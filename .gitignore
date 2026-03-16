@@ -5,7 +5,6 @@ target*
 .vscode/
 *.txt
 # *.smv
-*.lean
 *.smt
 *.smt2
 *.so
