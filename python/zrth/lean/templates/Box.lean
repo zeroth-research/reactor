@@ -28,7 +28,7 @@ instance (t : Ty) : DecidableEq t.denote := by
   cases t <;> simp [Ty.denote] <;> infer_instance
 
 /-- tuple of values -/
-def ValTuple : List Ty → Type
+@[simp] def ValTuple : List Ty → Type
   | []      => Unit
   | t :: ts => t.denote × ValTuple ts
 
@@ -40,11 +40,11 @@ instance [DecidableEq (t.denote)] [DecidableEq (ValTuple ts)] :
 
 namespace ValTuple
 
-def append : (xs : List Ty) → ValTuple xs → ValTuple ys → ValTuple (xs ++ ys)
+@[simp] def append : (xs : List Ty) → ValTuple xs → ValTuple ys → ValTuple (xs ++ ys)
   | [],     (),       bs => bs
   | _::xs, (a, rest), bs => (a, append xs rest bs)
 
-def split : (xs : List Ty) → ValTuple (xs ++ ys) → ValTuple xs × ValTuple ys
+@[simp] def split : (xs : List Ty) → ValTuple (xs ++ ys) → ValTuple xs × ValTuple ys
   | [],     h         => ((), h)
   | _::xs, (a, rest)  =>
     let (l, r) := split xs rest
@@ -219,3 +219,13 @@ end Box
 @[simp] theorem ite_vt_tail (p : Prop) [Decidable p] (a b : ValTuple (t :: ts)) :
     (if p then a else b).2 = if p then a.2 else b.2 := by
   split <;> rfl
+
+
+theorem parseq (A: Box α β) (B: Box α' β'):
+    (A ⊗ B).fn = (fun (x: ValTuple (α ++ α')) =>
+                    let a := A.fn (x.split α).1
+                    let b := B.fn (x.split α).2
+                    ValTuple.append β a b)
+  := by simp [Box.par]
+
+
