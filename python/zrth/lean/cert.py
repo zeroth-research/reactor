@@ -1,5 +1,5 @@
 from zrth.lean.native import _product_type, _append_expr, _translate_terms
-from zrth import Module
+from zrth import Module, Wire
 from .translate import ModuleToLean4
 
 
@@ -19,11 +19,12 @@ def generate_certificate_lean(
 ) -> str:
     """Generate Certificate.lean with compiled or placeholder definitions."""
 
-    extl_next = [pair[1] for pair in module.extl]
-    ctrl_next = [pair[1] for pair in module.ctrl]
+    extl_next: list[Wire] = [pair[1] for pair in module.extl]
+    ctrl_next: list[Wire] = [pair[1] for pair in module.ctrl]
+    ctrl_latched: list[Wire] = [p[0] for p in module.ctrl]
+    params: list[Wire] = []  # [x for x in module.param]
 
-    ctrl_latched = [p[0] for p in module.ctrl]
-    extl_native = _product_type(extl_next)
+    extl_native = _product_type(extl_next + params)
     ctrl_native = _product_type(ctrl_next)
     append = _append_expr("x", len(ctrl_latched), "e", len(extl_next))
 
@@ -93,7 +94,12 @@ def generate_certificate_lean(
     lines.append("")
 
     # DecidablePred P — must come after P and before ranking
-    lines.append("instance : DecidablePred P := inferInstance")
+    if p_terms is not None:
+        lines.append(
+            "instance : DecidablePred P := fun s => by unfold P; dsimp; infer_instance"
+        )
+    else:
+        lines.append("instance : DecidablePred P := sorry")
     lines.append("")
 
     # ranking
@@ -215,9 +221,15 @@ theorem hrank : ∀ s s', inv s → ¬(P s) → (∃ l, lts.Tr s l s') →
     rw [← heq]
     unfold ranking P at *
     unfold inv at *
-    simp only [RM, ReactiveModule.update]
-    unfold update
-    simp_mod
+    try simp [RM, ReactiveModule.update]
+    first
+      | contradiction
+      | simp at hP
+        unfold update
+        simp_mod
+   -- simp only [RM, ReactiveModule.update]
+   -- unfold update
+   -- simp_mod
 
 def buchi := rule_buchi
   lts

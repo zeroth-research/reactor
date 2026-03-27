@@ -1,8 +1,7 @@
 from zrth.lean.native import _product_type, _translate_terms
 from zrth.lean.circ import CircLayer, _translate_terms_circ, _ty_list, _native_to_vt
-from zrth.lean.constants import _is_scalar_tensor, _tensor_to_lean_def
-from zrth.lean.common import itype_name
-from zrth import Module, Wire, DType
+from zrth.lean.common import itype_name, _is_scalar_tensor, _tensor_to_lean_def
+from zrth import Module, Wire
 
 
 # ====================================================================
@@ -92,23 +91,24 @@ class ModuleToLean4:
             )
         atom = atoms[0]
 
-        extl_next = [pair[1] for pair in m.extl]
-        ctrl_latched = [pair[0] for pair in m.ctrl]
-        ctrl_next = [pair[1] for pair in m.ctrl]
+        extl_next: list[Wire] = [pair[1] for pair in m.extl]
+        ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
+        ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
+        params: list[Wire] = []  # [x for x in m.param]
 
         # Extract constants from both blocks
         init_terms = atom.init
         update_terms = atom.update
 
         # Compile both blocks
-        init_inputs = list(extl_next)
-        init_outputs = list(ctrl_next)
+        init_inputs = extl_next + params
+        init_outputs = ctrl_next
         init_layers = _translate_terms_circ(
             init_terms, init_inputs, init_outputs, self._constants
         )
 
-        update_inputs = ctrl_latched + extl_next
-        update_outputs = list(ctrl_next)
+        update_inputs = ctrl_latched + extl_next + params
+        update_outputs = ctrl_next
         update_layers = _translate_terms_circ(
             update_terms, update_inputs, update_outputs, self._constants
         )
@@ -170,12 +170,44 @@ class ModuleToLean4:
 
     # Simp lemmas for reducing a single circuit layer
     _LAYER_SIMP = [
-        "Box.par", "ValTuple.split", "ValTuple.append",
-        "Box.id", "Box.dup", "Box.swap", "Box.destr", "Box.const",
-        "Box.not", "Box.and", "Box.or", "Box.ite",
-        "Box.add", "Box.sub", "Box.mul", "Box.neg",
-        "Box.lt", "Box.le", "Box.gt", "Box.ge", "Box.eq", "Box.neq",
-        "Box.min", "Box.max", "Box.matMul", "Box.matAdd",
+        "Box.par",
+        "ValTuple.split",
+        "ValTuple.append",
+        "ValTuple.append_split",
+        "ValTuple.append_ite",
+        "ValTuple.split_singleton_fst",
+        "ValTuple.split_singleton_snd",
+        "ValTuple.split_cons_fst_fst",
+        "ValTuple.split_cons_fst_snd",
+        "ValTuple.split_2_fst",
+        "ValTuple.split_2_snd",
+        "ValTuple.split_3_fst",
+        "ValTuple.split_3_snd",
+        "ValTuple.split_nil",
+        "ValTuple.split_nil_snd",
+        "Box.id",
+        "Box.dup",
+        "Box.swap",
+        "Box.destr",
+        "Box.const",
+        "Box.not",
+        "Box.and",
+        "Box.or",
+        "Box.ite",
+        "Box.add",
+        "Box.sub",
+        "Box.mul",
+        "Box.neg",
+        "Box.lt",
+        "Box.le",
+        "Box.gt",
+        "Box.ge",
+        "Box.eq",
+        "Box.neq",
+        "Box.min",
+        "Box.max",
+        "Box.nnLinear",
+        "Box.relu",
         "ite_pair",
     ]
 
@@ -185,7 +217,9 @@ class ModuleToLean4:
         lines = []
         lines.append("/-- Reduce one circuit layer: unfolds the given lemma,")
         lines.append("    then simplifies all Box/ValTuple plumbing. -/")
-        lines.append('macro "simp_circ" "[" ls:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>')
+        lines.append(
+            'macro "simp_circ" "[" ls:Lean.Parser.Tactic.simpLemma,* "]" : tactic =>'
+        )
         lines.append("  `(tactic| simp only [$ls,*,")
         lines.append(f"    {layer_simp}])")
         return "\n".join(lines)
@@ -214,15 +248,18 @@ class ModuleToLean4:
         if const_names:
             final_simp.append(const_names)
         proof.append(f"  simp [{', '.join(final_simp)}]")
+        proof.append("  try simp only [Mat_1_1_eq]; simp")
+        proof.append("  try grind")
         return "\n".join(proof)
 
     def to_lean_equiv_theorems(self, atom) -> str:
         """Generate theorems proving circuit ≡ functional."""
         m = self.module
 
-        extl_next = [pair[1] for pair in m.extl]
-        ctrl_latched = [pair[0] for pair in m.ctrl]
-        ctrl_next = [pair[1] for pair in m.ctrl]
+        extl_next: list[Wire] = [pair[1] for pair in m.extl]
+        ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
+        ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
+        params: list[Wire] = []  # [x for x in m.param]
 
         lines: list[str] = []
 
@@ -233,13 +270,13 @@ class ModuleToLean4:
             lines.append("")
 
         # Init equivalence theorem
-        init_inputs = list(extl_next)
-        n_extl = len(init_inputs)
+        init_inputs = extl_next + params
+        n_inputs = len(init_inputs)
         n_ctrl = len(ctrl_next)
 
         if self._init_layer_names:
             init_native = _product_type(init_inputs)
-            lhs_input = _native_to_vt("s", n_extl)
+            lhs_input = _native_to_vt("s", n_inputs)
             rhs_output = _native_to_vt("r", n_ctrl)
 
             lines.append(f"theorem init_circ_eq : ∀ (s : {init_native}),")
@@ -256,7 +293,7 @@ class ModuleToLean4:
             lines.append("")
 
         # Update equivalence theorem
-        update_inputs = ctrl_latched + extl_next
+        update_inputs = ctrl_latched + extl_next + params
         n_update = len(update_inputs)
 
         if self._update_layer_names:
@@ -302,22 +339,24 @@ class ModuleToLean4:
     def to_lean_functional(self, atom) -> str:
         m = self.module
 
-        extl_next = [pair[1] for pair in m.extl]
-        ctrl_latched = [pair[0] for pair in m.ctrl]
-        ctrl_next = [pair[1] for pair in m.ctrl]
+        # TODO: we should handle also `extl_latched`
+        extl_next: list[Wire] = [pair[1] for pair in m.extl]
+        ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
+        ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
+        params: list[Wire] = []  # [x for x in m.param]
 
         init_terms = atom.init
         update_terms = atom.update
 
         # Compile both blocks
-        init_inputs = list(extl_next)
-        init_outputs = list(ctrl_next)
+        init_inputs = extl_next + params
+        init_outputs = ctrl_next
         init_body = _translate_terms(
             init_terms, init_inputs, init_outputs, self._constants
         )
 
-        update_inputs = ctrl_latched + extl_next
-        update_outputs = list(ctrl_next)
+        update_inputs = ctrl_latched + extl_next + params
+        update_outputs = ctrl_next
         update_body = _translate_terms(
             update_terms, update_inputs, update_outputs, self._constants
         )
