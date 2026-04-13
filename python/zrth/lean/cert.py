@@ -1,6 +1,20 @@
+from dataclasses import dataclass
+
 from zrth.lean.native import _product_type, _append_expr, _translate_terms
 from zrth import Module, Wire
 from .translate import ModuleToLean4
+from ..expr import Expr
+
+
+@dataclass
+class CertificateData:
+    """Data needed to generate a Lean certificate."""
+
+    prp: str | Expr | None = None
+    inv: Expr | str | None = None
+    init_pre: Expr | str | None = None
+    update_pre: Expr | str | None = None
+    ranking: Expr | str | None = None
 
 
 # TODO: move the parts that does not change into .lean file.
@@ -11,13 +25,21 @@ def generate_certificate_lean(
     module: Module,
     module_name: str,
     m2l: ModuleToLean4,
-    inv_terms: list | None = None,
-    init_pre_terms: list | None = None,
-    update_pre_terms: list | None = None,
-    ranking_terms: list | None = None,
-    p_terms: list | None = None,
+    cert_data: CertificateData | None = None,
 ) -> str:
     """Generate Certificate.lean with compiled or placeholder definitions."""
+    if cert_data is None:
+        cert_data = CertificateData()
+
+    def _as_terms(v):
+        """Return v if it is a list of Terms, else None (strings are not yet compiled)."""
+        return v if isinstance(v, list) else None
+
+    inv_terms = _as_terms(cert_data.inv)
+    init_pre_terms = _as_terms(cert_data.init_pre)
+    update_pre_terms = _as_terms(cert_data.update_pre)
+    ranking_terms = _as_terms(cert_data.ranking)
+    p_terms = _as_terms(cert_data.prp)
 
     extl_next: list[Wire] = [pair[1] for pair in module.extl]
     ctrl_next: list[Wire] = [pair[1] for pair in module.ctrl]
