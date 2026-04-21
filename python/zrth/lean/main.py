@@ -60,42 +60,10 @@ returns a :class:`zrth.Module`::
 """
 
 import argparse
-import linecache
 from pathlib import Path
 
 from .cert import CertificateData
-from .project import create_project, load_module_from_file
-
-from zrth import Wire, Bool
-from zrth.analyzer import convert_method
-
-
-def _compile_expr(fn_name: str, params: list[str], expr: str):
-    """Compile an expression string into a callable.
-
-    Registers the generated source in linecache so that inspect.getsource
-    (used internally by convert_method) can retrieve it.
-    """
-    source = f"def {fn_name}({', '.join(params)}):\n    return {expr}\n"
-    filename = f"<{fn_name}_inferred>"
-    lines = source.splitlines(keepends=True)
-    linecache.cache[filename] = (len(source), None, lines, filename)
-    code = compile(source, filename, "exec")
-    namespace: dict = {}
-    exec(code, namespace)  # noqa: S102
-    return namespace[fn_name]
-
-
-def _property_to_terms(prp: str, module) -> list:
-    """Compile a property expression into Terms.
-
-    ``x1``, ``x2``, … refer positionally to the next-state wires of
-    ``module.ctrl`` — the values produced by ``init`` / ``update``.
-    """
-    var_names = [f"x{i + 1}" for i in range(len(module.ctrl))]
-    wires = {name: (pair[1], pair[1]) for name, pair in zip(var_names, module.ctrl)}
-    fn = _compile_expr("property", var_names, prp)
-    return convert_method(fn, wires, [Wire(Bool(1))])
+from .project import create_project, load_module_from_file, write_certificate_lean
 
 
 _EPILOG = """\
@@ -162,12 +130,55 @@ def main():
         "-P",
         "--property",
         default=None,
-        help="Property expression to verify (e.g. 'x == 0'). Required when using --infer.",
+        help=(
+            "Property as an SMT-LIB 2 Bool expression over state vars "
+            "`s0..sN-1` (ctrl-next components). "
+            "Example: '(= s0 false)'. Required when using --infer."
+        ),
+    )
+    parser.add_argument(
+        "--pre",
+        default=None,
+        help=(
+            "Precondition as an SMT-LIB 2 Bool expression over input vars "
+            "`e0..eM-1` (extl-next) and `el0..elM-1` (extl-latched). "
+            "Tuple (matrix) elements use '((_ tuple.select k) eK)'. "
+            "Applied to both init_pre and update_pre. "
+            "Example: '(>= ((_ tuple.select 0) e0) 1.0)'."
+        ),
+    )
+    parser.add_argument(
+        "--invariant",
+        default=None,
+        help=(
+            "Invariant as an SMT-LIB 2 Bool expression over state vars "
+            "`s0..sN-1`. When combined with --infer, only a ranking "
+            "function is inferred (the invariant is fixed). "
+            "Example: '(= s0 s5)'."
+        ),
+    )
+    parser.add_argument(
+        "--ranking",
+        default=None,
+        help=(
+            "Ranking as an SMT-LIB 2 Int expression over state vars "
+            "`s0..sN-1`. When combined with --infer, only an invariant "
+            "is inferred. Must satisfy `ranking ≥ 0` under the invariant. "
+            "Example: '(ite s5 (ite s4 1 2) 0)'."
+        ),
     )
     parser.add_argument(
         "--infer",
-        action="store_true",
-        help="Use AI (TA2MagicAI) to infer the invariant and ranking function for --property.",
+        nargs="?",
+        const="ai-cegar",
+        default=None,
+        choices=["ai", "ai-cegar"],
+        help=(
+            "Infer the invariant and ranking function for --property. "
+            "`ai` uses plain LLM self-check; `ai-cegar` uses LLM + cvc5 "
+            "counterexample-guided refinement (default when --infer is "
+            "passed without a value)."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -186,19 +197,20 @@ def main():
         parser.error("--infer requires --property")
 
     cert_data: CertificateData | None = None
-    if args.property:
+    if args.property or args.pre or args.invariant or args.ranking:
         cert_data = CertificateData(prp=args.property)
+        if args.pre:
+            cert_data.init_pre = args.pre
+            cert_data.update_pre = args.pre
+        if args.invariant:
+            cert_data.inv = args.invariant
+        if args.ranking:
+            cert_data.ranking = args.ranking
 
     module = load_module_from_file(args.module_file, module_def=args.module_def)
     print(module)
 
-    # Compile the property expression against state variables ``x1..xN`` (mapped
-    # positionally to module.ctrl) so the certificate's P is concrete rather
-    # than ``sorry``.  Keep cert_data.prp as the original string — magic_ai and
-    # the Data.lean comment both expect it that way.
     project_cert_data = cert_data
-    if cert_data is not None and isinstance(cert_data.prp, str):
-        project_cert_data = CertificateData(prp=_property_to_terms(cert_data.prp, module))
 
     print(".. Generating lean code")
     project_dir = create_project(
@@ -214,12 +226,33 @@ def main():
 
     print(".. Doing TA2Magic")
     if args.infer:
-        from .magic_ai import TA2MagicAI
+        if args.infer == "ai":
+            from .magic_ai import TA2MagicAI
 
-        magic = TA2MagicAI(
-            lean_code.read_text(), model=args.model, base_url=args.base_url
-        )
+            magic = TA2MagicAI(
+                lean_code.read_text(), model=args.model, base_url=args.base_url
+            )
+        else:  # "ai-cegar"
+            from .magic_cegar import TA2MagicCEGAR
+
+            magic = TA2MagicCEGAR(
+                lean_code.read_text(),
+                module,
+                model=args.model,
+                base_url=args.base_url,
+            )
         cert_data = magic.infer(cert_data)
+
+        # Merge inferred inv/ranking into the project cert data and rewrite
+        # Certificate.lean so the final file has concrete definitions
+        # instead of the initial `True` / `sorry` placeholders.
+        if project_cert_data is None:
+            project_cert_data = CertificateData()
+        project_cert_data.inv = cert_data.inv
+        project_cert_data.ranking = cert_data.ranking
+        write_certificate_lean(
+            project_dir, args.project_name, module, project_cert_data
+        )
 
         data_file = project_dir / f"{args.project_name}Data.lean"
         data_lines = [
