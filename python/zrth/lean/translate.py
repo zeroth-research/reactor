@@ -1,48 +1,32 @@
 from zrth.lean.native import _product_type, _translate_terms
-from zrth.lean.circ import CircLayer, _translate_terms_circ, _ty_list, _native_to_vt
-from zrth.lean.common import itype_name, _is_scalar_tensor, _tensor_to_lean_def
+from zrth.lean.circ import (
+    CircLayer,
+    _translate_terms_circ,
+    _ty_list,
+    _native_to_vt,
+    _natives_to_vt,
+)
+from zrth.lean.common import LeanContext
 from zrth import Module, Wire
 
 
-# ====================================================================
-# ModuleToLean4 Class
-#
-# TODO: change to `GenerateLean4Cert` and cover also the certificate
-# ====================================================================
 class ModuleToLean4:
-    """Convert a Python Module into Lean4 wiring diagram code."""
+    """Convert a Python Module into Lean4 wiring diagram code.
 
-    def __init__(self, module: Module):
-        self.module = module
-        self._const_counter = 0
-        self._const_defs: list[str] = []
-        self._constants: dict[int, str] = {}  # wire_id -> const name
-        self.const_names: list[str] = []  # populated after to_lean()
+    Read-only consumer of a pre-populated LeanContext — does not mutate it.
+    Accepts a Module for convenience; in that case builds a fresh context.
+    """
 
-    def _next_const_name(self) -> str:
-        """Generate sequential constant names: c0, c1, c2, ..."""
-        name = f"c{self._const_counter}"
-        self._const_counter += 1
-        return name
+    def __init__(self, src: "LeanContext | Module"):
+        self.ctx = src if isinstance(src, LeanContext) else LeanContext(src)
+        # Layer names become available after atom_to_lean_circuit runs; the
+        # equivalence-theorem emitter reads them back.
+        self._init_layer_names: list[str] = []
+        self._update_layer_names: list[str] = []
 
-    def _extract_constants(self, terms) -> None:
-        """Pre-scan terms for matrix Tensor constants and generate top-level definitions.
-
-        Scalar Bool/Int tensors are inlined directly in the function body.
-        Only matrix tensors (shape with dim >= 2 or vector with size > 1) get
-        top-level named definitions.
-        """
-        for term in terms:
-            name_str = itype_name(term.itype)
-            if name_str == "Tensor":
-                out_wire = term.write[0]
-                if _is_scalar_tensor(out_wire):
-                    continue
-                const_name = self._next_const_name()
-                self._constants[out_wire.id] = const_name
-                tensor = term.itype._0
-                lean_def = _tensor_to_lean_def(const_name, tensor, out_wire)
-                self._const_defs.append(lean_def)
+    @property
+    def module(self):
+        return self.ctx.module
 
     def _emit_named_layers(
         self,
@@ -51,82 +35,55 @@ class ModuleToLean4:
         dom: str,
         cod: str,
     ) -> tuple[list[str], list[str]]:
-        """Emit named @[simp] definitions for each layer and a composed definition.
-
-        Returns (lines, layer_names) where layer_names includes both
-        individual layer names and the composed definition name.
-        """
+        """Emit named @[simp] definitions for each layer and a composed definition."""
         lines: list[str] = []
         layer_names: list[str] = []
+        # `Box.eq` / `Box.neq` on Real-valued wires drag in `Real.decidableEq`,
+        # which is classical. Mark all layers (and the composed def) as
+        # `noncomputable` when any Real wires are present so Lean's IR checker
+        # doesn't try to emit executable code.
+        noncomp = "noncomputable " if self.ctx.uses_real else ""
 
         for i, layer in enumerate(circ_layers):
             name = f"{block_name}_l{i}"
             in_tys = ", ".join(layer.in_tys)
             out_tys = ", ".join(layer.out_tys)
-            lines.append(f"@[simp] def {name} : Box [{in_tys}] [{out_tys}] :=")
+            lines.append(f"@[simp] {noncomp}def {name} : Box [{in_tys}] [{out_tys}] :=")
             lines.append(f"  {layer.body}")
             lines.append("")
             layer_names.append(name)
 
-        # Composed definition
-        if len(layer_names) == 1:
-            lines.append(f"@[simp] def {block_name} : Box {dom} {cod} :=")
-            lines.append(f"  {layer_names[0]}")
-        else:
-            lines.append(f"@[simp] def {block_name} : Box {dom} {cod} :=")
-            lines.append(f"  {' ≫ '.join(layer_names)}")
+        lines.append(f"@[simp] {noncomp}def {block_name} : Box {dom} {cod} :=")
+        lines.append(f"  {' ≫ '.join(layer_names)}")
         lines.append("")
 
         return lines, layer_names
 
-    def atom_to_lean_circuit(self, atom) -> str:
-        """Generate the full Lean4 source for this module as a combinational circuit"""
-        m = self.module
+    def atom_to_lean_circuit(self) -> str:
+        """Generate the full Lean4 source for this module as a combinational circuit."""
+        ctx = self.ctx
+        atom = ctx.atom
 
-        # Extract single atom (assume single atom for now)
-        atoms = list(m.atoms)
-        if len(atoms) != 1:
-            raise ValueError(
-                f"ModuleToLean4 currently supports single-atom modules, got {len(atoms)}"
-            )
-        atom = atoms[0]
-
-        extl_latched: list[Wire] = [pair[0] for pair in m.extl]
-        extl_next: list[Wire] = [pair[1] for pair in m.extl]
-        ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
-        ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
-
-        # Extract constants from both blocks
-        init_terms = atom.init
-        update_terms = atom.update
-
-        # Compile both blocks
-        init_inputs = extl_next
-        init_outputs = ctrl_next
+        init_inputs = ctx.extl_next
+        init_outputs = ctx.ctrl_next
         init_layers = _translate_terms_circ(
-            init_terms,
+            atom.init,
             (init_inputs,),
             init_outputs,
-            self._constants,
-            param_names=["extl_n"],
+            ctx.constants,
         )
 
-        update_inputs = (ctrl_latched, extl_latched, extl_next)
-        update_outputs = ctrl_next
+        update_inputs = (ctx.ctrl_latched, ctx.extl_latched, ctx.extl_next)
+        update_outputs = ctx.ctrl_next
         update_layers = _translate_terms_circ(
-            update_terms,
+            atom.update,
             update_inputs,
             update_outputs,
-            self._constants,
-            param_names=["ctrl", "extl_l", "extl_n"],
+            ctx.constants,
         )
 
-        # Render output
-        lines = []
-        lines.append("namespace Circ")
+        lines = ["namespace Circ"]
 
-        # Init definition with named layers
-        self._init_layer_names: list[str] = []
         if init_layers:
             init_dom = _ty_list(init_inputs)
             init_cod = _ty_list(init_outputs)
@@ -138,10 +95,10 @@ class ModuleToLean4:
             )
             lines.extend(layer_lines)
 
-        # Update definition with named layers
-        self._update_layer_names: list[str] = []
         if update_layers:
-            upd_dom = f"(ctrl: {_ty_list(ctrl_latched)}) (extl_l: {_ty_list(extl_latched)}) (extl_n: {_ty_list(extl_next)})"
+            upd_dom = _ty_list(
+                ctx.ctrl_latched + ctx.extl_latched + ctx.extl_next
+            )
             upd_cod = _ty_list(update_outputs)
             layer_lines, self._update_layer_names = self._emit_named_layers(
                 "update",
@@ -152,28 +109,15 @@ class ModuleToLean4:
             lines.extend(layer_lines)
 
         lines.append("end Circ")
-
         return "\n".join(lines)
 
-    def translate_constants(self, atom) -> str:
-        # Extract constants from both blocks
-        init_terms = atom.init
-        update_terms = atom.update
-        self._extract_constants(init_terms)
-        self._extract_constants(update_terms)
-
-        # Store metadata for certificate generation
-        self.const_names = list(self._constants.values())
-
-        lines: list[str] = []
-
-        # Constants
-        if self._const_defs:
-            lines.append("/- Concrete constants -/")
-            lines.append("")
-            for cdef in self._const_defs:
-                lines.append(cdef)
-
+    def _constants_block(self) -> str:
+        """Render the top-level `@[simp] def c0 : ...` constant definitions."""
+        defs = self.ctx.constants.defs()
+        if not defs:
+            return ""
+        lines = ["/- Concrete constants -/", ""]
+        lines.extend(defs)
         return "\n".join(lines)
 
     # Simp lemmas for reducing a single circuit layer
@@ -216,6 +160,8 @@ class ModuleToLean4:
         "Box.max",
         "Box.nnLinear",
         "Box.relu",
+        "Box.argmax_1d",
+        "Box.argmax",
         "ite_pair",
     ]
 
@@ -234,93 +180,82 @@ class ModuleToLean4:
 
     def _equiv_proof_tactic(
         self,
-        input_wires: list[Wire],
+        intro_vars: list[str],
         layer_names: list[str],
         block_name: str,
     ) -> str:
-        """Generate layer-by-layer proof tactic for equivalence theorem.
-
-        Unfolds one circuit layer at a time to keep intermediate terms small.
-        """
-        const_names = ", ".join(self.const_names) if self.const_names else ""
+        """Generate layer-by-layer proof tactic for equivalence theorem."""
+        const_names = ", ".join(self.ctx.constants.names())
 
         proof = []
-        proof.append("  intro s")
-        # Step 1: unfold the composed circuit and sequential composition
+        proof.append(f"  intro {' '.join(intro_vars)}")
         proof.append(f"  simp_circ [Circ.{block_name}, Box.seq]")
-        # Step 2: reduce each layer from innermost to outermost
         for name in layer_names:
             proof.append(f"  simp_circ [Circ.{name}]")
-        # Step 3: match with functional definition
         final_simp = [block_name, "ite_pair"]
         if const_names:
             final_simp.append(const_names)
         proof.append(f"  simp [{', '.join(final_simp)}]")
         proof.append("  try exact List.ofFn_inj.mp rfl")
         proof.append("  try grind")
-        proof.append("  try simp only [Mat_1_1_eq]")
         proof.append("  try simp")
         proof.append("  try grind")
         proof.append(f"  try simp [{', '.join(final_simp)}]")
         proof.append("  try exact List.ofFn_inj.mp rfl")
         return "\n".join(proof)
 
-    def to_lean_equiv_theorems(self, atom) -> str:
+    def to_lean_equiv_theorems(self) -> str:
         """Generate theorems proving circuit ≡ functional."""
-        m = self.module
-
-        extl_next: list[Wire] = [pair[1] for pair in m.extl]
-        ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
-        ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
-        params: list[Wire] = []  # [x for x in m.param]
-
+        ctx = self.ctx
         lines: list[str] = []
 
-        # Emit simp_circ helper tactic
         has_theorems = bool(self._init_layer_names or self._update_layer_names)
         if has_theorems:
             lines.append(self._simp_circ_macro())
             lines.append("")
 
-        # Init equivalence theorem
-        init_inputs = extl_next + params
-        n_inputs = len(init_inputs)
-        n_ctrl = len(ctrl_next)
+        n_ctrl = len(ctx.ctrl_next)
 
         if self._init_layer_names:
-            init_native = _product_type(init_inputs)
-            lhs_input = _native_to_vt("s", n_inputs)
+            n_extl_n = len(ctx.extl_next)
+            init_binder = f"(extl_n : {_product_type(ctx.extl_next)})"
+            lhs_input = _natives_to_vt([("extl_n", n_extl_n)])
             rhs_output = _native_to_vt("r", n_ctrl)
 
-            lines.append(f"theorem init_circ_eq : ∀ (s : {init_native}),")
+            lines.append(f"theorem init_circ_eq : ∀ {init_binder},")
             lines.append(f"    Circ.init.fn {lhs_input} =")
-            lines.append("    let r := init s")
+            lines.append("    let r := init extl_n")
             lines.append(f"    {rhs_output} := by")
             lines.append(
                 self._equiv_proof_tactic(
-                    init_inputs,
+                    ["extl_n"],
                     self._init_layer_names,
                     "init",
                 )
             )
             lines.append("")
 
-        # Update equivalence theorem
-        update_inputs = ctrl_latched + extl_next + params
-        n_update = len(update_inputs)
-
         if self._update_layer_names:
-            update_native = _product_type(update_inputs)
-            lhs_input = _native_to_vt("s", n_update)
+            n_ctrl_l = len(ctx.ctrl_latched)
+            n_extl_l = len(ctx.extl_latched)
+            n_extl_n = len(ctx.extl_next)
+            update_binders = (
+                f"(ctrl : {_product_type(ctx.ctrl_latched)}) "
+                f"(extl_l : {_product_type(ctx.extl_latched)}) "
+                f"(extl_n : {_product_type(ctx.extl_next)})"
+            )
+            lhs_input = _natives_to_vt(
+                [("ctrl", n_ctrl_l), ("extl_l", n_extl_l), ("extl_n", n_extl_n)]
+            )
             rhs_output = _native_to_vt("r", n_ctrl)
 
-            lines.append(f"theorem update_circ_eq : ∀ (s : {update_native}),")
+            lines.append(f"theorem update_circ_eq : ∀ {update_binders},")
             lines.append(f"    Circ.update.fn {lhs_input} =")
-            lines.append("    let r := update s")
+            lines.append("    let r := update ctrl extl_l extl_n")
             lines.append(f"    {rhs_output} := by")
             lines.append(
                 self._equiv_proof_tactic(
-                    update_inputs,
+                    ["ctrl", "extl_l", "extl_n"],
                     self._update_layer_names,
                     "update",
                 )
@@ -330,95 +265,54 @@ class ModuleToLean4:
         return "\n".join(lines)
 
     def to_lean_functional(self) -> str:
-        """Generate the full Lean4 source for this module."""
-        m = self.module
-
-        # Extract single atom (assume single atom for now)
-        atoms = list(m.atoms)
-        if len(atoms) != 1:
-            raise ValueError(
-                f"ModuleToLean4 currently supports single-atom modules, got {len(atoms)}"
-            )
-
-        atom = atoms[0]
-
-        return "{}\n\n{}".format(
-            self.translate_constants(atom),
-            self.atom_to_lean_functional(atom),
-        )
+        """Generate the functional init/update definitions (plus constants)."""
+        return "{}\n\n{}".format(self._constants_block(), self.atom_to_lean_functional())
 
     def to_lean_circ(self) -> str:
-        m = self.module
-
-        # Extract single atom (assume single atom for now)
-        atoms = list(m.atoms)
-        if len(atoms) != 1:
-            raise ValueError(
-                f"ModuleToLean4 currently supports single-atom modules, got {len(atoms)}"
-            )
-
-        atom = atoms[0]
-
         return "{}\n\n{}".format(
-            self.atom_to_lean_circuit(atom),
-            self.to_lean_equiv_theorems(atom),
+            self.atom_to_lean_circuit(),
+            self.to_lean_equiv_theorems(),
         )
 
     def to_lean(self, circuit: bool = True) -> str:
-        """Generate the full Lean4 source for this module."""
         if circuit:
             return f"{self.to_lean_functional()}\n\n{self.to_lean_circ()}"
-        else:
-            return self.to_lean_functional()
+        return self.to_lean_functional()
 
-    def atom_to_lean_functional(self, atom) -> str:
-        m = self.module
+    def atom_to_lean_functional(self) -> str:
+        ctx = self.ctx
+        atom = ctx.atom
 
-        # TODO: we should handle also `extl_latched`
-        extl_latched: list[Wire] = [pair[0] for pair in m.extl]
-        extl_next: list[Wire] = [pair[1] for pair in m.extl]
-        ctrl_latched: list[Wire] = [pair[0] for pair in m.ctrl]
-        ctrl_next: list[Wire] = [pair[1] for pair in m.ctrl]
-
-        init_terms = atom.init
-        update_terms = atom.update
-
-        # Compile both blocks
-        init_inputs = (extl_next,)
-        init_outputs = ctrl_next
         init_body = _translate_terms(
-            init_terms,
-            init_inputs,
-            init_outputs,
-            self._constants,
-            param_names=["extl_n"],
+            atom.init,
+            ctx.init_wire_names,
+            ctx.ctrl_next,
+            ctx.constants,
         )
-
-        update_inputs = (ctrl_latched, extl_latched, extl_next)
-        update_outputs = ctrl_next
         update_body = _translate_terms(
-            update_terms,
-            update_inputs,
-            update_outputs,
-            self._constants,
-            param_names=["ctrl", "extl_l", "extl_n"],
+            atom.update,
+            ctx.update_wire_names,
+            ctx.ctrl_next,
+            ctx.constants,
         )
 
-        # Render output
         lines = []
+        cod = _product_type(ctx.ctrl_next)
+        noncomp = "noncomputable " if ctx.uses_real else ""
 
-        # Init definition
-        cod = _product_type(ctrl_latched)
         if init_body:
-            init_dom = f"(extl_n: {_product_type(extl_next)})"
-            lines.append(f"@[simp] def init {init_dom} : {cod} :=")
+            init_dom = f"(extl_n: {_product_type(ctx.extl_next)})"
+            lines.append(f"@[simp] {noncomp}def init {init_dom} : {cod} :=")
             lines.append(init_body)
             lines.append("")
 
-        # Update definition
         if update_body:
-            upd_dom = f"(ctrl: {_product_type(ctrl_latched)}) (extl_l: {_product_type(extl_latched)}) (extl_n: {_product_type(extl_next)})"
-            lines.append(f"@[simp] def update {upd_dom} : {cod} :=")
+            upd_dom = (
+                f"(ctrl: {_product_type(ctx.ctrl_latched)}) "
+                f"(extl_l: {_product_type(ctx.extl_latched)}) "
+                f"(extl_n: {_product_type(ctx.extl_next)})"
+            )
+            lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
             lines.append(update_body)
             lines.append("")
 

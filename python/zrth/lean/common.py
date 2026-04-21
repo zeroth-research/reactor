@@ -1,4 +1,4 @@
-from zrth import Term, Wire, DType
+from zrth import Term, Wire, DType, Module
 
 
 def _accessor(pos: int, total: int) -> str:
@@ -34,14 +34,11 @@ def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
 
     if shape == [1] or shape == []:
         return ty if simple_types else f"(Mat {ty} 1 1)"
-    elif len(shape) == 1:
+    if len(shape) == 1:
         return f"(Mat {ty} 1 {shape[0]})"
-    elif len(shape) == 2:
+    if len(shape) == 2:
         return f"(Mat {ty} {shape[0]} {shape[1]})"
-    else:
-        raise ValueError(f"Unsupported DType shape: {shape}")
-
-    raise ValueError(f"Unsupported DType for Lean conversion: {dt}")
+    raise ValueError(f"Unsupported DType shape: {shape}")
 
 
 def itype_name(itype) -> str:
@@ -56,22 +53,130 @@ def itype_name(itype) -> str:
 # ======================================================================
 #  Constants
 # ======================================================================
+class ConstantRegistry:
+    """Registry of matrix constants (wire_id -> Lean name + top-level def).
+
+    Scalar Bool/Int tensors are inlined at their use site and not registered.
+    """
+
+    def __init__(self):
+        self._by_id: dict[int, str] = {}
+        self._defs: list[str] = []
+        self._counter = 0
+
+    def intern(self, term: Term) -> None:
+        """If term is a matrix Tensor, mint a name and top-level def for it.
+
+        Idempotent: calling again for the same output wire is a no-op.
+        """
+        if itype_name(term.itype) != "Tensor":
+            return
+        out_wire = term.write[0]
+        if _is_scalar_tensor(out_wire) or out_wire.id in self._by_id:
+            return
+        name = f"c{self._counter}"
+        self._counter += 1
+        self._by_id[out_wire.id] = name
+        self._defs.append(_tensor_to_lean_def(name, term.itype._0, out_wire))
+
+    def lookup(self, wire_id: int) -> str | None:
+        return self._by_id.get(wire_id)
+
+    def names(self) -> list[str]:
+        return list(self._by_id.values())
+
+    def defs(self) -> list[str]:
+        return list(self._defs)
+
+
 def _constant_expr(
-    const_name: str, term: Term, w: Wire, constants: dict[int, str]
+    const_name: str, term: Term, w: Wire, constants: "ConstantRegistry"
 ) -> str:
     if const_name == "Tensor":
-        wire_id = w.id
-        if wire_id in constants:
-            return constants[wire_id]
-        else:
-            return _tensor_to_lean_inline(term.itype._0, w)
-    elif const_name == "ConstBool":
-        val = bool(term.itype._0)
-        return "true" if val else "false"
-    else:
-        return str(int(term.itype._0))
+        name = constants.lookup(w.id)
+        if name is not None:
+            return name
+        return _tensor_to_lean_inline(term.itype._0, w)
+    if const_name == "ConstBool":
+        val = "true" if bool(term.itype._0) else "false"
+        return f"(fun _ _ => {val})"
+    return f"(fun _ _ => ({int(term.itype._0)} : Int))"
 
-    raise NotImplementedError
+
+def _any_float_wire(*wire_lists: list[Wire]) -> bool:
+    """True if any wire across the given lists has a Float dtype."""
+    for wires in wire_lists:
+        for w in wires:
+            if isinstance(w.dtype, DType.Float):
+                return True
+    return False
+
+
+def _bind_wires(params: list[tuple[str, list[Wire]]]) -> dict[int, str]:
+    """Map each input wire id to its Lean accessor expression.
+
+    E.g. [("ctrl", [w0, w1]), ("extl_n", [w2])] ->
+        {w0.id: "ctrl.1", w1.id: "ctrl.2", w2.id: "extl_n"}
+    """
+    out: dict[int, str] = {}
+    for name, wires in params:
+        n = len(wires)
+        for i, w in enumerate(wires):
+            out[w.id] = f"{name}{_accessor(i, n)}"
+    return out
+
+
+class LeanContext:
+    """Pre-computed artifacts shared by module and certificate codegen.
+
+    Runs a one-time discovery pass over the module's init/update terms (and
+    optionally the certificate terms) to populate the constant registry and
+    the wire-name bindings for each block. Read-only after construction;
+    codegen consumers do not mutate it.
+    """
+
+    def __init__(self, module: Module, cert_terms: "list | None" = None):
+        atoms = list(module.atoms)
+        if len(atoms) != 1:
+            raise ValueError(
+                f"LeanContext currently supports single-atom modules, got {len(atoms)}"
+            )
+
+        self.module = module
+        self.atom = atoms[0]
+
+        self.extl_latched: list[Wire] = [p[0] for p in module.extl]
+        self.extl_next: list[Wire] = [p[1] for p in module.extl]
+        self.ctrl_latched: list[Wire] = [p[0] for p in module.ctrl]
+        self.ctrl_next: list[Wire] = [p[1] for p in module.ctrl]
+
+        self.constants = ConstantRegistry()
+        for term in self.atom.init:
+            self.constants.intern(term)
+        for term in self.atom.update:
+            self.constants.intern(term)
+        for term in cert_terms or []:
+            self.constants.intern(term)
+
+        # Modules that use Float/Real require `noncomputable` on defs that
+        # compare or branch on real-typed values (Real lacks decidable equality).
+        self.uses_real = _any_float_wire(
+            self.extl_latched,
+            self.extl_next,
+            self.ctrl_latched,
+            self.ctrl_next,
+            [t.write[0] for t in self.atom.init],
+            [t.write[0] for t in self.atom.update],
+        )
+
+        self.init_wire_names = _bind_wires([("extl_n", self.extl_next)])
+        self.update_wire_names = _bind_wires(
+            [
+                ("ctrl", self.ctrl_latched),
+                ("extl_l", self.extl_latched),
+                ("extl_n", self.extl_next),
+            ]
+        )
 
 
 def _get_dtype_item(dtype: DType, item) -> str:
@@ -96,16 +201,6 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     """
     shape = wire.dtype.shape
 
-    # Scalar bool constant
-    # if isinstance(wire.dtype, DType.Bool):
-    #     val = bool(tensor.item())
-    #     lean_val = "true" if val else "false"
-    #     return f"@[simp] def {name} : Bool := {lean_val}\n"
-    #
-    # # Scalar int constant
-    # if isinstance(wire.dtype, DType.Int) and (shape == [1] or shape == []):
-    #     val = int(tensor.item())
-    #     return f"@[simp] def {name} : Int := {val}\n"
     if shape == [1] or shape == []:
         val = _get_dtype_item(wire.dtype, tensor.item())
         ty = dtype_to_lean_type(wire)
@@ -149,9 +244,10 @@ def _is_scalar_tensor(wire: Wire) -> bool:
 
 
 def _tensor_to_lean_inline(tensor, wire: Wire) -> str:
-    """Return an inline Lean literal for a scalar tensor."""
+    """Return an inline `Mat _ 1 1` literal for a scalar tensor."""
     if isinstance(wire.dtype, DType.Bool):
-        return "true" if bool(tensor.item()) else "false"
+        val = "true" if bool(tensor.item()) else "false"
+        return f"(fun _ _ => {val})"
     if isinstance(wire.dtype, DType.Int):
-        return str(int(tensor.item()))
+        return f"(fun _ _ => ({int(tensor.item())} : Int))"
     raise ValueError(f"Cannot inline tensor with dtype={wire.dtype}")

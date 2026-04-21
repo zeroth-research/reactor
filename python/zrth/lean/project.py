@@ -3,7 +3,7 @@ Build a Lean4 project with Mathlib, Cslib, and a custom git dependency,
 copy template library files, and generate a diagram Lean file.
 """
 
-from zrth.lean.common import dtype_to_lean_type
+from zrth.lean.common import LeanContext, dtype_to_lean_type
 
 from zrth.lean.cert import generate_certificate_lean, CertificateData
 
@@ -71,7 +71,7 @@ def generate_lakefile(project_name: str, executable: bool = False) -> str:
         [[require]]
         name = "smt"
         git = "https://github.com/ufmg-smite/lean-smt.git"
-        rev = "main"
+        rev = "f58d19d5d0803fcccb5ccb1b4473774dd2ae9f9a"
 
        #[[require]]
        #name = "mylib"
@@ -333,7 +333,20 @@ def create_project(
     # ----------------------------------------------------------
     # Generate reactive module (init and update)
     # ----------------------------------------------------------
-    m2l = ModuleToLean4(module)
+    cert_terms: list = []
+    if cert_data is not None:
+        for field in (
+            cert_data.prp,
+            cert_data.inv,
+            cert_data.init_pre,
+            cert_data.update_pre,
+            cert_data.ranking,
+        ):
+            if isinstance(field, list):
+                cert_terms.extend(field)
+
+    ctx = LeanContext(module, cert_terms=cert_terms)
+    m2l = ModuleToLean4(ctx)
 
     mod_file = src_dir / f"{module_name}.lean"
     print(f"Generating `{mod_file.absolute()}`")
@@ -353,6 +366,7 @@ import Core.Box
     mod_file.write_text(f"""\
 /- Code generated for reactive module `{module_name}` as circuit -/
 import Core.Box
+import {project_name}.{module_name}
 
 {m2l.to_lean_circ()}
 """)
@@ -376,9 +390,8 @@ import Core.Box
     cert_file.write_text(
         generate_certificate_lean(
             project_name,
-            module,
             module_name,
-            m2l,
+            ctx,
             cert_data=cert_data,
         )
     )
@@ -436,6 +449,7 @@ def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
         )
 
     module_def = getattr(module, module_def)
-    if not isinstance(module_def, Module):
-        return Wrapper(module_def())
-    return module_def()
+    result = module_def()
+    if isinstance(result, Module):
+        return result
+    return Wrapper(result)
