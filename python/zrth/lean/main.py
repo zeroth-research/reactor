@@ -81,7 +81,7 @@ def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateDa
     import cvc5
 
     from .smt_module import ModuleSMT
-    from .smt_prompt import CegarPromptEnv
+    from .smt_prompt import CegarPromptEnv, parse_predicate
     from .smt_to_lean import smt_to_lean, smt_to_lean_nat
 
     tm = cvc5.TermManager()
@@ -91,7 +91,7 @@ def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateDa
     def translate(smt_src: str | None, mode: str) -> str | None:
         if not isinstance(smt_src, str):
             return smt_src
-        term = env.parse_expr(smt_src)
+        term = parse_predicate(env, smt_src)
         if mode == "property" or mode == "invariant":
             return smt_to_lean(term, msmt.ctrl_next, param_name="s")
         if mode == "ranking":
@@ -298,16 +298,11 @@ def main():
             )
         cert_data = magic.infer(cert_data)
 
-        # Merge inferred inv/ranking into the project cert data and rewrite
-        # Certificate.lean so the final file has concrete definitions
-        # instead of the initial `True` / `sorry` placeholders.
+        # Merge inferred inv/ranking into project_cert_data.
         if project_cert_data is None:
             project_cert_data = CertificateData()
         project_cert_data.inv = cert_data.inv
         project_cert_data.ranking = cert_data.ranking
-        write_certificate_lean(
-            project_dir, args.project_name, module, project_cert_data
-        )
 
         data_file = project_dir / f"{args.project_name}Data.lean"
         data_lines = [
@@ -325,6 +320,9 @@ def main():
                 data_lines.append("")
         data_file.write_text("\n".join(data_lines) + "\n")
         print(f"Wrote {data_file}")
+
+    # Write certificate once — after inference if it ran, with placeholders otherwise.
+    write_certificate_lean(project_dir, args.project_name, module, project_cert_data)
 
     print(f"\nProject ready at: {project_dir}")
 
