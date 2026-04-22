@@ -4,6 +4,69 @@ from zrth.lean.native import _product_type, _translate_terms
 from zrth.lean.common import LeanContext, _bind_wires
 from ..expr import Expr
 
+_ZEROTH_HAMMER = """\
+syntax "zeroth_hammer" : tactic
+
+elab_rules : tactic
+  | `(tactic| zeroth_hammer) => do
+      -- Pre-step: clear ReactiveModule wrappers if present
+      try evalTactic (← `(tactic| unfold RM at *)) catch _ => pure ()
+      -- 1. simp with all defs + matrix lemmas on goal, then omega
+      try
+        evalTactic (← `(tactic| simp_mat; omega))
+        return
+      catch _ => pure ()
+      -- 2. case-split cascade — handles branching on ite
+      try
+        evalTactic (← `(tactic|
+          simp_mat
+          <;> first
+            | omega
+            | (simp_all; omega)
+            | (split <;> simp_all <;> omega)
+            | (split <;> split <;> simp_all <;> omega)
+            | (split <;> split <;> split <;> simp_all <;> omega)))
+        return
+      catch _ => pure ()
+      throwError "zeroth_hammer: no step closed the goal"
+        return
+      catch _ => pure ()
+      -- 5. last-resort fallback
+      evalTactic (← `(tactic| sorry))
+"""
+
+_LTS_THEOREMS = """\
+theorem hinv' : lts.StateSet_isInductiveInitial inv := by
+  unfold LTS'.StateSet_isInductiveInitial
+  unfold LTS'.StateSet_isInductive
+  constructor
+  · intro s hs
+    unfold lts at hs
+    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_init] at hs
+    obtain ⟨l, hpre, hl⟩ := hs
+    rw [← hl]
+    exact init_inv l hpre
+  · intro s s' ⟨hs, l, hstep⟩
+    unfold lts at hstep
+    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at hstep
+    rw [← hstep.2]
+    exact step_inv s l ⟨hstep.1, hs⟩
+
+theorem hinv : lts.StateSet_isInvariant inv := by
+  apply LTS'.StateSet_ind_init_is_inv lts
+  exact hinv'
+
+theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+    ranking s' < ranking s := by
+    intro s s' ⟨hi, hP, htr⟩
+    unfold lts at htr
+    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at htr
+    obtain ⟨l, hpre, heq⟩ := htr
+    rw [← heq]
+    zeroth_hammer
+
+"""
+
 
 @dataclass
 class CertificateData:
@@ -93,9 +156,7 @@ def generate_certificate_lean(
         lines.append(f"def update_pre (e : {extl_native}) : Prop :=")
         lines.append(body)
     elif isinstance(cert_data.update_pre, str):
-        lines.append(
-            f"def update_pre : {extl_native} → Prop := {cert_data.update_pre}"
-        )
+        lines.append(f"def update_pre : {extl_native} → Prop := {cert_data.update_pre}")
     else:
         lines.append(f"def update_pre (e : {extl_native}) : Prop := True")
     lines.append("")
@@ -125,7 +186,7 @@ def generate_certificate_lean(
     # DecidablePred P — must come after P and before ranking
     if p_terms is not None or isinstance(cert_data.prp, str):
         lines.append(
-            "instance : DecidablePred P := fun s => by unfold P; dsimp; infer_instance"
+            "instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance"
         )
     else:
         lines.append("instance : DecidablePred P := sorry")
@@ -161,7 +222,14 @@ def generate_certificate_lean(
     # All definitions that need unfolding for proof automation
     # Note: ReactiveModule fields are handled by dsimp/simp, not unfold (universe polymorphic)
     unfold_defs = [
-        "RM", "init", "update", "inv", "init_pre", "update_pre", "P", "ranking",
+        "RM",
+        "init",
+        "update",
+        "inv",
+        "init_pre",
+        "update_pre",
+        "P",
+        "ranking",
     ]
     unfold_defs.extend(const_names)
 
@@ -198,36 +266,7 @@ macro "simp_mat" : tactic =>
   `(tactic| simp [{all_defs}, {simp_mat}])
 """)
 
-    lines.append("""\
-syntax "zeroth_hammer" : tactic
-
-elab_rules : tactic
-  | `(tactic| zeroth_hammer) => do
-      -- Pre-step: clear ReactiveModule wrappers if present
-      try evalTactic (← `(tactic| unfold RM at *)) catch _ => pure ()
-      -- 1. simp with all defs + matrix lemmas on goal, then omega
-      try
-        evalTactic (← `(tactic| simp_mat; omega))
-        return
-      catch _ => pure ()
-      -- 2. case-split cascade — handles branching on ite
-      try
-        evalTactic (← `(tactic|
-          simp_mat
-          <;> first
-            | omega
-            | (simp_all; omega)
-            | (split <;> simp_all <;> omega)
-            | (split <;> split <;> simp_all <;> omega)
-            | (split <;> split <;> split <;> simp_all <;> omega)))
-        return
-      catch _ => pure ()
-      throwError "zeroth_hammer: no step closed the goal"
-        return
-      catch _ => pure ()
-      -- 5. last-resort fallback
-      evalTactic (← `(tactic| sorry))
-""")
+    lines.append(_ZEROTH_HAMMER)
 
     lines.append("""\
 
@@ -240,40 +279,11 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    zeroth_hammer
 """)
 
+
     lines.append("section LTS\n")
     lines.append(f"{rm_noncomp}def lts := RM.toLTS'\n")
 
-    lines.append("""\
-theorem hinv' : lts.StateSet_isInductiveInitial inv := by
-  unfold LTS'.StateSet_isInductiveInitial
-  unfold LTS'.StateSet_isInductive
-  constructor
-  · intro s hs
-    unfold lts at hs
-    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_init] at hs
-    obtain ⟨l, hpre, hl⟩ := hs
-    rw [← hl]
-    exact init_inv l hpre
-  · intro s s' ⟨hs, l, hstep⟩
-    unfold lts at hstep
-    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at hstep
-    rw [← hstep.2]
-    exact step_inv s l ⟨hstep.1, hs⟩
-
-theorem hinv : lts.StateSet_isInvariant inv := by
-  apply LTS'.StateSet_ind_init_is_inv lts
-  exact hinv'
-
-theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
-    ranking s' < ranking s := by
-    intro s s' ⟨hi, hP, htr⟩
-    unfold lts at htr
-    simp only [ReactiveModule.toLTS', ReactiveModule.LTS_update] at htr
-    obtain ⟨l, hpre, heq⟩ := htr
-    rw [← heq]
-    zeroth_hammer
-
-""")
+    lines.append(_LTS_THEOREMS)
 
     lines.append(f"""\
 {rm_noncomp}def buchi := rule_buchi
