@@ -60,67 +60,60 @@ returns a :class:`zrth.Module`::
 """
 
 import argparse
-import ast
-import linecache
 from pathlib import Path
 
 from .cert import CertificateData
-from .project import create_project, load_module_from_file
+from .project import create_project, load_module_from_file, write_certificate_lean
 
 
-def _state_var_names(source: str) -> list[str]:
-    """Extract state variable names from the update function's parameters.
+def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateData:
+    """Parse SMT-LIB strings on `cert_data` (prp / init_pre / update_pre) and
+    translate them to Lean expression strings over the appropriate parameter.
 
-    Strips the 'old_' prefix convention (e.g. old_x -> x).
+    SMT variable naming:
+      * Property (`prp`): references `s0..sN-1` — the ctrl-next components.
+      * Preconditions (`init_pre`, `update_pre`): reference `e0..eM-1`
+        (extl-next inputs) and `el0..elM-1` (extl-latched inputs). The
+        Lean parameter is a pair `e : Extl_latched × Extl_next`, so SMT
+        `eK` → Lean `e.2.<acc_k> [0 0]`, `elK` → `e.1.<acc_k> [0 0]`.
     """
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == "update":
-            params = [arg.arg for arg in node.args.args if arg.arg != "self"]
-            return [p[len("old_"):] if p.startswith("old_") else p for p in params]
-    raise ValueError("No 'update' function found in source")
+    # Local imports keep cvc5 off the critical path when inference is unused.
+    import cvc5
 
+    from .smt_module import ModuleSMT
+    from .smt_prompt import CegarPromptEnv, parse_predicate
+    from .smt_to_lean import smt_to_lean, smt_to_lean_nat
 
-def _make_callable(fn_name: str, params: list[str], expr: str):
-    """Compile an expression string into a callable.
+    tm = cvc5.TermManager()
+    msmt = ModuleSMT(tm=tm, module=module)
+    env = CegarPromptEnv(msmt)
 
-    Registers the generated source in linecache so that inspect.getsource
-    (used internally by convert_method) can retrieve it.
-    """
-    source = f"def {fn_name}({', '.join(params)}):\n    return {expr}\n"
-    filename = f"<{fn_name}_inferred>"
-    lines = source.splitlines(keepends=True)
-    linecache.cache[filename] = (len(source), None, lines, filename)
-    code = compile(source, filename, "exec")
-    namespace: dict = {}
-    exec(code, namespace)  # noqa: S102
-    return namespace[fn_name]
+    def translate(smt_src: str | None, mode: str) -> str | None:
+        if not isinstance(smt_src, str):
+            return smt_src
+        term = parse_predicate(env, smt_src)
+        if mode == "property" or mode == "invariant":
+            return smt_to_lean(term, msmt.ctrl_next, param_name="s")
+        if mode == "ranking":
+            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s")
+        # preconditions
+        return smt_to_lean(
+            term,
+            state_wires=[],
+            param_name="e",
+            extra=[
+                ("e", "e.2", msmt.extl_next),
+                ("el", "e.1", msmt.extl_latched),
+            ],
+        )
 
-
-def _exprs_to_terms(cert_data: CertificateData, module, source: str) -> CertificateData:
-    """Convert inv/ranking expression strings in cert_data to lists of Terms."""
-    from zrth import Wire, Bool, Int
-    from zrth.analyzer import convert_method
-
-    var_names = _state_var_names(source)
-    # cert_body evaluates inv/ranking/prp against ctrl_next (the [1] wire of each
-    # ctrl pair).  convert_method reads from wires[name][0], so we point both
-    # slots at the next-state wire so the generated terms read from ctrl_next.
-    wires = {name: (pair[1], pair[1]) for name, pair in zip(var_names, module.ctrl)}
-
-    if isinstance(cert_data.prp, str):
-        fn = _make_callable("prp", var_names, cert_data.prp)
-        cert_data.prp = convert_method(fn, wires, [Wire(Bool(1))])
-
-    if isinstance(cert_data.inv, str):
-        fn = _make_callable("inv", var_names, cert_data.inv)
-        cert_data.inv = convert_method(fn, wires, [Wire(Bool(1))])
-
-    if isinstance(cert_data.ranking, str):
-        fn = _make_callable("ranking", var_names, cert_data.ranking)
-        cert_data.ranking = convert_method(fn, wires, [Wire(Int(1))])
-
-    return cert_data
+    return CertificateData(
+        prp=translate(cert_data.prp, "property"),
+        init_pre=translate(cert_data.init_pre, "pre"),
+        update_pre=translate(cert_data.update_pre, "pre"),
+        inv=translate(cert_data.inv, "invariant"),
+        ranking=translate(cert_data.ranking, "ranking"),
+    )
 
 
 _EPILOG = """\
@@ -187,12 +180,55 @@ def main():
         "-P",
         "--property",
         default=None,
-        help="Property expression to verify (e.g. 'x == 0'). Required when using --infer.",
+        help=(
+            "Property as an SMT-LIB 2 Bool expression over state vars "
+            "`s0..sN-1` (ctrl-next components). "
+            "Example: '(= s0 false)'. Required when using --infer."
+        ),
+    )
+    parser.add_argument(
+        "--pre",
+        default=None,
+        help=(
+            "Precondition as an SMT-LIB 2 Bool expression over input vars "
+            "`e0..eM-1` (extl-next) and `el0..elM-1` (extl-latched). "
+            "Tuple (matrix) elements use '((_ tuple.select k) eK)'. "
+            "Applied to both init_pre and update_pre. "
+            "Example: '(>= ((_ tuple.select 0) e0) 1.0)'."
+        ),
+    )
+    parser.add_argument(
+        "--invariant",
+        default=None,
+        help=(
+            "Invariant as an SMT-LIB 2 Bool expression over state vars "
+            "`s0..sN-1`. When combined with --infer, only a ranking "
+            "function is inferred (the invariant is fixed). "
+            "Example: '(= s0 s5)'."
+        ),
+    )
+    parser.add_argument(
+        "--ranking",
+        default=None,
+        help=(
+            "Ranking as an SMT-LIB 2 Int expression over state vars "
+            "`s0..sN-1`. When combined with --infer, only an invariant "
+            "is inferred. Must satisfy `ranking ≥ 0` under the invariant. "
+            "Example: '(ite s5 (ite s4 1 2) 0)'."
+        ),
     )
     parser.add_argument(
         "--infer",
-        action="store_true",
-        help="Use AI (TA2MagicAI) to infer the invariant and ranking function for --property.",
+        nargs="?",
+        const="ai-cegar",
+        default=None,
+        choices=["ai", "ai-cegar"],
+        help=(
+            "Infer the invariant and ranking function for --property. "
+            "`ai` uses plain LLM self-check; `ai-cegar` uses LLM + cvc5 "
+            "counterexample-guided refinement (default when --infer is "
+            "passed without a value)."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -211,28 +247,83 @@ def main():
         parser.error("--infer requires --property")
 
     cert_data: CertificateData | None = None
-    if args.property:
+    if args.property or args.pre or args.invariant or args.ranking:
         cert_data = CertificateData(prp=args.property)
-
-    source: str | None = None
-    if args.infer:
-        from .magic_ai import TA2MagicAI
-
-        source = Path(args.module_file).read_text()
-        magic = TA2MagicAI(source, model=args.model, base_url=args.base_url)
-        cert_data = magic.infer(cert_data)
+        if args.pre:
+            cert_data.init_pre = args.pre
+            cert_data.update_pre = args.pre
+        if args.invariant:
+            cert_data.inv = args.invariant
+        if args.ranking:
+            cert_data.ranking = args.ranking
 
     module = load_module_from_file(args.module_file, module_def=args.module_def)
+    print(module)
 
-    if args.infer and cert_data is not None and source is not None:
-        cert_data = _exprs_to_terms(cert_data, module, source)
+    # Translate SMT-LIB predicates to Lean expression strings for codegen.
+    # `cert_data` keeps the original SMT source so `magic` can parse it with
+    # its own cvc5 context.
+    project_cert_data = cert_data
+    if cert_data is not None:
+        project_cert_data = _smt_predicates_to_lean(cert_data, module)
+
+    print(".. Generating lean code")
     project_dir = create_project(
         output_dir=Path(args.output_dir),
         module=module,
         project_name=args.project_name,
         executable=args.executable,
-        cert_data=cert_data,
+        cert_data=project_cert_data,
     )
+
+    # FIXME: this is brittle, we rely on hard-coded staff in `create_project`
+    lean_code = project_dir / f"{args.project_name}.lean"
+
+    print(".. Doing TA2Magic")
+    if args.infer:
+        if args.infer == "ai":
+            from .magic_ai import TA2MagicAI
+
+            magic = TA2MagicAI(
+                lean_code.read_text(), model=args.model, base_url=args.base_url
+            )
+        else:  # "ai-cegar"
+            from .magic_cegar import TA2MagicCEGAR
+
+            magic = TA2MagicCEGAR(
+                lean_code.read_text(),
+                module,
+                model=args.model,
+                base_url=args.base_url,
+            )
+        cert_data = magic.infer(cert_data)
+
+        # Merge inferred inv/ranking into project_cert_data.
+        if project_cert_data is None:
+            project_cert_data = CertificateData()
+        project_cert_data.inv = cert_data.inv
+        project_cert_data.ranking = cert_data.ranking
+
+        data_file = project_dir / f"{args.project_name}Data.lean"
+        data_lines = [
+            f"/- Inferred certificate data for `{args.project_name}` -/",
+            f"import {args.project_name}.{args.project_name}",
+            "",
+        ]
+        if isinstance(cert_data.prp, str):
+            data_lines.append(f"-- Property: {cert_data.prp}")
+            data_lines.append("")
+        for field in ("inv", "init_pre", "update_pre", "ranking"):
+            value = getattr(cert_data, field)
+            if isinstance(value, str):
+                data_lines.append(f"def {field} := {value}")
+                data_lines.append("")
+        data_file.write_text("\n".join(data_lines) + "\n")
+        print(f"Wrote {data_file}")
+
+    # Write certificate once — after inference if it ran, with placeholders otherwise.
+    write_certificate_lean(project_dir, args.project_name, module, project_cert_data)
+
     print(f"\nProject ready at: {project_dir}")
 
 
