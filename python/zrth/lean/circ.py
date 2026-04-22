@@ -8,7 +8,13 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.common import _accessor, dtype_to_lean_type, _tensor_to_lean_inline
+from zrth.lean.common import (
+    ConstantRegistry,
+    _accessor,
+    _constant_expr,
+    dtype_to_lean_type,
+    itype_name,
+)
 
 from dataclasses import dataclass
 
@@ -32,37 +38,25 @@ class CircLayer:
     body: str
 
 
-def _native_to_vt(param: str, n_wires: int) -> str:
-    """Generate native-to-ValTuple conversion expression.
+def _natives_to_vt(params: list[tuple[str, int]]) -> str:
+    """Generate native-to-ValTuple conversion from one or more native args.
 
-    n=0: "()"
-    n=1: "(s, ())"
-    n=2: "(s.1, (s.2, ()))"
-    n=3: "(s.1, (s.2.1, (s.2.2, ())))"
+    Each (name, n) contributes n accessors; all are concatenated into a single
+    right-nested ValTuple. Example: [("ctrl", 2), ("extl_n", 1)] ->
+    "(ctrl.1, (ctrl.2, (extl_n, ())))".
     """
-    if n_wires == 0:
-        return "()"
-    parts = [f"{param}{_accessor(i, n_wires)}" for i in range(n_wires)]
+    parts = [
+        f"{name}{_accessor(i, n)}" for name, n in params if n > 0 for i in range(n)
+    ]
     result = "()"
     for p in reversed(parts):
         result = f"({p}, {result})"
     return result
 
 
-def _vt_to_native(param: str, n_wires: int) -> str:
-    """Generate ValTuple-to-native conversion expression.
-
-    n=0: "()"
-    n=1: "v.1"
-    n=2: "(v.1, v.2.1)"
-    n=3: "(v.1, v.2.1, v.2.2.1)"
-    """
-    if n_wires == 0:
-        return "()"
-    if n_wires == 1:
-        return f"{param}.1"
-    parts = [f"{param}{'.2' * i}.1" for i in range(n_wires)]
-    return "(" + ", ".join(parts) + ")"
+def _native_to_vt(param: str, n_wires: int) -> str:
+    """Generate native-to-ValTuple conversion from a single native arg."""
+    return _natives_to_vt([(param, n_wires)])
 
 
 # Map operations to Lean expression builder (takes list of arg strings)
@@ -91,35 +85,21 @@ _LEAN_OP_BOX: dict[str, str] = {
 }
 
 
-def itype_name(itype) -> str:
-    """Get the variant name of an IType, e.g. IType.Add() -> 'Add'."""
-    name = type(itype).__name__
-    # PyO3 exports variants as IType_Add, IType_Tensor, etc.
-    if name.startswith("IType_"):
-        return name[6:]
-    return name
-
-
-def _constant_expr(
-    const_name: str, term: Term, w: Wire, constants: dict[int, str]
-) -> str:
-    if const_name == "Tensor":
-        wire_id = w.id
-        if wire_id in constants:
-            return constants[wire_id]
-        else:
-            return _tensor_to_lean_inline(term.itype._0, w)
-    elif const_name == "ConstBool":
-        val = bool(term.itype._0)
-        return "true" if val else "false"
-    else:
-        return str(int(term.itype._0))
-
-    raise NotImplementedError
+def _argmax_box(input_shape: list[int]) -> str:
+    """Pick the Box variant of argmax based on input shape."""
+    if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
+        return "Box.argmax_1d"
+    if len(input_shape) == 2:
+        return "Box.argmax"
+    raise ValueError(
+        f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
+    )
 
 
 def _circ_translate_body(
-    block_inputs: list[Wire], block_outputs: list[Wire], wire_to_term: dict[Wire, Term]
+    block_inputs: list[Wire],
+    block_outputs: list[Wire],
+    wire_to_term: dict[Wire, Term],
 ) -> list[list[Wire]]:
 
     # output layer are just the terms writing to output wires. However,
@@ -159,10 +139,8 @@ def _circ_translate_body(
         if not have_new:
             return layers
 
-    raise RuntimeError("Unreachable")
 
-
-def _cicr_compute_swapping(
+def _circ_compute_swapping(
     block_inputs: list[Wire],
     block_outputs: list[Wire],
     wires_ord: dict[Wire, int],
@@ -191,16 +169,21 @@ def _cicr_compute_swapping(
                 out_ty.append(dtype_to_lean_type(layer[i]))
                 i += 1
             else:
+                # Forward composition order: this Box receives the sorted
+                # (new_layer) arrangement and produces the original `layer`
+                # arrangement to feed into the next stage. So `Box.swap A B`
+                # takes [A, B] → [B, A] where [A, B] are new_layer's types at
+                # positions (i, i+1) and [B, A] are `layer`'s types there.
                 changed = True
                 boxes.append(
-                    f"@Box.swap {dtype_to_lean_type(layer[i])} {dtype_to_lean_type(layer[i + 1])}"
+                    f"@Box.swap {dtype_to_lean_type(layer[i + 1])} {dtype_to_lean_type(layer[i])}"
                 )
                 new_layer.append(layer[i + 1])
                 new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_type(layer[i]))
                 in_ty.append(dtype_to_lean_type(layer[i + 1]))
-                out_ty.append(dtype_to_lean_type(layer[i + 1]))
+                in_ty.append(dtype_to_lean_type(layer[i]))
                 out_ty.append(dtype_to_lean_type(layer[i]))
+                out_ty.append(dtype_to_lean_type(layer[i + 1]))
                 # `swap` consumes two wires
                 i += 2
 
@@ -216,8 +199,6 @@ def _cicr_compute_swapping(
         )
         assert len(new_layer) == len(layer)
         layer = new_layer
-
-    raise RuntimeError("Unreachable")
 
 
 def _circ_compute_dups(
@@ -270,10 +251,8 @@ def _circ_compute_dups(
         assert len(new_layer) < len(layer)
         layer = new_layer
 
-    raise RuntimeError("Unreachable")
 
-
-def _circ_comput_dels(block_inputs: list[Wire], last_layer: list[Wire]):
+def _circ_compute_dels(block_inputs: list[Wire], last_layer: list[Wire]):
     dels = []
     if len(block_inputs) != len(last_layer):
         boxes = []
@@ -299,45 +278,38 @@ def _circ_comput_dels(block_inputs: list[Wire], last_layer: list[Wire]):
 
 def _translate_terms_circ(
     terms,
-    block_inputs: list[Wire],
+    block_inputs: tuple[list[Wire], ...],
     block_outputs: list[Wire],
-    constants: dict[int, str],
-    param_name: str = "s",
+    constants: ConstantRegistry,
 ) -> list[CircLayer]:
     """Compile a block of terms into a list of CircLayer objects.
 
     Each CircLayer represents one layer of the circuit composition.
     Returns empty list if there are no terms.
     """
-    term_list = [terms[i] for i in range(len(terms))]
+    term_list = list(terms)
     if not term_list:
         return []
 
-    # Map wire_id -> Lean expression (variable name or input accessor)
-    # TODO: do this once (we use it also in `_translate_terms`)
-    n_inputs = len(block_inputs)
-    wire_expr: dict[int, str] = {}
-    for i, w in enumerate(block_inputs):
-        acc = _accessor(i, n_inputs)
-        wire_expr[w.id] = f"{param_name}{acc}"
+    all_inputs = [w for wires in block_inputs for w in wires]
 
     # output wires to terms
     wire_to_term: dict[Wire, Term] = {t.write[0]: t for t in term_list}
     # order of the input wires
-    wires_ord: dict[Wire, int] = {w: n for n, w in enumerate(block_inputs)}
+    wires_ord: dict[Wire, int] = {w: n for n, w in enumerate(all_inputs)}
 
-    layers = _circ_translate_body(block_inputs, block_outputs, wire_to_term)
+    layers = _circ_translate_body(all_inputs, block_outputs, wire_to_term)
 
     # compute swapping wires
-    swapping, last_layer = _cicr_compute_swapping(
-        block_inputs, block_outputs, wires_ord, layers[-1]
+    swapping, last_layer = _circ_compute_swapping(
+        all_inputs, block_outputs, wires_ord, layers[-1]
     )
 
     # duplication of wires
-    dups, last_layer = _circ_compute_dups(block_inputs, wires_ord, last_layer)
+    dups, last_layer = _circ_compute_dups(all_inputs, wires_ord, last_layer)
 
     # deletion of unused wires
-    dels = _circ_comput_dels(block_inputs, last_layer)
+    dels = _circ_compute_dels(all_inputs, last_layer)
 
     result: list[CircLayer] = list(reversed(swapping + dups + dels))
 
@@ -349,7 +321,7 @@ def _translate_terms_circ(
         boxes: list[str] = []
         in_ty, out_ty = [], []
         for w in layer:
-            if w in block_inputs:
+            if w in all_inputs:
                 boxes.append(f"@Box.id {dtype_to_lean_type(w)}")
                 in_ty.append(dtype_to_lean_type(w))
                 out_ty.append(dtype_to_lean_type(w))
@@ -363,7 +335,10 @@ def _translate_terms_circ(
                     boxes.append(f"@Box.const {dtype_to_lean_type(w)} {expr}")
                     out_ty.append(dtype_to_lean_type(w))
                 else:
-                    boxes.append(_LEAN_OP_BOX[name])
+                    if name == "Argmax":
+                        boxes.append(_argmax_box(term.read[0].dtype.shape))
+                    else:
+                        boxes.append(_LEAN_OP_BOX[name])
                     in_ty.extend([dtype_to_lean_type(u) for u in term.read])
                     out_ty.extend([dtype_to_lean_type(u) for u in term.write])
         assert boxes

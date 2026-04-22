@@ -3,7 +3,7 @@
 import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
 from zrth.lean import ModuleToLean4
-from zrth.lean.common import itype_name
+from zrth.lean.common import LeanContext, itype_name
 from zrth.lean.project import generate_main_lean, generate_certificate_lean
 
 
@@ -75,9 +75,9 @@ def test_twobitcounter_has_inlined_scalars():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    # Scalar Bool constants are inlined, not top-level defs
+    # Scalar Bool constants are inlined as Mat-typed literals, not top-level defs
     assert "def c0" not in lean
-    assert "let x0 := false" in lean
+    assert "let x0 := (fun _ _ => false)" in lean
 
 
 def test_twobitcounter_update_has_let_bindings():
@@ -101,7 +101,9 @@ def test_twobitcounter_init_signature():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def init (s : (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)" in lean
+    assert (
+        "def init (extl_n: (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)" in lean
+    )
 
 
 def test_twobitcounter_update_signature():
@@ -109,7 +111,7 @@ def test_twobitcounter_update_signature():
     lean = ModuleToLean4(m).to_lean()
 
     assert (
-        "def update (s : (Mat Bool 1 1) × (Mat Bool 1 1) × (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)"
+        "def update (ctrl: (Mat Bool 1 1) × (Mat Bool 1 1)) (extl_l: (Mat Bool 1 1)) (extl_n: (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)"
         in lean
     )
 
@@ -154,14 +156,17 @@ def test_matrix_init_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def init (s : (Mat Int 2 1)) : (Mat Int 3 1)" in lean
+    assert "def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1)" in lean
 
 
 def test_matrix_update_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def update (s : (Mat Int 3 1) × (Mat Int 2 1)) : (Mat Int 3 1)" in lean
+    assert (
+        "def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1)"
+        in lean
+    )
 
 
 # ── Main.lean generation ────────────────────────────────────────────────
@@ -210,9 +215,8 @@ def test_main_lean_matrix_signatures():
 
 def _cert_for(make_module, module_name="ReactiveModule"):
     m = make_module()
-    m2l = ModuleToLean4(m)
-    m2l.to_lean()
-    return generate_certificate_lean("Rea", m, module_name, m2l)
+    ctx = LeanContext(m)
+    return generate_certificate_lean("Rea", module_name, ctx)
 
 
 def test_certificate_bool_has_rm():
@@ -239,7 +243,7 @@ def test_certificate_bool_has_theorems():
 
 def test_certificate_bool_has_simp_mod():
     cert = _cert_for(_make_twobitcounter)
-    assert 'macro "simp_mod"' in cert
+    assert 'macro "simp_mat"' in cert
     assert "init, update, inv" in cert
 
 

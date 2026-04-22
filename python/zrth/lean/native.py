@@ -8,7 +8,13 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.common import _constant_expr, itype_name, _accessor, dtype_to_lean_type
+from zrth.lean.common import (
+    ConstantRegistry,
+    _constant_expr,
+    itype_name,
+    _accessor,
+    dtype_to_lean_type,
+)
 
 from typing import Callable
 
@@ -49,78 +55,89 @@ def _append_expr(var1: str, count1: int, var2: str, count2: int) -> str:
     return _build_tuple(parts)
 
 
-# Map operations to Lean expression builder (takes list of arg strings)
+# Map operations to Lean expression builder (takes list of arg strings).
+# Operands and results are all `Mat _ 1 1` (scalar)
+# FIXME: element-wise ops extract position `0 0`, but
+# it should be defined elem-wise on the whole matrix to match Rust
 _LEAN_OP: dict[str, Callable] = {
-    "Not": lambda a: f"!{a[0]}",
-    "And": lambda a: f"({a[0]} && {a[1]})",
-    "Or": lambda a: f"({a[0]} || {a[1]})",
-    "Ite": lambda a: f"if {a[0]} then {a[1]} else {a[2]}",
+    "Not": lambda a: f"(fun _ _ => !({a[0]} 0 0))",
+    "And": lambda a: f"(fun _ _ => ({a[0]} 0 0 && {a[1]} 0 0))",
+    "Or": lambda a: f"(fun _ _ => ({a[0]} 0 0 || {a[1]} 0 0))",
+    "Ite": lambda a: f"(if {a[0]} 0 0 then {a[1]} else {a[2]})",
     "Add": lambda a: f"({a[0]} + {a[1]})",
     "Sub": lambda a: f"({a[0]} - {a[1]})",
     "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Mod": lambda a: f"({a[0]} % {a[1]})",
+    "Mod": lambda a: f"(fun _ _ => ({a[0]} 0 0 % {a[1]} 0 0))",
     "Neg": lambda a: f"(-{a[0]})",
-    "Lt": lambda a: f"decide ({a[0]} 0 0 < {a[1]} 0 0)",
-    "Le": lambda a: f"decide ({a[0]} 0 0 ≤ {a[1]} 0 0)",
-    "Gt": lambda a: f"decide ({a[1]} 0 0 < {a[0]} 0 0)",
-    "Ge": lambda a: f"decide ({a[1]} 0 0 ≤ {a[0]} 0 0)",
-    "Eq": lambda a: f"({a[0]} == {a[1]})",
-    "Neq": lambda a: f"({a[0]} != {a[1]})",
-    "Min": lambda a: f"Min.min {a[0]} {a[1]}",
-    "Max": lambda a: f"Max.max {a[0]} {a[1]}",
+    "Lt": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 < {a[1]} 0 0))",
+    "Le": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≤ {a[1]} 0 0))",
+    "Gt": lambda a: f"(fun _ _ => decide ({a[1]} 0 0 < {a[0]} 0 0))",
+    "Ge": lambda a: f"(fun _ _ => decide ({a[1]} 0 0 ≤ {a[0]} 0 0))",
+    "Eq": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 = {a[1]} 0 0))",
+    "Neq": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≠ {a[1]} 0 0))",
+    "Min": lambda a: f"(fun i j => Min.min ({a[0]} i j) ({a[1]} i j))",
+    "Max": lambda a: f"(fun i j => Max.max ({a[0]} i j) ({a[1]} i j))",
     "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
     "Id": lambda a: a[0],
     "Linear": lambda a: f"affineLinear {a[0]} {a[1]} {a[2]}",
-    "ReLU": lambda a: f"Max.max 0 {a[0]}",
+    "ReLU": lambda a: f"ReLu {a[0]}",
     "TensorGet": lambda a: f"({a[0]} 0 0)",
-    "ToUnsigned": lambda a: f"({a[0]}).toNat",
+    "ToUnsigned": lambda a: f"(fun _ _ => Int.toNat ({a[0]} 0 0))",
 }
+
+
+def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
+    """Emit `argmax_1d` for 1-d input and `argmax` for generic 2-d input.
+    Wrap output as `Mat Int 1 _` to match the Python IR's Int output type."""
+    if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
+        return f"(fun i j => ((argmax_1d {arg_expr}) i j : Int))"
+    if len(input_shape) == 2:
+        return f"(fun i j => ((argmax {arg_expr}) i j : Int))"
+    raise ValueError(
+        f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
+    )
 
 
 def _translate_terms(
     terms,
-    block_inputs: list[Wire],
+    input_bindings: dict[int, str],
     block_outputs: list[Wire],
-    constants: dict[int, str],
-    param_name: str = "s",
+    constants: ConstantRegistry,
 ) -> str:
     """Compile a block of terms into a Lean function body with let-bindings.
 
+    `input_bindings` maps block-input wire IDs to their Lean accessor expressions
+    (e.g. ``{w.id: "ctrl.1"}``) — pre-built by the caller via `_bind_wires`.
+
     Returns the body string (let x0 := ...; ... ; (x1, x2)) or "sorry" if no terms.
     """
-    term_list = [terms[i] for i in range(len(terms))]
+    term_list = list(terms)
     if not term_list:
         return "sorry /- no terms -/"
 
-    # Map wire_id -> Lean expression (variable name or input accessor)
-    n_inputs = len(block_inputs)
-    wire_expr: dict[int, str] = {}
-    for i, w in enumerate(block_inputs):
-        acc = _accessor(i, n_inputs)
-        wire_expr[w.id] = f"{param_name}{acc}"
-
-    var_counter = 0
+    wire_expr: dict[int, str] = dict(input_bindings)
     let_lines: list[str] = []
 
-    for term in term_list:
-        read_wires = [term.read[i] for i in range(len(term.read))]
-        write_wires = [term.write[i] for i in range(len(term.write))]
+    for var_counter, term in enumerate(term_list):
         name = itype_name(term.itype)
 
         if name in ("Tensor", "ConstBool", "ConstInt"):
-            expr = _constant_expr(name, term, write_wires[0], constants)
+            expr = _constant_expr(name, term, term.write[0], constants)
+        elif name == "Argmax":
+            arg_expr = wire_expr[term.read[0].id]
+            expr = _argmax_expr(arg_expr, term.read[0].dtype.shape)
         else:
-            input_exprs = [wire_expr[w.id] for w in read_wires]
-            it_name = itype_name(term.itype)
-            if it_name not in _LEAN_OP:
-                raise ValueError(f"No Lean expression mapping for: {it_name}")
-            expr = _LEAN_OP[it_name](input_exprs)
+            if name not in _LEAN_OP:
+                raise ValueError(f"No Lean expression mapping for: {name}")
+            input_exprs = [wire_expr[w.id] for w in term.read]
+            expr = _LEAN_OP[name](input_exprs)
 
         # Each term writes exactly one wire
+        write_wire = term.write[0]
         var = f"x{var_counter}"
-        var_counter += 1
-        wire_expr[write_wires[0].id] = var
-        let_lines.append(f"  let {var} := {expr}")
+        wire_expr[write_wire.id] = var
+        ty = dtype_to_lean_type(write_wire)
+        let_lines.append(f"  let {var} : {ty} := {expr}")
 
     # Build output tuple
     out_exprs = [wire_expr[w.id] for w in block_outputs]

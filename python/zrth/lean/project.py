@@ -3,7 +3,7 @@ Build a Lean4 project with Mathlib, Cslib, and a custom git dependency,
 copy template library files, and generate a diagram Lean file.
 """
 
-from zrth.lean.common import dtype_to_lean_type
+from zrth.lean.common import LeanContext, dtype_to_lean_type
 
 from zrth.lean.cert import generate_certificate_lean, CertificateData
 
@@ -11,7 +11,7 @@ import shutil
 import textwrap
 from pathlib import Path
 
-from zrth import Module, Wire
+from zrth import Module, Wire, Wrapper
 from .native import (
     _product_type,
     _append_expr,
@@ -71,7 +71,7 @@ def generate_lakefile(project_name: str, executable: bool = False) -> str:
         [[require]]
         name = "smt"
         git = "https://github.com/ufmg-smite/lean-smt.git"
-        rev = "main"
+        rev = "f58d19d5d0803fcccb5ccb1b4473774dd2ae9f9a"
 
        #[[require]]
        #name = "mylib"
@@ -100,6 +100,7 @@ def generate_root(project_name: str, modules_names: list[str]) -> str:
     ]
     for dname in modules_names:
         lines.append(f"import {project_name}.{dname}")
+        lines.append(f"import {project_name}.{dname}Circ")
     return "\n".join(lines) + "\n"
 
 
@@ -252,6 +253,44 @@ def main : IO Unit := do
     return "\n".join(lines)
 
 
+def write_certificate_lean(
+    project_dir: Path,
+    project_name: str,
+    module: Module,
+    cert_data: CertificateData | None,
+) -> Path:
+    """Write/overwrite the Certificate.lean file using `cert_data`.
+
+    Builds a fresh `LeanContext` so term-typed cert fields are registered
+    with the constants table consistently with codegen.
+    """
+    module_name = project_name
+    cert_terms: list = []
+    if cert_data is not None:
+        for field in (
+            cert_data.prp,
+            cert_data.inv,
+            cert_data.init_pre,
+            cert_data.update_pre,
+            cert_data.ranking,
+        ):
+            if isinstance(field, list):
+                cert_terms.extend(field)
+    ctx = LeanContext(module, cert_terms=cert_terms)
+
+    cert_dir = project_dir / "Certificate"
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    cert_file = cert_dir / "Certificate.lean"
+    cert_file.write_text(
+        generate_certificate_lean(project_name, module_name, ctx, cert_data=cert_data)
+    )
+    print(f"Wrote {cert_file}")
+
+    cert_wrapper = project_dir / "Certificate.lean"
+    cert_wrapper.write_text("import Certificate.Certificate\n")
+    return cert_file
+
+
 def create_project(
     output_dir: Path,
     module: Module,
@@ -332,7 +371,20 @@ def create_project(
     # ----------------------------------------------------------
     # Generate reactive module (init and update)
     # ----------------------------------------------------------
-    m2l = ModuleToLean4(module)
+    cert_terms: list = []
+    if cert_data is not None:
+        for field in (
+            cert_data.prp,
+            cert_data.inv,
+            cert_data.init_pre,
+            cert_data.update_pre,
+            cert_data.ranking,
+        ):
+            if isinstance(field, list):
+                cert_terms.extend(field)
+
+    ctx = LeanContext(module, cert_terms=cert_terms)
+    m2l = ModuleToLean4(ctx)
 
     mod_file = src_dir / f"{module_name}.lean"
     print(f"Generating `{mod_file.absolute()}`")
@@ -341,32 +393,31 @@ def create_project(
 /- Code generated for reactive module `{module_name}` -/
 import Core.Box
 
-{m2l.to_lean()}
+{m2l.to_lean_functional()}
 """)
     assert mod_file.exists()
     print(f"++ Generated {mod_file} ++")
 
-    # ----------------------------------------------------------
-    # Generate Certificate.lean
-    # ----------------------------------------------------------
-    cert_dir = project_dir / "Certificate"
-    cert_dir.mkdir(parents=True, exist_ok=True)
-    cert_file = cert_dir / "Certificate.lean"
-    cert_file.write_text(
-        generate_certificate_lean(
-            project_name,
-            module,
-            module_name,
-            m2l,
-            cert_data=cert_data,
-        )
-    )
-    print(f"Wrote {cert_file}")
+    mod_file = src_dir / f"{module_name}Circ.lean"
+    print(f"Generating `{mod_file.absolute()}`")
 
-    # Write Certificate import wrapper
-    cert_wrapper = project_dir / "Certificate.lean"
-    cert_wrapper.write_text("import Certificate.Certificate\n")
-    print(f"Wrote {cert_wrapper}")
+    mod_file.write_text(f"""\
+/- Code generated for reactive module `{module_name}` as circuit -/
+import Core.Box
+import {project_name}.{module_name}
+
+{m2l.to_lean_circ()}
+""")
+    assert mod_file.exists()
+    print(f"++ Generated {mod_file} ++")
+
+    # -- empty file for data --
+    mod_file = src_dir / f"{module_name}Data.lean"
+    print(f"Generating `{mod_file.absolute()}`")
+
+    mod_file.write_text("")
+    assert mod_file.exists()
+    print(f"++ Generated {mod_file} ++")
 
     # ----------------------------------------------------------
     # Generate Main.lean for executable
@@ -415,4 +466,7 @@ def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
         )
 
     module_def = getattr(module, module_def)
-    return module_def()
+    result = module_def()
+    if isinstance(result, Module):
+        return result
+    return Wrapper(result)
