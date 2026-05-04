@@ -256,8 +256,6 @@ def write_certificate_lean(
 ) -> Path:
     """Write/overwrite the Certificate.lean file using `cert_data`.
 
-    Builds a fresh `LeanContext` so term-typed cert fields are registered
-    with the constants table consistently with codegen.
     """
     module_name = project_name
     cert_terms: list = []

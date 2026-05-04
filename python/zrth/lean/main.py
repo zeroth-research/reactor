@@ -66,6 +66,7 @@ from .cert import CertificateData
 from .project import create_project, load_module_from_file, write_certificate_lean
 
 
+
 _EPILOG = """\
 examples:
   # bare project — all certificate fields left as sorry

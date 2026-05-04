@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type, _translate_terms
 from zrth.lean.common import LeanContext, _bind_wires
 from ..expr import Expr
+
+if TYPE_CHECKING:
+    from zrth import Module
 
 _ZEROTH_HAMMER = """\
 syntax "zeroth_hammer" : tactic
@@ -327,3 +333,5 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
     lines.append("end LTS\n")
 
     return "\n".join(lines)
+
+
