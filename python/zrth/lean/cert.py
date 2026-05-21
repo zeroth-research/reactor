@@ -14,52 +14,135 @@ _ZEROTH_HAMMER = """\
 syntax "zeroth_hammer" : tactic
 
 /-- Zeroth hammer: cascading automated prover for reactive module goals.
-    Phase 0: simp + omega (fast, closes init_inv/step_inv)
-    Phase 1: simp + case-split + omega (branching goals)
-    Phase 2: full reduction + scalar collapse + case-split + omega (hrank)
-    Phase 4: sorry (explicit give-up) -/
+    Phase 0: simp alone (closes trivially-True invariants)
+    Phase 1: fast arithmetic — omega, norm_cast+omega, simp+omega, simp+linarith
+    Phase 2: push_neg + simp + omega (negated arithmetic)
+    Phase 3: simp + deep case-split + omega/linarith/norm_cast (branching goals)
+    Phase 4: simp_defs + case-split (unfold defs before splitting)
+    Phase 5: full reduction + mat_collapse + split_ifs + omega/linarith (hrank)
+    Phase 6: aesop (general-purpose proof search)
+    Phase 8: sorry (explicit give-up) -/
 elab_rules : tactic
   | `(tactic| zeroth_hammer) => do
-      -- Phase 0: simp_mat + omega (closes init_inv, step_inv)
+      -- Phase 0: simp_mat alone (closes trivial True goals without needing omega)
+      -- Note: simp never throws when it makes partial progress, so we must
+      -- check goals explicitly rather than relying on try/return/catch.
+      try evalTactic (← `(tactic| simp_mat)) catch _ => pure ()
+      if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
+      -- Phase 1: fast arithmetic passes
+      -- 1a: omega alone (goal already in linear arithmetic fragment after intros)
+      try evalTactic (← `(tactic| omega)); return catch _ => pure ()
+      -- 1b: norm_cast + omega (normalises Nat/Int coercions, e.g. Int.toNat in rankings)
+      try evalTactic (← `(tactic| norm_cast <;> omega)); return catch _ => pure ()
+      -- 1c: simp_mat + omega (main fast path)
       try
-        evalTactic (← `(tactic| simp_mat; omega))
+        evalTactic (← `(tactic| simp_mat <;> omega))
         return
       catch _ => pure ()
-      -- Phase 1: simp_mat + case-split cascade
+      -- 1d: simp_mat + linarith (ordered-ring arithmetic; fallback when omega is too weak)
+      try
+        evalTactic (← `(tactic| simp_mat <;> linarith))
+        return
+      catch _ => pure ()
+      -- Phase 2: push_neg normalises negated arithmetic before omega
+      -- (e.g. ¬(x > 0) → x ≤ 0; useful when inv or P contains negated comparisons)
+      try
+        evalTactic (← `(tactic| push_neg; simp_mat <;> omega))
+        return
+      catch _ => pure ()
+      -- Phase 3: simp_mat + deep case-split cascade (branching state machines)
+      -- Four levels of if-branch splitting; tries omega/linarith/norm_cast at each leaf
       try
         evalTactic (← `(tactic|
           simp_mat
           <;> first
             | omega
+            | linarith
+            | (norm_cast; omega)
+            | (push_neg; omega)
+            | (simp_all; omega)
+            | (split <;> simp_all <;> omega)
+            | (split <;> split <;> simp_all <;> omega)
+            | (split <;> split <;> split <;> simp_all <;> omega)
+            | (split <;> split <;> split <;> split <;> simp_all <;> omega)))
+        return
+      catch _ => pure ()
+      -- Phase 4: unfold definitions everywhere first, then case-split
+      -- Useful when inv/P/ranking are not yet visible to the split heuristic
+      try
+        evalTactic (← `(tactic|
+          simp_defs
+          <;> first
+            | omega
+            | linarith
+            | (norm_cast; omega)
             | (simp_all; omega)
             | (split <;> simp_all <;> omega)
             | (split <;> split <;> simp_all <;> omega)
             | (split <;> split <;> split <;> simp_all <;> omega)))
         return
       catch _ => pure ()
-      -- Phase 2: full pipeline for ranking proofs
-      -- Unfold defs in hypotheses → reduce matrices in goal →
-      -- collapse Mat 1 1 to scalar → case-split all ite → omega
+      -- Phase 5: full pipeline for ranking proofs
+      -- Unfold defs in hypotheses → reduce matrices → collapse Mat 1 1 to scalar
+      -- → split all ite → omega / linarith / norm_cast
       try evalTactic (← `(tactic| simp_defs)) catch _ => pure ()
       if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
-      -- Check for contradictory hypotheses (e.g., ¬True from vacuous hrank)
+      -- Check for contradictory hypotheses (e.g. ¬True from vacuous hrank)
       try evalTactic (← `(tactic| contradiction)); return catch _ => pure ()
       -- Try decide/native_decide after full reduction (works for finite Bool state)
       try evalTactic (← `(tactic| decide)); return catch _ => pure ()
       try evalTactic (← `(tactic| native_decide)); return catch _ => pure ()
-      -- Reduce matrices and case-split
+      -- Reduce matrices and collapse Mat 1 1 to bare scalar arithmetic
       try evalTactic (← `(tactic| simp_mat)) catch _ => pure ()
       try evalTactic (← `(tactic| mat_collapse)) catch _ => pure ()
       if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
       try
         evalTactic (← `(tactic|
           split_ifs at *
-          <;> first | omega | simp_all | (simp_all; omega)))
+          <;> first
+            | omega
+            | linarith
+            | (norm_cast; omega)
+            | (norm_cast; linarith)
+            | simp_all
+            | (simp_all; omega)
+            | (simp_all; linarith)
+            | positivity))
         return
       catch _ => pure ()
-      -- Phase 4: sorry (explicit give-up)
+      -- Phase 6: aesop (general-purpose proof search before SMT)
+      try
+        evalTactic (← `(tactic| aesop))
+        return
+      catch _ => pure ()
+      -- Phase 8: sorry (explicit give-up)
       evalTactic (← `(tactic| sorry))
 """
+
+
+def generate_zeroth_hammer_lean() -> str:
+    """Generate a standalone ZerothHammer.lean with only the zeroth_hammer tactic.
+
+    The tactic references ``simp_mat``, ``simp_defs``, and ``mat_collapse`` by
+    name.  Importers must define those macros for their specific module before
+    invoking ``zeroth_hammer``.
+    """
+    return "\n".join(
+        [
+            "import Lean",
+            "import Mathlib.Tactic",
+            "",
+            "open Lean Elab Tactic",
+            "",
+            "-- Default stub macros; certificate files redefine these for their specific module.",
+            'macro "simp_mat"     : tactic => `(tactic| simp)',
+            'macro "simp_defs"    : tactic => `(tactic| simp only [])',
+            'macro "mat_collapse" : tactic => `(tactic| simp only [])',
+            "",
+            _ZEROTH_HAMMER,
+        ]
+    )
+
 
 _TS_THEOREMS = """\
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
@@ -84,7 +167,9 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
     obtain ⟨l, hpre, heq⟩ := htr
     rw [← heq]
-    zeroth_hammer
+    simp_defs
+    simp_mat
+    split_ifs <;> first | omega | (norm_cast; omega)
 
 """
 
@@ -107,8 +192,22 @@ def generate_certificate_lean(
     module_name: str,
     ctx: LeanContext,
     cert_data: CertificateData | None = None,
+    *,
+    hammer_import: str | None = None,
+    module_inline: str | None = None,
 ) -> str:
-    """Generate Certificate.lean with compiled or placeholder definitions."""
+    """Generate Certificate.lean with compiled or placeholder definitions.
+
+    Args:
+        hammer_import: When set (e.g. ``"ZerothHammer"``), add
+            ``import <hammer_import>`` and omit the inlined ``zeroth_hammer``
+            definition.  The tactic must therefore be provided by that import.
+        module_inline: When set, inline this Lean source (the ``init`` /
+            ``update`` functions) instead of emitting
+            ``import {project_name}.{module_name}``.  Should be the output of
+            ``ModuleToLean4.to_lean_functional()`` — without its own import
+            header.
+    """
     if cert_data is None:
         cert_data = CertificateData()
 
@@ -155,10 +254,17 @@ def generate_certificate_lean(
 
     lines.append("import Mathlib.Algebra.BigOperators.Fin")
     lines.append("import Core.Basic")
-    lines.append(f"import {project_name}.{module_name}")
+    if module_inline is not None:
+        lines.append("import Core.Box")
+    else:
+        lines.append(f"import {project_name}.{module_name}")
+    if hammer_import is not None:
+        lines.append(f"import {hammer_import}")
     lines.append("")
-    lines.append("open Lean Elab Tactic")
     lines.append("")
+    if module_inline is not None:
+        lines.append(module_inline)
+        lines.append("")
 
     # init_pre
     if init_pre_terms is not None:
@@ -240,48 +346,23 @@ def generate_certificate_lean(
 
     const_list = ", ".join(const_names) if const_names else ""
 
-    # All definitions that need unfolding for proof automation
-    # Note: ReactiveModule fields are handled by dsimp/simp, not unfold (universe polymorphic)
-    unfold_defs = [
-        "RM",
-        "init",
-        "update",
-        "inv",
-        "init_pre",
-        "update_pre",
-        "P",
-        "ranking",
-    ]
-    unfold_defs.extend(const_names)
+    has_ranking = cert_data.ranking is not None
 
-    unfold_list = ", ".join(f"``{d}" for d in unfold_defs)
-
+    # Definitions emitted as `sorry` (i.e. ranking when not provided) are
+    # excluded: simp cannot reduce sorry, and including it pollutes lemma lists.
     simp_mat = "MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply"
     simp_mat += ", mul_Mat_apply, add_Mat_apply"
     simp_mat += ", Bool.or_eq_true, decide_eq_true_eq"
     simp_mat += ", Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue"
     simp_mat += ", Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three"
 
-    all_defs = "RM, init, update, inv, init_pre, update_pre, P, ranking"
+    all_defs = "RM, init, update, inv, init_pre, update_pre, P"
+    if has_ranking:
+        all_defs += ", ranking"
     if const_list:
         all_defs += f", {const_list}"
 
     lines.append(f"""\
--- Unfold all module and certificate definitions
-elab "unfold_all" : tactic => do
-  for f in [{unfold_list}] do
-    try
-      evalTactic (← `(tactic| unfold $(mkIdent f)))
-    catch _ =>
-      continue
-
--- Simplify matrix expressions to bare Int arithmetic
--- Phase 1: unfold RM projections and all definitions (no matrix reduction)
-macro "unfold_mod" : tactic =>
-  `(tactic| (
-    first | (unfold RM at *; dsimp at *) | skip
-    unfold_all; unfold_all; unfold_all))
-
 -- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
 macro "simp_mat" : tactic =>
   `(tactic| simp [{all_defs}, {simp_mat}])
@@ -300,17 +381,22 @@ macro "mat_collapse" : tactic =>
                         Bool.not_eq_true'] at *)
 """)
 
-    lines.append(_ZEROTH_HAMMER)
+    if hammer_import is None:
+        lines.append(_ZEROTH_HAMMER)
 
     lines.append("""\
 
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
-   zeroth_hammer
+   try simp_mat
+   try simp_defs
+   try split_ifs <;> omega
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
-   zeroth_hammer
+   try simp_defs
+   try simp_mat
+   try split_ifs <;> omega
 """)
 
     lines.append("section TS\n")
