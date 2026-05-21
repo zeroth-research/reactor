@@ -5,7 +5,11 @@ copy template library files, and generate a diagram Lean file.
 
 from zrth.lean.common import LeanContext, dtype_to_lean_type
 
-from zrth.lean.cert import generate_certificate_lean, CertificateData
+from zrth.lean.cert import (
+    generate_certificate_lean,
+    generate_zeroth_hammer_lean,
+    CertificateData,
+)
 
 import shutil
 import textwrap
@@ -49,13 +53,16 @@ def generate_lakefile(project_name: str, executable: bool = False) -> str:
 
         name = "{project_name}"
         version = "0.1.0"
-        defaultTargets = ["{project_name}"]
+        defaultTargets = ["{project_name}", "Certificate"]
 
         [[lean_lib]]
         name = "Core"
 
         [[lean_lib]]
         name = "LeanAI"
+
+        [[lean_lib]]
+        name = "ZerothHammer"
 
         [[lean_lib]]
         name = "Certificate"
@@ -284,7 +291,13 @@ def write_certificate_lean(
     cert_dir.mkdir(parents=True, exist_ok=True)
     cert_file = cert_dir / "Certificate.lean"
     cert_file.write_text(
-        generate_certificate_lean(project_name, module_name, ctx, cert_data=cert_data)
+        generate_certificate_lean(
+            project_name,
+            module_name,
+            ctx,
+            cert_data=cert_data,
+            hammer_import="ZerothHammer",
+        )
     )
     print(f"Wrote {cert_file}")
 
@@ -334,6 +347,11 @@ def create_project(
     root_module = src_dir.parent / f"{project_name}.lean"
     root_module.write_text(generate_root(project_name, [module_name]))
     print(f"Wrote root module {root_module}")
+
+    # Write ZerothHammer.lean — standalone tactic, imported by Certificate
+    hammer_file = project_dir / "ZerothHammer.lean"
+    hammer_file.write_text(generate_zeroth_hammer_lean())
+    print(f"Wrote {hammer_file}")
 
     # Copy template files to Core/ package
     # TODO: put these templates into `Core/` subfolder in `templates`
@@ -432,6 +450,47 @@ import {project_name}.{module_name}
     print()
     print(f"DONE: Project created at: {project_dir}")
     return project_dir
+
+
+def generate_standalone_cert_lean(
+    name: str,
+    module: Module,
+    cert_data: CertificateData | None = None,
+    *,
+    hammer_import: str = "ZerothHammer",
+) -> str:
+    """Generate a self-contained certificate Lean file with init/update inlined.
+
+    Unlike :func:`write_certificate_lean`, no ``import <name>.<name>`` is
+    emitted.  Instead the functional module code (init, update) is inlined
+    directly and ``zeroth_hammer`` is imported from *hammer_import*.
+
+    Suitable for placing a single .lean file inside an existing lake project
+    such as ``tests/lean/Certs/``.
+    """
+    cert_terms: list = []
+    if cert_data is not None:
+        for field in (
+            cert_data.prp,
+            cert_data.inv,
+            cert_data.init_pre,
+            cert_data.update_pre,
+            cert_data.ranking,
+        ):
+            if isinstance(field, list):
+                cert_terms.extend(field)
+
+    ctx = LeanContext(module, cert_terms=cert_terms)
+    m2l = ModuleToLean4(ctx)
+    module_code = m2l.to_lean_functional()
+    return generate_certificate_lean(
+        name,
+        name,
+        ctx,
+        cert_data=cert_data,
+        hammer_import=hammer_import,
+        module_inline=module_code,
+    )
 
 
 def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
