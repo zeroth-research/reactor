@@ -69,6 +69,7 @@ from .project import (
     load_module_from_file,
     write_certificate_lean,
 )
+from .translate import ModuleToLean4
 
 
 
@@ -267,9 +268,25 @@ def main():
         )
         out.write_text(lean_src)
         print(f"Wrote standalone certificate: {out}")
+        m2l = ModuleToLean4(module)
         scalar_out = out.with_stem(out.stem + "Scalar")
-        scalar_out.write_text(generate_scalar_lean(module, hammer_import=args.hammer_import))
+        scalar_out.write_text(f"""\
+/- Scalar encoding for reactive module `{out.stem}` -/
+import Core.Basic
+import {out.stem}
+
+{m2l.to_lean_scalar()}
+""")
         print(f"Wrote scalar encoding: {scalar_out}")
+        rel_out = out.with_stem(out.stem + "ScalarRel")
+        rel_out.write_text(f"""\
+/- Relational encoding for reactive module `{out.stem}` -/
+import Core.Basic
+import {out.stem}Scalar
+
+{m2l.to_lean_rel()}
+""")
+        print(f"Wrote relational encoding: {rel_out}")
         return
 
     print(".. Generating lean code")
