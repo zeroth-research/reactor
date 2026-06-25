@@ -1,0 +1,35 @@
+
+name = "{{ project_name }}"
+version = "0.1.0"
+defaultTargets = ["System", "Certificate"]
+
+[[lean_lib]]
+name = "Core"
+
+[[lean_lib]]
+name = "LeanAI"
+
+[[lean_lib]]
+name = "ZerothHammer"
+
+[[lean_lib]]
+name = "Certificate"
+
+[[lean_lib]]
+name = "System"
+
+[[require]]
+name = "cslib"
+scope = "leanprover"
+rev = "{{ cslib_rev }}"
+
+#[[require]]
+#name = "mylib"
+#git = "https://github.com/zeroth/proof-prototyping"
+#rev = "main"
+{% if executable %}
+
+[[lean_exe]]
+name = "main"
+root = "Main"
+{% endif %}
