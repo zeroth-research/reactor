@@ -4,7 +4,8 @@ import torch
 from zrth import Wire, Term, Module, DType as dt, IType as it
 from zrth.lean import ModuleToLean4
 from zrth.lean.common import LeanContext, itype_name
-from zrth.lean.project import generate_main_lean, generate_certificate_lean
+from zrth.lean.cert import generate_certificate_lean
+from zrth.lean.project import generate_main_lean
 
 
 def test_itype_name_strips_prefix():
@@ -77,7 +78,7 @@ def test_twobitcounter_has_inlined_scalars():
 
     # Scalar Bool constants are inlined as Mat-typed literals, not top-level defs
     assert "def c0" not in lean
-    assert "let x0 := (fun _ _ => false)" in lean
+    assert "let x0 : (Mat Bool 1 1) := (fun _ _ => false)" in lean
 
 
 def test_twobitcounter_update_has_let_bindings():
@@ -216,7 +217,7 @@ def test_main_lean_matrix_signatures():
 def _cert_for(make_module, module_name="ReactiveModule"):
     m = make_module()
     ctx = LeanContext(m)
-    return generate_certificate_lean("Rea", module_name, ctx)
+    return generate_certificate_lean(ctx)
 
 
 def test_certificate_bool_has_rm():
@@ -229,7 +230,7 @@ def test_certificate_bool_has_rm():
 def test_certificate_bool_rm_uses_plain_functions():
     cert = _cert_for(_make_twobitcounter)
     # Should use init directly, not init.fn
-    assert "init := init" in cert
+    assert "init := fun e => init e.2" in cert
     assert ".fn" not in cert
 
 
@@ -253,9 +254,12 @@ def test_certificate_bool_has_no_scalar_constants_in_simp():
     assert "c0, c1" not in cert
 
 
-def test_certificate_bool_has_sorry():
-    cert = _cert_for(_make_twobitcounter)
-    assert "sorry" in cert
+def test_data_lean_has_sorry_when_no_property():
+    from zrth.lean.cert import generate_data_lean
+    m = _make_twobitcounter()
+    ctx = LeanContext(m)
+    data = generate_data_lean(ctx)
+    assert "sorry" in data
 
 
 def test_certificate_matrix_has_rm():
