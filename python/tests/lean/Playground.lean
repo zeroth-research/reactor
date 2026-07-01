@@ -122,3 +122,58 @@ theorem tv_hrank (s : Mat Int 1 1 × Mat Int 1 1) (e : Unit × Unit)
     (hi : tv_inv s) (hP : ¬tv_P s) :
     tv_rank (tv_update s e.1 e.2) < tv_rank s := by
   tv_simp_defs; tv_simp_mat; split_ifs <;> first | omega | (norm_cast; omega)
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- affineLinear convention: `A · x + b` (matrix acts on the column from the LEFT)
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Regression guard for the theory-aligned convention (Y = A·X + B). The state
+-- `acx` is a 2×1 column, so this only type-checks under left-multiplication —
+-- the old ML form `x · A` would be ill-typed here — and the pinned value
+-- distinguishes `A · x` (= 13) from any transposed variant.
+
+def acA : Mat Int 2 2 := fun i j =>
+  if i = 0 then (if j = 0 then 1 else 2) else (if j = 0 then 0 else 1)
+def acx : Mat Int 2 1 := fun i _ => if i = 0 then 3 else 5
+
+theorem affineLinear_is_left_mul :
+    affineLinear acA acx MatZero = (fun i _ => if i = 0 then (13 : Int) else 5) := by
+  funext i j
+  fin_cases i <;> fin_cases j <;>
+    simp [affineLinear, MatMul, MatZero, acA, acx, Fin.sum_univ_two] <;> decide
+
+-- Baked constant matrices are emitted as `match`-based literals (see
+-- tensor_to_mat_expr): opaque to split_ifs, and still reducing under simp. This
+-- guards that the match form both computes correctly and reduces.
+def mmA : Mat Int 2 2 := fun i j =>
+  match i, j with
+  | 0, 0 => 1 | 0, 1 => 2
+  | 1, 0 => 0 | 1, 1 => 1
+
+theorem affineLinear_match_reduces :
+    affineLinear mmA acx MatZero = (fun i _ => if i = 0 then (13 : Int) else 5) := by
+  funext i j
+  fin_cases i <;> fin_cases j <;>
+    simp [affineLinear, MatMul, MatZero, mmA, acx, Fin.sum_univ_two] <;> decide
+
+-- Verbatim codegen output for the LIA.Linear matrix module (native affineLinear
+-- + Circ Box.linear paths, with the Fin.cons literal form from tensor_to_mat_expr).
+-- This is a compilation regression guard: if the generated literal rendering or
+-- the Box.linear combinator stops type-checking, this file fails to build.
+namespace GenLinearCompileCheck
+open Box
+
+@[simp] def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
+  let x0 : (Mat Int 3 1) := (affineLinear (fun (i : Fin 3) (j : Fin 2) => ((match i, j with | 0, 0 => 0 | 0, 1 => 0 | 1, 0 => 1 | 1, 1 => 0 | 2, 0 => 0 | 2, 1 => 1) : Int)) extl_n (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 0 | 1, 0 => 0 | 2, 0 => 0) : Int)))
+  x0
+
+@[simp] def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
+  let x0 : (Mat Int 3 1) := (affineLinear (fun (i : Fin 3) (j : Fin 3) => ((match i, j with | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 0 | 1, 0 => 0 | 1, 1 => 1 | 1, 2 => 0 | 2, 0 => 0 | 2, 1 => 0 | 2, 2 => 1) : Int)) ctrl (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 1 | 1, 0 => 0 | 2, 0 => 0) : Int)))
+  x0
+
+@[simp] def init_l1 : Box [(Mat Int 2 1)] [(Mat Int 3 1)] :=
+  (Box.linear (fun (i : Fin 3) (j : Fin 2) => ((match i, j with | 0, 0 => 0 | 0, 1 => 0 | 1, 0 => 1 | 1, 1 => 0 | 2, 0 => 0 | 2, 1 => 1) : Int)) (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 0 | 1, 0 => 0 | 2, 0 => 0) : Int)))
+
+@[simp] def update_l2 : Box [(Mat Int 3 1)] [(Mat Int 3 1)] :=
+  (Box.linear (fun (i : Fin 3) (j : Fin 3) => ((match i, j with | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 0 | 1, 0 => 0 | 1, 1 => 1 | 1, 2 => 0 | 2, 0 => 0 | 2, 1 => 0 | 2, 2 => 1) : Int)) (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 1 | 1, 0 => 0 | 2, 0 => 0) : Int)))
+
+end GenLinearCompileCheck

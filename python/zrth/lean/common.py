@@ -367,6 +367,44 @@ def _vec_from_scalars(scalars: list[str], elem_ty: str) -> str:
     return f"({result} : Fin {n} → {elem_ty})"
 
 
+def _sort_elem_ty(sort: Sort) -> str:
+    """Lean scalar element type ("Bool"/"Int"/"Real") for a Sort, ignoring shape."""
+    if isinstance(sort, Sort.Bool):
+        return "Bool"
+    if isinstance(sort, Sort.Int):
+        return "Int"
+    if isinstance(sort, Sort.Real):
+        return "Real"
+    raise ValueError(f"Unsupported Sort for element type: {sort}")
+
+
+def tensor_to_mat_expr(tensor, elem_sort: Sort, shape: list[int]) -> str:
+    """Inline `Mat` literal for a baked-in constant tensor, as a `match` on the
+    `Fin` indices.
+
+    A `match i, j with | r, c => v` is opaque to `split_ifs`, so an unreduced
+    constant matrix (e.g. a large one whose surrounding `Fin.sum_univ_n` did not
+    fire) degrades to an unsolved goal rather than a combinatorial `split_ifs`
+    blow-up. Concrete indices still reduce by matcher iota under `simp`.
+    `elem_sort` selects element formatting (Int/Real/Bool); `shape` is the
+    tensor's `[m, n]` (or `[n]` / scalar).
+    """
+    if _is_scalar_shape(shape):
+        m, n = 1, 1
+    elif len(shape) == 1:
+        m, n = 1, shape[0]
+    else:
+        m, n = shape[0], shape[1]
+    ty = _sort_elem_ty(elem_sort)
+    data = tensor.reshape(m, n)
+    arms = " ".join(
+        f"| {i}, {j} => {_get_dtype_item(elem_sort, data[i, j].item())}"
+        for i in range(m)
+        for j in range(n)
+    )
+    return f"(fun (i : Fin {m}) (j : Fin {n}) => ((match i, j with {arms}) : {ty}))"
+
+
 def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
     """Build a Lean ``Mat T m n`` expression from flat scalar slot strings.
 
