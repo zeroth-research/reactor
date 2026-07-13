@@ -16,7 +16,7 @@ from zrth.lean.common import (
     is_constant_name,
     _accessor,
     dtype_to_lean_type,
-    tensor_to_mat_expr,
+    linear_list_literals,
     _is_scalar_wire,
     _tensor_to_lean_scalar,
     _bind_wires_scalar,
@@ -135,21 +135,20 @@ def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
 
 
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:
-    """Emit `affineLinear A x b` for a baked-constant LIA/LRA `Linear` op.
+    """Emit a baked-constant LIA/LRA `Linear` op, `Y = A·X + B`, in the reflected
+    form `matVecAffine m A b X`.
 
-    Convention `Y = A·X + B`: `A` (shape `[out, in]`) and `B` (`[out, batch]`,
-    or empty for no bias) are baked into the op; the single read wire is `X`.
+    `A` (shape `[out, in]`) and `B` (`[out, 1]`, or empty) are constants baked
+    into the op; the read wire supplies `X` (`[in, batch]`). They are emitted as
+    plain `List (List t)` / `List t` literals: cheap to elaborate (no dense
+    `match`), and `matVecAffine` reduces to a linear expression under `simp`
+    (no symbolic `∑`). `Core.Mat.matVecAffine_eq` proves this equals
+    `affineLinear (matrixOf A) X (colOf b)` for any batch width, so the
+    contraction is machine-checked rather than trusted.
     """
-    out_wire = term.write[0]
     x_expr = wire_expr[term.read[0].id]
-    A = term.itype._0
-    B = term.itype._1
-    a_lit = tensor_to_mat_expr(A, out_wire.dtype, list(A.shape))
-    if B.numel() == 0:
-        b_lit = f"(MatZero : {dtype_to_lean_type(out_wire)})"
-    else:
-        b_lit = tensor_to_mat_expr(B, out_wire.dtype, list(B.shape))
-    return f"(affineLinear {a_lit} {x_expr} {b_lit})"
+    out_m, a_lit, b_lit, _ = linear_list_literals(term)
+    return f"(matVecAffine {out_m} {a_lit} {b_lit} {x_expr})"
 
 
 def _reachable_terms(terms, output_wires: "list[Wire]") -> list:

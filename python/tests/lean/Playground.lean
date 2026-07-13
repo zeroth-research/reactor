@@ -141,9 +141,9 @@ theorem affineLinear_is_left_mul :
   fin_cases i <;> fin_cases j <;>
     simp [affineLinear, MatMul, MatZero, acA, acx, Fin.sum_univ_two] <;> decide
 
--- Baked constant matrices are emitted as `match`-based literals (see
--- tensor_to_mat_expr): opaque to split_ifs, and still reducing under simp. This
--- guards that the match form both computes correctly and reduces.
+-- Constant matrices (ConstInt) are emitted as `match`-based literals: opaque to
+-- split_ifs, and still reducing under simp. This guards that the match form both
+-- computes correctly and reduces.
 def mmA : Mat Int 2 2 := fun i j =>
   match i, j with
   | 0, 0 => 1 | 0, 1 => 2
@@ -155,25 +155,57 @@ theorem affineLinear_match_reduces :
   fin_cases i <;> fin_cases j <;>
     simp [affineLinear, MatMul, MatZero, mmA, acx, Fin.sum_univ_two] <;> decide
 
--- Verbatim codegen output for the LIA.Linear matrix module (native affineLinear
--- + Circ Box.linear paths, with the Fin.cons literal form from tensor_to_mat_expr).
--- This is a compilation regression guard: if the generated literal rendering or
--- the Box.linear combinator stops type-checking, this file fails to build.
+-- Correspondence check: the pre-contracted output equals `affineLinear A x b`.
+-- A = [[1,0,2],[0,3,0]] (2×3), b = [5,0]ᵀ. Pre-contraction drops the zero
+-- entries, so row 0 = x0 + 2·x2 + 5 and row 1 = 3·x1.
+def ceqA : Mat Int 2 3 := fun i j =>
+  match i, j with
+  | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 2
+  | 1, 0 => 0 | 1, 1 => 3 | 1, 2 => 0
+  | _, _ => 0
+def ceqb : Mat Int 2 1 := fun i _ => match i with | 0 => 5 | _ => 0
+
+theorem precontract_eq_affineLinear (x : Mat Int 3 1) :
+    (fun (i : Fin 2) (j : Fin 1) =>
+      ((match i, j with
+        | 0, 0 => (x 0 0) + ((2) * (x 2 0)) + 5
+        | 1, 0 => (3) * (x 1 0)
+        | _, _ => 0) : Int))
+      = affineLinear ceqA x ceqb := by
+  funext i j
+  fin_cases i <;> fin_cases j <;>
+    simp [affineLinear, MatMul, ceqA, ceqb, Fin.sum_univ_succ, Fin.sum_univ_zero] <;> ring
+
+-- Verbatim codegen output for the LIA.Linear matrix module: the reflected form
+-- over list literals — matVecAffine on the native path, Box.linear on the Circ
+-- path. Compilation regression guard for both emitted forms.
 namespace GenLinearCompileCheck
 open Box
 
 @[simp] def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 3 1) := (affineLinear (fun (i : Fin 3) (j : Fin 2) => ((match i, j with | 0, 0 => 0 | 0, 1 => 0 | 1, 0 => 1 | 1, 1 => 0 | 2, 0 => 0 | 2, 1 => 1) : Int)) extl_n (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 0 | 1, 0 => 0 | 2, 0 => 0) : Int)))
+  let x0 : (Mat Int 3 1) := (matVecAffine 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int) extl_n)
   x0
 
 @[simp] def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 3 1) := (affineLinear (fun (i : Fin 3) (j : Fin 3) => ((match i, j with | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 0 | 1, 0 => 0 | 1, 1 => 1 | 1, 2 => 0 | 2, 0 => 0 | 2, 1 => 0 | 2, 2 => 1) : Int)) ctrl (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 1 | 1, 0 => 0 | 2, 0 => 0) : Int)))
+  let x0 : (Mat Int 3 1) := (matVecAffine 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int) ctrl)
   x0
 
 @[simp] def init_l1 : Box [(Mat Int 2 1)] [(Mat Int 3 1)] :=
-  (Box.linear (fun (i : Fin 3) (j : Fin 2) => ((match i, j with | 0, 0 => 0 | 0, 1 => 0 | 1, 0 => 1 | 1, 1 => 0 | 2, 0 => 0 | 2, 1 => 1) : Int)) (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 0 | 1, 0 => 0 | 2, 0 => 0) : Int)))
+  (Box.linear 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int))
 
 @[simp] def update_l2 : Box [(Mat Int 3 1)] [(Mat Int 3 1)] :=
-  (Box.linear (fun (i : Fin 3) (j : Fin 3) => ((match i, j with | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 0 | 1, 0 => 0 | 1, 1 => 1 | 1, 2 => 0 | 2, 0 => 0 | 2, 1 => 0 | 2, 2 => 1) : Int)) (fun (i : Fin 3) (j : Fin 1) => ((match i, j with | 0, 0 => 1 | 1, 0 => 0 | 2, 0 => 0) : Int)))
+  (Box.linear 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int))
 
 end GenLinearCompileCheck
+
+
+-- matVecAffine handles full matrices (batch > 1): it contracts each column, and
+-- the generic correspondence holds for any batch width (here 2).
+example (x : Mat Int 2 2) :
+    matVecAffine 2 [[1, 0], [0, 3]] [5, 0] x 0 1 = x 0 1 + 5 := by
+  simp [matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero]
+
+example (x : Mat Int 2 2) :
+    matVecAffine 2 [[1, 0], [0, 3]] [5, 0] x
+      = affineLinear (matrixOf 2 2 [[1, 0], [0, 3]]) x (colOf 2 2 [5, 0]) :=
+  matVecAffine_eq 2 2 2 _ _ x (by decide)
