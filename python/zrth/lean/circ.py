@@ -14,6 +14,7 @@ from zrth.lean.common import (
     _accessor,
     _constant_expr,
     dtype_to_lean_type,
+    linear_list_literals,
     itype_name,
     is_constant_name,
 )
@@ -82,9 +83,19 @@ _LEAN_OP_BOX: dict[str, str] = {
     "MatMul": "Box.mul",
     "MatAdd": "Box.add",
     "Id": "Box.id",
-    "Linear": "Box.nnLinear",
+    # Linear is handled specially (A, b are baked into the op) — see `_linear_box`.
     "ReLU": "Box.relu",
 }
+
+
+def _linear_box(term: Term) -> str:
+    """Box for a baked-constant LIA/LRA `Linear` op: `Box.linear m A b` (x ↦ A·x + b).
+
+    A and b are emitted as list literals; `Box.linear` applies the reflected
+    `matVecAffine` (see `Core.Mat`). Column output only (batch = 1).
+    """
+    out_m, a_lit, b_lit, _ = linear_list_literals(term)
+    return f"(Box.linear {out_m} {a_lit} {b_lit})"
 
 
 def _argmax_box(input_shape: list[int]) -> str:
@@ -339,6 +350,8 @@ def _translate_terms_circ(
                 else:
                     if name == "Argmax":
                         boxes.append(_argmax_box(dtype_shape(term.read[0].dtype)))
+                    elif name == "Linear":
+                        boxes.append(_linear_box(term))
                     else:
                         boxes.append(_LEAN_OP_BOX[name])
                     in_ty.extend([dtype_to_lean_type(u) for u in term.read])

@@ -250,6 +250,9 @@ def _tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
                 val = _get_dtype_item(wire.dtype, data[i, j].item())
                 row_entries.append(f"| {i}, {j} => {val}")
             lines.append("  " + " ".join(row_entries))
+        # Catch-all: enumerated arms already cover all indices, but Lean can't
+        # verify `0..k-1` exhausts `Fin k` for large k (see tensor_to_mat_expr).
+        lines.append(f"  | _, _ => {_get_dtype_item(wire.dtype, 0)}")
 
         return "\n".join(lines) + "\n"
 
@@ -365,6 +368,44 @@ def _vec_from_scalars(scalars: list[str], elem_ty: str) -> str:
     for s in reversed(scalars):
         result = f"(Fin.cons {s} {result})"
     return f"({result} : Fin {n} → {elem_ty})"
+
+
+def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
+    """List-literal operands for a baked-constant `Linear` op (`Y = A·X + B`).
+
+    Returns ``(out_rows, A_literal, b_literal, elem_ty)`` where ``A_literal`` is a
+    ``List (List t)`` and ``b_literal`` a ``List t`` (empty bias → zeros), both
+    type-ascribed. Shared by the native (`matVecAffine`) and circuit (`Box.linear`)
+    emitters so the reflected form is generated in one place.
+    """
+    out_wire = term.write[0]
+    A = term.itype._0
+    B = term.itype._1
+    out_m = dtype_shape(out_wire.dtype)[0]
+    in_dim = int(A.shape[1])
+    ty = _sort_elem_ty(out_wire.dtype)
+    rows = [
+        "[" + ", ".join(_get_dtype_item(out_wire.dtype, A[i][l].item()) for l in range(in_dim)) + "]"
+        for i in range(out_m)
+    ]
+    a_lit = f"([{', '.join(rows)}] : List (List {ty}))"
+    if B.numel() == 0:
+        bias = [_get_dtype_item(out_wire.dtype, 0) for _ in range(out_m)]
+    else:
+        bias = [_get_dtype_item(out_wire.dtype, B[i][0].item()) for i in range(out_m)]
+    b_lit = f"([{', '.join(bias)}] : List {ty})"
+    return out_m, a_lit, b_lit, ty
+
+
+def _sort_elem_ty(sort: Sort) -> str:
+    """Lean scalar element type ("Bool"/"Int"/"Real") for a Sort, ignoring shape."""
+    if isinstance(sort, Sort.Bool):
+        return "Bool"
+    if isinstance(sort, Sort.Int):
+        return "Int"
+    if isinstance(sort, Sort.Real):
+        return "Real"
+    raise ValueError(f"Unsupported Sort for element type: {sort}")
 
 
 def _mat_from_scalars(slots: list[str], shape: list[int], elem_ty: str) -> str:
