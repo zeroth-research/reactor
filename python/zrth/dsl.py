@@ -1,15 +1,15 @@
 """dslModule: a reactive Module you write by subclassing (à la ``torch.nn.Module``).
 
 Subclass ``dslModule``, pass a ``theory`` and the ``ctrl`` (and optional ``extl``)
-variables — each a ``(latched, next)`` **wire pair** — and override the block methods
+variables — each a ``(latched, next)`` **wire pair** — and override ``init`` / ``update``
 to return the next-state values as a tuple aligned with ``ctrl``. **Instantiating the
-subclass *is* a base Module** — the block methods run and the module is built in the
-constructor.
+subclass *is* a base Module** — ``init`` / ``update`` run and the sequential module is
+built in the constructor.
 
     from zrth import LIA, Sort, Wire
     from zrth.dsl import dslModule
 
-    class Counter(dslModule):                   # sequential: has latched state
+    class Counter(dslModule):
         def init(self):            return 0
         def update(self, ctrl):    return ctrl + 1
 
@@ -19,18 +19,14 @@ constructor.
 
 ``ctrl`` / ``extl`` are tuples of wire pairs (a single var is unwrapped, so you can write
 ``def update(self, ctrl): return ctrl + 1``); a var reads as its latched value and
-``nxt(v)`` gives its next wire. The block methods return a tuple aligned with ``ctrl``
+``nxt(v)`` gives its next wire. ``init`` / ``update`` return a tuple aligned with ``ctrl``
 — entry *i* is ``ctrl[i]``'s next value (return the var itself to keep it). ``extl`` vars
 are external inputs: they are declared but their next value is *not* driven here (the base
 Module classifies undriven wires as ``extl``, so a module with ``extl`` is open).
 
-Two kinds of module are built here, chosen by which methods the subclass defines:
-
-  * **sequential** — ``init`` (tick 0) + ``update`` (tick > 0). Has latched state:
-    ``update`` may read the latched ``ctrl``; ``init`` may not (there is no previous
-    tick to latch), so ``init`` reads only the awaited inputs.
-  * **combinatorial** — ``assign`` only. Memoryless: it reads only the awaited inputs
-    (``extl`` and their ``nxt`` wires) and has no ``init`` (no tick-0 state to set).
+Only **sequential** modules are built here; the base ``Module`` also has ``combinatorial`` /
+``parallel``, which the DSL does not expose yet (combinatorial logic may instead come from the
+torch front-end).
 
 Config comes from **constructor kwargs** (``theory=``, ``ctrl=``, ``extl=``). Two base-class
 constraints force this (both flagged for design review):
@@ -44,8 +40,7 @@ constraints force this (both flagged for design review):
 import inspect
 
 from .zrth import Module, Term
-from . import expr as E
-from .expr import expr, cast, nxt, ite, eq, ne, relu, argmax, Expr  # re-exported for authoring
+from .expr import expr, cast, nxt, ite, eq, ne, relu, argmax, collecting, Expr  # re-exported for authoring
 
 # Public authoring surface: `from zrth.dsl import dslModule, expr, nxt, ite, cast, ...`
 __all__ = ["dslModule", "expr", "cast", "nxt", "ite", "eq", "ne", "relu", "argmax", "Expr"]
@@ -61,29 +56,28 @@ def _as_tuple(r) -> tuple:
     return (r,)
 
 
-def _invoke(fn, ctrl_arg, extl_arg, mode: str):
-    """Call an init/update/assign method, passing args per its arity (self is unused
-    at construction time, so it is passed as None). ``update`` may read the latched
-    ``ctrl`` and the ``extl`` inputs; ``init`` and ``assign`` read only the awaited
-    inputs (``extl``), since neither may read a latched wire."""
+def _invoke(fn, ctrl_arg, extl_arg, is_init: bool):
+    """Call an init/update method, passing ctrl/extl per its arity (self is unused
+    at construction time, so it is passed as None)."""
     nparams = len(inspect.signature(fn).parameters)  # includes `self`
-    if mode == "update":
-        args = (ctrl_arg, extl_arg) if nparams >= 3 else (ctrl_arg,)
-    else:  # "init" or "assign": awaited inputs only
+    if is_init:
         args = (extl_arg,) if nparams >= 2 else ()
+    else:
+        args = (ctrl_arg, extl_arg) if nparams >= 3 else (ctrl_arg,)
     return _as_tuple(fn(None, *args))
 
 
-def _block_terms(theory, ctrl_vars: tuple, values: tuple) -> list:
-    """Terms for one block: every value's terms (deps first, and sub-expressions shared
-    across values emitted once), then an Id driving each ctrl var's next wire."""
-    if len(values) != len(ctrl_vars):
-        raise ValueError(f"expected {len(ctrl_vars)} return value(s), got {len(values)}")
-    exprs = [v if isinstance(v, Expr) else expr(v, theory=theory, sort=var.dtype)
-             for var, v in zip(ctrl_vars, values)]
-    terms = E.collect_terms(*exprs)          # one shared pass -> a reused subterm appears once
-    for var, e in zip(ctrl_vars, exprs):
-        terms.append(Term(theory.Id(), [nxt(var).wire], [e.wire]))
+def _build_block(theory, ctrl_vars, fn, ctrl_arg, extl_arg, is_init) -> list:
+    """Run one block (init/update) inside a collector: every Term built while the user
+    method runs is captured in dependency order (a shared sub-expression once); then an
+    Id drives each ctrl var's next wire from its returned value."""
+    with collecting() as terms:
+        values = _invoke(fn, ctrl_arg, extl_arg, is_init)
+        if len(values) != len(ctrl_vars):
+            raise ValueError(f"expected {len(ctrl_vars)} return value(s), got {len(values)}")
+        for var, v in zip(ctrl_vars, values):
+            e = v if isinstance(v, Expr) else expr(v, theory=theory, sort=var.dtype)
+            terms.append(Term(theory.Id(), [nxt(var).wire], [e.wire]))
     return terms
 
 
@@ -101,33 +95,20 @@ class dslModule(Module):
 
         init_fn = getattr(cls, "init", None)
         update_fn = getattr(cls, "update", None)
-        assign_fn = getattr(cls, "assign", None)
+        if init_fn is None:
+            raise TypeError(f"{cls.__name__} must define an `init` method (every ctrl variable needs an initial value)")
+        if update_fn is None:
+            raise TypeError(f"{cls.__name__} must define an `update` method")
 
         # a single variable is unwrapped, so `x = ctrl` works as well as `x, y = ctrl`
         ctrl_arg = ctrl_vars[0] if len(ctrl_vars) == 1 else ctrl_vars
         extl_arg = extl_vars[0] if len(extl_vars) == 1 else extl_vars
-        obs = [list(p) for p in (ctrl_pairs + extl_pairs)]
 
-        if assign_fn is not None:
-            # combinatorial (memoryless): a single `assign` block, no init/update
-            if init_fn is not None or update_fn is not None:
-                raise TypeError(
-                    f"{cls.__name__}: define `assign` (combinatorial) OR `init`+`update` "
-                    f"(sequential), not both")
-            assign_terms = _block_terms(theory, ctrl_vars,
-                                        _invoke(assign_fn, ctrl_arg, extl_arg, "assign"))
-            self = super().__new__(cls, assign=assign_terms, obs=obs)
-        else:
-            # sequential: init (tick 0) + update (tick > 0)
-            if init_fn is None:
-                raise TypeError(
-                    f"{cls.__name__} must define an `init` method (every ctrl variable needs "
-                    f"an initial value), or an `assign` method for a combinatorial module")
-            if update_fn is None:
-                raise TypeError(f"{cls.__name__} must define an `update` method")
-            init_terms = _block_terms(theory, ctrl_vars, _invoke(init_fn, ctrl_arg, extl_arg, "init"))
-            update_terms = _block_terms(theory, ctrl_vars, _invoke(update_fn, ctrl_arg, extl_arg, "update"))
-            self = super().__new__(cls, init=init_terms, update=update_terms, obs=obs)
+        init_terms = _build_block(theory, ctrl_vars, init_fn, ctrl_arg, extl_arg, True)
+        update_terms = _build_block(theory, ctrl_vars, update_fn, ctrl_arg, extl_arg, False)
+
+        obs = [list(p) for p in (ctrl_pairs + extl_pairs)]
+        self = super().__new__(cls, init=init_terms, update=update_terms, obs=obs)
         self._theory = theory
         self._ctrl_vars = ctrl_vars
         self._extl_vars = extl_vars
