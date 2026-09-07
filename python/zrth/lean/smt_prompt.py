@@ -12,13 +12,25 @@ ranking_term)` tuple.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 import cvc5
 from cvc5 import Kind
 
+from .common import dtype_shape
 from .smt_encode import wire_sort
 from .smt_module import ModuleSMT
+
+
+def _wire_rc(wire) -> tuple[int, int]:
+    """(rows, cols) of a wire's matrix shape (main shapes are always 2-D)."""
+    shape = dtype_shape(wire.dtype)
+    if len(shape) == 1:
+        return 1, shape[0]
+    if len(shape) == 2:
+        return shape[0], shape[1]
+    return 1, 1
 
 
 # ---------------------------------------------------------------------
@@ -50,6 +62,12 @@ class _E:
         if isinstance(x, bool):
             return self._tm.mkBoolean(x)
         if isinstance(x, int):
+            # Against a BitVec-sorted term, a bare Python int must become a
+            # same-width bitvector literal — cvc5 has no Int→BV coercion, so
+            # the SMT-LIB default (arbitrary-precision Int) would mismatch.
+            sort = self._t.getSort()
+            if sort.isBitVector():
+                return self._tm.mkBitVector(sort.getBitVectorSize(), x)
             return self._tm.mkInteger(x)
         if isinstance(x, float):
             return self._tm.mkReal(x)
@@ -75,12 +93,24 @@ class _E:
     def __rsub__(self, o): return self._bin(Kind.SUB, o, rev=True)
     def __mul__(self, o): return self._bin(Kind.MULT, o)
     def __rmul__(self, o): return self._bin(Kind.MULT, o, rev=True)
-    def __and__(self, o): return self._bin(Kind.AND, o)
-    def __rand__(self, o): return self._bin(Kind.AND, o, rev=True)
-    def __or__(self, o):  return self._bin(Kind.OR, o)
-    def __ror__(self, o): return self._bin(Kind.OR, o, rev=True)
-    def __neg__(self):    return _E(self._tm, self._tm.mkTerm(Kind.NEG, self._t))
-    def __invert__(self): return _E(self._tm, self._tm.mkTerm(Kind.NOT, self._t))
+    def __and__(self, o):
+        kind = Kind.BITVECTOR_AND if self._t.getSort().isBitVector() else Kind.AND
+        return self._bin(kind, o)
+    def __rand__(self, o):
+        kind = Kind.BITVECTOR_AND if self._t.getSort().isBitVector() else Kind.AND
+        return self._bin(kind, o, rev=True)
+    def __or__(self, o):
+        kind = Kind.BITVECTOR_OR if self._t.getSort().isBitVector() else Kind.OR
+        return self._bin(kind, o)
+    def __ror__(self, o):
+        kind = Kind.BITVECTOR_OR if self._t.getSort().isBitVector() else Kind.OR
+        return self._bin(kind, o, rev=True)
+    def __neg__(self):
+        kind = Kind.BITVECTOR_NEG if self._t.getSort().isBitVector() else Kind.NEG
+        return _E(self._tm, self._tm.mkTerm(kind, self._t))
+    def __invert__(self):
+        kind = Kind.BITVECTOR_NOT if self._t.getSort().isBitVector() else Kind.NOT
+        return _E(self._tm, self._tm.mkTerm(kind, self._t))
     def __hash__(self):   return id(self._t)
 
     # Tuple (matrix) element selection: `e0[k]` on a tuple-sorted var.
@@ -95,23 +125,80 @@ class _E:
         return _E(self._tm, self._tm.mkTerm(Kind.APPLY_SELECTOR, sel, self._t))
 
 
+class _Row:
+    """Intermediate for 2-D indexing: `v[i]` → `_Row`, then `v[i][j]` → element."""
+
+    __slots__ = ("_var", "_i")
+
+    def __init__(self, var: "_MatVar", i: int):
+        self._var, self._i = var, i
+
+    def __getitem__(self, j: int) -> "_E":
+        return self._var._element(self._i, j)
+
+
+class _MatVar(_E):
+    """A state/input variable that knows its matrix shape, so predicates can
+    address elements as ``v[i][j]`` (or ``v[i, j]``) into the row-major flat
+    tuple. ``v`` alone is still the whole matrix term; a scalar (1×1) var
+    accepts only ``v[0][0]``.
+    """
+
+    __slots__ = ("_rows", "_cols")
+
+    def __init__(self, tm: cvc5.TermManager, t: cvc5.Term, rows: int, cols: int):
+        super().__init__(tm, t)
+        self._rows, self._cols = rows, cols
+
+    def _element(self, i: int, j: int) -> "_E":
+        if not (0 <= i < self._rows and 0 <= j < self._cols):
+            raise IndexError(
+                f"index ({i}, {j}) out of bounds for {self._rows}×{self._cols} matrix"
+            )
+        idx = i * self._cols + j
+        sort = self._t.getSort()
+        if not sort.isTuple():
+            # scalar (1×1) var — the term itself is the single element
+            return _E(self._tm, self._t)
+        ctor = sort.getDatatype()[0]
+        sel = ctor[idx].getTerm()
+        return _E(self._tm, self._tm.mkTerm(Kind.APPLY_SELECTOR, sel, self._t))
+
+    def __getitem__(self, key):
+        if isinstance(key, tuple):
+            i, j = key
+            return self._element(i, j)
+        return _Row(self, key)
+
+
 def _pyeval_namespace(env: "CegarPromptEnv") -> dict:
     """Build the namespace exposed to Python-expression predicates."""
     tm = env.tm
 
-    def _unwrap(x):
+    def _unwrap(x, ref_sort=None):
         if isinstance(x, _E):
             return x._t
         if isinstance(x, bool):
             return tm.mkBoolean(x)
         if isinstance(x, int):
+            # Match a BitVec sibling's width — see `_E._coerce`.
+            if ref_sort is not None and ref_sort.isBitVector():
+                return tm.mkBitVector(ref_sort.getBitVectorSize(), x)
             return tm.mkInteger(x)
         if isinstance(x, float):
             return tm.mkReal(x)
         return x
 
     def _mk(kind, *args):
-        return _E(tm, tm.mkTerm(kind, *[_unwrap(a) for a in args]))
+        ref_sort = None
+        for a in args:
+            if isinstance(a, _E):
+                ref_sort = a._t.getSort()
+                break
+            if isinstance(a, cvc5.Term):
+                ref_sort = a.getSort()
+                break
+        return _E(tm, tm.mkTerm(kind, *[_unwrap(a, ref_sort) for a in args]))
 
     ns = {
         "__builtins__": {},
@@ -128,13 +215,55 @@ def _pyeval_namespace(env: "CegarPromptEnv") -> dict:
         "False": _E(tm, tm.mkBoolean(False)),
         "ToInt": lambda a: _mk(Kind.TO_INTEGER, a),
     }
-    for i, v in enumerate(env.state_vars):
-        ns[f"s{i}"] = _E(tm, v)
-    for i, v in enumerate(env.extl_next_vars):
-        ns[f"e{i}"] = _E(tm, v)
-    for i, v in enumerate(env.extl_latched_vars):
-        ns[f"el{i}"] = _E(tm, v)
+    def _bind(prefix: str, vars_: list, wires: list) -> None:
+        for i, v in enumerate(vars_):
+            r, c = _wire_rc(wires[i])
+            ns[f"{prefix}{i}"] = _MatVar(tm, v, r, c)
+        # Convenience alias without the index when there is a single component,
+        # so a lone state wire can be written `s[i][j]` instead of `s0[i][j]`.
+        if len(vars_) == 1:
+            ns[prefix] = ns[f"{prefix}0"]
+
+    _bind("s", env.state_vars, env.msmt.ctrl_next)
+    _bind("e", env.extl_next_vars, env.msmt.extl_next)
+    _bind("el", env.extl_latched_vars, env.msmt.extl_latched)
     return ns
+
+
+_BARE_NUMERAL_RE = re.compile(r"^-?\d+$")
+_BARE_EQ_RE = re.compile(r"\((?P<op>=|distinct)\s+(?P<a>-?\w+)\s+(?P<b>-?\w+)\)")
+
+
+def _coerce_bare_numerals(src: str, bv_widths: dict[str, int]) -> str:
+    """Rewrite `(= sK 0)` / `(distinct 0 sK)` into `(= sK (_ bv0 W))` when `sK`
+    is a known BitVec<W>-sorted symbol.
+
+    Plain SMT-LIB has no Int→BitVec coercion (cvc5 rejects `(= s0 0)` if `s0`
+    is `(_ BitVec W)` outright), so bare numerals written against BV state
+    would otherwise always fail to parse. Only rewrites atomic `(= a b)` /
+    `(distinct a b)` forms — one bare symbol, one bare numeral — not
+    numerals nested inside larger subexpressions.
+    """
+    if not bv_widths:
+        return src
+
+    def repl(m: re.Match) -> str:
+        op, a, b = m.group("op"), m.group("a"), m.group("b")
+        a_is_num, b_is_num = bool(_BARE_NUMERAL_RE.match(a)), bool(
+            _BARE_NUMERAL_RE.match(b)
+        )
+        if a_is_num == b_is_num:
+            return m.group(0)  # both/neither numeral: nothing to coerce
+        sym, num = (b, a) if a_is_num else (a, b)
+        width = bv_widths.get(sym)
+        if width is None:
+            return m.group(0)
+        val = int(num) % (1 << width)
+        lit = f"(_ bv{val} {width})"
+        new_a, new_b = (lit, b) if a_is_num else (a, lit)
+        return f"({op} {new_a} {new_b})"
+
+    return _BARE_EQ_RE.sub(repl, src)
 
 
 def parse_predicate(env: "CegarPromptEnv", src: str) -> cvc5.Term:
@@ -242,6 +371,14 @@ class CegarPromptEnv:
         self.extl_next_vars: list[cvc5.Term] = parsed[k : k + m]
         self.extl_latched_vars: list[cvc5.Term] = parsed[k + m :]
 
+        self._bv_widths: dict[str, int] = {
+            name: sort.getBitVectorSize()
+            for name, sort in zip(
+                names, self.state_sorts + self.extl_next_sorts + self.extl_latched_sorts
+            )
+            if sort.isBitVector()
+        }
+
     # --- internals ------------------------------------------------------
 
     def _run_commands(self, text: str) -> None:
@@ -254,6 +391,7 @@ class CegarPromptEnv:
 
     def parse_expr(self, smt_src: str) -> cvc5.Term:
         """Parse a single SMT-LIB expression referring to s0..sN-1."""
+        smt_src = _coerce_bare_numerals(smt_src, self._bv_widths)
         # Re-set the input source each call — the incremental stream ends
         # after a single nextTerm/nextCommand pair.
         self.parser.setIncrementalStringInput(

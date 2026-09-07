@@ -1,7 +1,8 @@
 """Tests for the Module-to-Lean4 functional converter."""
 
 import torch
-from zrth import Wire, Term, Module, DType as dt, IType as it, Bool, Int
+import pytest
+from zrth import Wire, Term, Module, Sort as dt, LIA, Bool, Int, Var, X
 from zrth.lean.project import (
     create_project,
 )
@@ -16,64 +17,72 @@ from pathlib import Path
 def _make_twobitcounter():
     """Bool-only module: two-bit counter with enable."""
 
-    b0 = (Wire(Bool(1)), Wire(Bool(1)))
-    b1 = (Wire(Bool(1)), Wire(Bool(1)))
-    enable = (Wire(Bool(1)), Wire(Bool(1)))
+    b0 = Var(Bool([1, 1]))
+    b1 = Var(Bool([1, 1]))
+    enable = Var(Bool([1, 1]))
 
-    not_b0 = Wire(Bool(1))
-    not_b1 = Wire(Bool(1))
-    b0_and_enable = Wire(Bool(1))
+    not_b0 = Wire(Bool([1, 1]))
+    not_b1 = Wire(Bool([1, 1]))
+    b0_and_enable = Wire(Bool([1, 1]))
 
     init = [
-        Term(it.Tensor(torch.tensor([False])), [b0[1]]),
-        Term(it.Tensor(torch.tensor([False])), [b1[1]]),
+        Term(LIA.Bool(torch.tensor([[False]])), [X(b0)]),
+        Term(LIA.Bool(torch.tensor([[False]])), [X(b1)]),
     ]
     update = [
-        Term(it.Not(), [not_b0], [b0[0]]),
-        Term(it.Ite(), [b0[1]], [enable[1], not_b0, b0[0]]),
-        Term(it.And(), [b0_and_enable], [b0[0], enable[1]]),
-        Term(it.Not(), [not_b1], [b1[0]]),
-        Term(it.Ite(), [b1[1]], [b0_and_enable, not_b1, b1[0]]),
+        Term(LIA.Not(), [not_b0], [b0]),
+        Term(LIA.Ite(), [X(b0)], [X(enable), not_b0, b0]),
+        Term(LIA.And(), [b0_and_enable], [b0, X(enable)]),
+        Term(LIA.Not(), [not_b1], [b1]),
+        Term(LIA.Ite(), [X(b1)], [b0_and_enable, not_b1, b1]),
     ]
-    return Module.sequential(init, update, obs=[b0, b1, enable])
+    return Module.sequential([b0, b1, enable], init, update)
 
 
 def _make_P(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
-    w_out = Wire(Bool(1))
-    t_false = Wire(Bool(1))
-    t1 = Term(it.Tensor(torch.tensor(False)), write=[t_false])
-    # need to use ctrl'
-    t2 = Term(it.Eq(), read=[t_false, ctrl[0][1]], write=[w_out])
-    return [t1, t2]
+    # P: b0' is false. main's LIA.Eq is Int-only, and Bool equality-with-false
+    # is just negation, so encode `false = b0'` as ¬b0'.
+    w_out = Wire(Bool([1, 1]))
+    t = Term(LIA.Not(), read=[X(ctrl[0])], write=[w_out])
+    return [t]
 
 
 def _make_ranking(ctrl: list[tuple[Wire, Wire]]) -> list[Term]:
+    # ranking = bit1 * 2 + bit0 - 3, fully in LIA. The bits are Bool, so each is
+    # cast to Int with Ite(bit, 1, 0); multiply-by-2 is linear (bit1 + bit1).
     terms = []
-    w_out = Wire(Int(1))
-    c2 = Wire(Int(1))
-    c3 = Wire(Int(1))
-    terms.append(Term(it.Tensor(torch.tensor(3)), write=[c3]))
-    terms.append(Term(it.Tensor(torch.tensor(2)), write=[c2]))
+    w_out = Wire(Int([1, 1]))
+    one = Wire(Int([1, 1]))
+    zero = Wire(Int([1, 1]))
+    c3 = Wire(Int([1, 1]))
+    terms.append(Term(LIA.Int(torch.tensor([[1]])), write=[one]))
+    terms.append(Term(LIA.Int(torch.tensor([[0]])), write=[zero]))
+    terms.append(Term(LIA.Int(torch.tensor([[3]])), write=[c3]))
 
-    tmp1 = Wire(Int(1))
-    tmp2 = Wire(Int(1))
+    bit1 = Wire(Int([1, 1]))
+    bit0 = Wire(Int([1, 1]))
+    terms.append(Term(LIA.Ite(), read=[X(ctrl[1]), one, zero], write=[bit1]))
+    terms.append(Term(LIA.Ite(), read=[X(ctrl[0]), one, zero], write=[bit0]))
+
+    tmp1 = Wire(Int([1, 1]))
+    tmp2 = Wire(Int([1, 1]))
     terms.append(
         Term(
-            it.Mul(),
-            read=[ctrl[1][1], c2],
+            LIA.Add(),
+            read=[bit1, bit1],
             write=[tmp1],
         )
     )
     terms.append(
         Term(
-            it.Add(),
-            read=[tmp1, ctrl[0][1]],
+            LIA.Add(),
+            read=[tmp1, bit0],
             write=[tmp2],
         )
     )
     terms.append(
         Term(
-            it.Sub(),
+            LIA.Sub(),
             read=[tmp2, c3],
             write=[w_out],
         )

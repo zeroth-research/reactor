@@ -9,11 +9,14 @@ IType operation to its Lean equivalent.
 
 from __future__ import annotations
 from zrth.lean.common import (
+    dtype_shape,
     ConstantRegistry,
     _constant_expr,
     itype_name,
+    is_constant_name,
     _accessor,
     dtype_to_lean_type,
+    linear_list_literals,
     _is_scalar_wire,
     _tensor_to_lean_scalar,
     _bind_wires_scalar,
@@ -25,7 +28,7 @@ from zrth.lean.common import (
 
 from typing import Callable
 
-from zrth import Wire, DType
+from zrth import Wire, Sort
 
 
 def _product_type(wires: list[Wire]) -> str:
@@ -86,7 +89,8 @@ _LEAN_OP: dict[str, Callable] = {
     "Max": lambda a: f"(fun i j => Max.max ({a[0]} i j) ({a[1]} i j))",
     "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
     "Id": lambda a: a[0],
-    "Linear": lambda a: f"affineLinear {a[0]} {a[1]} {a[2]}",
+    # Linear is handled specially (its A, B are baked into the op, not read
+    # wires) — see `_linear_expr`.
     "ReLU": lambda a: f"ReLu {a[0]}",
     "TensorGet": lambda a: f"({a[0]} 0 0)",
     "ToUnsigned": lambda a: f"(fun _ _ => Int.toNat ({a[0]} 0 0))",
@@ -130,6 +134,23 @@ def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
     )
 
 
+def _linear_expr(term, wire_expr: dict[int, str]) -> str:
+    """Emit a baked-constant LIA/LRA `Linear` op, `Y = A·X + B`, in the reflected
+    form `matVecAffine m A b X`.
+
+    `A` (shape `[out, in]`) and `B` (`[out, 1]`, or empty) are constants baked
+    into the op; the read wire supplies `X` (`[in, batch]`). They are emitted as
+    plain `List (List t)` / `List t` literals: cheap to elaborate (no dense
+    `match`), and `matVecAffine` reduces to a linear expression under `simp`
+    (no symbolic `∑`). `Core.Mat.matVecAffine_eq` proves this equals
+    `affineLinear (matrixOf A) X (colOf b)` for any batch width, so the
+    contraction is machine-checked rather than trusted.
+    """
+    x_expr = wire_expr[term.read[0].id]
+    out_m, a_lit, b_lit, _ = linear_list_literals(term)
+    return f"(matVecAffine {out_m} {a_lit} {b_lit} {x_expr})"
+
+
 def _reachable_terms(terms, output_wires: "list[Wire]") -> list:
     """Return the terms backward-reachable from output_wires, in original order.
 
@@ -168,11 +189,13 @@ def _translate_terms(
     for var_counter, term in enumerate(term_list):
         name = itype_name(term.itype)
 
-        if name in ("Tensor", "ConstBool", "ConstInt"):
+        if is_constant_name(name):
             expr = _constant_expr(name, term, term.write[0], constants)
         elif name == "Argmax":
             arg_expr = wire_expr[term.read[0].id]
-            expr = _argmax_expr(arg_expr, term.read[0].dtype.shape)
+            expr = _argmax_expr(arg_expr, dtype_shape(term.read[0].dtype))
+        elif name == "Linear":
+            expr = _linear_expr(term, wire_expr)
         else:
             if name not in _LEAN_OP:
                 raise ValueError(f"No Lean expression mapping for: {name}")
@@ -214,12 +237,8 @@ def _constant_expr_scalar(
     const_name: str, term, w: "Wire", constants: ConstantRegistry
 ) -> str:
     """Like _constant_expr but returns bare scalar values (no Mat wrapper)."""
-    if const_name == "ConstBool":
-        return "true" if bool(term.itype._0) else "false"
-    if const_name == "ConstInt":
-        return f"({int(term.itype._0)} : Int)"
-    # Tensor
     if _is_scalar_wire(w):
+        # Element type (Bool/Int/Real) is taken from the wire's dtype.
         return _tensor_to_lean_scalar(term.itype._0, w)
     # Non-scalar tensor: fall back to matrix constant from registry
     name = constants.lookup(w.id)
@@ -265,7 +284,7 @@ def _translate_terms_scalar(
         write_wire = term.write[0]
         var = f"x{var_counter}"
 
-        if name in ("Tensor", "ConstBool", "ConstInt"):
+        if is_constant_name(name):
             expr = _constant_expr_scalar(name, term, write_wire, constants)
         elif name == "Argmax":
             in_wire = term.read[0]
@@ -274,8 +293,10 @@ def _translate_terms_scalar(
                 axiom_name = _argmax_scalar_name(len(slots))
                 expr = f"({axiom_name} {' '.join(slots)})"
             else:
-                mat_expr = _argmax_expr(wire_expr[in_wire.id], in_wire.dtype.shape)
+                mat_expr = _argmax_expr(wire_expr[in_wire.id], dtype_shape(in_wire.dtype))
                 expr = f"({mat_expr} 0 0)" if _is_scalar_wire(write_wire) else mat_expr
+        elif name == "Linear":
+            expr = _linear_expr(term, wire_expr)
         elif _is_scalar_wire(write_wire) and name in _SCALAR_OP:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = _SCALAR_OP[name](input_exprs)

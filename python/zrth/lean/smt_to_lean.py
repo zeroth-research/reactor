@@ -11,8 +11,8 @@ from __future__ import annotations
 import cvc5
 from cvc5 import Kind
 
-from zrth import Wire, DType
-from .common import _accessor
+from zrth import Wire, Sort
+from .common import _accessor, dtype_shape, _is_scalar_shape
 
 
 # Binary / variadic operator maps
@@ -51,9 +51,9 @@ def build_var_map(
         n = len(wires)
         for i, w in enumerate(wires):
             acc = _accessor(i, n)
-            shape = w.dtype.shape
+            shape = dtype_shape(w.dtype)
             name = f"{prefix}{i}"
-            if shape in ([], [1]):
+            if _is_scalar_shape(shape):
                 var_accessor[name] = f"({base}{acc} 0 0)"
             else:
                 var_accessor[name] = f"({base}{acc})"
@@ -115,6 +115,10 @@ def _walk(
         return f"({v} : Int)" if v < 0 else str(v)
     if k == Kind.CONST_RATIONAL:
         return str(t)
+    if k == Kind.CONST_BITVECTOR:
+        width = t.getSort().getBitVectorSize()
+        value = int(t.getBitVectorValue(10))
+        return f"(BitVec.ofNat {width} {value})"
     if k == Kind.CONSTANT:
         name = t.getSymbol()
         if name in var_accessor:
@@ -161,7 +165,7 @@ def _walk(
         idx = _selector_index(sel)
         sname = obj.getSymbol()
         wire = var_wire[sname]
-        shape = wire.dtype.shape
+        shape = dtype_shape(wire.dtype)
         if len(shape) == 1:
             m, n = 1, shape[0]
         elif len(shape) == 2:
