@@ -44,30 +44,44 @@ def ReLu [Max t] [OfNat t 0] (x : Mat t m n) : Mat t m n :=
   fun i j => Max.max 0 (x i j)
 
 /-- 1-dimensional argmax: returns the column index of the maximum element
-    of a `Mat t 1 n`, packed as `Mat Nat 1 1`. -/
-def argmax_1d {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [Inhabited t]
+    of a `Mat t 1 n`, packed as `Mat Nat 1 1`.
+
+    Follows `torch.argmax`, the runtime reference the SMT encoding also
+    matches: the *first* maximal index wins a tie (hence the strict `<`),
+    and the search is seeded with element 0 rather than a neutral value.
+    Seeding with `default` would enter 0 as a candidate and report index 0
+    for any all-negative row. An empty row has no argmax and yields 0. -/
+def argmax_1d {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
     {n : Nat} (x : Mat t 1 n) : Mat Nat 1 1 :=
   fun _ _ =>
-    ((List.finRange n).foldl
-      (fun (best : Nat × t) j =>
-        let v := x 0 j
-        if best.2 ≤ v then (j.val, v) else best)
-      (0, default)).1
+    match List.finRange n with
+    | [] => 0
+    | j0 :: js =>
+      (js.foldl
+        (fun (best : Nat × t) j =>
+          let v := x 0 j
+          if best.2 < v then (j.val, v) else best)
+        (j0.val, x 0 j0)).1
 
-/-- 2-dimensional argmax: returns `[i, j]`, the position of the maximum
-    element of a `Mat t m n`, packed as `Mat Nat 1 2`. -/
-def argmax {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [Inhabited t]
-    {m n : Nat} (x : Mat t m n) : Mat Nat 1 2 :=
-  let pos :=
-    ((List.finRange m).foldl
-      (fun (bestI : Nat × Nat × t) i =>
-        (List.finRange n).foldl
-          (fun (best : Nat × Nat × t) j =>
-            let v := x i j
-            if best.2.2 ≤ v then (i.val, j.val, v) else best)
-          bestI)
-      (0, 0, default))
-  fun _ k => if k = 0 then pos.1 else pos.2.1
+/-- 2-dimensional argmax: the *row-major flat* index `i * n + j` of the
+    maximum element of a `Mat t m n`, packed as `Mat Nat 1 1`.
+
+    Follows `torch.argmax`, which flattens before searching and returns a
+    single index — not an `[i, j]` pair. Ties go to the lowest flat index
+    and the fold is seeded with element `(0, 0)`, matching `argmax_1d`,
+    which this agrees with whenever `m = 1` (there `i * n + j = j`). An
+    empty matrix has no argmax and yields 0. -/
+def argmax {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
+    {m n : Nat} (x : Mat t m n) : Mat Nat 1 1 :=
+  fun _ _ =>
+    match (List.finRange m).flatMap (fun i => (List.finRange n).map (fun j => (i, j))) with
+    | [] => 0
+    | p0 :: ps =>
+      (ps.foldl
+        (fun (best : Nat × t) p =>
+          let v := x p.1 p.2
+          if best.2 < v then (p.1.val * n + p.2.val, v) else best)
+        (p0.1.val * n + p0.2.val, x p0.1 p0.2)).1
 
 
 /-! Helper lemmas for simp -/
