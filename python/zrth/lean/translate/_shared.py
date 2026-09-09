@@ -8,6 +8,48 @@ from zrth.lean.common import (
     dtype_to_lean_type,
     _mat_from_scalars,
 )
+from zrth.lean.native import _build_tuple, _product_type_scalar
+
+
+def _flat_layout(wires: "list") -> "tuple[list[tuple[int, int]], int]":
+    """``([(offset, size)] per wire, total)`` in the flattened element tuple.
+
+    The scalar encoding's state tuple carries one component per *element*, so
+    a wire's data starts at the sum of the sizes before it -- not at its own
+    index. Consumers that relate a per-wire definition to that tuple need
+    both halves of this.
+    """
+    sizes = [_flat_size(w) for w in wires]
+    offset = 0
+    spans: list[tuple[int, int]] = []
+    for size in sizes:
+        spans.append((offset, size))
+        offset += size
+    return spans, offset
+
+
+def _flat_slice(expr: str, offset: int, size: int, total: int) -> str:
+    """The `size` components of the `total`-wide tuple `expr` from `offset`.
+
+    A wire covering the whole tuple slices to `expr` itself: projecting and
+    re-tupling would be a no-op that repeats `expr` once per element, and
+    `expr` is a whole `Scalar.update` call at the only call sites.
+    """
+    if offset == 0 and size == total:
+        return expr
+    return _build_tuple(
+        [f"{expr}{_accessor(offset + k, total)}" for k in range(size)]
+    )
+
+
+def _effect_type(wire) -> str:
+    """Codomain of a per-wire `effect_i`/`init_i`: its own flat element tuple.
+
+    One component per element, so it can be compared to the matching slice of
+    the scalar encoding's state tuple. Typing it as the wire's `Mat` instead
+    put a `Mat Int 6 1` against an `Int x ... x Int`.
+    """
+    return _product_type_scalar([wire])
 
 
 def _scalar_bindings_with_recon(
@@ -54,8 +96,38 @@ def _scalar_bindings_with_recon(
     return let_lines, bindings, flat_slots
 
 
+def _recon_var(let_line: str) -> str:
+    """The variable a reconstruction let binds (`  let _m0 : ... := ...`)."""
+    return let_line.split("let ", 1)[1].split(" ", 1)[0]
+
+
+def _needed_recon(recon_lets: "list[str]", body: str) -> "list[str]":
+    """The reconstruction lets `body` actually refers to, in order.
+
+    An unused let still mentions its parameter group (`extl_l.1` and so on),
+    and Lean's `variable` auto-binding would then add that parameter to the
+    declaration -- while the call sites are built from what the body
+    consumes, so they would under-apply it. Iterated to a fixed point in
+    case one reconstruction ever refers to another.
+    """
+    kept: list[str] = []
+    text = body
+    changed = True
+    while changed:
+        changed = False
+        for line in recon_lets:
+            if line in kept:
+                continue
+            if _recon_var(line) in text:
+                kept.append(line)
+                text += "\n" + line
+                changed = True
+    return [line for line in recon_lets if line in kept]
+
+
 def _prepend_recon(recon_lets: "list[str]", body: str) -> str:
-    """Prepend Mat reconstruction let-lines to a function body."""
-    if recon_lets:
-        return "\n".join(recon_lets) + "\n" + body
+    """Prepend the Mat reconstruction let-lines this body needs."""
+    needed = _needed_recon(recon_lets, body)
+    if needed:
+        return "\n".join(needed) + "\n" + body
     return body
