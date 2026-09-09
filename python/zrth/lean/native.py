@@ -15,7 +15,6 @@ from zrth.lean.common import (
     _constant_expr,
     itype_name,
     is_constant_name,
-    _accessor,
     dtype_to_lean_type,
     linear_list_literals,
     _is_scalar_wire,
@@ -83,6 +82,43 @@ _LEAN_OP: dict[str, Callable] = {
 }
 
 
+# BV works entirely in BitVec: that theory has no Bool wires at all -- an
+# `Ite` condition and an `Eq` result are both `BitVec 1`. The Boolean forms
+# above therefore do not apply to it (`!`, `&&`, `||` and a bare `if c then`
+# were emitted against `BitVec 1` values, which does not elaborate). These
+# use BitVec's own operators and compare a 1-bit value against 1 directly,
+# rather than converting through `BV.BVToBool`.
+_BV_LEAN_OP: dict[str, Callable] = {
+    "Not": lambda a: f"(fun i j => ~~~({a[0]} i j))",
+    "And": lambda a: f"(fun i j => ({a[0]} i j) &&& ({a[1]} i j))",
+    "Or": lambda a: f"(fun i j => ({a[0]} i j) ||| ({a[1]} i j))",
+    "Xor": lambda a: f"(fun i j => ({a[0]} i j) ^^^ ({a[1]} i j))",
+    "Ite": lambda a: f"(if {a[0]} 0 0 = 1 then {a[1]} else {a[2]})",
+    "Eq": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0)",
+    "Ne": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1)",
+}
+
+
+def _is_bv_itype(itype) -> bool:
+    """True for an op drawn from the BV theory (PyO3 names them `BV_*`)."""
+    return type(itype).__name__.startswith("BV_")
+
+
+def _op_table(itype) -> dict:
+    """The matrix-form emitter table for this op's theory."""
+    if _is_bv_itype(itype) and itype_name(itype) in _BV_LEAN_OP:
+        return _BV_LEAN_OP
+    return _LEAN_OP
+
+
+def _scalar_op_table(itype) -> dict:
+    """The scalar-form emitter table for this op's theory."""
+    if _is_bv_itype(itype) and itype_name(itype) in _BV_SCALAR_OP:
+        return _BV_SCALAR_OP
+    return _SCALAR_OP
+
+
+
 _SCALAR_OP: dict[str, Callable] = {
     "Not": lambda a: f"(!{a[0]})",
     "And": lambda a: f"({a[0]} && {a[1]})",
@@ -105,6 +141,18 @@ _SCALAR_OP: dict[str, Callable] = {
     "Id": lambda a: a[0],
     "TensorGet": lambda a: a[0],
     "ToUnsigned": lambda a: f"(Int.toNat {a[0]})",
+}
+
+
+# Scalar-encoding counterpart of `_BV_LEAN_OP`, on bare BitVec values.
+_BV_SCALAR_OP: dict[str, Callable] = {
+    "Not": lambda a: f"(~~~{a[0]})",
+    "And": lambda a: f"({a[0]} &&& {a[1]})",
+    "Or": lambda a: f"({a[0]} ||| {a[1]})",
+    "Xor": lambda a: f"({a[0]} ^^^ {a[1]})",
+    "Ite": lambda a: f"(if {a[0]} = 1 then {a[1]} else {a[2]})",
+    "Eq": lambda a: f"(if {a[0]} = {a[1]} then 1 else 0)",
+    "Ne": lambda a: f"(if {a[0]} = {a[1]} then 0 else 1)",
 }
 
 
@@ -145,6 +193,20 @@ def _check_argmax_output(output_shape: "list[int] | None") -> None:
             "but argmax yields a single flat index (torch.argmax semantics); "
             "declare a [1, 1] output wire"
         )
+
+
+def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
+    """`wire_expr` with this term's scalar-bound reads lifted to 1x1 matrices.
+
+    In the scalar encoding a 1x1 wire is bound to a bare `Bool`/`Int`, but
+    the matrix-form emitters apply their operands to `0 0`. Wrapping as
+    `fun _ _ => x` makes that reduce back to `x` and typecheck.
+    """
+    lifted = dict(wire_expr)
+    for w in term.read:
+        if _is_scalar_wire(w):
+            lifted[w.id] = f"(fun _ _ => {wire_expr[w.id]})"
+    return lifted
 
 
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:
@@ -214,10 +276,11 @@ def _translate_terms(
         elif name == "Linear":
             expr = _linear_expr(term, wire_expr)
         else:
-            if name not in _LEAN_OP:
+            table = _op_table(term.itype)
+            if name not in table:
                 raise ValueError(f"No Lean expression mapping for: {name}")
             input_exprs = [wire_expr[w.id] for w in term.read]
-            expr = _LEAN_OP[name](input_exprs)
+            expr = table[name](input_exprs)
 
         # Each term writes exactly one wire
         write_wire = term.write[0]
@@ -300,10 +363,18 @@ def _translate_terms_scalar(
     """
     term_list = list(terms)
     if not term_list:
-        out_exprs = [input_bindings.get(w.id) for w in block_outputs]
-        if all(e is not None for e in out_exprs):
-            return f"  {_build_tuple(out_exprs)}"
-        return "sorry /- no terms -/"
+        # Same flattening as the main return below: the codomain is
+        # per-element, so pass through the input wires' flat slots.
+        slots = dict(flat_slots or {})
+        passthrough: list[str] = []
+        for w in block_outputs:
+            if w.id in slots:
+                passthrough.extend(slots[w.id])
+            elif w.id in input_bindings:
+                passthrough.append(input_bindings[w.id])
+            else:
+                return "sorry /- no terms -/"
+        return f"  {_build_tuple(passthrough)}"
 
     wire_expr: dict[int, str] = dict(input_bindings)
     flat_slots = dict(flat_slots or {})
@@ -333,15 +404,27 @@ def _translate_terms_scalar(
                 )
                 expr = f"({mat_expr} 0 0)" if _is_scalar_wire(write_wire) else mat_expr
         elif name == "Linear":
-            expr = _linear_expr(term, wire_expr)
-        elif _is_scalar_wire(write_wire) and name in _SCALAR_OP:
+            # `matVecAffine` consumes a `Mat t n batch` and yields a
+            # `Mat t out batch`, but a 1x1 wire is bound to a bare scalar
+            # here and ascribed one. Lift the operand and take `0 0` off
+            # the result, as the Argmax branch above does.
+            expr = _linear_expr(term, _lift_scalar_reads(term, wire_expr))
+            if _is_scalar_wire(write_wire):
+                expr = f"({expr} 0 0)"
+        elif _is_scalar_wire(write_wire) and name in _scalar_op_table(term.itype):
             input_exprs = [wire_expr[w.id] for w in term.read]
-            expr = _SCALAR_OP[name](input_exprs)
+            expr = _scalar_op_table(term.itype)[name](input_exprs)
         else:
-            if name not in _LEAN_OP:
+            table = _op_table(term.itype)
+            if name not in table:
                 raise ValueError(f"No Lean expression mapping for: {name}")
-            input_exprs = [wire_expr[w.id] for w in term.read]
-            expr = _LEAN_OP[name](input_exprs)
+            # `_LEAN_OP` holds the matrix forms, which apply operands to
+            # `0 0`. Scalar-bound reads must be lifted first: a matrix
+            # `Ite` with a scalar Bool condition emitted
+            # `if <Bool> 0 0 then ...`, which does not elaborate.
+            lifted = _lift_scalar_reads(term, wire_expr)
+            input_exprs = [lifted[w.id] for w in term.read]
+            expr = table[name](input_exprs)
 
         wire_expr[write_wire.id] = var
         # Track flat scalar slots for the written wire so downstream Argmax
@@ -355,7 +438,13 @@ def _translate_terms_scalar(
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
-    out_exprs = [wire_expr[w.id] for w in block_outputs]
+    # The codomain is `_product_type_scalar`: one component per *element* of
+    # each output wire. Return the flat slots rather than the matrices the
+    # terms built -- `flat_slots` already carries the per-element accessors
+    # for every wire written above, and for the input groups passed in.
+    out_exprs: list[str] = []
+    for w in block_outputs:
+        out_exprs.extend(flat_slots.get(w.id, [wire_expr[w.id]]))
     result_line = f"  {_build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])
