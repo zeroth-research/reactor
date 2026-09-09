@@ -15,7 +15,6 @@ from zrth.lean.common import (
     _constant_expr,
     itype_name,
     is_constant_name,
-    _accessor,
     dtype_to_lean_type,
     linear_list_literals,
     _is_scalar_wire,
@@ -145,6 +144,20 @@ def _check_argmax_output(output_shape: "list[int] | None") -> None:
             "but argmax yields a single flat index (torch.argmax semantics); "
             "declare a [1, 1] output wire"
         )
+
+
+def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
+    """`wire_expr` with this term's scalar-bound reads lifted to 1x1 matrices.
+
+    In the scalar encoding a 1x1 wire is bound to a bare `Bool`/`Int`, but
+    the matrix-form emitters apply their operands to `0 0`. Wrapping as
+    `fun _ _ => x` makes that reduce back to `x` and typecheck.
+    """
+    lifted = dict(wire_expr)
+    for w in term.read:
+        if _is_scalar_wire(w):
+            lifted[w.id] = f"(fun _ _ => {wire_expr[w.id]})"
+    return lifted
 
 
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:
@@ -300,10 +313,18 @@ def _translate_terms_scalar(
     """
     term_list = list(terms)
     if not term_list:
-        out_exprs = [input_bindings.get(w.id) for w in block_outputs]
-        if all(e is not None for e in out_exprs):
-            return f"  {_build_tuple(out_exprs)}"
-        return "sorry /- no terms -/"
+        # Same flattening as the main return below: the codomain is
+        # per-element, so pass through the input wires' flat slots.
+        slots = dict(flat_slots or {})
+        passthrough: list[str] = []
+        for w in block_outputs:
+            if w.id in slots:
+                passthrough.extend(slots[w.id])
+            elif w.id in input_bindings:
+                passthrough.append(input_bindings[w.id])
+            else:
+                return "sorry /- no terms -/"
+        return f"  {_build_tuple(passthrough)}"
 
     wire_expr: dict[int, str] = dict(input_bindings)
     flat_slots = dict(flat_slots or {})
@@ -333,14 +354,25 @@ def _translate_terms_scalar(
                 )
                 expr = f"({mat_expr} 0 0)" if _is_scalar_wire(write_wire) else mat_expr
         elif name == "Linear":
-            expr = _linear_expr(term, wire_expr)
+            # `matVecAffine` consumes a `Mat t n batch` and yields a
+            # `Mat t out batch`, but a 1x1 wire is bound to a bare scalar
+            # here and ascribed one. Lift the operand and take `0 0` off
+            # the result, as the Argmax branch above does.
+            expr = _linear_expr(term, _lift_scalar_reads(term, wire_expr))
+            if _is_scalar_wire(write_wire):
+                expr = f"({expr} 0 0)"
         elif _is_scalar_wire(write_wire) and name in _SCALAR_OP:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = _SCALAR_OP[name](input_exprs)
         else:
             if name not in _LEAN_OP:
                 raise ValueError(f"No Lean expression mapping for: {name}")
-            input_exprs = [wire_expr[w.id] for w in term.read]
+            # `_LEAN_OP` holds the matrix forms, which apply operands to
+            # `0 0`. Scalar-bound reads must be lifted first: a matrix
+            # `Ite` with a scalar Bool condition emitted
+            # `if <Bool> 0 0 then ...`, which does not elaborate.
+            lifted = _lift_scalar_reads(term, wire_expr)
+            input_exprs = [lifted[w.id] for w in term.read]
             expr = _LEAN_OP[name](input_exprs)
 
         wire_expr[write_wire.id] = var
@@ -355,7 +387,13 @@ def _translate_terms_scalar(
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
-    out_exprs = [wire_expr[w.id] for w in block_outputs]
+    # The codomain is `_product_type_scalar`: one component per *element* of
+    # each output wire. Return the flat slots rather than the matrices the
+    # terms built -- `flat_slots` already carries the per-element accessors
+    # for every wire written above, and for the input groups passed in.
+    out_exprs: list[str] = []
+    for w in block_outputs:
+        out_exprs.extend(flat_slots.get(w.id, [wire_expr[w.id]]))
     result_line = f"  {_build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])
