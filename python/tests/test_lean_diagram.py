@@ -433,3 +433,133 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
     assert ite, "no Ite emitted"
     for line in ite:
         assert "(fun _ _ =>" in line, f"scalar operand not lifted: {line.strip()}"
+
+
+# ──────────────────────────────────────────────────────────────
+# FBK state layout
+# ──────────────────────────────────────────────────────────────
+
+
+def _six_wide_module():
+    """A single 6-element ctrl wire: state slots and wires diverge."""
+    s = Var(Int([6, 1]))
+    init = [Term(LIA.Int(torch.zeros(6, 1, dtype=torch.int64)), [X(s)])]
+    update = [Term(LIA.Id(), [X(s)], [s])]
+    return Module.sequential([s], init, update)
+
+
+def test_fbk_state_has_one_slot_per_element():
+    """`ScalarRel.effect_i` takes a flattened state, so FBK must match it.
+
+    FBK's `TypeMap` gave one slot per *wire* holding the whole `Mat`, which
+    could not be passed to `ScalarRel.effect_i` at all.
+    """
+    lean = ModuleToLean4(_six_wide_module()).to_lean_bool_rel()
+    assert "| _ => Int" in lean, f"TypeMap is not per element:\n{lean[:400]}"
+    assert "(Mat Int 6 1)" not in lean.split("abbrev StateType")[0], (
+        "TypeMap still holds a whole matrix"
+    )
+    # six slots, and the tuple passed to ScalarRel has six components
+    assert "abbrev var_5 := state 5" in lean
+    assert "((state 0), ((state 1), ((state 2), ((state 3), ((state 4), (state 5))))))" in lean
+
+
+def test_fbk_reconstructs_a_multi_element_wire():
+    """With a per-element state, a term needing the whole Mat rebuilds it."""
+    lean = ModuleToLean4(_six_wide_module()).to_lean_bool_rel()
+    assert "let _s0 : (Mat Int 6 1) :=" in lean
+    assert "match i, j with" in lean, "reconstruction should use a match"
+
+
+def test_scalar_translator_flattening_is_opt_in():
+    """`rel.py`/`fbk.py` type `effect_i` as the wire's `Mat`, so they opt out.
+
+    Making the flattening unconditional in `_translate_terms_scalar` broke
+    both, and nothing compiled them to notice.
+    """
+    from zrth.lean.native import _translate_terms_scalar
+    import inspect
+
+    sig = inspect.signature(_translate_terms_scalar)
+    assert sig.parameters["flatten_outputs"].default is False, (
+        "flattening must be opt-in so the matrix-typed callers keep working"
+    )
+
+
+# ──────────────────────────────────────────────────────────────
+# Reconstruction lets follow what the body uses
+# ──────────────────────────────────────────────────────────────
+
+
+def _split_effects(lean):
+    """Map `effect_i` -> the reconstruction lets prepended to its body."""
+    out, cur = {}, None
+    for line in lean.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("abbrev effect_") or stripped.startswith(
+            "@[simp] def effect_"
+        ):
+            cur = stripped.split("effect_")[1].split()[0].rstrip(":")
+            out[cur] = []
+        elif cur is not None and stripped.startswith("let _"):
+            out[cur].append(stripped)
+        elif cur is not None and stripped.startswith(("abbrev ", "theorem ", "def ")):
+            cur = None
+    return out
+
+
+def _mixed_dependency_module():
+    """Two effects: one reads only state, the other a multi-element extl."""
+    s1 = Var(Int([1, 1]))
+    s2 = Var(Int([1, 1]))
+    e = Var(Int([3, 1]))
+    init = [
+        Term(LIA.Int(torch.tensor([[0]])), [X(s1)]),
+        Term(LIA.Int(torch.tensor([[0]])), [X(s2)]),
+    ]
+    update = [
+        Term(LIA.Id(), [X(s1)], [s1]),
+        Term(
+            LIA.Linear(torch.tensor([[1, 0, 0]]), torch.tensor([[0]])),
+            [X(s2)],
+            [e],
+        ),
+    ]
+    return Module.sequential([s1, s2, e], init, update)
+
+
+def test_effect_gets_only_the_reconstructions_it_uses():
+    """An unused let mentions its parameter, which auto-binding then adds.
+
+    The call sites are built from what the body consumes (`_effect_args`),
+    so an extra parameter means every call under-applies. `effect_0` here
+    reads only `state`, but got the `extl_l` and `extl_n` reconstructions.
+    """
+    lean = ModuleToLean4(_mixed_dependency_module()).to_lean_bool_rel()
+    effects = _split_effects(lean)
+    assert effects, f"no effects found in:\n{lean[:400]}"
+    assert effects["0"] == [], (
+        f"effect_0 depends only on state but carries: {effects['0']}"
+    )
+    assert any("extl_l" in l for l in effects["1"]), (
+        f"effect_1 reads a multi-element extl_l but has: {effects['1']}"
+    )
+    assert not any("extl_n" in l for l in effects["1"]), (
+        f"effect_1 does not read extl_n but has: {effects['1']}"
+    )
+
+
+def test_recon_filter_keeps_order_and_transitive_uses():
+    """The filter is order-preserving and reaches a fixed point."""
+    from zrth.lean.translate._shared import _needed_recon
+
+    lets = [
+        "  let _m0 : T := f extl_l",
+        "  let _m1 : T := g extl_n",
+        "  let _m2 : T := h _m0",
+    ]
+    assert _needed_recon(lets, "  x := _m1") == [lets[1]]
+    # _m2 pulls in _m0 transitively, and order is preserved
+    assert _needed_recon(lets, "  x := _m2") == [lets[0], lets[2]]
+    assert _needed_recon(lets, "  x := 0") == []
+    assert _needed_recon([], "  x := 0") == []
