@@ -33,6 +33,9 @@ AI inference requirements
   ``pip install zrth[ai]``.
 * **Local LLM (Ollama, vLLM, …)**: install ``pip install zrth[ai-local]``
   and provide ``--base-url`` pointing to an OpenAI-compatible endpoint.
+* **Hosted OpenAI-compatible provider (OpenRouter, …)**: as above, plus set
+  ``OPENROUTER_API_KEY`` (or ``OPENAI_API_KEY``), e.g.
+  ``--base-url https://openrouter.ai/api/v1 --model anthropic/claude-haiku-4.5``.
 
 Module file format
 ------------------
@@ -40,7 +43,7 @@ The file must expose a callable named ``module`` (override with ``-d``) that
 returns a :class:`zrth.Module`::
 
     # mymodule.py
-    from zrth import Wire, Module, DType as dt
+    from zrth import Module, Int, Var, X
     from zrth.analyzer import convert_method
 
     def init():
@@ -53,67 +56,25 @@ returns a :class:`zrth.Module`::
         return x
 
     def module() -> Module:
-        state = (Wire(dt.Int([1])), Wire(dt.Int([1])))
-        init_terms   = convert_method(init,   {},               [state[1]])
-        update_terms = convert_method(update, {"old_x": state}, [state[1]])
-        return Module.sequential(init_terms, update_terms, obs=[state])
+        state = Var(Int([1, 1]))
+        init_terms   = convert_method(init,   {},               [X(state)])
+        update_terms = convert_method(update, {"old_x": state}, [X(state)])
+        return Module.sequential([state], init_terms, update_terms)
 """
 
 import argparse
 from pathlib import Path
 
-from .cert import CertificateData
-from .project import create_project, load_module_from_file, write_certificate_lean
+from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
+from .project import (
+    create_project,
+    generate_standalone_cert_lean,
+    load_module_from_file,
+    write_certificate_lean,
+    write_data_lean,
+)
+from .translate import ModuleToLean4
 
-
-def _smt_predicates_to_lean(cert_data: CertificateData, module) -> CertificateData:
-    """Parse SMT-LIB strings on `cert_data` (prp / init_pre / update_pre) and
-    translate them to Lean expression strings over the appropriate parameter.
-
-    SMT variable naming:
-      * Property (`prp`): references `s0..sN-1` — the ctrl-next components.
-      * Preconditions (`init_pre`, `update_pre`): reference `e0..eM-1`
-        (extl-next inputs) and `el0..elM-1` (extl-latched inputs). The
-        Lean parameter is a pair `e : Extl_latched × Extl_next`, so SMT
-        `eK` → Lean `e.2.<acc_k> [0 0]`, `elK` → `e.1.<acc_k> [0 0]`.
-    """
-    # Local imports keep cvc5 off the critical path when inference is unused.
-    import cvc5
-
-    from .smt_module import ModuleSMT
-    from .smt_prompt import CegarPromptEnv, parse_predicate
-    from .smt_to_lean import smt_to_lean, smt_to_lean_nat
-
-    tm = cvc5.TermManager()
-    msmt = ModuleSMT(tm=tm, module=module)
-    env = CegarPromptEnv(msmt)
-
-    def translate(smt_src: str | None, mode: str) -> str | None:
-        if not isinstance(smt_src, str):
-            return smt_src
-        term = parse_predicate(env, smt_src)
-        if mode == "property" or mode == "invariant":
-            return smt_to_lean(term, msmt.ctrl_next, param_name="s")
-        if mode == "ranking":
-            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s")
-        # preconditions
-        return smt_to_lean(
-            term,
-            state_wires=[],
-            param_name="e",
-            extra=[
-                ("e", "e.2", msmt.extl_next),
-                ("el", "e.1", msmt.extl_latched),
-            ],
-        )
-
-    return CertificateData(
-        prp=translate(cert_data.prp, "property"),
-        init_pre=translate(cert_data.init_pre, "pre"),
-        update_pre=translate(cert_data.update_pre, "pre"),
-        inv=translate(cert_data.inv, "invariant"),
-        ranking=translate(cert_data.ranking, "ranking"),
-    )
 
 
 _EPILOG = """\
@@ -144,7 +105,11 @@ def main():
     )
     parser.add_argument(
         "module_file",
-        help="Path to a Python file defining the module (must contain a callable that returns a Module).",
+        nargs="?",
+        help=(
+            "Path to a Python file defining the module (must contain a callable that "
+            "returns a Module). Optional when --hammer-file is used alone."
+        ),
     )
     parser.add_argument(
         "-o",
@@ -238,10 +203,40 @@ def main():
     parser.add_argument(
         "--base-url",
         default=None,
-        help="OpenAI-compatible base URL for local LLMs, e.g. http://localhost:11434/v1 for Ollama.",
+        help=(
+            "OpenAI-compatible base URL, e.g. http://localhost:11434/v1 for Ollama "
+            "or https://openrouter.ai/api/v1 for OpenRouter. Hosted providers read "
+            "the API key from OPENROUTER_API_KEY or OPENAI_API_KEY; local servers "
+            "need no key."
+        ),
+    )
+    parser.add_argument(
+        "--cert-file",
+        default=None,
+        help=(
+            "Write a standalone, self-contained certificate .lean file to this path "
+            "instead of creating a full project.  The file inlines init/update and "
+            "imports zeroth_hammer from ZerothHammer."
+        ),
+    )
+    parser.add_argument(
+        "--hammer-file",
+        default=None,
+        help="Write a standalone ZerothHammer.lean to this path.",
     )
 
     args = parser.parse_args()
+
+    # --hammer-file: generate ZerothHammer.lean and exit (no module needed)
+    if args.hammer_file:
+        out = Path(args.hammer_file)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(generate_zeroth_hammer_lean())
+        print(f"Wrote {out}")
+        return
+
+    if not args.module_file:
+        parser.error("module_file is required (unless --hammer-file is used alone)")
 
     if args.infer and not args.property:
         parser.error("--infer requires --property")
@@ -265,7 +260,44 @@ def main():
     # its own cvc5 context.
     project_cert_data = cert_data
     if cert_data is not None:
-        project_cert_data = _smt_predicates_to_lean(cert_data, module)
+        project_cert_data = smt_predicates_to_lean(cert_data, module)
+
+    # --cert-file: generate a standalone, self-contained certificate file and exit
+    if args.cert_file:
+        out = Path(args.cert_file)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        lean_src = generate_standalone_cert_lean(module, project_cert_data)
+        out.write_text(lean_src)
+        print(f"Wrote standalone certificate: {out}")
+        m2l = ModuleToLean4(module)
+        mat_rel_out = out.with_stem(out.stem + "Rel")
+        mat_rel_out.write_text(f"""\
+/- Relational encoding (matrix domain) for reactive module `{out.stem}` -/
+import Core.Basic
+import {out.stem}
+
+{m2l.to_lean_mat_rel()}
+""")
+        print(f"Wrote matrix-domain relational encoding: {mat_rel_out}")
+        scalar_out = out.with_stem(out.stem + "Scalar")
+        scalar_out.write_text(f"""\
+/- Scalar encoding for reactive module `{out.stem}` -/
+import Core.Basic
+import {out.stem}
+
+{m2l.to_lean_scalar()}
+""")
+        print(f"Wrote scalar encoding: {scalar_out}")
+        rel_out = out.with_stem(out.stem + "ScalarRel")
+        rel_out.write_text(f"""\
+/- Relational encoding for reactive module `{out.stem}` -/
+import Core.Basic
+import {out.stem}Scalar
+
+{m2l.to_lean_rel()}
+""")
+        print(f"Wrote relational encoding: {rel_out}")
+        return
 
     print(".. Generating lean code")
     project_dir = create_project(
@@ -274,10 +306,10 @@ def main():
         project_name=args.project_name,
         executable=args.executable,
         cert_data=project_cert_data,
+        module_file=args.module_file,
     )
 
-    # FIXME: this is brittle, we rely on hard-coded staff in `create_project`
-    lean_code = project_dir / f"{args.project_name}.lean"
+    lean_code = project_dir / "System" / "System.lean"
 
     print(".. Doing TA2Magic")
     if args.infer:
@@ -304,25 +336,9 @@ def main():
         project_cert_data.inv = cert_data.inv
         project_cert_data.ranking = cert_data.ranking
 
-        data_file = project_dir / f"{args.project_name}Data.lean"
-        data_lines = [
-            f"/- Inferred certificate data for `{args.project_name}` -/",
-            f"import {args.project_name}.{args.project_name}",
-            "",
-        ]
-        if isinstance(cert_data.prp, str):
-            data_lines.append(f"-- Property: {cert_data.prp}")
-            data_lines.append("")
-        for field in ("inv", "init_pre", "update_pre", "ranking"):
-            value = getattr(cert_data, field)
-            if isinstance(value, str):
-                data_lines.append(f"def {field} := {value}")
-                data_lines.append("")
-        data_file.write_text("\n".join(data_lines) + "\n")
-        print(f"Wrote {data_file}")
-
-    # Write certificate once — after inference if it ran, with placeholders otherwise.
-    write_certificate_lean(project_dir, args.project_name, module, project_cert_data)
+    # After inference, rewrite only System/Data.lean (Certificate.lean is stable).
+    if args.infer:
+        write_data_lean(project_dir, args.project_name, module, project_cert_data)
 
     print(f"\nProject ready at: {project_dir}")
 
