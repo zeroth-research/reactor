@@ -68,6 +68,11 @@ class Features:
     # what makes a neural certificate expensive.
     n_branch: int = 0
 
+    # Distinct branch *conditions*. `split_ifs` splits once per condition
+    # and reuses the hypothesis for repeats, so this, not `n_branch`, is
+    # what its fan-out costs. Falls back to `n_branch` without cvc5.
+    n_conditions: int = 0
+
     has_ite: bool = False
     has_and: bool = False
     has_or: bool = False
@@ -231,8 +236,15 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
     return out if len(out) <= MAX_ENUMERABLE_SLOTS else []
 
 
-def features_for(ctx, pred_text: str) -> Features:
-    """Read the shape of `ctx`'s module and its certificate predicates."""
+def features_for(ctx, pred_text: str, facts=None) -> Features:
+    """Read the shape of `ctx`'s module and its certificate predicates.
+
+    `facts` is `smt_query.PredicateFacts` when the predicates came from
+    SMT-LIB and cvc5 could parse them: the same questions answered against
+    the terms rather than against the printed Lean. It is `None` for
+    predicates compiled from Python IR, and then everything below falls back
+    to reading the text, exactly as it did before.
+    """
     f = Features()
 
     for w in (*ctx.ctrl_next, *ctx.extl_next):
@@ -258,9 +270,24 @@ def features_for(ctx, pred_text: str) -> Features:
     f.has_eq = " = " in pred_text
     f.has_floor = "⌊" in pred_text
     f.nonlinear = is_nonlinear(pred_text)
-    f.n_branch = (
+    text_branch = (
         pred_text.count("(max ") + pred_text.count("(min ") + pred_text.count("if ")
     )
+    f.n_branch = text_branch
+    if facts is not None:
+        # Exact where the text is a guess. `n_branch` takes the larger of the
+        # two: the terms cover only the fields that came from SMT-LIB, so a
+        # predicate compiled from Python IR alongside them would otherwise go
+        # uncounted, and over-counting only ever buys a bigger budget.
+        f.nonlinear = facts.nonlinear
+        f.has_and = f.has_and or facts.has_and
+        f.has_or = f.has_or or facts.has_or
+        f.has_eq = f.has_eq or facts.has_eq
+        f.has_ite = f.has_ite or facts.has_ite
+        f.n_branch = max(text_branch, facts.n_branch)
+        f.n_conditions = facts.n_conditions
+    else:
+        f.n_conditions = text_branch
     if f.finite_state:
         f.two_valued = _two_valued_slots(ctx)
     return f
@@ -278,6 +305,10 @@ class TacticPlan:
     max_rec_depth: int
     max_heartbeats: int
     features: Features
+    # `smt_query.SolverHints` when `--smt-tactics=cvc5` ran and cvc5 had
+    # something to add; `None` otherwise, and every property below degrades
+    # to the tactic the plan would have emitted without it.
+    hints: object | None = None
 
     @property
     def prep_tactic(self) -> str:
@@ -317,6 +348,48 @@ class TacticPlan:
         steps.append(f"try simp only [{names}] at *")
         return " <;>\n     ".join(steps)
 
+    @property
+    def facts_tactic(self) -> str:
+        """Discharge the branch conditions the invariant already settles.
+
+        `split_ifs` fans a goal out into 2^k over k conditions and each
+        branch then pays for the whole prep chain. A condition cvc5 decided
+        under `inv` need not be split at all: prove it once and rewrite the
+        `if` away. Every step is wrapped in `try`, so a `have` the tactics
+        cannot reproduce -- cvc5 is the stronger prover -- costs nothing
+        and leaves the `split_ifs` route intact.
+
+        The condition is rendered by the same walker that printed the
+        definition, so `if_pos` matches on the nose -- but only until
+        something rewrites the goal. Hence the call site: after `simp_defs`,
+        which unfolds `inv` so the `have` is provable at all, and before
+        `simp_mat`, which is where the arithmetic starts moving.
+        """
+        determined = getattr(self.hints, "determined", None)
+        if not determined:
+            return "skip"
+        steps = []
+        for k, (text, value) in enumerate(determined):
+            prop = text if value else f"¬ ({text})"
+            lemma = "if_pos" if value else "if_neg"
+            steps.append(
+                f"try (have hf{k} : {prop} := by "
+                f"(first | omega | linarith | norm_num); "
+                f"try simp only [{lemma} hf{k}])"
+            )
+        return ";\n     ".join(steps)
+
+    @property
+    def clear_tactic(self) -> str:
+        """Drop a precondition no refutation needed, before anything runs.
+
+        `simp_all` is superlinear in the hypothesis count and `nlinarith`
+        multiplies pairs of them, so an unused hypothesis is not free.
+        """
+        if getattr(self.hints, "pre_unused", False):
+            return "try clear hpre"
+        return "skip"
+
     def why(self) -> str:
         """One line per decision, emitted as a comment above the macros."""
         f = self.features
@@ -328,19 +401,23 @@ class TacticPlan:
             f"{', disjunctive' if f.has_or else ''}"
             f"{', nonlinear' if f.nonlinear else ', linear'}"
             f"{', floor' if f.has_floor else ''}"
-            f"{f', {f.n_branch} branch point(s)' if f.n_branch else ''}",
+            f"{f', {f.n_branch} branch point(s)' if f.n_branch else ''}"
+            f"{f' ({f.n_conditions} distinct)' if f.n_conditions != f.n_branch else ''}",
         ]
         if f.two_valued:
             bits.append(
                 f"state is finite and narrow: enumerating "
                 f"{len(f.two_valued)} two-valued element(s) before the closers"
             )
-        return "\n".join(f"-- {b}" for b in bits)
+        out = "\n".join(f"-- {b}" for b in bits)
+        if self.hints is not None and self.hints.any:
+            out += "\n" + self.hints.why()
+        return out
 
 
-def plan_for(ctx, pred_text: str) -> TacticPlan:
+def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
     """Build the tactic plan for this module's proof obligations."""
-    f = features_for(ctx, pred_text)
+    f = features_for(ctx, pred_text, facts)
 
     # ── prep: canonicalise the goal before anything tries to close it ──
     prep: list[str] = []
@@ -391,6 +468,17 @@ def plan_for(ctx, pred_text: str) -> TacticPlan:
     # suggests. Give the branch every prover the plan already carries.
     per_conjunct = [c for c in ("omega", "linarith", "nlinarith") if c in closers]
     closers.append("(constructor <;> first | " + " | ".join(per_conjunct) + ")")
+
+    if getattr(hints, "nlinarith_hints", None):
+        # cvc5's refutation multiplied these; naming the squares up front
+        # is the difference between `nlinarith` checking a certificate and
+        # searching for one. It goes *before* the bare `nlinarith` and adds
+        # to the list rather than replacing anything -- a `first` chain
+        # costs nothing for the alternatives it never reaches, so there is
+        # no case for taking a closer away on the solver's say-so.
+        hint_list = ", ".join(hints.nlinarith_hints)
+        idx = closers.index("nlinarith") if "nlinarith" in closers else len(closers)
+        closers.insert(idx, f"nlinarith [{hint_list}]")
 
     closers.append("tauto")
     # Re-simplify with the hypotheses, then retry the provers this state can
@@ -452,4 +540,5 @@ def plan_for(ctx, pred_text: str) -> TacticPlan:
         max_rec_depth=max_rec_depth,
         max_heartbeats=max_heartbeats,
         features=f,
+        hints=hints,
     )
