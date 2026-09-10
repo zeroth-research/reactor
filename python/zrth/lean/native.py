@@ -62,7 +62,6 @@ _LEAN_OP: dict[str, Callable] = {
     "Add": lambda a: f"({a[0]} + {a[1]})",
     "Sub": lambda a: f"({a[0]} - {a[1]})",
     "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Mod": lambda a: f"(fun _ _ => ({a[0]} 0 0 % {a[1]} 0 0))",
     "Neg": lambda a: f"(-{a[0]})",
     "Lt": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 < {a[1]} 0 0))",
     "Le": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≤ {a[1]} 0 0))",
@@ -70,8 +69,8 @@ _LEAN_OP: dict[str, Callable] = {
     "Ge": lambda a: f"(fun _ _ => decide ({a[1]} 0 0 ≤ {a[0]} 0 0))",
     "Eq": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 = {a[1]} 0 0))",
     "Ne": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≠ {a[1]} 0 0))",
-    "Min": lambda a: f"(fun i j => Min.min ({a[0]} i j) ({a[1]} i j))",
-    "Max": lambda a: f"(fun i j => Max.max ({a[0]} i j) ({a[1]} i j))",
+    "Min": lambda a: f"(matMin {a[0]})",
+    "Max": lambda a: f"(matMax {a[0]})",
     "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
     "Id": lambda a: a[0],
     # Linear is handled specially (its A, B are baked into the op, not read
@@ -96,6 +95,8 @@ _BV_LEAN_OP: dict[str, Callable] = {
     "Ite": lambda a: f"(if {a[0]} 0 0 = 1 then {a[1]} else {a[2]})",
     "Eq": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0)",
     "Ne": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1)",
+    "UMod": lambda a: f"(fun i j => BitVec.umod ({a[0]} i j) ({a[1]} i j))",
+    "SMod": lambda a: f"(fun i j => BitVec.smod ({a[0]} i j) ({a[1]} i j))",
 }
 
 
@@ -127,7 +128,6 @@ _SCALAR_OP: dict[str, Callable] = {
     "Add": lambda a: f"({a[0]} + {a[1]})",
     "Sub": lambda a: f"({a[0]} - {a[1]})",
     "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Mod": lambda a: f"({a[0]} % {a[1]})",
     "Neg": lambda a: f"(-{a[0]})",
     "Lt": lambda a: f"(decide ({a[0]} < {a[1]}))",
     "Le": lambda a: f"(decide ({a[0]} ≤ {a[1]}))",
@@ -135,8 +135,6 @@ _SCALAR_OP: dict[str, Callable] = {
     "Ge": lambda a: f"(decide ({a[1]} ≤ {a[0]}))",
     "Eq": lambda a: f"(decide ({a[0]} = {a[1]}))",
     "Ne": lambda a: f"(decide ({a[0]} ≠ {a[1]}))",
-    "Min": lambda a: f"(Min.min {a[0]} {a[1]})",
-    "Max": lambda a: f"(Max.max {a[0]} {a[1]})",
     "MatMul": lambda a: f"({a[0]} * {a[1]})",
     "Id": lambda a: a[0],
     "TensorGet": lambda a: a[0],
@@ -153,6 +151,8 @@ _BV_SCALAR_OP: dict[str, Callable] = {
     "Ite": lambda a: f"(if {a[0]} = 1 then {a[1]} else {a[2]})",
     "Eq": lambda a: f"(if {a[0]} = {a[1]} then 1 else 0)",
     "Ne": lambda a: f"(if {a[0]} = {a[1]} then 0 else 1)",
+    "UMod": lambda a: f"(BitVec.umod {a[0]} {a[1]})",
+    "SMod": lambda a: f"(BitVec.smod {a[0]} {a[1]})",
 }
 
 
