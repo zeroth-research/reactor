@@ -114,7 +114,12 @@ def _walk(
         v = t.getIntegerValue()
         return f"({v} : Int)" if v < 0 else str(v)
     if k == Kind.CONST_RATIONAL:
-        return str(t)
+        # `str(t)` is SMT-LIB, not Lean: cvc5 prints 0.5 as `(/ 1 2)` and
+        # -0.25 as `(/ (- 1) 4)`. Build the literal from the exact value.
+        q = t.getRealValue()
+        if q.denominator == 1:
+            return f"({q.numerator} : Real)"
+        return f"(({q.numerator} : Real) / {q.denominator})"
     if k == Kind.CONST_BITVECTOR:
         width = t.getSort().getBitVectorSize()
         value = int(t.getBitVectorValue(10))
@@ -136,6 +141,11 @@ def _walk(
     if k in _INFIX_LOGIC:
         parts = [recur(c) for c in t]
         return "(" + _INFIX_LOGIC[k].join(parts) + ")"
+
+    if k == Kind.IMPLIES:
+        # cvc5 keeps `=>` variadic and right-associated.
+        parts = [recur(c) for c in t]
+        return "(" + " → ".join(parts) + ")"
 
     if k in _INFIX_ARITH:
         parts = [recur(c) for c in t]
