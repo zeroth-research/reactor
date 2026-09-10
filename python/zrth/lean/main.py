@@ -252,6 +252,7 @@ def main():
         ),
     )
 
+
     args = parser.parse_args()
 
     # --fbk-proveit takes over the whole certification route, so anything it
@@ -308,7 +309,14 @@ def main():
     module = load_module_from_file(args.module_file, module_def=args.module_def)
     print(module)
 
+    # The hints have to come first: a settled branch condition is spliced
+    # into a tactic in expanded form, so the definition it has to match must
+    # be printed unshared.
+    hints = None
+
     project_cert_data = cert_data
+    if cert_data is not None:
+        project_cert_data.hints = hints
 
     # --cert-file: generate a standalone, self-contained certificate file and exit
     if args.cert_file:

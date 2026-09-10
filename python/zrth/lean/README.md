@@ -4,9 +4,6 @@ This package translates Python reactive modules (an SSA-style IR) into Lean 4
 source files that encode the module and carry machine-checked proofs of
 safety/liveness properties.
 
-Known defects in this pipeline, fixed and open, are catalogued in
-[KNOWN_ISSUES.md](KNOWN_ISSUES.md).
-
 ---
 
 ## Reactive Module IR

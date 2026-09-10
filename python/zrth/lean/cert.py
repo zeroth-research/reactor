@@ -28,6 +28,10 @@ class CertificateData:
     update_pre: Expr | str | None = None
     ranking: Expr | str | None = None
 
+    facts: "object | None" = None
+
+    hints: "object | None" = None
+
 
 def _cert_def_lines(
     ctx: LeanContext,
@@ -215,7 +219,12 @@ def generate_certificate_lean(
     if const_list:
         all_defs += f", {const_list}"
 
-    plan = plan_for(ctx, _predicate_text(ctx, cert_data))
+    plan = plan_for(
+        ctx,
+        _predicate_text(ctx, cert_data),
+        facts=cert_data.facts,
+        hints=cert_data.hints,
+    )
 
     return render(
         "project/Certificate/Certificate.lean.j2",
