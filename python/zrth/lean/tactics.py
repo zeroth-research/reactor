@@ -377,7 +377,12 @@ class TacticPlan:
                 f"(first | omega | linarith | norm_num); "
                 f"try simp only [{lemma} hf{k}])"
             )
-        return ";\n     ".join(steps)
+        # One line, whatever the length. A `;`-separated tactic sequence
+        # inside a `(tactic| ...)` quotation does not survive being broken
+        # across lines: Lean reports `unexpected token 'try'; expected ')'`
+        # at the end of the first one. Only shows up from two conditions on,
+        # which is why a single-condition case built happily.
+        return "; ".join(steps)
 
     @property
     def clear_tactic(self) -> str:
@@ -385,6 +390,10 @@ class TacticPlan:
 
         `simp_all` is superlinear in the hypothesis count and `nlinarith`
         multiplies pairs of them, so an unused hypothesis is not free.
+
+        `step_inv` and `hrank` only: both bind `update_pre`, which is what
+        the cores were taken over. `init_inv`'s `hpre` is `init_pre`, a
+        different predicate that nothing here has looked at.
         """
         if getattr(self.hints, "pre_unused", False):
             return "try clear hpre"
