@@ -187,8 +187,8 @@ output tuple.
 
 ```lean
 @[simp] def init (extl_n: (Mat (BitVec 1) 1 1)) : (Mat (BitVec 1) 1 1) × (Mat (BitVec 1) 1 1) :=
-  let x0 : (Mat (BitVec 1) 1 1) := (fun _ _ => (BitVec.ofNat 1 0))
-  let x1 : (Mat (BitVec 1) 1 1) := (fun _ _ => (BitVec.ofNat 1 0))
+  let x0 : (Mat (BitVec 1) 1 1) := (fun _ _ => (BitVec.ofInt 1 (0)))
+  let x1 : (Mat (BitVec 1) 1 1) := (fun _ _ => (BitVec.ofInt 1 (0)))
   (x0, x1)
 
 @[simp] def update (ctrl: (Mat (BitVec 1) 1 1) × (Mat (BitVec 1) 1 1)) (extl_l: (Mat (BitVec 1) 1 1)) (extl_n: (Mat (BitVec 1) 1 1)) : (Mat (BitVec 1) 1 1) × (Mat (BitVec 1) 1 1) :=
@@ -224,7 +224,7 @@ namespace Circ
   @Box.destr (Mat (BitVec 1) 1 1)
 
 @[simp] def init_l1 : Box [] [(Mat (BitVec 1) 1 1), (Mat (BitVec 1) 1 1)] :=
-  @Box.const (Mat (BitVec 1) 1 1) (fun _ _ => (BitVec.ofNat 1 0)) ⊗ @Box.const (Mat (BitVec 1) 1 1) (fun _ _ => (BitVec.ofNat 1 0))
+  @Box.const (Mat (BitVec 1) 1 1) (fun _ _ => (BitVec.ofInt 1 (0))) ⊗ @Box.const (Mat (BitVec 1) 1 1) (fun _ _ => (BitVec.ofInt 1 (0)))
 
 @[simp] def init : Box [(Mat (BitVec 1) 1 1)] [(Mat (BitVec 1) 1 1) , (Mat (BitVec 1) 1 1)] :=
   init_l0 ≫ init_l1
@@ -385,6 +385,13 @@ Encoding 4 again, but over bare scalars instead of matrices. Same names
 (`effect_i`, `R_i`, `TransRel`, `init_i`, `Init_i`, `InitCond`), inside
 `namespace ScalarRel`.
 
+Still one `effect_i` per state *variable*, but the state tuple carries one
+component per *element* — so the two counts differ as soon as a variable holds
+more than one. A variable of three elements returns all three, and `R_i`
+compares its run of the tuple: `(new.2.1, new.2.2.1, new.2.2.2)` for a
+3-element second variable, not `new.2`. The example below has one element per
+variable, where the two happen to coincide.
+
 ```lean
 namespace ScalarRel
 
@@ -476,7 +483,7 @@ def update_pre (e : ((Mat (BitVec 1) 1 1)) × ((Mat (BitVec 1) 1 1))) : Prop := 
 def inv (s : (Mat (BitVec 1) 1 1) × (Mat (BitVec 1) 1 1)) : Prop := True
 
 def P : (Mat (BitVec 1) 1 1) × (Mat (BitVec 1) 1 1) → Prop :=
-  fun s => (((s.1 0 0) = (BitVec.ofNat 1 0)) ∧ ((s.2 0 0) = (BitVec.ofNat 1 0)))
+  fun s => (((s.1 0 0) = (BitVec.ofInt 1 (0))) ∧ ((s.2 0 0) = (BitVec.ofInt 1 (0))))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
@@ -502,7 +509,7 @@ becomes:
 
 ```lean
 def ranking : (Mat (BitVec 1) 1 1) × (Mat (BitVec 1) 1 1) → Nat :=
-  fun s => (((if ((s.2 0 0) = (BitVec.ofNat 1 0)) then 1 else 2) : Int)).toNat
+  fun s => (((if ((s.2 0 0) = (BitVec.ofInt 1 (0))) then 1 else 2) : Int)).toNat
 ```
 
 ---

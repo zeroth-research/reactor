@@ -10,11 +10,11 @@ IType operation to its Lean equivalent.
 from __future__ import annotations
 from zrth.lean.common import (
     dtype_shape,
+    _is_scalar_shape,
     ConstantRegistry,
     _constant_expr,
     itype_name,
     is_constant_name,
-    _accessor,
     dtype_to_lean_type,
     linear_list_literals,
     _is_scalar_wire,
@@ -50,21 +50,6 @@ def _build_tuple(exprs: list[str]) -> str:
     return "(" + ", ".join(exprs) + ")"
 
 
-def _append_expr(var1: str, count1: int, var2: str, count2: int) -> str:
-    """Generate an expression that concatenates two tuples into one.
-
-    E.g. _append_expr("x", 2, "e", 1) -> "(x.1, x.2, e)"
-    """
-    parts = []
-    for i in range(count1):
-        acc = _accessor(i, count1)
-        parts.append(f"{var1}{acc}")
-    for i in range(count2):
-        acc = _accessor(i, count2)
-        parts.append(f"{var2}{acc}")
-    return _build_tuple(parts)
-
-
 # Map operations to Lean expression builder (takes list of arg strings).
 # Operands and results are all `Mat _ 1 1` (scalar)
 # FIXME: element-wise ops extract position `0 0`, but
@@ -77,24 +62,63 @@ _LEAN_OP: dict[str, Callable] = {
     "Add": lambda a: f"({a[0]} + {a[1]})",
     "Sub": lambda a: f"({a[0]} - {a[1]})",
     "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Mod": lambda a: f"(fun _ _ => ({a[0]} 0 0 % {a[1]} 0 0))",
     "Neg": lambda a: f"(-{a[0]})",
     "Lt": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 < {a[1]} 0 0))",
     "Le": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≤ {a[1]} 0 0))",
     "Gt": lambda a: f"(fun _ _ => decide ({a[1]} 0 0 < {a[0]} 0 0))",
     "Ge": lambda a: f"(fun _ _ => decide ({a[1]} 0 0 ≤ {a[0]} 0 0))",
     "Eq": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 = {a[1]} 0 0))",
-    "Neq": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≠ {a[1]} 0 0))",
-    "Min": lambda a: f"(fun i j => Min.min ({a[0]} i j) ({a[1]} i j))",
-    "Max": lambda a: f"(fun i j => Max.max ({a[0]} i j) ({a[1]} i j))",
+    "Ne": lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≠ {a[1]} 0 0))",
+    "Min": lambda a: f"(matMin {a[0]})",
+    "Max": lambda a: f"(matMax {a[0]})",
     "MatMul": lambda a: f"MatMul {a[0]} {a[1]}",
     "Id": lambda a: a[0],
+    "Transpose": lambda a: f"(MatTranspose {a[0]})",
     # Linear is handled specially (its A, B are baked into the op, not read
     # wires) — see `_linear_expr`.
     "ReLU": lambda a: f"ReLu {a[0]}",
     "TensorGet": lambda a: f"({a[0]} 0 0)",
     "ToUnsigned": lambda a: f"(fun _ _ => Int.toNat ({a[0]} 0 0))",
 }
+
+
+# BV works entirely in BitVec: that theory has no Bool wires at all -- an
+# `Ite` condition and an `Eq` result are both `BitVec 1`. The Boolean forms
+# above therefore do not apply to it (`!`, `&&`, `||` and a bare `if c then`
+# were emitted against `BitVec 1` values, which does not elaborate). These
+# use BitVec's own operators and compare a 1-bit value against 1 directly,
+# rather than converting through `BV.BVToBool`.
+_BV_LEAN_OP: dict[str, Callable] = {
+    "Not": lambda a: f"(fun i j => ~~~({a[0]} i j))",
+    "And": lambda a: f"(fun i j => ({a[0]} i j) &&& ({a[1]} i j))",
+    "Or": lambda a: f"(fun i j => ({a[0]} i j) ||| ({a[1]} i j))",
+    "Xor": lambda a: f"(fun i j => ({a[0]} i j) ^^^ ({a[1]} i j))",
+    "Ite": lambda a: f"(if {a[0]} 0 0 = 1 then {a[1]} else {a[2]})",
+    "Eq": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0)",
+    "Ne": lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1)",
+    "UMod": lambda a: f"(fun i j => BitVec.umod ({a[0]} i j) ({a[1]} i j))",
+    "SMod": lambda a: f"(fun i j => BitVec.smod ({a[0]} i j) ({a[1]} i j))",
+}
+
+
+def _is_bv_itype(itype) -> bool:
+    """True for an op drawn from the BV theory (PyO3 names them `BV_*`)."""
+    return type(itype).__name__.startswith("BV_")
+
+
+def _op_table(itype) -> dict:
+    """The matrix-form emitter table for this op's theory."""
+    if _is_bv_itype(itype) and itype_name(itype) in _BV_LEAN_OP:
+        return _BV_LEAN_OP
+    return _LEAN_OP
+
+
+def _scalar_op_table(itype) -> dict:
+    """The scalar-form emitter table for this op's theory."""
+    if _is_bv_itype(itype) and itype_name(itype) in _BV_SCALAR_OP:
+        return _BV_SCALAR_OP
+    return _SCALAR_OP
+
 
 
 _SCALAR_OP: dict[str, Callable] = {
@@ -105,26 +129,48 @@ _SCALAR_OP: dict[str, Callable] = {
     "Add": lambda a: f"({a[0]} + {a[1]})",
     "Sub": lambda a: f"({a[0]} - {a[1]})",
     "Mul": lambda a: f"({a[0]} * {a[1]})",
-    "Mod": lambda a: f"({a[0]} % {a[1]})",
     "Neg": lambda a: f"(-{a[0]})",
     "Lt": lambda a: f"(decide ({a[0]} < {a[1]}))",
     "Le": lambda a: f"(decide ({a[0]} ≤ {a[1]}))",
     "Gt": lambda a: f"(decide ({a[1]} < {a[0]}))",
     "Ge": lambda a: f"(decide ({a[1]} ≤ {a[0]}))",
     "Eq": lambda a: f"(decide ({a[0]} = {a[1]}))",
-    "Neq": lambda a: f"(decide ({a[0]} ≠ {a[1]}))",
-    "Min": lambda a: f"(Min.min {a[0]} {a[1]})",
-    "Max": lambda a: f"(Max.max {a[0]} {a[1]})",
+    "Ne": lambda a: f"(decide ({a[0]} ≠ {a[1]}))",
     "MatMul": lambda a: f"({a[0]} * {a[1]})",
     "Id": lambda a: a[0],
+    # `ReLu` is a matrix op; on a scalar-bound wire it has to be the bare
+    # `max 0 x`. Lifting the operand and projecting the result instead
+    # leaves `ReLu (fun _ _ => x) 0 0` with unconstrained dimensions.
+    "ReLU": lambda a: f"(Max.max 0 {a[0]})",
     "TensorGet": lambda a: a[0],
     "ToUnsigned": lambda a: f"(Int.toNat {a[0]})",
 }
 
 
-def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
+# Scalar-encoding counterpart of `_BV_LEAN_OP`, on bare BitVec values.
+_BV_SCALAR_OP: dict[str, Callable] = {
+    "Not": lambda a: f"(~~~{a[0]})",
+    "And": lambda a: f"({a[0]} &&& {a[1]})",
+    "Or": lambda a: f"({a[0]} ||| {a[1]})",
+    "Xor": lambda a: f"({a[0]} ^^^ {a[1]})",
+    "Ite": lambda a: f"(if {a[0]} = 1 then {a[1]} else {a[2]})",
+    "Eq": lambda a: f"(if {a[0]} = {a[1]} then 1 else 0)",
+    "Ne": lambda a: f"(if {a[0]} = {a[1]} then 0 else 1)",
+    "UMod": lambda a: f"(BitVec.umod {a[0]} {a[1]})",
+    "SMod": lambda a: f"(BitVec.smod {a[0]} {a[1]})",
+}
+
+
+def _argmax_expr(
+    arg_expr: str, input_shape: list[int], output_shape: "list[int] | None" = None
+) -> str:
     """Emit `argmax_1d` for 1-d input and `argmax` for generic 2-d input.
-    Wrap output as `Mat Int 1 _` to match the Python IR's Int output type."""
+
+    Both yield a single index in a `Mat _ 1 1` -- the column index for one
+    row, the row-major flat index otherwise -- so the two agree wherever
+    they overlap. Wrap output as `Mat Int 1 _` to match the Python IR's Int
+    output type."""
+    _check_argmax_output(output_shape)
     if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
         return f"(fun i j => ((argmax_1d {arg_expr}) i j : Int))"
     if len(input_shape) == 2:
@@ -132,6 +178,45 @@ def _argmax_expr(arg_expr: str, input_shape: list[int]) -> str:
     raise ValueError(
         f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
     )
+
+
+def _check_argmax_output(output_shape: "list[int] | None") -> None:
+    """Reject an Argmax output wider than the single index we can emit.
+
+    Argmax follows `torch.argmax`, which returns one row-major flat index,
+    so both Lean variants produce a `Mat _ 1 1`. The theory is looser -- it
+    accepts any vector output (see the FIXME on `LIA::Argmax` in
+    theory/src/lia.rs) -- and a wider wire would previously get that 1x1
+    body ascribed to it, which does not elaborate. Fail here with the reason
+    instead of emitting Lean that cannot compile.
+    """
+    if output_shape is None:
+        return
+    if not _is_scalar_shape(output_shape):
+        raise ValueError(
+            f"argmax: output shape {output_shape} holds more than one element, "
+            "but argmax yields a single flat index (torch.argmax semantics); "
+            "declare a [1, 1] output wire"
+        )
+
+
+def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
+    """`wire_expr` with this term's scalar-bound reads lifted to 1x1 matrices.
+
+    In the scalar encoding a 1x1 wire is bound to a bare `Bool`/`Int`, but
+    the matrix-form emitters apply their operands to `0 0`. Wrapping as
+    `fun _ _ => x` makes that reduce back to `x` and typecheck.
+    """
+    lifted = dict(wire_expr)
+    for w in term.read:
+        if _is_scalar_wire(w):
+            # The ascription is load-bearing: `matVecAffine`'s batch
+            # dimension is not determined by `fun _ _ => x`, so an
+            # un-ascribed lift leaves `n` unsolved ("don't know how to
+            # synthesize implicit argument `n`").
+            ty = f"Mat {_flat_element_type(w)} 1 1"
+            lifted[w.id] = f"((fun _ _ => {wire_expr[w.id]} : {ty}))"
+    return lifted
 
 
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:
@@ -193,14 +278,19 @@ def _translate_terms(
             expr = _constant_expr(name, term, term.write[0], constants)
         elif name == "Argmax":
             arg_expr = wire_expr[term.read[0].id]
-            expr = _argmax_expr(arg_expr, dtype_shape(term.read[0].dtype))
+            expr = _argmax_expr(
+                arg_expr,
+                dtype_shape(term.read[0].dtype),
+                dtype_shape(term.write[0].dtype),
+            )
         elif name == "Linear":
             expr = _linear_expr(term, wire_expr)
         else:
-            if name not in _LEAN_OP:
+            table = _op_table(term.itype)
+            if name not in table:
                 raise ValueError(f"No Lean expression mapping for: {name}")
             input_exprs = [wire_expr[w.id] for w in term.read]
-            expr = _LEAN_OP[name](input_exprs)
+            expr = table[name](input_exprs)
 
         # Each term writes exactly one wire
         write_wire = term.write[0]
@@ -247,9 +337,22 @@ def _constant_expr_scalar(
     return _tensor_to_lean_inline(term.itype._0, w)
 
 
-def _argmax_scalar_name(n: int) -> str:
-    """Name of the scalar axiom for 1-d argmax over n elements."""
-    return f"argmax1d_scalar_{n}"
+def _argmax_scalar_name(elem_ty: str, n: int) -> str:
+    """Name of the scalar axiom for 1-d argmax over n elements of `elem_ty`.
+
+    The element type belongs in the name: variants are collected per
+    `(elem_ty, n)`, so naming them by `n` alone made an Argmax over
+    `Mat Int 1 4` and one over `Mat Real 1 4` emit two definitions and two
+    `_eq` theorems under one name.
+    """
+    return f"argmax1d_scalar_{_elem_ty_slug(elem_ty)}_{n}"
+
+
+def _elem_ty_slug(elem_ty: str) -> str:
+    """Lean-identifier-safe form of an element type, e.g. `(BitVec 8)` -> `bv8`."""
+    if elem_ty.startswith("(BitVec "):
+        return f"bv{elem_ty[len('(BitVec '):-1].strip()}"
+    return elem_ty.lower()
 
 
 def _translate_terms_scalar(
@@ -258,6 +361,7 @@ def _translate_terms_scalar(
     block_outputs: list[Wire],
     constants: ConstantRegistry,
     flat_slots: "dict[int, list[str]] | None" = None,
+    flatten_outputs: bool = False,
 ) -> str:
     """Compile terms into a Lean body using scalar types for 1×1 wires.
 
@@ -270,10 +374,16 @@ def _translate_terms_scalar(
     """
     term_list = list(terms)
     if not term_list:
-        out_exprs = [input_bindings.get(w.id) for w in block_outputs]
-        if all(e is not None for e in out_exprs):
-            return f"  {_build_tuple(out_exprs)}"
-        return "sorry /- no terms -/"
+        slots = dict(flat_slots or {})
+        passthrough: list[str] = []
+        for w in block_outputs:
+            if flatten_outputs and w.id in slots:
+                passthrough.extend(slots[w.id])
+            elif w.id in input_bindings:
+                passthrough.append(input_bindings[w.id])
+            else:
+                return "sorry /- no terms -/"
+        return f"  {_build_tuple(passthrough)}"
 
     wire_expr: dict[int, str] = dict(input_bindings)
     flat_slots = dict(flat_slots or {})
@@ -288,23 +398,48 @@ def _translate_terms_scalar(
             expr = _constant_expr_scalar(name, term, write_wire, constants)
         elif name == "Argmax":
             in_wire = term.read[0]
+            _check_argmax_output(dtype_shape(write_wire.dtype))
             slots = flat_slots.get(in_wire.id)
             if slots is not None:
-                axiom_name = _argmax_scalar_name(len(slots))
+                axiom_name = _argmax_scalar_name(
+                    _flat_element_type(in_wire), len(slots)
+                )
                 expr = f"({axiom_name} {' '.join(slots)})"
             else:
-                mat_expr = _argmax_expr(wire_expr[in_wire.id], dtype_shape(in_wire.dtype))
+                mat_expr = _argmax_expr(
+                    wire_expr[in_wire.id],
+                    dtype_shape(in_wire.dtype),
+                    dtype_shape(write_wire.dtype),
+                )
                 expr = f"({mat_expr} 0 0)" if _is_scalar_wire(write_wire) else mat_expr
         elif name == "Linear":
-            expr = _linear_expr(term, wire_expr)
-        elif _is_scalar_wire(write_wire) and name in _SCALAR_OP:
+            # `matVecAffine` consumes a `Mat t n batch` and yields a
+            # `Mat t out batch`, but a 1x1 wire is bound to a bare scalar
+            # here and ascribed one. Lift the operand and take `0 0` off
+            # the result, as the Argmax branch above does.
+            expr = _linear_expr(term, _lift_scalar_reads(term, wire_expr))
+            if _is_scalar_wire(write_wire):
+                expr = f"({expr} 0 0)"
+        elif _is_scalar_wire(write_wire) and name in _scalar_op_table(term.itype):
             input_exprs = [wire_expr[w.id] for w in term.read]
-            expr = _SCALAR_OP[name](input_exprs)
+            expr = _scalar_op_table(term.itype)[name](input_exprs)
         else:
-            if name not in _LEAN_OP:
+            table = _op_table(term.itype)
+            if name not in table:
                 raise ValueError(f"No Lean expression mapping for: {name}")
-            input_exprs = [wire_expr[w.id] for w in term.read]
-            expr = _LEAN_OP[name](input_exprs)
+            # `_LEAN_OP` holds the matrix forms, which apply operands to
+            # `0 0`. Scalar-bound reads must be lifted first: a matrix
+            # `Ite` with a scalar Bool condition emitted
+            # `if <Bool> 0 0 then ...`, which does not elaborate.
+            lifted = _lift_scalar_reads(term, wire_expr)
+            input_exprs = [lifted[w.id] for w in term.read]
+            expr = table[name](input_exprs)
+            # A matrix form yields a `Mat`; a scalar write wire is ascribed
+            # the bare element type, so project it — the same step the
+            # `Argmax` and `Linear` branches above already take. Without it
+            # a 1x1 `Min`/`Max` emitted `let x : Int := matMax …`.
+            if _is_scalar_wire(write_wire):
+                expr = f"({expr} 0 0)"
 
         wire_expr[write_wire.id] = var
         # Track flat scalar slots for the written wire so downstream Argmax
@@ -312,13 +447,25 @@ def _translate_terms_scalar(
         if _is_scalar_wire(write_wire):
             flat_slots[write_wire.id] = [var]
         else:
+            # Parenthesised: these are spliced into an application
+            # (`argmax1d_scalar_int_3 <slots>`), where a bare `x0 0 0`
+            # would be read as three separate arguments.
             flat_slots[write_wire.id] = [
-                f"{var} {r} {c}" for r, c in _flat_indices(write_wire)
+                f"({var} {r} {c})" for r, c in _flat_indices(write_wire)
             ]
         ty = dtype_to_lean_type(write_wire, simple_types=True)
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
-    out_exprs = [wire_expr[w.id] for w in block_outputs]
+    # `flatten_outputs` says which codomain the caller declared. The scalar
+    # encoding uses `_product_type_scalar` -- one component per *element* --
+    # so it wants the flat slots; `rel.py` and `fbk.py` type their `effect_i`
+    # as the wire's own `Mat`, so they want the matrix the terms built.
+    out_exprs: list[str] = []
+    for w in block_outputs:
+        if flatten_outputs:
+            out_exprs.extend(flat_slots.get(w.id, [wire_expr[w.id]]))
+        else:
+            out_exprs.append(wire_expr[w.id])
     result_line = f"  {_build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])

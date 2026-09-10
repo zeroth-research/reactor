@@ -166,11 +166,14 @@ infixr:75 " ⊗ " => par
 @[simp] def or: Box [Mat Bool 1 1, Mat Bool 1 1] [Mat Bool 1 1] :=
   ⟨fun val!(a, b) => val!(fun _ _ => (a 0 0 || b 0 0))⟩
 
-@[simp] def min {t: Type} [Min t]: Box [t, t] [t] :=
-  ⟨fun val!(a, b) => val!(Min.min a b)⟩
+-- Unary reductions, matching the theory: one operand in, a single element out.
+@[simp] def min {t : Type} [Min t] [Inhabited t] {m n : Nat} :
+    Box [Mat t m n] [Mat t 1 1] :=
+  ⟨fun val!(a) => val!(_root_.matMin a)⟩
 
-@[simp] def max {t: Type} [Max t]: Box [t, t] [t] :=
-  ⟨fun val!(a, b) => val!(Max.max a b)⟩
+@[simp] def max {t : Type} [Max t] [Inhabited t] {m n : Nat} :
+    Box [Mat t m n] [Mat t 1 1] :=
+  ⟨fun val!(a) => val!(_root_.matMax a)⟩
 
 @[simp] def ite {t: Type}: Box [Mat Bool 1 1, t, t] [t] :=
   ⟨fun val!(c, a, b) => if c 0 0 then val!(a) else val!(b)⟩
@@ -201,13 +204,55 @@ infixr:75 " ⊗ " => par
     : Box [Mat t m n] [Mat t m n] :=
   ⟨fun val!(x) => val!(ReLu x)⟩
 
-@[simp] def argmax_1d {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [Inhabited t]
+@[simp] def transpose {m n : Nat} : Box [Mat t m n] [Mat t n m] :=
+  ⟨fun val!(x) => val!(MatTranspose x)⟩
+
+@[simp] def argmax_1d {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
     {n : Nat} : Box [Mat t 1 n] [Mat Int 1 1] :=
   ⟨fun val!(x) => val!(fun i j => ((_root_.argmax_1d x) i j : Int))⟩
 
-@[simp] def argmax {t : Type} [LE t] [DecidableRel ((· ≤ ·) : t → t → Prop)] [Inhabited t]
-    {m n : Nat} : Box [Mat t m n] [Mat Int 1 2] :=
+@[simp] def argmax {t : Type} [LT t] [DecidableRel ((· < ·) : t → t → Prop)]
+    {m n : Nat} : Box [Mat t m n] [Mat Int 1 1] :=
   ⟨fun val!(x) => val!(fun i j => ((_root_.argmax x) i j : Int))⟩
+
+-- BV works entirely in BitVec: that theory has no Bool wires, so an `ite`
+-- condition and an `eq` result are both `Mat (BitVec 1) 1 1`. The Boolean
+-- combinators above cannot serve it, and we compare a 1-bit value against 1
+-- directly rather than converting through a BVToBool box.
+
+@[simp] def bvNot {w m n : Nat} : Box [Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a) => val!(fun i j => ~~~(a i j))⟩
+
+@[simp] def bvAnd {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => (a i j) &&& (b i j))⟩
+
+@[simp] def bvOr {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => (a i j) ||| (b i j))⟩
+
+@[simp] def bvXor {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => (a i j) ^^^ (b i j))⟩
+
+@[simp] def bvUMod {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => BitVec.umod (a i j) (b i j))⟩
+
+@[simp] def bvSMod {w m n : Nat} :
+    Box [Mat (BitVec w) m n, Mat (BitVec w) m n] [Mat (BitVec w) m n] :=
+  ⟨fun val!(a, b) => val!(fun i j => BitVec.smod (a i j) (b i j))⟩
+
+@[simp] def bvIte {t : Type} : Box [Mat (BitVec 1) 1 1, t, t] [t] :=
+  ⟨fun val!(c, a, b) => if c 0 0 = 1 then val!(a) else val!(b)⟩
+
+@[simp] def bvEq {w : Nat} :
+    Box [Mat (BitVec w) 1 1, Mat (BitVec w) 1 1] [Mat (BitVec 1) 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => if a 0 0 = b 0 0 then 1 else 0)⟩
+
+@[simp] def bvNe {w : Nat} :
+    Box [Mat (BitVec w) 1 1, Mat (BitVec w) 1 1] [Mat (BitVec 1) 1 1] :=
+  ⟨fun val!(a, b) => val!(fun _ _ => if a 0 0 = b 0 0 then 0 else 1)⟩
 
 end Box
 

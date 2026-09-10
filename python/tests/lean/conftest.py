@@ -8,6 +8,9 @@ test in this directory runs:
      • Certs/Countdown.lean  (self-contained certificate, inline module)
      • Certs/TwoVars.lean
      • Certs/Collatz.lean
+     • Certs/ScalarEnc*.lean  (functional + scalar encodings)
+     • Certs/RelEnc*.lean  (those two + ScalarRel + FBK)
+     • Certs/ArgmaxScalar.lean  (the scalar Argmax variants)
 
 The generated files import ZerothHammer for the tactic and define their own
 module-specific ``simp_mat`` / ``simp_defs`` / ``mat_collapse`` macros.
@@ -22,6 +25,7 @@ from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
 from zrth.analyzer import convert_method
 from zrth.lean.cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
 from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
+from zrth.lean.translate.scalar import _argmax_scalar_def_lines
 
 _LEAN_DIR = Path(__file__).parent
 _CORE_DIR = _LEAN_DIR / "Core"
@@ -168,11 +172,82 @@ def _make_countdown_vec(n: int) -> Module:
     return Module.sequential([s], init, update)
 
 
+def _make_mixed() -> Module:
+    """ctrl = [x : 1x1, v : 3x1] — the state whose wires and elements disagree.
+
+    Four state elements against two ctrl wires, so wire 1's data starts at
+    flat slot 1. Everything else here has either all-1x1 wires (slot i *is*
+    wire i) or a single wire (the slice is the whole tuple), and neither
+    catches a per-wire projection of a per-element tuple. Both transitions
+    read both wires so the slices cannot be independently wrong.
+    """
+    x = Var(Int([1, 1]))
+    v = Var(Int([3, 1]))
+    z11 = torch.zeros((1, 1), dtype=torch.int64)
+    v0 = torch.tensor([[1], [2], [3]], dtype=torch.int64)
+
+    init = [
+        Term(LIA.Int(torch.zeros((1, 1), dtype=torch.int64)), [X(x)]),
+        Term(LIA.Int(v0), [X(v)]),
+    ]
+
+    head, zc = Wire(Int([1, 1])), Wire(Int([1, 1]))
+    cond = Wire(Bool([1, 1]))
+    reset, dec = Wire(Int([3, 1])), Wire(Int([3, 1]))
+    row0 = torch.tensor([[1, 0, 0]], dtype=torch.int64)
+    zero33 = torch.zeros((3, 3), dtype=torch.int64)
+    bneg = torch.tensor([[-1], [0], [0]], dtype=torch.int64)
+
+    update = [
+        Term(LIA.Linear(row0, z11), [head], [v]),          # head = v[0]
+        Term(LIA.Add(), [X(x)], [x, head]),                # x' = x + v[0]
+        Term(LIA.Int(torch.zeros((1, 1), dtype=torch.int64)), [zc]),
+        Term(LIA.Eq(), [cond], [head, zc]),                # cond = (v[0] == 0)
+        Term(LIA.Linear(zero33, v0), [reset], [v]),        # reset: v := (1,2,3)
+        Term(LIA.Linear(torch.eye(3, dtype=torch.int64), bneg), [dec], [v]),
+        Term(LIA.Ite(), [X(v)], [cond, reset, dec]),
+    ]
+    return Module.sequential([x, v], init, update)
+
+
 _COUNTDOWN_CERT = CertificateData(
     prp="s[0][0] == 0",
     inv="And(s[0][0] >= 0, s[0][0] <= 100)",
     ranking="Ite(s[0][0] == 0, 0, s[0][0])",
 )
+
+
+# (elem_ty, n) pairs for the generated scalar Argmax variants. n = 1 is the
+# degenerate single-element case; the rest exercise the fold.
+# Int and Real at the same width sit together on purpose: the variant
+# names used to be built from `n` alone, so these two collided.
+# Widths that exercise the scalar encoding's flattening: all-1x1, then
+# multi-element state, up to the 32 that stresses the index enumeration.
+_SCALAR_ENC_SPECS = [
+    ("Scalar", _make_countdown),
+    ("Vec6", lambda: _make_countdown_vec(6)),
+    ("Counter", _make_counter),
+    ("Vec32", lambda: _make_countdown_vec(32)),
+]
+
+
+# The relational encodings sit on top of the scalar one, so they need every
+# width the scalar specs cover, plus the two multi-wire states: `TwoVars`,
+# where each wire is one element so wire index and slot index coincide (what
+# the per-wire projection assumed), and `Mixed`, where they do not.
+_REL_ENC_SPECS = _SCALAR_ENC_SPECS + [
+    ("TwoVars", _make_twovars),
+    ("Mixed", _make_mixed),
+]
+
+
+_ARGMAX_SCALAR_SPECS = [
+    ("Int", 1),
+    ("Int", 2),
+    ("Int", 4),
+    ("Real", 3),
+    ("Real", 4),
+]
 
 
 _CERT_SPECS = [
@@ -258,3 +333,50 @@ def generate_lean_files(sync_core_templates) -> None:
         lean_cert = smt_predicates_to_lean(cert_data, module)
         content = generate_standalone_cert_lean(module, lean_cert)
         (_CERTS_DIR / f"{name}.lean").write_text(content)
+
+    # Certs/ArgmaxScalar.lean — the scalar Argmax variants exactly as the
+    # generator emits them. Each carries an `argmax1d_scalar_n_eq` theorem
+    # proving it equal to Core.Mat.argmax_1d, so building this file is what
+    # keeps the unrolled scalar form and the matrix definition in step. No
+    # certificate module currently uses Argmax, so nothing else compiles it.
+    # Certs/ScalarEnc.lean — the functional and scalar encodings together, the
+    # way a generated project arranges them (System/System.lean +
+    # System/Scalar.lean). The `_scalar_eq` theorems only elaborate if the
+    # flattening lines up, and no certificate carries a Scalar section, so
+    # this is the only thing that compiles them.
+    from zrth.lean.translate import ModuleToLean4
+
+    for name, make_module in _SCALAR_ENC_SPECS:
+        t = ModuleToLean4(make_module())
+        (_CERTS_DIR / f"ScalarEnc{name}.lean").write_text(
+            "import Core.Mat\nimport Core.Box\n\n"
+            + t.to_lean_functional()
+            + "\n\n"
+            + t.to_lean_scalar()
+            + "\n"
+        )
+
+    # Certs/RelEnc*.lean — functional + scalar + ScalarRel + FBK together, the
+    # way a generated project arranges them (System/ScalarRel.lean imports
+    # System/Scalar.lean, System/FBK.lean imports both). `ScalarRel.effect_i`
+    # is per wire while the state tuple it is compared to is per element, so
+    # these are what keep the slice and the codomain in agreement; no
+    # certificate carries a ScalarRel or FBK section.
+    for name, make_module in _REL_ENC_SPECS:
+        t = ModuleToLean4(make_module())
+        (_CERTS_DIR / f"RelEnc{name}.lean").write_text(
+            "import Core.Mat\nimport Core.Box\n\n"
+            + t.to_lean_functional()
+            + "\n\n"
+            + t.to_lean_scalar()
+            + "\n\n"
+            + t.to_lean_rel()
+            + "\n\n"
+            + t.to_lean_bool_rel()
+            + "\n"
+        )
+
+    argmax_lines = ["import Core.Mat", ""]
+    for elem_ty, n in _ARGMAX_SCALAR_SPECS:
+        argmax_lines.extend(_argmax_scalar_def_lines(elem_ty, n))
+    (_CERTS_DIR / "ArgmaxScalar.lean").write_text("\n".join(argmax_lines))

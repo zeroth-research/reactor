@@ -19,6 +19,8 @@ from zrth.lean.common import (
     is_constant_name,
 )
 
+from zrth.lean.native import _check_argmax_output, _is_bv_itype
+
 from dataclasses import dataclass
 
 from zrth import Wire, Term
@@ -77,12 +79,12 @@ _LEAN_OP_BOX: dict[str, str] = {
     "Gt": "Box.gt",
     "Ge": "Box.ge",
     "Eq": "Box.eq",
-    "Neq": "Box.neq",
+    "Ne": "Box.neq",
     "Min": "Box.min",
     "Max": "Box.max",
     "MatMul": "Box.mul",
-    "MatAdd": "Box.add",
     "Id": "Box.id",
+    "Transpose": "Box.transpose",
     # Linear is handled specially (A, b are baked into the op) — see `_linear_box`.
     "ReLU": "Box.relu",
 }
@@ -98,8 +100,38 @@ def _linear_box(term: Term) -> str:
     return f"(Box.linear {out_m} {a_lit} {b_lit})"
 
 
-def _argmax_box(input_shape: list[int]) -> str:
-    """Pick the Box variant of argmax based on input shape."""
+# BV needs BitVec-typed boxes: `Box.and`/`not`/`or` are fixed to
+# `Mat Bool 1 1`, and `Box.ite`/`eq`/`neq` take or produce a Bool. See the
+# note beside these definitions in Core/Box.lean.
+_BV_LEAN_OP_BOX = {
+    "Not": "Box.bvNot",
+    "And": "Box.bvAnd",
+    "Or": "Box.bvOr",
+    "Xor": "Box.bvXor",
+    "Ite": "Box.bvIte",
+    "Eq": "Box.bvEq",
+    "Ne": "Box.bvNe",
+    "UMod": "Box.bvUMod",
+    "SMod": "Box.bvSMod",
+}
+
+
+def _box_for(itype, name: str) -> str:
+    """Box combinator for this op, per its theory."""
+    if _is_bv_itype(itype) and name in _BV_LEAN_OP_BOX:
+        return _BV_LEAN_OP_BOX[name]
+    return _LEAN_OP_BOX[name]
+
+
+def _argmax_box(
+    input_shape: list[int], output_shape: "list[int] | None" = None
+) -> str:
+    """Pick the Box variant of argmax based on input shape.
+
+    Both variants have codomain `[Mat Int 1 1]` -- one flat index, per
+    `torch.argmax` -- so a wider output wire is rejected here rather than
+    producing a Box whose codomain does not match the wire it feeds."""
+    _check_argmax_output(output_shape)
     if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
         return "Box.argmax_1d"
     if len(input_shape) == 2:
@@ -349,11 +381,16 @@ def _translate_terms_circ(
                     out_ty.append(dtype_to_lean_type(w))
                 else:
                     if name == "Argmax":
-                        boxes.append(_argmax_box(dtype_shape(term.read[0].dtype)))
+                        boxes.append(
+                            _argmax_box(
+                                dtype_shape(term.read[0].dtype),
+                                dtype_shape(term.write[0].dtype),
+                            )
+                        )
                     elif name == "Linear":
                         boxes.append(_linear_box(term))
                     else:
-                        boxes.append(_LEAN_OP_BOX[name])
+                        boxes.append(_box_for(term.itype, name))
                     in_ty.extend([dtype_to_lean_type(u) for u in term.read])
                     out_ty.extend([dtype_to_lean_type(u) for u in term.write])
         assert boxes
