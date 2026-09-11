@@ -67,6 +67,8 @@ from pathlib import Path
 
 from .cert import CertificateData, generate_zeroth_hammer_lean
 from .project import (
+    LakeBuildError,
+    build_certificate,
     create_project,
     generate_standalone_cert_lean,
     load_module_from_file,
@@ -74,7 +76,6 @@ from .project import (
     write_data_lean,
 )
 from .translate import ModuleToLean4
-
 
 
 _EPILOG = """\
@@ -95,7 +96,50 @@ examples:
   # certify through lean-ltl-certifying's proveit.py (lean2vmt -> ic3ia -> vmt2lean)
   uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p MyProject \\
       --fbk-proveit ~/proof-prototyping/lean-ltl-certifying --ic3ia ~/ic3ia/build/ic3ia
+
+  # ... and build the certificate that route produces
+  uv run verith mymodule.py -P "(not (= s0 15))" -o out/ -p MyProject \\
+      --fbk-proveit ~/proof-prototyping/lean-ltl-certifying --build-cert
+
+  # build the certificate of any route that fills it: `lake build Certificate`
+  uv run verith mymodule.py -P "(= s0 0)" --invariant "(<= s0 100)" --ranking "s0" \\
+      --build-cert -o out/ -p MyProject
 """
+
+
+def _build_cert(args, project_dir: Path, cert_data) -> None:
+    """Honour `--build-cert`, once the certificate is written.
+
+    `cert_data` is what the project's certificate was generated from, or
+    `None` when the certificate came from elsewhere (`--fbk-proveit`
+    installs ic3ia's). The predicates are re-checked here rather than only
+    at parse time because `--infer` can return without one: an LLM that
+    answers nothing usable leaves `inv` or `ranking` unset, and building
+    that would report a proof of `sorry`.
+    """
+    if not args.build_cert:
+        return
+    if cert_data is not None:
+        missing = [
+            name
+            for name, value in (
+                ("property", cert_data.prp),
+                ("invariant", cert_data.inv),
+                ("ranking", cert_data.ranking),
+            )
+            if not value
+        ]
+        if missing:
+            raise SystemExit(
+                f"error: --build-cert: the certificate has no "
+                f"{', '.join(missing)}, so every obligation it carries is "
+                "`sorry`. With --infer this means inference produced none."
+            )
+    print(f".. Building the certificate in {project_dir}")
+    try:
+        build_certificate(project_dir)
+    except LakeBuildError as e:
+        raise SystemExit(f"error: --build-cert: {e}") from e
 
 
 def main():
@@ -237,7 +281,9 @@ def main():
             "proveit.py (lean2vmt -> ic3ia -> vmt2lean) instead of verith's "
             "own route: the project is generated bare, an NA-encoded model "
             "is written to <project>/ProveIt/, and the resulting certificate "
-            "is installed as <project>/Certificate/ProveItCert.lean. "
+            "is installed as <project>/Certificate/Certificate.lean, which "
+            "the project's root module imports. The lakefile requires this "
+            "checkout so that certificate builds. "
             "Requires --property; rejects --infer/--invariant/--ranking/--pre."
         ),
     )
@@ -251,13 +297,46 @@ def main():
             "on PATH. Only meaningful with --fbk-proveit."
         ),
     )
+    parser.add_argument(
+        "--build-cert",
+        action="store_true",
+        help=(
+            "Build the generated certificate: `lake update` then `lake "
+            "build Certificate` in the project. Needs a certificate with "
+            "predicates in it, so pass --invariant and --ranking, or "
+            "--infer, or --fbk-proveit; an obligation left as `sorry` is an "
+            "error, as is one lake cannot close. Off by default because the "
+            "build resolves and compiles cslib and Mathlib "
+            "-- minutes against a warm package cache, much longer against a "
+            "cold one."
+        ),
+    )
 
 
     args = parser.parse_args()
 
+    # An option given an empty string -- `--fbk-proveit "$LTL"` with `LTL`
+    # unset, which is how the BENCHMARKS.md invocations are written -- reads
+    # as "not passed" to every truthiness test below.  The route behind the
+    # flag would be dropped and the run would *succeed*, having quietly
+    # generated an ordinary project instead.  No option here has a
+    # meaningful empty value, so the blank itself is the error.
+    blank = [
+        action.option_strings[-1]
+        for action in parser._actions
+        if action.option_strings and getattr(args, action.dest, None) == ""
+    ]
+    if blank:
+        verb = "was" if len(blank) == 1 else "were"
+        parser.error(
+            f"{', '.join(blank)} {verb} given an empty value (an unset "
+            "shell variable?). Pass a real one or drop the flag."
+        )
+
     # --fbk-proveit takes over the whole certification route, so anything it
     # would have to ignore is an error rather than a silent no-op.
-    if args.fbk_proveit:
+    ltl_project = None
+    if args.fbk_proveit is not None:
         if not args.property:
             parser.error("--fbk-proveit requires --property")
         conflicts = [
@@ -278,8 +357,38 @@ def main():
                 "the invariant comes from ic3ia and the project is generated "
                 "bare"
             )
+        # Resolved here rather than inside the route: the lakefile written by
+        # `create_project` names this path, so a checkout that is not one has
+        # to be rejected before any of the project exists.
+        from .fbk_proveit import ProveItError, resolve_project
+
+        try:
+            ltl_project = resolve_project(args.fbk_proveit)
+        except ProveItError as e:
+            parser.error(str(e))
     elif args.ic3ia:
         parser.error("--ic3ia is only meaningful together with --fbk-proveit")
+
+    # --build-cert is route-independent, but it needs a certificate worth
+    # building. A bare project's obligations are all `sorry`: lake compiles
+    # that and proves nothing, so asking for it is a mistake, not a no-op.
+    if args.build_cert:
+        if args.cert_file or args.hammer_file:
+            which = "--cert-file" if args.cert_file else "--hammer-file"
+            parser.error(
+                f"--build-cert is incompatible with {which}: that writes a "
+                "file and generates no project to build"
+            )
+        if not (
+            args.fbk_proveit
+            or args.infer
+            or (args.property and args.invariant and args.ranking)
+        ):
+            parser.error(
+                "--build-cert needs a certificate to build: pass --property "
+                "with --invariant and --ranking, or --infer, or "
+                "--fbk-proveit. Without them every obligation is `sorry`."
+            )
 
     # --hammer-file: generate ZerothHammer.lean and exit (no module needed)
     if args.hammer_file:
@@ -294,6 +403,15 @@ def main():
 
     if args.infer and not args.property:
         parser.error("--infer requires --property")
+
+    # The standalone certificate is written before inference runs and then
+    # returns, so the inferred predicates could never reach it -- and the
+    # pre-check that waits for them would never run either.
+    if args.infer and args.cert_file:
+        parser.error(
+            "--infer is incompatible with --cert-file: the standalone "
+            "certificate is written from the predicates as supplied"
+        )
 
     cert_data: CertificateData | None = None
     if args.property or args.pre or args.invariant or args.ranking:
@@ -363,15 +481,16 @@ import {out.stem}Scalar
         executable=args.executable,
         cert_data=project_cert_data,
         module_file=args.module_file,
+        ltl_project=ltl_project,
     )
 
-    if args.fbk_proveit:
+    if args.fbk_proveit is not None:
         from .fbk_proveit import ProveItError, run as run_proveit
 
         print(".. Certifying through lean-ltl-certifying's proveit.py")
         try:
             run_proveit(
-                ltl_project=args.fbk_proveit,
+                ltl_project=ltl_project,
                 module=module,
                 project_dir=project_dir,
                 project_name=args.project_name,
@@ -380,6 +499,9 @@ import {out.stem}Scalar
             )
         except ProveItError as e:
             raise SystemExit(f"error: {e}") from e
+        # The installed certificate carries ic3ia's invariant, so there is
+        # nothing of `project_cert_data` left to be complete about.
+        _build_cert(args, project_dir, cert_data=None)
         print(f"\nProject ready at: {project_dir}")
         return
 
@@ -418,6 +540,8 @@ import {out.stem}Scalar
         write_certificate_lean(
             project_dir, args.project_name, module, project_cert_data
         )
+
+    _build_cert(args, project_dir, cert_data=project_cert_data)
 
     print(f"\nProject ready at: {project_dir}")
 

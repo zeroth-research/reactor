@@ -28,6 +28,9 @@ class CertificateData:
     update_pre: Expr | str | None = None
     ranking: Expr | str | None = None
 
+    inv_smt: str | None = None
+    ranking_smt: str | None = None
+
     facts: "object | None" = None
 
     hints: "object | None" = None
