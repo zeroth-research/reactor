@@ -24,6 +24,15 @@ class CertificateData:
     prp: str | Expr | None = None
     inv: Expr | str | None = None
 
+    # Which proof rule the certificate is built on, and so what `prp` means:
+    #
+    #   "buchi"  -- `G (F P)`, `rule_buchi`: an invariant *and* a ranking
+    #              function that decreases off `P`. `--buchi`.
+    #   "safety" -- `G P`, `rule_globally`: an invariant that implies `P`,
+    #              and no ranking at all -- there is nothing to rank when
+    #              the property never has to be re-reached. `--safety`.
+    kind: str = "buchi"
+
     init_pre: Expr | str | None = None
     update_pre: Expr | str | None = None
     ranking: Expr | str | None = None
@@ -34,6 +43,10 @@ class CertificateData:
     facts: "object | None" = None
 
     hints: "object | None" = None
+
+    @property
+    def is_safety(self) -> bool:
+        return self.kind == "safety"
 
 
 def _cert_def_lines(
@@ -78,6 +91,11 @@ def _cert_def_lines(
 
     # ranking (Nat, not Prop). Noncomputable for a Real state: `to_int`
     # emits `⌊·⌋`, which goes through the noncomputable `Real.instFloorRing`.
+    # `rule_globally` takes no ranking, so a safety certificate has none to
+    # define -- and defining it as `sorry` would put a `sorry` in a file
+    # whose whole point is that it has none.
+    if c["is_safety"]:
+        return lines
     if c["ranking_body"] is not None:
         lines.append(f"{noncomp}def ranking (s : {ctrl_native}) : Nat :=")
         lines.append(c["ranking_body"])
@@ -131,11 +149,14 @@ def _cert_def_context(ctx: LeanContext, cert_data: CertificateData) -> dict:
     inv_body, inv_expr = _field(cert_data.inv, s_bindings)
     p_body, p_expr = _field(cert_data.prp, s_bindings)
     rank_body, rank_expr = _field(cert_data.ranking, s_bindings)
+    if cert_data.is_safety:
+        rank_body = rank_expr = None
 
     return dict(
         extl_type=extl_native,
         ctrl_type=ctrl_native,
         noncomp="noncomputable " if ctx.uses_real else "",
+        is_safety=cert_data.is_safety,
         init_pre_body=ip_body,
         init_pre_expr=ip_expr,
         update_pre_body=up_body,
@@ -215,6 +236,9 @@ def generate_certificate_lean(
     else:
         inline_defs = None
         has_ranking = True
+    # A safety certificate defines no ranking at all, so naming it in a simp
+    # set would be an unknown identifier rather than an unused one.
+    has_ranking = has_ranking and not cert_data.is_safety
 
     all_defs = "RM, init, update, inv, init_pre, update_pre, P"
     if has_ranking:
@@ -237,6 +261,7 @@ def generate_certificate_lean(
         extl_type=extl_native,
         ctrl_type=ctrl_native,
         all_defs=all_defs,
+        is_safety=cert_data.is_safety,
         plan=plan,
     )
 
