@@ -67,22 +67,26 @@ NA_ELEMENT_TYPES = frozenset({"Int", "Bool"})
 # Ops whose scalar emission (`native._SCALAR_OP`) lands inside what
 # `exprToSMT` translates.  Deliberately *not* here:
 #
-#   Ne        `decide (a ≠ b)` hands `exprToSMT` the instance
-#             `instDecidableNot …`, which it prints as the bare word
-#             "instDecidableNot"
-#   ReLU      `Max.max 0 x` → "max"
-#   ToUnsigned`Int.toNat x`  → "toNat"
+#   ToUnsigned`Int.toNat x` → "toNat", and the result would be Nat-sorted
+#             where the VMT declares Int
 #   Argmax    calls the `argmax1d_scalar_*` axioms from `Core.Basic`
 #   Linear    calls `matVecAffine`, likewise from `Core.Basic`
 #
 # each of which `exprToSMT` prints as an unapplied leaf — a silently wrong
 # transition system rather than an error.  `MatMul` is here because on two
 # 1x1 wires it emits plain `*`.
+#
+# `Ne`, `ReLU`, `Max` and `Min` used to be on that list too and are now
+# translated, but only by a `lean2vmt` carrying the commit "lean2vmt:
+# translate mod, max/min and a negated decidable instance".  Against an
+# older checkout they go back to being printed as "instDecidableNot",
+# "max" and "min", so this set and that commit have to travel together.
 NA_OPS = frozenset({
     "Not", "And", "Or", "Ite",
     "Add", "Sub", "Mul", "Neg",
-    "Lt", "Le", "Gt", "Ge", "Eq",
+    "Lt", "Le", "Gt", "Ge", "Eq", "Ne",
     "Id", "TensorGet", "MatMul",
+    "ReLU", "Max", "Min",
 })
 
 # Constant variants that inline as a bare Int/Bool literal.
@@ -122,12 +126,6 @@ def check_na_supported(ctx: LeanContext) -> None:
         raise NAUnsupported(
             f"state element type(s) {', '.join(sorted(bad))} unsupported; "
             "vmt2lean.py only maps Int and Bool back to Lean"
-        )
-    if len(elem_types) > 1:
-        raise NAUnsupported(
-            f"state mixes element types ({', '.join(sorted(elem_types))}); "
-            "a per-index `TypeMap` needs a `match`, and the auxiliary "
-            "matcher it generates has never been through lean2vmt"
         )
 
     if not list(ctx.atom.init):
@@ -187,7 +185,7 @@ def atom_to_lean_na(
     check_na_supported(ctx)
 
     n = len(ctx.ctrl_next)
-    elem_ty = _flat_element_type(ctx.ctrl_next[0])
+    slot_ty = [_flat_element_type(w) for w in ctx.ctrl_next]
 
     # One slot per wire (`check_na_supported` rejects wider wires), so wire
     # `i` is slot `i` on both the read and the write side.
@@ -210,8 +208,18 @@ def atom_to_lean_na(
 
     # `TypeMap`/`StateType` sit *outside* `Definition`: the certificate
     # template opens `Definition` but names `StateType` unqualified.
+    # A uniform state gets the wildcard arm alone; a mixed one gets an arm
+    # per slot. The equation compiler builds a `TypeMap.match_1` for the
+    # latter, which `emitDefs` skips of its own accord: it keeps only
+    # declarations whose return type whnfs to `Prop`/`Int`/`Bool`, and a
+    # matcher's is `motive n` with `motive` a free variable.
     lines.append("abbrev TypeMap : Nat → Type")
-    lines.append(f"  | _ => {elem_ty}")
+    if len(set(slot_ty)) == 1:
+        lines.append(f"  | _ => {slot_ty[0]}")
+    else:
+        for i, ty in enumerate(slot_ty):
+            lines.append(f"  | {i} => {ty}")
+        lines.append(f"  | _ => {slot_ty[-1]}")
     lines.append("")
     lines.append("abbrev StateType := (n : Nat) → TypeMap n")
     lines.append("")
@@ -222,8 +230,10 @@ def atom_to_lean_na(
     # `variable`: auto-binding drops a binder the body happens not to use,
     # and `M` below applies `INIT`/`TRANS` to a fixed number of arguments.
     lines.append("-- state variables")
+    # The ascription is what `matchTypeName` reads to pick the VMT sort, so
+    # it has to be the slot's own type, not a shared one.
     for i in range(n):
-        lines.append(f"abbrev var_{i} (state : StateType) : {elem_ty} := state {i}")
+        lines.append(f"abbrev var_{i} (state : StateType) : {slot_ty[i]} := state {i}")
     lines.append("")
 
     # --- transition relation ---

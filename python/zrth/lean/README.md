@@ -429,8 +429,9 @@ describe the module:
 | external input wires | `lean2vmt` models only `state`/`statenext` |
 | a ctrl wire holding more than one element | `R_i` would compare a tuple |
 | state elements other than `Int`/`Bool` | `vmt2lean.py`'s `tp()` maps back only those two |
-| state mixing `Int` and `Bool` | a per-index `TypeMap` needs a `match`, whose auxiliary matcher has never been through `lean2vmt` |
-| `Ne`, `ReLU`, `ToUnsigned`, `Argmax`, `Linear`, any BV op | their Lean form reaches `exprToSMT` as an unapplied leaf (`instDecidableNot`, `max`, `toNat`) or calls into `Core.Basic` |
+| — | a state *mixing* `Int` and `Bool` is fine: `TypeMap` gets an arm per slot, and the `TypeMap.match_1` the equation compiler generates never reaches the VMT, because `emitDefs` keeps only declarations whose return type whnfs to `Prop`/`Int`/`Bool` |
+| `ToUnsigned`, `Argmax`, `Linear`, `Transpose`, `Xor`, any BV op | their Lean form reaches `exprToSMT` as an unapplied leaf (`toNat`) or calls into `Core.Basic` |
+| — | `Ne`, `ReLU`, `Max` and `Min` are accepted, but only against a `lean2vmt` carrying the commit *"translate mod, max/min and a negated decidable instance"*; against an older one they go back to being printed as `instDecidableNot` / `max` / `min`, so `NA_OPS` and that commit travel together |
 | `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
 
 ### The `lean-ltl-certifying` side
