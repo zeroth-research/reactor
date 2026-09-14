@@ -1,8 +1,3 @@
-import System.System
-import System.Circ
-import System.Rel
-{% if scalar %}
-import System.Scalar
-import System.ScalarRel
-import System.FBK
-{% endif %}
+{% for mod in imports %}
+import {{ mod }}
+{% endfor %}

@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type, _translate_terms
-from zrth.lean.common import LeanContext, _bind_wires
+from zrth.lean.common import LeanContext, Refused, _bind_wires
+from zrth.lean.tactics import plan_for
 from zrth.lean.template_env import render
 from ..expr import Expr
 
@@ -23,9 +24,38 @@ class CertificateData:
     prp: str | Expr | None = None
     inv: Expr | str | None = None
 
+    # Which proof rule the certificate is built on, and so what `prp` means:
+    #
+    #   "buchi"  -- `G (F P)`, `rule_buchi`: an invariant *and* a ranking
+    #              function that decreases off `P`. `--buchi`.
+    #   "safety" -- `G P`, `rule_globally`: an invariant that implies `P`,
+    #              and no ranking at all -- there is nothing to rank when
+    #              the property never has to be re-reached. `--safety`.
+    kind: str = "buchi"
+
     init_pre: Expr | str | None = None
     update_pre: Expr | str | None = None
     ranking: Expr | str | None = None
+
+    # SMT-LIB (or Python-expression) source for `inv` / `ranking` when those
+    # fields hold Lean text printed from a cvc5 term -- the `--infer ai-cegar`
+    # route. The project needs the Lean; cvc5 needs its own input back, so
+    # `--pre-check` restates the obligations from these.
+    inv_smt: str | None = None
+    ranking_smt: str | None = None
+
+    # Shape of the predicates as cvc5 sees them, when they came from SMT-LIB
+    # and cvc5 could parse them. `None` everywhere else, and the tactic plan
+    # falls back to reading the rendered Lean.
+    facts: "object | None" = None
+
+    # `smt_query.SolverHints` when `--smt-tactics=cvc5` ran. `None`
+    # otherwise, and the plan is exactly the one it would have emitted.
+    hints: "object | None" = None
+
+    @property
+    def is_safety(self) -> bool:
+        return self.kind == "safety"
 
 
 def _cert_def_lines(
@@ -70,6 +100,11 @@ def _cert_def_lines(
 
     # ranking (Nat, not Prop). Noncomputable for a Real state: `to_int`
     # emits `⌊·⌋`, which goes through the noncomputable `Real.instFloorRing`.
+    # `rule_globally` takes no ranking, so a safety certificate has none to
+    # define -- and defining it as `sorry` would put a `sorry` in a file
+    # whose whole point is that it has none.
+    if c["is_safety"]:
+        return lines
     if c["ranking_body"] is not None:
         lines.append(f"{noncomp}def ranking (s : {ctrl_native}) : Nat :=")
         lines.append(c["ranking_body"])
@@ -123,11 +158,14 @@ def _cert_def_context(ctx: LeanContext, cert_data: CertificateData) -> dict:
     inv_body, inv_expr = _field(cert_data.inv, s_bindings)
     p_body, p_expr = _field(cert_data.prp, s_bindings)
     rank_body, rank_expr = _field(cert_data.ranking, s_bindings)
+    if cert_data.is_safety:
+        rank_body = rank_expr = None
 
     return dict(
         extl_type=extl_native,
         ctrl_type=ctrl_native,
         noncomp="noncomputable " if ctx.uses_real else "",
+        is_safety=cert_data.is_safety,
         init_pre_body=ip_body,
         init_pre_expr=ip_expr,
         update_pre_body=up_body,
@@ -138,6 +176,21 @@ def _cert_def_context(ctx: LeanContext, cert_data: CertificateData) -> dict:
         p_expr=p_expr,
         ranking_body=rank_body,
         ranking_expr=rank_expr,
+    )
+
+
+def _predicate_text(ctx: LeanContext, cert_data: CertificateData) -> str:
+    """The Lean text of every certificate predicate, for shape detection.
+
+    Fields reach us as compiled term lists, as already-translated Lean
+    expression strings, or not at all; `_cert_def_context` has normalised all
+    three into `_body` / `_expr` entries by the time we look.
+    """
+    c = _cert_def_context(ctx, cert_data)
+    return "\n".join(
+        str(v)
+        for k, v in c.items()
+        if v and (k.endswith("_body") or k.endswith("_expr"))
     )
 
 
@@ -192,12 +245,22 @@ def generate_certificate_lean(
     else:
         inline_defs = None
         has_ranking = True
+    # A safety certificate defines no ranking at all, so naming it in a simp
+    # set would be an unknown identifier rather than an unused one.
+    has_ranking = has_ranking and not cert_data.is_safety
 
     all_defs = "RM, init, update, inv, init_pre, update_pre, P"
     if has_ranking:
         all_defs += ", ranking"
     if const_list:
         all_defs += f", {const_list}"
+
+    plan = plan_for(
+        ctx,
+        _predicate_text(ctx, cert_data),
+        facts=cert_data.facts,
+        hints=cert_data.hints,
+    )
 
     return render(
         "project/Certificate/Certificate.lean.j2",
@@ -207,15 +270,24 @@ def generate_certificate_lean(
         extl_type=extl_native,
         ctrl_type=ctrl_native,
         all_defs=all_defs,
+        is_safety=cert_data.is_safety,
+        plan=plan,
     )
 
 
 def smt_predicates_to_lean(
-    cert_data: CertificateData, module: "Module"
+    cert_data: CertificateData, module: "Module", *, share: bool = True
 ) -> CertificateData:
     """Translate SMT-LIB string fields in *cert_data* to Lean expression strings.
 
     None and compiled term-list fields pass through unchanged.
+
+    `share=False` prints repeated subterms in full instead of `let`-binding
+    them. The caller wants that when `--smt-tactics` settled a branch
+    condition: `cert_facts` states the condition expanded, because a `have`
+    outside the definition cannot name a `let` inside it, and
+    `simp only [if_pos …]` then has nothing to match against a shared
+    `if (u3 ≥ 0) …`.
     """
     fields = (
         cert_data.prp,
@@ -228,24 +300,30 @@ def smt_predicates_to_lean(
         return cert_data
 
     # Lazy imports keep cvc5 off the critical path when this function is unused.
-    import cvc5
-
-    from .smt_module import ModuleSMT
-    from .smt_prompt import CegarPromptEnv, parse_predicate
+    from .smt_query import ModuleQueries, predicate_facts
     from .smt_to_lean import smt_to_lean, smt_to_lean_nat
 
-    tm = cvc5.TermManager()
-    msmt = ModuleSMT(tm=tm, module=module)
-    env = CegarPromptEnv(msmt)
+    # Not `build`: its `None` would leave the SMT sources in the fields this
+    # function exists to translate, and they are interpolated into the `def`
+    # bodies further down -- `def P : … → Prop := (= s0` reaches the user as
+    # a Lean parse error in generated code, if it reaches them at all.
+    try:
+        q = ModuleQueries(module, cert_data)
+    except Refused:
+        raise
+    except Exception as e:
+        raise Refused(
+            f"the certificate predicates cannot be read for this module: {e}"
+        ) from e
+    msmt = q.msmt
 
-    def translate(smt_src: str | None, mode: str) -> str | None:
-        if not isinstance(smt_src, str):
-            return smt_src
-        term = parse_predicate(env, smt_src)
+    def translate(term, mode: str, original) -> str | None:
+        if term is None:
+            return original
         if mode in ("property", "invariant"):
-            return smt_to_lean(term, msmt.ctrl_next, param_name="s")
+            return smt_to_lean(term, msmt.ctrl_next, param_name="s", share=share)
         if mode == "ranking":
-            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s")
+            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s", share=share)
         # preconditions
         return smt_to_lean(
             term,
@@ -255,12 +333,35 @@ def smt_predicates_to_lean(
                 ("e", "e.2", msmt.extl_next),
                 ("el", "e.1", msmt.extl_latched),
             ],
+            share=share,
         )
 
+    def named(flag: str, term, mode: str, original) -> str | None:
+        """`translate`, with the flag the source came from on any refusal.
+
+        The translator walks a cvc5 term and knows nothing of the command
+        line; `--pre (= s0 0)` parses and then fails on a name preconditions
+        do not bind, and "Unknown free variable `s0`" alone does not say
+        which of five sources asked for it.
+        """
+        try:
+            return translate(term, mode, original)
+        except Refused as e:
+            raise Refused(f"{flag}: {e}") from e
+
+    prp_flag = "--safety" if cert_data.is_safety else "--buchi"
     return CertificateData(
-        prp=translate(cert_data.prp, "property"),
-        init_pre=translate(cert_data.init_pre, "pre"),
-        update_pre=translate(cert_data.update_pre, "pre"),
-        inv=translate(cert_data.inv, "invariant"),
-        ranking=translate(cert_data.ranking, "ranking"),
+        prp=named(prp_flag, q.prp, "property", cert_data.prp),
+        init_pre=named("--pre", q.init_pre, "pre", cert_data.init_pre),
+        update_pre=named("--pre", q.update_pre, "pre", cert_data.update_pre),
+        inv=named("--invariant", q.inv, "invariant", cert_data.inv),
+        ranking=named("--ranking", q.ranking, "ranking", cert_data.ranking),
+        # The rendering changes the predicates, not what they are a
+        # certificate *of*, nor what cvc5 was given to read them from.
+        kind=cert_data.kind,
+        inv_smt=cert_data.inv_smt,
+        ranking_smt=cert_data.ranking_smt,
+        # The terms are already parsed, so reading their shape is free. The
+        # tactic plan uses it in place of guessing from the printed Lean.
+        facts=predicate_facts(q),
     )

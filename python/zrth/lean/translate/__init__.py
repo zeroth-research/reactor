@@ -16,9 +16,10 @@ from zrth.lean.translate.scalar import (
     atom_to_lean_scalar as _atom_to_lean_scalar,
     to_lean_scalar_equiv as _to_lean_scalar_equiv,
 )
-from zrth.lean.translate.rel import atom_to_lean_rel as _atom_to_lean_rel
-from zrth.lean.translate.fbk import atom_to_lean_bool_rel as _atom_to_lean_bool_rel
-from zrth.lean.translate.mat_rel import atom_to_lean_mat_rel as _atom_to_lean_mat_rel
+from zrth.lean.translate.relational import (
+    atom_to_lean_rel as _atom_to_lean_rel,
+    atom_to_lean_mat_rel as _atom_to_lean_mat_rel,
+)
 
 
 class ModuleToLean4:
@@ -116,9 +117,6 @@ class ModuleToLean4:
         """Generate the relational encoding inside ``namespace ScalarRel``."""
         return _atom_to_lean_rel(self.ctx)
 
-    def atom_to_lean_bool_rel(self) -> str:
-        """Generate a Bool-valued relational encoding inside ``namespace FBK``."""
-        return _atom_to_lean_bool_rel(self.ctx)
 
     def atom_to_lean_mat_rel(self) -> str:
         """Generate the matrix-domain relational encoding inside ``namespace Rel``."""
@@ -132,10 +130,6 @@ class ModuleToLean4:
             return "-- relational encoding not available: module has non-scalar (matrix) wires"
         return self.atom_to_lean_rel()
 
-    def to_lean_bool_rel(self) -> str:
-        if not self._can_scalarize():
-            return "-- bool relational encoding not available: module has non-scalar (matrix) wires"
-        return self.atom_to_lean_bool_rel()
 
     # ------------------------------------------------------------------
     # Combined output

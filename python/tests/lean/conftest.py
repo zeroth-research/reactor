@@ -9,7 +9,7 @@ test in this directory runs:
      • Certs/TwoVars.lean
      • Certs/Collatz.lean
      • Certs/ScalarEnc*.lean  (functional + scalar encodings)
-     • Certs/RelEnc*.lean  (those two + ScalarRel + FBK)
+     • Certs/RelEnc*/     (those two + ScalarRel, one module each)
      • Certs/ArgmaxScalar.lean  (the scalar Argmax variants)
 
 The generated files import ZerothHammer for the tactic and define their own
@@ -250,6 +250,16 @@ _ARGMAX_SCALAR_SPECS = [
 ]
 
 
+# (name, module, safety property) for the `--fbk-proveit` equivalence proof.
+# One per shape class the route accepts: a scalar Int state, a mixed Bool/Int
+# state, and a module whose transition is a net (`Linear` -> `ReLU` ->
+# `Linear`), which is the case that needs the matrix simp set.
+_BRIDGE_SPECS = [
+    ("Countdown", _make_countdown, "(and (>= s0 0) (<= s0 100))"),
+    ("TwoVars", _make_twovars, "(and (>= s0 0) (<= s0 s1) (= s1 10))"),
+]
+
+
 _CERT_SPECS = [
     (
         "BigCounter",
@@ -278,6 +288,18 @@ _CERT_SPECS = [
             prp="(= s0 0)",
             inv="(and (>= s0 0) (<= s0 100))",
             ranking="(ite (= s0 0) 0 s0)",
+        ),
+    ),
+    (
+        # The safety shape: `rule_globally`, an invariant that implies the
+        # property, and no ranking function anywhere in the file. Nothing
+        # else in this suite compiles a `--safety` certificate.
+        "CountdownSafe",
+        _make_countdown,
+        CertificateData(
+            kind="safety",
+            prp="(<= s0 100)",
+            inv="(and (>= s0 0) (<= s0 100))",
         ),
     ),
     (
@@ -356,24 +378,78 @@ def generate_lean_files(sync_core_templates) -> None:
             + "\n"
         )
 
-    # Certs/RelEnc*.lean — functional + scalar + ScalarRel + FBK together, the
-    # way a generated project arranges them (System/ScalarRel.lean imports
-    # System/Scalar.lean, System/FBK.lean imports both). `ScalarRel.effect_i`
-    # is per wire while the state tuple it is compared to is per element, so
-    # these are what keep the slice and the codomain in agreement; no
-    # certificate carries a ScalarRel or FBK section.
+    # Certs/RelEnc*/ — functional, scalar and ScalarRel, one module each,
+    # exactly the way `create_project` splits them: System/Scalar.lean imports
+    # System/System.lean and System/ScalarRel.lean imports Scalar.
+    # `ScalarRel.effect_i` is per wire while the state tuple it is compared to
+    # is per element, so these are what keep the slice and the codomain in
+    # agreement; no certificate carries a ScalarRel section.
+    #
+    # The split is load-bearing, not cosmetic. These used to be concatenated
+    # into one file, which is a weaker test than separate modules: a `match`
+    # elaborates to an auxiliary matcher that is reused within a module but
+    # regenerated across module boundaries, so an `effect_i_eq` saw one
+    # matcher constant on both sides here and two different ones in a real
+    # project, and every generated project with a multi-element ctrl wire
+    # failed to compile while this test passed.
     for name, make_module in _REL_ENC_SPECS:
         t = ModuleToLean4(make_module())
-        (_CERTS_DIR / f"RelEnc{name}.lean").write_text(
-            "import Core.Mat\nimport Core.Box\n\n"
-            + t.to_lean_functional()
-            + "\n\n"
-            + t.to_lean_scalar()
-            + "\n\n"
-            + t.to_lean_rel()
-            + "\n\n"
-            + t.to_lean_bool_rel()
-            + "\n"
+        base = f"Certs.RelEnc{name}"
+        d = _CERTS_DIR / f"RelEnc{name}"
+        d.mkdir(exist_ok=True)
+        (d / "Base.lean").write_text(
+            "import Core.Mat\nimport Core.Box\n\n" + t.to_lean_functional() + "\n"
+        )
+        (d / "Scalar.lean").write_text(
+            f"import Core.Basic\nimport {base}.Base\n\n" + t.to_lean_scalar() + "\n"
+        )
+        (d / "ScalarRel.lean").write_text(
+            f"import Core.Basic\nimport {base}.Scalar\n\n" + t.to_lean_rel() + "\n"
+        )
+        (_CERTS_DIR / f"RelEnc{name}.lean").write_text(f"import {base}.ScalarRel\n")
+
+    # Certs/Bridge*.lean — the `--fbk-proveit` route's model, the module's
+    # own encodings, and the proof that the first is the second. The bridge
+    # normally imports `System.*` and the NA model from a generated project;
+    # inlining all of them in the order the project has them is the same
+    # elaboration problem, and it runs in this warm build instead of a cold
+    # `lake update` per case.
+    from zrth.lean.cert import generate_data_lean
+    from zrth.lean.common import LeanContext
+    from zrth.lean.fbk_proveit import property_to_bool_lean
+    from zrth.lean.translate.fbk import atom_to_lean_na
+    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+
+    def _strip(src: str) -> str:
+        out, in_doc = [], False
+        for line in src.splitlines():
+            if line.startswith("/-"):
+                in_doc = True
+            if in_doc:
+                if "-/" in line:
+                    in_doc = False
+                continue
+            if line.startswith("import "):
+                continue
+            out.append(line)
+        return "\n".join(out)
+
+    for name, make_module, prop in _BRIDGE_SPECS:
+        module = make_module()
+        ctx = LeanContext(module)
+        t = ModuleToLean4(module)
+        cert = smt_predicates_to_lean(CertificateData(prp=prop, kind="safety"), module)
+        (_CERTS_DIR / f"Bridge{name}.lean").write_text(
+            "\n".join([
+                "import Core.Basic", "import Core.Box", "import Core.Mat",
+                "import Smt", "",
+                t.to_lean_functional(), "",
+                t.to_lean_scalar(), "",
+                _strip(generate_data_lean(ctx, cert)), "",
+                _strip(atom_to_lean_na(ctx, property_to_bool_lean(module, prop),
+                                       module_name=name)), "",
+                _strip(atom_to_lean_fbk_bridge(ctx, na_module=name)),
+            ]) + "\n"
         )
 
     argmax_lines = ["import Core.Mat", ""]

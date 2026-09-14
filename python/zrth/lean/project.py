@@ -5,6 +5,7 @@ copy template library files, and generate a diagram Lean file.
 
 from zrth.lean.common import (
     LeanContext,
+    Refused,
     dtype_shape,
     _flat_element_type,
 )
@@ -18,6 +19,8 @@ from zrth.lean.cert import (
 from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 
 import shutil
+import subprocess
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from zrth import Module, Wire, Env, X
@@ -47,24 +50,248 @@ TEMPLATE_DIR = STATIC_DIR
 CORE_FILES = ["Basic.lean", "Box.lean", "LTL.lean", "Mat.lean"]
 LEAN_AI_FILES = ["LeanAI.lean", "LeanAI"]
 
+# The `--fbk-proveit` route's subdirectory inside the generated project. Its
+# NA model is both a `proveit.py` input and a lake target of the project, so
+# the directory and the model's module name are needed on both sides.
+PROVEIT_DIR = "ProveIt"
+
+
+def na_module_name(project_name: str) -> str:
+    """Lean module name of the NA model the `--fbk-proveit` route writes.
+
+    `proveit.py` compiles an out-of-tree model into an olean and imports it
+    under the file stem, so the file name *is* the module name the generated
+    certificate carries -- and the name the project's lakefile has to map
+    back onto ``PROVEIT_DIR``.
+    """
+    return f"{project_name}NA"
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # Lean project files
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def generate_lakefile(project_name: str, executable: bool = False) -> str:
+def generate_lakefile(
+    project_name: str,
+    executable: bool = False,
+    ltl_project: Path | str | None = None,
+) -> str:
+    """Render the project's lakefile.
+
+    `ltl_project` is the `--fbk-proveit` checkout: given one, the lakefile
+    also requires it and declares the NA model as a lean_lib, which is what
+    makes the installed certificate -- `Certificate/Certificate.lean`, which
+    the root module imports -- a buildable target rather than a file lake
+    reaches and cannot elaborate.
+    """
     return render(
         "project/lakefile.toml.j2",
         project_name=project_name,
         executable=executable,
         cslib_rev=CSLIB_REV,
+        ltl_project=str(ltl_project) if ltl_project is not None else None,
+        na_lib=na_module_name(project_name) if ltl_project is not None else None,
+        proveit_dir=PROVEIT_DIR,
     )
 
 
+class LakeBuildError(RuntimeError):
+    """`lake` could not build the generated project's certificate."""
+
+
+def stream(cmd: list[str], *, cwd: Path) -> tuple[int, str]:
+    """Run `cmd` in `cwd`, echoing its output as it arrives.
+
+    Returns the exit code *and* the output rather than raising, so each
+    caller can say what went wrong in its own vocabulary -- `lake` and
+    `proveit.py` do not fail in the same words. `FileNotFoundError`
+    propagates: a missing executable is the caller's to name.
+    """
+    print(f"$ {' '.join(cmd)}")
+    chunks: list[str] = []
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        chunks.append(line)
+        print(line, end="")
+    return proc.wait(), "".join(chunks)
+
+
+def build_certificate(project_dir: Path) -> None:
+    """`lake build` the certificate of a generated project.
+
+    `lake update` runs first: a freshly generated project has no manifest at
+    all, and one left by an earlier run predates this run's lakefile -- with
+    `--fbk-proveit` that lakefile has a require the manifest has never seen,
+    and `lake build` resolves neither case.
+
+    A build that succeeds while the certificate still holds `sorry` is not a
+    proof, so that is an error too. `zeroth_hammer` leaves a `sorry` where it
+    cannot close an obligation, and lake reports those as warnings and exits
+    0 -- which would make "built" mean nothing.
+    """
+    for cmd in (["lake", "update"], ["lake", "build", "Certificate"]):
+        try:
+            rc, out = stream(cmd, cwd=project_dir)
+        except FileNotFoundError as e:
+            raise LakeBuildError(f"cannot run {cmd[0]}: {e}") from e
+        if rc != 0:
+            raise LakeBuildError(
+                f"`{' '.join(cmd)}` failed (exit {rc}) in {project_dir}\n"
+                + _build_why(out)
+            )
+
+    unproved = [l for l in out.splitlines() if "sorry" in l and "Certificate/" in l]
+    if unproved:
+        raise LakeBuildError(
+            f"the certificate compiles but is not proved: "
+            f"{len(unproved)} obligation(s) left as `sorry`\n"
+            + "\n".join(f"  {l.strip()}" for l in unproved[:5])
+        )
+    print(f"Certificate built: lake build Certificate in {project_dir}")
+
+
+def _build_why(out: str) -> str:
+    """The reason lake refused, restated where the user will see it.
+
+    Its own diagnosis is accurate but scrolls past behind thousands of
+    replayed Mathlib jobs, leaving a bare "failed (exit 1)" as the last line.
+    """
+    # Lake's own two wrapper lines say only that something failed, which is
+    # what this is already replacing; the diagnostics are the lines between.
+    noise = ("error: build failed", "error: Lean exited with code")
+    errors = [
+        l
+        for l in out.splitlines()
+        if l.startswith("error:") and not l.startswith(noise)
+    ]
+    if not errors:
+        return "  (see the output above)"
+    return (
+        "\n".join(f"  {l}" for l in errors[:5])
+        + "\n  An unresolved import means the project cannot see what the "
+        "certificate needs.\n  A failed tactic means an obligation "
+        "`zeroth_hammer` could not close: the invariant\n  or the ranking "
+        "function is wrong, or too weak to be inductive."
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The emitted encodings
+#
+# One row per Lean file `ModuleToLean4` prints, and one writer for all of
+# them. Both routes that emit encodings -- the project (`create_project`)
+# and the standalone `--cert-file` -- walk this same table, so the header,
+# the imports and the producer agree across the two by construction rather
+# than by inspection. They differ only in how a row becomes a path and a
+# Lean module name, which is what `Layout` supplies.
+#
+# Row order is emission order, and it is load-bearing: `to_lean_*` methods
+# feed each other's lemma lists (see `translate/__init__.py`), so the
+# functional encoding has to be printed before the encodings that quote it.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Where one route puts an encoding and what Lean calls it.
+
+    `base` is the name of the row with no suffix -- the functional encoding
+    -- and every other row hangs off it. In the project the files live in
+    their own `System/` directory and are named by suffix alone; a
+    `--cert-file` writes them next to whatever else is in the output
+    directory, so there the names carry `base` too (`flat`).
+    """
+
+    base: str
+    prefix: str = ""            # Lean module prefix, e.g. "System."
+    flat: bool = False          # file names carry `base`
+    directory: Path = Path()    # only `path` uses it
+
+    def stem(self, suffix: str) -> str:
+        return f"{self.base}{suffix}" if self.flat else (suffix or self.base)
+
+    def path(self, suffix: str) -> Path:
+        return self.directory / f"{self.stem(suffix)}.lean"
+
+    def lean_module(self, suffix: str) -> str:
+        return f"{self.prefix}{self.stem(suffix)}"
+
+
+# The project's own layout, also the one `generate_root` imports through.
+SYSTEM_LAYOUT = Layout(base="System", prefix="System.")
+
+
+@dataclass(frozen=True)
+class Encoding:
+    """One Lean file: what names it, what it says, what it needs, who prints it."""
+
+    suffix: str                 # appended to the layout's base; "" is the base
+    title: str                  # header comment, "<title> of reactive module `X`"
+    core: str                   # the Core module the encoding is written against
+    needs: tuple[str, ...]      # suffixes of the sibling encodings it imports
+    producer: str               # the `ModuleToLean4` method that prints it
+    scalar: bool = False        # only sound when the module scalarizes
+    cert_file: bool = True      # also written by the `--cert-file` route
+
+
+ENCODINGS: tuple[Encoding, ...] = (
+    # The functional encoding is the base every other row imports. The
+    # `--cert-file` route gets its own copy inlined into the standalone
+    # certificate by `generate_standalone_cert_lean`, so it is not written
+    # again there; `Circ` has no consumer on that route at all.
+    Encoding("", "Functional encoding", "Core.Box", (), "to_lean_functional",
+             cert_file=False),
+    Encoding("Circ", "Circuit encoding", "Core.Box", ("",), "to_lean_circ",
+             cert_file=False),
+    Encoding("Rel", "Matrix-domain relational encoding", "Core.Basic", ("",),
+             "to_lean_mat_rel"),
+    Encoding("Scalar", "Scalar encoding", "Core.Basic", ("",), "to_lean_scalar",
+             scalar=True),
+    Encoding("ScalarRel", "Scalar-relational encoding", "Core.Basic", ("Scalar",),
+             "to_lean_rel", scalar=True),
+)
+
+
+def write_encoding(
+    enc: Encoding, m2l: "ModuleToLean4", layout: Layout, module_name: str
+) -> Path:
+    """Print one encoding and write it where `layout` says it goes."""
+    imports = [enc.core] + [layout.lean_module(s) for s in enc.needs]
+    body = getattr(m2l, enc.producer)()
+    path = layout.path(enc.suffix)
+    path.write_text(
+        f"/- {enc.title} of reactive module `{module_name}` -/\n"
+        + "".join(f"import {i}\n" for i in imports)
+        + f"\n{body}\n"
+    )
+    return path
+
+
 def generate_root(scalar: bool = True) -> str:
-    """Root module file that imports System.* encodings."""
-    return render("project/Root.lean.j2", scalar=scalar)
+    """Root module file that imports the `System.*` encodings.
+
+    The import list is the encoding table, so a row added there reaches the
+    root without a second edit. `scalar` drops the rows whose encoding only
+    holds for a module the scalar layout can express.
+    """
+    return render(
+        "project/Root.lean.j2",
+        imports=[
+            SYSTEM_LAYOUT.lean_module(e.suffix)
+            for e in ENCODINGS
+            if scalar or not e.scalar
+        ],
+    )
 
 
 def _token_count(wire: Wire) -> int:
@@ -82,8 +309,8 @@ def _token_count(wire: Wire) -> int:
     raise ValueError("Unsupported DType for token count")
 
 
-def _unsupported_io_sort(elem: str, wire: Wire) -> ValueError:
-    return ValueError(
+def _unsupported_io_sort(elem: str, wire: Wire) -> Refused:
+    return Refused(
         f"generate_main_lean: no Lean IO for element type {elem} "
         f"(wire dtype {wire.dtype}); `Real` is noncomputable in Lean, so it "
         "cannot be parsed or printed by the generated executable"
@@ -297,8 +524,11 @@ def write_certificate_lean(
 
     Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
     from ``create_project`` which already has one).
-    ``cert_data`` is accepted for compatibility but not used — the data lives in
-    XXXData.lean.  Call ``write_data_lean`` to update the data.
+
+    The *definitions* still live in XXXData.lean, but ``cert_data`` is no
+    longer inert here: the proof tactics are generated from the shape of the
+    predicates (see ``zrth.lean.tactics``), so this file has to be rewritten
+    whenever they change — after ``--infer``, for instance.
     """
     module_name = project_name
     if ctx is None:
@@ -307,7 +537,7 @@ def write_certificate_lean(
     cert_dir = project_dir / "Certificate"
     cert_dir.mkdir(parents=True, exist_ok=True)
     cert_file = cert_dir / "Certificate.lean"
-    cert_file.write_text(generate_certificate_lean(ctx))
+    cert_file.write_text(generate_certificate_lean(ctx, cert_data))
     print(f"Wrote {cert_file}")
     return cert_file
 
@@ -320,6 +550,7 @@ def create_project(
     executable: bool = False,
     cert_data: CertificateData | None = None,
     module_file: Path | str | None = None,
+    ltl_project: Path | str | None = None,
 ) -> Path:
     """
     Create a full Lean4 project.
@@ -333,6 +564,10 @@ def create_project(
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
         `module_file`:     Path to the Python source file used to create the module
                            (written as a debug artifact alongside the project).
+        `ltl_project`:     A `lean-ltl-certifying` checkout (the `--fbk-proveit`
+                           route). The lakefile then requires it and declares
+                           the NA model's lean_lib, so the certificate that
+                           route installs is buildable here.
     """
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
@@ -354,7 +589,11 @@ def create_project(
 
     # Render and write project-level files from templates
     lakefile = project_dir / "lakefile.toml"
-    lakefile.write_text(generate_lakefile(project_name, executable=executable))
+    lakefile.write_text(
+        generate_lakefile(
+            project_name, executable=executable, ltl_project=ltl_project
+        )
+    )
     print(f"Wrote {lakefile}")
 
     toolchain = project_dir / "lean-toolchain"
@@ -368,6 +607,14 @@ def create_project(
     print(f"Wrote {hammer_file}")
 
     (project_dir / "Certificate.lean").write_text(render("project/Certificate.lean.j2"))
+
+    # The `Certificate` lean_lib globs its submodules, so every file in
+    # `Certificate/` is built -- including one this run did not write.
+    # `Certificate/Certificate.lean` is rewritten below; the bridge is
+    # written later and only by `--fbk-proveit`, so a copy left by an
+    # earlier run into the same `-o` is about a different module, and lake
+    # would build it against this run's `System/`.
+    (project_dir / "Certificate" / "Equivalence.lean").unlink(missing_ok=True)
 
     # Copy static files (Core/, LeanAI/)
     core_dir = project_dir / "Core"
@@ -418,77 +665,12 @@ def create_project(
     root_lean.write_text(generate_root(scalar=m2l._can_scalarize()))
     print(f"Wrote root module {root_lean}")
 
-    mod_file = src_dir / "System.lean"
-    print(f"Generating `{mod_file.absolute()}`")
-    mod_file.write_text(f"""\
-/- Functional encoding of reactive module `{module_name}` -/
-import Core.Box
-
-{m2l.to_lean_functional()}
-""")
-    assert mod_file.exists()
-    print(f"++ Generated {mod_file} ++")
-
-    mod_file = src_dir / "Circ.lean"
-    print(f"Generating `{mod_file.absolute()}`")
-    mod_file.write_text(f"""\
-/- Circuit encoding of reactive module `{module_name}` -/
-import Core.Box
-import System.System
-
-{m2l.to_lean_circ()}
-""")
-    assert mod_file.exists()
-    print(f"++ Generated {mod_file} ++")
-
-    mat_rel_file = src_dir / "Rel.lean"
-    print(f"Generating `{mat_rel_file.absolute()}`")
-    mat_rel_file.write_text(f"""\
-/- Matrix-domain relational encoding of reactive module `{module_name}` -/
-import Core.Basic
-import System.System
-
-{m2l.to_lean_mat_rel()}
-""")
-    assert mat_rel_file.exists()
-    print(f"++ Generated {mat_rel_file} ++")
-
-    scalar_file = src_dir / "Scalar.lean"
-    print(f"Generating `{scalar_file.absolute()}`")
-    scalar_file.write_text(f"""\
-/- Scalar encoding of reactive module `{module_name}` -/
-import Core.Basic
-import System.System
-
-{m2l.to_lean_scalar()}
-""")
-    assert scalar_file.exists()
-    print(f"++ Generated {scalar_file} ++")
-
-    scalar_rel_file = src_dir / "ScalarRel.lean"
-    print(f"Generating `{scalar_rel_file.absolute()}`")
-    scalar_rel_file.write_text(f"""\
-/- Scalar-relational encoding of reactive module `{module_name}` -/
-import Core.Basic
-import System.Scalar
-
-{m2l.to_lean_rel()}
-""")
-    assert scalar_rel_file.exists()
-    print(f"++ Generated {scalar_rel_file} ++")
-
-    fbk_file = src_dir / "FBK.lean"
-    print(f"Generating `{fbk_file.absolute()}`")
-    fbk_file.write_text(f"""\
-/- Bool-valued relational encoding of reactive module `{module_name}` -/
-import Core.Basic
-import System.Scalar
-import System.ScalarRel
-
-{m2l.to_lean_bool_rel()}
-""")
-    assert fbk_file.exists()
-    print(f"++ Generated {fbk_file} ++")
+    # Every encoding the project carries, in table order. The scalar rows
+    # are written whether or not the module scalarizes -- only the root
+    # import list is gated, which is what it has always done.
+    layout = replace(SYSTEM_LAYOUT, directory=src_dir)
+    for enc in ENCODINGS:
+        print(f"++ Generated {write_encoding(enc, m2l, layout, module_name)} ++")
 
     # -- certificate data (init_pre, inv, P, ranking — placeholders if no cert_data) --
     write_data_lean(project_dir, project_name, module, cert_data, ctx=ctx)
@@ -504,7 +686,7 @@ import System.ScalarRel
     # ----------------------------------------------------------
     # Always write Certificate.lean (stable proof structure, imports XXXData)
     # ----------------------------------------------------------
-    write_certificate_lean(project_dir, project_name, module, ctx=ctx)
+    write_certificate_lean(project_dir, project_name, module, cert_data, ctx=ctx)
 
     print()
     print(f"DONE: Project created at: {project_dir}")
