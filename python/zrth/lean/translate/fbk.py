@@ -67,10 +67,10 @@ fragment is chosen to be what `lean2vmt` reads.  Three things follow:
 from zrth.lean.common import (
     LeanContext,
     _flat_element_type,
-    _flat_indices,
-    _flat_size,
+    flat_layout,
 )
 from zrth.lean.native import _reachable_terms
+from zrth.lean.translate._skeleton import RelBlock, RelSyntax, emit_rel_block
 
 
 class NAUnsupported(Exception):
@@ -179,8 +179,9 @@ def check_na_supported(ctx: LeanContext, simplify: bool = True) -> None:
 #
 # One VMT variable per *element*, not per wire. A wire holding a 3-vector
 # becomes `var_k, var_k+1, var_k+2`, in the row-major order `mat_select`
-# packs a matrix into a cvc5 tuple, so slot arithmetic here and element
-# selection there stay in step by construction.
+# packs a matrix into a cvc5 tuple -- `common.flat_layout` owns that order
+# for every encoding, and `tests/test_lean_flat_layout.py` is what keeps the
+# slot arithmetic here and the element selection there in step.
 #
 # Per wire was the older layout, and it is why this encoding used to reject
 # any wire holding more than one element: `R_i` compares `var_i statenext`
@@ -189,26 +190,18 @@ def check_na_supported(ctx: LeanContext, simplify: bool = True) -> None:
 # ══════════════════════════════════════════════════════════════════════
 
 
-def _slot_layout(ctrl_next) -> list[tuple[int, int, int]]:
-    """`(wire index, row, col)` for each state slot, in slot order."""
-    return [
-        (i, r, c) for i, w in enumerate(ctrl_next) for (r, c) in _flat_indices(w)
-    ]
-
-
 def _slot_accessors(ctrl_next, binder: str = "state") -> dict[str, list[str]]:
     """`s{i}` → the `(var_k <binder>)` reads of wire `i`'s elements.
 
     This is the map `smt_to_lean_bool` resolves both the state constants and
-    their tuple selectors through, so it is the single place that decides
-    which slot an element lives in.
+    their tuple selectors through: the encoder names a wire `s{i}` and
+    selects element `k` of it, and this says which VMT variable that is.
     """
+    layout = flat_layout(ctrl_next)
     out: dict[str, list[str]] = {}
-    k = 0
     for i, w in enumerate(ctrl_next):
-        n = _flat_size(w)
-        out[f"s{i}"] = [f"(var_{k + j} {binder})" for j in range(n)]
-        k += n
+        offset, size = layout.span(w)
+        out[f"s{i}"] = [f"(var_{offset + j} {binder})" for j in range(size)]
     return out
 
 
@@ -294,13 +287,14 @@ def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> tuple[list[str], li
     _LIVE.append((tm, msmt, solver))
 
     acc = _slot_accessors(ctx.ctrl_next)
+    layout = flat_layout(ctx.ctrl_next)
     state = msmt.fresh_ctrl("s")
     nxt = msmt.update_state(state, [], [])
     ini = msmt.init_state([])
 
     update_text: list[str] = []
     init_text: list[str] = []
-    for i, r, c in _slot_layout(ctx.ctrl_next):
+    for i, r, c in layout.slots:
         shape = wire_shape(ctx.ctrl_next[i])
         # Simplified because the encoder builds a matrix and then takes one
         # element of it: `m_vec32`'s affine layer is 97 KB of term before
@@ -327,9 +321,9 @@ def atom_to_lean_na(
     """
     check_na_supported(ctx, simplify)
 
-    layout = _slot_layout(ctx.ctrl_next)
-    n = len(layout)
-    slot_ty = [_flat_element_type(ctx.ctrl_next[i]) for i, _, _ in layout]
+    layout = flat_layout(ctx.ctrl_next)
+    n = layout.total
+    slot_ty = layout.element_types()
     update_text, init_text = _slot_bodies(ctx, simplify)
 
     subject = f"reactive module `{module_name}`" if module_name else "a reactive module"
@@ -371,41 +365,57 @@ def atom_to_lean_na(
         lines.append(f"abbrev var_{i} (state : StateType) : {slot_ty[i]} := state {i}")
     lines.append("")
 
+    # The body def / relation / conjunction shape below is the one `Rel` and
+    # `ScalarRel` emit too, so it comes from the shared skeleton -- spelled
+    # here in `abbrev`, `Bool`, `==` and `&&`, which is what `lean2vmt`
+    # reads, and with no `*_eq` theorem block: a cvc5-printed body is the
+    # module's transition spelled differently, not syntactically equal to the
+    # Lean one, so this route relates the two semantically (`fbk_bridge.py`).
+    syn = RelSyntax(
+        body_decl="abbrev",
+        rel_decl="abbrev",
+        prop="Bool",
+        eq="==",
+        conj="&&",
+        slot_ty=lambda i: slot_ty[i],
+        project=lambda e, i: f"var_{i} {e}",
+    )
+
     # --- transition relation ---
     # A slot whose next value does not read the state is a closed term, and
     # the binder is left off rather than written and unused.
     effect_uses_state = ["state" in body for body in update_text]
-    for i, body in enumerate(update_text):
-        binder = " (state : StateType)" if effect_uses_state[i] else ""
-        lines.append(f"abbrev effect_{i}{binder} : {slot_ty[i]} :=")
-        lines.append(f"  {body}")
-        lines.append("")
-
-    for i in range(n):
-        arg = " state" if effect_uses_state[i] else ""
-        lines.append(f"abbrev R_{i} (state statenext : StateType) : Bool :=")
-        lines.append(f"  var_{i} statenext == effect_{i}{arg}")
-        lines.append("")
-
-    lines.append("abbrev TRANS (state statenext : StateType) : Bool :=")
-    lines.append("  " + " &&\n  ".join(f"R_{i} state statenext" for i in range(n)))
-    lines.append("")
+    lines += emit_rel_block(
+        syn,
+        RelBlock(
+            body_name="effect",
+            rel_name="R",
+            conj_name="TRANS",
+            state_binders="(state statenext : StateType)",
+            state_args="state statenext",
+            target="statenext",
+            binders=[" (state : StateType)" if u else "" for u in effect_uses_state],
+            args=[" state" if u else "" for u in effect_uses_state],
+        ),
+        [f"  {body}" for body in update_text],
+    )
 
     # --- initial condition ---
     # No extl wires (checked), so `init_i` is a closed term.
-    for i, body in enumerate(init_text):
-        lines.append(f"abbrev init_{i} : {slot_ty[i]} :=")
-        lines.append(f"  {body}")
-        lines.append("")
-
-    for i in range(n):
-        lines.append(f"abbrev Init_{i} (state : StateType) : Bool :=")
-        lines.append(f"  var_{i} state == init_{i}")
-        lines.append("")
-
-    lines.append("abbrev INIT (state : StateType) : Bool :=")
-    lines.append("  " + " &&\n  ".join(f"Init_{i} state" for i in range(n)))
-    lines.append("")
+    lines += emit_rel_block(
+        syn,
+        RelBlock(
+            body_name="init",
+            rel_name="Init",
+            conj_name="INIT",
+            state_binders="(state : StateType)",
+            state_args="state",
+            target="state",
+            binders=[""] * n,
+            args=[""] * n,
+        ),
+        [f"  {body}" for body in init_text],
+    )
 
     # --- property ---
     lines.append("abbrev PROPERTY (state : StateType) : Bool :=")
