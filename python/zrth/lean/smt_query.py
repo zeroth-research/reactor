@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from .common import Refused
+
 if TYPE_CHECKING:
     from .cert import CertificateData as _CertificateData  # noqa: F401
 
@@ -112,7 +114,9 @@ class ModuleQueries:
 
     Construct with `build`, which returns `None` rather than raising when the
     module or the predicates are outside what the encoder covers -- the whole
-    point is that the caller can carry on without cvc5.
+    point is that the caller can carry on without cvc5. A caller that cannot
+    carry on -- `smt_predicates_to_lean`, whose output *is* the Lean the
+    predicates become -- constructs directly and reports what went wrong.
     """
 
     def __init__(self, module, cert_data):
@@ -127,20 +131,47 @@ class ModuleQueries:
         self.env = CegarPromptEnv(self.msmt)
         self.state_vars = self.env.state_vars
 
-        def opt(src):
-            return parse_predicate(self.env, src) if isinstance(src, str) else None
+        def opt(src, flag, want: str = "Bool"):
+            """Parse one predicate source, or refuse naming the flag it came
+            from. cvc5's parser reports the token it stopped at and nothing
+            about where the text came from, and the caller that prints this
+            has five sources in hand.
+
+            `want` is the sort the field is declared as and the Lean printer
+            assumes: a property, an invariant and a precondition become the
+            body of a `Prop`, a ranking function the body of a `Nat`. An Int
+            where a Prop is expected elaborates to nothing; a Bool ranking
+            prints as `(((s 0 0) = 0) : Int).toNat`, which is not Lean. cvc5
+            knows the sort here, so the flag can be told it is the wrong one
+            rather than Lean being shown the result.
+            """
+            if not isinstance(src, str):
+                return None
+            try:
+                term = parse_predicate(self.env, src)
+            except Exception as e:
+                raise Refused(f"{flag}: cannot read `{src}`: {e}") from e
+            got = term.getSort()
+            if not (got.isBoolean() if want == "Bool" else got.isInteger()):
+                raise Refused(f"{flag}: must have sort {want}, got {got}")
+            return term
 
         # After `--infer`, `inv` and `ranking` hold Lean printed from a cvc5
         # term, which nothing parses back; `inv_smt` / `ranking_smt` keep the
         # source the solver was handed, and that is what it can read.
         self.kind = getattr(cert_data, "kind", "buchi")
-        self.prp = opt(cert_data.prp)
-        self.inv = opt(getattr(cert_data, "inv_smt", None) or cert_data.inv)
-        self.ranking = opt(
-            getattr(cert_data, "ranking_smt", None) or cert_data.ranking
+        prp_flag = "--safety" if self.kind == "safety" else "--buchi"
+        self.prp = opt(cert_data.prp, prp_flag)
+        self.inv = opt(
+            getattr(cert_data, "inv_smt", None) or cert_data.inv, "--invariant"
         )
-        self.init_pre = opt(cert_data.init_pre)
-        self.update_pre = opt(cert_data.update_pre)
+        self.ranking = opt(
+            getattr(cert_data, "ranking_smt", None) or cert_data.ranking,
+            "--ranking",
+            want="Int",
+        )
+        self.init_pre = opt(cert_data.init_pre, "--pre")
+        self.update_pre = opt(cert_data.update_pre, "--pre")
         # Retained whole, solvers included: `smt_module.keep_alive` owns the
         # shutdown-ordering workaround for every cvc5 object this package
         # mints, and the instance is what ties this term manager to the
