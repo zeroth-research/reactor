@@ -126,6 +126,34 @@ so the generated executable can neither parse nor print it. A float
 approximation at the IO boundary would work if `verith -x` is wanted for LRA
 modules; that is a decision about what the executable is for.
 
+### 31. The NA model is not tied to the module · CONFIRMED
+
+Every other encoding carries an equivalence theorem back to the functional
+one; the `--fbk-proveit` route's model carries none, because trust leaves
+Lean through ic3ia and returns as `vmt2lean.py`'s certificate. A
+mistranslation in `smt_encode`, `_scalar_element`, cvc5's rewriter or
+`smt_to_lean_bool` therefore yields a model that parses, model-checks and
+carries a machine-checked certificate about a *different* system.
+
+`tests/test_lean_fbk.py::test_the_emitted_transition_agrees_with_the_module`
+evaluates the emitted slot bodies against the module's own execution, which
+catches a flattening or indexing error but is not a proof and does not run in
+the generated project.
+
+**Built**, for 14 of the 17 module shapes the route accepts:
+`translate/fbk_bridge.py` emits `Certificate/Equivalence.lean`, whose
+`module_safety` says safety of the model is safety of the module, over the
+module's own `init`/`update` and its own `P`. See
+[`FBK_EQUIVALENCE.md`](FBK_EQUIVALENCE.md).
+
+What is left is the three modules of #26 and #30 -- `matMin`/`matMax`/
+`argmax_1d` do not reduce, so the bridge cannot compute the side it has to
+compare against, and fixing the fold fixes both -- and the last link of
+`module_safety`, whose hypothesis is the model-side statement the installed
+certificate proves in `lean-ltl-certifying`'s LTL vocabulary rather than
+`Core.LTL`'s. Translating between the two is fixed work that does not vary
+per module.
+
 ### 26. `matMin` / `matMax` never reduce, so `Min`/`Max` modules cannot be proved · CONFIRMED
 
 **Symptom.** `OpMax`, `OpMin`. The certificate goal keeps an opaque
