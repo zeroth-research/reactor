@@ -45,7 +45,7 @@ from pathlib import Path
 
 from .common import LeanContext
 from .project import PROVEIT_DIR, na_module_name, stream
-from .translate.na import (
+from .translate.fbk import (
     NA_IMPORTS,
     NAUnsupported,
     atom_to_lean_na,
@@ -158,26 +158,48 @@ def resolve_ic3ia(spec: str | None) -> str | None:
     )
 
 
-def property_to_bool_lean(module, property_smt: str, n_state: int) -> str:
+def check_module(module, simplify: bool = True) -> None:
+    """Raise `ProveItError` unless the NA encoding can express `module`.
+
+    Called before anything is generated as well as inside :func:`run`: a
+    module this route cannot encode would otherwise be met first by
+    `create_project`, which fails about the Lean *project* -- a traceback
+    out of the functional encoder, for an op that has nothing to do with
+    the certificate route the user asked for.
+    """
+    try:
+        check_na_supported(LeanContext(module), simplify)
+    except NAUnsupported as e:
+        raise ProveItError(f"--fbk-proveit: {e}") from e
+
+
+def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
     """Translate the `--safety` SMT source to Bool-valued Lean.
 
-    The result reads state through `(var_i state)`, exactly as
-    ``translate/na.py`` binds it.
+    The result reads state through `(var_k state)`, exactly as
+    ``translate/fbk.py`` binds it -- one slot per *element*, so a wire wider
+    than 1x1 is read through the tuple selectors the property already uses
+    (`((_ tuple.select 2) s0)`), resolved to the slot that element lives in.
+    Both sides get that map from `na._slot_accessors`, which is what keeps
+    the property and the transition talking about the same variables.
+
+    `n_state` is ignored; the layout comes from the module's own wires.
     """
     import cvc5  # lazy: keeps cvc5 off the critical path of a bare run
 
+    from .common import LeanContext
     from .smt_module import ModuleSMT
     from .smt_prompt import CegarPromptEnv, parse_predicate
     from .smt_to_lean import smt_to_lean_bool
+    from .translate.fbk import _slot_accessors
 
     tm = cvc5.TermManager()
     env = CegarPromptEnv(ModuleSMT(tm=tm, module=module))
     term = parse_predicate(env, property_smt)
     if not term.getSort().isBoolean():
         raise ProveItError(f"--safety must have sort Bool, got {term.getSort()}")
-    accessors = {f"s{i}": f"(var_{i} state)" for i in range(n_state)}
     try:
-        return smt_to_lean_bool(term, accessors)
+        return smt_to_lean_bool(term, _slot_accessors(LeanContext(module).ctrl_next))
     except ValueError as e:
         raise ProveItError(f"--fbk-proveit: cannot encode --safety: {e}") from e
 
@@ -187,6 +209,7 @@ def write_na_model(
     project_name: str,
     ctx: LeanContext,
     property_lean: str,
+    simplify: bool = True,
 ) -> Path:
     """Write the NA model `proveit.py` consumes and return its path.
 
@@ -199,7 +222,11 @@ def write_na_model(
     out_dir = project_dir / PROVEIT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     model = out_dir / f"{na_module_name(project_name)}.lean"
-    model.write_text(atom_to_lean_na(ctx, property_lean, module_name=project_name))
+    model.write_text(
+        atom_to_lean_na(
+            ctx, property_lean, module_name=project_name, simplify=simplify
+        )
+    )
     print(f"Wrote NA model for proveit.py: {model}")
     return model
 
@@ -264,6 +291,7 @@ def run(
     property_smt: str,
     ic3ia: str | None = None,
     python: str | None = None,
+    simplify: bool = True,
 ) -> Path:
     """Run the whole route and return the installed certificate's path."""
     python = python or sys.executable
@@ -274,13 +302,12 @@ def run(
     check_toolchain(python)
 
     ctx = LeanContext(module)
-    try:
-        check_na_supported(ctx)
-    except NAUnsupported as e:
-        raise ProveItError(f"--fbk-proveit: {e}") from e
+    check_module(module, simplify)
 
-    property_lean = property_to_bool_lean(module, property_smt, len(ctx.ctrl_next))
-    model = write_na_model(project_dir, project_name, ctx, property_lean)
+    property_lean = property_to_bool_lean(module, property_smt)
+    model = write_na_model(
+        project_dir, project_name, ctx, property_lean, simplify=simplify
+    )
 
     targets = " ".join(_LAKE_TARGETS)
     print(f".. Building the model's imports ({targets}) in {root}")
