@@ -74,13 +74,16 @@ from pathlib import Path
 
 from .cert import CertificateData, generate_zeroth_hammer_lean
 from .project import (
+    ENCODINGS,
     LakeBuildError,
+    Layout,
     build_certificate,
     create_project,
     generate_standalone_cert_lean,
     load_module_from_file,
     write_certificate_lean,
     write_data_lean,
+    write_encoding,
 )
 from .translate import ModuleToLean4
 
@@ -510,10 +513,7 @@ def main():
     module = load_module_from_file(args.module_file, module_def=args.module_def)
     print(module)
 
-    # The proveit route's own shape check, before a line of Lean is written.
-    # Left until `run`, a module the NA encoding cannot express is met first
-    # by `create_project` -- which fails about the functional encoding, in a
-    # traceback, for a route that was never going to use it.
+    na_bodies = None
     if args.fbk_proveit:
         from .fbk_proveit import ProveItError, check_module
 
@@ -533,34 +533,17 @@ def main():
         lean_src = generate_standalone_cert_lean(module, project_cert_data)
         out.write_text(lean_src)
         print(f"Wrote standalone certificate: {out}")
+        # The same encoding table the project route walks, so these files
+        # and the ones in a generated project carry the same headers and
+        # the same imports. The functional encoding is already inlined in
+        # the standalone certificate above, which is the base they import.
         m2l = ModuleToLean4(module)
-        mat_rel_out = out.with_stem(out.stem + "Rel")
-        mat_rel_out.write_text(f"""\
-/- Relational encoding (matrix domain) for reactive module `{out.stem}` -/
-import Core.Basic
-import {out.stem}
-
-{m2l.to_lean_mat_rel()}
-""")
-        print(f"Wrote matrix-domain relational encoding: {mat_rel_out}")
-        scalar_out = out.with_stem(out.stem + "Scalar")
-        scalar_out.write_text(f"""\
-/- Scalar encoding for reactive module `{out.stem}` -/
-import Core.Basic
-import {out.stem}
-
-{m2l.to_lean_scalar()}
-""")
-        print(f"Wrote scalar encoding: {scalar_out}")
-        rel_out = out.with_stem(out.stem + "ScalarRel")
-        rel_out.write_text(f"""\
-/- Relational encoding for reactive module `{out.stem}` -/
-import Core.Basic
-import {out.stem}Scalar
-
-{m2l.to_lean_rel()}
-""")
-        print(f"Wrote relational encoding: {rel_out}")
+        layout = Layout(base=out.stem, flat=True, directory=out.parent)
+        for enc in ENCODINGS:
+            if not enc.cert_file:
+                continue
+            path = write_encoding(enc, m2l, layout, out.stem)
+            print(f"Wrote {enc.title.lower()}: {path}")
         return
 
     print(".. Generating lean code")
@@ -586,6 +569,7 @@ import {out.stem}Scalar
                 project_name=args.project_name,
                 ic3ia=args.ic3ia,
                 equivalence=args.fbk_equiv == "lean",
+                bodies=na_bodies,
             )
         except ProveItError as e:
             raise SystemExit(f"error: {e}") from e
