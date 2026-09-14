@@ -32,6 +32,7 @@ topologically-sorted dataflow graph.
 | File | Role |
 |------|------|
 | `common.py` | Shared utilities: `LeanContext`, type helpers, `ConstantRegistry`, wire-binding helpers |
+| `ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
 | `translate.py` | Top-level `ModuleToLean4` class; assembles functional + circuit encodings |
@@ -91,10 +92,11 @@ Lean function body as a string of `let` bindings followed by the output tuple:
   (x6, x5)
 ```
 
-Each term is looked up in `_LEAN_OP` (keyed by `IType` variant name).
-Operations produce `Mat T 1 1` values even for scalar results — conditions
-extract `0 0`, boolean ops wrap in `fun _ _ => ...`.  Non-scalar ops
-(`MatMul`, `Linear`, `ReLU`) use their native matrix forms.
+Each term is looked up in the op table's `mat` column (`ops.mat_emitter`,
+keyed by theory and variant name).  Operations produce `Mat T 1 1` values
+even for scalar results — conditions extract `0 0`, boolean ops wrap in
+`fun _ _ => ...`.  Non-scalar ops (`MatMul`, `Linear`, `ReLU`) use their
+native matrix forms.
 
 `ModuleToLean4.atom_to_lean_functional()` wraps the body into:
 
@@ -609,6 +611,15 @@ see [Building the certificate](#building-the-certificate---build-cert).
 ### The `lean-ltl-certifying` side
 
 [ltl]: https://github.com/zeroth/proof-prototyping
+
+---
+
+## Adding a New Op (`ops.py`)
+
+`python -m zrth.lean.ops` prints the whole matrix and every gap in it.
+`tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
+directions: a variant a theory gained but the table has not fails there, and
+so does a row no theory backs.
 
 ---
 

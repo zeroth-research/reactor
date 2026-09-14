@@ -339,6 +339,21 @@ def main():
         ),
     )
     parser.add_argument(
+        "--fbk-equiv",
+        default="lean",
+        choices=["lean", "none"],
+        help=(
+            "Whether to emit the proof that the NA model is the module "
+            "(default: lean). The certificate proveit.py installs is about "
+            "the *model*; this is what carries it back to the module, and "
+            "without it a mistranslation anywhere in the SMT path would be "
+            "a machine-checked certificate about a different system. "
+            "`none` skips it -- it is the expensive part on a wide state "
+            "(73 s at 32 slots against ~5 s for the rest of the route). "
+            "Only meaningful with --fbk-proveit."
+        ),
+    )
+    parser.add_argument(
         "--build-cert",
         action="store_true",
         help=(
@@ -441,6 +456,7 @@ def main():
             for name, given in (
                 ("--ic3ia", bool(args.ic3ia)),
                 ("--fbk-simplify"),
+                ("--fbk-equiv", args.fbk_equiv != "lean"),
             )
             if given
         ]
@@ -569,6 +585,7 @@ import {out.stem}Scalar
                 project_dir=project_dir,
                 project_name=args.project_name,
                 ic3ia=args.ic3ia,
+                equivalence=args.fbk_equiv == "lean",
             )
         except ProveItError as e:
             raise SystemExit(f"error: {e}") from e
