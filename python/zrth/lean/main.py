@@ -325,6 +325,20 @@ def main():
         ),
     )
     parser.add_argument(
+        "--fbk-simplify",
+        help=(
+            "Whether cvc5's rewriter runs over the transition the NA model "
+            "carries (default: cvc5). `none` leaves each state slot the "
+            "shape the module's own terms give it -- the same transition, "
+            "spelled the way the module spells it (`x - 1` rather than "
+            "`-1 + x`), which is what to pass when reading the generated "
+            "Lean against the source. The rewriter is what makes a constant "
+            "matrix tractable, though: a 32-wide affine layer is 97 KB of "
+            "term unfolded and 1.9 KB folded. Only meaningful with "
+            "--fbk-proveit."
+        ),
+    )
+    parser.add_argument(
         "--build-cert",
         action="store_true",
         help=(
@@ -421,8 +435,21 @@ def main():
             ltl_project = resolve_project(args.fbk_proveit)
         except ProveItError as e:
             parser.error(str(e))
-    elif args.ic3ia:
-        parser.error("--ic3ia is only meaningful together with --fbk-proveit")
+    else:
+        stray = [
+            name
+            for name, given in (
+                ("--ic3ia", bool(args.ic3ia)),
+                ("--fbk-simplify"),
+            )
+            if given
+        ]
+        if stray:
+            verb = "is" if len(stray) == 1 else "are"
+            parser.error(
+                f"{', '.join(stray)} {verb} only meaningful together with "
+                "--fbk-proveit"
+            )
 
     # --build-cert is route-independent, but it needs a certificate worth
     # building. A bare project's obligations are all `sorry`: lake compiles
@@ -466,6 +493,13 @@ def main():
 
     module = load_module_from_file(args.module_file, module_def=args.module_def)
     print(module)
+
+    # The proveit route's own shape check, before a line of Lean is written.
+    # Left until `run`, a module the NA encoding cannot express is met first
+    # by `create_project` -- which fails about the functional encoding, in a
+    # traceback, for a route that was never going to use it.
+    if args.fbk_proveit:
+        from .fbk_proveit import ProveItError, check_module
 
     # The hints have to come first: a settled branch condition is spliced
     # into a tactic in expanded form, so the definition it has to match must

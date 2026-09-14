@@ -231,6 +231,45 @@ module encoding.  `CertificateData` holds them as either:
 **Wire bindings in certificates:**  State is accessed as `s`, externals as
 `e.1` (latched) and `e.2` (next).
 
+## Tactic plans (`tactics.py`)
+
+The three obligations used to be closed by one hardcoded chain, textually
+identical in every certificate — wasteful in both directions: an integer
+module with a linear ranking paid for `decide` and `bv_decide` on every goal,
+and a shape nobody had anticipated had no way to ask for the step it needed.
+
+`plan_for` reads the module and its predicates and emits two macros,
+`cert_prep` (canonicalise) and `cert_close` (decide), which the three proofs
+share; each certificate carries a comment saying what was detected.
+
+| detected | consequence |
+|---|---|
+| Int / Bool in the state | `omega` is available |
+| Real | `omega` is dropped; `linarith`, `norm_num` and `norm_cast; linarith` take over |
+| Real *and* equalities in the predicates | `simp_all` moves into **prep**, so the closers see numerals, not an opaque `⌊4 - x⌋` |
+| a product of two state-dependent terms | `nlinarith`, `positivity` |
+| finite state (Bool/BitVec only) | `decide`, last, because it is the most expensive step |
+| an `Ite`/`ReLU`/`Min`/`Max` anywhere | `split_ifs` in prep |
+| `∧` / `∨` in the predicates | `casesm*` and `simp only [not_and_or]` in prep |
+| an `=` in the predicates | the `ne_iff_lt_or_gt` split, *after* `norm_num at *` |
+| term count | `maxRecDepth` scales with it |
+| branch points in the predicates | scales the heartbeat budget — this, not module size, is what a net costs |
+| nothing known to be slow | heartbeat budget stays at 400 000 for economy (it does *not* bound failures — see "Nets over ℝ") |
+
+Two decisions are worth recording because measurement contradicted the
+obvious guess. **`linarith` belongs in every plan** — gating it on `Real`
+looked right and cost two integer certificates that were closing on it; an
+integer goal `omega` cannot phrase is still ordinary linear arithmetic.
+**`bv_decide` belongs in none** — it only ever reaches goals every cheaper
+prover has already failed on, and there it bit-blasts: including it took a
+BitVec certificate from 10 s to 977 s while closing nothing `decide` had not
+already closed.
+
+Because the plan depends on the predicates, `Certificate.lean` is not stable
+across a change of invariant: `--infer` rewrites it alongside `Data.lean`.
+`tests/test_lean_tactics.py` pins these decisions in the fast suite, so a
+plan regression does not wait for a Lean build.
+
 ## ZerothHammer (`cert.py`)
 
 A Lean 4 elaborator tactic that cascades proof strategies:
@@ -494,21 +533,26 @@ Of the *invariant* the project is still **bare**: it comes from ic3ia, so
 `--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
 silently ignored, and `--safety` is required.
 
-### Encoding 7 — NA (`translate/na.py`)
+### Encoding 6 — NA, for the FBK toolchain (`translate/fbk.py`)
 
 `proveit.py`'s first step, `lake exe lean2vmt`, pattern-matches on a very
-specific Lean shape, and the FBK encoding misses on every point — so this is
-a separate encoding, emitted only for this route — though the project does
-build it, as the `<Proj>NA` lean_lib, because the certificate imports it:
+specific Lean shape. This encoding is emitted only for that route, and is
+not one of the five above — though the project does build it, as the
+`<Proj>NA` lean_lib, because the certificate imports it:
 
-| `lean2vmt` requires | why | FBK emits |
+| `lean2vmt` requires | why | what it would otherwise get |
 |---|---|---|
 | binders `state` / `statenext` | `emitDefs` looks them up by name to tell current from next | `state`, `newstate`, `s` |
 | state read as `var_i state` | `exprToSMT`'s `.fvar` case returns the bare binder name and **drops the index**, collapsing every slot onto one variable | `(state i)` |
 | next state as `var_i statenext` | this is how `collectLatchesIndices` finds the latches at all | `(newstate i)` |
 | `INIT` / `TRANS` / `PROPERTY` | they become `:init`, `:trans`, `:invar-property` | `InitCond`, `TransRel`, nothing |
-| top-level `StateType`, `abbrev M : … NA …` | the certificate template imports the model and names both | everything inside `namespace FBK` |
+| top-level `StateType`, `abbrev M : … NA …` | the certificate template imports the model and names both | everything inside a namespace |
 | self-contained imports | it is elaborated inside the `lean-ltl-certifying` package | imports `Core.Basic`, `System.Scalar`, … |
+
+The right-hand column is what the project's own Bool-valued relational
+encoding emitted. That encoding — `System/FBK.lean`, one of six until this
+one replaced it — missed every row, which is why the two could never be the
+same file; nothing else read it, so it is gone and its name is here.
 
 ### What the route refuses
 
@@ -519,12 +563,34 @@ describe the module:
 | rejected | because |
 |---|---|
 | external input wires | `lean2vmt` models only `state`/`statenext` |
-| a ctrl wire holding more than one element | `R_i` would compare a tuple |
 | state elements other than `Int`/`Bool` | `vmt2lean.py`'s `tp()` maps back only those two |
 | — | a state *mixing* `Int` and `Bool` is fine: `TypeMap` gets an arm per slot, and the `TypeMap.match_1` the equation compiler generates never reaches the VMT, because `emitDefs` keeps only declarations whose return type whnfs to `Prop`/`Int`/`Bool` |
-| `ToUnsigned`, `Argmax`, `Linear`, `Transpose`, `Xor`, any BV op | their Lean form reaches `exprToSMT` as an unapplied leaf (`toNat`) or calls into `Core.Basic` |
-| — | `Ne`, `ReLU`, `Max` and `Min` are accepted, but only against a `lean2vmt` carrying the commit *"translate mod, max/min and a negated decidable instance"*; against an older one they go back to being printed as `instDecidableNot` / `max` / `min`, so `NA_OPS` and that commit travel together |
+| — | a ctrl wire *wider* than 1×1 is fine too, and used to be the largest refusal here: the state is flattened to one VMT variable per **element**, so `R_k` compares two scalars where it once would have compared two tuples |
+| an op the Bool printer cannot render | same boundary from the other side: the printer raises rather than emit something `exprToSMT` would misread. `Linear`, `Argmax`, `Max`/`Min`, `Xor` and `Ne` all pass it — as an affine sum, a nested `ite` chain, `max`/`min`, `!(a == b)` and a negated equality — which is why they are no longer refused |
+| — | `Ne`, `ReLU`, `Max` and `Min` need a `lean2vmt` carrying the commit *"translate mod, max/min and a negated decidable instance"*; against an older one they go back to being printed as `instDecidableNot` / `max` / `min` |
 | `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
+
+**`--fbk-simplify none`** turns the rewriter off. It is a spelling, not a
+semantics: a module whose update reads `if x + 1 = 10 then 0 else x + 1`
+emits
+
+```lean
+-- default
+abbrev effect_0 (state : StateType) : Int :=
+  (if ((var_0 state) == (9 : Int)) then (0 : Int) else ((1 : Int) + (var_0 state)))
+-- --fbk-simplify none
+abbrev effect_0 (state : StateType) : Int :=
+  (if (((var_0 state) + (1 : Int)) == (10 : Int)) then (0 : Int) else ((var_0 state) + (1 : Int)))
+```
+
+— the same transition, and only the second one can be read against the
+source. Bool slots are never simplified either way, for a reason worth
+knowing: the rewriter turns `ite c b (¬b)` into an equality, which moves the
+slot from a branch into a *condition*, and `vmt2lean`'s `generalizeNatVar`
+then retypes it to the unreduced `TypeMap` match where the `Decidable`
+instance cannot be synthesised. What the rewriter buys on the arithmetic is
+size: a 32-wide affine layer is 97 KB of term unfolded and 1.9 KB folded, so
+`none` is for reading small models, not for running the sweep.
 
 Two limits are by design rather than by defect. First, the model's imports
 are `lake build`-ed before `proveit.py` runs: `lean2vmt` elaborates the model
