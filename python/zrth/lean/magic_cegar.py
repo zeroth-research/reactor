@@ -16,6 +16,7 @@ except ImportError:
 from zrth import Module
 
 from .cert import CertificateData
+from .common import Refused
 from .magic import TA2Magic
 from .magic_ai import _make_client, _describe_preconditions
 from .smt_module import ModuleSMT
@@ -43,6 +44,12 @@ class TA2MagicCEGAR(TA2Magic):
       2. Check four obligations with cvc5 (init, inductive, rank-decrease,
          rank-nonneg). Each check is: assert the negation, SAT ⇒ failure.
       3. If all UNSAT, return. Else format model as feedback and retry.
+
+    A safety certificate (`cd.kind == "safety"`, from `--safety`) is the
+    same loop over a smaller certificate: the LLM is asked for an invariant
+    alone, and the obligations are init, inductive, and `inv → prp` --
+    `rule_globally` has no ranking function to take, so the two ranking
+    checks have nothing to check.
     """
 
     def __init__(
@@ -91,10 +98,15 @@ class TA2MagicCEGAR(TA2Magic):
         preconds = _describe_preconditions(cd)
         feedback: str | None = None
 
+        safety = cd.is_safety
         fixed_inv = cd.inv if isinstance(cd.inv, str) else None
-        fixed_ranking = cd.ranking if isinstance(cd.ranking, str) else None
-        # If both user-provided, no LLM loop — just verify once.
-        loop_count = 1 if (fixed_inv and fixed_ranking) else self.max_attempts
+        fixed_ranking = None if safety else (
+            cd.ranking if isinstance(cd.ranking, str) else None
+        )
+        # If everything this kind of certificate needs is user-provided,
+        # no LLM loop — just verify once.
+        complete = bool(fixed_inv) and (safety or bool(fixed_ranking))
+        loop_count = 1 if complete else self.max_attempts
 
         for attempt in range(loop_count):
             print(f"[CEGAR] attempt {attempt}")
@@ -108,14 +120,20 @@ class TA2MagicCEGAR(TA2Magic):
                     feedback,
                     fixed_inv_src=fixed_inv,
                     fixed_ranking_src=fixed_ranking,
+                    kind=cd.kind,
                 )
+            except Refused:
+                # Not a reply to be parsed: the run cannot be made at all,
+                # and retrying it five times only hides the reason.
+                raise
             except ValueError as e:
                 print(f"  parse error: {e}")
                 feedback = f"Your reply could not be parsed: {e}"
                 continue
 
             print(f"  inv: {result.inv_src}")
-            print(f"  ranking: {result.ranking_src}")
+            if not safety:
+                print(f"  ranking: {result.ranking_src}")
 
             obligations = self._check_all(
                 msmt,
@@ -124,12 +142,19 @@ class TA2MagicCEGAR(TA2Magic):
                 prp_term,
                 init_pre_term,
                 update_pre_term,
+                safety=safety,
             )
             failures = [o for o in obligations if not o.ok]
             if not failures:
                 print("[CEGAR] all obligations UNSAT — accepted")
                 cd.inv = smt_to_lean(result.inv_term, msmt.ctrl_next)
-                cd.ranking = smt_to_lean_nat(result.ranking_term, msmt.ctrl_next)
+                # Keep what cvc5 was given: the Lean above is a rendering, and
+                # nothing can parse it back, so `--pre-check` would have no
+                # term left to ask about the certificate that was inferred.
+                cd.inv_smt = result.inv_src
+                if not safety:
+                    cd.ranking = smt_to_lean_nat(result.ranking_term, msmt.ctrl_next)
+                    cd.ranking_smt = result.ranking_src
                 return cd
 
             feedback = self._format_feedback(failures)
@@ -161,13 +186,30 @@ class TA2MagicCEGAR(TA2Magic):
         prp_term,
         init_pre_term,
         update_pre_term,
+        *,
+        safety: bool = False,
     ) -> list[ObligationResult]:
-        return [
+        checks = [
             self._check_init(msmt, env, r, init_pre_term),
             self._check_inductive(msmt, env, r, update_pre_term),
-            self._check_ranking_decrease(msmt, env, r, prp_term, update_pre_term),
-            self._check_ranking_nonneg(msmt, env, r),
         ]
+        if safety:
+            checks.append(self._check_inv_implies_prp(msmt, env, r, prp_term))
+        else:
+            checks += [
+                self._check_ranking_decrease(msmt, env, r, prp_term, update_pre_term),
+                self._check_ranking_nonneg(msmt, env, r),
+            ]
+        return checks
+
+    def _check_inv_implies_prp(self, msmt, env, r, prp_term):
+        """`inv s → prp s`: what makes the invariant a *safety* proof."""
+        tm = msmt.tm
+        s = msmt.fresh_ctrl("ip_s")
+        inv_s = r.inv_term.substitute(env.state_vars, s)
+        prp_s = prp_term.substitute(env.state_vars, s)
+        neg_query = tm.mkTerm(Kind.AND, inv_s, tm.mkTerm(Kind.NOT, prp_s))
+        return self._run_query("inv_imp_P", neg_query, env, extra_vars=[("s", s)])
 
     def _check_init(self, msmt, env, r, init_pre_term):
         tm = msmt.tm
@@ -263,7 +305,20 @@ class TA2MagicCEGAR(TA2Magic):
         res = solver.checkSat()
         if res.isUnsat():
             return ObligationResult(name, True, None)
-        # SAT or unknown — extract model values
+        if not res.isSat():
+            # `unknown` -- a timeout, or arithmetic the solver is incomplete
+            # for (a nonlinear ranking function, say). There is no model, so
+            # `getValue` below would raise CVC5ApiException and take the whole
+            # run down. Report it as unproven, with the solver's reason, so
+            # CEGAR can carry on.
+            why = res.getUnknownExplanation()
+            return ObligationResult(
+                name,
+                False,
+                f"{name}: solver returned unknown ({why}); no counterexample "
+                "available. The obligation is neither proved nor refuted.",
+            )
+        # SAT — read the counterexample off the model
         lines = [f"{name}: obligation violated. Counterexample:"]
         for label, group in extra_vars:
             for i, v in enumerate(group):

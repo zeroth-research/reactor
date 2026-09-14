@@ -37,7 +37,8 @@ def test_core_files_present(sync_core_templates):
 def test_generated_files_present(generate_lean_files):
     """ZerothHammer.lean and Certs/*.lean exist after generation fixture runs."""
     assert (_LEAN_DIR / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
-    for name in ("Countdown", "TwoVars", "Collatz", "ArgmaxScalar"):
+    for name in ("Countdown", "CountdownSafe", "TwoVars", "Collatz",
+                 "ArgmaxScalar", "BridgeCountdown", "BridgeTwoVars"):
         path = _LEAN_DIR / "Certs" / f"{name}.lean"
         assert path.exists(), f"Certs/{name}.lean not generated"
 
@@ -175,6 +176,52 @@ def test_cert_countdown_build(generate_lean_files):
     assert not sorry_lines, "Countdown certificate has sorry:\n" + "\n".join(sorry_lines)
 
 
+def test_generated_safety_cert_has_no_ranking(generate_lean_files):
+    """`Certs/CountdownSafe.lean` is the `--safety` shape: `rule_globally`
+    over an invariant that implies `P`, with no ranking function defined or
+    named anywhere -- a `def ranking := sorry` would be a `sorry` in a file
+    whose point is that it has none."""
+    src = (_LEAN_DIR / "Certs" / "CountdownSafe.lean").read_text()
+    assert "rule_globally" in src and "theorem inv_imp_P" in src
+    assert "rule_buchi" not in src
+    assert "ranking" not in src and "sorry" not in src
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", ["Countdown", "TwoVars"])
+def test_fbk_bridge_builds(generate_lean_files, name):
+    """`Certs/Bridge*.lean`: the proof that the `--fbk-proveit` model is the
+    module.
+
+    The certificate that route installs is about the *model*; this is the
+    file that carries it back. Two independent translators are on the two
+    sides of `bridge_k` -- `smt_encode` + cvc5 against
+    `_translate_terms_scalar` -- so nothing here closes by `rfl` alone, and
+    a translation defect in either shows up as an unclosed goal.
+    """
+    r = _lake_build(f"Certs.Bridge{name}")
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert r.returncode == 0, (
+        f"lake build Certs.Bridge{name} failed.\n"
+        f"stdout:\n{r.stdout[-2000:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    assert not sorry_lines, f"Bridge{name} used sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
+def test_cert_countdownsafe_build(generate_lean_files):
+    """Certs/CountdownSafe.lean: the safety certificate elaborates, which is
+    what says `rule_globally lts P hP` is applied to the right things --
+    `hP` transfers the invariant to `P` through `inv_imp_P`."""
+    r = _lake_build("Certs.CountdownSafe")
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert r.returncode == 0, (
+        f"lake build Certs.CountdownSafe failed.\n"
+        f"stdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    assert not sorry_lines, "CountdownSafe certificate has sorry:\n" + "\n".join(sorry_lines)
+
+
 @pytest.mark.slow
 def test_cert_twovars_build(generate_lean_files):
     """Certs/TwoVars.lean: zeroth_hammer closes all proof obligations."""
@@ -200,7 +247,18 @@ def test_cert_collatz_build(generate_lean_files):
 
 
 @pytest.mark.slow
-def test_generated_executable_builds_and_runs(generate_lean_files):
+@pytest.mark.parametrize(
+    "fixture,stdin,expected",
+    [
+        # LIA: x starts at 0, increments each step, resets at 10
+        ("counter", "x\nx\nx\n", ["0", "1", "2"]),
+        # BV: two-bit counter with enable=1 counts 00, 10, 01, 11
+        ("twobit", "1\n1\n1\n", ["0x0#1", "0x0#1", "0x1#1", "0x0#1", "0x0#1", "0x1#1"]),
+    ],
+)
+def test_generated_executable_builds_and_runs(
+    generate_lean_files, fixture, stdin, expected
+):
     """`verith -x` end to end: generate a project, build `main`, run it.
 
     The only coverage the executable path has. Its three generated pieces
@@ -220,16 +278,18 @@ def test_generated_executable_builds_and_runs(generate_lean_files):
     if not packages.is_dir() or not manifest.is_file():
         pytest.skip("tests/lean packages not built; run the other slow tests first")
 
+    import importlib
+
     sys.path.insert(0, str(_LEAN_DIR.parent / "fixtures"))
     try:
-        import counter
+        module_def = importlib.import_module(fixture).module()
     finally:
         sys.path.pop(0)
     from zrth.lean.project import create_project
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
-        project = create_project(out, counter.module(), "Rea", executable=True)
+        project = create_project(out, module_def, "Rea", executable=True)
 
         (project / ".lake").mkdir(exist_ok=True)
         (project / ".lake" / "packages").symlink_to(packages)
@@ -247,15 +307,66 @@ def test_generated_executable_builds_and_runs(generate_lean_files):
             f"stdout:\n{build.stdout[-2000:]}\nstderr:\n{build.stderr[-800:]}"
         )
 
-        # counter: starts at 0, increments each step, resets at 10
         run = subprocess.run(
             [str(project / ".lake" / "build" / "bin" / "main")],
-            input="x\nx\nx\n",
+            input=stdin,
             capture_output=True,
             text=True,
             timeout=60,
         )
         assert run.returncode == 0, f"executable failed: {run.stderr[-500:]}"
-        assert run.stdout.split() == ["0", "1", "2"], (
+        assert run.stdout.split() == expected, (
             f"unexpected trace: {run.stdout.split()}"
         )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", ["Scalar", "Vec6", "Counter", "Vec32"])
+def test_scalar_encoding_builds(generate_lean_files, name):
+    """The scalar encoding elaborates alongside the functional one.
+
+    `_product_type_scalar` flattens a multi-element wire into one component
+    per element, and the body and the `_scalar_eq` proofs have to follow. No
+    certificate in Certs/ carries a Scalar section, so without this the
+    encoding was never compiled at all — it had four type errors per
+    matrix-state module.
+    """
+    r = _lake_build(f"Certs.ScalarEnc{name}")
+    assert r.returncode == 0, (
+        f"lake build Certs.ScalarEnc{name} failed.\n"
+        f"stdout:\n{r.stdout[-2000:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert not sorry_lines, f"ScalarEnc{name} used sorry:\n" + "\n".join(sorry_lines)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "name", ["Scalar", "Vec6", "Counter", "Vec32", "TwoVars", "Mixed"]
+)
+def test_relational_encoding_builds(generate_lean_files, name):
+    """ScalarRel elaborates on top of the scalar encoding.
+
+    `effect_i` is per ctrl *wire*; the state tuple it is related to is per
+    *element*. Projecting component `i` of that tuple therefore put a
+    `Mat Int 6 1` against an `Int x ... x Int` for any multi-element wire, and
+    `Mixed` is the case where the offsets differ too. The chain that has teeth
+    here is `TransRel_scalar_eq` into `TransRel_func_eq`: it ties the sliced
+    relation back to the functional `update` through `pack`/`unpack`, so a
+    slice at the wrong offset does not typecheck rather than proving a wrong
+    equation. No certificate in Certs/ carries a ScalarRel section, so
+    without this it was not compiled at all.
+
+    The encodings are separate modules (see `conftest.py`), as they are in a
+    generated project. Concatenated into one file they elaborate more than
+    they do apart -- a `match` gets one auxiliary matcher per module -- and
+    that difference alone was enough to hide a broken `effect_i_eq` from
+    this test.
+    """
+    r = _lake_build(f"Certs.RelEnc{name}")
+    assert r.returncode == 0, (
+        f"lake build Certs.RelEnc{name} failed.\n"
+        f"stdout:\n{r.stdout[-2000:]}\nstderr:\n{r.stderr[-800:]}"
+    )
+    sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
+    assert not sorry_lines, f"RelEnc{name} used sorry:\n" + "\n".join(sorry_lines)
