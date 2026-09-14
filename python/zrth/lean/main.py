@@ -73,6 +73,7 @@ import argparse
 from pathlib import Path
 
 from .cert import CertificateData, generate_zeroth_hammer_lean
+from .common import Refused
 from .project import (
     ENCODINGS,
     LakeBuildError,
@@ -484,8 +485,11 @@ def main():
     # --hammer-file: generate ZerothHammer.lean and exit (no module needed)
     if args.hammer_file:
         out = Path(args.hammer_file)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(generate_zeroth_hammer_lean())
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(generate_zeroth_hammer_lean())
+        except OSError as e:
+            raise SystemExit(f"error: --hammer-file: {e}") from e
         print(f"Wrote {out}")
         return
 
@@ -510,7 +514,13 @@ def main():
 
     cert_data: CertificateData | None = None
 
-    module = load_module_from_file(args.module_file, module_def=args.module_def)
+    # The loader refuses a path that is not there, a file that is not a
+    # module and a `-d` the file does not define. All three are the user's
+    # input, so they are reported rather than raised.
+    try:
+        module = load_module_from_file(args.module_file, module_def=args.module_def)
+    except (OSError, AttributeError, RuntimeError) as e:
+        raise SystemExit(f"error: {e}") from e
     print(module)
 
     na_bodies = None
@@ -529,9 +539,12 @@ def main():
     # --cert-file: generate a standalone, self-contained certificate file and exit
     if args.cert_file:
         out = Path(args.cert_file)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        lean_src = generate_standalone_cert_lean(module, project_cert_data)
-        out.write_text(lean_src)
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            lean_src = generate_standalone_cert_lean(module, project_cert_data)
+            out.write_text(lean_src)
+        except (Refused, OSError) as e:
+            raise SystemExit(f"error: --cert-file: {e}") from e
         print(f"Wrote standalone certificate: {out}")
         # The same encoding table the project route walks, so these files
         # and the ones in a generated project carry the same headers and
@@ -547,15 +560,18 @@ def main():
         return
 
     print(".. Generating lean code")
-    project_dir = create_project(
-        output_dir=Path(args.output_dir),
-        module=module,
-        project_name=args.project_name,
-        executable=args.executable,
-        cert_data=project_cert_data,
-        module_file=args.module_file,
-        ltl_project=ltl_project,
-    )
+    try:
+        project_dir = create_project(
+            output_dir=Path(args.output_dir),
+            module=module,
+            project_name=args.project_name,
+            executable=args.executable,
+            cert_data=project_cert_data,
+            module_file=args.module_file,
+            ltl_project=ltl_project,
+        )
+    except (Refused, OSError) as e:
+        raise SystemExit(f"error: {e}") from e
 
     if args.fbk_proveit is not None:
         from .fbk_proveit import ProveItError, run as run_proveit
@@ -583,22 +599,27 @@ def main():
 
     print(".. Doing TA2Magic")
     if args.infer:
-        if args.infer == "ai":
-            from .magic_ai import TA2MagicAI
+        # A missing package and a missing key are both about how --infer was
+        # asked for, not about the module.
+        try:
+            if args.infer == "ai":
+                from .magic_ai import TA2MagicAI
 
-            magic = TA2MagicAI(
-                lean_code.read_text(), model=args.model, base_url=args.base_url
-            )
-        else:  # "ai-cegar"
-            from .magic_cegar import TA2MagicCEGAR
+                magic = TA2MagicAI(
+                    lean_code.read_text(), model=args.model, base_url=args.base_url
+                )
+            else:  # "ai-cegar"
+                from .magic_cegar import TA2MagicCEGAR
 
-            magic = TA2MagicCEGAR(
-                lean_code.read_text(),
-                module,
-                model=args.model,
-                base_url=args.base_url,
-            )
-        cert_data = magic.infer(cert_data)
+                magic = TA2MagicCEGAR(
+                    lean_code.read_text(),
+                    module,
+                    model=args.model,
+                    base_url=args.base_url,
+                )
+            cert_data = magic.infer(cert_data)
+        except (Refused, ImportError) as e:
+            raise SystemExit(f"error: --infer: {e}") from e
 
         # Merge inferred inv/ranking into project_cert_data. The kind comes
         # along: it decides which proof rule the rewritten files state, and

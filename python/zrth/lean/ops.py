@@ -34,7 +34,7 @@ from typing import Callable, Union
 
 from zrth import Bool, Int, Real, BitVec
 
-from .common import itype_name
+from .common import Refused, itype_name
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -570,7 +570,7 @@ def _reason(row: Op, cell) -> str:
 def _lean_emitter(itype, row: Op, cell, column: str):
     """Unwrap a Lean cell, or raise carrying the reason the table records."""
     if isinstance(cell, (Unsupported, Inline, ViaMat)):
-        raise ValueError(
+        raise Refused(
             f"No Lean expression mapping for: {itype_name(itype)} "
             f"({column}) — {_reason(row, cell)}"
         )
