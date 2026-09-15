@@ -353,6 +353,23 @@ def generate_lean_files(sync_core_templates) -> None:
     for name, make_module, cert_data in _CERT_SPECS:
         module = make_module()
 
+    # Certs/LearnedCountdown.lean — the certificate `--infer nuterm` produces,
+    # rather than one written by hand. Its ranking function is a sum of ReLU
+    # units, `(+ (* c (ite (> <affine> 0) <affine> 0)) ...)`, which no
+    # hand-written certificate in this suite has: whether `zeroth_hammer`
+    # closes `hrank` for that shape is a question only the learner's own
+    # output asks. The route proves the obligations before emitting them, so
+    # a failure here is the Lean side, not the certificate.
+    try:
+        from zrth.lean.magic_learn import TA2MagicLearn
+    except ImportError:
+        pass
+    else:
+        module = _make_countdown()
+        learned = TA2MagicLearn("", module, log=lambda *a: None).infer(
+            CertificateData(prp="(= s0 0)", kind="buchi")
+        )
+
     # Certs/ArgmaxScalar.lean — the scalar Argmax variants exactly as the
     # generator emits them. Each carries an `argmax1d_scalar_n_eq` theorem
     # proving it equal to Core.Mat.argmax_1d, so building this file is what
