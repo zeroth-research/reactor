@@ -304,7 +304,7 @@ that certificate files override.
 
 ---
 
-## `uv run verith` CLI (`main.py`, `project.py`)
+## `uv run verith` CLI (`cli.py`, `main.py`, `project.py`)
 
 `verith` is the command-line tool that drives the full pipeline: Python module
 → Lean project or standalone certificate files.
@@ -410,7 +410,6 @@ certificate consists of.
 | certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
-| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegar`, or `--infer nuterm` | `--infer ai`, `--infer ai-cegar`, or `--infer nuterm` |
 
 Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
 the project is generated from whatever predicates were supplied, and the two
@@ -433,14 +432,20 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--infer` | — | `ai`, `ai-cegar` (default when flag given without value), or `nuterm` (see below) |
-| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected with `--infer nuterm`, which calls none |
+| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
-| `--fbk-proveit` | — | Path to a `lean-ltl-certifying` checkout; certify through its `proveit.py` instead (see below) |
-| `--ic3ia` | — | Path to the `ic3ia` binary, forwarded to `proveit.py` |
+| `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
+| `--sygus-conjuncts` | `3` | `--infer sygus`: how many atoms the invariant may be a conjunction of — the bound is what makes the space finite, and so decidably empty |
+| `--proveit-dir` | — | `--infer fbk-proveit`: path to a `lean-ltl-certifying` checkout |
+| `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
+
+Each route is one row of `infer_route.ROUTES`, and a flag in the bottom half
+of the table belongs to a route rather than to verith: passed without its
+route selected it is an error, not a no-op.  `--fbk-proveit DIR` is the older
+spelling of `--infer fbk-proveit --proveit-dir DIR` and still works.
 
 ### State variable naming in SMT-LIB predicates
 
@@ -469,7 +474,7 @@ does, and proves it before offering it:
    finding the regions (`benchmarks/svcomp/_farkas.py`).  Only a candidate it
    certifies is returned.
 
-| | `--infer nuterm` | `--infer ai-cegar` | `--fbk-proveit` |
+| | `--infer nuterm` | `--infer ai-cegar` | `--infer fbk-proveit` |
 |---|---|---|---|
 | needs | nothing but the repo | an API key or a local LLM | an `ic3ia` build and a `lean-ltl-certifying` checkout |
 | property | `--safety` or `--buchi` | `--safety` or `--buchi` | `--safety` |
@@ -481,8 +486,6 @@ with no cell rule — rather than degrading quietly.  `--invariant`,
 `--ranking` and `--pre` are rejected alongside it: the route computes the
 whole certificate, and its invariant holds at entry for *every* input, which
 is stronger than any precondition would make it.
-
----
 
 ## Building the certificate (`--build-cert`)
 
@@ -526,7 +529,7 @@ A build that fails is a `LakeBuildError`, and the run exits non-zero with
 the Lean diagnostics restated: lake's log ends with thousands of replayed
 Mathlib jobs, so a bare "exit 1" as the last line would bury them.
 
-## Certifying through `lean-ltl-certifying` (`--fbk-proveit`)
+## Certifying through `lean-ltl-certifying` (`--infer fbk-proveit`)
 
 `--fbk-proveit=<dir>` swaps verith's own invariant machinery for the
 `proveit.py` driver of the [`lean-ltl-certifying`][ltl] repository, which
@@ -656,6 +659,45 @@ see [Building the certificate](#building-the-certificate---build-cert).
 `tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
 directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.
+
+---
+
+## Adding an Inference Route (`infer_route.py`)
+
+Every way verith can be handed a certificate is one row of
+`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is added
+there and nowhere else: `cli.py` reads the rows, so the `--infer` choices,
+the help text, every cross-flag rule and the dispatch all follow from the
+row rather than from an edit apiece.
+
+A row says:
+
+* **the property** — `kinds` (`"safety"`, `"buchi"`, or both) and
+  `kinds_refusal`, the sentence printed when the property is the other one.
+  The check is generic and the reason is not: why the `ai` route cannot
+  certify `G P` is prose about `rule_globally`, and why `nuterm` discards a
+  precondition is prose about Houdini.
+* **what it seeds from** — `seeds`, the `CertificateData` fields it will
+  *use* rather than discard, and `seeds_refusal`.  A predicate outside the
+  set is refused where it is passed, not dropped four steps later.
+* **the project** — `reads` (encoding suffixes; `""` is the functional one)
+  and `owns` (project-relative paths it may write).  The route is handed a
+  `ProjectHandle`, so these two are the whole of its access, and a route
+  that needs more of the project than the predicates says which more.
+* **the hooks** — `resolve` at parse time (a route whose lakefile names a
+  path has to reject a bad one before any of the project exists), `precheck`
+  once the module is loaded and before it is generated (a module shape the
+  route cannot express is met there rather than as a traceback out of an
+  encoder it never wanted), and `run`.
+* **its own flags** — `options`, a tuple of `Opt`.  Passed without the route
+  selected, each is an error rather than a no-op.  `aliases` carries any
+  older spelling that selects the route and fills one of those options
+  (`--fbk-proveit DIR`), so a deprecated flag goes away with its row.
+
+`tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
+checks the op matrix: a row declaring an encoding no row emits, a
+refusal with no reason, or two routes claiming one
+flag fails there rather than in generated code.
 
 ---
 
