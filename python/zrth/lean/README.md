@@ -9,8 +9,9 @@ Known defects in this pipeline, fixed and open, are catalogued in
 is missing -- a proof that the NA model *is* the module -- is designed, with
 measurements, in [FBK_EQUIVALENCE.md](FBK_EQUIVALENCE.md).  What cvc5 is used for -- the obligation
 pre-check, sharing in the printer, and the solver-informed tactics -- is in
-[SMT_ASSIST.md](SMT_ASSIST.md), together with cold-start plans for abduction
-and SyGuS.  The 77-case limit matrix those two are measured on, with its
+[SMT_ASSIST.md](SMT_ASSIST.md), together with what the synthesis routes
+(`--infer sygus`, `--infer smt-linear`) were measured against and the
+cold-start plan for abduction that is still one.  The 77-case limit matrix those two are measured on, with its
 runners and baseline, is in [`tests/limits/`](../../tests/limits/README.md).
 
 ---
@@ -321,7 +322,7 @@ that certificate files override.
 
 ---
 
-## `uv run verith` CLI (`main.py`, `project.py`)
+## `uv run verith` CLI (`cli.py`, `main.py`, `project.py`)
 
 `verith` is the command-line tool that drives the full pipeline: Python module
 → Lean project or standalone certificate files.
@@ -428,7 +429,7 @@ certificate consists of.
 | certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
-| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegar`, or `--infer nuterm` | `--infer ai`, `--infer ai-cegar`, or `--infer nuterm` |
+| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegar`, `--infer nuterm`, `--infer sygus`, or `--infer smt-linear` | `--infer ai`, `--infer ai-cegar`, `--infer nuterm`, or `--infer smt-linear` |
 
 Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
 the project is generated from whatever predicates were supplied, and the two
@@ -451,15 +452,24 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--infer` | — | `ai`, `ai-cegar` (default when flag given without value), or `nuterm` (see below) |
-| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected with `--infer nuterm`, which calls none |
+| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegar` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, or `fbk-proveit` (see below) |
+| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
-| `--fbk-proveit` | — | Path to a `lean-ltl-certifying` checkout; certify through its `proveit.py` instead (see below) |
-| `--ic3ia` | — | Path to the `ic3ia` binary, forwarded to `proveit.py` |
-| `--fbk-simplify` | `cvc5` | `none` leaves the NA model's transition the shape the module's own terms give it |
+| `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets a route resume from what an earlier run left, `ignore` searches afresh, `reset` empties it first |
+| `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
+| `--sygus-conjuncts` | `3` | `--infer sygus`: how many atoms the invariant may be a conjunction of — the bound is what makes the space finite, and so decidably empty |
+| `--linear-rows` | `2` | `--infer smt-linear --safety`: how many linear inequalities the invariant may be a conjunction of |
+| `--proveit-dir` | — | `--infer fbk-proveit`: path to a `lean-ltl-certifying` checkout |
+| `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
+| `--fbk-simplify` | `cvc5` | `--infer fbk-proveit`: `none` leaves the NA model's transition the shape the module's own terms give it |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
+
+Each route is one row of `infer_route.ROUTES`, and a flag in the bottom half
+of the table belongs to a route rather than to verith: passed without its
+route selected it is an error, not a no-op.  `--fbk-proveit DIR` is the older
+spelling of `--infer fbk-proveit --proveit-dir DIR` and still works.
 
 ### State variable naming in SMT-LIB predicates
 
@@ -492,7 +502,7 @@ So unlike the `ai` routes, what reaches the certificate has already been
 proved — `--pre-check cvc5` and `lake build Certificate` confirm it rather
 than discovering it.  The trade is reach:
 
-| | `--infer nuterm` | `--infer ai-cegar` | `--fbk-proveit` |
+| | `--infer nuterm` | `--infer ai-cegar` | `--infer fbk-proveit` |
 |---|---|---|---|
 | needs | nothing but the repo | an API key or a local LLM | an `ic3ia` build and a `lean-ltl-certifying` checkout |
 | state it reads | scalar integers | whatever cvc5 encodes | whatever the NA encoding expresses |
@@ -506,6 +516,83 @@ with no cell rule — rather than degrading quietly.  `--invariant`,
 `--ranking` and `--pre` are rejected alongside it: the route computes the
 whole certificate, and its invariant holds at entry for *every* input, which
 is stronger than any precondition would make it.
+
+### Searching a shape instead of proposing one (`--infer smt-linear`, `--infer sygus`)
+
+Two more routes need no LLM, and they differ from `nuterm` in what they do
+when they fail.  Both fix the *space* the certificate may live in and hand
+the whole space to cvc5 at once, so "not found" is an answer with content:
+
+* **`--infer smt-linear`** fixes the shape and leaves the coefficients open,
+  which makes the search one query — `exists c. forall s. obligations(c . s)`.
+  Every scalar component is a column whatever its sort: an `Int` is itself, a
+  `Bool` is `0`/`1` (`(ite s0 1 0)`), a bitvector is its unsigned value
+  (`(ubv_to_int s0)`) — so a Bool-state module, which `--infer nuterm`
+  refuses, is in reach, and so is a BitVec one.
+  `--buchi` asks it for a ranking function `c0 + c1*s0 + …` over a fixed
+  invariant (supplied with `--invariant`, resumed from `artifacts/`, or
+  `true`); `--safety` asks it for the invariant itself, as a conjunction of
+  `a0 + a1*s0 + … >= 0` rows, one width at a time up to `--linear-rows`.
+* **`--infer sygus`** (`--safety` only) fixes a *grammar* instead and hands
+  cvc5's SyGuS invariant track the three formulas `G P` is made of:
+  `addSygusInvConstraint(inv, pre, trans, post)`.  Its grammar carries
+  congruences — `(= (mod a0 + a1*s0 + … k) 0)` — which is the one fact
+  Houdini's lattice cannot state, and the reason the route exists beside
+  `nuterm`.  The conjunction is bounded (`--sygus-conjuncts`, default 3),
+  which bounds the certificate and, more to the point, makes the space
+  *finite*: cvc5 can then report it empty rather than merely unsearched.
+
+**A refuted search is a proof, and it is kept.**  When the template query
+comes back `unsat`, nothing of that shape satisfies the obligations — a fact
+about the module, not a failure to look.  It is written to `artifacts/` as a
+`no_solution` note, and `--infer ai-cegar` reads those notes into its prompt
+on the next run, so an attempt is not spent proposing what a decision
+procedure has already ruled out.  A search that runs out of budget writes an
+`unknown` note instead and is *not* carried into any prompt: the difference
+between a proof and a timeout is the whole value of the note.
+
+```bash
+# 1. the cheap question first: is there a linear ranking function at all?
+uv run verith m_toward5.py --buchi "(= s0 5)" \
+    --invariant "(and (>= s0 0) (<= s0 10))" --infer smt-linear -o out/ -p Rea
+# error: --infer: ... No ranking function linear in the state ... cvc5 refuted
+# the whole shape at once ... so this is a proof that the space is empty.
+
+# 2. the expensive one, now knowing that
+uv run verith m_toward5.py --buchi "(= s0 5)" \
+    --invariant "(and (>= s0 0) (<= s0 10))" --infer ai-cegar -o out/ -p Rea
+# .. resuming from note-0003-smt-linear.md: a space an earlier run ruled out
+```
+
+The same workspace carries what was *found*.  `--infer sygus` writes its
+invariant as a resumable `inv`, so the next run takes it as given:
+
+```bash
+uv run verith m_step2.py --safety "(not (= s0 1))" --infer sygus -o out/ -p Rea
+# [sygus] inv: (= (mod (+ (- 2) (* (- 1) s0)) 2) 0)        -- `x` is even
+
+uv run verith m_step2.py --safety "(not (= s0 1))" --infer ai-cegar \
+    --pre-check cvc5 -o out/ -p Rea
+# .. resuming from inv-0002-sygus.smt2 (proved): taking it as the certificate
+# [CEGAR] all obligations UNSAT — accepted        -- and no LLM call was made
+```
+
+What each is for, measured on the `tests/limits` fixtures:
+
+| | `--infer smt-linear` | `--infer sygus` |
+|---|---|---|
+| property | `--safety` or `--buchi` | `--safety` |
+| finds | coefficients of a fixed shape | any term its grammar generates |
+| answers `no` | yes, as a proof — 2–30 ms for a ranking function | yes, as a proof — the bounded grammar is finite (10–166 ms) |
+| cost | milliseconds per width; a second invariant row can cost more than 30 s | 11 ms for `m_step2`'s congruence |
+| engine | one quantified query, or — when cvc5 will not state it, which a bitvector column always does — a counterexample loop over a bounded coefficient box | cvc5's SyGuS invariant track |
+| state it reads | scalar `Int`, `Bool` and `BitVec` | scalar integers, transition in `LIA` |
+| seeds | `--invariant` (strengthened, not replaced), `--pre` | `--pre` |
+
+Neither is a better `nuterm`: within the scalar-integer class they overlap
+with it and lose on ranking functions, where a learned rank handles shapes a
+linear template has no room for.  What they add is the *no*, and one
+invariant shape — a congruence — that nothing else here can state.
 
 ---
 
@@ -563,7 +650,7 @@ already-built `.lake/packages` serves both: copying (or cloning, on APFS)
 the checkout's into the generated project makes the first `lake update` a
 no-op fetch.
 
-## Certifying through `lean-ltl-certifying` (`--fbk-proveit`)
+## Certifying through `lean-ltl-certifying` (`--infer fbk-proveit`)
 
 `--fbk-proveit=<dir>` swaps verith's own invariant machinery for the
 `proveit.py` driver of the [`lean-ltl-certifying`][ltl] repository, which
@@ -733,6 +820,128 @@ reason is what the caller is told when it hits the gap.
 `tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
 directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.
+
+---
+
+## Adding an Inference Route (`infer_route.py`)
+
+Every way verith can be handed a certificate is one row of
+`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is added
+there and nowhere else: `cli.py` reads the rows, so the `--infer` choices,
+the help text, every cross-flag rule and the dispatch all follow from the
+row rather than from an edit apiece.
+
+A row says:
+
+* **the property** — `kinds` (`"safety"`, `"buchi"`, or both) and
+  `kinds_refusal`, the sentence printed when the property is the other one.
+  The check is generic and the reason is not: why the `ai` route cannot
+  certify `G P` is prose about `rule_globally`, and why `nuterm` discards a
+  precondition is prose about Houdini.
+* **what it seeds from** — `seeds`, the `CertificateData` fields it will
+  *use* rather than discard, and `seeds_refusal`.  A predicate outside the
+  set is refused where it is passed, not dropped four steps later.
+* **the project** — `reads` (encoding suffixes; `""` is the functional one)
+  and `owns` (project-relative paths it may write).  The route is handed a
+  `ProjectHandle`, so these two are the whole of its access, and a route
+  that needs more of the project than the predicates says which more.
+* **`artifacts/`** — `reads_artifacts`, the roles it may resume from.  It is
+  declared access, like `reads`: `ProjectHandle.resume(role, …)` refuses an
+  undeclared role, and the filtering (stale module, stale property, stale
+  proof rule, plus the languages and statuses asked for) is the store's, so
+  there is one filter and one place that reports what it dropped.
+* **the hooks** — `resolve` at parse time (a route whose lakefile names a
+  path has to reject a bad one before any of the project exists), `precheck`
+  once the module is loaded and before it is generated (a module shape the
+  route cannot express is met there rather than as a traceback out of an
+  encoder it never wanted), and `run`.
+* **what comes back** — `returns`: `"smt"` (SMT-LIB predicates, which
+  `--pre-check` can restate the obligations from), `"lean"` (nothing parses
+  it back, so they cannot be restated), or `"installed"` (the route wrote the
+  certificate itself).  The row *declares* it and the `InferResult` carries
+  it, and `main` checks the two agree once rather than each reader trusting
+  whichever is nearer to hand.  Plus `uses_llm`, and `errors_self_named` for
+  a route whose refusals already name their own flag.
+* **its own flags** — `options`, a tuple of `Opt`.  Passed without the route
+  selected, each is an error rather than a no-op.  `aliases` carries any
+  older spelling that selects the route and fills one of those options
+  (`--fbk-proveit DIR`), so a deprecated flag goes away with its row.
+
+A route that renders its own Lean hands **both** spellings back in its
+`InferResult`.  Rendering means encoding the module into cvc5 again, and
+`magic_cegar` and `magic_learn` both already have the Lean — so the pipeline
+renders only for a route that returns SMT alone.
+
+`tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
+checks the op matrix: a row declaring an encoding no row emits, an artifact
+role that is not one, a refusal with no reason, or two routes claiming one
+flag fails there rather than in generated code.
+
+### `artifacts/` — the project as a workspace
+
+The project is generated *before* inference runs, and what a run leaves in
+`<project>/artifacts/` outlives it: an invariant that was inductive but too
+weak, a ranking function that used an op the certificate cannot express, a
+note for the next prompt.  A second `uv run verith` into the same `-o`
+continues rather than restarts — take that invariant and strengthen it, or
+take it as given and infer only the ranking function.
+
+Artifacts are arbitrary files (`.smt2` and `.md`, mostly, plus whatever a
+subprocess drops there); `artifacts/index.json` types the ones it knows, and
+a file with no entry is still listed, as `role="other"`.  Each entry carries
+`status` — what a consumer filters on — and `why`, the prose it puts in a
+prompt.  Three more fields exist only so a stale artifact is not trusted:
+`module_digest`, `prp` and `kind`.  An invariant found for another property,
+another proof rule or a since-edited module is not about this run, and
+`usable()` drops it and says so, because two identical command lines that
+resume differently is the one thing a workspace must not do quietly.
+
+`--artifacts ignore` searches afresh; `--artifacts reset` empties the
+directory first, which is what to pass when a bad artifact is being
+inherited by every run.  `artifacts/` belongs to no route, so a regenerating
+run must never treat it as its own output to clean up.
+
+#### The questions, not only the answers
+
+The same directory holds what the run *asked*, which is the other half of
+being able to check it.  A run encodes a good deal on its way to a
+certificate — the module's transition, the property, the invariant, one query
+per obligation — and until it was written down, all of it lived and died
+inside the process.  What reached the user was a project and a line saying
+`holds` or `REFUTED`: the conclusion without the question.
+
+| file | what it is |
+|---|---|
+| `system.smt2` | the whole problem as cvc5 encoded it: `init<i>` / `next<i>` per state component, and `P`, `inv`, `ranking` over the same state |
+| `obligation-<name>.smt2` | one obligation, **negated**, exactly as it was asked |
+| `property.smt`, `inv.smt`, `ranking.smt` | the predicate source, as a flag was given it or a route found it |
+
+`.smt2` is a script — declarations, definitions, `(check-sat)` — so
+`cvc5 artifacts/obligation-step_inv.smt2` answers without `verith` in the
+loop, and `unsat` there is the `holds` the pre-check printed.  That is what
+makes it worth having when the answer surprises: a refuted obligation becomes
+a file to bisect rather than a message to trust.  `.smt` is one predicate and
+not a script; the encoded form of the same thing is in `system.smt2`.
+
+These are written by `smt_query` as it builds each query, so they appear when
+something was encoded — `--pre-check cvc5` is what asks for the obligations.
+`--artifacts ignore` still records them: it is about where a run *starts*, not
+about what it leaves.
+
+#### `README.md` — the index components write
+
+`artifacts/README.md` is the human-readable half of `index.json`, and nothing
+assembles it centrally: no one place knows what a run will produce, which
+routes will run, or what a component added later will want to leave behind.
+So each component passes `what=` to `store.put` / `store.encoded` — one
+sentence saying what its file *is* — and the README is rendered from the index
+after every write.  It is therefore always exactly what was written, in the
+order it was written, and a file a later run rewrites replaces its own section
+rather than gaining a second one.
+
+`what` is the counterpart of `why`: `why` says what was wrong with a candidate,
+`what` says what the file is.  A question the run asked has a `what` and no
+`why`, which is why its status (`encoded`) is not flagged in the README.
 
 ---
 
