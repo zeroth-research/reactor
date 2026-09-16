@@ -128,13 +128,14 @@ out/ChainCert/
 │   ├── System.lean                  # functional encoding of init/update
 │   ├── Circ.lean                    # circuit (Box) encoding + equivalence
 │   ├── Scalar.lean, ScalarRel.lean  # scalar encoding + relational form
-│   ├── Rel.lean, FBK.lean           # matrix-domain relational encodings
+│   └── Rel.lean, FBK.lean           # matrix-domain relational encodings
+├── Certificate/
+│   ├── Certificate.lean             # proof obligations wired to the data
 │   └── Data.lean                    # certificate data: init_pre, update_pre, inv, P, ranking
-├── Certificate/Certificate.lean     # proof obligations wired to the data
 └── dbg/system.txt                   # human-readable wire/term dump
 ```
 
-Since we passed no property, `System/Data.lean` is a skeleton: `inv` is
+Since we passed no property, `Certificate/Data.lean` is a skeleton: `inv` is
 `True` and `P`/`ranking` are `sorry`, waiting to be filled in.
 
 ## Step 3 — Find your state variable names
@@ -185,7 +186,7 @@ uv run verith chain_env.py \
     -o out/ -p ChainCert
 ```
 
-The SMT-LIB predicates are compiled into Lean in `System/Data.lean` (state
+The SMT-LIB predicates are compiled into Lean in `Certificate/Data.lean` (state
 components appear as nested product accessors — `s4` becomes `s.2.2.2.2`):
 
 ```lean
@@ -460,7 +461,7 @@ What happens:
    (`--infer ai` skips the cvc5 loop and relies on LLM self-checking).
    Both integer (LIA) and real-valued (LRA) modules are validated — the
    Step 1 chain works here just as well as the cycle example.
-3. Only `System/Data.lean` is rewritten with the inferred `inv` and
+3. Only `Certificate/Data.lean` is rewritten with the inferred `inv` and
    `ranking` — `Certificate/Certificate.lean` and the module encodings are
    stable, so re-running inference never touches the proof skeleton.
 
@@ -576,7 +577,8 @@ entries in a lake project that also contains the `Core` library and
 | `--pre` | — | SMT-LIB 2 Bool over `e0..`/`el0..` input vars |
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking function |
-| `--infer [ai\|ai-cegar]` | `ai-cegar` | Infer missing invariant/ranking with an LLM |
-| `--model`, `--base-url` | `claude-sonnet-4-6`, — | LLM selection for `--infer` |
+| `--infer [ai\|ai-cegar\|nuterm\|fbk-proveit]` | `ai-cegar` | Which route finds the certificate — an LLM, (`nuterm`) a ranking function trained and then certified, or (`fbk-proveit`) ic3ia through `lean-ltl-certifying` |
+| `--model`, `--base-url` | `claude-sonnet-4-6`, — | LLM selection for `--infer`; rejected by a route that calls none |
+| `--artifacts` | `use` | The project's `artifacts/` across runs: `use` resumes from what an earlier run left, `ignore` searches afresh, `reset` empties it |
 | `--cert-file` | — | Standalone certificate files instead of a project |
 | `-x` / `--executable` | off | Also generate a runnable `Main.lean` |

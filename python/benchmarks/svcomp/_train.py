@@ -15,12 +15,13 @@ import torch
 import torch.nn.functional as F
 import z3
 from torch import nn
+from zrth import X
 
 # torch must load before the zrth C-extension (see _bench)
 from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
 from ._farkas import certify, resolve_domain
 from ._equiv import run_block
-from ._termination import compose, prove_invariants, system_of, terminates
+from ._termination import compose_lex, prove_invariants, system_of, terminates
 
 
 # ---------------------------------------------------------------------------
@@ -79,16 +80,16 @@ def _in_domain(dom, state: dict[str, int], system) -> bool:
 
 def _step(prog, ctrl, state: dict[str, int]) -> dict[str, int]:
     """One program step: latched `state` -> next state (via the update block)."""
-    st = {ctrl[n][0]: _t(state[n]) for n in state}
+    st = {ctrl[n]: _t(state[n]) for n in state}
     run_block(prog.atoms, st, lambda a: a.update)
-    return {n: int(st[ctrl[n][1]].reshape(-1)[0]) for n in state}
+    return {n: int(st[X(ctrl[n])].reshape(-1)[0]) for n in state}
 
 
 def _init_state(prog, ctrl, extl, bench: Bench, inputs: dict[str, int]) -> dict[str, int]:
     """Run the init block with the given extl (nondet) inputs -> initial state."""
-    st = {extl[name][1]: _t(val) for name, val in inputs.items()}
+    st = {X(extl[name]): _t(val) for name, val in inputs.items()}
     run_block(prog.atoms, st, lambda a: a.init)
-    return {n: int(st[ctrl[n][1]].reshape(-1)[0]) for n in bench.state}
+    return {n: int(st[X(ctrl[n])].reshape(-1)[0]) for n in bench.state}
 
 
 # PAS: high-variance Gaussian with one anticorrelated pair (ported from nt).
@@ -108,12 +109,22 @@ def _pas_sample(dim: int, sigma: float, rng) -> np.ndarray:
 
 
 def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
-            rng) -> tuple[np.ndarray, np.ndarray]:
+            rng, claim=None) -> tuple[np.ndarray, np.ndarray]:
     """nt-style trajectory rollouts: PAS-sample the inputs, init, execute the
     module up to `max_len`, collecting consecutive (s, T(s)) pairs on the rounds
-    the termination claim counts — the ones the rank must drop on."""
+    ``claim`` counts — the ones the rank must drop on.
+
+    A run leaves the domain and may well come back: for a recurrence claim that
+    is the whole point, and the initial state need not be in the domain at all
+    (a counter that starts at the value the property names is outside it on
+    round one). So the trajectory is followed to ``max_len`` whatever the domain
+    says, and only the rounds inside it are collected. What does end a
+    trajectory is a fixed point, where every later round repeats this one --
+    which is where a terminating program under :func:`._termination.terminates`
+    arrives, so that case still stops as soon as there is nothing more to
+    see."""
     prog, ctrl, extl = bench.build()
-    dom = resolve_domain(system, terminates().domain)
+    dom = resolve_domain(system, (claim or terminates()).domain)
     n_in = len(bench.inputs)
     S, Sp = [], []
     n_trials = n_traj if n_in > 0 else 1          # deterministic program -> 1 trajectory
@@ -126,11 +137,12 @@ def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
         if bench.precondition is not None and not all(bench.precondition(s)):
             continue
         for _ in range(max_len):
-            if not _in_domain(dom, s, system):
-                break
             sp = _step(prog, ctrl, s)
-            S.append([s[n] for n in bench.state])
-            Sp.append([sp[n] for n in bench.state])
+            if _in_domain(dom, s, system):
+                S.append([s[n] for n in bench.state])
+                Sp.append([sp[n] for n in bench.state])
+            if sp == s:
+                break
             s = sp
     return (np.array(S, dtype=np.float64).reshape(-1, len(bench.state)),
             np.array(Sp, dtype=np.float64).reshape(-1, len(bench.state)))
@@ -140,6 +152,50 @@ def rollout(bench: Bench, system, n_traj: int, max_len: int, sigma: float,
 # Orchestrator: rollout -> train -> round -> verify (round-and-rebuild)
 # ---------------------------------------------------------------------------
 
+def _fit(Xs, Xsp, dim, hidden_dim, delta, lr, n_epochs, mask=None):
+    """One net trained to drop by ``delta`` on the rounds ``mask`` selects.
+
+    The loss is the hinge on ``V(s') - V(s) + delta``: zero exactly where the
+    net already drops by enough, and pushing the difference down everywhere
+    else -- so a round it cannot make drop it still makes as flat as it can,
+    which is what a lexicographic rank needs of every component before the one
+    that covers the round."""
+    A, B = (Xs, Xsp) if mask is None else (Xs[mask], Xsp[mask])
+    model = TorchNRF(dim, hidden_dim).double()
+    opt = torch.optim.AdamW(model.parameters(), lr=lr)
+    loss = float("inf")
+    for _e in range(n_epochs):
+        out = torch.relu(model(B) - model(A) + delta).mean()
+        opt.zero_grad(); out.backward(); opt.step()
+        loss = float(out.detach())
+        if loss <= 1e-6:
+            break
+    return model, loss
+
+
+def _fit_lex(Xs, Xsp, dim, hidden_dim, delta, lr, n_epochs, ranks):
+    """``ranks`` nets, each trained on the rounds its predecessors leave over.
+
+    A lexicographic rank covers a round at the first component that drops on it,
+    so the second component is only ever asked about the rounds the first does
+    not cover, and so on. Fitting them that way rather than all on everything is
+    what makes the later ones specialise; the rounds are re-partitioned after
+    each fit, from the net as trained. Stops early once nothing is left over --
+    another component would have nothing to learn from."""
+    models, loss, left = [], float("inf"), None
+    for _ in range(ranks):
+        model, loss = _fit(Xs, Xsp, dim, hidden_dim, delta, lr, n_epochs, left)
+        models.append(model)
+        with torch.no_grad():
+            uncovered = (model(Xs) - model(Xsp)) < delta
+        if left is not None:
+            uncovered = uncovered & left
+        if not bool(uncovered.any()):
+            break
+        left = uncovered
+    return models, loss
+
+
 @dataclass
 class TrainResult:
     """The outcome of one ``learn_ranking`` run.
@@ -148,12 +204,17 @@ class TrainResult:
     rank was certified on, the witness that named it, and what ``certify``
     established — the evidence the Lean emitter consumes, so a caller reads it
     here rather than certifying the same layers a second time. All ``None`` when
-    no candidate certified."""
+    no candidate certified.
+
+    ``layers`` is the accepted net; ``nets`` is every component of the rank in
+    lexicographic order, which is the same thing in a tuple when the rank is one
+    net."""
     name: str
     verified: bool
     n_pairs: int
     final_loss: float
     layers: object = None
+    nets: tuple = ()
     reason: str | None = None
     system: object = None       # the program with the accepted rank composed in
     witness: object = None      # decrease over the rank's two wires
@@ -165,19 +226,34 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
                   initial_variance: float = 100.0, n_epochs: int = 1000,
                   lr: float = 0.05, outer: int = 20,
                   scales: tuple[float, ...] = (0.5, 1.0),
-                  use_invariants: bool = True) -> TrainResult:
+                  use_invariants: bool = True, claim=None,
+                  ranks: int = 1) -> TrainResult:
     """nt-matched: PAS trajectory rollouts, AdamW hinge loss, outer
     round-and-rebuild. Defaults mirror nt's learn_nrf_cfa.
 
     The round-and-rebuild loop composes each candidate into the program
-    (:func:`compose`) and accepts the first the procedure certifies."""
+    (:func:`compose`) and accepts the first the procedure certifies.
+
+    ``ranks`` is how many components the rank may have: one is a plain drop,
+    more is a lexicographic rank, which is what a program whose inner loop
+    restarts needs -- no single rank drops on both its steps, and ``(outer,
+    inner)`` drops on each. Each component is fitted on what the ones before it
+    leave over.
+
+    ``claim`` is the :class:`._property.Liveness` claim the rank discharges, and
+    defaults to :func:`._termination.terminates` — that the program stops. Any
+    other says which rounds the rank must drop on: a recurrence property's
+    domain is the rounds its formula does not hold, and the rank is what shows
+    the run leaves them."""
+    claim = claim or terminates()
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
     sigma = float(np.sqrt(initial_variance))
     # The program is read once here and reused: neither the transition nor the
     # invariants depend on the ranking candidate.
     system = system_of(bench)
-    S, Sp = rollout(bench, system, n_trajectories, max_trajectory_length, sigma, rng)
+    S, Sp = rollout(bench, system, n_trajectories, max_trajectory_length, sigma,
+                    rng, claim)
     if S.shape[0] == 0:
         return TrainResult(bench.name, False, 0, float("nan"), reason="no in-domain samples")
     Xs = torch.from_numpy(S)
@@ -192,25 +268,21 @@ def learn_ranking(bench: Bench, delta: float = 1.0, hidden_dim: int = 7, seed: i
             system = system.knowing(inv)
 
     final_loss = float("inf")
-    last_layers = None
+    last_nets = ()
     for _o in range(outer):
-        model = TorchNRF(dim, hidden_dim).double()
-        opt = torch.optim.AdamW(model.parameters(), lr=lr)
-        for _e in range(n_epochs):
-            loss = torch.relu(model(Xsp) - model(Xs) + delta).mean()
-            opt.zero_grad(); loss.backward(); opt.step()
-            final_loss = float(loss.detach())
-            if final_loss <= 1e-6:
-                break
+        models, final_loss = _fit_lex(Xs, Xsp, dim, hidden_dim, delta, lr,
+                                      n_epochs, ranks)
         for scale in scales:
-            layers = model.to_layers(scale)
-            last_layers = layers
-            composed, witness = compose(system, layers, delta)
-            proof = certify(composed, terminates(), witness)
+            nets = tuple(m.to_layers(scale) for m in models)
+            last_nets = nets
+            composed, witness = compose_lex(system, nets, delta)
+            proof = certify(composed, claim, witness)
             if proof.verified:
-                return TrainResult(bench.name, True, S.shape[0], final_loss, layers,
-                                   system=composed, witness=witness, proof=proof)
-    return TrainResult(bench.name, False, S.shape[0], final_loss, last_layers,
+                return TrainResult(bench.name, True, S.shape[0], final_loss,
+                                   nets[0], nets, system=composed,
+                                   witness=witness, proof=proof)
+    return TrainResult(bench.name, False, S.shape[0], final_loss,
+                       last_nets[0] if last_nets else None, last_nets,
                        reason="trained but not verified")
 
 
