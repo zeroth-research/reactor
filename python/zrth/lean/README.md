@@ -357,7 +357,7 @@ uv run verith mymodule.py --safety "(<= s0 10)" \
 # AI inference with Claude (requires ANTHROPIC_API_KEY + pip install zrth[ai])
 uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
 
-uv run verith mymodule.py --safety "(<= s0 10)" --infer ai-cegar -o out/ -p MyProject
+uv run verith mymodule.py --safety "(<= s0 10)" --infer ai-cegis -o out/ -p MyProject
 
 # AI inference with a local LLM via Ollama (requires pip install zrth[ai-local])
 uv run verith mymodule.py --buchi "(= s0 0)" --infer \
@@ -477,7 +477,7 @@ does, and proves it before offering it:
    finding the regions (`benchmarks/svcomp/_farkas.py`).  Only a candidate it
    certifies is returned.
 
-| | `--infer nuterm` | `--infer ai-cegar` | `--infer fbk-proveit` |
+| | `--infer nuterm` | `--infer ai-cegis` | `--infer fbk-proveit` |
 |---|---|---|---|
 | needs | nothing but the repo | an API key or a local LLM | an `ic3ia` build and a `lean-ltl-certifying` checkout |
 | property | `--safety` or `--buchi` | `--safety` or `--buchi` | `--safety` |
