@@ -438,6 +438,9 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
 | `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
 | `--sygus-conjuncts` | `3` | `--infer sygus`: how many atoms the invariant may be a conjunction of — the bound is what makes the space finite, and so decidably empty |
+| `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--infer vampire`: the Vampire binary, or a directory holding one |
+| `--vampire-timeout` | `120` | `--infer vampire`: seconds for all Vampire calls together; each call's limit climbs 2 s, 10 s, 60 s, then the rest |
+| `--vampire-cores` | `4` | `--infer vampire`: processes each call's portfolio spreads over |
 | `--proveit-dir` | — | `--infer fbk-proveit`: path to a `lean-ltl-certifying` checkout |
 | `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
@@ -486,6 +489,55 @@ with no cell rule — rather than degrading quietly.  `--invariant`,
 `--ranking` and `--pre` are rejected alongside it: the route computes the
 whole certificate, and its invariant holds at entry for *every* input, which
 is stronger than any precondition would make it.
+
+### Proposing candidates and proving them (`--infer vampire`)
+
+[Vampire](https://github.com/vprover/vampire) is a first-order theorem
+prover that reads SMT-LIB. Handed the negation of an obligation it either
+refutes it — the obligation holds — or runs out of time: it never answers
+*false* and never returns a model. So this route does not ask it to find
+anything. It proposes candidates, drops the ones a cheap test refutes, and
+keeps a candidate only once Vampire proves it:
+
+* **invariant** — Houdini over facts that hold on simulated runs of the
+  module: bounds stated with the program's own constants, congruences,
+  sums and differences of two components against zero, bounds on each side
+  of a Bool flag, and under `--safety` the property's conjuncts.
+* **ranking function** — affine forms of one or two components, `K*x + y`,
+  and piecewise `(ite c f g)` over the conditions the property and
+  transition branch on and the order of each pair of components. Each is
+  shifted to be positive on the rounds where the property fails and offered
+  zeroed where it holds.
+* **smaller certificate** — Vampire's unsat cores name the facts a proof
+  used; the invariant handed on is their closure, then minimised one fact
+  at a time.
+
+Because a false candidate costs a whole time limit, nothing is put to
+Vampire that a sampled round refutes: states near the reached ones — and
+from a range far wider than the program's constants, which is what exposes
+a shift fitted to small numbers — where the invariant holds, with inputs as
+`--pre` allows. On `ChenFlurMukhopadhyay-SAS2012-Ex3.01` the wide sample
+took the ranking search from 46 Vampire calls and 84 s to 3 calls and
+0.1 s. A `--safety` property a run of the module violates is reported as
+not holding, before Vampire is started.
+
+Vampire runs as its `smtcomp` portfolio. A whole search runs at one time
+limit per call — 2 s, then 10 s, then 60 s, then what is left of
+`--vampire-timeout` — because a short limit is a different schedule rather
+than a truncated long one. Measured on the 399 obligations of certificates
+the benchmark matrix had verified, the portfolio refuted 369 within 2 s,
+nearly all in 10–20 ms; the rest were encodings it cannot read or
+obligations that were false.
+
+```bash
+uv run verith mymodule.py --buchi "(= s0 0)" --infer vampire \
+    --vampire ~/vampire/vampire -o out/ -p Rea
+# [vampire] Houdini kept 2 of 2: (<= 0 s0) (<= s0 100)
+# [vampire] ranking function proved: s0
+# [vampire] invariant minimised to 1 of 2 facts
+```
+
+---
 
 ## Building the certificate (`--build-cert`)
 
