@@ -95,7 +95,8 @@ class SynthContext:
         return [f"s{i}" for i in range(len(self.state))]
 
     @classmethod
-    def build(cls, module, cd, *, route: str) -> "SynthContext":
+    def build(cls, module, cd, *, route: str,
+              reals: bool = False) -> "SynthContext":
         """The context, or the reason this module is not one these routes read.
 
         What is refused here is what *neither* search can weigh: a Real
@@ -106,6 +107,11 @@ class SynthContext:
         route's question, asked through :func:`int_readings` -- the grammar
         one takes integers only, the template one weighs Bools and
         bitvectors as well.
+
+        ``reals`` is a route saying it has an answer to the Real question:
+        `--infer houdini` states its candidates in real arithmetic and reads
+        a ranking function through `to_int`, so it asks for the component
+        rather than an integer reading of it.
         """
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
@@ -123,18 +129,28 @@ class SynthContext:
         msmt = ModuleSMT(tm=tm, module=module)
         env = CegarPromptEnv(msmt)
         keep_alive(tm, msmt, env)
+
+        def weighable(sort) -> bool:
+            if sort.isInteger() or sort.isBoolean() or sort.isBitVector():
+                return True
+            return reals and sort.isReal()
+
         bad = [
             f"s{i} is {sort}"
             for i, sort in enumerate(env.state_sorts)
-            if not (sort.isInteger() or sort.isBoolean() or sort.isBitVector())
+            if not weighable(sort)
         ]
         if bad:
+            takes = ("reads a scalar state" if reals else
+                     "weighs each state component as an integer")
+            why = "" if reals else (
+                "A Real component has no integer reading and a ranking "
+                "function has to land in `Nat`. "
+            )
             raise Refused(
-                f"--infer {route} weighs each state component as an integer, "
-                f"and this module has one that is not weighable: "
-                f"{', '.join(bad)}. A Real component has no integer reading "
-                f"and a ranking function has to land in `Nat`; a matrix-shaped "
-                f"one would be a column per element. Use --infer ai-cegis."
+                f"--infer {route} {takes}, and this module has one it "
+                f"cannot: {', '.join(bad)}. {why}A matrix-shaped component "
+                f"would be a column per element. Use --infer ai-cegis."
             )
         true = tm.mkBoolean(True)
         return cls(
@@ -160,7 +176,7 @@ class SynthContext:
 
         A precondition is written over `e0..`/`el0..`, which are constants of
         the parsing env; an obligation quantifies its own, so the two have to
-        be brought together exactly as `magic_cegar._subst_inputs` does it.
+        be brought together exactly as `magic.cegar._subst_inputs` does it.
         """
         old = list(self.extl_next) + list(self.extl_latched)
         new = list(en) + list(el)
@@ -346,7 +362,7 @@ def affine_smt(const: int, coeffs, names) -> str:
     Written out here rather than printed from the model's own term: what this
     string has to survive is being parsed back and rendered as the body of a
     Lean definition, and a printer that `let`-binds a repeated subterm
-    produces something that cannot be one (`magic_learn._smt_term` refuses
+    produces something that cannot be one (`magic.learn._smt_term` refuses
     exactly that).
     """
     parts = [] if not int(const) else [smt_int(const)]
