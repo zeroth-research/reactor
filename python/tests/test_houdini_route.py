@@ -76,14 +76,15 @@ def infer(name: str, kind: str, prp: str, *, solver="cvc5",
 def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A route mid-flight: its context, obligations and candidate parser,
     without a search having been run. What the seam's cases ask about."""
-    from zrth.lean.magic.houdini import Obligations, TA2MagicHoudini
+    from zrth.lean.magic.houdini import Obligations, TA2MagicHoudini, columns
     from zrth.lean.smt_synth import SynthContext
 
     cd = CertificateData(prp=prp, kind=kind)
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"),
                             log=lambda *_: None)
     magic.ctx = SynthContext.build(magic.module, cd, route="houdini",
-                                   takes=("int", "bool", "bv", "real"))
+                                   takes=("int", "bool", "bv", "real", "tuple"))
+    magic.cols = columns(magic.ctx)
     return magic, Obligations(magic.ctx)
 
 
@@ -528,6 +529,55 @@ def test_a_real_ranking_function_is_scaled_before_it_is_floored(solver):
     cd = infer("m_lra_half", "buchi", "(= s0 0.0)", solver=solver_or_skip(solver))
     assert cd.ranking_smt == "(to_int (* 2.0 s0))"
     assert "(= s0 0.5)" in cd.inv_smt
+
+
+@BOTH
+def test_a_matrix_component_is_ranked_by_one_of_its_elements(solver):
+    """`m_relu_vec` is a 3-vector stepping `v' = relu(v - 1)` from `(3,2,1)`.
+
+    The route refused the module outright for its sort. Its elements are
+    columns now, so `0 <= v[0]` is a candidate and `v[0]` is a rank, which
+    is the whole certificate -- and neither is sayable about the tuple
+    itself, which has no order to bound and no arithmetic to fall.
+
+    Both solvers, like the cases around it: the obligations name a constant
+    per element, so what Vampire is shown has no tuple in it even though
+    the certificate is written with selectors.
+    """
+    cd = infer("m_relu_vec", "buchi", "(= ((_ tuple.select 0) s0) 0)",
+               solver=solver_or_skip(solver))
+    assert cd.ranking_smt == "((_ tuple.select 0) s0)"
+    assert cd.inv_smt == "(<= 0 ((_ tuple.select 0) s0))"
+
+
+@BOTH
+def test_an_element_of_one_component_is_told_from_an_element_of_another(solver):
+    """`m_mixed`'s state is `x : 1x1` and `v : 3x1`, so the second
+    component's elements are columns 1, 2 and 3 while its own slots are 0,
+    1 and 2. The property is about `v[0]`, and a certificate that confused
+    the two indices would rank `x`."""
+    cd = infer("m_mixed", "buchi", "(= ((_ tuple.select 0) s1) 0)",
+               solver=solver_or_skip(solver))
+    assert cd.ranking_smt == "((_ tuple.select 0) s1)"
+
+
+def test_no_obligation_names_anything_of_tuple_sort():
+    """What lets Vampire read a matrix-shaped module at all.
+
+    The holders are constructors over a constant per element, so a
+    `declare-fun` or `define-fun` for `(Tuple Int Int Int)` -- which
+    Vampire's front end rejects outright -- is never written. The
+    certificate still says `((_ tuple.select 0) s0)`, because that is the
+    module's own namespace; it is the *obligation* that is scalar.
+    """
+    from zrth.lean.houdini_solver import VampireSolver
+
+    magic, ob = a_search("m_relu_vec", "buchi",
+                         "(= ((_ tuple.select 0) s0) 0)")
+    fact = magic._parse(["(<= 0 ((_ tuple.select 0) s0))"])
+    script = VampireSolver._script(ob.preserved(fact, fact))
+    assert "Tuple" not in script and "tuple" not in script
+    assert "v_s0_0" in script and "v_sp0_0" in script
 
 
 @BOTH
