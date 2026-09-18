@@ -143,7 +143,7 @@ nb-run: nb-build
 # (ZRTH_NO_BROWSER keeps zrth.visual.show from opening browser pages during the run)
 
 # Execute the tutorial notebooks against the current python crate without modifying them; fails on the first cell that errors
-nb-test *notebooks="tutorials/counter.ipynb tutorials/gym_and_sugar.ipynb tutorials/decrement_1d/decrement_1d.ipynb tutorials/cairo/cairo.ipynb tutorials/singapore-2/Singapore-2.ipynb": py-build nb-sync
+nb-test *notebooks="tutorials/counter.ipynb tutorials/gym_and_sugar.ipynb tutorials/rl_corridor.ipynb tutorials/decrement_1d/decrement_1d.ipynb tutorials/cairo/cairo.ipynb tutorials/singapore-2/Singapore-2.ipynb": py-build nb-sync
     ZRTH_NO_BROWSER=1 uv run jupyter nbconvert --to notebook --execute --stdout \
         --ExecutePreprocessor.timeout=600 {{ notebooks }} > /dev/null
 
