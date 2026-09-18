@@ -23,6 +23,7 @@ Train a neural ranking function and verify it as an **integer** (`LIA`) certific
 helpers (program, training, `quantise`, LIA `verify`) live in `_ranking.py`.
 
 - **quantise_after_training.ipynb**: train in the reals, then quantise (post-training) — shows why fixed-point **scaling** is needed (naive rounding degenerates).
+- **quantise_during_training.ipynb**: quantisation-aware training — the net trains *through* the rounding (straight-through estimator), so the integer certificate holds by construction.
 
 ## Termination examples
 
