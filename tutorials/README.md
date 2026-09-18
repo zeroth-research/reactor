@@ -13,6 +13,10 @@ Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
 - **rl_corridor.ipynb**: a corridor environment authored directly as a `sugar.Module`, a policy trained with REINFORCE against it, and the learned policy verified with Z3 (safety of the environment, progress of the policy).
 
+## Petri nets
+
+- **petri_queue_reachability.ipynb**: a bounded-queue Petri net modelled monolithically as a `sugar.Module` (marking = state, the firing choice = a non-deterministic external input); bounded reachability with Z3, returning a witness firing sequence for reachable markings.
+
 ## Termination examples
 
 Worked examples that model a C program as a `sugar.Module`, load a ranking function, and verify termination with Z3 (each in its own folder):
