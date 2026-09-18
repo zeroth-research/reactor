@@ -115,20 +115,18 @@ def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
     assert store.read(kept[0]) == cd.inv_smt
 
 
-def test_a_real_state_is_refused_by_name_by_both_routes():
-    """No integer reading, and a ranking function has to land in `Nat`.
+def test_a_real_state_is_refused_by_name_by_the_grammar_route():
+    """The grammar's `synthFun` takes integer arguments, so a Real column
+    has nowhere to go.
 
-    Refused where the sorts are read rather than inside a grammar rule or a
-    template, so the message names the component instead of a cvc5 error.
+    Refused where the sorts are read rather than inside a grammar rule, so
+    the message names the component instead of a cvc5 error.
     """
-    from zrth.lean.magic.linear import TA2MagicLinear
     from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(>= s0 0.0)", kind="safety")
-    for magic in (TA2MagicSygus(module_of("m_lra_lin"), log=lambda *_: None),
-                  TA2MagicLinear(module_of("m_lra_lin"), log=lambda *_: None)):
-        with pytest.raises(Refused, match="no integer reading"):
-            magic.infer(cd)
+    with pytest.raises(Refused, match="no integer reading"):
+        TA2MagicSygus(module_of("m_lra_lin"), log=lambda *_: None).infer(cd)
 
 
 def test_sygus_sends_a_bool_state_to_the_route_that_weighs_it():
@@ -152,6 +150,63 @@ def test_sygus_is_a_safety_route_in_the_class_as_well_as_the_row():
 # ══════════════════════════════════════════════════════════════════════════
 # --infer smt-linear
 # ══════════════════════════════════════════════════════════════════════════
+
+
+def test_a_real_component_is_read_through_a_floor():
+    """`rule_buchi` ranks by a `Nat`, so a Real rank is read through `to_int`.
+
+    The scale is the least common denominator of the literals the program
+    writes, because flooring a quantity that falls by less than one need not
+    fall at all -- `m_lra_half` steps by `1/2`, where `to_int x` stalls on
+    every other round.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_lra_lin")
+    cd = CertificateData(prp="(<= s0 0.0)", kind="buchi")
+    out = TA2MagicLinear(module, log=lambda *_: None).infer(cd)
+    assert "to_int s0" in out.ranking_smt
+    assert obligations_of(module, out) == []
+
+
+def test_a_real_rank_is_scaled_before_it_is_floored():
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_lra_half")
+    said: list[str] = []
+    cd = CertificateData(prp="(<= s0 0.0)", kind="buchi")
+    out = TA2MagicLinear(module, log=said.append).infer(cd)
+    assert "(to_int (* 2.0 s0))" in out.ranking_smt
+    assert obligations_of(module, out) == []
+    assert any("scaling by 2" in line for line in said)
+
+
+def test_a_matrix_component_is_a_column_per_element():
+    """`m_relu_vec`'s state is one 3x1 wire, which cvc5 encodes as a tuple.
+
+    The route refused the module outright for it. Its elements are columns
+    now, reached through the selectors `smt_to_lean` already renders, so
+    `v[0] >= 0` and a rank over `v[0]` are both sayable -- which is the
+    whole certificate for `v' = relu(v - 1)`.
+
+    The invariant is supplied because finding it *and* the rank in one
+    query over tuple columns does not finish inside the budget: cvc5 will
+    not state the quantified form once a tuple is in it, and the
+    counterexample loop is slower than the phase allows. What this pins is
+    the reading, which is what the route could not do at all before.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_relu_vec")
+    said: list[str] = []
+    cd = CertificateData(prp="(= ((_ tuple.select 0) s0) 0)", kind="buchi",
+                         inv="(>= ((_ tuple.select 0) s0) 0)")
+    out = TA2MagicLinear(module, log=said.append).infer(cd)
+    assert out.ranking_smt is not None
+    assert obligations_of(module, out) == []
+    assert any("tuple.select 2" in line for line in said), (
+        "every element is a column, not just the one the property reads"
+    )
 
 
 def test_smt_linear_finds_a_rank_when_the_shape_has_one():
@@ -180,20 +235,42 @@ def test_smt_linear_ranks_a_loop_whose_exit_states_are_unbounded():
     assert out.ranking_smt is not None
 
 def test_smt_linear_proves_a_shape_empty_rather_than_failing_to_search_it():
-    """`m_toward5` moves toward 5 from both sides, so a rank has to branch.
+    """`m_twovars` has no linear rank under any invariant this route states.
 
     The refusal says so as a *proof*, which is the difference between this
     route and an LLM that tried linear candidates until its attempts ran
-    out.
+    out -- and the note names the invariant width it got to, since an empty
+    space at two rows is not an empty space at three.
     """
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    cd = CertificateData(
-        prp="(= s0 5)", kind="buchi", inv="(and (>= s0 0) (<= s0 10))"
-    )
+    cd = CertificateData(prp="(and (= s0 0) (= s1 0))", kind="buchi")
     with pytest.raises(Refused) as e:
-        TA2MagicLinear(module_of("m_toward5"), log=lambda *_: None).infer(cd)
+        TA2MagicLinear(module_of("m_twovars"), log=lambda *_: None).infer(cd)
     assert "proof that the space is empty" in str(e.value)
+    assert "under any invariant of up to 2 linear inequalities" in str(e.value)
+
+
+def test_smt_linear_finds_the_invariant_it_needs_to_rank_over():
+    """`m_toward5` has no rank under `true` and one under `s0 >= 5`.
+
+    The rank and the invariant are one query, because an invariant searched
+    on its own has nothing to be strong enough *for*: `true` is inductive,
+    so a search for one alone returns it and the rank is no better off.
+    Asking for both at once is what makes the solver find the bound.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_toward5")
+    said: list[str] = []
+    cd = CertificateData(prp="(= s0 5)", kind="buchi")
+    out = TA2MagicLinear(module, log=said.append).infer(cd)
+    assert out.ranking_smt is not None
+    assert out.inv_smt != "true", "it had to find an invariant to rank under"
+    assert obligations_of(module, out) == []
+    assert any("widening the invariant" in line for line in said), (
+        "width 0 is tried first, so the rank under `true` still costs one query"
+    )
 
 
 def test_smt_linear_finds_a_one_row_safety_invariant():
@@ -217,20 +294,19 @@ def test_smt_linear_strengthens_a_supplied_invariant_rather_than_replacing_it():
 def test_smt_linear_writes_what_it_ruled_out(tmp_path):
     from zrth.lean.magic.linear import TA2MagicLinear
 
-    store = store_for(tmp_path, "m_toward5", kind="buchi", prp="(= s0 5)",
+    prp = "(and (= s0 0) (= s1 0))"
+    store = store_for(tmp_path, "m_twovars", kind="buchi", prp=prp,
                       producer="smt-linear")
-    cd = CertificateData(
-        prp="(= s0 5)", kind="buchi", inv="(and (>= s0 0) (<= s0 10))"
-    )
+    cd = CertificateData(prp=prp, kind="buchi")
     with pytest.raises(Refused):
         TA2MagicLinear(
-            module_of("m_toward5"), artifacts=store, log=lambda *_: None
+            module_of("m_twovars"), artifacts=store, log=lambda *_: None
         ).infer(cd)
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     assert len(notes) == 1
     text = store.read(notes[0])
     assert "No ranking function linear in the state" in text
-    assert "(and (>= s0 0) (<= s0 10))" in text, "the invariant it searched under"
+    assert "up to 2 linear inequalities" in text, "the invariants it ranked under"
 
 
 def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
