@@ -437,7 +437,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
 | `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
-| `--sygus-conjuncts` | `3` | `--infer sygus`: how many atoms the invariant may be a conjunction of — the bound is what makes the space finite, and so decidably empty |
+| `--sygus-conjuncts` | `3` | `--infer sygus`: a ceiling on how many atoms the invariant may be a conjunction of, tried `1, 2, … N` — the bound is what makes each space finite, and so decidably empty |
 | `--houdini-timeout` | `120` | `--infer houdini`: seconds for all solver calls together; each call is capped at 2 s, then the rest (under `vampire`: 2 s, 10 s, 60 s, then the rest) |
 | `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--infer vampire` and `--houdini-solver vampire`: the Vampire binary, or a directory holding one |
 | `--vampire-timeout` | `120` | `--infer vampire`: seconds for all answer-literal calls together; one call per template, and a template that does not answer is not retried |
