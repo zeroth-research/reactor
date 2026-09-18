@@ -55,6 +55,12 @@ macro "cert_states" v:ident : tactic =>
 macro "cert_facts" v:ident : tactic =>
   `(tactic| ({{ plan.facts_tactic }}))
 
+-- Bridge each floored quantity to a bound on the Real under it, so the
+-- closers see the `Int` atom with a sign. `skip` when nothing is floored.
+-- Takes the obligation's own state binder; every step is `try`.
+macro "cert_floors" v:ident : tactic =>
+  `(tactic| ({{ plan.floor_tactic }}))
+
 -- Hypotheses no refutation needed. `skip` otherwise.
 macro "cert_thin" : tactic =>
   `(tactic| ({{ plan.clear_tactic }}))
@@ -79,6 +85,7 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    try cert_thin
    try simp_defs
    try cert_facts s
+   try cert_floors s
    try simp_mat
    try cert_states s
    all_goals (cert_prep <;> cert_close)
@@ -113,6 +120,7 @@ theorem inv_imp_P : ∀ s, inv s → P s := by
     try cert_thin
     try simp_defs
     try cert_facts s
+    try cert_floors s
     try simp_mat
     try cert_states s
     all_goals (cert_prep <;> cert_close)
@@ -136,6 +144,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     try cert_thin
     try simp_defs
     try cert_facts s
+    try cert_floors s
     try simp_mat
     try cert_states s
     all_goals (cert_prep <;> cert_close)
