@@ -361,7 +361,7 @@ def generate_lean_files(sync_core_templates) -> None:
     # output asks. The route proves the obligations before emitting them, so
     # a failure here is the Lean side, not the certificate.
     try:
-        from zrth.lean.magic_learn import TA2MagicLearn
+        from zrth.lean.magic.learn import TA2MagicLearn
     except ImportError:
         pass
     else:

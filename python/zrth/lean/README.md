@@ -438,9 +438,10 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
 | `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
 | `--sygus-conjuncts` | `3` | `--infer sygus`: how many atoms the invariant may be a conjunction of — the bound is what makes the space finite, and so decidably empty |
-| `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--infer vampire`: the Vampire binary, or a directory holding one |
-| `--vampire-timeout` | `120` | `--infer vampire`: seconds for all Vampire calls together; each call's limit climbs 2 s, 10 s, 60 s, then the rest |
-| `--vampire-cores` | `4` | `--infer vampire`: processes each call's portfolio spreads over |
+| `--houdini-timeout` | `120` | `--infer houdini`: seconds for all solver calls together; each call is capped at 2 s, then the rest (under `vampire`: 2 s, 10 s, 60 s, then the rest) |
+| `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--infer vampire` and `--houdini-solver vampire`: the Vampire binary, or a directory holding one |
+| `--vampire-timeout` | `120` | `--infer vampire`: seconds for all answer-literal calls together; one call per template, and a template that does not answer is not retried |
+| `--vampire-cores` | `4` | `--houdini-solver vampire`: processes each call's portfolio spreads over |
 | `--proveit-dir` | — | `--infer fbk-proveit`: path to a `lean-ltl-certifying` checkout |
 | `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
@@ -490,51 +491,174 @@ with no cell rule — rather than degrading quietly.  `--invariant`,
 whole certificate, and its invariant holds at entry for *every* input, which
 is stronger than any precondition would make it.
 
-### Proposing candidates and proving them (`--infer vampire`)
+### Proposing candidates and proving them (`--infer houdini`)
 
-[Vampire](https://github.com/vprover/vampire) is a first-order theorem
-prover that reads SMT-LIB. Handed the negation of an obligation it either
-refutes it — the obligation holds — or runs out of time: it never answers
-*false* and never returns a model. So this route does not ask it to find
-anything. It proposes candidates, drops the ones a cheap test refutes, and
-keeps a candidate only once Vampire proves it:
+This route does not search for a certificate. It *proposes* — candidates that
+hold on simulated runs of the module — and a solver decides what stays:
 
 * **invariant** — Houdini over facts that hold on simulated runs of the
   module: bounds stated with the program's own constants, congruences,
   sums and differences of two components against zero, bounds on each side
-  of a Bool flag, and under `--safety` the property's conjuncts.
+  of a Bool flag, the values a Real component keeps to, and under
+  `--safety` the property's conjuncts.
 * **ranking function** — affine forms of one or two components, `K*x + y`,
   and piecewise `(ite c f g)` over the conditions the property and
   transition branch on and the order of each pair of components. Each is
   shifted to be positive on the rounds where the property fails and offered
   zeroed where it holds.
-* **smaller certificate** — Vampire's unsat cores name the facts a proof
-  used; the invariant handed on is their closure, then minimised one fact
-  at a time.
+* **smaller certificate** — the unsat cores name the facts a proof used;
+  the invariant handed on is their closure, then minimised one fact at a
+  time. Both solvers report one.
 
-Because a false candidate costs a whole time limit, nothing is put to
-Vampire that a sampled round refutes: states near the reached ones — and
-from a range far wider than the program's constants, which is what exposes
-a shift fitted to small numbers — where the invariant holds, with inputs as
+#### Which solver (`--houdini-solver`)
+
+The obligations are quantifier-free — the inputs are free constants, so what
+an obligation quantifies over is its free variables — and what is left is
+linear integer and real arithmetic with `to_int`, `div`, `mod` and `ite`.
+Two solvers answer them, and the difference is one thing:
+
+Measured on the 399 obligations of certificates the benchmark matrix had
+verified, Vampire's portfolio refuted 369 within 2 s, nearly all in
+10–20 ms; the rest were encodings it cannot read or obligations that were
+false — that is, nothing in that corpus needed a first-order prover rather
+than a decision procedure.
+
+#### What both solvers get
+
+Because a false candidate can cost a whole time limit, nothing is put to a
+solver that a sampled round refutes: states near the reached ones — and from
+a range far wider than the program's constants, which is what exposes a
+shift fitted to small numbers — where the invariant holds, with inputs as
 `--pre` allows. On `ChenFlurMukhopadhyay-SAS2012-Ex3.01` the wide sample
-took the ranking search from 46 Vampire calls and 84 s to 3 calls and
-0.1 s. A `--safety` property a run of the module violates is reported as
-not holding, before Vampire is started.
-
-Vampire runs as its `smtcomp` portfolio. A whole search runs at one time
-limit per call — 2 s, then 10 s, then 60 s, then what is left of
-`--vampire-timeout` — because a short limit is a different schedule rather
-than a truncated long one. Measured on the 399 obligations of certificates
-the benchmark matrix had verified, the portfolio refuted 369 within 2 s,
-nearly all in 10–20 ms; the rest were encodings it cannot read or
-obligations that were false.
+took the ranking search from 46 Vampire calls and 84 s to 3 calls and 0.1 s.
+It stays on both solvers: it is cheaper than a call either way, and it is
+what makes the *candidates* good rather than only the answers. A `--safety`
+property a run of the module violates is reported as not holding, before any
+solver is started.
 
 ```bash
-uv run verith mymodule.py --buchi "(= s0 0)" --infer vampire \
-    --vampire ~/vampire/vampire -o out/ -p Rea
-# [vampire] Houdini kept 2 of 2: (<= 0 s0) (<= s0 100)
-# [vampire] ranking function proved: s0
-# [vampire] invariant minimised to 1 of 2 facts
+uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini -o out/ -p Rea
+# [houdini] Houdini kept 2 of 2: (<= 0 s0) (<= s0 100)
+# [houdini] ranking function proved: s0
+# [houdini] invariant cut to the 1 of 2 facts its proofs use
+```
+
+```bash
+uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= s0 0.0)" \
+    --infer houdini --houdini-solver vampire --vampire ~/vampire/vampire \
+    -o out/ -p Rea
+# [houdini] solver: vampire
+# [houdini] Real state: a ranking function is floored after scaling by 1
+# [houdini] inv: (or (= s0 0.0) (= s0 1.0) ... (= s0 5.0))
+# [houdini] ranking: (to_int s0)
+```
+
+
+### Deriving the certificate outright (`--infer vampire`)
+
+Where `--infer houdini` proposes candidates and asks a solver which survive,
+this route proposes nothing. It states the obligations with the certificate
+*itself* left open — a template whose coefficients are existentially
+quantified — and asks Vampire for the coefficients:
+
+```
+(assert-not (exists ((A0 Int) (B0 Int)) (and ... )))
+% SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert
+```
+
+which carries `0 <= s0 <= 100`, derived rather than checked. That is
+Vampire's *answer literal* mechanism (`--question_answering plain`): it
+refutes the negation of the conjecture and reports the substitutions the
+refutation used. Those alternatives are a **disjunctive** answer — one of
+them is a witness, not each of them, because a split refutation closes each
+branch under its own hypothesis — so every one is tried against the
+obligations and the one they accept is the certificate. Here the first,
+`1 <= s0 <= 100`, is not preserved: `s0 = 1` steps to `0`.
+
+The templates are tried smallest first — `A_i <= s_i <= B_i` per component,
+then the same plus `C_ij <= s_i - s_j <= D_ij` for each pair.
+
+#### Two holes at a time
+
+Two holes is what the answer-literal search closes; three is a time limit.
+So the questions are kept to two where they can be:
+
+* `--safety` is **one** question. `inv -> prp` is what pins the interval
+  down, and with it the coefficients are two.
+* `--buchi` is **two**: an inductive invariant, then a ranking function that
+  drops on *that* invariant, with its coefficients already numbers. The
+  joint question is four holes for a one-component module and answered
+  nothing at all over `tests/limits`; the split derives `m_countdown` and
+  `m_deep` — invariant in about a second, rank in about eight. The rank
+  obligation is `rank(s) > 0` where the property fails and `rank(s') <
+  rank(s)`, which implies the clamped `Int.toNat` form `rule_buchi` asks
+  for.
+
+Splitting a search can cost what a joint one would have found — an
+inductive invariant need not admit a rank, and the second question cannot go
+back and ask for another. So every alternative of the first answer is
+carried into the second.
+
+An invariant asked for on its own is *looser* than one asked for with the
+property, and loose is harder: with nothing pinning the interval the search
+is over the whole of `Int`, and `m_countdown`'s invariant-only question does
+not come back inside 30 s. Bounded to a window around the module's own
+constants (`program_constants`, the same seed Houdini uses) it answers
+`[0,100]` in three. The same window costs the safety questions `m_max` and
+`m_toward5`, whose obligations pin the interval already — so it is asked for
+where it is needed and nowhere else.
+
+#### What the question has to look like
+
+Two restrictions, both measured on `m_countdown`, and the first decides the
+shape of the whole route.
+
+**Not the portfolio.** `--mode portfolio --schedule casc` reaches the time
+limit on this route's own question where the default mode answers at once. A
+portfolio strategy is tuned to find a refutation; what is wanted here is the
+*substitution* a refutation carries.
+
+**Both namings, and the whole budget declared to each.** Vampire introduces
+a Tseitin definition for each subformula it judges worth naming, and on a
+conjecture with holes that is decisive in *both* directions: over
+`tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
+`--naming 0` does not, `--naming 0` answers `m_relu` where naming does not,
+and they agree on `m_countdown`, `m_deep` and `m_min`. So both are asked,
+each on a share of what is left of the run.
+
+And `--time_limit` is a *scheduling* input before it is a cap — Vampire
+slices it between strategies, so a small one runs a different search rather
+than the same one cut short. `m_max`'s question reaches the limit at
+`--time_limit 20` and answers after 2.5 s at 25. So every call declares the
+run's whole budget and the wall clock is what actually bounds it.
+
+#### The reach
+
+Small, and worth knowing before reaching for it. Vampire's answer-literal
+search closes the **two-hole** question and does not close a three-hole one:
+adding a third, otherwise-free hole to the `m_countdown` question above
+turns an instant answer into a time limit. Five option settings were tried
+against that ceiling — `-qago on`, `--saturation_algorithm otter`, `--saturation_algorithm
+lrs`, `--theory_instantiation all`, `--unification_with_abstraction
+one_side_interpreted` — and none moved either.
+
+So in practice this route derives a certificate for a **one-component Int**
+module — eight of seventeen `tests/limits` safety and Büchi pairs, two of
+them Büchi — and refuses past that pointing at `--infer houdini`, which
+searches a wider module by proposing facts and proving them. It reads scalar `Int` state
+only: Vampire reads reals, but the templates here are integer intervals and
+integer coefficients.
+
+#### What comes back is checked
+
+```bash
+uv run verith tests/limits/mods/m_countdown.py --safety "(<= s0 100)" \
+    --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
+# [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
+# [vampire] template intervals: 2 holes, 409 chars
+# [vampire] answered with naming
+# [vampire] Vampire answered A0=0, B0=100
+# [vampire] inv: (and (<= 0 s0) (<= s0 100))
 ```
 
 ---
