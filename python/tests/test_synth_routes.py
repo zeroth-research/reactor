@@ -59,12 +59,29 @@ def test_sygus_finds_the_congruence_no_lattice_can_state():
     Houdini's candidates are signs and pairwise relations. A grammar with
     `mod` in it says it in milliseconds.
     """
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(not (= s0 1))", kind="safety")
     out = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None).infer(cd)
     assert "mod" in out.inv_smt
 
+
+def test_a_synthesised_invariant_that_prints_with_let_is_kept():
+    """cvc5 `let`-binds a repeated subterm when it prints a solution.
+
+    The route used to refuse such an invariant as one "the certificate's
+    definition cannot carry". It can: the source is parsed back before it is
+    rendered, and `smt_to_lean` binds what is shared in Lean. This one --
+    `(let ((_let_1 (* (- 1) s1))) ...)` -- was found and thrown away."""
+    from benchmarks.svcomp import discover
+    from zrth.lean.magic.sygus import TA2MagicSygus
+
+    bench = next(b for b in discover() if b.name == "AliasDarteFeautrierGonnord-SAS2010-easy2-2")
+    prp = ("(and (>= s0 0) (<= s1 0) (>= (+ s0 (* (- 1) s1)) 0) (>= (+ s0 s1) 0) "
+           "(<= (+ s0 s1) 0) (= (+ s0 s1) 0) (>= s0 (- 1)) (<= s1 1))")
+    out = TA2MagicSygus(bench.build()[0], log=lambda *_: None).infer(
+        CertificateData(prp=prp, kind="safety"))
+    assert out.inv_smt
 
 def test_sygus_without_congruences_cannot_state_it():
     """The same module under `--sygus-grammar linear`.
@@ -72,7 +89,7 @@ def test_sygus_without_congruences_cannot_state_it():
     The option is not a knob for its own sake: it is what shows that the
     congruence is doing the work rather than the search.
     """
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(not (= s0 1))", kind="safety")
     magic = TA2MagicSygus(
@@ -85,7 +102,7 @@ def test_sygus_without_congruences_cannot_state_it():
 def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
     """Found, and then *resumable*: `proved` and SMT-LIB, which is what
     `infer_route.FIXABLE` and `_resume_inv`'s filter ask for."""
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     store = store_for(tmp_path, "m_step2", kind="safety", prp="(not (= s0 1))",
                       producer="sygus")
@@ -98,26 +115,24 @@ def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
     assert store.read(kept[0]) == cd.inv_smt
 
 
-def test_a_real_state_is_refused_by_name_by_both_routes():
-    """No integer reading, and a ranking function has to land in `Nat`.
+def test_a_real_state_is_refused_by_name_by_the_grammar_route():
+    """The grammar's `synthFun` takes integer arguments, so a Real column
+    has nowhere to go.
 
-    Refused where the sorts are read rather than inside a grammar rule or a
-    template, so the message names the component instead of a cvc5 error.
+    Refused where the sorts are read rather than inside a grammar rule, so
+    the message names the component instead of a cvc5 error.
     """
-    from zrth.lean.magic_linear import TA2MagicLinear
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(>= s0 0.0)", kind="safety")
-    for magic in (TA2MagicSygus(module_of("m_lra_lin"), log=lambda *_: None),
-                  TA2MagicLinear(module_of("m_lra_lin"), log=lambda *_: None)):
-        with pytest.raises(Refused, match="not weighable"):
-            magic.infer(cd)
+    with pytest.raises(Refused, match="no integer reading"):
+        TA2MagicSygus(module_of("m_lra_lin"), log=lambda *_: None).infer(cd)
 
 
 def test_sygus_sends_a_bool_state_to_the_route_that_weighs_it():
     """The grammar's `synthFun` takes integer arguments, so a Bool column has
     nowhere to go -- and the refusal names the route that does read it."""
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(>= s1 0)", kind="safety")
     with pytest.raises(Refused, match="--infer smt-linear"):
@@ -125,7 +140,7 @@ def test_sygus_sends_a_bool_state_to_the_route_that_weighs_it():
 
 
 def test_sygus_is_a_safety_route_in_the_class_as_well_as_the_row():
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(= s0 0)", kind="buchi")
     with pytest.raises(Refused, match="ranking function"):
@@ -137,8 +152,65 @@ def test_sygus_is_a_safety_route_in_the_class_as_well_as_the_row():
 # ══════════════════════════════════════════════════════════════════════════
 
 
+def test_a_real_component_is_read_through_a_floor():
+    """`rule_buchi` ranks by a `Nat`, so a Real rank is read through `to_int`.
+
+    The scale is the least common denominator of the literals the program
+    writes, because flooring a quantity that falls by less than one need not
+    fall at all -- `m_lra_half` steps by `1/2`, where `to_int x` stalls on
+    every other round.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_lra_lin")
+    cd = CertificateData(prp="(<= s0 0.0)", kind="buchi")
+    out = TA2MagicLinear(module, log=lambda *_: None).infer(cd)
+    assert "to_int s0" in out.ranking_smt
+    assert obligations_of(module, out) == []
+
+
+def test_a_real_rank_is_scaled_before_it_is_floored():
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_lra_half")
+    said: list[str] = []
+    cd = CertificateData(prp="(<= s0 0.0)", kind="buchi")
+    out = TA2MagicLinear(module, log=said.append).infer(cd)
+    assert "(to_int (* 2.0 s0))" in out.ranking_smt
+    assert obligations_of(module, out) == []
+    assert any("scaling by 2" in line for line in said)
+
+
+def test_a_matrix_component_is_a_column_per_element():
+    """`m_relu_vec`'s state is one 3x1 wire, which cvc5 encodes as a tuple.
+
+    The route refused the module outright for it. Its elements are columns
+    now, reached through the selectors `smt_to_lean` already renders, so
+    `v[0] >= 0` and a rank over `v[0]` are both sayable -- which is the
+    whole certificate for `v' = relu(v - 1)`.
+
+    The invariant is supplied because finding it *and* the rank in one
+    query over tuple columns does not finish inside the budget: cvc5 will
+    not state the quantified form once a tuple is in it, and the
+    counterexample loop is slower than the phase allows. What this pins is
+    the reading, which is what the route could not do at all before.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_relu_vec")
+    said: list[str] = []
+    cd = CertificateData(prp="(= ((_ tuple.select 0) s0) 0)", kind="buchi",
+                         inv="(>= ((_ tuple.select 0) s0) 0)")
+    out = TA2MagicLinear(module, log=said.append).infer(cd)
+    assert out.ranking_smt is not None
+    assert obligations_of(module, out) == []
+    assert any("tuple.select 2" in line for line in said), (
+        "every element is a column, not just the one the property reads"
+    )
+
+
 def test_smt_linear_finds_a_rank_when_the_shape_has_one():
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     cd = CertificateData(
         prp="(= s0 0)", kind="buchi", inv="(and (>= s0 0) (<= s0 100))"
@@ -147,25 +219,62 @@ def test_smt_linear_finds_a_rank_when_the_shape_has_one():
     assert out.ranking_smt == "s0"
 
 
+def test_smt_linear_ranks_a_loop_whose_exit_states_are_unbounded():
+    """`while (y >= 0) y = y - 1`: `rule_buchi` asks the rank to fall only
+    where the property fails, and `1 + y` does, over the invariant `true`.
+
+    The route used to demand `rank >= 0` over every state as well. Where the
+    property holds `y` runs to minus infinity, so no linear rank survived that,
+    and the empty space was reported as a *proof* that none exists."""
+    from benchmarks.svcomp import discover
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
+    cd = CertificateData(prp="(not (<= 0 s0))", kind="buchi")
+    out = TA2MagicLinear(bench.build()[0], log=lambda *_: None).infer(cd)
+    assert out.ranking_smt is not None
+
 def test_smt_linear_proves_a_shape_empty_rather_than_failing_to_search_it():
-    """`m_toward5` moves toward 5 from both sides, so a rank has to branch.
+    """`m_twovars` has no linear rank under any invariant this route states.
 
     The refusal says so as a *proof*, which is the difference between this
     route and an LLM that tried linear candidates until its attempts ran
-    out.
+    out -- and the note names the invariant width it got to, since an empty
+    space at two rows is not an empty space at three.
     """
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
-    cd = CertificateData(
-        prp="(= s0 5)", kind="buchi", inv="(and (>= s0 0) (<= s0 10))"
-    )
+    cd = CertificateData(prp="(and (= s0 0) (= s1 0))", kind="buchi")
     with pytest.raises(Refused) as e:
-        TA2MagicLinear(module_of("m_toward5"), log=lambda *_: None).infer(cd)
+        TA2MagicLinear(module_of("m_twovars"), log=lambda *_: None).infer(cd)
     assert "proof that the space is empty" in str(e.value)
+    assert "under any invariant of up to 2 linear inequalities" in str(e.value)
+
+
+def test_smt_linear_finds_the_invariant_it_needs_to_rank_over():
+    """`m_toward5` has no rank under `true` and one under `s0 >= 5`.
+
+    The rank and the invariant are one query, because an invariant searched
+    on its own has nothing to be strong enough *for*: `true` is inductive,
+    so a search for one alone returns it and the rank is no better off.
+    Asking for both at once is what makes the solver find the bound.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_toward5")
+    said: list[str] = []
+    cd = CertificateData(prp="(= s0 5)", kind="buchi")
+    out = TA2MagicLinear(module, log=said.append).infer(cd)
+    assert out.ranking_smt is not None
+    assert out.inv_smt != "true", "it had to find an invariant to rank under"
+    assert obligations_of(module, out) == []
+    assert any("widening the invariant" in line for line in said), (
+        "width 0 is tried first, so the rank under `true` still costs one query"
+    )
 
 
 def test_smt_linear_finds_a_one_row_safety_invariant():
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     cd = CertificateData(prp="(<= s0 100)", kind="safety")
     out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
@@ -175,7 +284,7 @@ def test_smt_linear_finds_a_one_row_safety_invariant():
 
 
 def test_smt_linear_strengthens_a_supplied_invariant_rather_than_replacing_it():
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     cd = CertificateData(prp="(<= s0 100)", kind="safety", inv="(>= s0 0)")
     out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
@@ -183,22 +292,21 @@ def test_smt_linear_strengthens_a_supplied_invariant_rather_than_replacing_it():
 
 
 def test_smt_linear_writes_what_it_ruled_out(tmp_path):
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
-    store = store_for(tmp_path, "m_toward5", kind="buchi", prp="(= s0 5)",
+    prp = "(and (= s0 0) (= s1 0))"
+    store = store_for(tmp_path, "m_twovars", kind="buchi", prp=prp,
                       producer="smt-linear")
-    cd = CertificateData(
-        prp="(= s0 5)", kind="buchi", inv="(and (>= s0 0) (<= s0 10))"
-    )
+    cd = CertificateData(prp=prp, kind="buchi")
     with pytest.raises(Refused):
         TA2MagicLinear(
-            module_of("m_toward5"), artifacts=store, log=lambda *_: None
+            module_of("m_twovars"), artifacts=store, log=lambda *_: None
         ).infer(cd)
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     assert len(notes) == 1
     text = store.read(notes[0])
     assert "No ranking function linear in the state" in text
-    assert "(and (>= s0 0) (<= s0 10))" in text, "the invariant it searched under"
+    assert "up to 2 linear inequalities" in text, "the invariants it ranked under"
 
 
 def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
@@ -208,7 +316,7 @@ def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
     say so: `unknown`, not `no_solution`. A consumer that confused the two
     would state a falsehood in an LLM prompt.
     """
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
     from zrth.lean.smt_query import SmtBudget
 
     store = store_for(tmp_path, "m_lex", kind="safety", prp="(<= s0 3)",
@@ -234,7 +342,7 @@ def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
 
 
 def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
-    """`--infer smt-linear` refutes a shape; `--infer ai-cegar` is told.
+    """`--infer smt-linear` refutes a shape; `--infer ai-cegis` is told.
 
     The note is written to be read by a model, so what is checked is that it
     arrives in the message verbatim and is framed as established rather than
@@ -260,6 +368,25 @@ def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
     assert "decision procedure" in seen[0]
     assert "do not propose anything of a shape ruled out" in seen[0]
 
+
+def test_an_empty_ranking_is_a_parse_error_the_loop_can_answer():
+    """`RANKING:` with nothing after it is feedback, not a cvc5 crash.
+
+    cvc5 parses an empty source to a null term, and `getSort()` on one raises
+    a `RuntimeError` from inside the binding -- which `TA2MagicCEGAR`'s loop does
+    not catch, so the whole route died on one bad reply."""
+    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt_prompt import CegarPromptEnv, PromptParseError, prompt_inv_ranking
+    import cvc5
+
+    tm = cvc5.TermManager()
+    env = CegarPromptEnv(ModuleSMT(tm=tm, module=module_of("m_countdown")))
+
+    def chat(system: str, user: str) -> str:
+        return "INVARIANT: (and (>= s0 0) (<= s0 100))\nRANKING:"
+
+    with pytest.raises(PromptParseError, match="RANKING"):
+        prompt_inv_ranking(env, chat, "source", "(= s0 0)", "", None)
 
 def test_only_a_proof_of_absence_reaches_the_prompt(tmp_path):
     """`_ruled_out` filters on `no_solution`, so a timed-out search stays out."""
@@ -343,7 +470,7 @@ def obligations_hold(name: str, cd: CertificateData) -> list[str]:
 
 
 def test_a_synthesised_invariant_passes_the_obligations_cvc5_states():
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(not (= s0 1))", kind="safety")
     out = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None).infer(cd)
@@ -356,7 +483,7 @@ def test_sygus_reads_a_module_with_an_external_input():
     makes `init` produce it. If that were the wrong quantifier the invariant
     would come back and `step_inv` would then refute it, which is what this
     checks rather than merely that something was returned."""
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(>= s0 0)", kind="safety")
     out = TA2MagicSygus(module_of("m_relu_input"), log=lambda *_: None).infer(cd)
@@ -365,7 +492,7 @@ def test_sygus_reads_a_module_with_an_external_input():
 
 
 def test_a_linear_certificate_passes_the_obligations_too():
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     cd = CertificateData(
         prp="(= s0 0)", kind="buchi", inv="(and (>= s0 0) (<= s0 100))"
@@ -382,7 +509,7 @@ def test_sygus_writes_a_proof_of_absence_when_its_space_is_finite_and_empty(tmp_
     the space is empty. Without congruences `m_step2` has no invariant in
     it, which is the case that shows both halves at once.
     """
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     store = store_for(tmp_path, "m_step2", kind="safety", prp="(not (= s0 1))",
                       producer="sygus")
@@ -408,7 +535,7 @@ def test_a_bound_the_program_mentions_is_seeded_the_other_way_round():
     a *proof* that the space was empty, which is the worst way for a seeding
     gap to show up: not a missing answer but a confident wrong one.
     """
-    from zrth.lean.magic_sygus import TA2MagicSygus
+    from zrth.lean.magic.sygus import TA2MagicSygus
 
     cd = CertificateData(prp="(<= s0 100)", kind="safety")
     out = TA2MagicSygus(module_of("m_countdown"), log=lambda *_: None).infer(cd)
@@ -459,7 +586,7 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
 
 
 def TA2MagicLinearFor(cd: CertificateData) -> CertificateData:
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     return TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
 
@@ -534,7 +661,7 @@ def test_a_bool_component_is_weighed_as_zero_or_one():
     `b`, `¬b`, or a bound that mixes the flag with the counter -- and the
     invariant that comes back is put to the obligations like any other.
     """
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     module = module_of("m_boolint")
     cd = CertificateData(prp="(and (>= s1 0) (<= s1 5))", kind="safety")
@@ -552,7 +679,7 @@ def test_a_bitvector_component_is_weighed_as_its_unsigned_value():
     halves quantifier-free, and this checks that the route reaches the same
     place by that road: a certificate the obligations accept.
     """
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     module = bv_counter(8, 10)
     said: list[str] = []
@@ -569,7 +696,7 @@ def test_an_integer_state_does_not_pay_for_the_fallback():
     """The loop is a fallback, not the engine: an integer column is decided
     by the one quantified query, which is the stronger answer as well as the
     faster one -- it is about every integer coefficient, not a bounded box."""
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     said: list[str] = []
     cd = CertificateData(prp="(<= s0 100)", kind="safety")
@@ -582,7 +709,7 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
     note has to carry the difference: its `unsat` is about the coefficients
     it was allowed to try, not about every integer."""
     from zrth.lean.artifacts import ArtifactStore, module_digest
-    from zrth.lean.magic_linear import TA2MagicLinear
+    from zrth.lean.magic.linear import TA2MagicLinear
 
     module = bv_counter(4, 10)
     store = ArtifactStore(dir=tmp_path / "artifacts",

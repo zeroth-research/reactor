@@ -31,7 +31,7 @@ certificate's `init_inv` and `step_inv` obligations quantify over, and a
 
 What it leaves behind
 =====================
-The invariant, in `artifacts/`, as a resumable `inv`: `--infer ai-cegar` in
+The invariant, in `artifacts/`, as a resumable `inv`: `--infer ai-cegis` in
 a later run takes it as given and infers only what is left.  That is the
 route's second purpose and the reason it is worth running even when the
 project it generates is not the one wanted -- the certificate is the answer,
@@ -40,17 +40,16 @@ and the artifact is the answer being *reusable*.
 
 from __future__ import annotations
 
-from .cert import CertificateData
-from .common import Refused
-from .magic import TA2Magic
-from .smt_synth import (
+from ..cert import CertificateData
+from ..common import Refused
+from . import TA2Magic
+from ..smt_synth import (
     Search,
     SynthContext,
     body_of,
     bounded_solver,
-    int_readings,
+    readings,
     moduli,
-    no_let,
     program_constants,
     record,
 )
@@ -74,7 +73,7 @@ GRAMMARS = ("congruence", "linear")
 # be decided empty -- `hasNoSolution` rather than `unknown`, which is the
 # difference between leaving a proof behind and leaving a shrug. (The first
 # reason is the ordinary one: every conjunct is restated in Lean and is one
-# more implication in the obligation, which `magic_learn._prune` exists for.)
+# more implication in the obligation, which `magic.learn._prune` exists for.)
 # Measured on `m_step2` with the congruence atoms dropped, which has no
 # answer in this space: decided empty in 10 / 25 / 166 ms at 1 / 2 / 3.
 DEFAULT_CONJUNCTS = 3
@@ -130,7 +129,7 @@ class TA2MagicSygus(TA2Magic):
         # Integers only: the invariant is a `synthFun` over integer
         # arguments, so a Bool or bitvector column has nowhere to go. The
         # template route weighs those, and the refusal says so.
-        int_readings(ctx, allow=("int",), route="sygus")
+        readings(ctx, allow=("int",), route="sygus")
         self.log(f"[sygus] columns: {', '.join(ctx.names)}")
         consts = program_constants(ctx)
         self.log(f"[sygus] grammar: {self.grammar}, constants {list(consts)}")
@@ -187,7 +186,10 @@ class TA2MagicSygus(TA2Magic):
         if result.hasSolution():
             body, bound = body_of(solver.getSynthSolution(inv))
             src = str(body.substitute(bound, ctx.state) if bound else body)
-            return Search("inv", space, found=no_let(src, what="invariant"))
+            # cvc5 `let`-binds a repeated subterm when it prints, and that is
+            # fine: the term is parsed back before it is rendered, and
+            # `smt_to_lean` gives what is shared a Lean `let` of its own.
+            return Search("inv", space, found=src)
         exhausted = result.hasNoSolution()
         return Search(
             "inv",
@@ -201,10 +203,10 @@ class TA2MagicSygus(TA2Magic):
                 "An invariant for this module needs something the grammar "
                 "does not have -- a disjunction, a product of two "
                 "components, a constant the program never mentions, or more "
-                "than `--sygus-conjuncts` of them. `--infer ai-cegar` "
+                "than `--sygus-conjuncts` of them. `--infer ai-cegis` "
                 "searches no fixed space and is what to try next."
                 if exhausted else
-                "Raise `--smt-timeout`, or try `--infer ai-cegar`, which "
+                "Raise `--smt-timeout`, or try `--infer ai-cegis`, which "
                 "searches no fixed space."
             ),
         )
@@ -326,7 +328,7 @@ class TA2MagicSygus(TA2Magic):
     def _emit(self, cd: CertificateData, inv_smt: str) -> CertificateData:
         """The certificate, as SMT-LIB. The pipeline renders the Lean.
 
-        Unlike `magic_cegar` and `magic_learn` this route holds no rendering
+        Unlike `magic.cegar` and `magic.learn` this route holds no rendering
         of its own -- it never built one -- so handing back the SMT alone is
         what its row's `returns="smt"` means, and `main` prints it once.
         """

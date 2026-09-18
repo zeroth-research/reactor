@@ -39,6 +39,14 @@ from typing import TYPE_CHECKING
 from .artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
 from .cert import CertificateData
 from .common import Refused
+# Constants only -- the module imports cvc5 lazily, so naming its defaults
+# in the table below costs a bare run nothing.
+from .houdini_solver import (
+    DEFAULT_CORES,
+    DEFAULT_SOLVER,
+    DEFAULT_TIMEOUT,
+    SOLVERS,
+)
 
 if TYPE_CHECKING:
     from zrth import Module
@@ -359,7 +367,7 @@ class InferRoute:
 
 
 def _run_ai(inp: InferInput) -> InferResult:
-    from .magic_ai import TA2MagicAI
+    from .magic.ai import TA2MagicAI
 
     magic = TA2MagicAI(
         inp.project.encoding(""), model=inp.model, base_url=inp.base_url
@@ -371,7 +379,7 @@ def _run_ai(inp: InferInput) -> InferResult:
 
 
 # Statuses that make a previously-found invariant a *fixed* invariant for
-# this route: `magic_cegar` takes `cd.inv` as given and infers only what is
+# this route: `magic.cegar` takes `cd.inv` as given and infers only what is
 # left, so what it is handed has to be inductive. `too_weak` is inductive
 # and merely fails to imply the property, which `rule_buchi` never asked of
 # it -- so it is usable for a Buchi certificate and is exactly the wrong
@@ -389,7 +397,7 @@ def _resume_inv(inp: InferInput) -> "Artifact | None":
     if inp.cert_data.inv:
         return None
     # An inductive invariant is what this route can take as *given*:
-    # `magic_cegar` infers only what is left around a fixed `cd.inv`.
+    # `magic.cegar` infers only what is left around a fixed `cd.inv`.
     for a in inp.project.resume("inv", languages=("smt",), statuses=FIXABLE):
         # The one thing the store cannot filter on: `too_weak` means
         # inductive but not implying the property, which is all `rule_buchi`
@@ -442,8 +450,8 @@ def _ruled_out(inp: InferInput) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _run_ai_cegar(inp: InferInput) -> InferResult:
-    from .magic_cegar import TA2MagicCEGAR
+def _run_ai_cegis(inp: InferInput) -> InferResult:
+    from .magic.cegar import TA2MagicCEGAR
 
     _take_inv(
         inp,
@@ -476,11 +484,11 @@ def _run_ai_cegar(inp: InferInput) -> InferResult:
 
 
 def _run_nuterm(inp: InferInput) -> InferResult:
-    from .magic_learn import TA2MagicLearn
+    from .magic.learn import TA2MagicLearn
 
     magic = TA2MagicLearn("", inp.module, log=inp.log)
     cd = magic.infer(inp.cert_data)
-    # `magic_learn._emit` already rendered the Lean, so it comes along rather
+    # `magic.learn._emit` already rendered the Lean, so it comes along rather
     # than being rendered a second time from the same SMT.
     return InferResult(
         inv_smt=cd.inv_smt,
@@ -491,7 +499,7 @@ def _run_nuterm(inp: InferInput) -> InferResult:
 
 
 def _run_sygus(inp: InferInput) -> InferResult:
-    from .magic_sygus import TA2MagicSygus
+    from .magic.sygus import TA2MagicSygus
 
     magic = TA2MagicSygus(
         inp.module,
@@ -508,7 +516,7 @@ def _run_sygus(inp: InferInput) -> InferResult:
 
 
 def _run_smt_linear(inp: InferInput) -> InferResult:
-    from .magic_linear import TA2MagicLinear
+    from .magic.linear import TA2MagicLinear
 
     _take_inv(
         inp,
@@ -526,6 +534,74 @@ def _run_smt_linear(inp: InferInput) -> InferResult:
         log=inp.log,
     )
     cd = magic.infer(inp.cert_data)
+    return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
+
+
+def _resolve_houdini(opts: dict):
+    from .houdini_solver import resolve_solver
+
+    return resolve_solver(opts["houdini_solver"], opts["vampire"],
+                          opts["vampire_cores"])
+
+
+def _check_houdini_options(settings, opts) -> "str | None":
+    """The flags that belong to a solver this run did not choose.
+
+    Not a cell of the table: `--vampire` is an option of this route
+    whichever solver it names, and only the *value* of another option says
+    whether it means anything. Refused rather than ignored, for the reason
+    `Opt` exists at all -- a flag that quietly does nothing is worse than
+    one that is an error.
+    """
+    if opts["houdini_solver"] == "vampire":
+        return None
+    spare = [f for f, v in (("--vampire", opts["vampire"]),
+                            ("--vampire-cores", opts["vampire_cores"]))
+             if v is not None]
+    if not spare:
+        return None
+    return (
+        f"{', '.join(spare)} configures the Vampire prover, and this run is "
+        f"--houdini-solver {opts['houdini_solver']}, which starts no binary. "
+        f"Pass --houdini-solver vampire, or drop the flag."
+    )
+
+
+def _resolve_vampire(opts: dict):
+    from .houdini_solver import resolve_vampire
+
+    return resolve_vampire(opts["vampire"])
+
+
+def _run_vampire(inp: InferInput) -> InferResult:
+    from .magic.vampire import TA2MagicVampire
+
+    magic = TA2MagicVampire(
+        inp.module,
+        vampire=inp.config,
+        timeout=inp.opts["vampire_timeout"],
+        artifacts=inp.project.artifacts,
+        log=inp.log,
+    )
+    cd = magic.infer(inp.cert_data)
+    # SMT-LIB only: the template is rebuilt as source strings from the
+    # numbers Vampire answered, and the pipeline renders the Lean once.
+    return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
+
+
+def _run_houdini(inp: InferInput) -> InferResult:
+    from .magic.houdini import TA2MagicHoudini
+
+    magic = TA2MagicHoudini(
+        inp.module,
+        solver=inp.config,
+        timeout=inp.opts["houdini_timeout"],
+        artifacts=inp.project.artifacts,
+        log=inp.log,
+    )
+    cd = magic.infer(inp.cert_data)
+    # SMT-LIB only, like `smt-linear`: every candidate is a source string it
+    # wrote, and the pipeline renders the Lean once.
     return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
 
 
@@ -607,7 +683,7 @@ ROUTES: tuple[InferRoute, ...] = (
         ),
         kinds=frozenset({"buchi"}),
         kinds_refusal=(
-            "--safety needs --infer ai-cegar or --infer nuterm: the `ai` route "
+            "--safety needs --infer ai-cegis or --infer nuterm: the `ai` route "
             "infers a ranking function `rule_globally` cannot take, and nothing "
             "checks that the invariant implies the property"
         ),
@@ -622,11 +698,12 @@ ROUTES: tuple[InferRoute, ...] = (
         run=_run_ai,
     ),
     InferRoute(
-        name="ai-cegar",
+        name="ai-cegis",
         summary=(
-            "LLM + cvc5 counterexample-guided refinement: each candidate is "
-            "put to the obligations and the model that refutes one is fed "
-            "back (the default when --infer is passed without a value)"
+            "LLM + cvc5 counterexample-guided inductive synthesis: each "
+            "candidate is put to the obligations and the model that refutes "
+            "one is fed back (the default when --infer is passed without a "
+            "value)"
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",
@@ -641,7 +718,7 @@ ROUTES: tuple[InferRoute, ...] = (
         reads_artifacts=frozenset({"inv", "note"}),
         returns="smt",
         uses_llm=True,
-        run=_run_ai_cegar,
+        run=_run_ai_cegis,
     ),
     InferRoute(
         name="nuterm",
@@ -679,7 +756,7 @@ ROUTES: tuple[InferRoute, ...] = (
             "ranking function. Synthesis loses at those -- measured, 124 s on "
             "a two-variable module for a rank `--infer nuterm` certifies in "
             "seconds. Pass --safety, or infer a Buchi certificate with "
-            "--infer nuterm or --infer ai-cegar."
+            "--infer nuterm or --infer ai-cegis."
         ),
         seeds=frozenset({"pre"}),
         seeds_refusal=(
@@ -737,7 +814,7 @@ ROUTES: tuple[InferRoute, ...] = (
             "linear inequalities (--safety) -- over scalar Int, Bool and "
             "bitvector components alike, where a refuted query is a *proof* "
             "that the shape is empty, written to artifacts/ for --infer "
-            "ai-cegar to read into its prompt"
+            "ai-cegis to read into its prompt"
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",
@@ -773,6 +850,153 @@ ROUTES: tuple[InferRoute, ...] = (
         ),
     ),
     InferRoute(
+        name="houdini",
+        summary=(
+            "no LLM: Houdini over facts read off simulated runs of the module "
+            "and a ranking function from a fixed list of affine and "
+            "lexicographic shapes, each kept only once --houdini-solver "
+            "proves its obligation -- cvc5 (default), which decides them and "
+            "so answers a failed candidate with a counterexample, or the "
+            "Vampire theorem prover, which refutes or times out -- scalar "
+            "Int, Bool and Real state, the last ranked through to_int after "
+            "scaling by the denominators the program writes"
+        ),
+        kinds=frozenset({"safety", "buchi"}),
+        kinds_refusal="",
+        seeds=frozenset({"pre"}),
+        seeds_refusal=(
+            "the route proposes the invariant and proves which of its facts "
+            "stay, and a ranking function is what it searches for, so a "
+            "supplied predicate would be one it is not allowed to decide"
+        ),
+        returns="smt",
+        resolve=_resolve_houdini,
+        extra_check=_check_houdini_options,
+        run=_run_houdini,
+        options=(
+            Opt(
+                ("--houdini-solver",),
+                dict(
+                    choices=list(SOLVERS),
+                    default=DEFAULT_SOLVER,
+                    help=(
+                        f"Which solver decides the obligations (default: "
+                        f"{DEFAULT_SOLVER}). `cvc5` needs no binary -- it is "
+                        f"the package that encoded the module -- and it "
+                        f"*decides* them: a candidate it cannot prove comes "
+                        f"back refuted, with a counterexample that says which "
+                        f"facts to drop and that holds at every time limit. "
+                        f"`vampire` is a first-order prover on printed "
+                        f"SMT-LIB: it refutes the negation or runs out of "
+                        f"time, and the two are indistinguishable."
+                    ),
+                ),
+            ),
+            Opt(
+                ("--houdini-timeout",),
+                dict(
+                    type=float,
+                    default=DEFAULT_TIMEOUT,
+                    metavar="SECONDS",
+                    help=(
+                        f"Wall-clock budget for all solver calls together "
+                        f"(default: {DEFAULT_TIMEOUT}). The search runs whole "
+                        f"at a per-call limit of 2 s, then whatever is left; "
+                        f"under `--houdini-solver vampire` the rungs are 2 s, "
+                        f"10 s, 60 s and the rest, because a short limit "
+                        f"makes its portfolio a different schedule rather "
+                        f"than a truncated one. Either way only what came "
+                        f"back unanswered is asked again."
+                    ),
+                ),
+            ),
+            Opt(
+                ("--vampire",),
+                dict(
+                    metavar="PATH",
+                    help=(
+                        "The Vampire binary, for `--infer vampire` and for "
+                        "`--infer houdini --houdini-solver vampire`: the "
+                        "executable, or a directory holding one (the release "
+                        "zip unpacks to one). When omitted, $VAMPIRE, then "
+                        "`vampire` on PATH."
+                    ),
+                ),
+            ),
+            Opt(
+                ("--vampire-cores",),
+                dict(
+                    type=int,
+                    default=None,
+                    metavar="N",
+                    help=(
+                        f"--houdini-solver vampire: processes each call "
+                        f"spreads its portfolio over (default: "
+                        f"{DEFAULT_CORES}). Calls also run side by side, as "
+                        f"many as the machine's cores allow at this width, up "
+                        f"to four."
+                    ),
+                ),
+            ),
+        ),
+    ),
+    InferRoute(
+        name="vampire",
+        summary=(
+            "no LLM, and nothing proposed: the obligations are stated with "
+            "the certificate itself left open -- an interval per component, "
+            "and under --buchi an affine ranking function -- and Vampire's "
+            "answer literals return the coefficients, which are then checked "
+            "against the module's encoding with cvc5. Scalar Int state only, "
+            "and the transition is branch-split because a conditional "
+            "defeats the search. Measured reach: two holes, which is one "
+            "component under --safety; --infer houdini is what searches a "
+            "wider module"
+        ),
+        kinds=frozenset({"safety", "buchi"}),
+        kinds_refusal="",
+        seeds=frozenset({"pre"}),
+        seeds_refusal=(
+            "the whole certificate is what this route asks Vampire for, in "
+            "one question, so a supplied predicate would be half of an "
+            "answer it is not able to ask for half of"
+        ),
+        returns="smt",
+        resolve=_resolve_vampire,
+        run=_run_vampire,
+        options=(
+            Opt(
+                ("--vampire",),
+                dict(
+                    metavar="PATH",
+                    help=(
+                        "The Vampire binary, for `--infer vampire` and for "
+                        "`--infer houdini --houdini-solver vampire`: the "
+                        "executable, or a directory holding one (the release "
+                        "zip unpacks to one). When omitted, $VAMPIRE, then "
+                        "`vampire` on PATH."
+                    ),
+                ),
+            ),
+            Opt(
+                ("--vampire-timeout",),
+                dict(
+                    type=float,
+                    default=DEFAULT_TIMEOUT,
+                    metavar="SECONDS",
+                    help=(
+                        f"--infer vampire: wall-clock budget for all "
+                        f"answer-literal calls together (default: "
+                        f"{DEFAULT_TIMEOUT}). One call per template, and a "
+                        f"template that does not answer inside it is not "
+                        f"retried -- there is no schedule to vary, only the "
+                        f"next template."
+                    ),
+                ),
+            ),
+        ),
+    ),
+    InferRoute(
         name="fbk-proveit",
         summary=(
             "certify through a `lean-ltl-certifying` checkout's proveit.py "
@@ -785,7 +1009,7 @@ ROUTES: tuple[InferRoute, ...] = (
         kinds_refusal=(
             "--infer fbk-proveit is incompatible with --buchi: proveit.py "
             "proves `G PROPERTY` through ic3ia, which is a safety question. "
-            "Pass --safety, or infer a Buchi certificate with --infer ai-cegar."
+            "Pass --safety, or infer a Buchi certificate with --infer ai-cegis."
         ),
         seeds=frozenset(),
         seeds_refusal=(
@@ -877,7 +1101,7 @@ ROUTES: tuple[InferRoute, ...] = (
 )
 
 
-DEFAULT_ROUTE = "ai-cegar"
+DEFAULT_ROUTE = "ai-cegis"
 
 
 def index_routes(routes: "tuple[InferRoute, ...]") -> dict[str, InferRoute]:
@@ -918,6 +1142,35 @@ def route_names() -> tuple[str, ...]:
 def all_route_options() -> tuple[tuple[InferRoute, Opt], ...]:
     """Every route-scoped option, with the route that owns it."""
     return tuple((r, o) for r in ROUTES for o in r.options)
+
+
+def shared_route_options() -> tuple[tuple[Opt, tuple[InferRoute, ...]], ...]:
+    """Every distinct option, with every route that declares it.
+
+    An option can belong to more than one route: `--vampire` names the same
+    binary whether `--infer houdini` is putting candidates to it or `--infer
+    vampire` is asking it to derive one. Declared on both rows, because the
+    row is what `--help` groups by and what the "only meaningful with" check
+    reads -- and registered once here, because argparse takes a flag once.
+
+    Keyed by `dest` rather than by the flag tuple, so two rows spelling the
+    same option differently would be caught here as the mistake it is.
+    """
+    order: list[str] = []
+    seen: dict[str, tuple[Opt, list[InferRoute]]] = {}
+    for route, opt in all_route_options():
+        if opt.dest not in seen:
+            order.append(opt.dest)
+            seen[opt.dest] = (opt, [])
+        first, owners = seen[opt.dest]
+        if first.flags != opt.flags:
+            raise Refused(
+                f"--infer {route.name} declares {opt.flags[-1]} for the same "
+                f"option `{opt.dest}` that --infer {owners[0].name} spells "
+                f"{first.flags[-1]}: one option, one spelling"
+            )
+        owners.append(route)
+    return tuple((seen[d][0], tuple(seen[d][1])) for d in order)
 
 
 def all_route_aliases() -> tuple[tuple[InferRoute, Alias], ...]:

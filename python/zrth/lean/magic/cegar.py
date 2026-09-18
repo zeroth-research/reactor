@@ -2,6 +2,28 @@
 expressions, cvc5 verifies, counterexamples are fed back to the LLM.
 """
 
+# TODO: this is CEGIS, not CEGAR -- the counterexample refines the *candidate*,
+# and there is no abstraction to refine; the obligations are checked over the
+# concrete transition relation. The route was renamed (`--infer ai-cegar` ->
+# `--infer ai-cegis`); the driver was not, so `ai-cegis` still runs
+# `TA2MagicCEGAR` out of `magic/cegar.py` and prints `[CEGAR] attempt 0`.
+# What the rename has to reach, together, in one commit:
+#   * this module (-> `magic/cegis.py`), `TA2MagicCEGAR`, the docstring above,
+#     and the `magic.cegar` mentions in `infer_route.py`, `smt_synth.py` and
+#     `magic/sygus.py`;
+#   * `smt_prompt.CegarPromptEnv`, `CEGAR_GENERATE_SYSTEM`,
+#     `CEGAR_SAFETY_SYSTEM` and the `"cegar"` parser tag -- `smt_synth.py`,
+#     `smt_query.py` and `tests/test_synth_routes.py` import them too;
+#   * `tests/test_cegar_results.py`, and `CEGAR_FIXED` in
+#     `tests/test_verith_cli.py`;
+#   * the `[CEGAR] ...` lines printed below -- quoted verbatim in the
+#     transcripts in `tutorials/verith.md`, `tutorials/verith_gym.md` and
+#     `README.md`, and matched by `CEGAR failed after` in
+#     `tests/bench_matrix/run_matrix.py`'s failure regex. Those are why this
+#     is a sweep of its own rather than part of the flag rename.
+# Leave `magic.learn`'s Farkas/CEGAR alone: that one really does refine an
+# abstraction.
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,18 +37,18 @@ except ImportError:
 
 from zrth import Module
 
-from .cert import CertificateData
-from .common import Refused
-from .magic import TA2Magic
-from .magic_ai import _make_client, _describe_preconditions
-from .smt_module import ModuleSMT
-from .smt_prompt import (
+from ..cert import CertificateData
+from ..common import Refused
+from . import TA2Magic
+from .ai import _make_client, _describe_preconditions
+from ..smt_module import ModuleSMT
+from ..smt_prompt import (
     CegarPromptEnv,
     PromptResult,
     parse_predicate,
     prompt_inv_ranking,
 )
-from .smt_to_lean import smt_to_lean, smt_to_lean_nat
+from ..smt_to_lean import smt_to_lean, smt_to_lean_nat
 
 
 @dataclass
@@ -212,7 +234,7 @@ class TA2MagicCEGAR(TA2Magic):
         else:
             checks += [
                 self._check_ranking_decrease(msmt, env, r, prp_term, update_pre_term),
-                self._check_ranking_nonneg(msmt, env, r),
+                self._check_ranking_positive(msmt, env, r, prp_term, update_pre_term),
             ]
         return checks
 
@@ -292,14 +314,29 @@ class TA2MagicCEGAR(TA2Magic):
             ],
         )
 
-    def _check_ranking_nonneg(self, msmt, env, r):
+    def _check_ranking_positive(self, msmt, env, r, prp_term, update_pre_term):
+        """`inv s ∧ ¬P s ∧ update_pre → ranking s >= 1`.
+
+        With `rank_decrease`, exactly `rule_buchi`'s `hrank` over the Lean
+        ranking `Int.toNat ranking`: `toNat r' < toNat r` holds iff `r >= 1`
+        and `r' < r`. It used to be `inv s → ranking s >= 0` over every state,
+        which `hrank` never asks -- and which rejects every linear rank of a
+        state that is unbounded where the property already holds, such as
+        `1 + y` for `while (y >= 0) y = y - 1`.
+        """
         tm = msmt.tm
-        s = msmt.fresh_ctrl("rn_s")
+        s = msmt.fresh_ctrl("rp_s")
+        el = msmt.fresh_extl_l("rp_el")
+        en = msmt.fresh_extl_n("rp_en")
         inv_s = r.inv_term.substitute(env.state_vars, s)
+        pre = self._subst_inputs(env, update_pre_term, el, en)
+        prp_s = prp_term.substitute(env.state_vars, s)
         rank_s = r.ranking_term.substitute(env.state_vars, s)
-        nonneg = tm.mkTerm(Kind.GEQ, rank_s, tm.mkInteger(0))
-        neg_query = tm.mkTerm(Kind.AND, inv_s, tm.mkTerm(Kind.NOT, nonneg))
-        return self._run_query("rank_nonneg", neg_query, env, extra_vars=[("s", s)])
+        positive = tm.mkTerm(Kind.GEQ, rank_s, tm.mkInteger(1))
+        neg_query = tm.mkTerm(Kind.AND, inv_s, tm.mkTerm(Kind.NOT, prp_s), pre,
+                              tm.mkTerm(Kind.NOT, positive))
+        return self._run_query("rank_positive", neg_query, env,
+                               extra_vars=[("s", s), ("ranking(s)", [rank_s])])
 
     # --- solver driver --------------------------------------------------
 

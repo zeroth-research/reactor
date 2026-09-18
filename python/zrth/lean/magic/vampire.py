@@ -1,0 +1,1092 @@
+"""TA2Magic by synthesis: the certificate Vampire's answer literals derive.
+
+``--infer vampire``.  Nothing here proposes a candidate.  The route states
+the certificate's obligations with the certificate *itself* left open --
+a template whose coefficients are existentially quantified -- and Vampire
+answers with the coefficients, or does not answer.  Where ``--infer
+houdini`` asks "is this fact inductive?" once per fact, this asks "what
+numbers make the whole thing inductive?" once.
+
+That is Vampire's *answer literal* mechanism (``--question_answering
+plain``).  Handed a conjecture ``?[A,B]: phi(A,B)`` it refutes the negation
+and reports the substitutions the refutation used::
+
+    % SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert
+
+which carries `0 <= s0 <= 100` for `m_countdown`, derived rather than
+checked.  The alternatives are a *disjunctive* answer -- one of them is a
+witness, not each of them, because a split refutation closes each branch
+under its own hypothesis -- so all of them are tried below, and the one the
+obligations accept is the certificate.
+
+What the obligations have to look like
+======================================
+Three restrictions, and the first is the one that decides the shape of this
+whole module.
+
+**No ``ite``, anywhere.**  Vampire's answer-literal search is superposition
+plus theory reasoning, and a conditional in the goal defeats it -- measured:
+`m_countdown`'s own step obligation, stated with the transition as one
+``ite``, does not come back inside 40 s, and the same obligation split into
+its two guarded branches is answered in under one.  So the transition is
+*branch-split* before it is printed: every ``ite`` condition the update and
+the init terms mention becomes a case, cvc5's rewriter folds the
+conditionals away under each assignment of them, and each case is one more
+implication with its guard as a hypothesis.  A term that still holds an
+``ite`` after that -- a condition over something the split did not reach --
+is refused by name rather than printed into a question Vampire reads
+perfectly well and never answers.
+
+**No uninterpreted function for the round.**  Same measurement: defining
+``nxt(S)`` by an axiom and asking about ``nxt`` is a time limit where
+inlining the same arithmetic is an answer.  So the successor state is
+substituted into the obligation, once per branch.
+
+**Integer state.**  Vampire reads reals, but the templates below are integer
+intervals and integer coefficients, and a Real component would need the
+value-set shape that `--infer houdini` carries.  Refused by name.
+
+cvc5 writes the question
+========================
+The obligations are cvc5 terms -- the module's own encoding, the same terms
+`--infer houdini` proves -- so the conjecture is *built* as one cvc5 term,
+holes and quantifiers and all, and cvc5 prints it as SMT-LIB.  There is no
+printer in this module on purpose: one was here, in TPTP, and every kind it
+did not know was a way to state something other than what was encoded (a
+bitvector reached it once and crashed it).  What is left is the two
+refusals a printer gave for free -- an ``ite`` that survived the split, and
+a constant no quantifier binds -- said by name, and `assert-not`, which is
+how SMT-LIB marks the formula that ``--question_answering`` attaches answer
+literals to.
+
+Naming is asked both ways
+=========================
+Vampire introduces a Tseitin definition for each subformula it judges worth
+naming, and on a conjecture with holes that is decisive in *both*
+directions.  Measured over `tests/limits`, 30 s each: naming answers
+`m_max` and `m_toward5` where ``--naming 0`` does not; ``--naming 0``
+answers `m_relu` where naming does not; they agree on `m_countdown`,
+`m_deep` and `m_min`.  Neither setting is the right one, so both are asked,
+each on a share of what is left, and the union is what this route reaches.
+
+``--time_limit`` is a *scheduling* input before it is a cap: Vampire slices
+it between strategies, so a small one runs a different search rather than
+the same one cut short.  `m_max`'s question reaches the limit at
+``--time_limit 20`` and answers after 2.5 s at 25.  So every call declares
+the run's whole budget and the wall clock is what bounds it.
+
+Two holes at a time
+===================
+Two holes is what this mechanism closes; three is a time limit, measured
+both ways and against five option settings that moved neither ceiling.  So
+the questions are kept to two where they can be:
+
+* ``--safety`` is one question.  ``inv -> prp`` is what pins the interval
+  down, and with it the coefficients are two.
+* ``--buchi`` is two questions: an inductive invariant, then a rank that
+  drops on *that* invariant, with its coefficients already numbers.  The
+  joint question is four holes for a one-component module and answered
+  nothing at all over `tests/limits`; the split derives `m_countdown` and
+  `m_deep`, invariant in about a second and rank in about fifteen.
+
+Splitting a search can cost what a joint one would have found -- an
+inductive invariant need not admit a rank, and the second question cannot
+go back and ask for another.  So every alternative of the first answer is
+carried into the second.
+
+An invariant asked for on its own is *looser* than one asked for with the
+property, and loose is harder: with nothing pinning the interval the search
+is over the whole of `Int`, and `m_countdown`'s invariant-only question does
+not come back inside 30 s.  Bounded to a window around the module's own
+constants it answers ``[0,100]`` in three.  The same window costs the safety
+questions `m_max` and `m_toward5`, whose obligations pin the interval
+already -- so it is asked for where it is needed and nowhere else.
+
+The templates, smallest first
+=============================
+A template is a formula with holes, and the holes are what Vampire is asked
+for.  They are tried in order, because every extra hole is a wider search
+and the narrow one is usually enough:
+
+* **intervals** -- ``A_i <= s_i <= B_i`` per component.  Two holes each.
+* **intervals and differences** -- the above, plus ``C_ij <= s_i - s_j <=
+  D_ij`` for each pair.  What a module whose components move together needs,
+  and quadratic in the width, which is why it is second.
+
+Under ``--buchi`` the ranking function is ``R_0*s_0 + ... + R_n-1*s_n-1 +
+R_c``, asked for in the second question above.  Its obligation is stated as
+``rank(s) > 0`` where the property fails and ``rank(s') < rank(s)``, which
+is ite-free and implies the clamped ``Int.toNat`` form `rule_buchi` asks
+for: where ``r > 0`` and ``r' < r``, ``max(r',0) < max(r,0)`` whatever the
+sign of ``r'``.
+
+What comes back is checked
+==========================
+An answer literal is a substitution *a* refutation used, and a refutation of
+a mis-stated question proves nothing about the module -- nor does one branch
+of a disjunctive answer.  So the coefficients Vampire returns are put back
+into the template and the obligations are re-asked of cvc5 -- through the
+same :mod:`zrth.lean.houdini_solver` seam `--infer houdini` uses, in
+milliseconds.  A certificate that does not survive that is reported as not
+found, with what Vampire said.  This is not Houdini: nothing is filtered and
+nothing is proposed, it is the one check that the derivation is honest.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import tempfile
+import time
+from dataclasses import dataclass
+from itertools import combinations, product
+from pathlib import Path
+
+from ..cert import CertificateData
+from ..common import Refused
+from ..houdini_solver import (
+    DEFAULT_TIMEOUT,
+    Cvc5Solver,
+    _kill_group,
+)
+from . import TA2Magic
+from .houdini import Candidate, Obligations
+from ..smt_synth import SynthContext, program_constants, smt_int
+
+try:
+    import cvc5                                      # type: ignore
+    from cvc5 import Kind
+except ImportError:                                  # pragma: no cover
+    cvc5 = None
+    Kind = None
+
+# The templates, in the order they are tried.
+TEMPLATES = ("intervals", "differences")
+DEFAULT_TEMPLATE = TEMPLATES[0]
+
+# A branch is one assignment of the transition's `ite` conditions, so the
+# case count doubles with each. Past this the question is too long to be
+# worth asking, and the route says so rather than printing it.
+_MAX_CONDITIONS = 5
+_MAX_BRANCHES = 2 ** _MAX_CONDITIONS
+# Differences are quadratic in the width; past this the second template is
+# more holes than any answer-literal search has been measured to close.
+_MAX_WIDTH_FOR_DIFFERENCES = 4
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Branches: the transition without its conditionals
+# ══════════════════════════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True)
+class Branch:
+    """One case of a round: its guard, and the state terms under that guard.
+
+    `guard` is the conjunction of condition literals that selects this case
+    and `state` is the terms with every `ite` folded away by cvc5's rewriter
+    under that assignment. The guard is a hypothesis of the obligation
+    rather than a condition inside it, which is the whole point: Vampire
+    answers an implication and does not answer a conditional.
+    """
+
+    guard: tuple                # cvc5 Bool terms, all of them true here
+    state: tuple                # the folded terms, ite-free
+
+
+def ite_conditions(terms) -> list:
+    """Every condition an `ite` in `terms` branches on, outermost first.
+
+    Deduplicated by printed form: a transition that tests `s0 = 0` in three
+    components is one case split, not three.
+    """
+    seen: dict = {}
+
+    def walk(t):
+        if t.getKind() == Kind.ITE:
+            seen.setdefault(str(t[0]), t[0])
+        for child in t:
+            walk(child)
+
+    for t in terms:
+        walk(t)
+    return list(seen.values())
+
+
+def split(ctx: SynthContext, terms, what: str) -> list[Branch]:
+    """`terms`, split into the ite-free cases of their own conditions.
+
+    The round and the initial state are split *apart*, because they are not
+    quantified over the same things: the initial state is a function of the
+    inputs alone, so a guard taken from the round -- which tests the latched
+    state -- would leave a variable in the entry obligation that nothing
+    binds. Every assignment is emitted, the unsatisfiable ones included: an
+    unsatisfiable guard makes its implication vacuously true, which costs
+    Vampire a clause and costs this module the logic that would have worked
+    out which ones those are.
+    """
+    tm = ctx.tm
+    rewriter = cvc5.Solver(tm)
+    terms = list(terms)
+    conds = ite_conditions(terms)
+    if len(conds) > _MAX_CONDITIONS:
+        raise Refused(
+            f"--infer vampire splits {what} on the {len(conds)} conditions "
+            f"its `ite`s test, which is {2 ** len(conds)} cases and past the "
+            f"{_MAX_BRANCHES} this route will print. `--infer houdini` "
+            f"states the round once, conditionals and all."
+        )
+    out = []
+    for bits in product((True, False), repeat=len(conds)):
+        subs = [tm.mkBoolean(b) for b in bits]
+        folded = tuple(rewriter.simplify(t.substitute(conds, subs))
+                       if conds else t for t in terms)
+        guard = tuple(c if b else tm.mkTerm(Kind.NOT, c)
+                      for c, b in zip(conds, bits))
+        out.append(Branch(guard, folded))
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# SMT-LIB: cvc5 prints the question it built
+# ══════════════════════════════════════════════════════════════════════════
+
+_PRELUDE = "(set-logic ALL)\n"
+# Not `(assert (not ...))`: `assert-not` is what marks a formula as *the*
+# conjecture, which is what `--question_answering` attaches answer literals
+# to. An ordinary negated assertion is refuted without an answer.
+_CONJECTURE = "(assert-not {})\n(check-sat)\n"
+
+
+def script_for(conjecture) -> str:
+    """One cvc5 term as a whole SMT-LIB problem for Vampire.
+
+    The term *is* the question, so cvc5 prints it and this adds the two
+    lines around it. There is no printer here on purpose: the obligations
+    are cvc5 terms the module's own encoding produced, and every printer
+    between them and the prover is a chance to state something other than
+    what was encoded.
+    """
+    return _PRELUDE + _CONJECTURE.format(conjecture)
+
+
+def refuse_ites(term) -> None:
+    """An `ite` the split did not reach is refused rather than printed.
+
+    It would print perfectly well -- SMT-LIB has `ite` and Vampire reads it
+    -- and then never be answered, which reaches the user as a timeout
+    rather than as the unsupported shape it is. Asked of the whole assembled
+    question, so a conditional in the property or in a precondition is met
+    here too and not only one the branch split left behind.
+    """
+    if ite_conditions([term]):
+        raise Refused(
+            "--infer vampire cannot state an obligation that still holds "
+            "an `ite` after the transition was branch-split: Vampire's "
+            "answer-literal search does not see through a conditional. "
+            "`--infer houdini` proves the same obligation with one."
+        )
+
+
+def free_constants(term) -> list:
+    """Every uninterpreted constant `term` still mentions, outermost first.
+
+    What the old TPTP printer refused for free by having no variable for a
+    symbol: cvc5 prints a stray constant perfectly happily, and Vampire
+    reads an undeclared one as an error three steps later.
+    """
+    seen: dict = {}
+
+    def walk(t):
+        if t.getKind() == Kind.CONSTANT:
+            seen.setdefault(str(t), t)
+        for child in t:
+            walk(child)
+
+    walk(term)
+    return list(seen.values())
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The template
+# ══════════════════════════════════════════════════════════════════════════
+
+
+# How far outside the module's own numbers a coefficient is looked for. The
+# bound that makes an invariant true is almost always a constant the program
+# already contains -- what `program_constants` is seeded from and what
+# `tests/limits/README.md` records about Houdini -- so the window only has
+# to be wide enough to hold a little arithmetic around them.
+_WINDOW_MARGIN = 10
+_MIN_WINDOW = 100
+
+
+def window_for(ctx: SynthContext) -> int:
+    """How far a template coefficient may reach from zero."""
+    biggest = max((abs(c) for c in program_constants(ctx)), default=0)
+    return max(_MIN_WINDOW, biggest * _WINDOW_MARGIN)
+
+
+@dataclass(frozen=True)
+class Row:
+    """One `lo <= body <= hi` of a template, with `lo` and `hi` still holes.
+
+    `at` is which components the body reads: one index is the component
+    itself, two is their difference. It is kept as indices rather than as
+    text because the row is needed twice over -- as a cvc5 term in the
+    question, and as SMT-LIB in the certificate -- and a body that is
+    printed one way and parsed back the other is a way for those two to
+    disagree without anything saying so.
+    """
+
+    lo: str
+    hi: str
+    at: tuple[int, ...]
+
+    def term(self, tm, state: list):
+        """The body over `state`, which is one term per component."""
+        if len(self.at) == 1:
+            return state[self.at[0]]
+        i, j = self.at
+        return tm.mkTerm(Kind.SUB, state[i], state[j])
+
+    @property
+    def smt(self) -> str:
+        """The body as the certificate carries it."""
+        if len(self.at) == 1:
+            return f"s{self.at[0]}"
+        return f"(- s{self.at[0]} s{self.at[1]})"
+
+
+@dataclass(frozen=True)
+class Template:
+    """The certificate with its coefficients left open.
+
+    `holes` are the variables of the conjecture's existential, in the order
+    Vampire reports them, which is how an answer tuple is read back.
+    """
+
+    name: str
+    holes: tuple[str, ...]
+    rows: tuple[Row, ...]
+    rank: tuple[str, ...] = ()      # rank coefficient holes, then the constant
+
+    @property
+    def all_holes(self) -> tuple[str, ...]:
+        return self.holes + self.rank
+
+
+def template(ctx: SynthContext, which: str, *, ranked: bool) -> Template:
+    """The `which` template over this module's components."""
+    width = len(ctx.state)
+    rows, holes = [], []
+    for i in range(width):
+        lo, hi = f"A{i}", f"B{i}"
+        rows.append(Row(lo, hi, (i,)))
+        holes += [lo, hi]
+    if which == "differences":
+        for i, j in combinations(range(width), 2):
+            lo, hi = f"C{i}_{j}", f"D{i}_{j}"
+            rows.append(Row(lo, hi, (i, j)))
+            holes += [lo, hi]
+    rank = tuple([f"R{i}" for i in range(width)] + ["Rc"]) if ranked else ()
+    return Template(which, tuple(holes), tuple(rows), rank)
+
+
+def templates(ctx: SynthContext, *, ranked: bool) -> list[Template]:
+    """The templates this module is worth asking about, smallest first."""
+    out = [template(ctx, "intervals", ranked=ranked)]
+    if len(ctx.state) > 1 and len(ctx.state) <= _MAX_WIDTH_FOR_DIFFERENCES:
+        out.append(template(ctx, "differences", ranked=ranked))
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The question
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class Question:
+    """One module's obligations as one cvc5 term with holes in it.
+
+    The obligations are built over the constants `Obligations` already made
+    -- `v_s0`, `v_el0`, `v_en0` -- and turned into bound variables only on
+    the way out, by `_forall`. That way every term here is a term of the
+    module's own encoding right up to the point where it is quantified, and
+    the question Vampire reads is cvc5's printing of it.
+    """
+
+    def __init__(self, ctx: SynthContext, ob: Obligations,
+                 entry: list[Branch], step: list[Branch]):
+        self.ctx, self.ob, self.tm = ctx, ob, ctx.tm
+        self.entry, self.step = entry, step
+        ints = ctx.tm.getIntegerSort()
+        # One bound variable per constant. The names reach Vampire through
+        # cvc5's printer, so they have to be distinct: two `mkVar`s of one
+        # name print alike and mean different things.
+        self.consts = list(ob.s) + list(ob.el) + list(ob.en)
+        self.state = [ctx.tm.mkVar(ints, f"s{i}") for i in range(len(ob.s))]
+        self.inputs = [ctx.tm.mkVar(c.getSort(), f"e{i}")
+                       for i, c in enumerate(list(ob.el) + list(ob.en))]
+        self.vars = self.state + self.inputs
+        self.holes: dict = {}
+        self.window = window_for(ctx)
+
+    # --- the template, as a term over a state ----------------------------
+
+    def _hole(self, name: str):
+        """The variable standing for one coefficient, made once per name."""
+        if name not in self.holes:
+            self.holes[name] = self.tm.mkVar(self.tm.getIntegerSort(), name)
+        return self.holes[name]
+
+    def _rows(self, tpl: Template, at: list):
+        """`tpl` read at `at`, which is one term per component."""
+        out = []
+        for row in tpl.rows:
+            body = row.term(self.tm, at)
+            out += [self.tm.mkTerm(Kind.LEQ, self._hole(row.lo), body),
+                    self.tm.mkTerm(Kind.LEQ, body, self._hole(row.hi))]
+        return self._and(out)
+
+    def _rank(self, tpl: Template, at: list):
+        """`Rc + R0*s0 + ... `, the rank with its coefficients left open."""
+        out = self._hole(tpl.rank[-1])
+        for c, v in zip(tpl.rank, at):
+            out = self.tm.mkTerm(Kind.ADD, out,
+                                 self.tm.mkTerm(Kind.MULT, self._hole(c), v))
+        return out
+
+    def _and(self, parts):
+        kept = [p for p in parts
+                if not (p.getKind() == Kind.CONST_BOOLEAN
+                        and p.getBooleanValue())]
+        if not kept:
+            return self.tm.mkBoolean(True)
+        return kept[0] if len(kept) == 1 else self.tm.mkTerm(Kind.AND, *kept)
+
+    # --- the obligations --------------------------------------------------
+
+    def conjecture(self, tpl: Template, prp) -> str:
+        """`--safety`: an inductive invariant that implies the property."""
+        obs = self._obligations(tpl, prp, inductive=True, implies=True,
+                                ranked=False)
+        return script_for(self._ask_for(tpl.holes, obs))
+
+    def invariant_conjecture(self, tpl: Template) -> str:
+        """`init_inv` and `step_inv` alone -- an inductive invariant, with
+        no claim about the property. Stage one of the Buchi split."""
+        obs = self._obligations(tpl, None, inductive=True, implies=False,
+                                ranked=False)
+        return script_for(self._ask_for(tpl.holes, obs, bounded=True))
+
+    def rank_conjecture(self, tpl: Template, prp, fixed: dict) -> str:
+        """`hrank` over an invariant already derived. Stage two.
+
+        Only the rank obligations: the invariant is in them already, as the
+        hypothesis `here`, and with its coefficients fixed to numbers it is
+        a statement about the module rather than a hole to fill. `init_inv`
+        and `step_inv` are settled and asking them again is clauses for
+        nothing.
+        """
+        obs = self._obligations(tpl, prp, inductive=False, implies=False,
+                                ranked=True)
+        return script_for(self._ask_for(tpl.rank, obs, fixed=fixed))
+
+    def _obligations(self, tpl: Template, prp, *, inductive: bool,
+                     implies: bool, ranked: bool) -> list:
+        tm, ob = self.tm, self.ob
+        obligations = []
+        # init_inv. The initial state is a function of the inputs alone, so
+        # this is quantified over the inputs and split on its own
+        # conditions -- a guard from the round would leave a latched-state
+        # variable here that nothing binds.
+        if inductive:
+            for br in self.entry:
+                hyp = self._and([ob.init_pre, *br.guard])
+                obligations.append(self._forall(
+                    self.inputs,
+                    self._implies(hyp, self._rows(tpl, list(br.state)))))
+        for br in self.step:
+            here = self._rows(tpl, list(ob.s))
+            if inductive:
+                hyp = self._and([here, ob.update_pre, *br.guard])
+                obligations.append(self._forall(
+                    self.vars,
+                    self._implies(hyp, self._rows(tpl, list(br.state)))))
+            if ranked:
+                # hrank, ite-free: positive where the property fails, and
+                # smaller after the round. Implies the `Int.toNat` form.
+                now = self._rank(tpl, list(ob.s))
+                drops = self._and([
+                    tm.mkTerm(Kind.GT, now, tm.mkInteger(0)),
+                    tm.mkTerm(Kind.LT, self._rank(tpl, list(br.state)), now),
+                ])
+                fails = tm.mkTerm(Kind.NOT, self._at(prp, ob.s))
+                obligations.append(self._forall(
+                    self.vars,
+                    self._implies(
+                        self._and([here, fails, ob.update_pre, *br.guard]),
+                        drops)))
+        if implies:
+            obligations.append(self._forall(
+                self.state,
+                self._implies(self._rows(tpl, list(ob.s)),
+                              self._at(prp, ob.s))))
+        return obligations
+
+    def _ask_for(self, holes: tuple[str, ...], obligations: list,
+                 fixed: "dict | None" = None, bounded: bool = False):
+        """`obligations`, with `fixed` filled in and `holes` left open.
+
+        `bounded` confines each open hole to the window, and it is asked for
+        only where the obligations leave the coefficients loose. Measured
+        both ways over `tests/limits`: bounding costs the safety questions
+        `m_max` and `m_toward5`, whose `inv -> prp` obligation pins the
+        interval already so the window is clauses for nothing; and it is
+        what makes the invariant-only question answerable at all --
+        `m_countdown`'s does not come back inside 30 s free and answers
+        `[0,100]` in three seconds bounded. A refutation only has to produce
+        *a* witness, and where nothing else pins one down a window is what
+        makes producing one a finite matter rather than a guess.
+        """
+        tm = self.tm
+        body = self._and(obligations)
+        if fixed:
+            body = body.substitute(
+                [self._hole(h) for h in fixed],
+                [tm.mkInteger(v) for v in fixed.values()])
+        parts = []
+        if bounded:
+            window = tm.mkInteger(self.window)
+            parts = [b for h in holes for b in (
+                tm.mkTerm(Kind.LEQ, tm.mkTerm(Kind.NEG, window),
+                          self._hole(h)),
+                tm.mkTerm(Kind.LEQ, self._hole(h), window))]
+        out = tm.mkTerm(Kind.EXISTS,
+                        tm.mkTerm(Kind.VARIABLE_LIST,
+                                  *[self._hole(h) for h in holes]),
+                        self._and(parts + [body]))
+        refuse_ites(out)
+        return out
+
+    def _implies(self, hyp, goal):
+        if hyp.getKind() == Kind.CONST_BOOLEAN and hyp.getBooleanValue():
+            return goal
+        return self.tm.mkTerm(Kind.IMPLIES, hyp, goal)
+
+    def _at(self, term, vs):
+        return term.substitute(self.ctx.state, vs)
+
+    def _forall(self, vs: list, body):
+        """`body` over the constants, quantified over the variables for them.
+
+        The substitution is what turns `v_s0` into the bound `s0`, and only
+        the constants `vs` stands for are substituted: a constant left over
+        is one this obligation is not quantified over, and it is refused by
+        name rather than printed as a symbol nothing declares. That is the
+        entry obligation's own failure mode -- a guard from the round
+        mentions the latched state, which nothing binds there.
+        """
+        names = {str(v) for v in vs}
+        pairs = [(c, v) for c, v in zip(self.consts, self.vars)
+                 if str(v) in names]
+        if pairs:
+            body = body.substitute([c for c, _ in pairs],
+                                   [v for _, v in pairs])
+        stray = free_constants(body)
+        if stray:
+            raise Refused(
+                f"--infer vampire states an obligation over "
+                f"{', '.join(sorted(str(v) for v in vs)) or 'nothing'}, and "
+                f"it mentions {', '.join(str(c) for c in stray)}, which "
+                f"nothing there binds"
+            )
+        if not vs:
+            return body
+        return self.tm.mkTerm(Kind.FORALL,
+                              self.tm.mkTerm(Kind.VARIABLE_LIST, *vs), body)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Asking Vampire for an answer rather than a yes
+# ══════════════════════════════════════════════════════════════════════════
+
+# `% SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert`, and the
+# single form `% SZS answers Tuple [[0,100]|_]`.
+#
+# The alternatives after `|` are a *disjunctive* answer: the refutation
+# established that one of them is a witness, not that each is. A split
+# refutation -- AVATAR's, which is what closes these questions -- reports one
+# tuple per branch it closed, and a branch closed under a hypothesis that
+# does not hold contributes a tuple that is not a witness at all. Measured on
+# `m_countdown`: twelve alternatives, ten of them the `[0,100]` that is an
+# invariant and the first two `[1,100]`, which is not preserved (`s0 = 1`
+# steps to `0`). So every alternative is a candidate and they are tried in
+# turn against the obligations; taking the first is how this route spent a
+# while reporting no certificate for a module it had been handed one for.
+_ANSWER = "SZS answers Tuple "
+
+
+def answer_tuples(line: str) -> "list[list[str]] | None":
+    """Every alternative in a `SZS answers` line, one string per hole.
+
+    Scanned with a bracket depth rather than matched with a regex: a hole
+    the refutation never pinned down prints as `∀X0.[X0]`, brackets and all,
+    and a pattern that stops at the first `]` reads that as the end of the
+    tuple and comes back one value short.
+    """
+    at = line.find(_ANSWER)
+    if at < 0:
+        return None
+    rest = line[at + len(_ANSWER):].lstrip()
+    if not rest.startswith("["):
+        return None
+    rest = rest[1:].lstrip()
+    if rest.startswith("("):                         # the per-disjunct form
+        rest = rest[1:].lstrip()
+    out = []
+    while rest.startswith("["):
+        one, rest = _one_tuple(rest)
+        if one is None:
+            break
+        out.append(one)
+        rest = rest.lstrip()
+        if not rest.startswith("|"):
+            break
+        rest = rest[1:].lstrip()
+    return out or None
+
+
+def _one_tuple(rest: str) -> "tuple[list[str] | None, str]":
+    """One `[a,b,...]`, and what is left of the line after it."""
+    depth, out, cur = 0, [], ""
+    for i, ch in enumerate(rest[1:], start=2):
+        if ch in "([":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "]":
+            if depth == 0:
+                out.append(cur)
+                return out, rest[i:]
+            depth -= 1
+        elif ch == "," and depth == 0:
+            out.append(cur)
+            cur = ""
+            continue
+        cur += ch
+    return None, ""
+
+
+@dataclass(frozen=True)
+class Derived:
+    """What Vampire answered: the alternatives, each one value per hole.
+
+    Any one of them may be the witness, and which one is settled by putting
+    it back into the template and re-asking the obligations.
+    """
+
+    answers: tuple[tuple[int, ...], ...]
+    secs: float
+
+
+class Answers:
+    """Vampire in question-answering mode, on this run's deadline."""
+
+    # Both ways of naming subformulas, because on a conjecture with holes
+    # neither is the right one -- see the module docstring for what each
+    # answers that the other does not. Named rather than a bare tuple of
+    # flags so the log can say which one came back.
+    STRATEGIES = (("naming", ()), ("no naming", ("--naming", "0")))
+    # The short rung's wall clock. Measured over `tests/limits` with the
+    # declared limit left alone: every answer but `m_max`'s and `m_relu`'s
+    # arrives inside eight seconds, so one pass at this over every strategy
+    # is what keeps the questions that do answer from waiting behind the
+    # ones that do not.
+    SHORT = 8.0
+
+    def __init__(self, exe: str, *, seconds: float, log=print):
+        self.exe = exe
+        self.deadline = time.monotonic() + seconds
+        # What Vampire is *told* it has, which is not what it is given.
+        # `--time_limit` is a scheduling input before it is a cap: Vampire
+        # slices it between strategies, so a small one runs a different
+        # search rather than the same one cut short. Measured on `m_max`'s
+        # question -- `--time_limit 20` reaches the limit, `--time_limit 25`
+        # answers after 2.5 s. So every call declares the run's whole
+        # budget, and what actually bounds a call is the wall clock below.
+        self.declared = max(1, int(seconds))
+        self.log = log
+        self.calls = 0
+        self.spent = 0.0
+
+    def left(self) -> float:
+        return self.deadline - time.monotonic()
+
+    def ask(self, script: str, holes: int) -> "Derived | None":
+        """The first answer any strategy gives, short rung first.
+
+        The rungs are wall clock, and the declared limit does not move with
+        them -- which is the whole reason a short rung is safe here. A short
+        `--time_limit` would have Vampire run a *different* search; a short
+        wall runs the same one and stops it early, and most answers measured
+        over `tests/limits` arrive in under four seconds.
+        """
+        for short in (True, False):
+            for n, (name, extra) in enumerate(self.STRATEGIES):
+                left = self.left()
+                # On the long rung what is left is shared out between the
+                # strategies still to come, so the last is still asked.
+                budget = (min(self.SHORT, left) if short
+                          else left / (len(self.STRATEGIES) - n))
+                answer = self._call(script, holes, budget, extra)
+                if answer is not None:
+                    self.log(f"[vampire] answered with {name}")
+                    return answer
+        return None
+
+    def _call(self, script: str, holes: int, budget: float,
+              extra: tuple) -> "Derived | None":
+        if budget < 1:
+            return None
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".smt2", prefix="verith-vampire-qa-", delete=False
+        ) as f:
+            f.write(script)
+            path = f.name
+        # Default mode, not `portfolio`: measured on this route's own
+        # question for `m_countdown`, `--mode portfolio --schedule casc`
+        # reaches the time limit where the default mode answers `[0,100]`
+        # at once. A portfolio strategy is tuned to find a refutation, and
+        # what is wanted here is the *substitution* a refutation carries.
+        cmd = [
+            self.exe, "--input_syntax", "smtlib2",
+            "--question_answering", "plain",
+            *extra,
+            "--time_limit", f"{self.declared}",
+            path,
+        ]
+        t0 = time.perf_counter()
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True,
+                                start_new_session=True)
+        try:
+            # The real bound: `--time_limit` told Vampire what schedule to
+            # run, and this is the share of the deadline it actually gets.
+            out, _ = proc.communicate(timeout=budget)
+        except subprocess.TimeoutExpired:
+            _kill_group(proc)
+            out = ""
+        finally:
+            _kill_group(proc)
+            Path(path).unlink(missing_ok=True)
+        dt = time.perf_counter() - t0
+        self.calls += 1
+        self.spent += dt
+        error = next((ln for ln in out.splitlines()
+                      if "User error" in ln or "Parsing Error" in ln), None)
+        if error is not None:
+            raise Refused(
+                f"--infer vampire wrote a question Vampire cannot read: "
+                f"{error.strip()[:300]}"
+            )
+        return self._read(out, holes, dt)
+
+    def _read(self, out: str, holes: int, dt: float) -> "Derived | None":
+        alts = next(
+            (t for t in (answer_tuples(ln) for ln in out.splitlines())
+             if t is not None), None)
+        if alts is None:
+            return None
+        seen, kept = set(), []
+        for parts in alts:
+            values = []
+            for part in parts:
+                v = _integer(part.strip())
+                if v is None:
+                    # A hole the refutation never had to pin down: any value
+                    # serves, and zero is the one the certificate reads
+                    # best. It is checked with the rest before anything is
+                    # emitted.
+                    v = 0
+                values.append(v)
+            if len(values) != holes:
+                self.log(f"[vampire] an answer has {len(values)} values for "
+                         f"{holes} holes; ignoring it")
+                continue
+            if tuple(values) not in seen:
+                seen.add(tuple(values))
+                kept.append(tuple(values))
+        return Derived(tuple(kept), dt) if kept else None
+
+
+def _integer(text: str) -> "int | None":
+    text = text.strip()
+    m = re.fullmatch(r"\$uminus\((\d+)\)", text)
+    if m:
+        return -int(m.group(1))
+    return int(text) if re.fullmatch(r"-?\d+", text) else None
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The route
+# ══════════════════════════════════════════════════════════════════════════
+
+
+class TA2MagicVampire(TA2Magic):
+    """The certificate Vampire derives, checked before it is handed on."""
+
+    def __init__(self, module, *, vampire: str, timeout: float = DEFAULT_TIMEOUT,
+                 artifacts=None, log=print):
+        super().__init__("")
+        if cvc5 is None:                             # pragma: no cover
+            raise Refused(
+                "--infer vampire needs the `cvc5` package to encode the "
+                "module, which is not importable. Install with: "
+                "uv pip install cvc5"
+            )
+        self.module = module
+        self.exe = vampire
+        self.timeout = float(timeout)
+        self.artifacts = artifacts
+        self.log = log
+
+    # --- driver -----------------------------------------------------------
+
+    def infer(self, cd: CertificateData) -> CertificateData:
+        # `SynthContext.build` refuses a component this route cannot weigh
+        # as an integer -- Real, bitvector, matrix-shaped -- before anything
+        # here is printed, which is the same gate `--infer smt-linear` uses.
+        ctx = SynthContext.build(self.module, cd, route="vampire")
+        self._check_sorts(ctx)
+        self.ctx = ctx
+        self.ob = ob = Obligations(ctx)
+        entry = split(ctx, ob.init, "the initial state")
+        step = split(ctx, ob.next, "the round")
+        q = Question(ctx, ob, entry, step)
+        self.log(f"[vampire] {len(step)} branch(es) of the round, "
+                 f"{len(entry)} of the initial state, "
+                 f"{len(ctx.state)} component(s)")
+
+        asker = Answers(self.exe, seconds=self.timeout, log=self.log)
+        derive = self._safety if cd.is_safety else self._ranked
+        tried = []
+        for tpl in templates(ctx, ranked=not cd.is_safety):
+            if asker.left() < 1:
+                break
+            tried.append(tpl.name)
+            out = derive(q, tpl, asker, cd)
+            if out is not None:
+                return out
+            self.log(f"[vampire] nothing from {tpl.name} "
+                     f"({asker.spent:.1f} s spent)")
+        self.log(f"[vampire] {asker.calls} Vampire call(s), "
+                 f"{asker.spent:.1f} s")
+        return self._none(cd, tried, asker)
+
+    def _safety(self, q: Question, tpl: Template, asker: Answers,
+                cd: CertificateData) -> "CertificateData | None":
+        """One question: the invariant and the property it has to imply.
+
+        `inv -> prp` is what pins the coefficients down, which is why this
+        is one question where `--buchi` is two.
+        """
+        script = q.conjecture(tpl, self.ctx.prp)
+        self.log(f"[vampire] template {tpl.name}: {len(tpl.holes)} holes, "
+                 f"{len(script)} chars")
+        answer = asker.ask(script, len(tpl.holes))
+        if answer is None:
+            return None
+        for named in self._alternatives(answer, tpl.holes, asker):
+            inv, _ = self._read_back(tpl, named, cd)
+            if self._checks_out(inv, None, cd):
+                return self._emit(cd, inv, None, tpl)
+        return None
+
+    def _ranked(self, q: Question, tpl: Template, asker: Answers,
+                cd: CertificateData) -> "CertificateData | None":
+        """Two questions: an inductive invariant, then a rank that drops on
+        it.
+
+        Asked apart rather than as one conjecture with every hole in it,
+        because two holes is what this mechanism reaches: the joint question
+        for a one-component module is four, and it answered nothing at all
+        over `tests/limits`, where the split derives `m_countdown` and
+        `m_deep` -- invariant in about a second, rank in about fifteen.
+
+        Splitting a search can cost what a joint one would have found: an
+        invariant that is inductive need not admit a rank, and this one
+        cannot go back and ask for another. So every alternative of the
+        first answer is carried into the second, which is the disjunctive
+        answer earning its keep twice.
+        """
+        script = q.invariant_conjecture(tpl)
+        self.log(f"[vampire] template {tpl.name}: an invariant in "
+                 f"{len(tpl.holes)} holes, {len(script)} chars")
+        answer = asker.ask(script, len(tpl.holes))
+        if answer is None:
+            return None
+        for inv_named in self._alternatives(answer, tpl.holes, asker):
+            ranks = asker.ask(q.rank_conjecture(tpl, self.ctx.prp, inv_named),
+                              len(tpl.rank))
+            if ranks is None:
+                self.log("[vampire] no ranking over that invariant")
+                continue
+            for named in self._alternatives(ranks, tpl.rank, asker):
+                inv, rank = self._read_back(tpl, {**inv_named, **named}, cd)
+                if self._checks_out(inv, rank, cd):
+                    return self._emit(cd, inv, rank, tpl)
+        return None
+
+    def _alternatives(self, answer: Derived, holes: tuple[str, ...],
+                      asker: Answers):
+        """Each alternative of a disjunctive answer, named, while time lasts.
+
+        One of them is a witness, not each of them, so each is a candidate
+        until the obligations say otherwise. Checking one is cvc5 on a few
+        small queries, but there can be a dozen, so the run's own deadline
+        bounds the loop -- after the first, which is always worth it.
+        """
+        for n, values in enumerate(answer.answers):
+            if n and asker.left() < 0:
+                self.log(f"[vampire] out of time with "
+                         f"{len(answer.answers) - n} alternative(s) of the "
+                         f"answer unchecked")
+                return
+            named = dict(zip(holes, values))
+            self.log("[vampire] Vampire answered "
+                     + ", ".join(f"{h}={v}" for h, v in named.items()))
+            yield named
+
+    # --- what the answer means --------------------------------------------
+
+    def _read_back(self, tpl: Template, named: dict,
+                   cd: CertificateData) -> tuple:
+        """The template with Vampire's numbers in it, as SMT-LIB."""
+        facts = []
+        for row in tpl.rows:
+            facts.append(f"(<= {smt_int(named[row.lo])} {row.smt})")
+            facts.append(f"(<= {row.smt} {smt_int(named[row.hi])})")
+        inv = ("true" if not facts else facts[0] if len(facts) == 1
+               else "(and " + " ".join(facts) + ")")
+        if cd.is_safety:
+            return inv, None
+        # A coefficient of one is the component itself: `(* 1 s0)` is what
+        # the template says and `s0` is what the certificate should read.
+        terms = [f"s{i}" if named[c] == 1 else f"(* {smt_int(named[c])} s{i})"
+                 for i, c in enumerate(tpl.rank[:-1]) if named[c]]
+        const = named[tpl.rank[-1]]
+        parts = ([smt_int(const)] if const or not terms else []) + terms
+        rank = parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
+        return inv, rank
+
+    def _checks_out(self, inv_src: str, rank_src: "str | None",
+                    cd: CertificateData) -> bool:
+        """The four obligations, restated and put to cvc5.
+
+        An answer literal is the substitution *a* refutation used, and this
+        route wrote the question it refuted -- so the certificate is checked
+        against the module's own encoding before anything is emitted, the
+        same way `--pre-check cvc5` would check one supplied by hand.
+        """
+        ob, ctx = self.ob, self.ctx
+        try:
+            facts = [Candidate(inv_src, ctx.env.parse_expr(inv_src))]
+            rank = (None if rank_src is None
+                    else Candidate(rank_src, ctx.env.parse_expr(rank_src)))
+        except Exception as e:                       # noqa: BLE001
+            self.log(f"[vampire] the answer does not parse back: {e}")
+            return False
+        solver = Cvc5Solver(ctx.tm, seconds=max(5.0, min(30.0, self.timeout)),
+                            log=self.log)
+        queries = [ob.holds_at_entry(facts), ob.preserved(facts, facts)]
+        if cd.is_safety:
+            queries.append(ob.implies(facts, ctx.prp))
+        else:
+            queries.append(ob.drops(facts, rank))
+        for name, query in zip(("init_inv", "step_inv", "the last"), queries):
+            answer = solver.prove(query, 10)
+            if not answer.proved:
+                self.log(f"[vampire] {name} does not hold of the answer "
+                         f"({answer.verdict.value})")
+                return False
+        return True
+
+    # --- reading the module -----------------------------------------------
+
+    def _check_sorts(self, ctx: SynthContext) -> None:
+        """Every component an integer variable, not merely readable as one.
+
+        `SynthContext` lets a bitvector through -- it has an integer
+        *reading*, its unsigned value, which is what `--infer smt-linear`
+        weighs it by -- but the terms are still bitvector operations, and
+        the templates below are integer intervals with integer coefficients
+        that `<=` a bitvector nowhere. Met here, by sort, rather than as a
+        sort error out of cvc5 four steps later.
+        """
+        bad = [f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
+               if not s.isInteger()]
+        bad += [f"{c} is {c.getSort()}"
+                for c in list(ctx.extl_next) + list(ctx.extl_latched)
+                if not c.getSort().isInteger()]
+        if bad:
+            raise Refused(
+                f"--infer vampire states its obligations over integers, "
+                f"which is what its templates bound, and this module has "
+                f"{', '.join(bad)}. `--infer houdini` states them in SMT-LIB "
+                f"-- still not bitvectors, but it says so of the candidate "
+                f"shapes rather than of the templates; `--infer smt-linear` "
+                f"weighs a bitvector as its unsigned value."
+            )
+
+    # --- out ---------------------------------------------------------------
+
+    def _emit(self, cd: CertificateData, inv_src: str,
+              rank_src: "str | None", tpl: Template) -> CertificateData:
+        self.log(f"[vampire] inv: {inv_src}")
+        cd.inv = cd.inv_smt = inv_src
+        if rank_src is not None:
+            self.log(f"[vampire] ranking: {rank_src}")
+            cd.ranking = cd.ranking_smt = rank_src
+        self._record(inv_src, rank_src, tpl)
+        return cd
+
+    def _record(self, inv_src: str, rank_src: "str | None",
+                tpl: Template) -> None:
+        if self.artifacts is None:
+            return
+        what = (f"Derived by Vampire's answer literals from a `{tpl.name}` "
+                f"template with {len(tpl.all_holes)} holes -- the "
+                f"obligations were stated with the certificate open and "
+                f"Vampire returned the coefficients -- then checked against "
+                f"the module's encoding with cvc5.")
+        self.artifacts.put("inv", inv_src, status="proved", language="smt",
+                           what=f"The invariant this run found. {what}")
+        if rank_src is not None:
+            self.artifacts.put(
+                "ranking", rank_src, status="proved", language="smt",
+                what=f"The ranking function this run found. {what}")
+
+    def _none(self, cd, tried, asker) -> CertificateData:
+        what = ("inductive invariant implying the property" if cd.is_safety
+                else "invariant and ranking function")
+        detail = (
+            f"Vampire was asked for one as the coefficients of "
+            f"{' and '.join(tried) or 'no'} template(s), over "
+            f"{len(self.ob.s)} component(s), in {asker.calls} call(s) taking "
+            f"{asker.spent:.1f} s. An answer literal comes back only when a "
+            f"refutation pins the coefficients down, so this is not a proof "
+            f"that no certificate of this shape exists -- a longer "
+            f"--vampire-timeout, or a shape outside the templates, may be "
+            f"what is missing. `--infer houdini` searches the same module by "
+            f"proposing facts and proving them, which is a different reach."
+        )
+        if self.artifacts is not None:
+            self.artifacts.note(
+                f"--infer vampire derived no {what}. {detail}\n",
+                status="unknown",
+                what=f"A derivation of {what} that did not succeed.",
+                why="Vampire answers or times out; nothing was refuted.",
+            )
+        raise Refused(f"--infer vampire derived no {what}. {detail}")

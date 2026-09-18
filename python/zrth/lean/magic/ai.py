@@ -6,10 +6,11 @@ For local LLMs (Ollama, vLLM, etc.) and OpenAI-compatible providers
 """
 
 import os
+import re
 
-from .cert import CertificateData
-from .common import Refused
-from .magic import TA2Magic
+from ..cert import CertificateData
+from ..common import Refused
+from . import TA2Magic
 
 try:
     import anthropic
@@ -31,7 +32,7 @@ The Lean4 module has:
 - `update (s : CtrlNative × ExtlNative) : CtrlNative` — computes the next state
 
 This encodes an infinite loop: initialize state, then repeatedly update.
-State components are accessed via `.1`, `.2.1`, `.2.2.1`, etc. (left-nested tuples).
+`CtrlNative` is the type `init` returns in the source. With one state component it *is* that component, a matrix `Mat t 1 1 := Fin 1 → Fin 1 → t`, and its value is `s 0 0` — there is no `.1`. With several it is a tuple of them nested to the right, `A × (B × C)`: `s.1 0 0`, `s.2.1 0 0`, and the last one without a trailing `.1`, `s.2.2 0 0`.
 
 The module may have PRECONDITIONS on its inputs:
 - `init_pre`: constraint on the inputs to `init`
@@ -57,15 +58,15 @@ Reply with EXACTLY this format (NO OTHER TEXT):
 INVARIANT: <Lean4 expression of type CtrlNative → Prop>
 RANKING: <Lean4 expression of type CtrlNative → ℕ>
 
-Use Lean4 syntax. Access state components with `.1`, `.2.1`, etc. \
+Use Lean4 syntax, and access the state as described above. \
 Use `∧`, `∨`, `¬` for logical connectives and `≤`, `<`, `=` for comparisons.
 
 IMPORTANT — Lean 4 lambda syntax: write `fun s => expr` (NOT the Lean 3 form \
 `λ s, expr` or `fun s, expr`). Do not use a comma after the binder.
 
-State components are matrices of type `Mat t 1 1 := Fin 1 → Fin 1 → t`, so a \
-scalar value is accessed as `s.1 0 0`, `s.2.1 0 0`, etc. The ranking function \
-*MUST* return `Nat`.
+Every state component is a matrix `Mat t 1 1`, so a scalar is always read with \
+`0 0` after it: `s 0 0` for a one-component state, `s.1 0 0` for the first of \
+several. The ranking function *MUST* return `Nat`.
 """
 
 VERIFY_SYSTEM = """\
@@ -75,8 +76,7 @@ You are a formal verification auditor. You will be given:
 3. Preconditions on inputs (init_pre, update_pre) — assume these always hold
 4. A proposed invariant and ranking function
 
-The state type is `CtrlNative` (a left-nested tuple). \
-Components are accessed via `.1`, `.2.1`, `.2.2.1`, etc.
+`CtrlNative` is the type `init` returns in the source. With one state component it *is* that component, a matrix `Mat t 1 1 := Fin 1 → Fin 1 → t`, and its value is `s 0 0` — there is no `.1`. With several it is a tuple of them nested to the right, `A × (B × C)`: `s.1 0 0`, `s.2.1 0 0`, and the last one without a trailing `.1`, `s.2.2 0 0`.
 
 Your job is to rigorously check whether the invariant and ranking function \
 are correct. Specifically, check ALL of the following:
@@ -97,6 +97,45 @@ Reply with EXACTLY one of:
 Put NO OTHER TEXT in the response.
 """
 
+
+# Room for the answer *after* the reasoning. The generate prompt asks for two
+# lines, but a model reasons in prose first and the lines come last, so a cap
+# sized for the answer cuts the reply before it: at 1024 tokens 56 of the
+# bench matrix's `--infer ai` cells ended mid-sentence, some inside
+# `INVARIANT: fun s => s`, and failed to parse. Kept below the size at which
+# the Anthropic SDK insists on streaming.
+MAX_TOKENS = 8192
+
+def _state_type_line(source: str) -> str:
+    """The state type, named outright, as a line of the user message.
+
+    The system prompt says how a state is read in general; this says which
+    case this module is. Without it a model reached for `s.1 0 0` on a
+    one-component state -- a projection out of a function, which Lean
+    refuses -- on 16 of the bench matrix's single-wire modules."""
+    m = re.search(r"^@\[simp\] def init\b[^\n]*?\)\s*:\s*(.+?)\s*:=\s*$", source, re.M)
+    if not m:
+        return ""
+    ty = m.group(1)
+    shape = ("a tuple of components" if "×" in ty
+             else "a single component, so its value is `s 0 0`")
+    return f"CtrlNative, the state type, is `{ty}`: {shape}.\n\n"
+
+
+def _unquote(value: str) -> str:
+    """``value`` without the one pair of backticks a model wraps it in.
+
+    The prompt writes Lean as inline code -- `` `fun s => expr` `` -- and a
+    model answers in kind. Lean reads a backtick as the start of a name
+    literal, so a quoted answer reaches `Data.lean` as
+    ``def inv : T → Prop := `fun s => ...` `` and fails with `Function
+    expected ... this term has type Lean.Name`, which says nothing about
+    quoting. Only an enclosing pair is removed: a backtick inside the
+    expression is Lean's and stays."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] == "`":
+        value = value[1:-1].strip()
+    return value
 
 def _describe_preconditions(cd: CertificateData) -> str:
     parts = []
@@ -129,7 +168,7 @@ def _make_client(base_url: str | None, model: str):
         def chat(system: str, user: str) -> str:
             resp = client.chat.completions.create(
                 model=model,
-                max_tokens=1024,
+                max_tokens=MAX_TOKENS,
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
@@ -161,7 +200,7 @@ def _make_client(base_url: str | None, model: str):
                 )
             resp = client.messages.create(
                 model=model,
-                max_tokens=1024,
+                max_tokens=MAX_TOKENS,
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
@@ -212,6 +251,7 @@ class TA2MagicAI(TA2Magic):
         preconds = _describe_preconditions(cd)
         user_msg = (
             f"Source code:\n```python\n{self.source}\n```\n\n"
+            f"{_state_type_line(self.source)}"
             f"Property (prp): {cd.prp}\n\n"
             f"{preconds}\n"
         )
@@ -230,6 +270,7 @@ class TA2MagicAI(TA2Magic):
         preconds = _describe_preconditions(cd)
         user_msg = (
             f"Source code:\n```python\n{self.source}\n```\n\n"
+            f"{_state_type_line(self.source)}"
             f"Property (prp): {cd.prp}\n\n"
             f"{preconds}\n\n"
             f"Proposed invariant: {inv}\n"
@@ -260,9 +301,9 @@ class TA2MagicAI(TA2Magic):
         for line in text.strip().splitlines():
             line = line.strip()
             if line.startswith("INVARIANT:"):
-                inv = line[len("INVARIANT:") :].strip()
+                inv = _unquote(line[len("INVARIANT:") :])
             elif line.startswith("RANKING:"):
-                ranking = line[len("RANKING:") :].strip()
+                ranking = _unquote(line[len("RANKING:") :])
         if inv is None or ranking is None:
             raise ValueError(f"Failed to parse AI response:\n{text}")
         return inv, ranking

@@ -1,4 +1,4 @@
-"""The `--infer nuterm` route (`zrth.lean.magic_learn`).
+"""The `--infer nuterm` route (`zrth.lean.magic.learn`).
 
 What the route promises is that the certificate it returns has already been
 proved, so the tests that matter put its output to verith's *own* obligations
@@ -18,7 +18,7 @@ from zrth.analyzer import convert_method
 from zrth.sugar import ite
 from zrth.lean.cert import CertificateData
 from zrth.lean.common import Refused
-from zrth.lean.magic_learn import (
+from zrth.lean.magic.learn import (
     TA2MagicLearn,
     _parse_property,
     _prune,
@@ -141,7 +141,7 @@ def test_a_property_the_route_cannot_establish_is_refused():
     Houdini's lattice of signs and pairwise facts reads the same way -- is a
     refusal naming the routes that are not so limited, not a certificate that
     fails four steps later in cvc5 or in lake."""
-    with pytest.raises(Refused, match="--fbk-proveit.*--infer ai-cegar"):
+    with pytest.raises(Refused, match="--fbk-proveit.*--infer ai-cegis"):
         _learn(_countdown(), "(<= s0 3)", "safety")
 
 

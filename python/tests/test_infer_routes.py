@@ -108,9 +108,33 @@ def test_row_promises_match_what_it_returns():
             )
 
 
-def test_route_options_do_not_collide():
-    dests = [o.dest for _, o in all_route_options()]
-    assert len(dests) == len(set(dests)), "two routes claiming one flag"
+def test_an_option_two_routes_declare_is_one_option():
+    """A flag may belong to more than one row -- `--vampire` names the same
+    binary whether `--infer houdini` is putting candidates to it or `--infer
+    vampire` is asking it to derive one -- but then it has to be the *same*
+    option: one `dest`, one spelling, registered once.
+
+    The rule this replaces was "no two routes claim one flag", which is what
+    `shared_route_options` now makes safe rather than forbidden.
+    """
+    from zrth.lean.infer_route import shared_route_options
+
+    by_dest: dict = {}
+    for route, opt in all_route_options():
+        by_dest.setdefault(opt.dest, []).append((route, opt))
+    for dest, claims in by_dest.items():
+        spellings = {o.flags for _r, o in claims}
+        assert len(spellings) == 1, f"{dest} is spelled {len(spellings)} ways"
+
+    # And every distinct option appears exactly once in what the CLI
+    # registers, with every route that declared it.
+    shared = shared_route_options()
+    assert [o.dest for o, _ in shared] == list(by_dest)
+    assert all(len(owners) == len(by_dest[o.dest]) for o, owners in shared)
+
+    # Two flags must still never share a `dest`, and two `dest`s never a flag.
+    flags = [f for o, _ in shared for f in o.flags]
+    assert len(flags) == len(set(flags)), "two options claiming one flag"
 
 
 def test_parser_offers_exactly_the_rows():
@@ -173,7 +197,7 @@ def test_a_route_needs_a_property_and_names_the_kinds_it_takes(route):
 def test_ai_does_not_infer_a_safety_certificate():
     """`main.py:616`, from the row's `kinds` + `kinds_refusal`."""
     message = err(["m.py", "--safety", "(= s0 0)", "--infer", "ai"])
-    assert "rule_globally" in message and "ai-cegar" in message
+    assert "rule_globally" in message and "ai-cegis" in message
 
 
 @pytest.mark.parametrize(
@@ -351,7 +375,7 @@ def test_the_legacy_flag_and_a_different_route_conflict(tmp_path):
             "--safety",
             "(= s0 0)",
             "--infer",
-            "ai-cegar",
+            "ai-cegis",
             "--fbk-proveit",
             str(_checkout(tmp_path)),
         ]
@@ -484,7 +508,7 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi"):
 
 def test_lean_that_came_back_is_not_rendered_again(monkeypatch, tmp_path):
     """Rendering encodes the module into cvc5 again, so a route that already
-    has the Lean -- both `ai-cegar` and `nuterm` do -- is taken at its word.
+    has the Lean -- both `ai-cegis` and `nuterm` do -- is taken at its word.
     """
     out, rendered = _run_infer(
         monkeypatch,
@@ -551,7 +575,7 @@ def test_artifacts_defaults_to_use():
     assert parse_args(["m.py", "--buchi", "(= s0 0)"]).artifacts == "use"
 
 
-# --- resuming, as `ai-cegar` does it -------------------------------------
+# --- resuming, as `ai-cegis` does it -------------------------------------
 
 
 def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):

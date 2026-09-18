@@ -24,7 +24,7 @@ from .infer_route import (
     ROUTES,
     InferRoute,
     all_route_aliases,
-    all_route_options,
+    shared_route_options,
     route_by_name,
     route_names,
 )
@@ -32,7 +32,7 @@ from .smt_query import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 _EPILOG = """\
 examples:
-  # bare project — all certificate fields left as sorry
+  # bare project — no property, so `P` and `ranking` are sorry
   uv run verith mymodule.py -o out/ -p MyProject
 
   # a Buchi property, `G (F (= s0 0))` (certificate stub with known P)
@@ -45,7 +45,7 @@ examples:
   uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
 
   # ... and the same loop for a safety property (cvc5-checked route only)
-  uv run verith mymodule.py --safety "(<= s0 100)" --infer ai-cegar -o out/ -p MyProject
+  uv run verith mymodule.py --safety "(<= s0 100)" --infer ai-cegis -o out/ -p MyProject
 
   # no LLM: learn a ranking function and certify it before it is offered
   uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
@@ -55,8 +55,21 @@ examples:
   uv run verith mymodule.py --safety "(not (= s0 1))" --infer sygus -o out/ -p MyProject
 
   # no LLM: one query per shape -- and a refuted shape is a *proof* that no
-  # certificate of that shape exists, which --infer ai-cegar reads next run
+  # certificate of that shape exists, which --infer ai-cegis reads next run
   uv run verith mymodule.py --buchi "(= s0 0)" --infer smt-linear -o out/ -p MyProject
+
+  # no LLM: Houdini and a ranking search, each candidate decided by cvc5 --
+  # a candidate it cannot prove comes back with the counterexample that kills it
+  uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini -o out/ -p MyProject
+
+  # ... the same search, refuted by the Vampire prover instead
+  uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini \\
+      --houdini-solver vampire --vampire ~/vampire/vampire -o out/ -p MyProject
+
+  # no LLM, and nothing proposed: the obligations are stated with the invariant
+  # left open and Vampire's answer literals return its coefficients
+  uv run verith mymodule.py --safety "(<= s0 100)" --infer vampire \\
+      --vampire ~/vampire/vampire -o out/ -p MyProject
 
   # AI inference with Ollama (requires pip install zrth[ai-local])
   uv run verith mymodule.py --buchi "(= s0 0)" --infer \\
@@ -284,18 +297,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # One group per route, so `--help` shows whose flag is whose.
-    for route in ROUTES:
-        if not route.options:
-            continue
-        group = parser.add_argument_group(f"--infer {route.name}")
-        for opt in route.options:
-            # `default=None` so that "given" is distinguishable from "not
-            # given" for the stray-option check; the row's own default is
-            # put back in `_check_route_options` once the route is known.
-            kwargs = dict(opt.kwargs)
-            kwargs["default"] = None
-            group.add_argument(*opt.flags, **kwargs)
+    # One group per option, named for every route that declares it, so
+    # `--help` shows whose flag is whose and says when a flag is two routes'.
+    groups: dict = {}
+    for opt, owners in shared_route_options():
+        title = ", ".join(f"--infer {r.name}" for r in owners)
+        if title not in groups:
+            groups[title] = parser.add_argument_group(title)
+        # `default=None` so that "given" is distinguishable from "not
+        # given" for the stray-option check; the row's own default is
+        # put back in `_check_route_options` once the route is known.
+        kwargs = dict(opt.kwargs)
+        kwargs["default"] = None
+        groups[title].add_argument(*opt.flags, **kwargs)
 
     # Deprecated spellings, from the rows that own them: each selects its
     # route and fills one of that route's options, which is why it cannot be
@@ -554,14 +568,17 @@ def _check_route_options(
     # given" -- including for an option whose row default is a real value.
     # An option passed the same value its row defaults to still counts as
     # given, which is what makes "only meaningful with" honest.
+    # An option several routes declare is stray only when *none* of them
+    # was selected: `--vampire` is meaningful to two routes and a no-op
+    # under the other five.
     stray = [
-        (owner, o)
-        for owner, o in all_route_options()
-        if owner is not route and getattr(args, o.dest, None) is not None
+        (owners, o)
+        for o, owners in shared_route_options()
+        if route not in owners and getattr(args, o.dest, None) is not None
     ]
     if stray:
         flags = [o.flags[-1] for _, o in stray]
-        owners = sorted({f"--infer {owner.name}" for owner, _ in stray})
+        owners = sorted({f"--infer {r.name}" for rs, _ in stray for r in rs})
         verb = "is" if len(flags) == 1 else "are"
         parser.error(
             f"{', '.join(flags)} {verb} only meaningful together with "
@@ -650,8 +667,11 @@ def _check_route(parser: argparse.ArgumentParser, args, settings: Settings) -> N
 
 def _check_outputs(parser: argparse.ArgumentParser, settings: Settings) -> None:
     # --build-cert is route-independent, but it needs a certificate worth
-    # building. A bare project's obligations are all `sorry`: lake compiles
-    # that and proves nothing, so asking for it is a mistake, not a no-op.
+    # building. A bare project's unsupplied fields default to `True`
+    # (`inv`, the preconditions) or to `sorry` (`P`, `ranking`), and its
+    # obligations are still handed to the tactics -- which cannot close one
+    # stated over a `sorry`, so `lake build` fails on it rather than
+    # compiling to a proof of nothing. Asking for that is a mistake.
     if settings.build_cert:
         if settings.cert_file or settings.hammer_file:
             which = "--cert-file" if settings.cert_file else "--hammer-file"
@@ -663,8 +683,9 @@ def _check_outputs(parser: argparse.ArgumentParser, settings: Settings) -> None:
             parser.error(
                 "--build-cert needs a certificate to build: pass --safety "
                 "with --invariant, or --buchi with --invariant and "
-                "--ranking, or --infer. Without them every obligation is "
-                "`sorry`."
+                "--ranking, or --infer. Without them the certificate's "
+                "predicates are `True` or `sorry`, and its obligations "
+                "cannot be discharged."
             )
 
     # `artifacts/` lives in the project, so the routes that write a file and

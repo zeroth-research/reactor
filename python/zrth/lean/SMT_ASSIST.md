@@ -1,7 +1,7 @@
 # Using cvc5 inside `verith`
 
 `verith` has always had a complete symbolic encoding of every module
-(`smt_module.ModuleSMT`), but outside the `--infer ai-cegar` loop it never
+(`smt_module.ModuleSMT`), but outside the `--infer ai-cegis` loop it never
 asked the solver anything: cvc5 parsed the SMT-LIB predicates, handed them to
 the Lean printer, and went home. This is what it is used for now, what that
 bought, and what is left.
@@ -44,7 +44,7 @@ printed Lean had already justified.
 not exist yet, so it reported "nothing to check" and the certificate that
 reached Lean went unchecked. With `--infer` it runs **after** inference, on
 what `magic` returned. `magic` hands back Lean text, which nothing parses
-back, so `ai-cegar` keeps the SMT-LIB it gave the solver in
+back, so `ai-cegis` keeps the SMT-LIB it gave the solver in
 `CertificateData.inv_smt` / `.ranking_smt` and the check restates the
 obligations from that.
 
@@ -52,7 +52,7 @@ obligations from that.
 it asks an LLM for Lean and verifies with a second LLM call, so there is no
 SMT-LIB anywhere on that path and no Lean parser to make one. The pre-check
 says exactly that rather than reporting nothing. Closing it means prompting
-that route in SMT-LIB too, as `ai-cegar` does.
+that route in SMT-LIB too, as `ai-cegis` does.
 
 ---
 
@@ -83,7 +83,7 @@ afternoon. This is the check that answers it in 5.8 ms.
 They are unary reductions over a matrix, like `Argmax`, but were wired to the
 binary `_elementwise` path, so building the term for any module using one
 raised `TypeError: <lambda>() missing 1 required positional argument` and took
-down every cvc5 query about that module — `--infer ai-cegar` included.
+down every cvc5 query about that module — `--infer ai-cegis` included.
 
 ```
 $ verith m.py --buchi '(= s0 0)' --invariant '(and (>= s0 0) (<= s0 100))' \
@@ -501,7 +501,7 @@ the branches *are* the comparison's operands. No solution cvc5 returned here
 has that shape, so each one costs a `split_ifs` branch, doubled because
 `hrank` mentions the ranking twice.
 
-**Step 6 — "fall back to `--infer ai-cegar`" — was not built, deliberately.**
+**Step 6 — "fall back to `--infer ai-cegis`" — was not built, deliberately.**
 A route is a row and routes do not chain: a route that silently becomes
 another one makes two identical command lines mean different things, which
 is the argument `_resume_inv` already makes about inheriting a predicate.
@@ -538,11 +538,11 @@ m_step2      inv k=2   unsat    2 ms    -- needs the congruence, as above
 An `unsat` there is a **proof that the shape is empty**. That is the one
 thing neither an LLM nor a learner produces, and it is what the routes were
 built around: it goes to `artifacts/` as a `no_solution` note and into the
-`--infer ai-cegar` prompt on the next run.
+`--infer ai-cegis` prompt on the next run.
 
 **What shipped.**
 
-* `--infer sygus` (`--safety`) — `magic_sygus.py`. `addSygusInvConstraint`
+* `--infer sygus` (`--safety`) — `magic/sygus.py`. `addSygusInvConstraint`
   over a grammar of affine comparisons plus congruences, with the constants
   seeded from the program's own literals. The conjunction is bounded
   (`--sygus-conjuncts`, default 3) and that is load-bearing: `B -> (and B B)`
@@ -553,7 +553,7 @@ built around: it goes to `artifacts/` as a `no_solution` note and into the
   `pre`/`trans`, so `--pre` works and a module with inputs is in reach
   (`m_relu_input`: invariant found, and all three obligations hold). Writes
   the invariant as a resumable `inv`.
-* `--infer smt-linear` (`--safety` and `--buchi`) — `magic_linear.py`. One
+* `--infer smt-linear` (`--safety` and `--buchi`) — `magic/linear.py`. One
   quantified query per shape; widths tried smallest first; a supplied or
   resumed invariant is *strengthened* rather than replaced. Every scalar
   component is a column whatever its sort — `Int` as itself, `Bool` as
@@ -583,7 +583,7 @@ built around: it goes to `artifacts/` as a `no_solution` note and into the
 * `artifacts.STATUSES` gained `no_solution`, told apart from `unknown`
   because the difference is a proof versus a timeout, and a consumer that
   confused them would put a falsehood in a prompt.
-* `--infer ai-cegar` resumes `note` artifacts as well as `inv` ones, and
+* `--infer ai-cegis` resumes `note` artifacts as well as `inv` ones, and
   states them in the prompt as established facts.
 
 **What is still open.** Both searches are integer-only and refuse a Real,
