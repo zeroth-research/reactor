@@ -17,6 +17,13 @@ Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
 - **petri_queue_reachability.ipynb**: a bounded-queue Petri net modelled monolithically as a `sugar.Module` (marking = state, the firing choice = a non-deterministic external input); bounded reachability with Z3, returning a witness firing sequence for reachable markings.
 
+## Quantised ranking functions
+
+Train a neural ranking function and verify it as an **integer** (`LIA`) certificate. Shared
+helpers (program, training, `quantise`, LIA `verify`) live in `_ranking.py`.
+
+- **quantise_after_training.ipynb**: train in the reals, then quantise (post-training) — shows why fixed-point **scaling** is needed (naive rounding degenerates).
+
 ## Termination examples
 
 Worked examples that model a C program as a `sugar.Module`, load a ranking function, and verify termination with Z3 (each in its own folder):
