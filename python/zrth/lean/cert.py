@@ -38,7 +38,7 @@ class CertificateData:
     ranking: Expr | str | None = None
 
     # SMT-LIB (or Python-expression) source for `inv` / `ranking` when those
-    # fields hold Lean text printed from a cvc5 term -- the `--infer ai-cegar`
+    # fields hold Lean text printed from a cvc5 term -- the `--infer ai-cegis`
     # route. The project needs the Lean; cvc5 needs its own input back, so
     # `--pre-check` restates the obligations from these.
     inv_smt: str | None = None
@@ -198,15 +198,23 @@ def generate_data_lean(
     ctx: LeanContext,
     cert_data: CertificateData | None = None,
 ) -> str:
-    """Generate System/Data.lean content: init_pre, update_pre, inv, P, ranking.
+    """Generate Certificate/Data.lean: init_pre, update_pre, inv, P, ranking.
 
     Imports only ``Core.Basic``.  ``Certificate.lean`` imports this file so that
     only the data file needs regeneration when the certificate data changes
     (e.g. after --infer).
+
+    It sits under ``Certificate/`` rather than ``System/`` because that is what
+    it is about: ``System/`` is the module, which is the same whatever is being
+    proved about it, while these five definitions are the certificate's own and
+    change with every ``--infer``.  The two files a route rewrites are then the
+    two files in one directory.
     """
     if cert_data is None:
         cert_data = CertificateData()
-    return render("project/System/Data.lean.j2", **_cert_def_context(ctx, cert_data))
+    return render(
+        "project/Certificate/Data.lean.j2", **_cert_def_context(ctx, cert_data)
+    )
 
 
 def generate_certificate_lean(
@@ -238,7 +246,7 @@ def generate_certificate_lean(
 
     rm_noncomp = "noncomputable " if ctx.uses_real else ""
 
-    # Inline definitions when used standalone (no separate System/Data.lean).
+    # Inline definitions when used standalone (no separate Certificate/Data.lean).
     if module_inline is not None:
         inline_defs = "\n".join(_cert_def_lines(ctx, cert_data))
         has_ranking = cert_data.ranking is not None

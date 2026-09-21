@@ -279,7 +279,15 @@ def parse_predicate(env: "CegarPromptEnv", src: str) -> cvc5.Term:
         # Some other Python object — fall through to SMT-LIB
     except Exception:
         pass
-    return env.parse_expr(src)
+    term = env.parse_expr(src)
+    if term.isNull():
+        # cvc5 parses an empty or all-blank source to a null term rather than
+        # an error, and the first use of one -- `getSort()` -- raises from
+        # inside the binding: an LLM that wrote `RANKING:` and nothing after
+        # it crashed `--infer ai-cegis` instead of being told. Every caller
+        # already turns a `RuntimeError` into "could not parse".
+        raise RuntimeError("the expression is empty")
+    return term
 
 
 CEGAR_GENERATE_SYSTEM = """\
@@ -302,8 +310,10 @@ Examples of valid expressions:
   (and (= s0 false) (<= s1 10))
   (ite (= s0 true) 0 (- 10 s1))
 
-The ranking expression must have sort **Int** and satisfy \
-`ranking >= 0` whenever the invariant holds. If a state component is \
+The ranking expression must have sort **Int**, and wherever the \
+invariant holds and the property does not, it must be at least 1 and \
+strictly smaller after the step. Where the property holds it is \
+unconstrained, negative included. If a state component is \
 Real, wrap it in `(to_int ...)` to convert to Int; Bool components \
 can be mapped via `(ite s_k 1 0)`.
 
@@ -522,6 +532,7 @@ def prompt_inv_ranking(
     fixed_inv_src: str | None = None,
     fixed_ranking_src: str | None = None,
     kind: str = "buchi",
+    known: tuple[str, ...] = (),
 ) -> PromptResult:
     """Call `chat` with the CEGAR prompt, parse reply into SMT terms.
 
@@ -529,6 +540,13 @@ def prompt_inv_ranking(
     treated as a user-provided input: not requested from the LLM, and
     shown in the prompt so the LLM sees it while searching for the other.
     If both are fixed, no LLM call is made.
+
+    `known` is what earlier runs *proved* about the shape of the answer --
+    that no ranking function linear in the state works under this invariant,
+    say. It is stated before the question rather than as feedback, because
+    it is not about an attempt: it is a fact about the module that holds
+    whatever this model proposes, and the one thing worth knowing before
+    proposing anything.
 
     `kind="safety"` asks for an invariant alone. `rule_globally` takes no
     ranking function, so there is none to propose; what the invariant has
@@ -558,6 +576,19 @@ def prompt_inv_ranking(
         f"{env.state_description()}\n\n"
         f"{env.transition_description()}\n"
     )
+    if known:
+        # Numbered and quoted as established, not as advice: each line was
+        # written by a decision procedure that refuted a whole space, and the
+        # model's job is to propose something outside it.
+        established = "\n".join(f"{i}. {text.strip()}"
+                                 for i, text in enumerate(known, 1))
+        user_msg += (
+            "\nAlready established about this module by a decision procedure "
+            "(cvc5), in earlier runs. These are proofs that a space is empty, "
+            "not opinions -- do not propose anything of a shape ruled out "
+            "here:\n"
+            f"{established}\n"
+        )
     if fixed_inv_src is not None:
         user_msg += (
             f"\nThe invariant is GIVEN (do not propose a new one):\n"

@@ -24,6 +24,11 @@ _INFIX_ARITH = {
     Kind.ADD: " + ",
     Kind.SUB: " - ",
     Kind.MULT: " * ",
+    # SMT-LIB's `div`/`mod` are Euclidean -- `a = b * (a div b) + (a mod b)`
+    # with `0 <= a mod b < |b|` -- and so are Lean 4's `/` and `%` on `Int`:
+    # `(-7 : Int) / 2` is `-4` and `(-7 : Int) % 2` is `1`, where truncating
+    # division would give `-3` and `-1`. The pair goes across unchanged.
+    Kind.INTS_DIVISION: " / ",
     Kind.INTS_MODULUS: " % ",
 }
 _INFIX_CMP = {
@@ -353,6 +358,15 @@ def _walk(
 
     if k == Kind.TO_INTEGER:
         return f"⌊{recur(t[0])}⌋"
+
+    if k == Kind.BITVECTOR_UBV_TO_INT:
+        # `bv2nat`/`ubv_to_int`: a bitvector read as the number it holds.
+        # `--infer smt-linear` weighs a BitVec state component this way, so
+        # one `Int` template covers a mixed state instead of a template per
+        # sort. `Int.ofNat` rather than a coercion arrow: the surrounding
+        # expression is `Int`-typed and an inserted `↑` there is a different
+        # elaboration problem in each place it lands.
+        return f"(Int.ofNat (BitVec.toNat {recur(t[0])}))"
 
     if k == Kind.TO_REAL:
         # cvc5 inserts `to_real` wherever an Int-sorted subterm meets a Real

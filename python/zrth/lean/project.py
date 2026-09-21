@@ -18,6 +18,7 @@ from zrth.lean.cert import (
 )
 from zrth.lean.template_env import render, STATIC_DIR, PROJECT_TEMPLATES_DIR
 
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, replace
@@ -160,6 +161,31 @@ def build_certificate(project_dir: Path) -> None:
     print(f"Certificate built: lake build Certificate in {project_dir}")
 
 
+# A declaration whose elaboration fails is never added to the environment,
+# so the next one that mentions it fails again -- in the kernel this time,
+# as `(kernel) unknown constant 'hrank'` after `hrank` itself timed out at
+# `whnf`. The second error is the first one's shadow: it names a symbol
+# where the first named a cause, and it is the one that reads like a
+# codegen bug rather than a certificate that could not be proved. Over the
+# matrix every occurrence of it follows an earlier error.
+_CASCADE = re.compile(r"\(kernel\) unknown constant")
+
+
+def without_cascades(errors: list) -> list:
+    """`errors`, without the ones an earlier error already accounts for.
+
+    Only ever drops a *later* kernel `unknown constant`. A build whose
+    first complaint is one is left alone: nothing came before it to be a
+    shadow of, and then something really is missing.
+    """
+    out: list = []
+    for e in errors:
+        if out and _CASCADE.search(str(e)):
+            continue
+        out.append(e)
+    return out
+
+
 def _build_why(out: str) -> str:
     """The reason lake refused, restated where the user will see it.
 
@@ -169,11 +195,11 @@ def _build_why(out: str) -> str:
     # Lake's own two wrapper lines say only that something failed, which is
     # what this is already replacing; the diagnostics are the lines between.
     noise = ("error: build failed", "error: Lean exited with code")
-    errors = [
+    errors = without_cascades([
         l
         for l in out.splitlines()
         if l.startswith("error:") and not l.startswith(noise)
-    ]
+    ])
     if not errors:
         return "  (see the output above)"
     return (
@@ -479,6 +505,32 @@ def main : IO Unit := do
     return "\n".join(lines)
 
 
+def lean_context_for(
+    module: Module, cert_data: "CertificateData | None"
+) -> LeanContext:
+    """The `LeanContext` a run's codegen shares.
+
+    The discovery pass it runs interns every init/update term, so it is built
+    once per run and threaded: `create_project` takes one, hands it to the
+    files it writes, and the caller keeps it for the rewrites that come after
+    inference. The certificate's own term lists have to be in it -- a
+    predicate supplied as compiled IR rather than as SMT-LIB text contributes
+    constants the emitted definitions name.
+    """
+    cert_terms: list = []
+    if cert_data is not None:
+        for field in (
+            cert_data.prp,
+            cert_data.inv,
+            cert_data.init_pre,
+            cert_data.update_pre,
+            cert_data.ranking,
+        ):
+            if isinstance(field, list):
+                cert_terms.extend(field)
+    return LeanContext(module, cert_terms=cert_terms)
+
+
 def write_data_lean(
     project_dir: Path,
     project_name: str,
@@ -486,27 +538,23 @@ def write_data_lean(
     cert_data: CertificateData | None,
     ctx: LeanContext | None = None,
 ) -> Path:
-    """Write/overwrite XXXData.lean with init_pre, update_pre, inv, P, ranking.
+    """Write/overwrite Certificate/Data.lean with init_pre, update_pre, inv, P,
+    ranking.
 
     Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
     from ``create_project`` which already has one).
-    """
-    module_name = project_name
-    if ctx is None:
-        cert_terms: list = []
-        if cert_data is not None:
-            for field in (
-                cert_data.prp,
-                cert_data.inv,
-                cert_data.init_pre,
-                cert_data.update_pre,
-                cert_data.ranking,
-            ):
-                if isinstance(field, list):
-                    cert_terms.extend(field)
-        ctx = LeanContext(module, cert_terms=cert_terms)
 
-    src_dir = project_dir / "System"
+    Beside ``Certificate.lean`` rather than under ``System/``: both files are
+    about the certificate and both are rewritten whenever the predicates
+    change, while ``System/`` holds the module, which does not. The directory
+    is made here because this can be called on its own, after inference, and
+    is not guaranteed to run after ``write_certificate_lean``.
+    """
+    if ctx is None:
+        ctx = lean_context_for(module, cert_data)
+
+    src_dir = project_dir / "Certificate"
+    src_dir.mkdir(parents=True, exist_ok=True)
     data_file = src_dir / "Data.lean"
     data_file.write_text(generate_data_lean(ctx, cert_data))
     print(f"Wrote {data_file}")
@@ -520,17 +568,17 @@ def write_certificate_lean(
     cert_data: CertificateData | None = None,
     ctx: LeanContext | None = None,
 ) -> Path:
-    """Write/overwrite Certificate.lean (stable proof structure, imports XXXData).
+    """Write/overwrite Certificate.lean (stable proof structure, imports Data).
 
     Pass a pre-built ``ctx`` to avoid rebuilding LeanContext (e.g. when called
     from ``create_project`` which already has one).
 
-    The *definitions* still live in XXXData.lean, but ``cert_data`` is no
+    The *definitions* still live in ``Certificate/Data.lean`` beside it, but
+    ``cert_data`` is no
     longer inert here: the proof tactics are generated from the shape of the
     predicates (see ``zrth.lean.tactics``), so this file has to be rewritten
     whenever they change — after ``--infer``, for instance.
     """
-    module_name = project_name
     if ctx is None:
         ctx = LeanContext(module)
 
@@ -550,7 +598,8 @@ def create_project(
     executable: bool = False,
     cert_data: CertificateData | None = None,
     module_file: Path | str | None = None,
-    ltl_project: Path | str | None = None,
+    lakefile_vars: dict | None = None,
+    ctx: "LeanContext | None" = None,
 ) -> Path:
     """
     Create a full Lean4 project.
@@ -564,10 +613,18 @@ def create_project(
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
         `module_file`:     Path to the Python source file used to create the module
                            (written as a debug artifact alongside the project).
-        `ltl_project`:     A `lean-ltl-certifying` checkout (the `--fbk-proveit`
-                           route). The lakefile then requires it and declares
-                           the NA model's lean_lib, so the certificate that
-                           route installs is buildable here.
+        `lakefile_vars`:   What the inference route needs of the lakefile,
+                           from its row's `lakefile` hook -- the
+                           `--infer fbk-proveit` route's checkout, for
+                           instance, which the lakefile has to require for
+                           the certificate that route installs to build.
+                           Declared as data rather than passed per route:
+                           the lakefile is written here, before any route
+                           runs, so a route cannot amend it afterwards.
+        `ctx`:             A `lean_context_for` this run already built, so
+                           the discovery pass runs once rather than once
+                           here and again for every file rewritten after
+                           inference.
     """
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
@@ -591,7 +648,7 @@ def create_project(
     lakefile = project_dir / "lakefile.toml"
     lakefile.write_text(
         generate_lakefile(
-            project_name, executable=executable, ltl_project=ltl_project
+            project_name, executable=executable, **(lakefile_vars or {})
         )
     )
     print(f"Wrote {lakefile}")
@@ -609,12 +666,19 @@ def create_project(
     (project_dir / "Certificate.lean").write_text(render("project/Certificate.lean.j2"))
 
     # The `Certificate` lean_lib globs its submodules, so every file in
-    # `Certificate/` is built -- including one this run did not write.
-    # `Certificate/Certificate.lean` is rewritten below; the bridge is
-    # written later and only by `--fbk-proveit`, so a copy left by an
-    # earlier run into the same `-o` is about a different module, and lake
-    # would build it against this run's `System/`.
-    (project_dir / "Certificate" / "Equivalence.lean").unlink(missing_ok=True)
+    # `Certificate/` is built -- including one this run did not write. A file
+    # an inference route writes is written *after* this, so anything already
+    # there is a copy an earlier run left in the same `-o`: it is about a
+    # different module, and lake would build it against this run's `System/`.
+    #
+    # Taken from the rows rather than named here, so the hazard is covered
+    # for every route that declares a file rather than for the one filename
+    # someone remembered. Directory entries are left alone -- nothing globs
+    # them until the route that owns them declares its lean_lib.
+    from .infer_route import ROUTES
+
+    for rel in {o for r in ROUTES for o in r.owns if not o.endswith("/")}:
+        (project_dir / rel).unlink(missing_ok=True)
 
     # Copy static files (Core/, LeanAI/)
     core_dir = project_dir / "Core"
@@ -646,19 +710,8 @@ def create_project(
     # ----------------------------------------------------------
     # Generate reactive module (init and update)
     # ----------------------------------------------------------
-    cert_terms: list = []
-    if cert_data is not None:
-        for field in (
-            cert_data.prp,
-            cert_data.inv,
-            cert_data.init_pre,
-            cert_data.update_pre,
-            cert_data.ranking,
-        ):
-            if isinstance(field, list):
-                cert_terms.extend(field)
-
-    ctx = LeanContext(module, cert_terms=cert_terms)
+    if ctx is None:
+        ctx = lean_context_for(module, cert_data)
     m2l = ModuleToLean4(ctx)
 
     root_lean = project_dir / "System.lean"
@@ -706,19 +759,7 @@ def generate_standalone_cert_lean(
     Suitable for placing a single .lean file inside an existing lake project
     such as ``tests/lean/Certs/``.
     """
-    cert_terms: list = []
-    if cert_data is not None:
-        for field in (
-            cert_data.prp,
-            cert_data.inv,
-            cert_data.init_pre,
-            cert_data.update_pre,
-            cert_data.ranking,
-        ):
-            if isinstance(field, list):
-                cert_terms.extend(field)
-
-    ctx = LeanContext(module, cert_terms=cert_terms)
+    ctx = lean_context_for(module, cert_data)
     m2l = ModuleToLean4(ctx)
     module_code = m2l.to_lean_functional()
     return generate_certificate_lean(

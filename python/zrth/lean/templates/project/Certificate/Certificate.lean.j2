@@ -4,7 +4,7 @@ import Core.Basic
 import Core.Box
 {% else %}
 import System.System
-import System.Data
+import Certificate.Data
 {% endif %}
 import ZerothHammer
 
@@ -31,7 +31,7 @@ set_option maxHeartbeats {{ plan.max_heartbeats }}
 
 -- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
 macro "simp_mat" : tactic =>
-  `(tactic| simp [{{ all_defs }}, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero])
+  `(tactic| simp [{{ all_defs }}, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
 
 -- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
 -- Gives omega/decide access to invariant and property conditions in hypotheses
@@ -57,6 +57,12 @@ macro "cert_states" v:ident : tactic =>
 macro "cert_facts" v:ident : tactic =>
   `(tactic| ({{ plan.facts_tactic }}))
 
+-- Bridge each floored quantity to a bound on the Real under it, so the
+-- closers see the `Int` atom with a sign. `skip` when nothing is floored.
+-- Takes the obligation's own state binder; every step is `try`.
+macro "cert_floors" v:ident : tactic =>
+  `(tactic| ({{ plan.floor_tactic }}))
+
 -- Hypotheses no refutation needed. `skip` otherwise.
 macro "cert_thin" : tactic =>
   `(tactic| ({{ plan.clear_tactic }}))
@@ -81,6 +87,7 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    try cert_thin
    try simp_defs
    try cert_facts s
+   try cert_floors s
    try simp_mat
    try cert_states s
    all_goals (cert_prep <;> cert_close)
@@ -115,6 +122,7 @@ theorem inv_imp_P : ∀ s, inv s → P s := by
     try cert_thin
     try simp_defs
     try cert_facts s
+    try cert_floors s
     try simp_mat
     try cert_states s
     all_goals (cert_prep <;> cert_close)
@@ -138,6 +146,7 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     try cert_thin
     try simp_defs
     try cert_facts s
+    try cert_floors s
     try simp_mat
     try cert_states s
     all_goals (cert_prep <;> cert_close)

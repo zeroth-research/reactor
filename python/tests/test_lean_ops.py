@@ -11,7 +11,7 @@ was meant to serve — but nothing could see a variant with no emitter at all,
 because there was no one place that knew which variants there are. That is
 how every unsigned and signed BV comparison came to be encoded for cvc5 and
 for no Lean backend: a module using one passed `--pre-check` and
-`--infer ai-cegar`, then failed at project generation.
+`--infer ai-cegis`, then failed at project generation.
 
 So: a variant added to a theory fails `test_every_variant_has_a_row` until
 someone writes its row, and writing that row means saying what all four
@@ -22,7 +22,8 @@ import torch
 import pytest
 from zrth import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.common import itype_name
+from zrth.lean.common import LeanContext, itype_name
+from zrth.lean.native import lean_gaps
 from zrth.lean import ops
 from zrth.lean.ops import (
     COLUMNS,
@@ -280,6 +281,75 @@ def test_an_op_no_backend_has_names_its_own_reason():
     """`Uninterpreted` is the limit matrix's only generation failure."""
     with pytest.raises(ValueError, match="KNOWN_ISSUES #27"):
         mat_emitter(LIA.Uninterpreted("f"))
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  The same gap, asked of a whole module before it is generated
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _uninterp_module():
+    """The limit matrix's `m_uninterp`: a lone `Uninterpreted` write, read."""
+    x = Var(Int([1, 1]))
+    y = Wire(Int([1, 1]))
+    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
+    update = [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])]
+    return Module.sequential([x], init, update)
+
+
+def test_a_module_with_no_lean_form_says_which_wire_and_why():
+    """The reason the table records, about the module rather than the table.
+
+    Met during codegen this is `No Lean expression mapping for:
+    Uninterpreted (matrix form)` -- a sentence about `ops.py`, raised half
+    way through a file, for a user who asked about a module."""
+    gaps = lean_gaps(LeanContext(_uninterp_module()))
+    assert len(gaps) == 1
+    assert "`update` block" in gaps[0] and "`Uninterpreted`" in gaps[0]
+    assert "wire #" in gaps[0] and "KNOWN_ISSUES #27" in gaps[0]
+
+
+def test_a_module_that_generates_reports_no_gap():
+    """The check cannot refuse what codegen accepts, so it says so here."""
+    assert lean_gaps(LeanContext(_bv_mod_module(BV.UMod()))) == []
+
+
+def test_an_unreachable_term_is_not_a_gap():
+    """Nothing reads `y`, so no encoder ever emits it and neither branch of
+    the tool should care that it has no Lean form."""
+    x = Var(Int([1, 1]))
+    y = Wire(Int([1, 1]))
+    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
+    update = [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [x])]
+    assert lean_gaps(LeanContext(Module.sequential([x], init, update))) == []
+
+
+def _cells(mat, scalar, box) -> ops.Op:
+    """A row of the shape under test. No theory claims it, so nothing can
+    reach it through `itype_name`; `gap_of` is asked about it directly."""
+    return ops.Op("Fake", (), mat=mat, scalar=scalar, box=box,
+                  smt=ops.Unsupported("not the question here"))
+
+
+def test_a_gap_is_asked_of_every_lean_column_not_only_the_matrix_one():
+    """Today every row with no matrix form has no other Lean form either, so
+    reading `mat` alone gets the right answer for all 24 of them. That is a
+    fact about the table's contents, and this check refuses a *module* on
+    the strength of it -- so the day a row has a `Box` and no matrix form,
+    reading `mat` alone would refuse a module the circuit encoding builds.
+    """
+    unsupported = ops.Unsupported("no matrix form")
+    see_mat = ops.Unsupported("see the matrix column")
+
+    assert ops.gap_of(_cells(unsupported, see_mat, see_mat)) == "no matrix form"
+    assert ops.gap_of(_cells(unsupported, see_mat, "Box.fake")) is None
+    assert ops.gap_of(_cells(unsupported, lambda a: a[0], see_mat)) is None
+    # `ViaMat` is served by the matrix form, which is the gap -- so it is
+    # not an escape from one, unlike `Inline`, whose branch is reached
+    # before the table is asked at all.
+    assert ops.gap_of(_cells(unsupported, ops.ViaMat("folds to 1x1"), see_mat)) \
+        == "no matrix form"
+    assert ops.gap_of(_cells(unsupported, ops.Inline("native._special"), see_mat)) is None
 
 
 # ══════════════════════════════════════════════════════════════════════

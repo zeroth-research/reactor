@@ -9,8 +9,9 @@ Known defects in this pipeline, fixed and open, are catalogued in
 is missing -- a proof that the NA model *is* the module -- is designed, with
 measurements, in [FBK_EQUIVALENCE.md](FBK_EQUIVALENCE.md).  What cvc5 is used for -- the obligation
 pre-check, sharing in the printer, and the solver-informed tactics -- is in
-[SMT_ASSIST.md](SMT_ASSIST.md), together with cold-start plans for abduction
-and SyGuS.  The 77-case limit matrix those two are measured on, with its
+[SMT_ASSIST.md](SMT_ASSIST.md), together with what the synthesis routes
+(`--infer sygus`, `--infer smt-linear`) were measured against and the
+cold-start plan for abduction that is still one.  The 77-case limit matrix those two are measured on, with its
 runners and baseline, is in [`tests/limits/`](../../tests/limits/README.md).
 
 ---
@@ -321,7 +322,7 @@ that certificate files override.
 
 ---
 
-## `uv run verith` CLI (`main.py`, `project.py`)
+## `uv run verith` CLI (`cli.py`, `main.py`, `project.py`)
 
 `verith` is the command-line tool that drives the full pipeline: Python module
 → Lean project or standalone certificate files.
@@ -375,12 +376,15 @@ uv run verith mymodule.py --safety "(<= s0 10)" \
 uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
 
 # ... and for a safety property, through the cvc5-checked loop
-uv run verith mymodule.py --safety "(<= s0 10)" --infer ai-cegar -o out/ -p MyProject
+uv run verith mymodule.py --safety "(<= s0 10)" --infer ai-cegis -o out/ -p MyProject
 
 # AI inference with a local LLM via Ollama (requires pip install zrth[ai-local])
 uv run verith mymodule.py --buchi "(= s0 0)" --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 \
     -o out/ -p MyProject
+
+# No LLM: learn a ranking function and certify it before it is offered
+uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
 
 # Standalone self-contained certificate (no project scaffold)
 uv run verith mymodule.py --buchi "(= s0 0)" --cert-file out/MyCert.lean
@@ -425,7 +429,7 @@ certificate consists of.
 | certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
-| routes | `--fbk-proveit` (ic3ia finds the invariant), or `--infer ai-cegar` | `--infer ai` or `--infer ai-cegar` |
+| routes | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegis`, `--infer nuterm`, `--infer sygus`, `--infer smt-linear`, `--infer houdini`, or `--infer vampire` | `--infer ai`, `--infer ai-cegis`, `--infer nuterm`, `--infer smt-linear`, `--infer houdini`, or `--infer vampire` |
 
 Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
 the project is generated from whatever predicates were supplied, and the two
@@ -448,15 +452,29 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--infer` | — | `ai` or `ai-cegar` (default when flag given without value) |
-| `--model` | `claude-sonnet-4-6` | LLM model for inference |
+| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `houdini`, `vampire`, or `fbk-proveit` (see below) |
+| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
 | `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
-| `--fbk-proveit` | — | Path to a `lean-ltl-certifying` checkout; certify through its `proveit.py` instead (see below) |
-| `--ic3ia` | — | Path to the `ic3ia` binary, forwarded to `proveit.py` |
-| `--fbk-simplify` | `cvc5` | `none` leaves the NA model's transition the shape the module's own terms give it |
+| `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets a route resume from what an earlier run left, `ignore` searches afresh, `reset` empties it first |
+| `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
+| `--sygus-conjuncts` | `3` | `--infer sygus`: a ceiling on how many atoms the invariant may be a conjunction of, tried `1, 2, … N` — the bound is what makes each space finite, and so decidably empty |
+| `--linear-rows` | `2` | `--infer smt-linear --safety`: how many linear inequalities the invariant may be a conjunction of |
+| `--houdini-solver` | `cvc5` | `--infer houdini`: which solver decides the obligations. `cvc5` needs no binary and refutes what it cannot prove, with a counterexample; `vampire` refutes or times out |
+| `--houdini-timeout` | `120` | `--infer houdini`: seconds for all solver calls together; each call is capped at 2 s, then the rest (under `vampire`: 2 s, 10 s, 60 s, then the rest) |
+| `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--infer vampire` and `--houdini-solver vampire`: the Vampire binary, or a directory holding one |
+| `--vampire-timeout` | `120` | `--infer vampire`: seconds for all answer-literal calls together; one call per template, and a template that does not answer is not retried |
+| `--vampire-cores` | `4` | `--houdini-solver vampire`: processes each call's portfolio spreads over |
+| `--proveit-dir` | — | `--infer fbk-proveit`: path to a `lean-ltl-certifying` checkout |
+| `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
+| `--fbk-simplify` | `cvc5` | `--infer fbk-proveit`: `none` leaves the NA model's transition the shape the module's own terms give it |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
+
+Each route is one row of `infer_route.ROUTES`, and a flag in the bottom half
+of the table belongs to a route rather than to verith: passed without its
+route selected it is an error, not a no-op.  `--fbk-proveit DIR` is the older
+spelling of `--infer fbk-proveit --proveit-dir DIR` and still works.
 
 ### State variable naming in SMT-LIB predicates
 
@@ -464,6 +482,372 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 `vars` list passed to `Module.sequential`).  For tuple/matrix wires, use
 SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 `e0..eM-1` (next) and `el0..elM-1` (latched).
+
+### Inferring without an LLM (`--infer nuterm`)
+
+`--infer nuterm` searches for the certificate the way a termination prover
+does, and proves it before offering it:
+
+1. **The invariant** — Houdini over a candidate lattice of sign and pairwise
+   facts (`benchmarks/svcomp/_invariants.py`): seed the candidates, drop the
+   ones that do not hold at entry or are not preserved by a step, and certify
+   the survivors as one inductive `Safety` claim.  With `--safety`, the
+   property itself is seeded as a candidate, so it is an invariant exactly
+   when it survives with the rest.
+2. **The ranking function** (`--buchi` only) — a small ReLU network is trained
+   on rollouts of the module to drop on the rounds where the property does not
+   hold, its weights are rounded to integers, and the candidate is composed
+   into the module as two ordinary atoms, `V(s)` and `V(s')`.  The obligation
+   `V(s) - V(s') >= 1` on that domain goes to a decision procedure over the
+   composed module's wires: Farkas-certified linear regions, with CEGAR
+   finding the regions (`benchmarks/svcomp/_farkas.py`).  Only a candidate it
+   certifies is returned.
+
+So unlike the `ai` routes, what reaches the certificate has already been
+proved — `--pre-check cvc5` and `lake build Certificate` confirm it rather
+than discovering it.  The trade is reach:
+
+| | `--infer nuterm` | `--infer ai-cegis` | `--infer fbk-proveit` |
+|---|---|---|---|
+| needs | nothing but the repo | an API key or a local LLM | an `ic3ia` build and a `lean-ltl-certifying` checkout |
+| state it reads | scalar integers | whatever cvc5 encodes | whatever the NA encoding expresses |
+| property | `--safety` or `--buchi` | `--safety` or `--buchi` | `--safety` |
+| invariants it can find | Houdini's lattice | whatever the LLM proposes and cvc5 confirms | ic3ia's interpolants |
+| deterministic | yes (a fixed seed) | no | yes |
+
+The procedure refuses by name what it has no rule for — a matrix-shaped or
+real-valued component, a next value that reads an awaited input, an operation
+with no cell rule — rather than degrading quietly.  `--invariant`,
+`--ranking` and `--pre` are rejected alongside it: the route computes the
+whole certificate, and its invariant holds at entry for *every* input, which
+is stronger than any precondition would make it.
+
+### Searching a shape instead of proposing one (`--infer smt-linear`, `--infer sygus`)
+
+Two more routes need no LLM, and they differ from `nuterm` in what they do
+when they fail.  Both fix the *space* the certificate may live in and hand
+it to cvc5 a width at a time, narrowest first, so "not found" is an answer
+with content: what is decided is decided about a width that was reached.
+
+* **`--infer smt-linear`** fixes the shape and leaves the coefficients open,
+  which makes the search one query — `exists c. forall s. obligations(c . s)`.
+  Every scalar component is a column whatever its sort: an `Int` is itself, a
+  `Bool` is `0`/`1` (`(ite s0 1 0)`), a bitvector is its unsigned value
+  (`(ubv_to_int s0)`) — so a Bool-state module, which `--infer nuterm`
+  refuses, is in reach, and so is a BitVec one.
+  `--buchi` asks it for a ranking function `c0 + c1*s0 + …` over a fixed
+  invariant (supplied with `--invariant`, resumed from `artifacts/`, or
+  `true`); `--safety` asks it for the invariant itself, as a conjunction of
+  `a0 + a1*s0 + … >= 0` rows, one width at a time up to `--linear-rows`.
+* **`--infer sygus`** (`--safety` only) fixes a *grammar* instead and hands
+  cvc5's SyGuS invariant track the three formulas `G P` is made of:
+  `addSygusInvConstraint(inv, pre, trans, post)`.  Its grammar carries
+  congruences — `(= (mod a0 + a1*s0 + … k) 0)` — which is the one fact
+  Houdini's lattice cannot state, and the reason the route exists beside
+  `nuterm`.  The conjunction is bounded (`--sygus-conjuncts`, default 3),
+  which bounds the certificate and, more to the point, makes the space
+  *finite*: cvc5 can then report it empty rather than merely unsearched.
+  The widths run `1, 2, … N` and the first that answers wins, because the
+  search is **not monotone in the width** — measured over the 59 matrix
+  cells that reach the grammar, two modules have a one-atom invariant found
+  in under a second that the three-atom query does not finish.  Asked only
+  at the ceiling the route found 28 and decided 1 space empty; a width at a
+  time it finds 31 and decides 22.
+
+**A refuted search is a proof, and it is kept.**  When the template query
+comes back `unsat`, nothing of that shape satisfies the obligations — a fact
+about the module, not a failure to look.  It is written to `artifacts/` as a
+`no_solution` note, and `--infer ai-cegis` reads those notes into its prompt
+on the next run, so an attempt is not spent proposing what a decision
+procedure has already ruled out.  A search that runs out of budget writes an
+`unknown` note instead and is *not* carried into any prompt: the difference
+between a proof and a timeout is the whole value of the note.
+
+```bash
+# 1. the cheap question first: is there a linear ranking function at all?
+uv run verith m_toward5.py --buchi "(= s0 5)" \
+    --invariant "(and (>= s0 0) (<= s0 10))" --infer smt-linear -o out/ -p Rea
+# error: --infer: ... No ranking function linear in the state ... cvc5 refuted
+# the whole shape at once ... so this is a proof that the space is empty.
+
+# 2. the expensive one, now knowing that
+uv run verith m_toward5.py --buchi "(= s0 5)" \
+    --invariant "(and (>= s0 0) (<= s0 10))" --infer ai-cegis -o out/ -p Rea
+# .. resuming from note-0003-smt-linear.md: a space an earlier run ruled out
+```
+
+The same workspace carries what was *found*.  `--infer sygus` writes its
+invariant as a resumable `inv`, so the next run takes it as given:
+
+```bash
+uv run verith m_step2.py --safety "(not (= s0 1))" --infer sygus -o out/ -p Rea
+# [sygus] inv: (= (mod (+ (- 2) (* (- 1) s0)) 2) 0)        -- `x` is even
+
+uv run verith m_step2.py --safety "(not (= s0 1))" --infer ai-cegis \
+    --pre-check cvc5 -o out/ -p Rea
+# .. resuming from inv-0002-sygus.smt2 (proved): taking it as the certificate
+# [CEGAR] all obligations UNSAT — accepted        -- and no LLM call was made
+```
+
+What each is for, measured on the `tests/limits` fixtures:
+
+| | `--infer smt-linear` | `--infer sygus` |
+|---|---|---|
+| property | `--safety` or `--buchi` | `--safety` |
+| finds | coefficients of a fixed shape | any term its grammar generates |
+| answers `no` | yes, as a proof — 2–30 ms for a ranking function | yes, as a proof — each bounded grammar is finite (10–166 ms), and the note claims the widest width that finished |
+| cost | milliseconds per width; a second invariant row can cost more than 30 s | 11 ms for `m_step2`'s congruence; a width that finds nothing costs the per-query budget, and there are `--sygus-conjuncts` of them |
+| engine | one quantified query, or — when cvc5 will not state it, which a bitvector column always does — a counterexample loop over a bounded coefficient box | cvc5's SyGuS invariant track |
+| state it reads | scalar `Int`, `Bool` and `BitVec` | scalar integers, transition in `LIA` |
+| seeds | `--invariant` (strengthened, not replaced), `--pre` | `--pre` |
+
+Neither is a better `nuterm`: within the scalar-integer class they overlap
+with it and lose on ranking functions, where a learned rank handles shapes a
+linear template has no room for.  What they add is the *no*, and one
+invariant shape — a congruence — that nothing else here can state.
+
+### Proposing candidates and proving them (`--infer houdini`)
+
+This route does not search for a certificate. It *proposes* — candidates that
+hold on simulated runs of the module — and a solver decides what stays:
+
+* **invariant** — Houdini over facts that hold on simulated runs of the
+  module: bounds stated with the program's own constants, congruences,
+  sums and differences of two components against zero, bounds on each side
+  of a Bool flag, the values a Real component keeps to, and under
+  `--safety` the property's conjuncts.
+* **ranking function** — affine forms of one or two components, `K*x + y`,
+  and piecewise `(ite c f g)` over the conditions the property and
+  transition branch on and the order of each pair of components. Each is
+  shifted to be positive on the rounds where the property fails and offered
+  zeroed where it holds.
+* **smaller certificate** — the unsat cores name the facts a proof used;
+  the invariant handed on is their closure, then minimised one fact at a
+  time. Both solvers report one.
+
+#### Which solver (`--houdini-solver`)
+
+The obligations are quantifier-free — the inputs are free constants, so what
+an obligation quantifies over is its free variables — and what is left is
+linear integer and real arithmetic with `to_int`, `div`, `mod` and `ite`.
+Two solvers answer them, and the difference is one thing:
+
+| | `cvc5` (default) | `vampire` |
+|---|---|---|
+| binary | none — it is the package that encoded the module | `--vampire`, `$VAMPIRE`, or on `PATH` |
+| a candidate it cannot prove | **refuted, with a counterexample** | out of time, or false — indistinguishable |
+| a failed Houdini pass | one model names every fact to drop: **one call** | one call per fact |
+| a refuted candidate | gone for the run | retried at the next rung |
+| per-call limits | 2 s, then the rest of `--houdini-timeout` | 2 s, 10 s, 60 s, then the rest |
+
+[Vampire](https://github.com/vprover/vampire) is a first-order theorem
+prover that reads SMT-LIB. Handed the negation of an obligation it either
+refutes it — the obligation holds — or runs out of time: it never answers
+*false* and never returns a model. cvc5 *decides* these obligations, so
+`sat` is a counterexample, and a counterexample holds at every time limit
+there will ever be.
+
+That is why the ladder of per-call limits differs. Vampire's `smtcomp`
+portfolio divides its limit among its strategies, so a short limit is a
+different schedule rather than a truncated long one, and a whole search runs
+at one limit before the next is tried. cvc5's search at a longer limit
+simply contains the shorter one, so its rungs are only a cap that stops one
+query eating a whole budget. Either way a repeated pass re-asks only what
+came back unanswered — a proof or a refutation already in hand is kept.
+
+Measured on the 399 obligations of certificates the benchmark matrix had
+verified, Vampire's portfolio refuted 369 within 2 s, nearly all in
+10–20 ms; the rest were encodings it cannot read or obligations that were
+false — that is, nothing in that corpus needed a first-order prover rather
+than a decision procedure.
+
+#### What both solvers get
+
+Because a false candidate can cost a whole time limit, nothing is put to a
+solver that a sampled round refutes: states near the reached ones — and from
+a range far wider than the program's constants, which is what exposes a
+shift fitted to small numbers — where the invariant holds, with inputs as
+`--pre` allows. On `ChenFlurMukhopadhyay-SAS2012-Ex3.01` the wide sample
+took the ranking search from 46 Vampire calls and 84 s to 3 calls and 0.1 s.
+It stays on both solvers: it is cheaper than a call either way, and it is
+what makes the *candidates* good rather than only the answers. A `--safety`
+property a run of the module violates is reported as not holding, before any
+solver is started.
+
+```bash
+uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini -o out/ -p Rea
+# [houdini] solver: cvc5
+# [houdini] Houdini kept 2 of 2: (<= 0 s0) (<= s0 100)
+# [houdini] ranking function proved: s0
+# [houdini] invariant cut to the 1 of 2 facts its proofs use
+```
+
+It reads scalar `Int`, `Bool` and `Real` state and inputs, whichever solver
+is chosen: Vampire has no bitvector theory, and cvc5 has one but the
+candidate shapes above do not, so a bitvector is refused by name for both
+and a matrix-shaped component is refused as it is by `smt-linear`. A tuple
+the transition builds internally is folded away by cvc5's rewriter before
+Vampire sees it. When nothing is found, the note in `artifacts/` says
+`unknown`, not `no_solution`: even under cvc5, what was refuted is the
+candidates proposed, not the space they were drawn from.
+
+A `Real` component changes two things. Its invariant is a **set of values**
+rather than an interval, because over the reals a bound is hardly ever
+inductive — `m_lra_lin` steps `x' = x - 1` while `x > 0`, so `0 ≤ x ≤ 5`
+admits `x = 1/2` and steps it out — while the values a run takes are
+finitely many and closed under the round. And its ranking function is
+**scaled, then floored**: `rule_buchi` ranks by a `Nat`, so a real rank is
+read through `to_int`, and a quantity that falls by less than one need not
+floor to a smaller number. The scale is the least common denominator of the
+literals the program writes, so `m_lra_half`, which steps by a half, is
+ranked by `(to_int (* 2.0 s0))`. Literals are written as decimals
+throughout: Vampire's front end sorts them strictly and reads neither
+cvc5's `(/ 1 2)` nor a bare `3` where a `Real` belongs, and cvc5 reads a
+decimal as happily, so the certificate carries one spelling whoever proved
+it.
+
+```bash
+uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= s0 0.0)" \
+    --infer houdini --houdini-solver vampire --vampire ~/vampire/vampire \
+    -o out/ -p Rea
+# [houdini] solver: vampire
+# [houdini] Real state: a ranking function is floored after scaling by 1
+# [houdini] inv: (or (= s0 0.0) (= s0 1.0) ... (= s0 5.0))
+# [houdini] ranking: (to_int s0)
+```
+
+
+### Deriving the certificate outright (`--infer vampire`)
+
+Where `--infer houdini` proposes candidates and asks a solver which survive,
+this route proposes nothing. It states the obligations with the certificate
+*itself* left open — a template whose coefficients are existentially
+quantified — and asks Vampire for the coefficients:
+
+```
+(assert-not (exists ((A0 Int) (B0 Int)) (and ... )))
+% SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert
+```
+
+which carries `0 <= s0 <= 100`, derived rather than checked. That is
+Vampire's *answer literal* mechanism (`--question_answering plain`): it
+refutes the negation of the conjecture and reports the substitutions the
+refutation used. Those alternatives are a **disjunctive** answer — one of
+them is a witness, not each of them, because a split refutation closes each
+branch under its own hypothesis — so every one is tried against the
+obligations and the one they accept is the certificate. Here the first,
+`1 <= s0 <= 100`, is not preserved: `s0 = 1` steps to `0`.
+
+The question is not printed by this route. The obligations are cvc5 terms —
+the module's own encoding, the same terms `--infer houdini` proves — so the
+conjecture is *built* as one cvc5 term, holes and quantifiers and all, and
+cvc5 prints it as SMT-LIB. `assert-not` is what marks the formula that
+`--question_answering` attaches answer literals to; an ordinary negated
+assertion is refuted without an answer.
+
+The templates are tried smallest first — `A_i <= s_i <= B_i` per component,
+then the same plus `C_ij <= s_i - s_j <= D_ij` for each pair.
+
+#### Two holes at a time
+
+Two holes is what the answer-literal search closes; three is a time limit.
+So the questions are kept to two where they can be:
+
+* `--safety` is **one** question. `inv -> prp` is what pins the interval
+  down, and with it the coefficients are two.
+* `--buchi` is **two**: an inductive invariant, then a ranking function that
+  drops on *that* invariant, with its coefficients already numbers. The
+  joint question is four holes for a one-component module and answered
+  nothing at all over `tests/limits`; the split derives `m_countdown` and
+  `m_deep` — invariant in about a second, rank in about eight. The rank
+  obligation is `rank(s) > 0` where the property fails and `rank(s') <
+  rank(s)`, which implies the clamped `Int.toNat` form `rule_buchi` asks
+  for.
+
+Splitting a search can cost what a joint one would have found — an
+inductive invariant need not admit a rank, and the second question cannot go
+back and ask for another. So every alternative of the first answer is
+carried into the second.
+
+An invariant asked for on its own is *looser* than one asked for with the
+property, and loose is harder: with nothing pinning the interval the search
+is over the whole of `Int`, and `m_countdown`'s invariant-only question does
+not come back inside 30 s. Bounded to a window around the module's own
+constants (`program_constants`, the same seed Houdini uses) it answers
+`[0,100]` in three. The same window costs the safety questions `m_max` and
+`m_toward5`, whose obligations pin the interval already — so it is asked for
+where it is needed and nowhere else.
+
+#### What the question has to look like
+
+Two restrictions, both measured on `m_countdown`, and the first decides the
+shape of the whole route.
+
+**No `ite`, anywhere.** Stated with the transition as one conditional, the
+step obligation does not come back inside 40 s; split into its two guarded
+branches it is answered in under a second. So the transition is
+*branch-split* before it is printed: every `ite` condition the update and
+the init terms mention becomes a case, cvc5's rewriter folds the
+conditionals away under each assignment, and each case is one more
+implication with its guard as a hypothesis. The round and the initial state
+are split apart, because they are not quantified over the same things — a
+guard from the round tests the latched state, which the entry obligation
+does not have.
+
+**Not the portfolio.** `--mode portfolio --schedule casc` reaches the time
+limit on this route's own question where the default mode answers at once. A
+portfolio strategy is tuned to find a refutation; what is wanted here is the
+*substitution* a refutation carries.
+
+**Both namings, and the whole budget declared to each.** Vampire introduces
+a Tseitin definition for each subformula it judges worth naming, and on a
+conjecture with holes that is decisive in *both* directions: over
+`tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
+`--naming 0` does not, `--naming 0` answers `m_relu` where naming does not,
+and they agree on `m_countdown`, `m_deep` and `m_min`. So both are asked,
+each on a share of what is left of the run.
+
+And `--time_limit` is a *scheduling* input before it is a cap — Vampire
+slices it between strategies, so a small one runs a different search rather
+than the same one cut short. `m_max`'s question reaches the limit at
+`--time_limit 20` and answers after 2.5 s at 25. So every call declares the
+run's whole budget and the wall clock is what actually bounds it.
+
+#### The reach
+
+Small, and worth knowing before reaching for it. Vampire's answer-literal
+search closes the **two-hole** question and does not close a three-hole one:
+adding a third, otherwise-free hole to the `m_countdown` question above
+turns an instant answer into a time limit. Five option settings were tried
+against that ceiling — `-qago on`, `--saturation_algorithm otter`, `--saturation_algorithm
+lrs`, `--theory_instantiation all`, `--unification_with_abstraction
+one_side_interpreted` — and none moved either.
+
+So in practice this route derives a certificate for a **one-component Int**
+module — eight of seventeen `tests/limits` safety and Büchi pairs, two of
+them Büchi — and refuses past that pointing at `--infer houdini`, which
+searches a wider module by proposing facts and proving them. It reads scalar `Int` state
+only: Vampire reads reals, but the templates here are integer intervals and
+integer coefficients.
+
+#### What comes back is checked
+
+An answer literal is the substitution *a* refutation used, and this route
+wrote the question it refuted. So the coefficients are put back into the
+template and the obligations are re-asked of cvc5 — through the same seam
+`--infer houdini` uses, in milliseconds. A certificate that does not survive
+that is reported as not found. This is not Houdini: nothing is filtered and
+nothing is proposed; it is the one check that the derivation is honest.
+
+```bash
+uv run verith tests/limits/mods/m_countdown.py --safety "(<= s0 100)" \
+    --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
+# [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
+# [vampire] template intervals: 2 holes, 409 chars
+# [vampire] answered with naming
+# [vampire] Vampire answered A0=0, B0=100
+# [vampire] inv: (and (<= 0 s0) (<= s0 100))
+```
 
 ---
 
@@ -521,7 +905,7 @@ already-built `.lake/packages` serves both: copying (or cloning, on APFS)
 the checkout's into the generated project makes the first `lake update` a
 no-op fetch.
 
-## Certifying through `lean-ltl-certifying` (`--fbk-proveit`)
+## Certifying through `lean-ltl-certifying` (`--infer fbk-proveit`)
 
 `--fbk-proveit=<dir>` swaps verith's own invariant machinery for the
 `proveit.py` driver of the [`lean-ltl-certifying`][ltl] repository, which
@@ -619,7 +1003,7 @@ describe the module:
 
 The transition itself is not written by `translate/fbk.py`. Each state slot's
 next value is `smt_encode`'s term for that element — the encoder `--pre-check`
-and `--infer ai-cegar` run on — simplified by cvc5 and printed by
+and `--infer ai-cegis` run on — simplified by cvc5 and printed by
 `smt_to_lean_bool`. So the model `lean2vmt` reads and the obligations cvc5
 answers about the same module are one encoding rather than two readings, and
 the refusal list above is exactly what those two components cannot express.
@@ -691,6 +1075,128 @@ reason is what the caller is told when it hits the gap.
 `tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
 directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.
+
+---
+
+## Adding an Inference Route (`infer_route.py`)
+
+Every way verith can be handed a certificate is one row of
+`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is added
+there and nowhere else: `cli.py` reads the rows, so the `--infer` choices,
+the help text, every cross-flag rule and the dispatch all follow from the
+row rather than from an edit apiece.
+
+A row says:
+
+* **the property** — `kinds` (`"safety"`, `"buchi"`, or both) and
+  `kinds_refusal`, the sentence printed when the property is the other one.
+  The check is generic and the reason is not: why the `ai` route cannot
+  certify `G P` is prose about `rule_globally`, and why `nuterm` discards a
+  precondition is prose about Houdini.
+* **what it seeds from** — `seeds`, the `CertificateData` fields it will
+  *use* rather than discard, and `seeds_refusal`.  A predicate outside the
+  set is refused where it is passed, not dropped four steps later.
+* **the project** — `reads` (encoding suffixes; `""` is the functional one)
+  and `owns` (project-relative paths it may write).  The route is handed a
+  `ProjectHandle`, so these two are the whole of its access, and a route
+  that needs more of the project than the predicates says which more.
+* **`artifacts/`** — `reads_artifacts`, the roles it may resume from.  It is
+  declared access, like `reads`: `ProjectHandle.resume(role, …)` refuses an
+  undeclared role, and the filtering (stale module, stale property, stale
+  proof rule, plus the languages and statuses asked for) is the store's, so
+  there is one filter and one place that reports what it dropped.
+* **the hooks** — `resolve` at parse time (a route whose lakefile names a
+  path has to reject a bad one before any of the project exists), `precheck`
+  once the module is loaded and before it is generated (a module shape the
+  route cannot express is met there rather than as a traceback out of an
+  encoder it never wanted), and `run`.
+* **what comes back** — `returns`: `"smt"` (SMT-LIB predicates, which
+  `--pre-check` can restate the obligations from), `"lean"` (nothing parses
+  it back, so they cannot be restated), or `"installed"` (the route wrote the
+  certificate itself).  The row *declares* it and the `InferResult` carries
+  it, and `main` checks the two agree once rather than each reader trusting
+  whichever is nearer to hand.  Plus `uses_llm`, and `errors_self_named` for
+  a route whose refusals already name their own flag.
+* **its own flags** — `options`, a tuple of `Opt`.  Passed without the route
+  selected, each is an error rather than a no-op.  `aliases` carries any
+  older spelling that selects the route and fills one of those options
+  (`--fbk-proveit DIR`), so a deprecated flag goes away with its row.
+
+A route that renders its own Lean hands **both** spellings back in its
+`InferResult`.  Rendering means encoding the module into cvc5 again, and
+`magic.cegar` and `magic.learn` both already have the Lean — so the pipeline
+renders only for a route that returns SMT alone.
+
+`tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
+checks the op matrix: a row declaring an encoding no row emits, an artifact
+role that is not one, a refusal with no reason, or two routes claiming one
+flag fails there rather than in generated code.
+
+### `artifacts/` — the project as a workspace
+
+The project is generated *before* inference runs, and what a run leaves in
+`<project>/artifacts/` outlives it: an invariant that was inductive but too
+weak, a ranking function that used an op the certificate cannot express, a
+note for the next prompt.  A second `uv run verith` into the same `-o`
+continues rather than restarts — take that invariant and strengthen it, or
+take it as given and infer only the ranking function.
+
+Artifacts are arbitrary files (`.smt2` and `.md`, mostly, plus whatever a
+subprocess drops there); `artifacts/index.json` types the ones it knows, and
+a file with no entry is still listed, as `role="other"`.  Each entry carries
+`status` — what a consumer filters on — and `why`, the prose it puts in a
+prompt.  Three more fields exist only so a stale artifact is not trusted:
+`module_digest`, `prp` and `kind`.  An invariant found for another property,
+another proof rule or a since-edited module is not about this run, and
+`usable()` drops it and says so, because two identical command lines that
+resume differently is the one thing a workspace must not do quietly.
+
+`--artifacts ignore` searches afresh; `--artifacts reset` empties the
+directory first, which is what to pass when a bad artifact is being
+inherited by every run.  `artifacts/` belongs to no route, so a regenerating
+run must never treat it as its own output to clean up.
+
+#### The questions, not only the answers
+
+The same directory holds what the run *asked*, which is the other half of
+being able to check it.  A run encodes a good deal on its way to a
+certificate — the module's transition, the property, the invariant, one query
+per obligation — and until it was written down, all of it lived and died
+inside the process.  What reached the user was a project and a line saying
+`holds` or `REFUTED`: the conclusion without the question.
+
+| file | what it is |
+|---|---|
+| `system.smt2` | the whole problem as cvc5 encoded it: `init<i>` / `next<i>` per state component, and `P`, `inv`, `ranking` over the same state |
+| `obligation-<name>.smt2` | one obligation, **negated**, exactly as it was asked |
+| `property.smt`, `inv.smt`, `ranking.smt` | the predicate source, as a flag was given it or a route found it |
+
+`.smt2` is a script — declarations, definitions, `(check-sat)` — so
+`cvc5 artifacts/obligation-step_inv.smt2` answers without `verith` in the
+loop, and `unsat` there is the `holds` the pre-check printed.  That is what
+makes it worth having when the answer surprises: a refuted obligation becomes
+a file to bisect rather than a message to trust.  `.smt` is one predicate and
+not a script; the encoded form of the same thing is in `system.smt2`.
+
+These are written by `smt_query` as it builds each query, so they appear when
+something was encoded — `--pre-check cvc5` is what asks for the obligations.
+`--artifacts ignore` still records them: it is about where a run *starts*, not
+about what it leaves.
+
+#### `README.md` — the index components write
+
+`artifacts/README.md` is the human-readable half of `index.json`, and nothing
+assembles it centrally: no one place knows what a run will produce, which
+routes will run, or what a component added later will want to leave behind.
+So each component passes `what=` to `store.put` / `store.encoded` — one
+sentence saying what its file *is* — and the README is rendered from the index
+after every write.  It is therefore always exactly what was written, in the
+order it was written, and a file a later run rewrites replaces its own section
+rather than gaining a second one.
+
+`what` is the counterpart of `why`: `why` says what was wrong with a candidate,
+`what` says what the file is.  A question the run asked has a `what` and no
+`why`, which is why its status (`encoded`) is not flagged in the README.
 
 ---
 
