@@ -16,6 +16,7 @@ Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 ## Petri nets
 
 - **petri_queue_reachability.ipynb**: a bounded-queue Petri net modelled monolithically as a `sugar.Module` (marking = state, the firing choice = a non-deterministic external input); bounded reachability with Z3, returning a witness firing sequence for reachable markings.
+- **petrinaut/**: HASH's L0 cyclic-resource control instances as Petrinaut YAML exports, loaded with `zrth.petri.load_sdcpn`; `petrinaut.ipynb` lets Z3 find the deadlock, trains a dispatch policy with REINFORCE against the imported module, and verifies it under every interleaving of the plant's moves.
 
 ## Quantised ranking functions
 

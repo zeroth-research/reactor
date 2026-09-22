@@ -1,0 +1,294 @@
+version: 1
+meta:
+  generator: Petrinaut
+title: Minimal cyclic resource cell L0
+parameters: []
+types: []
+differentialEquations: []
+subnets: []
+places:
+  - id: place_order_ab
+    name: OrderAB
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 105
+    'y': 1185
+    description: A waiting job that needs Machine A followed by Machine B.
+    showAsInitialState: true
+  - id: place_order_bc
+    name: OrderBC
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 105
+    'y': 750
+    description: A waiting job that needs Machine B followed by Machine C.
+    showAsInitialState: true
+  - id: place_order_ca
+    name: OrderCA
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 120
+    'y': 315
+    description: A waiting job that needs Machine C followed by Machine A.
+    showAsInitialState: true
+  - id: place_machine_a_free
+    name: MachineAFree
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 960
+    'y': 1410
+    description: The token means Machine A is available. A started job retains it until completion.
+    showAsInitialState: true
+  - id: place_machine_b_free
+    name: MachineBFree
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 960
+    'y': 960
+    description: The token means Machine B is available. A started job retains it until completion.
+    showAsInitialState: true
+  - id: place_machine_c_free
+    name: MachineCFree
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 960
+    'y': 525
+    description: The token means Machine C is available. A started job retains it until completion.
+    showAsInitialState: true
+  - id: place_ab_holding_a
+    name: ABHoldingA
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 675
+    'y': 1185
+    description: An A-to-B job holding Machine A while waiting to use Machine B.
+    showAsInitialState: false
+  - id: place_bc_holding_b
+    name: BCHoldingB
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 675
+    'y': 750
+    description: A B-to-C job holding Machine B while waiting to use Machine C.
+    showAsInitialState: false
+  - id: place_ca_holding_c
+    name: CAHoldingC
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 675
+    'y': 315
+    description: A C-to-A job holding Machine C while waiting to use Machine A.
+    showAsInitialState: false
+  - id: place_completed_ab
+    name: CompletedAB
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1185
+    'y': 1185
+    description: Completed A-to-B jobs.
+    showAsInitialState: false
+  - id: place_completed_bc
+    name: CompletedBC
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1185
+    'y': 750
+    description: Completed B-to-C jobs.
+    showAsInitialState: false
+  - id: place_completed_ca
+    name: CompletedCA
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1185
+    'y': 315
+    description: Completed C-to-A jobs.
+    showAsInitialState: false
+componentInstances: []
+transitions:
+  - id: transition_start_ab
+    name: Start A-to-B job
+    inputArcs:
+      - placeId: place_order_ab
+        weight: 1
+        type: standard
+      - placeId: place_machine_a_free
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_ab_holding_a
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 405
+    'y': 1185
+    description: 'Controller dispatch action: admit the A-to-B job and reserve Machine A.'
+    metadata:
+      control: controllable
+      action: dispatch
+  - id: transition_complete_ab
+    name: Complete A-to-B job
+    inputArcs:
+      - placeId: place_ab_holding_a
+        weight: 1
+        type: standard
+      - placeId: place_machine_b_free
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_ab
+        weight: 1
+      - placeId: place_machine_a_free
+        weight: 1
+      - placeId: place_machine_b_free
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 960
+    'y': 1185
+    description: 'Automatic progress: acquire Machine B, complete the job, and release both machines.'
+    metadata:
+      control: uncontrollable
+      action: process-completion
+  - id: transition_start_bc
+    name: Start B-to-C job
+    inputArcs:
+      - placeId: place_order_bc
+        weight: 1
+        type: standard
+      - placeId: place_machine_b_free
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_bc_holding_b
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 405
+    'y': 750
+    description: 'Controller dispatch action: admit the B-to-C job and reserve Machine B.'
+    metadata:
+      control: controllable
+      action: dispatch
+  - id: transition_complete_bc
+    name: Complete B-to-C job
+    inputArcs:
+      - placeId: place_bc_holding_b
+        weight: 1
+        type: standard
+      - placeId: place_machine_c_free
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_bc
+        weight: 1
+      - placeId: place_machine_b_free
+        weight: 1
+      - placeId: place_machine_c_free
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 960
+    'y': 750
+    description: 'Automatic progress: acquire Machine C, complete the job, and release both machines.'
+    metadata:
+      control: uncontrollable
+      action: process-completion
+  - id: transition_start_ca
+    name: Start C-to-A job
+    inputArcs:
+      - placeId: place_order_ca
+        weight: 1
+        type: standard
+      - placeId: place_machine_c_free
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_ca_holding_c
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 405
+    'y': 315
+    description: 'Controller dispatch action: admit the C-to-A job and reserve Machine C.'
+    metadata:
+      control: controllable
+      action: dispatch
+  - id: transition_complete_ca
+    name: Complete C-to-A job
+    inputArcs:
+      - placeId: place_ca_holding_c
+        weight: 1
+        type: standard
+      - placeId: place_machine_a_free
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_ca
+        weight: 1
+      - placeId: place_machine_c_free
+        weight: 1
+      - placeId: place_machine_a_free
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 960
+    'y': 315
+    description: 'Automatic progress: acquire Machine A, complete the job, and release both machines.'
+    metadata:
+      control: uncontrollable
+      action: process-completion
+metrics:
+  - id: metric_completed_jobs
+    name: Completed jobs
+    description: Total jobs completed across all three routes.
+    code: return state.places.CompletedAB.count + state.places.CompletedBC.count + state.places.CompletedCA.count;
+  - id: metric_open_jobs
+    name: Open jobs
+    description: Waiting or in-process jobs. A successful maximal run ends at zero.
+    code: return state.places.OrderAB.count + state.places.OrderBC.count + state.places.OrderCA.count + state.places.ABHoldingA.count + state.places.BCHoldingB.count + state.places.CAHoldingC.count;
+  - id: metric_deadlocked
+    name: Unfinished deadlock
+    description: One exactly when all resources are held while unfinished work remains.
+    code: |-
+      const openJobs = state.places.OrderAB.count + state.places.OrderBC.count + state.places.OrderCA.count + state.places.ABHoldingA.count + state.places.BCHoldingB.count + state.places.CAHoldingC.count;
+      const freeMachines = state.places.MachineAFree.count + state.places.MachineBFree.count + state.places.MachineCFree.count;
+      return openJobs > 0 && freeMachines === 0 ? 1 : 0;
+scenarios:
+  - id: scenario_one_job_each
+    name: One job of each route
+    description: The teaching scenario. Dispatching all three jobs before any completes creates a circular wait.
+    scenarioParameters: []
+    parameterOverrides: {}
+    initialState:
+      type: per_place
+      content:
+        place_order_ab: '1'
+        place_order_bc: '1'
+        place_order_ca: '1'
+        place_machine_a_free: '1'
+        place_machine_b_free: '1'
+        place_machine_c_free: '1'
+        place_ab_holding_a: '0'
+        place_bc_holding_b: '0'
+        place_ca_holding_c: '0'
+        place_completed_ab: '0'
+        place_completed_bc: '0'
+        place_completed_ca: '0'

@@ -1,0 +1,973 @@
+version: 1
+meta:
+  generator: Petrinaut
+title: Flexible manufacturing cell L0
+parameters: []
+types: []
+differentialEquations: []
+subnets: []
+places:
+  - id: place_frame_orders
+    name: FrameOrders
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 360
+    'y': 1995
+    description: Waiting frame orders. Frames require the cutter followed by the mill.
+    showAsInitialState: true
+  - id: place_panel_orders
+    name: PanelOrders
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 345
+    'y': 1065
+    description: Waiting panel orders. A panel may start at either the mill or the test rig before using the paint booth.
+    showAsInitialState: true
+  - id: place_cabinet_orders
+    name: CabinetOrders
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 345
+    'y': 1710
+    description: Waiting cabinet orders. A cabinet may start at either the paint booth or the packing cell before using the cutter.
+    showAsInitialState: true
+  - id: place_sensor_orders
+    name: SensorOrders
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 345
+    'y': 540
+    description: Waiting sensor orders. Sensors require the paint booth followed by the test rig.
+    showAsInitialState: true
+  - id: place_circuit_board_orders
+    name: CircuitBoardOrders
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 345
+    'y': 810
+    description: Waiting circuit board orders. Circuit boards require the test rig followed by the packing cell.
+    showAsInitialState: true
+  - id: place_pump_orders
+    name: PumpOrders
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 345
+    'y': 1380
+    description: Waiting pump orders. A pump may start at either the packing cell or the mill before using the paint booth.
+    showAsInitialState: true
+  - id: place_cutter_free
+    name: CutterFree
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1485
+    'y': 2130
+    description: The token means the cutter is free.
+    showAsInitialState: true
+  - id: place_mill_free
+    name: MillFree
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1485
+    'y': 1635
+    description: The token means the mill is free.
+    showAsInitialState: true
+  - id: place_paint_booth_free
+    name: PaintBoothFree
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1485
+    'y': 990
+    description: The token means the paint booth is free.
+    showAsInitialState: true
+  - id: place_test_rig_free
+    name: TestRigFree
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1485
+    'y': 705
+    description: The token means the test rig is free.
+    showAsInitialState: true
+  - id: place_pack_cell_free
+    name: PackCellFree
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1485
+    'y': 1905
+    description: The token means the packing cell is free.
+    showAsInitialState: true
+  - id: place_dispatch_credits
+    name: DispatchCredits
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: -150
+    'y': 1305
+    description: Release credits bound work in process. Dispatch consumes one and completion returns one. Three in the balanced and shared-stage scenarios; the one-order scenario sets the count from the dispatch_credits parameter.
+    showAsInitialState: true
+  - id: place_started_in_wave
+    name: StartedInWave
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1230
+    'y': 1380
+    description: Counts dispatches toward a release wave. Every three tokens enable another processing permit.
+  - id: place_processing_permits
+    name: ProcessingPermits
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1785
+    'y': 1380
+    description: A processing permit enables automatic completion transitions. The first is created only after three jobs have been dispatched.
+  - id: place_frame_holding_cutter
+    name: FrameHoldingCutter
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1005
+    'y': 2130
+    description: A frame holding the cutter while waiting for the mill.
+  - id: place_panel_holding_mill
+    name: PanelHoldingMill
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1005
+    'y': 1050
+    description: A panel on its standard route, holding the mill while waiting for the paint booth.
+  - id: place_panel_holding_test_rig
+    name: PanelHoldingTestRig
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1005
+    'y': 885
+    description: A panel on its alternate route, holding the test rig while waiting for the paint booth.
+  - id: place_cabinet_holding_paint_booth
+    name: CabinetHoldingPaintBooth
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1005
+    'y': 1935
+    description: A cabinet on its standard route, holding the paint booth while waiting for the cutter.
+  - id: place_cabinet_holding_pack_cell
+    name: CabinetHoldingPackCell
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1005
+    'y': 1755
+    description: A cabinet on its alternate route, holding the packing cell while waiting for the cutter.
+  - id: place_sensor_holding_paint_booth
+    name: SensorHoldingPaintBooth
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1005
+    'y': 525
+    description: A sensor holding the paint booth while waiting for the test rig.
+  - id: place_circuit_board_holding_test_rig
+    name: CircuitBoardHoldingTestRig
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1005
+    'y': 705
+    description: A circuit board holding the test rig while waiting for the packing cell.
+  - id: place_pump_holding_pack_cell
+    name: PumpHoldingPackCell
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1005
+    'y': 1230
+    description: A pump on its standard route, holding the packing cell while waiting for the paint booth.
+  - id: place_pump_holding_mill
+    name: PumpHoldingMill
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 1005
+    'y': 1545
+    description: A pump on its alternate route, holding the mill while waiting for the paint booth.
+  - id: place_completed_frames
+    name: CompletedFrames
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 2400
+    'y': 2040
+    description: Completed frame orders.
+  - id: place_completed_panels
+    name: CompletedPanels
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 2400
+    'y': 1080
+    description: Completed panel orders from either route.
+  - id: place_completed_cabinets
+    name: CompletedCabinets
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 2400
+    'y': 1740
+    description: Completed cabinet orders from either route.
+  - id: place_completed_sensors
+    name: CompletedSensors
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 2400
+    'y': 585
+    description: Completed sensor orders.
+  - id: place_completed_circuit_boards
+    name: CompletedCircuitBoards
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 2400
+    'y': 780
+    description: Completed circuit board orders.
+  - id: place_completed_pumps
+    name: CompletedPumps
+    colorId: null
+    dynamicsEnabled: false
+    differentialEquationId: null
+    x: 2400
+    'y': 1395
+    description: Completed pump orders from either route.
+componentInstances: []
+transitions:
+  - id: transition_start_frame
+    name: Dispatch frame via cutter
+    inputArcs:
+      - placeId: place_frame_orders
+        weight: 1
+        type: standard
+      - placeId: place_cutter_free
+        weight: 1
+        type: standard
+      - placeId: place_dispatch_credits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_frame_holding_cutter
+        weight: 1
+      - placeId: place_started_in_wave
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 660
+    'y': 2055
+    description: Admit a frame and reserve the cutter.
+    metadata:
+      control: controllable
+      action: dispatch
+      product: frame
+      route: cutter-mill
+  - id: transition_complete_frame
+    name: Complete frame at mill
+    inputArcs:
+      - placeId: place_frame_holding_cutter
+        weight: 1
+        type: standard
+      - placeId: place_mill_free
+        weight: 1
+        type: standard
+      - placeId: place_processing_permits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_frames
+        weight: 1
+      - placeId: place_cutter_free
+        weight: 1
+      - placeId: place_mill_free
+        weight: 1
+      - placeId: place_processing_permits
+        weight: 1
+      - placeId: place_dispatch_credits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 2115
+    'y': 2040
+    description: Acquire the mill, complete the frame, and release the cutter and mill.
+    metadata:
+      control: uncontrollable
+      action: process-completion
+      product: frame
+  - id: transition_start_panel_mill
+    name: Dispatch panel via mill
+    inputArcs:
+      - placeId: place_panel_orders
+        weight: 1
+        type: standard
+      - placeId: place_mill_free
+        weight: 1
+        type: standard
+      - placeId: place_dispatch_credits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_panel_holding_mill
+        weight: 1
+      - placeId: place_started_in_wave
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 660
+    'y': 1140
+    description: Choose the standard panel route and reserve the mill.
+    metadata:
+      control: controllable
+      action: dispatch
+      product: panel
+      route: mill-paint
+  - id: transition_complete_panel_mill
+    name: Complete mill-route panel at paint booth
+    inputArcs:
+      - placeId: place_panel_holding_mill
+        weight: 1
+        type: standard
+      - placeId: place_paint_booth_free
+        weight: 1
+        type: standard
+      - placeId: place_processing_permits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_panels
+        weight: 1
+      - placeId: place_mill_free
+        weight: 1
+      - placeId: place_paint_booth_free
+        weight: 1
+      - placeId: place_processing_permits
+        weight: 1
+      - placeId: place_dispatch_credits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 2115
+    'y': 1125
+    description: Acquire the paint booth, complete the panel, and release both resources.
+    metadata:
+      control: uncontrollable
+      action: process-completion
+      product: panel
+      route: mill-paint
+  - id: transition_start_panel_test
+    name: Dispatch panel via test rig
+    inputArcs:
+      - placeId: place_panel_orders
+        weight: 1
+        type: standard
+      - placeId: place_test_rig_free
+        weight: 1
+        type: standard
+      - placeId: place_dispatch_credits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_panel_holding_test_rig
+        weight: 1
+      - placeId: place_started_in_wave
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 660
+    'y': 960
+    description: Choose the alternate panel route and reserve the test rig.
+    metadata:
+      control: controllable
+      action: dispatch
+      product: panel
+      route: test-paint
+  - id: transition_complete_panel_test
+    name: Complete test-route panel at paint booth
+    inputArcs:
+      - placeId: place_panel_holding_test_rig
+        weight: 1
+        type: standard
+      - placeId: place_paint_booth_free
+        weight: 1
+        type: standard
+      - placeId: place_processing_permits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_panels
+        weight: 1
+      - placeId: place_test_rig_free
+        weight: 1
+      - placeId: place_paint_booth_free
+        weight: 1
+      - placeId: place_processing_permits
+        weight: 1
+      - placeId: place_dispatch_credits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 2115
+    'y': 945
+    description: Acquire the paint booth, complete the panel, and release both resources.
+    metadata:
+      control: uncontrollable
+      action: process-completion
+      product: panel
+      route: test-paint
+  - id: transition_start_cabinet_paint
+    name: Dispatch cabinet via paint booth
+    inputArcs:
+      - placeId: place_cabinet_orders
+        weight: 1
+        type: standard
+      - placeId: place_paint_booth_free
+        weight: 1
+        type: standard
+      - placeId: place_dispatch_credits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_cabinet_holding_paint_booth
+        weight: 1
+      - placeId: place_started_in_wave
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 660
+    'y': 1860
+    description: Choose the standard cabinet route and reserve the paint booth.
+    metadata:
+      control: controllable
+      action: dispatch
+      product: cabinet
+      route: paint-cutter
+  - id: transition_complete_cabinet_paint
+    name: Complete paint-route cabinet at cutter
+    inputArcs:
+      - placeId: place_cabinet_holding_paint_booth
+        weight: 1
+        type: standard
+      - placeId: place_cutter_free
+        weight: 1
+        type: standard
+      - placeId: place_processing_permits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_cabinets
+        weight: 1
+      - placeId: place_paint_booth_free
+        weight: 1
+      - placeId: place_cutter_free
+        weight: 1
+      - placeId: place_processing_permits
+        weight: 1
+      - placeId: place_dispatch_credits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 2115
+    'y': 1845
+    description: Acquire the cutter, complete the cabinet, and release both resources.
+    metadata:
+      control: uncontrollable
+      action: process-completion
+      product: cabinet
+      route: paint-cutter
+  - id: transition_start_cabinet_pack
+    name: Dispatch cabinet via packing cell
+    inputArcs:
+      - placeId: place_cabinet_orders
+        weight: 1
+        type: standard
+      - placeId: place_pack_cell_free
+        weight: 1
+        type: standard
+      - placeId: place_dispatch_credits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_cabinet_holding_pack_cell
+        weight: 1
+      - placeId: place_started_in_wave
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 660
+    'y': 1665
+    description: Choose the alternate cabinet route and reserve the packing cell.
+    metadata:
+      control: controllable
+      action: dispatch
+      product: cabinet
+      route: pack-cutter
+  - id: transition_complete_cabinet_pack
+    name: Complete pack-route cabinet at cutter
+    inputArcs:
+      - placeId: place_cabinet_holding_pack_cell
+        weight: 1
+        type: standard
+      - placeId: place_cutter_free
+        weight: 1
+        type: standard
+      - placeId: place_processing_permits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_cabinets
+        weight: 1
+      - placeId: place_pack_cell_free
+        weight: 1
+      - placeId: place_cutter_free
+        weight: 1
+      - placeId: place_processing_permits
+        weight: 1
+      - placeId: place_dispatch_credits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 2115
+    'y': 1650
+    description: Acquire the cutter, complete the cabinet, and release both resources.
+    metadata:
+      control: uncontrollable
+      action: process-completion
+      product: cabinet
+      route: pack-cutter
+  - id: transition_start_sensor
+    name: Dispatch sensor via paint booth
+    inputArcs:
+      - placeId: place_sensor_orders
+        weight: 1
+        type: standard
+      - placeId: place_paint_booth_free
+        weight: 1
+        type: standard
+      - placeId: place_dispatch_credits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_sensor_holding_paint_booth
+        weight: 1
+      - placeId: place_started_in_wave
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 660
+    'y': 600
+    description: Admit a sensor and reserve the paint booth.
+    metadata:
+      control: controllable
+      action: dispatch
+      product: sensor
+      route: paint-test
+  - id: transition_complete_sensor
+    name: Complete sensor at test rig
+    inputArcs:
+      - placeId: place_sensor_holding_paint_booth
+        weight: 1
+        type: standard
+      - placeId: place_test_rig_free
+        weight: 1
+        type: standard
+      - placeId: place_processing_permits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_sensors
+        weight: 1
+      - placeId: place_paint_booth_free
+        weight: 1
+      - placeId: place_test_rig_free
+        weight: 1
+      - placeId: place_processing_permits
+        weight: 1
+      - placeId: place_dispatch_credits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 2115
+    'y': 585
+    description: Acquire the test rig, complete the sensor, and release both resources.
+    metadata:
+      control: uncontrollable
+      action: process-completion
+      product: sensor
+  - id: transition_start_circuit_board
+    name: Dispatch circuit board via test rig
+    inputArcs:
+      - placeId: place_circuit_board_orders
+        weight: 1
+        type: standard
+      - placeId: place_test_rig_free
+        weight: 1
+        type: standard
+      - placeId: place_dispatch_credits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_circuit_board_holding_test_rig
+        weight: 1
+      - placeId: place_started_in_wave
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 660
+    'y': 780
+    description: Admit a circuit board and reserve the test rig.
+    metadata:
+      control: controllable
+      action: dispatch
+      product: circuit-board
+      route: test-pack
+  - id: transition_complete_circuit_board
+    name: Complete circuit board at packing cell
+    inputArcs:
+      - placeId: place_circuit_board_holding_test_rig
+        weight: 1
+        type: standard
+      - placeId: place_pack_cell_free
+        weight: 1
+        type: standard
+      - placeId: place_processing_permits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_circuit_boards
+        weight: 1
+      - placeId: place_test_rig_free
+        weight: 1
+      - placeId: place_pack_cell_free
+        weight: 1
+      - placeId: place_processing_permits
+        weight: 1
+      - placeId: place_dispatch_credits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 2115
+    'y': 780
+    description: Acquire the packing cell, complete the circuit board, and release both resources.
+    metadata:
+      control: uncontrollable
+      action: process-completion
+      product: circuit-board
+  - id: transition_start_pump_pack
+    name: Dispatch pump via packing cell
+    inputArcs:
+      - placeId: place_pump_orders
+        weight: 1
+        type: standard
+      - placeId: place_pack_cell_free
+        weight: 1
+        type: standard
+      - placeId: place_dispatch_credits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_pump_holding_pack_cell
+        weight: 1
+      - placeId: place_started_in_wave
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 660
+    'y': 1305
+    description: Choose the standard pump route and reserve the packing cell.
+    metadata:
+      control: controllable
+      action: dispatch
+      product: pump
+      route: pack-paint
+  - id: transition_complete_pump_pack
+    name: Complete pack-route pump at paint booth
+    inputArcs:
+      - placeId: place_pump_holding_pack_cell
+        weight: 1
+        type: standard
+      - placeId: place_paint_booth_free
+        weight: 1
+        type: standard
+      - placeId: place_processing_permits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_pumps
+        weight: 1
+      - placeId: place_pack_cell_free
+        weight: 1
+      - placeId: place_paint_booth_free
+        weight: 1
+      - placeId: place_processing_permits
+        weight: 1
+      - placeId: place_dispatch_credits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 2115
+    'y': 1485
+    description: Acquire the paint booth, complete the pump, and release both resources.
+    metadata:
+      control: uncontrollable
+      action: process-completion
+      product: pump
+      route: pack-paint
+  - id: transition_start_pump_mill
+    name: Dispatch pump via mill
+    inputArcs:
+      - placeId: place_pump_orders
+        weight: 1
+        type: standard
+      - placeId: place_mill_free
+        weight: 1
+        type: standard
+      - placeId: place_dispatch_credits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_pump_holding_mill
+        weight: 1
+      - placeId: place_started_in_wave
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 660
+    'y': 1500
+    description: Choose the alternate pump route and reserve the mill.
+    metadata:
+      control: controllable
+      action: dispatch
+      product: pump
+      route: mill-paint
+  - id: transition_complete_pump_mill
+    name: Complete mill-route pump at paint booth
+    inputArcs:
+      - placeId: place_pump_holding_mill
+        weight: 1
+        type: standard
+      - placeId: place_paint_booth_free
+        weight: 1
+        type: standard
+      - placeId: place_processing_permits
+        weight: 1
+        type: standard
+    outputArcs:
+      - placeId: place_completed_pumps
+        weight: 1
+      - placeId: place_mill_free
+        weight: 1
+      - placeId: place_paint_booth_free
+        weight: 1
+      - placeId: place_processing_permits
+        weight: 1
+      - placeId: place_dispatch_credits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 2115
+    'y': 1305
+    description: Acquire the paint booth, complete the pump, and release both resources.
+    metadata:
+      control: uncontrollable
+      action: process-completion
+      product: pump
+      route: mill-paint
+  - id: transition_open_processing_wave
+    name: Open processing wave
+    inputArcs:
+      - placeId: place_started_in_wave
+        weight: 3
+        type: standard
+    outputArcs:
+      - placeId: place_processing_permits
+        weight: 1
+    lambdaType: predicate
+    lambdaCode: export default Lambda(() => true);
+    transitionKernelCode: ''
+    x: 1500
+    'y': 1380
+    description: After three dispatches, enable processing. Later groups of three dispatches add equivalent permit tokens without changing the net's behaviour.
+    metadata:
+      control: uncontrollable
+      action: release-wave
+metrics:
+  - id: metric_completed_orders
+    name: Completed orders
+    description: Total completed orders across all product families.
+    code: return state.places.CompletedFrames.count + state.places.CompletedPanels.count + state.places.CompletedCabinets.count + state.places.CompletedSensors.count + state.places.CompletedCircuitBoards.count + state.places.CompletedPumps.count;
+  - id: metric_weighted_completion_score
+    name: Weighted completion score
+    description: A training objective for fixed-length episodes. Higher weights represent more valuable downstream orders.
+    code: return 2 * state.places.CompletedFrames.count + 3 * state.places.CompletedPanels.count + 4 * state.places.CompletedCabinets.count + 5 * state.places.CompletedSensors.count + 6 * state.places.CompletedCircuitBoards.count + 5 * state.places.CompletedPumps.count;
+  - id: metric_open_orders
+    name: Open orders
+    description: All waiting and in-process orders. A successful maximal run ends at zero.
+    code: return state.places.FrameOrders.count + state.places.PanelOrders.count + state.places.CabinetOrders.count + state.places.SensorOrders.count + state.places.CircuitBoardOrders.count + state.places.PumpOrders.count + state.places.FrameHoldingCutter.count + state.places.PanelHoldingMill.count + state.places.PanelHoldingTestRig.count + state.places.CabinetHoldingPaintBooth.count + state.places.CabinetHoldingPackCell.count + state.places.SensorHoldingPaintBooth.count + state.places.CircuitBoardHoldingTestRig.count + state.places.PumpHoldingPackCell.count + state.places.PumpHoldingMill.count;
+  - id: metric_machines_in_use
+    name: Machines in use
+    description: Five minus the number of free resource tokens. Useful as a utilization signal, but unsafe to maximize greedily.
+    code: return 5 - state.places.CutterFree.count - state.places.MillFree.count - state.places.PaintBoothFree.count - state.places.TestRigFree.count - state.places.PackCellFree.count;
+  - id: metric_unfinished_deadlock
+    name: Unfinished deadlock
+    description: One exactly when work remains but no dispatch, wave-release, or completion transition is enabled.
+    code: |-
+      const openOrders = state.places.FrameOrders.count + state.places.PanelOrders.count + state.places.CabinetOrders.count + state.places.SensorOrders.count + state.places.CircuitBoardOrders.count + state.places.PumpOrders.count + state.places.FrameHoldingCutter.count + state.places.PanelHoldingMill.count + state.places.PanelHoldingTestRig.count + state.places.CabinetHoldingPaintBooth.count + state.places.CabinetHoldingPackCell.count + state.places.SensorHoldingPaintBooth.count + state.places.CircuitBoardHoldingTestRig.count + state.places.PumpHoldingPackCell.count + state.places.PumpHoldingMill.count;
+      const hasDispatchCredit = state.places.DispatchCredits.count > 0;
+      const dispatchEnabled = hasDispatchCredit && ((state.places.FrameOrders.count > 0 && state.places.CutterFree.count > 0) || (state.places.PanelOrders.count > 0 && (state.places.MillFree.count > 0 || state.places.TestRigFree.count > 0)) || (state.places.CabinetOrders.count > 0 && (state.places.PaintBoothFree.count > 0 || state.places.PackCellFree.count > 0)) || (state.places.SensorOrders.count > 0 && state.places.PaintBoothFree.count > 0) || (state.places.CircuitBoardOrders.count > 0 && state.places.TestRigFree.count > 0) || (state.places.PumpOrders.count > 0 && (state.places.PackCellFree.count > 0 || state.places.MillFree.count > 0)));
+      const waveReleaseEnabled = state.places.StartedInWave.count >= 3;
+      const hasProcessingPermit = state.places.ProcessingPermits.count > 0;
+      const completionEnabled = hasProcessingPermit && ((state.places.FrameHoldingCutter.count > 0 && state.places.MillFree.count > 0) || (state.places.PanelHoldingMill.count > 0 && state.places.PaintBoothFree.count > 0) || (state.places.PanelHoldingTestRig.count > 0 && state.places.PaintBoothFree.count > 0) || (state.places.CabinetHoldingPaintBooth.count > 0 && state.places.CutterFree.count > 0) || (state.places.CabinetHoldingPackCell.count > 0 && state.places.CutterFree.count > 0) || (state.places.SensorHoldingPaintBooth.count > 0 && state.places.TestRigFree.count > 0) || (state.places.CircuitBoardHoldingTestRig.count > 0 && state.places.PackCellFree.count > 0) || (state.places.PumpHoldingPackCell.count > 0 && state.places.PaintBoothFree.count > 0) || (state.places.PumpHoldingMill.count > 0 && state.places.PaintBoothFree.count > 0));
+      return openOrders > 0 && !dispatchEnabled && !waveReleaseEnabled && !completionEnabled ? 1 : 0;
+scenarios:
+  - id: scenario_balanced_workload
+    name: Balanced workload
+    description: Two orders of every product family and one token for each machine.
+    scenarioParameters: []
+    parameterOverrides: {}
+    initialState:
+      type: per_place
+      content:
+        place_frame_orders: '2'
+        place_panel_orders: '2'
+        place_cabinet_orders: '2'
+        place_sensor_orders: '2'
+        place_circuit_board_orders: '2'
+        place_pump_orders: '2'
+        place_cutter_free: '1'
+        place_mill_free: '1'
+        place_paint_booth_free: '1'
+        place_test_rig_free: '1'
+        place_pack_cell_free: '1'
+        place_dispatch_credits: '3'
+        place_started_in_wave: '0'
+        place_processing_permits: '0'
+        place_frame_holding_cutter: '0'
+        place_panel_holding_mill: '0'
+        place_panel_holding_test_rig: '0'
+        place_cabinet_holding_paint_booth: '0'
+        place_cabinet_holding_pack_cell: '0'
+        place_sensor_holding_paint_booth: '0'
+        place_circuit_board_holding_test_rig: '0'
+        place_pump_holding_pack_cell: '0'
+        place_pump_holding_mill: '0'
+        place_completed_frames: '0'
+        place_completed_panels: '0'
+        place_completed_cabinets: '0'
+        place_completed_sensors: '0'
+        place_completed_circuit_boards: '0'
+        place_completed_pumps: '0'
+  - id: scenario_shared_stage_pressure
+    name: Shared-stage pressure
+    description: More work uses the paint booth, mill and packing cell, increasing the value of route choices that preserve a safe completion path.
+    scenarioParameters: []
+    parameterOverrides: {}
+    initialState:
+      type: per_place
+      content:
+        place_frame_orders: '3'
+        place_panel_orders: '4'
+        place_cabinet_orders: '3'
+        place_sensor_orders: '3'
+        place_circuit_board_orders: '2'
+        place_pump_orders: '3'
+        place_cutter_free: '1'
+        place_mill_free: '1'
+        place_paint_booth_free: '1'
+        place_test_rig_free: '1'
+        place_pack_cell_free: '1'
+        place_dispatch_credits: '3'
+        place_started_in_wave: '0'
+        place_processing_permits: '0'
+        place_frame_holding_cutter: '0'
+        place_panel_holding_mill: '0'
+        place_panel_holding_test_rig: '0'
+        place_cabinet_holding_paint_booth: '0'
+        place_cabinet_holding_pack_cell: '0'
+        place_sensor_holding_paint_booth: '0'
+        place_circuit_board_holding_test_rig: '0'
+        place_pump_holding_pack_cell: '0'
+        place_pump_holding_mill: '0'
+        place_completed_frames: '0'
+        place_completed_panels: '0'
+        place_completed_cabinets: '0'
+        place_completed_sensors: '0'
+        place_completed_circuit_boards: '0'
+        place_completed_pumps: '0'
+  - id: scenario_one_order_each
+    name: Dispatch credits with one order per product
+    description: 'One order of every product family, one token for each machine, and the dispatch_credits scenario parameter (default 3) setting the initial DispatchCredits tokens. The wave size stays 3 because arc weights are fixed: with fewer than 3 credits the first wave never opens and nothing completes; with more than 3, several waves of dispatches can be in flight before processing starts and work in progress is bounded by the credit count instead of 3. Exact analysis: 2 credits is unwinnable; 3 credits gives 1,009 reachable states, 34 of 41 first waves safe, 8.0% losing; 4 and 5 credits stay winnable at 12.2% and 13.7% losing; 6 or more behaves as 5. In the engine''s default firing order the 3-credit run dispatches frame via cutter, panel via mill and cabinet via paint booth, the unsafe first wave from the curriculum text, and deadlocks.'
+    scenarioParameters:
+      - type: integer
+        identifier: dispatch_credits
+        default: 3
+    parameterOverrides: {}
+    initialState:
+      type: code
+      content: |-
+        return {
+          "FrameOrders": 1,
+          "PanelOrders": 1,
+          "CabinetOrders": 1,
+          "SensorOrders": 1,
+          "CircuitBoardOrders": 1,
+          "PumpOrders": 1,
+          "CutterFree": 1,
+          "MillFree": 1,
+          "PaintBoothFree": 1,
+          "TestRigFree": 1,
+          "PackCellFree": 1,
+          "DispatchCredits": scenario.dispatch_credits,
+          "StartedInWave": 0,
+          "ProcessingPermits": 0,
+          "FrameHoldingCutter": 0,
+          "PanelHoldingMill": 0,
+          "PanelHoldingTestRig": 0,
+          "CabinetHoldingPaintBooth": 0,
+          "CabinetHoldingPackCell": 0,
+          "SensorHoldingPaintBooth": 0,
+          "CircuitBoardHoldingTestRig": 0,
+          "PumpHoldingPackCell": 0,
+          "PumpHoldingMill": 0,
+          "CompletedFrames": 0,
+          "CompletedPanels": 0,
+          "CompletedCabinets": 0,
+          "CompletedSensors": 0,
+          "CompletedCircuitBoards": 0,
+          "CompletedPumps": 0,
+        };

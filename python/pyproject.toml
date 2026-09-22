@@ -19,6 +19,7 @@ dependencies = [
     "maturin==1.9",
     # for toy and smt crates
     "pysmt>=0.9.6",
+    "pyyaml>=6.0",
     # for torch crate
     "textual>=8.0.0",
     "torch==2.9.0",
@@ -39,6 +40,7 @@ requires = [
 build-backend = "maturin"
 
 [tool.maturin]
+skip-auditwheel = true
 features = ["pyo3/extension-module"]
 #python-source = "zrth"
 module-name = "zrth.zrth"
