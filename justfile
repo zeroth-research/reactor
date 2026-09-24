@@ -2,10 +2,11 @@
 # set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 #
 # Recipes are named by target: `rs-` for Rust, `py-` for Python, `vr-` for the
-# `verith` project (the inference routes), `nb-` for notebooks; an unprefixed
-# name means "all" (e.g. `test` = `rs-test` + `py-test` + `vr-test` +
-# `nb-test`), and a `-fix` suffix marks the recipes that modify files in the
-# repository — everything else is read-only towards the sources.
+# `verith` project (the inference routes), `lean-` for the Lean crate and
+# library, `nb-` for notebooks; an unprefixed name means "all" (e.g. `test` =
+# `rs-test` + `py-test` + `vr-test` + `nb-test`), and a `-fix` suffix marks the
+# recipes that modify files in the repository — everything else is read-only
+# towards the sources.
 #
 # Prerequisites are declared as native dependencies (not `@just` calls in the
 # bodies), so shared ones run at most once per invocation: `just test` builds
@@ -36,17 +37,17 @@ profile_flag := if PROFILE == "" { "" } else { "--profile " + PROFILE }
 features_flag := if FEATURES == "" { "" } else { "--features " + FEATURES }
 
 # -------------------------------------------------
-# All (unprefixed = Rust + Python + notebooks)
+# All (unprefixed = Rust + Python + Lean + notebooks)
 # -------------------------------------------------
 
-# Build everything: the Rust workspace (all targets and features) and the Python crate
-build: rs-build-all py-build
+# Build everything: the Rust workspace (all targets and features), the Python crate and the Lean library
+build: rs-build-all py-build lean-build
 
 # Run the test suite that needs no `lake` (Rust + Python + verith + notebooks)
 test: rs-test py-test vr-test nb-test
 
-# Run everything, including the Lean tests that build proofs via `lake`
-test-all: test test-lean
+# Run everything, including the tests that build Lean via `lake`
+test-all: test test-lean lean-test
 
 # Run the Lean tests that build proofs via `lake` (marked `slow`; require lake + mathlib)
 test-lean *args: (py-run "pytest" "-m" "slow" args) (vr-run "pytest" "-m" "slow" args)
@@ -144,6 +145,22 @@ vr-test *args: (vr-run "pytest" "-m" "'not slow'" args)
 # Run a command inside the `verith` project (with rebuilding the Python crate it builds on). The command given is executed from *within* `verith/`, i.e., with paths relative to it.
 vr-run *args: py-build
     cd verith && uv run {{ args }}
+
+# -------------------------------------------------
+# Lean (lean-)
+# -------------------------------------------------
+
+# The Lean library (a Lake package in `lean/lib`) is the static part common to
+# every module translated by the `lean` crate. Lake picks the toolchain pinned
+# in `lean/lib/lean-toolchain` (via elan).
+
+# Build (i.e., type-check) the Lean library
+lean-build:
+    cd lean/lib && lake build
+
+# Run the tests of the `lean` crate on top of the built Lean library
+lean-test: lean-build
+    {{ CARGO }} test -p lean {{ profile_flag }}
 
 # -------------------------------------------------
 # Notebooks (nb-)
