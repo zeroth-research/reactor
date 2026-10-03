@@ -619,3 +619,72 @@ def test_an_integer_module_pays_nothing_for_floors():
     assert not plan.features.has_floor
     assert plan.floor_tactic == "skip"
     assert "simp only [mul_sub]" not in plan.prep
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Closers for structure the cheap provers do not take apart
+# ══════════════════════════════════════════════════════════════════════
+
+
+def test_a_real_state_gets_lra_close_after_every_cheaper_closer():
+    """Behind everything else, so a proof that closes today never reaches it."""
+    plan = _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)")
+    assert "lra_close" in plan.closers
+    assert plan.closers.index("lra_close") > plan.closers.index("(simp_all; norm_num; done)")
+
+
+def test_an_integer_state_does_not_pay_for_lra_close():
+    plan = _plan(_int_module(), "fun s => ((s 0 0) ≥ 0)")
+    assert "lra_close" not in plan.closers
+
+
+def test_a_branching_integer_state_splits_the_hypotheses_too():
+    """`split_ifs` in prep splits the goal; a Bool weighed inside a hypothesis
+    needs `split_ifs at *` and the substitution before omega can read it."""
+    plan = _plan(_int_module(), "fun s => ((if (s 0 0) = 0 then 1 else 0) ≥ 0)")
+    assert "(split_ifs at * <;> simp_all <;> omega)" in plan.closers
+
+
+def test_a_nonlinear_predicate_gets_its_max_split_into_cases():
+    plan = _plan(_int_module(), "fun s => (((s 0 0) * (max (s 0 0) 0) : Int)).toNat")
+    assert any(c.startswith("(simp only [max_def, min_def] at *") and c.endswith("nlinarith)")
+               for c in plan.closers)
+    linear = _plan(_int_module(), "fun s => ((max (s 0 0) 0 : Int)).toNat")
+    assert not any("max_def" in c for c in linear.closers)
+
+
+def test_the_hammer_defines_every_closer_the_plan_can_name():
+    """A closer the plan names and the project does not define is a parse
+    error in every certificate that carries it, not a failed alternative."""
+    from zrth.lean.cert import generate_zeroth_hammer_lean
+    hammer = generate_zeroth_hammer_lean()
+    for name in ("lra_close", "lra_leaf", "lra_atoms", "floor_bounds"):
+        assert f'"{name}"' in hammer
+
+
+def _branchy_transition(n: int) -> Module:
+    """A countdown whose next value is chosen by an `n`-deep chain of `ite`s."""
+    x = Var(Int([1, 1]))
+    zero, one = Wire(Int([1, 1])), Wire(Int([1, 1]))
+    terms = [Term(LIA.Int(torch.tensor([[0]])), [zero]),
+             Term(LIA.Int(torch.tensor([[1]])), [one])]
+    prev = x
+    for k in range(n):
+        cond, out = Wire(Bool([1, 1])), (X(x) if k == n - 1 else Wire(Int([1, 1])))
+        dec = Wire(Int([1, 1]))
+        terms += [Term(LIA.Eq(), [cond], [prev, zero]),
+                  Term(LIA.Sub(), [dec], [prev, one]),
+                  Term(LIA.Ite(), [out], [cond, zero, dec])]
+        prev = out
+    return Module.sequential([x], [Term(LIA.Int(torch.tensor([[9]])), [X(x)])], terms)
+
+
+def test_a_branchy_transition_gets_the_higher_budget():
+    """`step_inv` splits the transition's branches before any closer runs, so
+    a Petri net's 16 of them cost what a 32-branch certificate does."""
+    narrow = _plan(_branchy_transition(3), "fun s => ((s 0 0) ≥ 0)")
+    assert narrow.features.n_trans_branch == 3
+    assert narrow.max_heartbeats == 2000000
+    wide = _plan(_branchy_transition(16), "fun s => ((s 0 0) ≥ 0)")
+    assert wide.features.n_trans_branch == 16
+    assert wide.max_heartbeats == 8000000
