@@ -8,8 +8,9 @@ solver decides what stays:
 * **the invariant** is Houdini's.  Candidate facts are the bound a component
   stays within, stated with a constant the program mentions; a congruence
   the runs keep; a relation between two components; the bounds a component
-  keeps on each side of a Bool flag; and under ``--safety`` the property's
-  own conjuncts.  Each is put to the solver (it holds at entry; a round
+  keeps on each side of a Bool flag; the bounds each mode of the Bool
+  columns keeps, computed rather than read (:mod:`.modes`); and under
+  ``--safety`` the property's own conjuncts.  Each is put to the solver (it holds at entry; a round
   preserves it given the others) and dropped when not proved, until a pass
   drops nothing.
 * **the ranking function** (``--buchi``) is one of a fixed list of shapes --
@@ -113,7 +114,7 @@ from __future__ import annotations
 import math
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from itertools import product
 
@@ -130,6 +131,7 @@ from ..houdini_solver import (
     smt_real,
 )
 from . import TA2Magic
+from .modes import mode_bounds
 from ..smt_synth import (
     SynthContext,
     affine_smt,
@@ -172,6 +174,14 @@ _MAX_RANKS = 48
 _MAX_OUTSIDE = 1000
 _MAX_SPLITS = 24
 _MAX_BRANCH_FORMS = 6
+# Times the shapes are fitted again to the wide rounds every one of them
+# failed on, before the search gives up on them.
+_REFITS = 3
+# Ranking functions a refit reads the solver's counter-models of.
+_WITNESSED = 4
+# How long a rung's fits may run, refits included: a refit that would end
+# past it is skipped. The first fit always runs.
+_REFIT_SECONDS = 20.0
 # Up to this many columns, every {-1, 0, 1} combination is a form; past it,
 # one or two columns at a time. There is no third rung, and a cap on the
 # pairs was measured and dropped: they are quadratic in the columns, but on
@@ -394,8 +404,13 @@ class Obligations:
             self._clamp(self._at(rank.term, self.sp)),
             self._clamp(self._at(rank.term, self.s)),
         )
-        return self._query(named, goal,
-                           defines=self._defines(self.sp, self.next))
+        q = self._query(named, goal, defines=self._defines(self.sp, self.next))
+        # A refutation is a round the rank does not drop on, and the round
+        # is what the fit learns from -- read back only for a state of
+        # scalars, which is the shape a simulated round has.
+        if all(h.getKind() != Kind.APPLY_CONSTRUCTOR for h in self.s):
+            q = replace(q, witness=tuple(self.s) + tuple(self.sp))
+        return q
 
     # --- plumbing ---------------------------------------------------------
 
@@ -1245,11 +1260,14 @@ class Ranks:
                 self._truth[key] = term is None
         return self._truth[key]
 
-    def fit(self, rounds: list) -> list[str]:
-        """Every shape that drops on all of `rounds`, smallest first."""
+    def fit(self, rounds: list, keep=()) -> list[str]:
+        """Every shape that drops on all of `rounds` and `keep`, smallest
+        first. `rounds` may be thinned to :data:`_MAX_OUTSIDE`; `keep` --
+        the rounds a shape was already seen to fail on -- never is."""
         outside = [(s, sp) for s, sp in rounds if not self.holds(s)]
         if len(outside) > _MAX_OUTSIDE:
             outside = random.Random(0).sample(outside, _MAX_OUTSIDE)
+        outside += [(s, sp) for s, sp in keep if not self.holds(s)]
         if not outside:
             # Nothing to rank on. A constant is then the first thing worth
             # asking: it proves the property holds wherever the invariant does.
@@ -1437,8 +1455,11 @@ class TA2MagicHoudini(TA2Magic):
 
         self.pins = pinned_values(ctx, runs)
         conjuncts = self._conjuncts(ctx, cd) if cd.is_safety else []
+        # The computed bounds go last: the minimiser drops from the end, so
+        # a certificate the read ones carry keeps the program's constants.
         facts = self._parse(invariant_candidates(ctx, runs, constants,
-                                                 conjuncts, rationals))
+                                                 conjuncts, rationals)
+                            + mode_bounds(ctx, ob, log=self.log))
         self.log(f"[houdini] {len(facts)} candidate facts hold on the runs")
         ranks = None if cd.is_safety else Ranks(ctx, ev, cd.prp,
                                                 split_conditions(ctx, ob),
@@ -1446,6 +1467,9 @@ class TA2MagicHoudini(TA2Magic):
 
         prover = self.spec.build(ctx.tm, seconds=self.timeout, log=self.log)
         found, reached, tried = None, 0.0, 0
+        # Rounds a refutation taught the fit. Kept across rungs: a round
+        # cvc5 refuted a shape with is a counterexample at every limit.
+        learnt: list = []
         for limit in prover.ladder(self.timeout):
             if prover.left() < 0.5:
                 break
@@ -1462,11 +1486,26 @@ class TA2MagicHoudini(TA2Magic):
                     found = (self._minimise(prover, inv, conjuncts, None), None)
                     break
                 continue
-            candidates = self._ranks(ranks, inv)
-            tried = max(tried, len(candidates))
-            if not candidates:
-                continue
-            at = prover.first([ob.drops(inv, r) for r in candidates], limit)
+            at, candidates = None, []
+            fit_until = time.monotonic() + _REFIT_SECONDS
+            for _ in range(_REFITS + 1):
+                started = time.monotonic()
+                candidates = self._ranks(ranks, inv, learnt, fit_until)
+                tried = max(tried, len(candidates))
+                if not candidates:
+                    break
+                at = prover.first([ob.drops(inv, r) for r in candidates], limit)
+                if at is not None or not prover.refutes:
+                    break
+                if time.monotonic() + (time.monotonic() - started) > fit_until:
+                    break
+                fresh = [r for r in self._refuting(prover, inv, candidates, limit)
+                         if r not in learnt]
+                if not fresh:
+                    break
+                self.log(f"[houdini] refitting to {len(fresh)} round(s) "
+                         f"{prover.name} refuted the ranking functions with")
+                learnt += fresh
             if at is not None:
                 rank = candidates[at]
                 self.log(f"[houdini] ranking function proved: {rank.src}")
@@ -1588,38 +1627,77 @@ class TA2MagicHoudini(TA2Magic):
             kept = [f for i, f in enumerate(kept) if i not in broken]
         return kept
 
-    def _ranks(self, ranks: Ranks, inv: list[Candidate]) -> list[Candidate]:
+    def _ranks(self, ranks: Ranks, inv: list[Candidate],
+               seen=(), fit_until: float = math.inf) -> list[Candidate]:
         """Shapes fitted to the rounds `inv` admits, smallest first.
 
         Fitted to the reached rounds and to sampled ones from states `inv`
         admits where the property fails -- `hrank` quantifies over all of
         those, so a shape that does not drop on a sampled round is one the
-        solver would only be asked about to be told no.
+        solver would only be asked about to be told no -- and to `seen`,
+        rounds the solver refuted earlier shapes with, as far as `inv` still
+        admits them. A refit is skipped when another fit would run past
+        `fit_until`: on a wide module one fit is tens of seconds of Python.
         """
         sampled = sample_rounds(
             self.ctx, self.ob, self.ev, self.draws, self.runs.states,
             lambda s: not ranks.holds(s) and all(self._holds(f, s) for f in inv))
-        fitted = self._parse(ranks.fit(list(self.runs.rounds) + sampled))
         wide = sample_rounds(
             self.ctx, self.ob, self.ev, self.wide, self.runs.states,
             lambda s: not ranks.holds(s) and all(self._holds(f, s) for f in inv))
-        kept = [r for r in fitted if self._drops_on(r, wide)]
+        # A wide round no fitted shape drops on is fitted to in turn: the
+        # shift of a shape is read off the rounds it was fitted to, and the
+        # round that decides it -- one crossing between two modes from
+        # exactly a bound -- is one a draw finds by luck.
+        learnt: list = [r for r in seen
+                        if all(self._holds(f, r[0]) for f in inv)]
+        for _ in range(_REFITS + 1):
+            started = time.monotonic()
+            fitted = self._parse(ranks.fit(list(self.runs.rounds) + sampled,
+                                           keep=learnt))
+            broken = [self._broken_on(r, wide) for r in fitted]
+            kept = [r for r, b in zip(fitted, broken) if b is None]
+            fresh = [b for b in dict.fromkeys(b for b in broken if b is not None)
+                     if b not in learnt]
+            if kept or not fresh:
+                break
+            if time.monotonic() + (time.monotonic() - started) > fit_until:
+                break
+            learnt += fresh
         self.log(f"[houdini] {len(fitted)} ranking functions drop on "
-                 f"{len(self.runs.rounds)} reached and {len(sampled)} sampled "
-                 f"rounds; {len(kept)} also on {len(wide)} rounds from a wider "
-                 f"range")
+                 f"{len(self.runs.rounds)} reached and "
+                 f"{len(sampled) + len(learnt)} sampled rounds; {len(kept)} "
+                 f"also on {len(wide)} rounds from a wider range")
         return kept[:_MAX_RANKS]
 
-    def _drops_on(self, rank: Candidate, rounds: list) -> bool:
+    def _refuting(self, prover: Solver, inv: list[Candidate],
+                  ranks: list[Candidate], limit: float) -> list:
+        """The rounds the solver refutes the first few of `ranks` with.
+
+        `hrank` quantifies over real states the lattice the draws live on
+        never reaches -- a tank at 11.9, just short of full, where a rank
+        floored after scaling is already 0 -- and a counter-model is exactly
+        such a state, with its successor.
+        """
+        n = len(self.ctx.state)
+        out = []
+        for r in ranks[:_WITNESSED]:
+            a = prover.prove(self.ob.drops(inv, r), limit, model=True)
+            if a.refuted and a.values is not None:
+                out.append((a.values[:n], a.values[n:]))
+        return list(dict.fromkeys(out))
+
+    def _broken_on(self, rank: Candidate, rounds: list):
+        """The first of `rounds` `rank` does not drop on, or None."""
         names = self.ctx.names
         for s, sp in rounds:
             try:
                 if not _drops(self.ev(rank.term, dict(zip(names, s))),
                               self.ev(rank.term, dict(zip(names, sp)))):
-                    return False
+                    return (s, sp)
             except _Unevaluable:
                 continue
-        return True
+        return None
 
     def _pins(self, inv: list[Candidate], rank: Candidate) -> list[Candidate]:
         """The value-set facts about the components a floored rank reads.
@@ -1887,10 +1965,16 @@ class TA2MagicHoudini(TA2Magic):
                        f"dropped on every reached and sampled round")
         refuted = (f", {prover.refuted} of them refuted"
                    if prover.refutes else "")
+        if not cd.is_safety and not n_ranks:
+            started += f", so no ranking function was put to {prover.name}"
+        # What was spent, and the per-call limit the last call ran under --
+        # which used to be printed as "the time limit reached 120 s" on runs
+        # that took under a second, because with no candidate to ask about
+        # every rung of the ladder is passed at once.
         detail = (
-            f"{started}; the time limit reached {reached:g} s over "
-            f"{prover.calls} {prover.name} calls{refuted}. "
-            f"{prover.inconclusive}"
+            f"{started}; {prover.calls} {prover.name} calls took "
+            f"{prover.spent:.1f} s, the last under a {reached:g} s limit"
+            f"{refuted}. {prover.inconclusive}"
         )
         if self.artifacts is not None:
             self.artifacts.note(
