@@ -217,7 +217,39 @@ RUNS = [
     ("ai", COUNTER, [
         "--buchi", "(= s0 0)", "--infer", "ai",
         ]),
+    ("sygus", COUNTDOWN, [
+        "--safety", "(<= s0 100)", "--infer", "sygus",
+        ]),
+    # A short declared limit: Vampire answers this one in about a second
+    # under 10 and in about six under the default 120.
+    ("vampire", COUNTDOWN, [
+        "--safety", "(<= s0 100)", "--infer", "vampire",
+        "--vampire-timeout", "10",
+        ]),
 ]
+
+
+def _has_vampire() -> bool:
+    from zrth.lean.common import Refused
+    from zrth.lean.houdini_solver import resolve_vampire
+
+    try:
+        resolve_vampire(None)
+    except Refused:
+        return False
+    return True
+
+
+def _runs() -> list:
+    out = []
+    for name, fixture, args in RUNS:
+        marks = ()
+        if "vampire" in args:
+            marks = pytest.mark.skipif(
+                not _has_vampire(),
+                reason="no Vampire binary: set $VAMPIRE or put `vampire` on PATH")
+        out.append(pytest.param(name, fixture, args, id=name, marks=marks))
+    return out
 
 
 def _offline(monkeypatch) -> None:
@@ -285,7 +317,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
     return _normalise("\n".join(parts), out)
 
 
-@pytest.mark.parametrize("name,fixture,args", RUNS, ids=[r[0] for r in RUNS])
+@pytest.mark.parametrize("name,fixture,args", _runs())
 def test_verith_run_is_unchanged(name, fixture, args, monkeypatch, capsys,
                                  tmp_path):
     _check(f"verith-{name}.golden",
