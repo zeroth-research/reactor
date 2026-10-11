@@ -15,8 +15,9 @@ from pathlib import Path
 
 from zrth import Module, Int, LIA, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.project import create_project
-from zrth.lean.cert import CertificateData
+from zrth.lean.project import create_project, write_data_lean
+from zrth.lean.cert import lean_certificate
+from zrth.lean.certificate import Certificate, Claim
 
 OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
 
@@ -28,15 +29,17 @@ OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
 
 def _gen(name, module, prp, inv, ranking, pre=None):
     """Generate a Lean project with certificate and return the project dir."""
-    cert = CertificateData(prp=prp, inv=inv, ranking=ranking)
-    if pre is not None:
-        cert.init_pre = pre
-        cert.update_pre = pre
+    lean_cert = lean_certificate(
+        module,
+        Claim(prp=prp, init_pre=pre, update_pre=pre),
+        Certificate(inv=inv, ranking=ranking),
+    )
     project_dir = create_project(
         output_dir=OUTPUT_DIR,
         module=module,
         project_name=name,
     )
+    write_data_lean(project_dir, name, module, lean_cert)
     return project_dir
 
 

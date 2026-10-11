@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from zrth.lean.native import _product_type, _translate_terms
-from zrth.lean.common import LeanContext, _bind_wires
+from zrth.lean.native import _product_type
+from zrth.lean.certificate import Certificate, LeanAnswer
+from zrth.lean.common import LeanContext, Refused
 from zrth.lean.tactics import plan_for
 from zrth.lean.template_env import render
-from ..expr import Expr
 
 if TYPE_CHECKING:
     from zrth import Module
@@ -17,71 +17,101 @@ def generate_zeroth_hammer_lean() -> str:
     return render("project/ZerothHammer.lean.j2")
 
 
-@dataclass
-class CertificateData:
-    """Data needed to generate a Lean certificate."""
+# ══════════════════════════════════════════════════════════════════════════
+# The certificate as Lean
+# ══════════════════════════════════════════════════════════════════════════
 
-    prp: str | Expr | None = None
-    inv: Expr | str | None = None
 
-    # Which proof rule the certificate is built on, and so what `prp` means:
-    #
-    #   "buchi"  -- `G (F P)`, `rule_buchi`: an invariant *and* a ranking
-    #              function that decreases off `P`. `--buchi`.
-    #   "safety" -- `G P`, `rule_globally`: an invariant that implies `P`,
-    #              and no ranking at all -- there is nothing to rank when
-    #              the property never has to be re-reached. `--safety`.
+@dataclass(frozen=True)
+class LeanPredicates:
+    """The certificate's definitions as Lean text, `fun s => ...` over the
+    state and `fun e => ...` over the inputs; `None` where the template's
+    placeholder stands. Built by `render_certificate` alone."""
+
     kind: str = "buchi"
-
-    init_pre: Expr | str | None = None
-    update_pre: Expr | str | None = None
-    ranking: Expr | str | None = None
-
-    inv_smt: str | None = None
-    ranking_smt: str | None = None
-
-    facts: "object | None" = None
-
-    hints: "object | None" = None
+    prp: str | None = None
+    inv: str | None = None
+    ranking: str | None = None
+    init_pre: str | None = None
+    update_pre: str | None = None
 
     @property
     def is_safety(self) -> bool:
         return self.kind == "safety"
 
 
-def _cert_def_lines(
-    ctx: LeanContext,
-    cert_data: CertificateData,
-) -> list[str]:
+@dataclass(frozen=True)
+class LeanCertificate:
+    """Everything codegen needs of a certificate."""
+
+    defs: LeanPredicates = field(default_factory=LeanPredicates)
+
+
+def render_certificate(
+    q, *, share: bool = True,
+    verbatim: LeanAnswer | None = None,
+) -> LeanPredicates:
+    """The one place certificate predicates are printed as Lean.
+
+    """
+
+    msmt = q.msmt
+
+    def translate(term, mode: str) -> str | None:
+        if term is None:
+            return None
+
+    def named(flag: str, term, mode: str) -> str | None:
+        """`translate`, with the flag the source came from on any refusal.
+
+        """
+        try:
+            return translate(term, mode)
+        except Refused as e:
+            raise Refused(f"{flag}: {e}") from e
+
+    prp_flag = "--safety" if q.kind == "safety" else "--buchi"
+    prp = named(prp_flag, q.prp, "property")
+    init_pre = named("--pre", q.init_pre, "pre")
+    update_pre = named("--pre", q.update_pre, "pre")
+    if verbatim is not None:
+        inv, ranking = verbatim.inv, verbatim.ranking
+    else:
+        inv = named("--invariant", q.inv, "invariant")
+        ranking = named("--ranking", q.ranking, "ranking")
+    return LeanPredicates(
+        kind=q.kind, prp=prp, inv=inv, ranking=ranking,
+        init_pre=init_pre, update_pre=update_pre,
+    )
+
+
+def _cert_def_lines(ctx: LeanContext, lean_cert: LeanCertificate) -> list[str]:
     """Emit the five certificate definition lines as Lean source strings.
 
     Used by the inline path of ``generate_certificate_lean`` (standalone certs).
     Delegates field parsing to ``_cert_def_context`` to avoid duplicating logic.
     """
-    c = _cert_def_context(ctx, cert_data)
+    c = _cert_def_context(ctx, lean_cert)
     extl_native = c["extl_type"]
     ctrl_native = c["ctrl_type"]
     lines: list[str] = []
 
-    def _prop_def(name: str, ty: str, param: str, body: "str | None", expr: "str | None", default: str) -> None:
-        if body is not None:
-            lines.append(f"def {name} ({param} : {ty}) : Prop :=")
-            lines.append(body)
-        elif expr is not None:
+    def _prop_def(name: str, ty: str, param: str, expr: "str | None", default: str) -> None:
+        if expr is not None:
             lines.append(f"def {name} : {ty} → Prop := {expr}")
         else:
             lines.append(f"def {name} ({param} : {ty}) : Prop := {default}")
         lines.append("")
 
-    _prop_def("init_pre",   extl_native, "e", c["init_pre_body"],  c["init_pre_expr"],  "True")
-    _prop_def("update_pre", extl_native, "e", c["update_pre_body"], c["update_pre_expr"], "True")
-    _prop_def("inv",        ctrl_native, "s", c["inv_body"],        c["inv_expr"],        "True")
-    _prop_def("P",          ctrl_native, "s", c["p_body"],          c["p_expr"],          "sorry")
+    _prop_def("init_pre",   extl_native, "e", c["init_pre_expr"],   "True")
+    _prop_def("update_pre", extl_native, "e", c["update_pre_expr"], "True")
+    _prop_def("inv",        ctrl_native, "s", c["inv_expr"],        "True")
+    _prop_def("P",          ctrl_native, "s", c["p_expr"],          "sorry")
 
     # DecidablePred P (noncomputable for Real-typed state: Real.decidableLE
     # and friends are classical, so the instance cannot be compiled)
     noncomp = c["noncomp"]
-    if c["p_body"] is not None or c["p_expr"] is not None:
+    if c["p_expr"] is not None:
         lines.append(
             f"{noncomp}instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance"
         )
@@ -96,10 +126,7 @@ def _cert_def_lines(
     # whose whole point is that it has none.
     if c["is_safety"]:
         return lines
-    if c["ranking_body"] is not None:
-        lines.append(f"{noncomp}def ranking (s : {ctrl_native}) : Nat :=")
-        lines.append(c["ranking_body"])
-    elif c["ranking_expr"] is not None:
+    if c["ranking_expr"] is not None:
         lines.append(f"{noncomp}def ranking : {ctrl_native} → Nat := {c['ranking_expr']}")
     else:
         lines.append(f"{noncomp}def ranking (s : {ctrl_native}) : Nat := sorry")
@@ -108,86 +135,37 @@ def _cert_def_lines(
     return lines
 
 
-def _cert_def_context(ctx: LeanContext, cert_data: CertificateData) -> dict:
+def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
     """Build a Jinja2 context dict for the Data.lean.j2 template.
 
-    Each field yields either a ``_body`` (multi-line Lean from compiled terms),
-    an ``_expr`` (raw Lean expression string from SMT translation), or neither
-    (in which case the template uses the placeholder value).
+    Each predicate is an ``_expr`` (a Lean `fun` from `render_certificate`)
+    or `None`, in which case the template uses the placeholder value.
     """
-    def _as_terms(v):
-        return v if isinstance(v, list) else None
-
-    extl_latched = ctx.extl_latched
-    extl_next = ctx.extl_next
-    ctrl_next = ctx.ctrl_next
-
-    extl_native = f"({_product_type(extl_latched)}) × ({_product_type(extl_next)})"
-    ctrl_native = _product_type(ctrl_next)
-
-    e_bindings = {
-        **_bind_wires([("e.1", extl_latched)]),
-        **_bind_wires([("e.2", extl_next)]),
-    }
-    s_bindings = _bind_wires([("s", ctrl_next)])
-
-    def _body(terms, bindings):
-        output = [terms[-1].write[0]]
-        return _translate_terms(terms, bindings, output, ctx.constants)
-
-    def _field(value, bindings):
-        """Return (body, expr) where at most one is set."""
-        terms = _as_terms(value)
-        if terms is not None:
-            return _body(terms, bindings), None
-        if isinstance(value, str):
-            return None, value
-        return None, None
-
-    ip_body, ip_expr = _field(cert_data.init_pre, e_bindings)
-    up_body, up_expr = _field(cert_data.update_pre, e_bindings)
-    inv_body, inv_expr = _field(cert_data.inv, s_bindings)
-    p_body, p_expr = _field(cert_data.prp, s_bindings)
-    rank_body, rank_expr = _field(cert_data.ranking, s_bindings)
-    if cert_data.is_safety:
-        rank_body = rank_expr = None
-
+    d = lean_cert.defs
+    extl_native = (f"({_product_type(ctx.extl_latched)}) × "
+                   f"({_product_type(ctx.extl_next)})")
     return dict(
         extl_type=extl_native,
-        ctrl_type=ctrl_native,
+        ctrl_type=_product_type(ctx.ctrl_next),
         noncomp="noncomputable " if ctx.uses_real else "",
-        is_safety=cert_data.is_safety,
-        init_pre_body=ip_body,
-        init_pre_expr=ip_expr,
-        update_pre_body=up_body,
-        update_pre_expr=up_expr,
-        inv_body=inv_body,
-        inv_expr=inv_expr,
-        p_body=p_body,
-        p_expr=p_expr,
-        ranking_body=rank_body,
-        ranking_expr=rank_expr,
+        is_safety=d.is_safety,
+        init_pre_expr=d.init_pre,
+        update_pre_expr=d.update_pre,
+        inv_expr=d.inv,
+        p_expr=d.prp,
+        ranking_expr=None if d.is_safety else d.ranking,
     )
 
 
-def _predicate_text(ctx: LeanContext, cert_data: CertificateData) -> str:
-    """The Lean text of every certificate predicate, for shape detection.
-
-    Fields reach us as compiled term lists, as already-translated Lean
-    expression strings, or not at all; `_cert_def_context` has normalised all
-    three into `_body` / `_expr` entries by the time we look.
-    """
-    c = _cert_def_context(ctx, cert_data)
-    return "\n".join(
-        str(v)
-        for k, v in c.items()
-        if v and (k.endswith("_body") or k.endswith("_expr"))
-    )
+def _predicate_text(ctx: LeanContext, lean_cert: LeanCertificate) -> str:
+    """The Lean text of every certificate predicate, for shape detection."""
+    c = _cert_def_context(ctx, lean_cert)
+    return "\n".join(str(v) for k, v in c.items() if v and k.endswith("_expr"))
 
 
 def generate_data_lean(
     ctx: LeanContext,
-    cert_data: CertificateData | None = None,
+    lean_cert: LeanCertificate | None = None,
 ) -> str:
     """Generate Certificate/Data.lean: init_pre, update_pre, inv, P, ranking.
 
@@ -201,16 +179,15 @@ def generate_data_lean(
     change with every ``--infer``.  The two files a route rewrites are then the
     two files in one directory.
     """
-    if cert_data is None:
-        cert_data = CertificateData()
     return render(
-        "project/Certificate/Data.lean.j2", **_cert_def_context(ctx, cert_data)
+        "project/Certificate/Data.lean.j2",
+        **_cert_def_context(ctx, lean_cert or LeanCertificate()),
     )
 
 
 def generate_certificate_lean(
     ctx: LeanContext,
-    cert_data: CertificateData | None = None,
+    lean_cert: LeanCertificate | None = None,
     *,
     module_inline: str | None = None,
 ) -> str:
@@ -222,8 +199,8 @@ def generate_certificate_lean(
             ``System.System``.  Should be the output of
             ``ModuleToLean4.to_lean_functional()``.
     """
-    if cert_data is None:
-        cert_data = CertificateData()
+    lean_cert = lean_cert or LeanCertificate()
+    defs = lean_cert.defs
 
     extl_latched = ctx.extl_latched
     extl_next = ctx.extl_next
@@ -239,14 +216,14 @@ def generate_certificate_lean(
 
     # Inline definitions when used standalone (no separate Certificate/Data.lean).
     if module_inline is not None:
-        inline_defs = "\n".join(_cert_def_lines(ctx, cert_data))
-        has_ranking = cert_data.ranking is not None
+        inline_defs = "\n".join(_cert_def_lines(ctx, lean_cert))
+        has_ranking = defs.ranking is not None
     else:
         inline_defs = None
         has_ranking = True
     # A safety certificate defines no ranking at all, so naming it in a simp
     # set would be an unknown identifier rather than an unused one.
-    has_ranking = has_ranking and not cert_data.is_safety
+    has_ranking = has_ranking and not defs.is_safety
 
     all_defs = "RM, init, update, inv, init_pre, update_pre, P"
     if has_ranking:
@@ -256,9 +233,9 @@ def generate_certificate_lean(
 
     plan = plan_for(
         ctx,
-        _predicate_text(ctx, cert_data),
-        facts=cert_data.facts,
-        hints=cert_data.hints,
+        _predicate_text(ctx, lean_cert),
+        facts=lean_cert.plan.facts,
+        hints=lean_cert.plan.hints,
     )
 
     return render(
@@ -269,8 +246,6 @@ def generate_certificate_lean(
         extl_type=extl_native,
         ctrl_type=ctrl_native,
         all_defs=all_defs,
-        is_safety=cert_data.is_safety,
+        is_safety=defs.is_safety,
         plan=plan,
     )
-
-

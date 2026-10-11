@@ -21,12 +21,11 @@ import pytest
 import torch
 
 from zrth import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from zrth.analyzer import convert_method
 from zrth.lean.cert import (
-    CertificateData,
     generate_certificate_lean,
     generate_data_lean,
 )
+from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.common import LeanContext
 from zrth.lean.project import generate_standalone_cert_lean, load_module_from_file
 
@@ -107,46 +106,47 @@ def _dense(layers: int) -> str:
     return f"(+ {a} {b})"
 
 
+COUNTDOWN_INV = "(and (>= s0 0) (<= s0 100))"
+
 CODEGEN = [
-    ("bare", lambda: _fixture("counter"), None, False),
-    ("countdown", lambda: _fixture("svcomp_countdown"), CertificateData(
-        prp="(= s0 0)", inv="(and (>= s0 0) (<= s0 100))",
-        ranking="(ite (= s0 0) 0 s0)"), False),
-    ("countdown_safe", lambda: _fixture("svcomp_countdown"), CertificateData(
-        kind="safety", prp="(<= s0 100)", inv="(and (>= s0 0) (<= s0 100))"),
+    ("bare", lambda: _fixture("counter"), None, None, False),
+    ("countdown", lambda: _fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
+     Certificate(COUNTDOWN_INV, "(ite (= s0 0) 0 s0)"), False),
+    ("countdown_safe", lambda: _fixture("svcomp_countdown"),
+     Claim(prp="(<= s0 100)", kind="safety"), Certificate(COUNTDOWN_INV),
      False),
     ("property_only", lambda: _fixture("svcomp_countdown"),
-     CertificateData(prp="(= s0 0)"), False),
-    ("twovars", lambda: _fixture("svcomp_twovars"), CertificateData(
-        prp="(= s0 s1)", inv="(and (>= s0 0) (<= s0 s1) (= s1 10))",
-        ranking="(ite (= s0 s1) 0 (- s1 s0))"), False),
-    ("vector_counter_pre", _vector_counter, CertificateData(
-        prp="s[0][0] == 0",
-        inv="And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
-        init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
-        update_pre="e[0][0] >= 0",
-        ranking="Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], "
-                "s[2][0]) - s[0][0]) + 1)"), False),
-    ("shared_let", lambda: _fixture("svcomp_countdown"), CertificateData(
-        prp="(= s0 0)", inv="(and (>= s0 0) (<= s0 100))",
-        ranking=_dense(3)), False),
+     Claim(prp="(= s0 0)"), Certificate(), False),
+    ("twovars", lambda: _fixture("svcomp_twovars"), Claim(prp="(= s0 s1)"),
+     Certificate("(and (>= s0 0) (<= s0 s1) (= s1 10))",
+                 "(ite (= s0 s1) 0 (- s1 s0))"), False),
+    ("vector_counter_pre", _vector_counter,
+     Claim(prp="s[0][0] == 0",
+           init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
+           update_pre="e[0][0] >= 0"),
+     Certificate(
+         "And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
+         "Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], "
+         "s[2][0]) - s[0][0]) + 1)"), False),
+    ("shared_let", lambda: _fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
+     Certificate(COUNTDOWN_INV, _dense(3)), False),
     ("hints_settle_a_branch", lambda: _fixture("svcomp_countdown"),
-     CertificateData(prp="(= s0 0)", inv="(and (>= s0 0) (<= s0 100))",
-                     ranking="(ite (<= s0 200) s0 999)"), True),
+     Claim(prp="(= s0 0)"),
+     Certificate(COUNTDOWN_INV, "(ite (<= s0 200) s0 999)"), True),
     ("nonlinear_hints", lambda: _fixture("svcomp_countdown"),
-     CertificateData(prp="(= s0 0)", inv="(and (>= s0 0) (<= s0 100))",
-                     ranking="(* s0 s0)"), True),
-    ("real", _real_countdown, CertificateData(
-        prp="(<= s0 0.0)", inv="(<= s0 5.0)", ranking="(to_int s0)"), False),
-    ("real_safety", _real_countdown, CertificateData(
-        kind="safety", prp="(<= s0 5.0)", inv="(<= s0 5.0)"), False),
+     Claim(prp="(= s0 0)"), Certificate(COUNTDOWN_INV, "(* s0 s0)"), True),
+    ("real", _real_countdown, Claim(prp="(<= s0 0.0)"),
+     Certificate("(<= s0 5.0)", "(to_int s0)"), False),
+    ("real_safety", _real_countdown, Claim(prp="(<= s0 5.0)", kind="safety"),
+     Certificate("(<= s0 5.0)"), False),
 ]
 
 
-def _codegen(module: Module, cd: "CertificateData | None", hints: bool) -> str:
+def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
+             hints: bool) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
 
-    lean = cd
+    lean = None
     ctx = LeanContext(module)
     return "\n".join([
         "=== Certificate/Data.lean",
@@ -158,10 +158,10 @@ def _codegen(module: Module, cd: "CertificateData | None", hints: bool) -> str:
     ])
 
 
-@pytest.mark.parametrize("name,make,cd,hints", CODEGEN,
+@pytest.mark.parametrize("name,make,claim,cert,hints", CODEGEN,
                          ids=[c[0] for c in CODEGEN])
-def test_codegen_is_unchanged(name, make, cd, hints):
-    _check(f"codegen-{name}.golden", _codegen(make(), cd, hints))
+def test_codegen_is_unchanged(name, make, claim, cert, hints):
+    _check(f"codegen-{name}.golden", _codegen(make(), claim, cert, hints))
 
 
 # ══════════════════════════════════════════════════════════════════════════
