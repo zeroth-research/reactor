@@ -46,7 +46,8 @@ topologically-sorted dataflow graph.
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
 | `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` |
-| `cert.py` | Certificate generation: `CertificateData`, `generate_certificate_lean`, ZerothHammer |
+| `certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
+| `cert.py` | Certificate generation: `predicate_terms`, `render_certificate`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
 
 ---
 
@@ -223,14 +224,15 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 ## Certificate Generation (`cert.py`)
 
 A **certificate** adds five predicates and a proof skeleton on top of the
-module encoding.  `CertificateData` holds them as either:
+module encoding.  The predicates are SMT-LIB over `s0..`, `e0..`, `el0..`
+(`certificate.Claim` and `certificate.Certificate`). `predicate_terms`
+parses them against the module, and `render_certificate` prints them as
+Lean `fun` expressions into a `LeanPredicates`; it is the only place they
+are printed. Codegen takes a `LeanCertificate`: those definitions and
+`PlanInputs`, the facts and solver hints the tactic plan reads. A predicate
+that is `None` becomes a `True` / `sorry` placeholder.
 
-- `None` → a `True` / `sorry` placeholder is emitted.
-- `str` → a raw Lean expression string is emitted verbatim.
-- `list[Term]` → compiled from the Python term IR into a Lean body (via
-  `_translate_terms` with `e`/`s` as the param names).
-
-`generate_certificate_lean(project_name, module_name, ctx, cert_data, ...)`:
+`generate_certificate_lean(ctx, lean_cert, *, module_inline=None)`:
 
 1. Emits imports (`Mathlib`, `Core.Basic`, module import or inline, hammer).
 2. Emits `init_pre`, `update_pre`, `inv`, `P`, `DecidablePred P`, `ranking`.
@@ -243,10 +245,14 @@ module encoding.  `CertificateData` holds them as either:
 **Wire bindings in certificates:**  State is accessed as `s`, externals as
 `e.1` (latched) and `e.2` (next).
 
-### `smt_predicates_to_lean`
+### `predicate_terms` / `render_certificate`
 
-Converts SMT-LIB string predicates (from a CEGIS loop) into Lean expression
-strings by parsing them with cvc5 and translating the AST.
+`predicate_terms` parses with cvc5 and refuses a predicate by the flag it
+came from; `render_certificate(q, share=..., verbatim=...)` translates the
+terms. `share=False` prints repeated subterms in full, which a condition
+`--smt-tactics` settled needs; `verbatim` takes the invariant and ranking of
+a `LeanAnswer` as they are. `lean_certificate(module, claim, cert)` does both
+for a caller that wants no solver hints.
 
 ---
 
@@ -886,8 +892,8 @@ inference returns and lake cannot be trusted to fail loudly:
 * **After the route, before the build.** `--infer` can come back without an
   invariant or a ranking — an LLM that answers nothing usable — and the
   error names which one is missing instead of building a proof of `sorry`.
-  (`--fbk-proveit` is exempt: its certificate is ic3ia's, and no
-  `CertificateData` describes it.)
+  (`--fbk-proveit` is exempt: its certificate is ic3ia's, installed by the
+  route itself, and no `Certificate` describes it.)
 * **After the build.** `zeroth_hammer` leaves a `sorry` where it cannot
   close an obligation, and lake reports that as a *warning* and exits 0. So
   `build_certificate` also scans the log for `sorry` under `Certificate/` —
@@ -1093,8 +1099,8 @@ A row says:
   The check is generic and the reason is not: why the `ai` route cannot
   certify `G P` is prose about `rule_globally`, and why `nuterm` discards a
   precondition is prose about Houdini.
-* **what it seeds from** — `seeds`, the `CertificateData` fields it will
-  *use* rather than discard, and `seeds_refusal`.  A predicate outside the
+* **what it seeds from** — `seeds`, the given predicates it will *use*
+  rather than discard, and `seeds_refusal`.  A predicate outside the
   set is refused where it is passed, not dropped four steps later.
 * **the project** — `reads` (encoding suffixes; `""` is the functional one)
   and `owns` (project-relative paths it may write).  The route is handed a
@@ -1122,10 +1128,11 @@ A row says:
   older spelling that selects the route and fills one of those options
   (`--fbk-proveit DIR`), so a deprecated flag goes away with its row.
 
-A route that renders its own Lean hands **both** spellings back in its
-`InferResult`.  Rendering means encoding the module into cvc5 again, and
-`magic.cegar` and `magic.learn` both already have the Lean — so the pipeline
-renders only for a route that returns SMT alone.
+A route is handed a frozen `InferInput` — the `Claim`, and the `given`
+predicates it starts from — and answers with a new `InferResult`: SMT-LIB
+in `cert`, which the pipeline prints as Lean in one place
+(`cert.render_certificate`), or, for the one `returns="lean"` row (`ai`),
+Lean in `lean`.
 
 `tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
 checks the op matrix: a row declaring an encoding no row emits, an artifact

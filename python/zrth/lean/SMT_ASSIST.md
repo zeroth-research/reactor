@@ -27,25 +27,24 @@ behaviour `verith` had before. Nothing here may take information away.
 The two always-on items do no solving at all -- they read the parsed terms --
 so they need no budget and cannot hang.
 
-`--smt-tactics` acts on the predicates *as supplied*, and then again on the
-inferred ones. Running only the first way was the same mistake `--pre-check`
-used to make: every question `solver_hints` asks is asked *under* the
-invariant, so with `--infer` there was no invariant to ask under and the run
-printed "nothing cvc5 can add to the plan" before the route that would give
-it something to add had run. `cert_facts` and `cert_thin` were therefore
-`skip` on every inferred certificate. `main._replan` restates both the hints
-and `predicate_facts` once the route has answered, from the `inv_smt` /
-`ranking_smt` it kept -- which matters twice over, because `features_for`
-takes `nonlinear` from the facts *over* the text scan rather than merging
-them, so stale facts did not merely omit `nlinarith` but removed one the
-printed Lean had already justified.
+`--smt-tactics` acts on the predicates the certificate ends up with: as
+supplied, or with `--infer` the inferred ones. Running only on the supplied
+ones was the same mistake `--pre-check` used to make: every question
+`solver_hints` asks is asked *under* the invariant, so with `--infer` there
+was no invariant to ask under and the run printed "nothing cvc5 can add to
+the plan" before the route that would give it something to add had run.
+`cert_facts` and `cert_thin` were therefore `skip` on every inferred
+certificate. `main._render` computes both the hints and `predicate_facts`
+once the route has answered, from the SMT-LIB it answered with -- which
+matters twice over, because `features_for` takes `nonlinear` from the facts
+*over* the text scan rather than merging them, so stale facts did not
+merely omit `nlinarith` but removed one the printed Lean had already
+justified.
 
 `--pre-check` no longer does either: run there, the invariant it would check does
 not exist yet, so it reported "nothing to check" and the certificate that
 reached Lean went unchecked. With `--infer` it runs **after** inference, on
-what `magic` returned. `magic` hands back Lean text, which nothing parses
-back, so `ai-cegis` keeps the SMT-LIB it gave the solver in
-`CertificateData.inv_smt` / `.ranking_smt` and the check restates the
+the route's answer, a `Certificate` of SMT-LIB source, and restates the
 obligations from that.
 
 `--infer ai` is still out of reach, and it is the route that needs it most:
@@ -216,10 +215,10 @@ already been zeta-reduced into the goal, and only the rewrite removes the
 split. That is the whole of the missing benefit.
 
 So the predicate is now rendered **unshared whenever cvc5 settled a
-condition in it** (`solver_hints` runs before `smt_predicates_to_lean` and
-passes `share=False`; after inference `_replan` reprints the same way, and
-reprints *every* predicate rather than the two that were inferred, since a
-settled condition can come from the property). That costs almost nothing: settled conditions only
+condition in it** (`main._render` asks `solver_hints` before
+`render_certificate` and passes it `share=False`, for *every* predicate
+rather than the two that were inferred, since a settled condition can come
+from the property). That costs almost nothing: settled conditions only
 survive as `if`s in Real predicates, where sharing saves little
 (NN2RealWide4 is 556 chars against 422), while the deep Int nets where
 sharing matters fold to `max` and offer no conditions to settle at all.

@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
-from .cert import CertificateData
+from .certificate import Certificate, Claim, LeanAnswer
 from .common import Refused
 # Constants only -- the module imports cvc5 lazily, so naming its defaults
 # in the table below costs a bare run nothing.
@@ -51,6 +51,7 @@ from .houdini_solver import (
 if TYPE_CHECKING:
     from zrth import Module
 
+    from .cert import LeanCertificate
     from .common import LeanContext
 
 
@@ -135,24 +136,24 @@ class ProjectHandle:
     # restated.  Going through here rather than through two module-level
     # functions in the caller keeps that pairing in one place.
 
-    def write_data(self, cert_data: CertificateData) -> Path:
+    def write_data(self, lean_cert: "LeanCertificate") -> Path:
         from .project import write_data_lean
 
         return write_data_lean(
-            self.dir, self.name, self.module, cert_data, ctx=self.ctx
+            self.dir, self.name, self.module, lean_cert, ctx=self.ctx
         )
 
-    def write_certificate(self, cert_data: CertificateData) -> Path:
+    def write_certificate(self, lean_cert: "LeanCertificate") -> Path:
         from .project import write_certificate_lean
 
         return write_certificate_lean(
-            self.dir, self.name, self.module, cert_data, ctx=self.ctx
+            self.dir, self.name, self.module, lean_cert, ctx=self.ctx
         )
 
-    def write_predicates(self, cert_data: CertificateData) -> None:
+    def write_predicates(self, lean_cert: "LeanCertificate") -> None:
         """Both of the above, which is what an inferring route wants."""
-        self.write_data(cert_data)
-        self.write_certificate(cert_data)
+        self.write_data(lean_cert)
+        self.write_certificate(lean_cert)
 
     # --- writing more than that -----------------------------------------
 
@@ -198,7 +199,10 @@ class InferInput:
 
     project: ProjectHandle
     module: "Module"
-    cert_data: CertificateData
+    claim: Claim
+    # What the route starts from: `--invariant` / `--ranking`, or an
+    # invariant `_take_inv` resumed from `artifacts/`.
+    given: Certificate
     opts: dict                          # this route's own options, by dest
     config: object | None = None        # what `resolve` returned
     prechecked: object | None = None    # what `precheck` returned
@@ -220,30 +224,17 @@ class InferInput:
 
 @dataclass(frozen=True)
 class InferResult:
-    """The certificate a route inferred, in whichever languages it holds it.
-
-    A route that renders its own Lean hands *both* spellings over. The SMT is
-    what `--pre-check` restates the obligations from -- nothing parses the
-    Lean back -- and the Lean is what the project is generated from. Handing
-    over the SMT alone would make the pipeline render what the route already
-    rendered, and rendering means encoding the module into cvc5 again: one
-    more encoding per run, which is the cost the rest of this package spends
-    comments avoiding.
-
-    All four empty is the answer of a route that installed the certificate
-    itself; its row says `returns="installed"`.
+    """What a route answered: SMT-LIB in `cert`, or Lean in `lean` for the
+    one row that answers in Lean (`returns="lean"`). Neither is the answer
+    of a route that installed the certificate itself (`returns="installed"`).
     """
 
-    inv_smt: str | None = None
-    ranking_smt: str | None = None
-    inv_lean: str | None = None
-    ranking_lean: str | None = None
+    cert: Certificate = Certificate()
+    lean: LeanAnswer | None = None
 
     @property
     def empty(self) -> bool:
-        return not any(
-            (self.inv_smt, self.ranking_smt, self.inv_lean, self.ranking_lean)
-        )
+        return self.cert.empty and self.lean is None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -297,7 +288,7 @@ class InferRoute:
     kinds_refusal: str              # why the kind it lacks is not its question
 
     # --- predicates supplied alongside ----------------------------------
-    # The `CertificateData` fields this route will *use*: "inv", "ranking",
+    # The given predicates this route will *use*: "inv", "ranking",
     # "pre".  Anything outside the set would be discarded, so passing it is
     # refused with `seeds_refusal` rather than silently dropped.
     seeds: frozenset[str]
@@ -329,17 +320,16 @@ class InferRoute:
     # that are not a cell of this table.  `fbk-proveit` has one -- the
     # project name becomes a Lean module name.
     extra_check: Callable | None = None
-    # `precheck(module, opts, config, cert_data) -> object` once the module
+    # `precheck(module, opts, config, claim) -> object` once the module
     # is loaded and before it is generated: a module shape the route cannot
     # express is met here rather than as a traceback out of an encoder it
     # never wanted.  What it computed reaches `run` as `prechecked`, so the
     # module is not encoded twice to answer one question.
     #
-    # `cert_data` carries the seeds in their SMT source (it may be `None`),
-    # because whether a route can take one is not always a question about
-    # the flag alone: `fbk-proveit` accepts `--pre` over an input its model
-    # keeps and refuses one over an input it does not, and only the module's
-    # encoding knows which is which.
+    # It is handed the claim because whether a route can take a `--pre` is
+    # not always a question about the flag alone: `fbk-proveit` accepts one
+    # over an input its model keeps and refuses one over an input it does
+    # not, and only the module's encoding knows which is which.
     precheck: Callable | None = None
     run: Callable | None = None      # `(InferInput) -> InferResult`
 
@@ -378,14 +368,14 @@ def _run_ai(inp: InferInput) -> InferResult:
     magic = TA2MagicAI(
         inp.project.encoding(""), model=inp.model, base_url=inp.base_url
     )
-    cd = magic.infer(inp.cert_data)
     # Lean only: it is parsed out of an LLM reply and never had an SMT term
-    # behind it, which is what this route's `returns="lean"` declares.
-    return InferResult(inv_lean=cd.inv, ranking_lean=cd.ranking)
+    # behind it, which is what this route's `returns="lean"` declares. No
+    # answer is an empty result, which main reports against the row.
+    return InferResult(lean=magic.infer(inp.claim))
 
 
 # Statuses that make a previously-found invariant a *fixed* invariant for
-# this route: `magic.cegar` takes `cd.inv` as given and infers only what is
+# this route: `magic.cegar` holds `given.inv` fixed and infers only what is
 # left, so what it is handed has to be inductive. `too_weak` is inductive
 # and merely fails to imply the property, which `rule_buchi` never asked of
 # it -- so it is usable for a Buchi certificate and is exactly the wrong
@@ -400,15 +390,15 @@ def _resume_inv(inp: InferInput) -> "Artifact | None":
     ask for, over one they did, is the kind of cross-run surprise that makes
     two identical command lines mean different things.
     """
-    if inp.cert_data.inv:
+    if inp.given.inv:
         return None
     # An inductive invariant is what this route can take as *given*:
-    # `magic.cegar` infers only what is left around a fixed `cd.inv`.
+    # `magic.cegar` infers only what is left around a fixed `given.inv`.
     for a in inp.project.resume("inv", languages=("smt",), statuses=FIXABLE):
         # The one thing the store cannot filter on: `too_weak` means
         # inductive but not implying the property, which is all `rule_buchi`
         # ever wanted of an invariant and exactly what `rule_globally` needs.
-        if a.status == "too_weak" and inp.cert_data.is_safety:
+        if a.status == "too_weak" and inp.claim.is_safety:
             continue
         return a
     return None
@@ -423,19 +413,20 @@ def _resume_inv_to_strengthen(inp: InferInput) -> "Artifact | None":
     are *missing*, so an invariant that is inductive and does not yet imply
     the property is the best thing it can be handed.
     """
-    if inp.cert_data.inv:
+    if inp.given.inv:
         return None
     for a in inp.project.resume("inv", languages=("smt",), statuses=FIXABLE):
         return a
     return None
 
 
-def _take_inv(inp: InferInput, resumed, what: str) -> None:
-    """Put a resumed invariant into `cert_data`, saying so."""
+def _take_inv(inp: InferInput, resumed, what: str) -> InferInput:
+    """`inp` with a resumed invariant as its given one, saying so."""
     if resumed is None:
-        return
+        return inp
     inp.log(f".. resuming from {resumed.name} ({resumed.status}): {what}")
-    inp.cert_data.inv = inp.project.artifacts.read(resumed)
+    inv = inp.project.artifacts.read(resumed)
+    return replace(inp, given=replace(inp.given, inv=inv))
 
 
 def _ruled_out(inp: InferInput) -> tuple[str, ...]:
@@ -459,7 +450,7 @@ def _ruled_out(inp: InferInput) -> tuple[str, ...]:
 def _run_ai_cegis(inp: InferInput) -> InferResult:
     from .magic.cegar import TA2MagicCEGAR
 
-    _take_inv(
+    inp = _take_inv(
         inp,
         _resume_inv(inp),
         # On `--safety` the invariant *is* the certificate, so there is
@@ -467,7 +458,7 @@ def _run_ai_cegis(inp: InferInput) -> InferResult:
         # inferring the ranking function" there would name a field
         # `rule_globally` does not have.
         "taking it as the certificate"
-        if inp.cert_data.is_safety
+        if inp.claim.is_safety
         else "taking its invariant as given and inferring the ranking function",
     )
 
@@ -479,30 +470,14 @@ def _run_ai_cegis(inp: InferInput) -> InferResult:
         known=_ruled_out(inp),
         budget_s=inp.opts["cegar_budget"],
     )
-    cd = magic.infer(inp.cert_data)
-    # It renders the Lean from its own cvc5 context, where it is free, so
-    # both spellings come back and the pipeline renders nothing.
-    return InferResult(
-        inv_smt=cd.inv_smt,
-        ranking_smt=cd.ranking_smt,
-        inv_lean=cd.inv,
-        ranking_lean=cd.ranking,
-    )
+    return InferResult(magic.infer(inp.claim, inp.given))
 
 
 def _run_nuterm(inp: InferInput) -> InferResult:
     from .magic.learn import TA2MagicLearn
 
     magic = TA2MagicLearn("", inp.module, log=inp.log)
-    cd = magic.infer(inp.cert_data)
-    # `magic.learn._emit` already rendered the Lean, so it comes along rather
-    # than being rendered a second time from the same SMT.
-    return InferResult(
-        inv_smt=cd.inv_smt,
-        ranking_smt=cd.ranking_smt,
-        inv_lean=cd.inv,
-        ranking_lean=cd.ranking,
-    )
+    return InferResult(magic.infer(inp.claim, inp.given))
 
 
 def _run_sygus(inp: InferInput) -> InferResult:
@@ -516,21 +491,18 @@ def _run_sygus(inp: InferInput) -> InferResult:
         artifacts=inp.project.artifacts,
         log=inp.log,
     )
-    cd = magic.infer(inp.cert_data)
-    # SMT-LIB only: the search answers in cvc5 terms and never renders Lean,
-    # so the pipeline renders it once -- which is what `returns="smt"` says.
-    return InferResult(inv_smt=cd.inv_smt)
+    return InferResult(magic.infer(inp.claim, inp.given))
 
 
 def _run_smt_linear(inp: InferInput) -> InferResult:
     from .magic.linear import TA2MagicLinear
 
-    _take_inv(
+    inp = _take_inv(
         inp,
-        (_resume_inv_to_strengthen(inp) if inp.cert_data.is_safety
+        (_resume_inv_to_strengthen(inp) if inp.claim.is_safety
          else _resume_inv(inp)),
         ("adding to it the conjuncts the property needs"
-         if inp.cert_data.is_safety
+         if inp.claim.is_safety
          else "taking its invariant as given and ranking over it"),
     )
     magic = TA2MagicLinear(
@@ -540,8 +512,7 @@ def _run_smt_linear(inp: InferInput) -> InferResult:
         artifacts=inp.project.artifacts,
         log=inp.log,
     )
-    cd = magic.infer(inp.cert_data)
-    return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
+    return InferResult(magic.infer(inp.claim, inp.given))
 
 
 def _resolve_houdini(opts: dict):
@@ -590,10 +561,7 @@ def _run_vampire(inp: InferInput) -> InferResult:
         artifacts=inp.project.artifacts,
         log=inp.log,
     )
-    cd = magic.infer(inp.cert_data)
-    # SMT-LIB only: the template is rebuilt as source strings from the
-    # numbers Vampire answered, and the pipeline renders the Lean once.
-    return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
+    return InferResult(magic.infer(inp.claim, inp.given))
 
 
 def _run_houdini(inp: InferInput) -> InferResult:
@@ -606,10 +574,7 @@ def _run_houdini(inp: InferInput) -> InferResult:
         artifacts=inp.project.artifacts,
         log=inp.log,
     )
-    cd = magic.infer(inp.cert_data)
-    # SMT-LIB only, like `smt-linear`: every candidate is a source string it
-    # wrote, and the pipeline renders the Lean once.
-    return InferResult(inv_smt=cd.inv_smt, ranking_smt=cd.ranking_smt)
+    return InferResult(magic.infer(inp.claim, inp.given))
 
 
 def _resolve_fbk(opts: dict):
@@ -639,14 +604,14 @@ def _check_fbk_project_name(settings, opts) -> "str | None":
     )
 
 
-def _precheck_fbk(module, opts, config, cert_data):
+def _precheck_fbk(module, opts, config, claim):
     from .fbk_proveit import ProveItError, check_module
 
     try:
         return check_module(
             module,
             opts["fbk_simplify"] == "cvc5",
-            cert_data.init_pre if cert_data else None,
+            claim.init_pre if claim else None,
         )
     except ProveItError as e:
         # One exception type crosses the seam, so `main` catches what every
@@ -672,8 +637,8 @@ def _run_fbk(inp: InferInput) -> InferResult:
             module=inp.module,
             project_dir=inp.project.dir,
             project_name=inp.project.name,
-            property_smt=str(inp.cert_data.prp),
-            pre_smt=inp.cert_data.init_pre,
+            property_smt=str(inp.claim.prp),
+            pre_smt=inp.claim.init_pre,
             ic3ia=inp.opts["ic3ia"],
             simplify=inp.opts["fbk_simplify"] == "cvc5",
             equivalence=inp.opts["fbk_equiv"] == "lean",
