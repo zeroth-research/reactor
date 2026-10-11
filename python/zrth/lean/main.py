@@ -80,7 +80,7 @@ from pathlib import Path
 
 from .cert import CertificateData, generate_zeroth_hammer_lean
 from .cli import Settings, parse_args
-from .common import LeanContext, Refused
+from .common import Refused
 from .native import lean_gaps
 from .infer_route import InferInput, ProjectHandle
 from .project import (
@@ -97,7 +97,7 @@ from .project import (
 from .translate import ModuleToLean4
 
 
-def _build_cert(args, project_dir: Path, cert_data) -> None:
+def _build_cert(settings: Settings, project_dir: Path, cert_data) -> None:
     """Honour `--build-cert`, once the certificate is written.
 
     `cert_data` is what the project's certificate was generated from, or
@@ -107,7 +107,7 @@ def _build_cert(args, project_dir: Path, cert_data) -> None:
     answers nothing usable leaves `inv` or `ranking` unset, and building
     that would report a proof of `sorry`.
     """
-    if not args.build_cert:
+    if not settings.build_cert:
         return
     if cert_data is not None:
         # A safety certificate has no ranking function to be missing.
@@ -129,14 +129,15 @@ def _build_cert(args, project_dir: Path, cert_data) -> None:
 
 
 def _refused(settings: Settings, error: Exception) -> SystemExit:
-    """A route's refusal, under the flag it is about.
+    """A refusal, under the flag it is about.
 
     Most routes are asked for with `--infer`, so that is what a failure of
     one is reported under. The proveit route's own errors already name
     `--fbk-proveit`, `--ic3ia` or `--safety`, and prefixing those again
-    would name two flags for one problem.
+    would name two flags for one problem. With no route there is no flag to
+    name: the refusal is about the module.
     """
-    if settings.route is not None and settings.route.errors_self_named:
+    if settings.route is None or settings.route.errors_self_named:
         return SystemExit(f"error: {error}")
     return SystemExit(f"error: --infer: {error}")
 
@@ -289,7 +290,13 @@ def main():
     # here says it once, before any of the project exists. Left to codegen it
     # arrives as a missing table cell in the middle of a file, which is a
     # sentence about `ops.py` for a user who asked about a module.
-    gaps = lean_gaps(LeanContext(module))
+    #
+    # The context is built once and threaded: its discovery pass interns
+    # every init/update term, and codegen and the rewrites after inference
+    # need the same one. `cert_data` contributes the terms
+    # `project_cert_data` would, since rendering passes term lists through.
+    ctx = lean_context_for(module, cert_data)
+    gaps = lean_gaps(ctx)
     if gaps:
         raise _refused(settings, Refused(
             "this module has no Lean form: "
@@ -311,9 +318,6 @@ def main():
         return
 
     print(".. Generating lean code")
-    # Built once and threaded: the discovery pass interns every init/update
-    # term, and the files rewritten after inference need the same one.
-    ctx = lean_context_for(module, project_cert_data)
     try:
         project_dir = create_project(
             output_dir=settings.output_dir,
@@ -332,8 +336,8 @@ def main():
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e
 
-    print(".. Doing TA2Magic")
     if settings.route is not None:
+        print(f".. Inferring the certificate with --infer {settings.route.name}")
         handle = ProjectHandle(
             dir=project_dir,
             name=settings.project_name,
