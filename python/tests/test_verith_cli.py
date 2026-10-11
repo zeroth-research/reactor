@@ -43,6 +43,7 @@ def test_verith_no_property():
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "CounterBasic")
         assert r.returncode == 0, r.stderr
+        assert "Inferring" not in r.stdout, "no route was asked for"
         assert (Path(tmpdir) / "CounterBasic").exists()
         data = (
             Path(tmpdir) / "CounterBasic" / "Certificate" / "Data.lean"
@@ -142,6 +143,45 @@ def test_a_refusal_is_an_error_line_not_a_traceback():
             assert "error:" in r.stderr, f"{case} said nothing:\n{r.stderr}"
 
 
+# `update` reads an `Uninterpreted` wire, which no Lean column can write.
+_NO_LEAN_FORM_MODULE = """\
+import torch
+from zrth import Int, LIA, Module, Term, Var, Wire, X
+
+def module():
+    x = Var(Int([1, 1]))
+    y = Wire(Int([1, 1]))
+    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
+    update = [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])]
+    return Module.sequential([x], init, update)
+"""
+
+
+def test_a_module_with_no_lean_form_is_refused_without_naming_infer(tmp_path):
+    """The refusal is about the module. A run that gave no `--infer` must
+    not be told about one."""
+    path = tmp_path / "uninterp.py"
+    path.write_text(_NO_LEAN_FORM_MODULE)
+    r = _verith(str(path), "-o", str(tmp_path), "-p", "P")
+    assert r.returncode != 0
+    assert "error: this module has no Lean form" in r.stderr, r.stderr
+    assert "--infer" not in r.stderr, r.stderr
+
+
+def test_a_refusal_names_only_the_flag_that_was_given():
+    from types import SimpleNamespace
+
+    from zrth.lean import main as m
+    from zrth.lean.common import Refused
+
+    def said(route) -> str:
+        return m._refused(SimpleNamespace(route=route), Refused("why")).code
+
+    assert said(None) == "error: why"
+    assert said(SimpleNamespace(errors_self_named=False)) == "error: --infer: why"
+    assert said(SimpleNamespace(errors_self_named=True)) == "error: why"
+
+
 def test_a_stale_bridge_is_not_left_for_lake_to_build():
     """`Certificate/` is globbed by the lakefile, so every file in it is
     built. Only `--fbk-proveit` writes `Equivalence.lean`, and it is about
@@ -219,7 +259,36 @@ def test_pre_check_checks_the_inferred_certificate():
         assert "nothing to check" not in out
         # After inference, not before: the certificate it reports on is the
         # one the project was written with.
-        assert out.index("TA2Magic") < out.index("SMT pre-check")
+        assert out.index(".. Inferring the certificate") < out.index("SMT pre-check")
+
+
+def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
+    """A route infers the invariant and the ranking function, never the
+    property: that is the question it was asked."""
+    from zrth.lean import main as m
+    from zrth.lean.artifacts import ArtifactStore
+    from zrth.lean.cert import CertificateData
+
+    def recorded(store) -> dict[str, str]:
+        return {a.role: a.what for a in store.list() if a.indexed}
+
+    # As `main` does it: once before the route, once after.
+    store = ArtifactStore(dir=tmp_path / "run", kind="buchi", prp="(= s0 0)")
+    cert = CertificateData(prp="(= s0 0)", kind="buchi")
+    m._record_predicates(store, None, cert)
+    cert.inv, cert.ranking = "(>= s0 0)", "s0"
+    m._record_predicates(store, None, cert, inferred=True)
+    what = recorded(store)
+    assert set(what) == {"property", "inv", "ranking"}
+    assert "Inferred" not in what["property"]
+    assert "Inferred" in what["inv"] and "Inferred" in what["ranking"]
+
+    # And without the first record to fall back on.
+    fresh = ArtifactStore(dir=tmp_path / "fresh", kind="buchi", prp="(= s0 0)")
+    m._record_predicates(fresh, None, cert, inferred=True)
+    what = recorded(fresh)
+    assert "Inferred" not in what["property"]
+    assert "Inferred" in what["inv"] and "Inferred" in what["ranking"]
 
 
 # ── safety and Buchi are different certificates ─────────────────────────────
@@ -348,17 +417,48 @@ def test_learn_serves_safety_as_well():
         }, r.stdout
 
 
+BOUNDED_INPUT_MODULE = FIXTURE_DIR / "svcomp_bounded_input.py"
+
+
+def test_learn_takes_the_precondition_as_its_entry_assumption(tmp_path):
+    """`0 <= x` is inductive from the states `0 <= n` admits and from no
+    larger set, so this run is the flag doing the work -- and `--pre-check`
+    grants the same assumption the search made, which is what makes the
+    certificate one verith's own obligations accept."""
+    r = _verith(
+        str(BOUNDED_INPUT_MODULE), "--safety", "(>= s0 0)", "--infer", "nuterm",
+        "--pre", "(>= e0 0)", "--pre-check", "cvc5", "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode == 0, r.stderr
+    assert "[nuterm] --pre at entry: e0=s0" in r.stdout, r.stdout
+    assert _pre_check(r.stdout) == {
+        "init_inv": "holds", "step_inv": "holds", "inv_imp_P": "holds"
+    }, r.stdout
+
+
+def test_without_the_precondition_the_same_run_finds_nothing(tmp_path):
+    """The control for the test above: not a module the route cannot read,
+    and not a false property -- a question that is only answerable from the
+    states the precondition admits."""
+    r = _verith(
+        str(BOUNDED_INPUT_MODULE), "--safety", "(>= s0 0)", "--infer", "nuterm",
+        "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert "no inductive invariant" in r.stderr, r.stderr
+
+
 @pytest.mark.parametrize("extra, expected", [
     (["--invariant", "(<= s0 100)"], "--invariant"),
     (["--ranking", "s0"], "--ranking"),
-    (["--pre", "true"], "--pre"),
     (["--model", "claude-sonnet-4-6-x"], "--model and --base-url"),
     (["--base-url", "http://localhost:11434/v1"], "--model and --base-url"),
 ])
 def test_learn_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
-    """The learner computes the whole certificate and assumes nothing of the
-    inputs, so a predicate or a precondition passed alongside would be dropped
-    -- and an LLM flag names a model it never calls."""
+    """The learner computes the whole certificate, so a predicate passed
+    alongside would be dropped -- and an LLM flag names a model it never
+    calls. `--pre` is not one of these: it is an assumption rather than a
+    candidate, and the two tests above are it being used."""
     r = _verith(
         str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "nuterm",
         *extra, "-o", str(tmp_path), "-p", "P",
@@ -597,4 +697,42 @@ def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(
 
     logs["build"] = (1, "error: Certificate/Certificate.lean:9:2: omega failed\n")
     with pytest.raises(project.LakeBuildError, match="omega failed"):
+        project.build_certificate(tmp_path)
+
+
+def test_a_kernel_error_after_another_one_is_not_reported_twice(
+    monkeypatch, tmp_path
+):
+    """A declaration that fails to elaborate is never added to the
+    environment, so the next one to mention it fails again in the kernel.
+
+    `hrank` times out at `whnf`, and then `(kernel) unknown constant
+    'hrank'` -- which names a symbol where the first line named a cause,
+    and reads like a codegen bug rather than a proof that did not close.
+    Every occurrence of it in the matrix follows an earlier error.
+    """
+    from zrth.lean import project
+
+    logs: dict[str, tuple[int, str]] = {}
+    monkeypatch.setattr(project, "stream", lambda cmd, *, cwd: logs[cmd[1]])
+    logs["update"] = (0, "")
+    logs["build"] = (
+        1,
+        "error: Certificate/Certificate.lean:117:4: (deterministic) timeout "
+        "at `whnf`, maximum number of heartbeats (400000) has been reached\n"
+        "error: Certificate/Certificate.lean:119:4: (kernel) unknown "
+        "constant 'hrank'\n",
+    )
+    with pytest.raises(project.LakeBuildError) as raised:
+        project.build_certificate(tmp_path)
+    assert "heartbeats" in str(raised.value)
+    assert "unknown constant" not in str(raised.value)
+
+    # On its own it is nobody's shadow, and something really is missing.
+    logs["build"] = (
+        1,
+        "error: Certificate/Certificate.lean:119:4: (kernel) unknown "
+        "constant 'hrank'\n",
+    )
+    with pytest.raises(project.LakeBuildError, match="unknown constant"):
         project.build_certificate(tmp_path)

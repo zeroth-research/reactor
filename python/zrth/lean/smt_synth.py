@@ -154,6 +154,22 @@ class SynthContext:
                 f"cannot: {', '.join(bad)}. {why}{shaped}"
                 f"Use --infer ai-cegis."
             )
+        # The transition, encoded once here rather than lazily by whichever
+        # route first builds an obligation out of it. A module with an
+        # operator cvc5 has no term for -- `Transpose`, say -- is a refusal
+        # either way, but raised from the middle of a search it is a
+        # `ValueError` traceback several steps past the fact, for a user who
+        # asked about a module. Named up front instead, which is what
+        # `native.lean_gaps` does for the Lean side.
+        try:
+            msmt.init_state(env.extl_next_vars)
+            msmt.update_state(env.state_vars, env.extl_latched_vars,
+                              env.extl_next_vars)
+        except ValueError as e:
+            raise Refused(
+                f"--infer {route} encodes this module's transition for cvc5, "
+                f"and an operator in it has no encoding. {e}"
+            ) from e
         true = tm.mkBoolean(True)
         return cls(
             module=module,
@@ -187,13 +203,15 @@ class SynthContext:
 
 @dataclass(frozen=True)
 class Reading:
-    """One integer a template can weigh a state component by.
+    """One quantity a template can weigh a state component by.
 
     An `Int` component is itself. A `Bool` one is `0`/`1` -- which is what
     makes `b` and `¬b` expressible as rows (`(ite s0 1 0) - 1 >= 0`), and
     what lets a rank fall when a flag flips. A bitvector is its unsigned
     value, `ubv_to_int`, so a counter in `BitVec 8` is ranked by the number
-    it holds rather than by its bits.
+    it holds rather than by its bits. A Real is a floor, or itself, and
+    which one is the caller's `floor_reals` -- see :func:`component_readings`
+    for why that is a question about ranking rather than about sorts.
 
     The lifting is only the *search space*. Every obligation is still stated
     against the module's own transition, in its own sorts, so a candidate
@@ -207,14 +225,21 @@ class Reading:
 
     name: str                       # SMT-LIB over `s0..`, for printing
     term: object                    # the same, over `ctx.state`
-    kind: str                       # one of `READING_KINDS`
+    kind: str                       # one of `READING_KINDS`, of the *element*
     index: int                      # which state component it reads
+    slot: "int | None" = None       # which element of it, or the whole thing
 
 
 # Every kind of state component there is a reading for. A sort absent from
 # here has none at all, which is a different refusal from a route declining
 # a kind that exists: the first is this front end's limit, the second is the
 # route's own contract.
+#
+# `tuple` is the odd one out, and deliberately: it is not a kind anything is
+# *read* as, it is the kind that has elements. A route that takes it is
+# saying it states itself over elements rather than over components -- see
+# :func:`component_slots` -- and what each element is read as is one of the
+# other four.
 READING_KINDS = ("int", "bool", "bv", "real", "tuple")
 
 
@@ -228,55 +253,133 @@ def reading_kind(sort) -> "str | None":
     return None
 
 
-def component_readings(ctx: "SynthContext", i: int, *,
-                       scale: int = 1) -> list[Reading]:
-    """Every integer reading of state component `i`, in column order.
+def component_slots(ctx: "SynthContext", i: int) -> list[tuple]:
+    """The scalars state component `i` is made of: `(slot, sort)` apiece.
+
+    A scalar component is one slot, `None` -- it *is* the scalar, and there
+    is no selector to write. A matrix-shaped one is a slot per element, in
+    the order `smt_encode.wire_sort` laid the tuple out: flat, `m*n`
+    elements of one scalar sort, row by row. Flat is why this is one level
+    and not a recursion -- a 2-D component is `(Tuple Int Int ...)`, never a
+    tuple of tuples -- and it is the same order `smt_to_lean` renders the
+    selectors in and the Lean state is written in, so a certificate stated
+    over slot `k` here means element `k` there.
+
+    This is the one place that answers "what is this component made of",
+    and it is separate from :func:`component_readings` because the routes
+    that need elements do not all want them read the same way: `smt-linear`
+    wants an integer per element, `houdini` wants each element in its own
+    sort so a Real one keeps its rationals, and `vampire` wants a variable
+    per element because its prover has no tuples at all.
+    """
+    sort = ctx.env.state_sorts[i]
+    if not sort.isTuple():
+        return [(None, sort)]
+    return list(enumerate(sort.getTupleSorts()))
+
+
+def element(ctx: "SynthContext", i: int, slot: "int | None") -> tuple:
+    """One slot of component `i`: how it is written, and the term for it."""
+    var = ctx.state[i]
+    if slot is None:
+        return f"s{i}", var
+    ctor = ctx.env.state_sorts[i].getDatatype()[0]
+    return (f"((_ tuple.select {slot}) s{i})",
+            ctx.tm.mkTerm(Kind.APPLY_SELECTOR, ctor[slot].getTerm(), var))
+
+
+def component_readings(ctx: "SynthContext", i: int, *, scale: int = 1,
+                       floor_reals: bool = True) -> list[Reading]:
+    """Every arithmetic reading of state component `i`, in column order.
 
     One reading for a scalar; one *per element* for a matrix-shaped
     component, which cvc5 encodes as a tuple and which is projected with the
-    selectors `smt_to_lean` already renders. A Real component is read
-    through `to_int` -- the floor `Int.toNat` sees -- after multiplying by
-    `scale`, because flooring a quantity that falls by less than one need
-    not fall at all.
+    selectors `smt_to_lean` already renders.
+
+    An element is read by *its own* sort rather than by the component's,
+    which is the only reading of a matrix of Bools or of Reals that is
+    arithmetic at all: the selector alone is a Bool, and a template that
+    multiplies it by a coefficient is a sort error four steps later.
+
+    ``floor_reals`` is what a Real costs, and it is the caller's question
+    rather than this function's. A **ranking** function has to land in
+    `Nat`, so a route that weighs one reads a Real through `to_int` -- the
+    floor `Int.toNat` sees -- after multiplying by ``scale``, because
+    flooring a quantity that falls by less than one need not fall at all.
+    An **invariant** has no such obligation: it is a predicate, and
+    flooring one is not conservative in either direction -- `to_int s0 +
+    to_int s1 <= 1` neither implies nor is implied by `s0 + s1 <= 1.0`, as
+    `s0 = s1 = 0.6` shows. So a route that only ever states an invariant
+    passes `floor_reals=False` and keeps the rationals, and its linear
+    combinations live in Real arithmetic instead.
     """
     tm = ctx.tm
-    var, sort = ctx.state[i], ctx.env.state_sorts[i]
-    kind = reading_kind(sort)
-    if kind == "int":
-        return [Reading(f"s{i}", var, kind, i)]
-    if kind == "bool":
-        return [Reading(f"(ite s{i} 1 0)",
-                        tm.mkTerm(Kind.ITE, var, tm.mkInteger(1),
-                                  tm.mkInteger(0)), kind, i)]
-    if kind == "bv":
-        return [Reading(f"(ubv_to_int s{i})",
-                        tm.mkTerm(Kind.BITVECTOR_UBV_TO_INT, var), kind, i)]
-    if kind == "real":
-        inner, name = var, f"s{i}"
-        if scale != 1:
-            inner = tm.mkTerm(Kind.MULT, tm.mkReal(scale, 1), var)
-            name = f"(* {scale}.0 s{i})"
-        return [Reading(f"(to_int {name})",
-                        tm.mkTerm(Kind.TO_INTEGER, inner), kind, i)]
-    if kind == "tuple":
-        ctor = sort.getDatatype()[0]
-        return [Reading(f"((_ tuple.select {k}) s{i})",
-                        tm.mkTerm(Kind.APPLY_SELECTOR, ctor[k].getTerm(), var),
-                        kind, i)
-                for k in range(sort.getTupleLength())]
-    return []
+    out: list[Reading] = []
+    for slot, sort in component_slots(ctx, i):
+        name, var = element(ctx, i, slot)
+        kind = reading_kind(sort)
+        if kind == "int":
+            out.append(Reading(name, var, kind, i, slot))
+        elif kind == "bool":
+            out.append(Reading(f"(ite {name} 1 0)",
+                               tm.mkTerm(Kind.ITE, var, tm.mkInteger(1),
+                                         tm.mkInteger(0)), kind, i, slot))
+        elif kind == "bv":
+            out.append(Reading(f"(ubv_to_int {name})",
+                               tm.mkTerm(Kind.BITVECTOR_UBV_TO_INT, var),
+                               kind, i, slot))
+        elif kind == "real":
+            if not floor_reals:
+                out.append(Reading(name, var, kind, i, slot))
+                continue
+            inner = var
+            if scale != 1:
+                inner = tm.mkTerm(Kind.MULT, tm.mkReal(scale, 1), var)
+                name = f"(* {scale}.0 {name})"
+            out.append(Reading(f"(to_int {name})",
+                               tm.mkTerm(Kind.TO_INTEGER, inner), kind, i, slot))
+    return out
+
+
+def floor_real(tm, term, scale: int = 1):
+    """`term` as an integer if it is a Real, and itself if it is not.
+
+    The reading :func:`component_readings` gives a Real under
+    `floor_reals`, for a caller that holds the term rather than the
+    component -- `magic.vampire` floors a column it has already built for
+    the rank while the same column keeps its rationals in the invariant
+    rows. :func:`floor_real_src` is the other half, the SMT-LIB a
+    certificate carries; the two have to say the same thing, so they are
+    written next to each other.
+    """
+    if not term.getSort().isReal():
+        return term
+    inner = (term if scale == 1
+             else tm.mkTerm(Kind.MULT, tm.mkReal(scale, 1), term))
+    return tm.mkTerm(Kind.TO_INTEGER, inner)
+
+
+def floor_real_src(src: str, sort, scale: int = 1) -> str:
+    """:func:`floor_real`, as the SMT-LIB a certificate carries."""
+    if not sort.isReal():
+        return src
+    return f"(to_int {src if scale == 1 else f'(* {scale}.0 {src})'})"
 
 
 def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
-             scale: int = 1) -> list[Reading]:
+             scale: int = 1, floor_reals: bool = True) -> list[Reading]:
     """The columns `route` weighs this module by, or why one component is not.
 
-    `allow` is the route's own contract rather than the context's: the
-    grammar route's `synthFun` takes integer arguments and has nowhere to
-    put a Bool column, while a template weighs whatever has an integer
-    reading. Refused by name either way -- naming the component and the
-    route that does read it is the difference between "try something else"
-    and "try everything else".
+    `allow` is the route's own contract rather than the context's: a route
+    whose obligations are stated in integer arithmetic has nowhere to put a
+    Real column, while a template weighs whatever has a reading. Refused by
+    name either way -- naming the component and the route that does read it
+    is the difference between "try something else" and "try everything
+    else".
+
+    ``scale`` and ``floor_reals`` are passed through to
+    :func:`component_readings`, which is where what a Real costs is
+    written down.
     """
     out: list[Reading] = []
     refused: list[str] = []
@@ -284,7 +387,8 @@ def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
         if reading_kind(sort) not in allow:
             refused.append(f"s{i} is {sort}")
             continue
-        out.extend(component_readings(ctx, i, scale=scale))
+        out.extend(component_readings(ctx, i, scale=scale,
+                                      floor_reals=floor_reals))
     if refused:
         raise Refused(
             f"--infer {route} reads a state of scalar integers, and this "

@@ -62,8 +62,71 @@ fragment is chosen to be what `lean2vmt` reads.  Three things follow:
 * the model `lean2vmt` reads and the obligations cvc5 answers about the
   same module are now the *same encoding*, rather than two readings that
   could drift apart.
+
+External inputs
+---------------
+
+A slot the module starts at an unconstrained external input gets **no
+`Init_k` at all**, and that is the whole of how an input is modelled here.
+`x := nondeterministic` is "`x` starts anywhere", and a conjunction with
+one conjunct missing says exactly that -- no extra variable, no change to
+`StateType`, and the initial states are the module's own rather than a
+superset of them.
+
+The obvious encoding, a free VMT variable, is the one that does not work,
+and it is worth writing down why.  `lean2vmt` would take it: it declares
+every `var_k` as a current-state constant and annotates only the slots some
+body writes as `var_k statenext`, so an unwritten slot arrives in the VMT as
+an unconstrained variable.  What stops it is the Lean side.  `TS.transfer`
+carries the certificate back to the module along a *function* from module
+states to model states (`fbk_bridge.toSlots`), and a module state does not
+say which input produced it -- `init` need not be injective, and there is
+nothing for that function to return.  A simulation *relation* would express
+it; a function cannot.
+
+An input read while *stepping* is refused, and not because it is hard to
+print.  `update x l x'` draws `l` afresh at each step and reads both of its
+components, which are independent of each other and of the next step's, so
+neither is a slot of `state` or of `statenext`: each would need a free slot
+of its own, and `toSlots` would be back to inventing values it cannot see.
+Sharing one slot between them is the tempting mistake -- it quietly forces
+the input this step ends with to be the input the next one begins with,
+which the module does not.
+
+`--pre` rides on the same fact.  A precondition is a predicate over inputs,
+and this model has no inputs -- but the slot an input started is the input,
+still there and still readable, so the precondition becomes one more
+conjunct of `INIT` over those slots (:func:`pre_over_slots`).  A
+precondition over an input that started no slot, or over a *latched* one
+that `init` never read, is refused: the state kept no value to read it back
+from, and saying "some input satisfying it exists" needs a quantifier the
+NA has not got.
+
+`INIT` and not `TRANS`, and that is worth stating because a precondition
+*is* an auxiliary invariant and in an encoding with real input variables it
+would belong in both.  Here it does not, on two counts.
+
+It would not be sound.  `--pre` fills `update_pre` as well, but the
+transition reads no input at all, so `update_pre` constrains a label
+`update` never looks at: there is nothing in `TRANS` for it to constrain.
+The conjunct one *could* write -- `PRE statenext`, the predicate re-read off
+the same slots -- is a claim about the initial inputs asserted of an evolved
+state, and a slot the transition writes need not still satisfy it.  Lean
+catches this rather than trusting the argument: `TS.transfer` takes a
+simulation, so `step_maps` has to hold for *every* pair of states and not
+only the reachable ones, and an invariant conjunct in `TRANS` is not
+something a simulation can prove.
+
+It would not buy anything either.  With the conjunct in `INIT` the model is
+*exactly* the module -- same initial states, same steps -- so there is no
+imprecision for an auxiliary invariant to remove.  The only case where
+`PRE statenext` would be sound is a slot the transition leaves latched, and
+there `TRANS` already pins `var_k statenext == var_k state`, which makes the
+conjunct one-step inductive from `INIT` and leaves ic3ia nothing to
+discover.
 """
 
+import re
 from typing import NamedTuple
 
 from zrth.lean.common import (
@@ -91,6 +154,12 @@ class SlotBodies(NamedTuple):
 
     update: list[str]
     init: list[str]
+    # `slot -> the external input element it starts at`, for the slots `INIT`
+    # says nothing about. See :func:`_free_init_slots`. Keyed by slot because
+    # every reader asks "is this slot free?"; the input is carried because
+    # `--pre` is a predicate over inputs and this is the only place that says
+    # which slot holds one (:func:`pre_over_slots`).
+    free_init: dict = {}
 
 
 # What the model imports -- and, because the driver builds exactly this
@@ -143,16 +212,10 @@ def check_na_supported(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
     zero), so a check run with it on would pass a module the emission then
     could not print.
     """
-    if ctx.extl_latched or ctx.extl_next:
-        raise NAUnsupported(
-            f"the module has {len(ctx.extl_next)} external input wire(s); "
-            "lean2vmt models only `state`/`statenext`, so inputs have no "
-            "VMT counterpart"
-        )
     if not ctx.ctrl_next:
         raise NAUnsupported("the module has no controlled state to encode")
 
-    elem_types = {_flat_element_type(w) for w in ctx.ctrl_next}
+    elem_types = {_flat_element_type(w) for w in ctx.ctrl_next + ctx.extl_next}
     bad = elem_types - NA_ELEMENT_TYPES
     if bad:
         raise NAUnsupported(
@@ -214,19 +277,180 @@ def check_na_supported(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
 # ══════════════════════════════════════════════════════════════════════
 
 
-def _slot_accessors(ctrl_next, binder: str = "state") -> dict[str, list[str]]:
-    """`s{i}` → the `(var_k <binder>)` reads of wire `i`'s elements.
+def _slot_accessors(
+    wires,
+    binder: str = "state",
+    prefix: str = "s",
+    offset: int = 0,
+) -> dict[str, list[str]]:
+    """`{prefix}{i}` → the `(var_k <binder>)` reads of wire `i`'s elements.
 
     This is the map `smt_to_lean_bool` resolves both the state constants and
     their tuple selectors through: the encoder names a wire `s{i}` and
     selects element `k` of it, and this says which VMT variable that is.
+
+    `prefix` and `offset` are what let the input wires share the mechanism:
+    they are `el{i}`/`en{i}` to the encoder and slots past the controlled
+    ones here.
     """
-    layout = flat_layout(ctrl_next)
+    layout = flat_layout(wires)
     out: dict[str, list[str]] = {}
-    for i, w in enumerate(ctrl_next):
-        offset, size = layout.span(w)
-        out[f"s{i}"] = [f"(var_{offset + j} {binder})" for j in range(size)]
+    for i, w in enumerate(wires):
+        start, size = layout.span(w)
+        out[f"{prefix}{i}"] = [
+            f"(var_{offset + start + j} {binder})" for j in range(size)
+        ]
     return out
+
+
+# An external input read, standing in for a Lean expression there is none of.
+# Spelled so it cannot be mistaken for one and cannot arise from anything
+# else: `smt_to_lean_bool` substitutes these verbatim, and what comes back is
+# read by :func:`_free_init_slots`.
+#
+# Two families, because the two kinds of input are refused for different
+# reasons and a marker that cannot say which it came from cannot say why.
+# They are disjoint by construction: `\d` does not match the `l` in `__extl_l_`.
+_INPUT = "__extl_"
+_INPUT_RE = re.compile(r"__extl_\d+")
+_LATCHED = "__extl_l_"
+_LATCHED_RE = re.compile(r"__extl_l_\d+")
+
+
+def _input_markers(wires, prefix: str, marker: str = _INPUT) -> dict[str, list[str]]:
+    """`{prefix}{i}` → one marker per element of input wire `i`."""
+    layout = flat_layout(wires)
+    out: dict[str, list[str]] = {}
+    for i, w in enumerate(wires):
+        start, size = layout.span(w)
+        out[f"{prefix}{i}"] = [f"{marker}{start + j}" for j in range(size)]
+    return out
+
+
+def _input_names(acc: dict[str, list[str]]) -> dict[str, str]:
+    """Marker → the name the user wrote it as, for a refusal to quote.
+
+    `e0` where the wire is 1×1 and `e0[2]` where it is wider: a refusal that
+    says `__extl_7` names an implementation detail of this file, and the
+    person reading it passed `--pre`.
+    """
+    return {
+        m: (wire if len(markers) == 1 else f"{wire}[{j}]")
+        for wire, markers in acc.items()
+        for j, m in enumerate(markers)
+    }
+
+
+def _free_init_slots(init_text: list[str]) -> tuple[dict[int, str], dict[int, int]]:
+    """`slot -> input marker` for the slots `INIT` must leave alone, and
+    `slot -> slot` for those that start at an input another slot claimed.
+
+    Raises :class:`NAUnsupported` for anything else that reads an input.
+
+    A slot whose initial value is *exactly* one external input is a slot the
+    module leaves free: absent `--pre` nothing constrains an input, and
+    "`s_k` starts at an arbitrary value" is said by writing no `Init_k` at
+    all. That is the module's own initial set, not a weakening of it, which
+    matters because `TS.transfer` carries proofs from the model to the module
+    in one direction only -- a model admitting *more* runs still proves
+    `G P` for the module, but a counterexample it finds need not be one of
+    the module's, and this route reports those.
+
+    With `--pre` the same slot is where the precondition lands: the input is
+    readable as the slot it started, and nowhere else (:func:`pre_over_slots`).
+
+    Anything else that reads an input is refused for exactly that reason.
+    `s_k := 2 * input` would have to become "`s_k` is anything", and a
+    REFUTED read off a model that admits odd `s_k` would be a counterexample
+    the module cannot produce.
+
+    The one other read that is exact is a second slot starting at the same
+    input -- SV-COMP's `i = N` after `N = nondet()`. The first such slot is
+    left free and every later one *equal to it*: `Init_k` is
+    `var_k state == var_j state`, which is the module's initial set again,
+    where leaving both free would forget the equality (and `i <= N`, which
+    rests on it, would be refuted by a run the module cannot take).
+    """
+    free: dict[int, str] = {}
+    aliased: dict[int, int] = {}
+    claimed: dict[str, int] = {}
+    for k, body in enumerate(init_text):
+        found = _INPUT_RE.findall(body)
+        if not found:
+            continue
+        if len(found) > 1 or body.strip() != found[0]:
+            raise NAUnsupported(
+                f"slot {k}'s initial value is built from an external input "
+                f"({body.strip()}) rather than being one; the NA encoding "
+                "can only say that a slot starts free, not that it starts "
+                "at a function of something free"
+            )
+        if found[0] in claimed:
+            aliased[k] = claimed[found[0]]
+            continue
+        claimed[found[0]] = k
+        free[k] = found[0]
+    return free, aliased
+
+
+def pre_over_slots(ctx: LeanContext, pre_term, bodies: SlotBodies) -> str:
+    """`--pre`, as a Bool over the slots its inputs start.
+
+    The module's initial states are `{init e | pre e}`. `init` writes each
+    input it reads to one slot and nothing else (:func:`_free_init_slots`),
+    so reading that slot back *is* reading the input, and the precondition
+    becomes one more conjunct of `INIT` rather than a constraint on a
+    variable the NA has not got. The result is exact -- the same set of
+    states, not a superset -- which is what this route needs: it reports
+    REFUTED, and a counterexample from a larger initial set need not be one
+    of the module's.
+
+    Two refusals keep it exact, and both are about an input the state cannot
+    be read for:
+
+    * a **latched** input. `init` reads `e.2` only, so `pre` over `e.1`
+      admits `init e.2` whenever *some* latched value satisfies it. That is
+      an existential the NA cannot write.
+    * a **next** input that starts no slot -- read by the property, say, or
+      by nothing. Constraining it is again an existential over the value the
+      state did not keep.
+
+    The transition is not the other half of this. `--pre` fills `update_pre`
+    too, and `TRANS` has no guard for it; it needs none, because the
+    transition reads no input at all (:func:`_slot_bodies` refuses one that
+    does), so `update x l` is the same state for every `l`. Every step
+    `TRANS` admits is one the module admits under any `l` satisfying the
+    precondition, and if no `l` satisfies it then the same conjunct makes
+    `INIT` empty and the model has no runs to report.
+    """
+    from ..smt_to_lean import smt_to_lean_bool
+
+    acc = {
+        **_input_markers(ctx.extl_next, "e"),
+        **_input_markers(ctx.extl_latched, "el", _LATCHED),
+    }
+    try:
+        text = smt_to_lean_bool(pre_term, acc)
+    except ValueError as e:
+        raise NAUnsupported(f"--pre cannot be encoded: {e}") from e
+
+    names = _input_names(acc)
+    latched = _LATCHED_RE.findall(text)
+    if latched:
+        raise NAUnsupported(
+            f"--pre constrains the latched input {names[latched[0]]}, which "
+            "`init` does not read; the NA encoding would have to say that "
+            "some latched value satisfies it, and it has no quantifier"
+        )
+    slot_of = {marker: k for k, marker in bodies.free_init.items()}
+    loose = [m for m in _INPUT_RE.findall(text) if m not in slot_of]
+    if loose:
+        raise NAUnsupported(
+            f"--pre constrains the input {names[loose[0]]}, which starts no "
+            "state slot; the model keeps no value to read it back from, so "
+            "the constraint has nowhere to go"
+        )
+    return _INPUT_RE.sub(lambda m: f"(var_{slot_of[m.group(0)]} state)", text)
 
 
 def _scalar_element(tm, term, shape, i: int, j: int):
@@ -310,11 +534,24 @@ def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
     solver.setLogic("ALL")
     keep_alive(tm, msmt, solver)
 
-    acc = _slot_accessors(ctx.ctrl_next)
     layout = flat_layout(ctx.ctrl_next)
+    # An input reading is marked rather than translated: it has no Lean form
+    # in this encoding, and what the caller does about one depends on where
+    # it turned up. `_free_init_slots` reads the markers back.
+    acc_upd = {
+        **_slot_accessors(ctx.ctrl_next),
+        **_input_markers(ctx.extl_next, "el"),
+        **_input_markers(ctx.extl_next, "en"),
+    }
+    acc_ini = {
+        **_slot_accessors(ctx.ctrl_next),
+        **_input_markers(ctx.extl_next, "en"),
+    }
     state = msmt.fresh_ctrl("s")
-    nxt = msmt.update_state(state, [], [])
-    ini = msmt.init_state([])
+    nxt = msmt.update_state(
+        state, msmt.fresh_extl_l("el"), msmt.fresh_extl_n("en")
+    )
+    ini = msmt.init_state(msmt.fresh_extl_n("en"))
 
     update_text: list[str] = []
     init_text: list[str] = []
@@ -325,9 +562,27 @@ def _slot_bodies(ctx: LeanContext, simplify: bool = True) -> SlotBodies:
         # the rewriter folds the constant weights and 1.9 KB after.
         upd = _simplify(solver, _scalar_element(tm, nxt[i], shape, r, c), simplify)
         init = _simplify(solver, _scalar_element(tm, ini[i], shape, r, c), simplify)
-        update_text.append(smt_to_lean_bool(upd, acc))
-        init_text.append(smt_to_lean_bool(init, acc))
-    return SlotBodies(update_text, init_text)
+        update_text.append(smt_to_lean_bool(upd, acc_upd))
+        init_text.append(smt_to_lean_bool(init, acc_ini))
+
+    # An input read by the *transition* is a different encoding, not a
+    # missing line here. `update x l x'` draws `l` afresh at every step and
+    # reads both its components, which are independent of each other and of
+    # the next step's, so neither is a slot of `state` or of `statenext`:
+    # they would have to be further free slots, and then `toSlots` -- the
+    # simulation function `TS.transfer` takes -- would have to recover them
+    # from a module state it cannot see them in.
+    for k, body in enumerate(update_text):
+        if _INPUT_RE.search(body):
+            raise NAUnsupported(
+                f"slot {k}'s transition reads an external input; the NA "
+                "encoding carries a module's state, and an input read while "
+                "stepping has no slot of either state to be"
+            )
+    free, aliased = _free_init_slots(init_text)
+    for k, j in aliased.items():
+        init_text[k] = f"(var_{j} state)"
+    return SlotBodies(update_text, init_text, free)
 
 
 def atom_to_lean_na(
@@ -337,12 +592,19 @@ def atom_to_lean_na(
     module_name: str = "",
     simplify: bool = True,
     bodies: SlotBodies | None = None,
+    pre_lean: str = "",
 ) -> str:
     """Emit the whole NA model file for `ctx`.
 
     `property_lean` is a Bool-valued Lean expression over the same
     `(var_i state)` bindings this encoding uses — see
     ``smt_to_lean.smt_to_lean_bool``.
+
+    `pre_lean` is `--pre` in those same bindings (:func:`pre_over_slots`), or
+    `""` for a module that was given none. It becomes one more conjunct of
+    `INIT`, which is where a precondition over inputs belongs in a model
+    that has no inputs: `init` wrote each one to a slot, so the state is
+    where it is still readable.
 
     `bodies` is what :func:`check_na_supported` returned for this `ctx` and
     `simplify`; passing it is what keeps a route that has already checked
@@ -352,7 +614,7 @@ def atom_to_lean_na(
     """
     if bodies is None:
         bodies = check_na_supported(ctx, simplify)
-    update_text, init_text = bodies
+    update_text, init_text = bodies.update, bodies.init
 
     layout = flat_layout(ctx.ctrl_next)
     n = layout.total
@@ -433,7 +695,22 @@ def atom_to_lean_na(
     )
 
     # --- initial condition ---
-    # No extl wires (checked), so `init_i` is a closed term.
+    # `init_i` is a closed term: an input read is the one thing that could
+    # make it otherwise, and a slot that starts at one is left out of `INIT`
+    # entirely rather than given a body (:func:`_free_init_slots`) -- unless
+    # another slot started at the same input first, and then its body is
+    # that slot, read from `state` like a transition body.
+    #
+    # `--pre` is what puts such a slot back under a constraint, and it is a
+    # conjunct rather than a body because it is one predicate over the whole
+    # state -- `(>= e0 e1)` pins neither slot on its own.
+    if pre_lean:
+        lines.append("-- `--pre`, over the slots its inputs start")
+        lines.append("abbrev PRE (state : StateType) : Bool :=")
+        lines.append(f"  {pre_lean}")
+        lines.append("")
+    pinned = [k for k in range(n) if k not in bodies.free_init]
+    init_uses_state = ["state" in init_text[k] for k in pinned]
     lines += emit_rel_block(
         syn,
         RelBlock(
@@ -443,10 +720,12 @@ def atom_to_lean_na(
             state_binders="(state : StateType)",
             state_args="state",
             target="state",
-            binders=[""] * n,
-            args=[""] * n,
+            binders=[" (state : StateType)" if u else "" for u in init_uses_state],
+            args=[" state" if u else "" for u in init_uses_state],
+            slots=tuple(pinned),
+            extra=("PRE state",) if pre_lean else (),
         ),
-        [f"  {body}" for body in init_text],
+        [f"  {init_text[k]}" for k in pinned],
     )
 
     # --- property ---

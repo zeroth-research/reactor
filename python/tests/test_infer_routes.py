@@ -200,14 +200,38 @@ def test_ai_does_not_infer_a_safety_certificate():
     assert "rule_globally" in message and "ai-cegis" in message
 
 
+def test_ai_takes_a_precondition():
+    """`--pre` is not a candidate this route would have to hold to the
+    obligations -- it is an assumption the reply may lean on, and both
+    `magic.ai` prompts already carry it (`test_magic_ai.py`)."""
+    assert err(["m.py", "--buchi", "(= s0 0)", "--infer", "ai",
+                "--pre", "(>= e0 0)"]) == ""
+
+
+@pytest.mark.parametrize("flag,value", [("--invariant", "(= s0 1)"), ("--ranking", "s0")])
+def test_ai_refuses_a_supplied_certificate(flag, value):
+    """The other half: this route answers with both at once and puts a
+    supplied one to nothing, so it would be overwritten rather than used."""
+    message = err(["m.py", "--buchi", "(= s0 0)", "--infer", "ai", flag, value])
+    assert flag in message and "ai-cegis" in message
+
+
 @pytest.mark.parametrize(
-    "flag,value",
-    [("--invariant", "(= s0 1)"), ("--ranking", "s0"), ("--pre", "true")],
+    "flag,value", [("--invariant", "(= s0 1)"), ("--ranking", "s0")],
 )
 def test_nuterm_refuses_what_it_would_discard(flag, value):
-    """`main.py:627`, from the row's `seeds` + `seeds_refusal`."""
+    """`main.py:627`, from the row's `seeds` + `seeds_refusal`.
+
+    `--pre` is no longer one of these: it is the entry assumption Houdini
+    checks initiation under, and `test_magic_learn.py` measures that it is
+    used rather than merely accepted."""
     message = err(["m.py", "--buchi", "(= s0 0)", "--infer", "nuterm", flag, value])
     assert flag in message and "comes from the learner" in message
+
+
+def test_nuterm_takes_a_precondition():
+    assert err(["m.py", "--buchi", "(= s0 0)", "--infer", "nuterm",
+                "--pre", "(>= e0 0)"]) == ""
 
 
 @pytest.mark.parametrize(
@@ -672,3 +696,75 @@ def test_the_workspace_is_not_a_route_owned_path():
 
     for route in ROUTES:
         assert not any(o.startswith(ARTIFACTS_DIR) for o in route.owns)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# What a refusal leaves behind
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _note_store(tmp_path):
+    from zrth.lean.artifacts import ArtifactStore
+
+    return ArtifactStore(dir=tmp_path / "artifacts", producer="test")
+
+
+class _NoteHandle:
+    def __init__(self, store):
+        self.artifacts = store
+
+
+class _NoteRoute:
+    name = "test-route"
+
+
+def test_a_refusal_says_whether_anything_was_searched():
+    """Two refusals that read alike and mean opposite things. The default is
+    the common case: a gate, reached before a solver starts."""
+    assert Refused("gate").searched is False
+    assert Refused("gave up", searched=True).searched is True
+
+
+def test_a_route_that_looked_at_nothing_records_a_decline(tmp_path):
+    """`NO-CERT` is three measurements in one name, and this is the one the
+    prose is worst at: nothing ran, so there is no fact about the module."""
+    from zrth.lean.main import _note_refusal
+
+    store = _note_store(tmp_path)
+    _note_refusal(_NoteHandle(store), _NoteRoute(), Refused("s0 is (Tuple Int Int)"))
+    kept = [a for a in store.list() if a.role == "note"]
+    assert [a.status for a in kept] == ["declined"]
+    assert "Tuple" in (store.dir / kept[0].name).read_text()
+
+
+def test_a_search_that_ran_out_records_unknown(tmp_path):
+    """Not a decline: a search did run, and that it did not finish is a fact
+    about how hard this module is."""
+    from zrth.lean.main import _note_refusal
+
+    store = _note_store(tmp_path)
+    _note_refusal(_NoteHandle(store), _NoteRoute(),
+                  Refused("no ranking function", searched=True))
+    assert [a.status for a in store.list() if a.role == "note"] == ["unknown"]
+
+
+def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
+    """`smt-linear`, `sygus`, `houdini` and `vampire` each leave a note with
+    more in it than this one, and a second saying less is worse than none."""
+    from zrth.lean.main import _note_refusal
+
+    store = _note_store(tmp_path)
+    store.note("the space is empty\n", status="no_solution", what="x", why="y")
+    _note_refusal(_NoteHandle(store), _NoteRoute(), Refused("...", searched=True))
+    assert [a.status for a in store.list()
+            if a.role == "note"] == ["no_solution"]
+
+
+def test_a_missing_package_is_not_filed_against_the_module(tmp_path):
+    """An `ImportError` is about how the route was asked for. Filing it as a
+    decline would read as a fact about a run that never started."""
+    from zrth.lean.main import _note_refusal
+
+    store = _note_store(tmp_path)
+    _note_refusal(_NoteHandle(store), _NoteRoute(), ImportError("no cvc5"))
+    assert store.list() == ()

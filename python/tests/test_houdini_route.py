@@ -35,6 +35,7 @@ from zrth.lean.houdini_solver import SolverSpec
 
 LIMITS = Path(__file__).parent / "limits" / "mods"
 FIXTURES = Path(__file__).parent / "fixtures"
+HYBRID = Path(__file__).parent / "bench_matrix" / "hybrid"
 
 
 def module_at(path: Path):
@@ -76,14 +77,15 @@ def infer(name: str, kind: str, prp: str, *, solver="cvc5",
 def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A route mid-flight: its context, obligations and candidate parser,
     without a search having been run. What the seam's cases ask about."""
-    from zrth.lean.magic.houdini import Obligations, TA2MagicHoudini
+    from zrth.lean.magic.houdini import Obligations, TA2MagicHoudini, columns
     from zrth.lean.smt_synth import SynthContext
 
     cd = CertificateData(prp=prp, kind=kind)
     magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"),
                             log=lambda *_: None)
     magic.ctx = SynthContext.build(magic.module, cd, route="houdini",
-                                   takes=("int", "bool", "bv", "real"))
+                                   takes=("int", "bool", "bv", "real", "tuple"))
+    magic.cols = columns(magic.ctx)
     return magic, Obligations(magic.ctx)
 
 
@@ -310,6 +312,21 @@ def test_a_cached_proof_is_asked_again_only_when_a_core_is_wanted():
     assert asked == [False, True]
 
 
+def test_a_refuted_rank_comes_back_with_the_round_that_refutes_it():
+    """A ranking function's refutation is a state and its successor, and
+    cvc5 hands both back: the round the fit learns from next time."""
+    from zrth.lean.houdini_solver import Cvc5Solver, Verdict
+
+    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    inv = magic._parse(["(<= 0 s0)", "(<= s0 100)"])
+    rising = magic._parse(["(- 100 s0)"])[0]
+    answer = Cvc5Solver(magic.ctx.tm, seconds=30).prove(
+        ob.drops(inv, rising), 5, model=True)
+    assert answer.verdict is Verdict.REFUTED
+    (s,), (sp,) = answer.values[:1], answer.values[1:]
+    assert s > 0 and sp == s - 1                    # a round of the countdown
+
+
 def test_entry_is_narrowed_until_it_is_proved_not_once_per_model():
     """One counter-model names the facts *that* initial state breaks, and a
     different one may break others -- so the entry check is a fixpoint, not
@@ -400,6 +417,70 @@ def test_a_solver_with_no_model_falls_back_to_asking_fact_by_fact():
 
     assert [f.src for f in from_model] == [f.src for f in one_at_a_time]
     assert [f.src for f in from_model] == ["(<= 0 s0)", "(<= s0 100)"]
+
+
+def test_the_cut_is_taken_again_over_what_it_returned():
+    """A core is what the refutation touched, so a wide pool gives it more
+    to touch -- and one cut is therefore not a fixed point.
+
+    Scripted with the shape Vampire's cores were measured to have: the
+    proof goes through whatever it is asked from, and names half of what it
+    was offered. Asking the same question of the half is a *different*
+    refutation, and it names half again. Four facts have to reach one, and
+    a single pass reaches two.
+    """
+    from zrth.lean.houdini_solver import Answer, Solver, Verdict
+
+    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    magic.ob = ob
+    facts = magic._parse(["(<= 0 s0)", "(<= s0 100)",
+                          "(<= s0 200)", "(<= s0 300)"])
+    pools = []
+
+    class Half(Solver):
+        def _run(self, query, budget, core, model):
+            named = [n for n, _t in query.hyps if n != "pre"]
+            pools.append(len(named))
+            return Answer(Verdict.PROVED,
+                          core=frozenset(named[:(len(named) + 1) // 2]))
+
+    kept = magic._shrink(Half(seconds=30), facts, facts[1:2], 5)
+
+    assert [f.src for f in kept] == ["(<= s0 100)"]
+    # 4, 4 (the closure, asked until it adds nothing), then 2, then 1. The
+    # check that what came out is inductive on its own costs no fifth call:
+    # the last round asked that very question -- a pool whose closure is
+    # the whole of it -- and the cache is keyed on the question.
+    assert pools == [4, 4, 2, 1]
+
+
+def test_a_cut_that_stops_answering_keeps_the_round_before_it():
+    """A later round's time limit is not evidence against an earlier
+    round's proofs, so what the first cut reached still stands."""
+    from zrth.lean.houdini_solver import Answer, Solver, Verdict
+
+    magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    magic.ob = ob
+    facts = magic._parse(["(<= 0 s0)", "(<= s0 100)",
+                          "(<= s0 200)", "(<= s0 300)"])
+
+    class Once(Solver):
+        """Answers the first pool it is shown and gives up on every
+        narrower one -- a portfolio that found a proof at four hypotheses
+        and no longer finds it at two."""
+
+        def _run(self, query, budget, core, model):
+            named = [n for n, _t in query.hyps if n != "pre"]
+            if len(named) < len(facts):
+                return Answer(Verdict.UNKNOWN)
+            return Answer(Verdict.PROVED, core=frozenset(named[:2]))
+
+    kept = magic._shrink(Once(seconds=30), facts, facts[1:2], 5)
+
+    # The first cut is two facts and the second round cannot be had. The
+    # two are kept -- but only because they were proved inductive on their
+    # own, which `Once` refuses, so the invariant stays whole.
+    assert [f.src for f in kept] == [f.src for f in facts]
 
 
 def test_a_query_carries_its_transition_once_and_names_every_fact():
@@ -531,6 +612,55 @@ def test_a_real_ranking_function_is_scaled_before_it_is_floored(solver):
 
 
 @BOTH
+def test_a_matrix_component_is_ranked_by_one_of_its_elements(solver):
+    """`m_relu_vec` is a 3-vector stepping `v' = relu(v - 1)` from `(3,2,1)`.
+
+    The route refused the module outright for its sort. Its elements are
+    columns now, so `0 <= v[0]` is a candidate and `v[0]` is a rank, which
+    is the whole certificate -- and neither is sayable about the tuple
+    itself, which has no order to bound and no arithmetic to fall.
+
+    Both solvers, like the cases around it: the obligations name a constant
+    per element, so what Vampire is shown has no tuple in it even though
+    the certificate is written with selectors.
+    """
+    cd = infer("m_relu_vec", "buchi", "(= ((_ tuple.select 0) s0) 0)",
+               solver=solver_or_skip(solver))
+    assert cd.ranking_smt == "((_ tuple.select 0) s0)"
+    assert cd.inv_smt == "(<= 0 ((_ tuple.select 0) s0))"
+
+
+@BOTH
+def test_an_element_of_one_component_is_told_from_an_element_of_another(solver):
+    """`m_mixed`'s state is `x : 1x1` and `v : 3x1`, so the second
+    component's elements are columns 1, 2 and 3 while its own slots are 0,
+    1 and 2. The property is about `v[0]`, and a certificate that confused
+    the two indices would rank `x`."""
+    cd = infer("m_mixed", "buchi", "(= ((_ tuple.select 0) s1) 0)",
+               solver=solver_or_skip(solver))
+    assert cd.ranking_smt == "((_ tuple.select 0) s1)"
+
+
+def test_no_obligation_names_anything_of_tuple_sort():
+    """What lets Vampire read a matrix-shaped module at all.
+
+    The holders are constructors over a constant per element, so a
+    `declare-fun` or `define-fun` for `(Tuple Int Int Int)` -- which
+    Vampire's front end rejects outright -- is never written. The
+    certificate still says `((_ tuple.select 0) s0)`, because that is the
+    module's own namespace; it is the *obligation* that is scalar.
+    """
+    from zrth.lean.houdini_solver import VampireSolver
+
+    magic, ob = a_search("m_relu_vec", "buchi",
+                         "(= ((_ tuple.select 0) s0) 0)")
+    fact = magic._parse(["(<= 0 ((_ tuple.select 0) s0))"])
+    script = VampireSolver._script(ob.preserved(fact, fact))
+    assert "Tuple" not in script and "tuple" not in script
+    assert "v_s0_0" in script and "v_sp0_0" in script
+
+
+@BOTH
 def test_two_real_components_are_ranked_by_the_one_that_falls(solver):
     """`m_lra_conv`: `x` converges to 0 and `y` to 2, two rounds apart. The
     relation between them is a fact, so `y`'s range carries `x`'s rank."""
@@ -538,6 +668,37 @@ def test_two_real_components_are_ranked_by_the_one_that_falls(solver):
                solver=solver_or_skip(solver))
     assert cd.ranking_smt == "(to_int s0)"
     assert "(= (- s0 s1) (- 2.0))" in cd.inv_smt
+
+
+def test_each_mode_is_bounded_by_what_its_round_reaches():
+    """The thermostat heats as `T' = 0.875 T + 3.75` while `T < 22`, so with
+    the heater on it never passes 23, and with it off never passes the
+    23.875 one more tick of heating gives -- constants no program text
+    names, computed rather than read."""
+    from zrth.lean.magic.modes import mode_bounds
+
+    magic, ob = a_search("m_thermostat", "buchi", "(>= s0 21.0)", fixture=HYBRID)
+    facts = mode_bounds(magic.ctx, ob, log=lambda *_: None)
+    assert "(=> s1 (<= s0 23.0))" in facts
+    assert "(=> (not s1) (<= 17.0 s0))" in facts
+    assert "(<= s0 23.875)" in facts
+
+
+@BOTH
+def test_a_hysteresis_band_is_proved_by_the_bounds_each_mode_keeps(solver):
+    """No interval is inductive for `15 <= T <= 25` -- from 25 with the
+    heater on the room reaches 25.5 -- and the bounds per mode are."""
+    cd = infer("m_thermostat", "safety", "(and (>= s0 15.0) (<= s0 25.0))",
+               solver=solver_or_skip(solver), fixture=HYBRID)
+    assert "(=> s1 (<= s0 23.0))" in cd.inv_smt
+
+
+def test_a_rank_is_fitted_again_to_the_round_the_solver_refutes_it_with():
+    """The tank fills by 1.5 to 12, and `24 - 2h` floors to 0 at h = 11.9:
+    a state off the half-unit lattice the draws live on. cvc5's refutation
+    is that state, and fitted to it the shift is 25."""
+    cd = infer("m_watertank", "buchi", "(>= s0 12.0)", fixture=HYBRID)
+    assert cd.ranking_smt.startswith("(ite s1 (to_int (+ 25.0 (* (- 2.0) s0)))")
 
 
 # ══════════════════════════════════════════════════════════════════════════

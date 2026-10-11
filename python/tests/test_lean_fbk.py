@@ -202,6 +202,22 @@ def _na(module: Module, prop_smt: str) -> str:
     return atom_to_lean_na(ctx, prop, module_name="T")
 
 
+def _encoding(module: Module, pre_smt: str):
+    """What the route's own shape check makes of this module and `--pre`."""
+    from zrth.lean.fbk_proveit import check_module
+
+    return check_module(module, True, pre_smt)
+
+
+def _na_pre(module: Module, prop_smt: str, pre_smt: str) -> str:
+    """:func:`_na` for a run that was given a precondition."""
+    ctx = LeanContext(module)
+    enc = _encoding(module, pre_smt)
+    prop = property_to_bool_lean(module, prop_smt, len(ctx.ctrl_next))
+    return atom_to_lean_na(ctx, prop, module_name="T",
+                           bodies=enc.bodies, pre_lean=enc.pre_lean)
+
+
 # ── the shape lean2vmt reads ────────────────────────────────────────────────
 
 
@@ -341,9 +357,188 @@ def test_property_must_be_boolean():
 # ── what the route refuses ──────────────────────────────────────────────────
 
 
-def test_external_inputs_abort():
-    with pytest.raises(NAUnsupported, match="external input"):
+def test_an_input_read_while_stepping_aborts():
+    """`x := x + e` reads its input mid-transition.
+
+    Not a printing problem: `update x l x'` draws `l` afresh at each step,
+    so the input is a slot of neither `state` nor `statenext`, and the one
+    slot it might share would force this step's input to be the next step's.
+    """
+    with pytest.raises(NAUnsupported, match="transition reads an external input"):
         check_na_supported(LeanContext(_with_extl()))
+
+
+def _input_start() -> Module:
+    """`y` starts at an unconstrained input, `x` at 0; both then hold.
+
+    The svcomp `houdini-inv` shape: a program variable whose initial value
+    the source leaves to the environment.
+    """
+    x = Var(Int([1, 1]))
+    y = Var(Int([1, 1]))
+    e = Var(Int([1, 1]))
+    init = [
+        Term(LIA.Int(torch.tensor([[0]])), [X(x)]),
+        Term(LIA.Id(), [X(y)], [X(e)]),
+    ]
+    update = [Term(LIA.Id(), [X(x)], [x]), Term(LIA.Id(), [X(y)], [y])]
+    return Module.sequential([x, y, e], init, update)
+
+
+def test_a_slot_that_starts_at_an_input_is_left_out_of_INIT():
+    """"`y` starts anywhere" is said by writing no `Init_1` for it.
+
+    That is the module's own initial set rather than a weakening of it,
+    which matters because a counterexample this route reports has to be a
+    run the module has.
+    """
+    src = _na(_input_start(), "(>= s0 0)")
+    assert "abbrev Init_0" in src and "abbrev Init_1" not in src
+    assert "INIT (state : StateType) : Bool :=\n  Init_0 state\n" in src
+
+
+def test_an_input_costs_no_state_slot():
+    """The input is not a variable of the model -- there is nothing to be
+    free, only a conjunct that is not there."""
+    src = _na(_input_start(), "(>= s0 0)")
+    assert "abbrev var_2" not in src
+    assert "abbrev StateType" in src and "| 2 =>" not in src
+
+
+def test_every_slot_free_leaves_INIT_as_true():
+    """An empty conjunction is a state set, not a missing one."""
+    x = Var(Int([1, 1]))
+    e = Var(Int([1, 1]))
+    module = Module.sequential(
+        [x, e],
+        [Term(LIA.Id(), [X(x)], [X(e)])],
+        [Term(LIA.Id(), [X(x)], [x])],
+    )
+    assert "abbrev INIT (state : StateType) : Bool :=\n  true\n" in _na(
+        module, "(>= s0 0)"
+    )
+
+
+def test_an_initial_value_built_from_an_input_is_refused():
+    """`x := e + 1` would have to become "`x` is anything", and a REFUTED
+    read off a model admitting more than the module is a counterexample the
+    module cannot produce."""
+    x = Var(Int([1, 1]))
+    e = Var(Int([1, 1]))
+    one = Wire(Int([1, 1]))
+    module = Module.sequential(
+        [x, e],
+        [Term(LIA.Int(torch.tensor([[1]])), [one]),
+         Term(LIA.Add(), [X(x)], [X(e), one])],
+        [Term(LIA.Id(), [X(x)], [x])],
+    )
+    with pytest.raises(NAUnsupported, match="rather than being one"):
+        check_na_supported(LeanContext(module))
+
+
+def test_two_slots_from_one_input_start_equal():
+    """They start equal, and two slots each left free do not: the first is
+    left free and the second is pinned to it -- SV-COMP's `i = N` after
+    `N = nondet()`, which `i <= N` rests on."""
+    x = Var(Int([1, 1]))
+    y = Var(Int([1, 1]))
+    e = Var(Int([1, 1]))
+    module = Module.sequential(
+        [x, y, e],
+        [Term(LIA.Id(), [X(x)], [X(e)]), Term(LIA.Id(), [X(y)], [X(e)])],
+        [Term(LIA.Id(), [X(x)], [x]), Term(LIA.Id(), [X(y)], [y])],
+    )
+    src = _na(module, "(<= s0 s1)")
+    assert "abbrev Init_0" not in src
+    assert "abbrev init_1 (state : StateType) : Int :=\n  (var_0 state)" in src
+    assert "INIT (state : StateType) : Bool :=\n  Init_1 state\n" in src
+
+
+# ── `--pre`, over the slots its inputs start ────────────────────────────────
+
+
+def _pre(module: Module, pre_smt: str) -> str:
+    """`--pre` as this route encodes it, through the route's own entry point."""
+    from zrth.lean.fbk_proveit import check_module
+
+    return check_module(module, True, pre_smt).pre_lean
+
+
+def test_a_precondition_is_read_off_the_slot_its_input_starts():
+    """`e0` is not a variable of the model; the slot `init` wrote it to is,
+    and reading that slot back is reading the input."""
+    assert _pre(_input_start(), "(>= e0 5)") == "(decide ((5 : Int) ≤ (var_1 state)))"
+
+
+def test_a_precondition_becomes_an_INIT_conjunct():
+    """`INIT` is where a precondition over inputs belongs: it constrains the
+    state at time 0 and nothing later."""
+    module = _input_start()
+    src = _na_pre(module, "(>= s0 0)", "(>= e0 5)")
+    assert "abbrev PRE (state : StateType) : Bool :=" in src
+    assert "INIT (state : StateType) : Bool :=\n  Init_0 state &&\n  PRE state\n" in src
+
+
+def test_a_precondition_is_not_a_TRANS_conjunct():
+    """A precondition *is* an auxiliary invariant, and in an encoding with
+    real input variables it would belong in both halves. Not in this one:
+    the transition reads no input, so with `PRE` in `INIT` the model is
+    already exactly the module, and `PRE statenext` -- a claim about the
+    initial inputs asserted of an evolved state -- is not something the
+    simulation `TS.transfer` takes could prove."""
+    src = _na_pre(_input_start(), "(>= s0 0)", "(>= e0 5)")
+    trans = src[src.index("abbrev TRANS"):src.index("-- `--pre`")]
+    assert "PRE" not in trans
+
+
+def test_a_precondition_over_a_latched_input_is_refused():
+    """`init` reads `e.2` alone, so a predicate over `e.1` admits the same
+    initial state whenever *some* latched value satisfies it -- an
+    existential the NA has no quantifier for."""
+    with pytest.raises(ProveItError, match="latched input el0"):
+        _pre(_input_start(), "(>= el0 1)")
+
+
+def test_a_precondition_over_an_input_that_starts_no_slot_is_refused():
+    """The model keeps no value to read that input back from. Here `init`
+    takes the first element of a two-element input and drops the second."""
+    x = Var(Int([1, 1]))
+    y = Var(Int([1, 1]))
+    e = Var(Int([2, 1]))
+    module = Module.sequential(
+        [x, y, e],
+        [Term(LIA.Int(torch.tensor([[0]])), [X(x)]),
+         Term(LIA.Linear(torch.tensor([[1, 0]]), torch.tensor([[0]])),
+              [X(y)], [X(e)])],
+        [Term(LIA.Id(), [X(x)], [x]), Term(LIA.Id(), [X(y)], [y])],
+    )
+    # The element it *did* keep is readable.
+    assert _pre(module, "(>= ((_ tuple.select 0) e0) 5)") == \
+        "(decide ((5 : Int) ≤ (var_1 state)))"
+    with pytest.raises(ProveItError, match=r"input e0\[1\], which starts no"):
+        _pre(module, "(>= ((_ tuple.select 1) e0) 5)")
+
+
+def test_a_precondition_makes_start_maps_read_its_hypothesis():
+    """`INIT`'s `PRE` conjunct is exactly `init_pre l`, so the proof has to
+    keep that hypothesis rather than discard it -- and `simp` on the goal
+    alone would never look at it."""
+    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+
+    module = _input_start()
+    enc = _encoding(module, "(>= e0 5)")
+    src = atom_to_lean_fbk_bridge(
+        LeanContext(module), na_module="TNA",
+        bodies=enc.bodies, pre_lean=enc.pre_lean,
+    )
+    start = src[src.index("theorem start_maps"):src.index("theorem step_maps")]
+    assert "obtain ⟨l, hpre, rfl⟩ := hs" in start
+    assert "simp_all [" in start and "Definition.PRE, init_pre" in start
+    # Without a precondition the hypothesis is `True` and naming it would
+    # leave it unused.
+    plain = atom_to_lean_fbk_bridge(LeanContext(module), na_module="TNA",
+                                    bodies=enc.bodies)
+    assert "obtain ⟨l, _, rfl⟩ := hs" in plain
 
 
 def test_real_state_aborts():
@@ -763,6 +958,70 @@ def test_resolve_project_rejects_a_directory_that_is_not_the_checkout():
 # ── CLI wiring ──────────────────────────────────────────────────────────────
 
 
+# ── what the installed certificate is processed for ─────────────────────────
+
+
+_RAW_CHECK = """\
+#print "Validity check 1"
+theorem validity_check_1_prop (trace : TraceType) :
+    ( (I M) trace 0) ->  (INV trace 0) := by
+  try dsimp only
+  repeat intro
+  with_reducible reduce at *
+  expose_names
+  simp
+  all_goals (revert h; generalizeNatVar trace at 0 using 4; smt)
+"""
+
+
+def test_the_certificate_leaves_Bool_before_it_generalises():
+    """`generalizeNatVar` cannot abstract a slot that a `Decidable` instance
+    still mentions, and `--pre` is what first puts one in `INIT`."""
+    from zrth.lean.fbk_proveit import leave_bool_before_generalize
+
+    out, n = leave_bool_before_generalize(_RAW_CHECK)
+    assert n == 1
+    line = next(l for l in out.splitlines() if "generalizeNatVar" in l)
+    assert "revert h; try simp only [" in line
+    assert line.index("simp only") < line.index("generalizeNatVar")
+    # All of `Bool` or none of it: a `decide` normalised while a `==` is
+    # left behind is a `Prop` goal under a `Bool` hypothesis, which is worse
+    # than not touching it (`fbk/m_countdown/InvBase`).
+    assert "beq_iff_eq" in line and "decide_eq_true_eq" in line
+    assert "Bool.and_eq_true" in line
+
+
+def test_a_certificate_this_does_not_recognise_is_installed_as_it_came():
+    """This rewrites another project's generated proof. A `proveit.py` whose
+    template has moved on should cost a run nothing."""
+    from zrth.lean.fbk_proveit import leave_bool_before_generalize
+
+    other = "theorem t : True := by trivial\n"
+    assert leave_bool_before_generalize(other) == (other, 0)
+
+
+def test_omega_is_offered_before_the_smt_that_closes_a_check():
+    """`smt` reconstructs a cvc5 proof, and on `fbk/m_step2/NiS2Odd3` the
+    kernel rejects the term it builds -- `(kernel) application type
+    mismatch` inside a `Smt.Reconstruct.Int.sum_ub` chain, which is
+    lean-smt's reconstruction rather than anything `vmt2lean` wrote.
+
+    A validity check is linear integer arithmetic, so `omega` decides it and
+    builds its own proof instead of translating one. Measured: that
+    certificate builds with this and does not without.
+    """
+    from zrth.lean.fbk_proveit import try_omega_before_smt
+
+    out, n = try_omega_before_smt(_RAW_CHECK)
+    assert n == 1
+    assert "using 4; first | omega | smt)" in out
+
+    # Only an `smt` that closes a goal. One already allowed to fail is left
+    # as it is, and so is a name that merely ends in those three letters.
+    left = "  try smt\n  exact foo.smt\n"
+    assert try_omega_before_smt(left) == (left, 0)
+
+
 def _verith(*args) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["uv", "run", "verith", *args],
@@ -783,7 +1042,11 @@ def _verith(*args) -> subprocess.CompletedProcess:
         (["--safety", "(= s0 0)", "--infer"], "a run takes one route"),
         (["--safety", "(= s0 0)", "--invariant", "(= s0 0)"], "incompatible with --invariant"),
         (["--safety", "(= s0 0)", "--ranking", "s0"], "is meaningless with --safety"),
-        (["--safety", "(= s0 0)", "--pre", "true"], "incompatible with --pre"),
+        # `--pre` is *not* here: it is an assumption about the module's
+        # inputs rather than a piece of the certificate ic3ia produces, and
+        # the NA model carries it. What it refuses is a precondition its
+        # slots cannot hold, which is a question about the module --
+        # `test_a_precondition_over_an_input_that_starts_no_slot_is_refused`.
     ],
 )
 def test_fbk_proveit_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):

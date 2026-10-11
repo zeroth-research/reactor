@@ -95,6 +95,7 @@ from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from .cert import CertificateData, generate_zeroth_hammer_lean, smt_predicates_to_lean
 from .cli import Settings, parse_args
 from .common import Refused
+from .native import lean_gaps
 from .infer_route import InferInput, ProjectHandle
 from .project import (
     ENCODINGS,
@@ -111,7 +112,7 @@ from .smt_query import ModuleQueries, pre_check, predicate_facts, solver_hints
 from .translate import ModuleToLean4
 
 
-def _build_cert(args, project_dir: Path, cert_data) -> None:
+def _build_cert(settings: Settings, project_dir: Path, cert_data) -> None:
     """Honour `--build-cert`, once the certificate is written.
 
     `cert_data` is what the project's certificate was generated from, or
@@ -121,7 +122,7 @@ def _build_cert(args, project_dir: Path, cert_data) -> None:
     answers nothing usable leaves `inv` or `ranking` unset, and building
     that would report a proof of `sorry`.
     """
-    if not args.build_cert:
+    if not settings.build_cert:
         return
     if cert_data is not None:
         # A safety certificate has no ranking function to be missing.
@@ -143,14 +144,15 @@ def _build_cert(args, project_dir: Path, cert_data) -> None:
 
 
 def _refused(settings: Settings, error: Exception) -> SystemExit:
-    """A route's refusal, under the flag it is about.
+    """A refusal, under the flag it is about.
 
     Most routes are asked for with `--infer`, so that is what a failure of
     one is reported under. The proveit route's own errors already name
     `--fbk-proveit`, `--ic3ia` or `--safety`, and prefixing those again
-    would name two flags for one problem.
+    would name two flags for one problem. With no route there is no flag to
+    name: the refusal is about the module.
     """
-    if settings.route is not None and settings.route.errors_self_named:
+    if settings.route is None or settings.route.errors_self_named:
         return SystemExit(f"error: {error}")
     return SystemExit(f"error: --infer: {error}")
 
@@ -224,10 +226,10 @@ def _record_predicates(store, settings: Settings, cert_data, *,
         )
         if src is None:
             continue
-        store.encoded(
-            role, role, src.strip(), language="smt-src",
-            what=(what + " Inferred by this run's route." if inferred else what),
-        )
+        # A route infers the certificate, never the property it was asked about.
+        if inferred and role != "property":
+            what += " Inferred by this run's route."
+        store.encoded(role, role, src.strip(), language="smt-src", what=what)
 
 
 def _workspace(settings: Settings, module, project_dir: Path) -> ArtifactStore:
@@ -320,6 +322,41 @@ def _replan(settings: Settings, module, inferred, project_cert_data) -> None:
         setattr(project_cert_data, field, getattr(lean, field))
 
 
+def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
+    """Leave *why* a route gave up in `artifacts/`, if it did not say so itself.
+
+    `NO-CERT` is three measurements wearing one name -- a space proved
+    empty, a budget that ran out, a shape the route never looked at -- and
+    the prose that distinguishes them is a dozen wordings per route, which
+    is why reading it back is guesswork. The status is not: a route that
+    searched a bounded shape and refuted it writes `no_solution`, one whose
+    budget ran out writes `unknown`, and everything else is a decline.
+
+    Only when the route wrote nothing. `smt-linear`, `sygus`, `houdini` and
+    `vampire` each leave a note of their own with more in it than this, and
+    a second one saying less would be worse than none.
+
+    An `ImportError` is not about the module at all -- a package or a key is
+    missing -- so it is left unrecorded rather than filed against a run that
+    never started.
+    """
+    store = getattr(handle, "artifacts", None)
+    if store is None or store.notes or isinstance(e, ImportError):
+        return
+    searched = getattr(e, "searched", False)
+    store.note(
+        f"{e}\n",
+        status="unknown" if searched else "declined",
+        what=(f"A search by `--infer {route.name}` that did not finish."
+              if searched else
+              f"`--infer {route.name}` declined this module and property."),
+        why=("The budget ran out first; nothing is known about the space."
+             if searched else
+             "Nothing was searched, so this says what the route does not "
+             "take rather than anything about the module's difficulty."),
+    )
+
+
 def _infer(
     settings: Settings, module, handle: ProjectHandle, cert_data, prechecked
 ) -> "CertificateData | None":
@@ -352,6 +389,7 @@ def _infer(
     except (Refused, ImportError) as e:
         # A missing package and a missing key are both about how the route
         # was asked for, not about the module.
+        _note_refusal(handle, route, e)
         raise _refused(settings, e) from e
 
     # The row *declares* what comes back and the result carries it, so the
@@ -411,22 +449,11 @@ def main():
         raise SystemExit(f"error: {e}") from e
     print(module)
 
-    # The route's own shape check, before a line of Lean is written. Left
-    # until the route runs, a module its encoding cannot express is met
-    # first by `create_project` -- which fails about the functional
-    # encoding, in a traceback, for a route that was never going to use it.
-    #
-    # Making the check *is* encoding the module, so what it answered with is
-    # kept and handed to the route below rather than encoded again.
-    prechecked = None
-    if settings.route is not None and settings.route.precheck is not None:
-        try:
-            prechecked = settings.route.precheck(
-                module, settings.route_opts, settings.route_config
-            )
-        except (Refused, ImportError) as e:
-            raise _refused(settings, e) from e
-
+    # The flags, gathered before anything asks about them. Nothing here
+    # needs the module; it is first because the route's shape check below
+    # is entitled to an opinion about the predicates as well as about the
+    # module -- `--pre` on `--infer fbk-proveit` is answerable only by the
+    # encoding, so it is answered where the encoding is made.
     cert_data: CertificateData | None = None
     if settings.prp or settings.pre or settings.invariant or settings.ranking:
         cert_data = CertificateData(prp=settings.prp, kind=settings.kind)
@@ -438,13 +465,50 @@ def main():
         if settings.ranking:
             cert_data.ranking = settings.ranking
 
+    # The route's own shape check, before a line of Lean is written. Left
+    # until the route runs, a module its encoding cannot express is met
+    # first by `create_project` -- which fails about the functional
+    # encoding, in a traceback, for a route that was never going to use it.
+    #
+    # Making the check *is* encoding the module, so what it answered with is
+    # kept and handed to the route below rather than encoded again.
+    prechecked = None
+    if settings.route is not None and settings.route.precheck is not None:
+        try:
+            prechecked = settings.route.precheck(
+                module, settings.route_opts, settings.route_config, cert_data
+            )
+        except (Refused, ImportError) as e:
+            raise _refused(settings, e) from e
+
+    # The same question for the *project*, which every route needs written
+    # whatever it infers. After the route's own check, so a route with an
+    # opinion about this module still gets to state it in its own words.
+    #
+    # An operator with no Lean form is a fact about the module, and saying so
+    # here says it once, before any of the project exists. Left to codegen it
+    # arrives as a missing table cell in the middle of a file, which is a
+    # sentence about `ops.py` for a user who asked about a module.
+    #
+    # The context is built once and threaded: its discovery pass interns
+    # every init/update term, and codegen and the rewrites after inference
+    # need the same one. `cert_data` contributes the terms
+    # `project_cert_data` would, since rendering passes term lists through.
+    ctx = lean_context_for(module, cert_data)
+    gaps = lean_gaps(ctx)
+    if gaps:
+        raise _refused(settings, Refused(
+            "this module has no Lean form: "
+            + "; also ".join(gaps)
+        ))
+
     # The workspace belongs to the project, not to the route: `--artifacts
     # reset` is what to pass when a bad artifact is being inherited by every
     # run, and a run that selects no route is one of those runs. Built before
     # the pre-check rather than after `create_project`, because the pre-check
     # is the run's first encoding and what it encodes is worth keeping.
     store = (
-        None if settings.cert_file or settings.hammer_file
+        None if settings.cert_file
         else _workspace(settings, module,
                         settings.output_dir / settings.project_name)
     )
@@ -490,9 +554,6 @@ def main():
         return
 
     print(".. Generating lean code")
-    # Built once and threaded: the discovery pass interns every init/update
-    # term, and the files rewritten after inference need the same one.
-    ctx = lean_context_for(module, project_cert_data)
     try:
         project_dir = create_project(
             output_dir=settings.output_dir,
@@ -511,8 +572,8 @@ def main():
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e
 
-    print(".. Doing TA2Magic")
     if settings.route is not None:
+        print(f".. Inferring the certificate with --infer {settings.route.name}")
         handle = ProjectHandle(
             dir=project_dir,
             name=settings.project_name,

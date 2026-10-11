@@ -11,7 +11,7 @@ to the ``proveit.py`` driver of the ``lean-ltl-certifying`` repository:
                               ▼
               <Proj>/ProveIt/<Proj>Cert.lean   (raw proveit.py output)
                               │
-                              ▼  "processing" — a copy, for now
+                              ▼  processing (`leave_bool_before_generalize`)
               <Proj>/Certificate/Certificate.lean   (the project's own
                                     certificate, which `Certificate.lean`
                                     imports and `lake build` reaches)
@@ -37,11 +37,13 @@ compile an error.  ``README.md`` spells the whole envelope out.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 from .common import LeanContext
 from .project import PROVEIT_DIR, na_module_name, stream
@@ -51,11 +53,34 @@ from .translate.fbk import (
     SlotBodies,
     atom_to_lean_na,
     check_na_supported,
+    pre_over_slots,
 )
 
 
 class ProveItError(RuntimeError):
-    """A step of the proveit route could not be carried out."""
+    """A step of the proveit route could not be carried out.
+
+    `searched` is `Refused.searched`, for the one step that searches:
+    `proveit.py` failing is ic3ia running and not deciding, which says
+    something about the module, where every other failure here is about
+    what the encoding or the checkout can take.
+    """
+
+    def __init__(self, message: str, *, searched: bool = False):
+        super().__init__(message)
+        self.searched = searched
+
+
+class NAEncoding(NamedTuple):
+    """What :func:`check_module` learned, for the files written from it.
+
+    Both answers cost a cvc5 encoding and both are wanted twice -- by the NA
+    model and by the bridge -- so the check hands them on rather than being
+    asked again. `pre_lean` is `""` for a run with no `--pre`.
+    """
+
+    bodies: SlotBodies
+    pre_lean: str = ""
 
 
 # Files that identify a `lean-ltl-certifying` checkout.
@@ -159,8 +184,10 @@ def resolve_ic3ia(spec: str | None) -> str | None:
     )
 
 
-def check_module(module, simplify: bool = True) -> SlotBodies:
-    """The module's slot bodies; `ProveItError` if the NA encoding has none.
+def check_module(
+    module, simplify: bool = True, pre_smt: str | None = None
+) -> NAEncoding:
+    """The module's slot bodies and `--pre`; `ProveItError` if it has none.
 
     Called before anything is generated as well as inside :func:`run`: a
     module this route cannot encode would otherwise be met first by
@@ -168,17 +195,134 @@ def check_module(module, simplify: bool = True) -> SlotBodies:
     out of the functional encoder, for an op that has nothing to do with
     the certificate route the user asked for.
 
-    Answering the question means encoding the module into cvc5, so the
-    answer is handed back and carried to the two files written from it
+    `--pre` is checked here for the same reason and not a weaker one: which
+    preconditions this encoding can carry depends on the module's slots
+    (`fbk.pre_over_slots`), so it is a question only the encoding can answer,
+    and answering it after the project is written answers it too late.
+
+    Answering either means encoding into cvc5, so the answers are handed
+    back and carried to the two files written from them
     (:func:`write_na_model`, :func:`write_equivalence`).  `main.py`'s call,
     before the project is generated, is then the only encoding a whole run
     makes: five of them on a one-wire counter before this was threaded
     through, one now.
     """
+    ctx = LeanContext(module)
     try:
-        return check_na_supported(LeanContext(module), simplify)
+        bodies = check_na_supported(ctx, simplify)
+        if not pre_smt:
+            return NAEncoding(bodies)
+        return NAEncoding(bodies, pre_over_slots(ctx, _parse(module, pre_smt, "--pre"), bodies))
     except NAUnsupported as e:
         raise ProveItError(f"--fbk-proveit: {e}") from e
+
+
+# The step between `proveit.py`'s certificate and the project's own, which
+# used to be a copy.
+#
+# `vmt2lean.py` proves the first validity check -- "the initial condition
+# implies the invariant" -- by reverting the initial condition into the goal
+# and generalising each state slot out of it. That last step cannot see
+# through a `Decidable` instance. `with_reducible reduce at *`, two lines
+# above, rewrites `var_k (trace 0)` to `trace 0 k` inside the proposition a
+# `decide` is applied to and leaves the instance beside it still reading
+# `(var_k (trace 0)).decLe`; `generalize` then abstracts the one and not the
+# other and reports `result is not type correct`.
+#
+# It cannot arise while `INIT` is a conjunction of `var_k state == c`, which
+# is every module with no external input: `BEq Int` does not take its
+# operands, so there is no instance mentioning a slot. A precondition is a
+# comparison, so `--pre` is what first puts a `decide` in `INIT` -- and it
+# stopped all 6 of the svcomp rows that get that far.
+#
+# Leaving `Bool` first is the repair, and it is where the certificate's own
+# `smt` call wants the goal anyway. `try`, because a goal already in `Prop`
+# is most of them and `simp only` fails when it changes nothing.
+#
+# All of `Bool` or none of it. Normalising the `decide`s and leaving `==`
+# behind is worse than doing nothing: it turns a goal `smt` was closing in
+# `Bool` into a `Prop` conclusion under a `Bool` hypothesis, and that mix
+# cost `fbk/m_countdown/InvBase` -- which has no precondition and was never
+# the point -- its proof. So `beq_iff_eq` is in the set, and the connectives
+# lead it: an `INIT` of several conjuncts is one `&&`, and what is under it
+# is not reached until the `&&` is gone.
+_NORM = (
+    "Bool.and_eq_true, Bool.or_eq_true, "
+    "beq_iff_eq, Bool.not_eq_true', decide_eq_false_iff_not, decide_eq_true_eq, "
+    "Bool.not_eq_eq_eq_not, Bool.not_true, Bool.not_false"
+)
+_REVERT = re.compile(r"revert h; generalizeNatVar")
+
+
+def leave_bool_before_generalize(cert: str) -> "tuple[str, int]":
+    """`cert` with the `Bool` left before each `generalizeNatVar`, and a count.
+
+    A count rather than a raised error when nothing matches: this rewrites
+    another project's generated proof script, so a `proveit.py` that has
+    changed its template should leave the certificate exactly as it came
+    rather than fail a run that may well build.
+    """
+    text, n = _REVERT.subn(f"revert h; try simp only [{_NORM}]; generalizeNatVar", cert)
+    return text, n
+
+
+# `smt` reconstructs a cvc5 proof into a Lean term, and on
+# `fbk/m_step2/NiS2Odd3`'s second validity check the kernel rejects the term
+# it builds: `(kernel) application type mismatch`, inside a chain of
+# `Smt.Reconstruct.Int.sum_ub`. That is lean-smt's reconstruction and not
+# anything `vmt2lean` wrote, which is the same root as the `Failed to
+# reconstruct term` on `svcomp/genady/houdini-inv` -- one fails loudly, the
+# other hands the kernel a term it will not take.
+#
+# A validity check is linear integer arithmetic, which is what `omega`
+# decides, and it builds its own proof rather than translating one. So it is
+# offered first: where it applies there is no reconstruction to get wrong,
+# and where it does not it fails in milliseconds and `smt` runs as before.
+# Measured on `NiS2Odd3`, whose certificate builds with it and does not
+# without.
+#
+# Only an `smt` that closes a goal -- the last tactic of a parenthesised
+# group. The `try smt` further down is already allowed to fail and is left
+# alone.
+_SMT_CLOSER = re.compile(r"(?<![\w.])smt\b(?=\s*\))")
+
+
+def try_omega_before_smt(cert: str) -> "tuple[str, int]":
+    """`cert` with `omega` offered before each closing `smt`, and a count.
+
+    A count rather than a raised error, for the reason
+    :func:`leave_bool_before_generalize` gives: this rewrites another
+    project's generated proof script, and one that has changed its template
+    should be left as it came rather than fail a run that may well build.
+    """
+    return _SMT_CLOSER.subn("first | omega | smt", cert)
+
+
+def _parse(module, src: str, flag: str):
+    """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
+
+    One term manager and one `CegarPromptEnv` per call: the symbols are the
+    module's, so the two flags that come through here -- `--safety` and
+    `--pre` -- read `s0`, `e0`, `el0` as the same things the rest of the
+    package does.
+
+    cvc5's parser raises a bare `RuntimeError` naming the token it stopped
+    at, with no hint of which flag the text came from; the flag is this
+    function's whole reason for taking one.
+    """
+    import cvc5  # lazy: keeps cvc5 off the critical path of a bare run
+
+    from .smt_module import ModuleSMT
+    from .smt_prompt import CegarPromptEnv, parse_predicate
+
+    env = CegarPromptEnv(ModuleSMT(tm=cvc5.TermManager(), module=module))
+    try:
+        term = parse_predicate(env, src)
+    except RuntimeError as e:
+        raise ProveItError(f"{flag}: cannot read `{src}`: {e}") from e
+    if not term.getSort().isBoolean():
+        raise ProveItError(f"{flag} must have sort Bool, got {term.getSort()}")
+    return term
 
 
 def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
@@ -193,24 +337,11 @@ def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
 
     `n_state` is ignored; the layout comes from the module's own wires.
     """
-    import cvc5  # lazy: keeps cvc5 off the critical path of a bare run
-
     from .common import LeanContext
-    from .smt_module import ModuleSMT
-    from .smt_prompt import CegarPromptEnv, parse_predicate
     from .smt_to_lean import smt_to_lean_bool
     from .translate.fbk import _slot_accessors
 
-    tm = cvc5.TermManager()
-    env = CegarPromptEnv(ModuleSMT(tm=tm, module=module))
-    # cvc5's parser raises a bare `RuntimeError` naming the token it stopped
-    # at, with no hint that the token came from `--safety`.
-    try:
-        term = parse_predicate(env, property_smt)
-    except RuntimeError as e:
-        raise ProveItError(f"--safety: cannot read `{property_smt}`: {e}") from e
-    if not term.getSort().isBoolean():
-        raise ProveItError(f"--safety must have sort Bool, got {term.getSort()}")
+    term = _parse(module, property_smt, "--safety")
     try:
         return smt_to_lean_bool(term, _slot_accessors(LeanContext(module).ctrl_next))
     except ValueError as e:
@@ -224,6 +355,7 @@ def write_na_model(
     property_lean: str,
     simplify: bool = True,
     bodies: SlotBodies | None = None,
+    pre_lean: str = "",
 ) -> Path:
     """Write the NA model `proveit.py` consumes and return its path.
 
@@ -243,6 +375,7 @@ def write_na_model(
             module_name=project_name,
             simplify=simplify,
             bodies=bodies,
+            pre_lean=pre_lean,
         )
     )
     print(f"Wrote NA model for proveit.py: {model}")
@@ -255,6 +388,7 @@ def _run(
     cwd: Path,
     what: str,
     why: Callable[[str], str] | None = None,
+    searched: bool = False,
 ) -> str:
     """Run `cmd`, streaming its output; raise `ProveItError` if it fails.
 
@@ -270,7 +404,8 @@ def _run(
         raise ProveItError(f"--fbk-proveit: cannot run {cmd[0]}: {e}") from e
     if rc != 0:
         reason = why(out) if why else "  (see the output above)"
-        raise ProveItError(f"--fbk-proveit: {what} failed (exit {rc})\n{reason}")
+        raise ProveItError(f"--fbk-proveit: {what} failed (exit {rc})\n{reason}",
+                           searched=searched)
     return out
 
 
@@ -307,18 +442,20 @@ def run(
     project_dir: Path,
     project_name: str,
     property_smt: str,
+    pre_smt: str | None = None,
     ic3ia: str | None = None,
     python: str | None = None,
     simplify: bool = True,
     equivalence: bool = True,
-    bodies: SlotBodies | None = None,
+    prechecked: NAEncoding | None = None,
 ) -> Path:
     """Run the whole route and return the installed certificate's path.
 
-    `bodies` is what `check_module` returned to a caller that has already
-    made the check -- `main.py` does, before it generates the project.  The
-    check is repeated here when it is left out, because `run` is also called
-    on its own.
+    `prechecked` is what `check_module` returned to a caller that has
+    already made the check -- `main.py` does, before it generates the
+    project.  The check is repeated here when it is left out, because `run`
+    is also called on its own; `pre_smt` is what it is repeated over, so a
+    direct caller gets the same refusals `main.py` gets early.
     """
     python = python or sys.executable
     root = resolve_project(ltl_project)
@@ -328,12 +465,13 @@ def run(
     check_toolchain(python)
 
     ctx = LeanContext(module)
-    if bodies is None:
-        bodies = check_module(module, simplify)
+    if prechecked is None:
+        prechecked = check_module(module, simplify, pre_smt)
+    bodies, pre_lean = prechecked
 
     property_lean = property_to_bool_lean(module, property_smt)
     model = write_na_model(
-        project_dir, project_name, ctx, property_lean, simplify, bodies
+        project_dir, project_name, ctx, property_lean, simplify, bodies, pre_lean
     )
 
     targets = " ".join(_LAKE_TARGETS)
@@ -348,7 +486,7 @@ def run(
     cmd = [python, str(root / "proveit.py"), str(model), "-o", str(raw_cert)]
     if ic3ia:
         cmd += ["--ic3ia", ic3ia]
-    _run(cmd, cwd=root, what="proveit.py", why=_why)
+    _run(cmd, cwd=root, what="proveit.py", why=_why, searched=True)
 
     if not raw_cert.is_file() or raw_cert.stat().st_size == 0:
         raise ProveItError(
@@ -358,12 +496,21 @@ def run(
 
     installed = project_dir / "Certificate" / "Certificate.lean"
     installed.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(raw_cert, installed)
-    print(f"Installed certificate: {installed}")
+    text, patched = leave_bool_before_generalize(raw_cert.read_text())
+    text, omegas = try_omega_before_smt(text)
+    installed.write_text(text)
+    notes = []
+    if patched:
+        notes.append(f"{patched} normalised out of Bool")
+    if omegas:
+        notes.append(f"{omegas} offered omega before smt")
+    print(f"Installed certificate: {installed}"
+          + (f" ({', '.join(notes)})" if notes else ""))
 
     if equivalence:
         write_equivalence(
-            project_dir, project_name, ctx, simplify=simplify, bodies=bodies
+            project_dir, project_name, ctx,
+            simplify=simplify, bodies=bodies, pre_lean=pre_lean,
         )
     return installed
 
@@ -375,6 +522,7 @@ def write_equivalence(
     *,
     simplify: bool = True,
     bodies: SlotBodies | None = None,
+    pre_lean: str = "",
 ) -> Path:
     """Write the proof that the model is the module, and make lake see it.
 
@@ -402,6 +550,7 @@ def write_equivalence(
             na_module=na_module_name(project_name),
             simplify=simplify,
             bodies=bodies,
+            pre_lean=pre_lean,
         )
     )
     print(f"Wrote the model-is-the-module proof: {out}")

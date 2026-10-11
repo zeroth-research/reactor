@@ -55,6 +55,45 @@ def test_declared_truth(row):
     )
 
 
+# A recurrence row whose runs close no cycle at all. Its `holds` is then
+# weaker than its neighbours': the property was never tested against a
+# cycle, only never contradicted. `m_reactor` is a Real-valued plant whose
+# core temperature is a fresh float every tick, so no configuration is ever
+# revisited exactly -- and it is the whole list, which is what the test
+# below keeps true as rows are added.
+UNCYCLED = {"hybrid/m_reactor/cools"}
+
+
+def test_a_refutation_is_a_cycle_with_a_length():
+    """Every `fails` recurrence row is refuted by a loop, not by a count.
+
+    The period is the evidence: it is how many ticks of recorded inputs have
+    to be replayed to keep the property false for ever. A refutation with no
+    period would be the tail heuristic back again under another name."""
+    for row in [r for r in ROWS if r.kind == "buchi" and r.truth == "fails"]:
+        seen = sim.observe(_load(row), row.prop, row.kind, row.pre)
+        assert seen.refuted and seen.period > 0, (
+            f"{row.key}: refuted with period {seen.period}")
+
+
+def test_which_recurrence_rows_the_runs_actually_test():
+    """A `holds` recurrence row should have met a cycle to be tested against.
+
+    `sim.observe` refutes `G F p` with a loop that avoids `p`, so a run that
+    closes no loop cannot refute anything and its `holds` rests on nothing
+    the simulation established. That is honest and it is not free, so the
+    rows it applies to are named: a new one joining them is a row this file
+    has stopped checking, and it should be noticed rather than pass."""
+    uncycled = set()
+    for row in [r for r in ROWS if r.kind == "buchi" and r.truth == "holds"]:
+        if not sim.observe(_load(row), row.prop, row.kind, row.pre).looped:
+            uncycled.add(row.key)
+
+    assert uncycled == UNCYCLED, (
+        f"recurrence rows whose runs close no cycle: {sorted(uncycled)}; "
+        f"expected {sorted(UNCYCLED)}")
+
+
 def test_every_module_has_a_refutable_row():
     """Each module carries at least one property that fails.
 
@@ -70,3 +109,58 @@ def test_every_module_has_a_refutable_row():
     fails = {net_of(r.bench) for r in ROWS if r.truth == "fails"}
     missing = sorted({net_of(r.bench) for r in ROWS} - fails)
     assert not missing, f"no failing property for: {', '.join(missing)}"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The recurrence rule itself
+#
+# `m_countdown` is the module the old tail count got wrong -- it counts 100
+# down to 0 and resets, so its period is 101 and it satisfies `s0 = 0` once
+# in a 50-tick tail. Both cases below are that one module, which is what
+# makes them a test of the rule rather than of a benchmark: the tail count
+# cannot tell them apart and answers `fails` to both.
+# ══════════════════════════════════════════════════════════════════════════
+
+COUNTDOWN = Path(__file__).resolve().parents[1] / "limits" / "mods" / "m_countdown.py"
+
+
+def test_a_recurrence_longer_than_the_tail_is_not_refuted():
+    """`s0 = 0` recurs once per 101 ticks, which is a property that holds."""
+    seen = sim.observe(load_module_from_file(str(COUNTDOWN)), "(= s0 0)", "buchi")
+
+    assert not seen.refuted
+    # And the absence has force: a cycle *was* closed, so the property was
+    # tested against one rather than merely never contradicted.
+    assert seen.looped
+
+
+def test_a_cycle_the_property_never_holds_in_refutes_it():
+    """`s0 = -1` is false at every state of the same cycle, and the cycle is
+    the refutation: its length is the module's real period, and replaying
+    the inputs of those 101 ticks repeats it for ever."""
+    seen = sim.observe(load_module_from_file(str(COUNTDOWN)), "(= s0 (- 1))",
+                       "buchi")
+
+    assert seen.refuted and seen.verdict == "fails"
+    assert seen.period == 101
+    assert seen.witness == (100,)
+
+
+def test_only_consecutive_returns_to_a_configuration_are_compared():
+    """A loop spanning three visits is property-free only if both halves
+    are, and the first half is checked when it closes -- so comparing
+    neighbours misses no refutation, and `lasso` reports the earliest."""
+    # Three visits to the configuration `s0 = 0`, at ticks 0, 2 and 4, and
+    # no inputs. A run is written here rather than stepped, so that what is
+    # under test is the scan and not a module.
+    dtypes = [sim.Int([1, 1])]
+    at = sim._consts("s", dtypes)
+    run = [([sim._tensor(v, dtypes[0])], []) for v in (0, 1, 0, 2, 0)]
+
+    # `s0 = 1` holds in the first stretch and not the second, so the second
+    # is the refutation; a property in neither stretch is refuted by the
+    # first, which is the earlier one.
+    assert sim.lasso(run, sim.parse("(= s0 1)", at), at, dtypes) == (2, 4)
+    assert sim.lasso(run, sim.parse("(= s0 9)", at), at, dtypes) == (0, 2)
+    # And a property that holds somewhere in every stretch is not refuted.
+    assert sim.lasso(run, sim.parse("(<= s0 1)", at), at, dtypes) is None

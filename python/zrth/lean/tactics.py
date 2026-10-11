@@ -24,13 +24,15 @@ So the plan is read off the obligations instead:
   skipped when there is nothing to split;
 * whether a Real state carries equalities — then `simp_all` runs in *prep*, so
   every closer afterwards sees numerals rather than an opaque `⌊4 - x⌋`;
-* how big the module is — `maxRecDepth` scales with the term count, and the
-  heartbeat budget is left low unless something in the plan is known to be
-  slow. For economy on ordinary goals, *not* to bound failures: a tactic that
-  hits the cap throws, `first` catches that like any other failure and moves
-  to a more expensive alternative, so a low cap multiplies the wasted work
-  rather than cutting it short. Measured, `NN2RealWide4` fails in 106 s at
-  400k and succeeds in 71 s at 2M;
+* how big the module is — `maxRecDepth` scales with the term count. The
+  heartbeat budget does *not*: it is 2000000, what every other generated file
+  carries, and climbs only for a net with more than 32 branch points or a
+  transition with more than 12. A lower floor never bounded a failure,
+  because a tactic that hits the cap throws, `first` catches that like any
+  other failure and moves to a more expensive alternative — so it capped
+  the cheap attempts and let the dear ones run anyway. Measured,
+  `NN2RealWide4` fails in 106 s at 400k and succeeds in 71 s at 2M, and
+  `svcomp_collatz_bounded` fails in 29 s and builds in 66 s;
 * whether the state is finite *and* narrow — then each element is enumerated
   over its two values before anything tries to close, which is the only way
   to discharge a branch that is contradictory purely because the state has
@@ -78,6 +80,12 @@ class Features:
     # and reuses the hypothesis for repeats, so this, not `n_branch`, is
     # what its fan-out costs. Falls back to `n_branch` without cvc5.
     n_conditions: int = 0
+
+    # Branch points in the module's own transition -- `Ite`, and the ReLU,
+    # `Min` and `Max` that reduce to one in the goal. `n_branch` counts the
+    # certificate's; this is what `split_ifs` fans `step_inv` out over
+    # before a single closer runs, whatever the certificate looks like.
+    n_trans_branch: int = 0
 
     has_ite: bool = False
     has_and: bool = False
@@ -248,6 +256,9 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
     return out if len(out) <= MAX_ENUMERABLE_SLOTS else []
 
 
+_BRANCHING_OPS = frozenset({"Ite", "ReLU", "Min", "Max"})
+
+
 def features_for(ctx, pred_text: str, facts=None) -> Features:
     """Read the shape of `ctx`'s module and its certificate predicates.
 
@@ -271,12 +282,14 @@ def features_for(ctx, pred_text: str, facts=None) -> Features:
     f.n_terms = len(terms)
     for t in terms:
         f.ops.add(itype_name(t.itype))
+        if itype_name(t.itype) in _BRANCHING_OPS:
+            f.n_trans_branch += 1
         for w in (*t.read, *t.write):
             f.theories.add(_sort_name(w.dtype))
 
     # The transition branches if it has an `Ite`, and a ReLU/Min/Max reduces
     # to a branch in the goal even though the term itself is not an `Ite`.
-    f.has_ite = bool({"Ite", "ReLU", "Min", "Max"} & f.ops) or "if " in pred_text
+    f.has_ite = bool(_BRANCHING_OPS & f.ops) or "if " in pred_text
     f.has_and = " ∧ " in pred_text
     f.has_or = " ∨ " in pred_text
     f.has_eq = " = " in pred_text
@@ -615,6 +628,33 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
     if f.has_real:
         closers.append("(simp_all; norm_num; done)")
 
+    # Structure the closers above do not take apart, each behind every one of
+    # them: a proof that closes today never reaches these, so they can only
+    # turn a failure into a proof, at the price of failing a little later.
+    # Measured on the cells of the bench matrix whose certificate cvc5
+    # accepts and Lean did not, rebuilt with only the closers changed.
+    if f.has_real:
+        # `ZerothHammer`'s `lra_close`: implications and disjunctions taken
+        # apart on both sides, and every floor bounded and the goal moved to
+        # `ℝ`. A hybrid plant's invariant is mode-split -- `b = false → 5 ≤
+        # x` -- and its rank floors a scaled level, which is exactly what
+        # `linarith` cannot see through: `m_thermostat`, `m_tank_dist`,
+        # `m_watertank` and `p_fluid` certificates all build with it and
+        # none did without.
+        closers.append("lra_close")
+    if f.has_int and f.has_ite:
+        # A Bool weighed as `if b then 1 else 0` *inside a hypothesis*:
+        # `split_ifs` in prep splits the goal's branches only, and omega
+        # cannot read the Bool the goal still mentions until `simp_all` has
+        # substituted it. `m_boolint`'s `--infer smt-linear` invariant.
+        closers.append("(split_ifs at * <;> simp_all <;> omega)")
+    if f.nonlinear:
+        # A product with a `max` in it: omega refuses the product, and
+        # `nlinarith` cannot see through the `max` until it is a case.
+        # `cousot9`'s `s0 * (max s2 0 + 1) + max s1 0`.
+        closers.append("(simp only [max_def, min_def] at *; split_ifs at * "
+                       "<;> (repeat' apply And.intro) <;> nlinarith)")
+
     # `decide` goes last: on a finite state it settles goals nothing else
     # can, but it is the most expensive thing in the plan.
     #
@@ -631,33 +671,45 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
     # `simp_mat` unfolds the whole transition at once, so recursion depth
     # tracks the term count rather than the state width.
     max_rec_depth = max(4096, 1500 * f.n_terms)
-    # The base budget is low, but not to make failures fail fast -- measured,
-    # it does not. When a tactic hits the cap it throws, `first` catches that
-    # like any other failure and moves on to a *more expensive* alternative,
-    # which burns up to the cap again; a low cap multiplies the wasted work
-    # instead of cutting it short. Two Real cases below are faster at the
-    # higher budget than at the lower one, succeeding rather than failing.
-    # So raise it wherever the shape is known to need it.
-    slow = f.finite_state or f.has_bitvec or f.n_slots > 8 or f.n_terms > 32
-    max_heartbeats = 2000000 if slow else 400000
+    # 2000000, which is what every other generated file carries
+    # (`scalar.py`, `circ.py`, `fbk_bridge.py`). This file used to start at
+    # 400000 and climb to 2M wherever the shape was known to be slow --
+    # finite state, a bitvector, more than 8 slots or 32 terms, a branchy
+    # Real predicate, more than 16 branch points. The list kept growing
+    # because a low floor is not what it looks like: a tactic that hits the
+    # cap *throws*, `first` catches that like any other failure and moves to
+    # a more expensive alternative, which burns up to the cap again. So the
+    # floor never cut a failure short, it multiplied the wasted work, and
+    # every rung was a shape someone had already been bitten by.
+    #
+    # Measured on the two cells that hit the old floor, one project apiece
+    # with only this number changed: `svcomp_collatz_bounded` fails in 29 s
+    # at 400k and *builds* in 66 s at 2M -- so the floor was the whole
+    # difference, and it cost 37 s to find that out rather than saving any.
+    # `ChenFlurMukhopadhyay-SAS2012-Ex1.01` still fails at 2M, but with
+    # `linarith failed to find a contradiction` instead of a heartbeat
+    # timeout, which is the truth about it: cvc5 refutes that certificate's
+    # `hrank` outright at `s0 = 1`. A budget error was standing in front of
+    # a wrong certificate. `NN2RealWide4` is the same shape of result at
+    # 106 s failing against 71 s succeeding, and is why the Real rung
+    # existed.
+    max_heartbeats = 2000000
     # A wide or deep net puts far more branch points in one predicate than the
     # module's own size suggests, and the whole cost of a neural certificate
     # lives there. Measured on nets built from explicit weight matrices: 14
     # branch points (a 12-unit layer, or three dense hidden layers) close
-    # inside the base budget, 30 needs 2M, 62 needs 4M. Raising the cap costs
+    # inside this budget, 30 needs it, 62 needs 4M. Raising the cap costs
     # nothing on a proof that closes; it only makes a failing one give up
     # later, and a predicate this size was never going to fail fast anyway.
-    if f.n_branch > 32:
-        max_heartbeats = max(max_heartbeats, 8000000)
-    elif f.n_branch > 16:
-        max_heartbeats = max(max_heartbeats, 2000000)
-    if f.has_real and f.n_branch:
-        # A branchy Real predicate cannot use the `min`/`max` folding above --
-        # `linarith` has no support for either -- so it still pays a
-        # `split_ifs` branch per unit, and each branch is closed by linarith
-        # rather than omega. Measured on a 4-unit net over the reals: 106 s to
-        # *fail* at the base budget, 71 s to succeed at this one.
-        max_heartbeats = max(max_heartbeats, 2000000)
+    #
+    # The transition can be the branchy half instead. A Petri net with a
+    # transition per input value is a nested `ite` per transition, and
+    # `step_inv` pays for every case of it under one declaration's budget:
+    # `mutex` (16 branch points) and `philo` (18) ran out at 2M on invariants
+    # cvc5 accepts and build at 8M in 78-160 s, four cells of five. The
+    # svcomp, hybrid and smaller Petri modules have 3-12 and are untouched.
+    if f.n_branch > 32 or f.n_trans_branch > 12:
+        max_heartbeats = 8000000
 
     return TacticPlan(
         prep=prep,

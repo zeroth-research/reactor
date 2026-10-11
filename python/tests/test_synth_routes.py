@@ -35,6 +35,18 @@ def module_of(name: str):
     return mod.module()
 
 
+def _int_cols(n: int):
+    """`n` scalar integer columns, for the note-shaping tests.
+
+    The prose only reads a column's name and kind, so the terms are not
+    worth a cvc5 context here -- what is being checked is which widths the
+    note claims, not what was searched.
+    """
+    from zrth.lean.smt_synth import Reading
+
+    return [Reading(f"s{i}", None, "int", i) for i in range(n)]
+
+
 def store_for(tmp_path: Path, name: str, *, kind: str, prp: str,
               producer: str = "test") -> ArtifactStore:
     return ArtifactStore(
@@ -115,28 +127,91 @@ def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
     assert store.read(kept[0]) == cd.inv_smt
 
 
-def test_a_real_state_is_refused_by_name_by_the_grammar_route():
-    """The grammar's `synthFun` takes integer arguments, so a Real column
-    has nowhere to go.
+def test_a_real_state_keeps_its_rationals_in_the_grammar_route():
+    """A Real component is a Real column, not a floored one.
 
-    Refused where the sorts are read rather than inside a grammar rule, so
-    the message names the component instead of a cvc5 error.
+    This route only ever states an invariant, and a predicate has no reason
+    to land in `Nat`. Flooring one is not conservative in either direction
+    -- `to_int s0 + to_int s1 <= 1` holds at `s0 = s1 = 0.6` where
+    `s0 + s1 <= 1.0` fails -- so the floor `--infer smt-linear` weighs a
+    Real by would search a space that cannot state the property.
     """
     from zrth.lean.magic.sygus import TA2MagicSygus
 
+    lines: list[str] = []
     cd = CertificateData(prp="(>= s0 0.0)", kind="safety")
-    with pytest.raises(Refused, match="no integer reading"):
-        TA2MagicSygus(module_of("m_lra_lin"), log=lambda *_: None).infer(cd)
+    try:
+        TA2MagicSygus(module_of("m_lra_lin"), log=lines.append).infer(cd)
+    except Refused:
+        pass                                 # the search may come back empty
+    assert "[sygus] columns: s0" in lines
+    assert not any("to_int" in ln for ln in lines)
 
 
-def test_sygus_sends_a_bool_state_to_the_route_that_weighs_it():
-    """The grammar's `synthFun` takes integer arguments, so a Bool column has
-    nowhere to go -- and the refusal names the route that does read it."""
+def test_sygus_weighs_a_bool_column_as_zero_or_one():
+    """A Bool component has an arithmetic reading, so an atom can hold it.
+
+    The `synthFun` still takes the component itself -- `pre` and `trans` are
+    the module's own transition -- and it is the *grammar* that reads it.
+    """
     from zrth.lean.magic.sygus import TA2MagicSygus
 
+    lines: list[str] = []
     cd = CertificateData(prp="(>= s1 0)", kind="safety")
-    with pytest.raises(Refused, match="--infer smt-linear"):
-        TA2MagicSygus(module_of("m_boolint"), log=lambda *_: None).infer(cd)
+    try:
+        TA2MagicSygus(module_of("m_boolint"), log=lines.append).infer(cd)
+    except Refused:
+        pass
+    assert any("(ite s0 1 0)" in ln for ln in lines if ln.startswith("[sygus] columns"))
+
+
+def test_sygus_asks_the_narrow_grammars_before_the_wide_one():
+    """`m_countdown |- G (0 <= s0 <= 100)` has no one-atom invariant.
+
+    The widths are separate queries because the search is not monotone in
+    the width -- measured over the 59 matrix cells that reach the grammar,
+    two of them find a *one-atom* invariant in under a second and time out
+    at three. Asked only at the ceiling, as this route used to be, those
+    came back as "did not finish".
+    """
+    from zrth.lean.magic.sygus import TA2MagicSygus
+
+    lines: list[str] = []
+    cd = CertificateData(prp="(and (>= s0 0) (<= s0 100))", kind="safety")
+    out = TA2MagicSygus(module_of("m_countdown"), log=lines.append).infer(cd)
+    assert "[sygus] no invariant of 1 atom(s); widening" in lines
+    assert "[sygus] found at 2 atom(s)" in lines
+    assert out.inv_smt
+
+
+def test_the_note_claims_the_widths_that_finished_and_no_more():
+    """A width that ran out of budget is not evidence of anything.
+
+    The narrower widths still count -- the start rule at width `w` is
+    `A | A /\\ A | ...`, so the widths nest and an empty one subsumes every
+    one below it -- but nothing above the width that stopped does.
+    """
+    from zrth.lean.magic.sygus import TA2MagicSygus
+
+    magic = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None)
+    note = magic._empty(_int_cols(1), (-2, -1, 0, 1, 2),
+                        decided=2, undecided_at=3).note
+    assert "at most 2 atoms" in note
+    assert "proof that the space is empty" in note
+    assert "It stopped at 3 atoms, above the 2 proved empty" in note
+
+
+def test_a_ladder_that_decided_nothing_claims_nothing():
+    """`exhausted` is what carries a note into the `ai-cegis` prompt, so a
+    ladder whose first width already timed out must not set it."""
+    from zrth.lean.magic.sygus import TA2MagicSygus
+
+    magic = TA2MagicSygus(module_of("m_step2"), log=lambda *_: None)
+    search = magic._empty(_int_cols(1), (-2, -1, 0, 1, 2),
+                          decided=0, undecided_at=1)
+    assert not search.exhausted
+    assert "Nothing was proved" in search.note
+    assert "proof that the space is empty" not in search.note
 
 
 def test_sygus_is_a_safety_route_in_the_class_as_well_as_the_row():
@@ -207,6 +282,54 @@ def test_a_matrix_component_is_a_column_per_element():
     assert any("tuple.select 2" in line for line in said), (
         "every element is a column, not just the one the property reads"
     )
+
+
+def test_an_operator_cvc5_cannot_encode_is_refused_before_the_search():
+    """`m_transpose` is a 1x3 vector -- a column per element -- with a
+    `Transpose` in its round, which has no cvc5 term at all.
+
+    The sort gate passes it, so until the transition is encoded nothing has
+    noticed, and the failure used to arrive as a `ValueError` traceback out
+    of whichever obligation a route built first. `build` forces the
+    encoding and names the operator, which is what `native.lean_gaps` does
+    for the Lean side.
+    """
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = module_of("m_transpose")
+    cd = CertificateData(prp="(= ((_ tuple.select 0) s0) 1)", kind="buchi")
+    with pytest.raises(Refused, match="operator in it has no encoding"):
+        TA2MagicLinear(module, log=lambda _: None).infer(cd)
+
+
+def test_an_element_is_read_by_its_own_sort_not_the_component_s():
+    """A matrix of `Bool` has an integer reading; the selector alone does not.
+
+    `component_slots` says what a component is made of and
+    `component_readings` reads each piece by *its* sort, so a `Bool`
+    element becomes `0`/`1` the same way a scalar `Bool` component does.
+    Reading it by the component's sort instead -- `tuple` -- hands a
+    template a Bool where it multiplies by a coefficient, which is a sort
+    error several steps after the mistake.
+    """
+    import torch
+
+    from zrth import LIA, Bool, Module, Term, Var, Wire, X
+    from zrth.lean.smt_synth import SynthContext, component_readings, component_slots
+
+    b, n = Var(Bool([2, 1])), Wire(Bool([2, 1]))
+    module = Module.sequential(
+        [b],
+        [Term(LIA.Bool(torch.tensor([[True], [False]])), [X(b)])],
+        [Term(LIA.Not(), [n], [b]), Term(LIA.Id(), [X(b)], [n])],
+    )
+    ctx = SynthContext.build(module, CertificateData(prp="true", kind="safety"),
+                             route="test", takes=("bool", "tuple"))
+    assert [slot for slot, _ in component_slots(ctx, 0)] == [0, 1]
+    assert [(r.name, r.kind, r.slot) for r in component_readings(ctx, 0)] == [
+        ("(ite ((_ tuple.select 0) s0) 1 0)", "bool", 0),
+        ("(ite ((_ tuple.select 1) s0) 1 0)", "bool", 1),
+    ]
 
 
 def test_smt_linear_finds_a_rank_when_the_shape_has_one():
@@ -305,8 +428,13 @@ def test_smt_linear_writes_what_it_ruled_out(tmp_path):
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     assert len(notes) == 1
     text = store.read(notes[0])
-    assert "No ranking function linear in the state" in text
+    assert "No ranking function of these shapes" in text
+    assert "linear in the state" in text
     assert "up to 2 linear inequalities" in text, "the invariants it ranked under"
+    # Every shape it searched is named, branching ones included: the note is
+    # read as a list of shapes a later prompt need not propose.
+    assert "zero where the property holds" in text
+    assert "linear on each side of" in text
 
 
 def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
@@ -726,3 +854,34 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
         text = store.read(notes[0])
         assert "coefficients were searched in" in text
         assert "counterexample" in text
+
+
+def _fixture(name: str):
+    """One `tests/fixtures` module, loaded by path."""
+    path = Path(__file__).resolve().parent / "fixtures" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"_f_{name}", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.module()
+
+
+def test_smt_linear_zeroes_the_rank_where_the_property_holds():
+    """A counter that wraps to 0 has no linear rank -- the round from 9 back
+    to 0 rises -- and `(ite P 0 r)` needs only the rounds outside `P` to
+    fall, which is every round but that one."""
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    module = _fixture("counter")
+    cd = CertificateData(prp="(= s0 0)", kind="buchi")
+    out = TA2MagicLinear(module, log=lambda *_: None).infer(cd)
+    assert out.ranking_smt.startswith("(ite (= s0 0) 0 ")
+    assert obligations_of(module, out) == []
+
+
+def test_smt_linear_keeps_a_linear_rank_where_one_exists():
+    """Linear is tried at every width before anything with a branch."""
+    from zrth.lean.magic.linear import TA2MagicLinear
+
+    cd = CertificateData(prp="(= s0 0)", kind="buchi")
+    out = TA2MagicLinear(module_of("m_countdown"), log=lambda *_: None).infer(cd)
+    assert "ite" not in out.ranking_smt

@@ -329,11 +329,17 @@ class InferRoute:
     # that are not a cell of this table.  `fbk-proveit` has one -- the
     # project name becomes a Lean module name.
     extra_check: Callable | None = None
-    # `precheck(module, opts, config) -> object` once the module is loaded
-    # and before it is generated: a module shape the route cannot express is
-    # met here rather than as a traceback out of an encoder it never wanted.
-    # What it computed reaches `run` as `prechecked`, so the module is not
-    # encoded twice to answer one question.
+    # `precheck(module, opts, config, cert_data) -> object` once the module
+    # is loaded and before it is generated: a module shape the route cannot
+    # express is met here rather than as a traceback out of an encoder it
+    # never wanted.  What it computed reaches `run` as `prechecked`, so the
+    # module is not encoded twice to answer one question.
+    #
+    # `cert_data` carries the seeds in their SMT source (it may be `None`),
+    # because whether a route can take one is not always a question about
+    # the flag alone: `fbk-proveit` accepts `--pre` over an input its model
+    # keeps and refuses one over an input it does not, and only the module's
+    # encoding knows which is which.
     precheck: Callable | None = None
     run: Callable | None = None      # `(InferInput) -> InferResult`
 
@@ -471,6 +477,7 @@ def _run_ai_cegis(inp: InferInput) -> InferResult:
         model=inp.model,
         base_url=inp.base_url,
         known=_ruled_out(inp),
+        budget_s=inp.opts["cegar_budget"],
     )
     cd = magic.infer(inp.cert_data)
     # It renders the Lean from its own cvc5 context, where it is free, so
@@ -632,11 +639,15 @@ def _check_fbk_project_name(settings, opts) -> "str | None":
     )
 
 
-def _precheck_fbk(module, opts, config):
+def _precheck_fbk(module, opts, config, cert_data):
     from .fbk_proveit import ProveItError, check_module
 
     try:
-        return check_module(module, opts["fbk_simplify"] == "cvc5")
+        return check_module(
+            module,
+            opts["fbk_simplify"] == "cvc5",
+            cert_data.init_pre if cert_data else None,
+        )
     except ProveItError as e:
         # One exception type crosses the seam, so `main` catches what every
         # route raises. The message keeps naming `--fbk-proveit` itself,
@@ -662,13 +673,14 @@ def _run_fbk(inp: InferInput) -> InferResult:
             project_dir=inp.project.dir,
             project_name=inp.project.name,
             property_smt=str(inp.cert_data.prp),
+            pre_smt=inp.cert_data.init_pre,
             ic3ia=inp.opts["ic3ia"],
             simplify=inp.opts["fbk_simplify"] == "cvc5",
             equivalence=inp.opts["fbk_equiv"] == "lean",
-            bodies=inp.prechecked,
+            prechecked=inp.prechecked,
         )
     except ProveItError as e:
-        raise Refused(str(e)) from e
+        raise Refused(str(e), searched=e.searched) from e
     # The installed certificate carries ic3ia's invariant: no predicates come
     # back, which is what this route's `returns="installed"` declares.
     return InferResult()
@@ -687,10 +699,21 @@ ROUTES: tuple[InferRoute, ...] = (
             "infers a ranking function `rule_globally` cannot take, and nothing "
             "checks that the invariant implies the property"
         ),
-        seeds=frozenset(),
+        # `--pre` is the one predicate this route has somewhere to put. It is
+        # not something the route must hold a candidate to -- it is an
+        # assumption the candidate may lean on -- and both prompts already
+        # carry it: `GENERATE_SYSTEM` states the two obligations with
+        # `init_pre` and `update_pre` in them, `VERIFY_SYSTEM` tells the
+        # auditor to assume them, and `_describe_preconditions` writes the
+        # predicates themselves into each user message. `Certificate/Data.lean`
+        # carries them whatever the route, so `lake build` checks the reply
+        # under the same assumption the reply was asked for under.
+        seeds=frozenset({"pre"}),
         seeds_refusal=(
-            "the `ai` route prompts for a whole certificate and does not state "
-            "the obligations, so it has nothing to hold a supplied predicate to"
+            "the `ai` route asks for the invariant and the ranking function "
+            "together in one reply and nothing puts a supplied one to the "
+            "obligations, so it would be overwritten rather than used -- "
+            "--infer ai-cegis takes either as given and infers what is left"
         ),
         reads=("",),
         returns="lean",
@@ -719,6 +742,24 @@ ROUTES: tuple[InferRoute, ...] = (
         returns="smt",
         uses_llm=True,
         run=_run_ai_cegis,
+        options=(
+            Opt(
+                ("--cegar-budget",),
+                dict(
+                    type=float,
+                    default=None,
+                    metavar="SECONDS",
+                    help=(
+                        "Keep proposing candidates for this many seconds "
+                        "instead of stopping after 5 attempts. An attempt "
+                        "starts only while the slowest one so far would still "
+                        "finish inside the budget, so a run under an outer "
+                        "time limit gives up on its own rather than being "
+                        "killed mid-reply. Each attempt is an API call."
+                    ),
+                ),
+            ),
+        ),
     ),
     InferRoute(
         name="nuterm",
@@ -730,11 +771,17 @@ ROUTES: tuple[InferRoute, ...] = (
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",
-        seeds=frozenset(),
+        # `--pre` is the entry assumption Houdini checks initiation under.
+        # Refusing it used to be argued from soundness -- an invariant that
+        # holds at entry for *every* input is stronger than one that holds
+        # only from the admitted states -- which is true of the invariants the
+        # route finds and says nothing about the ones it then cannot. That is
+        # the whole effect: 8 of the svcomp corpus's own Houdini invariants
+        # hold only from the states the precondition admits.
+        seeds=frozenset({"pre"}),
         seeds_refusal=(
-            "the certificate comes from the learner and its invariant holds at "
-            "entry for every input, which is stronger than any precondition "
-            "would make it"
+            "the certificate comes from the learner, which infers both halves "
+            "of it and puts a supplied one to nothing"
         ),
         returns="smt",
         run=_run_nuterm,
@@ -745,8 +792,9 @@ ROUTES: tuple[InferRoute, ...] = (
             "no LLM: the invariant synthesised outright by cvc5's SyGuS "
             "invariant track, over a grammar of linear facts and congruences "
             "-- the one shape `nuterm`'s Houdini lattice cannot state -- and "
-            "left in artifacts/ for a later run to take as given; scalar "
-            "integer state only"
+            "left in artifacts/ for a later run to take as given; Int, Bool, "
+            "bitvector, Real and matrix-shaped components alike, a Real kept "
+            "rational rather than floored and costing only the congruences"
         ),
         kinds=frozenset({"safety"}),
         kinds_refusal=(
@@ -774,14 +822,17 @@ ROUTES: tuple[InferRoute, ...] = (
                     default=3,
                     metavar="N",
                     help=(
-                        "How many atoms the synthesised invariant may be a "
-                        "conjunction of (default: 3). It bounds the "
-                        "certificate -- every conjunct is one more "
-                        "implication in the obligation -- and it is what "
-                        "makes a failure informative: a bounded conjunction "
-                        "is a finite space, so cvc5 can report it *empty* "
-                        "rather than merely not searched, and that proof is "
-                        "what lands in artifacts/."
+                        "A ceiling on how many atoms the synthesised "
+                        "invariant may be a conjunction of (default: 3). The "
+                        "widths run 1, 2, ... N and the first that answers "
+                        "wins, because the search is not monotone in the "
+                        "width: measured, invariants found at 1 and at 2 "
+                        "time out at 3. It bounds the certificate -- every "
+                        "conjunct is one more implication in the obligation "
+                        "-- and it is what makes a failure informative: a "
+                        "bounded conjunction is a finite space, so cvc5 can "
+                        "report it *empty* rather than merely not searched, "
+                        "and that proof is what lands in artifacts/."
                     ),
                 ),
             ),
@@ -944,14 +995,16 @@ ROUTES: tuple[InferRoute, ...] = (
         name="vampire",
         summary=(
             "no LLM, and nothing proposed: the obligations are stated with "
-            "the certificate itself left open -- an interval per component, "
+            "the certificate itself left open -- an interval per column, "
             "and under --buchi an affine ranking function -- and Vampire's "
             "answer literals return the coefficients, which are then checked "
-            "against the module's encoding with cvc5. Scalar Int state only, "
-            "and the transition is branch-split because a conditional "
-            "defeats the search. Measured reach: two holes, which is one "
-            "component under --safety; --infer houdini is what searches a "
-            "wider module"
+            "against the module's encoding with cvc5. It bounds what it can "
+            "order: Int and Real state, scalar or element by element, with "
+            "a Bool column carried unbounded and a bitvector refused, since "
+            "Vampire's front end has none. The transition is branch-split, "
+            "because a conditional defeats the search. Measured reach: two "
+            "holes, which is one column under --safety; --infer houdini is "
+            "what searches a wider module"
         ),
         kinds=frozenset({"safety", "buchi"}),
         kinds_refusal="",
@@ -1011,9 +1064,13 @@ ROUTES: tuple[InferRoute, ...] = (
             "proves `G PROPERTY` through ic3ia, which is a safety question. "
             "Pass --safety, or infer a Buchi certificate with --infer ai-cegis."
         ),
-        seeds=frozenset(),
+        seeds=frozenset({"pre"}),
         seeds_refusal=(
-            "the invariant comes from ic3ia and the project is generated bare"
+            "the invariant comes from ic3ia and the project is generated "
+            "bare. `--pre` is taken: it is an assumption about the module's "
+            "inputs rather than a piece of the certificate, and the NA model "
+            "carries it as an `INIT` conjunct over the slots those inputs "
+            "start"
         ),
         owns=(
             "ProveIt/",

@@ -112,8 +112,14 @@ def _state_type_line(source: str) -> str:
     The system prompt says how a state is read in general; this says which
     case this module is. Without it a model reached for `s.1 0 0` on a
     one-component state -- a projection out of a function, which Lean
-    refuses -- on 16 of the bench matrix's single-wire modules."""
-    m = re.search(r"^@\[simp\] def init\b[^\n]*?\)\s*:\s*(.+?)\s*:=\s*$", source, re.M)
+    refuses -- on 16 of the bench matrix's single-wire modules.
+
+    `init` may carry modifiers between the attribute and `def`: a
+    Real-valued module's is `noncomputable`."""
+    m = re.search(
+        r"^@\[simp\]\s+(?:[a-z]+\s+)*def init\b[^\n]*?\)\s*:\s*(.+?)\s*:=\s*$",
+        source, re.M,
+    )
     if not m:
         return ""
     ty = m.group(1)
@@ -136,6 +142,48 @@ def _unquote(value: str) -> str:
     if len(value) >= 2 and value[0] == value[-1] == "`":
         value = value[1:-1].strip()
     return value
+
+# `s 0 0.toNat`. Lean reads `0.toNat` as a decimal literal whose fractional
+# part is an identifier and says so -- "unexpected identifier after decimal
+# point; consider parenthesizing the number" -- which is the repair, and
+# there is only one parenthesisation that type-checks: the projection is of
+# the *state element*, so the application closes before the dot. Measured on
+# `m_max/OpMax`, where the model wrote `fun s => s 0 0.toNat` and meant
+# `fun s => (s 0 0).toNat`; it writes the parenthesised form on nine other
+# cells, so this is a slip rather than a misunderstanding.
+_NUMERAL_FIELD = re.compile(
+    r"(?P<head>\bs(?:\.\d+)*)\s+(?P<i>\d+)\s+(?P<j>\d+)\.(?P<field>[A-Za-z_][\w']*)"
+)
+
+# Names a model reaches for that Lean does not have. Unlike the one above
+# there is no rewriting these: `Real.toNat` could mean a floor or a ceiling
+# or a truncation, and picking one would be inventing the certificate rather
+# than reading it. They go back to the model as feedback instead, which is
+# the loop this route already has for a candidate that is wrong.
+_ABSENT = {
+    "Real.toNat": (
+        "`Real.toNat` does not exist. A `Nat`-valued rank over a `Real` "
+        "goes through the floor: `\u230ax\u230b.toNat`"
+    ),
+}
+
+
+def _parenthesise_elements(value: str) -> str:
+    """``s 0 0.toNat`` -> ``(s 0 0).toNat``, which is the only reading."""
+    return _NUMERAL_FIELD.sub(r"(\g<head> \g<i> \g<j>).\g<field>", value)
+
+
+def _absent_names(*values: str) -> str:
+    """What Lean will refuse to *find* in these, before a build says so.
+
+    Returned as the feedback the next attempt is given, because a name that
+    is not there is a fact about Lean rather than about this module, and
+    saying which name goes further than a parse error copied back.
+    """
+    said = [why for name, why in _ABSENT.items()
+            if any(re.search(rf"\b{re.escape(name)}\b", v) for v in values)]
+    return " ".join(said)
+
 
 def _describe_preconditions(cd: CertificateData) -> str:
     parts = []
@@ -236,15 +284,27 @@ class TA2MagicAI(TA2Magic):
             print("Candidates:")
             print(f"  inv: {inv}")
             print(f"  ranking: {ranking}")
+            missing = _absent_names(inv, ranking)
+            if missing:
+                # Lean would reject this before any obligation is stated, so
+                # there is nothing for `_verify` to be right or wrong about.
+                print(f"  not Lean: {missing}")
+                feedback = f"WRONG: that does not elaborate. {missing}"
+                continue
             print("Cross-checking...")
             ok, feedback = self._verify(cd, inv, ranking)
             if ok:
                 cd.inv = inv
                 cd.ranking = ranking
                 return cd
-        raise RuntimeError(
-            f"Failed to find valid invariant/ranking after {self.max_attempts} attempts. "
-            f"Last feedback: {feedback}"
+        # `Refused`, not `RuntimeError`: a route that asked the model
+        # `max_attempts` times and did not get a certificate has given up, the
+        # way every other route gives up, and that is a decision about the
+        # module rather than a defect with a traceback to read.
+        raise Refused(
+            f"Failed to find valid invariant/ranking after {self.max_attempts} "
+            f"attempts. Last feedback: {feedback}",
+            searched=True,
         )
 
     def _generate(self, cd: CertificateData, feedback: str | None) -> tuple[str, str]:
@@ -301,9 +361,10 @@ class TA2MagicAI(TA2Magic):
         for line in text.strip().splitlines():
             line = line.strip()
             if line.startswith("INVARIANT:"):
-                inv = _unquote(line[len("INVARIANT:") :])
+                inv = _parenthesise_elements(_unquote(line[len("INVARIANT:"):]))
             elif line.startswith("RANKING:"):
-                ranking = _unquote(line[len("RANKING:") :])
+                ranking = _parenthesise_elements(
+                    _unquote(line[len("RANKING:"):]))
         if inv is None or ranking is None:
             raise ValueError(f"Failed to parse AI response:\n{text}")
         return inv, ranking

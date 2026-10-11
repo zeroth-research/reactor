@@ -60,7 +60,8 @@ def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
 
     cd = CertificateData(prp=prp, kind=kind)
     ctx = SynthContext.build(module_at(fixture / f"{name}.py"), cd,
-                             route="vampire")
+                             route="vampire",
+                             takes=("int", "bool", "bv", "tuple"))
     ob = Obligations(ctx)
     entry = split(ctx, ob.init, "the initial state")
     step = split(ctx, ob.next, "the round")
@@ -239,12 +240,57 @@ def test_only_the_question_that_needs_a_window_gets_one():
 
 def test_a_template_row_is_one_body_read_two_ways():
     """A row is needed as a cvc5 term in the question and as SMT-LIB in the
-    certificate, so it holds which components it reads rather than text one
+    certificate, so it holds which columns it reads rather than text one
     side prints and the other parses back."""
     from zrth.lean.magic.vampire import Row
 
-    assert Row("A0", "B0", (0,)).smt == "s0"
-    assert Row("C0_1", "D0_1", (0, 1)).smt == "(- s0 s1)"
+    assert Row("A0", "B0", (0,), ("s0",)).smt == "s0"
+    assert Row("C0_1", "D0_1", (0, 1), ("s0", "s1")).smt == "(- s0 s1)"
+    # A column of a matrix-shaped component is written as the selector the
+    # certificate carries, not as the component it is an element of.
+    sel = "((_ tuple.select 2) s0)"
+    assert Row("A2", "B2", (2,), (sel,)).smt == sel
+
+
+def test_a_matrix_component_is_an_interval_per_element():
+    """`m_relu_vec`'s state is one 3x1 wire, and the route refused it.
+
+    A tuple has no order for `lo <= _ <= hi` to bound, so the template is
+    built over the *columns* -- one interval per element, one rank
+    coefficient per element -- and the obligation names an integer variable
+    per element, never the component.
+
+    What is pinned here is that the obligation says the right thing: the
+    certificate this module actually has, instantiated into the template,
+    is proved by cvc5. Whether Vampire *derives* those numbers is a
+    separate matter and on this module it does not -- three ReLUs split the
+    round into eight branches against six holes.
+    """
+    import cvc5
+    from cvc5 import Kind
+
+    from zrth.lean.magic.houdini import columns
+    from zrth.lean.magic.vampire import template
+
+    ctx, _ob, q = parts("m_relu_vec", "safety",
+                        "(<= ((_ tuple.select 0) s0) 3)")
+    assert [c.src for c in columns(ctx)] == [
+        f"((_ tuple.select {k}) s0)" for k in range(3)]
+
+    tpl = template(ctx, "intervals", ranked=False)
+    obs = q._obligations(tpl, ctx.prp, inductive=True, implies=True,
+                         ranked=False)
+    body = q._and(obs)
+    assert "tuple" not in str(body).lower(), "an obligation Vampire can read"
+
+    # `v' = relu(v - 1)` from (3,2,1): every element stays within its start.
+    want = {"A0": 0, "B0": 3, "A1": 0, "B1": 2, "A2": 0, "B2": 1}
+    body = body.substitute([q._hole(h) for h in want],
+                           [ctx.tm.mkInteger(v) for v in want.values()])
+    solver = cvc5.Solver(ctx.tm)
+    solver.setOption("tlimit", "20000")
+    solver.assertFormula(ctx.tm.mkTerm(Kind.NOT, body))
+    assert solver.checkSat().isUnsat()
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -334,18 +380,87 @@ def test_both_namings_are_asked_and_each_is_told_the_whole_budget(tmp_path):
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def test_a_real_component_is_refused_by_name():
-    """Vampire reads reals, but the templates here are integer intervals
-    and integer coefficients -- so this route takes the same gate `--infer
-    smt-linear` does, before anything is stated."""
-    with pytest.raises(Refused, match="s0 is Real"):
-        derive("m_lra_lin", "buchi", "(= s0 0.0)", vampire="/nowhere")
+def test_a_real_component_reaches_the_templates():
+    """A Real column is bounded by an interval with *integer* endpoints.
+
+    The coefficients stay integers because Vampire reports an answer as a
+    literal and this route reads an integer one, but `0 <= s0 <= 9` is a
+    true and useful thing to say about a rational column -- so the sorts
+    gate lets it through and the search decides, rather than the gate.
+    Getting as far as looking for the prover is getting past both gates.
+    """
+    from zrth.lean.magic.vampire import TA2MagicVampire, template
+    from zrth.lean.smt_synth import SynthContext
+
+    magic = TA2MagicVampire(module_at(LIMITS / "m_lra_lin.py"),
+                            vampire="/nowhere", log=lambda *_: None)
+    ctx = SynthContext.build(magic.module,
+                             CertificateData(prp="(= s0 0.0)", kind="buchi"),
+                             route="vampire",
+                             takes=("int", "bool", "bv", "real", "tuple"))
+    magic._check_sorts(ctx)                  # the gate that used to refuse it
+    tpl = template(ctx, "intervals", ranked=True)
+    assert [r.smt for r in tpl.rows] == ["s0"]
 
 
-def test_a_bitvector_state_is_refused_by_name():
-    with pytest.raises(Refused, match="states its obligations over integers"):
+def test_a_bitvector_is_refused_because_nothing_can_state_it():
+    """Vampire's front end has no bitvectors, so a bitvector anywhere makes
+    the whole script unreadable rather than the certificate weaker. That is
+    a refusal, and unlike a Bool it is not a matter of what the template
+    can bound."""
+    with pytest.raises(Refused, match="front end has no bitvectors"):
         derive("twobit", "buchi", "(and (= s0 (_ bv0 1)) (= s1 (_ bv0 1)))",
                fixture=FIXTURES, vampire="/nowhere")
+
+
+def test_a_bool_column_is_carried_rather_than_refused():
+    """A Bool cannot be bounded and does not stop the module being asked
+    about.
+
+    `lo <= b <= hi` wants an order and two integer endpoints and a Bool has
+    neither -- but Vampire reads a Bool perfectly well, and the obligations
+    are stated over the module's own transition whether or not the
+    invariant mentions every column of it. So `m_boolint`'s Int column is
+    bounded, its Bool column is left out, and the search decides rather than
+    the gate.
+    """
+    from zrth.lean.magic.vampire import TA2MagicVampire, template
+    from zrth.lean.smt_synth import SynthContext
+
+    magic = TA2MagicVampire(module_at(LIMITS / "m_boolint.py"),
+                            vampire="/nowhere", log=lambda *_: None)
+    ctx = SynthContext.build(magic.module,
+                             CertificateData(prp="(>= s1 0)", kind="safety"),
+                             route="vampire",
+                             takes=("int", "bool", "bv", "real", "tuple"))
+    magic._check_sorts(ctx)                  # the gate that used to refuse it
+
+    tpl = template(ctx, "intervals", ranked=False)
+    # `s0` is the Bool and `s1` the Int, so the one row is the second
+    # column -- and its holes are named after the column, not after its
+    # position among the rows.
+    assert [r.smt for r in tpl.rows] == ["s1"]
+    assert tpl.at == (1,)
+    assert tpl.holes == ("A1", "B1")
+
+
+def test_a_module_with_nothing_to_bound_is_refused():
+    """The limit of carrying a Bool unbounded: with no other column the
+    invariant would be `true`, which is inductive and proves nothing, so
+    the module is turned away up front rather than searched."""
+    from zrth.lean.magic.vampire import TA2MagicVampire
+    from zrth.lean.smt_synth import SynthContext
+
+    magic = TA2MagicVampire(module_at(FIXTURES / "twobit_lia.py"),
+                            vampire="/nowhere", log=lambda *_: None)
+    ctx = SynthContext.build(magic.module,
+                             CertificateData(prp="(not (and s0 s1))",
+                                             kind="safety"),
+                             route="vampire",
+                             takes=("int", "bool", "bv", "real", "tuple"))
+
+    with pytest.raises(Refused, match="no column it can bound"):
+        magic._check_sorts(ctx)
 
 
 def test_the_templates_are_tried_smallest_first():

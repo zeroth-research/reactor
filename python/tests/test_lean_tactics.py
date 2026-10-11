@@ -214,12 +214,13 @@ def test_budget_scales_with_predicate_branch_points():
     """A net's cost lives in its branch points, not in the module's size.
 
     A 12-unit ranking net over a one-wire countdown leaves `n_slots` and
-    `n_terms` tiny, so the module-size rule alone left it on the base budget
-    and it timed out rather than failing to be provable.
+    `n_terms` tiny, so nothing about the module says what the predicate
+    costs. Only a net past 32 branch points goes above the standard budget
+    -- everything else is already at it.
     """
     m = _int_module()
     flat = _plan(m, "fun s => ((s 0 0) ≥ 0)")
-    assert flat.max_heartbeats == 400000
+    assert flat.max_heartbeats == 2000000
 
     mid = _plan(m, "fun s => " + " + ".join(f"(max ((s 0 0) - {k}) 0)" for k in range(20)))
     assert mid.max_heartbeats >= 2000000
@@ -244,20 +245,23 @@ def test_branchy_real_gets_a_higher_budget():
     """A ReLU over the reals cannot fold to `max`, so it keeps its branches.
 
     `linarith` has no min/max support, so a Real net still pays a `split_ifs`
-    branch per unit. Measured, the base budget makes such a case *fail* in
-    106 s where the higher one *succeeds* in 71 s.
+    branch per unit. Measured, the old 400k floor made such a case *fail* in
+    106 s where 2M *succeeds* in 71 s -- which is why there is no longer a
+    floor below 2M for it to fall to.
     """
     branchy = _plan(_real_module(), "fun s => (if (s 0 0) ≥ 0 then (s 0 0) else 0) = 0")
     assert branchy.max_heartbeats >= 2000000
     flat = _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)")
-    assert flat.max_heartbeats == 400000
+    assert flat.max_heartbeats == 2000000
 
 
-def test_budgets_scale_with_the_module():
-    """`maxRecDepth` tracks the term count; the heartbeat budget stays low
-    unless something in the plan is known to be slow, so failures are fast."""
+def test_only_recursion_depth_scales_with_the_module():
+    """`maxRecDepth` tracks the term count. The heartbeat budget does not:
+    it is the same 2000000 every other generated file carries, whatever the
+    module's size, because a lower floor never made a failure faster -- a
+    tactic that hits the cap throws and `first` moves to a dearer one."""
     small = _plan(_int_module(), "fun s => ((s 0 0) = 0)")
-    assert small.max_heartbeats == 400000
+    assert small.max_heartbeats == 2000000
 
     x = Var(Int([64, 1]))
     wide = Module.sequential(
@@ -266,7 +270,8 @@ def test_budgets_scale_with_the_module():
         [Term(LIA.Id(), [X(x)], [x])],
     )
     plan = _plan(wide, "fun s => True")
-    assert plan.max_heartbeats > small.max_heartbeats
+    # 64 slots used to be one of the shapes that bought a bigger budget.
+    assert plan.max_heartbeats == small.max_heartbeats
     assert plan.max_rec_depth >= 4096
 
 
@@ -614,3 +619,72 @@ def test_an_integer_module_pays_nothing_for_floors():
     assert not plan.features.has_floor
     assert plan.floor_tactic == "skip"
     assert "simp only [mul_sub]" not in plan.prep
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Closers for structure the cheap provers do not take apart
+# ══════════════════════════════════════════════════════════════════════
+
+
+def test_a_real_state_gets_lra_close_after_every_cheaper_closer():
+    """Behind everything else, so a proof that closes today never reaches it."""
+    plan = _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)")
+    assert "lra_close" in plan.closers
+    assert plan.closers.index("lra_close") > plan.closers.index("(simp_all; norm_num; done)")
+
+
+def test_an_integer_state_does_not_pay_for_lra_close():
+    plan = _plan(_int_module(), "fun s => ((s 0 0) ≥ 0)")
+    assert "lra_close" not in plan.closers
+
+
+def test_a_branching_integer_state_splits_the_hypotheses_too():
+    """`split_ifs` in prep splits the goal; a Bool weighed inside a hypothesis
+    needs `split_ifs at *` and the substitution before omega can read it."""
+    plan = _plan(_int_module(), "fun s => ((if (s 0 0) = 0 then 1 else 0) ≥ 0)")
+    assert "(split_ifs at * <;> simp_all <;> omega)" in plan.closers
+
+
+def test_a_nonlinear_predicate_gets_its_max_split_into_cases():
+    plan = _plan(_int_module(), "fun s => (((s 0 0) * (max (s 0 0) 0) : Int)).toNat")
+    assert any(c.startswith("(simp only [max_def, min_def] at *") and c.endswith("nlinarith)")
+               for c in plan.closers)
+    linear = _plan(_int_module(), "fun s => ((max (s 0 0) 0 : Int)).toNat")
+    assert not any("max_def" in c for c in linear.closers)
+
+
+def test_the_hammer_defines_every_closer_the_plan_can_name():
+    """A closer the plan names and the project does not define is a parse
+    error in every certificate that carries it, not a failed alternative."""
+    from zrth.lean.cert import generate_zeroth_hammer_lean
+    hammer = generate_zeroth_hammer_lean()
+    for name in ("lra_close", "lra_leaf", "lra_atoms", "floor_bounds"):
+        assert f'"{name}"' in hammer
+
+
+def _branchy_transition(n: int) -> Module:
+    """A countdown whose next value is chosen by an `n`-deep chain of `ite`s."""
+    x = Var(Int([1, 1]))
+    zero, one = Wire(Int([1, 1])), Wire(Int([1, 1]))
+    terms = [Term(LIA.Int(torch.tensor([[0]])), [zero]),
+             Term(LIA.Int(torch.tensor([[1]])), [one])]
+    prev = x
+    for k in range(n):
+        cond, out = Wire(Bool([1, 1])), (X(x) if k == n - 1 else Wire(Int([1, 1])))
+        dec = Wire(Int([1, 1]))
+        terms += [Term(LIA.Eq(), [cond], [prev, zero]),
+                  Term(LIA.Sub(), [dec], [prev, one]),
+                  Term(LIA.Ite(), [out], [cond, zero, dec])]
+        prev = out
+    return Module.sequential([x], [Term(LIA.Int(torch.tensor([[9]])), [X(x)])], terms)
+
+
+def test_a_branchy_transition_gets_the_higher_budget():
+    """`step_inv` splits the transition's branches before any closer runs, so
+    a Petri net's 16 of them cost what a 32-branch certificate does."""
+    narrow = _plan(_branchy_transition(3), "fun s => ((s 0 0) ≥ 0)")
+    assert narrow.features.n_trans_branch == 3
+    assert narrow.max_heartbeats == 2000000
+    wide = _plan(_branchy_transition(16), "fun s => ((s 0 0) ≥ 0)")
+    assert wide.features.n_trans_branch == 16
+    assert wide.max_heartbeats == 8000000

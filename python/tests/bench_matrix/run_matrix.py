@@ -48,6 +48,7 @@ MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
+from zrth.lean.project import without_cascades  # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 PROJECTS = WORK / "projects"
@@ -56,6 +57,9 @@ RESULTS = WORK / "results.json"
 
 GEN_TIMEOUT = 300
 BUILD_TIMEOUT = 420
+# What of GEN_TIMEOUT `--infer ai-cegis` does not spend asking: verith's
+# start-up and the project it writes either side of the loop.
+CEGAR_MARGIN = 20
 
 # The two paths `--infer fbk-proveit` needs, and the MathSAT bindings its
 # `vmt2lean.py` imports. Overridable, but defaulted so a plain run measures
@@ -128,6 +132,11 @@ def command(row, route, out: Path) -> list[str]:
            "--artifacts", "reset", "-o", str(out), "-p", "Rea"]
     if route.needs_llm and MODEL:
         cmd += ["--model", MODEL]
+    if route.name == "ai-cegis":
+        # Asked by time rather than by count, so the column uses the budget
+        # the cell has: five attempts used to end at 75-107 s of a 180 s cap.
+        # The margin is the project written before the loop and after it.
+        cmd += ["--cegar-budget", str(GEN_TIMEOUT - CEGAR_MARGIN)]
     return cmd
 
 
@@ -225,6 +234,32 @@ def _kill_group(proc):
         return "", ""
 
 
+def diagnosis(blob: str) -> str:
+    """The part of a failed run's output that says what went wrong.
+
+    Two shapes reach here. A refusal is prose `verith` wrote: the first line
+    is the diagnosis and the lines under it are the hint, so a tail of it is
+    the answer -- which is why this is a tail and not a head.
+
+    A traceback is Python's, and there the answer is the exception at the
+    bottom; the frames above it are the path there. Taking the last lines of
+    one gave `cd = magic.infer(...) | File "...", line 177, in infer | raise
+    RuntimeError(` -- the call that raised, not what it said. `err_full`
+    keeps the whole thing for the page's detail panel either way.
+    """
+    lines = blob.splitlines()
+    frames = [i for i, ln in enumerate(lines) if ln.startswith('  File "')]
+    if not frames:
+        tail = [ln.strip() for ln in lines if ln.strip()]
+        return " | ".join(tail[-8:])
+    # The exception is the first unindented line after the last frame -- its
+    # own message may run on over indented lines, so those come with it.
+    for j in range(frames[-1] + 1, len(lines)):
+        if lines[j].strip() and not lines[j][0].isspace():
+            return "\n".join(lines[j:]).strip()
+    return lines[-1].strip()
+
+
 def generate(row, route, out: Path) -> dict:
     if out.exists():
         shutil.rmtree(out)
@@ -236,15 +271,46 @@ def generate(row, route, out: Path) -> dict:
                     err=f"verith timed out ({GEN_TIMEOUT}s)",
                     err_full=((r.stderr or r.stdout) or "").strip()[-4000:])
     if r.returncode != 0:
-        # The diagnosis is often the *first* line of a refusal and the lines
-        # after it are the hint, so a 3-line tail threw away the reason.
-        # `err_full` keeps the whole thing for the page's detail panel.
         blob = (r.stderr or r.stdout).strip()
-        tail = [ln.strip() for ln in blob.splitlines() if ln.strip()]
         return dict(ok=False, secs=time.time() - t0,
-                    err=" | ".join(tail[-8:]), err_full=blob[-4000:])
+                    err=diagnosis(blob), err_full=blob[-4000:],
+                    gave_up=gave_up(out, blob))
     return dict(ok=True, secs=time.time() - t0, err="",
                 inferred=inferred_from(r.stdout), inferred_rule="last")
+
+
+def gave_up(out: Path, blob: str = "") -> str:
+    """Which kind of giving up this was, as the route itself recorded it.
+
+    `NO-CERT` is three measurements in one name -- `no_solution` is a space
+    proved empty, `unknown` a search that ran out, `declined` a shape no
+    search was run on -- and reading them back off the prose was guesswork:
+    a dozen wordings per route, ~160 of 312 unmatched, 7 matching two
+    buckets at once. The status is what the route wrote down, so it is what
+    this reads.
+
+    The *last* note, because a run that resumed may carry an earlier one,
+    and `""` when there is none -- a pass taken before routes recorded this
+    has no note at all.
+
+    A refusal `verith` wrote before any project existed has nowhere to leave
+    a note, and is `declined` all the same: what refuses that early is the
+    CLI's check of the property kind or a route's own `precheck`, and both
+    are a shape check by contract -- nothing is searched before the project
+    is written. `--infer fbk-proveit` refuses a Real state or an input read
+    while stepping there, and those were 49 `NO-CERT` cells with no status
+    at all. A usage error is argparse's, not a refusal, and is left alone.
+    """
+    if (blob and not (out / "Rea").exists()
+            and re.search(r"^error: ", blob, re.M) and "usage:" not in blob):
+        return "declined"
+    index = out / "Rea" / "artifacts" / "index.json"
+    try:
+        entries = json.loads(index.read_text())
+    except (OSError, ValueError):
+        return ""
+    notes = [e for e in entries if e.get("role") == "note"]
+    return notes[-1].get("status", "") if notes else ""
 
 
 _PRED = re.compile(r"^\s*(?:\[[\w-]+\]\s*)?(inv|ranking)\s*:\s*(.+?)\s*$")
@@ -316,9 +382,12 @@ def build(row, route, out: Path) -> dict:
                 errors.append(f"{m.group('file')}: {msg}")
             elif "Lean exited" not in ln:
                 errors.append(ln[7:])
+    # A kernel `unknown constant` after an earlier error is that error's
+    # shadow -- the declaration it names is the one that just failed to
+    # elaborate -- and it is the line that reads like a codegen bug.
     return dict(ok=r.returncode == 0 and not sorries, raw_ok=r.returncode == 0,
                 secs=time.time() - t0, targets=failed,
-                errors=errors[:6], sorries=sorries[:8])
+                errors=without_cascades(errors)[:6], sorries=sorries[:8])
 
 
 # A route that produced no project did so for one of three reasons, and they
@@ -337,6 +406,11 @@ _NO_CERT = re.compile(
     r"error: --infer|CEGAR failed after|obligation violated|found no ranking"
     r"|found no invariant|could not decide|cannot decide|--fbk-proveit:|--ic3ia:"
     r"|Failed to find valid invariant/ranking after")
+# A module shape no Lean column can write. `verith` refuses it before
+# generating and the message is prefixed like every other `--infer` refusal,
+# so it has to be told from one: nothing was searched, and `GEN-FAIL` is what
+# the page promises for a module shape refused up front.
+_NO_LEAN = re.compile(r"has no Lean form")
 
 
 # What a certificate is made of. Everything else a project builds -- the five
@@ -375,6 +449,14 @@ def verdict(gen, bld) -> str:
             return "UNSUPPORTED"
         if _REFUTED.search(err):
             return "REFUTED"
+        if _NO_LEAN.search(err):
+            return "GEN-FAIL"
+        # A route that looked at this module and did not take it searched
+        # nothing, so its cell says what the route reads, not how hard the
+        # module is -- and counted as `NO-CERT` it was in every success
+        # rate's denominator: some 165 of the 750 in one pass.
+        if gen.get("gave_up") == "declined":
+            return "UNSUPPORTED"
         return "NO-CERT" if _NO_CERT.search(err) else "GEN-FAIL"
     if "<timeout>" in bld.get("targets", []):
         return "TIMEOUT"
@@ -430,7 +512,7 @@ def machine() -> dict:
 
 
 def main() -> None:
-    global RESULTS
+    global RESULTS, GEN_TIMEOUT
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, _stop)
     ap = argparse.ArgumentParser(description=__doc__,
@@ -444,6 +526,8 @@ def main() -> None:
                     help="re-measure exactly the pairs named in FILE, one "
                          "`suite/bench/prop::route` per line (implies --redo)")
     ap.add_argument("--no-build", action="store_true", help="generate only, skip lake")
+    ap.add_argument("--gen-timeout", type=int, default=GEN_TIMEOUT, metavar="SECONDS",
+                    help=f"wall-clock cap on one `verith` run (default: {GEN_TIMEOUT})")
     # A repeat measurement is a *new sample*, not an amendment to the old
     # one: it goes in its own file and `render.py` averages the files it is
     # given. Resuming an interrupted pass means pointing `--results` back at
@@ -462,6 +546,7 @@ def main() -> None:
                          "emitting a row or a route")
     args = ap.parse_args()
     RESULTS = Path(args.results)
+    GEN_TIMEOUT = args.gen_timeout
 
     if args.prune:
         data = json.loads(RESULTS.read_text())

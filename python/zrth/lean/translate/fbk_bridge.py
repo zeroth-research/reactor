@@ -43,7 +43,7 @@ from zrth.lean.common import (
     LeanContext,
     flat_layout,
 )
-from zrth.lean.native import _product_type
+from zrth.lean.native import _product_type, _product_type_scalar
 from zrth.lean.translate.fbk import SlotBodies, check_na_supported
 
 # The certificate's own `simp_mat` arsenal. Without it a `Linear` arrives as
@@ -53,15 +53,35 @@ _MAT_SIMP = (
     "MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, "
     "add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, "
     "Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, "
-    "Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero"
+    "Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, "
+    # The three reductions unfold to a `List.ofFn` fold that the two lemmas
+    # above then compute; without the defs here the fold never opens.
+    "matMin, matMax, argmax_1d, argmax"
 )
 
 
-def _cascade(defs: str, extra: str = "") -> list[str]:
+def _lemmas(*names: str) -> str:
+    """`", a, b, c"`, or `""` when there are none.
+
+    A module can have no pinned slot at all -- every one of them starts at
+    an unconstrained input -- and a bare `", "` before the closing bracket
+    is a simp set with a hole in it.
+    """
+    return "".join(f", {n}" for n in names)
+
+
+def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False) -> list[str]:
     """The closer chain, cheapest first.
 
     Measured over every module shape the route accepts: `rfl` closes the
     trivial ones and `simp` + `omega` the rest.
+
+    `from_hyps` switches `simp` for `simp_all`, for the one goal whose
+    content is in a hypothesis rather than in the definitions: `start_maps`
+    under `--pre` has to carry `init_pre l` into a `PRE` conjunct, and a
+    `simp` that rewrites only the goal never reads it. Off elsewhere,
+    because `simp_all` also rewrites *with* every hypothesis in scope, which
+    on the other goals is work that cannot help.
 
     There is no `smt` arm, and this file cannot have one.  `smt` comes from
     `lean-smt`, which pulls in `auto` and with it `Auto.instBEqInt_auto`, a
@@ -75,14 +95,15 @@ def _cascade(defs: str, extra: str = "") -> list[str]:
     """
     plain = f"{defs}{extra}"
     mat = f"{defs}, {_MAT_SIMP}{extra}"
+    s = "simp_all" if from_hyps else "simp"
     return [
         "  first",
         "    | rfl",
-        f"    | (simp [{plain}]; done)",
-        f"    | (simp [{plain}]; omega)",
-        f"    | (simp [{mat}]; done)",
-        f"    | (simp [{mat}]; omega)",
-        f"    | (simp [{mat}]; split_ifs <;> omega)",
+        f"    | ({s} [{plain}]; done)",
+        f"    | ({s} [{plain}]; omega)",
+        f"    | ({s} [{mat}]; done)",
+        f"    | ({s} [{mat}]; omega)",
+        f"    | ({s} [{mat}]; split_ifs <;> omega)",
         f"    | (simp [{mat}]; simp_all)",
     ]
 
@@ -93,6 +114,7 @@ def atom_to_lean_fbk_bridge(
     na_module: str,
     simplify: bool = True,
     bodies: SlotBodies | None = None,
+    pre_lean: str = "",
 ) -> str:
     """Emit the bridge file for `ctx`.
 
@@ -102,18 +124,44 @@ def atom_to_lean_fbk_bridge(
     because the theorem below is about *that* file. Pass what
     `check_na_supported` returned; left out, it is asked again, which encodes
     the module into cvc5 a second time.
+
+    `pre_lean` is what the model's `PRE` was written from, and it is passed
+    rather than a flag so that the two files cannot disagree about whether
+    there is one: `start_maps` proves `INIT`, and an `INIT` with a conjunct
+    this file does not know about is a proof that does not close.
     """
     layout = flat_layout(ctx.ctrl_next)
     n = layout.total
     ty = layout.element_types()
-    upd = (bodies if bodies is not None else check_na_supported(ctx, simplify)).update
+    slot_bodies = bodies if bodies is not None else check_na_supported(ctx, simplify)
+    upd = slot_bodies.update
+    # `INIT` says nothing about a slot the module starts at an unconstrained
+    # input, so there is no `Init_k` to unfold for one (`fbk._free_init_slots`)
+    # -- unless `--pre` put it back under a constraint, which is a conjunct
+    # over the slots rather than a body for any one of them.
+    pinned = [k for k in range(n) if k not in slot_bodies.free_init]
+    has_pre = bool(pre_lean)
 
     binders = " ".join(f"(x{k} : {ty[k]})" for k in range(n))
     args = " ".join(f"x{k}" for k in range(n))
     flat = ", ".join(f"x{k}" for k in range(n))
     slots_of_state = " ".join(f"(Definition.var_{k} state)" for k in range(n))
     ctrl_native = _product_type(ctx.ctrl_next)
-    extl_native = "(Unit) × (Unit)"
+    extl_native = (
+        f"({_product_type(ctx.extl_latched)}) × ({_product_type(ctx.extl_next)})"
+    )
+    # The transition reads no input -- `check_na_supported` refuses a module
+    # whose does -- so `bridge_k` quantifies over them and `Scalar.update`
+    # is applied to the binders rather than to a value that would have to be
+    # invented. With no inputs at all both sides are `Unit`, spelled `()`.
+    if ctx.extl_next:
+        extl_binders = (
+            f" (el : {_product_type_scalar(ctx.extl_latched)})"
+            f" (en : {_product_type_scalar(ctx.extl_next)})"
+        )
+        extl_args = "el en"
+    else:
+        extl_binders, extl_args = "", "() ()"
 
     def as_fn(body: str) -> str:
         """`(var_k state)` is the model's read; `xk` is the same slot."""
@@ -189,11 +237,11 @@ def atom_to_lean_fbk_bridge(
     ]
     # The right-hand sides are slot `k` of the flat transition, read out by
     # the same layout the left-hand sides were numbered by.
-    scalar_slots = layout.flat_accessors(f"(Scalar.update ({flat}) () ())")
+    scalar_slots = layout.flat_accessors(f"(Scalar.update ({flat}) {extl_args})")
     for k in range(n):
         rhs = scalar_slots[k]
         lines += [
-            f"theorem bridge_{k} {binders} :",
+            f"theorem bridge_{k} {binders}{extl_binders} :",
             f"    effect_{k}_fn {args} = {rhs} := by",
             *_cascade(f"effect_{k}_fn, Scalar.update"),
             "",
@@ -213,13 +261,27 @@ def atom_to_lean_fbk_bridge(
         "    RM.toTS.start s → Definition.INIT (toSlots s) = true := by",
         "  intro hs",
         "  simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs",
-        "  obtain ⟨l, _, hl⟩ := hs",
-        "  rw [← hl]",
+        # The `rfl` pattern substitutes `s := init l.2` rather than rewriting
+        # under an equation that stays in scope: the arms below reason from
+        # the hypotheses, and `init l.2 = s` left in context is a rewrite
+        # back to `s` that undoes the step this line just took.
+        #
+        # `hpre : init_pre l` is named only when `INIT` has a `PRE` conjunct
+        # to discharge from it. Without one the module's precondition is
+        # `True` and naming it leaves an unused hypothesis; with one it is
+        # the whole content of that conjunct -- `PRE (toSlots (init l.2))`
+        # reads back the very inputs `init` wrote to those slots, so it *is*
+        # `init_pre l`, spelled in `Bool`.
+        f"  obtain ⟨l, {'hpre' if has_pre else '_'}, rfl⟩ := hs",
         *_cascade(
-            "Definition.INIT, toSlots, init_scalar_eq, Scalar.pack, Scalar.init",
-            ", " + ", ".join(
-                f"Definition.Init_{k}, Definition.var_{k}" for k in range(n)
-            ),
+            "Definition.INIT, toSlots, init_scalar_eq, Scalar.pack, Scalar.init"
+            + (", Definition.PRE, init_pre" if has_pre else ""),
+            # Every slot's `var_k`, not only the pinned ones': a slot that
+            # starts at an input another slot took first is pinned *to* that
+            # slot (`fbk._free_init_slots`), which is free.
+            _lemmas(*(f"Definition.Init_{k}" for k in pinned),
+                    *(f"Definition.var_{k}" for k in range(n))),
+            from_hyps=has_pre,
         ),
         "",
         "theorem step_maps (s : CtrlNative) (l : " + extl_native + ") (s' : CtrlNative) :",
@@ -227,11 +289,20 @@ def atom_to_lean_fbk_bridge(
         "  intro hstep",
         "  simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep",
         "  rw [← hstep.2]",
+        # `effect_k_fn` is unfolded only when the module has inputs, and it
+        # has to be: `bridge_k` is then not a rewrite `simp` can apply,
+        # because its right-hand side binds the inputs and its left-hand
+        # side does not, so there is nothing to instantiate them from. The
+        # transition reads no input (`check_na_supported`), so unfolding the
+        # body leaves the same arithmetic on both sides and the cascade
+        # closes it where `bridge_k` would have. Left off otherwise: it is
+        # another definition in every `simp` arm of every slot.
         *_cascade(
             "Definition.TRANS, toSlots, update_scalar_eq, Scalar.pack, "
             "Scalar.unpack_ctrl",
             ", " + ", ".join(
                 f"Definition.R_{k}, Definition.var_{k}, link_{k}, bridge_{k}"
+                + (f", effect_{k}_fn" if ctx.extl_next else "")
                 for k in range(n)
             ),
         ),
@@ -256,7 +327,11 @@ def atom_to_lean_fbk_bridge(
         "-- ── what it all buys ─────────────────────────────────────────────",
         "",
         "/-- the model as a transition system -/",
-        f"abbrev MTS : TS StateType ({extl_native}) := {{ toNA := M }}",
+        "-- The model's own label type, not the module's: the NA reads its",
+        "-- inputs out of the state and is labelled by `Unit × Unit`, while a",
+        "-- reactive module is labelled by its external inputs. `TS.transfer`",
+        "-- takes the map between them, and nothing reads a label.",
+        "abbrev MTS : TS StateType (Unit × Unit) := { toNA := M }",
         "",
         "/-- **Safety of the model is safety of the module.**",
         "",
@@ -272,7 +347,7 @@ def atom_to_lean_fbk_bridge(
         "    (hM : ∀ ts μs, MTS.ωTrace ts μs →",
         "            ts ⊧ G (AP (fun st => Definition.PROPERTY st = true))) :",
         "    ∀ ss μs, RM.toTS.ωTrace ss μs → ss ⊧ G (AP P) := by",
-        "  have h := TS.transfer RM.toTS MTS toSlots start_maps step_maps _ hM",
+        "  have h := TS.transfer RM.toTS MTS toSlots (fun _ => ((), ()))\n            start_maps step_maps _ hM",
         "  rw [← property_eq]",
         "  exact h",
         "",

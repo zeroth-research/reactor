@@ -8,8 +8,9 @@ solver decides what stays:
 * **the invariant** is Houdini's.  Candidate facts are the bound a component
   stays within, stated with a constant the program mentions; a congruence
   the runs keep; a relation between two components; the bounds a component
-  keeps on each side of a Bool flag; and under ``--safety`` the property's
-  own conjuncts.  Each is put to the solver (it holds at entry; a round
+  keeps on each side of a Bool flag; the bounds each mode of the Bool
+  columns keeps, computed rather than read (:mod:`.modes`); and under
+  ``--safety`` the property's own conjuncts.  Each is put to the solver (it holds at entry; a round
   preserves it given the others) and dropped when not proved, until a pass
   drops nothing.
 * **the ranking function** (``--buchi``) is one of a fixed list of shapes --
@@ -113,7 +114,7 @@ from __future__ import annotations
 import math
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from itertools import product
 
@@ -130,10 +131,13 @@ from ..houdini_solver import (
     smt_real,
 )
 from . import TA2Magic
+from .modes import mode_bounds
 from ..smt_synth import (
     SynthContext,
     affine_smt,
+    component_slots,
     denominator_scale,
+    element,
     moduli,
     program_constants,
     program_rationals,
@@ -170,8 +174,21 @@ _MAX_RANKS = 48
 _MAX_OUTSIDE = 1000
 _MAX_SPLITS = 24
 _MAX_BRANCH_FORMS = 6
-# Up to this many components, every {-1, 0, 1} combination is a form; past
-# it, one or two components at a time.
+# Times the shapes are fitted again to the wide rounds every one of them
+# failed on, before the search gives up on them.
+_REFITS = 3
+# Ranking functions a refit reads the solver's counter-models of.
+_WITNESSED = 4
+# How long a rung's fits may run, refits included: a refit that would end
+# past it is skipped. The first fit always runs.
+_REFIT_SECONDS = 20.0
+# Up to this many columns, every {-1, 0, 1} combination is a form; past it,
+# one or two columns at a time. There is no third rung, and a cap on the
+# pairs was measured and dropped: they are quadratic in the columns, but on
+# the widest module here -- a 32-element vector, so 2048 forms against 64 --
+# dropping them saves 2.3 s of a 5.5 s search and changes no answer on any
+# of the seven matrix-shaped modules. A guard that costs reach and buys
+# nothing measurable is not worth the rung.
 _MAX_DENSE = 5
 # Constant-derived shifts offered above a fitted one, per form.
 _MAX_SHIFTS = 2
@@ -215,35 +232,137 @@ class Obligations:
     def __init__(self, ctx: SynthContext):
         tm = ctx.tm
         self.ctx = ctx
+        self._rewriter = cvc5.Solver(tm)
 
         def consts(vs, prefix):
-            return [tm.mkConst(v.getSort(), f"{prefix}{i}")
-                    for i, v in enumerate(vs)]
+            """One holder per component, over one *constant* per element.
+
+            A scalar component is a constant, as it always was. A
+            matrix-shaped one is the constructor over a constant per
+            element -- `(tuple v_s0_0 v_s0_1 v_s0_2)` -- so that a
+            component is still one thing to substitute while every name
+            that reaches a solver is a scalar. `_readable` folds the
+            selects that leaves behind, and a prover with no tuple theory
+            then never sees a tuple: not in a `declare-fun`, not in a
+            `define-fun`, and not in an obligation.
+            """
+            out = []
+            for i, v in enumerate(vs):
+                sort = v.getSort()
+                if not sort.isTuple():
+                    out.append(tm.mkConst(sort, f"{prefix}{i}"))
+                    continue
+                out.append(tm.mkTuple([tm.mkConst(e, f"{prefix}{i}_{k}")
+                                       for k, e in
+                                       enumerate(sort.getTupleSorts())]))
+            return out
 
         self.s = consts(ctx.state, "v_s")
         self.sp = consts(ctx.state, "v_sp")
         self.si = consts(ctx.state, "v_si")
         self.el = consts(ctx.extl_latched, "v_el")
         self.en = consts(ctx.extl_next, "v_en")
-        rewriter = cvc5.Solver(tm)
-
-        def readable(t):
-            """`t`, with the tuples a matrix-shaped intermediate leaves folded.
-
-            A module with scalar state can still compute through a matrix --
-            `m_max` takes the max of a 2-vector -- and cvc5 encodes that as
-            `tuple`/`tuple.select`, which Vampire's SMT-LIB front end does not
-            have. The rewriter folds a select of a constructor away, so the
-            round Vampire is shown is the same function without them. It is
-            only called where a tuple is printed: a term that has none is
-            handed over exactly as encoded.
-            """
-            return rewriter.simplify(t) if "tuple" in str(t) else t
+        readable = self._readable
 
         self.next = [readable(t) for t in ctx.msmt.update_state(self.s, self.el, self.en)]
         self.init = [readable(t) for t in ctx.msmt.init_state(self.en)]
         self.update_pre = readable(ctx.with_inputs(ctx.update_pre, self.el, self.en))
         self.init_pre = readable(ctx.with_inputs(ctx.init_pre, self.el, self.en))
+
+    def _readable(self, t):
+        """`t`, with every tuple the encoding leaves folded away.
+
+        A module with scalar state can still compute through a matrix --
+        `m_max` takes the max of a 2-vector -- and cvc5 encodes that as
+        `tuple`/`tuple.select`, which Vampire's SMT-LIB front end does not
+        have. The rewriter folds a select of a constructor away, so the
+        round a prover is shown is the same function without them. Since
+        the state holders are constructors too (`consts`), that covers a
+        matrix-shaped *component* and not only an intermediate. It is only
+        called where a tuple is printed: a term that has none is handed
+        over exactly as encoded.
+        """
+        return self._rewriter.simplify(t) if "tuple" in str(t) else t
+
+    def flatten(self, holders, terms=None) -> list:
+        """One term per element: `terms` shaped by `holders`, or the holders.
+
+        `holders` says what has elements and how many -- a constructor is a
+        matrix-shaped component, anything else is a scalar -- and `terms`
+        are the terms standing in those positions, which for the round is
+        the successor and for the holders themselves is the constants. The
+        two are separate because a caller that wants the *names* and one
+        that wants the round both need the same shape read off the same
+        place.
+        """
+        out = []
+        for h, t in zip(holders, holders if terms is None else terms):
+            if h.getKind() != Kind.APPLY_CONSTRUCTOR:
+                out.append(t)
+            else:
+                out += [self._select(t, k)
+                        for k in range(h.getNumChildren() - 1)]
+        return out
+
+    def slots(self, holders) -> list:
+        """`(name, sort)` for every constant in `holders` -- one per element.
+
+        What a caller drawing input values needs: the names are the ones a
+        term mentions, so a matrix-shaped input is drawn element by element
+        rather than as a tuple under a name nothing uses.
+        """
+        return [(str(c), c.getSort()) for c in self.flatten(holders)]
+
+    def env_of(self, state, holders=None) -> dict:
+        """A simulated state as values for the constants `holders` names.
+
+        One entry per element, because that is what the constants are: a
+        matrix-shaped component contributes its elements under the names
+        `consts` gave them, not a tuple under the component's name.
+        """
+        out: dict = {}
+        for h, v in zip(holders if holders is not None else self.s, state):
+            if h.getKind() == Kind.APPLY_CONSTRUCTOR:
+                for c, x in zip(list(h)[1:], v):
+                    out[c.getSymbol()] = x
+            else:
+                out[str(h)] = v
+        return out
+
+    def _select(self, t, k):
+        """Element `k` of `t`, pushed down to where the tuple is built.
+
+        `simplify` folds a select of a constructor, but not one of an `ite`
+        *between* constructors -- and that is exactly the shape of a round
+        that branches, as `m_mixed` does when it resets its vector instead
+        of decrementing it. Pushing the select into the branches is what
+        leaves a scalar per element rather than a tuple under a selector.
+        """
+        tm = self.ctx.tm
+        if t.getKind() == Kind.ITE:
+            return tm.mkTerm(Kind.ITE, t[0],
+                             self._select(t[1], k), self._select(t[2], k))
+        if t.getKind() == Kind.APPLY_CONSTRUCTOR:
+            return list(t)[1 + k]
+        ctor = t.getSort().getDatatype()[0]
+        return self._readable(
+            tm.mkTerm(Kind.APPLY_SELECTOR, ctor[k].getTerm(), t))
+
+    def _defines(self, holders, values) -> list:
+        """The round as `define-fun`s: one per constant, so one per element.
+
+        There is no constant of tuple sort to define -- by construction, see
+        `consts` -- so a matrix-shaped component is defined element by
+        element, the `k`-th from the `k`-th element of the round.
+        """
+        out = []
+        for h, v in zip(holders, values):
+            if h.getKind() != Kind.APPLY_CONSTRUCTOR:
+                out.append((h, v))
+                continue
+            for k, c in enumerate(list(h)[1:]):
+                out.append((c, self._select(v, k)))
+        return out
 
     # --- the queries ------------------------------------------------------
 
@@ -251,14 +370,16 @@ class Obligations:
         """`init_pre e -> fact (init e)`, for all of `facts` at once."""
         at = [self._at(f.term, self.si) for f in facts]
         return self._query([("pre", self.init_pre)], self._and(at),
-                           defines=zip(self.si, self.init), probes=at)
+                           defines=self._defines(self.si, self.init),
+                           probes=at)
 
     def preserved(self, hyps: list[Candidate], goals: list[Candidate]) -> Query:
         """`hyps s /\\ update_pre e -> goals (update s e)`."""
         named = [(f"h{i}", self._at(h.term, self.s)) for i, h in enumerate(hyps)]
         at = [self._at(g.term, self.sp) for g in goals]
         return self._query(named + [("pre", self.update_pre)], self._and(at),
-                           defines=zip(self.sp, self.next), probes=at)
+                           defines=self._defines(self.sp, self.next),
+                           probes=at)
 
     def implies(self, hyps: list[Candidate], goal) -> Query:
         """`hyps s -> goal s`: the invariant is a proof of the property."""
@@ -283,12 +404,20 @@ class Obligations:
             self._clamp(self._at(rank.term, self.sp)),
             self._clamp(self._at(rank.term, self.s)),
         )
-        return self._query(named, goal, defines=zip(self.sp, self.next))
+        q = self._query(named, goal, defines=self._defines(self.sp, self.next))
+        # A refutation is a round the rank does not drop on, and the round
+        # is what the fit learns from -- read back only for a state of
+        # scalars, which is the shape a simulated round has.
+        if all(h.getKind() != Kind.APPLY_CONSTRUCTOR for h in self.s):
+            q = replace(q, witness=tuple(self.s) + tuple(self.sp))
+        return q
 
     # --- plumbing ---------------------------------------------------------
 
     def _at(self, term, vs):
-        return term.substitute(self.ctx.state, vs)
+        # Folded, because substituting a matrix-shaped holder leaves a
+        # select of a constructor where the component was.
+        return self._readable(term.substitute(self.ctx.state, vs))
 
     def _and(self, terms):
         tm = self.ctx.tm
@@ -327,7 +456,15 @@ class Obligations:
 
 
 def _term(tm, sort, value):
-    """`value` as a cvc5 literal of `sort`."""
+    """`value` as a cvc5 literal of `sort`.
+
+    A matrix-shaped value is a Python tuple, element by element, which is
+    how the simulation carries one and the only shape `tuple.select` reads
+    back.
+    """
+    if sort.isTuple():
+        return tm.mkTuple([_term(tm, s, v)
+                           for s, v in zip(sort.getTupleSorts(), value)])
     if sort.isBoolean():
         return tm.mkBoolean(bool(value))
     if sort.isReal():
@@ -401,6 +538,31 @@ def _quotient(vals):
     if a is _UNDEF or b is _UNDEF or b == 0:
         return _UNDEF
     return Fraction(a) / Fraction(b)
+
+
+def _tuple(vals):
+    """A matrix-shaped value: its elements, in the tuple's own order."""
+    return _UNDEF if any(v is _UNDEF for v in vals) else tuple(vals)
+
+
+def _selector(j: int):
+    """Element `j` of one, which is what `((_ tuple.select j) x)` means."""
+    def pick(vals):
+        return _UNDEF if vals[0] is _UNDEF else vals[0][j]
+    return pick
+
+
+def _selected(t) -> int:
+    """Which element `t`, an `APPLY_SELECTOR`, reads.
+
+    By identity against the datatype's own selectors rather than by reading
+    the index out of the printed name: the name is cvc5's to spell.
+    """
+    dt = t[1].getSort().getDatatype()[0]
+    for j in range(dt.getNumSelectors()):
+        if t[0] == dt[j].getTerm():
+            return j
+    raise _Unevaluable(f"no element for {t}")      # pragma: no cover
 
 
 _OPS = {} if Kind is None else {
@@ -495,6 +657,19 @@ class Evaluator:
                 op = (0, t.getBooleanValue())
             elif k == Kind.CONSTANT:
                 op = (1, t.getSymbol())
+            elif k in (Kind.APPLY_SELECTOR, Kind.APPLY_CONSTRUCTOR):
+                # The tuples a matrix-shaped component and the wires around
+                # it are encoded as. Child 0 is the selector or constructor
+                # symbol, which stands for the operation rather than for a
+                # value, so it is the one child not compiled.
+                kids = list(t)[1:]
+                if not expanded:
+                    stack.append((t, True))
+                    stack.extend((c, False) for c in reversed(kids))
+                    continue
+                fn = (_selector(_selected(t)) if k == Kind.APPLY_SELECTOR
+                      else _tuple)
+                op = (fn, tuple(slot[c.getId()] for c in kids))
             elif k not in _OPS:
                 op = (2, t)
             elif not expanded:
@@ -578,11 +753,18 @@ class Draws:
             self.reach = _WIDE
         self.fresh = 0.5 if wide else 0.25
         self.sorts = [v.getSort() for v in ctx.state]
+        # Where a state can be moved, and in what sort: one place per
+        # *element*, so a matrix-shaped component is as many as it has.
+        self.slots = [(i, slot, srt)
+                      for i in range(len(self.sorts))
+                      for slot, srt in component_slots(ctx, i)]
         self.rpool = sorted(set(rationals) | {Fraction(c) for c in self.pool})
         self.step = Fraction(1, scale)
 
     def value(self, sort):
         rng = self.rng
+        if sort.isTuple():
+            return tuple(self.value(s) for s in sort.getTupleSorts())
         if sort.isBoolean():
             return rng.random() < 0.5
         if sort.isReal():
@@ -598,19 +780,31 @@ class Draws:
         return rng.randint(-self.reach, self.reach)
 
     def near(self, seeds: list) -> tuple:
-        """A state: a reached one with some components moved, or a fresh one."""
+        """A state: a reached one with some elements moved, or a fresh one.
+
+        Elements rather than components: a 3-vector moved as a unit is three
+        coordinates that always change together, and the state that tells a
+        fact about `v[0]` apart from one about the whole vector is the state
+        where only `v[0]` moved.
+        """
         rng = self.rng
         if not seeds or rng.random() < self.fresh:
             return tuple(self.value(srt) for srt in self.sorts)
         s = list(rng.choice(seeds))
-        for i in rng.sample(range(len(s)), k=rng.randint(1, len(s))):
-            if self.sorts[i].isBoolean():
-                s[i] = not s[i]
+        for i, slot, srt in rng.sample(self.slots,
+                                       k=rng.randint(1, len(self.slots))):
+            old = s[i] if slot is None else s[i][slot]
+            if srt.isBoolean():
+                new = not old
             elif rng.random() < 0.6:
-                step = self.step if self.sorts[i].isReal() else 1
-                s[i] = s[i] + step * rng.choice((-2, -1, 1, 2))
+                new = old + (self.step if srt.isReal() else 1) * rng.choice(
+                    (-2, -1, 1, 2))
             else:
-                s[i] = self.value(self.sorts[i])
+                new = self.value(srt)
+            if slot is None:
+                s[i] = new
+            else:
+                s[i] = s[i][:slot] + (new,) + s[i][slot + 1:]
         return tuple(s)
 
 
@@ -626,8 +820,8 @@ def simulate(ctx: SynthContext, ob: Obligations, ev: Evaluator,
     """
     draws = Draws(ctx, constants, seed, rationals=rationals, scale=scale)
     names = ctx.names
-    latched = [str(c) for c in ob.el]
-    awaited = [(str(c), c.getSort()) for c in ob.en]
+    latched = [n for n, _ in ob.slots(ob.el)]
+    awaited = ob.slots(ob.en)
 
     def inputs(pre, base, before):
         """Awaited inputs `pre` allows. At entry nothing is latched yet, so
@@ -680,9 +874,9 @@ def simulate(ctx: SynthContext, ob: Obligations, ev: Evaluator,
             seen_here.add(s)
             if (len(rounds) >= _MAX_ROUNDS or time.monotonic() > t_end
                     or any(not isinstance(v, bool) and abs(v) > _OVERFLOW
-                           for v in s)):
+                           for v in _scalars(s))):
                 break
-            base = {str(c): v for c, v in zip(ob.s, s)}
+            base = ob.env_of(s)
             env = inputs(ob.update_pre, base, before)
             if env is None:
                 break
@@ -709,8 +903,7 @@ def sample_rounds(ctx: SynthContext, ob: Obligations, ev: Evaluator,
     best and, on a solver that cannot refute, a whole time limit to learn
     nothing.
     """
-    ins = [(str(c), c.getSort()) for c in ob.el + ob.en]
-    names = [str(c) for c in ob.s]
+    ins = ob.slots(ob.el) + ob.slots(ob.en)
     out: list = []
     t_end = time.monotonic() + seconds
     for _ in range(40 * want):
@@ -720,7 +913,7 @@ def sample_rounds(ctx: SynthContext, ob: Obligations, ev: Evaluator,
         try:
             if not keep(s):
                 continue
-            base = dict(zip(names, s))
+            base = ob.env_of(s)
             for _ in range(8):
                 env = dict(base)
                 env.update({n: draws.value(srt) for n, srt in ins})
@@ -737,8 +930,53 @@ def sample_rounds(ctx: SynthContext, ob: Obligations, ev: Evaluator,
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def _reading(ctx: SynthContext, i: int) -> str:
-    return f"(ite s{i} 1 0)" if ctx.env.state_sorts[i].isBoolean() else f"s{i}"
+def _scalars(state):
+    """Every scalar in a simulated state, matrix-shaped ones flattened."""
+    for v in state:
+        if isinstance(v, tuple):
+            yield from v
+        else:
+            yield v
+
+
+@dataclass(frozen=True)
+class Column:
+    """One scalar a candidate or a ranking function may be stated over.
+
+    A scalar component is its own column. A matrix-shaped one is a column
+    per element -- `((_ tuple.select k) s0)`, the spelling `smt_to_lean`
+    renders and a property already uses -- which is what lets a fact be
+    said about `v[0]` when the component it lives in is a 3-vector. Without
+    it the only sayable facts are about the whole tuple, and there are
+    none: a tuple has no order to bound and no arithmetic to relate.
+
+    `sort` is the *element's*, never the component's, because everything
+    downstream branches on it -- an integer column is bounded by program
+    constants, a Real one by rationals and pinned to the values a run
+    takes, a Bool one splits a fact in two.
+    """
+
+    src: str                        # SMT-LIB over `s0..`
+    sort: object                    # the element's cvc5 sort
+    index: int                      # which component it reads
+    slot: "int | None"              # which element of it, or the whole thing
+
+    def at(self, state):
+        """This column's value in a simulated state."""
+        v = state[self.index]
+        return v if self.slot is None else v[self.slot]
+
+
+def columns(ctx: SynthContext) -> list[Column]:
+    """Every scalar this module's state is made of, in certificate order."""
+    return [Column(element(ctx, i, slot)[0], srt, i, slot)
+            for i in range(len(ctx.state))
+            for slot, srt in component_slots(ctx, i)]
+
+
+def _reading(col: Column) -> str:
+    """`col` as an integer: a Bool one is `0`/`1`, anything else itself."""
+    return f"(ite {col.src} 1 0)" if col.sort.isBoolean() else col.src
 
 
 def _bounds(values, constants) -> tuple["int | None", "int | None"]:
@@ -756,21 +994,24 @@ def _bounds(values, constants) -> tuple["int | None", "int | None"]:
 
 
 def pinned_values(ctx: SynthContext, runs: Runs) -> dict[str, str]:
-    """For each Real component the runs keep to a few values, those values.
+    """For each Real column the runs keep to a few values, those values.
 
     Over the reals an interval is hardly ever inductive -- `0 <= x <= 5`
     admits `x = 1/2`, and `x' = x - 1` steps it out -- while the values a
     run takes are finitely many and closed under the round. It is the fact
     the LRA certificates `tests/limits` carries by hand are written with,
     and the one a floored ranking function needs: see `_pins`.
+
+    Keyed by the column's own source, so an element of a matrix-shaped
+    component is pinned on its own rather than with the component around it.
     """
     out: dict[str, str] = {}
-    for i, srt in enumerate(ctx.env.state_sorts):
-        if not (srt.isReal() and runs.states):
+    for col in columns(ctx):
+        if not (col.sort.isReal() and runs.states):
             continue
-        values = sorted({s[i] for s in runs.states})
+        values = sorted({col.at(s) for s in runs.states})
         if 1 < len(values) <= _MAX_VALUES:
-            out[f"s{i}"] = ("(or " + " ".join(f"(= s{i} {smt_real(v)})"
+            out[col.src] = ("(or " + " ".join(f"(= {col.src} {smt_real(v)})"
                                               for v in values) + ")")
     return out
 
@@ -779,15 +1020,20 @@ def invariant_candidates(ctx: SynthContext, runs: Runs,
                          constants: tuple[int, ...],
                          conjuncts: list[str],
                          rationals: tuple = ()) -> list[str]:
-    """Facts every simulated state satisfies, as SMT-LIB over `s0..`."""
+    """Facts every simulated state satisfies, as SMT-LIB over `s0..`.
+
+    Stated over :func:`columns` rather than over components: a fact about a
+    matrix-shaped component is a fact about one of its elements, since the
+    tuple itself has nothing to bound.
+    """
     consts = tuple(sorted(set(constants) | {0}))
     rconsts = tuple(sorted({Fraction(c) for c in consts}
                            | {Fraction(q) for q in rationals}))
     states = runs.states
-    sorts = ctx.env.state_sorts
-    ints = [i for i, srt in enumerate(sorts) if srt.isInteger()]
-    bools = [i for i, srt in enumerate(sorts) if srt.isBoolean()]
-    reals = [i for i, srt in enumerate(sorts) if srt.isReal()]
+    cols = columns(ctx)
+    ints = [c for c in cols if c.sort.isInteger()]
+    bools = [c for c in cols if c.sort.isBoolean()]
+    reals = [c for c in cols if c.sort.isReal()]
     out: list[str] = list(conjuncts)
     if not states:
         return out
@@ -806,50 +1052,52 @@ def invariant_candidates(ctx: SynthContext, runs: Runs,
     def near_zero(cs):
         return tuple(c for c in cs if abs(c) <= 1)
 
-    for i in ints:
-        values = [s[i] for s in states]
-        out += bounded(f"s{i}", values)
+    for col in ints:
+        values = [col.at(s) for s in states]
+        out += bounded(col.src, values)
         distinct = set(values)
         for k in moduli(consts):
             residues = {v % k for v in values}
             if len(residues) == 1 and len(distinct) > 2:
-                out.append(f"(= (mod s{i} {k}) {residues.pop()})")
+                out.append(f"(= (mod {col.src} {k}) {residues.pop()})")
     pins = pinned_values(ctx, runs)
-    for i in reals:
-        values = [s[i] for s in states]
+    for col in reals:
+        values = [col.at(s) for s in states]
         # The values themselves, before any bound -- listed first so that
         # the minimiser, which drops from the end, tries the bounds before
         # the fact that carries the module.
-        if f"s{i}" in pins:
-            out.append(pins[f"s{i}"])
-        out += bounded(f"s{i}", values, rconsts, smt_real)
-    for i in bools:
-        values = {s[i] for s in states}
+        if col.src in pins:
+            out.append(pins[col.src])
+        out += bounded(col.src, values, rconsts, smt_real)
+    for col in bools:
+        values = {col.at(s) for s in states}
         if len(values) == 1:
-            out.append(f"s{i}" if values.pop() else f"(not s{i})")
+            out.append(col.src if values.pop() else f"(not {col.src})")
             continue
-        for flag, lit in ((True, f"s{i}"), (False, f"(not s{i})")):
-            side = [s for s in states if s[i] == flag]
-            for j in ints:
-                for fact in bounded(f"s{j}", [s[j] for s in side]):
+        for flag, lit in ((True, col.src), (False, f"(not {col.src})")):
+            side = [s for s in states if col.at(s) == flag]
+            for other in ints:
+                for fact in bounded(other.src, [other.at(s) for s in side]):
                     if fact not in out:
                         out.append(f"(=> {lit} {fact})")
-            for j in reals:
-                for fact in bounded(f"s{j}", [s[j] for s in side],
+            for other in reals:
+                for fact in bounded(other.src, [other.at(s) for s in side],
                                     rconsts, smt_real):
                     if fact not in out:
                         out.append(f"(=> {lit} {fact})")
-    # Relations between two components of the same sort -- mixing an Int one
+    # Relations between two columns of the same sort -- mixing an Int one
     # with a Real one would need a `to_real` on the sum, and the certificate
     # is easier to read one sort at a time -- against the constants near zero
     # only: a sum bounded by some large literal is rarely what holds a run in.
     for group, cs, lit in ((ints, near_zero(consts), smt_int),
                            (reals, near_zero(rconsts), smt_real)):
-        for a, i in enumerate(group):
-            for j in group[a + 1:]:
+        for a, x in enumerate(group):
+            for y in group[a + 1:]:
                 for form, values in (
-                    (f"(- s{i} s{j})", [s[i] - s[j] for s in states]),
-                    (f"(+ s{i} s{j})", [s[i] + s[j] for s in states]),
+                    (f"(- {x.src} {y.src})",
+                     [x.at(s) - y.at(s) for s in states]),
+                    (f"(+ {x.src} {y.src})",
+                     [x.at(s) + y.at(s) for s in states]),
                 ):
                     out += bounded(form, values, cs, lit)
     return list(dict.fromkeys(out))
@@ -860,7 +1108,7 @@ def split_conditions(ctx: SynthContext, ob: Obligations) -> list[str]:
 
     First the comparisons the property and the transition branch on -- where
     a run changes what it does, and so where the quantity that falls changes
-    too -- then each Bool component, the sign of each integer one, and the
+    too -- then each Bool column, the sign of each integer one, and the
     order of each pair: `max(y, z) - x` falls on `while (x < y) {x++; y = z}`
     and is `(ite (<= y z) (- z x) (- y x))`, a branch the program never
     spells.
@@ -886,17 +1134,17 @@ def split_conditions(ctx: SynthContext, ob: Obligations) -> list[str]:
             if set(_constants(t, {})) <= state:
                 out.append(decimals(str(t)))
         stack.extend(kids)
-    sorts = ctx.env.state_sorts
-    ints = [i for i, srt in enumerate(sorts) if srt.isInteger()]
-    reals = [i for i, srt in enumerate(sorts) if srt.isReal()]
-    for i, srt in enumerate(sorts):
-        if srt.isBoolean():
-            out.append(f"s{i}")
+    cols = columns(ctx)
+    ints = [c for c in cols if c.sort.isInteger()]
+    reals = [c for c in cols if c.sort.isReal()]
+    for col in cols:
+        if col.sort.isBoolean():
+            out.append(col.src)
         else:
-            out.append(f"(<= {smt_lit(0, srt)} s{i})")
+            out.append(f"(<= {smt_lit(0, col.sort)} {col.src})")
     for group in (ints, reals):
-        out += [f"(<= s{i} s{j})"
-                for a, i in enumerate(group) for j in group[a + 1:]]
+        out += [f"(<= {x.src} {y.src})"
+                for a, x in enumerate(group) for y in group[a + 1:]]
     return list(dict.fromkeys(out))[:_MAX_SPLITS]
 
 
@@ -904,7 +1152,7 @@ class Ranks:
     """Ranking functions fitted to rounds, in a few fixed shapes.
 
     Each shape is an affine form of the state's integer readings -- one
-    component, a sum or difference of two, or `K*x + y` for a lexicographic
+    column, a sum or difference of two, or `K*x + y` for a lexicographic
     pair -- and the *shift* that makes it at least one on every round that
     has to drop is read off those rounds rather than enumerated. A piecewise
     rank `(ite c f g)` fits a form to each side of `c` the same way, and the
@@ -920,7 +1168,8 @@ class Ranks:
         # What a real-valued form is multiplied by before it is floored, and
         # whether it has to be: a state of `Int` and `Bool` is read as it is.
         self.scale = max(1, int(scale))
-        self.real = any(srt.isReal() for srt in ctx.env.state_sorts)
+        self.cols = columns(ctx)
+        self.real = any(c.sort.isReal() for c in self.cols)
         # Shifts a guard's constant suggests: `c` and one past it. A shift
         # fitted to sampled rounds is only as low as the lowest one sampled,
         # and the round that needs the largest shift is usually the corner
@@ -930,13 +1179,16 @@ class Ranks:
         shifts = set(constants) | {math.floor(self.scale * Fraction(q))
                                    for q in rationals}
         self.shift_pool = sorted({c + d for c in shifts for d in (0, 1)})
+        # The env the evaluator wants is keyed by *component*, which is what
+        # a state is a tuple of; the forms below are over columns, which is
+        # what a matrix-shaped component has several of.
         self.names = ctx.names
-        n = len(self.names)
-        self.readings = [self._reading(ctx, i) for i in range(n)]
+        n = len(self.cols)
+        self.readings = [self._reading(c) for c in self.cols]
         if n <= _MAX_DENSE:
             # Every form with coefficients in {-1, 0, 1}: `100 - y + x - z`
             # ranks `ColonSipma-TACAS2001-Fig1`, and no pair of its three
-            # components does.
+            # columns does.
             forms = [v for v in product((1, -1, 0), repeat=n) if any(v)]
         else:
             forms = []
@@ -960,19 +1212,18 @@ class Ranks:
                 self.splits.append((src, term))
         self._truth: dict = {}
 
-    def _reading(self, ctx: SynthContext, i: int) -> str:
-        """Component `i` in the arithmetic this rank's forms are summed in.
+    def _reading(self, col: Column) -> str:
+        """`col` in the arithmetic this rank's forms are summed in.
 
-        Integer, unless some component is Real -- then every reading is
+        Integer, unless some column is Real -- then every reading is
         lifted to Real, because a sum has one sort and `to_real` is the only
-        way an `Int` component joins it.
+        way an `Int` column joins it.
         """
-        srt = ctx.env.state_sorts[i]
         if not self.real:
-            return _reading(ctx, i)
-        if srt.isBoolean():
-            return f"(ite s{i} 1.0 0.0)"
-        return f"s{i}" if srt.isReal() else f"(to_real s{i})"
+            return _reading(col)
+        if col.sort.isBoolean():
+            return f"(ite {col.src} 1.0 0.0)"
+        return col.src if col.sort.isReal() else f"(to_real {col.src})"
 
     def _src(self, shift: int, form) -> str:
         """The shape as the certificate carries it: an `Int`-sorted term.
@@ -1009,11 +1260,14 @@ class Ranks:
                 self._truth[key] = term is None
         return self._truth[key]
 
-    def fit(self, rounds: list) -> list[str]:
-        """Every shape that drops on all of `rounds`, smallest first."""
+    def fit(self, rounds: list, keep=()) -> list[str]:
+        """Every shape that drops on all of `rounds` and `keep`, smallest
+        first. `rounds` may be thinned to :data:`_MAX_OUTSIDE`; `keep` --
+        the rounds a shape was already seen to fail on -- never is."""
         outside = [(s, sp) for s, sp in rounds if not self.holds(s)]
         if len(outside) > _MAX_OUTSIDE:
             outside = random.Random(0).sample(outside, _MAX_OUTSIDE)
+        outside += [(s, sp) for s, sp in keep if not self.holds(s)]
         if not outside:
             # Nothing to rank on. A constant is then the first thing worth
             # asking: it proves the property holds wherever the invariant does.
@@ -1037,7 +1291,7 @@ class Ranks:
 
     def _lex(self, outside) -> list:
         """`K*x + y`, with `K` wider than the range `y` takes on these rounds."""
-        n = len(self.names)
+        n = len(self.cols)
         out = []
         for i in range(n):
             for j in range(n):
@@ -1059,7 +1313,7 @@ class Ranks:
                     if self.holds(s, c_term) == b] for b in (True, False)}
         if not side[True] or not side[False]:
             return []
-        zero = tuple(0 for _ in self.names)
+        zero = tuple(0 for _ in self.cols)
         fits = {}
         for b in (True, False):
             stays = [(s, sp) for s, sp in side[b] if self.holds(sp, c_term) == b]
@@ -1117,8 +1371,11 @@ class Ranks:
 
     def _at(self, form, state) -> int:
         """What `_src(0, form)` evaluates to at `state` -- floored, if real."""
-        total = sum(c * (int(v) if isinstance(v, bool) else v)
-                    for c, v in zip(form, state) if c)
+        total = 0
+        for c, col in zip(form, self.cols):
+            if c:
+                v = col.at(state)
+                total += c * (int(v) if isinstance(v, bool) else v)
         return math.floor(self.scale * total) if self.real else int(total)
 
 
@@ -1162,9 +1419,10 @@ class TA2MagicHoudini(TA2Magic):
 
     def infer(self, cd: CertificateData) -> CertificateData:
         ctx = SynthContext.build(self.module, cd, route="houdini",
-                                 takes=("int", "bool", "bv", "real"))
+                                 takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx
+        self.cols = columns(ctx)
         self.ob = ob = Obligations(ctx)
         self.ev = ev = Evaluator(ctx.tm)
         constants = program_constants(ctx)
@@ -1172,7 +1430,7 @@ class TA2MagicHoudini(TA2Magic):
         scale = denominator_scale(rationals)
         self.log(f"[houdini] solver: {self.spec.kind}")
         self.log("[houdini] columns: "
-                 + ", ".join(_reading(ctx, i) for i in range(len(ctx.state))))
+                 + ", ".join(_reading(c) for c in self.cols))
         if any(srt.isReal() for srt in ctx.env.state_sorts):
             self.log(f"[houdini] Real state: a ranking function is floored "
                      f"after scaling by {scale}")
@@ -1197,8 +1455,11 @@ class TA2MagicHoudini(TA2Magic):
 
         self.pins = pinned_values(ctx, runs)
         conjuncts = self._conjuncts(ctx, cd) if cd.is_safety else []
+        # The computed bounds go last: the minimiser drops from the end, so
+        # a certificate the read ones carry keeps the program's constants.
         facts = self._parse(invariant_candidates(ctx, runs, constants,
-                                                 conjuncts, rationals))
+                                                 conjuncts, rationals)
+                            + mode_bounds(ctx, ob, log=self.log))
         self.log(f"[houdini] {len(facts)} candidate facts hold on the runs")
         ranks = None if cd.is_safety else Ranks(ctx, ev, cd.prp,
                                                 split_conditions(ctx, ob),
@@ -1206,6 +1467,9 @@ class TA2MagicHoudini(TA2Magic):
 
         prover = self.spec.build(ctx.tm, seconds=self.timeout, log=self.log)
         found, reached, tried = None, 0.0, 0
+        # Rounds a refutation taught the fit. Kept across rungs: a round
+        # cvc5 refuted a shape with is a counterexample at every limit.
+        learnt: list = []
         for limit in prover.ladder(self.timeout):
             if prover.left() < 0.5:
                 break
@@ -1222,11 +1486,26 @@ class TA2MagicHoudini(TA2Magic):
                     found = (self._minimise(prover, inv, conjuncts, None), None)
                     break
                 continue
-            candidates = self._ranks(ranks, inv)
-            tried = max(tried, len(candidates))
-            if not candidates:
-                continue
-            at = prover.first([ob.drops(inv, r) for r in candidates], limit)
+            at, candidates = None, []
+            fit_until = time.monotonic() + _REFIT_SECONDS
+            for _ in range(_REFITS + 1):
+                started = time.monotonic()
+                candidates = self._ranks(ranks, inv, learnt, fit_until)
+                tried = max(tried, len(candidates))
+                if not candidates:
+                    break
+                at = prover.first([ob.drops(inv, r) for r in candidates], limit)
+                if at is not None or not prover.refutes:
+                    break
+                if time.monotonic() + (time.monotonic() - started) > fit_until:
+                    break
+                fresh = [r for r in self._refuting(prover, inv, candidates, limit)
+                         if r not in learnt]
+                if not fresh:
+                    break
+                self.log(f"[houdini] refitting to {len(fresh)} round(s) "
+                         f"{prover.name} refuted the ranking functions with")
+                learnt += fresh
             if at is not None:
                 rank = candidates[at]
                 self.log(f"[houdini] ranking function proved: {rank.src}")
@@ -1348,38 +1627,77 @@ class TA2MagicHoudini(TA2Magic):
             kept = [f for i, f in enumerate(kept) if i not in broken]
         return kept
 
-    def _ranks(self, ranks: Ranks, inv: list[Candidate]) -> list[Candidate]:
+    def _ranks(self, ranks: Ranks, inv: list[Candidate],
+               seen=(), fit_until: float = math.inf) -> list[Candidate]:
         """Shapes fitted to the rounds `inv` admits, smallest first.
 
         Fitted to the reached rounds and to sampled ones from states `inv`
         admits where the property fails -- `hrank` quantifies over all of
         those, so a shape that does not drop on a sampled round is one the
-        solver would only be asked about to be told no.
+        solver would only be asked about to be told no -- and to `seen`,
+        rounds the solver refuted earlier shapes with, as far as `inv` still
+        admits them. A refit is skipped when another fit would run past
+        `fit_until`: on a wide module one fit is tens of seconds of Python.
         """
         sampled = sample_rounds(
             self.ctx, self.ob, self.ev, self.draws, self.runs.states,
             lambda s: not ranks.holds(s) and all(self._holds(f, s) for f in inv))
-        fitted = self._parse(ranks.fit(list(self.runs.rounds) + sampled))
         wide = sample_rounds(
             self.ctx, self.ob, self.ev, self.wide, self.runs.states,
             lambda s: not ranks.holds(s) and all(self._holds(f, s) for f in inv))
-        kept = [r for r in fitted if self._drops_on(r, wide)]
+        # A wide round no fitted shape drops on is fitted to in turn: the
+        # shift of a shape is read off the rounds it was fitted to, and the
+        # round that decides it -- one crossing between two modes from
+        # exactly a bound -- is one a draw finds by luck.
+        learnt: list = [r for r in seen
+                        if all(self._holds(f, r[0]) for f in inv)]
+        for _ in range(_REFITS + 1):
+            started = time.monotonic()
+            fitted = self._parse(ranks.fit(list(self.runs.rounds) + sampled,
+                                           keep=learnt))
+            broken = [self._broken_on(r, wide) for r in fitted]
+            kept = [r for r, b in zip(fitted, broken) if b is None]
+            fresh = [b for b in dict.fromkeys(b for b in broken if b is not None)
+                     if b not in learnt]
+            if kept or not fresh:
+                break
+            if time.monotonic() + (time.monotonic() - started) > fit_until:
+                break
+            learnt += fresh
         self.log(f"[houdini] {len(fitted)} ranking functions drop on "
-                 f"{len(self.runs.rounds)} reached and {len(sampled)} sampled "
-                 f"rounds; {len(kept)} also on {len(wide)} rounds from a wider "
-                 f"range")
+                 f"{len(self.runs.rounds)} reached and "
+                 f"{len(sampled) + len(learnt)} sampled rounds; {len(kept)} "
+                 f"also on {len(wide)} rounds from a wider range")
         return kept[:_MAX_RANKS]
 
-    def _drops_on(self, rank: Candidate, rounds: list) -> bool:
+    def _refuting(self, prover: Solver, inv: list[Candidate],
+                  ranks: list[Candidate], limit: float) -> list:
+        """The rounds the solver refutes the first few of `ranks` with.
+
+        `hrank` quantifies over real states the lattice the draws live on
+        never reaches -- a tank at 11.9, just short of full, where a rank
+        floored after scaling is already 0 -- and a counter-model is exactly
+        such a state, with its successor.
+        """
+        n = len(self.ctx.state)
+        out = []
+        for r in ranks[:_WITNESSED]:
+            a = prover.prove(self.ob.drops(inv, r), limit, model=True)
+            if a.refuted and a.values is not None:
+                out.append((a.values[:n], a.values[n:]))
+        return list(dict.fromkeys(out))
+
+    def _broken_on(self, rank: Candidate, rounds: list):
+        """The first of `rounds` `rank` does not drop on, or None."""
         names = self.ctx.names
         for s, sp in rounds:
             try:
                 if not _drops(self.ev(rank.term, dict(zip(names, s))),
                               self.ev(rank.term, dict(zip(names, sp)))):
-                    return False
+                    return (s, sp)
             except _Unevaluable:
                 continue
-        return True
+        return None
 
     def _pins(self, inv: list[Candidate], rank: Candidate) -> list[Candidate]:
         """The value-set facts about the components a floored rank reads.
@@ -1397,7 +1715,12 @@ class TA2MagicHoudini(TA2Magic):
         from ..smt_query import _constants
 
         read = set(_constants(rank.term, {}))
-        wanted = {src for name, src in self.pins.items() if name in read}
+        # A pin is keyed by its column, and what the rank's term mentions is
+        # the *component* -- an element and the tuple it lives in are one
+        # constant to a solver -- so the column is mapped back to it.
+        holder = {c.src: f"s{c.index}" for c in self.cols}
+        wanted = {src for key, src in self.pins.items()
+                  if holder.get(key) in read}
         return [f for f in inv if f.src in wanted]
 
     def _property_rests_on(self, prover, inv, conjuncts,
@@ -1423,32 +1746,63 @@ class TA2MagicHoudini(TA2Magic):
                 need: list[Candidate], limit: float) -> list[Candidate]:
         """The facts `need` rests on, closed under the preservation proofs.
 
-        Each proof of "a round preserves `need`" is asked from all of `inv`,
-        and its core names the facts it used; those join `need` until a proof
-        uses nothing new. The set that comes out is inductive by those
-        proofs, and it is checked once more on its own before it replaces
-        `inv` -- a core over-trimmed would otherwise surface as a Lean
-        failure, and neither solver promises a core is one its goal needs. Anything that does not come back proved keeps `inv` whole.
+        The closure is `_closure`, and it is taken **again over what it
+        returned** until a round cuts nothing. One round is not a fixed
+        point, because a core names what the refutation happened to touch
+        and a pool of 87 facts offers more to touch than the 35 that come
+        back: asking the same question of the smaller pool is a different
+        refutation, and on measurement a much tighter one. The rounds
+        shrink strictly or stop, so there are at most as many as there are
+        facts, and each costs a handful of calls against `_minimise`'s one
+        per fact -- which is what makes this the half that carries a
+        refutation-only prover, whose every unproved call costs a whole time
+        limit.
+
+        The set that comes out is inductive by those proofs, and it is
+        checked once more on its own before it replaces `inv` -- a core
+        over-trimmed would otherwise surface as a Lean failure, and neither
+        solver promises a core is one its goal needs. Anything that does not
+        come back proved keeps `inv` whole.
         """
-        ob = self.ob
-        need = list(dict.fromkeys(need))
+        pool = inv
         while True:
-            if not need:
-                return need
-            answer = prover.prove(ob.preserved(inv, need), limit, core=True)
+            cut = self._closure(prover, pool, need, limit)
+            # `None` is a round that could not answer, and it leaves the
+            # round before it standing: what that one cut was closed under
+            # its own proofs and is not made wrong by a later time limit.
+            if cut is None or len(cut) >= len(pool):
+                break
+            pool = cut
+            if not pool:
+                return pool
+        if len(pool) == len(inv):
+            return inv
+        if prover.prove(self.ob.preserved(pool, pool), limit).proved:
+            self.log(f"[houdini] invariant cut to the {len(pool)} of "
+                     f"{len(inv)} facts its proofs use")
+            return pool
+        return inv
+
+    def _closure(self, prover: Solver, pool: list[Candidate],
+                 need: list[Candidate], limit: float) -> "list[Candidate] | None":
+        """`need` closed under "a round preserves it", drawing from `pool`.
+
+        Each proof is asked from all of `pool` and its core names the facts
+        it used; those join `need` until a proof uses nothing new. `None` is
+        "no answer" -- a proof that did not come back, or one with no core
+        -- and leaves the caller with what it had.
+        """
+        need = list(dict.fromkeys(need))
+        while need:
+            answer = prover.prove(self.ob.preserved(pool, need), limit,
+                                  core=True)
             if not answer.proved or answer.core is None:
-                return inv
-            more = [f for f in self._named(inv, answer.core) if f not in need]
+                return None
+            more = [f for f in self._named(pool, answer.core) if f not in need]
             if not more:
                 break
             need += more
-        if len(need) == len(inv):
-            return inv
-        if prover.prove(ob.preserved(need, need), limit).proved:
-            self.log(f"[houdini] invariant cut to the {len(need)} of "
-                     f"{len(inv)} facts its proofs use")
-            return need
-        return inv
+        return need
 
     def _minimise(self, prover: Solver, inv: list[Candidate],
                   keep: list[str], ranked) -> list[Candidate]:
@@ -1516,6 +1870,14 @@ class TA2MagicHoudini(TA2Magic):
 
     def _check_sorts(self, ctx: SynthContext) -> None:
         def scalar(s) -> bool:
+            """A sort this route has candidate shapes for.
+
+            A matrix-shaped component passes when its *elements* do: it is a
+            column per element here, and a column of a sort with no shapes
+            is no better inside a tuple than outside one.
+            """
+            if s.isTuple():
+                return all(scalar(e) for e in s.getTupleSorts())
             return s.isInteger() or s.isBoolean() or s.isReal()
 
         bad = [f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
@@ -1603,10 +1965,16 @@ class TA2MagicHoudini(TA2Magic):
                        f"dropped on every reached and sampled round")
         refuted = (f", {prover.refuted} of them refuted"
                    if prover.refutes else "")
+        if not cd.is_safety and not n_ranks:
+            started += f", so no ranking function was put to {prover.name}"
+        # What was spent, and the per-call limit the last call ran under --
+        # which used to be printed as "the time limit reached 120 s" on runs
+        # that took under a second, because with no candidate to ask about
+        # every rung of the ladder is passed at once.
         detail = (
-            f"{started}; the time limit reached {reached:g} s over "
-            f"{prover.calls} {prover.name} calls{refuted}. "
-            f"{prover.inconclusive}"
+            f"{started}; {prover.calls} {prover.name} calls took "
+            f"{prover.spent:.1f} s, the last under a {reached:g} s limit"
+            f"{refuted}. {prover.inconclusive}"
         )
         if self.artifacts is not None:
             self.artifacts.note(
@@ -1619,4 +1987,5 @@ class TA2MagicHoudini(TA2Magic):
                      f"{prover.name} proves or times out; nothing here was "
                      f"refuted."),
             )
-        raise Refused(f"--infer houdini found no {what}. {detail}")
+        raise Refused(f"--infer houdini found no {what}. {detail}",
+                      searched=True)

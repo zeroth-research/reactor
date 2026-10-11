@@ -16,11 +16,26 @@ cvc5 answers that invariant in 11 ms.
 
 What the route needs of a module
 ================================
-Scalar integer state, and a transition in linear integer arithmetic -- the
-fragment the grammar lives in.  A Real, Bool, bitvector or matrix-shaped
-state is refused by name (:meth:`SynthContext.build`), and a transition
-outside `LIA` is refused when cvc5 rejects the constraint rather than
-silently searching a space that cannot express it.
+A state cvc5 can read an integer column out of, which is every kind there
+is, and a transition the grammar's arithmetic can state.  The `synthFun`
+takes the components in their own sorts -- `pre` and `trans` are the
+module's own transition and that is where it lives -- and the grammar is
+affine over their *columns*: a Bool weighs 0/1, a bitvector its unsigned
+value, a matrix one column per element, and a Real stays a Real -- the
+combination is then `LRA` rather than `LIA`.  This route used to refuse all
+four at the sorts gate, on the true premise that an `Int` argument has
+nowhere to put a Real and the false conclusion that the argument had to be
+an `Int`.
+
+A Real is *not* read through the floor `--infer smt-linear` weighs one by,
+and that is the difference between ranking and stating an invariant: a rank
+has to land in `Nat`, a predicate does not, and `to_int` neither implies nor
+is implied by what it floors -- `to_int s0 + to_int s1 <= 1` holds at
+`s0 = s1 = 0.6` where `s0 + s1 <= 1.0` fails.  A floor here would search a
+space that cannot state most of the properties these modules have.
+
+A transition outside the logic is still refused when cvc5 rejects the
+constraint, rather than silently searching a space that cannot express it.
 
 External inputs are allowed.  SyGuS-IF's `pre` and `trans` are predicates on
 the state alone, so an input is existentially quantified inside them: `s` is
@@ -28,6 +43,15 @@ initial when *some* input makes `init` produce it, and `s -> s'` is a
 transition when *some* input does -- which is the same relation the
 certificate's `init_inv` and `step_inv` obligations quantify over, and a
 `--pre` precondition restricts it exactly as it restricts them.
+
+How wide an invariant it looks for
+==================================
+One width at a time, `1, 2, ... --sygus-conjuncts`, the first that answers
+winning -- not one query at the ceiling.  The widths nest, so this costs no
+reach and the *narrowest* answer is the one that comes back; and because the
+search is not monotone in the width, asking only at the ceiling was losing
+both halves of what this route is for.  :meth:`TA2MagicSygus._synthesise`
+has the measurement.
 
 What it leaves behind
 =====================
@@ -44,6 +68,7 @@ from ..cert import CertificateData
 from ..common import Refused
 from . import TA2Magic
 from ..smt_synth import (
+    READING_KINDS,
     Search,
     SynthContext,
     body_of,
@@ -67,13 +92,25 @@ except ImportError:                                  # pragma: no cover
 # what Houdini's lattice already covers.
 GRAMMARS = ("congruence", "linear")
 
-# How many atoms the invariant may be a conjunction of. A bound rather than
-# a free `B -> A | (and B B)` for two reasons, and the second is the one that
-# matters: a bounded conjunction is a *finite* space, and a finite space can
-# be decided empty -- `hasNoSolution` rather than `unknown`, which is the
-# difference between leaving a proof behind and leaving a shrug. (The first
-# reason is the ordinary one: every conjunct is restated in Lean and is one
-# more implication in the obligation, which `magic.learn._prune` exists for.)
+# What this route reads a module's state as: every kind there is a reading
+# for.  The grammar is affine over *columns*, and :func:`readings` is what
+# turns a component into its columns -- a Bool into `(ite s 1 0)`, a
+# bitvector into its unsigned value, a matrix into one per element, a Real
+# into itself.  The synthesised function still takes the components
+# themselves, in their own sorts, because `pre` and `trans` are stated over
+# the module's transition and that is where it lives; only what the grammar
+# may *multiply by a coefficient* goes through a reading.
+READS = READING_KINDS
+
+# The *ceiling* on how many atoms the invariant may be a conjunction of: the
+# widths are asked one at a time, `1, 2, ... n`, and the first that answers
+# wins. A bound rather than a free `B -> A | (and B B)` for two reasons, and
+# the second is the one that matters: a bounded conjunction is a *finite*
+# space, and a finite space can be decided empty -- `hasNoSolution` rather
+# than `unknown`, which is the difference between leaving a proof behind and
+# leaving a shrug. (The first reason is the ordinary one: every conjunct is
+# restated in Lean and is one more implication in the obligation, which
+# `magic.learn._prune` exists for.)
 # Measured on `m_step2` with the congruence atoms dropped, which has no
 # answer in this space: decided empty in 10 / 25 / 166 ms at 1 / 2 / 3.
 DEFAULT_CONJUNCTS = 3
@@ -84,7 +121,8 @@ class TA2MagicSygus(TA2Magic):
 
     ``grammar`` chooses what an atom may be: `linear` gives comparisons of
     affine combinations of the state, `congruence` adds `(= (mod lin k) 0)`
-    for the `k` the program mentions.
+    for the `k` the program mentions.  ``conjuncts`` is a *ceiling*: the
+    widths are asked one at a time and the first that answers wins.
     """
 
     def __init__(
@@ -125,43 +163,116 @@ class TA2MagicSygus(TA2Magic):
                 "--infer sygus certifies `G P`: the invariant is the whole "
                 "certificate and there is no ranking function to synthesise"
             )
-        ctx = SynthContext.build(self.module, cd, route="sygus")
-        # Integers only: the invariant is a `synthFun` over integer
-        # arguments, so a Bool or bitvector column has nowhere to go. The
-        # template route weighs those, and the refusal says so.
-        readings(ctx, allow=("int",), route="sygus")
-        self.log(f"[sygus] columns: {', '.join(ctx.names)}")
+        ctx = SynthContext.build(self.module, cd, route="sygus", takes=READS)
+        # The columns the grammar is affine over, with a Real kept Real:
+        # this route synthesises an invariant and never a ranking function,
+        # so nothing here has to land in `Nat` and flooring would only lose
+        # the property. `--infer smt-linear` reads the same component
+        # through `to_int` because it also ranks; see `component_readings`.
+        cols = readings(ctx, allow=READS, route="sygus", floor_reals=False)
+        self.log(f"[sygus] columns: {', '.join(c.name for c in cols)}")
         consts = program_constants(ctx)
         self.log(f"[sygus] grammar: {self.grammar}, constants {list(consts)}")
 
-        search = self._synthesise(ctx, consts)
+        search = self._synthesise(ctx, cols, consts)
         record(self.artifacts, search, log=self.log)
         if search.found is None:
             raise Refused(
-                f"--infer sygus found no invariant. {search.note}"
+                f"--infer sygus found no invariant. {search.note}",
+                searched=True,
             )
         self.log(f"[sygus] inv: {search.found}")
         return self._emit(cd, search.found)
 
     # --- the search -----------------------------------------------------
 
-    def _synthesise(self, ctx: SynthContext, consts) -> Search:
-        """`pre -> inv`, `inv /\\ trans -> inv'`, `inv -> post`, as one query."""
-        tm, n = ctx.tm, len(ctx.state)
+    def _synthesise(self, ctx: SynthContext, cols, consts) -> Search:
+        """`pre -> inv`, `inv /\\ trans -> inv'`, `inv -> post`, width by width.
+
+        One query per width, narrowest first, as `magic.linear` runs its
+        rows -- and here for a stronger reason than cost, because **the
+        search is not monotone in the width**.  The widths nest: the start
+        rule at width `w` is `A | A /\\ A | ... ` up to `w`, so a wider
+        grammar's language contains every narrower one and an answer found
+        at 2 is inside the space searched at 3.  cvc5 still does not find it
+        there.  Measured over the 59 matrix cells that reach the grammar:
+        `wise` finds a two-atom invariant at width 3 and times out at 2;
+        `T5Exact` finds one at 2 and times out at 3; `NiLexNe4` and
+        `RelTvImplies` find *one-atom* invariants in under a second and time
+        out at 3.  So the ceiling is the worst single width to ask at, and
+        asking only there is what this route used to do: 28 found, 1 space
+        decided empty, 30 cells that learned nothing.  Every width, first
+        answer wins: 31 found, 22 decided, 6 that learned nothing.
+
+        Nesting is also what lets the note claim the *widest* width that
+        came back empty rather than a prefix of them -- an empty width 3
+        subsumes 1 and 2 whatever they did.
+        """
+        decided, undecided = 0, []
+        for k in range(1, self.conjuncts + 1):
+            found, exhausted = self._at_width(ctx, cols, consts, k)
+            if found is not None:
+                self.log(f"[sygus] found at {k} atom(s)")
+                return Search("inv", self._found_space(cols, consts, k),
+                              found=found)
+            if exhausted:
+                decided = k
+                self.log(f"[sygus] no invariant of {k} atom(s); widening")
+            else:
+                undecided.append(k)
+                self.log(f"[sygus] {k} atom(s) did not finish; widening")
+            if self.budget is not None and self.budget.exhausted:
+                break
+        # Only a width *above* the decided one is still open: the widths
+        # nest, so one that ran out of budget under a width that came back
+        # empty was decided after all, by the wider query that contains it.
+        return self._empty(
+            cols, consts, decided,
+            undecided_at=min((k for k in undecided if k > decided), default=0),
+        )
+
+    def _logic(self, sorts) -> str:
+        """The narrowest logic this module's state fits in.
+
+        `LIA` whenever every component is an integer, which is every module
+        this route took before it read columns -- narrowest is not a
+        preference here, it is what keeps those cells answering exactly as
+        they did, and cvc5's SyGuS search is measurably sensitive to the
+        logic it is given. Anything else and the state carries a sort `LIA`
+        has no word for, so the fragment is named by what is in it: `ALL`,
+        because a Real component read through `to_int` is already `LIRA` and
+        a matrix-shaped one adds datatypes on top.
+        """
+        return "LIA" if all(s.isInteger() for s in sorts) else "ALL"
+
+    def _at_width(self, ctx: SynthContext, cols, consts, width: int):
+        """One SyGuS query, over a grammar of at most `width` atoms.
+
+        Returns the invariant if there is one, else whether the space was
+        *decided* empty rather than merely not searched.
+        """
+        tm = ctx.tm
+        sorts = list(ctx.env.state_sorts)
         solver = bounded_solver(tm, self.budget, sygus="true")
         try:
-            solver.setLogic("LIA")
+            solver.setLogic(self._logic(sorts))
         except Exception as e:                       # pragma: no cover
             raise Refused(f"cvc5 refused the logic for this module: {e}") from e
 
-        Int, Bool = tm.getIntegerSort(), tm.getBooleanSort()
-        args = [tm.mkVar(Int, f"x{i}") for i in range(n)]
-        grammar = self._grammar(solver, ctx, args, consts)
+        Bool = tm.getBooleanSort()
+        # The synthesised function takes the state *components*, in their own
+        # sorts, not the columns: `pre` and `trans` are the module's own
+        # transition and it is stated over components. What a column is for
+        # is the grammar -- see :meth:`_grammar`. Equating an `Int` variable
+        # with a Real component here is what the old sorts gate was standing
+        # in front of, and it is a wrong relation rather than a sort error,
+        # because cvc5 coerces the integer up.
+        args = [tm.mkVar(srt, f"x{i}") for i, srt in enumerate(sorts)]
+        grammar = self._grammar(solver, ctx, cols, args, consts, width)
         inv = solver.synthFun("inv", args, Bool, grammar)
 
-        state = [tm.mkVar(Int, f"s{i}_") for i in range(n)]
-        nxt = [tm.mkVar(Int, f"sp{i}_") for i in range(n)]
-        space = self._space(ctx, consts)
+        state = [tm.mkVar(srt, f"s{i}_") for i, srt in enumerate(sorts)]
+        nxt = [tm.mkVar(srt, f"sp{i}_") for i, srt in enumerate(sorts)]
         try:
             solver.addSygusInvConstraint(
                 inv,
@@ -185,31 +296,12 @@ class TA2MagicSygus(TA2Magic):
 
         if result.hasSolution():
             body, bound = body_of(solver.getSynthSolution(inv))
-            src = str(body.substitute(bound, ctx.state) if bound else body)
             # cvc5 `let`-binds a repeated subterm when it prints, and that is
             # fine: the term is parsed back before it is rendered, and
             # `smt_to_lean` gives what is shared a Lean `let` of its own.
-            return Search("inv", space, found=src)
-        exhausted = result.hasNoSolution()
-        return Search(
-            "inv",
-            space,
-            exhausted=exhausted,
-            how=(
-                f"the grammar is finite -- at most {self.conjuncts} atoms "
-                f"over a fixed set of coefficients -- and cvc5 enumerated it"
-            ),
-            detail=(
-                "An invariant for this module needs something the grammar "
-                "does not have -- a disjunction, a product of two "
-                "components, a constant the program never mentions, or more "
-                "than `--sygus-conjuncts` of them. `--infer ai-cegis` "
-                "searches no fixed space and is what to try next."
-                if exhausted else
-                "Raise `--smt-timeout`, or try `--infer ai-cegis`, which "
-                "searches no fixed space."
-            ),
-        )
+            src = str(body.substitute(bound, ctx.state) if bound else body)
+            return src, False
+        return None, result.hasNoSolution()
 
     # --- the three formulas `G P` is made of ----------------------------
 
@@ -262,7 +354,8 @@ class TA2MagicSygus(TA2Magic):
 
     # --- the grammar ----------------------------------------------------
 
-    def _grammar(self, solver, ctx: SynthContext, args: list, consts):
+    def _grammar(self, solver, ctx: SynthContext, cols, args: list,
+                 consts, width):
         """Conjunctions of comparisons between affine combinations.
 
         Shaped as a *template* rather than a free arithmetic grammar, because
@@ -270,29 +363,54 @@ class TA2MagicSygus(TA2Magic):
         unrestricted `LIA` grammar and a loose "linear combinations plus
         `ite`" grammar both ran *slower* than this shape, and what prunes is
         fixing the affine form and enumerating only its coefficients.
+
+        Affine over **columns**, not over the arguments. For a state of
+        scalar integers those are the same list and this is the grammar the
+        route has always had; for anything else the column is the argument's
+        reading -- `(ite x 1 0)`, one `((_ tuple.select k) x)` per element --
+        which is what gives an atom somewhere to put a component `Int` has no
+        word for. The readings are built over `ctx.state`, so each is carried
+        onto the grammar's own bound arguments by the same substitution
+        `ctx.at` does everywhere.
+
+        The arithmetic follows the columns: `Int` unless one of them is a
+        Real, and then the whole affine combination is Real and an `Int`
+        column is lifted into it. Two things fall out of that. The
+        coefficients are still the program's own integer constants, because
+        what makes an invariant true is a bound the program mentions whether
+        or not the state is rational. And the **congruence** atom is dropped,
+        because `(mod lin k)` of a Real is not a term -- which costs this
+        route nothing it had, since a congruence is a statement about
+        integers and the one module that needs it has them.
         """
         tm = ctx.tm
-        Int, Bool = tm.getIntegerSort(), tm.getBooleanSort()
+        Int, Real, Bool = (tm.getIntegerSort(), tm.getRealSort(),
+                           tm.getBooleanSort())
+        rational = any(c.kind == "real" for c in cols)
+        num = Real if rational else Int
+        zero = tm.mkReal(0, 1) if rational else tm.mkInteger(0)
         start = tm.mkVar(Bool, "B")
         atom = tm.mkVar(Bool, "A")
-        lin = tm.mkVar(Int, "L")
-        coeff = tm.mkVar(Int, "K")
+        lin = tm.mkVar(num, "L")
+        coeff = tm.mkVar(num, "K")
         grammar = solver.mkGrammar(args, [start, atom, lin, coeff])
-        # The finite ladder: one atom, two, ... up to the bound. `B -> (and
+        # The finite ladder: one atom, two, ... up to `width`. `B -> (and
         # B B)` would say the same thing about what is *reachable* and make
         # the space infinite, and then "nothing here works" stops being
-        # something cvc5 can answer.
+        # something cvc5 can answer. Keeping the narrower rungs in is what
+        # makes the widths nest, which is what lets an empty width subsume
+        # the ones below it.
         ladder = [atom]
         wider = atom
-        for _ in range(self.conjuncts - 1):
+        for _ in range(width - 1):
             wider = tm.mkTerm(Kind.AND, wider, atom)
             ladder.append(wider)
         grammar.addRules(start, ladder)
         atoms = [
-            tm.mkTerm(Kind.LEQ, lin, tm.mkInteger(0)),
-            tm.mkTerm(Kind.EQUAL, lin, tm.mkInteger(0)),
+            tm.mkTerm(Kind.LEQ, lin, zero),
+            tm.mkTerm(Kind.EQUAL, lin, zero),
         ]
-        if self.grammar == "congruence":
+        if self.grammar == "congruence" and not rational:
             atoms += [
                 tm.mkTerm(
                     Kind.EQUAL,
@@ -303,24 +421,109 @@ class TA2MagicSygus(TA2Magic):
             ]
         grammar.addRules(atom, atoms)
         body = coeff
-        for a in args:
-            body = tm.mkTerm(Kind.ADD, body, tm.mkTerm(Kind.MULT, coeff, a))
+        for col in cols:
+            read = ctx.at(col.term, args)
+            if rational and read.getSort().isInteger():
+                read = tm.mkTerm(Kind.TO_REAL, read)
+            body = tm.mkTerm(Kind.ADD, body, tm.mkTerm(Kind.MULT, coeff, read))
         grammar.addRules(lin, [body])
-        grammar.addRules(coeff, [tm.mkInteger(c) for c in consts])
+        grammar.addRules(
+            coeff,
+            [tm.mkReal(c, 1) if rational else tm.mkInteger(c) for c in consts],
+        )
         return grammar
 
-    def _space(self, ctx: SynthContext, consts) -> str:
-        atoms = "`c0 + c1*s0 + ... <= 0` and `= 0`"
-        if self.grammar == "congruence":
+    # --- what the widths add up to, as prose for the artifact -----------
+
+    def _atoms(self, cols, consts) -> str:
+        """The shape, written in the columns this module actually has.
+
+        Named rather than sketched as `s0 + ...` because on a Real or
+        matrix-shaped state the column is the interesting half of the
+        answer: `c0 + c1*(to_int (* 2.0 s0)) <= 0` says both what was
+        searched and that a floor is how the Real got into it.
+        """
+        lin = " + ".join(["c0"] + [f"c{i + 1}*{c.name}"
+                                   for i, c in enumerate(cols)])
+        atoms = f"`{lin} <= 0` and `= 0`"
+        if self.grammar == "congruence" and not any(c.kind == "real"
+                                                    for c in cols):
             atoms += (
-                f", and `(= (mod c0 + c1*s0 + ... k) 0)` for k in "
+                f", and `(= (mod {lin} k) 0)` for k in "
                 f"{list(moduli(consts))}"
             )
+        return atoms
+
+    def _found_space(self, cols, consts, width: int) -> str:
         return (
-            f"No inductive invariant implying the property is a conjunction "
-            f"of at most {self.conjuncts} atoms of the form {atoms}, with "
-            f"coefficients from {list(consts)} -- the constants this module "
-            f"and property mention."
+            f"It is a conjunction of at most {width} "
+            f"{'atom' if width == 1 else 'atoms'} of the form "
+            f"{self._atoms(cols, consts)}, with coefficients from "
+            f"{list(consts)}."
+        )
+
+    def _empty(self, cols, consts, decided: int,
+               undecided_at: int = 0) -> Search:
+        """What the widths add up to, and no more than that.
+
+        `decided` is the widest width cvc5 enumerated, and it is all the note
+        may claim. A width that ran out of budget is not evidence of anything
+        -- the narrower widths it sits above still count, because they are
+        inside it, but the ones above it do not.
+        """
+        shape = (
+            f"{self._atoms(cols, consts)}, with coefficients from "
+            f"{list(consts)} -- the constants this module and property mention"
+        )
+        if not decided:
+            # The shape is named even here. What was searched is the useful
+            # half of "and nothing came of it", and a reader who is choosing
+            # the next route needs it whether or not the query finished.
+            space = (
+                f"Nothing was proved about invariants that are conjunctions "
+                f"of atoms of the form {shape}."
+            )
+        else:
+            space = (
+                f"No inductive invariant implying the property is a "
+                f"conjunction of at most {decided} "
+                f"{'atom' if decided == 1 else 'atoms'} of the form {shape}."
+            )
+        return Search(
+            "inv",
+            space,
+            exhausted=decided > 0,
+            how=(
+                f"the grammar is finite -- at most {decided} "
+                f"{'atom' if decided == 1 else 'atoms'} over a fixed set of "
+                f"coefficients -- and cvc5 enumerated it"
+            ),
+            detail=(
+                # The timeout is named last and as what it is -- a knob, not
+                # a remedy -- because naming it first sends the reader to
+                # spend two minutes arriving back here. The measurement
+                # behind it is six benchmark modules re-run at 12 to 24 times
+                # the budget, and it is quoted as the six it is rather than
+                # as a property of the route.
+                # `Search.note` has already said a query did not finish, so
+                # what is left to say is *which width* is still open -- the
+                # one thing the reader cannot infer from the rest.
+                f"It stopped at {undecided_at} "
+                f"{'atom' if undecided_at == 1 else 'atoms'}"
+                f"{f', above the {decided} proved empty' if decided else ''}. "
+                f"`--infer ai-cegis` searches no fixed space and is what to "
+                f"try next; `--infer smt-linear` decides a narrower shape "
+                f"rather than enumerating this one. `--smt-timeout` raises "
+                f"the per-query budget, though tried at 12 to 24 times the "
+                f"default on six modules that stopped here it finished none "
+                f"of them."
+                if undecided_at else
+                "An invariant for this module needs something the grammar "
+                "does not have -- a disjunction, a product of two "
+                "components, a constant the program never mentions, or more "
+                "than `--sygus-conjuncts` of them. `--infer ai-cegis` "
+                "searches no fixed space and is what to try next."
+            ),
         )
 
     # --- out ------------------------------------------------------------

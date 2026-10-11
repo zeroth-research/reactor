@@ -76,11 +76,163 @@ def test_a_tuple_state_is_named_with_its_whole_type():
     assert "tuple" in line
 
 
+def test_a_real_valued_state_is_named_too():
+    """A Real-valued module's `init` is `noncomputable def`, and the encoding
+    is read as `verith` prints it rather than as a hand-written line."""
+    import torch
+
+    from zrth import LRA, Module, Real, Term, Var, X
+    from zrth.lean.magic.ai import _state_type_line
+    from zrth.lean.translate import ModuleToLean4
+
+    s = Var(Real([1, 1]))
+    module = Module.sequential(
+        [s],
+        [Term(LRA.Real(torch.tensor([[0.0]])), [X(s)])],
+        [Term(LRA.Id(), [X(s)], [s])],
+    )
+    functional = ModuleToLean4(module).to_lean_functional()
+    assert "noncomputable def init" in functional
+    line = _state_type_line(functional)
+    assert "`(Mat Real 1 1)`" in line
+    assert "`s 0 0`" in line
+
+
 def test_no_prompt_says_every_state_is_read_through_dot_one():
     from zrth.lean.magic.ai import GENERATE_SYSTEM, VERIFY_SYSTEM
     for prompt in (GENERATE_SYSTEM, VERIFY_SYSTEM):
         assert "there is no `.1`" in prompt
         assert "accessed via `.1`, `.2.1`, `.2.2.1`" not in prompt
+
+
+# --- the precondition, in the prompt ---
+
+def test_both_prompts_state_the_obligations_under_the_precondition():
+    """What makes `--pre` a seed this route can take.
+
+    `--infer ai` holds the reply to nothing itself -- `lake build` does that,
+    against a `Certificate/Data.lean` that carries `init_pre` and
+    `update_pre`. So the prompts have to ask for a certificate under the same
+    assumption the build will check it under, and both do."""
+    from zrth.lean.magic.ai import GENERATE_SYSTEM, VERIFY_SYSTEM
+    for prompt in (GENERATE_SYSTEM, VERIFY_SYSTEM):
+        assert "init_pre" in prompt and "update_pre" in prompt
+    assert "inputs satisfying init_pre" in GENERATE_SYSTEM
+    assert "inputs satisfying update_pre" in GENERATE_SYSTEM
+    assert "assume these always hold" in VERIFY_SYSTEM
+
+
+def _recording_ai(monkeypatch):
+    """A `TA2MagicAI` that answers a fixed reply and keeps every message."""
+    import zrth.lean.magic.ai as ai
+
+    seen: list[tuple[str, str]] = []
+
+    def fake_client(base_url, model):
+        def chat(system: str, user: str) -> str:
+            seen.append((system, user))
+            # In each call's own format: answering the auditor's question in
+            # the generator's format makes `_verify` re-ask, and the re-ask
+            # carries neither the source nor the preconditions.
+            if system is ai.VERIFY_SYSTEM:
+                return "CORRECT"
+            return "INVARIANT: fun s => True\nRANKING: fun s => 0"
+        return chat
+
+    monkeypatch.setattr(ai, "_make_client", fake_client)
+    return ai.TA2MagicAI(COUNTER_SOURCE), seen
+
+
+def test_the_precondition_reaches_both_calls(monkeypatch):
+    """Stating the obligations is half of it; the predicate itself is the
+    other half, and it is what the model is being asked to lean on."""
+    magic, seen = _recording_ai(monkeypatch)
+    cd = CertificateData(prp="x == 0")
+    cd.init_pre = "(>= e0 0)"
+    cd.update_pre = "(>= e0 0)"
+
+    magic._generate(cd, None)
+    magic._verify(cd, "fun s => True", "fun s => 0")
+
+    assert len(seen) == 2
+    for _system, user in seen:
+        assert "init_pre): (>= e0 0)" in user
+        assert "update_pre): (>= e0 0)" in user
+
+
+def test_no_precondition_says_so_rather_than_saying_nothing(monkeypatch):
+    """A prompt that names `init_pre` and then omits it reads as an omission.
+    Without `--pre` there is no assumption to make, which is a fact about the
+    question and worth one line of the message."""
+    magic, seen = _recording_ai(monkeypatch)
+    magic._generate(CertificateData(prp="x == 0"), None)
+    assert "No preconditions on inputs." in seen[0][1]
+
+
+def test_a_projection_off_a_numeral_is_parenthesised():
+    """`s 0 0.toNat` is not what it looks like.
+
+    Lean reads `0.toNat` as a decimal literal whose fractional part is an
+    identifier, and the recorded error on `m_max/OpMax` is its own advice --
+    "consider parenthesizing the number". There is one parenthesisation that
+    elaborates, because the projection is of the state *element*: checked
+    against Lean, `(s 0 0).toNat` compiles and `s 0 0.toNat` is the recorded
+    type mismatch.
+    """
+    from zrth.lean.magic.ai import _parenthesise_elements as fix
+
+    assert fix("fun s => s 0 0.toNat") == "fun s => (s 0 0).toNat"
+    assert fix("fun s => s.2.2.1 0 0.toNat") == "fun s => (s.2.2.1 0 0).toNat"
+    # What the model writes on the nine cells it gets right is left alone.
+    for good in ("fun s => (s 0 0).toNat", "fun s => (5 - s 0 0).toNat",
+                 "fun s => s 0 0 + 1", "fun s => True"):
+        assert fix(good) == good
+
+
+def test_a_name_lean_does_not_have_is_named_rather_than_rewritten():
+    """`Real.toNat` could be a floor, a ceiling or a truncation.
+
+    Rewriting it would be inventing the certificate rather than reading it,
+    so it goes back as feedback -- which is the loop this route already has
+    for a candidate that is wrong.
+    """
+    from zrth.lean.magic.ai import _absent_names
+
+    assert "does not exist" in _absent_names("fun s => Real.toNat (s 0 0)")
+    assert _absent_names("fun s => (s 0 0).toNat", "fun s => True") == ""
+
+
+def test_a_candidate_lean_cannot_elaborate_is_asked_again(monkeypatch):
+    """It never reaches `_verify`: there is nothing for an auditor to be
+    right or wrong about in an expression Lean will not read. The model is
+    told which name is missing and answers again, and the second answer is
+    the one that is emitted."""
+    import zrth.lean.magic.ai as ai
+
+    seen: list[tuple[str, str]] = []
+    replies = iter([
+        "INVARIANT: fun s => True\nRANKING: fun s => Real.toNat (s 0 0)",
+        "INVARIANT: fun s => True\nRANKING: fun s => \u230as 0 0\u230b.toNat",
+    ])
+
+    def fake_client(base_url, model):
+        def chat(system: str, user: str) -> str:
+            seen.append((system, user))
+            if system is ai.VERIFY_SYSTEM:
+                return "CORRECT"
+            return next(replies)
+        return chat
+
+    monkeypatch.setattr(ai, "_make_client", fake_client)
+    magic = ai.TA2MagicAI(COUNTER_SOURCE)
+    out = magic.infer(CertificateData(prp="x == 0"))
+
+    assert out.ranking == "fun s => \u230as 0 0\u230b.toNat"
+    # Two generate calls and one verify -- the refused candidate was never
+    # put to the auditor.
+    assert [sys is ai.VERIFY_SYSTEM for sys, _ in seen] == [False, False, True]
+    assert "Real.toNat` does not exist" in seen[1][1]
+
 
 # --- Claude API tests ---
 

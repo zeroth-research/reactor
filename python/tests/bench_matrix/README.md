@@ -12,6 +12,10 @@ uv run python tests/bench_matrix/render.py -o matrix.html
 ```
 
 The page is a single local file — no server, no network, no build step.
+A bar above the summary narrows it to some routes and some verdicts —
+`houdini` alone, say, or every `PROOF-FAIL` — and can keep only the
+properties none of the chosen routes verifies. It filters in the browser
+and remembers its last setting there.
 
 ---
 
@@ -228,7 +232,7 @@ would score perfectly on it.
 | `PROOF-FAIL` | A certificate was produced and Lean rejected it. |
 | `BUILD-FAIL` | The project failed outside the certificate: one of the five encodings did not compile. |
 | `SORRY` / `SORRY+FAIL` | An obligation left as `sorry`, the build otherwise clean / not. |
-| `UNSUPPORTED` | The route does not take this property's kind (`sygus` and `fbk-proveit` are safety-only, `ai` Büchi-only); `verith` refused it up front. |
+| `UNSUPPORTED` | The route does not take this question and searched nothing: the property's kind (`sygus` and `fbk-proveit` are safety-only, `ai` Büchi-only), or the module's shape (`nuterm` reads scalar integer state, `fbk-proveit` no Real state, `vampire` no bitvectors). A shape refusal is read off the status the route records, `declined`, not off its prose. |
 
 `NO-CERT`, `REFUTED` and `GEN-FAIL` are kept apart because they are
 different measurements, and telling them apart is not a prefix match: `main`
@@ -283,6 +287,55 @@ that pytest survived a day and a half:
 ps -axo pid,ppid,etime,time,%cpu,command -r | head        # who is busy
 ps -axo pid,ppid,etime,%cpu,command | awk '$2==1'         # orphans
 ```
+
+---
+
+## What the routes actually found
+
+A `VERIFIED` says a route certified a row. It does not say **what** it
+certified, and two routes that both certify one row need not have found the
+same thing — which is the question the `houdini`/`houdini-vampire` column
+pair exists to ask, and the one the table cannot answer.
+
+```bash
+uv run python tests/bench_matrix/compare_certs.py
+uv run python tests/bench_matrix/compare_certs.py --routes houdini houdini-vampire
+```
+
+The comparison is **logical, not textual**, because the textual one is
+wrong on the first row it meets: on `fbk/m_countdown/InvBase` all seven
+routes derive `0 <= s0 <= 100` and they write it four ways, so a string
+diff sorts them into four answers where there is one. Each invariant is
+parsed back through the module's own cvc5 encoding — the same front end the
+routes state their obligations in — and compared as a formula. Four
+answers come out, and the ordering is the interesting part, since an
+invariant that implies another is the *stronger* claim and the route that
+reached it looked harder:
+
+| | |
+| --- | --- |
+| `same` | one formula, however it is spelled |
+| `stronger` | every pair is ordered: a chain from the tightest down |
+| `mixed` | some pairs ordered, some not |
+| `incomparable` | no pair is ordered: different arguments throughout |
+
+With two answers the last three collapse to two; with three or more they do
+not, and 19 of the recorded rows have three or more.
+
+Measured over the recorded passes: of **148 rows where more than one route
+found a certificate, 79 are one invariant, 64 are a chain and 5 are mixed —
+and not one is wholly incomparable.** So the routes mostly differ in how
+much they prove rather than in what they prove, and where they do diverge
+it is a strand off a chain rather than two unrelated arguments.
+
+On the `houdini` pair it separates 5 of 16 rows, and the implication goes
+**both** ways — cvc5 stronger on two, Vampire on three — which is exactly
+the "which half of the route the difference is in" that the pair exists to
+show and that its verdicts, identical on all but one row, cannot.
+
+Ranking functions are reported beside the invariants and compared only for
+equality: `s0` and `2*s0` are both valid and neither is stronger, so no
+implication is asked of them.
 
 ---
 
@@ -372,6 +425,7 @@ run_matrix.py  generate + build every cell, record verdicts and timings
 coldstart.py   what the first project in a fresh build dir costs
 merge.py       fold several passes into one averaged dataset, and flag it
 render.py      averaged results -> one static local HTML page
+compare_certs.py  what the routes found, compared as formulas not as text
 ```
 
 The page's prose is generated too: the method cards are each route's own
