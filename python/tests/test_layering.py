@@ -20,9 +20,10 @@ MAGIC = LEAN / "magic"
 
 # The SMT layer: every module a decision procedure is built from.
 SMT_LAYER = sorted(
-    [*MAGIC.glob("*.py"), *(LEAN / "smt").glob("*.py")]
+    [*MAGIC.glob("*.py"), *(LEAN / "smt").glob("*.py"),
+     *(LEAN / "infer_route").glob("*.py")]
     + [LEAN / f"{name}.py" for name in (
-        "houdini_solver", "infer_route", "smt_encode", "smt_module",
+        "houdini_solver", "smt_encode", "smt_module",
         "smt_prompt", "smt_query", "smt_synth")]
 )
 
@@ -92,6 +93,24 @@ def test_no_route_imports_another(path):
     assert not bad, "\n".join(bad)
 
 
+ROW_DIR = LEAN / "infer_route"
+ROW_MODULES = sorted(
+    p for p in ROW_DIR.glob("*.py") if p.stem not in {"__init__", "api", "shared"}
+)
+
+
+@pytest.mark.parametrize("path", ROW_MODULES, ids=_name)
+def test_no_route_row_imports_another(path):
+    """A row names its engine and the shared types, never a sibling row."""
+    rows = {f"zrth.lean.infer_route.{p.stem}" for p in ROW_MODULES}
+    bad = []
+    for module, name, _, line in _imports(path):
+        target = f"{module}.{name}" if name and f"{module}.{name}" in rows else module
+        if target in rows and target != f"zrth.lean.infer_route.{path.stem}":
+            bad.append(f"{_name(path)}:{line} imports {target}")
+    assert not bad, "\n".join(bad)
+
+
 @pytest.mark.parametrize("path", SMT_LAYER, ids=_name)
 def test_no_private_name_crosses_a_module(path):
     bad = []
@@ -109,4 +128,15 @@ def test_no_private_name_crosses_a_module(path):
                 and node.value.id in imported):
             bad.append(f"{_name(path)}:{node.lineno} reads "
                        f"{node.value.id}.{node.attr}")
+    assert not bad, "\n".join(bad)
+
+
+def test_the_project_builder_does_not_know_the_routes():
+    """`create_project` is told what to remove and what to add to the lakefile;
+    it does not read the route table to find out."""
+    bad = [
+        f"project.py:{line} imports {module}"
+        for module, _, _, line in _imports(LEAN / "project.py")
+        if module.startswith("zrth.lean.infer_route")
+    ]
     assert not bad, "\n".join(bad)

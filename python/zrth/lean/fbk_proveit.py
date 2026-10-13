@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .common import LeanContext
-from .project import PROVEIT_DIR, na_module_name, stream
+from .project import stream
 from .translate.fbk import (
     NA_IMPORTS,
     NAUnsupported,
@@ -55,6 +55,23 @@ from .translate.fbk import (
     check_na_supported,
     pre_over_slots,
 )
+
+
+# The route's subdirectory inside the generated project. The NA model is both
+# a `proveit.py` input and a lake target of the project, so the directory and
+# the model's module name are needed on both sides.
+PROVEIT_DIR = "ProveIt"
+
+
+def na_module_name(project_name: str) -> str:
+    """Lean module name of the NA model this route writes.
+
+    `proveit.py` compiles an out-of-tree model into an olean and imports it
+    under the file stem, so the file name *is* the module name the generated
+    certificate carries -- and the name the project's lakefile has to map
+    back onto ``PROVEIT_DIR``.
+    """
+    return f"{project_name}NA"
 
 
 class ProveItError(RuntimeError):
@@ -185,7 +202,10 @@ def resolve_ic3ia(spec: str | None) -> str | None:
 
 
 def check_module(
-    module, simplify: bool = True, pre_smt: str | None = None
+    module,
+    simplify: bool = True,
+    pre_smt: str | None = None,
+    encoding=None,
 ) -> NAEncoding:
     """The module's slot bodies and `--pre`; `ProveItError` if it has none.
 
@@ -202,17 +222,28 @@ def check_module(
 
     Answering either means encoding into cvc5, so the answers are handed
     back and carried to the two files written from them
-    (:func:`write_na_model`, :func:`write_equivalence`).  `main.py`'s call,
+    (:func:`write_na_model`, :func:`equivalence_lean`).  `main.py`'s call,
     before the project is generated, is then the only encoding a whole run
-    makes: five of them on a one-wire counter before this was threaded
-    through, one now.
+    makes.
+
+    `encoding` is the run's `ModuleEncoding`: the slot bodies and the
+    `--pre` are read on its term manager.  A caller with none gets an
+    encoding of `module` of its own.
     """
+    from .smt.run import ModuleEncoding
+
+    if encoding is None:
+        encoding = ModuleEncoding(module)
     ctx = LeanContext(module)
     try:
-        bodies = check_na_supported(ctx, simplify)
+        # The bodies first: the `--pre` is parsed on the same encoding.
+        bodies = check_na_supported(ctx, simplify, encoding)
         if not pre_smt:
             return NAEncoding(bodies)
-        return NAEncoding(bodies, pre_over_slots(ctx, _parse(module, pre_smt, "--pre"), bodies))
+        return NAEncoding(
+            bodies,
+            pre_over_slots(ctx, _parse(module, pre_smt, "--pre", encoding), bodies),
+        )
     except NAUnsupported as e:
         raise ProveItError(f"--fbk-proveit: {e}") from e
 
@@ -298,26 +329,26 @@ def try_omega_before_smt(cert: str) -> "tuple[str, int]":
     return _SMT_CLOSER.subn("first | omega | smt", cert)
 
 
-def _parse(module, src: str, flag: str):
+def _parse(module, src: str, flag: str, encoding=None):
     """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
 
-    One term manager and one `CegarPromptEnv` per call: the symbols are the
-    module's, so the two flags that come through here -- `--safety` and
-    `--pre` -- read `s0`, `e0`, `el0` as the same things the rest of the
-    package does.
+    Read through `encoding`'s `CegarPromptEnv` (an encoding of `module` of
+    the caller's own when it has none): the symbols are the module's, so the
+    two flags that come through here -- `--safety` and `--pre` -- read `s0`,
+    `e0`, `el0` as the same things the rest of the package does.
 
     cvc5's parser raises a bare `RuntimeError` naming the token it stopped
     at, with no hint of which flag the text came from; the flag is this
     function's whole reason for taking one.
     """
-    import cvc5  # lazy: keeps cvc5 off the critical path of a bare run
+    # lazy: keeps cvc5 off the critical path of a bare run
+    from .smt.run import ModuleEncoding
+    from .smt_prompt import parse_predicate
 
-    from .smt_module import ModuleSMT
-    from .smt_prompt import CegarPromptEnv, parse_predicate
-
-    env = CegarPromptEnv(ModuleSMT(tm=cvc5.TermManager(), module=module))
+    if encoding is None:
+        encoding = ModuleEncoding(module)
     try:
-        term = parse_predicate(env, src)
+        term = parse_predicate(encoding.env, src)
     except RuntimeError as e:
         raise ProveItError(f"{flag}: cannot read `{src}`: {e}") from e
     if not term.getSort().isBoolean():
@@ -325,7 +356,9 @@ def _parse(module, src: str, flag: str):
     return term
 
 
-def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
+def property_to_bool_lean(
+    module, property_smt: str, n_state: int = 0, encoding=None
+) -> str:
     """Translate the `--safety` SMT source to Bool-valued Lean.
 
     The result reads state through `(var_k state)`, exactly as
@@ -336,12 +369,13 @@ def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
     the property and the transition talking about the same variables.
 
     `n_state` is ignored; the layout comes from the module's own wires.
+    `encoding` is the run's `ModuleEncoding`, which the property is read on.
     """
     from .common import LeanContext
     from .smt_to_lean import smt_to_lean_bool
     from .translate.fbk import _slot_accessors
 
-    term = _parse(module, property_smt, "--safety")
+    term = _parse(module, property_smt, "--safety", encoding)
     try:
         return smt_to_lean_bool(term, _slot_accessors(LeanContext(module).ctrl_next))
     except ValueError as e:
@@ -349,7 +383,7 @@ def property_to_bool_lean(module, property_smt: str, n_state: int = 0) -> str:
 
 
 def write_na_model(
-    project_dir: Path,
+    path: Callable[[str], Path],
     project_name: str,
     ctx: LeanContext,
     property_lean: str,
@@ -363,11 +397,10 @@ def write_na_model(
     model under (`resolve_model` uses the stem for an out-of-tree model),
     so it has to be a valid Lean identifier -- and it is the same name the
     generated lakefile's lean_lib declares, which is why both come from
-    `project.na_module_name`.
+    `na_module_name`.  `path` is the project handle's: the model is the one
+    file this route writes itself, because `proveit.py` reads it from disk.
     """
-    out_dir = project_dir / PROVEIT_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    model = out_dir / f"{na_module_name(project_name)}.lean"
+    model = path(f"{PROVEIT_DIR}/{na_module_name(project_name)}.lean")
     model.write_text(
         atom_to_lean_na(
             ctx,
@@ -439,7 +472,7 @@ def run(
     *,
     ltl_project: str | Path,
     module,
-    project_dir: Path,
+    path: Callable[[str], Path],
     project_name: str,
     property_smt: str,
     pre_smt: str | None = None,
@@ -448,14 +481,25 @@ def run(
     simplify: bool = True,
     equivalence: bool = True,
     prechecked: NAEncoding | None = None,
-) -> Path:
-    """Run the whole route and return the installed certificate's path.
+    encoding=None,
+    log: Callable = print,
+) -> dict[str, str]:
+    """Run the whole route and return the certificate it made, and the proof
+    that the model is the module, as text by project-relative path.
+
+    Only `ProveIt/` is written here, through `path` (the project handle's),
+    because `proveit.py` works on files; the two Lean files that are the
+    route's answer are handed back for the pipeline to install.
 
     `prechecked` is what `check_module` returned to a caller that has
     already made the check -- `main.py` does, before it generates the
     project.  The check is repeated here when it is left out, because `run`
     is also called on its own; `pre_smt` is what it is repeated over, so a
     direct caller gets the same refusals `main.py` gets early.
+
+    `encoding` is the run's `ModuleEncoding` (`InferInput.smt()`): the check
+    and the `--safety` property are both read on it.  A direct caller that
+    passes none gets one `run` makes, so the two still share it.
     """
     python = python or sys.executable
     root = resolve_project(ltl_project)
@@ -464,14 +508,18 @@ def run(
     ic3ia = resolve_ic3ia(ic3ia)
     check_toolchain(python)
 
+    if encoding is None:
+        from .smt.run import ModuleEncoding
+
+        encoding = ModuleEncoding(module)
     ctx = LeanContext(module)
     if prechecked is None:
-        prechecked = check_module(module, simplify, pre_smt)
+        prechecked = check_module(module, simplify, pre_smt, encoding)
     bodies, pre_lean = prechecked
 
-    property_lean = property_to_bool_lean(module, property_smt)
+    property_lean = property_to_bool_lean(module, property_smt, encoding=encoding)
     model = write_na_model(
-        project_dir, project_name, ctx, property_lean, simplify, bodies, pre_lean
+        path, project_name, ctx, property_lean, simplify, bodies, pre_lean
     )
 
     targets = " ".join(_LAKE_TARGETS)
@@ -494,37 +542,34 @@ def run(
             f"certificate to {raw_cert}"
         )
 
-    installed = project_dir / "Certificate" / "Certificate.lean"
-    installed.parent.mkdir(parents=True, exist_ok=True)
     text, patched = leave_bool_before_generalize(raw_cert.read_text())
     text, omegas = try_omega_before_smt(text)
-    installed.write_text(text)
     notes = []
     if patched:
         notes.append(f"{patched} normalised out of Bool")
     if omegas:
         notes.append(f"{omegas} offered omega before smt")
-    print(f"Installed certificate: {installed}"
-          + (f" ({', '.join(notes)})" if notes else ""))
+    if notes:
+        log(f".. proveit.py's certificate: {', '.join(notes)}")
 
+    files = {"Certificate/Certificate.lean": text}
     if equivalence:
-        write_equivalence(
-            project_dir, project_name, ctx,
+        files["Certificate/Equivalence.lean"] = equivalence_lean(
+            project_name, ctx,
             simplify=simplify, bodies=bodies, pre_lean=pre_lean,
         )
-    return installed
+    return files
 
 
-def write_equivalence(
-    project_dir: Path,
+def equivalence_lean(
     project_name: str,
     ctx: LeanContext,
     *,
     simplify: bool = True,
     bodies: SlotBodies | None = None,
     pre_lean: str = "",
-) -> Path:
-    """Write the proof that the model is the module, and make lake see it.
+) -> str:
+    """The proof that the model is the module, as the text of its file.
 
     The certificate `proveit.py` installs is about the NA model. This is the
     file that carries it back to the module -- see `translate/fbk_bridge.py`
@@ -542,16 +587,10 @@ def write_equivalence(
     """
     from .translate.fbk_bridge import atom_to_lean_fbk_bridge
 
-    out = project_dir / "Certificate" / "Equivalence.lean"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        atom_to_lean_fbk_bridge(
-            ctx,
-            na_module=na_module_name(project_name),
-            simplify=simplify,
-            bodies=bodies,
-            pre_lean=pre_lean,
-        )
+    return atom_to_lean_fbk_bridge(
+        ctx,
+        na_module=na_module_name(project_name),
+        simplify=simplify,
+        bodies=bodies,
+        pre_lean=pre_lean,
     )
-    print(f"Wrote the model-is-the-module proof: {out}")
-    return out
