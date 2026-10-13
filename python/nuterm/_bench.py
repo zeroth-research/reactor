@@ -1,20 +1,12 @@
-"""Shared scaffolding for the SV-COMP DSL encodings.
+"""The benchmark record and the scalar-state vocabulary the procedure works on.
 
-Each encoding module in this package exposes one ``BENCH`` (a :class:`Bench`).
-This module provides the common ``INT`` sort, a fresh-variable helper, the
-``Bench`` record, and a ``discover`` helper that imports every sibling
-encoding module and collects their ``BENCH`` objects.
-
-See ``_template.py`` for the encoding conventions (copy it to add a benchmark).
-"""
+A :class:`Bench` describes one program as a module with named state and input
+variables; the trainer and the termination check consume it."""
 
 from __future__ import annotations
 
-import importlib
-import pkgutil
 from dataclasses import dataclass
 from typing import Callable
-import torch
 
 from zrth import Int, Var
 
@@ -65,20 +57,10 @@ class Bench:
     precondition: Callable[[dict], list] | None = None
 
 
-def discover() -> list[Bench]:
-    """Import every sibling encoding module and return their ``BENCH`` objects.
-
-    Skips private modules (leading underscore), so ``_bench`` / ``_template``
-    are not collected.
-    """
-    pkg_name = __name__.rsplit(".", 1)[0] + ".dsl"   # the encodings live in <svcomp>.dsl
-    pkg = importlib.import_module(pkg_name)
-    out: list[Bench] = []
-    for info in pkgutil.iter_modules(pkg.__path__):
-        if info.name.startswith("_"):                # skip _template, etc.
-            continue
-        mod = importlib.import_module(f"{pkg_name}.{info.name}")
-        bench = getattr(mod, "BENCH", None)
-        if isinstance(bench, Bench):
-            out.append(bench)
-    return out
+def bench_of_module(module, name: str, source: str = "") -> Bench:
+    """A :class:`Bench` for a ready-made module: its ctrl variables are named
+    ``s0..``, its extl variables ``e0..``, in declaration order."""
+    ctrl = {f"s{i}": v for i, v in enumerate(module.ctrl)}
+    extl = {f"e{i}": v for i, v in enumerate(module.extl)}
+    return Bench(name=name, source=source, state=tuple(ctrl), inputs=tuple(extl),
+                 build=lambda: (module, ctrl, extl))
