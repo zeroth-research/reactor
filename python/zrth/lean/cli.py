@@ -27,6 +27,7 @@ from .infer_route import (
     route_by_name,
     route_names,
 )
+from .magic.llm import DEFAULT_MODEL
 
 _EPILOG = """\
 examples:
@@ -256,8 +257,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        default="claude-sonnet-4-6",
-        help="LLM model to use for inference (default: claude-sonnet-4-6).",
+        default=DEFAULT_MODEL,
+        help=f"LLM model to use for inference (default: {DEFAULT_MODEL}).",
     )
     parser.add_argument(
         "--base-url",
