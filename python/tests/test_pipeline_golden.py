@@ -6,7 +6,7 @@ files, `artifacts/index.json`). Both are compared with the snapshots under
 `tests/golden/pipeline/`; set `ZRTH_UPDATE_GOLDEN=1` to rewrite them, and
 only for a change to the output that is intended.
 
-No run reaches an LLM: `_make_client` is replaced in both modules that build
+No run reaches an LLM: `make_client` is replaced in both modules that build
 one, and the `ai-cegis` run has every predicate fixed, so it never asks.
 """
 
@@ -153,7 +153,8 @@ CODEGEN = [
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              hints: bool) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
-    from zrth.lean.smt_query import SmtBudget, predicate_facts, solver_hints
+    from zrth.lean.smt.limits import SmtBudget
+    from zrth.lean.smt_query import predicate_facts, solver_hints
 
     lean = None
     if claim is not None:
@@ -254,18 +255,18 @@ RUNS = [
     ]),
 ]
 
-# `ModuleSMT`s built per run, pinned so that sharing one encoding per run
-# (PL-2) shows up as these numbers going down.
+# `ModuleSMT`s built per run. The pre-check, both renderings and a route on
+# `InferInput.smt` share the run's `smt.run.lazy` encoding.
 ENCODINGS = {
-    "bare": 0, "supplied": 2, "supplied_pre": 2, "cert_file": 1,
-    "unreadable_property": 1, "smt_linear": 4, "houdini": 4, "nuterm": 3,
-    "nuterm_pre": 3, "ai_cegis_fixed": 4, "ai": 2, "sygus": 4, "vampire": 4,
+    "bare": 0, "supplied": 1, "supplied_pre": 1, "cert_file": 1,
+    "unreadable_property": 1, "smt_linear": 1, "houdini": 1, "nuterm": 1,
+    "nuterm_pre": 1, "ai_cegis_fixed": 1, "ai": 1, "sygus": 1, "vampire": 1,
 }
 
 
 def _has_vampire() -> bool:
     from zrth.lean.common import Refused
-    from zrth.lean.houdini_solver import resolve_vampire
+    from zrth.lean.smt.vampire import resolve_vampire
 
     try:
         resolve_vampire(None)
@@ -301,8 +302,8 @@ def _offline(monkeypatch) -> None:
             raise AssertionError("ai-cegis with every predicate fixed asked")
         return chat
 
-    monkeypatch.setattr(ai, "_make_client", client)
-    monkeypatch.setattr(cegar, "_make_client", no_client)
+    monkeypatch.setattr(ai, "make_client", client)
+    monkeypatch.setattr(cegar, "make_client", no_client)
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")

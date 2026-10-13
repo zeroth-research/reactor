@@ -44,7 +44,7 @@ def module_at(path: Path):
 
 
 def vampire_or_skip() -> str:
-    from zrth.lean.houdini_solver import resolve_vampire
+    from zrth.lean.smt.vampire import resolve_vampire
 
     try:
         return resolve_vampire(None)
@@ -54,7 +54,7 @@ def vampire_or_skip() -> str:
 
 def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A module's context, obligations and branches, without asking anything."""
-    from zrth.lean.magic.houdini import Obligations
+    from zrth.lean.smt.obligations import Obligations
     from zrth.lean.magic.vampire import Question, split
     from zrth.lean.smt_synth import SynthContext
 
@@ -269,7 +269,7 @@ def test_a_matrix_component_is_an_interval_per_element():
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic.houdini import columns
+    from zrth.lean.smt_synth import columns
     from zrth.lean.magic.vampire import template
 
     ctx, _ob, q = parts("m_relu_vec", "safety",

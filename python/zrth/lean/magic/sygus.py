@@ -67,12 +67,12 @@ from __future__ import annotations
 from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
+from ..smt.limits import bounded_solver, call_ms
 from ..smt_synth import (
     READING_KINDS,
     Search,
     SynthContext,
     body_of,
-    bounded_solver,
     readings,
     moduli,
     program_constants,
@@ -134,6 +134,7 @@ class TA2MagicSygus(TA2Magic):
         budget=None,
         artifacts=None,
         log=print,
+        encoding=None,
     ):
         super().__init__("")
         if cvc5 is None:                             # pragma: no cover
@@ -147,6 +148,9 @@ class TA2MagicSygus(TA2Magic):
                 f"{grammar!r} is not one"
             )
         self.module = module
+        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
         self.grammar = grammar
         self.conjuncts = max(1, int(conjuncts))
         self.budget = budget
@@ -166,8 +170,8 @@ class TA2MagicSygus(TA2Magic):
                 "--infer sygus certifies `G P`: the invariant is the whole "
                 "certificate and there is no ranking function to synthesise"
             )
-        ctx = SynthContext.build(self.module, claim, route="sygus",
-                                 takes=READS)
+        ctx = SynthContext.build(self.encoding or self.module, claim,
+                                 route="sygus", takes=READS)
         # The columns the grammar is affine over, with a Real kept Real:
         # this route synthesises an invariant and never a ranking function,
         # so nothing here has to land in `Nat` and flooring would only lose
@@ -179,7 +183,7 @@ class TA2MagicSygus(TA2Magic):
         self.log(f"[sygus] grammar: {self.grammar}, constants {list(consts)}")
 
         search = self._synthesise(ctx, cols, consts)
-        record(self.artifacts, search, log=self.log)
+        record(self.artifacts, search)
         if search.found is None:
             raise Refused(
                 f"--infer sygus found no invariant. {search.note}",
@@ -257,7 +261,7 @@ class TA2MagicSygus(TA2Magic):
         """
         tm = ctx.tm
         sorts = list(ctx.env.state_sorts)
-        solver = bounded_solver(tm, self.budget, sygus="true")
+        solver = bounded_solver(tm, call_ms(self.budget), sygus="true")
         try:
             solver.setLogic(self._logic(sorts))
         except Exception as e:                       # pragma: no cover
@@ -285,7 +289,7 @@ class TA2MagicSygus(TA2Magic):
                     "trans", state + nxt, Bool, self._trans(ctx, state, nxt)
                 ),
                 solver.defineFun(
-                    "post", state, Bool, ctx.at(ctx.prp, state)
+                    "post", state, Bool, ctx.enc.at(ctx.prp, state)
                 ),
             )
             result = solver.checkSynth()
@@ -324,8 +328,8 @@ class TA2MagicSygus(TA2Magic):
               for i, v in enumerate(ctx.extl_next)]
         body = tm.mkTerm(
             Kind.AND,
-            ctx.with_inputs(ctx.init_pre, el, en),
-            self._same(ctx, state, ctx.msmt.init_state(en)),
+            ctx.enc.with_inputs(ctx.init_pre, el, en),
+            self._same(ctx, state, ctx.enc.init_state(en)),
         )
         return self._exists(ctx, el + en, body)
 
@@ -338,8 +342,8 @@ class TA2MagicSygus(TA2Magic):
               for i, v in enumerate(ctx.extl_next)]
         body = tm.mkTerm(
             Kind.AND,
-            ctx.with_inputs(ctx.update_pre, el, en),
-            self._same(ctx, nxt, ctx.msmt.update_state(state, el, en)),
+            ctx.enc.with_inputs(ctx.update_pre, el, en),
+            self._same(ctx, nxt, ctx.enc.next_state(state, el, en)),
         )
         return self._exists(ctx, el + en, body)
 
@@ -426,7 +430,7 @@ class TA2MagicSygus(TA2Magic):
         grammar.addRules(atom, atoms)
         body = coeff
         for col in cols:
-            read = ctx.at(col.term, args)
+            read = ctx.enc.at(col.term, args)
             if rational and read.getSort().isInteger():
                 read = tm.mkTerm(Kind.TO_REAL, read)
             body = tm.mkTerm(Kind.ADD, body, tm.mkTerm(Kind.MULT, coeff, read))

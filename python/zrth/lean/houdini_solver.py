@@ -47,25 +47,22 @@ the cache re-asks only what is unsettled.
 from __future__ import annotations
 
 import os
-import shutil
-import signal
-import subprocess
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
-from pathlib import Path
-from re import Match, compile as _compile
 
 from .common import Refused
+from .smt.obligations import Query
+from .smt.limits import bounded_solver
+from .smt.script import decimals, script
+from .smt.vampire import resolve_vampire, run_vampire
 
 SOLVERS = ("cvc5", "vampire")
 DEFAULT_SOLVER = "cvc5"
 DEFAULT_TIMEOUT = 120
 DEFAULT_CORES = 4
-ENV = "VAMPIRE"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -84,35 +81,6 @@ class Verdict(Enum):
     PROVED = "proved"
     REFUTED = "refuted"
     UNKNOWN = "unknown"
-
-
-@dataclass(frozen=True)
-class Query:
-    """One obligation: named hypotheses, a goal, and the round they read.
-
-    `defines` states the round once -- the successor state over the latched
-    state and the inputs -- so a query about twenty facts carries the
-    transition once rather than twenty times.
-
-    `probes` are the goal's conjuncts under their own names.  A solver that
-    returns a counter-model reports which of them that model falsifies; one
-    that does not, ignores them.  They are deliberately outside `key`: the
-    same obligation asked with and without probes is the same question, and
-    a cached answer that already carries what the caller wants is reused.
-    """
-
-    hyps: tuple[tuple[str, object], ...]
-    goal: object
-    defines: tuple[tuple[object, object], ...] = ()
-    probes: tuple[tuple[str, object], ...] = ()
-    # Terms whose values a counter-model is read at -- the state and its
-    # successor, for an obligation whose refutation is a round to learn
-    # from. Outside `key` for the reason `probes` are.
-    witness: tuple = ()
-
-    @property
-    def key(self):
-        return (self.hyps, self.goal, self.defines)
 
 
 @dataclass(frozen=True)
@@ -293,28 +261,25 @@ class Cvc5Solver(Solver):
         # Lazily, so that the route table above can name this class without
         # a bare `verith` run paying for the import.
         try:
-            import cvc5                              # type: ignore
-            from cvc5 import Kind
+            from cvc5 import Kind                    # type: ignore
         except ImportError as e:                     # pragma: no cover
             raise Refused(
                 "--houdini-solver cvc5 needs the `cvc5` package, which is "
                 "not importable. Install with: uv pip install cvc5"
             ) from e
-        self.cvc5, self.kind = cvc5, Kind
+        self.kind = Kind
         self.tm = tm
 
     def _run(self, q: Query, budget: float, core: bool, model: bool) -> Answer:
         tm, Kind = self.tm, self.kind
         t0 = time.perf_counter()
-        solver = self.cvc5.Solver(tm)
-        solver.setLogic("ALL")
-        limit = str(max(1, int(budget * 1000)))
-        solver.setOption("tlimit", limit)
-        solver.setOption("tlimit-per", limit)
+        options = {}
         if core:
-            solver.setOption("produce-unsat-cores", "true")
+            options["produce_unsat_cores"] = "true"
         if model and (q.probes or q.witness):
-            solver.setOption("produce-models", "true")
+            options["produce_models"] = "true"
+        solver = bounded_solver(tm, max(1, int(budget * 1000)), logic="ALL",
+                                **options)
         try:
             # The round, as equalities rather than `define-fun`: the same
             # constraint, and it leaves `v_sp*` as constants the model can
@@ -399,103 +364,8 @@ class Cvc5Solver(Solver):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# Literals Vampire reads
+# Vampire: a printed script, and one-sided answers
 # ══════════════════════════════════════════════════════════════════════════
-#
-# Its SMT-LIB front end sorts literals strictly, and cvc5's printer does
-# not write for it: a rational prints as `(/ 1 2)`, whose arguments are Int
-# ("invalid sort $int for interpretation /"), and an Int numeral anywhere a
-# Real is expected is a parse error rather than a coercion. So every real
-# literal written for a script is a decimal, and every term cvc5 prints is
-# passed through `decimals` on its way into one.
-#
-# The candidate shapes go through here too, because a candidate's `src` is
-# the SMT-LIB the certificate carries and it has to be a string either
-# solver reads -- cvc5 reads a decimal as happily as it reads `(/ 1 2)`.
-
-
-def smt_real(value) -> str:
-    """A Real literal: a decimal where one is exact, else a quotient of two.
-
-    `1/2` is `0.5` and `1/3` is `(/ 1.0 3.0)` -- a decimal cannot say the
-    second, and rounding it would state a different obligation.
-    """
-    q = Fraction(value)
-    sign, q = ("(- ", -q) if q < 0 else ("", -(-q))
-    close = ")" if sign else ""
-    rest = q.denominator
-    for factor in (2, 5):
-        while rest % factor == 0:
-            rest //= factor
-    if rest != 1:
-        return f"{sign}(/ {q.numerator}.0 {q.denominator}.0){close}"
-    places = 0
-    while 10 ** places % q.denominator:
-        places += 1
-    digits = str(q.numerator * 10 ** places // q.denominator).rjust(places + 1, "0")
-    whole, frac = digits[:len(digits) - places], digits[len(digits) - places:]
-    return f"{sign}{whole}.{frac or '0'}{close}"
-
-
-# `(/ 1 2)`, `(/ (- 1) 4)`: a rational as cvc5 prints one. Integer division
-# prints as `div`, so a `/` whose arguments are both numerals is always this.
-_RATIONAL = _compile(r"\(/ (?:\(- (\d+)\)|(\d+)) (\d+)\)")
-
-
-def decimals(text: str) -> str:
-    """`text` with cvc5's rational literals rewritten as Vampire reads them."""
-    def fix(m: Match) -> str:
-        neg, num, den = m.groups()
-        return smt_real(Fraction(-int(neg) if neg else int(num), int(den)))
-
-    return _RATIONAL.sub(fix, text)
-
-
-def smt_lit(value, sort) -> str:
-    """`value` as a literal of `sort`: an Int numeral, or a decimal."""
-    from .smt_synth import smt_int
-
-    return smt_real(value) if sort.isReal() else smt_int(int(value))
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# Vampire: a binary, a file, and one-sided answers
-# ══════════════════════════════════════════════════════════════════════════
-
-
-def resolve_vampire(spec: "str | None") -> str:
-    """`--vampire` as an executable, else `$VAMPIRE`, else `vampire` on PATH.
-
-    Resolved at parse time, so a run that cannot start the prover says so
-    before a project is generated rather than after. A directory is accepted
-    when it holds a `vampire` -- the release zip unpacks to one.
-    """
-    for source, value in (("--vampire", spec), (f"${ENV}", os.environ.get(ENV))):
-        if not value:
-            continue
-        path = Path(value).expanduser()
-        if path.is_dir():
-            path = path / "vampire"
-        if path.is_file():
-            if not os.access(path, os.X_OK):
-                raise Refused(f"{source}: {path} is not executable")
-            return str(path)
-        found = shutil.which(value)
-        if found:
-            return found
-        raise Refused(
-            f"{source}: no such file: {path}. Pass the Vampire binary, a "
-            f"directory holding one, or a name on PATH."
-        )
-    found = shutil.which("vampire")
-    if found:
-        return found
-    raise Refused(
-        "--houdini-solver vampire needs the Vampire prover: pass --vampire "
-        f"PATH, set ${ENV}, or put `vampire` on PATH. Builds for Linux and "
-        "macOS are at https://github.com/vprover/vampire/releases\n"
-        "`--houdini-solver cvc5` needs no binary."
-    )
 
 
 class VampireSolver(Solver):
@@ -531,39 +401,17 @@ class VampireSolver(Solver):
         self.jobs = max(1, min(4, (os.cpu_count() or 4) // self.cores))
 
     def _run(self, q: Query, budget: float, core: bool, model: bool) -> Answer:
-        script = self._script(q)
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".smt2", prefix="verith-vampire-", delete=False
-        ) as f:
-            f.write(script)
-            path = f.name
-        cmd = [
-            self.exe, "--input_syntax", "smtlib2",
+        run = run_vampire(self.exe, self._script(q), [
             "--mode", "portfolio", "--schedule", "smtcomp",
             "--cores", str(self.cores),
             "--output_mode", "ucore" if core else "smtcomp",
             # Deciseconds: a limit below a second is a real limit.
             "--time_limit", f"{max(1, int(budget * 10))}d",
-            path,
-        ]
-        t0 = time.perf_counter()
-        # Its own session: the portfolio forks a process per strategy, and a
-        # run killed from outside has to take them all with it.
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True,
-                                start_new_session=True)
-        try:
-            out, _ = proc.communicate(timeout=budget + 10)
-        except subprocess.TimeoutExpired:
-            _kill_group(proc)
-            out = ""
-        finally:
-            _kill_group(proc)
-            Path(path).unlink(missing_ok=True)
-        dt = time.perf_counter() - t0
+        ], timeout=budget + 10)
+        dt = run.secs
         self.calls += 1
         self.spent += dt
-        lines = [ln.strip() for ln in out.splitlines()]
+        lines = run.lines
         if "unsat" in lines:
             names = None
             if core:
@@ -574,10 +422,9 @@ class VampireSolver(Solver):
                 )
                 names = frozenset(n for n, _t in q.hyps if n in reported)
             return Answer(Verdict.PROVED, dt, names)
-        error = next((ln for ln in lines
-                      if "User error" in ln or "Parsing Error" in ln), None)
+        error = run.error
         if error is not None:
-            detail = out[out.find(error):].strip().splitlines()
+            detail = run.out[run.out.find(error):].strip().splitlines()
             raise Refused(
                 f"Vampire cannot read this module's encoding: "
                 f"{' '.join(detail[:2])[:300]}. `--houdini-solver cvc5` reads "
@@ -594,33 +441,13 @@ class VampireSolver(Solver):
         core can say which of them the proof used; the goal is named too, so
         a core is never empty for a reason other than the goal being false.
         """
-        from .smt_query import _constants
-
-        seen: dict = {}
-        for _v, body in q.defines:
-            _constants(body, seen)
-        for _n, t in q.hyps:
-            _constants(t, seen)
-        _constants(q.goal, seen)
-        defined = {str(v) for v, _b in q.defines}
-        lines = ["(set-logic ALL)"]
-        lines += [f"(declare-fun {sym} () {seen[sym].getSort()})"
-                  for sym in sorted(seen) if sym not in defined]
-        lines += [f"(define-fun {v} () {v.getSort()} {body})"
-                  for v, body in q.defines]
-        lines += [f"(assert (! {t} :named {n}))" for n, t in q.hyps]
-        lines.append(f"(assert (! (not {q.goal}) :named goal))")
-        lines.append("(check-sat)")
-        return decimals("\n".join(lines)) + "\n"
-
-
-def _kill_group(proc: subprocess.Popen) -> None:
-    if proc.poll() is None:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        proc.wait()
+        defines = [(str(v), (), v.getSort(), body) for v, body in q.defines]
+        asserts = [f"(! {t} :named {n})" for n, t in q.hyps]
+        asserts.append(f"(! (not {q.goal}) :named goal)")
+        mentions = ([body for _v, body in q.defines]
+                    + [t for _n, t in q.hyps] + [q.goal])
+        return decimals(script(asserts, defines=defines, mentions=mentions,
+                               spaced=False))
 
 
 # ══════════════════════════════════════════════════════════════════════════

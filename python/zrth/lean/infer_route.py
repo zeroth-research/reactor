@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 
     from .cert import LeanCertificate
     from .common import LeanContext
+    from .smt.run import ModuleEncoding
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -208,13 +209,15 @@ class InferInput:
     prechecked: object | None = None    # what `precheck` returned
     # This run's `--smt-timeout` / `--smt-budget`, for a route that asks cvc5
     # a question of its own. The obligation queries have always been on it
-    # (`smt_query.SmtBudget`); a route that *searches* has to be, for the
+    # (`smt.limits.SmtBudget`); a route that *searches* has to be, for the
     # same reason and more so -- a synthesis with no limit hangs generation,
     # and `tlimit-per` is the option that actually stops one.
     budget: object | None = None
     model: str | None = None            # meaningful iff the row uses an LLM
     base_url: str | None = None
     log: Callable = print
+    # The run's one cvc5 encoding of `module`, built on first call.
+    smt: "Callable[[], ModuleEncoding] | None" = None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -366,7 +369,8 @@ def _run_ai(inp: InferInput) -> InferResult:
     from .magic.ai import TA2MagicAI
 
     magic = TA2MagicAI(
-        inp.project.encoding(""), model=inp.model, base_url=inp.base_url
+        inp.project.encoding(""), model=inp.model, base_url=inp.base_url,
+        log=inp.log,
     )
     # Lean only: it is parsed out of an LLM reply and never had an SMT term
     # behind it, which is what this route's `returns="lean"` declares. No
@@ -469,6 +473,9 @@ def _run_ai_cegis(inp: InferInput) -> InferResult:
         base_url=inp.base_url,
         known=_ruled_out(inp),
         budget_s=inp.opts["cegar_budget"],
+        encoding=inp.smt,
+        budget=inp.budget,
+        log=inp.log,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 
@@ -490,6 +497,7 @@ def _run_sygus(inp: InferInput) -> InferResult:
         budget=inp.budget,
         artifacts=inp.project.artifacts,
         log=inp.log,
+        encoding=inp.smt,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 
@@ -511,6 +519,7 @@ def _run_smt_linear(inp: InferInput) -> InferResult:
         budget=inp.budget,
         artifacts=inp.project.artifacts,
         log=inp.log,
+        encoding=inp.smt,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 
@@ -546,7 +555,7 @@ def _check_houdini_options(settings, opts) -> "str | None":
 
 
 def _resolve_vampire(opts: dict):
-    from .houdini_solver import resolve_vampire
+    from .smt.vampire import resolve_vampire
 
     return resolve_vampire(opts["vampire"])
 
@@ -560,6 +569,7 @@ def _run_vampire(inp: InferInput) -> InferResult:
         timeout=inp.opts["vampire_timeout"],
         artifacts=inp.project.artifacts,
         log=inp.log,
+        encoding=inp.smt,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 
@@ -573,6 +583,7 @@ def _run_houdini(inp: InferInput) -> InferResult:
         timeout=inp.opts["houdini_timeout"],
         artifacts=inp.project.artifacts,
         log=inp.log,
+        encoding=inp.smt,
     )
     return InferResult(magic.infer(inp.claim, inp.given))
 
@@ -669,7 +680,7 @@ ROUTES: tuple[InferRoute, ...] = (
         # assumption the candidate may lean on -- and both prompts already
         # carry it: `GENERATE_SYSTEM` states the two obligations with
         # `init_pre` and `update_pre` in them, `VERIFY_SYSTEM` tells the
-        # auditor to assume them, and `_describe_preconditions` writes the
+        # auditor to assume them, and `llm.describe_preconditions` writes the
         # predicates themselves into each user message. `Certificate/Data.lean`
         # carries them whatever the route, so `lake build` checks the reply
         # under the same assumption the reply was asked for under.

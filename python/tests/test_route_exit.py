@@ -40,8 +40,8 @@ def client(base_url, model):
                 "RANKING: fun s => (if (s 0 0) = 0 then 0 else 10 - (s 0 0)).toNat")
     return chat
 
-ai._make_client = client
-cegar._make_client = client
+ai.make_client = client
+cegar.make_client = client
 
 for argv in json.loads(sys.argv[1]):
     sys.argv = ["verith", *argv]
@@ -58,7 +58,7 @@ PRE = ["--pre-check", "cvc5", "--smt-tactics", "cvc5"]
 
 def _cases(out: Path) -> list[list[str]]:
     from zrth.lean.common import Refused
-    from zrth.lean.houdini_solver import resolve_vampire
+    from zrth.lean.smt.vampire import resolve_vampire
 
     counter = str(FIXTURES / "counter.py")
     countdown = str(FIXTURES / "svcomp_countdown.py")

@@ -1,8 +1,9 @@
 # Using cvc5 inside `verith`
 
 `verith` has always had a complete symbolic encoding of every module
-(`smt_module.ModuleSMT`), but outside the `--infer ai-cegis` loop it never
-asked the solver anything: cvc5 parsed the SMT-LIB predicates, handed them to
+(`smt_module.ModuleSMT`; a run builds it once, as `smt.run.ModuleEncoding`,
+and the pre-check and every cvc5 route share it), but outside the
+`--infer ai-cegis` loop it never asked the solver anything: cvc5 parsed the SMT-LIB predicates, handed them to
 the Lean printer, and went home. This is what it is used for now, what that
 bought, and what is left.
 
@@ -465,8 +466,8 @@ showed (cvc5 1.3.4, `tests/limits` fixtures), and then what shipped.
 
 **What the plan had right.** `Solver.synthFun` + `addSygusConstraint` +
 `checkSynth` does find ranking functions with no LLM and no API key, and
-`ModuleSMT.update_state` against `declareSygusVar` state variables is the
-encoding — step 2 was exactly right and is what both routes do.
+the module's encoded round (`ModuleEncoding.next_state`) against
+`declareSygusVar` state variables is the encoding — step 2 was exactly right and is what both routes do.
 
 **Step 3 — "give it a grammar" — was half wrong.** A grammar is not
 automatically a pruning:
@@ -491,8 +492,8 @@ where `4*x1 + x0` would do.
 answer.** `tlimit` does **not** stop `checkSynth`: a 1000 ms limit ran 13.9 s
 and returned a solution. It does not stop a quantified `checkSat` either — a
 20 s limit ran past 400 s. **`tlimit-per` stops both** (1001 ms and 5007 ms,
-`unknown`). No subprocess is needed; `smt_query._solver` already sets the
-pair, and `smt_synth.bounded_solver` is that pair for the searches.
+`unknown`). No subprocess is needed; `smt.limits.bounded_solver` sets the
+pair for every query.
 
 **Step 5 — "a synthesised `ite` folds through the min/max peephole for free"
 — is wrong.** `smt_to_lean.min_max_of` fires only on `ite (a ⋈ b) a b`, where
