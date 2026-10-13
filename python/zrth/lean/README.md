@@ -724,20 +724,22 @@ mymodule.py ──verith──▶ out/Counter/                       (bare, as u
                                   ▼
                         out/Counter/ProveIt/CounterCert.lean
                                   │
-                                  ▼   "processing" — a copy, for now
+                                  ▼   two tactic patches; handed back to the pipeline
                         out/Counter/Certificate/Certificate.lean
 ```
 
 The installed file is the project's *own* certificate — the same
 `Certificate/Certificate.lean` that `Certificate.lean` root-imports and that
 `lake build Certificate` reaches, overwriting the `sorry` stub the bare
-project would have carried. For that reach to end in a build rather than an
-unknown identifier, `create_project` is given the checkout and the lakefile
-gains two entries:
+project would have carried. The route does not write it: it hands the text
+back in `InferResult.files`, with `Certificate/Equivalence.lean`, and the
+pipeline writes both through the route's `ProjectHandle`. For the reach to
+end in a build rather than an unknown identifier, the row's `lakefile` hook
+gives the project two lakefile entries:
 
 | lakefile entry | resolves |
 |---|---|
-| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `project.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
+| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `fbk_proveit.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
 
 Of the *invariant* the project is still **bare**: it comes from ic3ia, so
 `--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
@@ -831,13 +833,19 @@ so does a row no theory backs.
 
 ---
 
-## Adding an Inference Route (`infer_route.py`)
+## Adding an Inference Route (`infer_route/`)
 
 Every way verith can be handed a certificate is one row of
-`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is added
-there and nowhere else: `cli.py` reads the rows, so the `--infer` choices,
-the help text, every cross-flag rule and the dispatch all follow from the
-row rather than from an edit apiece.
+`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is one
+module, `infer_route/<name>.py`, exporting `ROUTE` (an `InferRoute`), plus
+its entry in the `ROUTES` tuple of `infer_route/__init__.py`, and nothing
+else: `cli.py` reads the rows, so the `--infer` choices, the help text,
+every cross-flag rule and the dispatch all follow from the row rather than
+from an edit apiece.  The row module imports its engine (usually a class in
+`magic/`) inside `run`, so `verith --help` imports none of them; no row
+imports another, and an option two rows share is declared once in
+`infer_route/shared.py`.  The types a row is written in are in
+`infer_route/api.py`.
 
 A row says:
 
@@ -854,20 +862,26 @@ A row says:
   `ProjectHandle`, so these two are the whole of its access, and a route
   that needs more of the project than the predicates says which more.
 * **the hooks** — `resolve` at parse time (a route whose lakefile names a
-  path has to reject a bad one before any of the project exists), `precheck`
-  once the module is loaded and before it is generated (a module shape the
-  route cannot express is met there rather than as a traceback out of an
-  encoder it never wanted), and `run`.
+  path has to reject a bad one before any of the project exists),
+  `lakefile(config, project_name)`, the `LakefileParts` (extra `lean_lib`s
+  and `require`s) the project is generated with, `precheck` once the module
+  is loaded and before it is generated (a module shape the route cannot
+  express is met there rather than as a traceback out of an encoder it never
+  wanted; it is handed the run's encoding), and `run`.
 * **its own flags** — `options`, a tuple of `Opt`.  Passed without the route
   selected, each is an error rather than a no-op.  `aliases` carries any
   older spelling that selects the route and fills one of those options
   (`--fbk-proveit DIR`), so a deprecated flag goes away with its row.
 
-A route is handed a frozen `InferInput` — the `Claim`, and the `given`
-predicates it starts from — and answers with a new `InferResult`: SMT-LIB
-in `cert`, which the pipeline prints as Lean in one place
-(`cert.render_certificate`), or, for the one `returns="lean"` row (`ai`),
-Lean in `lean`.
+A route is handed a frozen `InferInput` — the `Claim`, the `given`
+predicates it starts from, the run's encoding and budget — and answers with
+a new `InferResult`: SMT-LIB in `cert`, which the pipeline prints as Lean in
+one place (`cert.render_certificate`), or, for the one `returns="lean"` row
+(`ai`), Lean in `lean`.  `files` carries whole files the route produced
+(project-relative path to text); the pipeline writes them after the
+predicates, through the handle, so each has to be a path the row owns.
+`fbk-proveit` answers with its certificate and the proof that its model is
+the module this way.
 
 `tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
 checks the op matrix: a row declaring an encoding no row emits, a

@@ -86,7 +86,9 @@ from .certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
 from .common import LeanContext, Refused
 from .native import lean_gaps
-from .infer_route import InferInput, InferResult, ProjectHandle
+from .infer_route import (
+    InferInput, InferResult, ProjectHandle, owned_files,
+)
 from .project import (
     ENCODINGS,
     LakeBuildError,
@@ -198,12 +200,12 @@ def _render(settings: Settings, module, claim: "Claim | None",
 def _infer(
     settings: Settings, module, handle: ProjectHandle, claim: Claim,
     given: Certificate, prechecked,
-) -> "InferResult | None":
+) -> "InferResult":
     """Run the selected route against the generated project.
 
-    Returns what it inferred, or `None` when the route installed the
-    certificate itself -- there are then no predicates for the project to
-    be regenerated from.
+    Returns what it handed back: predicates, or -- for a route whose row
+    says `returns="files"` -- whole files, with no predicates for the
+    project to be regenerated from.
 
     Everything route-specific is a field of the row: what of the project it
     may read and write, and which languages its answer comes back in.
@@ -234,20 +236,30 @@ def _infer(
     # two are checked against each other once rather than each reader
     # trusting whichever is nearer to hand.
     agrees = {
-        "installed": result.empty,
+        "smt": not result.cert.empty and result.lean is None,
         "lean": result.lean is not None,
-        "smt": result.lean is None and not result.empty,
+        "files": bool(result.files) and result.cert.empty
+                 and result.lean is None,
     }[route.returns]
     if not agrees:
-        handed = "no predicates" if result.empty else "predicates"
-        if not result.empty and route.returns != "installed":
+        if result.cert.empty and result.lean is None:
+            handed = ("files and no predicates" if result.files
+                      else "no predicates")
+        else:
+            handed = "predicates"
             handed += " in Lean" if result.lean is not None else " in SMT-LIB"
+            if result.files:
+                handed += " and files"
         raise SystemExit(
             f"error: --infer {route.name}: the route's row declares "
             f"returns={route.returns!r} but it handed back {handed}"
         )
-    if route.returns == "installed":
-        return None
+    for rel in result.files:
+        if not handle.owns_path(rel):
+            raise SystemExit(
+                f"error: --infer {route.name}: the route handed back {rel}, "
+                f"which its row does not own"
+            )
     return result
 
 
@@ -336,11 +348,17 @@ def _generate(settings: Settings, module, ctx: LeanContext,
             executable=settings.executable,
             lean_cert=lean_cert,
             module_file=settings.module_file,
-            lakefile_vars=(
-                settings.route.lakefile(settings.route_config)
+            lakefile=(
+                settings.route.lakefile(
+                    settings.route_config, settings.project_name)
                 if settings.route is not None and settings.route.lakefile
                 else None
             ),
+            # `Certificate/` is globbed by the build, so a copy of a file a
+            # route writes, left by an earlier run in this `-o`, would be
+            # built against this run's module. Directories are left alone:
+            # nothing globs them until a route declares a lean_lib for them.
+            remove=owned_files(),
             ctx=ctx,
         )
     except (Refused, OSError) as e:
@@ -404,12 +422,13 @@ def main():
             owns=settings.route.owns,
         )
         result = _infer(settings, module, handle, claim, given, prechecked)
-        # `None`: the route installed its own certificate, so there is
-        # nothing of ours to be complete about and nothing to regenerate from.
+        # `files`: the certificate is the route's own, so there is nothing
+        # of ours to be complete about and nothing to regenerate from.
         lean_cert = (
-            None if result is None
+            None if settings.route.returns == "files"
             else _regenerate(settings, module, handle, claim, result)
         )
+        handle.write_files(result.files)
 
     _build_cert(settings, project_dir, lean_cert)
 

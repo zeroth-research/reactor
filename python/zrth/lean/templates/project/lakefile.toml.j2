@@ -24,30 +24,28 @@ globs = ["Certificate", "Certificate.+"]
 
 [[lean_lib]]
 name = "System"
-{% if na_lib %}
+{% for lib in parts.libs %}
 
-# `--fbk-proveit`: `proveit.py` compiles the NA model out of tree and so
-# imports it under its bare file stem, which the certificate then names.
-# Mapping that module name back onto the file is what lets `lake build`
-# resolve the same import the certificate was generated against.
+{% for line in lib.comment.splitlines() %}
+# {{ line }}
+{% endfor %}
 [[lean_lib]]
-name = "{{ na_lib }}"
-srcDir = "{{ proveit_dir }}"
-{% endif %}
+name = "{{ lib.name }}"
+srcDir = "{{ lib.src_dir }}"
+{% endfor %}
 
 [[require]]
 name = "cslib"
 scope = "leanprover"
 rev = "{{ cslib_rev }}"
 
-# `--fbk-proveit`: the certificate imports LTLCertifying.*. A path require
-# rather than a git one because the route already has the checkout in hand,
-# and because that checkout pins cslib to the revision above — the
-# two package sets resolve as one.
+{% for line in req.comment.splitlines() %}
+# {{ line }}
+{% endfor %}
 [[require]]
-name = "LTL_Certifying"
-path = "{{ ltl_project }}"
-{% endif %}
+name = "{{ req.name }}"
+path = "{{ req.path }}"
+{% endfor %}
 
 #[[require]]
 #name = "mylib"
