@@ -18,6 +18,9 @@ module
     #N := Ite (#N, #N, #N)
     X(#N) := Id #N
 
+.. --buchi, in internal names: (= s0 0)
+.. --invariant, in internal names: (and (>= s0 0) (<= s0 9))
+.. --ranking, in internal names: (ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)
    wrote artifact property.smt (encoded)
    wrote artifact inv.smt (encoded)
    wrote artifact ranking.smt (encoded)
@@ -65,6 +68,9 @@ DONE: Project created at: <OUT>/G
    inv forces `((($v) 0 0) ≤ 200)` to be true
 Wrote <OUT>/G/Certificate/Data.lean
 Wrote <OUT>/G/Certificate/Certificate.lean
+.. The certificate, in the input's names:
+   --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))'
+   --ranking '(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)'
 
 Project ready at: <OUT>/G
 

@@ -18,6 +18,7 @@ module
     #N := Ite (#N, #N, #N)
     X(#N) := Id #N
 
+.. --safety, in internal names: (<= s0 100)
    wrote artifact property.smt (encoded)
 .. Generating lean code
 Created project directory: `<OUT>/G`
@@ -62,6 +63,8 @@ DONE: Project created at: <OUT>/G
    nothing cvc5 can add to the plan
 Wrote <OUT>/G/Certificate/Data.lean
 Wrote <OUT>/G/Certificate/Certificate.lean
+.. The certificate, in the input's names:
+   --invariant '(and (<= 0 (X @intf.0)) (<= (X @intf.0) 100))'
 
 Project ready at: <OUT>/G
 
