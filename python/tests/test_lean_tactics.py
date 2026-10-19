@@ -11,7 +11,7 @@ import torch
 import pytest
 
 from zrth import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
-from zrth.lean.common import LeanContext
+from zrth.lean.context import LeanContext
 from zrth.lean.tactics import features_for, is_nonlinear, plan_for
 
 
@@ -515,7 +515,7 @@ def test_cvc5_is_asked_about_the_invariant_that_now_exists():
     hints = after.plan.hints
     assert hints is not None
     assert [value for _text, value in hints.determined] == [True]
-    assert "≤ 200" in hints.determined[0][0]
+    assert "≤ (200 : Int)" in hints.determined[0][0]
 
 
 def test_a_settled_condition_is_printed_unshared():

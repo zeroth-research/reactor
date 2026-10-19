@@ -15,7 +15,8 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
-from zrth.lean.common import LeanContext, dtype_shape
+from zrth.lean.sorts import dtype_shape
+from zrth.lean.context import LeanContext
 from zrth.lean.fbk_proveit import ProveItError, property_to_bool_lean, resolve_project
 from zrth.lean.translate.fbk import NAUnsupported, atom_to_lean_na, check_na_supported
 
@@ -1183,3 +1184,17 @@ def test_a_check_and_a_property_share_one_encoding(monkeypatch):
 
     assert built[0] == 1
     assert checked.pre_lean and prop
+
+
+def test_a_stateless_module_has_no_na_encoding_and_no_bridge():
+    """No controlled state: no slots, no `init_scalar_eq` to cite. Refused
+    by the check, and by the bridge even when handed bodies, which skips
+    the rest of the check."""
+    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+
+    inp = Var(Int([1, 1]))
+    ctx = LeanContext(Module.sequential([inp], [], []))
+    with pytest.raises(NAUnsupported, match="no controlled state"):
+        check_na_supported(ctx)
+    with pytest.raises(NAUnsupported, match="no controlled state"):
+        atom_to_lean_fbk_bridge(ctx, na_module="NA", bodies=object())

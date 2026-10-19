@@ -4,7 +4,8 @@ import pytest
 import torch
 from zrth import Wire, Term, Module, Bool, Int, LIA, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.common import LeanContext, itype_name
+from zrth.lean.sorts import itype_name
+from zrth.lean.context import LeanContext
 from zrth.lean.cert import generate_certificate_lean
 from zrth.lean.project import generate_main_lean
 
@@ -159,7 +160,7 @@ def test_matrix_module_uses_matvecaffine():
     assert "affineLinear" not in lean
     assert "matVecAffine" in lean
     assert "Box.linear" in lean
-    assert "[[0, 0], [1, 0], [0, 1]]" in lean  # A of init, as a list literal
+    assert "[[(0 : Int), (0 : Int)], [(1 : Int), (0 : Int)], [(0 : Int), (1 : Int)]]" in lean  # A of init, as a list literal
 
 
 def test_matrix_init_signature():
@@ -446,20 +447,6 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
 # ──────────────────────────────────────────────────────────────
 
 
-def test_scalar_translator_flattening_is_opt_in():
-    """Without the flag, each output is its wire's own `Mat`.
-
-    The flat-tuple callers (`scalar.py`, `ScalarRel`) ask for it explicitly.
-    """
-    from zrth.lean.native import _translate_terms_scalar
-    import inspect
-
-    sig = inspect.signature(_translate_terms_scalar)
-    assert sig.parameters["flatten_outputs"].default is False, (
-        "flattening must be opt-in so the matrix-typed callers keep working"
-    )
-
-
 # ──────────────────────────────────────────────────────────────
 # Reconstruction lets follow what the body uses
 # ──────────────────────────────────────────────────────────────
@@ -563,7 +550,7 @@ def test_stateless_module_defines_init_and_update_as_unit():
 
 def test_unbound_block_output_raises():
     """An output no term writes and no input binds has no Lean value."""
-    from zrth.lean.common import ConstantRegistry
+    from zrth.lean.literals import ConstantRegistry
     from zrth.lean.native import _translate_terms, _translate_terms_scalar
 
     out = [Wire(Int([1, 1]))]
@@ -571,5 +558,37 @@ def test_unbound_block_output_raises():
         _translate_terms([], {}, out, ConstantRegistry())
     with pytest.raises(ValueError, match="written by no term"):
         _translate_terms_scalar(
-            [], {}, out, ConstantRegistry(), flatten_outputs=True
+            [], {}, out, ConstantRegistry()
         )
+
+
+# ──────────────────────────────────────────────────────────────
+# Each producer stands alone
+# ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("mod", ["m_countdown", "m_argmax"])
+def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
+    """`to_lean_equiv_theorems` and `to_lean_scalar_equiv` read what their
+    encoding computed (layer names, argmax variants). Called first, on a
+    fresh `ModuleToLean4`, they print what the full producer prints rather
+    than silently dropping the theorems or the argmax lemmas."""
+    import importlib.util
+    from pathlib import Path
+
+    from zrth.lean.translate import ModuleToLean4
+
+    path = Path(__file__).parent / "limits" / "mods" / f"{mod}.py"
+    spec = importlib.util.spec_from_file_location(f"_alone_{mod}", path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    module = m.module()
+
+    circ_alone = ModuleToLean4(module).to_lean_equiv_theorems()
+    assert "init_circ_eq" in circ_alone
+    assert ModuleToLean4(module).to_lean_circ().endswith(circ_alone)
+
+    scalar_alone = ModuleToLean4(module).to_lean_scalar_equiv()
+    assert ModuleToLean4(module).to_lean_scalar().endswith(scalar_alone)
+    if mod == "m_argmax":
+        assert "argmax1d_scalar" in scalar_alone

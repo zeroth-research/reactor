@@ -22,14 +22,12 @@ from zrth.lean.native import (
     _translate_terms_scalar,
     _reachable_terms,
 )
-from zrth.lean.common import (
-    LeanContext,
-    _accessor,
-    _bind_wires,
-    dtype_to_lean_type,
-    flat_layout,
-)
+from zrth.lean.sorts import dtype_to_lean_type
+from zrth.lean.layout import _accessor, flat_layout
+from zrth.lean.context import LeanContext, _bind_wires
 from zrth.lean.translate._shared import (
+    has_block,
+    scalar_eq_name,
     _scalar_bindings_with_recon,
     _prepend_recon,
     _flat_slice,
@@ -249,7 +247,7 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
 
     lines = ["namespace Rel", ""]
 
-    if list(ctx.atom.update):
+    if has_block(ctx, "update"):
         blk = _update_block(dom, n_ctrl, "update")
         lines += emit_rel_block(
             syn, blk, _bodies(ctx.atom.update, update_bindings)
@@ -258,7 +256,7 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
             "TransRel_func_eq", blk, n_ctrl, f"new = update old {dom.extl_args}"
         )
 
-    if list(ctx.atom.init):
+    if has_block(ctx, "init"):
         blk = _init_block(dom, n_ctrl, "init")
         lines += emit_rel_block(syn, blk, _bodies(ctx.atom.init, init_bindings))
         lines += _conj_eq_theorem(
@@ -312,7 +310,6 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
                     [w],
                     ctx.constants,
                     flat_slots=flat,
-                    flatten_outputs=True,
                 ),
             )
             for w in ctx.ctrl_next
@@ -324,8 +321,8 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
     # quantify over, since they state the scalar relation in matrix terms.
     mat = _domain(ctx, _product_type)
 
-    has_update = bool(list(ctx.atom.update))
-    has_init = bool(list(ctx.atom.init))
+    has_update = has_block(ctx, "update")
+    has_init = has_block(ctx, "init")
 
     # Described up front because its two closing theorems are emitted after
     # the init block, not with the block itself: `TransRel_func_eq` rewrites
@@ -360,7 +357,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
             "ctrl' extl_n",
             f"InitCond {new_unpack} {extl_n_unpack}",
             "ctrl' = init extl_n",
-            ["InitCond_scalar_eq", "init_scalar_eq"],
+            ["InitCond_scalar_eq", scalar_eq_name("init")],
         )
 
     if has_update:
@@ -383,7 +380,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
             f"ctrl ctrl' {mat.extl_args}",
             f"TransRel {old_unpack} {new_unpack} {extl_unpacks}",
             f"ctrl' = update ctrl {mat.extl_args}",
-            ["TransRel_scalar_eq", "update_scalar_eq"],
+            ["TransRel_scalar_eq", scalar_eq_name("update")],
         )
 
     lines.append("end ScalarRel")

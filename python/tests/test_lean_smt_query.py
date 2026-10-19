@@ -14,7 +14,7 @@ import torch
 from zrth import Module, Term, Var, Wire, X, LIA, Int
 from zrth.analyzer import convert_method
 from zrth.lean.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.common import Refused
+from zrth.lean.errors import Refused
 from zrth.lean.smt.limits import SmtBudget
 from zrth.lean.smt_query import (
     ModuleQueries,
@@ -441,7 +441,7 @@ def test_a_lean_answer_is_printed_as_it_was_given():
 
     defs = render_certificate(predicate_terms(countdown(), CLAIM), verbatim=LEAN)
     assert (defs.inv, defs.ranking) == (LEAN.inv, LEAN.ranking)
-    assert defs.prp == "fun s => ((s 0 0) = 0)"
+    assert defs.prp == "fun s => ((s 0 0) = (0 : Int))"
 
 
 def test_a_predicate_that_does_not_parse_is_refused_by_its_flag():

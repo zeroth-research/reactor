@@ -49,7 +49,8 @@ from dataclasses import dataclass, field
 
 from zrth import Bool, Int, Real, BitVec
 
-from .common import _accessor, dtype_shape, itype_name
+from .sorts import dtype_shape, itype_name, sort_shape
+from .layout import _accessor
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -124,10 +125,12 @@ _SORT_NAMES = ((Bool, "Bool"), (Int, "Int"), (Real, "Real"), (BitVec, "BitVec"))
 
 
 def _sort_name(dtype) -> str:
+    """The theory a sort's elements are in, a tag (`BitVec` without its
+    width), not a Lean type: `sorts.lean_elem_type` is that."""
     for cls, name in _SORT_NAMES:
         if isinstance(dtype, cls):
             return name
-    return "Int"
+    raise ValueError(f"Unsupported Sort: {dtype}")
 
 
 # A `*` whose two operands both mention the state parameter. An operand is a
@@ -247,11 +250,9 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
             # are not finite at all.
             return []
         acc = _accessor(i, n)
-        shape = dtype_shape(dt)
-        rows = shape[0] if shape else 1
-        cols = shape[1] if len(shape) > 1 else 1
-        for r in range(rows):
-            for c in range(cols):
+        shape = sort_shape(dt)
+        for r in range(shape.m):
+            for c in range(shape.n):
                 out.append((f"{acc} {r} {c}", lemma))
     return out if len(out) <= MAX_ENUMERABLE_SLOTS else []
 

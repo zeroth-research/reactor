@@ -41,7 +41,12 @@ topologically-sorted dataflow graph.
 
 | File | Role |
 |------|------|
-| `common.py` | Shared utilities: `LeanContext`, type helpers, `ConstantRegistry`, wire-binding helpers, `flat_layout` (the row-major element order every scalar encoding shares) |
+| `errors.py` | `Refused`, the error a run is refused with |
+| `sorts.py` | Sorts and shapes of wires and the Lean types they print as (`lean_elem_type`, `dtype_to_lean_type`) |
+| `layout.py` | Tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares |
+| `literals.py` | Constants as Lean text, `ConstantRegistry` |
+| `context.py` | `LeanContext`, what every encoding of one module shares |
+| `common.py` | Re-exports the five above, for importers not migrated yet |
 | `ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
@@ -55,7 +60,7 @@ topologically-sorted dataflow graph.
 
 ---
 
-## Type Mapping (`common.py`)
+## Type Mapping (`sorts.py`)
 
 `dtype_to_lean_type(wire, simple_types=False)` maps wire types to Lean:
 
@@ -78,7 +83,7 @@ scalar.  This keeps the algebra uniform.  Float-typed modules require
 
 ---
 
-## `LeanContext` (`common.py`)
+## `LeanContext` (`context.py`)
 
 Created once per module; shared across all code generators.  It extracts:
 
@@ -179,8 +184,9 @@ Key differences from functional:
 - Non-scalar wires (actual matrices, `MatMul` results with shape `[m,n]`) fall
   back to matrix types transparently.
 
-`_bind_wires_scalar` builds the input bindings, appending `" 0 0"` for scalar
-wires so downstream ops receive bare values.
+`translate._shared._scalar_bindings_with_recon` builds the input bindings: a
+one-element wire is bound to its bare accessor, so downstream ops receive bare
+values, and a wider one to a `let` that rebuilds its `Mat` from the elements.
 
 **Equivalence theorems** (`to_lean_scalar_equiv`) connect the scalar and
 functional encodings:
@@ -213,15 +219,21 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 
 | Method | Returns |
 |--------|---------|
-| `to_lean_functional()` | Constants block + `init`/`update` defs |
-| `to_lean_circ()` | Circuit namespace + equivalence theorems |
-| `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems |
-| `to_lean(circuit=True, scalar=True)` | All three encodings combined |
+| `to_lean_functional()` | Constants block + `init`/`update` defs (`System.lean`) |
+| `to_lean_circ()` | Circuit namespace + equivalence theorems (`SystemCirc.lean`) |
+| `to_lean_mat_rel()` | `namespace Rel`, the matrix-domain relational encoding (`SystemRel.lean`) |
+| `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems (`SystemScalar.lean`) |
+| `to_lean_rel()` | `namespace ScalarRel`, the scalar-relational encoding (`SystemScalarRel.lean`) |
+| `to_lean(circuit=True, scalar=True, rel=True)` | Functional, then each enabled one of circuit, scalar and scalar-relational, joined (never `Rel`); used by tests |
 | `atom_to_lean_functional()` | Just `init`/`update` bodies |
 | `atom_to_lean_circuit()` | Just `namespace Circ` block |
 | `atom_to_lean_scalar()` | Just `namespace Scalar` block |
+| `atom_to_lean_mat_rel()` / `atom_to_lean_rel()` | Just the `Rel` / `ScalarRel` namespace |
 | `to_lean_equiv_theorems()` | `init_circ_eq` / `update_circ_eq` theorems |
 | `to_lean_scalar_equiv()` | `init_scalar_eq` / `update_scalar_eq` theorems |
+
+The project writes one file per row of `project.ENCODINGS`, each from its
+`to_lean_*` producer.
 
 ---
 
