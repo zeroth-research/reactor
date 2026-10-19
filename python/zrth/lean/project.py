@@ -24,14 +24,18 @@ import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from zrth import Module, Wire, Env, X
+from zrth import Module, Wire, X
 from .native import (
     _product_type,
     _build_tuple,
 )
 
 from .translate import ModuleToLean4
+
+if TYPE_CHECKING:
+    from .inputs import SourceText
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -580,7 +584,7 @@ def create_project(
     template_dir: Path = TEMPLATE_DIR,
     executable: bool = False,
     lean_cert: LeanCertificate | None = None,
-    module_file: Path | str | None = None,
+    source: "SourceText | None" = None,
     lakefile: LakefileParts | None = None,
     remove: Iterable[str] = (),
     ctx: "LeanContext | None" = None,
@@ -597,8 +601,8 @@ def create_project(
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
         `lean_cert`:       The certificate's predicates, printed; placeholders
                            where it is `None`.
-        `module_file`:     Path to the Python source file used to create the module
-                           (written as a debug artifact alongside the project).
+        `source`:          The input the module was read from, written to
+                           `dbg/system<suffix>` as a debug artifact.
         `lakefile`:        What the inference route adds to the lakefile,
                            from its row's `lakefile` hook. Declared as data
                            rather than passed per route: the lakefile is
@@ -621,14 +625,14 @@ def create_project(
     src_dir.mkdir(parents=True, exist_ok=True)
     print(f"Created project directory: `{project_dir}`")
 
-    # Debug artifacts: module representation and Python source
+    # Debug artifacts: module representation and the input it was read from
     dbg_dir.mkdir(parents=True, exist_ok=True)
     (dbg_dir / "system.txt").write_text(str(module))
     print("Wrote system.txt")
-    if module_file is not None:
-        py_src = Path(module_file).read_text()
-        (dbg_dir / "system.py").write_text(py_src)
-        print("Wrote system.py")
+    if source is not None:
+        copy = f"system{source.suffix}"
+        (dbg_dir / copy).write_text(source.text)
+        print(f"Wrote {copy}")
 
     # Render and write project-level files from templates
     lakefile_path = project_dir / "lakefile.toml"
@@ -744,45 +748,3 @@ def generate_standalone_cert_lean(
     m2l = ModuleToLean4(ctx)
     module_code = m2l.to_lean_functional()
     return generate_certificate_lean(ctx, lean_cert, module_inline=module_code)
-
-
-def load_module_from_file(filepath: str, module_def: str = "module") -> Module:
-    """
-    Load modules from an external Python file.
-
-    The file must define either a function `module_def` (which defaults into `module`):
-
-        def module() -> Module:
-            ...
-
-    returning the Module, or it may define a class that inherits from `Module` and
-    has constructor without arguments that create `Module`.
-    """
-    import importlib.util
-
-    path = Path(filepath).resolve()
-    if not path.exists():
-        raise FileNotFoundError(f"Diagram file not found: {path}")
-
-    spec = importlib.util.spec_from_file_location("_user_diagrams", path)
-    if spec is None:
-        raise RuntimeError(
-            f"Failed to load module from file: `{filepath}`, module: `{module_def}`"
-        )
-
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader, "No loaded created"
-    spec.loader.exec_module(module)
-
-    if not hasattr(module, module_def):
-        raise AttributeError(
-            f"Module file {path} must define `{module_def}` which is a function returning `Module` or a sub-class of `Module` with contructor without arguments."
-        )
-
-    module_def = getattr(module, module_def)
-    result = module_def()
-    if isinstance(result, Module):
-        return result
-    # main merged the old `Wrapper` into `Env`; wrap non-Module results (e.g.
-    # a gym environment) into a reactive Module via `Env`.
-    return Env(result)

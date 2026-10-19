@@ -325,43 +325,46 @@ def module() -> Module:
     return Module.sequential([state], init_terms, update_terms)
 ```
 
+To write claims in the module's own names (`--safety "(<= (X x) 9)"`), return
+`zrth.lean.inputs.Named(module, {"x": state})` instead of the bare module.
+
 ### Common invocations
 
 ```bash
 # Bare Lean project (all certificate fields left as sorry)
 uv run verith mymodule.py -o out/ -p MyProject
 
-# Specify the property to prove (SMT-LIB 2 Bool over s0..sN-1). Which flag it
+# Specify the property to prove (SMT-LIB 2 Bool over the state after a round: `(X @intf.N)`). Which flag it
 # goes under is the choice of proof rule -- see "Safety or Büchi" below.
-uv run verith mymodule.py --buchi "(= s0 0)" -o out/ -p MyProject
-uv run verith mymodule.py --safety "(<= s0 10)" -o out/ -p MyProject
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" -o out/ -p MyProject
+uv run verith mymodule.py --safety "(<= (X @intf.0) 10)" -o out/ -p MyProject
 
 # Also supply invariant and ranking manually
-uv run verith mymodule.py --buchi "(= s0 0)" \
-    --invariant "(and (>= s0 0) (<= s0 10))" \
-    --ranking   "(ite (= s0 0) 0 s0)" \
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))" \
+    --ranking   "(ite (= (X @intf.0) 0) 0 (X @intf.0))" \
     -o out/ -p MyProject
 
 # A safety certificate is an invariant alone -- no ranking function exists
-uv run verith mymodule.py --safety "(<= s0 10)" \
-    --invariant "(and (>= s0 0) (<= s0 10))" \
+uv run verith mymodule.py --safety "(<= (X @intf.0) 10)" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))" \
     -o out/ -p MyProject
 
 # AI inference with Claude (requires ANTHROPIC_API_KEY + pip install zrth[ai])
-uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer -o out/ -p MyProject
 
-uv run verith mymodule.py --safety "(<= s0 10)" --infer ai-cegis -o out/ -p MyProject
+uv run verith mymodule.py --safety "(<= (X @intf.0) 10)" --infer ai-cegis -o out/ -p MyProject
 
 # AI inference with a local LLM via Ollama (requires pip install zrth[ai-local])
-uv run verith mymodule.py --buchi "(= s0 0)" --infer \
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 \
     -o out/ -p MyProject
 
 # No LLM: learn a ranking function and certify it before it is offered
-uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer nuterm -o out/ -p MyProject
 
 # Standalone self-contained certificate (no project scaffold)
-uv run verith mymodule.py --buchi "(= s0 0)" --cert-file out/MyCert.lean
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lean
 # → writes out/MyCert.lean  (certificate)
 # → writes out/MyCertScalar.lean  (scalar encoding + equivalence theorems)
 ```
@@ -411,7 +414,7 @@ mutually exclusive, and `--fbk-proveit` takes only `--safety` — ic3ia decides
 reachability of `¬P`, which is not a question about recurrence.
 
 The distinction is not academic. Countdown starts at 100 and counts down, so
-`(= s0 0)` is reached over and over — true under `--buchi`, and false under
+`(= (X @intf.0) 0)` is reached over and over — true under `--buchi`, and false under
 `--safety` at step 0.
 
 ### Key flags
@@ -420,9 +423,10 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 |------|---------|-------------|
 | `-o` / `--output-dir` | `.` | Where to create the project |
 | `-p` / `--project-name` | `Rea` | Lean package name |
-| `-d` / `--module-def` | `module` | Name of the factory function in the Python file |
-| `--safety` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold in every reachable state (`G P`) |
-| `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
+| `--format` | by suffix | The input's format (`python`: `.py`) |
+| `-d` / `--module-def` | `module` | Name of the factory function in the Python file (python input only) |
+| `--safety` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold in every reachable state (`G P`) |
+| `--buchi` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
 | `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
@@ -444,7 +448,30 @@ of the table belongs to a route rather than to verith: passed without its
 route selected it is an error, not a no-op.  `--fbk-proveit DIR` is the older
 spelling of `--infer fbk-proveit --proveit-dir DIR` and still works.
 
-### State variable naming in SMT-LIB predicates
+### Writing a claim on the command line
+
+`--safety`, `--buchi`, `--pre`, `--invariant` and `--ranking` are written in
+the reactive module's own terms. The bare names `s0`, `e0`, `el0` (and the
+Python-DSL aliases `s`, `e`, `el`) are refused there.
+
+| surface (SMT-LIB) | surface (Python DSL) | means |
+|---|---|---|
+| `(X v)` | `X(v)` | the value of `v` after the round, for a name `v` the input gives |
+| `(X @intf.N)` | `X(@intf.N)` | the same, for interface variable N by position |
+| `(X @extl.N)` | `X(@extl.N)` | the input N read in the round |
+| `v` | `v` | a bare input name: the input of the round before |
+| `@extl.N` | `@extl.N` | the same, by position |
+
+An interface variable's latched value cannot be named yet. A name like `x`
+comes from an input that provides one (a module file returning
+`zrth.lean.inputs.Named(module, {"x": var})`); `@intf.N` works for any
+module. `zrth.lean.inputs.to_surface(text)` turns internal text into this
+spelling. verith prints one `.. --FLAG, in internal names: ...` line per
+claim flag it was given. Everything past the command line (`Claim`,
+`Certificate`, SMT, Lean, LLM replies) still uses the internal
+names below.
+
+### State variable naming in SMT-LIB predicates (internal)
 
 `ctrl` wires are named `s0`, `s1`, … in left-to-right order (matching the
 `vars` list passed to `Module.sequential`).  For tuple/matrix wires, use
@@ -530,14 +557,14 @@ property a run of the module violates is reported as not holding, before any
 solver is started.
 
 ```bash
-uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini -o out/ -p Rea
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer houdini -o out/ -p Rea
 # [houdini] Houdini kept 2 of 2: (<= 0 s0) (<= s0 100)
 # [houdini] ranking function proved: s0
 # [houdini] invariant cut to the 1 of 2 facts its proofs use
 ```
 
 ```bash
-uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= s0 0.0)" \
+uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= (X @intf.0) 0.0)" \
     --infer houdini --houdini-solver vampire --vampire ~/vampire/vampire \
     -o out/ -p Rea
 # [houdini] solver: vampire
@@ -645,7 +672,7 @@ integer coefficients.
 #### What comes back is checked
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py --safety "(<= s0 100)" \
+uv run verith tests/limits/mods/m_countdown.py --safety "(<= (X @intf.0) 100)" \
     --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
 # [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
 # [vampire] template intervals: 2 holes, 409 chars
@@ -664,14 +691,14 @@ project. All three routes that fill a certificate qualify —
 
 ```bash
 # predicates supplied
-uv run verith mymodule.py --buchi "(= s0 0)" --invariant "(<= s0 100)" \
-    --ranking "s0" --build-cert -o out/ -p Counter
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" \
+    --ranking "(X @intf.0)" --build-cert -o out/ -p Counter
 
 # predicates inferred
-uv run verith mymodule.py --buchi "(= s0 0)" --infer --build-cert -o out/ -p Counter
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer --build-cert -o out/ -p Counter
 
 # predicates from ic3ia
-uv run verith mymodule.py --safety "(not (= s0 15))" --build-cert -o out/ -p Counter \
+uv run verith mymodule.py --safety "(not (= (X @intf.0) 15))" --build-cert -o out/ -p Counter \
     --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying
 ```
 
@@ -706,7 +733,7 @@ model-checks the system with ic3ia and renders the inductive invariant it
 finds back as a Lean certificate:
 
 ```bash
-uv run verith mymodule.py --safety "(not (= s0 15))" -o out/ -p Counter \
+uv run verith mymodule.py --safety "(not (= (X @intf.0) 15))" -o out/ -p Counter \
     --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying \
     --ic3ia ~/ic3ia/build/ic3ia
 ```
@@ -861,6 +888,10 @@ A row says:
   and `owns` (project-relative paths it may write).  The route is handed a
   `ProjectHandle`, so these two are the whole of its access, and a route
   that needs more of the project than the predicates says which more.
+* **the input** — `reads_source`: the route is handed the file the module
+  was read from (`InferInput.source`, a `SourceText`) and the names claims
+  may use (`InferInput.names`). A route that does not declare it gets
+  `None` for both.
 * **the hooks** — `resolve` at parse time (a route whose lakefile names a
   path has to reject a bad one before any of the project exists),
   `lakefile(config, project_name)`, the `LakefileParts` (extra `lean_lib`s

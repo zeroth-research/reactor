@@ -18,6 +18,9 @@ module
     #N := Ite (#N, #N, #N)
     X(#N) := Id #N
 
+.. --safety, in internal names: (>= s0 0)
+.. --pre, in internal names: (>= e0 0)
+.. --invariant, in internal names: (>= s0 0)
    init_inv  holds N ms
    step_inv  holds N ms
    inv_imp_P holds N ms

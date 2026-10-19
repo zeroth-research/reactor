@@ -27,7 +27,8 @@ from zrth.lean.cert import (
 )
 from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.common import LeanContext
-from zrth.lean.project import generate_standalone_cert_lean, load_module_from_file
+from zrth.lean.inputs.python import load_module
+from zrth.lean.project import generate_standalone_cert_lean
 
 GOLDEN = Path(__file__).parent / "golden" / "pipeline"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -50,7 +51,7 @@ def _check(name: str, text: str) -> None:
 
 
 def _fixture(name: str) -> Module:
-    return load_module_from_file(str(FIXTURES / f"{name}.py"))
+    return load_module(str(FIXTURES / f"{name}.py"))
 
 
 def _vector_counter() -> Module:
@@ -182,48 +183,48 @@ _AI_REPLIES = {
 RUNS = [
     ("bare", COUNTER, []),
     ("supplied", COUNTER, [
-        "--buchi", "(= s0 0)",
-        "--invariant", "(and (>= s0 0) (<= s0 9))",
-        "--ranking", "(ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)",
+        "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+        "--ranking", "(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)",
         ]),
     ("supplied_pre", BOUNDED, [
-        "--safety", "(>= s0 0)", "--pre", "(>= e0 0)",
-        "--invariant", "(>= s0 0)",
+        "--safety", "(>= (X @intf.0) 0)", "--pre", "(>= (X @extl.0) 0)",
+        "--invariant", "(>= (X @intf.0) 0)",
         ]),
     ("cert_file", COUNTER, [
-        "--buchi", "(= s0 0)",
-        "--invariant", "(and (>= s0 0) (<= s0 9))",
-        "--ranking", "(ite (= s0 0) 0 (- 10 s0))",
+        "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+        "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
         "--cert-file", "{out}/Cert.lean",
     ]),
-    ("unreadable_property", COUNTER, ["--buchi", "(= s0"]),
+    ("unreadable_property", COUNTER, ["--buchi", "(= (X @intf.0)"]),
     ("smt_linear", COUNTDOWN, [
-        "--buchi", "(= s0 0)", "--invariant", "(and (>= s0 0) (<= s0 100))",
+        "--buchi", "(= (X @intf.0) 0)", "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))",
         "--infer", "smt-linear", ]),
     ("houdini", COUNTDOWN, [
-        "--safety", "(<= s0 100)", "--infer", "houdini",
+        "--safety", "(<= (X @intf.0) 100)", "--infer", "houdini",
         ]),
     ("nuterm", COUNTDOWN, [
-        "--buchi", "(= s0 0)", "--infer", "nuterm",
+        "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
         ]),
     ("nuterm_pre", BOUNDED, [
-        "--safety", "(>= s0 0)", "--pre", "(>= e0 0)", "--infer", "nuterm",
+        "--safety", "(>= (X @intf.0) 0)", "--pre", "(>= (X @extl.0) 0)", "--infer", "nuterm",
         ]),
     ("ai_cegis_fixed", COUNTER, [
-        "--buchi", "(= s0 0)",
-        "--invariant", "(and (>= s0 0) (<= s0 9))",
-        "--ranking", "(ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)",
+        "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+        "--ranking", "(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)",
         "--infer", "ai-cegis", ]),
     ("ai", COUNTER, [
-        "--buchi", "(= s0 0)", "--infer", "ai",
+        "--buchi", "(= (X @intf.0) 0)", "--infer", "ai",
         ]),
     ("sygus", COUNTDOWN, [
-        "--safety", "(<= s0 100)", "--infer", "sygus",
+        "--safety", "(<= (X @intf.0) 100)", "--infer", "sygus",
         ]),
     # A short declared limit: Vampire answers this one in about a second
     # under 10 and in about six under the default 120.
     ("vampire", COUNTDOWN, [
-        "--safety", "(<= s0 100)", "--infer", "vampire",
+        "--safety", "(<= (X @intf.0) 100)", "--infer", "vampire",
         "--vampire-timeout", "10",
         ]),
 ]
