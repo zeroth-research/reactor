@@ -22,7 +22,6 @@ and a `lean-ltl-certifying` checkout.
 |---|---|
 | `probes.py` | the probe table: `(module, safety property, expected verdict)`, plus the modules the encoding refuses and why |
 | `run_fbk.py` | the runner — strictly sequential, one probe at a time |
-| `lean-smt-bug.md` | a reproducer for the one upstream bug the sweep found in `lean-smt`'s proof reconstruction |
 
 ---
 
@@ -160,10 +159,10 @@ synthesise the bound), relational over two state variables, nonlinear,
 `ite`-in-the-property, and false-but-only-refutable-after-100-steps.
 `probes.py::HARDER` goes one step further — a coupling between two state
 components, a parity argument asked as an implication, a linear combination
-of two counters, three-way band splits — and is what
-[`lean-smt-bug.md`](lean-smt-bug.md)'s narrowing came out of: `Step2Odd`
-and `NiS2Odd3` ask the same parity question of the same module and land on
-opposite sides of the `sum_ub` bug.
+of two counters, three-way band splits — and is what narrowed the
+lean-smt `sum_ub` bug (its reproducer is in [`TODO.md`](../../../../TODO.md)):
+`Step2Odd` and `NiS2Odd3` ask the same parity question of the same module
+and land on opposite sides of it.
 
 ### `run_fbk_limits.py`: the whole limit matrix, as a measurement
 
@@ -185,54 +184,18 @@ Of the 18 refusals, 11 are `Real` state, 4 external input wires, 2 an op
 `smt_encode` has no term for (`Transpose`, `Uninterpreted`), and 1 a
 property outside the Bool fragment (`mod`).
 
-The previous run of the same sweep certified 40 cases and refused 30.  What
-moved is the multi-element ctrl wire restriction and the op allowlist that
-went with it: `m_mixed`, `m_relu_vec`, `m_relu_net`, `m_relu_net8`,
-`m_relu_net16`, `m_max`, `m_min` and `m_argmax` all certify now, and the
-two `m_vec32` cases changed from `abort` to `lean-fail` — they encode, and
-ic3ia proves them, but checking the certificate for a 32-slot model runs
-out of Lean heartbeats (200000) in `whnf`.  The `m_relu` cases changed from
-`lean-fail` to `certified`, because the transition no longer spells a ReLU
-`Max.max`.
+The two `m_vec32` cases are `lean-fail`: they encode, and ic3ia proves
+them, but checking the certificate for a 32-slot model runs out of Lean
+heartbeats (200000) in `whnf`.
 
 ### What the sweep found
 
-Two of the four obstacles it turned up have since been fixed; these are
-the standing ones.
-
-1. **`mod` stops at the witness, not the model** (`InvMod`, `abort`).
-   `lean2vmt` does translate `%`, and ic3ia proves such a property — but
-   MathSAT eliminates the mod from the *witness*, returning
-   `x + (-2) * to_int ((1/2) * to_real x) = 0`, and `vmt2lean.py` renders
-   neither `to_real`/`to_int` nor a Real inside a `Bool`-valued `INVAR`.
-   `smt_to_lean_bool` therefore refuses `INTS_MODULUS` at the front of the
-   pipeline, where the message can say why rather than dying inside
-   `vmt2lean`.
-
-2. **`lean-smt` miscompiles a `sum_ub` proof** (`NiS2Odd3`, `lean-fail`).
-   The step returns an equality where a `≤` is wanted, and the kernel
-   rejects the term.  Standalone reproducer in
-   [`lean-smt-bug.md`](lean-smt-bug.md), narrowed there to the exact
-   shape: an equality *disjunct* in the hypothesis, a *disequality* goal,
-   and that disequality on the variable the linear equation defines.  The
-   VMT and the certificate are correct; only the tactic fails.  `Step2Odd`
-   asks the same parity question of the same module without a disequality
-   and certifies, which is both the evidence for the narrowing and the
-   workaround.
-
-   The file's *second* symptom — `Max` tripping universe-level
-   bookkeeping — no longer fires on this route: the NA encoding takes its
-   transition from `smt_encode`, where a ReLU is an `ite`, so no `Max`
-   reaches Lean.  `ReluTrans` certifies.  The upstream bug is unfixed.
-
-3. **Nonlinear ⇒ `unknown`** (`NonlinLexMul`).  Expected: ic3ia is IC3 with
-   implicit predicate abstraction over *linear* arithmetic.  The route
-   aborts cleanly.
-
-Fixed since: a trivially safe property produced an uncompilable
-certificate (two `vmt2lean` template bugs plus a tactic that ran past a
-closed goal), and `Ne`/`ReLU`/`Max`/`Min` were emitted as unapplied
-leaves by `lean2vmt`.  `InvTrue` and `MixedBoolInt` cover the first,
-`ReluTrans` the second.
+Two obstacles are upstream and still open, and both are in
+[`TODO.md`](../../../../TODO.md): `vmt2lean.py` cannot render the witness
+MathSAT gives for a `mod` property (`InvMod`, `abort`), and lean-smt's
+reconstruction of a `sum_ub` step fails in the kernel (`NiS2Odd3`,
+`lean-fail`). A third is expected: `NonlinLexMul` comes back `unknown`,
+because ic3ia is IC3 with implicit predicate abstraction over *linear*
+arithmetic, and the route aborts cleanly.
 
 [ltl]: https://github.com/zeroth/proof-prototyping
