@@ -55,6 +55,11 @@ def render_certificate(
 ) -> LeanPredicates:
     """The one place certificate predicates are printed as Lean.
 
+    `share=False` prints repeated subterms in full instead of `let`-binding
+    them, which Lean reads the same once `simp` has zeta-reduced the
+    `let`s; it is for reading a definition, not for proving with it.
+    `verbatim` is an answer that is Lean already; its `inv` and `ranking`
+    are taken as they are.
     """
 
     msmt = q.msmt
@@ -93,11 +98,11 @@ def prepare(
     """`q`'s certificate as codegen takes it: the predicates printed, the
     facts their terms give, `hints`, and the text of a `verbatim` answer.
 
-    The one place the printing is chosen. A condition the hints settle is
-    spliced into a tactic in expanded form, and a `have` outside a
-    definition cannot name a `let` inside it, so with such hints every
-    definition is printed unshared -- a condition can come from any of
-    them.
+    The definitions are printed shared whatever the hints settle: a
+    settled condition is spliced into a tactic in expanded form, and it
+    still matches the `if` it settles, because `simp_defs` unfolds the
+    definitions with `simp`'s default `zeta`, which substitutes the `let`s
+    away before the hint's `if_pos` runs.
     """
 
     floors: list[str] = []

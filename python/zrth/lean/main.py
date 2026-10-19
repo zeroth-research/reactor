@@ -88,6 +88,7 @@ from pathlib import Path
 from .cert import (
     LeanCertificate,
     generate_zeroth_hammer_lean,
+    prepare,
 )
 from .certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
