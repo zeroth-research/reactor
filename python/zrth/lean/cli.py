@@ -28,7 +28,8 @@ from .infer_route import (
     route_by_name,
     route_names,
 )
-from .smt_query import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
+from .magic.llm import DEFAULT_MODEL
+from .smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 _EPILOG = """\
 examples:
@@ -89,11 +90,10 @@ examples:
 """
 
 
-# One row per predicate flag: the `CertificateData` field it fills (which is
-# what a route's `seeds` set is written in), the `Settings` attribute that
-# carries it, and the flag to name in a refusal. The first two differ for
-# `inv`, which is why the attribute is in the table rather than patched at
-# the one place that reads it.
+# One row per predicate flag: the seed it supplies, as a route's `seeds`
+# names it; the `Settings` attribute that carries it; and the flag to name
+# in a refusal. The first two differ for `inv`, which is why the attribute
+# is in the table rather than patched at the one place that reads it.
 _SEED_FLAGS: tuple[tuple[str, str, str], ...] = (
     ("inv", "invariant", "--invariant"),
     ("ranking", "ranking", "--ranking"),
@@ -283,8 +283,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--model",
-        default="claude-sonnet-4-6",
-        help="LLM model to use for inference (default: claude-sonnet-4-6).",
+        default=DEFAULT_MODEL,
+        help=f"LLM model to use for inference (default: {DEFAULT_MODEL}).",
     )
     parser.add_argument(
         "--base-url",

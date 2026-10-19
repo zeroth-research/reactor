@@ -39,8 +39,8 @@ shapes below are chosen from:
 holds it.**  Measured: `tlimit` alone does *not* stop `checkSynth` (a 1000 ms
 limit ran 13.9 s and returned a solution) and does not stop a quantified
 `checkSat` either (a 20 s limit ran past 400 s); `tlimit-per` stops both
-(1001 ms and 5007 ms, `unknown`).  `smt_query._solver` already sets the
-pair, and :func:`bounded_solver` is the same pair for the searches here.
+(1001 ms and 5007 ms, `unknown`).  `smt.limits.bounded_solver` sets the
+pair, for these searches and for the obligation queries alike.
 """
 
 from __future__ import annotations
@@ -48,8 +48,13 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from fractions import Fraction
+from typing import TYPE_CHECKING
 
+from .certificate import Claim
 from .common import Refused
+from .smt.record import found, note
+from .smt.script import decimals, smt_int, smt_lit
+from .smt.terms import free_constants, literals, nodes
 
 try:
     import cvc5                                      # type: ignore
@@ -57,6 +62,9 @@ try:
 except ImportError:                                  # pragma: no cover
     cvc5 = None
     Kind = None
+
+if TYPE_CHECKING:
+    from .smt.obligations import Obligations
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -68,19 +76,33 @@ except ImportError:                                  # pragma: no cover
 class SynthContext:
     """One module and its property in cvc5, for a search over shapes.
 
-    The same front end the prompt routes use (`ModuleSMT` under
-    `CegarPromptEnv`), for the same reason: the property arrives as SMT-LIB
-    over ``s0..sN-1`` and that is the namespace every predicate this package
-    reads or writes is in, so a certificate found here is in it too.
+    Stated over the run's `smt.run.ModuleEncoding`, the front end the
+    pre-check and the prompt routes read predicates through: the property
+    arrives as SMT-LIB over ``s0..sN-1`` and that is the namespace every
+    predicate this package reads or writes is in, so a certificate found
+    here is in it too.
     """
 
-    module: object
-    tm: object
-    msmt: object
-    env: object
+    enc: object
     prp: object
     init_pre: object
     update_pre: object
+
+    @property
+    def module(self):
+        return self.enc.module
+
+    @property
+    def tm(self):
+        return self.enc.tm
+
+    @property
+    def msmt(self):
+        return self.enc.msmt
+
+    @property
+    def env(self):
+        return self.enc.env
 
     @property
     def state(self) -> list:
@@ -99,9 +121,10 @@ class SynthContext:
         return [f"s{i}" for i in range(len(self.state))]
 
     @classmethod
-    def build(cls, module, cd, *, route: str,
+    def build(cls, source, claim: Claim, *, route: str,
               takes: tuple[str, ...] = ("int", "bool", "bv")) -> "SynthContext":
         """The context, or the reason this module is not one `route` reads.
+        `source` is the module, its encoding or a `smt.run.lazy` factory.
 
         ``takes`` is the route's contract, as :data:`READING_KINDS`, and it
         is the same tuple :func:`readings` is given -- a route that declines
@@ -122,17 +145,14 @@ class SynthContext:
                 f"--infer {route} needs the `cvc5` package, which is not "
                 f"importable. Install with: uv pip install cvc5"
             )
-        from .smt_module import ModuleSMT, keep_alive
-        from .smt_prompt import CegarPromptEnv, parse_predicate
+        from .smt.run import encoding_of
 
-        if not isinstance(cd.prp, str):
+        if claim.prp is None:
             raise Refused(
                 f"--infer {route} needs a property: pass --safety or --buchi"
             )
-        tm = cvc5.TermManager()
-        msmt = ModuleSMT(tm=tm, module=module)
-        env = CegarPromptEnv(msmt)
-        keep_alive(tm, msmt, env)
+        enc = encoding_of(source)
+        env = enc.env
 
         bad = [
             f"s{i} is {sort}"
@@ -154,51 +174,33 @@ class SynthContext:
                 f"cannot: {', '.join(bad)}. {why}{shaped}"
                 f"Use --infer ai-cegis."
             )
-        # The transition, encoded once here rather than lazily by whichever
-        # route first builds an obligation out of it. A module with an
-        # operator cvc5 has no term for -- `Transpose`, say -- is a refusal
-        # either way, but raised from the middle of a search it is a
-        # `ValueError` traceback several steps past the fact, for a user who
-        # asked about a module. Named up front instead, which is what
-        # `native.lean_gaps` does for the Lean side.
+        # The transition, asked for here rather than by whichever route
+        # first builds an obligation out of it. A module with an operator
+        # cvc5 has no term for -- `Transpose`, say -- is a refusal either way,
+        # but raised from the middle of a search it is a `ValueError`
+        # traceback several steps past the fact, for a user who asked about
+        # a module. Named up front instead, which is what `native.lean_gaps`
+        # does for the Lean side.
         try:
-            msmt.init_state(env.extl_next_vars)
-            msmt.update_state(env.state_vars, env.extl_latched_vars,
-                              env.extl_next_vars)
+            enc.init_state(enc.extl_next)
+            enc.next_state(enc.state, enc.extl_latched, enc.extl_next)
         except ValueError as e:
             raise Refused(
                 f"--infer {route} encodes this module's transition for cvc5, "
                 f"and an operator in it has no encoding. {e}"
             ) from e
-        true = tm.mkBoolean(True)
+        true = enc.tm.mkBoolean(True)
         return cls(
-            module=module,
-            tm=tm,
-            msmt=msmt,
-            env=env,
-            prp=parse_predicate(env, cd.prp),
-            init_pre=(parse_predicate(env, cd.init_pre)
-                      if isinstance(cd.init_pre, str) else true),
-            update_pre=(parse_predicate(env, cd.update_pre)
-                        if isinstance(cd.update_pre, str) else true),
+            enc=enc,
+            prp=enc.parse(claim.prp,
+                          "--safety" if claim.is_safety else "--buchi"),
+            init_pre=(enc.parse(claim.init_pre, "--pre")
+                      if claim.init_pre is not None else true),
+            update_pre=(enc.parse(claim.update_pre, "--pre")
+                        if claim.update_pre is not None else true),
         )
 
     # --- terms the searches build on ------------------------------------
-
-    def at(self, term, vs: list):
-        """`term` with the state variables replaced by `vs`."""
-        return term.substitute(self.state, vs)
-
-    def with_inputs(self, term, el: list, en: list):
-        """`term` with the env's input constants replaced by `el` / `en`.
-
-        A precondition is written over `e0..`/`el0..`, which are constants of
-        the parsing env; an obligation quantifies its own, so the two have to
-        be brought together exactly as `magic.cegar._subst_inputs` does it.
-        """
-        old = list(self.extl_next) + list(self.extl_latched)
-        new = list(en) + list(el)
-        return term.substitute(old, new) if old else term
 
 
 @dataclass(frozen=True)
@@ -286,6 +288,41 @@ def element(ctx: "SynthContext", i: int, slot: "int | None") -> tuple:
     ctor = ctx.env.state_sorts[i].getDatatype()[0]
     return (f"((_ tuple.select {slot}) s{i})",
             ctx.tm.mkTerm(Kind.APPLY_SELECTOR, ctor[slot].getTerm(), var))
+
+
+@dataclass(frozen=True)
+class Column:
+    """One scalar a candidate or a ranking function may be stated over.
+
+    A scalar component is its own column. A matrix-shaped one is a column
+    per element -- `((_ tuple.select k) s0)`, the spelling `smt_to_lean`
+    renders and a property already uses -- which is what lets a fact be
+    said about `v[0]` when the component it lives in is a 3-vector. Without
+    it the only sayable facts are about the whole tuple, and there are
+    none: a tuple has no order to bound and no arithmetic to relate.
+
+    `sort` is the *element's*, never the component's, because everything
+    downstream branches on it -- an integer column is bounded by program
+    constants, a Real one by rationals and pinned to the values a run
+    takes, a Bool one splits a fact in two.
+    """
+
+    src: str                        # SMT-LIB over `s0..`
+    sort: object                    # the element's cvc5 sort
+    index: int                      # which component it reads
+    slot: "int | None"              # which element of it, or the whole thing
+
+    def at(self, state):
+        """This column's value in a simulated state."""
+        v = state[self.index]
+        return v if self.slot is None else v[self.slot]
+
+
+def columns(ctx: "SynthContext") -> list[Column]:
+    """Every scalar this module's state is made of, in certificate order."""
+    return [Column(element(ctx, i, slot)[0], srt, i, slot)
+            for i in range(len(ctx.state))
+            for slot, srt in component_slots(ctx, i)]
 
 
 def component_readings(ctx: "SynthContext", i: int, *, scale: int = 1,
@@ -399,6 +436,47 @@ def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
     return out
 
 
+# The most branch conditions `split_conditions` offers.
+_MAX_SPLITS = 24
+
+
+def split_conditions(ctx: "SynthContext", ob: "Obligations") -> list[str]:
+    """What a piecewise ranking function may branch on, as SMT-LIB over `s0..`.
+
+    First the comparisons the property and the transition branch on -- where
+    a run changes what it does, and so where the quantity that falls changes
+    too -- then each Bool column, the sign of each integer one, and the
+    order of each pair: `max(y, z) - x` falls on `while (x < y) {x++; y = z}`
+    and is `(ite (<= y z) (- z x) (- y x))`, a branch the program never
+    spells.
+    """
+    out: list[str] = []
+    state = set(ctx.names)
+    roots = [ctx.prp] + [t.substitute(ob.s, ctx.state) for t in ob.next]
+    # In this order: the list is cut at `_MAX_SPLITS`.
+    for t in nodes(roots, order="lifo"):
+        k = t.getKind()
+        kids = list(t)
+        if k in (Kind.LT, Kind.LEQ, Kind.GT, Kind.GEQ) or (
+            k == Kind.EQUAL and kids
+            and (kids[0].getSort().isInteger() or kids[0].getSort().isReal())
+        ):
+            if set(free_constants([t])) <= state:
+                out.append(decimals(str(t)))
+    cols = columns(ctx)
+    ints = [c for c in cols if c.sort.isInteger()]
+    reals = [c for c in cols if c.sort.isReal()]
+    for col in cols:
+        if col.sort.isBoolean():
+            out.append(col.src)
+        else:
+            out.append(f"(<= {smt_lit(0, col.sort)} {col.src})")
+    for group in (ints, reals):
+        out += [f"(<= {x.src} {y.src})"
+                for a, x in enumerate(group) for y in group[a + 1:]]
+    return list(dict.fromkeys(out))[:_MAX_SPLITS]
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # Grammar and template material
 # ══════════════════════════════════════════════════════════════════════════
@@ -425,16 +503,9 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
     """
     seen: set[int] = set(_BASE_CONSTANTS)
     roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
-    roots += list(ctx.msmt.init_state(ctx.extl_next))
-    roots += list(ctx.msmt.update_state(ctx.state, ctx.extl_latched, ctx.extl_next))
-    stack = list(roots)
-    visited: set[int] = set()
-    while stack:
-        t = stack.pop()
-        key = t.getId() if hasattr(t, "getId") else id(t)
-        if key in visited:
-            continue
-        visited.add(key)
+    roots += ctx.enc.init_state(ctx.extl_next)
+    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
+    for t in literals(roots):
         if t.getKind() == Kind.CONST_INTEGER:
             value = int(t.getIntegerValue())
             if abs(value) <= _CONSTANT_LIMIT:
@@ -455,7 +526,6 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
                 # for a space that should not have been that one.
                 near = {value, value - 1, value + 1}
                 seen.update(near | {-v for v in near})
-        stack.extend(list(t))
     out = sorted(seen, key=lambda v: (abs(v), v))[:_CONSTANT_COUNT]
     return tuple(sorted(out))
 
@@ -469,17 +539,10 @@ def program_rationals(ctx: SynthContext) -> tuple:
     here instead.
     """
     roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
-    roots += list(ctx.msmt.init_state(ctx.extl_next))
-    roots += list(ctx.msmt.update_state(ctx.state, ctx.extl_latched,
-                                        ctx.extl_next))
+    roots += ctx.enc.init_state(ctx.extl_next)
+    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
     seen: set = set()
-    visited: set = set()
-    stack = list(roots)
-    while stack:
-        t = stack.pop()
-        if t.getId() in visited:
-            continue
-        visited.add(t.getId())
+    for t in literals(roots):
         if t.getKind() == Kind.CONST_RATIONAL:
             q = t.getRealValue()
             if abs(q) <= _CONSTANT_LIMIT:
@@ -487,7 +550,6 @@ def program_rationals(ctx: SynthContext) -> tuple:
                 # neighbours, since the bound is usually one step past the
                 # guard's own constant.
                 seen.update({q, q - 1, q + 1, -q, 1 - q, -1 - q})
-        stack.extend(list(t))
     return tuple(sorted(seen)[:32])
 
 
@@ -528,41 +590,9 @@ def moduli(constants: tuple[int, ...]) -> tuple[int, ...]:
     return tuple(sorted(ks))
 
 
-def bounded_solver(tm, budget, **options):
-    """A solver on this run's leash, with `options` set before the logic.
-
-    Both limits, because only one of them binds what these routes run:
-    `tlimit` does not stop `checkSynth` or a quantified `checkSat`, and
-    `tlimit-per` stops both. `smt_query._solver` sets the same pair for the
-    obligation queries.
-    """
-    solver = cvc5.Solver(tm)
-    limit = _limit_ms(budget)
-    solver.setOption("tlimit-per", str(limit))
-    solver.setOption("tlimit", str(limit))
-    for name, value in options.items():
-        solver.setOption(name.replace("_", "-"), value)
-    return solver
-
-
-def _limit_ms(budget) -> int:
-    """How long the next query may take, from the run's budget."""
-    if budget is None:
-        from .smt_query import DEFAULT_CALL_MS
-
-        return DEFAULT_CALL_MS
-    return max(1, budget.next_call_ms())
-
-
 # ══════════════════════════════════════════════════════════════════════════
 # SMT-LIB out
 # ══════════════════════════════════════════════════════════════════════════
-
-
-def smt_int(value: int) -> str:
-    """An integer literal. SMT-LIB has no negative numerals, so one is a negation."""
-    value = int(value)
-    return str(value) if value >= 0 else f"(- {-value})"
 
 
 def affine_smt(const: int, coeffs, names) -> str:
@@ -667,23 +697,19 @@ class Search:
         )
 
 
-def record(store, search: Search, *, log=None) -> None:
+def record(store, search: Search) -> None:
     """Leave `search` in `artifacts/` for the next run.
 
-    A found predicate is written as its own role, in SMT-LIB and with the
-    status that makes it resumable -- `infer_route.FIXABLE` is what a later
-    `--infer ai-cegis` will take as given. An empty space is written as a
-    note, because what it is worth is what it *says*, and `no_solution` is
-    the status that tells a consumer the saying was proved.
+    A found predicate is written as its own role (`smt.record.found`). An
+    empty space is written as a note, because what it is worth is what it
+    *says*, and `no_solution` is the status that tells a consumer the
+    saying was proved.
     """
-    if store is None:
-        return
     if search.found is not None:
-        store.put(
+        found(
+            store,
             search.field,
             search.found,
-            status="proved",
-            language="smt",
             what=(
                 f"The {search.field} this run found. {search.space} It "
                 f"satisfies the obligations by construction: cvc5 answered "
@@ -692,7 +718,8 @@ def record(store, search: Search, *, log=None) -> None:
             ),
         )
         return
-    store.note(
+    note(
+        store,
         search.note + "\n",
         status="no_solution" if search.exhausted else "unknown",
         what=(

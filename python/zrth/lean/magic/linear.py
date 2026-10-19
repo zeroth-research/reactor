@@ -86,25 +86,32 @@ what answered.
 
 from __future__ import annotations
 
-from ..cert import CertificateData
+from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
 from dataclasses import dataclass
 
-from ..houdini_solver import decimals
-from ..smt_prompt import parse_predicate
-from .houdini import Obligations, split_conditions
+from ..smt.limits import bounded_solver, call_ms
+from ..smt.script import decimals
+from ..smt.obligations import (
+    Frame,
+    Obligations,
+    init_inv,
+    inv_imp_P,
+    ranked,
+    step_inv,
+)
 from ..smt_synth import (
     Search,
     SynthContext,
     affine_smt,
-    bounded_solver,
     conjunction_smt,
     denominator_scale,
     program_constants,
     program_rationals,
     readings,
     record,
+    split_conditions,
 )
 
 try:
@@ -191,6 +198,14 @@ class _RankShape:
         return f"linear in the state -- {lin}, integer coefficients, no branching"
 
 
+def _frame(ctx: SynthContext, st, el, en) -> Frame:
+    """The obligations' frame over `st`, `el` and `en`: bound variables for
+    the quantified query, a sample's values or a counterexample's constants
+    for the loop."""
+    return Frame.over(ctx.enc, st, el, en, init_pre=ctx.init_pre,
+                      update_pre=ctx.update_pre)
+
+
 def _shape(names, prefix: str = "c") -> str:
     """The template as a person would write it: `c0 + c1*s0 + c2*s1`.
 
@@ -232,14 +247,17 @@ class TA2MagicLinear(TA2Magic):
         budget=None,
         artifacts=None,
         log=print,
+        encoding=None,
     ):
-        super().__init__("")
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
                 "--infer smt-linear needs the `cvc5` package, which is not "
                 "importable. Install with: uv pip install cvc5"
             )
         self.module = module
+        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
         self.rows = max(1, int(rows))
         self.budget = budget
         self.artifacts = artifacts
@@ -247,29 +265,32 @@ class TA2MagicLinear(TA2Magic):
 
     # --- driver ---------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
-        ctx = SynthContext.build(self.module, cd, route="smt-linear",
-                                 takes=READS)
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. `given.inv` is kept: the
+        rows strengthen it for `--safety` and the rank is searched under it
+        for `--buchi`."""
+        ctx = SynthContext.build(self.encoding or self.module, claim,
+                                 route="smt-linear", takes=READS)
         scale = denominator_scale(program_rationals(ctx))
         cols = readings(ctx, allow=READS, route="smt-linear", scale=scale)
         self.log(f"[smt-linear] columns: {', '.join(c.name for c in cols)}")
         if scale != 1:
             self.log(f"[smt-linear] Real state: read through a floor after "
                      f"scaling by {scale}")
-        if cd.is_safety:
-            search = self._safety(ctx, cols, cd)
+        inv = given.inv if given.inv and given.inv.strip() else None
+        if claim.is_safety:
+            search = self._safety(ctx, cols, inv)
             if search.found is not None:
                 self.log(f"[smt-linear] inv: {search.found}")
-            record(self.artifacts, search, log=self.log)
+            record(self.artifacts, search)
             if search.found is None:
                 raise Refused(
                     f"--infer smt-linear found no invariant. {search.note}",
                     searched=True)
-            cd.inv = cd.inv_smt = search.found
-            return cd
+            return Certificate(inv=search.found)
 
-        given = cd.inv if isinstance(cd.inv, str) and cd.inv.strip() else None
-        if given is None:
+        if inv is None:
             # Said rather than assumed: a rank that has to hold in *every*
             # state is a much harder ask than one over a real invariant, so
             # the rank is searched under `true` first and the invariant
@@ -279,23 +300,21 @@ class TA2MagicLinear(TA2Magic):
                 "none resumed): searching under `true` first, then for an "
                 "invariant to rank under"
             )
-        search, inv_src = self._buchi(ctx, cols, given, cd)
+        search, inv_src = self._buchi(ctx, cols, inv, claim)
         if search.found is not None:
             self.log(f"[smt-linear] inv: {inv_src}")
             self.log(f"[smt-linear] ranking: {search.found}")
-        record(self.artifacts, search, log=self.log)
+        record(self.artifacts, search)
         if search.found is None:
             raise Refused(
                 f"--infer smt-linear found no ranking function. {search.note}",
                 searched=True,
             )
-        cd.inv = cd.inv_smt = inv_src
-        cd.ranking = cd.ranking_smt = search.found
-        return cd
+        return Certificate(inv_src, search.found)
 
     # --- the ranking function, and the invariant it ranks under ---------
 
-    def _shapes(self, ctx: SynthContext, cd: CertificateData) -> list:
+    def _shapes(self, ctx: SynthContext, claim: Claim) -> list:
         """The rank shapes to try, simplest first: linear, then two with a branch.
 
         Linear comes first and at every invariant width before anything with
@@ -310,12 +329,12 @@ class TA2MagicLinear(TA2Magic):
           property's state has no linear rank and has this one:
           `(ite (= s0 0) 0 (- 11 s0))` on `m_step2`.
         * **two pieces**, `(ite c r1 r2)`, `c` one of the conditions the
-          property and the transition branch on (`houdini.split_conditions`),
+          property and the transition branch on (`smt_synth.split_conditions`),
           for a rank that falls through a different quantity on each side --
           `(ite (<= 0 s1) s0 (- s1))`.
         """
         shapes = [_RankShape("linear")]
-        prp_src = cd.prp.strip() if isinstance(cd.prp, str) else ""
+        prp_src = claim.prp.strip() if isinstance(claim.prp, str) else ""
         if not prp_src.startswith("("):
             # A property written in Python syntax: the rank is SMT-LIB, so the
             # branch is the property as cvc5 prints it.
@@ -328,8 +347,8 @@ class TA2MagicLinear(TA2Magic):
             conds = []
         for src in conds[:MAX_SPLITS]:
             try:
-                term = parse_predicate(ctx.env, src)
-            except Exception:                       # pragma: no cover
+                term = ctx.enc.parse(src, "--infer smt-linear")
+            except Refused:                         # pragma: no cover
                 continue
             shapes.append(_RankShape("split", cond_src=src, cond=term))
         return shapes
@@ -387,33 +406,30 @@ class TA2MagicLinear(TA2Magic):
 
         def rank(vs):
             if shape.kind == "split":
-                return tm.mkTerm(Kind.ITE, ctx.at(shape.cond, vs),
+                return tm.mkTerm(Kind.ITE, ctx.enc.at(shape.cond, vs),
                                  affine(cs[0], vs), affine(cs[1], vs))
             return affine(cs[0], vs)
 
         def build(st, el, en):
-            nxt = ctx.msmt.update_state(st, el, en)
+            f = _frame(ctx, st, el, en)
+            nxt = f.succ
             drops = tm.mkTerm(Kind.LT, rank(nxt), rank(st))
             if shape.kind == "zeroed":
                 # `(ite P 0 r)` at a successor where `P` holds is 0, below the
                 # `r >= 1` the round starts from: only a round that stays
                 # outside `P` has to fall.
-                drops = tm.mkTerm(Kind.OR, ctx.at(ctx.prp, nxt), drops)
-            falls = tm.mkTerm(
-                Kind.IMPLIES,
-                tm.mkTerm(Kind.AND, inv(st),
-                          tm.mkTerm(Kind.NOT, ctx.at(ctx.prp, st)),
-                          ctx.with_inputs(ctx.update_pre, el, en)),
+                drops = tm.mkTerm(Kind.OR, f.at(ctx.prp, nxt), drops)
+            falls = ranked(
+                f, [("inv", inv)], ctx.prp,
                 tm.mkTerm(Kind.AND,
                           tm.mkTerm(Kind.GEQ, rank(st), tm.mkInteger(1)),
                           drops),
-            )
+            ).implication(tm)
             if not k:
                 # Nothing to make inductive: the invariant is whatever was
                 # supplied, which the caller has not been asked to prove.
                 return falls
-            return tm.mkTerm(Kind.AND,
-                             *self._inductive(ctx, inv, st, el, en), falls)
+            return tm.mkTerm(Kind.AND, *self._inductive(ctx, inv, f), falls)
 
         verdict = self._decide(
             ctx, _Template(unknowns=rows + [x for c in cs for x in c], build=build))
@@ -436,7 +452,7 @@ class TA2MagicLinear(TA2Magic):
         return (inv_src, rank_src), verdict
 
     def _buchi(self, ctx: SynthContext, cols: list, given: "str | None",
-               cd: CertificateData) -> tuple[Search, str]:
+               claim: Claim) -> tuple[Search, str]:
         """The rank, and the invariant it ranks under, widening the invariant.
 
         Width 0 is the rank under `given` alone, which is the whole of what
@@ -453,7 +469,7 @@ class TA2MagicLinear(TA2Magic):
         """
         names = [col.name for col in cols]
         inv_src = given or "true"
-        shapes = self._shapes(ctx, cd)
+        shapes = self._shapes(ctx, claim)
         # Per shape: the widest invariant it was decided empty under (-1 for
         # none yet), and whether a query about it went unanswered.
         decided = {i: -1 for i in range(len(shapes))}
@@ -551,7 +567,7 @@ class TA2MagicLinear(TA2Magic):
     # --- the invariant, one row at a time -------------------------------
 
     def _safety(self, ctx: SynthContext, cols: list,
-                cd: CertificateData) -> Search:
+                given: "str | None") -> Search:
         """`init -> inv`, `inv -> inv'`, `inv -> P`, over conjunctions of rows.
 
         A supplied invariant is not replaced but *strengthened*: it is the
@@ -564,7 +580,6 @@ class TA2MagicLinear(TA2Magic):
         in 30 s. Each `unsat` on the way is a fact worth keeping, and the
         widest one reached is what the note is allowed to claim.
         """
-        given = cd.inv if isinstance(cd.inv, str) and cd.inv.strip() else None
         if given:
             self.log(f"[smt-linear] strengthening the given invariant: {given}")
         decided, how, caveat = 0, _HOW_QUANTIFIED, ""
@@ -589,13 +604,11 @@ class TA2MagicLinear(TA2Magic):
         it, and both conjoin it to whatever `--invariant` or a resumed
         artifact already supplied.
         """
-        from ..smt_prompt import parse_predicate
-
         tm, n = ctx.tm, len(cols)
         Int = tm.getIntegerSort()
         rows = [[tm.mkConst(Int, f"a{j}_{i}") for i in range(n + 1)]
                 for j in range(k)]
-        given_term = parse_predicate(ctx.env, given) if given else None
+        given_term = ctx.enc.parse(given, "--invariant") if given else None
 
         def inv(vs):
             parts = []
@@ -616,25 +629,15 @@ class TA2MagicLinear(TA2Magic):
 
         return [x for row in rows for x in row], inv
 
-    def _inductive(self, ctx: SynthContext, inv, st, el, en) -> tuple:
+    def _inductive(self, ctx: SynthContext, inv, f: Frame) -> tuple:
         """`init -> inv` and `inv /\\ pre -> inv'`.
 
         The two obligations an invariant owes whatever it is *for*. Implying
         the property is `_safety_at`'s third; ranking under it is
         `_buchi_at`'s.
         """
-        tm = ctx.tm
-        return (
-            tm.mkTerm(Kind.IMPLIES,
-                      ctx.with_inputs(ctx.init_pre, el, en),
-                      inv(ctx.msmt.init_state(en))),
-            tm.mkTerm(
-                Kind.IMPLIES,
-                tm.mkTerm(Kind.AND, inv(st),
-                          ctx.with_inputs(ctx.update_pre, el, en)),
-                inv(ctx.msmt.update_state(st, el, en)),
-            ),
-        )
+        return (init_inv(f, [inv]).implication(ctx.tm),
+                step_inv(f, [("inv", inv)], [inv]).implication(ctx.tm))
 
     def _rows_smt(self, cols: list, given: "str | None", values, k: int) -> str:
         """The solved rows as SMT-LIB, conjoined to `given`."""
@@ -660,10 +663,11 @@ class TA2MagicLinear(TA2Magic):
         flat, inv = self._inv_rows(ctx, cols, given, k)
 
         def build(st, el, en):
+            f = _frame(ctx, st, el, en)
             return tm.mkTerm(
                 Kind.AND,
-                *self._inductive(ctx, inv, st, el, en),
-                tm.mkTerm(Kind.IMPLIES, inv(st), ctx.at(ctx.prp, st)),
+                *self._inductive(ctx, inv, f),
+                inv_imp_P(f, [("inv", inv)], ctx.prp).implication(tm),
             )
 
         verdict = self._decide(ctx, _Template(unknowns=flat, build=build))
@@ -748,7 +752,7 @@ class TA2MagicLinear(TA2Magic):
     def _quantified(self, ctx: SynthContext, tpl: _Template) -> _Verdict:
         """`exists c. forall s, inputs. obligations(c)`, in one call."""
         tm = ctx.tm
-        solver = bounded_solver(tm, self.budget, produce_models="true")
+        solver = bounded_solver(tm, call_ms(self.budget), produce_models="true")
         solver.setLogic("ALL")
         st, el, en = self._bound_vars(ctx)
         body = tpl.build(st, el, en)
@@ -793,7 +797,8 @@ class TA2MagicLinear(TA2Magic):
         for step in range(DEFAULT_SAMPLES):
             if self.budget is not None and self.budget.exhausted:
                 return _Verdict("unknown")
-            propose = bounded_solver(tm, self.budget, produce_models="true")
+            propose = bounded_solver(tm, call_ms(self.budget),
+                                     produce_models="true")
             propose.setLogic("ALL")
             for x in tpl.unknowns:
                 propose.assertFormula(
@@ -813,7 +818,8 @@ class TA2MagicLinear(TA2Magic):
                 return _Verdict("unknown")
             values = [propose.getValue(x) for x in tpl.unknowns]
 
-            verify = bounded_solver(tm, self.budget, produce_models="true")
+            verify = bounded_solver(tm, call_ms(self.budget),
+                                    produce_models="true")
             verify.setLogic("ALL")
             st, el, en = self._fresh_consts(ctx, f"cex{step}_")
             verify.assertFormula(

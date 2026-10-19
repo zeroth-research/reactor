@@ -54,9 +54,10 @@ from z3.z3util import get_vars
 
 from zrth import Module
 
-from ..cert import CertificateData, smt_predicates_to_lean
+from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
+from ..smt.script import smt_int
 
 
 def _engine():
@@ -90,19 +91,13 @@ def _engine():
 # SMT-LIB in and out
 # ---------------------------------------------------------------------------
 
-def _smt_int(v) -> str:
-    """An integer literal. SMT-LIB has no negative numerals, so one is a negation."""
-    v = int(v)
-    return str(v) if v >= 0 else f"(- {-v})"
-
-
 def _smt_affine(coeffs, const, names) -> str:
     """``k + Σ cᵢ·sᵢ`` as an SMT-LIB term, written out in full.
 
     Printed here rather than through z3's ``sexpr``, which ``let``-binds the
     subterm a ReLU repeats -- and what this string has to survive is being read
     back and rendered as the body of a Lean definition."""
-    parts = [] if not int(const) else [_smt_int(const)]
+    parts = [] if not int(const) else [smt_int(const)]
     for c, n in zip(coeffs, names):
         c = int(c)
         if c == 1:
@@ -110,7 +105,7 @@ def _smt_affine(coeffs, const, names) -> str:
         elif c == -1:
             parts.append(f"(- {n})")
         elif c:
-            parts.append(f"(* {_smt_int(c)} {n})")
+            parts.append(f"(* {smt_int(c)} {n})")
     if not parts:
         return "0"
     return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
@@ -123,14 +118,14 @@ def _smt_ranking(layers, names) -> str:
     the composed module computed with, so the term and the wire the procedure
     certified are one function."""
     (W1, b1), (W2, b2) = layers
-    parts = [] if not int(b2[0]) else [_smt_int(b2[0])]
+    parts = [] if not int(b2[0]) else [smt_int(b2[0])]
     for j in range(W1.shape[0]):
         c = int(W2[0][j])
         if not c:
             continue
         pre = _smt_affine(W1[j], b1[j], names)
         unit = f"(ite (> {pre} 0) {pre} 0)"
-        parts.append(unit if c == 1 else f"(* {_smt_int(c)} {unit})")
+        parts.append(unit if c == 1 else f"(* {smt_int(c)} {unit})")
     if not parts:
         return "0"
     return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
@@ -276,7 +271,6 @@ class TA2MagicLearn(TA2Magic):
 
     def __init__(
         self,
-        source: str,
         module: Module,
         *,
         delta: int = 1,
@@ -284,7 +278,6 @@ class TA2MagicLearn(TA2Magic):
         seed: int = 0,
         log=print,
     ):
-        super().__init__(source)
         self.module = module
         self.delta = delta
         self.hidden_dim = hidden_dim
@@ -399,14 +392,17 @@ class TA2MagicLearn(TA2Magic):
 
     # --- driver ---------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. `given` is not read: the
+        row seeds from nothing but `--pre`, which is in the claim."""
         eng = _engine()
-        if not isinstance(cd.prp, str):
+        if claim.prp is None:
             raise Refused("--infer nuterm needs a property: pass --safety or --buchi")
         system = self._system(eng)
-        if isinstance(cd.init_pre, str):
-            system = self._assuming(system, cd.init_pre)
-        prp = _parse_property(cd.prp, self._declared(), system.names)
+        if claim.init_pre is not None:
+            system = self._assuming(system, claim.init_pre)
+        prp = _parse_property(claim.prp, self._declared(), system.names)
         self.log(f"[nuterm] columns: {', '.join(system.names)}")
 
         # The procedure refuses what it has no rule for by raising, and that
@@ -415,15 +411,16 @@ class TA2MagicLearn(TA2Magic):
         # of them is a reason this route cannot answer, so none of them is a
         # traceback.
         try:
-            if cd.is_safety:
-                inv_smt = self._safety_invariant(eng, system, prp, cd.prp)
-                rank_smt = None
+            if claim.is_safety:
+                inv_src = self._safety_invariant(eng, system, prp, claim.prp)
+                rank_src = None
             else:
-                inv_smt, rank_smt = self._buchi_certificate(eng, system, prp, cd.prp)
+                inv_src, rank_src = self._buchi_certificate(eng, system, prp,
+                                                            claim.prp)
         except eng.Unsupported as e:
             raise Refused(f"--infer nuterm cannot certify this property: {e}") from e
 
-        return self._emit(cd, inv_smt, rank_smt)
+        return self._emit(inv_src, rank_src)
 
     # --- the two kinds --------------------------------------------------
 
@@ -546,7 +543,7 @@ class TA2MagicLearn(TA2Magic):
         self.log("[nuterm] zeroing the rank where the property holds")
         rank = _smt_ranking(result.layers, result.system.names)
         return (self._invariant_of(result),
-                f"(ite {prp_src} 0 (+ {_smt_int(self.delta)} {rank}))")
+                f"(ite {prp_src} 0 (+ {smt_int(self.delta)} {rank}))")
 
     def _invariant_of(self, result) -> str:
         """The invariant ``result`` was certified against, as SMT-LIB.
@@ -559,7 +556,7 @@ class TA2MagicLearn(TA2Magic):
                  f"{len(result.system.invariants)} conjuncts after pruning")
         return _smt_conjunction([_smt_term(t) for _, t in kept])
 
-    # --- rendering ------------------------------------------------------
+    # --- terms and the answer -------------------------------------------
 
     @staticmethod
     def _at(term, system, st):
@@ -567,20 +564,10 @@ class TA2MagicLearn(TA2Magic):
         subs = [(z3.Int(n), st[n]) for n in system.names]
         return z3.substitute(term, *subs) if subs else term
 
-    def _emit(self, cd: CertificateData, inv_smt: str, rank_smt: str | None):
-        """Fill ``cd`` with the certificate, as Lean and as the SMT-LIB behind it.
-
-        The project needs Lean; ``--pre-check`` needs cvc5's own input back, and
-        nothing parses the Lean rendering into one -- so both are kept, as the
-        other inferring routes keep them."""
-        self.log(f"[nuterm] inv: {inv_smt}")
-        if rank_smt is not None:
-            self.log(f"[nuterm] ranking: {rank_smt}")
-        lean = smt_predicates_to_lean(
-            CertificateData(prp=cd.prp, kind=cd.kind, inv=inv_smt, ranking=rank_smt),
-            self.module,
-        )
-        cd.inv, cd.inv_smt = lean.inv, inv_smt
-        if rank_smt is not None:
-            cd.ranking, cd.ranking_smt = lean.ranking, rank_smt
-        return cd
+    def _emit(self, inv_src: str, rank_src: str | None) -> Certificate:
+        """The certificate, logged as the `inv:` / `ranking:` lines the bench
+        harness reads."""
+        self.log(f"[nuterm] inv: {inv_src}")
+        if rank_src is not None:
+            self.log(f"[nuterm] ranking: {rank_src}")
+        return Certificate(inv_src, rank_src)

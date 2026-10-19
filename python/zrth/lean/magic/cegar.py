@@ -9,7 +9,7 @@ expressions, cvc5 verifies, counterexamples are fed back to the LLM.
 # `TA2MagicCEGAR` out of `magic/cegar.py` and prints `[CEGAR] attempt 0`.
 # What the rename has to reach, together, in one commit:
 #   * this module (-> `magic/cegis.py`), `TA2MagicCEGAR`, the docstring above,
-#     and the `magic.cegar` mentions in `infer_route.py`, `smt_synth.py` and
+#     and the `magic.cegar` mentions in `infer_route/`, `smt_synth.py` and
 #     `magic/sygus.py`;
 #   * `smt_prompt.CegarPromptEnv`, `CEGAR_GENERATE_SYSTEM`,
 #     `CEGAR_SAFETY_SYSTEM` and the `"cegar"` parser tag -- `smt_synth.py`,
@@ -31,25 +31,26 @@ from dataclasses import dataclass
 
 try:
     import cvc5  # type: ignore
-    from cvc5 import Kind
 except ImportError:
     cvc5 = None
-    Kind = None
 
 from zrth import Module
 
-from ..cert import CertificateData
+from ..certificate import Certificate, Claim
 from ..common import Refused
 from . import TA2Magic
-from .ai import _make_client, _describe_preconditions
-from ..smt_module import ModuleSMT
-from ..smt_prompt import (
-    CegarPromptEnv,
-    PromptResult,
-    parse_predicate,
-    prompt_inv_ranking,
+from .llm import DEFAULT_MODEL, describe_preconditions, make_client
+from ..smt.obligations import (
+    Frame,
+    init_inv,
+    inv_imp_P,
+    rank_decrease,
+    rank_positive,
+    step_inv,
 )
-from ..smt_to_lean import smt_to_lean, smt_to_lean_nat
+from ..smt.limits import bounded_solver, call_ms
+from ..smt.run import encoding_of
+from ..smt_prompt import PromptResult, prompt_inv_ranking
 
 
 @dataclass
@@ -65,7 +66,8 @@ class TA2MagicCEGAR(TA2Magic):
     Each attempt:
       1. Ask LLM for SMT-LIB invariant + ranking expressions.
       2. Check four obligations with cvc5 (init, inductive, rank-decrease,
-         rank-nonneg). Each check is: assert the negation, SAT ⇒ failure.
+         rank-positive). Each check is: assert the negation, SAT ⇒ failure,
+         each query held to the run's `--smt-timeout`.
       3. If all UNSAT, return. Else format model as feedback and retry.
 
     `known` is what earlier runs established about *shapes* rather than
@@ -74,7 +76,7 @@ class TA2MagicCEGAR(TA2Magic):
     `artifacts/` by `--infer smt-linear`. It is stated in the prompt so an
     attempt is not spent proposing what is already known not to exist.
 
-    A safety certificate (`cd.kind == "safety"`, from `--safety`) is the
+    A safety certificate (`claim.kind == "safety"`, from `--safety`) is the
     same loop over a smaller certificate: the LLM is asked for an invariant
     alone, and the obligations are init, inductive, and `inv → prp` --
     `rule_globally` has no ranking function to take, so the two ranking
@@ -86,19 +88,28 @@ class TA2MagicCEGAR(TA2Magic):
         source: str,
         module: Module,
         *,
-        model: str = "gpt-4",
+        model: str = DEFAULT_MODEL,
         max_attempts: int = 5,
         base_url: str | None = None,
         known: tuple[str, ...] = (),
         budget_s: float | None = None,
+        encoding=None,
+        budget=None,
+        log=print,
     ):
-        super().__init__(source)
-        if cvc5 is None:
-            raise RuntimeError(
-                "cvc5 package is required for TA2MagicCEGAR. "
-                "Install with: uv pip install cvc5"
+        self.source = source
+        if cvc5 is None:                             # pragma: no cover
+            raise Refused(
+                "--infer ai-cegis needs the `cvc5` package, which is not "
+                "importable. Install with: uv pip install cvc5"
             )
         self.module = module
+        # The run's `--smt-timeout` / `--smt-budget`: each check is a phase.
+        self.budget = budget
+        self.log = log
+        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
         self.max_attempts = max_attempts
         # Wall-clock seconds to keep asking for, in place of `max_attempts`.
         # A fixed count is the wrong leash for a run that has a time limit
@@ -114,40 +125,31 @@ class TA2MagicCEGAR(TA2Magic):
         # already refute a bad candidate in milliseconds, and what this saves
         # is the attempt being spent on a shape a solver has ruled out.
         self.known = tuple(known)
-        self._chat = _make_client(base_url, model)
+        self._chat = make_client(base_url, model)
 
     # --- driver ---------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
-        tm = cvc5.TermManager()
-        msmt = ModuleSMT(tm=tm, module=self.module)
-        env = CegarPromptEnv(msmt)
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. What `given` holds is
+        fixed: it is shown to the model and only the rest is asked for."""
+        enc = encoding_of(self.encoding or self.module)
+        env = enc.env
 
-        # Parse predicates — Python expression first, SMT-LIB fallback.
-        prp_term = (
-            parse_predicate(env, cd.prp)
-            if isinstance(cd.prp, str)
-            else tm.mkBoolean(True)
-        )
-        init_pre_term = (
-            parse_predicate(env, cd.init_pre)
-            if isinstance(cd.init_pre, str)
-            else tm.mkBoolean(True)
-        )
-        update_pre_term = (
-            parse_predicate(env, cd.update_pre)
-            if isinstance(cd.update_pre, str)
-            else tm.mkBoolean(True)
-        )
+        # An absent predicate is `true`, and every obligation states it.
+        def parsed(src, flag):
+            return enc.tm.mkBoolean(True) if src is None else enc.parse(src, flag)
 
-        preconds = _describe_preconditions(cd)
+        prp_term = parsed(claim.prp, "--safety" if claim.is_safety else "--buchi")
+        init_pre_term = parsed(claim.init_pre, "--pre")
+        update_pre_term = parsed(claim.update_pre, "--pre")
+
+        preconds = describe_preconditions(claim)
         feedback: str | None = None
 
-        safety = cd.is_safety
-        fixed_inv = cd.inv if isinstance(cd.inv, str) else None
-        fixed_ranking = None if safety else (
-            cd.ranking if isinstance(cd.ranking, str) else None
-        )
+        safety = claim.is_safety
+        fixed_inv = given.inv
+        fixed_ranking = None if safety else given.ranking
         # If everything this kind of certificate needs is user-provided,
         # no LLM loop — just verify once.
         complete = bool(fixed_inv) and (safety or bool(fixed_ranking))
@@ -155,19 +157,19 @@ class TA2MagicCEGAR(TA2Magic):
 
         while self._another(attempt, complete, start, slowest):
             began = time.monotonic()
-            print(f"[CEGAR] attempt {attempt}")
+            self.log(f"[CEGAR] attempt {attempt}")
             attempt += 1
             try:
                 result = prompt_inv_ranking(
                     env,
                     self._chat,
                     self.source,
-                    str(cd.prp),
+                    str(claim.prp),
                     preconds,
                     feedback,
                     fixed_inv_src=fixed_inv,
                     fixed_ranking_src=fixed_ranking,
-                    kind=cd.kind,
+                    kind=claim.kind,
                     known=self.known,
                 )
             except Refused:
@@ -175,18 +177,17 @@ class TA2MagicCEGAR(TA2Magic):
                 # and retrying it five times only hides the reason.
                 raise
             except ValueError as e:
-                print(f"  parse error: {e}")
+                self.log(f"  parse error: {e}")
                 feedback = f"Your reply could not be parsed: {e}"
                 slowest = max(slowest, time.monotonic() - began)
                 continue
 
-            print(f"  inv: {result.inv_src}")
+            self.log(f"  inv: {result.inv_src}")
             if not safety:
-                print(f"  ranking: {result.ranking_src}")
+                self.log(f"  ranking: {result.ranking_src}")
 
             obligations = self._check_all(
-                msmt,
-                env,
+                enc,
                 result,
                 prp_term,
                 init_pre_term,
@@ -195,19 +196,13 @@ class TA2MagicCEGAR(TA2Magic):
             )
             failures = [o for o in obligations if not o.ok]
             if not failures:
-                print("[CEGAR] all obligations UNSAT — accepted")
-                cd.inv = smt_to_lean(result.inv_term, msmt.ctrl_next)
-                # Keep what cvc5 was given: the Lean above is a rendering, and
-                # nothing can parse it back, so `--pre-check` would have no
-                # term left to ask about the certificate that was inferred.
-                cd.inv_smt = result.inv_src
-                if not safety:
-                    cd.ranking = smt_to_lean_nat(result.ranking_term, msmt.ctrl_next)
-                    cd.ranking_smt = result.ranking_src
-                return cd
+                self.log("[CEGAR] all obligations UNSAT — accepted")
+                return Certificate(
+                    result.inv_src, None if safety else result.ranking_src
+                )
 
             feedback = self._format_feedback(failures)
-            print(f"[CEGAR] failures: {[o.name for o in failures]}")
+            self.log(f"[CEGAR] failures: {[o.name for o in failures]}")
             slowest = max(slowest, time.monotonic() - began)
 
         # `Refused` for the reason `magic.ai` gives: running out of
@@ -237,22 +232,9 @@ class TA2MagicCEGAR(TA2Magic):
 
     # --- obligation checks ---------------------------------------------
 
-    def _subst_inputs(
-        self,
-        env: CegarPromptEnv,
-        term: "cvc5.Term",
-        el: list,
-        en: list,
-    ) -> "cvc5.Term":
-        """Substitute the env's `e0/el0` consts with obligation-local vars."""
-        old = list(env.extl_next_vars) + list(env.extl_latched_vars)
-        new = list(en) + list(el)
-        return term.substitute(old, new) if old else term
-
     def _check_all(
         self,
-        msmt: ModuleSMT,
-        env: CegarPromptEnv,
+        enc,
         r: PromptResult,
         prp_term,
         init_pre_term,
@@ -260,118 +242,80 @@ class TA2MagicCEGAR(TA2Magic):
         *,
         safety: bool = False,
     ) -> list[ObligationResult]:
+        """`rule_buchi`'s obligations, `hrank` split in two, or
+        `rule_globally`'s; each over fresh constants of its own."""
+
+        def frame(prefix):
+            return Frame(enc, prefix, init_pre=init_pre_term,
+                         update_pre=update_pre_term)
+
+        if self.budget is not None:
+            self.budget.start_phase()
+
         checks = [
-            self._check_init(msmt, env, r, init_pre_term),
-            self._check_inductive(msmt, env, r, update_pre_term),
+            self._check_init(frame("init_"), r),
+            self._check_inductive(frame("ind_"), r),
         ]
         if safety:
-            checks.append(self._check_inv_implies_prp(msmt, env, r, prp_term))
+            checks.append(self._check_inv_implies_prp(frame("ip_"), r, prp_term))
         else:
             checks += [
-                self._check_ranking_decrease(msmt, env, r, prp_term, update_pre_term),
-                self._check_ranking_positive(msmt, env, r, prp_term, update_pre_term),
+                self._check_ranking_decrease(frame("rd_"), r, prp_term),
+                self._check_ranking_positive(frame("rp_"), r, prp_term),
             ]
         return checks
 
-    def _check_inv_implies_prp(self, msmt, env, r, prp_term):
+    def _check_inv_implies_prp(self, f: Frame, r, prp_term):
         """`inv s → prp s`: what makes the invariant a *safety* proof."""
-        tm = msmt.tm
-        s = msmt.fresh_ctrl("ip_s")
-        inv_s = r.inv_term.substitute(env.state_vars, s)
-        prp_s = prp_term.substitute(env.state_vars, s)
-        neg_query = tm.mkTerm(Kind.AND, inv_s, tm.mkTerm(Kind.NOT, prp_s))
-        return self._run_query("inv_imp_P", neg_query, env, extra_vars=[("s", s)])
+        q = inv_imp_P(f, [("inv", r.inv_term)], prp_term)
+        return self._run_query("inv_imp_P", q.negation(f.tm), f.tm,
+                               extra_vars=[("s", f.s)])
 
-    def _check_init(self, msmt, env, r, init_pre_term):
-        tm = msmt.tm
-        el = msmt.fresh_extl_l("init_el")
-        en = msmt.fresh_extl_n("init_en")
-        pre = self._subst_inputs(env, init_pre_term, el, en)
-        s0 = msmt.init_state(en)
-        inv_at_init = r.inv_term.substitute(env.state_vars, s0)
-        neg_query = tm.mkTerm(Kind.AND, pre, tm.mkTerm(Kind.NOT, inv_at_init))
+    def _check_init(self, f: Frame, r):
+        q = init_inv(f, [r.inv_term])
         return self._run_query(
-            "init_inv", neg_query, env, extra_vars=[("extl_l", el), ("extl_n", en)]
+            "init_inv", q.negation(f.tm), f.tm,
+            extra_vars=[("extl_l", f.el), ("extl_n", f.en)],
         )
 
-    def _check_inductive(self, msmt, env, r, update_pre_term):
-        tm = msmt.tm
-        s = msmt.fresh_ctrl("ind_s")
-        el = msmt.fresh_extl_l("ind_el")
-        en = msmt.fresh_extl_n("ind_en")
-        inv_s = r.inv_term.substitute(env.state_vars, s)
-        pre = self._subst_inputs(env, update_pre_term, el, en)
-        s_next = msmt.update_state(s, el, en)
-        inv_next = r.inv_term.substitute(env.state_vars, s_next)
-        neg_query = tm.mkTerm(Kind.AND, inv_s, pre, tm.mkTerm(Kind.NOT, inv_next))
+    def _check_inductive(self, f: Frame, r):
+        q = step_inv(f, [("inv", r.inv_term)], [r.inv_term])
         return self._run_query(
             "step_inv",
-            neg_query,
-            env,
+            q.negation(f.tm),
+            f.tm,
             extra_vars=[
-                ("s", s),
-                ("extl_l", el),
-                ("extl_n", en),
-                ("s_next", s_next),
+                ("s", f.s),
+                ("extl_l", f.el),
+                ("extl_n", f.en),
+                ("s_next", f.succ),
             ],
         )
 
-    def _check_ranking_decrease(self, msmt, env, r, prp_term, update_pre_term):
-        tm = msmt.tm
-        s = msmt.fresh_ctrl("rd_s")
-        el = msmt.fresh_extl_l("rd_el")
-        en = msmt.fresh_extl_n("rd_en")
-        inv_s = r.inv_term.substitute(env.state_vars, s)
-        pre = self._subst_inputs(env, update_pre_term, el, en)
-        prp_s = prp_term.substitute(env.state_vars, s)
-        s_next = msmt.update_state(s, el, en)
-        rank_s = r.ranking_term.substitute(env.state_vars, s)
-        rank_next = r.ranking_term.substitute(env.state_vars, s_next)
-        decrease = tm.mkTerm(Kind.LT, rank_next, rank_s)
-        neg_query = tm.mkTerm(
-            Kind.AND,
-            inv_s,
-            tm.mkTerm(Kind.NOT, prp_s),
-            pre,
-            tm.mkTerm(Kind.NOT, decrease),
-        )
+    def _check_ranking_decrease(self, f: Frame, r, prp_term):
+        q = rank_decrease(f, [("inv", r.inv_term)], prp_term, r.ranking_term)
         return self._run_query(
             "rank_decrease",
-            neg_query,
-            env,
+            q.negation(f.tm),
+            f.tm,
             extra_vars=[
-                ("s", s),
-                ("extl_l", el),
-                ("extl_n", en),
-                ("s_next", s_next),
-                ("ranking(s)", [rank_s]),
-                ("ranking(s_next)", [rank_next]),
+                ("s", f.s),
+                ("extl_l", f.el),
+                ("extl_n", f.en),
+                ("s_next", f.succ),
+                ("ranking(s)", [f.at(r.ranking_term, f.s)]),
+                ("ranking(s_next)", [f.at(r.ranking_term, f.succ)]),
             ],
         )
 
-    def _check_ranking_positive(self, msmt, env, r, prp_term, update_pre_term):
-        """`inv s ∧ ¬P s ∧ update_pre → ranking s >= 1`.
-
-        With `rank_decrease`, exactly `rule_buchi`'s `hrank` over the Lean
-        ranking `Int.toNat ranking`: `toNat r' < toNat r` holds iff `r >= 1`
-        and `r' < r`. It used to be `inv s → ranking s >= 0` over every state,
-        which `hrank` never asks -- and which rejects every linear rank of a
-        state that is unbounded where the property already holds, such as
-        `1 + y` for `while (y >= 0) y = y - 1`.
-        """
-        tm = msmt.tm
-        s = msmt.fresh_ctrl("rp_s")
-        el = msmt.fresh_extl_l("rp_el")
-        en = msmt.fresh_extl_n("rp_en")
-        inv_s = r.inv_term.substitute(env.state_vars, s)
-        pre = self._subst_inputs(env, update_pre_term, el, en)
-        prp_s = prp_term.substitute(env.state_vars, s)
-        rank_s = r.ranking_term.substitute(env.state_vars, s)
-        positive = tm.mkTerm(Kind.GEQ, rank_s, tm.mkInteger(1))
-        neg_query = tm.mkTerm(Kind.AND, inv_s, tm.mkTerm(Kind.NOT, prp_s), pre,
-                              tm.mkTerm(Kind.NOT, positive))
-        return self._run_query("rank_positive", neg_query, env,
-                               extra_vars=[("s", s), ("ranking(s)", [rank_s])])
+    def _check_ranking_positive(self, f: Frame, r, prp_term):
+        """`inv s ∧ ¬P s ∧ update_pre → ranking s >= 1`: with
+        `rank_decrease`, exactly `hrank` over `Int.toNat ranking`."""
+        q = rank_positive(f, [("inv", r.inv_term)], prp_term, r.ranking_term)
+        return self._run_query(
+            "rank_positive", q.negation(f.tm), f.tm,
+            extra_vars=[("s", f.s), ("ranking(s)", [f.at(r.ranking_term, f.s)])],
+        )
 
     # --- solver driver --------------------------------------------------
 
@@ -379,14 +323,13 @@ class TA2MagicCEGAR(TA2Magic):
         self,
         name: str,
         neg_query,
-        env: CegarPromptEnv,
+        tm,
         extra_vars: list[tuple[str, list]],
     ) -> ObligationResult:
         """Check `neg_query` for SAT. UNSAT ⇒ obligation holds."""
-        print(f"[smt] check query: {neg_query}")
-        solver = cvc5.Solver(env.tm)
-        solver.setLogic("ALL")
-        solver.setOption("produce-models", "true")
+        self.log(f"[smt] check query: {neg_query}")
+        solver = bounded_solver(tm, call_ms(self.budget), logic="ALL",
+                                produce_models="true")
         solver.assertFormula(neg_query)
         res = solver.checkSat()
         if res.isUnsat():

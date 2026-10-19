@@ -29,7 +29,7 @@ from zrth.lean.infer_route import (
 from zrth.lean.project import ENCODINGS
 
 KINDS = {"safety", "buchi"}
-RETURNS = {"smt", "lean", "installed"}
+RETURNS = {"smt", "lean", "files"}
 SEEDS = {"inv", "ranking", "pre"}
 
 
@@ -98,10 +98,11 @@ def test_row_reads_and_owns_are_real(route):
 
 
 def test_row_promises_match_what_it_returns():
-    """`returns="installed"` is the only shape that writes its own certificate."""
+    """`returns="files"` is the only shape that hands back files, so it is
+    the only one that has to own something."""
     for route in ROUTES:
-        if route.returns == "installed":
-            assert route.owns, "a route that installs a certificate writes files"
+        if route.returns == "files":
+            assert route.owns, "a route that hands back files owns them"
         else:
             assert not route.lakefile, (
                 "a route that hands back predicates needs no lakefile of its own"
@@ -490,28 +491,20 @@ def test_the_declared_prefix_is_a_directory_not_a_string(tmp_path):
 # ══════════════════════════════════════════════════════════════════════════
 
 
-def test_an_empty_result_is_what_an_installing_route_returns():
-    """`empty` is what `main` checks the row's `returns` against."""
+def test_an_empty_result_is_one_with_no_predicates_and_no_files():
+    """`empty` is true only when the route handed back nothing at all."""
+    from zrth.lean.certificate import Certificate, LeanAnswer
+
     assert InferResult().empty
-    assert not InferResult(inv_smt="(= s0 0)").empty
-    assert not InferResult(inv_lean="fun s => s.1 = 0").empty
+    assert not InferResult(Certificate(inv="(= s0 0)")).empty
+    assert not InferResult(lean=LeanAnswer("fun s => s.1 = 0")).empty
+    assert not InferResult(files={"Out/Cert.lean": ""}).empty
 
 
-def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi"):
-    """Put one synthetic row through `main._infer`, counting renders."""
-    from zrth.lean import main as m
-    from zrth.lean.cert import CertificateData
+def _row(returns="smt", kind="buchi", result=None):
     from zrth.lean.infer_route import InferRoute
 
-    rendered = []
-
-    def _render(cd, module, **kw):
-        rendered.append(cd)
-        return CertificateData(inv="RENDERED_INV", ranking="RENDERED_RANK")
-
-    monkeypatch.setattr(m, "smt_predicates_to_lean", _render)
-    settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
-    settings.route = InferRoute(
+    return InferRoute(
         name="probe",
         summary="a synthetic row",
         kinds=frozenset({kind}),
@@ -520,64 +513,115 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi"):
         returns=returns,
         run=lambda inp: result,
     )
-    out = m._infer(
+
+
+def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
+               owns=()):
+    """Put one synthetic row through `main._infer`."""
+    from zrth.lean import main as m
+    from zrth.lean.certificate import Certificate, Claim
+
+    settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
+    settings.route = _row(returns, kind, result)
+    return m._infer(
         settings,
         None,
-        _handle(tmp_path),
-        CertificateData(prp="(= s0 0)", kind=kind),
+        _handle(tmp_path, owns=owns),
+        Claim(prp="(= s0 0)", kind=kind),
+        Certificate(),
         None,
     )
-    return out, rendered
 
 
-def test_lean_that_came_back_is_not_rendered_again(monkeypatch, tmp_path):
-    """Rendering encodes the module into cvc5 again, so a route that already
-    has the Lean -- both `ai-cegis` and `nuterm` do -- is taken at its word.
-    """
-    out, rendered = _run_infer(
-        monkeypatch,
-        tmp_path,
-        InferResult(
-            inv_smt="(= s0 0)",
-            ranking_smt="s0",
-            inv_lean="fun s => s.1 = 0",
-            ranking_lean="fun s => s.1",
-        ),
+def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
+    from zrth.lean.certificate import Certificate
+
+    result = InferResult(Certificate("(= s0 0)", "s0"))
+    assert _run_infer(monkeypatch, tmp_path, result) is result
+
+
+def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
+    """Every SMT-LIB answer is printed as Lean in one place, so Lean from an
+    `smt` row has nowhere to go."""
+    from zrth.lean.certificate import Certificate, LeanAnswer
+
+    both = InferResult(Certificate("(= s0 0)", "s0"),
+                       LeanAnswer("fun s => s.1 = 0", "fun s => s.1"))
+    with pytest.raises(SystemExit, match="handed back predicates in Lean"):
+        _run_infer(monkeypatch, tmp_path, both, returns="smt")
+
+
+def test_a_lean_row_is_taken_at_its_word(monkeypatch, tmp_path):
+    from zrth.lean.certificate import Certificate, LeanAnswer
+
+    lean = InferResult(lean=LeanAnswer("fun s => s.1 = 0", "fun s => 1"))
+    assert _run_infer(monkeypatch, tmp_path, lean, returns="lean") is lean
+    with pytest.raises(SystemExit, match="handed back predicates in SMT-LIB"):
+        _run_infer(monkeypatch, tmp_path, InferResult(Certificate("(= s0 0)")),
+                   returns="lean")
+
+
+def test_a_files_route_hands_back_files_and_no_predicates(monkeypatch, tmp_path):
+    result = InferResult(files={"Out/Cert.lean": "-- cert\n"})
+    out = _run_infer(
+        monkeypatch, tmp_path, result, returns="files", kind="safety",
+        owns=("Out/",),
     )
-    assert rendered == [], "the pipeline re-rendered Lean it was handed"
-    assert out.inv == "fun s => s.1 = 0" and out.ranking == "fun s => s.1"
-    # cvc5's own input is kept either way: nothing parses the Lean back.
-    assert out.inv_smt == "(= s0 0)" and out.ranking_smt == "s0"
-
-
-def test_smt_with_no_lean_is_rendered_once(monkeypatch, tmp_path):
-    out, rendered = _run_infer(
-        monkeypatch, tmp_path, InferResult(inv_smt="(= s0 0)", ranking_smt="s0")
-    )
-    assert len(rendered) == 1
-    assert out.inv == "RENDERED_INV" and out.ranking == "RENDERED_RANK"
-
-
-def test_an_installing_route_hands_back_no_certificate(monkeypatch, tmp_path):
-    out, rendered = _run_infer(
-        monkeypatch, tmp_path, InferResult(), returns="installed", kind="safety"
-    )
-    assert out is None and rendered == []
+    assert out is result
 
 
 def test_a_row_and_its_result_have_to_agree(monkeypatch, tmp_path):
     """The row declares what comes back; nothing else has to guess which of
     the two to trust."""
+    from zrth.lean.certificate import Certificate
+
     with pytest.raises(SystemExit, match="declares returns='smt'"):
         _run_infer(monkeypatch, tmp_path, InferResult(), returns="smt")
-    with pytest.raises(SystemExit, match="declares returns='installed'"):
+    with pytest.raises(SystemExit, match="declares returns='files'"):
         _run_infer(
             monkeypatch,
             tmp_path,
-            InferResult(inv_lean="x"),
-            returns="installed",
+            InferResult(Certificate(inv="x")),
+            returns="files",
             kind="safety",
         )
+    with pytest.raises(SystemExit, match="declares returns='files'"):
+        _run_infer(monkeypatch, tmp_path, InferResult(), returns="files",
+                   kind="safety")
+    with pytest.raises(SystemExit, match="handed back files and no predicates"):
+        _run_infer(
+            monkeypatch,
+            tmp_path,
+            InferResult(files={"Out/Cert.lean": ""}),
+            returns="smt",
+            owns=("Out/",),
+        )
+
+
+def test_a_file_the_row_does_not_own_is_refused(monkeypatch, tmp_path):
+    result = InferResult(files={"Elsewhere/Cert.lean": "-- cert\n"})
+    with pytest.raises(
+        SystemExit,
+        match="handed back Elsewhere/Cert.lean, which its row does not own",
+    ):
+        _run_infer(
+            monkeypatch, tmp_path, result, returns="files", kind="safety",
+            owns=("Out/",),
+        )
+
+
+def test_the_handle_writes_what_a_route_handed_back(tmp_path, capsys):
+    handle = _handle(tmp_path, owns=("Out/", "Top.lean"))
+    handle.write_files({"Out/A.lean": "a\n", "Top.lean": "t\n"})
+    assert (tmp_path / "Out" / "A.lean").read_text() == "a\n"
+    assert (tmp_path / "Top.lean").read_text() == "t\n"
+    assert capsys.readouterr().out == (
+        f"Wrote {tmp_path / 'Out' / 'A.lean'}\nWrote {tmp_path / 'Top.lean'}\n"
+    )
+    assert handle.owns_path("Out/deep/B.lean")
+    assert not handle.owns_path("Outside.lean")
+    with pytest.raises(Refused, match="not among this route's declared paths"):
+        handle.write_files({"Other.lean": ""})
 
 
 @pytest.mark.parametrize("route", ROUTES, ids=route_names())
@@ -603,24 +647,23 @@ def test_artifacts_defaults_to_use():
 
 
 def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
-    """`_resume_inv`'s answer for a store that already holds artifacts.
+    """`InferInput.resumable_inv`'s answer for a store that already holds artifacts.
 
     The store does the role/language/status filtering (it is the half that
     knows what a stale artifact is and reports what it dropped); what is
     exercised here is the one rule left to the route.
     """
-    from zrth.lean.cert import CertificateData
-    from zrth.lean.infer_route import InferInput, _resume_inv
+    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.infer_route import InferInput
 
     handle = _handle(tmp_path, resumes=("inv",), store=_store(tmp_path, kind=kind))
-    return _resume_inv(
-        InferInput(
-            project=handle,
-            module=None,
-            cert_data=CertificateData(prp="(= s0 0)", kind=kind, inv=supplied_inv),
-            opts={},
-        )
-    )
+    return InferInput(
+        project=handle,
+        module=None,
+        claim=Claim(prp="(= s0 0)", kind=kind),
+        given=Certificate(inv=supplied_inv),
+        opts={},
+    ).resumable_inv()
 
 
 def test_an_inductive_invariant_is_taken_as_given(tmp_path):
@@ -683,7 +726,7 @@ def test_the_owned_proveit_directory_is_the_one_the_route_writes():
     """`owns` is the truth about what a route writes, and `path()` refuses
     anything undeclared -- so a renamed `PROVEIT_DIR` must not leave the row
     declaring a directory `fbk_proveit` no longer uses."""
-    from zrth.lean.project import PROVEIT_DIR
+    from zrth.lean.fbk_proveit import PROVEIT_DIR
 
     owns = route_by_name("fbk-proveit").owns
     assert f"{PROVEIT_DIR}/" in owns
@@ -696,6 +739,18 @@ def test_the_workspace_is_not_a_route_owned_path():
 
     for route in ROUTES:
         assert not any(o.startswith(ARTIFACTS_DIR) for o in route.owns)
+
+
+def test_owned_files_are_the_files_not_the_directories_the_rows_own():
+    from zrth.lean.infer_route import owned_files
+
+    files = owned_files()
+    assert files == tuple(sorted(files))
+    assert "Certificate/Certificate.lean" in files
+    assert not any(f.endswith("/") for f in files)
+    assert set(files) == {
+        o for r in ROUTES for o in r.owns if not o.endswith("/")
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════

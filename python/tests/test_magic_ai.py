@@ -4,7 +4,7 @@ import os
 import subprocess
 import pytest
 
-from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Claim, LeanAnswer
 from zrth.lean.magic.ai import TA2MagicAI
 
 COUNTER_SOURCE = """\
@@ -19,7 +19,7 @@ def update(old_x):
 """
 
 
-def _assert_result(result: CertificateData):
+def _assert_result(result: LeanAnswer):
     assert result.inv is not None
     assert result.ranking is not None
     print(f"invariant: {result.inv}")
@@ -139,7 +139,7 @@ def _recording_ai(monkeypatch):
             return "INVARIANT: fun s => True\nRANKING: fun s => 0"
         return chat
 
-    monkeypatch.setattr(ai, "_make_client", fake_client)
+    monkeypatch.setattr(ai, "make_client", fake_client)
     return ai.TA2MagicAI(COUNTER_SOURCE), seen
 
 
@@ -147,12 +147,10 @@ def test_the_precondition_reaches_both_calls(monkeypatch):
     """Stating the obligations is half of it; the predicate itself is the
     other half, and it is what the model is being asked to lean on."""
     magic, seen = _recording_ai(monkeypatch)
-    cd = CertificateData(prp="x == 0")
-    cd.init_pre = "(>= e0 0)"
-    cd.update_pre = "(>= e0 0)"
+    claim = Claim(prp="x == 0", init_pre="(>= e0 0)", update_pre="(>= e0 0)")
 
-    magic._generate(cd, None)
-    magic._verify(cd, "fun s => True", "fun s => 0")
+    magic._generate(claim, None)
+    magic._verify(claim, "fun s => True", "fun s => 0")
 
     assert len(seen) == 2
     for _system, user in seen:
@@ -165,8 +163,19 @@ def test_no_precondition_says_so_rather_than_saying_nothing(monkeypatch):
     Without `--pre` there is no assumption to make, which is a fact about the
     question and worth one line of the message."""
     magic, seen = _recording_ai(monkeypatch)
-    magic._generate(CertificateData(prp="x == 0"), None)
+    magic._generate(Claim(prp="x == 0"), None)
     assert "No preconditions on inputs." in seen[0][1]
+
+
+def test_the_source_is_fenced_as_the_lean_it_is(monkeypatch):
+    """The route hands the model the project's Lean encoding; a fence that
+    calls it Python tells the model to read it as something it is not."""
+    magic, seen = _recording_ai(monkeypatch)
+    claim = Claim(prp="x == 0")
+    magic._generate(claim, None)
+    magic._verify(claim, "fun s => True", "fun s => 0")
+    for _system, user in seen:
+        assert f"```lean\n{COUNTER_SOURCE}\n```" in user
 
 
 def test_a_projection_off_a_numeral_is_parenthesised():
@@ -223,15 +232,32 @@ def test_a_candidate_lean_cannot_elaborate_is_asked_again(monkeypatch):
             return next(replies)
         return chat
 
-    monkeypatch.setattr(ai, "_make_client", fake_client)
+    monkeypatch.setattr(ai, "make_client", fake_client)
     magic = ai.TA2MagicAI(COUNTER_SOURCE)
-    out = magic.infer(CertificateData(prp="x == 0"))
+    out = magic.infer(Claim(prp="x == 0"))
 
     assert out.ranking == "fun s => \u230as 0 0\u230b.toNat"
     # Two generate calls and one verify -- the refused candidate was never
     # put to the auditor.
     assert [sys is ai.VERIFY_SYSTEM for sys, _ in seen] == [False, False, True]
     assert "Real.toNat` does not exist" in seen[1][1]
+
+
+def test_an_accepted_reply_with_neither_predicate_is_no_answer(monkeypatch):
+    """Empty `INVARIANT:` and `RANKING:` lines parse, and an auditor can
+    accept them; that is no certificate, and the route says so rather than
+    handing an empty Lean answer to the pipeline."""
+    import zrth.lean.magic.ai as ai
+
+    def fake_client(base_url, model):
+        def chat(system: str, user: str) -> str:
+            if system is ai.VERIFY_SYSTEM:
+                return "CORRECT"
+            return "INVARIANT: \nRANKING: "
+        return chat
+
+    monkeypatch.setattr(ai, "make_client", fake_client)
+    assert ai.TA2MagicAI(COUNTER_SOURCE).infer(Claim(prp="x == 0")) is None
 
 
 # --- Claude API tests ---
@@ -244,7 +270,7 @@ def test_counter_claude():
     from zrth.lean.magic.ai import TA2MagicAI
 
     magic = TA2MagicAI(COUNTER_SOURCE)
-    _assert_result(magic.infer(CertificateData(prp="x == 0")))
+    _assert_result(magic.infer(Claim(prp="x == 0")))
 
 
 # --- Local LLM tests (Ollama) ---
@@ -266,4 +292,4 @@ def test_counter_ollama_qwen3_coder():
         model="qwen3-coder",
         base_url="http://localhost:11434/v1",
     )
-    _assert_result(magic.infer(CertificateData(prp="x == 0")))
+    _assert_result(magic.infer(Claim(prp="x == 0")))

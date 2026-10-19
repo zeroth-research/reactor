@@ -118,7 +118,7 @@ def atom_to_lean_fbk_bridge(
 ) -> str:
     """Emit the bridge file for `ctx`.
 
-    `na_module` is the Lean module name of the NA model (`project.na_module_name`).
+    `na_module` is the Lean module name of the NA model (`fbk_proveit.na_module_name`).
 
     `bodies` are the slot texts the model was written from -- the same ones,
     because the theorem below is about *that* file. Pass what
@@ -310,7 +310,7 @@ def atom_to_lean_fbk_bridge(
         "-- ── the property, translated twice and proved equal ──────────────",
         "--",
         "-- `PROPERTY` is `smt_to_lean_bool`'s reading of the formula and `P`",
-        "-- is `smt_predicates_to_lean`'s. Without this the chain would be",
+        "-- is `render_certificate`'s. Without this the chain would be",
         "-- sound about the transition and silent about what is proved of it.",
         "",
         "theorem PROPERTY_iff (s : CtrlNative) :",

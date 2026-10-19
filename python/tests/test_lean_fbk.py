@@ -866,7 +866,7 @@ def test_the_bridge_targets_the_scalar_encoding():
 
 def test_the_bridge_proves_the_property_twice_translated():
     """`PROPERTY` is `smt_to_lean_bool`'s reading of the formula and `P` is
-    `smt_predicates_to_lean`'s. Without tying them the chain would be sound
+    `render_certificate`'s. Without tying them the chain would be sound
     about the transition and silent about what is proved of it."""
     src = _bridge(_counter())
     assert "theorem PROPERTY_iff" in src
@@ -902,20 +902,20 @@ def test_the_bridge_closes_goals_only_with_tactics_it_imports():
     assert not [l for l in arms if "smt" in l], "an arm needs `import Smt`"
 
 
-def test_the_bridge_is_not_imported_by_the_certificate_root(tmp_path):
+def test_the_bridge_is_not_imported_by_the_certificate_root():
     """The bridge speaks `Core.LTL` and the certificate speaks
     `LTLCertifying`, and both declare a top-level `LTLFormula`: one module
     importing the two is rejected before it is elaborated. Lake reaches the
     bridge through the `Certificate` lean_lib's glob instead."""
-    from zrth.lean.fbk_proveit import write_equivalence
+    from zrth.lean.fbk_proveit import equivalence_lean
+    from zrth.lean.template_env import render
 
-    root = tmp_path / "Certificate.lean"
-    root.write_text("import Certificate.Certificate\n")
+    text = equivalence_lean("Proj", LeanContext(_counter()))
 
-    out = write_equivalence(tmp_path, "Proj", LeanContext(_counter()))
-
-    assert out.read_text()
-    assert root.read_text() == "import Certificate.Certificate\n"
+    assert text.strip()
+    root = render("project/Certificate.lean.j2")
+    assert "Certificate.Certificate" in root
+    assert "Certificate.Equivalence" not in root
 
 
 def test_ic3ia_directory_resolves_to_the_binary_inside_it():
@@ -1106,13 +1106,18 @@ def test_the_proveit_lakefile_can_see_what_the_certificate_imports():
     """`Certificate/Certificate.lean` is root-imported, so `lake build`
     reaches it. It imports `LTLCertifying.*`, `Smt` and the NA model, and a
     lakefile missing any of the three turns that reach into an error."""
-    from zrth.lean.project import generate_lakefile, na_module_name
+    from pathlib import Path
+
+    from zrth.lean.fbk_proveit import na_module_name
+    from zrth.lean.infer_route import route_by_name
+    from zrth.lean.project import generate_lakefile
 
     bare = generate_lakefile("Proj")
     assert "LTL_Certifying" not in bare
     assert "srcDir" not in bare
 
-    wired = generate_lakefile("Proj", ltl_project="/checkout")
+    parts = route_by_name("fbk-proveit").lakefile(Path("/checkout"), "Proj")
+    wired = generate_lakefile("Proj", parts=parts)
     assert 'name = "LTL_Certifying"' in wired
     assert 'path = "/checkout"' in wired
     # The NA lib maps the model's module name onto the directory it is
@@ -1127,12 +1132,14 @@ def test_the_na_lib_names_the_file_the_model_is_written_to(tmp_path):
     """The lean_lib's name and srcDir are the model's module name and
     directory. Drift between them is a `lake build` that cannot find an
     import the certificate already carries."""
-    from zrth.lean.project import PROVEIT_DIR, na_module_name
-    from zrth.lean.fbk_proveit import write_na_model
+    from zrth.lean.fbk_proveit import PROVEIT_DIR, na_module_name, write_na_model
 
-    model = write_na_model(
-        tmp_path, "Proj", LeanContext(_counter()), "true"
-    )
+    def path(rel):
+        out = tmp_path / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        return out
+
+    model = write_na_model(path, "Proj", LeanContext(_counter()), "true")
     assert model.parent.name == PROVEIT_DIR
     assert model.stem == na_module_name("Proj")
 
@@ -1150,3 +1157,29 @@ def test_a_checkout_that_is_not_one_fails_before_the_project_exists(tmp_path):
     assert r.returncode != 0
     assert "--fbk-proveit: not a directory" in r.stderr
     assert not out.exists()
+
+
+def test_a_check_and_a_property_share_one_encoding(monkeypatch):
+    """The slot bodies, the `--pre` and the `--safety` property are all read
+    on the run's one `ModuleEncoding`; none of them builds a term manager of
+    its own."""
+    from zrth.lean.fbk_proveit import check_module
+    from zrth.lean.smt.run import ModuleEncoding
+    from zrth.lean.smt_module import ModuleSMT
+
+    built = [0]
+    post_init = ModuleSMT.__post_init__
+
+    def counted(self):
+        built[0] += 1
+        post_init(self)
+
+    monkeypatch.setattr(ModuleSMT, "__post_init__", counted)
+
+    module = _input_start()
+    encoding = ModuleEncoding(module)
+    checked = check_module(module, True, "(>= e0 5)", encoding)
+    prop = property_to_bool_lean(module, "(>= s0 0)", encoding=encoding)
+
+    assert built[0] == 1
+    assert checked.pre_lean and prop

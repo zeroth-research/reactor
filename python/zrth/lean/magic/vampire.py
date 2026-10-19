@@ -159,31 +159,28 @@ nothing is proposed, it is the one check that the derivation is honest.
 from __future__ import annotations
 
 import re
-import subprocess
-import tempfile
 import time
 from dataclasses import dataclass
 from itertools import combinations, product
-from pathlib import Path
 
-from ..cert import CertificateData
+from ..certificate import Certificate, Claim
 from ..common import Refused
-from ..houdini_solver import (
-    DEFAULT_TIMEOUT,
-    Cvc5Solver,
-    _kill_group,
-    decimals,
-)
+from ..houdini_solver import DEFAULT_TIMEOUT, Cvc5Solver
 from . import TA2Magic
-from .houdini import Candidate, Obligations, columns
+from ..smt import obligations as obl
+from ..smt.obligations import Candidate, Obligations
+from ..smt.record import found, note
+from ..smt.script import decimals, script, smt_int
+from ..smt.terms import free_constants, ite_conditions
+from ..smt.vampire import run_vampire
 from ..smt_synth import (
     SynthContext,
+    columns,
     denominator_scale,
     floor_real,
     floor_real_src,
     program_constants,
     program_rationals,
-    smt_int,
 )
 
 try:
@@ -227,25 +224,6 @@ class Branch:
     state: tuple                # the folded terms, ite-free
 
 
-def ite_conditions(terms) -> list:
-    """Every condition an `ite` in `terms` branches on, outermost first.
-
-    Deduplicated by printed form: a transition that tests `s0 = 0` in three
-    components is one case split, not three.
-    """
-    seen: dict = {}
-
-    def walk(t):
-        if t.getKind() == Kind.ITE:
-            seen.setdefault(str(t[0]), t[0])
-        for child in t:
-            walk(child)
-
-    for t in terms:
-        walk(t)
-    return list(seen.values())
-
-
 def split(ctx: SynthContext, terms, what: str) -> list[Branch]:
     """`terms`, split into the ite-free cases of their own conditions.
 
@@ -284,31 +262,16 @@ def split(ctx: SynthContext, terms, what: str) -> list[Branch]:
 # SMT-LIB: cvc5 prints the question it built
 # ══════════════════════════════════════════════════════════════════════════
 
-_PRELUDE = "(set-logic ALL)\n"
-# Not `(assert (not ...))`: `assert-not` is what marks a formula as *the*
-# conjecture, which is what `--question_answering` attaches answer literals
-# to. An ordinary negated assertion is refuted without an answer.
-_CONJECTURE = "(assert-not {})\n(check-sat)\n"
-
 
 def script_for(conjecture) -> str:
-    """One cvc5 term as a whole SMT-LIB problem for Vampire.
+    """One closed cvc5 term as a whole SMT-LIB problem for Vampire.
 
-    Through `decimals`, which is the one rewrite cvc5's printing needs
-    before Vampire reads it: a rational prints as `(/ 1 2)`, whose
-    arguments are Int, and Vampire's SMT-LIB front end sorts literals
-    strictly enough to call that "invalid sort $int for interpretation /".
-    `houdini_solver` has said so since it began passing its own scripts
-    through the same function; this one did not, and nothing noticed while
-    the sorts gate refused every module with a rational in it.
-
-    The term *is* the question, so cvc5 prints it and this adds the two
-    lines around it. There is no printer here on purpose: the obligations
-    are cvc5 terms the module's own encoding produced, and every printer
-    between them and the prover is a chance to state something other than
-    what was encoded.
+    The term *is* the question: cvc5 prints it, and `decimals` rewrites the
+    rationals Vampire will not read. It goes under `assert-not`, not
+    `(assert (not ...))`, because that marks it as *the* conjecture, which
+    is what `--question_answering` attaches answer literals to.
     """
-    return _PRELUDE + decimals(_CONJECTURE.format(conjecture))
+    return decimals(script([conjecture], command="assert-not", spaced=False))
 
 
 def refuse_ites(term) -> None:
@@ -327,25 +290,6 @@ def refuse_ites(term) -> None:
             "answer-literal search does not see through a conditional. "
             "`--infer houdini` proves the same obligation with one."
         )
-
-
-def free_constants(term) -> list:
-    """Every uninterpreted constant `term` still mentions, outermost first.
-
-    What the old TPTP printer refused for free by having no variable for a
-    symbol: cvc5 prints a stray constant perfectly happily, and Vampire
-    reads an undeclared one as an error three steps later.
-    """
-    seen: dict = {}
-
-    def walk(t):
-        if t.getKind() == Kind.CONSTANT:
-            seen.setdefault(str(t), t)
-        for child in t:
-            walk(child)
-
-    walk(term)
-    return list(seen.values())
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -643,7 +587,14 @@ class Question:
 
     def _obligations(self, tpl: Template, prp, *, inductive: bool,
                      implies: bool, ranked: bool) -> list:
+        """The obligations, one per case of the round: each case's guard is
+        a hypothesis of its own, and its folded state the successor."""
         tm, ob = self.tm, self.ob
+
+        def rows(vs):
+            return self._rows(tpl, ob.flatten(ob.s, vs))
+
+        inv = [("inv", rows)]
         obligations = []
         # init_inv. The initial state is a function of the inputs alone, so
         # this is quantified over the inputs and split on its own
@@ -651,17 +602,13 @@ class Question:
         # variable here that nothing binds.
         if inductive:
             for br in self.entry:
-                hyp = self._and([ob.init_pre, *br.guard])
-                obligations.append(self._forall(
-                    self.inputs,
-                    self._implies(hyp, self._rows(tpl, self._cols(br)))))
+                q = obl.init_inv(ob.case(br.state), [rows], given=br.guard)
+                obligations.append(self._forall(self.inputs, self._stated(q)))
         for br in self.step:
-            here = self._rows(tpl, self.here)
+            case = ob.case(br.state)
             if inductive:
-                hyp = self._and([here, ob.update_pre, *br.guard])
-                obligations.append(self._forall(
-                    self.vars,
-                    self._implies(hyp, self._rows(tpl, self._cols(br)))))
+                q = obl.step_inv(case, inv, [rows], given=br.guard)
+                obligations.append(self._forall(self.vars, self._stated(q)))
             if ranked:
                 # hrank, ite-free: positive where the property fails, and
                 # smaller after the round. Implies the `Int.toNat` form.
@@ -670,18 +617,16 @@ class Question:
                     tm.mkTerm(Kind.GT, now, tm.mkInteger(0)),
                     tm.mkTerm(Kind.LT, self._rank(tpl, self._cols(br)), now),
                 ])
-                fails = tm.mkTerm(Kind.NOT, self._at(prp, ob.s))
-                obligations.append(self._forall(
-                    self.vars,
-                    self._implies(
-                        self._and([here, fails, ob.update_pre, *br.guard]),
-                        drops)))
+                q = obl.ranked(case, inv, prp, drops, given=br.guard)
+                obligations.append(self._forall(self.vars, self._stated(q)))
         if implies:
-            obligations.append(self._forall(
-                self.state,
-                self._implies(self._rows(tpl, self.here),
-                              self._at(prp, ob.s))))
+            q = obl.inv_imp_P(ob, inv, prp)
+            obligations.append(self._forall(self.state, self._stated(q)))
         return obligations
+
+    def _stated(self, q):
+        """`q` as the implication Vampire reads, a literal `true` left out."""
+        return self._implies(self._and([h for _, h in q.hyps]), q.goal)
 
     def _ask_for(self, holes: tuple[str, ...], obligations: list,
                  fixed: "dict | None" = None, bounded: bool = False):
@@ -723,11 +668,6 @@ class Question:
             return goal
         return self.tm.mkTerm(Kind.IMPLIES, hyp, goal)
 
-    def _at(self, term, vs):
-        # Folded: substituting a matrix-shaped holder leaves a select of a
-        # constructor, and a tuple is the one thing Vampire cannot be shown.
-        return self.ob._readable(term.substitute(self.ctx.state, vs))
-
     def _cols(self, br: Branch) -> list:
         """A branch's successor state, one term per column."""
         return self.ob.flatten(self.ob.s, list(br.state))
@@ -748,7 +688,10 @@ class Question:
         if pairs:
             body = body.substitute([c for c, _ in pairs],
                                    [v for _, v in pairs])
-        stray = free_constants(body)
+        # What the old TPTP printer refused for free by having no variable
+        # for a symbol: cvc5 prints a stray constant perfectly happily, and
+        # Vampire reads an undeclared one as an error three steps later.
+        stray = list(free_constants([body]).values())
         if stray:
             raise Refused(
                 f"--infer vampire states an obligation over "
@@ -904,48 +847,27 @@ class Answers:
               extra: tuple) -> "Derived | None":
         if budget < 1:
             return None
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".smt2", prefix="verith-vampire-qa-", delete=False
-        ) as f:
-            f.write(script)
-            path = f.name
         # Default mode, not `portfolio`: measured on this route's own
         # question for `m_countdown`, `--mode portfolio --schedule casc`
         # reaches the time limit where the default mode answers `[0,100]`
         # at once. A portfolio strategy is tuned to find a refutation, and
         # what is wanted here is the *substitution* a refutation carries.
-        cmd = [
-            self.exe, "--input_syntax", "smtlib2",
+        #
+        # `--time_limit` tells Vampire what schedule to run; `timeout` is
+        # the share of the deadline it actually gets.
+        run = run_vampire(self.exe, script, [
             "--question_answering", "plain",
             *extra,
             "--time_limit", f"{self.declared}",
-            path,
-        ]
-        t0 = time.perf_counter()
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True,
-                                start_new_session=True)
-        try:
-            # The real bound: `--time_limit` told Vampire what schedule to
-            # run, and this is the share of the deadline it actually gets.
-            out, _ = proc.communicate(timeout=budget)
-        except subprocess.TimeoutExpired:
-            _kill_group(proc)
-            out = ""
-        finally:
-            _kill_group(proc)
-            Path(path).unlink(missing_ok=True)
-        dt = time.perf_counter() - t0
+        ], timeout=budget, prefix="verith-vampire-qa-")
         self.calls += 1
-        self.spent += dt
-        error = next((ln for ln in out.splitlines()
-                      if "User error" in ln or "Parsing Error" in ln), None)
-        if error is not None:
+        self.spent += run.secs
+        if run.error is not None:
             raise Refused(
                 f"--infer vampire wrote a question Vampire cannot read: "
-                f"{error.strip()[:300]}"
+                f"{run.error[:300]}"
             )
-        return self._read(out, holes, dt)
+        return self._read(run.out, holes, run.secs)
 
     def _read(self, out: str, holes: int, dt: float) -> "Derived | None":
         alts = next(
@@ -992,8 +914,7 @@ class TA2MagicVampire(TA2Magic):
     """The certificate Vampire derives, checked before it is handed on."""
 
     def __init__(self, module, *, vampire: str, timeout: float = DEFAULT_TIMEOUT,
-                 artifacts=None, log=print):
-        super().__init__("")
+                 artifacts=None, log=print, encoding=None):
         if cvc5 is None:                             # pragma: no cover
             raise Refused(
                 "--infer vampire needs the `cvc5` package to encode the "
@@ -1001,6 +922,9 @@ class TA2MagicVampire(TA2Magic):
                 "uv pip install cvc5"
             )
         self.module = module
+        # The run's `smt.run.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
         self.exe = vampire
         self.timeout = float(timeout)
         self.artifacts = artifacts
@@ -1008,11 +932,15 @@ class TA2MagicVampire(TA2Magic):
 
     # --- driver -----------------------------------------------------------
 
-    def infer(self, cd: CertificateData) -> CertificateData:
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. `given` is not read: the
+        row seeds from nothing but `--pre`, which is in the claim."""
         # `SynthContext.build` refuses a component this route cannot weigh
         # as an integer -- Real, bitvector, matrix-shaped -- before anything
         # here is printed, which is the same gate `--infer smt-linear` uses.
-        ctx = SynthContext.build(self.module, cd, route="vampire",
+        ctx = SynthContext.build(self.encoding or self.module, claim,
+                                 route="vampire",
                                  takes=("int", "bool", "bv", "real", "tuple"))
         self._check_sorts(ctx)
         self.ctx = ctx
@@ -1035,23 +963,23 @@ class TA2MagicVampire(TA2Magic):
                      f"through a floor after scaling by {self.scale}")
 
         asker = Answers(self.exe, seconds=self.timeout, log=self.log)
-        derive = self._safety if cd.is_safety else self._ranked
+        derive = self._safety if claim.is_safety else self._ranked
         tried = []
-        for tpl in templates(ctx, ranked=not cd.is_safety):
+        for tpl in templates(ctx, ranked=not claim.is_safety):
             if asker.left() < 1:
                 break
             tried.append(tpl.name)
-            out = derive(q, tpl, asker, cd)
+            out = derive(q, tpl, asker, claim)
             if out is not None:
                 return out
             self.log(f"[vampire] nothing from {tpl.name} "
                      f"({asker.spent:.1f} s spent)")
         self.log(f"[vampire] {asker.calls} Vampire call(s), "
                  f"{asker.spent:.1f} s")
-        return self._none(cd, tried, asker)
+        return self._none(claim, tried, asker)
 
     def _safety(self, q: Question, tpl: Template, asker: Answers,
-                cd: CertificateData) -> "CertificateData | None":
+                claim: Claim) -> "Certificate | None":
         """One question: the invariant and the property it has to imply.
 
         `inv -> prp` is what pins the coefficients down, which is why this
@@ -1064,13 +992,13 @@ class TA2MagicVampire(TA2Magic):
         if answer is None:
             return None
         for named in self._alternatives(answer, tpl.holes, asker):
-            inv, _ = self._read_back(tpl, named, cd)
-            if self._checks_out(inv, None, cd):
-                return self._emit(cd, inv, None, tpl)
+            inv, _ = self._read_back(tpl, named, claim)
+            if self._checks_out(inv, None, claim):
+                return self._emit(inv, None, tpl)
         return None
 
     def _ranked(self, q: Question, tpl: Template, asker: Answers,
-                cd: CertificateData) -> "CertificateData | None":
+                claim: Claim) -> "Certificate | None":
         """Two questions: an inductive invariant, then a rank that drops on
         it.
 
@@ -1099,9 +1027,10 @@ class TA2MagicVampire(TA2Magic):
                 self.log("[vampire] no ranking over that invariant")
                 continue
             for named in self._alternatives(ranks, tpl.rank, asker):
-                inv, rank = self._read_back(tpl, {**inv_named, **named}, cd)
-                if self._checks_out(inv, rank, cd):
-                    return self._emit(cd, inv, rank, tpl)
+                inv, rank = self._read_back(tpl, {**inv_named, **named},
+                                            claim)
+                if self._checks_out(inv, rank, claim):
+                    return self._emit(inv, rank, tpl)
         return None
 
     def _alternatives(self, answer: Derived, holes: tuple[str, ...],
@@ -1127,7 +1056,7 @@ class TA2MagicVampire(TA2Magic):
     # --- what the answer means --------------------------------------------
 
     def _read_back(self, tpl: Template, named: dict,
-                   cd: CertificateData) -> tuple:
+                   claim: Claim) -> tuple:
         """The template with Vampire's numbers in it, as SMT-LIB."""
         facts = []
         for row in tpl.rows:
@@ -1135,7 +1064,7 @@ class TA2MagicVampire(TA2Magic):
             facts.append(f"(<= {row.smt} {smt_int(named[row.hi])})")
         inv = ("true" if not facts else facts[0] if len(facts) == 1
                else "(and " + " ".join(facts) + ")")
-        if cd.is_safety:
+        if claim.is_safety:
             return inv, None
         # A coefficient of one is the column itself: `(* 1 s0)` is what the
         # template says and `s0` is what the certificate should read. The
@@ -1156,7 +1085,7 @@ class TA2MagicVampire(TA2Magic):
         return inv, rank
 
     def _checks_out(self, inv_src: str, rank_src: "str | None",
-                    cd: CertificateData) -> bool:
+                    claim: Claim) -> bool:
         """The four obligations, restated and put to cvc5.
 
         An answer literal is the substitution *a* refutation used, and this
@@ -1175,7 +1104,7 @@ class TA2MagicVampire(TA2Magic):
         solver = Cvc5Solver(ctx.tm, seconds=max(5.0, min(30.0, self.timeout)),
                             log=self.log)
         queries = [ob.holds_at_entry(facts), ob.preserved(facts, facts)]
-        if cd.is_safety:
+        if claim.is_safety:
             queries.append(ob.implies(facts, ctx.prp))
         else:
             queries.append(ob.drops(facts, rank))
@@ -1258,34 +1187,29 @@ class TA2MagicVampire(TA2Magic):
 
     # --- out ---------------------------------------------------------------
 
-    def _emit(self, cd: CertificateData, inv_src: str,
-              rank_src: "str | None", tpl: Template) -> CertificateData:
+    def _emit(self, inv_src: str, rank_src: "str | None",
+              tpl: Template) -> Certificate:
         self.log(f"[vampire] inv: {inv_src}")
-        cd.inv = cd.inv_smt = inv_src
         if rank_src is not None:
             self.log(f"[vampire] ranking: {rank_src}")
-            cd.ranking = cd.ranking_smt = rank_src
         self._record(inv_src, rank_src, tpl)
-        return cd
+        return Certificate(inv_src, rank_src)
 
     def _record(self, inv_src: str, rank_src: "str | None",
                 tpl: Template) -> None:
-        if self.artifacts is None:
-            return
         what = (f"Derived by Vampire's answer literals from a `{tpl.name}` "
                 f"template with {len(tpl.all_holes)} holes -- the "
                 f"obligations were stated with the certificate open and "
                 f"Vampire returned the coefficients -- then checked against "
                 f"the module's encoding with cvc5.")
-        self.artifacts.put("inv", inv_src, status="proved", language="smt",
-                           what=f"The invariant this run found. {what}")
+        found(self.artifacts, "inv", inv_src,
+              what=f"The invariant this run found. {what}")
         if rank_src is not None:
-            self.artifacts.put(
-                "ranking", rank_src, status="proved", language="smt",
-                what=f"The ranking function this run found. {what}")
+            found(self.artifacts, "ranking", rank_src,
+                  what=f"The ranking function this run found. {what}")
 
-    def _none(self, cd, tried, asker) -> CertificateData:
-        what = ("inductive invariant implying the property" if cd.is_safety
+    def _none(self, claim: Claim, tried, asker):
+        what = ("inductive invariant implying the property" if claim.is_safety
                 else "invariant and ranking function")
         detail = (
             f"Vampire was asked for one as the coefficients of "
@@ -1298,12 +1222,12 @@ class TA2MagicVampire(TA2Magic):
             f"what is missing. `--infer houdini` searches the same module by "
             f"proposing facts and proving them, which is a different reach."
         )
-        if self.artifacts is not None:
-            self.artifacts.note(
-                f"--infer vampire derived no {what}. {detail}\n",
-                status="unknown",
-                what=f"A derivation of {what} that did not succeed.",
-                why="Vampire answers or times out; nothing was refuted.",
-            )
+        note(
+            self.artifacts,
+            f"--infer vampire derived no {what}. {detail}\n",
+            status="unknown",
+            what=f"A derivation of {what} that did not succeed.",
+            why="Vampire answers or times out; nothing was refuted.",
+        )
         raise Refused(f"--infer vampire derived no {what}. {detail}",
                       searched=True)

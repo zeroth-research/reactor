@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import cvc5
 
-from zrth.lean.cert import CertificateData
+from zrth.lean.certificate import Certificate, Claim
 from zrth.lean.smt_query import ModuleQueries
 
 CASES = [
@@ -30,7 +30,7 @@ CASES = [
 
 def abduce(modname: str, inv: str) -> str:
     module = importlib.import_module(f"mods.{modname}").module()
-    q = ModuleQueries.build(module, CertificateData(inv=inv))
+    q = ModuleQueries.build(module, Claim(), Certificate(inv=inv))
     if q is None:
         return "<cvc5 could not encode this module>"
     solver = cvc5.Solver(q.tm)
@@ -40,9 +40,9 @@ def abduce(modname: str, inv: str) -> str:
     el = q.msmt.fresh_extl_l("a_el")
     en = q.msmt.fresh_extl_n("a_en")
     nxt = q.msmt.update_state(s, el, en)
-    solver.assertFormula(q._sub_state(q.inv, s))
+    solver.assertFormula(q.enc.at(q.inv, s))
     try:
-        return str(solver.getAbduct(q._sub_state(q.inv, nxt)))
+        return str(solver.getAbduct(q.enc.at(q.inv, nxt)))
     except Exception as e:
         return f"<{type(e).__name__}: {str(e)[:70]}>"
 

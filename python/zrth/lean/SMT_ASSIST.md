@@ -1,8 +1,9 @@
 # Using cvc5 inside `verith`
 
 `verith` has always had a complete symbolic encoding of every module
-(`smt_module.ModuleSMT`), but outside the `--infer ai-cegis` loop it never
-asked the solver anything: cvc5 parsed the SMT-LIB predicates, handed them to
+(`smt_module.ModuleSMT`; a run builds it once, as `smt.run.ModuleEncoding`,
+and the pre-check and every cvc5 route share it), but outside the
+`--infer ai-cegis` loop it never asked the solver anything: cvc5 parsed the SMT-LIB predicates, handed them to
 the Lean printer, and went home. This is what it is used for now, what that
 bought, and what is left.
 
@@ -27,25 +28,24 @@ behaviour `verith` had before. Nothing here may take information away.
 The two always-on items do no solving at all -- they read the parsed terms --
 so they need no budget and cannot hang.
 
-`--smt-tactics` acts on the predicates *as supplied*, and then again on the
-inferred ones. Running only the first way was the same mistake `--pre-check`
-used to make: every question `solver_hints` asks is asked *under* the
-invariant, so with `--infer` there was no invariant to ask under and the run
-printed "nothing cvc5 can add to the plan" before the route that would give
-it something to add had run. `cert_facts` and `cert_thin` were therefore
-`skip` on every inferred certificate. `main._replan` restates both the hints
-and `predicate_facts` once the route has answered, from the `inv_smt` /
-`ranking_smt` it kept -- which matters twice over, because `features_for`
-takes `nonlinear` from the facts *over* the text scan rather than merging
-them, so stale facts did not merely omit `nlinarith` but removed one the
-printed Lean had already justified.
+`--smt-tactics` acts on the predicates the certificate ends up with: as
+supplied, or with `--infer` the inferred ones. Running only on the supplied
+ones was the same mistake `--pre-check` used to make: every question
+`solver_hints` asks is asked *under* the invariant, so with `--infer` there
+was no invariant to ask under and the run printed "nothing cvc5 can add to
+the plan" before the route that would give it something to add had run.
+`cert_facts` and `cert_thin` were therefore `skip` on every inferred
+certificate. `main._render` computes both the hints and `predicate_facts`
+once the route has answered, from the SMT-LIB it answered with -- which
+matters twice over, because `features_for` takes `nonlinear` from the facts
+*over* the text scan rather than merging them, so stale facts did not
+merely omit `nlinarith` but removed one the printed Lean had already
+justified.
 
 `--pre-check` no longer does either: run there, the invariant it would check does
 not exist yet, so it reported "nothing to check" and the certificate that
 reached Lean went unchecked. With `--infer` it runs **after** inference, on
-what `magic` returned. `magic` hands back Lean text, which nothing parses
-back, so `ai-cegis` keeps the SMT-LIB it gave the solver in
-`CertificateData.inv_smt` / `.ranking_smt` and the check restates the
+the route's answer, a `Certificate` of SMT-LIB source, and restates the
 obligations from that.
 
 `--infer ai` is still out of reach, and it is the route that needs it most:
@@ -216,10 +216,10 @@ already been zeta-reduced into the goal, and only the rewrite removes the
 split. That is the whole of the missing benefit.
 
 So the predicate is now rendered **unshared whenever cvc5 settled a
-condition in it** (`solver_hints` runs before `smt_predicates_to_lean` and
-passes `share=False`; after inference `_replan` reprints the same way, and
-reprints *every* predicate rather than the two that were inferred, since a
-settled condition can come from the property). That costs almost nothing: settled conditions only
+condition in it** (`main._render` asks `solver_hints` before
+`render_certificate` and passes it `share=False`, for *every* predicate
+rather than the two that were inferred, since a settled condition can come
+from the property). That costs almost nothing: settled conditions only
 survive as `if`s in Real predicates, where sharing saves little
 (NN2RealWide4 is 556 chars against 422), while the deep Int nets where
 sharing matters fold to `max` and offer no conditions to settle at all.
@@ -466,8 +466,8 @@ showed (cvc5 1.3.4, `tests/limits` fixtures), and then what shipped.
 
 **What the plan had right.** `Solver.synthFun` + `addSygusConstraint` +
 `checkSynth` does find ranking functions with no LLM and no API key, and
-`ModuleSMT.update_state` against `declareSygusVar` state variables is the
-encoding — step 2 was exactly right and is what both routes do.
+the module's encoded round (`ModuleEncoding.next_state`) against
+`declareSygusVar` state variables is the encoding — step 2 was exactly right and is what both routes do.
 
 **Step 3 — "give it a grammar" — was half wrong.** A grammar is not
 automatically a pruning:
@@ -492,8 +492,8 @@ where `4*x1 + x0` would do.
 answer.** `tlimit` does **not** stop `checkSynth`: a 1000 ms limit ran 13.9 s
 and returned a solution. It does not stop a quantified `checkSat` either — a
 20 s limit ran past 400 s. **`tlimit-per` stops both** (1001 ms and 5007 ms,
-`unknown`). No subprocess is needed; `smt_query._solver` already sets the
-pair, and `smt_synth.bounded_solver` is that pair for the searches.
+`unknown`). No subprocess is needed; `smt.limits.bounded_solver` sets the
+pair for every query.
 
 **Step 5 — "a synthesised `ite` folds through the min/max peephole for free"
 — is wrong.** `smt_to_lean.min_max_of` fires only on `ite (a ⋈ b) a b`, where
@@ -504,7 +504,8 @@ has that shape, so each one costs a `split_ifs` branch, doubled because
 **Step 6 — "fall back to `--infer ai-cegis`" — was not built, deliberately.**
 A route is a row and routes do not chain: a route that silently becomes
 another one makes two identical command lines mean different things, which
-is the argument `_resume_inv` already makes about inheriting a predicate.
+is the argument `InferInput.resumable_inv` already makes about inheriting
+a predicate.
 The handoff is through `artifacts/` instead, which is explicit, inspectable
 and survives the process.
 
