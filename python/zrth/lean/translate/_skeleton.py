@@ -9,7 +9,7 @@ conjunction over them (`TransRel` / `INIT`).
 They vary on three axes, and this module is parameterised on exactly those:
 
 1. **type builder** — what a state value is: a product of `Mat`s
-   (`_product_type`), one component per *element* (`_product_type_scalar`),
+   (`product_type`), one component per *element* (`product_type_scalar`),
    or the NA model's per-slot element type.  :attr:`RelSyntax.slot_ty` is the
    half of it a slot needs.
 3. **projection** — how slot `i` is read out of a state value
