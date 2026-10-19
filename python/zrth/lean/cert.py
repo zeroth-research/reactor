@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from zrth.lean.native import _product_type
 from zrth.lean.certificate import Certificate, LeanAnswer
-from zrth.lean.errors import Refused
+from zrth.lean.errors import PredicateRefused, Refused
 from zrth.lean.context import LeanContext
 from zrth.lean.lean_names import MAT_SIMP, rm_def
 from zrth.lean.tactics import plan_for
@@ -63,24 +63,23 @@ def render_certificate(
         if term is None:
             return None
 
-    def named(flag: str, term, mode: str) -> str | None:
-        """`translate`, with the flag the source came from on any refusal.
+    def named(term, role: str) -> str | None:
+        """`translate`, with the predicate's role on any refusal.
 
         """
         try:
-            return translate(term, mode)
+            return translate(term, role)
         except Refused as e:
-            raise Refused(f"{flag}: {e}") from e
+            raise PredicateRefused(role, str(e), kind=q.kind) from e
 
-    prp_flag = "--safety" if q.kind == "safety" else "--buchi"
-    prp = named(prp_flag, q.prp, "property")
-    init_pre = named("--pre", q.init_pre, "pre")
-    update_pre = named("--pre", q.update_pre, "pre")
+    prp = named(q.prp, "property")
+    init_pre = named(q.init_pre, "pre")
+    update_pre = named(q.update_pre, "pre")
     if verbatim is not None:
         inv, ranking = verbatim.inv, verbatim.ranking
     else:
-        inv = named("--invariant", q.inv, "invariant")
-        ranking = named("--ranking", q.ranking, "ranking")
+        inv = named(q.inv, "invariant")
+        ranking = named(q.ranking, "ranking")
     return LeanPredicates(
         kind=q.kind, prp=prp, inv=inv, ranking=ranking,
         init_pre=init_pre, update_pre=update_pre,

@@ -85,7 +85,10 @@ returns a :class:`zrth.Module`::
 import shlex
 from pathlib import Path
 
-from .cert import LeanCertificate, generate_zeroth_hammer_lean
+from .cert import (
+    LeanCertificate,
+    generate_zeroth_hammer_lean,
+)
 from .certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
 from .errors import Refused
