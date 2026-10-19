@@ -34,7 +34,8 @@ from typing import Callable, Union
 
 from zrth import Bool, Int, Real, BitVec
 
-from .common import Refused, itype_name
+from .errors import Refused
+from .sorts import itype_name
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -150,7 +151,7 @@ OPS: tuple[Op, ...] = (
         Op(
             name,
             theories,
-            mat=Inline("common._constant_expr"),
+            mat=Inline("literals._constant_expr"),
             scalar=Inline("native._constant_expr_scalar"),
             box=Inline("circ: @Box.const"),
         )
@@ -487,7 +488,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Tensor",
         NONE,
-        mat=Inline("common._constant_expr"),
+        mat=Inline("literals._constant_expr"),
         scalar=Inline("native._constant_expr_scalar"),
         box=Inline("circ: @Box.const"),
     ),

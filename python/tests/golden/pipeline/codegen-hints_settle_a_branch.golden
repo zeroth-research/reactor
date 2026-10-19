@@ -5,13 +5,13 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 100))
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) ≤ 200) then (s 0 0) else 999) : Int)).toNat
+def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) ≤ (200 : Int)) then (s 0 0) else (999 : Int)) : Int)).toNat
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin
@@ -58,7 +58,7 @@ macro "cert_states" v:ident : tactic =>
 
 -- obligation's own state binder; every step is `try`.
 macro "cert_facts" v:ident : tactic =>
-  `(tactic| (try (have hf0 : ((($v) 0 0) ≤ 200) := by (first | omega | linarith | norm_num); try simp only [if_pos hf0])))
+  `(tactic| (try (have hf0 : ((($v) 0 0) ≤ (200 : Int)) := by (first | omega | linarith | norm_num); try simp only [if_pos hf0])))
 
 -- Bridge each floored quantity to a bound on the Real under it, so the
 -- closers see the `Int` atom with a sign. `skip` when nothing is floored.
@@ -176,13 +176,13 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 100))
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) ≤ 200) then (s 0 0) else 999) : Int)).toNat
+def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) ≤ (200 : Int)) then (s 0 0) else (999 : Int)) : Int)).toNat
 
 
 def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
@@ -216,7 +216,7 @@ macro "cert_states" v:ident : tactic =>
 
 -- obligation's own state binder; every step is `try`.
 macro "cert_facts" v:ident : tactic =>
-  `(tactic| (try (have hf0 : ((($v) 0 0) ≤ 200) := by (first | omega | linarith | norm_num); try simp only [if_pos hf0])))
+  `(tactic| (try (have hf0 : ((($v) 0 0) ≤ (200 : Int)) := by (first | omega | linarith | norm_num); try simp only [if_pos hf0])))
 
 -- Bridge each floored quantity to a bound on the Real under it, so the
 -- closers see the `Int` atom with a sign. `skip` when nothing is floored.

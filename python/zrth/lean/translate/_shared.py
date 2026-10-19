@@ -1,15 +1,22 @@
 """Shared helpers used by multiple translate sub-modules."""
 
-from zrth.lean.common import (
-    FlatLayout,
-    dtype_shape,
-    _accessor,
-    _flat_element_type,
-    dtype_to_lean_type,
-    _mat_from_scalars,
-    flat_layout,
-)
+from zrth.lean.sorts import dtype_to_lean_type, _flat_element_type, wire_shape
+from zrth.lean.layout import FlatLayout, _accessor, _mat_from_scalars, flat_layout
 from zrth.lean.native import _build_tuple, _product_type_scalar
+
+
+def has_block(ctx, block: str) -> bool:
+    """Whether the module's atom has `block` ("init" or "update") terms. An
+    encoding proves its theorems about a block only when the block has
+    some, so whatever cites one of them asks this same question."""
+    return bool(list(getattr(ctx.atom, block)))
+
+
+def scalar_eq_name(block: str) -> str:
+    """The theorem `scalar.py` proves for `block`: the functional block is
+    `Scalar.pack` of `Scalar.<block>` of the unpacked inputs. It exists
+    exactly when `has_block(ctx, block)`."""
+    return f"{block}_scalar_eq"
 
 
 def _flat_slice(expr: str, layout: FlatLayout, wire) -> str:
@@ -74,7 +81,7 @@ def _scalar_bindings_with_recon(
                 bindings[w.id] = slots[0]
             else:
                 mat_ty = dtype_to_lean_type(w)
-                mat_expr = _mat_from_scalars(slots, list(dtype_shape(w.dtype)), _flat_element_type(w))
+                mat_expr = _mat_from_scalars(slots, wire_shape(w), _flat_element_type(w))
                 var_name = f"_m{let_counter[0]}"
                 let_counter[0] += 1
                 let_lines.append(f"  let {var_name} : {mat_ty} := {mat_expr}")

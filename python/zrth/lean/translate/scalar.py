@@ -8,17 +8,20 @@ from zrth.lean.native import (
     _build_tuple,
     _argmax_scalar_name,
 )
-from zrth.lean.common import (
-    dtype_shape,
+from zrth.lean.sorts import (
     dtype_to_lean_type,
-    LeanContext,
-    _flat_size,
     _flat_element_type,
-    _mat_from_scalars,
-    flat_layout,
     itype_name,
+    wire_shape,
 )
-from zrth.lean.translate._shared import _scalar_bindings_with_recon, _prepend_recon
+from zrth.lean.layout import _flat_size, _mat_from_scalars, flat_layout
+from zrth.lean.context import LeanContext
+from zrth.lean.translate._shared import (
+    _prepend_recon,
+    _scalar_bindings_with_recon,
+    has_block,
+    scalar_eq_name,
+)
 from zrth import Wire
 
 
@@ -49,7 +52,7 @@ def _pack_body(var: str, wires: "list[Wire]") -> str:
         parts.append(
             _mat_from_scalars(
                 flat_accrs[offset : offset + size],
-                list(dtype_shape(w.dtype)),
+                wire_shape(w),
                 _flat_element_type(w),
             )
         )
@@ -83,10 +86,9 @@ def _recon_lemma_lines(w) -> "list[str]":
     without this. Built by the same `_mat_from_scalars` as the reconstruction
     itself, so the shapes match syntactically.
     """
-    shape = list(dtype_shape(w.dtype))
+    shape = wire_shape(w)
     elem = _flat_element_type(w)
-    m = shape[0]
-    n = shape[1] if len(shape) == 2 else 1
+    m, n = shape.m, shape.n
     slots = [f"c {i} {j}" for i in range(m) for j in range(n)]
     lhs = _mat_from_scalars(slots, shape, elem)
     name = f"recon_{_elem_ty_slug(elem)}_{m}_{n}"
@@ -156,7 +158,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         for w in wires:
             if _flat_size(w) == 1:
                 continue
-            key = (tuple(dtype_shape(w.dtype)), _flat_element_type(w))
+            key = (wire_shape(w), _flat_element_type(w))
             if key in seen_recon:
                 continue
             seen_recon.add(key)
@@ -196,7 +198,6 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         ctx.ctrl_next,
         ctx.constants,
         flat_slots=init_flat,
-        flatten_outputs=True,
     )
     lines.append(
         f"@[simp] {noncomp}def init {_scalar_dom('extl_n', ctx.extl_next)} : {cod} :="
@@ -217,7 +218,6 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         ctx.ctrl_next,
         ctx.constants,
         flat_slots=update_flat,
-        flatten_outputs=True,
     )
     upd_dom = " ".join(_scalar_dom(p, w) for p, w in input_groups)
     lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
@@ -267,7 +267,7 @@ def to_lean_scalar_equiv(
             # budget. Raised per theorem rather than file-wide.
             f"set_option maxHeartbeats 2000000 in",
             f"set_option maxRecDepth 100000 in",
-            f"theorem {func_name}_scalar_eq : ∀ {' '.join(binders)},",
+            f"theorem {scalar_eq_name(func_name)} : ∀ {' '.join(binders)},",
             f"    {func_name} {' '.join(vars_)} = {rhs} := by",
             f"  intro {' '.join(vars_)}",
             f"  simp only [{', '.join(simp_names)}]",
@@ -300,14 +300,14 @@ def to_lean_scalar_equiv(
         ("extl_n", ctx.extl_next),
     ]
 
-    if list(ctx.atom.init):
+    if has_block(ctx, "init"):
         init_binder = f"(extl_n : {_product_type(ctx.extl_next)})"
         extl_n_arg = _call_arg("extl_n", ctx.extl_next)
         extras = [f"Scalar.unpack_extl_n"] if ctx.extl_next else []
         lines.extend(_proof([init_binder], "init", [extl_n_arg], extras))
         lines.append("")
 
-    if list(ctx.atom.update):
+    if has_block(ctx, "update"):
         binders = [
             f"({p} : {_product_type(w) if w else 'Unit'})" for p, w in input_groups
         ]
