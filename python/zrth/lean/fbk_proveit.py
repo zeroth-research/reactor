@@ -45,7 +45,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
-from .common import LeanContext
+from .context import LeanContext
+from .lean_names import (
+    EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
+)
 from .project import stream
 from .translate.fbk import (
     NA_IMPORTS,
@@ -55,12 +58,6 @@ from .translate.fbk import (
     check_na_supported,
     pre_over_slots,
 )
-
-
-# The route's subdirectory inside the generated project. The NA model is both
-# a `proveit.py` input and a lake target of the project, so the directory and
-# the model's module name are needed on both sides.
-PROVEIT_DIR = "ProveIt"
 
 
 def na_module_name(project_name: str) -> str:
@@ -329,10 +326,34 @@ def try_omega_before_smt(cert: str) -> "tuple[str, int]":
     return _SMT_CLOSER.subn("first | omega | smt", cert)
 
 
+# What each patch hooks onto, looked for anywhere in the certificate. Both
+# patches leave a certificate they do not recognise as it came, which is
+# right for a template that has moved on and silent about it: a
+# `generalizeNatVar` still there with no `revert h;` before it is the
+# template having moved under the patch, and the certificate then fails
+# where the patch was the repair. The `smt` here is a bare one, not `try
+# smt` and not the end of a dotted name, as `_SMT_CLOSER` takes it.
+_HOOKS = (
+    (re.compile(r"\bgeneralizeNatVar\b"),
+     "`generalizeNatVar` with no `revert h;` before it, so its `Bool` was "
+     "not normalised"),
+    (re.compile(r"(?<![\w.])(?<!try )smt\b"),
+     "`smt` closing no parenthesised group, so `omega` was not offered "
+     "before it"),
+)
+
+
+def unpatched(cert: str, *counts: int) -> "list[str]":
+    """What the two patches above found nothing to change in, though the
+    tactic each hooks onto is in `cert`. `counts` are theirs, in order."""
+    return [what for n, (hook, what) in zip(counts, _HOOKS)
+            if n == 0 and hook.search(cert)]
+
+
 def _parse(module, src: str, flag: str, encoding=None):
     """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
 
-    Read through `encoding`'s `CegarPromptEnv` (an encoding of `module` of
+    Read through `encoding`'s `CegisPromptEnv` (an encoding of `module` of
     the caller's own when it has none): the symbols are the module's, so the
     two flags that come through here -- `--safety` and `--pre` -- read `s0`,
     `e0`, `el0` as the same things the rest of the package does.
@@ -365,19 +386,19 @@ def property_to_bool_lean(
     ``translate/fbk.py`` binds it -- one slot per *element*, so a wire wider
     than 1x1 is read through the tuple selectors the property already uses
     (`((_ tuple.select 2) s0)`), resolved to the slot that element lives in.
-    Both sides get that map from `na._slot_accessors`, which is what keeps
+    Both sides get that map from `na.slot_accessors`, which is what keeps
     the property and the transition talking about the same variables.
 
     `n_state` is ignored; the layout comes from the module's own wires.
     `encoding` is the run's `ModuleEncoding`, which the property is read on.
     """
-    from .common import LeanContext
+    from .context import LeanContext
     from .smt_to_lean import smt_to_lean_bool
-    from .translate.fbk import _slot_accessors
+    from .translate.fbk import slot_accessors
 
     term = _parse(module, property_smt, "--safety", encoding)
     try:
-        return smt_to_lean_bool(term, _slot_accessors(LeanContext(module).ctrl_next))
+        return smt_to_lean_bool(term, slot_accessors(LeanContext(module).ctrl_next))
     except ValueError as e:
         raise ProveItError(f"--fbk-proveit: cannot encode --safety: {e}") from e
 
@@ -542,7 +563,8 @@ def run(
             f"certificate to {raw_cert}"
         )
 
-    text, patched = leave_bool_before_generalize(raw_cert.read_text())
+    raw = raw_cert.read_text()
+    text, patched = leave_bool_before_generalize(raw)
     text, omegas = try_omega_before_smt(text)
     notes = []
     if patched:
@@ -551,10 +573,13 @@ def run(
         notes.append(f"{omegas} offered omega before smt")
     if notes:
         log(f".. proveit.py's certificate: {', '.join(notes)}")
+    for what in unpatched(raw, patched, omegas):
+        log(f"warning: --fbk-proveit: proveit.py's certificate has {what}; "
+            f"its template may have changed under this patch")
 
-    files = {"Certificate/Certificate.lean": text}
+    files = {cert_file(PROOF): text}
     if equivalence:
-        files["Certificate/Equivalence.lean"] = equivalence_lean(
+        files[cert_file(EQUIVALENCE)] = equivalence_lean(
             project_name, ctx,
             simplify=simplify, bodies=bodies, pre_lean=pre_lean,
         )
@@ -572,8 +597,7 @@ def equivalence_lean(
     """The proof that the model is the module, as the text of its file.
 
     The certificate `proveit.py` installs is about the NA model. This is the
-    file that carries it back to the module -- see `translate/fbk_bridge.py`
-    and `FBK_EQUIVALENCE.md`.
+    file that carries it back to the module -- see `translate/fbk_bridge.py`.
 
     Lake reaches it through the `Certificate` lean_lib's glob, not through
     the root `Certificate.lean`'s import list, and that is not a detail:

@@ -18,6 +18,9 @@ module
     #N := Ite (#N, #N, #N)
     X(#N) := Id #N
 
+.. --buchi, in internal names: (= s0 0)
+.. --invariant, in internal names: (and (>= s0 0) (<= s0 9))
+.. --ranking, in internal names: (ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)
    wrote artifact property.smt (encoded)
    wrote artifact inv.smt (encoded)
    wrote artifact ranking.smt (encoded)
@@ -45,14 +48,14 @@ Wrote <OUT>/G/Certificate/Certificate.lean
 
 DONE: Project created at: <OUT>/G
 .. Inferring the certificate with --infer ai-cegis
-[CEGAR] attempt 0
+[CEGIS] attempt 0
   inv: (and (>= s0 0) (<= s0 9))
   ranking: (ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)
 [smt] check query: (and true (not (and (>= 0 0) (<= 0 9))))
 [smt] check query: (let ((_let_1 (+ ind_s0 1))) (let ((_let_2 (ite (= _let_1 10) 0 _let_1))) (and (and (>= ind_s0 0) (<= ind_s0 9)) true (not (and (>= _let_2 0) (<= _let_2 9))))))
 [smt] check query: (let ((_let_1 (= rd_s0 0))) (let ((_let_2 (+ rd_s0 1))) (let ((_let_3 (ite (= _let_2 10) 0 _let_2))) (and (and (>= rd_s0 0) (<= rd_s0 9)) (not _let_1) true (not (< (ite (<= _let_3 200) (ite (= _let_3 0) 0 (- 10 _let_3)) 999) (ite (<= rd_s0 200) (ite _let_1 0 (- 10 rd_s0)) 999)))))))
 [smt] check query: (let ((_let_1 (= rp_s0 0))) (and (and (>= rp_s0 0) (<= rp_s0 9)) (not _let_1) true (not (>= (ite (<= rp_s0 200) (ite _let_1 0 (- 10 rp_s0)) 999) 1))))
-[CEGAR] all obligations UNSAT — accepted
+[CEGIS] all obligations UNSAT — accepted
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    wrote artifact system.smt2 (encoded)
    wrote artifact obligation-init_inv.smt2 (encoded)
@@ -62,9 +65,12 @@ DONE: Project created at: <OUT>/G
    step_inv  holds N ms
    hrank     holds N ms
 .. SMT-informed tactics (cvc5), restated over the inferred predicates: <=5000 ms per query, <=20000 ms total
-   inv forces `((($v) 0 0) ≤ 200)` to be true
+   inv forces `((($v) 0 0) ≤ (200 : Int))` to be true
 Wrote <OUT>/G/Certificate/Data.lean
 Wrote <OUT>/G/Certificate/Certificate.lean
+.. The certificate, in the input's names:
+   --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))'
+   --ranking '(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)'
 
 Project ready at: <OUT>/G
 
@@ -73,17 +79,23 @@ Project ready at: <OUT>/G
 === Certificate/Data.lean
 import Core.Basic
 
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
 def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 9))
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (9 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) ≤ 200) then (if ((s 0 0) = 0) then 0 else (10 - (s 0 0))) else 999) : Int)).toNat
+def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) ≤ (200 : Int)) then (if ((s 0 0) = (0 : Int)) then (0 : Int) else ((10 : Int) - (s 0 0))) else (999 : Int)) : Int)).toNat
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin
@@ -92,11 +104,17 @@ import System.System
 import Certificate.Data
 import ZerothHammer
 
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
 -- Budgets and tactics below are generated from the shape of this module and
 -- its certificate; see `zrth/lean/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, linear, 2 branch point(s)
--- cvc5: inv forces `((($v) 0 0) ≤ 200)` to be true
+-- cvc5: inv forces `((($v) 0 0) ≤ (200 : Int))` to be true
 set_option maxRecDepth 13500
 set_option maxHeartbeats 2000000
 
@@ -133,7 +151,7 @@ macro "cert_states" v:ident : tactic =>
 -- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
 -- obligation's own state binder; every step is `try`.
 macro "cert_facts" v:ident : tactic =>
-  `(tactic| (try (have hf0 : ((($v) 0 0) ≤ 200) := by (first | omega | linarith | norm_num); try simp only [if_pos hf0])))
+  `(tactic| (try (have hf0 : ((($v) 0 0) ≤ (200 : Int)) := by (first | omega | linarith | norm_num); try simp only [if_pos hf0])))
 
 -- Bridge each floored quantity to a bound on the Real under it, so the
 -- closers see the `Int` atom with a sign. `skip` when nothing is floored.

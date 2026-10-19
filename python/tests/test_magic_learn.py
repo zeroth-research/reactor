@@ -18,7 +18,7 @@ from zrth import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
 from zrth.analyzer import convert_method
 from zrth.sugar import ite
 from zrth.lean.certificate import Claim
-from zrth.lean.common import Refused
+from zrth.lean.errors import Refused
 from zrth.lean.magic.learn import (
     TA2MagicLearn,
     _parse_property,
@@ -120,6 +120,31 @@ def test_a_learned_buchi_certificate_holds_under_cvc5():
     v = _verdicts(module, claim, cert)
     assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
                  "hrank": Status.HOLDS}, v
+
+
+def test_the_route_leaves_its_answer_where_the_next_run_resumes_from(tmp_path):
+    """Found, and then *resumable*: both halves `proved` and SMT-LIB, which
+    is what `infer_route.FIXABLE` and `InferInput.resumable_inv` ask for, so
+    a following `--infer ai-cegis` starts from them instead of asking the
+    model again."""
+    from types import SimpleNamespace
+
+    from zrth.lean.artifacts import ArtifactStore
+    from zrth.lean.certificate import Certificate
+    from zrth.lean.infer_route import FIXABLE
+    from zrth.lean.infer_route.nuterm import ROUTE
+
+    store = ArtifactStore(dir=tmp_path / "artifacts", producer="nuterm")
+    inp = SimpleNamespace(
+        module=_countdown(), claim=Claim(prp="(= s0 0)", kind="buchi"),
+        given=Certificate(), log=lambda *a: None,
+        project=SimpleNamespace(artifacts=store),
+    )
+    cert = ROUTE.run(inp).cert
+    inv = store.usable("inv", languages=("smt",), statuses=FIXABLE)
+    rank = store.usable("ranking", languages=("smt",), statuses=("proved",))
+    assert [store.read(a) for a in inv] == [cert.inv]
+    assert [store.read(a) for a in rank] == [cert.ranking]
 
 
 def test_a_learned_safety_invariant_implies_the_property():

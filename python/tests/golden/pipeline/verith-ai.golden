@@ -18,6 +18,7 @@ module
     #N := Ite (#N, #N, #N)
     X(#N) := Id #N
 
+.. --buchi, in internal names: (= s0 0)
    wrote artifact property.smt (encoded)
 .. Generating lean code
 Created project directory: `<OUT>/G`
@@ -60,13 +61,19 @@ Project ready at: <OUT>/G
 === Certificate/Data.lean
 import Core.Basic
 
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
 def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
 def inv : (Mat Int 1 1) → Prop := fun s => (s 0 0) ≥ 0 ∧ (s 0 0) ≤ 9
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
@@ -79,10 +86,16 @@ import System.System
 import Certificate.Data
 import ZerothHammer
 
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
 -- Budgets and tactics below are generated from the shape of this module and
 -- its certificate; see `zrth/lean/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
--- predicates: branching, conjunctive, linear, 1 branch point(s) (0 distinct)
+-- predicates: branching, conjunctive, linear, 1 branch point(s)
 set_option maxRecDepth 13500
 set_option maxHeartbeats 2000000
 

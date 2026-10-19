@@ -81,9 +81,9 @@ def test_a_predicate_of_the_wrong_sort_is_refused():
     `--fbk-proveit` has always checked its own."""
     with tempfile.TemporaryDirectory() as tmpdir:
         refused = [
-            ("--safety", "s0"),                              # Int as a Prop
+            ("--safety", "(X @intf.0)"),                              # Int as a Prop
             ("--pre", "(+ 1 1)"),                            # Int as a Prop
-            ("--buchi", "(= s0 0)", "--ranking", "(= s0 0)"),  # Bool as a Nat
+            ("--buchi", "(= (X @intf.0) 0)", "--ranking", "(= (X @intf.0) 0)"),  # Bool as a Nat
         ]
         for args in refused:
             r = _verith(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Sorts")
@@ -92,7 +92,7 @@ def test_a_predicate_of_the_wrong_sort_is_refused():
 
         # and the shapes that are right still pass
         r = _verith(
-            str(COUNTER_MODULE), "--buchi", "(= s0 0)", "--ranking", "s0",
+            str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)", "--ranking", "(X @intf.0)",
             "-o", tmpdir, "-p", "Sorts",
         )
         assert r.returncode == 0, r.stderr
@@ -105,10 +105,10 @@ def test_a_predicate_cvc5_cannot_read_is_refused_not_pasted():
     leaving a Lean parse error in generated code as the first sign."""
     with tempfile.TemporaryDirectory() as tmpdir:
         cases = [
-            (("--safety", "(= s0"), "--safety"),          # unbalanced
-            (("--safety", "(= s9 0)"), "--safety"),       # no such state var
-            (("--buchi", "(and s0"), "--buchi"),
-            (("--safety", "true", "--invariant", "(bogus s0)"), "--invariant"),
+            (("--safety", "(= (X @intf.0)"), "--safety"),          # unbalanced
+            (("--safety", "(= (X @intf.9) 0)"), "--safety"),       # no such state var
+            (("--buchi", "(and (X @intf.0)"), "--buchi"),
+            (("--safety", "true", "--invariant", "(bogus (X @intf.0))"), "--invariant"),
         ]
         for args, flag in cases:
             r = _verith(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Unparsed")
@@ -134,7 +134,7 @@ def test_a_refusal_is_an_error_line_not_a_traceback():
             # a `-d` the file does not define
             (str(COUNTER_MODULE), "-d", "no_such_function"),
             # a state variable in a precondition, which reads inputs
-            (str(COUNTER_MODULE), "--pre", "(= s0 0)"),
+            (str(COUNTER_MODULE), "--pre", "(= (X @intf.0) 0)"),
         ]
         for case in cases:
             r = _verith(*case, "-o", tmpdir, "-p", "Refused")
@@ -172,7 +172,7 @@ def test_a_refusal_names_only_the_flag_that_was_given():
     from types import SimpleNamespace
 
     from zrth.lean import main as m
-    from zrth.lean.common import Refused
+    from zrth.lean.errors import Refused
 
     def said(route) -> str:
         return m._refused(SimpleNamespace(route=route), Refused("why")).code
@@ -202,7 +202,7 @@ def test_verith_with_property():
     """A property without --infer writes prp as sorry (string not compiled to Terms)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTER_MODULE), "--buchi", "s0 == 0", "-o", tmpdir, "-p", "CounterProp"
+            str(COUNTER_MODULE), "--buchi", "X(@intf.0) == 0", "-o", tmpdir, "-p", "CounterProp"
         )
         assert r.returncode == 0, r.stderr
         assert (Path(tmpdir) / "CounterProp").exists()
@@ -221,7 +221,7 @@ def test_verith_infer_rejects_cert_file():
         r = _verith(
             str(COUNTER_MODULE),
             "--buchi",
-            "(= s0 0)",
+            "(= (X @intf.0) 0)",
             "--infer",
             "--cert-file",
             str(Path(tmpdir) / "Cert.lean"),
@@ -235,22 +235,21 @@ def test_verith_infer_rejects_cert_file():
 # ── the pre-check and inference, in that order ──────────────────────────────
 
 
-# `--infer ai-cegis` with both predicates fixed makes no LLM call: the CEGAR
+# `--infer ai-cegis` with both predicates fixed makes no LLM call: the CEGIS
 # loop just verifies them once. That is the whole inference path, offline.
-CEGAR_FIXED = (
-    "--buchi", "(= s0 0)",
-    "--invariant", "(and (>= s0 0) (<= s0 9))",
-    "--ranking", "(ite (= s0 0) 0 (- 10 s0))",
+CEGIS_FIXED = (
+    "--buchi", "(= (X @intf.0) 0)",
+    "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+    "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
     "--infer", "ai-cegis",
 )
 
 
 def test_pre_check_checks_the_inferred_certificate():
     """`--pre-check` has to wait for `--infer`, or it checks nothing."""
-    pytest.importorskip("anthropic")  # the CEGAR route builds a client either way
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTER_MODULE), *CEGAR_FIXED, "--pre-check", "cvc5",
+            str(COUNTER_MODULE), *CEGIS_FIXED, "--pre-check", "cvc5",
             "-o", tmpdir, "-p", "CounterPreCheck",
         )
         assert r.returncode == 0, r.stderr
@@ -306,9 +305,9 @@ def _cert(tmpdir, name) -> tuple[str, str]:
 def test_buchi_generates_a_ranking_certificate():
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTER_MODULE), "--buchi", "(= s0 0)",
-            "--invariant", "(and (>= s0 0) (<= s0 9))",
-            "--ranking", "(ite (= s0 0) 0 (- 10 s0))",
+            str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)",
+            "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+            "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
             "-o", tmpdir, "-p", "CounterBuchi",
         )
         assert r.returncode == 0, r.stderr
@@ -324,8 +323,8 @@ def test_safety_generates_a_rule_globally_certificate():
     point is that it has none."""
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTER_MODULE), "--safety", "(<= s0 9)",
-            "--invariant", "(and (>= s0 0) (<= s0 9))",
+            str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)",
+            "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
             "-o", tmpdir, "-p", "CounterSafety",
         )
         assert r.returncode == 0, r.stderr
@@ -338,7 +337,7 @@ def test_safety_generates_a_rule_globally_certificate():
 
 def test_safety_and_buchi_are_mutually_exclusive(tmp_path):
     r = _verith(
-        str(COUNTER_MODULE), "--safety", "(<= s0 9)", "--buchi", "(= s0 0)",
+        str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)", "--buchi", "(= (X @intf.0) 0)",
         "-o", str(tmp_path), "-p", "P",
     )
     assert r.returncode != 0
@@ -348,7 +347,7 @@ def test_safety_and_buchi_are_mutually_exclusive(tmp_path):
 def test_safety_rejects_a_ranking(tmp_path):
     """Taking a ranking function and dropping it would look like it was used."""
     r = _verith(
-        str(COUNTER_MODULE), "--safety", "(<= s0 9)", "--ranking", "s0",
+        str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)", "--ranking", "(X @intf.0)",
         "-o", str(tmp_path), "-p", "P",
     )
     assert r.returncode != 0
@@ -358,7 +357,7 @@ def test_safety_rejects_a_ranking(tmp_path):
 def test_safety_rejects_the_unchecked_inference_route(tmp_path):
     """`--infer ai` infers a ranking function and checks nothing with cvc5."""
     r = _verith(
-        str(COUNTER_MODULE), "--safety", "(<= s0 9)", "--infer", "ai",
+        str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)", "--infer", "ai",
         "-o", str(tmp_path), "-p", "P",
     )
     assert r.returncode != 0
@@ -388,7 +387,7 @@ def test_learn_infers_a_buchi_certificate_and_it_pre_checks():
     pytest.importorskip("cvc5")
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "nuterm",
+            str(COUNTDOWN_MODULE), "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
             "--pre-check", "cvc5", "-o", tmpdir, "-p", "CountdownLearn",
         )
         assert r.returncode == 0, r.stderr
@@ -407,7 +406,7 @@ def test_learn_serves_safety_as_well():
     pytest.importorskip("cvc5")
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTDOWN_MODULE), "--safety", "(<= s0 100)", "--infer", "nuterm",
+            str(COUNTDOWN_MODULE), "--safety", "(<= (X @intf.0) 100)", "--infer", "nuterm",
             "--pre-check", "cvc5", "-o", tmpdir, "-p", "BoundedLearn",
         )
         assert r.returncode == 0, r.stderr
@@ -426,8 +425,8 @@ def test_learn_takes_the_precondition_as_its_entry_assumption(tmp_path):
     grants the same assumption the search made, which is what makes the
     certificate one verith's own obligations accept."""
     r = _verith(
-        str(BOUNDED_INPUT_MODULE), "--safety", "(>= s0 0)", "--infer", "nuterm",
-        "--pre", "(>= e0 0)", "--pre-check", "cvc5", "-o", str(tmp_path), "-p", "P",
+        str(BOUNDED_INPUT_MODULE), "--safety", "(>= (X @intf.0) 0)", "--infer", "nuterm",
+        "--pre", "(>= (X @extl.0) 0)", "--pre-check", "cvc5", "-o", str(tmp_path), "-p", "P",
     )
     assert r.returncode == 0, r.stderr
     assert "[nuterm] --pre at entry: e0=s0" in r.stdout, r.stdout
@@ -441,7 +440,7 @@ def test_without_the_precondition_the_same_run_finds_nothing(tmp_path):
     and not a false property -- a question that is only answerable from the
     states the precondition admits."""
     r = _verith(
-        str(BOUNDED_INPUT_MODULE), "--safety", "(>= s0 0)", "--infer", "nuterm",
+        str(BOUNDED_INPUT_MODULE), "--safety", "(>= (X @intf.0) 0)", "--infer", "nuterm",
         "-o", str(tmp_path), "-p", "P",
     )
     assert r.returncode != 0
@@ -449,8 +448,8 @@ def test_without_the_precondition_the_same_run_finds_nothing(tmp_path):
 
 
 @pytest.mark.parametrize("extra, expected", [
-    (["--invariant", "(<= s0 100)"], "--invariant"),
-    (["--ranking", "s0"], "--ranking"),
+    (["--invariant", "(<= (X @intf.0) 100)"], "--invariant"),
+    (["--ranking", "(X @intf.0)"], "--ranking"),
     (["--model", "claude-sonnet-4-6-x"], "--model and --base-url"),
     (["--base-url", "http://localhost:11434/v1"], "--model and --base-url"),
 ])
@@ -460,7 +459,7 @@ def test_learn_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
     calls. `--pre` is not one of these: it is an assumption rather than a
     candidate, and the two tests above are it being used."""
     r = _verith(
-        str(COUNTDOWN_MODULE), "--buchi", "(= s0 0)", "--infer", "nuterm",
+        str(COUNTDOWN_MODULE), "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
         *extra, "-o", str(tmp_path), "-p", "P",
     )
     assert r.returncode != 0
@@ -472,22 +471,21 @@ def test_learn_is_an_answer_to_safety_where_the_ai_route_is_not():
     that can serve it."""
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTDOWN_MODULE), "--safety", "(<= s0 100)", "--infer", "ai",
+            str(COUNTDOWN_MODULE), "--safety", "(<= (X @intf.0) 100)", "--infer", "ai",
             "-o", tmpdir, "-p", "P",
         )
         assert r.returncode != 0
         assert "--infer ai-cegis or --infer nuterm" in r.stderr
 
 
-def test_cegar_infers_a_safety_certificate():
-    """The CEGAR loop with the invariant fixed makes no LLM call: it states
+def test_cegis_infers_a_safety_certificate():
+    """The CEGIS loop with the invariant fixed makes no LLM call: it states
     the safety obligations (init, inductive, `inv -> P`) and verifies them,
     which is the whole route minus the prompting."""
-    pytest.importorskip("anthropic")
     with tempfile.TemporaryDirectory() as tmpdir:
         r = _verith(
-            str(COUNTER_MODULE), "--safety", "(<= s0 9)",
-            "--invariant", "(and (>= s0 0) (<= s0 9))",
+            str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)",
+            "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
             "--infer", "ai-cegis", "--pre-check", "cvc5",
             "-o", tmpdir, "-p", "CounterSafetyInfer",
         )
@@ -512,7 +510,7 @@ def test_verith_infer_claude():
         r = _verith(
             str(COUNTER_MODULE),
             "--buchi",
-            "s0 == 0",
+            "X(@intf.0) == 0",
             "--infer",
             "-o",
             tmpdir,
@@ -538,7 +536,7 @@ def test_verith_infer_ollama():
         r = _verith(
             str(COUNTER_MODULE),
             "--buchi",
-            "s0 == 0",
+            "X(@intf.0) == 0",
             "--infer",
             "--model",
             "qwen3-coder",
@@ -565,14 +563,14 @@ def test_build_cert_needs_a_certificate_to_build(tmp_path):
     """A bare project's `ranking` is `sorry`, and no tactic closes an
     obligation stated over it, so asking for the build is a mistake."""
     r = _verith(
-        str(COUNTER_MODULE), "--buchi", "(= s0 0)",
+        str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)",
         "-o", str(tmp_path), "-p", "P", "--build-cert",
     )
     assert r.returncode != 0
     assert "--build-cert needs a certificate to build" in r.stderr
     # An invariant without a ranking is still a `sorry`, so it is not enough.
     r = _verith(
-        str(COUNTER_MODULE), "--buchi", "(= s0 0)", "--invariant", "(<= s0 100)",
+        str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)", "--invariant", "(<= (X @intf.0) 100)",
         "-o", str(tmp_path), "-p", "P", "--build-cert",
     )
     assert r.returncode != 0
@@ -591,12 +589,12 @@ def _fake_ltl_checkout(root: Path) -> Path:
 @pytest.mark.parametrize(
     "route",
     [
-        ["--buchi", "(= s0 0)", "--invariant", "(<= s0 100)", "--ranking", "s0"],
+        ["--buchi", "(= (X @intf.0) 0)", "--invariant", "(<= (X @intf.0) 100)", "--ranking", "(X @intf.0)"],
         # A safety certificate is complete without a ranking function.
-        ["--safety", "(<= s0 100)", "--invariant", "(<= s0 100)"],
-        ["--buchi", "(= s0 0)", "--infer"],
-        ["--buchi", "(= s0 0)", "--infer", "nuterm"],
-        ["--safety", "(= s0 0)", "--fbk-proveit", "<checkout>"],
+        ["--safety", "(<= (X @intf.0) 100)", "--invariant", "(<= (X @intf.0) 100)"],
+        ["--buchi", "(= (X @intf.0) 0)", "--infer"],
+        ["--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm"],
+        ["--safety", "(= (X @intf.0) 0)", "--fbk-proveit", "<checkout>"],
     ],
 )
 def test_build_cert_is_accepted_by_every_route_that_fills_the_certificate(
@@ -626,8 +624,8 @@ def test_build_cert_rejects_the_routes_that_generate_no_project(tmp_path):
         ("--hammer-file", str(tmp_path / "H.lean")),
     ):
         r = _verith(
-            str(COUNTER_MODULE), "--buchi", "(= s0 0)", "--invariant", "(<= s0 100)",
-            "--ranking", "s0", "-o", str(tmp_path), "-p", "P",
+            str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)", "--invariant", "(<= (X @intf.0) 100)",
+            "--ranking", "(X @intf.0)", "-o", str(tmp_path), "-p", "P",
             "--build-cert", flag, value,
         )
         assert r.returncode != 0
@@ -741,3 +739,55 @@ def test_a_kernel_error_after_another_one_is_not_reported_twice(
     )
     with pytest.raises(project.LakeBuildError, match="unknown constant"):
         project.build_certificate(tmp_path)
+
+
+def test_the_input_format_follows_the_suffix_or_format():
+    from zrth.lean.cli import parse_args
+
+    s = parse_args([str(COUNTER_MODULE)])
+    assert (s.input_format, s.input_opts) == ("python", {"module_def": "module"})
+    s = parse_args([str(COUNTER_MODULE), "-d", "other"])
+    assert s.input_opts == {"module_def": "other"}
+    s = parse_args(["--format", "python", "model.txt"])
+    assert s.input_format == "python"
+
+
+def test_an_input_whose_format_cannot_be_told_is_refused(capsys):
+    from zrth.lean.cli import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args(["model.txt"])
+    assert "cannot tell the format of model.txt" in capsys.readouterr().err
+
+
+SMV_FIXTURES = Path(__file__).parent / "smv_fixtures"
+
+
+def test_d_is_only_meaningful_for_python_input(capsys):
+    from zrth.lean.cli import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args([str(SMV_FIXTURES / "mod10.smv"), "-d", "other"])
+    assert "--module-def is only meaningful for python input" in \
+        capsys.readouterr().err
+
+
+def test_an_smv_model_is_certified_in_its_own_names(tmp_path):
+    """mod10 counts to 9 and wraps: `x` stays in 0..9, and cvc5 checks the
+    invariant that says so before a line of the certificate is written."""
+    band = "(and (>= (X x) 0) (<= (X x) 9))"
+    r = _verith(str(SMV_FIXTURES / "mod10.smv"), "--safety", band,
+                "--invariant", band, "--pre-check", "cvc5",
+                "--cert-file", str(tmp_path / "Mod10.lean"))
+    assert r.returncode == 0, r.stderr
+    assert ".. --safety, in internal names: (and (>= s0 0) (<= s0 9))" in r.stdout
+    assert (tmp_path / "Mod10.lean").exists()
+
+
+def test_a_model_strict_smv_refuses_is_an_error_line(tmp_path):
+    free = tmp_path / "free.smv"
+    free.write_text("MODULE main\nVAR x : boolean;\nASSIGN init(x) := TRUE;\n")
+    r = _verith(str(free), "-o", str(tmp_path))
+    assert r.returncode != 0
+    assert "Traceback" not in r.stderr, r.stderr
+    assert "error:" in r.stderr and "`x` has no next value" in r.stderr

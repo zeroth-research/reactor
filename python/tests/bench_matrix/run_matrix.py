@@ -49,6 +49,7 @@ sys.path.insert(0, str(PY))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
 from zrth.lean.project import without_cascades  # noqa: E402
+from zrth.lean.inputs import to_surface  # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 PROJECTS = WORK / "projects"
@@ -59,7 +60,7 @@ GEN_TIMEOUT = 300
 BUILD_TIMEOUT = 420
 # What of GEN_TIMEOUT `--infer ai-cegis` does not spend asking: verith's
 # start-up and the project it writes either side of the loop.
-CEGAR_MARGIN = 20
+CEGIS_MARGIN = 20
 
 # The two paths `--infer fbk-proveit` needs, and the MathSAT bindings its
 # `vmt2lean.py` imports. Overridable, but defaulted so a plain run measures
@@ -127,8 +128,8 @@ def write_manifest(proj: Path, route_name: str) -> None:
 def command(row, route, out: Path) -> list[str]:
     """The `uv run verith` this pair is, as a list. Also what the page shows."""
     cmd = ["uv", "run", "verith", rel(row.module),
-           f"--{row.kind}", row.prop,
-           *(["--pre", row.pre] if row.pre else []), *route.args,
+           f"--{row.kind}", to_surface(row.prop),
+           *(["--pre", to_surface(row.pre)] if row.pre else []), *route.args,
            "--artifacts", "reset", "-o", str(out), "-p", "Rea"]
     if route.needs_llm and MODEL:
         cmd += ["--model", MODEL]
@@ -136,7 +137,7 @@ def command(row, route, out: Path) -> list[str]:
         # Asked by time rather than by count, so the column uses the budget
         # the cell has: five attempts used to end at 75-107 s of a 180 s cap.
         # The margin is the project written before the loop and after it.
-        cmd += ["--cegar-budget", str(GEN_TIMEOUT - CEGAR_MARGIN)]
+        cmd += ["--cegis-budget", str(GEN_TIMEOUT - CEGIS_MARGIN)]
     return cmd
 
 
@@ -403,7 +404,7 @@ _UNSUPPORTED = re.compile(
 # `max_attempts` rejections -- the same outcome as `ai-cegis` running out of
 # attempts, reported in its own words.
 _NO_CERT = re.compile(
-    r"error: --infer|CEGAR failed after|obligation violated|found no ranking"
+    r"error: --infer|CEG(?:AR|IS) failed after|obligation violated|found no ranking"
     r"|found no invariant|could not decide|cannot decide|--fbk-proveit:|--ic3ia:"
     r"|Failed to find valid invariant/ranking after")
 # A module shape no Lean column can write. `verith` refuses it before

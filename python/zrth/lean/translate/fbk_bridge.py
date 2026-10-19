@@ -4,7 +4,7 @@
 comes back is about *that model*. Every other encoding in this package
 carries an equivalence theorem to the functional one and would be worthless
 without it; this route had none, so a mistranslation anywhere in
-`smt_encode`, `_scalar_element`, cvc5's rewriter or `smt_to_lean_bool`
+`smt_encode`, `smt.slots`, cvc5's rewriter or `smt_to_lean_bool`
 produced a model that parses, model-checks, and describes a different
 system.
 
@@ -29,35 +29,24 @@ step: `state k` has type `TypeMap k`, a stuck `match` that `omega` will not
 read as an `Int` and `smt` will not read at all. Hence `effect_k_fn`, the
 same body over honest scalar binders, tied to the model by `rfl`.
 
-`FBK_EQUIVALENCE.md` has the measurements this is built on, including why
-the cascade is what it is: `decide` cannot close these goals (free
+The cascade is what it is because `decide` cannot close these goals (free
 variables), `split_ifs` before `simp` splits `(x == 0)` and `decide (x = 0)`
 into four branches, and the `Linear` cases need the certificate's own matrix
-simp set because `_translate_terms_scalar` does not scalarise a `Linear` --
+simp set because `translate_terms_scalar` does not scalarise a `Linear` --
 it rebuilds the `Mat` and calls `matVecAffine`.
 """
 
 import re
 
-from zrth.lean.common import (
-    LeanContext,
-    flat_layout,
+from zrth.lean.layout import flat_layout
+from zrth.lean.context import LeanContext
+from zrth.lean.native import product_type, product_type_scalar
+from zrth.lean.lean_names import (
+    DATA, LINTERS_OFF, MAT_SIMP, SYSTEM_LAYOUT, cert_module, rm_def,
 )
-from zrth.lean.native import _product_type, _product_type_scalar
-from zrth.lean.translate.fbk import SlotBodies, check_na_supported
+from zrth.lean.translate._shared import scalar_eq_name
+from zrth.lean.translate.fbk import SlotBodies, check_na_shape, check_na_supported
 
-# The certificate's own `simp_mat` arsenal. Without it a `Linear` arrives as
-# `matVecAffine 2 [[1, 0], [0, 1]] [0, 1] (fun i j => match i, j with ...)`
-# and no arithmetic prover can touch it.
-_MAT_SIMP = (
-    "MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, "
-    "add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, "
-    "Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, "
-    "Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, "
-    # The three reductions unfold to a `List.ofFn` fold that the two lemmas
-    # above then compute; without the defs here the fold never opens.
-    "matMin, matMax, argmax_1d, argmax"
-)
 
 
 def _lemmas(*names: str) -> str:
@@ -94,7 +83,7 @@ def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False) -> list[str
     what broke the `rfl`.
     """
     plain = f"{defs}{extra}"
-    mat = f"{defs}, {_MAT_SIMP}{extra}"
+    mat = f"{defs}, {', '.join(MAT_SIMP)}{extra}"
     s = "simp_all" if from_hyps else "simp"
     return [
         "  first",
@@ -130,6 +119,10 @@ def atom_to_lean_fbk_bridge(
     there is one: `start_maps` proves `INIT`, and an `INIT` with a conjunct
     this file does not know about is a proof that does not close.
     """
+    # Also when `bodies` were handed in: the proof below cites the scalar
+    # theorems and indexes the slots, which a module without that shape has
+    # neither of.
+    check_na_shape(ctx)
     layout = flat_layout(ctx.ctrl_next)
     n = layout.total
     ty = layout.element_types()
@@ -146,9 +139,9 @@ def atom_to_lean_fbk_bridge(
     args = " ".join(f"x{k}" for k in range(n))
     flat = ", ".join(f"x{k}" for k in range(n))
     slots_of_state = " ".join(f"(Definition.var_{k} state)" for k in range(n))
-    ctrl_native = _product_type(ctx.ctrl_next)
+    ctrl_native = product_type(ctx.ctrl_next)
     extl_native = (
-        f"({_product_type(ctx.extl_latched)}) × ({_product_type(ctx.extl_next)})"
+        f"({product_type(ctx.extl_latched)}) × ({product_type(ctx.extl_next)})"
     )
     # The transition reads no input -- `check_na_supported` refuses a module
     # whose does -- so `bridge_k` quantifies over them and `Scalar.update`
@@ -156,8 +149,8 @@ def atom_to_lean_fbk_bridge(
     # invented. With no inputs at all both sides are `Unit`, spelled `()`.
     if ctx.extl_next:
         extl_binders = (
-            f" (el : {_product_type_scalar(ctx.extl_latched)})"
-            f" (en : {_product_type_scalar(ctx.extl_next)})"
+            f" (el : {product_type_scalar(ctx.extl_latched)})"
+            f" (en : {product_type_scalar(ctx.extl_next)})"
         )
         extl_args = "el en"
     else:
@@ -173,14 +166,14 @@ def atom_to_lean_fbk_bridge(
         f"   `{na_module}` is a model of this module, and the certificate",
         "   `proveit.py` installed proves a property *of that model*. These",
         "   theorems say the model admits every run the module has, so the",
-        "   property transfers -- see `module_safety` at the end, and",
-        "   `zrth/lean/FBK_EQUIVALENCE.md` for the design. Generated by",
-        "   `verith --fbk-proveit`. -/",
-        "import System.System",
-        "import System.Scalar",
-        "import Certificate.Data",
+        "   property transfers -- see `module_safety` at the end.",
+        "   Generated by `verith --fbk-proveit`. -/",
+        f"import {SYSTEM_LAYOUT.lean_module('')}",
+        f"import {SYSTEM_LAYOUT.lean_module('Scalar')}",
+        f"import {cert_module(DATA)}",
         f"import {na_module}",
         "",
+        LINTERS_OFF,
         "",
         "-- The same budgets the certificate and the scalar equivalence carry:",
         "-- a 64-deep straight-line transition exhausts the default recursion",
@@ -195,7 +188,7 @@ def atom_to_lean_fbk_bridge(
         f"abbrev CtrlNative := {ctrl_native}",
         "",
         "/-- A module state, read as the model's slots. The arms are the flat",
-        "    element order `common.flat_layout` fixes, which is the order",
+        "    element order `layout.flat_layout` fixes, which is the order",
         "    `Scalar.unpack_ctrl` unpacks in -- the same call, not a matching",
         "    one. The last arm is `_ + n` rather",
         "    than `_`: at a variable index `TypeMap` is stuck, and only the",
@@ -231,7 +224,7 @@ def atom_to_lean_fbk_bridge(
         "-- ── semantic: two independent translators agree ──────────────────",
         "--",
         "-- The left side came through `smt_encode` and cvc5, the right",
-        "-- through `_translate_terms_scalar`. `rfl` closes the easy ones and",
+        "-- through `translate_terms_scalar`. `rfl` closes the easy ones and",
         "-- nothing else; the rest is what this file exists for.",
         "",
     ]
@@ -250,12 +243,7 @@ def atom_to_lean_fbk_bridge(
     lines += [
         "-- ── the module as a reactive module, and the two hypotheses ──────",
         "",
-        f"def RM : ReactiveModule ({extl_native}) (CtrlNative) := {{",
-        "    init := fun e => init e.2",
-        "    update := fun x e => update x e.1 e.2",
-        "    init_pre := init_pre",
-        "    update_pre := update_pre",
-        "}",
+        rm_def(extl_native, "CtrlNative"),
         "",
         "theorem start_maps (s : CtrlNative) :",
         "    RM.toTS.start s → Definition.INIT (toSlots s) = true := by",
@@ -274,7 +262,8 @@ def atom_to_lean_fbk_bridge(
         # `init_pre l`, spelled in `Bool`.
         f"  obtain ⟨l, {'hpre' if has_pre else '_'}, rfl⟩ := hs",
         *_cascade(
-            "Definition.INIT, toSlots, init_scalar_eq, Scalar.pack, Scalar.init"
+            f"Definition.INIT, toSlots, {scalar_eq_name('init')}, Scalar.pack, "
+            "Scalar.init"
             + (", Definition.PRE, init_pre" if has_pre else ""),
             # Every slot's `var_k`, not only the pinned ones': a slot that
             # starts at an input another slot took first is pinned *to* that
@@ -298,7 +287,7 @@ def atom_to_lean_fbk_bridge(
         # closes it where `bridge_k` would have. Left off otherwise: it is
         # another definition in every `simp` arm of every slot.
         *_cascade(
-            "Definition.TRANS, toSlots, update_scalar_eq, Scalar.pack, "
+            f"Definition.TRANS, toSlots, {scalar_eq_name('update')}, Scalar.pack, "
             "Scalar.unpack_ctrl",
             ", " + ", ".join(
                 f"Definition.R_{k}, Definition.var_{k}, link_{k}, bridge_{k}"

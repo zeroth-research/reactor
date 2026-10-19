@@ -8,13 +8,14 @@ a cvc5 exception -- comes back as `UNKNOWN` rather than an exception.
 
 from dataclasses import replace
 
+import cvc5
 import pytest
 import torch
 
 from zrth import Module, Term, Var, Wire, X, LIA, Int
 from zrth.analyzer import convert_method
 from zrth.lean.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.common import Refused
+from zrth.lean.errors import Refused
 from zrth.lean.smt.limits import SmtBudget
 from zrth.lean.smt_query import (
     ModuleQueries,
@@ -336,7 +337,7 @@ def test_a_condition_the_invariant_settles_is_reported():
         replace(GOOD, ranking="(ite (>= s0 0) s0 1)")
     )
     assert [value for _, value in h.determined] == [True]
-    assert "≥" in h.determined[0][0]
+    assert h.determined[0][0].getKind() == cvc5.Kind.GEQ
 
 
 def test_the_hint_layer_shapes_the_obligation_the_kind_states():
@@ -368,10 +369,13 @@ def test_an_undetermined_condition_is_left_to_split_ifs():
 
 def test_conditions_are_rendered_against_the_macro_binder():
     """They are spliced into a tactic, so they read the obligation's state."""
-    h = _hints(
-        replace(GOOD, ranking="(ite (>= s0 0) s0 1)")
-    )
-    assert "($v)" in h.determined[0][0]
+    from zrth.lean.cert import print_hints
+
+    q = ModuleQueries.build(countdown(), CLAIM,
+                            replace(GOOD, ranking="(ite (>= s0 0) s0 1)"))
+    printed = print_hints(solver_hints(q, SmtBudget()), q.msmt.ctrl_next)
+    assert "($v)" in printed.determined[0][0]
+    assert "≥" in printed.determined[0][0]
 
 
 def test_a_folded_relu_is_not_offered_as_a_condition():
@@ -409,24 +413,12 @@ def test_hints_survive_a_module_cvc5_cannot_encode():
     assert solver_hints(None, SmtBudget()).any is False
 
 
-def test_the_hint_log_says_when_there_is_nothing_to_add():
-    lines: list[str] = []
-    solver_hints(
-        ModuleQueries.build(countdown(), CLAIM),
-        SmtBudget(),
-        log=lines.append,
-    )
-    assert any("nothing cvc5 can add" in ln for ln in lines)
-
-
 def test_translation_can_be_asked_not_to_share():
-    """`cert_facts` states a condition expanded, so the definition must be.
-
-    A `have` outside the definition cannot name a `let` bound inside it, so
-    a shared `if (u3 ≥ 0) …` gives `simp only [if_pos hf0]` nothing to match
-    and the branch is never collapsed.
+    """`share=False` prints every subterm in full -- for reading; the
+    certificate itself is printed shared, hints or not (`cert.prepare`).
     """
-    from zrth.lean.cert import predicate_terms, render_certificate
+    from zrth.lean.cert import render_certificate
+    from zrth.lean.smt_query import predicate_terms
 
     q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(4)))
     shared = render_certificate(q, share=True).ranking
@@ -437,15 +429,16 @@ def test_translation_can_be_asked_not_to_share():
 
 def test_a_lean_answer_is_printed_as_it_was_given():
     """`--infer ai`'s reply is Lean already; the property beside it is not."""
-    from zrth.lean.cert import predicate_terms, render_certificate
+    from zrth.lean.cert import render_certificate
+    from zrth.lean.smt_query import predicate_terms
 
     defs = render_certificate(predicate_terms(countdown(), CLAIM), verbatim=LEAN)
     assert (defs.inv, defs.ranking) == (LEAN.inv, LEAN.ranking)
-    assert defs.prp == "fun s => ((s 0 0) = 0)"
+    assert defs.prp == "fun s => ((s 0 0) = (0 : Int))"
 
 
 def test_a_predicate_that_does_not_parse_is_refused_by_its_flag():
-    from zrth.lean.cert import predicate_terms
+    from zrth.lean.smt_query import predicate_terms
 
     with pytest.raises(Refused, match="--ranking"):
         predicate_terms(countdown(), CLAIM, Certificate(ranking="(+ s0"))

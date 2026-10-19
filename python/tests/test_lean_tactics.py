@@ -11,7 +11,7 @@ import torch
 import pytest
 
 from zrth import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
-from zrth.lean.common import LeanContext
+from zrth.lean.context import LeanContext
 from zrth.lean.tactics import features_for, is_nonlinear, plan_for
 
 
@@ -291,14 +291,26 @@ def test_facts_override_the_text_scan_for_nonlinearity():
     assert features_for(ctx, "fun s => ((s 0 0) * (s 0 0))", facts).nonlinear is False
 
 
-def test_facts_never_lower_the_branch_count():
-    """Terms cover only the SMT-derived fields, so text still counts too."""
+def test_a_lean_answers_branches_add_to_the_terms():
+    """Terms cover only the SMT-derived fields; a Lean answer's text is
+    counted on top of them, never in place of them."""
     from zrth.lean.smt_query import PredicateFacts
 
     ctx = LeanContext(_int_module())
     text = "fun s => (max (s 0 0) 0) + (max (s 0 0) 1) + (max (s 0 0) 2)"
+    f = features_for(ctx, text, PredicateFacts(n_branch=1), verbatim=text)
+    assert f.n_branch == 4
+
+
+def test_with_facts_the_printed_text_is_not_reread():
+    """The facts speak for what was printed from terms; reading the text
+    as well would count a shared subterm by how the printer laid it out."""
+    from zrth.lean.smt_query import PredicateFacts
+
+    ctx = LeanContext(_int_module())
+    text = "fun s => ((s 0 0) * (s 0 0)) + (max (s 0 0) 0)"
     f = features_for(ctx, text, PredicateFacts(n_branch=1))
-    assert f.n_branch == 3
+    assert (f.n_branch, f.nonlinear) == (1, False)
 
 
 def test_facts_raise_the_branch_count_above_what_the_printer_shows():
@@ -327,12 +339,12 @@ def test_without_facts_everything_falls_back_to_the_text():
 
 
 def _hinted(**fields):
-    from zrth.lean.smt_query import SolverHints
+    from zrth.lean.cert import LeanHints
 
     return plan_for(
         LeanContext(_int_module()),
         "fun s => (s 0 0)",
-        hints=SolverHints(**fields),
+        hints=LeanHints(**fields),
     )
 
 
@@ -397,9 +409,9 @@ def test_the_reasons_are_recorded_in_the_generated_comment():
 
 
 def _solver_hints(**fields):
-    from zrth.lean.smt_query import SolverHints
+    from zrth.lean.cert import LeanHints
 
-    return SolverHints(**fields)
+    return LeanHints(**fields)
 
 
 def test_several_settled_conditions_stay_on_one_line():
@@ -515,7 +527,7 @@ def test_cvc5_is_asked_about_the_invariant_that_now_exists():
     hints = after.plan.hints
     assert hints is not None
     assert [value for _text, value in hints.determined] == [True]
-    assert "≤ 200" in hints.determined[0][0]
+    assert "≤ (200 : Int)" in hints.determined[0][0]
 
 
 def test_a_settled_condition_is_printed_unshared():
@@ -565,7 +577,7 @@ def test_a_floored_rank_gets_the_bridge_to_the_real_under_it():
     """
     plan = _plan(_real_module(), "fun s => ((2 + ⌊(s 0 0)⌋ : Int)).toNat")
     assert plan.features.has_floor
-    assert plan.features.floor_args == ("(s 0 0)",)
+    assert plan.features.floor_args == ("(($v) 0 0)",)
     body = plan.floor_tactic
     assert "Int.floor_nonneg" in body
     assert "($v)" in body, "the macro's own binder, not the printer's `s`"
@@ -592,7 +604,7 @@ def test_a_scaled_floor_distributes_before_the_closers():
     """
     plan = _plan(_real_module(), "fun s => ((2 + ⌊((2 : Real) * (s 0 0))⌋ : Int)).toNat")
     assert "simp only [mul_sub]" in plan.prep
-    assert plan.features.floor_args == ("((2 : Real) * (s 0 0))",)
+    assert plan.features.floor_args == ("((2 : Real) * (($v) 0 0))",)
 
 
 def test_an_integer_module_pays_nothing_for_floors():

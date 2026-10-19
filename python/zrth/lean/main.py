@@ -5,9 +5,10 @@ Entry point: ``uv run verith``
 Quick start
 -----------
 A *module file* is a Python file that defines a ``module()`` function (or
-class) returning a :class:`zrth.Module`.  Optionally it may also define plain
-``init()`` / ``update()`` functions so that the AI inference (``--infer``) can
-read the high-level logic.
+class) returning a :class:`zrth.Module` (or a ``zrth.lean.inputs.Named``
+one, for claims in its own names), or another format ``--format`` lists.
+The LLM routes prompt on the module's generated Lean; a route that declares
+``reads_source`` is also handed the input file itself.
 
 Generate a bare Lean project (all certificate fields left as ``sorry``)::
 
@@ -18,22 +19,27 @@ goes under is the choice of proof rule, and so of what the certificate
 contains::
 
     # `G (F x == 0)` -- holds infinitely often: invariant + ranking function
-    uv run verith mymodule.py --buchi "x == 0" -o out/ -p MyProject
+    uv run verith mymodule.py --buchi "(= (X x) 0)" -o out/ -p MyProject
 
     # `G (x <= 100)` -- holds in every reachable state: invariant alone
-    uv run verith mymodule.py --safety "x <= 100" -o out/ -p MyProject
+    uv run verith mymodule.py --safety "(<= (X x) 100)" -o out/ -p MyProject
+
+A claim is written in the module's own terms: ``(X x)`` is the value of ``x``
+after the round.  Names like ``x`` come from a module file that returns
+``zrth.lean.inputs.Named(module, {"x": var})``, and ``(X @intf.0)`` names
+interface variable 0 by position, which works for any module.
 
 Ask the AI to infer the certificate automatically (the ranking function too,
 for a Buchi property)::
 
-    uv run verith mymodule.py --buchi "x == 0" --infer -o out/ -p MyProject
+    uv run verith mymodule.py --buchi "(= (X x) 0)" --infer -o out/ -p MyProject
 
 Or infer it without an LLM at all: ``--infer nuterm`` trains a ranking function
 on rollouts of the module and hands it over only once a Farkas/CEGAR decision
 procedure has certified it, with the invariant inferred by Houdini.  It needs
 no API key, and it reads modules whose state is scalar integers::
 
-    uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
+    uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer nuterm -o out/ -p MyProject
 
 Two more routes need no LLM and search a *shape* rather than proposing
 candidates, so that failing to find one is an answer with content:
@@ -45,12 +51,12 @@ one quantified query.  A refuted query proves that nothing of that shape
 works, and both leave what they found and what they ruled out in the
 project's ``artifacts/``, where the next run picks it up::
 
-    uv run verith mymodule.py --safety "(not (= s0 1))" --infer sygus -o out/ -p MyProject
-    uv run verith mymodule.py --buchi "(= s0 0)" --infer smt-linear -o out/ -p MyProject
+    uv run verith mymodule.py --safety "(not (= (X @intf.0) 1))" --infer sygus -o out/ -p MyProject
+    uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer smt-linear -o out/ -p MyProject
 
 Use a local LLM via Ollama instead of Claude::
 
-    uv run verith mymodule.py --buchi "x == 0" --infer \\
+    uv run verith mymodule.py --buchi "(= (X x) 0)" --infer \\
         --model qwen3-coder --base-url http://localhost:11434/v1 \\
         -o out/ -p MyProject
 
@@ -89,20 +95,22 @@ returns a :class:`zrth.Module`::
         return Module.sequential([state], init_terms, update_terms)
 """
 
+import shlex
+import sys
 from pathlib import Path
 
 from .artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from .cert import (
     LeanCertificate,
-    PlanInputs,
     generate_zeroth_hammer_lean,
-    predicate_terms,
-    render_certificate,
+    prepare,
 )
 from .certificate import Certificate, Claim, LeanAnswer
 from .cli import Settings, parse_args
-from .common import LeanContext, Refused
+from .errors import Refused
+from .context import LeanContext
 from .native import lean_gaps
+from . import inputs
 from .infer_route import (
     InferInput, InferResult, ProjectHandle, owned_files,
 )
@@ -113,11 +121,11 @@ from .project import (
     build_certificate,
     create_project,
     generate_standalone_cert_lean,
-    load_module_from_file,
     write_encoding,
 )
+from .smt.record import note
 from .smt.run import lazy
-from .smt_query import pre_check, predicate_facts, solver_hints
+from .smt_query import pre_check, predicate_terms, solver_hints
 from .translate import ModuleToLean4
 
 
@@ -239,7 +247,8 @@ def _record_predicates(store, claim: "Claim | None", cert: Certificate, *,
         store.encoded(role, role, src.strip(), language="smt-src", what=what)
 
 
-def _workspace(settings: Settings, module, project_dir: Path) -> ArtifactStore:
+def _workspace(settings: Settings, module, project_dir: Path,
+               claim: "Claim | None") -> ArtifactStore:
     """The project's `artifacts/`, as this run sees it.
 
     The project is generated before inference runs and `artifacts/` outlives
@@ -253,7 +262,7 @@ def _workspace(settings: Settings, module, project_dir: Path) -> ArtifactStore:
         dir=project_dir / ARTIFACTS_DIR,
         module_digest=module_digest(module),
         kind=settings.kind,
-        prp=settings.prp or "",
+        prp=(claim.prp if claim else None) or "",
         producer=settings.route.name if settings.route else "",
         enabled=settings.artifacts == "use",
         log=print,
@@ -272,11 +281,8 @@ def _render(settings: Settings, smt, claim: "Claim | None",
 
     The predicates are parsed once, and that one parse is printed as Lean,
     read for its shape (`predicate_facts`) and, with `hints` under
-    `--smt-tactics cvc5`, put to `solver_hints`. A condition the hints
-    settle is spliced into a tactic in expanded form, and a `have` outside
-    a definition cannot name a `let` inside it, so the definitions are then
-    printed unshared -- every one, since a condition can come from the
-    property. `verbatim` is an answer that is Lean already.
+    `--smt-tactics cvc5`, put to `solver_hints` (`cert.prepare` says how
+    the two meet). `verbatim` is an answer that is Lean already.
     """
     if claim is None:
         return None
@@ -289,11 +295,14 @@ def _render(settings: Settings, smt, claim: "Claim | None",
             f"<={settings.budget.per_call_ms} ms per query, "
             f"<={settings.budget.phase_ms} ms total"
         )
-        h = solver_hints(q, settings.budget, log=print)
-    defs = render_certificate(
-        q, share=not (h and h.determined), verbatim=verbatim
-    )
-    return LeanCertificate(defs, PlanInputs(predicate_facts(q), h))
+        h = solver_hints(q, settings.budget)
+    lean = prepare(q, h, verbatim)
+    if h is not None:
+        reasons = [ln.removeprefix("-- cvc5: ")
+                   for ln in lean.plan.hints.why().splitlines()]
+        for reason in reasons or ["nothing cvc5 can add to the plan"]:
+            print(f"   {reason}")
+    return lean
 
 
 def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
@@ -331,9 +340,28 @@ def _note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
     )
 
 
+def _note_unrenderable(store, route, e: Refused) -> None:
+    """Leave in `artifacts/` that a route's answer has no Lean form.
+
+    Not a refusal by the route: it answered, and what failed was printing
+    the answer as Lean, after the route had returned. So no note of the
+    route's own can say this, and without one the next run reads a found
+    predicate in `artifacts/` and nothing about why no certificate came of
+    it -- and an LLM route resuming from it proposes the same shape again.
+    """
+    note(
+        store, f"{e}\n",
+        status="unsupported",
+        what=f"An answer by `--infer {route.name}` that has no Lean form.",
+        why=("The route answered; what failed is writing that answer as "
+             "Lean, so the same shape proposed again fails the same way."),
+    )
+
+
 def _infer(
     settings: Settings, module, handle: ProjectHandle, claim: Claim,
     given: Certificate, prechecked, smt=None,
+    problem: "inputs.Problem | None" = None,
 ) -> "InferResult":
     """Run the selected route against the generated project.
 
@@ -361,6 +389,10 @@ def _infer(
                 base_url=settings.base_url,
                 log=print,
                 smt=smt,
+                source=(problem.source
+                        if route.reads_source and problem else None),
+                names=(problem.names
+                       if route.reads_source and problem else None),
             )
         )
     except (Refused, ImportError) as e:
@@ -400,35 +432,50 @@ def _infer(
     return result
 
 
-def _load(settings: Settings):
-    """The module the run is about.
+def _load(settings: Settings) -> "inputs.Problem":
+    """The module the run is about, and the input it was read from.
 
     The loader refuses a path that is not there, a file that is not a
     module and a `-d` the file does not define. All three are the user's
     input, so they are reported rather than raised.
     """
     try:
-        return load_module_from_file(
-            settings.module_file, module_def=settings.module_def
-        )
-    except (OSError, AttributeError, RuntimeError) as e:
+        return inputs.load(settings.module_file, settings.input_opts,
+                           format=settings.input_format)
+    except (OSError, AttributeError, RuntimeError, inputs.ClaimError,
+            inputs.InputError) as e:
         raise SystemExit(f"error: {e}") from e
 
 
-def _claim(settings: Settings) -> "tuple[Claim | None, Certificate]":
+def _claim(settings: Settings,
+           names: "inputs.Names") -> "tuple[Claim | None, Certificate]":
     """What the flags ask to be proved, and what of its certificate they
-    supply. No claim when no predicate flag was passed."""
+    supply. No claim when no predicate flag was passed.
+
+    The flags are in the module's own terms (`inputs.names`); the claim
+    is in the internal names every later stage reads, and each flag is
+    printed in them once, since that is how the logs, the artifacts and
+    any refusal will spell it."""
     if not (settings.prp or settings.pre or settings.invariant
             or settings.ranking):
         return None, Certificate()
-    claim = Claim(
-        prp=settings.prp,
-        kind=settings.kind,
-        init_pre=settings.pre or None,
-        update_pre=settings.pre or None,
-    )
-    return claim, Certificate(settings.invariant or None,
-                              settings.ranking or None)
+    prp_flag = "--safety" if settings.is_safety else "--buchi"
+
+    def internal(text: "str | None", flag: str) -> "str | None":
+        if not text:
+            return None
+        try:
+            spelled = inputs.to_internal(text, names, flag)
+        except inputs.ClaimError as e:
+            raise SystemExit(f"error: {e}") from e
+        print(f".. {flag}, in internal names: {spelled}")
+        return spelled
+
+    prp = internal(settings.prp, prp_flag)
+    pre = internal(settings.pre, "--pre")
+    claim = Claim(prp=prp, kind=settings.kind, init_pre=pre, update_pre=pre)
+    return claim, Certificate(internal(settings.invariant, "--invariant"),
+                              internal(settings.ranking, "--ranking"))
 
 
 def _route_precheck(settings: Settings, module, claim: "Claim | None", smt):
@@ -474,7 +521,8 @@ def _lean_context(settings: Settings, module) -> LeanContext:
 
 
 def _generate(settings: Settings, module, ctx: LeanContext,
-              lean_cert: "LeanCertificate | None") -> Path:
+              lean_cert: "LeanCertificate | None",
+              source: "inputs.SourceText") -> Path:
     """The Lean project, with the certificate as it stands before inference."""
     print(".. Generating lean code")
     try:
@@ -484,7 +532,7 @@ def _generate(settings: Settings, module, ctx: LeanContext,
             project_name=settings.project_name,
             executable=settings.executable,
             lean_cert=lean_cert,
-            module_file=settings.module_file,
+            source=source,
             lakefile=(
                 settings.route.lakefile(
                     settings.route_config, settings.project_name)
@@ -521,23 +569,92 @@ def _regenerate(settings: Settings, smt, handle: ProjectHandle, store,
         lean_cert = _render(settings, smt, claim, cert,
                             hints=lean is None, restated=True, verbatim=lean)
     except Refused as e:
+        _note_unrenderable(store, settings.route, e)
         raise _refused(settings, e) from e
     handle.write_predicates(lean_cert)
     return lean_cert
 
 
+def _show_certificate(cert: Certificate, names: "inputs.Names") -> None:
+    """The route's answer in the input's names, as `--invariant` and
+    `--ranking` take it: what one run found, the next can be given."""
+    shown = [(flag, text) for flag, text in (("--invariant", cert.inv),
+                                             ("--ranking", cert.ranking))
+             if text]
+    if not shown:
+        return
+    print(".. The certificate, in the input's names:")
+    for flag, text in shown:
+        print(f"   {flag} {shlex.quote(inputs.to_surface(text, names))}")
+
+
+def _stated_claim(settings: Settings, problem: "inputs.Problem",
+                  argv: list[str]) -> Settings:
+    """The command line, with the property the input states when it gives
+    none (an SMV INVARSPEC or LTLSPEC).
+
+    The stated property is the claim exactly as if it had been passed as
+    `--safety`/`--buchi`: the command line is parsed again with it added,
+    so every rule about the flags applies to it unchanged. Given both, the
+    run would prove one and ignore the other, so that is refused.
+    """
+    stated = problem.claims
+    chosen = settings.input_opts.get("spec")
+    listing = "; ".join(f"{i}: {c.where}" for i, c in enumerate(stated, 1))
+    if settings.prp:
+        if chosen is not None:
+            raise SystemExit(
+                "error: --spec chooses one of the input's properties, and "
+                "--safety/--buchi already gives the claim"
+            )
+        if stated:
+            raise SystemExit(
+                f"error: {problem.source.path} states its own property "
+                f"({listing}); pass no --safety/--buchi to prove it, or "
+                "remove it to prove another"
+            )
+        return settings
+    if not settings.claim_deferred:
+        return settings
+    if not stated:
+        if chosen is not None:
+            raise SystemExit("error: --spec: the input states no property")
+        return parse_args(argv, defer_claim=False)
+    if chosen is None:
+        if len(stated) > 1:
+            raise SystemExit(
+                f"error: the input states {len(stated)} properties "
+                f"({listing}); choose one with --spec N"
+            )
+        chosen = 1
+    if not 1 <= chosen <= len(stated):
+        raise SystemExit(
+            f"error: --spec {chosen}: the input states {len(stated)} "
+            f"propert{'y' if len(stated) == 1 else 'ies'} ({listing})"
+        )
+    claim = stated[chosen - 1]
+    print(f".. the claim is the input's {claim.where} (--{claim.kind})")
+    return parse_args(
+        [*argv, f"--{claim.kind}", inputs.to_surface(claim.text, problem.names)],
+        defer_claim=False,
+    )
+
+
 def main():
-    settings = parse_args()
+    argv = sys.argv[1:]
+    settings = parse_args(argv)
 
     if settings.hammer_file:
         _hammer_only(settings)
         return
 
-    module = _load(settings)
+    problem = _load(settings)
+    settings = _stated_claim(settings, problem, argv)
+    module = problem.module
     print(module)
     # The run's one cvc5 encoding, built by whichever stage asks first.
     smt = lazy(module)
-    claim, given = _claim(settings)
+    claim, given = _claim(settings, problem.names)
     prechecked = _route_precheck(settings, module, claim, smt)
     ctx = _lean_context(settings, module)
 
@@ -549,7 +666,7 @@ def main():
     store = (
         None if settings.cert_file
         else _workspace(settings, module,
-                        settings.output_dir / settings.project_name)
+                        settings.output_dir / settings.project_name, claim)
     )
     _record_predicates(store, claim, given)
 
@@ -574,7 +691,7 @@ def main():
         _standalone(settings, module, lean_cert)
         return
 
-    project_dir = _generate(settings, module, ctx, lean_cert)
+    project_dir = _generate(settings, module, ctx, lean_cert, problem.source)
 
     if settings.route is not None:
         print(f".. Inferring the certificate with --infer {settings.route.name}")
@@ -589,7 +706,7 @@ def main():
             artifacts=store,
         )
         result = _infer(settings, module, handle, claim, given, prechecked,
-                        smt=smt)
+                        smt=smt, problem=problem)
         # `files`: the certificate is the route's own, so there is nothing
         # of ours to be complete about and nothing to regenerate from.
         lean_cert = (
@@ -597,6 +714,7 @@ def main():
             else _regenerate(settings, smt, handle, store, claim, result)
         )
         handle.write_files(result.files)
+        _show_certificate(result.cert, problem.names)
 
     _build_cert(settings, project_dir, lean_cert)
 

@@ -51,7 +51,7 @@ from fractions import Fraction
 from typing import TYPE_CHECKING
 
 from .certificate import Claim
-from .common import Refused
+from .errors import Refused
 from .smt.record import found, note
 from .smt.script import decimals, smt_int, smt_lit
 from .smt.terms import free_constants, literals, nodes
@@ -192,11 +192,10 @@ class SynthContext:
         true = enc.tm.mkBoolean(True)
         return cls(
             enc=enc,
-            prp=enc.parse(claim.prp,
-                          "--safety" if claim.is_safety else "--buchi"),
-            init_pre=(enc.parse(claim.init_pre, "--pre")
+            prp=enc.parse(claim.prp, "property", kind=claim.kind),
+            init_pre=(enc.parse(claim.init_pre, "pre")
                       if claim.init_pre is not None else true),
-            update_pre=(enc.parse(claim.update_pre, "--pre")
+            update_pre=(enc.parse(claim.update_pre, "pre")
                         if claim.update_pre is not None else true),
         )
 

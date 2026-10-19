@@ -18,6 +18,7 @@ module
     #N := Ite (#N, #N, #N)
     X(#N) := Id #N
 
+.. --safety, in internal names: (<= s0 100)
    wrote artifact property.smt (encoded)
 .. Generating lean code
 Created project directory: `<OUT>/G`
@@ -67,6 +68,8 @@ DONE: Project created at: <OUT>/G
    nothing cvc5 can add to the plan
 Wrote <OUT>/G/Certificate/Data.lean
 Wrote <OUT>/G/Certificate/Certificate.lean
+.. The certificate, in the input's names:
+   --invariant '(<= (X @intf.0) 100)'
 
 Project ready at: <OUT>/G
 
@@ -75,13 +78,19 @@ Project ready at: <OUT>/G
 === Certificate/Data.lean
 import Core.Basic
 
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
 def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≤ 100)
+def inv : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≤ (100 : Int))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≤ 100)
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≤ (100 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
@@ -92,6 +101,12 @@ import Core.Basic
 import System.System
 import Certificate.Data
 import ZerothHammer
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
 
 -- Budgets and tactics below are generated from the shape of this module and
 -- its certificate; see `zrth/lean/tactics.py`.

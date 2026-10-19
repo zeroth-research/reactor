@@ -10,13 +10,15 @@ from typing import TYPE_CHECKING
 
 from ..artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
 from ..certificate import Certificate, Claim, LeanAnswer
-from ..common import Refused
+from ..errors import Refused
+from ..options import Opt
 
 if TYPE_CHECKING:
+    from ..inputs import Names, SourceText
     from zrth import Module
 
     from ..cert import LeanCertificate
-    from ..common import LeanContext
+    from ..context import LeanContext
     from ..smt.run import ModuleEncoding
 
 
@@ -200,6 +202,10 @@ class InferInput:
     log: Callable = print
     # The run's one cvc5 encoding of `module`, built on first call.
     smt: "Callable[[], ModuleEncoding] | None" = None
+    # The input verith read and the names a claim may use, for a row that
+    # declares `reads_source`; `None` for every other row.
+    source: "SourceText | None" = None
+    names: "Names | None" = None
 
     # --- resuming from `artifacts/` -------------------------------------
 
@@ -210,7 +216,7 @@ class InferInput:
         not ask for, over one they did, is the kind of cross-run surprise
         that makes two identical command lines mean different things.
 
-        By default the invariant is one to take as *given*: `magic.cegar`
+        By default the invariant is one to take as *given*: `magic.cegis`
         infers only what is left around a fixed `given.inv`, so it has to be
         inductive and, on a safety claim, imply the property. `too_weak` is
         inductive and merely fails to imply it, which `rule_buchi` never
@@ -290,25 +296,6 @@ class InferResult:
 
 
 @dataclass(frozen=True)
-class Opt:
-    """One command-line option that belongs to a route, not to verith.
-
-    Given without its route selected it is an error rather than a no-op --
-    which is what `--ic3ia`, `--fbk-simplify` and `--fbk-equiv` each say by
-    hand today, in a block that grows a line per option per route.
-    """
-
-    flags: tuple[str, ...]
-    kwargs: dict                # forwarded to `add_argument`
-    required: bool = False      # the route cannot run without it
-
-    @property
-    def dest(self) -> str:
-        d = self.kwargs.get("dest")
-        return d or self.flags[-1].lstrip("-").replace("-", "_")
-
-
-@dataclass(frozen=True)
 class Alias:
     """An older spelling that selects a route and fills one of its options.
 
@@ -344,6 +331,13 @@ class InferRoute:
     # --- the project ----------------------------------------------------
     reads: tuple[str, ...] = ()     # ENCODINGS suffixes; "" is the functional one
     owns: tuple[str, ...] = ()      # project-relative paths it may write
+
+    # --- the input ------------------------------------------------------
+    # Whether the route is handed the input the module was read from and
+    # the names claims may use (`InferInput.source` / `.names`). Declared
+    # like `reads`: a route that did not ask is handed neither, so what a
+    # route reads of the run is what its row says.
+    reads_source: bool = False
 
     # --- `artifacts/`, the workspace across runs ------------------------
     # Roles (`artifacts.ROLES`) this route can start from, so that a second

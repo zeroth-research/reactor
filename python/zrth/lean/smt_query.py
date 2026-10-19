@@ -30,7 +30,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from .certificate import Certificate, Claim, LeanAnswer
-from .common import Refused
+from .errors import Refused
 from .smt import obligations as ob
 from .smt.limits import call_ms
 from .smt.run import encoding_of
@@ -96,7 +96,7 @@ class ModuleQueries:
     Construct with `build`, which returns `None` rather than raising when the
     module or the predicates are outside what the encoder covers -- the whole
     point is that the caller can carry on without cvc5. A caller that cannot
-    carry on -- `cert.predicate_terms`, whose terms *are* what the Lean is
+    carry on -- `predicate_terms`, whose terms *are* what the Lean is
     printed from -- constructs directly and reports what went wrong:
     `Refused` for a predicate, anything else for the module.
     """
@@ -113,12 +113,11 @@ class ModuleQueries:
 
         cert = cert or Certificate()
         self.kind = claim.kind
-        prp_flag = "--safety" if claim.is_safety else "--buchi"
-        self.prp = enc.parse(claim.prp, prp_flag)
-        self.inv = enc.parse(cert.inv, "--invariant")
-        self.ranking = enc.parse(cert.ranking, "--ranking", want="Int")
-        self.init_pre = enc.parse(claim.init_pre, "--pre")
-        self.update_pre = enc.parse(claim.update_pre, "--pre")
+        self.prp = enc.parse(claim.prp, "property", kind=claim.kind)
+        self.inv = enc.parse(cert.inv, "invariant")
+        self.ranking = enc.parse(cert.ranking, "ranking", want="Int")
+        self.init_pre = enc.parse(claim.init_pre, "pre")
+        self.update_pre = enc.parse(claim.update_pre, "pre")
 
     @classmethod
     def build(cls, source, claim: Claim,
@@ -451,6 +450,26 @@ def pre_check(smt, claim: Claim, answer: "Certificate | LeanAnswer | None",
 # ══════════════════════════════════════════════════════════════════════
 
 
+def predicate_terms(
+    smt, claim: Claim, cert: Certificate = Certificate()
+) -> "ModuleQueries":
+    """`claim` and `cert` parsed against the module: what the Lean is printed
+    from, and what `predicate_facts` and `solver_hints` read. `smt` is the
+    module, its encoding or a `smt.run.lazy` factory for one.
+
+    A predicate that does not parse is refused by its role; anything
+    else is the module's, and refused as that.
+    """
+    try:
+        return encoding_of(smt).queries(claim, cert)
+    except Refused:
+        raise
+    except Exception as e:
+        raise Refused(
+            f"the certificate predicates cannot be read for this module: {e}"
+        ) from e
+
+
 @dataclass
 class PredicateFacts:
     """What the certificate predicates contain, from the cvc5 terms.
@@ -485,6 +504,10 @@ class PredicateFacts:
     has_eq: bool = False
     has_ite: bool = False
     mentioned: frozenset = frozenset()
+    # The argument of each outermost `to_int` (printed `⌊x⌋`), distinct,
+    # in the order the predicates are printed: what the plan bridges from
+    # the floor's `Int` to the `Real` it was taken of.
+    floors: tuple = ()
 
     def why(self) -> str:
         bits = [f"{self.n_branch} branch point(s)"]
@@ -524,6 +547,21 @@ def _facts_walk(t, acc: dict) -> None:
         elif k == Kind.MULT:
             if sum(1 for c in node if state_dependent(c)) > 1:
                 acc["nonlinear"] = True
+
+
+def _floor_args(t, out: list) -> None:
+    """Append the argument of each outermost `to_int` in `t`, left to
+    right, skipping one already in `out`."""
+    from cvc5 import Kind
+
+    stack = [t]
+    while stack:
+        node = stack.pop()
+        if node.getKind() == Kind.TO_INTEGER:
+            if all(node[0] != seen for seen in out):
+                out.append(node[0])
+            continue
+        stack.extend(reversed(list(node)))
 
 
 def _tree_branch_points(t) -> int:
@@ -582,11 +620,15 @@ def predicate_facts(q: "ModuleQueries | None") -> PredicateFacts | None:
         "conds": set(),
         "mentioned": set(),
     }
+    floors: list = []
     try:
         for t in (q.prp, q.inv, q.ranking, q.init_pre, q.update_pre):
             if t is not None:
                 _facts_walk(t, acc)
                 acc["branch"] += _tree_branch_points(t)
+        for t in (q.init_pre, q.update_pre, q.inv, q.prp, q.ranking):
+            if t is not None:
+                _floor_args(t, floors)
     except Exception:
         return None
     return PredicateFacts(
@@ -598,6 +640,7 @@ def predicate_facts(q: "ModuleQueries | None") -> PredicateFacts | None:
         has_eq=acc["eq"],
         has_ite=acc["ite"],
         mentioned=frozenset(acc["mentioned"]),
+        floors=tuple(floors),
     )
 
 
@@ -644,14 +687,17 @@ _NONLINEAR_RULES = {
 
 @dataclass
 class SolverHints:
-    """What cvc5 established about the obligations, for the tactic plan."""
+    """What cvc5 established about the obligations, as terms over the state
+    variables; `cert.print_hints` prints them for the tactic plan."""
 
-    # (Lean text of the condition, the value `inv` forces it to).
+    # (a branch condition, the value `inv` forces it to), in the order the
+    # printer meets the conditions.
     determined: list = field(default_factory=list)
     # None when no obligation was proved, so nothing may be concluded.
     linear_proof: "bool | None" = None
-    # Lean terms to hand `nlinarith`.
-    nlinarith_hints: list = field(default_factory=list)
+    # (a, b) for each product of two state-dependent factors a refutation
+    # multiplied; meaningful when `linear_proof` is False.
+    products: list = field(default_factory=list)
     # A real precondition that no obligation's refutation needed.
     pre_unused: bool = False
     notes: list = field(default_factory=list)
@@ -659,19 +705,8 @@ class SolverHints:
     @property
     def any(self) -> bool:
         return bool(
-            self.determined or self.nlinarith_hints or self.pre_unused
+            self.determined or self.products or self.pre_unused
         ) or (self.linear_proof is not None)
-
-    def why(self) -> str:
-        bits = []
-        for text, value in self.determined:
-            bits.append(f"inv forces `{text}` to be {str(value).lower()}")
-        if self.linear_proof is False:
-            bits.append(f"cvc5 needed {len(self.nlinarith_hints)} product hint(s)")
-        if self.pre_unused:
-            bits.append("no refutation needed the precondition: clearing it")
-        bits += self.notes
-        return "\n".join(f"-- cvc5: {b}" for b in bits)
 
 
 def _proof_facts(solver) -> tuple[bool, list]:
@@ -701,36 +736,14 @@ def _proof_facts(solver) -> tuple[bool, list]:
     return linear, list(products.values())
 
 
-def _hint_terms(products, ctrl_next) -> list:
-    """`nlinarith` hint terms for the products cvc5 multiplied.
-
-    `nlinarith` looks for degree-2 certificates by multiplying pairs of
-    hypotheses; naming the squares it needs up front turns that search into
-    a check. `mul_self_nonneg (a - b)` and `(a + b)` between them span the
-    products of two atoms, which is what the arithmetic rules produce.
-    """
-    from .smt_to_lean import smt_to_lean_body
-
-    seen: set[str] = set()
-    out: list[str] = []
+def _factor_pairs(products) -> list:
+    """`(a, b)` for each product with two state-dependent factors: what
+    `nlinarith` is handed squares of (`cert.print_hints`)."""
+    out = []
     for prod in products:
         args = [c for c in prod if state_dependent(c)]
-        if len(args) < 2:
-            continue
-        try:
-            a, b = (
-                smt_to_lean_body(args[0], ctrl_next),
-                smt_to_lean_body(args[1], ctrl_next),
-            )
-        except Exception:
-            continue
-        for hint in (
-            f"mul_self_nonneg ({a} - {b})",
-            f"mul_self_nonneg ({a} + {b})",
-        ):
-            if hint not in seen:
-                seen.add(hint)
-                out.append(hint)
+        if len(args) >= 2:
+            out.append((args[0], args[1]))
     return out
 
 
@@ -753,7 +766,7 @@ def _core_note(solver, labels: dict) -> "str | None":
     return f"the core needs only {', '.join(sorted(used))} of {len(labels)}"
 
 
-def solver_hints(q: "ModuleQueries | None", budget: SmtBudget, log=None) -> SolverHints:
+def solver_hints(q: "ModuleQueries | None", budget: SmtBudget) -> SolverHints:
     """Ask cvc5 the questions whose answers change the tactic plan.
 
     Bounded and total: whatever is not answered inside the budget is simply
@@ -768,19 +781,12 @@ def solver_hints(q: "ModuleQueries | None", budget: SmtBudget, log=None) -> Solv
             _refutation_shape(q, budget, hints)
         except Exception as e:  # pragma: no cover -- the point is to not raise
             hints.notes.append(f"gave up: {type(e).__name__}")
-    if log:
-        reasons = [ln.removeprefix("-- cvc5: ") for ln in hints.why().splitlines()]
-        if reasons:
-            for reason in reasons:
-                log(f"   {reason}")
-        else:
-            log("   nothing cvc5 can add to the plan")
     return hints
 
 
 def _branch_polarity(q: "ModuleQueries", budget: SmtBudget, hints: SolverHints) -> None:
     """Conditions the invariant already settles, so `split_ifs` need not."""
-    from .smt_to_lean import min_max_of, smt_to_lean_body
+    from .smt_to_lean import min_max_of
 
     # Conditions of the `ite`s the printer does not fold into min/max, in
     # this order: it is the order of `hints.determined`, which reaches Lean.
@@ -805,14 +811,7 @@ def _branch_polarity(q: "ModuleQueries", budget: SmtBudget, hints: SolverHints) 
             value = True
         if value is None:
             continue
-        try:
-            # `($v)` is the macro's own binder: the condition is spliced into
-            # a tactic, so it has to read whichever state the obligation
-            # bound rather than a fixed name.
-            text = smt_to_lean_body(cond, q.msmt.ctrl_next, param_name="($v)")
-        except Exception:
-            continue
-        hints.determined.append((text, value))
+        hints.determined.append((cond, value))
 
 
 def _refutation_shape(
@@ -860,7 +859,7 @@ def _refutation_shape(
     hints.linear_proof = linear_all
     hints.pre_unused = pre_offered and not pre_used
     if not linear_all:
-        hints.nlinarith_hints = _hint_terms(products, q.msmt.ctrl_next)
+        hints.products = _factor_pairs(products)
 
 
 def _obligation_labels(q: "ModuleQueries"):

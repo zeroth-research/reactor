@@ -73,7 +73,7 @@ MATHLIB_NOTE = (
     "not compiled here &mdash; <code>tests/lean/.lake/packages</code> is already "
     "populated, and Mathlib arrives from the mathlib4 olean cache "
     "(<code>lake exe cache get</code>, an Azure blob store) rather than from a "
-    "local build. <code>tests/BENCHMARKS.md</code> records that first "
+    "local build. <code>tests/limits/README.md</code> records that first "
     "<code>(cd tests/lean &amp;&amp; lake build)</code> at <b>~1 hour</b> cold, which is "
     "mostly download and decompression of ~8,000 oleans; the "
     "<code>lean-ltl-certifying</code> checkout that <code>fbk-proveit</code> needs "
@@ -108,7 +108,7 @@ def main() -> None:
 
     print("generating one project (m_countdown, --infer nuterm) ...")
     _, r = run(["uv", "run", "verith", "tests/limits/mods/m_countdown.py",
-                "--buchi", "(= s0 0)", "--infer", "nuterm",
+                "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
                 "--artifacts", "reset", "-o", str(proj_root), "-p", "Rea"], PY, 600)
     if r.returncode != 0:
         raise SystemExit(f"generation failed:\n{r.stderr[-2000:]}")
@@ -138,7 +138,7 @@ def main() -> None:
     print("warm build: the same project regenerated, cache already filled ...")
     shutil.rmtree(proj_root, ignore_errors=True)
     run(["uv", "run", "verith", "tests/limits/mods/m_countdown.py",
-         "--buchi", "(= s0 0)", "--infer", "nuterm", "--artifacts", "reset",
+         "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm", "--artifacts", "reset",
          "-o", str(proj_root), "-p", "Rea"], PY, 600)
     (proj / ".lake").unlink(missing_ok=True)
     (proj / ".lake").symlink_to(COLD)

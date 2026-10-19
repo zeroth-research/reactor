@@ -49,7 +49,8 @@ from dataclasses import dataclass, field
 
 from zrth import Bool, Int, Real, BitVec
 
-from .common import _accessor, dtype_shape, itype_name
+from .sorts import dtype_shape, itype_name, sort_shape
+from .layout import product_accessor
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -124,10 +125,12 @@ _SORT_NAMES = ((Bool, "Bool"), (Int, "Int"), (Real, "Real"), (BitVec, "BitVec"))
 
 
 def _sort_name(dtype) -> str:
+    """The theory a sort's elements are in, a tag (`BitVec` without its
+    width), not a Lean type: `sorts.lean_elem_type` is that."""
     for cls, name in _SORT_NAMES:
         if isinstance(dtype, cls):
             return name
-    return "Int"
+    raise ValueError(f"Unsupported Sort: {dtype}")
 
 
 # A `*` whose two operands both mention the state parameter. An operand is a
@@ -246,12 +249,10 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
             # Wider BitVec has 2^w values and no two-way lemma; Int and Real
             # are not finite at all.
             return []
-        acc = _accessor(i, n)
-        shape = dtype_shape(dt)
-        rows = shape[0] if shape else 1
-        cols = shape[1] if len(shape) > 1 else 1
-        for r in range(rows):
-            for c in range(cols):
+        acc = product_accessor(i, n)
+        shape = sort_shape(dt)
+        for r in range(shape.m):
+            for c in range(shape.n):
                 out.append((f"{acc} {r} {c}", lemma))
     return out if len(out) <= MAX_ENUMERABLE_SLOTS else []
 
@@ -259,7 +260,8 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
 _BRANCHING_OPS = frozenset({"Ite", "ReLU", "Min", "Max"})
 
 
-def features_for(ctx, pred_text: str, facts=None) -> Features:
+def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
+                 floors: tuple = ()) -> Features:
     """Read the shape of `ctx`'s module and its certificate predicates.
 
     `facts` is `smt_query.PredicateFacts` when the predicates came from
@@ -287,33 +289,36 @@ def features_for(ctx, pred_text: str, facts=None) -> Features:
         for w in (*t.read, *t.write):
             f.theories.add(_sort_name(w.dtype))
 
+    # The predicates' shape comes from the facts cvc5 read off their terms;
+    # text is read only where no term stands behind it -- a Lean answer
+    # (`verbatim`), or every predicate when there are no facts at all.
+    scanned = verbatim if facts is not None else pred_text
+    # Floors come printed from the terms (`floors`, over `($v)` already).
+    f.floor_args = tuple(dict.fromkeys(
+        (*(floors if facts is not None else ()),
+         *(_rebind(a) for a in floor_arguments(scanned)))
+    ))
+    f.has_floor = bool(f.floor_args)
     # The transition branches if it has an `Ite`, and a ReLU/Min/Max reduces
     # to a branch in the goal even though the term itself is not an `Ite`.
-    f.has_ite = bool(_BRANCHING_OPS & f.ops) or "if " in pred_text
-    f.has_and = " ∧ " in pred_text
-    f.has_or = " ∨ " in pred_text
-    f.has_eq = " = " in pred_text
-    f.has_floor = "⌊" in pred_text
-    f.floor_args = floor_arguments(pred_text)
-    f.nonlinear = is_nonlinear(pred_text)
+    f.has_ite = bool(_BRANCHING_OPS & f.ops) or "if " in scanned
+    f.has_and = " ∧ " in scanned
+    f.has_or = " ∨ " in scanned
+    f.has_eq = " = " in scanned
+    f.nonlinear = is_nonlinear(scanned)
     text_branch = (
-        pred_text.count("(max ") + pred_text.count("(min ") + pred_text.count("if ")
+        scanned.count("(max ") + scanned.count("(min ") + scanned.count("if ")
     )
     f.n_branch = text_branch
+    f.n_conditions = text_branch
     if facts is not None:
-        # Exact where the text is a guess. `n_branch` takes the larger of the
-        # two: the terms cover only the fields that came from SMT-LIB, so a
-        # predicate compiled from Python IR alongside them would otherwise go
-        # uncounted, and over-counting only ever buys a bigger budget.
-        f.nonlinear = facts.nonlinear
+        f.nonlinear = f.nonlinear or facts.nonlinear
         f.has_and = f.has_and or facts.has_and
         f.has_or = f.has_or or facts.has_or
         f.has_eq = f.has_eq or facts.has_eq
         f.has_ite = f.has_ite or facts.has_ite
-        f.n_branch = max(text_branch, facts.n_branch)
-        f.n_conditions = facts.n_conditions
-    else:
-        f.n_conditions = text_branch
+        f.n_branch = text_branch + facts.n_branch
+        f.n_conditions = text_branch + facts.n_conditions
     if f.finite_state:
         f.two_valued = _two_valued_slots(ctx)
     return f
@@ -397,8 +402,7 @@ class TacticPlan:
         if not self.features.floor_args:
             return "skip"
         steps = []
-        for k, arg in enumerate(self.features.floor_args):
-            a = _rebind(arg)
+        for k, a in enumerate(self.features.floor_args):
             steps.append(
                 f"by_cases hs{k} : (0:Real) ≤ ({a}) <;> "
                 f"[(have hfl{k} : (0:Int) ≤ ⌊{a}⌋ := Int.floor_nonneg.mpr hs{k}); "
@@ -515,9 +519,10 @@ def floor_arguments(pred_text: str) -> tuple[str, ...]:
     return tuple(out)
 
 
-def plan_for(ctx, pred_text: str, facts=None, hints=None) -> TacticPlan:
+def plan_for(ctx, pred_text: str, facts=None, hints=None,
+             verbatim: str = "", floors: tuple = ()) -> TacticPlan:
     """Build the tactic plan for this module's proof obligations."""
-    f = features_for(ctx, pred_text, facts)
+    f = features_for(ctx, pred_text, facts, verbatim, floors)
 
     # ── prep: canonicalise the goal before anything tries to close it ──
     prep: list[str] = []

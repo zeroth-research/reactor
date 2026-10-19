@@ -1,12 +1,15 @@
-"""Proof of concept for SMT_ASSIST.md item 7: synthesise the ranking function.
+"""Proof of concept for synthesising the ranking function with SyGuS.
 
-No LLM, no API key, deterministic. The constraints are the two `magic.cegar`
+What came of it is `--infer sygus` (an invariant, not a ranking function) and
+`--infer smt-linear`; these are the numbers that steered them there.
+
+No LLM, no API key, deterministic. The constraints are the two `magic.cegis`
 already builds -- `inv s → rank s ≥ 0` and
 `inv s ∧ ¬P s → rank (update s) < rank s` -- with `rank` a `synthFun`
 instead of a parsed term.
 
 Note the times: unrestricted LIA is fine for one variable and already 10 s
-for two, which is why step 3 of the plan is "give it a grammar".
+for two, which is why the next step was to give it a grammar.
 
     uv run python tests/limits/probes/sygus.py
 """
@@ -22,7 +25,7 @@ import cvc5
 from cvc5 import Kind
 
 from zrth.lean.smt_module import ModuleSMT
-from zrth.lean.smt_prompt import CegarPromptEnv, parse_predicate
+from zrth.lean.smt_prompt import CegisPromptEnv, parse_predicate
 
 CASES = [
     ("m_countdown", "(= s0 0)", "(and (>= s0 0) (<= s0 100))"),
@@ -36,7 +39,7 @@ def synth_rank(modname: str, prp_src: str, inv_src: str) -> str:
     module = importlib.import_module(f"mods.{modname}").module()
     tm = cvc5.TermManager()
     msmt = ModuleSMT(tm=tm, module=module)
-    env = CegarPromptEnv(msmt)
+    env = CegisPromptEnv(msmt)
     prp = parse_predicate(env, prp_src)
     inv = parse_predicate(env, inv_src)
     sv = env.state_vars

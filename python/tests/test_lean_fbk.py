@@ -15,7 +15,8 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
-from zrth.lean.common import LeanContext, dtype_shape
+from zrth.lean.sorts import dtype_shape
+from zrth.lean.context import LeanContext
 from zrth.lean.fbk_proveit import ProveItError, property_to_bool_lean, resolve_project
 from zrth.lean.translate.fbk import NAUnsupported, atom_to_lean_na, check_na_supported
 
@@ -629,7 +630,7 @@ def test_a_non_scalar_ctrl_wire_becomes_one_slot_per_element():
 
 def test_an_element_of_a_wide_wire_reads_its_own_slot():
     """The property and the transition have to agree about which slot an
-    element lives in; both take the layout from `_slot_accessors`."""
+    element lives in; both take the layout from `slot_accessors`."""
     v = Var(Int([1, 3]))
     init = [Term(LIA.Int(torch.tensor([[0, 0, 0]])), [X(v)])]
     update = [Term(LIA.Id(), [X(v)], [v])]
@@ -1022,6 +1023,28 @@ def test_omega_is_offered_before_the_smt_that_closes_a_check():
     assert try_omega_before_smt(left) == (left, 0)
 
 
+def test_a_patch_that_found_nothing_to_change_is_reported():
+    """A certificate either patch leaves as it came is right for a template
+    that has moved on, and silent about it. Where the tactic the patch hooks
+    onto is still there, the template moved *under* the patch, and the
+    certificate then fails where the patch was the repair."""
+    from zrth.lean.fbk_proveit import (
+        leave_bool_before_generalize, try_omega_before_smt, unpatched,
+    )
+
+    def run(cert):
+        text, n = leave_bool_before_generalize(cert)
+        return unpatched(cert, n, try_omega_before_smt(text)[1])
+
+    assert run(_RAW_CHECK) == []
+    moved = _RAW_CHECK.replace("(revert h; generalizeNatVar", "(revert h1; generalizeNatVar")
+    assert [w.split()[0] for w in run(moved)] == ["`generalizeNatVar`"]
+    moved = _RAW_CHECK.replace("using 4; smt)", "using 4\n  smt")
+    assert [w.split()[0] for w in run(moved)] == ["`smt`"]
+    # Neither tactic at all is a different certificate, not a moved one.
+    assert run("theorem t : True := by\n  try smt\n  trivial\n") == []
+
+
 def _verith(*args) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["uv", "run", "verith", *args],
@@ -1036,12 +1059,12 @@ def _verith(*args) -> subprocess.CompletedProcess:
     [
         ([], "--infer fbk-proveit requires --safety"),
         # ic3ia decides `G P`; a Buchi property is a different question.
-        (["--buchi", "(= s0 0)"], "incompatible with --buchi"),
+        (["--buchi", "(= (X @intf.0) 0)"], "incompatible with --buchi"),
         # The route *is* an `--infer` value, so a second one is not a
         # conflicting flag, it is a second route for one run.
-        (["--safety", "(= s0 0)", "--infer"], "a run takes one route"),
-        (["--safety", "(= s0 0)", "--invariant", "(= s0 0)"], "incompatible with --invariant"),
-        (["--safety", "(= s0 0)", "--ranking", "s0"], "is meaningless with --safety"),
+        (["--safety", "(= (X @intf.0) 0)", "--infer"], "a run takes one route"),
+        (["--safety", "(= (X @intf.0) 0)", "--invariant", "(= (X @intf.0) 0)"], "incompatible with --invariant"),
+        (["--safety", "(= (X @intf.0) 0)", "--ranking", "(X @intf.0)"], "is meaningless with --safety"),
         # `--pre` is *not* here: it is an assumption about the module's
         # inputs rather than a piece of the certificate ic3ia produces, and
         # the NA model carries it. What it refuses is a precondition its
@@ -1079,7 +1102,7 @@ def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
     out = tmp_path / "out"
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
-        "--safety", "(= s0 0)", "-o", str(out), "-p", "P",
+        "--safety", "(= (X @intf.0) 0)", "-o", str(out), "-p", "P",
         "--fbk-proveit", str(tmp_path),
         flag, "",
     )
@@ -1091,7 +1114,7 @@ def test_an_empty_value_is_not_an_absent_flag(flag, reported, tmp_path):
 def test_ic3ia_alone_is_an_error(tmp_path):
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
-        "--safety", "(= s0 0)", "-o", str(tmp_path), "-p", "P",
+        "--safety", "(= (X @intf.0) 0)", "-o", str(tmp_path), "-p", "P",
         "--ic3ia", "/bin/true",
     )
     assert r.returncode != 0
@@ -1151,7 +1174,7 @@ def test_a_checkout_that_is_not_one_fails_before_the_project_exists(tmp_path):
     out = tmp_path / "out"
     r = _verith(
         str(FIXTURE_DIR / "counter.py"),
-        "--safety", "(= s0 0)", "-o", str(out), "-p", "P",
+        "--safety", "(= (X @intf.0) 0)", "-o", str(out), "-p", "P",
         "--fbk-proveit", str(tmp_path / "nowhere"),
     )
     assert r.returncode != 0
@@ -1183,3 +1206,17 @@ def test_a_check_and_a_property_share_one_encoding(monkeypatch):
 
     assert built[0] == 1
     assert checked.pre_lean and prop
+
+
+def test_a_stateless_module_has_no_na_encoding_and_no_bridge():
+    """No controlled state: no slots, no `init_scalar_eq` to cite. Refused
+    by the check, and by the bridge even when handed bodies, which skips
+    the rest of the check."""
+    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+
+    inp = Var(Int([1, 1]))
+    ctx = LeanContext(Module.sequential([inp], [], []))
+    with pytest.raises(NAUnsupported, match="no controlled state"):
+        check_na_supported(ctx)
+    with pytest.raises(NAUnsupported, match="no controlled state"):
+        atom_to_lean_fbk_bridge(ctx, na_module="NA", bodies=object())

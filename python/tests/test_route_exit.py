@@ -30,7 +30,7 @@ import zrth.lean.main as entry
 
 print("cvc5 loaded by import:", "cvc5" in sys.modules, flush=True)
 
-from zrth.lean.magic import ai, cegar
+from zrth.lean.magic import ai, cegis
 
 def client(base_url, model):
     def chat(system, user):
@@ -41,7 +41,7 @@ def client(base_url, model):
     return chat
 
 ai.make_client = client
-cegar.make_client = client
+cegis.make_client = client
 
 for argv in json.loads(sys.argv[1]):
     sys.argv = ["verith", *argv]
@@ -57,26 +57,26 @@ PRE = ["--pre-check", "cvc5", "--smt-tactics", "cvc5"]
 
 
 def _cases(out: Path) -> list[list[str]]:
-    from zrth.lean.common import Refused
+    from zrth.lean.errors import Refused
     from zrth.lean.smt.vampire import resolve_vampire
 
     counter = str(FIXTURES / "counter.py")
     countdown = str(FIXTURES / "svcomp_countdown.py")
-    safe = ["--safety", "(<= s0 100)"]
+    safe = ["--safety", "(<= (X @intf.0) 100)"]
     runs = [
-        (counter, ["--buchi", "(= s0 0)", "--invariant",
-                   "(and (>= s0 0) (<= s0 9))", "--ranking",
-                   "(ite (= s0 0) 0 (- 10 s0))", *PRE]),
-        (countdown, ["--buchi", "(= s0 0)", "--invariant",
-                     "(and (>= s0 0) (<= s0 100))", "--infer", "smt-linear",
+        (counter, ["--buchi", "(= (X @intf.0) 0)", "--invariant",
+                   "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))", "--ranking",
+                   "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))", *PRE]),
+        (countdown, ["--buchi", "(= (X @intf.0) 0)", "--invariant",
+                     "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))", "--infer", "smt-linear",
                      *PRE]),
         (countdown, [*safe, "--infer", "sygus", *PRE]),
         (countdown, [*safe, "--infer", "houdini", *PRE]),
-        (countdown, ["--buchi", "(= s0 0)", "--infer", "nuterm", *PRE]),
-        (counter, ["--buchi", "(= s0 0)", "--invariant",
-                   "(and (>= s0 0) (<= s0 9))", "--ranking",
-                   "(ite (= s0 0) 0 (- 10 s0))", "--infer", "ai-cegis", *PRE]),
-        (counter, ["--buchi", "(= s0 0)", "--infer", "ai", *PRE]),
+        (countdown, ["--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm", *PRE]),
+        (counter, ["--buchi", "(= (X @intf.0) 0)", "--invariant",
+                   "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))", "--ranking",
+                   "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))", "--infer", "ai-cegis", *PRE]),
+        (counter, ["--buchi", "(= (X @intf.0) 0)", "--infer", "ai", *PRE]),
     ]
     try:
         resolve_vampire(None)
@@ -101,3 +101,14 @@ def test_every_route_exits_cleanly(tmp_path):
     assert "cvc5 loaded by import: False" in r.stdout
     exits = [ln for ln in r.stdout.splitlines() if ln.startswith("== exit")]
     assert exits == ["== exit 0"] * len(cases), r.stdout[-3000:]
+
+
+def test_a_predicate_refusal_is_shown_as_its_flag():
+    """The layers below the CLI name a predicate by role; the refusal is
+    read where the user can act on it, as the flag it came from."""
+    from zrth.lean.errors import PredicateRefused
+
+    assert str(PredicateRefused("property", "x", kind="safety")) == "--safety: x"
+    assert str(PredicateRefused("property", "x")) == "--buchi: x"
+    assert str(PredicateRefused("pre", "x")) == "--pre: x"
+    assert str(PredicateRefused("branch condition", "x")) == "branch condition: x"
