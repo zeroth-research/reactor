@@ -87,54 +87,21 @@ def render_certificate(
     )
 
 
-def _cert_def_lines(ctx: LeanContext, lean_cert: LeanCertificate) -> list[str]:
-    """Emit the five certificate definition lines as Lean source strings.
+def prepare(
+    q,
+    verbatim: LeanAnswer | None = None,
+) -> LeanCertificate:
+    """`q`'s certificate as codegen takes it: the predicates printed, the
+    facts their terms give, `hints`, and the text of a `verbatim` answer.
 
-    Used by the inline path of ``generate_certificate_lean`` (standalone certs).
-    Delegates field parsing to ``_cert_def_context`` to avoid duplicating logic.
+    The one place the printing is chosen. A condition the hints settle is
+    spliced into a tactic in expanded form, and a `have` outside a
+    definition cannot name a `let` inside it, so with such hints every
+    definition is printed unshared -- a condition can come from any of
+    them.
     """
-    c = _cert_def_context(ctx, lean_cert)
-    extl_native = c["extl_type"]
-    ctrl_native = c["ctrl_type"]
-    lines: list[str] = []
 
-    def _prop_def(name: str, ty: str, param: str, expr: "str | None", default: str) -> None:
-        if expr is not None:
-            lines.append(f"def {name} : {ty} → Prop := {expr}")
-        else:
-            lines.append(f"def {name} ({param} : {ty}) : Prop := {default}")
-        lines.append("")
-
-    _prop_def("init_pre",   extl_native, "e", c["init_pre_expr"],   "True")
-    _prop_def("update_pre", extl_native, "e", c["update_pre_expr"], "True")
-    _prop_def("inv",        ctrl_native, "s", c["inv_expr"],        "True")
-    _prop_def("P",          ctrl_native, "s", c["p_expr"],          "sorry")
-
-    # DecidablePred P (noncomputable for Real-typed state: Real.decidableLE
-    # and friends are classical, so the instance cannot be compiled)
-    noncomp = c["noncomp"]
-    if c["p_expr"] is not None:
-        lines.append(
-            f"{noncomp}instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance"
-        )
-    else:
-        lines.append(f"{noncomp}instance : DecidablePred P := sorry")
-    lines.append("")
-
-    # ranking (Nat, not Prop). Noncomputable for a Real state: `to_int`
-    # emits `⌊·⌋`, which goes through the noncomputable `Real.instFloorRing`.
-    # `rule_globally` takes no ranking, so a safety certificate has none to
-    # define -- and defining it as `sorry` would put a `sorry` in a file
-    # whose whole point is that it has none.
-    if c["is_safety"]:
-        return lines
-    if c["ranking_expr"] is not None:
-        lines.append(f"{noncomp}def ranking : {ctrl_native} → Nat := {c['ranking_expr']}")
-    else:
-        lines.append(f"{noncomp}def ranking (s : {ctrl_native}) : Nat := sorry")
-    lines.append("")
-
-    return lines
+    floors: list[str] = []
 
 
 def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
@@ -216,15 +183,15 @@ def generate_certificate_lean(
 
 
     # Inline definitions when used standalone (no separate Certificate/Data.lean).
-    if module_inline is not None:
-        inline_defs = "\n".join(_cert_def_lines(ctx, lean_cert))
-        has_ranking = defs.ranking is not None
-    else:
-        inline_defs = None
-        has_ranking = True
-    # A safety certificate defines no ranking at all, so naming it in a simp
-    # set would be an unknown identifier rather than an unused one.
-    has_ranking = has_ranking and not defs.is_safety
+    inline_defs = (
+        render("project/Certificate/_defs.lean.j2",
+               **_cert_def_context(ctx, lean_cert)).strip("\n")
+        if module_inline is not None else None
+    )
+    # A Buchi certificate always defines `ranking` (as `sorry` when nothing
+    # supplied one); a safety certificate defines none, and naming it in a
+    # simp set would be an unknown identifier rather than an unused one.
+    has_ranking = not defs.is_safety
 
     all_defs = "RM, init, update, inv, init_pre, update_pre, P"
     if has_ranking:
@@ -237,6 +204,8 @@ def generate_certificate_lean(
         _predicate_text(ctx, lean_cert),
         facts=lean_cert.plan.facts,
         hints=lean_cert.plan.hints,
+        verbatim=lean_cert.plan.verbatim,
+        floors=lean_cert.plan.floors,
     )
 
     return render(

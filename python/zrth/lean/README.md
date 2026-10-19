@@ -238,6 +238,15 @@ The project writes one file per row of `project.ENCODINGS`, each from its
 **Wire bindings in certificates:**  State is accessed as `s`, externals as
 `e.1` (latched) and `e.2` (next).
 
+**Where Lean text comes from.** Jinja templates (`templates/project/`) render
+the files and their fixed structure: the project skeleton, `Data.lean`, the
+certificate's proof skeleton. Python renders expressions and the parts whose
+shape follows the module: the encodings (`translate/`), the predicates
+(`render_certificate`), the tactic plan (`tactics.py`). A piece both a project
+and a `--cert-file` certificate need is one template partial, rendered by both
+(`Certificate/_defs.lean.j2`, the five definitions), and a name or a text more
+than one file uses is one constant in `lean_names.py`.
+
 ## Tactic plans (`tactics.py`)
 
 The three obligations used to be closed by one hardcoded chain, textually

@@ -21,11 +21,8 @@ import pytest
 import torch
 
 from zrth import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from zrth.lean.cert import (
-    generate_certificate_lean,
-    generate_data_lean,
-)
-from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.cert import generate_certificate_lean, generate_data_lean
+from zrth.lean.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.context import LeanContext
 from zrth.lean.inputs.python import load_module
 from zrth.lean.project import generate_standalone_cert_lean
@@ -144,8 +141,9 @@ CODEGEN = [
 
 
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
-             hints: bool) -> str:
+             hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
+    from zrth.lean.cert import prepare
 
     lean = None
     ctx = LeanContext(module)
@@ -163,6 +161,17 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
                          ids=[c[0] for c in CODEGEN])
 def test_codegen_is_unchanged(name, make, claim, cert, hints):
     _check(f"codegen-{name}.golden", _codegen(make(), claim, cert, hints))
+
+
+def test_codegen_of_a_nonlinear_lean_answer_is_unchanged():
+    """`--infer ai` hands back Lean with no term behind it, so the facts
+    cannot speak for its ranking; a product in it still brings `nlinarith`
+    into the plan."""
+    answer = LeanAnswer("fun s => (s 0 0) ≥ 0",
+                        "fun s => ((s 0 0) * (s 0 0)).toNat")
+    _check("codegen-lean_answer_nonlinear.golden",
+           _codegen(_fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
+                    None, False, verbatim=answer))
 
 
 # ══════════════════════════════════════════════════════════════════════════
