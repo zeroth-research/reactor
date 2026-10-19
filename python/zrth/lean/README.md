@@ -1,18 +1,185 @@
 # `zrth/lean` — Lean 4 Certificate Generation
 
-This package translates Python reactive modules (an SSA-style IR) into Lean 4
-source files that encode the module and carry machine-checked proofs of
-safety/liveness properties.
+`uv run verith` takes a reactive module and a property of it, and ends with a
+Lean project in which `lake build` checks a proof of the property. The proof
+rests on a certificate: an inductive invariant, and for a Büchi property
+also a ranking function. A decision procedure finds the certificate, and
+the pipeline does not trust it. Whatever the procedure answers is written
+into the project, and Lean checks it.
 
-Known defects in this pipeline, fixed and open, are catalogued in
-[KNOWN_ISSUES.md](KNOWN_ISSUES.md).  The one link the `--fbk-proveit` route
-is missing -- a proof that the NA model *is* the module -- is designed, with
-measurements, in [FBK_EQUIVALENCE.md](FBK_EQUIVALENCE.md).  What cvc5 is used for -- the obligation
-pre-check, sharing in the printer, and the solver-informed tactics -- is in
-[SMT_ASSIST.md](SMT_ASSIST.md), together with what the synthesis routes
-(`--infer sygus`, `--infer smt-linear`) were measured against and the
-cold-start plan for abduction that is still one.  The 77-case limit matrix those two are measured on, with its
-runners and baseline, is in [`tests/limits/`](../../tests/limits/README.md).
+![The verification pipeline](figures/pipeline.png)
+
+Solid arrows are the run's control flow. Dashed ones are data: what the
+decision procedure may read, and the project that the check builds the
+certificate in. The picture's source is
+[`figures/pipeline.tex`](figures/pipeline.tex).
+
+## The pipeline, stage by stage
+
+`main.main` runs the stages in this order. Each one names the code that
+does it and the section of this file that covers it in full.
+
+### 1. Input (`inputs/`)
+
+The input is a file, read by the adapter that `--format` names or that the
+file's suffix picks:
+
+| format | suffix | what it gives |
+|---|---|---|
+| `python` | `.py` | the `zrth.Module` that `module()` (or `-d NAME`) returns. Returning `inputs.Named(module, {"x": var})` instead adds names to write claims in. A Gymnasium environment comes in this way, through `zrth.gym` ([tutorial](../../../tutorials/verith_gym.md)) |
+| `smv` | `.smv` | a NuSMV model with one `MODULE main`, read as NuSMV reads it; a model that NuSMV would read differently is refused. Its variable names are the claim's names, and its `INVARSPEC` / `LTLSPEC G F` is the claim when neither `--safety` nor `--buchi` is given (`--spec N` picks one of several). The picture does not show this input |
+
+The adapter returns an `inputs.Problem`: the module, the source text, the
+names, and the claims the input states. A new input format is a new
+`InputAdapter` in `inputs/`.
+
+### 2. The claim (`cli.py`, `inputs/names.py`)
+
+The property goes under the flag of its proof rule:
+
+- `--safety P` claims `G P`, that `P` holds in every reachable state. The
+  certificate is an invariant that implies `P`.
+- `--buchi P` claims `G F P`, that `P` holds infinitely often. The
+  certificate is an invariant and a ranking function.
+
+`P` is SMT-LIB written in the input's names, and so are `--pre`,
+`--invariant` and `--ranking`. For example, `(X x)` is `x` after the round
+and `(X @intf.N)` is interface variable N by position. See [Writing a claim
+on the command line](#writing-a-claim-on-the-command-line) for the full
+spelling. This stage translates the names to the internal `s{i}`, `e{i}`
+and `el{i}`, and everything after it uses those. verith translates them back
+when it shows the certificate.
+
+### 3. Reactive module (`zrth.Module`)
+
+The module is the IR: `init` and `update` in SSA form over typed matrix
+wires ([Reactive Module IR](#reactive-module-ir)). Two checks run before any
+Lean is written:
+
+- the route's `precheck` refuses a module that its procedure cannot read;
+- `lean_gaps` refuses an operator with no Lean form.
+
+### 4. Lean project (`project.py`, `translate/`, `templates/`)
+
+`create_project` writes the project to `-o DIR -p NAME`:
+
+```
+NAME/
+  System.lean, System/          the module in five encodings: functional,
+                                circuit, relational, scalar and
+                                scalar-relational, each tied to the
+                                functional one by equivalence theorems
+  Certificate/Data.lean         the certificate: init_pre, update_pre, P,
+                                inv, ranking
+  Certificate/Certificate.lean  the proof rule's obligations, and the
+                                tactics that close them
+  Core/                         matrices, ReactiveModule, LTL, the proof
+                                rules (rule_globally, rule_buchi)
+  ZerothHammer.lean, LeanAI/    the zeroth_hammer and ai_solve tactics
+  artifacts/                    what earlier runs found, for the next run
+  dbg/                          the module as printed, and a copy of the input
+  lakefile.toml, lean-toolchain
+```
+
+The certificate in `Data.lean` depends on the run:
+
+- with no certificate given and no route, the predicates are `sorry`;
+- with no route, it is the certificate given by `--invariant` and
+  `--ranking`;
+- with a route, it is a placeholder that stage 6 replaces.
+
+`--cert-file PATH.lean` writes a self-contained certificate instead, with
+the relational and scalar encodings beside it, and the run ends there.
+[What gets generated](#what-gets-generated) has the details.
+
+### 5. Decision procedure (`infer_route/`), untrusted
+
+`--infer NAME` runs one route against the generated project. A route is a
+module that exports a `ROUTE` row. The row says what the route may read and
+write in the project, which `artifacts/` it resumes from, and what it
+returns: predicates in SMT-LIB, predicates in Lean, or whole files. The run
+holds each answer to its row and believes nothing else about it.
+
+| route | LLM | returns | how it finds the certificate |
+|---|---|---|---|
+| `ai` | yes | Lean | one call proposes the invariant and the ranking function; a second call is asked to find them wrong |
+| `ai-cegis` (default `--infer`) | yes | SMT-LIB | each candidate is put to the obligations in cvc5, and a counterexample goes back into the next prompt |
+| `nuterm` | no | SMT-LIB | a ranking function trained on rollouts and certified by Farkas/CEGAR; the invariant comes from Houdini |
+| `sygus` | no | SMT-LIB | cvc5's SyGuS invariant track, over linear facts and congruences |
+| `smt-linear` | no | SMT-LIB | one cvc5 query per shape; a refuted query proves that no certificate of that shape exists |
+| `houdini` | no | SMT-LIB | facts read off simulated runs, kept only once cvc5 or Vampire proves them |
+| `vampire` | no | SMT-LIB | the certificate is left as holes in the obligations, and Vampire's answer fills them |
+| `fbk-proveit` | no | files | `lean-ltl-certifying`'s ic3ia toolchain, over an NA model of the module |
+
+[Common invocations](#common-invocations) shows the LLM routes. The others
+each have a section, from [`--infer nuterm`](#inferring-without-an-llm---infer-nuterm)
+to [`--infer fbk-proveit`](#certifying-through-lean-ltl-certifying---infer-fbk-proveit).
+[Adding an Inference Route](#adding-an-inference-route-infer_route) says how
+to write a new one.
+
+### 6. Lean certificate (`cert.py`, `smt_query.py`, `tactics.py`, `smt_to_lean.py`)
+
+The route's answer becomes the project's certificate. Without a route,
+the same steps turn the given predicates into the certificate, before
+stage 4:
+
+- `predicate_terms` parses the predicates once, into cvc5 terms over the
+  module's encoding.
+- That parse is printed as Lean by `render_certificate`, and read for its
+  shape by `predicate_facts`.
+- Under `--smt-tactics cvc5`, it is also put to cvc5 for hints
+  (`solver_hints`).
+- `cert.prepare` joins these into a `LeanCertificate`: the definitions in
+  `Data.lean`, and the tactic plan in `Certificate.lean`.
+
+`--pre-check cvc5` first asks cvc5 whether the obligations hold, so that a
+wrong answer fails in seconds rather than in the build. verith then prints
+the certificate in the input's names.
+
+`fbk-proveit` is different: it returns files, and nothing is regenerated.
+It installs ic3ia's certificate and, unless `--fbk-equiv none` is given,
+`Certificate/Equivalence.lean`, which ties ic3ia's model back to the
+module.
+
+### 7. The check (`--build-cert`)
+
+`lake update` and `lake build Certificate` run in the project. This is the
+step the result rests on: Lean checks the certificate's obligations against
+the module's encoding. Lake reports a `sorry` as a warning and exits 0, so
+a `sorry` left in `Certificate/` also fails the run. Without `--build-cert`
+the run stops at the project, which can then be built by hand. See [Building
+the certificate](#building-the-certificate---build-cert).
+
+## Checking a change to the pipeline
+
+Record each of these at the commit before the change and after it, and
+compare; every difference must be one the change means.
+
+- **Route transcripts**: `uv run python scripts/route_transcripts.py OUTDIR`
+  from `python/`, then `diff -r`. 42 cases over all eight routes, with the
+  LLM replies scripted; the docstring names the variables that find the
+  external tools. Record on a quiet machine, and re-run a `vampire_*` case
+  alone before reading a difference in it as a change: under load its
+  templates run out of their shared deadline.
+- **Encoding snapshots**: `scripts/encoding_snapshots.py OUTDIR` writes what
+  the transcripts do not cover: the `System/*.lean` encodings, the bare
+  `--cert-file` certificate, and the NA model and bridge, per fixture.
+- **Goldens**: `tests/test_pipeline_golden.py`; `ZRTH_UPDATE_GOLDEN=1`
+  rewrites them.
+- **Suites**: `uv run pytest -m 'not slow' -q` from `python/` (set `VAMPIRE`
+  to the binary for the Vampire tests), and `just test-lean` for the lake
+  builds after any change to the generated Lean.
+
+## Further reading
+
+- [`TODO.md`](../../../TODO.md): what is still to do, known defects
+  included.
+- [`tests/limits/`](../../tests/limits/README.md): the limit matrix the
+  routes are measured on, with its runners and baseline.
+- [`tutorials/verith.md`](../../../tutorials/verith.md): a walk through
+  every route on worked examples.
+
+The rest of this file is the reference, starting from the IR.
 
 ---
 
@@ -41,7 +208,12 @@ topologically-sorted dataflow graph.
 
 | File | Role |
 |------|------|
-| `common.py` | Shared utilities: `LeanContext`, type helpers, `ConstantRegistry`, wire-binding helpers, `flat_layout` (the row-major element order every scalar encoding shares) |
+| `errors.py` | `Refused`, the error a run is refused with |
+| `sorts.py` | Sorts and shapes of wires and the Lean types they print as (`lean_elem_type`, `dtype_to_lean_type`) |
+| `layout.py` | Tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares |
+| `literals.py` | Constants as Lean text, `ConstantRegistry` |
+| `context.py` | `LeanContext`, what every encoding of one module shares |
+| `common.py` | Re-exports the five above, for importers not migrated yet |
 | `ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
@@ -55,7 +227,7 @@ topologically-sorted dataflow graph.
 
 ---
 
-## Type Mapping (`common.py`)
+## Type Mapping (`sorts.py`)
 
 `dtype_to_lean_type(wire, simple_types=False)` maps wire types to Lean:
 
@@ -71,14 +243,14 @@ All intermediate values are `Mat T m n` (Lean: `Fin m → Fin n → T`) even whe
 scalar.  This keeps the algebra uniform.  Float-typed modules require
 `noncomputable` on all definitions because `Real` lacks decidable equality.
 
-**`_accessor(pos, total)`** builds right-nested product accessors:
+**`product_accessor(pos, total)`** builds right-nested product accessors:
 - `total=1` → `""` (value itself)
 - `total=2` → `.1`, `.2`
 - `total=3` → `.1`, `.2.1`, `.2.2`
 
 ---
 
-## `LeanContext` (`common.py`)
+## `LeanContext` (`context.py`)
 
 Created once per module; shared across all code generators.  It extracts:
 
@@ -90,14 +262,14 @@ Created once per module; shared across all code generators.  It extracts:
   mapping each input wire to its Lean expression (e.g. `"ctrl.1"`).
 - `uses_real` — True if any wire is Float-typed (triggers `noncomputable`).
 
-`_bind_wires(params)` builds the wire-id → accessor dict from a list of
+`bind_wires(params)` builds the wire-id → accessor dict from a list of
 `(param_name, [wire, ...])` pairs.
 
 ---
 
 ## Encoding 1 — Functional (`native.py`, `translate/functional.py`)
 
-`_translate_terms(terms, input_bindings, block_outputs, constants)` produces a
+`translate_terms_lean(terms, input_bindings, block_outputs, constants)` produces a
 Lean function body as a string of `let` bindings followed by the output tuple:
 
 ```lean
@@ -157,7 +329,7 @@ plumbing lemmas.
 
 ## Encoding 3 — Scalar (`native.py`, `translate/scalar.py`)
 
-`_translate_terms_scalar` is like `_translate_terms` but uses bare scalar types
+`translate_terms_scalar` is like `translate_terms_lean` but uses bare scalar types
 (`Bool`, `Int`, `Real`) instead of `Mat T 1 1` for all 1×1 wires:
 
 ```lean
@@ -179,8 +351,9 @@ Key differences from functional:
 - Non-scalar wires (actual matrices, `MatMul` results with shape `[m,n]`) fall
   back to matrix types transparently.
 
-`_bind_wires_scalar` builds the input bindings, appending `" 0 0"` for scalar
-wires so downstream ops receive bare values.
+`translate._shared.scalar_bindings_with_recon` builds the input bindings: a
+one-element wire is bound to its bare accessor, so downstream ops receive bare
+values, and a wider one to a `let` that rebuilds its `Mat` from the elements.
 
 **Equivalence theorems** (`to_lean_scalar_equiv`) connect the scalar and
 functional encodings:
@@ -213,15 +386,21 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 
 | Method | Returns |
 |--------|---------|
-| `to_lean_functional()` | Constants block + `init`/`update` defs |
-| `to_lean_circ()` | Circuit namespace + equivalence theorems |
-| `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems |
-| `to_lean(circuit=True, scalar=True)` | All three encodings combined |
+| `to_lean_functional()` | Constants block + `init`/`update` defs (`System.lean`) |
+| `to_lean_circ()` | Circuit namespace + equivalence theorems (`SystemCirc.lean`) |
+| `to_lean_mat_rel()` | `namespace Rel`, the matrix-domain relational encoding (`SystemRel.lean`) |
+| `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems (`SystemScalar.lean`) |
+| `to_lean_rel()` | `namespace ScalarRel`, the scalar-relational encoding (`SystemScalarRel.lean`) |
+| `to_lean(circuit=True, scalar=True, rel=True)` | Functional, then each enabled one of circuit, scalar and scalar-relational, joined (never `Rel`); used by tests |
 | `atom_to_lean_functional()` | Just `init`/`update` bodies |
 | `atom_to_lean_circuit()` | Just `namespace Circ` block |
 | `atom_to_lean_scalar()` | Just `namespace Scalar` block |
+| `atom_to_lean_mat_rel()` / `atom_to_lean_rel()` | Just the `Rel` / `ScalarRel` namespace |
 | `to_lean_equiv_theorems()` | `init_circ_eq` / `update_circ_eq` theorems |
 | `to_lean_scalar_equiv()` | `init_scalar_eq` / `update_scalar_eq` theorems |
+
+The project writes one file per row of `project.ENCODINGS`, each from its
+`to_lean_*` producer.
 
 ---
 
@@ -252,13 +431,23 @@ that is `None` becomes a `True` / `sorry` placeholder.
 **Wire bindings in certificates:**  State is accessed as `s`, externals as
 `e.1` (latched) and `e.2` (next).
 
+**Where Lean text comes from.** Jinja templates (`templates/project/`) render
+the files and their fixed structure: the project skeleton, `Data.lean`, the
+certificate's proof skeleton. Python renders expressions and the parts whose
+shape follows the module: the encodings (`translate/`), the predicates
+(`render_certificate`), the tactic plan (`tactics.py`). A piece both a project
+and a `--cert-file` certificate need is one template partial, rendered by both
+(`Certificate/_defs.lean.j2`, the five definitions), and a name or a text more
+than one file uses is one constant in `lean_names.py`.
+
 ### `predicate_terms` / `render_certificate`
 
 `predicate_terms` parses with cvc5 and refuses a predicate by the flag it
 came from; `render_certificate(q, share=..., verbatim=...)` translates the
-terms. `share=False` prints repeated subterms in full, which a condition
-`--smt-tactics` settled needs; `verbatim` takes the invariant and ranking of
-a `LeanAnswer` as they are. `lean_certificate(module, claim, cert)` does both
+terms. `share=False` prints repeated subterms in full; `cert.prepare`
+always shares, because a hint's `if_pos` matches once `simp` has
+zeta-reduced the `let`s. `verbatim` takes the invariant and ranking of a
+`LeanAnswer` as they are. `lean_certificate(module, claim, cert)` does both
 for a caller that wants no solver hints.
 
 ---
@@ -426,7 +615,8 @@ uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer nuterm -o out/ -p 
 # Standalone self-contained certificate (no project scaffold)
 uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lean
 # → writes out/MyCert.lean  (certificate)
-# → writes out/MyCertScalar.lean  (scalar encoding + equivalence theorems)
+# → and out/MyCertRel.lean, out/MyCertScalar.lean, out/MyCertScalarRel.lean
+#   (the other encodings + equivalence theorems)
 ```
 
 ### What gets generated
@@ -437,20 +627,34 @@ uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lea
 <output_dir>/<ProjectName>/
   lakefile.toml
   lean-toolchain
-  ZerothHammer.lean          # standalone zeroth_hammer tactic
-  <ProjectName>.lean          # functional + circuit encodings of init/update
-  Certificate/
-    Certificate.lean          # certificate predicates + proofs
+  System.lean                 # root: imports the encodings
+  System/
+    System.lean               # functional encoding of init/update
+    Circ.lean                 # circuit encoding + equivalence theorems
+    Rel.lean                  # relational encoding + equivalence theorems
     Scalar.lean               # scalar encoding + equivalence theorems
+    ScalarRel.lean            # scalar-relational encoding + equivalence theorems
   Certificate.lean            # re-export shim
-  Core/                       # library files (Mat, Box, ReactiveModule, …)
+  Certificate/
+    Data.lean                 # certificate predicates
+    Certificate.lean          # obligations + proofs
+  ZerothHammer.lean           # standalone zeroth_hammer tactic
+  LeanAI.lean, LeanAI/        # the ai_solve tactic
+  Core/                       # library files (Mat, Box, ReactiveModule, LTL, proof rules)
+  artifacts/                  # what runs found, for the next run (see below)
+  dbg/                        # system.txt (the module) and a copy of the input
+  Main.lean                   # only with --executable
 ```
+
+`--infer fbk-proveit` adds `ProveIt/` and `Certificate/Equivalence.lean`.
 
 **Standalone certificate** (`--cert-file path/Name.lean`):
 
 ```
 path/Name.lean               # self-contained: init/update + certificate
+path/NameRel.lean            # relational encoding + equivalence theorems
 path/NameScalar.lean         # scalar encoding + equivalence theorems
+path/NameScalarRel.lean      # scalar-relational encoding + equivalence theorems
 ```
 
 ### Safety or Büchi
@@ -647,7 +851,7 @@ uv run verith m_step2.py --safety "(not (= (X @intf.0) 1))" --infer sygus -o out
 uv run verith m_step2.py --safety "(not (= (X @intf.0) 1))" --infer ai-cegis \
     --pre-check cvc5 -o out/ -p Rea
 # .. resuming from inv-0002-sygus.smt2 (proved): taking it as the certificate
-# [CEGAR] all obligations UNSAT — accepted        -- and no LLM call was made
+# [CEGIS] all obligations UNSAT — accepted        -- and no LLM call was made
 ```
 
 What each is for, measured on the `tests/limits` fixtures:
@@ -1285,7 +1489,7 @@ rather than gaining a second one.
 ## Adding a New Encoding
 
 1. Add a translation function in `native.py` (or a new file) analogous to
-   `_translate_terms`.  It receives `input_bindings: dict[wire_id, str]` and
+   `translate_terms_lean`.  It receives `input_bindings: dict[wire_id, str]` and
    returns a Lean body string.
 2. Add a module under `translate/` that wraps the result in the
    appropriate namespace / function signature, and a method on

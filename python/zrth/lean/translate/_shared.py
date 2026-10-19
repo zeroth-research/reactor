@@ -1,23 +1,31 @@
 """Shared helpers used by multiple translate sub-modules."""
 
-from zrth.lean.common import (
-    FlatLayout,
-    dtype_shape,
-    _accessor,
-    _flat_element_type,
-    dtype_to_lean_type,
-    _mat_from_scalars,
-    flat_layout,
-)
-from zrth.lean.native import _build_tuple, _product_type_scalar
+from zrth.lean.sorts import dtype_to_lean_type, flat_element_type, wire_shape
+from zrth.lean.layout import FlatLayout, product_accessor, mat_from_scalars, flat_layout
+from zrth.lean.native import build_tuple, product_type_scalar
 
 
-def _flat_slice(expr: str, layout: FlatLayout, wire) -> str:
+def has_block(ctx, block: str) -> bool:
+    """Whether the module's atom has `block` ("init" or "update") terms. An
+    encoding proves its theorems about a block only when the block has
+    some, so whatever cites one of them asks this same question."""
+    return bool(list(getattr(ctx.atom, block)))
+
+
+def scalar_eq_name(block: str) -> str:
+    """The theorem `scalar.py` proves for `block`: the functional block is
+    `Scalar.pack` of `Scalar.<block>` of the unpacked inputs. It exists
+    exactly when `has_block(ctx, block)`."""
+    return f"{block}_scalar_eq"
+
+
+def flat_slice(expr: str, layout: FlatLayout, wire) -> str:
     """The components of the flat tuple `expr` that `wire` owns.
 
     Takes the wire and the layout rather than an offset and a length: the
     only two numbers involved are a position in one index space and a length
-    in another, and `KNOWN_ISSUES` #22 was them mismatched at a call site.
+    in another, and the defect `fe8600da` fixed was them mismatched at a
+    call site.
 
     A wire covering the whole tuple slices to `expr` itself: projecting and
     re-tupling would be a no-op that repeats `expr` once per element, and
@@ -26,22 +34,22 @@ def _flat_slice(expr: str, layout: FlatLayout, wire) -> str:
     offset, size = layout.span(wire)
     if offset == 0 and size == layout.total:
         return expr
-    return _build_tuple(
-        [f"{expr}{_accessor(offset + k, layout.total)}" for k in range(size)]
+    return build_tuple(
+        [f"{expr}{product_accessor(offset + k, layout.total)}" for k in range(size)]
     )
 
 
-def _effect_type(wire) -> str:
+def effect_type(wire) -> str:
     """Codomain of a per-wire `effect_i`/`init_i`: its own flat element tuple.
 
     One component per element, so it can be compared to the matching slice of
     the scalar encoding's state tuple. Typing it as the wire's `Mat` instead
     put a `Mat Int 6 1` against an `Int x ... x Int`.
     """
-    return _product_type_scalar([wire])
+    return product_type_scalar([wire])
 
 
-def _scalar_bindings_with_recon(
+def scalar_bindings_with_recon(
     params: "list[tuple[str, list]]",
 ) -> "tuple[list[str], dict[int, str], dict[int, list[str]]]":
     """Build wire bindings and flat scalar slot tracking for scalar encoding.
@@ -74,7 +82,7 @@ def _scalar_bindings_with_recon(
                 bindings[w.id] = slots[0]
             else:
                 mat_ty = dtype_to_lean_type(w)
-                mat_expr = _mat_from_scalars(slots, list(dtype_shape(w.dtype)), _flat_element_type(w))
+                mat_expr = mat_from_scalars(slots, wire_shape(w), flat_element_type(w))
                 var_name = f"_m{let_counter[0]}"
                 let_counter[0] += 1
                 let_lines.append(f"  let {var_name} : {mat_ty} := {mat_expr}")
@@ -112,7 +120,7 @@ def _needed_recon(recon_lets: "list[str]", body: str) -> "list[str]":
     return [line for line in recon_lets if line in kept]
 
 
-def _prepend_recon(recon_lets: "list[str]", body: str) -> str:
+def prepend_recon(recon_lets: "list[str]", body: str) -> str:
     """Prepend the Mat reconstruction let-lines this body needs."""
     needed = _needed_recon(recon_lets, body)
     if needed:

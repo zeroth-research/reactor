@@ -5,9 +5,9 @@ and four backends turn that name into something they can emit:
 
 | column   | backend                          | a cell holds                 |
 |----------|----------------------------------|------------------------------|
-| `mat`    | `native._translate_terms`        | args -> Lean expr (on `Mat`) |
-| `scalar` | `native._translate_terms_scalar` | args -> Lean expr (bare)     |
-| `box`    | `circ._translate_terms_circ`     | a `Box` combinator name      |
+| `mat`    | `native.translate_terms_lean`        | args -> Lean expr (on `Mat`) |
+| `scalar` | `native.translate_terms_scalar` | args -> Lean expr (bare)     |
+| `box`    | `circ.translate_terms_circ`     | a `Box` combinator name      |
 | `smt`    | `smt_encode.translate_terms`     | `SmtOp` -> `cvc5.Term`       |
 
 These were six dicts and an if/elif chain — one per backend, doubled for the
@@ -35,7 +35,7 @@ row, and a row no theory backs fails it too.
 
 This module never imports cvc5, on purpose: `native.py` and `circ.py`
 import *it*, and the Lean path has to keep working where cvc5 is absent
-(see `magic/cegar.py`'s guarded import). The SMT emitters reach cvc5 only
+(see `magic/cegis.py`'s guarded import). The SMT emitters reach cvc5 only
 through the `SmtOp` context `smt_encode` hands them — `op.K` is
 `cvc5.Kind`.
 """
@@ -47,7 +47,8 @@ from typing import TYPE_CHECKING, Callable, Union
 
 from zrth import Bool, Int, Real, BitVec
 
-from .common import Refused, itype_name
+from .errors import Refused
+from .sorts import itype_name
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, cvc5 is not imported here
     import cvc5
@@ -87,7 +88,7 @@ class Inline:
 class ViaMat:
     """Scalar column only: there is no scalar form, the matrix one serves.
 
-    `_translate_terms_scalar` lifts scalar-bound reads to `fun _ _ => x`
+    `translate_terms_scalar` lifts scalar-bound reads to `fun _ _ => x`
     and projects `0 0` off the result, which is right whenever the matrix
     form is elementwise or folds to a 1x1.
     """
@@ -110,9 +111,9 @@ THEORIES = ("LIA", "LRA", "BV")
 ALL = THEORIES
 LIA_LRA = ("LIA", "LRA")
 BV_ONLY = ("BV",)
-# No theory defines these any more; the emitters are kept because removal is
-# the open half of KNOWN_ISSUES #23. Dispatch goes through `itype_name`, so
-# nothing can reach them.
+# No theory defines these any more; the emitters are kept until it is
+# decided whether to drop them (TODO.md). Dispatch goes through `itype_name`,
+# so nothing can reach them.
 NONE: tuple[str, ...] = ()
 
 
@@ -343,8 +344,8 @@ _NONDET = Unsupported(
 _UNINTERPRETED = Unsupported(
     "an uninterpreted symbol has no obvious translation — emit an `opaque` "
     "nothing can prove anything about, or reject it at the front end. "
-    "KNOWN_ISSUES #27 holds the open decision; `--fbk-proveit` already "
-    "takes the second option."
+    "Which of the two is an open decision; `--fbk-proveit` already takes "
+    "the second option."
 )
 
 _ZEROGRAD = Unsupported(
@@ -380,7 +381,7 @@ OPS: tuple[Op, ...] = (
         Op(
             name,
             theories,
-            mat=Inline("common._constant_expr"),
+            mat=Inline("literals.constant_expr"),
             scalar=Inline("native._constant_expr_scalar"),
             box=Inline("circ: @Box.const"),
             smt=_smt_const,
@@ -772,13 +773,13 @@ OPS: tuple[Op, ...] = (
         )
     ),
     # ── dead ──────────────────────────────────────────────────────────
-    # `IType`-era names no theory defines any more. Kept because removing
-    # them is the decision KNOWN_ISSUES #23 asks for; unreachable either
-    # way, since dispatch goes through `itype_name`.
+    # `IType`-era names no theory defines any more. Kept until it is
+    # decided whether to remove them (TODO.md); unreachable either way,
+    # since dispatch goes through `itype_name`.
     Op(
         "Tensor",
         NONE,
-        mat=Inline("common._constant_expr"),
+        mat=Inline("literals.constant_expr"),
         scalar=Inline("native._constant_expr_scalar"),
         box=Inline("circ: @Box.const"),
         smt=_smt_tensor,

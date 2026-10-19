@@ -3,12 +3,9 @@ Build a Lean4 project with Mathlib, Cslib, and a custom git dependency,
 copy template library files, and generate a diagram Lean file.
 """
 
-from zrth.lean.common import (
-    LeanContext,
-    Refused,
-    dtype_shape,
-    _flat_element_type,
-)
+from zrth.lean.errors import Refused
+from zrth.lean.sorts import flat_element_type, wire_shape
+from zrth.lean.context import LeanContext
 
 from zrth.lean.cert import (
     generate_certificate_lean,
@@ -28,11 +25,14 @@ from typing import TYPE_CHECKING
 
 from zrth import Module, Wire, X
 from .native import (
-    _product_type,
-    _build_tuple,
+    product_type,
+    build_tuple,
 )
 
 from .translate import ModuleToLean4
+from .lean_names import (
+    CERT_LIB, DATA, LINTERS_OFF, PROOF, SYSTEM_LAYOUT, Layout, cert_file,
+)
 
 if TYPE_CHECKING:
     from .inputs import SourceText
@@ -152,7 +152,7 @@ def build_certificate(project_dir: Path) -> None:
     cannot close an obligation, and lake reports those as warnings and exits
     0 -- which would make "built" mean nothing.
     """
-    for cmd in (["lake", "update"], ["lake", "build", "Certificate"]):
+    for cmd in (["lake", "update"], ["lake", "build", CERT_LIB]):
         try:
             rc, out = stream(cmd, cwd=project_dir)
         except FileNotFoundError as e:
@@ -163,7 +163,8 @@ def build_certificate(project_dir: Path) -> None:
                 + _build_why(out)
             )
 
-    unproved = [l for l in out.splitlines() if "sorry" in l and "Certificate/" in l]
+    unproved = [l for l in out.splitlines()
+                if "sorry" in l and f"{CERT_LIB}/" in l]
     if unproved:
         raise LakeBuildError(
             f"the certificate compiles but is not proved: "
@@ -241,34 +242,6 @@ def _build_why(out: str) -> str:
 # ══════════════════════════════════════════════════════════════════════════
 
 
-@dataclass(frozen=True)
-class Layout:
-    """Where one route puts an encoding and what Lean calls it.
-
-    `base` is the name of the row with no suffix -- the functional encoding
-    -- and every other row hangs off it. In the project the files live in
-    their own `System/` directory and are named by suffix alone; a
-    `--cert-file` writes them next to whatever else is in the output
-    directory, so there the names carry `base` too (`flat`).
-    """
-
-    base: str
-    prefix: str = ""            # Lean module prefix, e.g. "System."
-    flat: bool = False          # file names carry `base`
-    directory: Path = Path()    # only `path` uses it
-
-    def stem(self, suffix: str) -> str:
-        return f"{self.base}{suffix}" if self.flat else (suffix or self.base)
-
-    def path(self, suffix: str) -> Path:
-        return self.directory / f"{self.stem(suffix)}.lean"
-
-    def lean_module(self, suffix: str) -> str:
-        return f"{self.prefix}{self.stem(suffix)}"
-
-
-# The project's own layout, also the one `generate_root` imports through.
-SYSTEM_LAYOUT = Layout(base="System", prefix="System.")
 
 
 @dataclass(frozen=True)
@@ -280,7 +253,6 @@ class Encoding:
     core: str                   # the Core module the encoding is written against
     needs: tuple[str, ...]      # suffixes of the sibling encodings it imports
     producer: str               # the `ModuleToLean4` method that prints it
-    scalar: bool = False        # only sound when the module scalarizes
     cert_file: bool = True      # also written by the `--cert-file` route
 
 
@@ -295,10 +267,9 @@ ENCODINGS: tuple[Encoding, ...] = (
              cert_file=False),
     Encoding("Rel", "Matrix-domain relational encoding", "Core.Basic", ("",),
              "to_lean_mat_rel"),
-    Encoding("Scalar", "Scalar encoding", "Core.Basic", ("",), "to_lean_scalar",
-             scalar=True),
+    Encoding("Scalar", "Scalar encoding", "Core.Basic", ("",), "to_lean_scalar"),
     Encoding("ScalarRel", "Scalar-relational encoding", "Core.Basic", ("Scalar",),
-             "to_lean_rel", scalar=True),
+             "to_lean_rel"),
 )
 
 
@@ -312,25 +283,20 @@ def write_encoding(
     path.write_text(
         f"/- {enc.title} of reactive module `{module_name}` -/\n"
         + "".join(f"import {i}\n" for i in imports)
-        + f"\n{body}\n"
+        + f"\n{LINTERS_OFF}\n\n{body}\n"
     )
     return path
 
 
-def generate_root(scalar: bool = True) -> str:
+def generate_root() -> str:
     """Root module file that imports the `System.*` encodings.
 
     The import list is the encoding table, so a row added there reaches the
-    root without a second edit. `scalar` drops the rows whose encoding only
-    holds for a module the scalar layout can express.
+    root without a second edit.
     """
     return render(
         "project/Root.lean.j2",
-        imports=[
-            SYSTEM_LAYOUT.lean_module(e.suffix)
-            for e in ENCODINGS
-            if scalar or not e.scalar
-        ],
+        imports=[SYSTEM_LAYOUT.lean_module(e.suffix) for e in ENCODINGS],
     )
 
 
@@ -339,14 +305,7 @@ def _token_count(wire: Wire) -> int:
     to read to get a single input value (which can be e.g., a matrix).
     This function computes this.
     """
-    shape = dtype_shape(wire.dtype)
-    if shape == []:
-        return 1
-    if len(shape) == 1:
-        return shape[0]
-    if len(shape) == 2:  # matrix
-        return shape[0] * shape[1]
-    raise ValueError("Unsupported DType for token count")
+    return wire_shape(wire).total
 
 
 def _unsupported_io_sort(elem: str, wire: Wire) -> Refused:
@@ -400,6 +359,9 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     # `System` lean_lib's root module pulls in; `{project_name}.{module_name}`
     # named no file the generator ever writes.
     lines.append("import System")
+    lines.append("")
+    lines.append(LINTERS_OFF)
+    lines.append("")
     lines.append("open Box")
     lines.append("")
 
@@ -428,7 +390,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
 
     # parseExtl
     lines.append(
-        f"def parseExtl (tokens : Array String) : IO ({_product_type(extl_next)}) := do"
+        f"def parseExtl (tokens : Array String) : IO ({product_type(extl_next)}) := do"
     )
     lines.append(
         f'  if tokens.size < {total_extl_tokens} then throw (.userError "Expected {total_extl_tokens} input values")'
@@ -437,11 +399,9 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     offset = 0
     parse_vars: list[str] = []
     for i, w in enumerate(extl_next):
-        elem = _flat_element_type(w)
+        elem = flat_element_type(w)
         var = f"e{i}"
-        shape = dtype_shape(w.dtype)
-        m = shape[0]
-        n = shape[1] if len(shape) == 2 else 1
+        m, n = wire_shape(w).m, wire_shape(w).n
         # Every wire is a matrix here, so parse m*n tokens into an array of
         # the wire's own element type -- reading them all as Int made the
         # body disagree with the ascribed return type for every other sort.
@@ -457,32 +417,30 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         offset += m * n
         parse_vars.append(var)
 
-    # `_product_type` orders components as the wires are declared, and
-    # `_accessor` projects them the same way, so the literal follows suit.
+    # `product_type` orders components as the wires are declared, and
+    # `product_accessor` projects them the same way, so the literal follows suit.
     # (An earlier right-nested `ValTuple` encoding needed the reverse.)
-    lines.append(f"  pure {_build_tuple(parse_vars)}")
+    lines.append(f"  pure {build_tuple(parse_vars)}")
     lines.append("")
 
     # showCtrl
-    lines.append(f"def showCtrl (v : {_product_type(ctrl_next)}) : String :=")
+    lines.append(f"def showCtrl (v : {product_type(ctrl_next)}) : String :=")
     # Destructure
     destr_vars: list[str] = []
     for i in range(len(ctrl_next)):
         destr_vars.append(f"v{i}")
     # Same order here: v{i} must bind ctrl_next[i], since the formatters
     # below pick showBool/toString/showMat from that wire's type.
-    lines.append(f"  let {_build_tuple(destr_vars)} := v")
+    lines.append(f"  let {build_tuple(destr_vars)} := v")
 
     # Format each variable. `dtype_to_lean_type` always returns a `Mat ...`
     # here, so dispatch on the element sort instead: comparing that string
     # against "Bool"/"Int" never matched and pinned every element to Int.
     show_parts: list[str] = []
     for i, w in enumerate(ctrl_next):
-        elem = _flat_element_type(w)
+        elem = flat_element_type(w)
         var = f"v{i}"
-        shape = dtype_shape(w.dtype)
-        m = shape[0]
-        n = shape[1] if len(shape) == 2 else 1
+        m, n = wire_shape(w).m, wire_shape(w).n
         show_parts.append(f"showMat {m} {n} {_elem_shower(elem, w)} {var}")
 
     if len(show_parts) == 1:
@@ -541,9 +499,8 @@ def write_data_lean(
     if ctx is None:
         ctx = LeanContext(module)
 
-    src_dir = project_dir / "Certificate"
-    src_dir.mkdir(parents=True, exist_ok=True)
-    data_file = src_dir / "Data.lean"
+    data_file = project_dir / cert_file(DATA)
+    data_file.parent.mkdir(parents=True, exist_ok=True)
     data_file.write_text(generate_data_lean(ctx, lean_cert))
     print(f"Wrote {data_file}")
     return data_file
@@ -569,12 +526,11 @@ def write_certificate_lean(
     if ctx is None:
         ctx = LeanContext(module)
 
-    cert_dir = project_dir / "Certificate"
-    cert_dir.mkdir(parents=True, exist_ok=True)
-    cert_file = cert_dir / "Certificate.lean"
-    cert_file.write_text(generate_certificate_lean(ctx, lean_cert))
-    print(f"Wrote {cert_file}")
-    return cert_file
+    path = project_dir / cert_file(PROOF)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(generate_certificate_lean(ctx, lean_cert))
+    print(f"Wrote {path}")
+    return path
 
 
 def create_project(
@@ -700,12 +656,10 @@ def create_project(
     m2l = ModuleToLean4(ctx)
 
     root_lean = project_dir / "System.lean"
-    root_lean.write_text(generate_root(scalar=m2l._can_scalarize()))
+    root_lean.write_text(generate_root())
     print(f"Wrote root module {root_lean}")
 
-    # Every encoding the project carries, in table order. The scalar rows
-    # are written whether or not the module scalarizes -- only the root
-    # import list is gated, which is what it has always done.
+    # Every encoding the project carries, in table order.
     layout = replace(SYSTEM_LAYOUT, directory=src_dir)
     for enc in ENCODINGS:
         print(f"++ Generated {write_encoding(enc, m2l, layout, module_name)} ++")

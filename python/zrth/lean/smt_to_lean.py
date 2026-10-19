@@ -12,7 +12,10 @@ import cvc5
 from cvc5 import Kind
 
 from zrth import Wire, Sort
-from .common import Refused, _accessor, dtype_shape, _is_scalar_shape
+from .errors import Refused
+from .sorts import dtype_shape, is_scalar_shape, wire_shape
+from .layout import product_accessor
+from .literals import lean_bitvec, lean_int, lean_real
 from .smt.terms import state_dependent
 
 
@@ -56,10 +59,10 @@ def build_var_map(
     for prefix, base, wires in bindings:
         n = len(wires)
         for i, w in enumerate(wires):
-            acc = _accessor(i, n)
+            acc = product_accessor(i, n)
             shape = dtype_shape(w.dtype)
             name = f"{prefix}{i}"
-            if _is_scalar_shape(shape):
+            if is_scalar_shape(shape):
                 var_accessor[name] = f"({base}{acc} 0 0)"
             else:
                 var_accessor[name] = f"({base}{acc})"
@@ -292,20 +295,14 @@ def _walk(
     if k == Kind.CONST_BOOLEAN:
         return "true" if t.getBooleanValue() else "false"
     if k == Kind.CONST_INTEGER:
-        v = t.getIntegerValue()
-        return f"({v} : Int)" if v < 0 else str(v)
+        return lean_int(t.getIntegerValue())
     if k == Kind.CONST_RATIONAL:
-        # `str(t)` is SMT-LIB, not Lean: cvc5 prints 0.5 as `(/ 1 2)` and
-        # -0.25 as `(/ (- 1) 4)`. Build the literal from the exact value.
-        q = t.getRealValue()
-        if q.denominator == 1:
-            return f"({q.numerator} : Real)"
-        return f"(({q.numerator} : Real) / {q.denominator})"
+        # `str(t)` is SMT-LIB, not Lean: cvc5 prints 0.5 as `(/ 1 2)`. The
+        # literal is built from the exact value.
+        return lean_real(t.getRealValue())
     if k == Kind.CONST_BITVECTOR:
-        width = t.getSort().getBitVectorSize()
-        value = int(t.getBitVectorValue(10))
-        # see the note in common.py: `ofNat` rejects a negative literal
-        return f"(BitVec.ofInt {width} ({value}))"
+        return lean_bitvec(t.getSort().getBitVectorSize(),
+                           int(t.getBitVectorValue(10)))
     if k == Kind.CONSTANT:
         name = t.getSymbol()
         if name in var_accessor:
@@ -379,14 +376,7 @@ def _walk(
         idx = _selector_index(sel)
         sname = obj.getSymbol()
         wire = var_wire[sname]
-        shape = dtype_shape(wire.dtype)
-        if len(shape) == 1:
-            m, n = 1, shape[0]
-        elif len(shape) == 2:
-            m, n = shape
-        else:
-            raise ValueError(f"tuple selector on unexpected shape: {shape}")
-        i, j = divmod(idx, n)
+        i, j = divmod(idx, wire_shape(wire).n)
         base = var_accessor[sname]
         return f"({base} {i} {j})"
 
@@ -463,18 +453,18 @@ def _walk_bool(t: cvc5.Term, acc: dict[str, list[str]]) -> str:
     if k == Kind.CONST_BOOLEAN:
         return "true" if t.getBooleanValue() else "false"
     if k == Kind.CONST_INTEGER:
-        return f"({t.getIntegerValue()} : Int)"
+        return lean_int(t.getIntegerValue())
     if k == Kind.CONSTANT:
         name = t.getSymbol()
         if name in acc:
             slots = acc[name]
             if len(slots) == 1:
                 return slots[0]
-            raise ValueError(
+            raise Refused(
                 f"`{name}` holds {len(slots)} elements, so it has no single "
                 "value; select an element instead"
             )
-        raise ValueError(
+        raise Refused(
             f"Unknown free variable `{name}` (known: {sorted(acc)})"
         )
 
@@ -491,12 +481,12 @@ def _walk_bool(t: cvc5.Term, acc: dict[str, list[str]]) -> str:
         # A wide wire reaches here as a tuple constant; its elements are
         # exactly the state slots, in the row-major order `mat_select` packs.
         if obj.getKind() != Kind.CONSTANT or obj.getSymbol() not in acc:
-            raise ValueError(
+            raise Refused(
                 f"tuple selector against a non-state term is not supported: {t}"
             )
         slots = acc[obj.getSymbol()]
         if idx >= len(slots):
-            raise ValueError(
+            raise Refused(
                 f"element {idx} of `{obj.getSymbol()}`, which has "
                 f"{len(slots)}"
             )
@@ -536,7 +526,7 @@ def _walk_bool(t: cvc5.Term, acc: dict[str, list[str]]) -> str:
     if k == Kind.ITE:
         return f"(if {recur(t[0])} then {recur(t[1])} else {recur(t[2])})"
 
-    raise ValueError(
+    raise Refused(
         f"SMT→Bool Lean: unsupported kind {k} in {t}; "
         + (
             "lean2vmt does translate `mod`, and ic3ia proves such a "

@@ -10,7 +10,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable
 
-from ..common import Refused
+from ..errors import PredicateRefused
 from .limits import bounded_solver
 
 
@@ -29,16 +29,17 @@ class ModuleEncoding:
         import cvc5
 
         from ..smt_module import ModuleSMT, keep_alive
-        from ..smt_prompt import CegarPromptEnv
+        from ..smt_prompt import CegisPromptEnv
 
         self.module = module
         self.tm = cvc5.TermManager()
         self.msmt = ModuleSMT(tm=self.tm, module=module)
-        self.env = CegarPromptEnv(self.msmt)
+        self.env = CegisPromptEnv(self.msmt)
         self._parsed: dict = {}
         self._blocks: dict = {}
         self._queries: dict = {}
         self._solvers: list = []
+        self._rewriter = None
         keep_alive(self)
 
     @property
@@ -55,9 +56,11 @@ class ModuleEncoding:
 
     # --- predicates -------------------------------------------------------
 
-    def parse(self, src: str | None, flag: str, want: str = "Bool"):
-        """`src` as a term over the state and inputs, or `Refused` naming
-        `flag`, the source it came from.
+    def parse(self, src: str | None, role: str, want: str = "Bool",
+              kind: str = "buchi"):
+        """`src` as a term over the state and inputs, or `PredicateRefused`
+        naming its `role` ("property" of `kind`, "pre", "invariant",
+        "ranking").
 
         `want` is the sort the field is declared as and the Lean printer
         assumes: a property, an invariant and a precondition become the
@@ -78,10 +81,12 @@ class ModuleEncoding:
                 hit = e
             self._parsed[src] = hit
         if isinstance(hit, Exception):
-            raise Refused(f"{flag}: cannot read `{src}`: {hit}") from hit
+            raise PredicateRefused(
+                role, f"cannot read `{src}`: {hit}", kind=kind) from hit
         got = hit.getSort()
         if not (got.isBoolean() if want == "Bool" else got.isInteger()):
-            raise Refused(f"{flag}: must have sort {want}, got {got}")
+            raise PredicateRefused(
+                role, f"must have sort {want}, got {got}", kind=kind)
         return hit
 
     def queries(self, claim, cert=None):
@@ -148,6 +153,16 @@ class ModuleEncoding:
         old = list(self.extl_next) + list(self.extl_latched)
         new = list(en) + list(el)
         return term.substitute(old, new) if old else term
+
+    def simplify(self, term):
+        """`term` through cvc5's rewriter, on a solver this encoding keeps
+        for that alone."""
+        if self._rewriter is None:
+            import cvc5
+
+            self._rewriter = cvc5.Solver(self.tm)
+            self._rewriter.setLogic("ALL")
+        return self._rewriter.simplify(term)
 
     def solver(self, ms: int, *, logic: str | None = None, **options):
         """`smt.limits.bounded_solver` on this encoding's terms."""

@@ -22,7 +22,8 @@ import torch
 import pytest
 from zrth import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.common import LeanContext, itype_name
+from zrth.lean.sorts import itype_name
+from zrth.lean.context import LeanContext
 from zrth.lean.native import lean_gaps
 from zrth.lean import ops
 from zrth.lean.ops import (
@@ -83,8 +84,8 @@ def test_no_row_outlives_its_theory():
 
 
 # `IType`-era names that survive as rows with no theory behind them. They
-# keep their emitters because *removing* them is the open half of
-# KNOWN_ISSUES #23; listing them here is what tells "dead" from "missing".
+# keep their emitters until it is decided whether to remove them (TODO.md);
+# listing them here is what tells "dead" from "missing".
 _KNOWN_DEAD = {"Tensor", "TensorGet", "ToUnsigned"}
 
 
@@ -123,7 +124,7 @@ def test_every_cell_is_an_emitter_or_says_why(column):
 def test_the_scalar_column_falls_back_only_where_there_is_something_to_fall_back_to():
     """`ViaMat` is a claim about the matrix cell, and `Unsupported` too.
 
-    `_translate_terms_scalar` reaches for the matrix form whenever the
+    `translate_terms_scalar` reaches for the matrix form whenever the
     scalar cell is not an emitter, so a scalar cell that gives up while the
     matrix one does not would be a lie: the matrix form would be used
     anyway. Either the matrix column has an emitter (`ViaMat`) or neither
@@ -167,7 +168,7 @@ _KNOWN_GAPS = {
         for column in COLUMNS
     ),
     # No Lean form for an uninterpreted symbol, and no cvc5 one either
-    # (KNOWN_ISSUES #27).
+    # (TODO.md).
     *(
         (theory, "Uninterpreted", column)
         for theory in ("LIA", "LRA", "BV")
@@ -279,7 +280,7 @@ def test_a_missing_lean_form_is_refused_with_the_recorded_reason(encoding):
 
 def test_an_op_no_backend_has_names_its_own_reason():
     """`Uninterpreted` is the limit matrix's only generation failure."""
-    with pytest.raises(ValueError, match="KNOWN_ISSUES #27"):
+    with pytest.raises(ValueError, match="an open decision"):
         mat_emitter(LIA.Uninterpreted("f"))
 
 
@@ -306,7 +307,7 @@ def test_a_module_with_no_lean_form_says_which_wire_and_why():
     gaps = lean_gaps(LeanContext(_uninterp_module()))
     assert len(gaps) == 1
     assert "`update` block" in gaps[0] and "`Uninterpreted`" in gaps[0]
-    assert "wire #" in gaps[0] and "KNOWN_ISSUES #27" in gaps[0]
+    assert "wire #" in gaps[0] and "an open decision" in gaps[0]
 
 
 def test_a_module_that_generates_reports_no_gap():

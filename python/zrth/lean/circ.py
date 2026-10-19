@@ -8,18 +8,16 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from zrth.lean.common import (
+from zrth.lean.sorts import (
     dtype_shape,
-    ConstantRegistry,
-    _accessor,
-    _constant_expr,
     dtype_to_lean_type,
-    linear_list_literals,
     itype_name,
     is_constant_name,
 )
+from zrth.lean.layout import product_accessor
+from zrth.lean.literals import ConstantRegistry, constant_expr, linear_list_literals
 
-from zrth.lean.native import _check_argmax_output
+from zrth.lean.native import check_argmax_output
 from zrth.lean.ops import box_for
 
 from dataclasses import dataclass
@@ -27,7 +25,7 @@ from dataclasses import dataclass
 from zrth import Wire, Term
 
 
-def _ty_list(wires: list[Wire]) -> str:
+def ty_list(wires: list[Wire]) -> str:
     """Build a right-nested product type: [w1, w2] -> 'Bool × Bool', [w1] -> 'Bool'."""
     if not wires:
         return "[]"
@@ -44,7 +42,7 @@ class CircLayer:
     body: str
 
 
-def _natives_to_vt(params: list[tuple[str, int]]) -> str:
+def natives_to_vt(params: list[tuple[str, int]]) -> str:
     """Generate native-to-ValTuple conversion from one or more native args.
 
     Each (name, n) contributes n accessors; all are concatenated into a single
@@ -52,7 +50,7 @@ def _natives_to_vt(params: list[tuple[str, int]]) -> str:
     "(ctrl.1, (ctrl.2, (extl_n, ())))".
     """
     parts = [
-        f"{name}{_accessor(i, n)}" for name, n in params if n > 0 for i in range(n)
+        f"{name}{product_accessor(i, n)}" for name, n in params if n > 0 for i in range(n)
     ]
     result = "()"
     for p in reversed(parts):
@@ -60,9 +58,9 @@ def _natives_to_vt(params: list[tuple[str, int]]) -> str:
     return result
 
 
-def _native_to_vt(param: str, n_wires: int) -> str:
+def native_to_vt(param: str, n_wires: int) -> str:
     """Generate native-to-ValTuple conversion from a single native arg."""
-    return _natives_to_vt([(param, n_wires)])
+    return natives_to_vt([(param, n_wires)])
 
 
 def _linear_box(term: Term) -> str:
@@ -83,7 +81,7 @@ def _argmax_box(
     Both variants have codomain `[Mat Int 1 1]` -- one flat index, per
     `torch.argmax` -- so a wider output wire is rejected here rather than
     producing a Box whose codomain does not match the wire it feeds."""
-    _check_argmax_output(output_shape)
+    check_argmax_output(output_shape)
     if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
         return "Box.argmax_1d"
     if len(input_shape) == 2:
@@ -273,7 +271,7 @@ def _circ_compute_dels(block_inputs: list[Wire], last_layer: list[Wire]):
     return dels
 
 
-def _translate_terms_circ(
+def translate_terms_circ(
     terms,
     block_inputs: tuple[list[Wire], ...],
     block_outputs: list[Wire],
@@ -327,7 +325,7 @@ def _translate_terms_circ(
                 name = itype_name(term.itype)
 
                 if is_constant_name(name):
-                    expr = _constant_expr(term, w, constants)
+                    expr = constant_expr(term, w, constants)
 
                     boxes.append(f"@Box.const {dtype_to_lean_type(w)} {expr}")
                     out_ty.append(dtype_to_lean_type(w))
