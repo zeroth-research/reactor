@@ -45,8 +45,13 @@ topologically-sorted dataflow graph.
 | `ops.py` | The op table: one row per theory variant, one column per backend |
 | `native.py` | Translates term lists → Lean functional `let`-binding bodies |
 | `circ.py` | Translates term lists → `Box` circuit layers |
-| `translate.py` | Top-level `ModuleToLean4` class; assembles functional + circuit encodings |
-| `cert.py` | Certificate generation: `CertificateData`, `generate_certificate_lean`, ZerothHammer |
+| `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` |
+| `certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
+| `cert.py` | Certificate generation: `predicate_terms`, `render_certificate`, `LeanCertificate`, `generate_certificate_lean`, ZerothHammer |
+| `smt/` | What the cvc5 routes and the pre-check share: the run's one encoding of the module (`run.ModuleEncoding`), the obligations stated once over a frame (`obligations`), walks over terms, the SMT-LIB printer, the Vampire driver, time limits (`limits`) and the artifact recorder |
+| `smt_query.py` | `--pre-check` and `--smt-tactics`: `ModuleQueries`, `pre_check`, `solver_hints` |
+| `smt_synth.py` | What a searching route reads a module as: `SynthContext`, its columns and readings, the branch conditions a rank may split on |
+| `magic/` | One engine per `--infer` route (`TA2Magic`), plus `llm` (the model both LLM routes ask) and `modes`; no route imports another |
 
 ---
 
@@ -90,7 +95,7 @@ Created once per module; shared across all code generators.  It extracts:
 
 ---
 
-## Encoding 1 — Functional (`native.py`, `translate.py`)
+## Encoding 1 — Functional (`native.py`, `translate/functional.py`)
 
 `_translate_terms(terms, input_bindings, block_outputs, constants)` produces a
 Lean function body as a string of `let` bindings followed by the output tuple:
@@ -117,7 +122,7 @@ native matrix forms.
 
 ---
 
-## Encoding 2 — Circuit (`circ.py`, `translate.py`)
+## Encoding 2 — Circuit (`circ.py`, `translate/circ.py`)
 
 The same computation is re-expressed as a `Box` (categorical wiring diagram)
 inside `namespace Circ`.  The translation:
@@ -150,7 +155,7 @@ plumbing lemmas.
 
 ---
 
-## Encoding 3 — Scalar (`native.py`, `translate.py`)
+## Encoding 3 — Scalar (`native.py`, `translate/scalar.py`)
 
 `_translate_terms_scalar` is like `_translate_terms` but uses bare scalar types
 (`Bool`, `Int`, `Real`) instead of `Mat T 1 1` for all 1×1 wires:
@@ -202,7 +207,7 @@ and the equivalence theorems.
 
 ---
 
-## `ModuleToLean4` (`translate.py`)
+## `ModuleToLean4` (`translate/__init__.py`)
 
 The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 
@@ -223,14 +228,18 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 ## Certificate Generation (`cert.py`)
 
 A **certificate** adds five predicates and a proof skeleton on top of the
-module encoding.  `CertificateData` holds them as either:
+module encoding.  The predicates are SMT-LIB over `s0..`, `e0..`, `el0..`
+(internally; on the command line the same variables are spelled
+`(X @intf.0)`, `(X @extl.0)`, `@extl.0`, see "Writing a claim on the command
+line" below)
+(`certificate.Claim` and `certificate.Certificate`). `predicate_terms`
+parses them against the module, and `render_certificate` prints them as
+Lean `fun` expressions into a `LeanPredicates`; it is the only place they
+are printed. Codegen takes a `LeanCertificate`: those definitions and
+`PlanInputs`, the facts and solver hints the tactic plan reads. A predicate
+that is `None` becomes a `True` / `sorry` placeholder.
 
-- `None` → a `True` / `sorry` placeholder is emitted.
-- `str` → a raw Lean expression string is emitted verbatim.
-- `list[Term]` → compiled from the Python term IR into a Lean body (via
-  `_translate_terms` with `e`/`s` as the param names).
-
-`generate_certificate_lean(project_name, module_name, ctx, cert_data, ...)`:
+`generate_certificate_lean(ctx, lean_cert, *, module_inline=None)`:
 
 1. Emits imports (`Mathlib`, `Core.Basic`, module import or inline, hammer).
 2. Emits `init_pre`, `update_pre`, `inv`, `P`, `DecidablePred P`, `ranking`.
@@ -243,10 +252,14 @@ module encoding.  `CertificateData` holds them as either:
 **Wire bindings in certificates:**  State is accessed as `s`, externals as
 `e.1` (latched) and `e.2` (next).
 
-### `smt_predicates_to_lean`
+### `predicate_terms` / `render_certificate`
 
-Converts SMT-LIB string predicates (from a CEGIS loop) into Lean expression
-strings by parsing them with cvc5 and translating the AST.
+`predicate_terms` parses with cvc5 and refuses a predicate by the flag it
+came from; `render_certificate(q, share=..., verbatim=...)` translates the
+terms. `share=False` prints repeated subterms in full, which a condition
+`--smt-tactics` settled needs; `verbatim` takes the invariant and ranking of
+a `LeanAnswer` as they are. `lean_certificate(module, claim, cert)` does both
+for a caller that wants no solver hints.
 
 ---
 
@@ -350,44 +363,68 @@ def module() -> Module:
     return Module.sequential([state], init_terms, update_terms)
 ```
 
+To write claims in the module's own names (`--safety "(<= (X x) 9)"`), return
+`zrth.lean.inputs.Named(module, {"x": state})` instead of the bare module.
+
+### SMV input (`--format smv`, `.smv`)
+
+A NuSMV model with one `MODULE main` is read by `zrth.smv.parse_smv(strict=True)`:
+it means what NuSMV means by it, or it is refused with every reason listed. A
+model without words lowers to LIA (`integer`, ranges and enum codes are `Int`,
+`boolean` is `Bool`), one with words to BV. Refused: a variable with no `init`
+or no `next` (NuSMV leaves it free), an `INIT`/`TRANS`/`INVAR` that is not an
+assignment to a variable, fairness constraints, an integer type in a model
+with words, `*` of two non-constants and `/`/`mod` in LIA, and a `case` whose
+last condition is not `TRUE`. An input (`IVAR`) is read in the round it labels,
+and `INVAR x = e` / `x := e` hold in every state. Claims use the model's
+variable names: `uv run verith tests/smv_fixtures/mod10.smv --safety "(<= (X x) 9)"`.
+
+A model's own specification is the claim when no `--safety`/`--buchi` is
+given: `INVARSPEC p` and `LTLSPEC G p` are `--safety p`, `LTLSPEC G F p` is
+`--buchi p` (any other spec is refused). The command line is parsed again with
+it added, so every flag rule applies as if it had been typed. A model that
+states several needs `--spec N` (counted from 1); one that states any, given
+`--safety`/`--buchi` as well, is refused rather than proving one and ignoring
+the other.
+
 ### Common invocations
 
 ```bash
 # Bare Lean project (all certificate fields left as sorry)
 uv run verith mymodule.py -o out/ -p MyProject
 
-# Specify the property to prove (SMT-LIB 2 Bool over s0..sN-1). Which flag it
+# Specify the property to prove (SMT-LIB 2 Bool over the state after a round: `(X @intf.N)`). Which flag it
 # goes under is the choice of proof rule -- see "Safety or Büchi" below.
-uv run verith mymodule.py --buchi "(= s0 0)" -o out/ -p MyProject
-uv run verith mymodule.py --safety "(<= s0 10)" -o out/ -p MyProject
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" -o out/ -p MyProject
+uv run verith mymodule.py --safety "(<= (X @intf.0) 10)" -o out/ -p MyProject
 
 # Also supply invariant and ranking manually
-uv run verith mymodule.py --buchi "(= s0 0)" \
-    --invariant "(and (>= s0 0) (<= s0 10))" \
-    --ranking   "(ite (= s0 0) 0 s0)" \
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))" \
+    --ranking   "(ite (= (X @intf.0) 0) 0 (X @intf.0))" \
     -o out/ -p MyProject
 
 # A safety certificate is an invariant alone -- no ranking function exists
-uv run verith mymodule.py --safety "(<= s0 10)" \
-    --invariant "(and (>= s0 0) (<= s0 10))" \
+uv run verith mymodule.py --safety "(<= (X @intf.0) 10)" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))" \
     -o out/ -p MyProject
 
 # AI inference with Claude (requires ANTHROPIC_API_KEY + pip install zrth[ai])
-uv run verith mymodule.py --buchi "(= s0 0)" --infer -o out/ -p MyProject
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer -o out/ -p MyProject
 
 # ... and for a safety property, through the cvc5-checked loop
-uv run verith mymodule.py --safety "(<= s0 10)" --infer ai-cegis -o out/ -p MyProject
+uv run verith mymodule.py --safety "(<= (X @intf.0) 10)" --infer ai-cegis -o out/ -p MyProject
 
 # AI inference with a local LLM via Ollama (requires pip install zrth[ai-local])
-uv run verith mymodule.py --buchi "(= s0 0)" --infer \
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 \
     -o out/ -p MyProject
 
 # No LLM: learn a ranking function and certify it before it is offered
-uv run verith mymodule.py --buchi "(= s0 0)" --infer nuterm -o out/ -p MyProject
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer nuterm -o out/ -p MyProject
 
 # Standalone self-contained certificate (no project scaffold)
-uv run verith mymodule.py --buchi "(= s0 0)" --cert-file out/MyCert.lean
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lean
 # → writes out/MyCert.lean  (certificate)
 # → writes out/MyCertScalar.lean  (scalar encoding + equivalence theorems)
 ```
@@ -438,7 +475,7 @@ mutually exclusive, and `--fbk-proveit` takes only `--safety` — ic3ia decides
 reachability of `¬P`, which is not a question about recurrence.
 
 The distinction is not academic. Countdown starts at 100 and counts down, so
-`(= s0 0)` is reached over and over — true under `--buchi`, and false under
+`(= (X @intf.0) 0)` is reached over and over — true under `--buchi`, and false under
 `--safety` at step 0.
 
 ### Key flags
@@ -447,9 +484,10 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 |------|---------|-------------|
 | `-o` / `--output-dir` | `.` | Where to create the project |
 | `-p` / `--project-name` | `Rea` | Lean package name |
-| `-d` / `--module-def` | `module` | Name of the factory function in the Python file |
-| `--safety` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold in every reachable state (`G P`) |
-| `--buchi` | — | SMT-LIB 2 Bool over `s0..sN-1`, to hold infinitely often (`G (F P)`) |
+| `--format` | by suffix | The input's format (`python`: `.py`, `smv`: `.smv`) |
+| `-d` / `--module-def` | `module` | Name of the factory function in the Python file (python input only) |
+| `--safety` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold in every reachable state (`G P`) |
+| `--buchi` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
 | `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
 | `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `houdini`, `vampire`, or `fbk-proveit` (see below) |
@@ -476,7 +514,30 @@ of the table belongs to a route rather than to verith: passed without its
 route selected it is an error, not a no-op.  `--fbk-proveit DIR` is the older
 spelling of `--infer fbk-proveit --proveit-dir DIR` and still works.
 
-### State variable naming in SMT-LIB predicates
+### Writing a claim on the command line
+
+`--safety`, `--buchi`, `--pre`, `--invariant` and `--ranking` are written in
+the reactive module's own terms. The bare names `s0`, `e0`, `el0` (and the
+Python-DSL aliases `s`, `e`, `el`) are refused there.
+
+| surface (SMT-LIB) | surface (Python DSL) | means |
+|---|---|---|
+| `(X v)` | `X(v)` | the value of `v` after the round, for a name `v` the input gives |
+| `(X @intf.N)` | `X(@intf.N)` | the same, for interface variable N by position |
+| `(X @extl.N)` | `X(@extl.N)` | the input N read in the round |
+| `v` | `v` | a bare input name: the input of the round before |
+| `@extl.N` | `@extl.N` | the same, by position |
+
+An interface variable's latched value cannot be named yet. A name like `x`
+comes from an input that provides one (a module file returning
+`zrth.lean.inputs.Named(module, {"x": var})`); `@intf.N` works for any
+module. `zrth.lean.inputs.to_surface(text)` turns internal text into this
+spelling. verith prints one `.. --FLAG, in internal names: ...` line per
+claim flag it was given. Everything past the command line (`Claim`,
+`Certificate`, SMT, Lean, `artifacts/`, LLM replies) still uses the internal
+names below.
+
+### State variable naming in SMT-LIB predicates (internal)
 
 `ctrl` wires are named `s0`, `s1`, … in left-to-right order (matching the
 `vars` list passed to `Module.sequential`).  For tuple/matrix wires, use
@@ -565,14 +626,14 @@ between a proof and a timeout is the whole value of the note.
 
 ```bash
 # 1. the cheap question first: is there a linear ranking function at all?
-uv run verith m_toward5.py --buchi "(= s0 5)" \
-    --invariant "(and (>= s0 0) (<= s0 10))" --infer smt-linear -o out/ -p Rea
+uv run verith m_toward5.py --buchi "(= (X @intf.0) 5)" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))" --infer smt-linear -o out/ -p Rea
 # error: --infer: ... No ranking function linear in the state ... cvc5 refuted
 # the whole shape at once ... so this is a proof that the space is empty.
 
 # 2. the expensive one, now knowing that
-uv run verith m_toward5.py --buchi "(= s0 5)" \
-    --invariant "(and (>= s0 0) (<= s0 10))" --infer ai-cegis -o out/ -p Rea
+uv run verith m_toward5.py --buchi "(= (X @intf.0) 5)" \
+    --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))" --infer ai-cegis -o out/ -p Rea
 # .. resuming from note-0003-smt-linear.md: a space an earlier run ruled out
 ```
 
@@ -580,10 +641,10 @@ The same workspace carries what was *found*.  `--infer sygus` writes its
 invariant as a resumable `inv`, so the next run takes it as given:
 
 ```bash
-uv run verith m_step2.py --safety "(not (= s0 1))" --infer sygus -o out/ -p Rea
+uv run verith m_step2.py --safety "(not (= (X @intf.0) 1))" --infer sygus -o out/ -p Rea
 # [sygus] inv: (= (mod (+ (- 2) (* (- 1) s0)) 2) 0)        -- `x` is even
 
-uv run verith m_step2.py --safety "(not (= s0 1))" --infer ai-cegis \
+uv run verith m_step2.py --safety "(not (= (X @intf.0) 1))" --infer ai-cegis \
     --pre-check cvc5 -o out/ -p Rea
 # .. resuming from inv-0002-sygus.smt2 (proved): taking it as the certificate
 # [CEGAR] all obligations UNSAT — accepted        -- and no LLM call was made
@@ -675,7 +736,7 @@ property a run of the module violates is reported as not holding, before any
 solver is started.
 
 ```bash
-uv run verith mymodule.py --buchi "(= s0 0)" --infer houdini -o out/ -p Rea
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer houdini -o out/ -p Rea
 # [houdini] solver: cvc5
 # [houdini] Houdini kept 2 of 2: (<= 0 s0) (<= s0 100)
 # [houdini] ranking function proved: s0
@@ -707,7 +768,7 @@ decimal as happily, so the certificate carries one spelling whoever proved
 it.
 
 ```bash
-uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= s0 0.0)" \
+uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= (X @intf.0) 0.0)" \
     --infer houdini --houdini-solver vampire --vampire ~/vampire/vampire \
     -o out/ -p Rea
 # [houdini] solver: vampire
@@ -840,7 +901,7 @@ that is reported as not found. This is not Houdini: nothing is filtered and
 nothing is proposed; it is the one check that the derivation is honest.
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py --safety "(<= s0 100)" \
+uv run verith tests/limits/mods/m_countdown.py --safety "(<= (X @intf.0) 100)" \
     --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
 # [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
 # [vampire] template intervals: 2 holes, 409 chars
@@ -859,14 +920,14 @@ project. All three routes that fill a certificate qualify —
 
 ```bash
 # predicates supplied
-uv run verith mymodule.py --buchi "(= s0 0)" --invariant "(<= s0 100)" \
-    --ranking "s0" --build-cert -o out/ -p Counter
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" \
+    --ranking "(X @intf.0)" --build-cert -o out/ -p Counter
 
 # predicates inferred
-uv run verith mymodule.py --buchi "(= s0 0)" --infer --build-cert -o out/ -p Counter
+uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer --build-cert -o out/ -p Counter
 
 # predicates from ic3ia
-uv run verith mymodule.py --safety "(not (= s0 15))" --build-cert -o out/ -p Counter \
+uv run verith mymodule.py --safety "(not (= (X @intf.0) 15))" --build-cert -o out/ -p Counter \
     --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying
 ```
 
@@ -886,8 +947,8 @@ inference returns and lake cannot be trusted to fail loudly:
 * **After the route, before the build.** `--infer` can come back without an
   invariant or a ranking — an LLM that answers nothing usable — and the
   error names which one is missing instead of building a proof of `sorry`.
-  (`--fbk-proveit` is exempt: its certificate is ic3ia's, and no
-  `CertificateData` describes it.)
+  (`--fbk-proveit` is exempt: its certificate is ic3ia's, installed by the
+  route itself, and no `Certificate` describes it.)
 * **After the build.** `zeroth_hammer` leaves a `sorry` where it cannot
   close an obligation, and lake reports that as a *warning* and exits 0. So
   `build_certificate` also scans the log for `sorry` under `Certificate/` —
@@ -913,7 +974,7 @@ model-checks the system with ic3ia and renders the inductive invariant it
 finds back as a Lean certificate:
 
 ```bash
-uv run verith mymodule.py --safety "(not (= s0 15))" -o out/ -p Counter \
+uv run verith mymodule.py --safety "(not (= (X @intf.0) 15))" -o out/ -p Counter \
     --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying \
     --ic3ia ~/ic3ia/build/ic3ia
 ```
@@ -931,21 +992,23 @@ mymodule.py ──verith──▶ out/Counter/                       (bare, as u
                                   ▼
                         out/Counter/ProveIt/CounterCert.lean
                                   │
-                                  ▼   "processing" — a copy, for now
+                                  ▼   two tactic patches; handed back to the pipeline
                         out/Counter/Certificate/Certificate.lean
 ```
 
 The installed file is the project's *own* certificate — the same
 `Certificate/Certificate.lean` that `Certificate.lean` root-imports and that
 `lake build Certificate` reaches, overwriting the `sorry` stub the bare
-project would have carried. For that reach to end in a build rather than an
-unknown identifier, `create_project` is given the checkout and the lakefile
-gains two entries:
+project would have carried. The route does not write it: it hands the text
+back in `InferResult.files`, with `Certificate/Equivalence.lean`, and the
+pipeline writes both through the route's `ProjectHandle`. For the reach to
+end in a build rather than an unknown identifier, the row's `lakefile` hook
+gives the project two lakefile entries:
 
 | lakefile entry | resolves |
 |---|---|
 | `[[require]] name = "LTL_Certifying", path = <checkout>` | `import LTLCertifying.Safety.Lemmas` and its two siblings. A path require because the route already holds the checkout, and because that checkout pins `cslib` and `smt` to the revisions the generated project already requires — the two package sets resolve as one |
-| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `project.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
+| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `fbk_proveit.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
 
 `import Smt` needs nothing new — verith's own route already requires
 `smt` — and neither does the cvc5 shared library the `smt` tactic dlopens:
@@ -1078,13 +1141,19 @@ so does a row no theory backs.
 
 ---
 
-## Adding an Inference Route (`infer_route.py`)
+## Adding an Inference Route (`infer_route/`)
 
 Every way verith can be handed a certificate is one row of
-`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is added
-there and nowhere else: `cli.py` reads the rows, so the `--infer` choices,
-the help text, every cross-flag rule and the dispatch all follow from the
-row rather than from an edit apiece.
+`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is one
+module, `infer_route/<name>.py`, exporting `ROUTE` (an `InferRoute`), plus
+its entry in the `ROUTES` tuple of `infer_route/__init__.py`, and nothing
+else: `cli.py` reads the rows, so the `--infer` choices, the help text,
+every cross-flag rule and the dispatch all follow from the row rather than
+from an edit apiece.  The row module imports its engine (usually a class in
+`magic/`) inside `run`, so `verith --help` imports none of them; no row
+imports another, and an option two rows share is declared once in
+`infer_route/shared.py`.  The types a row is written in are in
+`infer_route/api.py`.
 
 A row says:
 
@@ -1093,39 +1162,52 @@ A row says:
   The check is generic and the reason is not: why the `ai` route cannot
   certify `G P` is prose about `rule_globally`, and why `nuterm` discards a
   precondition is prose about Houdini.
-* **what it seeds from** — `seeds`, the `CertificateData` fields it will
-  *use* rather than discard, and `seeds_refusal`.  A predicate outside the
+* **what it seeds from** — `seeds`, the given predicates it will *use*
+  rather than discard, and `seeds_refusal`.  A predicate outside the
   set is refused where it is passed, not dropped four steps later.
 * **the project** — `reads` (encoding suffixes; `""` is the functional one)
   and `owns` (project-relative paths it may write).  The route is handed a
   `ProjectHandle`, so these two are the whole of its access, and a route
   that needs more of the project than the predicates says which more.
+* **the input** — `reads_source`: the route is handed the file the module
+  was read from (`InferInput.source`, a `SourceText`) and the names claims
+  may use (`InferInput.names`). A route that does not declare it gets
+  `None` for both.
 * **`artifacts/`** — `reads_artifacts`, the roles it may resume from.  It is
   declared access, like `reads`: `ProjectHandle.resume(role, …)` refuses an
   undeclared role, and the filtering (stale module, stale property, stale
   proof rule, plus the languages and statuses asked for) is the store's, so
   there is one filter and one place that reports what it dropped.
 * **the hooks** — `resolve` at parse time (a route whose lakefile names a
-  path has to reject a bad one before any of the project exists), `precheck`
-  once the module is loaded and before it is generated (a module shape the
-  route cannot express is met there rather than as a traceback out of an
-  encoder it never wanted), and `run`.
+  path has to reject a bad one before any of the project exists),
+  `lakefile(config, project_name)`, the `LakefileParts` (extra `lean_lib`s
+  and `require`s) the project is generated with, `precheck` once the module
+  is loaded and before it is generated (a module shape the route cannot
+  express is met there rather than as a traceback out of an encoder it never
+  wanted; it is handed the run's encoding), and `run`.
 * **what comes back** — `returns`: `"smt"` (SMT-LIB predicates, which
   `--pre-check` can restate the obligations from), `"lean"` (nothing parses
-  it back, so they cannot be restated), or `"installed"` (the route wrote the
-  certificate itself).  The row *declares* it and the `InferResult` carries
-  it, and `main` checks the two agree once rather than each reader trusting
-  whichever is nearer to hand.  Plus `uses_llm`, and `errors_self_named` for
-  a route whose refusals already name their own flag.
+  it back, so they cannot be restated), or `"files"` (the certificate is a
+  file the route produced, with no predicates behind it).  The row
+  *declares* it and the `InferResult` carries it, and `main` checks the two
+  agree once rather than each reader trusting whichever is nearer to hand.
+  Plus `uses_llm`, and `errors_self_named` for a route whose refusals
+  already name their own flag.
 * **its own flags** — `options`, a tuple of `Opt`.  Passed without the route
   selected, each is an error rather than a no-op.  `aliases` carries any
   older spelling that selects the route and fills one of those options
   (`--fbk-proveit DIR`), so a deprecated flag goes away with its row.
 
-A route that renders its own Lean hands **both** spellings back in its
-`InferResult`.  Rendering means encoding the module into cvc5 again, and
-`magic.cegar` and `magic.learn` both already have the Lean — so the pipeline
-renders only for a route that returns SMT alone.
+A route is handed a frozen `InferInput` — the `Claim`, the `given`
+predicates it starts from, the run's encoding and budget — and answers with
+a new `InferResult`: SMT-LIB in `cert`, which the pipeline prints as Lean in
+one place (`cert.render_certificate`), or, for the one `returns="lean"` row
+(`ai`), Lean in `lean`.  `files` carries whole files the route produced
+(project-relative path to text); the pipeline writes them after the
+predicates, through the handle, so each has to be a path the row owns.
+`fbk-proveit` answers with its certificate and the proof that its model is
+the module this way.  A route that resumes from `artifacts/` does so through
+`InferInput.resumable_inv`, `taking_inv` and `ruled_out`.
 
 `tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
 checks the op matrix: a row declaring an encoding no row emits, an artifact
@@ -1205,11 +1287,13 @@ rather than gaining a second one.
 1. Add a translation function in `native.py` (or a new file) analogous to
    `_translate_terms`.  It receives `input_bindings: dict[wire_id, str]` and
    returns a Lean body string.
-2. Add a method to `ModuleToLean4` in `translate.py` that calls it and wraps
-   the result in the appropriate namespace / function signature.
+2. Add a module under `translate/` that wraps the result in the
+   appropriate namespace / function signature, and a method on
+   `ModuleToLean4` (`translate/__init__.py`) that calls it.
 3. Optionally add an equivalence theorem connecting the new encoding to the
    existing functional one.
-4. Wire it into `to_lean()`.
+4. Wire it into `to_lean()`, and give it a row in `ENCODINGS`
+   (`project.py`) to be written into the project.
 
 If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth

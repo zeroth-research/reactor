@@ -447,10 +447,9 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
 
 
 def test_scalar_translator_flattening_is_opt_in():
-    """`rel.py` types `effect_i` as the wire's `Mat`, so it opts out.
+    """Without the flag, each output is its wire's own `Mat`.
 
-    Making the flattening unconditional in `_translate_terms_scalar` broke
-    it, and nothing compiled it to notice.
+    The flat-tuple callers (`scalar.py`, `ScalarRel`) ask for it explicitly.
     """
     from zrth.lean.native import _translate_terms_scalar
     import inspect
@@ -538,3 +537,39 @@ def test_recon_filter_keeps_order_and_transitive_uses():
     assert _needed_recon(lets, "  x := _m2") == [lets[0], lets[2]]
     assert _needed_recon(lets, "  x := 0") == []
     assert _needed_recon([], "  x := 0") == []
+
+
+# ──────────────────────────────────────────────────────────────
+# A module with no state
+# ──────────────────────────────────────────────────────────────
+
+
+def test_stateless_module_defines_init_and_update_as_unit():
+    """No controlled variable means empty blocks, whose only value is `()`.
+
+    The certificate's `RM` is built from `init` and `update`, so both must
+    be defined -- and not as `sorry`: `build_certificate` only looks for
+    one under `Certificate/`, so a `sorry` in `System/` would pass.
+    """
+    m2l = ModuleToLean4(Module.sequential([], [], []))
+    func = m2l.to_lean_functional()
+    assert "def init (extl_n: Unit) : Unit :=\n  ()\n" in func
+    assert (
+        "def update (ctrl: Unit) (extl_l: Unit) (extl_n: Unit) : Unit :=\n  ()\n"
+        in func
+    )
+    assert "sorry" not in m2l.to_lean() + m2l.to_lean_mat_rel()
+
+
+def test_unbound_block_output_raises():
+    """An output no term writes and no input binds has no Lean value."""
+    from zrth.lean.common import ConstantRegistry
+    from zrth.lean.native import _translate_terms, _translate_terms_scalar
+
+    out = [Wire(Int([1, 1]))]
+    with pytest.raises(ValueError, match="written by no term"):
+        _translate_terms([], {}, out, ConstantRegistry())
+    with pytest.raises(ValueError, match="written by no term"):
+        _translate_terms_scalar(
+            [], {}, out, ConstantRegistry(), flatten_outputs=True
+        )
