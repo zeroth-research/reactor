@@ -169,6 +169,12 @@ compare; every difference must be one the change means.
 - **Suites**: `uv run pytest -m 'not slow' -q` from `python/` (set `VAMPIRE`
   to the binary for the Vampire tests), and `just test-lean` for the lake
   builds after any change to the generated Lean.
+- **Encodings against the module**: after a change to an encoder or to the
+  op table, `tests/test_encodings_agree.py` (the SMT encoding, two seconds)
+  and `tests/lean/test_lean_agree.py` (the Lean one, `-m slow`, a minute)
+  run every module of the suite's corpus on random inputs and hold both
+  encodings to `zrth.eval`, the interpreter. The equivalence theorems
+  cannot catch an encoder that is wrong on every side at once; these can.
 
 ## Further reading
 
@@ -754,7 +760,7 @@ SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 does, and proves it before offering it:
 
 1. **The invariant** — Houdini over a candidate lattice of sign and pairwise
-   facts (`benchmarks/svcomp/_invariants.py`): seed the candidates, drop the
+   facts (`nuterm/_invariants.py`): seed the candidates, drop the
    ones that do not hold at entry or are not preserved by a step, and certify
    the survivors as one inductive `Safety` claim.  With `--safety`, the
    property itself is seeded as a candidate, so it is an invariant exactly
@@ -765,7 +771,7 @@ does, and proves it before offering it:
    into the module as two ordinary atoms, `V(s)` and `V(s')`.  The obligation
    `V(s) - V(s') >= 1` on that domain goes to a decision procedure over the
    composed module's wires: Farkas-certified linear regions, with CEGAR
-   finding the regions (`benchmarks/svcomp/_farkas.py`).  Only a candidate it
+   finding the regions (`nuterm/_farkas.py`).  Only a candidate it
    certifies is returned.
 
 So unlike the `ai` routes, what reaches the certificate has already been
@@ -1373,10 +1379,6 @@ A row says:
   and `owns` (project-relative paths it may write).  The route is handed a
   `ProjectHandle`, so these two are the whole of its access, and a route
   that needs more of the project than the predicates says which more.
-* **the input** — `reads_source`: the route is handed the file the module
-  was read from (`InferInput.source`, a `SourceText`) and the names claims
-  may use (`InferInput.names`). A route that does not declare it gets
-  `None` for both.
 * **`artifacts/`** — `reads_artifacts`, the roles it may resume from.  It is
   declared access, like `reads`: `ProjectHandle.resume(role, …)` refuses an
   undeclared role, and the filtering (stale module, stale property, stale

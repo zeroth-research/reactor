@@ -106,7 +106,7 @@ def _scalar_const(tm: cvc5.TermManager, dt: Sort, raw) -> cvc5.Term:
     raise ValueError(f"Unsupported scalar Sort: {dt}")
 
 
-def _tensor_const(tm: cvc5.TermManager, wire: Wire, tensor) -> cvc5.Term:
+def tensor_const(tm: cvc5.TermManager, wire: Wire, tensor) -> cvc5.Term:
     """Materialize a torch tensor as a matrix-shaped cvc5 term."""
     shape = wire_shape(wire)
     dt = wire.dtype
@@ -151,18 +151,24 @@ def _matmul(
             f"MatMul dim mismatch: {a_shape.m}x{a_shape.n} * {b_shape.m}x{b_shape.n}"
         )
     out_shape = MatShape(a_shape.m, b_shape.n)
+    # `BV.MatMul` multiplies bit-vectors, and cvc5's arithmetic `MULT`
+    # refuses them ("expecting an arithmetic subterm"): no module with one
+    # had an SMT encoding.
+    bv = mat_select(tm, a, a_shape, 0, 0).getSort().isBitVector()
+    mul, add = ((Kind.BITVECTOR_MULT, Kind.BITVECTOR_ADD) if bv
+                else (Kind.MULT, Kind.ADD))
     elems: list[cvc5.Term] = []
     for i in range(a_shape.m):
         for j in range(b_shape.n):
             prods = [
                 tm.mkTerm(
-                    Kind.MULT,
+                    mul,
                     mat_select(tm, a, a_shape, i, k),
                     mat_select(tm, b, b_shape, k, j),
                 )
                 for k in range(a_shape.n)
             ]
-            elems.append(prods[0] if len(prods) == 1 else tm.mkTerm(Kind.ADD, *prods))
+            elems.append(prods[0] if len(prods) == 1 else tm.mkTerm(add, *prods))
     return mat_pack(tm, out_shape, elems)
 
 
@@ -286,7 +292,7 @@ class SmtOp:
         return _scalar_const(self.tm, dt, raw)
 
     def tensor(self, wire: Wire, data) -> cvc5.Term:
-        return _tensor_const(self.tm, wire, data)
+        return tensor_const(self.tm, wire, data)
 
     # -- matrices ---------------------------------------------------------
     def shape(self, m: int, n: int) -> MatShape:
