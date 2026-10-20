@@ -316,6 +316,22 @@ def test_facts_are_absent_rather_than_wrong_when_cvc5_cannot_parse():
     assert predicate_facts(None) is None
 
 
+def test_floors_are_read_off_a_shared_term_once():
+    """What a floor applies to is collected over the term's DAG: walked as
+    a tree, sixty doublings of one `to_int` are 2^60 visits of it."""
+    from cvc5 import Kind
+    from zrth.lean.proof.facts import _floor_args
+
+    tm = cvc5.TermManager()
+    x = tm.mkConst(tm.getRealSort(), "x")
+    t = tm.mkTerm(Kind.TO_INTEGER, x)
+    for _ in range(60):
+        t = tm.mkTerm(Kind.ADD, t, t)
+    out = []
+    _floor_args(t, out)
+    assert out == [x]
+
+
 # ══════════════════════════════════════════════════════════════════════
 # Solver-informed tactics
 # ══════════════════════════════════════════════════════════════════════
@@ -324,6 +340,26 @@ def test_facts_are_absent_rather_than_wrong_when_cvc5_cannot_parse():
 def _hints(cert, budget=None, claim=CLAIM):
     q = ModuleQueries.build(countdown(), claim, cert)
     return solver_hints(q, budget or SmtBudget())
+
+
+def test_a_proof_step_is_recognised_however_it_was_reached():
+    """`_proof_facts` walks a refutation's DAG keeping the steps it has
+    seen, which holds only while a step wrapped twice is one step."""
+    from cvc5 import Kind
+
+    tm = cvc5.TermManager()
+    solver = cvc5.Solver(tm)
+    solver.setOption("produce-proofs", "true")
+    solver.setLogic("QF_NIA")
+    x = tm.mkConst(tm.getIntegerSort(), "x")
+    solver.assertFormula(tm.mkTerm(Kind.LT, tm.mkTerm(Kind.MULT, x, x),
+                                   tm.mkInteger(0)))
+    assert solver.checkSat().isUnsat()
+    root = solver.getProof()[0]
+    first, again = root.getChildren()[0], root.getChildren()[0]
+    assert first is not again
+    assert first == again and hash(first) == hash(again)
+    assert len({first, again}) == 1
 
 
 def test_a_condition_the_invariant_settles_is_reported():
@@ -342,10 +378,12 @@ def test_the_hint_layer_shapes_the_obligation_the_kind_states():
     from zrth.lean.proof.facts import _obligation_labels
 
     buchi = ModuleQueries.build(countdown(), CLAIM, GOOD)
-    assert [name for name, _ in _obligation_labels(buchi)] == ["step_inv", "hrank"]
+    assert [name for name, _ in _obligation_labels(buchi, buchi.frame("h_"))
+            ] == ["step_inv", "hrank"]
 
     safe = ModuleQueries.build(countdown(), SAFE_CLAIM, SAFE)
-    assert [name for name, _ in _obligation_labels(safe)] == ["step_inv", "inv_imp_P"]
+    assert [name for name, _ in _obligation_labels(safe, safe.frame("h_"))
+            ] == ["step_inv", "inv_imp_P"]
 
 
 def test_a_condition_the_invariant_refutes_is_reported():
