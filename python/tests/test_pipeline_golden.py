@@ -22,15 +22,15 @@ import pytest
 import torch
 
 from zrth import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from zrth.lean.cert import (
+from zrth.lean.proof.render import (
     generate_certificate_lean,
     generate_data_lean,
+    generate_standalone_cert_lean,
 )
-from zrth.lean.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.smt_query import predicate_terms
-from zrth.lean.context import LeanContext
+from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
+from zrth.lean.smt.precheck import predicate_terms
+from zrth.lean.codegen.context import LeanContext
 from zrth.lean.inputs.python import load_module
-from zrth.lean.project import generate_standalone_cert_lean
 
 pytest.importorskip("cvc5")
 
@@ -151,9 +151,9 @@ CODEGEN = [
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
-    from zrth.lean.cert import prepare
+    from zrth.lean.proof.render import prepare
     from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.smt_query import solver_hints
+    from zrth.lean.proof.facts import solver_hints
 
     lean = None
     if claim is not None:
@@ -263,7 +263,7 @@ RUNS = [
 ]
 
 # `ModuleSMT`s built per run. The pre-check, both renderings and a route on
-# `InferInput.smt` share the run's `smt.run.lazy` encoding.
+# `InferInput.smt` share the run's `smt.encoding.lazy` encoding.
 ENCODINGS = {
     "bare": 0, "supplied": 1, "supplied_pre": 1, "cert_file": 1,
     "unreadable_property": 1, "smt_linear": 1, "houdini": 1, "nuterm": 1,
@@ -272,7 +272,7 @@ ENCODINGS = {
 
 
 def _has_vampire() -> bool:
-    from zrth.lean.errors import Refused
+    from zrth.lean.core.errors import Refused
     from zrth.lean.smt.vampire import resolve_vampire
 
     try:
@@ -296,7 +296,8 @@ def _runs() -> list:
 
 def _offline(monkeypatch) -> None:
     """Both LLM routes answer from `_AI_REPLIES` and never open a client."""
-    from zrth.lean.magic import ai, cegis
+    from zrth.lean.infer.ai import engine as ai
+    from zrth.lean.infer.ai_cegis import engine as cegis
 
     def client(base_url, model):
         def chat(system: str, user: str) -> str:
@@ -336,7 +337,7 @@ def _index(path: Path) -> str:
 
 
 def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
-    from zrth.lean.main import main
+    from zrth.lean.pipeline import main
 
     out = tmp_path / "out"
     argv = [a.replace("{out}", str(out)) for a in args]
@@ -380,7 +381,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
 
 def _count_encodings(monkeypatch) -> list:
     """Counts each `ModuleSMT` built from here on, in a one-element list."""
-    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.smt.module import ModuleSMT
 
     built = [0]
     post_init = ModuleSMT.__post_init__

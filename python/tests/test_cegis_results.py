@@ -13,10 +13,13 @@ import cvc5
 
 from zrth import Module, Int, LIA, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.magic import cegis
-from zrth.lean.certificate import Certificate, Claim
-from zrth.lean.magic.cegis import TA2MagicCEGIS
-from zrth.lean.smt_prompt import CEGIS_GENERATE_SYSTEM, CEGIS_SAFETY_SYSTEM
+from zrth.lean.infer.ai_cegis import engine as cegis
+from zrth.lean.core.certificate import Certificate, Claim
+from zrth.lean.infer.ai_cegis.engine import AiCegisEngine
+from zrth.lean.infer.ai_cegis.prompt import (
+    CEGIS_GENERATE_SYSTEM,
+    CEGIS_SAFETY_SYSTEM,
+)
 
 
 class _Result:
@@ -75,7 +78,7 @@ def _run(monkeypatch, kind):
     env = _Env()
     solver = _Solver(kind)
     monkeypatch.setattr(cegis, "make_client", lambda base_url, model: None)
-    magic = TA2MagicCEGIS("", _counter(), log=lambda *_: None)
+    magic = AiCegisEngine("", _counter(), log=lambda *_: None)
     monkeypatch.setattr(cegis.cvc5, "Solver", lambda _tm: solver)
     var = env.tm.mkConst(env.tm.getIntegerSort(), "s0")
     query = env.tm.mkTerm(cvc5.Kind.EQUAL, var, env.tm.mkInteger(0))
@@ -153,7 +156,7 @@ def _infer(monkeypatch, claim, replies, given=Certificate()):
         return pending.pop(0)
 
     monkeypatch.setattr(cegis, "make_client", lambda base_url, model: chat)
-    magic = TA2MagicCEGIS("", _counter())
+    magic = AiCegisEngine("", _counter())
     return magic.infer(claim, given), prompts
 
 
@@ -206,7 +209,7 @@ def test_a_rank_is_bounded_only_where_the_property_fails(monkeypatch):
 
     monkeypatch.setattr(cegis, "make_client", lambda base_url, model: chat)
     bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
-    cert = TA2MagicCEGIS("", bench.build()[0]).infer(Claim(prp="(not (<= 0 s0))"))
+    cert = AiCegisEngine("", bench.build()[0]).infer(Claim(prp="(not (<= 0 s0))"))
     assert len(prompts) == 1, "the candidate should have been accepted as proposed"
     assert cert.ranking == "(+ 1 s0)"
 
@@ -247,7 +250,7 @@ def test_a_certificate_given_whole_builds_no_client(monkeypatch):
 
     monkeypatch.setattr(cegis, "make_client", no_client)
     given = Certificate("(and (>= s0 0) (<= s0 9))", "(ite (= s0 0) 0 (- 10 s0))")
-    cert = TA2MagicCEGIS("", _counter(), log=lambda *_: None).infer(
+    cert = AiCegisEngine("", _counter(), log=lambda *_: None).infer(
         Claim(prp="(= s0 0)"), given)
     assert cert == given
 
@@ -272,10 +275,10 @@ def _always_wrong(monkeypatch, clock, step):
 
 def test_without_a_budget_the_count_is_the_leash(monkeypatch):
     import pytest
-    from zrth.lean.errors import Refused
+    from zrth.lean.core.errors import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 1.0)
     with pytest.raises(Refused, match="after 5 attempts"):
-        TA2MagicCEGIS("", _counter()).infer(Claim(kind="safety", prp="(<= s0 9)"))
+        AiCegisEngine("", _counter()).infer(Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 5
 
 
@@ -283,19 +286,19 @@ def test_a_budget_keeps_asking_past_five_while_an_attempt_still_fits(monkeypatch
     """10 s attempts in a 95 s budget: the ninth ends at 90 s, and a tenth
     would end at 100 s, past the budget, so it is never started."""
     import pytest
-    from zrth.lean.errors import Refused
+    from zrth.lean.core.errors import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 10.0)
     with pytest.raises(Refused, match="after 9 attempts in 90 s of a 95 s budget"):
-        TA2MagicCEGIS("", _counter(), budget_s=95).infer(
+        AiCegisEngine("", _counter(), budget_s=95).infer(
             Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 9
 
 
 def test_a_budget_always_allows_the_first_attempt(monkeypatch):
     import pytest
-    from zrth.lean.errors import Refused
+    from zrth.lean.core.errors import Refused
     prompts = _always_wrong(monkeypatch, [0.0], 10.0)
     with pytest.raises(Refused, match="after 1 attempt in "):
-        TA2MagicCEGIS("", _counter(), budget_s=1).infer(
+        AiCegisEngine("", _counter(), budget_s=1).infer(
             Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 1

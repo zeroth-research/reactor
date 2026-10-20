@@ -28,7 +28,7 @@ _LEAN_DIR = Path(__file__).parent
 
 def test_core_files_present(sync_core_templates):
     """Core/ template files were copied successfully."""
-    from zrth.lean.project import CORE_FILES
+    from zrth.lean.project.scaffold import CORE_FILES
 
     for name in CORE_FILES:
         assert (_LEAN_DIR / "Core" / name).exists(), f"Core/{name} missing after sync"
@@ -225,7 +225,7 @@ def test_fbk_bridge_builds(generate_lean_files, name):
 
     The certificate that route installs is about the *model*; this is the
     file that carries it back. Two independent translators are on the two
-    sides of `bridge_k` -- `smt_encode` + cvc5 against
+    sides of `bridge_k` -- `smt.encode` + cvc5 against
     `translate_terms_scalar` -- so nothing here closes by `rfl` alone, and
     a translation defect in either shows up as an unclosed goal.
     """
@@ -315,11 +315,15 @@ def test_generated_executable_builds_and_runs(
         module_def = importlib.import_module(fixture).module()
     finally:
         sys.path.pop(0)
-    from zrth.lean.project import create_project
+    from zrth.lean.codegen.context import LeanContext
+    from zrth.lean.project.scaffold import create_project
+    from zrth.lean.proof.render import certificate_files
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
-        project = create_project(out, module_def, "Rea", executable=True)
+        project = create_project(
+            out, module_def, "Rea", executable=True,
+            certificate=certificate_files(LeanContext(module_def)))
 
         (project / ".lake").mkdir(exist_ok=True)
         (project / ".lake" / "packages").symlink_to(packages)

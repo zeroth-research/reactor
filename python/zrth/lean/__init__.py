@@ -1,6 +1,6 @@
 """Lean 4 certificate generation for reactive modules."""
 
-from .certificate import Certificate, Claim, LeanAnswer
-from .translate import ModuleToLean4
+from .core.certificate import Certificate, Claim, LeanAnswer
+from .codegen.encodings import ModuleToLean4
 
 __all__ = ["ModuleToLean4", "Claim", "Certificate", "LeanAnswer"]

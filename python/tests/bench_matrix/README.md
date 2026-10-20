@@ -33,7 +33,7 @@ matrix cannot survive.
 ### The routes
 
 The `--infer` routes of
-[`zrth/lean/infer_route/`](../../zrth/lean/infer_route/), one column each
+[`zrth/lean/infer/`](../../zrth/lean/infer/), one column each
 -- except `houdini`, which is two: the same proposals decided by cvc5
 (`houdini`) or refuted by Vampire (`houdini-vampire`), so a cell where one
 succeeds and the other times out says which half of the route the difference
@@ -178,7 +178,7 @@ Finding the wall this way is also what turned up a missing budget: the two
 `*_circ_eq` theorems ran at Lean's default `maxHeartbeats` while `Scalar`'s
 equivalents have long carried `2000000`. Every net above four places timed
 out inside `simp` — `BUILD-FAIL` on every route, for modules nothing else was
-wrong with. [`../../zrth/lean/translate/circ.py`](../../zrth/lean/translate/circ.py)
+wrong with. [`../../zrth/lean/codegen/encodings/circuit.py`](../../zrth/lean/codegen/encodings/circuit.py)
 now raises it, and the same net builds `System.Circ` in 13 s.
 
 **What is left of the wall, measured.** With the sum encoding and the raised
@@ -429,6 +429,6 @@ compare_certs.py  what the routes found, compared as formulas not as text
 ```
 
 The page's prose is generated too: the method cards are each route's own
-`summary` from `infer_route/`, so the page cannot drift from what
+`summary` from `infer/`, so the page cannot drift from what
 `--infer` accepts, and the machine block and every timing come from
 `results.json`.

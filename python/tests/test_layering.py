@@ -5,25 +5,29 @@ layers it may import besides itself, and a module imports nothing else of
 `zrth.lean`. An import under `if TYPE_CHECKING:` is exempt: it names a type
 for the reader and loads nothing.
 
-A route is a module of `zrth.lean.magic` that defines a `TA2Magic`: what two
-routes share lives under `zrth.lean.smt` or in `smt_synth`, never in one of
-them. A route's row imports its engine inside the function that runs it, so
-`verith --help` loads no engine. And a name with a leading underscore is its
-module's own: no module of `zrth.lean` imports one from another, nor reads
-one off an imported module. A name another module needs is part of its
-module's interface, and is spelled without the underscore.
+A route is a package of `zrth.lean.infer`: its row in `__init__.py` and its
+engine beside it. No route imports another; what two share lives in
+`infer.common` or under `zrth.lean.smt`. A route's row imports its engine
+inside the function that runs it, so `verith --help` loads no engine.
+
+And a name with a leading underscore is its module's own: no module of
+`zrth.lean` imports one from another, nor reads one off an imported module.
+A name another module needs is part of its module's interface, and is
+spelled without the underscore.
 """
 
 from __future__ import annotations
 
 import ast
+import subprocess
+import sys
 from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 
 LEAN = Path(__file__).parent.parent / "zrth" / "lean"
-MAGIC = LEAN / "magic"
+INFER = LEAN / "infer"
 
 # Every module of the package: the SMT layer the routes are built from, and
 # the Lean code generators.
@@ -33,14 +37,32 @@ PACKAGE = sorted(LEAN.rglob("*.py"))
 # it), and the layers it may import besides itself. A module no layer names
 # is not checked, but a checked module may import it only through a layer.
 LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
-    "core": (frozenset({
-        "zrth.lean.certificate", "zrth.lean.errors", "zrth.lean.options",
-    }), frozenset()),
-    "ir": (frozenset({
-        "zrth.lean.sorts", "zrth.lean.layout", "zrth.lean.literals",
-        "zrth.lean.ops",
-    }), frozenset({"core"})),
+    "core": (frozenset({"zrth.lean.core"}), frozenset()),
+    "lowering": (frozenset({"zrth.lean.lowering"}), frozenset({"core"})),
     "artifacts": (frozenset({"zrth.lean.artifacts"}), frozenset({"core"})),
+    "codegen": (frozenset({"zrth.lean.codegen"}),
+                frozenset({"core", "lowering"})),
+    "smt": (frozenset({"zrth.lean.smt"}),
+            frozenset({"core", "lowering", "artifacts"})),
+    # The project on disk. It writes the certificate's files as the text it
+    # is handed, so it sits below `proof`, which renders them.
+    "project": (frozenset({"zrth.lean.project"}),
+                frozenset({"core", "lowering", "codegen"})),
+    "proof": (frozenset({"zrth.lean.proof"}),
+              frozenset({"core", "lowering", "codegen", "smt", "project"})),
+    # The input formats; one encodes a module through `smt` as it reads it.
+    "inputs": (frozenset({"zrth.lean.inputs"}), frozenset({"core", "smt"})),
+    # The routes, their engines and the registry over them.
+    "infer": (frozenset({"zrth.lean.infer"}), frozenset({
+        "core", "lowering", "artifacts", "codegen", "smt", "project",
+        "proof"})),
+    # The command line: read off the input formats' and the routes' rows.
+    "cli": (frozenset({"zrth.lean.cli"}), frozenset({
+        "core", "artifacts", "smt", "inputs", "infer"})),
+    # `uv run verith`: every stage, in order.
+    "pipeline": (frozenset({"zrth.lean.pipeline"}), frozenset({
+        "core", "lowering", "artifacts", "codegen", "smt", "project", "proof",
+        "inputs", "infer", "cli"})),
 }
 
 
@@ -49,7 +71,7 @@ def _tree(path: Path) -> ast.Module:
 
 
 def _module(path: Path) -> str:
-    """`path` as a dotted module name: `zrth.lean.magic.houdini`."""
+    """`path` as a dotted module name: `zrth.lean.infer.houdini.engine`."""
     parts = path.relative_to(LEAN.parent).with_suffix("").parts
     if parts[-1] == "__init__":
         parts = parts[:-1]
@@ -60,7 +82,7 @@ MODULES = {_module(p) for p in PACKAGE}
 
 
 def _package(path: Path) -> list[str]:
-    """`path`'s package as a dotted list: `["zrth", "lean", "magic"]`."""
+    """`path`'s package as a dotted list: `["zrth", "lean", "infer"]`."""
     return ["zrth", *path.parent.relative_to(LEAN.parent).parts]
 
 
@@ -74,9 +96,9 @@ class Import(NamedTuple):
 
     @property
     def target(self) -> str:
-        """The module this import loads: `from zrth.lean import errors` loads
-        `zrth.lean.errors`, `from zrth.lean.errors import Refused` loads
-        `zrth.lean.errors`."""
+        """The module this import loads: `from zrth.lean.core import errors`
+        loads `zrth.lean.core.errors`, and so does `from zrth.lean.core.errors
+        import Refused`."""
         if self.name and f"{self.module}.{self.name}" in MODULES:
             return f"{self.module}.{self.name}"
         return self.module
@@ -130,15 +152,19 @@ def _layer(module: str) -> str | None:
     return None
 
 
-def _is_route(path: Path) -> bool:
-    return any(
-        isinstance(node, ast.ClassDef)
-        and any(isinstance(b, ast.Name) and b.id == "TA2Magic" for b in node.bases)
-        for node in ast.walk(_tree(path))
-    )
+# Every route: a package of `infer` other than `common`.
+ROUTE_DIRS = sorted(d for d in INFER.iterdir()
+                    if (d / "__init__.py").exists() and d.name != "common")
+ROUTES = {d.name for d in ROUTE_DIRS}
 
 
-ROUTES = {f"zrth.lean.magic.{p.stem}" for p in MAGIC.glob("*.py") if _is_route(p)}
+def _route(module: str) -> str | None:
+    """The route `module` belongs to: `houdini` for
+    `zrth.lean.infer.houdini.engine`."""
+    parts = module.split(".")
+    if parts[:3] == ["zrth", "lean", "infer"] and len(parts) > 3:
+        return parts[3] if parts[3] in ROUTES else None
+    return None
 
 
 def _private(name: str) -> bool:
@@ -178,48 +204,55 @@ def test_a_layer_imports_only_the_layers_below_it(path):
 
 
 def test_the_routes_are_found():
-    assert {r.rsplit(".", 1)[1] for r in ROUTES} >= {
-        "ai", "cegis", "houdini", "learn", "linear", "sygus", "vampire"}
-
-
-@pytest.mark.parametrize("path", sorted(MAGIC.glob("*.py")), ids=_name)
-def test_no_route_imports_another(path):
-    me = f"zrth.lean.magic.{path.stem}"
-    bad = [f"{_name(path)}:{i.line} imports {i.target}"
-           for i in _imports(path) if i.target in ROUTES and i.target != me]
-    assert not bad, "\n".join(bad)
-
-
-ROW_DIR = LEAN / "infer_route"
-ROW_MODULES = sorted(
-    p for p in ROW_DIR.glob("*.py") if p.stem not in {"__init__", "api", "shared"}
-)
-
-
-def test_the_route_rows_are_found():
-    assert {p.stem for p in ROW_MODULES} >= {
+    assert ROUTES >= {
         "ai", "ai_cegis", "fbk_proveit", "houdini", "nuterm", "smt_linear",
         "sygus", "vampire"}
 
 
-@pytest.mark.parametrize("path", ROW_MODULES, ids=_name)
-def test_no_route_row_imports_another(path):
-    """A row names its engine and the shared types, never a sibling row."""
-    rows = {f"zrth.lean.infer_route.{p.stem}" for p in ROW_MODULES}
-    me = f"zrth.lean.infer_route.{path.stem}"
+@pytest.mark.parametrize("route", ROUTE_DIRS, ids=lambda d: d.name)
+def test_every_route_has_an_engine(route):
+    """The row is `__init__.py` and what it runs is `engine.py`, so the rule
+    below names one module."""
+    assert (route / "engine.py").exists()
+
+
+INFER_MODULES = sorted(p for p in INFER.rglob("*.py")
+                       if p != INFER / "__init__.py")
+
+
+@pytest.mark.parametrize("path", INFER_MODULES, ids=_name)
+def test_no_route_imports_another(path):
+    """A route imports its own modules and what no route owns; a module
+    that belongs to no route imports none. The registry, which lists the
+    rows, is the one module that knows them all."""
+    me = _route(_module(path))
     bad = [f"{_name(path)}:{i.line} imports {i.target}"
-           for i in _imports(path) if i.target in rows and i.target != me]
+           for i in _imports(path)
+           if _route(i.target) not in (None, me)]
     assert not bad, "\n".join(bad)
 
 
-@pytest.mark.parametrize("path", ROW_MODULES, ids=_name)
-def test_a_route_row_imports_its_engine_only_when_it_runs(path):
+@pytest.mark.parametrize("route", ROUTE_DIRS, ids=lambda d: d.name)
+def test_a_route_row_imports_its_engine_only_when_it_runs(route):
     """The CLI imports every row to print `--help`; an engine imported with
     its row would be loaded by every run, whichever route it asks for."""
+    path = route / "__init__.py"
+    engine = f"zrth.lean.infer.{route.name}.engine"
     bad = [f"{_name(path)}:{i.line} imports {i.target} at module level"
            for i in _imports(path)
-           if i.top and not i.typing and i.target in ROUTES]
+           if i.top and not i.typing and i.target == engine]
     assert not bad, "\n".join(bad)
+
+
+def test_the_registry_loads_no_engine():
+    """What the rule above is for, observed: importing every row, as
+    `verith --help` does, imports no engine and no module an engine
+    imports at its top."""
+    probe = ("import sys, zrth.lean.infer; print(sorted(m for m in "
+             "sys.modules if m.endswith('.engine') or m == 'cvc5'))")
+    r = subprocess.run([sys.executable, "-c", probe], capture_output=True,
+                       text=True, check=True)
+    assert r.stdout.strip() == "[]", r.stdout
 
 
 @pytest.mark.parametrize("path", PACKAGE, ids=_name)
@@ -246,8 +279,9 @@ def test_the_project_builder_does_not_know_the_routes():
     """`create_project` is told what to remove and what to add to the lakefile;
     it does not read the route table to find out."""
     bad = [
-        f"project.py:{i.line} imports {i.module}"
-        for i in _imports(LEAN / "project.py")
-        if i.module.startswith("zrth.lean.infer_route")
+        f"{_name(p)}:{i.line} imports {i.module}"
+        for p in sorted((LEAN / "project").glob("*.py"))
+        for i in _imports(p)
+        if i.module.startswith("zrth.lean.infer")
     ]
     assert not bad, "\n".join(bad)

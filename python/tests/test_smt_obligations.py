@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.core.certificate import Certificate, Claim
 
 cvc5 = pytest.importorskip("cvc5")
 from cvc5 import Kind  # noqa: E402
@@ -33,7 +33,7 @@ def _module(name: str):
 def _clamps():
     """`(name, tm, clamp)` for each clamp `hrank` is stated with."""
     from zrth.lean.smt.obligations import clamp
-    from zrth.lean.smt_query import ModuleQueries
+    from zrth.lean.smt.precheck import ModuleQueries
 
     claim = Claim(prp="(= s0 0)")
     q = ModuleQueries(_module("m_countdown"), claim,
@@ -63,7 +63,7 @@ def test_bound_is_fresh_as_variables_a_quantifier_can_close():
     """`fresh` makes constants, which a model assigns. A quantifier needs
     variables of the same sorts, which `--infer smt-linear` used to make on
     its own; `bound` is them."""
-    from zrth.lean.smt.run import ModuleEncoding
+    from zrth.lean.smt.encoding import ModuleEncoding
 
     enc = ModuleEncoding(_module("m_relu_input"))
     bound, fresh = enc.bound("q_"), enc.fresh("c_")
@@ -79,7 +79,7 @@ def test_the_round_as_relations_closes_its_inputs():
     restricts which of them may be used. `m_relu_input` is `x0 = 5`, `x' =
     relu(x - e)`, with `e` read the round it is awaited."""
     from zrth.lean.smt import obligations as obl
-    from zrth.lean.smt.run import ModuleEncoding
+    from zrth.lean.smt.encoding import ModuleEncoding
 
     enc = ModuleEncoding(_module("m_relu_input"))
 

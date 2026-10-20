@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.project import CORE_FILES, LEAN_AI_FILES, TEMPLATE_DIR
-from zrth.lean.template_env import TEMPLATES_DIR, STATIC_DIR, PROJECT_TEMPLATES_DIR
+from zrth.lean.project.scaffold import CORE_FILES, LEAN_AI_FILES, TEMPLATE_DIR
+from zrth.lean.project.templates import TEMPLATES_DIR, STATIC_DIR, PROJECT_TEMPLATES_DIR
 
 
 def test_every_lean_template_is_reachable_by_the_generator():
@@ -105,7 +105,7 @@ def test_the_reductions_enumerate_with_ofFn_not_finRange():
 
 
 def _counter_ctx():
-    from zrth.lean.context import LeanContext
+    from zrth.lean.codegen.context import LeanContext
     from zrth.lean.inputs.python import load_module
 
     fixture = Path(__file__).parent / "fixtures" / "counter.py"
@@ -114,7 +114,7 @@ def _counter_ctx():
 
 def test_the_certificate_simp_set_unfolds_them():
     """Computing the fold is no use if the definition never opens."""
-    from zrth.lean.cert import generate_certificate_lean
+    from zrth.lean.proof.render import generate_certificate_lean
 
     cert = generate_certificate_lean(_counter_ctx())
     simp_mat = [ln for ln in cert.splitlines()
@@ -126,8 +126,8 @@ def test_the_certificate_simp_set_unfolds_them():
 
 def test_the_fbk_bridge_simp_set_agrees_with_it():
     """The bridge proves the NA model is the module, over the same terms."""
-    from zrth.lean.translate.fbk import check_na_supported
-    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.infer.fbk_proveit.na import check_na_supported
+    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     ctx = _counter_ctx()
     bridge = atom_to_lean_fbk_bridge(ctx, na_module="NA",

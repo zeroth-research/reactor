@@ -23,11 +23,15 @@ import torch
 
 from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
 from zrth.analyzer import convert_method
-from zrth.lean.cert import generate_zeroth_hammer_lean, lean_certificate
-from zrth.lean.certificate import Certificate, Claim
-from zrth.lean.lean_names import LINTERS_OFF
-from zrth.lean.project import CORE_FILES, TEMPLATE_DIR, generate_standalone_cert_lean
-from zrth.lean.translate.scalar import _argmax_scalar_def_lines
+from zrth.lean.project.scaffold import generate_zeroth_hammer_lean
+from zrth.lean.proof.render import (
+    generate_standalone_cert_lean,
+    lean_certificate,
+)
+from zrth.lean.core.certificate import Certificate, Claim
+from zrth.lean.project.names import LINTERS_OFF
+from zrth.lean.project.scaffold import CORE_FILES, TEMPLATE_DIR
+from zrth.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 
 _LEAN_DIR = Path(__file__).parent
 _CORE_DIR = _LEAN_DIR / "Core"
@@ -379,13 +383,13 @@ def generate_lean_files(sync_core_templates) -> None:
     # a failure here is the Lean side, not the certificate.
     try:
         import cvc5  # noqa: F401
-        from zrth.lean.magic.learn import TA2MagicLearn
+        from zrth.lean.infer.nuterm.engine import NutermEngine
     except ImportError:
         pass
     else:
         module = _make_countdown()
         claim = Claim(prp="(= s0 0)", kind="buchi")
-        learned = TA2MagicLearn(module, log=lambda *a: None).infer(claim)
+        learned = NutermEngine(module, log=lambda *a: None).infer(claim)
         # Generated from the SMT-LIB the route answered with, as `verith`
         # does it.
         (_CERTS_DIR / "LearnedCountdown.lean").write_text(
@@ -404,7 +408,7 @@ def generate_lean_files(sync_core_templates) -> None:
     # System/Scalar.lean). The `_scalar_eq` theorems only elaborate if the
     # flattening lines up, and no certificate carries a Scalar section, so
     # this is the only thing that compiles them.
-    from zrth.lean.translate import ModuleToLean4
+    from zrth.lean.codegen.encodings import ModuleToLean4
 
     for name, make_module in _SCALAR_ENC_SPECS:
         t = ModuleToLean4(make_module())
@@ -455,11 +459,11 @@ def generate_lean_files(sync_core_templates) -> None:
     # inlining all of them in the order the project has them is the same
     # elaboration problem, and it runs in this warm build instead of a cold
     # `lake update` per case.
-    from zrth.lean.cert import generate_data_lean
-    from zrth.lean.context import LeanContext
-    from zrth.lean.fbk_proveit import property_to_bool_lean
-    from zrth.lean.translate.fbk import atom_to_lean_na
-    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.proof.render import generate_data_lean
+    from zrth.lean.codegen.context import LeanContext
+    from zrth.lean.infer.fbk_proveit.engine import property_to_bool_lean
+    from zrth.lean.infer.fbk_proveit.na import atom_to_lean_na
+    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     def _strip(src: str) -> str:
         out, in_doc = [], False
