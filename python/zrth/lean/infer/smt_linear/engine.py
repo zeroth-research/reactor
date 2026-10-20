@@ -93,10 +93,11 @@ from dataclasses import dataclass
 
 from ...smt.claim import SynthContext
 from ...smt.limits import bounded_solver, call_ms
-from ...smt.script import decimals
+from ...smt.script import affine_smt, conjunction_smt, decimals
 from ...smt.obligations import (
     Frame,
     Obligations,
+    conjunction,
     init_inv,
     inv_imp_P,
     ranked,
@@ -104,8 +105,6 @@ from ...smt.obligations import (
 )
 from ..common.synth import (
     Search,
-    affine_smt,
-    conjunction_smt,
     denominator_scale,
     program_constants,
     program_rationals,
@@ -248,11 +247,6 @@ class SmtLinearEngine(Engine):
         log=print,
         encoding=None,
     ):
-        if cvc5 is None:                             # pragma: no cover
-            raise Refused(
-                "--infer smt-linear needs the `cvc5` package, which is not "
-                "importable. Install with: uv pip install cvc5"
-            )
         self.module = module
         # The run's `smt.encoding.lazy` encoding; a library caller's module gets
         # its own.
@@ -623,9 +617,7 @@ class SmtLinearEngine(Engine):
                                   col.term.substitute(ctx.state, vs)),
                     )
                 parts.append(tm.mkTerm(Kind.GEQ, t, tm.mkInteger(0)))
-            if not parts:
-                return tm.mkBoolean(True)
-            return parts[0] if len(parts) == 1 else tm.mkTerm(Kind.AND, *parts)
+            return conjunction(tm, parts)
 
         return [x for row in rows for x in row], inv
 

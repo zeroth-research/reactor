@@ -127,11 +127,10 @@ from ..engine import Engine
 from .modes import mode_bounds
 from ...smt.obligations import Candidate, Obligations
 from ...artifacts.record import found, note
-from ...smt.script import smt_int, smt_real
+from ...smt.script import affine_smt, conjunction_smt, smt_int, smt_real
 from ...smt.terms import free_constants
 from ..common.synth import (
     Column,
-    affine_smt,
     columns,
     component_slots,
     denominator_scale,
@@ -903,16 +902,7 @@ class Ranks:
         coeffs = [self.scale * c for c in form]
         if not any(coeffs):
             return smt_int(shift)
-        parts = [] if not shift else [smt_real(shift)]
-        for c, name in zip(coeffs, self.readings):
-            if c == 1:
-                parts.append(name)
-            elif c == -1:
-                parts.append(f"(- {name})")
-            elif c:
-                parts.append(f"(* {smt_real(c)} {name})")
-        body = parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
-        return f"(to_int {body})"
+        return f"(to_int {affine_smt(shift, coeffs, self.readings, lit=smt_real)})"
 
     def holds(self, state, term=None) -> bool:
         key = (state, None if term is None else term.getId())
@@ -1068,12 +1058,6 @@ class HoudiniEngine(Engine):
     def __init__(self, module, *, solver=DEFAULT_SOLVER,
                  timeout: float = DEFAULT_TIMEOUT, artifacts=None, log=print,
                  encoding=None):
-        if cvc5 is None:                             # pragma: no cover
-            raise Refused(
-                "--infer houdini needs the `cvc5` package to encode the "
-                "module, which is not importable. Install with: "
-                "uv pip install cvc5"
-            )
         self.spec = solver if isinstance(solver, SolverSpec) else SolverSpec(solver)
         self.module = module
         # The run's `smt.encoding.lazy` encoding; a library caller's module gets
@@ -1599,9 +1583,7 @@ class HoudiniEngine(Engine):
 
     def _emit(self, inv: list[Candidate],
               rank: "Candidate | None") -> Certificate:
-        srcs = [f.src for f in inv]
-        inv_src = ("true" if not srcs else srcs[0] if len(srcs) == 1
-                   else "(and " + " ".join(srcs) + ")")
+        inv_src = conjunction_smt(f.src for f in inv)
         self.log(f"[houdini] inv: {inv_src}")
         if rank is not None:
             self.log(f"[houdini] ranking: {rank.src}")

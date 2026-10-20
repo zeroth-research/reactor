@@ -647,7 +647,7 @@ def test_artifacts_defaults_to_use():
 
 
 def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
-    """`InferInput.resumable_inv`'s answer for a store that already holds artifacts.
+    """`infer.resume.resumable_inv`'s answer for a store that already holds artifacts.
 
     The store does the role/language/status filtering (it is the half that
     knows what a stale artifact is and reports what it dropped); what is
@@ -655,15 +655,16 @@ def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
     """
     from zrth.lean.core.certificate import Certificate, Claim
     from zrth.lean.infer import InferInput
+    from zrth.lean.infer.resume import resumable_inv
 
     handle = _handle(tmp_path, resumes=("inv",), store=_store(tmp_path, kind=kind))
-    return InferInput(
+    return resumable_inv(InferInput(
         project=handle,
         module=None,
         claim=Claim(prp="(= s0 0)", kind=kind),
         given=Certificate(inv=supplied_inv),
         opts={},
-    ).resumable_inv()
+    ))
 
 
 def test_an_inductive_invariant_is_taken_as_given(tmp_path):
@@ -885,3 +886,12 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
             assert inp.source == problem.source and inp.names == problem.names
         else:
             assert inp.source is None and inp.names is None
+
+
+def test_a_missing_package_is_refused_by_the_flag_that_needs_it():
+    from zrth.lean.core.errors import Refused, require
+
+    assert require("json", "--anything").dumps(1) == "1"
+    with pytest.raises(Refused, match=r"--infer x needs the `zrth_no_such` "
+                                      r"package.*uv pip install zrth_no_such"):
+        require("zrth_no_such", "--infer x")

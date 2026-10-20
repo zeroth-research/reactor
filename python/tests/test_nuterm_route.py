@@ -23,8 +23,6 @@ from zrth.lean.infer.nuterm.engine import (
     NutermEngine,
     _parse_property,
     _prune,
-    _smt_affine,
-    _smt_conjunction,
     _smt_ranking,
     _smt_term,
 )
@@ -124,7 +122,7 @@ def test_a_learned_buchi_certificate_holds_under_cvc5():
 
 def test_the_route_leaves_its_answer_where_the_next_run_resumes_from(tmp_path):
     """Found, and then *resumable*: both halves `proved` and SMT-LIB, which
-    is what `infer.FIXABLE` and `InferInput.resumable_inv` ask for, so
+    is what `infer.FIXABLE` and `infer.resume.resumable_inv` ask for, so
     a following `--infer ai-cegis` starts from them instead of asking the
     model again."""
     from types import SimpleNamespace
@@ -324,19 +322,6 @@ def test_a_negative_literal_is_a_negation():
     assert smt_int(3) == "3" and smt_int(-3) == "(- 3)" and smt_int(0) == "0"
 
 
-@pytest.mark.parametrize("coeffs, const, want", [
-    ([0], 0, "0"),                                  # nothing at all
-    ([0], 5, "5"),                                  # a constant alone
-    ([1], 0, "s0"),                                 # a bare column
-    ([-1], 0, "(- s0)"),
-    ([2], 0, "(* 2 s0)"),
-    ([1, -1], 3, "(+ 3 s0 (- s1))"),
-    ([1, 0, 2], -1, "(+ (- 1) s0 (* 2 s2))"),       # a zero coefficient drops
-])
-def test_an_affine_row_prints_as_one_term(coeffs, const, want):
-    assert _smt_affine(coeffs, const, ["s0", "s1", "s2"][:len(coeffs)]) == want
-
-
 def test_a_relu_unit_prints_without_a_let():
     """A ReLU names its pre-activation twice. z3's own printer would bind it
     with a `let`, which cannot be the body of the Lean definition this string
@@ -353,15 +338,6 @@ def test_a_unit_the_output_layer_drops_is_not_printed():
               (np.array([[1, 0]]), np.array([0]))]
     src = _smt_ranking(layers, ["s0"])
     assert "9" not in src, src
-
-
-def test_the_same_fact_twice_is_one_conjunct():
-    """A property seeded as a candidate that the lattice also proposes survives
-    as both, and the certificate should carry it once."""
-    assert _smt_conjunction(["(<= s0 100)", "(>= s0 0)", "(<= s0 100)"]) == \
-        "(and (<= s0 100) (>= s0 0))"
-    assert _smt_conjunction(["(<= s0 100)"]) == "(<= s0 100)"
-    assert _smt_conjunction([]) == "true"
 
 
 def test_a_conjunct_z3_cannot_print_flat_is_refused():
