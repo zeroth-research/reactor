@@ -1069,10 +1069,6 @@ A row says:
   and `owns` (project-relative paths it may write).  The route is handed a
   `ProjectHandle`, so these two are the whole of its access, and a route
   that needs more of the project than the predicates says which more.
-* **the input** — `reads_source`: the route is handed the file the module
-  was read from (`InferInput.source`, a `SourceText`) and the names claims
-  may use (`InferInput.names`). A route that does not declare it gets
-  `None` for both.
 * **the hooks** — `resolve` at parse time (a route whose lakefile names a
   path has to reject a bad one before any of the project exists),
   `lakefile(config, project_name)`, the `LakefileParts` (extra `lean_lib`s
