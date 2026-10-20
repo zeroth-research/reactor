@@ -1,4 +1,4 @@
-"""The inference-route table (`zrth.lean.infer_route`) and the CLI over it.
+"""The inference-route table (`zrth.lean.infer`) and the CLI over it.
 
 Two things are checked here. The table is checked for *completeness*, the way
 `test_lean_ops.py` checks the op matrix: a row that declares something the
@@ -16,8 +16,8 @@ from __future__ import annotations
 import pytest
 
 from zrth.lean.cli import build_parser, parse_args
-from zrth.lean.errors import Refused
-from zrth.lean.infer_route import (
+from zrth.lean.core.errors import Refused
+from zrth.lean.infer import (
     ROUTES,
     InferResult,
     ProjectHandle,
@@ -26,7 +26,7 @@ from zrth.lean.infer_route import (
     route_by_name,
     route_names,
 )
-from zrth.lean.project import ENCODINGS
+from zrth.lean.project.scaffold import ENCODINGS
 
 KINDS = {"safety", "buchi"}
 RETURNS = {"smt", "lean", "files"}
@@ -118,7 +118,7 @@ def test_an_option_two_routes_declare_is_one_option():
     The rule this replaces was "no two routes claim one flag", which is what
     `shared_route_options` now makes safe rather than forbidden.
     """
-    from zrth.lean.infer_route import shared_route_options
+    from zrth.lean.infer import shared_route_options
 
     by_dest: dict = {}
     for route, opt in all_route_options():
@@ -204,7 +204,7 @@ def test_ai_does_not_infer_a_safety_certificate():
 def test_ai_takes_a_precondition():
     """`--pre` is not a candidate this route would have to hold to the
     obligations -- it is an assumption the reply may lean on, and both
-    `magic.ai` prompts already carry it (`test_magic_ai.py`)."""
+    `infer.ai.engine` prompts already carry it (`test_ai_route.py`)."""
     assert err(["m.py", "--buchi", "(= s0 0)", "--infer", "ai",
                 "--pre", "(>= e0 0)"]) == ""
 
@@ -224,7 +224,7 @@ def test_nuterm_refuses_what_it_would_discard(flag, value):
     """`main.py:627`, from the row's `seeds` + `seeds_refusal`.
 
     `--pre` is no longer one of these: it is the entry assumption Houdini
-    checks initiation under, and `test_magic_learn.py` measures that it is
+    checks initiation under, and `test_nuterm_route.py` measures that it is
     used rather than merely accepted."""
     message = err(["m.py", "--buchi", "(= s0 0)", "--infer", "nuterm", flag, value])
     assert flag in message and "comes from the learner" in message
@@ -493,7 +493,7 @@ def test_the_declared_prefix_is_a_directory_not_a_string(tmp_path):
 
 def test_an_empty_result_is_one_with_no_predicates_and_no_files():
     """`empty` is true only when the route handed back nothing at all."""
-    from zrth.lean.certificate import Certificate, LeanAnswer
+    from zrth.lean.core.certificate import Certificate, LeanAnswer
 
     assert InferResult().empty
     assert not InferResult(Certificate(inv="(= s0 0)")).empty
@@ -502,7 +502,7 @@ def test_an_empty_result_is_one_with_no_predicates_and_no_files():
 
 
 def _row(returns="smt", kind="buchi", result=None):
-    from zrth.lean.infer_route import InferRoute
+    from zrth.lean.infer import InferRoute
 
     return InferRoute(
         name="probe",
@@ -517,13 +517,13 @@ def _row(returns="smt", kind="buchi", result=None):
 
 def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
                owns=()):
-    """Put one synthetic row through `main._infer`."""
-    from zrth.lean import main as m
-    from zrth.lean.certificate import Certificate, Claim
+    """Put one synthetic row through `pipeline.certify.run_route`."""
+    from zrth.lean.pipeline import certify
+    from zrth.lean.core.certificate import Certificate, Claim
 
     settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
     settings.route = _row(returns, kind, result)
-    return m._infer(
+    return certify.run_route(
         settings,
         None,
         _handle(tmp_path, owns=owns),
@@ -534,7 +534,7 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
 
 
 def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
-    from zrth.lean.certificate import Certificate
+    from zrth.lean.core.certificate import Certificate
 
     result = InferResult(Certificate("(= s0 0)", "s0"))
     assert _run_infer(monkeypatch, tmp_path, result) is result
@@ -543,7 +543,7 @@ def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
 def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
     """Every SMT-LIB answer is printed as Lean in one place, so Lean from an
     `smt` row has nowhere to go."""
-    from zrth.lean.certificate import Certificate, LeanAnswer
+    from zrth.lean.core.certificate import Certificate, LeanAnswer
 
     both = InferResult(Certificate("(= s0 0)", "s0"),
                        LeanAnswer("fun s => s.1 = 0", "fun s => s.1"))
@@ -552,7 +552,7 @@ def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
 
 
 def test_a_lean_row_is_taken_at_its_word(monkeypatch, tmp_path):
-    from zrth.lean.certificate import Certificate, LeanAnswer
+    from zrth.lean.core.certificate import Certificate, LeanAnswer
 
     lean = InferResult(lean=LeanAnswer("fun s => s.1 = 0", "fun s => 1"))
     assert _run_infer(monkeypatch, tmp_path, lean, returns="lean") is lean
@@ -573,7 +573,7 @@ def test_a_files_route_hands_back_files_and_no_predicates(monkeypatch, tmp_path)
 def test_a_row_and_its_result_have_to_agree(monkeypatch, tmp_path):
     """The row declares what comes back; nothing else has to guess which of
     the two to trust."""
-    from zrth.lean.certificate import Certificate
+    from zrth.lean.core.certificate import Certificate
 
     with pytest.raises(SystemExit, match="declares returns='smt'"):
         _run_infer(monkeypatch, tmp_path, InferResult(), returns="smt")
@@ -653,8 +653,8 @@ def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
     knows what a stale artifact is and reports what it dropped); what is
     exercised here is the one rule left to the route.
     """
-    from zrth.lean.certificate import Certificate, Claim
-    from zrth.lean.infer_route import InferInput
+    from zrth.lean.core.certificate import Certificate, Claim
+    from zrth.lean.infer import InferInput
 
     handle = _handle(tmp_path, resumes=("inv",), store=_store(tmp_path, kind=kind))
     return InferInput(
@@ -694,9 +694,9 @@ def test_an_explicit_invariant_wins_over_an_inherited_one(tmp_path):
 
 
 def test_the_registry_rejects_two_rows_with_one_name():
-    """`ops.py` guards its op table the same way: a shadowed row would also
-    show the name twice in `--infer`'s choices."""
-    from zrth.lean.infer_route import index_routes
+    """`lowering/ops.py` guards its op table the same way: a shadowed row
+    would also show the name twice in `--infer`'s choices."""
+    from zrth.lean.infer import index_routes
 
     assert index_routes(ROUTES).keys() == set(route_names())
     with pytest.raises(RuntimeError, match="two route-table rows named"):
@@ -707,7 +707,7 @@ def test_an_unknown_route_name_says_where_to_add_one():
     # `abduction` is a TODO.md item, planned and not built;
     # it was `sygus` until that one became a row, which is the point -- the
     # name in this test has to be one the table really does not have.
-    with pytest.raises(KeyError, match="infer_route.ROUTES"):
+    with pytest.raises(KeyError, match="infer.ROUTES"):
         route_by_name("abduction")
 
 
@@ -726,7 +726,7 @@ def test_the_owned_proveit_directory_is_the_one_the_route_writes():
     """`owns` is the truth about what a route writes, and `path()` refuses
     anything undeclared -- so a renamed `PROVEIT_DIR` must not leave the row
     declaring a directory `fbk_proveit` no longer uses."""
-    from zrth.lean.fbk_proveit import PROVEIT_DIR
+    from zrth.lean.infer.fbk_proveit.engine import PROVEIT_DIR
 
     owns = route_by_name("fbk-proveit").owns
     assert f"{PROVEIT_DIR}/" in owns
@@ -742,7 +742,7 @@ def test_the_workspace_is_not_a_route_owned_path():
 
 
 def test_owned_files_are_the_files_not_the_directories_the_rows_own():
-    from zrth.lean.infer_route import owned_files
+    from zrth.lean.infer import owned_files
 
     files = owned_files()
     assert files == tuple(sorted(files))
@@ -783,10 +783,10 @@ def test_a_refusal_says_whether_anything_was_searched():
 def test_a_route_that_looked_at_nothing_records_a_decline(tmp_path):
     """`NO-CERT` is three measurements in one name, and this is the one the
     prose is worst at: nothing ran, so there is no fact about the module."""
-    from zrth.lean.main import _note_refusal
+    from zrth.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
-    _note_refusal(_NoteHandle(store), _NoteRoute(), Refused("s0 is (Tuple Int Int)"))
+    note_refusal(_NoteHandle(store), _NoteRoute(), Refused("s0 is (Tuple Int Int)"))
     kept = [a for a in store.list() if a.role == "note"]
     assert [a.status for a in kept] == ["declined"]
     assert "Tuple" in (store.dir / kept[0].name).read_text()
@@ -795,22 +795,22 @@ def test_a_route_that_looked_at_nothing_records_a_decline(tmp_path):
 def test_a_search_that_ran_out_records_unknown(tmp_path):
     """Not a decline: a search did run, and that it did not finish is a fact
     about how hard this module is."""
-    from zrth.lean.main import _note_refusal
+    from zrth.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
-    _note_refusal(_NoteHandle(store), _NoteRoute(),
-                  Refused("no ranking function", searched=True))
+    note_refusal(_NoteHandle(store), _NoteRoute(),
+                 Refused("no ranking function", searched=True))
     assert [a.status for a in store.list() if a.role == "note"] == ["unknown"]
 
 
 def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
     """`smt-linear`, `sygus`, `houdini` and `vampire` each leave a note with
     more in it than this one, and a second saying less is worse than none."""
-    from zrth.lean.main import _note_refusal
+    from zrth.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
     store.note("the space is empty\n", status="no_solution", what="x", why="y")
-    _note_refusal(_NoteHandle(store), _NoteRoute(), Refused("...", searched=True))
+    note_refusal(_NoteHandle(store), _NoteRoute(), Refused("...", searched=True))
     assert [a.status for a in store.list()
             if a.role == "note"] == ["no_solution"]
 
@@ -818,10 +818,10 @@ def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
 def test_a_missing_package_is_not_filed_against_the_module(tmp_path):
     """An `ImportError` is about how the route was asked for. Filing it as a
     decline would read as a fact about a run that never started."""
-    from zrth.lean.main import _note_refusal
+    from zrth.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
-    _note_refusal(_NoteHandle(store), _NoteRoute(), ImportError("no cvc5"))
+    note_refusal(_NoteHandle(store), _NoteRoute(), ImportError("no cvc5"))
     assert store.list() == ()
 
 
@@ -832,23 +832,23 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     about why no certificate came of it."""
     from types import SimpleNamespace
 
-    from zrth.lean import main as m
-    from zrth.lean.certificate import Certificate, Claim
-    from zrth.lean.infer_route import InferResult
+    from zrth.lean.pipeline import certify
+    from zrth.lean.core.certificate import Certificate, Claim
+    from zrth.lean.infer import InferResult
 
     def refuse(*a, **k):
         raise Refused("SMT→Lean: unsupported kind INTS_MODULUS")
 
-    monkeypatch.setattr(m, "_render", refuse)
+    monkeypatch.setattr(certify, "render", refuse)
     store = _note_store(tmp_path)
     settings = SimpleNamespace(
         pre_check=None,
         route=SimpleNamespace(name="test-route", errors_self_named=False),
     )
     with pytest.raises(SystemExit, match="--infer: .*INTS_MODULUS"):
-        m._regenerate(settings, None, _NoteHandle(store), store,
-                      Claim(prp="(= s0 0)", kind="safety"),
-                      InferResult(cert=Certificate(inv="(= (mod s0 2) 0)")))
+        certify.regenerate(settings, None, _NoteHandle(store), store,
+                           Claim(prp="(= s0 0)", kind="safety"),
+                           InferResult(cert=Certificate(inv="(= (mod s0 2) 0)")))
     notes = [a for a in store.list() if a.role == "note"]
     assert [a.status for a in notes] == ["unsupported"]
     assert "INTS_MODULUS" in (store.dir / notes[0].name).read_text()
@@ -860,8 +860,8 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
     import dataclasses
 
     from zrth.lean import inputs
-    from zrth.lean import main as m
-    from zrth.lean.certificate import Certificate, Claim
+    from zrth.lean.pipeline import certify
+    from zrth.lean.core.certificate import Certificate, Claim
 
     from pathlib import Path
 
@@ -877,8 +877,8 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
         )
         settings = parse_args([str(fixture), "--buchi", "(= (X @intf.0) 0)"])
         settings.route = row
-        m._infer(settings, problem.module, _handle(tmp_path),
-                 Claim(prp="(= s0 0)", kind="buchi"), Certificate(), None,
+        certify.run_route(settings, problem.module, _handle(tmp_path),
+                          Claim(prp="(= s0 0)", kind="buchi"), Certificate(), None,
                  problem=problem)
         (inp,) = seen
         if reads_source:

@@ -8,7 +8,7 @@ the Vampire binary is looked for, the evaluator the simulation runs on
 simulation refuting a property the module violates before any solver is
 started.
 
-The *seam* -- :mod:`zrth.lean.houdini_solver` -- is tested against cvc5
+The *seam* -- :mod:`zrth.lean.smt.solvers` -- is tested against cvc5
 alone, because what it is for is the thing only cvc5 does: answer a failed
 proof with a counterexample, name the facts that counterexample breaks, and
 settle a candidate for good rather than until the next rung.
@@ -29,9 +29,9 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.certificate import Claim
-from zrth.lean.errors import Refused
-from zrth.lean.houdini_solver import SolverSpec
+from zrth.lean.core.certificate import Claim
+from zrth.lean.core.errors import Refused
+from zrth.lean.infer.houdini.solvers import SolverSpec
 
 LIMITS = Path(__file__).parent / "limits" / "mods"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -51,7 +51,7 @@ def solver_or_skip(kind: str):
     `--houdini-solver cvc5` resolves to nothing to look for, so the cvc5 half
     of every parametrised case below always runs.
     """
-    from zrth.lean.houdini_solver import resolve_solver
+    from zrth.lean.infer.houdini.solvers import resolve_solver
 
     try:
         return resolve_solver(kind)
@@ -67,22 +67,23 @@ BOTH = pytest.mark.parametrize("solver", ["cvc5", "vampire"])
 
 def infer(name: str, kind: str, prp: str, *, solver="cvc5",
           timeout: float = 60, fixture: Path = LIMITS, log=None):
-    from zrth.lean.magic.houdini import TA2MagicHoudini
+    from zrth.lean.infer.houdini.engine import HoudiniEngine
 
-    magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"), solver=solver,
-                            timeout=timeout, log=log or (lambda *_: None))
+    magic = HoudiniEngine(module_at(fixture / f"{name}.py"), solver=solver,
+                          timeout=timeout, log=log or (lambda *_: None))
     return magic.infer(Claim(prp=prp, kind=kind))
 
 
 def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A route mid-flight: its context, obligations and candidate parser,
     without a search having been run. What the seam's cases ask about."""
-    from zrth.lean.magic.houdini import TA2MagicHoudini
+    from zrth.lean.infer.houdini.engine import HoudiniEngine
     from zrth.lean.smt.obligations import Obligations
-    from zrth.lean.smt_synth import SynthContext, columns
+    from zrth.lean.smt.claim import SynthContext
+    from zrth.lean.infer.common.synth import columns
 
-    magic = TA2MagicHoudini(module_at(fixture / f"{name}.py"),
-                            log=lambda *_: None)
+    magic = HoudiniEngine(module_at(fixture / f"{name}.py"),
+                          log=lambda *_: None)
     magic.ctx = SynthContext.build(magic.module, Claim(prp=prp, kind=kind),
                                    route="houdini",
                                    takes=("int", "bool", "bv", "real", "tuple"))
@@ -98,7 +99,7 @@ def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
 def test_vampires_time_limit_climbs_and_ends_at_the_budget():
     """Four rungs, because its portfolio schedules a short limit differently
     rather than cutting a long one short."""
-    from zrth.lean.houdini_solver import VampireSolver
+    from zrth.lean.smt.solvers import VampireSolver
 
     v = VampireSolver("/nowhere", seconds=1)
     assert v.ladder(120) == (2, 10, 60, 120)
@@ -113,7 +114,7 @@ def test_cvc5s_ladder_is_a_cap_rather_than_a_schedule():
     there only so a single query cannot eat the whole budget."""
     import cvc5
 
-    from zrth.lean.houdini_solver import Cvc5Solver
+    from zrth.lean.smt.solvers import Cvc5Solver
 
     c = Cvc5Solver(cvc5.TermManager(), seconds=1)
     assert c.ladder(120) == (2, 120)
@@ -147,7 +148,7 @@ def test_the_evaluator_divides_the_way_smt_lib_does(a, b):
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic.houdini import Evaluator
+    from zrth.lean.infer.houdini.engine import Evaluator
 
     tm = cvc5.TermManager()
     solver = cvc5.Solver(tm)
@@ -214,7 +215,7 @@ def test_the_evaluator_floors_a_real_the_way_to_int_does():
     import cvc5
     from cvc5 import Kind
 
-    from zrth.lean.magic.houdini import Evaluator
+    from zrth.lean.infer.houdini.engine import Evaluator
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getRealSort(), "x")
@@ -228,7 +229,7 @@ def test_the_evaluator_floors_a_real_the_way_to_int_does():
 def test_a_real_module_is_no_longer_refused_for_its_sort():
     """It is the shapes that have to answer for a Real component now, not a
     sort check: `SynthContext.build` still refuses one for every other route."""
-    from zrth.lean.smt_synth import SynthContext
+    from zrth.lean.smt.claim import SynthContext
 
     claim = Claim(prp="(= s0 0.0)", kind="buchi")
     module = module_at(LIMITS / "m_lra_lin.py")
@@ -255,7 +256,7 @@ def test_a_false_obligation_comes_back_refuted_with_the_facts_it_breaks():
     """
     import cvc5
 
-    from zrth.lean.houdini_solver import Cvc5Solver, Verdict
+    from zrth.lean.smt.solvers import Cvc5Solver, Verdict
 
     magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
     kept = magic._parse(["(<= 0 s0)", "(<= s0 100)", "(<= 50 s0)"])
@@ -270,7 +271,7 @@ def test_a_false_obligation_comes_back_refuted_with_the_facts_it_breaks():
 def test_a_refuted_answer_is_kept_forever_and_an_unknown_only_per_limit():
     """`REFUTED` holds at every time limit there will ever be, so it is
     cached like a proof; an `UNKNOWN` is only ever "not at *that* limit"."""
-    from zrth.lean.houdini_solver import Answer, Query, Solver, Verdict
+    from zrth.lean.smt.solvers import Answer, Query, Solver, Verdict
 
     q = Query(hyps=(), goal="g")
     for verdict, limits in ((Verdict.PROVED, [2]), (Verdict.REFUTED, [2]),
@@ -295,7 +296,7 @@ def test_a_refuted_answer_is_kept_forever_and_an_unknown_only_per_limit():
 def test_a_cached_proof_is_asked_again_only_when_a_core_is_wanted():
     """A proof already in hand serves a question that wants no core, and is
     re-asked when one does -- the same rule the counter-model follows."""
-    from zrth.lean.houdini_solver import Answer, Query, Solver, Verdict
+    from zrth.lean.smt.solvers import Answer, Query, Solver, Verdict
 
     asked = []
 
@@ -316,7 +317,7 @@ def test_a_cached_proof_is_asked_again_only_when_a_core_is_wanted():
 def test_a_refuted_rank_comes_back_with_the_round_that_refutes_it():
     """A ranking function's refutation is a state and its successor, and
     cvc5 hands both back: the round the fit learns from next time."""
-    from zrth.lean.houdini_solver import Cvc5Solver, Verdict
+    from zrth.lean.smt.solvers import Cvc5Solver, Verdict
 
     magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
     inv = magic._parse(["(<= 0 s0)", "(<= s0 100)"])
@@ -338,7 +339,7 @@ def test_entry_is_narrowed_until_it_is_proved_not_once_per_model():
     asks `init_inv` again, so a fact left in here is a Lean failure later,
     and this loop is the only thing between the two.
     """
-    from zrth.lean.houdini_solver import Answer, Solver, Verdict
+    from zrth.lean.smt.solvers import Answer, Solver, Verdict
 
     magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
     magic.ob = ob
@@ -375,7 +376,7 @@ def test_entry_is_narrowed_until_it_is_proved_not_once_per_model():
 def test_entry_stops_when_a_model_names_nothing_to_drop():
     """An unreadable model is not evidence that every fact is fine, so the
     loop ends rather than spinning on an answer it cannot act on."""
-    from zrth.lean.houdini_solver import Answer, Solver, Verdict
+    from zrth.lean.smt.solvers import Answer, Solver, Verdict
 
     magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
     magic.ob = ob
@@ -400,7 +401,7 @@ def test_a_solver_with_no_model_falls_back_to_asking_fact_by_fact():
     """`_survivors` is the fork. Handed an answer carrying no `broken` it
     asks about each fact on its own, which is the only thing a refutation
     prover leaves to do -- and it must reach the same set."""
-    from zrth.lean.houdini_solver import Cvc5Solver
+    from zrth.lean.smt.solvers import Cvc5Solver
 
     magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
     magic.ob = ob
@@ -430,7 +431,7 @@ def test_the_cut_is_taken_again_over_what_it_returned():
     refutation, and it names half again. Four facts have to reach one, and
     a single pass reaches two.
     """
-    from zrth.lean.houdini_solver import Answer, Solver, Verdict
+    from zrth.lean.smt.solvers import Answer, Solver, Verdict
 
     magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
     magic.ob = ob
@@ -458,7 +459,7 @@ def test_the_cut_is_taken_again_over_what_it_returned():
 def test_a_cut_that_stops_answering_keeps_the_round_before_it():
     """A later round's time limit is not evidence against an earlier
     round's proofs, so what the first cut reached still stands."""
-    from zrth.lean.houdini_solver import Answer, Solver, Verdict
+    from zrth.lean.smt.solvers import Answer, Solver, Verdict
 
     magic, ob = a_search("m_countdown", "buchi", "(= s0 0)")
     magic.ob = ob
@@ -505,7 +506,7 @@ def test_the_vampire_script_states_the_round_once_and_names_the_goal():
     """The printed half, checked without a binary: a `define-fun` per
     component, `:named` on every hypothesis, and the goal asserted negated
     under a name of its own so a core is never empty by accident."""
-    from zrth.lean.houdini_solver import VampireSolver
+    from zrth.lean.smt.solvers import VampireSolver
 
     magic, ob = a_search("m_lra_lin", "buchi", "(= s0 0.0)")
     kept = magic._parse(["(<= 0.0 s0)", "(<= s0 5.0)"])
@@ -529,7 +530,7 @@ def test_vampires_answer_is_read_off_its_output(tmp_path):
     proof plus a core; anything else is `UNKNOWN` and never `REFUTED`, which
     is the whole of what this solver cannot tell you.
     """
-    from zrth.lean.houdini_solver import VampireSolver, Verdict
+    from zrth.lean.smt.solvers import VampireSolver, Verdict
 
     def stub(output: str):
         exe = tmp_path / f"vampire{abs(hash(output))}"
@@ -651,7 +652,7 @@ def test_no_obligation_names_anything_of_tuple_sort():
     certificate still says `((_ tuple.select 0) s0)`, because that is the
     module's own namespace; it is the *obligation* that is scalar.
     """
-    from zrth.lean.houdini_solver import VampireSolver
+    from zrth.lean.smt.solvers import VampireSolver
 
     magic, ob = a_search("m_relu_vec", "buchi",
                          "(= ((_ tuple.select 0) s0) 0)")
@@ -676,7 +677,7 @@ def test_each_mode_is_bounded_by_what_its_round_reaches():
     the heater on it never passes 23, and with it off never passes the
     23.875 one more tick of heating gives -- constants no program text
     names, computed rather than read."""
-    from zrth.lean.magic.modes import mode_bounds
+    from zrth.lean.infer.houdini.modes import mode_bounds
 
     magic, ob = a_search("m_thermostat", "buchi", "(>= s0 21.0)", fixture=HYBRID)
     facts = mode_bounds(magic.ctx, ob, log=lambda *_: None)
@@ -710,7 +711,7 @@ def test_a_rank_is_fitted_again_to_the_round_the_solver_refutes_it_with():
 def test_cvc5_is_the_default_and_resolves_without_a_binary():
     """The reason it is the default: nothing to look for, and nothing to
     fail at parse time on a machine with no prover installed."""
-    from zrth.lean.houdini_solver import DEFAULT_SOLVER, resolve_solver
+    from zrth.lean.infer.houdini.solvers import DEFAULT_SOLVER, resolve_solver
 
     assert DEFAULT_SOLVER == "cvc5"
     assert resolve_solver("cvc5") == SolverSpec("cvc5", None, 4)
@@ -719,7 +720,7 @@ def test_cvc5_is_the_default_and_resolves_without_a_binary():
 def test_a_vampire_flag_without_the_vampire_solver_is_refused():
     """A flag that quietly did nothing would be worse than one that is an
     error, which is what the route's `extra_check` is for."""
-    from zrth.lean.infer_route import route_by_name
+    from zrth.lean.infer import route_by_name
 
     check = route_by_name("houdini").extra_check
     opts = {"houdini_solver": "cvc5", "vampire": "/x", "vampire_cores": None}

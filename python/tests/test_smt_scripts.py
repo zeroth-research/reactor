@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.certificate import Claim
+from zrth.lean.core.certificate import Claim
 
 pytest.importorskip("cvc5")
 
@@ -47,7 +47,7 @@ def _module(path: Path):
 
 def _context(path: Path, kind: str, prp: str, route: str):
     from zrth.lean.smt.obligations import Obligations
-    from zrth.lean.smt_synth import SynthContext
+    from zrth.lean.smt.claim import SynthContext
 
     ctx = SynthContext.build(_module(path), Claim(prp=prp, kind=kind),
                              route=route,
@@ -84,7 +84,7 @@ HOUDINI = [
                          ids=[c[0] for c in HOUDINI])
 def test_houdini_vampire_scripts_are_unchanged(name, path, kind, prp, facts,
                                                rank):
-    from zrth.lean.houdini_solver import VampireSolver
+    from zrth.lean.smt.solvers import VampireSolver
 
     ctx, ob = _context(path, kind, prp, "houdini")
     kept = _candidates(ctx, facts)
@@ -119,7 +119,7 @@ VAMPIRE = [
                          ids=[c[0] for c in VAMPIRE])
 def test_vampire_conjectures_are_unchanged(name, path, kind, prp, which,
                                            fixed):
-    from zrth.lean.magic.vampire import Question, split, template
+    from zrth.lean.infer.vampire.engine import Question, split, template
 
     ctx, ob = _context(path, kind, prp, "vampire")
     q = Question(ctx, ob, split(ctx, ob.init, "the initial state"),
@@ -146,7 +146,7 @@ MODES = [
 @pytest.mark.parametrize("name,path,prp", MODES, ids=[c[0] for c in MODES])
 def test_the_round_z3_reads_is_unchanged(name, path, prp, monkeypatch):
     z3 = pytest.importorskip("z3")
-    from zrth.lean.magic import modes
+    from zrth.lean.infer.houdini import modes
 
     ctx, ob = _context(path, "buchi", prp, "houdini")
     read = []

@@ -1,13 +1,13 @@
 """A module's transition as one scalar term per state slot: what the
-fbk-proveit NA encoding (`translate/fbk`) prints, built on the run's
+fbk-proveit NA encoding (`infer/fbk_proveit/na`) prints, built on the run's
 encoding. The state, latched and awaited inputs are the encoding's
 constants `s*`, `el*` and `en*`, which is what the printer's accessor maps
 are keyed by."""
 
 from __future__ import annotations
 
-from ..layout import flat_layout
-from ..sorts import wire_shape
+from ..lowering.elements import flat_layout
+from ..lowering.sorts import wire_shape
 
 
 def scalar_element(tm, term, shape, i: int, j: int):
@@ -22,7 +22,7 @@ def scalar_element(tm, term, shape, i: int, j: int):
     """
     from cvc5 import Kind
 
-    from ..smt_encode import mat_select
+    from .encode import mat_select
 
     if shape.is_scalar:
         return term

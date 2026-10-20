@@ -1,4 +1,5 @@
-"""The NA encoding and the `--fbk-proveit` route (`zrth.lean.translate.fbk`).
+"""The NA encoding and the `--fbk-proveit` route
+(`zrth.lean.infer.fbk_proveit.na`).
 
 The shape asserted here is not cosmetic: `lean2vmt` in `lean-ltl-certifying`
 pattern-matches on it, and every mismatch is silent. `(state i)` in place of
@@ -15,10 +16,10 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
-from zrth.lean.sorts import dtype_shape
-from zrth.lean.context import LeanContext
-from zrth.lean.fbk_proveit import ProveItError, property_to_bool_lean, resolve_project
-from zrth.lean.translate.fbk import NAUnsupported, atom_to_lean_na, check_na_supported
+from zrth.lean.lowering.sorts import dtype_shape
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.infer.fbk_proveit.engine import ProveItError, property_to_bool_lean, resolve_project
+from zrth.lean.infer.fbk_proveit.na import NAUnsupported, atom_to_lean_na, check_na_supported
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 PKG_ROOT = Path(__file__).parent.parent
@@ -199,13 +200,13 @@ def _wide_matrix() -> Module:
 
 def _na(module: Module, prop_smt: str) -> str:
     ctx = LeanContext(module)
-    prop = property_to_bool_lean(module, prop_smt, len(ctx.ctrl_next))
+    prop = property_to_bool_lean(module, prop_smt)
     return atom_to_lean_na(ctx, prop, module_name="T")
 
 
 def _encoding(module: Module, pre_smt: str):
     """What the route's own shape check makes of this module and `--pre`."""
-    from zrth.lean.fbk_proveit import check_module
+    from zrth.lean.infer.fbk_proveit.engine import check_module
 
     return check_module(module, True, pre_smt)
 
@@ -214,7 +215,7 @@ def _na_pre(module: Module, prop_smt: str, pre_smt: str) -> str:
     """:func:`_na` for a run that was given a precondition."""
     ctx = LeanContext(module)
     enc = _encoding(module, pre_smt)
-    prop = property_to_bool_lean(module, prop_smt, len(ctx.ctrl_next))
+    prop = property_to_bool_lean(module, prop_smt)
     return atom_to_lean_na(ctx, prop, module_name="T",
                            bodies=enc.bodies, pre_lean=enc.pre_lean)
 
@@ -282,8 +283,8 @@ def test_imports_are_only_what_M_needs():
 
 def test_the_prebuild_targets_are_the_models_imports():
     """Drift between the two is what leaves `lean2vmt` unable to elaborate."""
-    from zrth.lean.fbk_proveit import _LAKE_TARGETS
-    from zrth.lean.translate.fbk import NA_IMPORTS
+    from zrth.lean.infer.fbk_proveit.engine import _LAKE_TARGETS
+    from zrth.lean.infer.fbk_proveit.na import NA_IMPORTS
 
     assert _LAKE_TARGETS == NA_IMPORTS
 
@@ -460,7 +461,7 @@ def test_two_slots_from_one_input_start_equal():
 
 def _pre(module: Module, pre_smt: str) -> str:
     """`--pre` as this route encodes it, through the route's own entry point."""
-    from zrth.lean.fbk_proveit import check_module
+    from zrth.lean.infer.fbk_proveit.engine import check_module
 
     return check_module(module, True, pre_smt).pre_lean
 
@@ -524,7 +525,7 @@ def test_a_precondition_makes_start_maps_read_its_hypothesis():
     """`INIT`'s `PRE` conjunct is exactly `init_pre l`, so the proof has to
     keep that hypothesis rather than discard it -- and `simp` on the goal
     alone would never look at it."""
-    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     module = _input_start()
     enc = _encoding(module, "(>= e0 5)")
@@ -578,7 +579,7 @@ def test_an_op_with_no_scalar_lean_form_is_still_encoded():
     """`Xor` has no `_SCALAR_OP` entry and used to be refused for it.
 
     The transition no longer goes through the scalar *Lean* printer, so
-    "has a scalar Lean form" stopped being the question: `smt_encode` gives
+    "has a scalar Lean form" stopped being the question: `smt.encode` gives
     the term and `smt_to_lean_bool` prints `Xor` as `!(a == b)`, which is
     inside the fragment lean2vmt reads.
     """
@@ -588,7 +589,7 @@ def test_an_op_with_no_scalar_lean_form_is_still_encoded():
 
 
 def test_an_op_the_encoder_has_no_term_for_aborts():
-    """The boundary is now `smt_encode` and the Bool printer, and it is the
+    """The boundary is now `smt.encode` and the Bool printer, and it is the
     *reason* they give that reaches the user -- `Transpose` has no SMT
     term at all, so no VMT model can be built from it."""
     v = Var(Int([1, 3]))
@@ -641,7 +642,7 @@ def test_an_element_of_a_wide_wire_reads_its_own_slot():
 
 # ── the emitted transition means what the module means ──────────────────────
 #
-# The slot bodies come from `smt_encode` and are printed by
+# The slot bodies come from `smt.encode` and are printed by
 # `smt_to_lean_bool`, so the arithmetic is not re-implemented here -- but the
 # *flattening* is: which slot an element lands in, and which element of a
 # wire's next value a slot's `effect_k` computes. Getting that wrong produces
@@ -826,7 +827,7 @@ def test_simplification_can_be_turned_off_without_changing_the_meaning():
 
 
 def _bridge(module: Module) -> str:
-    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     return atom_to_lean_fbk_bridge(LeanContext(module), na_module="TNA")
 
@@ -908,8 +909,8 @@ def test_the_bridge_is_not_imported_by_the_certificate_root():
     `LTLCertifying`, and both declare a top-level `LTLFormula`: one module
     importing the two is rejected before it is elaborated. Lake reaches the
     bridge through the `Certificate` lean_lib's glob instead."""
-    from zrth.lean.fbk_proveit import equivalence_lean
-    from zrth.lean.template_env import render
+    from zrth.lean.infer.fbk_proveit.engine import equivalence_lean
+    from zrth.lean.project.templates import render
 
     text = equivalence_lean("Proj", LeanContext(_counter()))
 
@@ -923,7 +924,7 @@ def test_ic3ia_directory_resolves_to_the_binary_inside_it():
     """The build directory is the obvious thing to reach for, and
     `proveit.py` reports it as "executable not found" with the binary
     sitting inside."""
-    from zrth.lean.fbk_proveit import resolve_ic3ia
+    from zrth.lean.infer.fbk_proveit.engine import resolve_ic3ia
 
     with tempfile.TemporaryDirectory() as tmp:
         binary = Path(tmp) / "ic3ia"
@@ -935,7 +936,7 @@ def test_ic3ia_directory_resolves_to_the_binary_inside_it():
 
 
 def test_ic3ia_bad_paths_say_which_way_they_are_bad():
-    from zrth.lean.fbk_proveit import resolve_ic3ia
+    from zrth.lean.infer.fbk_proveit.engine import resolve_ic3ia
 
     assert resolve_ic3ia(None) is None
     with tempfile.TemporaryDirectory() as tmp:
@@ -978,7 +979,7 @@ theorem validity_check_1_prop (trace : TraceType) :
 def test_the_certificate_leaves_Bool_before_it_generalises():
     """`generalizeNatVar` cannot abstract a slot that a `Decidable` instance
     still mentions, and `--pre` is what first puts one in `INIT`."""
-    from zrth.lean.fbk_proveit import leave_bool_before_generalize
+    from zrth.lean.infer.fbk_proveit.engine import leave_bool_before_generalize
 
     out, n = leave_bool_before_generalize(_RAW_CHECK)
     assert n == 1
@@ -995,7 +996,7 @@ def test_the_certificate_leaves_Bool_before_it_generalises():
 def test_a_certificate_this_does_not_recognise_is_installed_as_it_came():
     """This rewrites another project's generated proof. A `proveit.py` whose
     template has moved on should cost a run nothing."""
-    from zrth.lean.fbk_proveit import leave_bool_before_generalize
+    from zrth.lean.infer.fbk_proveit.engine import leave_bool_before_generalize
 
     other = "theorem t : True := by trivial\n"
     assert leave_bool_before_generalize(other) == (other, 0)
@@ -1011,7 +1012,7 @@ def test_omega_is_offered_before_the_smt_that_closes_a_check():
     builds its own proof instead of translating one. Measured: that
     certificate builds with this and does not without.
     """
-    from zrth.lean.fbk_proveit import try_omega_before_smt
+    from zrth.lean.infer.fbk_proveit.engine import try_omega_before_smt
 
     out, n = try_omega_before_smt(_RAW_CHECK)
     assert n == 1
@@ -1028,7 +1029,7 @@ def test_a_patch_that_found_nothing_to_change_is_reported():
     that has moved on, and silent about it. Where the tactic the patch hooks
     onto is still there, the template moved *under* the patch, and the
     certificate then fails where the patch was the repair."""
-    from zrth.lean.fbk_proveit import (
+    from zrth.lean.infer.fbk_proveit.engine import (
         leave_bool_before_generalize, try_omega_before_smt, unpatched,
     )
 
@@ -1131,9 +1132,9 @@ def test_the_proveit_lakefile_can_see_what_the_certificate_imports():
     lakefile missing any of the three turns that reach into an error."""
     from pathlib import Path
 
-    from zrth.lean.fbk_proveit import na_module_name
-    from zrth.lean.infer_route import route_by_name
-    from zrth.lean.project import generate_lakefile
+    from zrth.lean.infer.fbk_proveit.engine import na_module_name
+    from zrth.lean.infer import route_by_name
+    from zrth.lean.project.lakefile import generate_lakefile
 
     bare = generate_lakefile("Proj")
     assert "LTL_Certifying" not in bare
@@ -1155,7 +1156,9 @@ def test_the_na_lib_names_the_file_the_model_is_written_to(tmp_path):
     """The lean_lib's name and srcDir are the model's module name and
     directory. Drift between them is a `lake build` that cannot find an
     import the certificate already carries."""
-    from zrth.lean.fbk_proveit import PROVEIT_DIR, na_module_name, write_na_model
+    from zrth.lean.infer.fbk_proveit.engine import (
+        PROVEIT_DIR, na_module_name, write_na_model,
+    )
 
     def path(rel):
         out = tmp_path / rel
@@ -1186,9 +1189,9 @@ def test_a_check_and_a_property_share_one_encoding(monkeypatch):
     """The slot bodies, the `--pre` and the `--safety` property are all read
     on the run's one `ModuleEncoding`; none of them builds a term manager of
     its own."""
-    from zrth.lean.fbk_proveit import check_module
-    from zrth.lean.smt.run import ModuleEncoding
-    from zrth.lean.smt_module import ModuleSMT
+    from zrth.lean.infer.fbk_proveit.engine import check_module
+    from zrth.lean.smt.encoding import ModuleEncoding
+    from zrth.lean.smt.module import ModuleSMT
 
     built = [0]
     post_init = ModuleSMT.__post_init__
@@ -1212,7 +1215,7 @@ def test_a_stateless_module_has_no_na_encoding_and_no_bridge():
     """No controlled state: no slots, no `init_scalar_eq` to cite. Refused
     by the check, and by the bridge even when handed bodies, which skips
     the rest of the check."""
-    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     inp = Var(Int([1, 1]))
     ctx = LeanContext(Module.sequential([inp], [], []))

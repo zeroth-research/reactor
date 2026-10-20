@@ -253,7 +253,8 @@ def index(path: Path) -> str:
 
 def install_llm(script: str) -> None:
     """Replace the LLM client of the ai and ai-cegis routes by scripted replies."""
-    from zrth.lean.magic import ai, cegis
+    from zrth.lean.infer.ai import engine as ai
+    from zrth.lean.infer.ai_cegis import engine as cegis
 
     gen = list(LLM[script].get("gen", []))
     ver = list(LLM[script].get("verify", []))
@@ -270,7 +271,7 @@ def install_llm(script: str) -> None:
 
 
 def transcript(mod: Path, args: list[str], out: Path, name: str) -> str:
-    from zrth.lean.main import main as verith
+    from zrth.lean.pipeline import main as verith
 
     sys.argv = ["verith", str(mod), *args, "-o", str(out), "-p", name]
     so, se = io.StringIO(), io.StringIO()
