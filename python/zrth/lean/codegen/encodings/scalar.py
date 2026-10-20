@@ -1,6 +1,6 @@
 """Scalar encoding translation."""
 
-from zrth.lean.native import (
+from zrth.lean.codegen.terms import (
     elem_ty_slug,
     product_type,
     product_type_scalar,
@@ -8,15 +8,15 @@ from zrth.lean.native import (
     build_tuple,
     argmax_scalar_name,
 )
-from zrth.lean.sorts import (
+from zrth.lean.lowering.sorts import (
     dtype_to_lean_type,
     flat_element_type,
     itype_name,
     wire_shape,
 )
-from zrth.lean.layout import flat_size, mat_from_scalars, flat_layout
-from zrth.lean.context import LeanContext
-from zrth.lean.translate._shared import (
+from zrth.lean.lowering.elements import flat_size, mat_from_scalars, flat_layout
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.codegen.encodings.common import (
     prepend_recon,
     scalar_bindings_with_recon,
     has_block,

@@ -16,7 +16,7 @@ certificate in. The picture's source is
 
 ## The pipeline, stage by stage
 
-`main.main` runs the stages in this order. Each one names the code that
+`pipeline.main` runs the stages in this order. Each one names the code that
 does it and the section of this file that covers it in full.
 
 ### 1. Input (`inputs/`)
@@ -31,7 +31,7 @@ file's suffix picks:
 The adapter returns an `inputs.Problem`: the module, the source text and the
 names. A new input format is a new `InputAdapter` in `inputs/`.
 
-### 2. The claim (`cli.py`, `inputs/names.py`)
+### 2. The claim (`cli/`, `inputs/names.py`)
 
 The property goes under the flag of its proof rule:
 
@@ -57,7 +57,7 @@ Lean is written:
 - the route's `precheck` refuses a module that its procedure cannot read;
 - `lean_gaps` refuses an operator with no Lean form.
 
-### 4. Lean project (`project.py`, `translate/`, `templates/`)
+### 4. Lean project (`project/`, `codegen/encodings/`, `templates/`)
 
 `create_project` writes the project to `-o DIR -p NAME`:
 
@@ -89,7 +89,7 @@ The certificate in `Data.lean` depends on the run:
 the relational and scalar encodings beside it, and the run ends there.
 [What gets generated](#what-gets-generated) has the details.
 
-### 5. Decision procedure (`infer_route/`), untrusted
+### 5. Decision procedure (`infer/`), untrusted
 
 `--infer NAME` runs one route against the generated project. A route is a
 module that exports a `ROUTE` row. The row says what the route may read and
@@ -107,7 +107,7 @@ holds each answer to its row and believes nothing else about it.
 [Common invocations](#common-invocations) shows the LLM routes. The others
 each have a section, from [`--infer nuterm`](#inferring-without-an-llm---infer-nuterm)
 to [`--infer fbk-proveit`](#certifying-through-lean-ltl-certifying---infer-fbk-proveit).
-[Adding an Inference Route](#adding-an-inference-route-infer_route) says how
+[Adding an Inference Route](#adding-an-inference-route-infer) says how
 to write a new one.
 
 ### 7. The check (`--build-cert`)
@@ -175,24 +175,23 @@ topologically-sorted dataflow graph.
 
 ## Module Files
 
-| File | Role |
+The rows run from the bottom layer up: a package imports only the packages
+above it in the table. `tests/test_layering.py` holds every module to its
+layer.
+
+| Package | What it holds |
 |------|------|
-| `errors.py` | `Refused`, the error a run is refused with |
-| `sorts.py` | Sorts and shapes of wires and the Lean types they print as (`lean_elem_type`, `dtype_to_lean_type`) |
-| `layout.py` | Tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares |
-| `literals.py` | Constants as Lean text, `ConstantRegistry` |
-| `context.py` | `LeanContext`, what every encoding of one module shares |
-| `common.py` | Re-exports the five above, for importers not migrated yet |
-| `ops.py` | The op table: one row per theory variant, one column per backend |
-| `native.py` | Translates term lists → Lean functional `let`-binding bodies |
-| `circ.py` | Translates term lists → `Box` circuit layers |
-| `translate/` | `ModuleToLean4` (`__init__.py`) and one module per encoding: `functional.py`, `circ.py`, `scalar.py`, `relational.py`, `fbk.py` |
-| `certificate.py` | `Claim` (property, proof rule, preconditions) and `Certificate` (invariant, ranking) as SMT-LIB; `LeanAnswer` for an answer that is Lean only |
-| `magic/` | One engine per `--infer` route (`TA2Magic`), plus `llm` (the model both LLM routes ask) and `modes`; no route imports another |
+| `core/` | The vocabulary every layer is written in, importing nothing of `zrth.lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option a route or an input format declares) |
+| `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
+| `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `build` (`lake build`), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), the certificate's files as the text it is handed |
+| `inputs/` | The input formats, one `InputAdapter` each (`python`), and `names`, which translates a claim's names to the internal ones and back |
+| `infer/` | The `--infer` routes: the registry (`ROUTES`), the row (`route.InferRoute`) and what a route is given and hands back (`io`); one package per route, its row in `__init__.py` and its engine in `engine.py`; no route imports another |
+| `cli/` | The command line: `parser` (the flags), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
+| `pipeline/` | `uv run verith`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certify` (the certificate rendered, the route run, the certificate rendered again from its answer), `outputs` (the project, `--cert-file`, `--hammer-file`, `--build-cert`) |
 
 ---
 
-## Type Mapping (`sorts.py`)
+## Type Mapping (`lowering/sorts.py`)
 
 `dtype_to_lean_type(wire, simple_types=False)` maps wire types to Lean:
 
@@ -215,7 +214,7 @@ scalar.  This keeps the algebra uniform.  Float-typed modules require
 
 ---
 
-## `LeanContext` (`context.py`)
+## `LeanContext` (`codegen/context.py`)
 
 Created once per module; shared across all code generators.  It extracts:
 
@@ -232,7 +231,7 @@ Created once per module; shared across all code generators.  It extracts:
 
 ---
 
-## Encoding 1 — Functional (`native.py`, `translate/functional.py`)
+## Encoding 1 — Functional (`codegen/terms.py`, `codegen/encodings/functional.py`)
 
 `translate_terms_lean(terms, input_bindings, block_outputs, constants)` produces a
 Lean function body as a string of `let` bindings followed by the output tuple:
@@ -244,11 +243,11 @@ Lean function body as a string of `let` bindings followed by the output tuple:
   (x6, x5)
 ```
 
-Each term is looked up in the op table's `mat` column (`ops.mat_emitter`,
-keyed by theory and variant name).  Operations produce `Mat T 1 1` values
-even for scalar results — conditions extract `0 0`, boolean ops wrap in
-`fun _ _ => ...`.  Non-scalar ops (`MatMul`, `Linear`, `ReLU`) use their
-native matrix forms.
+Each term is looked up in the op table's `mat` column
+(`lowering.ops.mat_emitter`, keyed by theory and variant name).  Operations
+produce `Mat T 1 1` values even for scalar results — conditions extract
+`0 0`, boolean ops wrap in `fun _ _ => ...`.  Non-scalar ops (`MatMul`,
+`Linear`, `ReLU`) use their native matrix forms.
 
 `ModuleToLean4.atom_to_lean_functional()` wraps the body into:
 
@@ -259,7 +258,7 @@ native matrix forms.
 
 ---
 
-## Encoding 2 — Circuit (`circ.py`, `translate/circ.py`)
+## Encoding 2 — Circuit (`codegen/boxes.py`, `codegen/encodings/circuit.py`)
 
 The same computation is re-expressed as a `Box` (categorical wiring diagram)
 inside `namespace Circ`.  The translation:
@@ -292,7 +291,7 @@ plumbing lemmas.
 
 ---
 
-## Encoding 3 — Scalar (`native.py`, `translate/scalar.py`)
+## Encoding 3 — Scalar (`codegen/terms.py`, `codegen/encodings/scalar.py`)
 
 `translate_terms_scalar` is like `translate_terms_lean` but uses bare scalar types
 (`Bool`, `Int`, `Real`) instead of `Mat T 1 1` for all 1×1 wires:
@@ -316,7 +315,7 @@ Key differences from functional:
 - Non-scalar wires (actual matrices, `MatMul` results with shape `[m,n]`) fall
   back to matrix types transparently.
 
-`translate._shared.scalar_bindings_with_recon` builds the input bindings: a
+`codegen.encodings.common.scalar_bindings_with_recon` builds the input bindings: a
 one-element wire is bound to its bare accessor, so downstream ops receive bare
 values, and a wider one to a `let` that rebuilds its `Mat` from the elements.
 
@@ -345,7 +344,7 @@ and the equivalence theorems.
 
 ---
 
-## `ModuleToLean4` (`translate/__init__.py`)
+## `ModuleToLean4` (`codegen/encodings/__init__.py`)
 
 The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 
@@ -364,12 +363,12 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 | `to_lean_equiv_theorems()` | `init_circ_eq` / `update_circ_eq` theorems |
 | `to_lean_scalar_equiv()` | `init_scalar_eq` / `update_scalar_eq` theorems |
 
-The project writes one file per row of `project.ENCODINGS`, each from its
-`to_lean_*` producer.
+The project writes one file per row of `project.scaffold.ENCODINGS`, each
+printed by the row's `producer`, a `ModuleToLean4.to_lean_*` method.
 
 ---
 
-## Certificate Generation (`cert.py`)
+## Certificate Generation (`proof/render.py`)
 
 `generate_certificate_lean(ctx, lean_cert, *, module_inline=None)`:
 
@@ -387,13 +386,13 @@ The project writes one file per row of `project.ENCODINGS`, each from its
 **Where Lean text comes from.** Jinja templates (`templates/project/`) render
 the files and their fixed structure: the project skeleton, `Data.lean`, the
 certificate's proof skeleton. Python renders expressions and the parts whose
-shape follows the module: the encodings (`translate/`), the predicates
-(`render_certificate`), the tactic plan (`tactics.py`). A piece both a project
+shape follows the module: the encodings (`codegen/encodings/`), the predicates
+(`render_certificate`), the tactic plan (`proof/tactics.py`). A piece both a project
 and a `--cert-file` certificate need is one template partial, rendered by both
 (`Certificate/_defs.lean.j2`, the five definitions), and a name or a text more
-than one file uses is one constant in `lean_names.py`.
+than one file uses is one constant in `project/names.py`.
 
-## Tactic plans (`tactics.py`)
+## Tactic plans (`proof/tactics.py`)
 
 The three obligations used to be closed by one hardcoded chain, textually
 identical in every certificate — wasteful in both directions: an integer
@@ -432,7 +431,7 @@ across a change of invariant: `--infer` rewrites it alongside `Data.lean`.
 `tests/test_lean_tactics.py` pins these decisions in the fast suite, so a
 plan regression does not wait for a Lean build.
 
-## ZerothHammer (`cert.py`)
+## ZerothHammer (`project/scaffold.py`)
 
 A Lean 4 elaborator tactic that cascades proof strategies:
 
@@ -464,7 +463,7 @@ that certificate files override.
 
 ---
 
-## `uv run verith` CLI (`cli.py`, `main.py`, `project.py`)
+## `uv run verith` CLI (`cli/`, `pipeline/`, `project/`)
 
 `verith` is the command-line tool that drives the full pipeline: Python module
 → Lean project or standalone certificate files.
@@ -624,7 +623,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
 
-Each route is one row of `infer_route.ROUTES`, and a flag in the bottom half
+Each route is one row of `infer.ROUTES`, and a flag in the bottom half
 of the table belongs to a route rather than to verith: passed without its
 route selected it is an error, not a no-op.  `--fbk-proveit DIR` is the older
 spelling of `--infer fbk-proveit --proveit-dir DIR` and still works.
@@ -947,13 +946,13 @@ gives the project two lakefile entries:
 
 | lakefile entry | resolves |
 |---|---|
-| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `fbk_proveit.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
+| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `fbk.proveit.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
 
 Of the *invariant* the project is still **bare**: it comes from ic3ia, so
 `--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
 silently ignored, and `--safety` is required.
 
-### Encoding 6 — NA, for the FBK toolchain (`translate/fbk.py`)
+### Encoding 6 — NA, for the FBK toolchain (`infer/fbk_proveit/na.py`)
 
 `proveit.py`'s first step, `lake exe lean2vmt`, pattern-matches on a very
 specific Lean shape. This encoding is emitted only for that route, and is
@@ -1018,7 +1017,7 @@ with `processHeader`, so they must already exist as oleans, and `lake exe
 lean2vmt` builds only the executable (whose own imports are just `Lean`).
 The model imports `Cslib.Computability.Automata.NA.Basic` and nothing else —
 `M`'s type is all it needs — so that pre-build is one target;
-`NA_IMPORTS` and `fbk_proveit._LAKE_TARGETS` are the same list, pinned by a
+`NA_IMPORTS` and `fbk.proveit._LAKE_TARGETS` are the same list, pinned by a
 test, because drift between them leaves `lean2vmt` unable to elaborate.
 Second, the installed certificate is by default **written but not
 compiled** — not because the project cannot compile it (it can: the lakefile
@@ -1032,28 +1031,29 @@ see [Building the certificate](#building-the-certificate---build-cert).
 
 ---
 
-## Adding a New Op (`ops.py`)
+## Adding a New Op (`lowering/ops.py`)
 
-`python -m zrth.lean.ops` prints the whole matrix and every gap in it.
+`python -m zrth.lean.lowering.ops` prints the whole matrix and every gap in it.
 `tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
 directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.
 
 ---
 
-## Adding an Inference Route (`infer_route/`)
+## Adding an Inference Route (`infer/`)
 
 Every way verith can be handed a certificate is one row of
-`infer_route.ROUTES`, and `--infer <name>` selects a row.  A route is one
-module, `infer_route/<name>.py`, exporting `ROUTE` (an `InferRoute`), plus
-its entry in the `ROUTES` tuple of `infer_route/__init__.py`, and nothing
-else: `cli.py` reads the rows, so the `--infer` choices, the help text,
-every cross-flag rule and the dispatch all follow from the row rather than
-from an edit apiece.  The row module imports its engine (usually a class in
-`magic/`) inside `run`, so `verith --help` imports none of them; no row
-imports another, and an option two rows share is declared once in
-`infer_route/shared.py`.  The types a row is written in are in
-`infer_route/api.py`.
+`infer.ROUTES`, and `--infer <name>` selects a row.  A route is one
+package, `infer/<name>/`: its `__init__.py` exports `ROUTE` (an
+`InferRoute`), its `engine.py` is what the row runs, and its entry in the
+`ROUTES` tuple of `infer/__init__.py` is the only line written elsewhere.
+`cli/` reads the rows, so the `--infer` choices, the help text, every
+cross-flag rule and the dispatch all follow from the row rather than from
+an edit apiece.  The row imports its engine inside `run`, so
+`verith --help` imports none of them; no route imports another, and an
+option two rows share is declared once in `infer/common/options.py`.  The
+types a row is written in are in `infer/route.py` (the row) and
+`infer/io.py` (what a route is given and hands back).
 
 A row says:
 
@@ -1069,6 +1069,10 @@ A row says:
   and `owns` (project-relative paths it may write).  The route is handed a
   `ProjectHandle`, so these two are the whole of its access, and a route
   that needs more of the project than the predicates says which more.
+* **the input** — `reads_source`: the route is handed the file the module
+  was read from (`InferInput.source`, a `SourceText`) and the names claims
+  may use (`InferInput.names`). A route that does not declare it gets
+  `None` for both.
 * **the hooks** — `resolve` at parse time (a route whose lakefile names a
   path has to reject a bad one before any of the project exists),
   `lakefile(config, project_name)`, the `LakefileParts` (extra `lean_lib`s
@@ -1084,7 +1088,7 @@ A row says:
 A route is handed a frozen `InferInput` — the `Claim`, the `given`
 predicates it starts from, the run's encoding and budget — and answers with
 a new `InferResult`: SMT-LIB in `cert`, which the pipeline prints as Lean in
-one place (`cert.render_certificate`), or, for the one `returns="lean"` row
+one place (`proof.render.render_certificate`), or, for the one `returns="lean"` row
 (`ai`), Lean in `lean`.  `files` carries whole files the route produced
 (project-relative path to text); the pipeline writes them after the
 predicates, through the handle, so each has to be a path the row owns.
@@ -1100,23 +1104,24 @@ flag fails there rather than in generated code.
 
 ## Adding a New Encoding
 
-1. Add a translation function in `native.py` (or a new file) analogous to
+1. Add a translation function in `codegen/terms.py` (or a new file) analogous to
    `translate_terms_lean`.  It receives `input_bindings: dict[wire_id, str]` and
    returns a Lean body string.
-2. Add a module under `translate/` that wraps the result in the
+2. Add a module under `codegen/encodings/` that wraps the result in the
    appropriate namespace / function signature, and a method on
-   `ModuleToLean4` (`translate/__init__.py`) that calls it.
+   `ModuleToLean4` (`codegen/encodings/__init__.py`) that calls it.
 3. Optionally add an equivalence theorem connecting the new encoding to the
    existing functional one.
 4. Wire it into `to_lean()`, and give it a row in `ENCODINGS`
-   (`project.py`) to be written into the project.
+   (`project/scaffold.py`) to be written into the project.
 
 If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth
 time: build a `RelSyntax` and a `RelBlock` and call `emit_rel_block` from
-`translate/_skeleton.py`, as `Rel`, `ScalarRel` (both in
-`translate/relational.py`) and the NA model (`translate/fbk.py`) do.  It is
-parameterised on the type builder, the projection, and the spelling
+`codegen/encodings/skeleton.py`, as `Rel`, `ScalarRel` (both in
+`codegen/encodings/relational.py`) and the NA model
+(`infer/fbk_proveit/na.py`) do.  It is parameterised on the type builder,
+the projection, and the spelling
 (`def`/`abbrev`, `Prop`/`Bool`, `=`/`==`, `∧`/`&&`); the body producer stays
 yours, and the per-slot `*_eq` theorems are emitted only if you name a
 functional counterpart to prove them against.

@@ -1,6 +1,6 @@
 """The two provable relational encodings: `Rel` (matrix) and `ScalarRel` (flat).
 
-Both are the skeleton in `_skeleton.py` — a body def, a relation and a
+Both are the skeleton in `skeleton.py` — a body def, a relation and a
 conjunction per slot — instantiated on the three axes it is parameterised on:
 the type builder (`product_type` vs `product_type_scalar`), the body
 producer (`translate_terms_lean` vs `translate_terms_scalar`) and the projection
@@ -15,17 +15,17 @@ types differ by.
 
 from dataclasses import dataclass
 
-from zrth.lean.native import (
+from zrth.lean.codegen.terms import (
     product_type,
     product_type_scalar,
     translate_terms_lean,
     translate_terms_scalar,
     reachable_terms,
 )
-from zrth.lean.sorts import dtype_to_lean_type
-from zrth.lean.layout import product_accessor, flat_layout
-from zrth.lean.context import LeanContext, bind_wires
-from zrth.lean.translate._shared import (
+from zrth.lean.lowering.sorts import dtype_to_lean_type
+from zrth.lean.lowering.elements import product_accessor, flat_layout
+from zrth.lean.codegen.context import LeanContext, bind_wires
+from zrth.lean.codegen.encodings.common import (
     has_block,
     scalar_eq_name,
     scalar_bindings_with_recon,
@@ -33,7 +33,7 @@ from zrth.lean.translate._shared import (
     flat_slice,
     effect_type,
 )
-from zrth.lean.translate._skeleton import RelBlock, RelSyntax, emit_rel_block
+from zrth.lean.codegen.encodings.skeleton import RelBlock, RelSyntax, emit_rel_block
 
 
 @dataclass(frozen=True)

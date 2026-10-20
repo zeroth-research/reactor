@@ -14,11 +14,11 @@ import torch
 import pytest
 from zrth import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
 from zrth.lean import ModuleToLean4
-from zrth.lean.sorts import itype_name
-from zrth.lean.context import LeanContext
-from zrth.lean.native import lean_gaps
-from zrth.lean import ops
-from zrth.lean.ops import (
+from zrth.lean.lowering.sorts import itype_name
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.codegen.terms import lean_gaps
+from zrth.lean.lowering import ops
+from zrth.lean.lowering.ops import (
     COLUMNS,
     OPS,
     Inline,
@@ -70,8 +70,8 @@ def test_no_row_outlives_its_theory():
     for op in OPS:
         for theory_name in op.theories:
             assert op.name in _variant_names(_THEORIES[theory_name]), (
-                f"ops.py has a row for {theory_name}.{op.name}, which that "
-                "theory does not define"
+                f"lowering/ops.py has a row for {theory_name}.{op.name}, "
+                "which that theory does not define"
             )
 
 
@@ -138,7 +138,8 @@ def test_the_scalar_column_falls_back_only_where_there_is_something_to_fall_back
 
 # Every (theory, variant, column) with no emitter. Closing one of these is a
 # line removed here; opening a new one is a line added, which is the point —
-# `ops.py` records *why* each is open, and this says how many there are.
+# `lowering/ops.py` records *why* each is open, and this says how many there
+# are.
 _KNOWN_GAPS = {
     # Nondeterministic choice: nullary, and every encoding here is a
     # function of the read wires.
@@ -198,12 +199,13 @@ def test_the_coverage_gaps_are_the_known_ones():
         "the coverage matrix moved: "
         f"new gaps {sorted(gaps - _KNOWN_GAPS)}, "
         f"closed gaps {sorted(_KNOWN_GAPS - gaps)}. "
-        "Run `python -m zrth.lean.ops` to see the whole matrix."
+        "Run `python -m zrth.lean.lowering.ops` to see the whole matrix."
     )
 
 
 def test_the_matrix_prints():
-    """`python -m zrth.lean.ops` is how the table is meant to be read."""
+    """`python -m zrth.lean.lowering.ops` is how the table is meant to be
+    read."""
     text = ops.format_matrix()
     assert "ULt" in text and "gaps:" in text
     for theory in _THEORIES:
@@ -269,8 +271,8 @@ def test_a_module_with_no_lean_form_says_which_wire_and_why():
     """The reason the table records, about the module rather than the table.
 
     Met during codegen this is `No Lean expression mapping for:
-    Uninterpreted (matrix form)` -- a sentence about `ops.py`, raised half
-    way through a file, for a user who asked about a module."""
+    Uninterpreted (matrix form)` -- a sentence about `lowering/ops.py`, raised
+    half way through a file, for a user who asked about a module."""
     gaps = lean_gaps(LeanContext(_uninterp_module()))
     assert len(gaps) == 1
     assert "`update` block" in gaps[0] and "`Uninterpreted`" in gaps[0]
@@ -316,7 +318,7 @@ def test_a_gap_is_asked_of_every_lean_column_not_only_the_matrix_one():
     # before the table is asked at all.
     assert ops.gap_of(_cells(unsupported, ops.ViaMat("folds to 1x1"), see_mat)) \
         == "no matrix form"
-    assert ops.gap_of(_cells(unsupported, ops.Inline("native._special"), see_mat)) is None
+    assert ops.gap_of(_cells(unsupported, ops.Inline("codegen.terms._special"), see_mat)) is None
 
 
 # ══════════════════════════════════════════════════════════════════════

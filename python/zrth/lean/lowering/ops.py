@@ -5,9 +5,9 @@ and four backends turn that name into something they can emit:
 
 | column   | backend                          | a cell holds                 |
 |----------|----------------------------------|------------------------------|
-| `mat`    | `native.translate_terms_lean`        | args -> Lean expr (on `Mat`) |
-| `scalar` | `native.translate_terms_scalar` | args -> Lean expr (bare)     |
-| `box`    | `circ.translate_terms_circ`     | a `Box` combinator name      |
+| `mat`    | `codegen.terms.translate_terms_lean`        | args -> Lean expr (on `Mat`) |
+| `scalar` | `codegen.terms.translate_terms_scalar` | args -> Lean expr (bare)     |
+| `box`    | `codegen.boxes.translate_terms_circ`     | a `Box` combinator name      |
 
 A row is one variant of one or more theories, and it must say something
 about every column. A cell is either an emitter or one of
@@ -20,7 +20,7 @@ about every column. A cell is either an emitter or one of
 * `Unsupported(...)` — no emitter, and the reason it is missing rather than
   forgotten. That reason is what the caller is told.
 
-`python -m zrth.lean.ops` prints the matrix, gaps and all.
+`python -m zrth.lean.lowering.ops` prints the matrix, gaps and all.
 `tests/test_lean_ops.py` checks it against `LIA`/`LRA`/`BV` in both
 directions, so a variant added to a theory fails the suite until it has a
 row, and a row no theory backs fails it too.
@@ -34,7 +34,7 @@ from typing import Callable, Union
 
 from zrth import Bool, Int, Real, BitVec
 
-from .errors import Refused
+from ..core.errors import Refused
 from .sorts import itype_name
 
 
@@ -151,8 +151,8 @@ OPS: tuple[Op, ...] = (
         Op(
             name,
             theories,
-            mat=Inline("literals.constant_expr"),
-            scalar=Inline("native._constant_expr_scalar"),
+            mat=Inline("codegen.literals.constant_expr"),
+            scalar=Inline("codegen.terms._constant_expr_scalar"),
             box=Inline("circ: @Box.const"),
         )
         for name, theories in (
@@ -417,16 +417,16 @@ OPS: tuple[Op, ...] = (
     Op(
         "Linear",
         LIA_LRA,
-        mat=Inline("native._linear_expr"),
-        scalar=Inline("native._linear_expr, lifted and projected"),
-        box=Inline("circ._linear_box"),
+        mat=Inline("codegen.terms._linear_expr"),
+        scalar=Inline("codegen.terms._linear_expr, lifted and projected"),
+        box=Inline("codegen.boxes._linear_box"),
     ),
     Op(
         "Argmax",
         LIA_LRA,
-        mat=Inline("native._argmax_expr"),
+        mat=Inline("codegen.terms._argmax_expr"),
         scalar=Inline("native: the `argmax1d_scalar_*` axiom, else _argmax_expr"),
-        box=Inline("circ._argmax_box"),
+        box=Inline("codegen.boxes._argmax_box"),
     ),
     # ── bit-width and conversion ──────────────────────────────────────
     Op(
@@ -488,8 +488,8 @@ OPS: tuple[Op, ...] = (
     Op(
         "Tensor",
         NONE,
-        mat=Inline("literals.constant_expr"),
-        scalar=Inline("native._constant_expr_scalar"),
+        mat=Inline("codegen.literals.constant_expr"),
+        scalar=Inline("codegen.terms._constant_expr_scalar"),
         box=Inline("circ: @Box.const"),
     ),
     Op(

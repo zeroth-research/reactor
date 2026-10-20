@@ -30,11 +30,14 @@ def test_an_unknown_format_is_refused_with_the_known_ones():
 def test_the_project_keeps_the_input_under_its_formats_suffix(tmp_path):
     """`dbg/` holds the input the module was read from, named for its
     format rather than assumed to be Python."""
-    from zrth.lean.project import create_project
+    from zrth.lean.codegen.context import LeanContext
+    from zrth.lean.project.scaffold import create_project
+    from zrth.lean.proof.render import certificate_files
 
     module = inputs.load(FIXTURES / "counter.py").module
     source = inputs.SourceText("text", tmp_path / "m.in", "a module\n", ".txt")
-    project = create_project(tmp_path, module, "Rea", source=source)
+    project = create_project(tmp_path, module, "Rea", source=source,
+                             certificate=certificate_files(LeanContext(module)))
     assert (project / "dbg" / "system.txt").read_text() == "a module\n"
     assert not (project / "dbg" / "system.py").exists()
 

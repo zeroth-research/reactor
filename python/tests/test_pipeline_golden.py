@@ -21,14 +21,14 @@ import pytest
 import torch
 
 from zrth import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from zrth.lean.cert import (
+from zrth.lean.proof.render import (
     generate_certificate_lean,
     generate_data_lean,
+    generate_standalone_cert_lean,
 )
-from zrth.lean.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.context import LeanContext
+from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
+from zrth.lean.codegen.context import LeanContext
 from zrth.lean.inputs.python import load_module
-from zrth.lean.project import generate_standalone_cert_lean
 
 GOLDEN = Path(__file__).parent / "golden" / "pipeline"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -146,7 +146,7 @@ CODEGEN = [
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
-    from zrth.lean.cert import prepare
+    from zrth.lean.proof.render import prepare
 
     lean = None
     ctx = LeanContext(module)
@@ -243,7 +243,7 @@ RUNS = [
 
 
 def _has_vampire() -> bool:
-    from zrth.lean.errors import Refused
+    from zrth.lean.core.errors import Refused
 
     return True
 
@@ -262,7 +262,8 @@ def _runs() -> list:
 
 def _offline(monkeypatch) -> None:
     """Both LLM routes answer from `_AI_REPLIES` and never open a client."""
-    from zrth.lean.magic import ai, cegis
+    from zrth.lean.infer.ai import engine as ai
+    from zrth.lean.infer.ai_cegis import engine as cegis
 
     def client(base_url, model):
         def chat(system: str, user: str) -> str:
@@ -292,7 +293,7 @@ def _normalise(text: str, out: Path) -> str:
 
 
 def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
-    from zrth.lean.main import main
+    from zrth.lean.pipeline import main
 
     out = tmp_path / "out"
     argv = [a.replace("{out}", str(out)) for a in args]

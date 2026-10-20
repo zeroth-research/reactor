@@ -1,5 +1,11 @@
 """What a certificate is about, and what it says.
 
+Every predicate here is SMT-LIB source over the state `s0..sN-1` and the
+inputs `e0..` (awaited) / `el0..` (latched) -- the text
+`parse.native.read_predicates` reads. The Python predicate DSL is accepted at
+the CLI and library edge only; Lean is produced from these in one place,
+`proof.render.render_certificate`.
+
 """
 
 from __future__ import annotations
