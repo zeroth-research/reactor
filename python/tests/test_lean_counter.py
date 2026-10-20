@@ -2,11 +2,10 @@
 
 import torch
 from zrth import Wire, Term, Module, LIA as it, Bool, Int, Var, X
-from zrth.lean.project import (
-    create_project,
-)
-from zrth.lean.cert import lean_certificate
-from zrth.lean.certificate import Certificate, Claim
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.project.scaffold import create_project
+from zrth.lean.proof.render import certificate_files, lean_certificate
+from zrth.lean.core.certificate import Certificate, Claim
 
 from os.path import dirname
 from pathlib import Path
@@ -79,6 +78,7 @@ def test_inf_counter_generates_lean():
         module=m,
         project_name="CounterInfCertificate",
         executable=True,
+        certificate=certificate_files(LeanContext(m)),
     )
 
 
@@ -93,7 +93,7 @@ def test_counter_generates_lean():
         module=m,
         project_name="Counter",
         executable=True,
-        lean_cert=lean_certificate(
+        certificate=certificate_files(LeanContext(m), lean_certificate(
             m,
             Claim(
                 prp="s[0][0] == 0",
@@ -103,5 +103,5 @@ def test_counter_generates_lean():
                 inv="And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
                 ranking="Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], s[2][0]) - s[0][0]) + 1)",
             ),
-        ),
+        )),
     )

@@ -30,7 +30,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# AI-based inference of invariants and ranking functions (TA2MagicAI).
+# AI-based inference of invariants and ranking functions (`--infer ai`,
+# `--infer ai-cegis`).
 # Install with: pip install zrth[ai]  or  uv pip install zrth[ai]
 # For local LLMs (Ollama, vLLM, etc.) via OpenAI-compatible API: pip install zrth[ai-local]
 ai = [
@@ -41,7 +42,7 @@ ai-local = [
 ]
 
 [project.scripts]
-verith = "zrth.lean.main:main"
+verith = "zrth.lean.pipeline:main"
 
 [build-system]
 requires = [

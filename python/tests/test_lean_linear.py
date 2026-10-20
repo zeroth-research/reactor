@@ -13,8 +13,8 @@ import pytest
 import torch
 
 from zrth import BitVec, Bool, Wire, Term, LIA, LRA, Int, Real
-from zrth.lean.literals import linear_list_literals
-from zrth.lean.native import _linear_expr
+from zrth.lean.codegen.literals import linear_list_literals
+from zrth.lean.codegen.terms import _linear_expr
 
 
 def _int_linear(A, B, out_rows):
@@ -108,7 +108,7 @@ def test_is_scalar_tensor_respects_shape_for_bool():
     """Bool skipped the shape check that Int/BitVec get, so a Bool matrix
     was treated as a scalar and inlined via `tensor.item()`."""
     from zrth import Wire, Bool, Int, BitVec
-    from zrth.lean.sorts import is_scalar_tensor
+    from zrth.lean.lowering.sorts import is_scalar_tensor
 
     assert is_scalar_tensor(Wire(Bool([1, 1]))) is True
     assert is_scalar_tensor(Wire(Bool([2, 3]))) is False
@@ -150,7 +150,7 @@ def test_bitvec_literal_uses_of_int():
     tests/lean/Playground.lean.
     """
     from zrth import Wire, BitVec
-    from zrth.lean.literals import lean_literal
+    from zrth.lean.codegen.literals import lean_literal
 
     dt = Wire(BitVec(8, [1, 1])).dtype
     assert lean_literal(dt, -3) == "(BitVec.ofInt 8 (-3))"
@@ -188,7 +188,7 @@ def test_non_negative_bitvec_constant_still_emits():
 def test_one_printer_spells_every_literal(sort, value, lean):
     """Ints ascribed whatever their sign, Reals exact -- a float read by its
     decimal form, which is also what the SMT encoding states."""
-    from zrth.lean.literals import lean_literal
+    from zrth.lean.codegen.literals import lean_literal
 
     assert lean_literal(sort, value) == lean
 
@@ -198,7 +198,7 @@ def test_a_float_constant_in_scientific_notation_encodes():
     builds the constant from the same exact fraction the Lean literal
     states."""
     import cvc5
-    from zrth.lean.smt_encode import translate_terms
+    from zrth.lean.smt.encode import translate_terms
 
     w = Wire(Real([1, 1]))
     term = Term(LRA.Real(torch.tensor([[1e-07]], dtype=torch.float64)), [w], [])

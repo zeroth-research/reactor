@@ -3,10 +3,11 @@
 Everything below `Mat` turns a list of wires into a flat tuple of scalar
 elements and then reads it back: `Scalar.unpack_ctrl` and `Scalar.pack`, the
 `ScalarRel` slices, the NA model's `var_k`, the bridge's `toSlots`, and
-cvc5's own tuple in `smt_encode`. Those were seven independent walks over the
+cvc5's own tuple in `smt.encode`. Those were seven independent walks over the
 same row-major order, agreeing by construction and by comment; the
 defects `d49ebdb9` and `fe8600da` fixed are what that was worth. They now
-all go through `layout.flat_layout`, and this is the test that says so.
+all go through `lowering.elements.flat_layout`, and this is the test that
+says so.
 
 The shapes here are synthetic on purpose. Mutating `flat_indices` to
 column-major and running the fast suite fails exactly one existing test:
@@ -27,19 +28,19 @@ import pytest
 import torch
 
 from zrth import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
-from zrth.lean.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
-from zrth.lean.layout import (
+from zrth.lean.lowering.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
+from zrth.lean.lowering.elements import (
     product_accessor,
     flat_indices,
     flat_size,
     mat_from_scalars,
     flat_layout,
 )
-from zrth.lean.context import LeanContext
-from zrth.lean.native import product_type_scalar
-from zrth.lean.translate._shared import scalar_bindings_with_recon
-from zrth.lean.translate.fbk import slot_accessors
-from zrth.lean.translate.scalar import _pack_body, _unpack_body
+from zrth.lean.codegen.context import LeanContext
+from zrth.lean.codegen.terms import product_type_scalar
+from zrth.lean.codegen.encodings.common import scalar_bindings_with_recon
+from zrth.lean.infer.fbk_proveit.na import slot_accessors
+from zrth.lean.codegen.encodings.scalar import _pack_body, _unpack_body
 
 # One wire list per case. The last three are the ones no fixture has: a
 # genuinely 2-D wire, and a mixed list where the wire index and the slot
@@ -111,7 +112,7 @@ def test_span_needs_the_wire_not_a_position(wires):
 
 
 def test_slot_order_is_the_smt_tuple_order(wires):
-    """Slot `k` of a wire is element `i*n + j` of `smt_encode`'s cvc5 tuple.
+    """Slot `k` of a wire is element `i*n + j` of `smt.encode`'s cvc5 tuple.
 
     `smt_to_lean_bool` resolves the NA model's reads through `slot_accessors`
     while the term it prints selects with `mat_select`, so these two orders
@@ -256,11 +257,11 @@ def _matrix_module() -> Module:
 def test_na_model_init_is_the_matrix_read_row_major():
     """`Definition.init_k` for a 2x3 ctrl wire, against the source tensor.
 
-    The whole chain in one assertion: the Python tensor, `smt_encode`'s cvc5
+    The whole chain in one assertion: the Python tensor, `smt.encode`'s cvc5
     tuple, `smt.slots.scalar_element`'s selection, and the slot numbering this module
     owns. Transpose any one of them and the constants come back permuted.
     """
-    from zrth.lean.translate.fbk import atom_to_lean_na
+    from zrth.lean.infer.fbk_proveit.na import atom_to_lean_na
 
     ctx = LeanContext(_matrix_module())
     src = atom_to_lean_na(ctx, "true", module_name="matrix")
@@ -284,7 +285,7 @@ def test_bridge_reads_the_state_exactly_as_unpack_does():
     docstring said "without either consulting the other" — and a
     disagreement makes `bridge_k` an obligation about the wrong element.
     """
-    from zrth.lean.translate.fbk_bridge import atom_to_lean_fbk_bridge
+    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     ctx = LeanContext(_matrix_module())
     src = atom_to_lean_fbk_bridge(ctx, na_module="NA")
@@ -294,11 +295,11 @@ def test_bridge_reads_the_state_exactly_as_unpack_does():
 
 
 def test_every_sort_is_two_dimensional_so_one_reading_suffices():
-    """`sorts.sort_shape` reads a shape as `(m, n)` and nothing else: the
-    Sort constructor refuses a 0-D, 1-D or 3-D shape, so there is no other
-    case for an encoding to read differently. A 1xn wire's Lean type,
-    element order, rebuilt matrix and recon lemma all agree on it."""
-    from zrth.lean.translate.scalar import _recon_lemma_lines
+    """`lowering.sorts.sort_shape` reads a shape as `(m, n)` and nothing
+    else: the Sort constructor refuses a 0-D, 1-D or 3-D shape, so there is
+    no other case for an encoding to read differently. A 1xn wire's Lean
+    type, element order, rebuilt matrix and recon lemma all agree on it."""
+    from zrth.lean.codegen.encodings.scalar import _recon_lemma_lines
 
     for shape in ([], [3], [2, 3, 4]):
         with pytest.raises(ValueError):
