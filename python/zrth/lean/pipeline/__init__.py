@@ -105,7 +105,7 @@ def main():
     settings = parse_args()
 
     if settings.hammer_file:
-        hammer_only(settings)
+        hammer_only(settings.hammer_file)
         return
 
     problem = load(settings)
@@ -117,13 +117,13 @@ def main():
 
 
     try:
-        lean_cert = render(settings, module, claim, given,
-                           hints=settings.route is None)
+        lean_cert = render(
+            module, claim, given)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 
     if settings.cert_file:
-        standalone(settings, module, lean_cert)
+        standalone(settings.cert_file, ctx, lean_cert)
         return
 
     project_dir = generate(settings, module, ctx, lean_cert, problem.source)
@@ -133,7 +133,6 @@ def main():
         handle = ProjectHandle(
             dir=project_dir,
             name=settings.project_name,
-            module=module,
             ctx=ctx,
             reads=frozenset(settings.route.reads),
             owns=settings.route.owns,
@@ -149,7 +148,8 @@ def main():
         handle.write_files(result.files)
         show_certificate(result.cert, problem.names)
 
-    build_cert(settings, project_dir, lean_cert)
+    if settings.build_cert:
+        build_cert(project_dir, lean_cert)
 
     print(f"\nProject ready at: {project_dir}")
 

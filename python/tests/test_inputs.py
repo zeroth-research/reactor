@@ -41,3 +41,19 @@ def test_the_project_keeps_the_input_under_its_formats_suffix(tmp_path):
     assert (project / "dbg" / "system.txt").read_text() == "a module\n"
     assert not (project / "dbg" / "system.py").exists()
 
+
+def test_an_input_option_its_format_requires_has_to_be_given():
+    """As a route's required option is: a format that cannot read its input
+    without an option says so at parse time, not halfway through loading."""
+    import argparse
+    from dataclasses import replace
+
+    from zrth.lean.cli.checks import check_input_options
+    from zrth.lean.core.options import Opt
+
+    fmt = replace(inputs.adapter_by_name("python"),
+                  options=(Opt(("--needed",), {}, required=True),))
+    parser = argparse.ArgumentParser()
+    with pytest.raises(SystemExit):
+        check_input_options(parser, argparse.Namespace(needed=None), fmt)
+    check_input_options(parser, argparse.Namespace(needed="x"), fmt)
