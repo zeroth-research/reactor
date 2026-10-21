@@ -48,6 +48,7 @@ from typing import NamedTuple
 
 from ...codegen.context import LeanContext
 from ...core.certificate import Claim
+from ...core.errors import Refused
 from ...project.names import (
     EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
 )
@@ -73,18 +74,16 @@ def na_module_name(project_name: str) -> str:
     return f"{project_name}NA"
 
 
-class ProveItError(RuntimeError):
+class ProveItError(Refused):
     """A step of the proveit route could not be carried out.
 
-    `searched` is `Refused.searched`, for the one step that searches:
-    `proveit.py` failing is ic3ia running and not deciding, which says
-    something about the module, where every other failure here is about
-    what the encoding or the checkout can take.
+    A `Refused`, so it reaches `main` as every route's refusal does. Its
+    message names `--fbk-proveit` itself, which is what the row's
+    `errors_self_named` is about. `searched` is set by the one step that
+    searches: `proveit.py` failing is ic3ia running and not deciding, which
+    says something about the module, where every other failure here is
+    about what the encoding or the checkout can take.
     """
-
-    def __init__(self, message: str, *, searched: bool = False):
-        super().__init__(message)
-        self.searched = searched
 
 
 class NAEncoding(NamedTuple):
@@ -399,7 +398,7 @@ def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
     term = _parse(module, property_smt, "--safety", encoding)
     try:
         return smt_to_lean_bool(term, slot_accessors(LeanContext(module).ctrl_next))
-    except ValueError as e:
+    except Refused as e:
         raise ProveItError(f"--fbk-proveit: cannot encode --safety: {e}") from e
 
 
