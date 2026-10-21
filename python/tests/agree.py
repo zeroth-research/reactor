@@ -126,15 +126,16 @@ def _draw(wire, rng: random.Random) -> torch.Tensor:
     return torch.tensor(vals, dtype=kind).reshape(shape.m, shape.n)
 
 
-def runs(module, *, seed: int = 0) -> list:
-    """`RUNS` runs of `module`: each a list of rounds `(inputs, state)`,
+def runs(module, *, seed: int = 0, count: int = RUNS) -> list:
+    """`count` runs of `module`: each a list of rounds `(inputs, state)`,
     where `inputs` maps each input variable to the value awaited that round
-    and `state` lists the ctrl values after it, in `module.ctrl` order."""
+    and `state` lists the ctrl values after it, in `module.ctrl` order. The
+    first runs of a seed are the same whatever `count` is."""
     if len(list(module.atoms)) != 1:
         raise Skip("more than one atom; the encodings take one")
     rng = random.Random(seed)
     out = []
-    for _ in range(RUNS):
+    for _ in range(count):
         st: dict = {}
         run = []
         for k in range(ROUNDS + 1):
@@ -205,7 +206,8 @@ def _lean_shown(wire, element: str) -> str:
 
 def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     """Lean that `#eval`s `module`'s functional encoding on `rounds`, and
-    the line each `#eval` should print.
+    the line each `#eval` should print. The text imports nothing: a file
+    of several states `import Core.Box` once, above them all.
 
     Each round is a `def` in namespace `ns` -- `init` at the round's awaited
     inputs, or `update` at the reference's state before it -- and one
@@ -231,10 +233,9 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     lines = [f"namespace {ns}", ModuleToLean4(ctx).to_lean_functional()]
     evals, want = [], {}
     for r, run in enumerate(rounds):
-        before = None
-        for k, (inputs, state) in enumerate(run):
+        for k, ((inputs, state), before) in enumerate(zip(run, [None, *run])):
             en = build_tuple([_lean_value(e, inputs[e]) for e in extl])
-            if k == 0:
+            if before is None:
                 call = f"init {en}"
             else:
                 prev_inputs, prev_state = before
@@ -254,6 +255,5 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
                     for v in flat(c, state[p])))
             evals.append(f'#eval IO.println s!"{tag}|{"|".join(shown)}"')
             want[tag] = f"{tag}|{'|'.join(expected)}"
-            before = (inputs, state)
     lines.append(f"end {ns}")
-    return "\n".join(["import Core.Box", "", *lines, "", *evals, ""]), want
+    return "\n".join(["", *lines, "", *evals, ""]), want

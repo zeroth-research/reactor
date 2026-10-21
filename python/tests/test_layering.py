@@ -14,6 +14,7 @@ spelled without the underscore.
 from __future__ import annotations
 
 import ast
+import functools
 import subprocess
 import sys
 from pathlib import Path
@@ -27,36 +28,35 @@ INFER = LEAN / "infer"
 # Every module of the package.
 PACKAGE = sorted(LEAN.rglob("*.py"))
 
-# Each layer: the modules it is made of (a package names everything under
-# it), and the layers it may import besides itself. A module no layer names
+# Each layer is the package `zrth.lean.<layer>` and everything under it, and
+# maps to the layers it may import besides itself. A module no layer names
 # is not checked, but a checked module may import it only through a layer.
-LAYERS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
-    "core": (frozenset({"zrth.lean.core"}), frozenset()),
-    "lowering": (frozenset({"zrth.lean.lowering"}), frozenset({"core"})),
-    "codegen": (frozenset({"zrth.lean.codegen"}),
-                frozenset({"core", "lowering"})),
+LAYERS: dict[str, frozenset[str]] = {
+    "core": frozenset(),
+    "lowering": frozenset({"core"}),
+    "codegen": frozenset({"core", "lowering"}),
     # The project on disk. It writes the certificate's files as the text it
     # is handed, so it sits below `proof`, which renders them.
-    "project": (frozenset({"zrth.lean.project"}),
-                frozenset({"core", "lowering", "codegen"})),
-    "proof": (frozenset({"zrth.lean.proof"}),
-              frozenset({"core", "lowering", "codegen", "project"})),
-    "inputs": (frozenset({"zrth.lean.inputs"}), frozenset({"core"})),
+    "project": frozenset({"core", "lowering", "codegen"}),
+    "proof": frozenset({"core", "lowering", "codegen", "project"}),
+    # The input formats.
+    "inputs": frozenset({"core"}),
     # The routes, their engines and the registry over them.
-    "infer": (frozenset({"zrth.lean.infer"}), frozenset({
+    "infer": frozenset({
         "core", "lowering", "codegen", "project",
-        "proof"})),
+        "proof"}),
     # The command line: read off the input formats' and the routes' rows.
-    "cli": (frozenset({"zrth.lean.cli"}), frozenset({
-        "core", "inputs", "infer"})),
+    "cli": frozenset({"core", "inputs", "infer"}),
     # `uv run verith`: every stage, in order.
-    "pipeline": (frozenset({"zrth.lean.pipeline"}), frozenset({
+    "pipeline": frozenset({
         "core", "lowering", "codegen", "project", "proof",
-        "inputs", "infer", "cli"})),
+        "inputs", "infer", "cli"}),
 }
 
 
+@functools.cache
 def _tree(path: Path) -> ast.Module:
+    """`path` parsed, once: every test below reads the same files."""
     return ast.parse(path.read_text(), filename=str(path))
 
 
@@ -136,9 +136,9 @@ def _imports(path: Path):
 
 
 def _layer(module: str) -> str | None:
-    for layer, (members, _) in LAYERS.items():
-        if any(module == m or module.startswith(m + ".") for m in members):
-            return layer
+    parts = module.split(".")
+    if parts[:2] == ["zrth", "lean"] and len(parts) > 2 and parts[2] in LAYERS:
+        return parts[2]
     return None
 
 
@@ -170,18 +170,16 @@ LAYERED = [p for p in PACKAGE if _layer(_module(p))]
 
 @pytest.mark.parametrize("layer", sorted(LAYERS))
 def test_every_module_a_layer_names_exists(layer):
-    """A module moved or renamed takes its layer entry with it; a stale
+    """A package moved or renamed takes its layer entry with it; a stale
     entry would check nothing."""
-    members, below = LAYERS[layer]
-    assert members and all(m in MODULES for m in members), sorted(
-        m for m in members if m not in MODULES)
-    assert below <= set(LAYERS), sorted(below - set(LAYERS))
+    assert f"zrth.lean.{layer}" in MODULES
+    assert LAYERS[layer] <= set(LAYERS), sorted(LAYERS[layer] - set(LAYERS))
 
 
 @pytest.mark.parametrize("path", LAYERED, ids=_name)
 def test_a_layer_imports_only_the_layers_below_it(path):
     me = _layer(_module(path))
-    allowed = {me} | LAYERS[me][1]
+    allowed = {me} | LAYERS[me]
     bad = []
     for i in _imports(path):
         if i.typing or not i.target.startswith("zrth.lean."):
