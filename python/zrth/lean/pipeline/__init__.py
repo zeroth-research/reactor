@@ -146,8 +146,7 @@ def main():
     # is kept.
     store = (
         None if settings.cert_file
-        else workspace(settings, module,
-                       settings.output_dir / settings.project_name, claim)
+        else workspace(settings, module, claim)
     )
     record_predicates(store, claim, given)
 
@@ -170,7 +169,7 @@ def main():
         raise SystemExit(f"error: {e}") from e
 
     if settings.cert_file:
-        standalone(settings.cert_file, module, lean_cert)
+        standalone(settings.cert_file, ctx, lean_cert)
         return
 
     project_dir = generate(settings, module, ctx, lean_cert, problem.source)

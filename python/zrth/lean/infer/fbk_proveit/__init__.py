@@ -34,7 +34,7 @@ def _resolve(opts: dict):
     return resolve_project(opts["proveit_dir"])
 
 
-def _check_project_name(settings, opts) -> "str | None":
+def _check_project_name(settings) -> "str | None":
     """`-p` becomes a Lean module name on this route, so it has to be one.
 
     Not a cell of the table: it is a rule about another flag's *value*.
@@ -122,6 +122,7 @@ def _run(inp: InferInput) -> InferResult:
         project_name=inp.project.name,
         prechecked=inp.prechecked,
         encoding=inp.smt(),
+        ctx=inp.project.ctx,
         log=inp.log,
     )
     # The certificate carries ic3ia's invariant: no predicates come back,
