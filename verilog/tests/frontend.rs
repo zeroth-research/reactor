@@ -2,6 +2,7 @@
 //! for every rejected construct.
 
 use verilog::ast::{Dir, Item, Ty};
+use verilog::lower::Translation;
 use verilog::{frontend, lower};
 
 /// The right-hand side of `assign y = <e>;`, fully parenthesized.
@@ -233,9 +234,209 @@ fn rejected_items() {
         "  always_comb y = a;",
         2,
         "always_comb",
-        "always blocks",
+        "`always_comb` not supported yet",
     );
     rejects(None, "  assign #1 y = a;", 2, "#1", "delay");
     rejects(None, "  initial y = a;", 2, "initial", "unsupported");
     rejects(None, "  assign y = ;", 2, ";", "syntax error");
+}
+
+const HEADER_FF: &str = "module m(input logic clk, input logic [7:0] a, output logic [7:0] y);";
+
+fn translate_ff(body: &str) -> Translation {
+    let src = format!("{HEADER_FF}\n{body}\nendmodule\n");
+    frontend::parse(&src, "test.sv")
+        .and_then(|m| lower::lower(&m))
+        .unwrap_or_else(|e| panic!("{src}\n{e}"))
+}
+
+/// `else if` chains nest to the right; a missing `else` is empty.
+#[test]
+fn if_else_chains() {
+    let src = format!(
+        "{HEADER_FF}\n  always_ff @(posedge clk)\n    if (a == 8'd0) y <= a; else if (a < 8'd9) y <= 8'd1; else if (|a) ;\nendmodule\n"
+    );
+    let m = frontend::parse(&src, "test.sv").unwrap();
+    let [Item::AlwaysFf { clock, body, .. }] = &m.items[..] else {
+        panic!("{:?}", m.items);
+    };
+    assert_eq!(clock, "clk");
+    assert_eq!(
+        body.to_string(),
+        "if ((a == 8'd0)) y <= a; else if ((a < 8'd9)) y <= 8'd1; else if ((|a)) begin end else begin end"
+    );
+}
+
+#[test]
+fn accepted_always_ff() {
+    // several assignments to one register in a block: the last one wins
+    let t = translate_ff("  always_ff @(posedge clk) begin y <= a; y <= y; end");
+    assert_eq!(t.registers, ["y"]);
+    assert_eq!(t.clock.as_deref(), Some("clk"));
+    // a loop through a register is no combinational loop
+    let t =
+        translate_ff("  logic [7:0] t;\n  assign t = y + a;\n  always_ff @(posedge clk) y <= t;");
+    assert_eq!(t.module.atoms().len(), 2);
+    // the clock is no variable, and not an unread input
+    assert!(t.unread_inputs.is_empty());
+    let clk = t.var("clk");
+    assert!(!t.module.extl().contains(&clk));
+}
+
+#[test]
+fn rejected_always() {
+    let cases = [
+        (
+            "  always_ff @(posedge clk) y = a;",
+            "y =",
+            "blocking assignment",
+        ),
+        (
+            "  always_ff @(negedge clk) y <= a;",
+            "negedge",
+            "`negedge` not supported",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge a) y <= a;",
+            "posedge",
+            "only one event",
+        ),
+        ("  always_ff @(clk) y <= a;", "clk)", "level-sensitive"),
+        ("  always_ff @(posedge clk iff a) y <= a;", "iff", "`iff`"),
+        ("  always_ff @* y <= a;", "@", "needs `@(posedge"),
+        ("  always_ff y <= a;", "y <=", "needs `@(posedge"),
+        (
+            "  always @(posedge clk) y <= a;",
+            "always",
+            "plain `always`",
+        ),
+        ("  always_latch y <= a;", "always_latch", "`always_latch`"),
+        (
+            "  always_ff @(posedge clk) case (a) default: y <= a; endcase",
+            "case",
+            "`case` not supported yet",
+        ),
+        (
+            "  always_ff @(posedge clk) y[0] <= 1'b0;",
+            "[0]",
+            "bit or part select",
+        ),
+        (
+            "  always_ff @(posedge clk) y <= #1 a;",
+            "#1",
+            "intra-assignment delay",
+        ),
+        (
+            "  always_ff @(posedge clk) begin : b y <= a; end",
+            ": b",
+            "block name",
+        ),
+        (
+            "  always_ff @(posedge clk) begin logic [7:0] t; y <= a; end",
+            "logic",
+            "declarations in blocks",
+        ),
+        (
+            "  always_ff @(posedge clk) unique if (a == a) y <= a;",
+            "unique",
+            "`unique` not supported",
+        ),
+        (
+            "  always_ff @(posedge clk) @(posedge clk) y <= a;",
+            "@(posedge clk) y",
+            "unsupported",
+        ),
+        ("  always_ff @(posedge clk) y++;", "y++", "unsupported"),
+    ];
+    for (body, needle, msg) in cases {
+        rejects(Some(HEADER_FF), body, 2, needle, msg);
+    }
+}
+
+#[test]
+fn rejected_clocks() {
+    let two =
+        Some("module m(input logic clk, clk2, input logic [7:0] a, output logic [7:0] y, z);");
+    rejects(
+        two,
+        "  always_ff @(posedge clk) y <= a;\n  always_ff @(posedge clk2) z <= a;",
+        3,
+        "clk2",
+        "second clock `clk2`, only one clock (`clk` at 2:23) supported",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  always_ff @(posedge a) y <= a;",
+        2,
+        "a)",
+        "the clock `a` must be a 1-bit input",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic c;\n  assign c = &a;\n  always_ff @(posedge c) y <= a;",
+        4,
+        "c)",
+        "the clock `c` must be a 1-bit input",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  always_ff @(posedge clk) if (clk) y <= a;",
+        2,
+        "clk) y",
+        "clock `clk` read",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic t;\n  assign t = clk;\n  always_ff @(posedge clk) y <= a;",
+        3,
+        "clk",
+        "clock `clk` read",
+    );
+}
+
+#[test]
+fn rejected_registers() {
+    let two = Some("module m(input logic clk, input logic [7:0] a, output logic [7:0] y, z);");
+    rejects(
+        two,
+        "  always_ff @(posedge clk) begin y <= a; z <= a; end\n  always_ff @(posedge clk) y <= a;",
+        3,
+        "y <=",
+        "`y` already driven at 2:34",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  assign y = a;\n  always_ff @(posedge clk) y <= a;",
+        3,
+        "y <=",
+        "`y` already driven at 2:10",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  always_ff @(posedge clk) y <= a;\n  assign y = a;",
+        3,
+        "y",
+        "`y` already driven at 2:28",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  always_ff @(posedge clk) begin a <= y; y <= a; end",
+        2,
+        "a <=",
+        "input `a` is assigned",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  always_ff @(posedge clk) y <= 4'd1;",
+        2,
+        "y <=",
+        "assigning 4 bits to 8 bits",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  always_ff @(posedge clk) z <= a;\n  assign y = a;",
+        2,
+        "z",
+        "`z` is not declared",
+    );
 }

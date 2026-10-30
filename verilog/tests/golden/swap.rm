@@ -1,0 +1,20 @@
+module swap
+  external
+    load : bv1
+    sw : bv1
+    a : bv4
+    b : bv4
+    x@init : bv4
+    y@init : bv4
+  interface
+    x : bv4
+    y : bv4
+  atom controls x, y reads load, sw, a, b, x, y awaits x@init, y@init
+    init
+      X(x) := ID X(x@init)
+      X(y) := ID X(y@init)
+    update
+      %1 := ITE (sw, y, x)
+      %2 := ITE (sw, x, y)
+      X(x) := ITE (load, a, %1)
+      X(y) := ITE (load, b, %2)

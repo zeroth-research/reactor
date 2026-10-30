@@ -15,7 +15,9 @@ not affected.
 [`ast::Module`]: crate::ast::Module
 */
 
-use crate::ast::{BinOp, Decl, Dir, Error, Expr, ExprKind, Item, Module, Port, Span, Ty, UnOp};
+use crate::ast::{
+    BinOp, Decl, Dir, Error, Expr, ExprKind, Item, Module, Port, Span, Stmt, StmtKind, Ty, UnOp,
+};
 use crate::value::BitVec;
 use num_bigint::BigUint;
 use std::collections::HashMap;
@@ -352,10 +354,170 @@ impl Cx<'_> {
                 a => self.err(a, "delay not supported"),
             },
             sv::ModuleCommonItem::AlwaysConstruct(a) => {
-                self.err(a.as_ref(), "always blocks not supported yet")
+                m.items.push(self.always(a)?);
+                Ok(())
             }
             i => self.unsupported(i),
         }
+    }
+
+    /// `always_ff @(posedge clk) stmt`: one edge of one clock signal,
+    /// no other events (asynchronous resets come later).
+    fn always(&self, a: &sv::AlwaysConstruct) -> Result<Item> {
+        let (kw, stmt) = &a.nodes;
+        match kw {
+            sv::AlwaysKeyword::AlwaysFf(_) => {}
+            sv::AlwaysKeyword::AlwaysComb(_) => {
+                return self.err(kw, "`always_comb` not supported yet");
+            }
+            sv::AlwaysKeyword::AlwaysLatch(_) => {
+                return self.err(kw, "`always_latch` not supported");
+            }
+            sv::AlwaysKeyword::Always(_) => {
+                return self.err(kw, "plain `always` not supported, use `always_ff`");
+            }
+        }
+        let (label, attrs, item) = &stmt.nodes;
+        self.absent(label, "statement label")?;
+        self.absent(attrs, "attribute")?;
+        let sv::StatementItem::ProceduralTimingControlStatement(t) = item else {
+            return self.err(stmt, "`always_ff` needs `@(posedge <clock>)`");
+        };
+        let (ctrl, body) = &t.nodes;
+        let event = match ctrl {
+            sv::ProceduralTimingControl::EventControl(e) => match e.as_ref() {
+                sv::EventControl::EventExpression(e) => &e.nodes.1.nodes.1,
+                e => return self.err(e, "`always_ff` needs `@(posedge <clock>)`"),
+            },
+            c => return self.err(c, "`always_ff` needs `@(posedge <clock>)`"),
+        };
+        let sv::EventExpression::Expression(event) = event else {
+            return self.err(
+                event,
+                "only one event `posedge <clock>` supported (no asynchronous reset)",
+            );
+        };
+        let (edge, clock, iff) = &event.nodes;
+        match edge {
+            Some(sv::EdgeIdentifier::Posedge(_)) => {}
+            Some(e) => {
+                return self.err(
+                    e,
+                    format!("`{}` not supported, only `posedge`", self.text(e)),
+                );
+            }
+            None => return self.err(clock, "level-sensitive event not supported, use `posedge`"),
+        }
+        self.absent(iff, "`iff`")?;
+        let clock_span = self.span(clock);
+        let ExprKind::Var(clock) = self.expr(clock)?.kind else {
+            return Err(Error::new(clock_span, "the clock must be a signal name"));
+        };
+        Ok(Item::AlwaysFf {
+            clock,
+            clock_span,
+            body: self.stmt(body)?,
+            span: self.span(kw),
+        })
+    }
+
+    // ------------------------------------------------------------------
+    // Statements
+    // ------------------------------------------------------------------
+
+    fn stmt(&self, s: &sv::StatementOrNull) -> Result<Stmt> {
+        let s = match s {
+            sv::StatementOrNull::Statement(s) => s,
+            sv::StatementOrNull::Attribute(a) => {
+                let (attrs, semi) = &a.nodes;
+                self.absent(attrs, "attribute")?;
+                return Ok(Stmt::empty(self.span(semi)));
+            }
+        };
+        let (label, attrs, item) = &s.nodes;
+        self.absent(label, "statement label")?;
+        self.absent(attrs, "attribute")?;
+        let span = self.span(item);
+        let kind = match item {
+            sv::StatementItem::NonblockingAssignment(a) => {
+                let (lhs, _, delay, rhs) = &a.0.nodes;
+                self.absent(delay, "intra-assignment delay")?;
+                let (lhs, span) = self.variable_lvalue(lhs)?;
+                let rhs = self.expr(rhs)?;
+                return Ok(Stmt {
+                    kind: StmtKind::NonBlocking { lhs, rhs },
+                    span,
+                });
+            }
+            sv::StatementItem::BlockingAssignment(a) => {
+                return self.err(
+                    &a.0,
+                    "blocking assignment not allowed in `always_ff`, use `<=`",
+                );
+            }
+            sv::StatementItem::ConditionalStatement(c) => {
+                let (unique, _, cond, then, elifs, els) = &c.nodes;
+                if let Some(u) = unique {
+                    return self.err(u, format!("`{}` not supported", self.text(u)));
+                }
+                // `else if` chains nest to the right
+                let mut branches = vec![(cond, then)];
+                branches.extend(elifs.iter().map(|(_, _, c, s)| (c, s)));
+                let mut acc = match els {
+                    Some((_, s)) => self.stmt(s)?,
+                    None => Stmt::empty(span),
+                };
+                for (i, (cond, then)) in branches.into_iter().enumerate().rev() {
+                    let span = if i == 0 {
+                        span
+                    } else {
+                        self.span(&elifs[i - 1].1)
+                    };
+                    acc = Stmt {
+                        kind: StmtKind::If(
+                            self.cond_predicate(&cond.nodes.1)?,
+                            Box::new(self.stmt(then)?),
+                            Box::new(acc),
+                        ),
+                        span,
+                    };
+                }
+                return Ok(acc);
+            }
+            sv::StatementItem::SeqBlock(b) => {
+                let (_, label, decls, stmts, _, end_label) = &b.nodes;
+                self.absent(label, "block name")?;
+                self.absent(end_label, "block name")?;
+                if let Some(d) = decls.first() {
+                    return self.err(d, "declarations in blocks not supported");
+                }
+                StmtKind::Block(stmts.iter().map(|s| self.stmt(s)).collect::<Result<_>>()?)
+            }
+            sv::StatementItem::CaseStatement(c) => {
+                return self.err(c.as_ref(), "`case` not supported yet");
+            }
+            i => return self.unsupported(i),
+        };
+        Ok(Stmt { kind, span })
+    }
+
+    /// The condition of an `if`: one expression, no patterns.
+    fn cond_predicate(&self, p: &sv::CondPredicate) -> Result<Expr> {
+        match p.nodes.0.contents().as_slice() {
+            [sv::ExpressionOrCondPattern::Expression(e)] => self.expr(e),
+            _ => self.err(p, "`&&&` and patterns not supported"),
+        }
+    }
+
+    fn variable_lvalue(&self, lv: &sv::VariableLvalue) -> Result<(String, Span)> {
+        let sv::VariableLvalue::Identifier(lv) = lv else {
+            return self.err(lv, "only a plain signal name can be assigned");
+        };
+        let (scope, id, select) = &lv.nodes;
+        self.absent(scope, "package or class scope")?;
+        let id = self.simple_hierarchical(&id.nodes.0)?;
+        self.absent(select, "bit or part select")?;
+        Ok((self.identifier(id)?, self.span(id)))
     }
 
     fn declaration(&self, d: &sv::PackageOrGenerateItemDeclaration, m: &mut Module) -> Result<()> {

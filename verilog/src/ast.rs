@@ -97,6 +97,26 @@ pub struct Module {
     pub items: Vec<Item>,
 }
 
+impl Module {
+    /// The clock of the first `always_ff` block, if any. After
+    /// [`typing::check`](crate::typing::check), all blocks have this clock.
+    pub fn clock(&self) -> Option<&Name> {
+        self.items.iter().find_map(|item| match item {
+            Item::AlwaysFf { clock, .. } => Some(clock),
+            Item::Assign { .. } => None,
+        })
+    }
+
+    /// The signals assigned in `always_ff` blocks, in source order.
+    pub fn registers(&self) -> Vec<&Name> {
+        self.items
+            .iter()
+            .filter(|item| matches!(item, Item::AlwaysFf { .. }))
+            .flat_map(Item::targets)
+            .collect()
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Dir {
     Input,
@@ -120,6 +140,95 @@ pub struct Decl {
 pub enum Item {
     /// `assign lhs = rhs;`, with `span` the position of `lhs`.
     Assign { lhs: Name, rhs: Expr, span: Span },
+    /// `always_ff @(posedge clock) body`, with `span` the position of
+    /// `always_ff` and `clock_span` that of `clock`.
+    AlwaysFf {
+        clock: Name,
+        clock_span: Span,
+        body: Stmt,
+        span: Span,
+    },
+}
+
+impl Item {
+    /// The signals the item drives, in the order of their first
+    /// assignment.
+    pub fn targets(&self) -> Vec<&Name> {
+        match self {
+            Item::Assign { lhs, .. } => vec![lhs],
+            Item::AlwaysFf { body, .. } => {
+                let mut out = Vec::new();
+                body.targets(&mut out);
+                out
+            }
+        }
+    }
+
+    /// The signals the item reads, with the position of every read.
+    pub fn reads(&self) -> Vec<(&Name, Span)> {
+        let mut out = Vec::new();
+        match self {
+            Item::Assign { rhs, .. } => rhs.reads(&mut out),
+            Item::AlwaysFf { body, .. } => body.reads(&mut out),
+        }
+        out
+    }
+}
+
+/// A procedural statement.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Stmt {
+    pub kind: StmtKind,
+    pub span: Span,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum StmtKind {
+    /// `begin … end`; also the null statement `;` (empty).
+    Block(Vec<Stmt>),
+    /// `if (c) s1 else s2`; a missing `else` is an empty block, and
+    /// `else if` is an `if` in the `else` branch.
+    If(Expr, Box<Stmt>, Box<Stmt>),
+    /// `lhs <= rhs;`, with `span` the position of `lhs`.
+    NonBlocking { lhs: Name, rhs: Expr },
+}
+
+impl Stmt {
+    pub fn empty(span: Span) -> Self {
+        Stmt {
+            kind: StmtKind::Block(Vec::new()),
+            span,
+        }
+    }
+
+    /// Adds the signals assigned in the statement to `out`, each once, in
+    /// the order of their first assignment.
+    fn targets<'s>(&'s self, out: &mut Vec<&'s Name>) {
+        match &self.kind {
+            StmtKind::Block(stmts) => stmts.iter().for_each(|s| s.targets(out)),
+            StmtKind::If(_, a, b) => {
+                a.targets(out);
+                b.targets(out);
+            }
+            StmtKind::NonBlocking { lhs, .. } => {
+                if !out.contains(&lhs) {
+                    out.push(lhs);
+                }
+            }
+        }
+    }
+
+    fn reads<'s>(&'s self, out: &mut Vec<(&'s Name, Span)>) {
+        match &self.kind {
+            StmtKind::Block(stmts) => stmts.iter().for_each(|s| s.reads(out)),
+            StmtKind::If(c, a, b) => {
+                c.reads(out);
+                a.reads(out);
+                b.reads(out);
+            }
+            StmtKind::NonBlocking { rhs, .. } => rhs.reads(out),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -250,6 +359,26 @@ impl fmt::Display for BinOp {
     }
 }
 
+impl Expr {
+    /// Adds every occurrence of a signal in the expression to `out`.
+    pub fn reads<'e>(&'e self, out: &mut Vec<(&'e Name, Span)>) {
+        match &self.kind {
+            ExprKind::Lit { .. } => {}
+            ExprKind::Var(x) => out.push((x, self.span)),
+            ExprKind::Unary(_, a) => a.reads(out),
+            ExprKind::Binary(_, a, b) => {
+                a.reads(out);
+                b.reads(out);
+            }
+            ExprKind::Cond(c, a, b) => {
+                c.reads(out);
+                a.reads(out);
+                b.reads(out);
+            }
+        }
+    }
+}
+
 /// Fully parenthesized SystemVerilog syntax, for tests and messages.
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -262,6 +391,24 @@ impl fmt::Display for Expr {
             ExprKind::Unary(op, e) => write!(f, "({op}{e})"),
             ExprKind::Binary(op, a, b) => write!(f, "({a} {op} {b})"),
             ExprKind::Cond(c, a, b) => write!(f, "({c} ? {a} : {b})"),
+        }
+    }
+}
+
+/// SystemVerilog syntax on one line, with every `else` written out, for
+/// tests and messages.
+impl fmt::Display for Stmt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            StmtKind::Block(stmts) => {
+                write!(f, "begin")?;
+                for s in stmts {
+                    write!(f, " {s}")?;
+                }
+                write!(f, " end")
+            }
+            StmtKind::If(c, a, b) => write!(f, "if ({c}) {a} else {b}"),
+            StmtKind::NonBlocking { lhs, rhs } => write!(f, "{lhs} <= {rhs};"),
         }
     }
 }

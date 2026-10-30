@@ -19,7 +19,9 @@ On this fragment the widths of IEEE 1800 (after propagation) equal the
 self-determined widths, so the fragment has the standard's semantics.
 */
 
-use crate::ast::{BinOp, Dir, Error, Expr, ExprKind, Item, Module, Name, Span, Ty, UnOp};
+use crate::ast::{
+    BinOp, Dir, Error, Expr, ExprKind, Item, Module, Name, Span, Stmt, StmtKind, Ty, UnOp,
+};
 use std::collections::BTreeMap;
 
 type Result<T> = std::result::Result<T, Error>;
@@ -58,33 +60,121 @@ pub fn env(m: &Module) -> Result<Env> {
 }
 
 /// Checks the module and returns its signals.
+///
+/// Drivers: every signal other than an input has exactly one driver, an
+/// `assign` or an `always_ff` block. Within one `always_ff` block a signal
+/// can be assigned several times (the last assignment wins). This is the
+/// rule of IEEE 1800-2017 for whole variables: a variable assigned in an
+/// `always_ff` "shall not be written to by any other process" (§9.2.2.4),
+/// and procedural and continuous assignments to the same variable must not
+/// be mixed (§6.5). The standard applies both rules per longest static
+/// prefix, so different bits of a vector may be driven from different
+/// places; we only assign whole signals, where the two rules coincide.
+///
+/// The clock: all `always_ff` blocks are clocked by the same 1-bit
+/// input, and nothing else reads it. A round of the module is a whole
+/// clock cycle, in which the clock is 0 and 1, so it has no value there.
 pub fn check(m: &Module) -> Result<Env> {
     let env = env(m)?;
-    let mut driver: BTreeMap<&str, Span> = BTreeMap::new();
-    for item in &m.items {
+    // the position of the first assignment to each signal, and its item
+    let mut driver: BTreeMap<Name, (Span, usize)> = BTreeMap::new();
+    let mut clock: Option<(&Name, Span)> = None;
+    for (i, item) in m.items.iter().enumerate() {
         match item {
             Item::Assign { lhs, rhs, span } => {
-                let sig = lookup(&env, lhs, *span)?;
-                if sig.dir == Some(Dir::Input) {
-                    return Err(Error::new(*span, format!("input `{lhs}` is assigned")));
-                }
-                if let Some(prev) = driver.insert(lhs, *span) {
+                let ty = drive(&env, &mut driver, lhs, *span, i)?;
+                let t = expr(&env, rhs)?;
+                assign(ty, t, *span)?;
+            }
+            Item::AlwaysFf {
+                clock: c,
+                clock_span,
+                body,
+                ..
+            } => {
+                let sig = lookup(&env, c, *clock_span)?;
+                if sig.dir != Some(Dir::Input) || sig.ty.width != 1 {
                     return Err(Error::new(
-                        *span,
-                        format!("`{lhs}` already driven at {prev}"),
+                        *clock_span,
+                        format!("the clock `{c}` must be a 1-bit input"),
                     ));
                 }
-                let t = expr(&env, rhs)?;
-                assign(sig.ty, t, *span)?;
+                match clock {
+                    Some((first, at)) if first != c => {
+                        return Err(Error::new(
+                            *clock_span,
+                            format!(
+                                "second clock `{c}`, only one clock (`{first}` at {at}) supported"
+                            ),
+                        ));
+                    }
+                    Some(_) => {}
+                    None => clock = Some((c, *clock_span)),
+                }
+                stmt(&env, body, &mut |lhs, span| {
+                    drive(&env, &mut driver, lhs, span, i)
+                })?;
+            }
+        }
+    }
+    if let Some((clock, _)) = clock {
+        for item in &m.items {
+            if let Some((_, span)) = item.reads().into_iter().find(|(x, _)| *x == clock) {
+                return Err(Error::new(
+                    span,
+                    format!("clock `{clock}` read (a cycle has no single clock value)"),
+                ));
             }
         }
     }
     for (name, sig) in &env {
-        if sig.dir != Some(Dir::Input) && !driver.contains_key(name.as_str()) {
+        if sig.dir != Some(Dir::Input) && !driver.contains_key(name) {
             return Err(Error::new(sig.span, format!("`{name}` is never driven")));
         }
     }
     Ok(env)
+}
+
+/// Records `item` as the driver of `lhs` and returns the type of `lhs`.
+fn drive(
+    env: &Env,
+    driver: &mut BTreeMap<Name, (Span, usize)>,
+    lhs: &Name,
+    span: Span,
+    item: usize,
+) -> Result<Ty> {
+    let sig = lookup(env, lhs, span)?;
+    if sig.dir == Some(Dir::Input) {
+        return Err(Error::new(span, format!("input `{lhs}` is assigned")));
+    }
+    match driver.get(lhs) {
+        Some((prev, i)) if *i != item => Err(Error::new(
+            span,
+            format!("`{lhs}` already driven at {prev}"),
+        )),
+        Some(_) => Ok(sig.ty),
+        None => {
+            driver.insert(lhs.clone(), (span, item));
+            Ok(sig.ty)
+        }
+    }
+}
+
+/// Checks a statement of an `always_ff` block; `drive` checks the target
+/// of an assignment and returns its type.
+fn stmt(env: &Env, s: &Stmt, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Result<()> {
+    match &s.kind {
+        StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| stmt(env, s, drive)),
+        StmtKind::If(c, a, b) => {
+            expr(env, c)?;
+            stmt(env, a, drive)?;
+            stmt(env, b, drive)
+        }
+        StmtKind::NonBlocking { lhs, rhs } => {
+            let ty = drive(lhs, s.span)?;
+            assign(ty, expr(env, rhs)?, s.span)
+        }
+    }
 }
 
 pub fn lookup<'e>(env: &'e Env, name: &str, span: Span) -> Result<&'e Sig> {

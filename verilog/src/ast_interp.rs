@@ -2,7 +2,12 @@
 # The reference cycle semantics on the AST
 
 [`Interp::step`] runs one clock cycle: given the inputs, it computes the
-value of every signal. It gives meaning to the source operators directly
+value of every signal in the cycle, from the inputs and the registers,
+and then the register values of the next cycle by executing every
+`always_ff` block on the values of this cycle. The assignments `q <= e`
+of all blocks are collected and take effect together at the end of the
+cycle (the rising clock edge), the last one to a register winning; a
+register that no executed assignment targets keeps its value. It gives meaning to the source operators directly
 on numbers (unsigned or two's complement as the operand types say),
 independently of [`SvOp`] and of the rewrites in lowering, so that tests
 can compare it with the translated module.
@@ -10,7 +15,9 @@ can compare it with the translated module.
 [`SvOp`]: crate::SvOp
 */
 
-use crate::ast::{BinOp, Dir, Error, Expr, ExprKind, Item, Module, Name, Ty, UnOp};
+use crate::ast::{
+    BinOp, Dir, Error, Expr, ExprKind, Item, Module, Name, Span, Stmt, StmtKind, Ty, UnOp,
+};
 use crate::typing::{self, Env};
 use crate::value::BitVec;
 use num_bigint::{BigInt, BigUint};
@@ -22,29 +29,59 @@ pub type Values = BTreeMap<Name, BitVec>;
 
 pub struct Interp<'m> {
     env: Env,
-    /// The expression driving each driven signal.
+    clock: Option<&'m Name>,
+    /// The expression driving each signal driven by an `assign`.
     driver: BTreeMap<&'m str, &'m Expr>,
+    /// The bodies of the `always_ff` blocks.
+    blocks: Vec<&'m Stmt>,
+    /// The value of every register in the current cycle.
+    state: Values,
 }
 
 impl<'m> Interp<'m> {
-    pub fn new(m: &'m Module) -> Result<Self, Error> {
+    /// Starts with `init` giving a value for every register (and nothing
+    /// else).
+    pub fn new(m: &'m Module, init: &Values) -> Result<Self, Error> {
         let env = typing::check(m)?;
-        let driver = m
-            .items
-            .iter()
-            .map(|item| match item {
-                Item::Assign { lhs, rhs, .. } => (lhs.as_str(), rhs),
-            })
-            .collect();
-        Ok(Self { env, driver })
+        let mut driver = BTreeMap::new();
+        let mut blocks = Vec::new();
+        for item in &m.items {
+            match item {
+                Item::Assign { lhs, rhs, .. } => {
+                    driver.insert(lhs.as_str(), rhs);
+                }
+                Item::AlwaysFf { body, .. } => blocks.push(body),
+            }
+        }
+        let registers = m.registers();
+        let err = |msg: String| Error::new(Span::default(), msg);
+        for q in &registers {
+            let v = init
+                .get(*q)
+                .ok_or_else(|| err(format!("no initial value for register `{q}`")))?;
+            if v.width() != env[*q].ty.width {
+                return Err(err(format!("register `{q}` given {} bits", v.width())));
+            }
+        }
+        if let Some(x) = init.keys().find(|x| !registers.contains(x)) {
+            return Err(err(format!("`{x}` is not a register")));
+        }
+        Ok(Self {
+            env,
+            clock: m.clock(),
+            driver,
+            blocks,
+            state: init.clone(),
+        })
     }
 
-    /// Runs one cycle, with `inputs` giving a value for every input.
-    /// Returns the value of every signal in this cycle.
+    /// Runs one cycle, with `inputs` giving a value for every input but
+    /// the clock. Returns the value of every signal but the clock in this
+    /// cycle.
     pub fn step(&mut self, inputs: &Values) -> Result<Values, String> {
-        let mut values = Values::new();
+        let mut values = self.state.clone();
         for (name, sig) in &self.env {
-            if sig.dir != Some(Dir::Input) {
+            if sig.dir != Some(Dir::Input) || Some(name) == self.clock {
                 continue;
             }
             let v = inputs
@@ -57,9 +94,42 @@ impl<'m> Interp<'m> {
         }
         let mut active = BTreeSet::new();
         for name in self.env.keys() {
-            self.signal(name, &mut values, &mut active)?;
+            if Some(name) != self.clock {
+                self.signal(name, &mut values, &mut active)?;
+            }
         }
+        let mut updates = Values::new();
+        for body in &self.blocks {
+            self.exec(body, &mut values, &mut active, &mut updates)?;
+        }
+        self.state.extend(updates);
         Ok(values)
+    }
+
+    /// Executes a statement of an `always_ff` block, adding its
+    /// assignments to `updates`.
+    fn exec(
+        &self,
+        s: &Stmt,
+        values: &mut Values,
+        active: &mut BTreeSet<Name>,
+        updates: &mut Values,
+    ) -> Result<(), String> {
+        match &s.kind {
+            StmtKind::Block(stmts) => stmts
+                .iter()
+                .try_for_each(|s| self.exec(s, values, active, updates)),
+            StmtKind::If(c, a, b) => {
+                let (c, _) = self.expr(c, values, active)?;
+                let branch = if c.is_zero() { b } else { a };
+                self.exec(branch, values, active, updates)
+            }
+            StmtKind::NonBlocking { lhs, rhs } => {
+                let (v, _) = self.expr(rhs, values, active)?;
+                updates.insert(lhs.clone(), v);
+                Ok(())
+            }
+        }
     }
 
     /// The value of a signal, computed on demand from its driver.

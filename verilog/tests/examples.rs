@@ -1,6 +1,7 @@
 //! The example designs in `examples/`: printed modules against golden
 //! files, structure, the AST semantics against the translated module, and
-//! the AST semantics against iverilog.
+//! the AST semantics against iverilog, on random initial register values
+//! and random input traces.
 //!
 //! `UPDATE_GOLDEN=1 cargo test -p verilog --test examples` rewrites the
 //! golden files in `tests/golden/`.
@@ -9,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use verilog::ast::{Dir, Module};
 use verilog::ast_interp::{Interp, Values};
-use verilog::lower::{Translation, lower};
+use verilog::lower::{Translation, init_name, lower};
 use verilog::rm_sim::{Sim, Valuation};
 use verilog::{BitVec, frontend};
 
@@ -55,8 +56,9 @@ fn golden() {
     }
 }
 
-/// Inputs are external, outputs interface, internal signals private; an
-/// unread input is no variable at all.
+/// Inputs and the initial values of the registers are external, outputs
+/// interface, internal signals private; an unread input and the clock are
+/// no variables at all. The update of a register atom awaits nothing.
 #[test]
 fn structure() {
     for path in examples() {
@@ -74,27 +76,44 @@ fn structure() {
             m.ports
                 .iter()
                 .filter(|p| p.dir == dir && !t.unread_inputs.contains(&p.decl.name))
+                .filter(|p| Some(&p.decl.name) != t.clock.as_ref())
                 .map(|p| p.decl.name.clone())
-                .collect()
+                .collect::<Vec<_>>()
         };
-        assert_eq!(
-            names(t.module.extl()),
-            sorted(ports(Dir::Input)),
-            "{}",
-            path.display()
-        );
+        let mut extl = ports(Dir::Input);
+        extl.extend(t.registers.iter().map(|q| init_name(q)));
+        let display = path.display();
+        assert_eq!(names(t.module.extl()), sorted(extl), "{display}");
         assert_eq!(
             names(t.module.intf()),
             sorted(ports(Dir::Output)),
-            "{}",
-            path.display()
+            "{display}"
         );
         let decls = m.decls.iter().map(|d| d.name.clone()).collect();
-        assert_eq!(names(t.module.prvt()), sorted(decls), "{}", path.display());
+        assert_eq!(names(t.module.prvt()), sorted(decls), "{display}");
         assert_eq!(t.module.atoms().len(), m.items.len());
+        for atom in t.module.atoms() {
+            let ctrl = names(atom.ctrl());
+            if !t.registers.contains(&ctrl[0]) {
+                continue;
+            }
+            let inits: Vec<String> = ctrl.iter().map(|q| init_name(q)).collect();
+            assert_eq!(names(atom.wait()), sorted(inits), "{display}");
+            for term in atom.update().iter() {
+                for w in term.read() {
+                    let awaited = t.vars.values().any(|v| base::var::X(*v) == *w);
+                    assert!(!awaited, "{display}: update of {ctrl:?} awaits");
+                }
+            }
+        }
     }
     let (_, t) = load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arith.sv"));
     assert_eq!(t.unread_inputs, ["clk"]);
+    assert_eq!(t.clock, None);
+    let (_, t) = load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/accum.sv"));
+    assert_eq!(t.clock.as_deref(), Some("clk"));
+    assert!(t.unread_inputs.is_empty());
+    assert_eq!(t.registers, ["acc", "overflow"]);
 }
 
 /// A pseudo-random generator (64-bit LCG).
@@ -123,42 +142,71 @@ impl Rand {
         BitVec::new(width, v & ones).unwrap()
     }
 
+    /// A value for every input but the clock.
     fn inputs(&mut self, m: &Module) -> Values {
         m.ports
             .iter()
-            .filter(|p| p.dir == Dir::Input)
+            .filter(|p| p.dir == Dir::Input && Some(&p.decl.name) != m.clock())
             .map(|p| (p.decl.name.clone(), self.bits(p.decl.ty.width)))
+            .collect()
+    }
+
+    /// A value for every register.
+    fn registers(&mut self, m: &Module) -> Values {
+        let decls: Vec<_> = m.ports.iter().map(|p| &p.decl).chain(&m.decls).collect();
+        m.registers()
+            .into_iter()
+            .map(|q| {
+                let d = decls.iter().find(|d| &d.name == q).unwrap();
+                (q.clone(), self.bits(d.ty.width))
+            })
             .collect()
     }
 }
 
-/// The translated module computes the same values as the AST semantics.
+/// The translated module computes the same values as the AST semantics,
+/// from the same initial register values (given to `q@init` in the first
+/// round, and random values without effect in later rounds).
 #[test]
 fn rm_matches_ast() {
     let mut rand = Rand(0x2545_f491_4f6c_dd1d);
     for path in examples() {
         let (m, t) = load(&path);
-        let mut interp = Interp::new(&m).unwrap();
-        let mut sim = Sim::new(&t.module);
-        for k in 0..500 {
-            let inputs = rand.inputs(&m);
-            let expected = interp.step(&inputs).unwrap();
-            let extl: Valuation = inputs
-                .iter()
-                .map(|(n, v)| (t.var(n), v.clone()))
-                .filter(|(var, _)| t.module.extl().contains(var))
-                .collect();
-            let got = sim.step(&extl).unwrap();
-            for (var, value) in &got {
-                let name = t.name(var);
-                assert_eq!(
-                    value,
-                    &expected[name],
-                    "{}: `{name}` in cycle {k} with inputs {inputs:?}",
-                    path.display()
-                );
+        for _ in 0..10 {
+            let init = rand.registers(&m);
+            let mut interp = Interp::new(&m, &init).unwrap();
+            let mut sim = Sim::new(&t.module);
+            for k in 0..100 {
+                let inputs = rand.inputs(&m);
+                let expected = interp.step(&inputs).unwrap();
+                let regs = if k == 0 {
+                    init.clone()
+                } else {
+                    rand.registers(&m)
+                };
+                let extl: Valuation = inputs
+                    .iter()
+                    .map(|(n, v)| (t.var(n), v.clone()))
+                    .chain(regs.iter().map(|(q, v)| (t.var(&init_name(q)), v.clone())))
+                    .filter(|(var, _)| t.module.extl().contains(var))
+                    .collect();
+                let got = sim.step(&extl).unwrap();
+                let mut compared = 0;
+                for (var, value) in &got {
+                    let name = t.name(var);
+                    if name.contains('@') {
+                        continue;
+                    }
+                    assert_eq!(
+                        value,
+                        &expected[name],
+                        "{}: `{name}` in cycle {k} from {init:?} with inputs {inputs:?}",
+                        path.display()
+                    );
+                    compared += 1;
+                }
+                assert_eq!(compared, expected.len() - t.unread_inputs.len());
             }
-            assert_eq!(got.len(), expected.len() - t.unread_inputs.len());
         }
     }
 }
@@ -178,9 +226,15 @@ fn iverilog_bin() -> Option<PathBuf> {
     })
 }
 
-/// A testbench driving the module with `vectors` and printing the outputs
-/// in hex after each, one line per vector.
-fn testbench(m: &Module, vectors: &[Values]) -> String {
+/// A testbench that sets the registers to `init`, then for each of
+/// `vectors` sets the inputs, prints all signals but the inputs in hex (one
+/// line per vector) and pulses the clock.
+///
+/// The registers are set by hierarchical assignment (`dut.q = …`) before
+/// the first edge; iverilog accepts this although the standard forbids
+/// writing an `always_ff` variable from another process. The clock starts
+/// at 0, since a change from x to 1 would be a rising edge.
+fn testbench(m: &Module, init: &Values, vectors: &[Values]) -> String {
     let mut tb = String::from("module tb;\n");
     for p in &m.ports {
         let kind = if p.dir == Dir::Input { "logic" } else { "wire" };
@@ -192,21 +246,35 @@ fn testbench(m: &Module, vectors: &[Values]) -> String {
         .map(|p| format!(".{0}({0})", p.decl.name))
         .collect();
     tb += &format!("  {} dut({});\n  initial begin\n", m.name, conns.join(", "));
-    let outputs: Vec<&str> = m
-        .ports
-        .iter()
-        .filter(|p| p.dir == Dir::Output)
-        .map(|p| p.decl.name.as_str())
-        .collect();
-    let format = vec!["%h"; outputs.len()].join(" ");
+    if let Some(clk) = m.clock() {
+        tb += &format!("    {clk} = 1'b0;\n");
+    }
+    for (q, value) in init {
+        tb += &format!("    dut.{q} = {}'h{:x};\n", value.width(), value.unsigned());
+    }
+    let shown: Vec<String> = shown(m).iter().map(|x| format!("dut.{x}")).collect();
+    let format = vec!["%h"; shown.len()].join(" ");
     for v in vectors {
         for (name, value) in v {
             tb += &format!("    {name} = {}'h{:x};\n", value.width(), value.unsigned());
         }
-        tb += &format!("    #1 $display(\"{format}\", {});\n", outputs.join(", "));
+        tb += &format!("    #1 $display(\"{format}\", {});\n", shown.join(", "));
+        if let Some(clk) = m.clock() {
+            tb += &format!("    {clk} = 1'b1;\n    #1 {clk} = 1'b0;\n");
+        }
     }
     tb += "    $finish;\n  end\nendmodule\n";
     tb
+}
+
+/// The signals compared with iverilog: outputs and internal signals.
+fn shown(m: &Module) -> Vec<&String> {
+    let outputs = m.ports.iter().filter(|p| p.dir == Dir::Output);
+    outputs
+        .map(|p| &p.decl)
+        .chain(&m.decls)
+        .map(|d| &d.name)
+        .collect()
 }
 
 /// The AST semantics agree with iverilog on random vectors. Skipped (with a
@@ -223,17 +291,17 @@ fn ast_matches_iverilog() {
     let mut rand = Rand(0x9e37_79b9_7f4a_7c15);
     for path in examples() {
         let (m, _) = load(&path);
+        let init = rand.registers(&m);
         let vectors: Vec<Values> = (0..300).map(|_| rand.inputs(&m)).collect();
-        let mut interp = Interp::new(&m).unwrap();
+        let mut interp = Interp::new(&m, &init).unwrap();
         let expected: Vec<String> = vectors
             .iter()
             .map(|v| {
                 let values = interp.step(v).unwrap();
-                m.ports
-                    .iter()
-                    .filter(|p| p.dir == Dir::Output)
-                    .map(|p| {
-                        let v = &values[&p.decl.name];
+                shown(&m)
+                    .into_iter()
+                    .map(|x| {
+                        let v = &values[x];
                         format!("{:0w$x}", v.unsigned(), w = v.width().div_ceil(4))
                     })
                     .collect::<Vec<_>>()
@@ -243,7 +311,7 @@ fn ast_matches_iverilog() {
 
         let tb = tmp.join(format!("tb_{}.sv", m.name));
         let out = tmp.join(format!("tb_{}.vvp", m.name));
-        std::fs::write(&tb, testbench(&m, &vectors)).unwrap();
+        std::fs::write(&tb, testbench(&m, &init, &vectors)).unwrap();
         let compile = Command::new(bin.join("iverilog"))
             .args(["-g2012", "-o"])
             .args([&out, &tb, &path])

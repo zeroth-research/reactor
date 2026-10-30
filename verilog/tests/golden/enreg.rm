@@ -1,0 +1,30 @@
+module enreg
+  external
+    rst : bv1
+    load : bv1
+    inc : bv1
+    d : bv8
+    changed@init : bv1
+    q@init : bv8
+  interface
+    q : bv8
+    changed : bv1
+  atom controls q, changed reads rst, load, inc, d, q awaits changed@init, q@init
+    init
+      X(changed) := ID X(changed@init)
+      X(q) := ID X(q@init)
+    update
+      %1 := 1'd0
+      %2 := 8'd0
+      %3 := 8'd0
+      %4 := NE (q, %3)
+      %5 := NE (q, d)
+      %6 := 8'd1
+      %7 := ADD (q, %6)
+      %8 := 1'd1
+      %9 := ITE (inc, %8, %1)
+      %10 := ITE (inc, %7, q)
+      %11 := ITE (load, %5, %9)
+      %12 := ITE (load, d, %10)
+      X(changed) := ITE (rst, %4, %11)
+      X(q) := ITE (rst, %2, %12)
