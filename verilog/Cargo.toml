@@ -1,0 +1,11 @@
+[package]
+name = "verilog"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+
+[dependencies]
+base = { path = "../base" }
+theory = { path = "../theory" }
+num-bigint = "0.4"
+num-traits = "0.2"
