@@ -1,0 +1,25 @@
+module mux
+  external
+    sel : bv2
+    a : bv8
+    b : bv8
+    c : bv8
+    d : bv8
+    s : bv1
+  interface
+    y4 : bv8
+    y2 : bv8
+  atom controls y4 awaits sel, a, b, c, d
+    init = update
+      %1 := 2'd0
+      %2 := EQ (X(sel), %1)
+      %3 := 2'd1
+      %4 := EQ (X(sel), %3)
+      %5 := 2'd2
+      %6 := EQ (X(sel), %5)
+      %7 := ITE (%6, X(c), X(d))
+      %8 := ITE (%4, X(b), %7)
+      X(y4) := ITE (%2, X(a), %8)
+  atom controls y2 awaits a, b, s
+    init = update
+      X(y2) := ITE (X(s), X(a), X(b))

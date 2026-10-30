@@ -1,0 +1,51 @@
+module flags
+  external
+    x : bv8
+    y : bv8
+  interface
+    zero : bv1
+    parity : bv1
+    all_ones : bv1
+    any_both : bv1
+    none : bv1
+    same : bv1
+    blend : bv8
+  private
+    both : bv8
+  atom controls both awaits x, y
+    init = update
+      X(both) := AND (X(x), X(y))
+  atom controls any_both awaits both
+    init = update
+      X(any_both) := REDOR X(both)
+  atom controls zero awaits x
+    init = update
+      %1 := REDOR X(x)
+      X(zero) := NOT %1
+  atom controls parity awaits x
+    init = update
+      X(parity) := REDXOR X(x)
+  atom controls all_ones awaits x
+    init = update
+      X(all_ones) := REDAND X(x)
+  atom controls none awaits x, y
+    init = update
+      %1 := REDOR X(x)
+      %2 := NOT %1
+      %3 := REDOR X(y)
+      %4 := NOT %3
+      X(none) := AND (%2, %4)
+  atom controls same awaits x, y
+    init = update
+      %1 := XOR (X(x), X(y))
+      %2 := NOT %1
+      X(same) := REDAND %2
+  atom controls blend awaits x, y
+    init = update
+      %1 := NOT X(y)
+      %2 := AND (X(x), %1)
+      %3 := NOT X(x)
+      %4 := AND (%3, X(y))
+      %5 := 8'd15
+      %6 := XOR (%4, %5)
+      X(blend) := OR (%2, %6)
