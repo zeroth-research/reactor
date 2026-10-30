@@ -16,7 +16,8 @@ not affected.
 */
 
 use crate::ast::{
-    BinOp, Decl, Dir, Error, Expr, ExprKind, Item, Module, Port, Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, CaseItem, Decl, Dir, Error, Expr, ExprKind, Item, Module, Port, Span, Stmt, StmtKind,
+    Ty, UnOp,
 };
 use crate::value::BitVec;
 use num_bigint::BigUint;
@@ -361,20 +362,26 @@ impl Cx<'_> {
         }
     }
 
-    /// `always_ff @(posedge clk) stmt`: one edge of one clock signal,
-    /// no other events (asynchronous resets come later).
+    /// `always_comb stmt`, or `always_ff @(posedge clk) stmt`: one edge
+    /// of one clock signal, no other events (asynchronous resets come later).
     fn always(&self, a: &sv::AlwaysConstruct) -> Result<Item> {
         let (kw, stmt) = &a.nodes;
         match kw {
             sv::AlwaysKeyword::AlwaysFf(_) => {}
             sv::AlwaysKeyword::AlwaysComb(_) => {
-                return self.err(kw, "`always_comb` not supported yet");
+                return Ok(Item::AlwaysComb {
+                    body: self.statement(stmt)?,
+                    span: self.span(kw),
+                });
             }
             sv::AlwaysKeyword::AlwaysLatch(_) => {
                 return self.err(kw, "`always_latch` not supported");
             }
             sv::AlwaysKeyword::Always(_) => {
-                return self.err(kw, "plain `always` not supported, use `always_ff`");
+                return self.err(
+                    kw,
+                    "plain `always` not supported, use `always_ff` or `always_comb`",
+                );
             }
         }
         let (label, attrs, item) = &stmt.nodes;
@@ -426,14 +433,20 @@ impl Cx<'_> {
     // ------------------------------------------------------------------
 
     fn stmt(&self, s: &sv::StatementOrNull) -> Result<Stmt> {
-        let s = match s {
-            sv::StatementOrNull::Statement(s) => s,
+        match s {
+            sv::StatementOrNull::Statement(s) => self.statement(s),
             sv::StatementOrNull::Attribute(a) => {
                 let (attrs, semi) = &a.nodes;
                 self.absent(attrs, "attribute")?;
-                return Ok(Stmt::empty(self.span(semi)));
+                Ok(Stmt::empty(self.span(semi)))
             }
-        };
+        }
+    }
+
+    /// A statement of an `always_ff` or `always_comb` block; that each
+    /// kind of block has only its kind of assignment (`<=` or `=`) is
+    /// checked in [`typing`](crate::typing).
+    fn statement(&self, s: &sv::Statement) -> Result<Stmt> {
         let (label, attrs, item) = &s.nodes;
         self.absent(label, "statement label")?;
         self.absent(attrs, "attribute")?;
@@ -449,12 +462,24 @@ impl Cx<'_> {
                     span,
                 });
             }
-            sv::StatementItem::BlockingAssignment(a) => {
-                return self.err(
-                    &a.0,
-                    "blocking assignment not allowed in `always_ff`, use `<=`",
-                );
-            }
+            sv::StatementItem::BlockingAssignment(a) => match &a.0 {
+                sv::BlockingAssignment::OperatorAssignment(a) => {
+                    let (lhs, op, rhs) = &a.nodes;
+                    if self.text(op) != "=" {
+                        return self.err(op, format!("`{}` not supported", self.text(op)));
+                    }
+                    let (lhs, span) = self.variable_lvalue(lhs)?;
+                    let rhs = self.expr(rhs)?;
+                    return Ok(Stmt {
+                        kind: StmtKind::Blocking { lhs, rhs },
+                        span,
+                    });
+                }
+                sv::BlockingAssignment::Variable(a) => {
+                    return self.err(&a.nodes.2, "intra-assignment delay not supported");
+                }
+                a => return self.unsupported(a),
+            },
             sv::StatementItem::ConditionalStatement(c) => {
                 let (unique, _, cond, then, elifs, els) = &c.nodes;
                 if let Some(u) = unique {
@@ -493,12 +518,64 @@ impl Cx<'_> {
                 }
                 StmtKind::Block(stmts.iter().map(|s| self.stmt(s)).collect::<Result<_>>()?)
             }
-            sv::StatementItem::CaseStatement(c) => {
-                return self.err(c.as_ref(), "`case` not supported yet");
-            }
+            sv::StatementItem::CaseStatement(c) => match c.as_ref() {
+                sv::CaseStatement::Normal(c) => return self.case(c, span),
+                sv::CaseStatement::Matches(c) => {
+                    return self.err(&c.nodes.3, "`case … matches` not supported");
+                }
+                sv::CaseStatement::Inside(c) => {
+                    return self.err(&c.nodes.3, "`case … inside` not supported");
+                }
+            },
             i => return self.unsupported(i),
         };
         Ok(Stmt { kind, span })
+    }
+
+    /// `case (sel) … endcase`: no `casez`/`casex`, no
+    /// `unique`/`priority`, at most one `default`.
+    fn case(&self, c: &sv::CaseStatementNormal, span: Span) -> Result<Stmt> {
+        let (unique, kw, sel, first, rest, _) = &c.nodes;
+        if let Some(u) = unique {
+            return self.err(u, format!("`{}` not supported", self.text(u)));
+        }
+        if !matches!(kw, sv::CaseKeyword::Case(_)) {
+            return self.err(kw, format!("`{}` not supported", self.text(kw)));
+        }
+        let sel = self.expr(&sel.nodes.1.nodes.0)?;
+        let mut items = Vec::new();
+        let mut default: Option<Box<Stmt>> = None;
+        for item in std::iter::once(first).chain(rest) {
+            match item {
+                sv::CaseItem::NonDefault(i) => {
+                    let (labels, _, body) = &i.nodes;
+                    let labels = labels
+                        .contents()
+                        .into_iter()
+                        .map(|l| self.expr(&l.nodes.0))
+                        .collect::<Result<_>>()?;
+                    let body = self.stmt(body)?;
+                    items.push(CaseItem { labels, body });
+                }
+                sv::CaseItem::Default(d) => {
+                    let (kw, _, body) = &d.nodes;
+                    if let Some(prev) = &default {
+                        let at = prev.span;
+                        return self
+                            .err(kw, format!("second `default` (first one's body at {at})"));
+                    }
+                    default = Some(Box::new(self.stmt(body)?));
+                }
+            }
+        }
+        Ok(Stmt {
+            kind: StmtKind::Case {
+                sel,
+                items,
+                default,
+            },
+            span,
+        })
     }
 
     /// The condition of an `if`: one expression, no patterns.

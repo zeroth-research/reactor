@@ -1,0 +1,19 @@
+module chain
+  external
+    a : bv8
+  interface
+    y : bv8
+  private
+    x : bv8
+    z : bv8
+  atom controls x awaits a
+    init = update
+      %1 := 8'd3
+      X(x) := SUB (X(a), %1)
+  atom controls z awaits x
+    init = update
+      X(z) := ADD (X(x), X(x))
+  atom controls y awaits z
+    init = update
+      %1 := 8'd15
+      X(y) := XOR (X(z), %1)

@@ -229,13 +229,6 @@ fn rejected_declarations() {
 
 #[test]
 fn rejected_items() {
-    rejects(
-        None,
-        "  always_comb y = a;",
-        2,
-        "always_comb",
-        "`always_comb` not supported yet",
-    );
     rejects(None, "  assign #1 y = a;", 2, "#1", "delay");
     rejects(None, "  initial y = a;", 2, "initial", "unsupported");
     rejects(None, "  assign y = ;", 2, ";", "syntax error");
@@ -308,14 +301,14 @@ fn rejected_always() {
         (
             "  always @(posedge clk) y <= a;",
             "always",
-            "plain `always`",
+            "plain `always` not supported, use `always_ff` or `always_comb`",
+        ),
+        (
+            "  always_ff @(posedge clk) ;",
+            "always_ff",
+            "drives nothing",
         ),
         ("  always_latch y <= a;", "always_latch", "`always_latch`"),
-        (
-            "  always_ff @(posedge clk) case (a) default: y <= a; endcase",
-            "case",
-            "`case` not supported yet",
-        ),
         (
             "  always_ff @(posedge clk) y[0] <= 1'b0;",
             "[0]",
@@ -439,4 +432,188 @@ fn rejected_registers() {
         "z",
         "`z` is not declared",
     );
+}
+
+/// The statement of `always_comb <stmt>` in `body`, on one line.
+fn comb_body(body: &str) -> String {
+    let src = format!("{HEADER}\n{body}\nendmodule\n");
+    let m = frontend::parse(&src, "test.sv").unwrap();
+    let [Item::AlwaysComb { body, .. }] = &m.items[..] else {
+        panic!("{:?}", m.items);
+    };
+    body.to_string()
+}
+
+/// `default` is kept apart wherever it is written; a missing one is
+/// `None`.
+#[test]
+fn case_statements() {
+    assert_eq!(
+        comb_body(
+            "  always_comb case (a) 8'd1, 8'd2: y = a; default: y = 8'd0; 8'd3: begin end endcase"
+        ),
+        "case (a) 8'd1, 8'd2: y = a; 8'd3: begin end default: y = 8'd0; endcase"
+    );
+    assert_eq!(
+        comb_body("  always_comb begin y = a; case (a) 8'd1: y = 8'd0; endcase end"),
+        "begin y = a; case (a) 8'd1: y = 8'd0; endcase end"
+    );
+}
+
+fn translate(body: &str) -> Translation {
+    let src = format!("{HEADER}\n{body}\nendmodule\n");
+    frontend::parse(&src, "test.sv")
+        .and_then(|m| lower::lower(&m))
+        .unwrap_or_else(|e| panic!("{src}\n{e}"))
+}
+
+#[test]
+fn accepted_always_comb() {
+    // a default assignment first: no latch
+    translate("  always_comb begin y = 8'd0; if (a == 8'd1) y = a; end");
+    // a case without default after a default assignment
+    translate("  always_comb begin y = a; case (a) 8'd1: y = 8'd0; endcase end");
+    // reads of the block's own signal after its assignment
+    let t = translate("  logic [7:0] t;\n  always_comb begin t = a + a; y = t; t = t + 8'd1; end");
+    assert_eq!(t.module.atoms().len(), 1);
+    // an awaited variable of an always_comb is no loop when the other block
+    // reads only what does not depend on it
+    let t = translate(
+        "  logic [7:0] t, u;\n  always_comb begin t = a; u = t + a; end\n  assign y = u;",
+    );
+    assert_eq!(t.module.atoms().len(), 2);
+}
+
+#[test]
+fn rejected_always_comb() {
+    let cases: [(&str, usize, &str, &str); 14] = [
+        (
+            "  always_comb y <= a;",
+            2,
+            "y <=",
+            "non-blocking assignment not allowed in `always_comb`",
+        ),
+        ("  always_comb y += a;", 2, "+=", "`+=` not supported"),
+        ("  always_comb y = #1 a;", 2, "#1", "intra-assignment delay"),
+        (
+            "  always_comb begin end",
+            2,
+            "always_comb",
+            "drives nothing",
+        ),
+        (
+            "  always_comb if (a == 8'd0) y = a;",
+            2,
+            "if",
+            "`y` is assigned on only some paths through this `if`",
+        ),
+        (
+            "  always_comb\n    case (a) 8'd0: y = a; 8'd1: ; default: y = a; endcase",
+            3,
+            "case",
+            "`y` is assigned on only some paths through this `case`",
+        ),
+        (
+            "  always_comb case (a) 8'd0: y = a; endcase",
+            2,
+            "case",
+            "without `default`, nothing is assigned",
+        ),
+        (
+            "  always_comb begin y = y + a; end",
+            2,
+            "y + a",
+            "`y` read before it is assigned",
+        ),
+        (
+            "  always_comb begin if (a == 8'd0) y = a; y = y; end",
+            2,
+            "y; end",
+            "`y` read before it is assigned",
+        ),
+        (
+            "  always_comb case (a) 8'd1: y = a; 4'd2: y = a; default: y = a; endcase",
+            2,
+            "4'd2",
+            "`case` label `logic [3:0]` differs from selector `logic [7:0]`",
+        ),
+        (
+            "  always_comb case (a) default: y = a; default: y = a; endcase",
+            2,
+            "default: y = a; endcase",
+            "second `default`",
+        ),
+        (
+            "  always_comb casez (a) default: y = a; endcase",
+            2,
+            "casez",
+            "`casez` not supported",
+        ),
+        (
+            "  always_comb unique case (a) default: y = a; endcase",
+            2,
+            "unique",
+            "`unique` not supported",
+        ),
+        (
+            "  always_comb case (a) inside default: y = a; endcase",
+            2,
+            "inside",
+            "`case … inside` not supported",
+        ),
+    ];
+    for (body, line, needle, msg) in cases {
+        rejects(None, body, line, needle, msg);
+    }
+    // drivers: one process per signal
+    rejects(
+        None,
+        "  assign y = a;\n  always_comb y = a;",
+        3,
+        "y =",
+        "already driven at 2:10",
+    );
+    rejects(
+        None,
+        "  always_comb y = a;\n  always_comb y = a;",
+        3,
+        "y =",
+        "already driven at 2:15",
+    );
+}
+
+/// A loop through an `always_comb` driving several signals, which the data
+/// flow does not have, names the block to split; a real loop does
+/// not.
+#[test]
+fn comb_loops() {
+    rejects(
+        Some("module m(input logic [7:0] a, output logic [7:0] x, y);"),
+        "  logic [7:0] z;\n  always_comb begin x = a; y = z; end\n  always_comb z = x;",
+        3,
+        "always_comb begin",
+        "combinational loop: x -> z -> x; in the `always_comb` at 3:3, `x` does not depend on `z`, \
+         but the block is translated as a whole: split it",
+    );
+    rejects(
+        Some("module m(input logic [7:0] a, output logic [7:0] x, y);"),
+        "  logic [7:0] z;\n  always_comb begin x = z; y = a; end\n  always_comb z = x;",
+        3,
+        "always_comb begin",
+        "combinational loop: x -> z -> x",
+    );
+    let src = "module m(input logic [7:0] a, output logic [7:0] x, y);\n  logic [7:0] z;\n  always_comb begin x = z; y = a; end\n  always_comb z = x;\nendmodule\n";
+    let err = frontend::parse(src, "t.sv")
+        .and_then(|m| lower::lower(&m))
+        .err()
+        .unwrap();
+    assert!(!err.msg.contains("split"), "{err}");
+    // control dependencies count: `x` depends on `z` through the condition
+    let src = "module m(input logic [7:0] a, output logic [7:0] x, y);\n  logic [7:0] z;\n  always_comb begin y = a; if (z == a) x = a; else x = y; end\n  always_comb z = x;\nendmodule\n";
+    let err = frontend::parse(src, "t.sv")
+        .and_then(|m| lower::lower(&m))
+        .err()
+        .unwrap();
+    assert!(err.msg.starts_with("combinational loop"), "{err}");
+    assert!(!err.msg.contains("split"), "{err}");
 }
