@@ -1,0 +1,24 @@
+module shiftreg
+  external
+    d : bv8
+    s1@init : bv8
+    s2@init : bv8
+    s3@init : bv8
+    q@init : bv8
+  interface
+    q : bv8
+  private
+    s1 : bv8
+    s2 : bv8
+    s3 : bv8
+  atom controls q, s1, s2, s3 reads d, s1, s2, s3 awaits s1@init, s2@init, s3@init, q@init
+    init
+      X(s1) := ID X(s1@init)
+      X(s2) := ID X(s2@init)
+      X(s3) := ID X(s3@init)
+      X(q) := ID X(q@init)
+    update
+      X(s1) := ID d
+      X(s2) := ID s1
+      X(s3) := ID s2
+      X(q) := ID s3

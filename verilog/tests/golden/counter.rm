@@ -1,0 +1,17 @@
+module counter
+  external
+    en : bv1
+    q@init : bv8
+  interface
+    q : bv8
+    full : bv1
+  atom controls q reads en, q awaits q@init
+    init
+      X(q) := ID X(q@init)
+    update
+      %1 := 8'd1
+      %2 := ADD (q, %1)
+      X(q) := ITE (en, %2, q)
+  atom controls full awaits q
+    init = update
+      X(full) := REDAND X(q)

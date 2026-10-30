@@ -1,0 +1,35 @@
+module accum
+  external
+    clear : bv1
+    x : bv8
+    acc@init : bv8
+    overflow@init : bv1
+  interface
+    sum : bv8
+    overflow : bv1
+  private
+    acc : bv8
+    next : bv8
+    carry : bv1
+  atom controls acc reads clear, next awaits acc@init
+    init
+      X(acc) := ID X(acc@init)
+    update
+      %1 := 8'd0
+      X(acc) := ITE (clear, %1, next)
+  atom controls next awaits x, acc
+    init = update
+      X(next) := ADD (X(acc), X(x))
+  atom controls carry awaits acc, next
+    init = update
+      X(carry) := ULT (X(next), X(acc))
+  atom controls overflow reads clear, overflow, carry awaits overflow@init
+    init
+      X(overflow) := ID X(overflow@init)
+    update
+      %1 := 1'd0
+      %2 := OR (carry, overflow)
+      X(overflow) := ITE (clear, %1, %2)
+  atom controls sum awaits acc
+    init = update
+      X(sum) := ID X(acc)
