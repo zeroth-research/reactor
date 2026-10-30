@@ -9,3 +9,4 @@ base = { path = "../base" }
 theory = { path = "../theory" }
 num-bigint = "0.4"
 num-traits = "0.2"
+sv-parser = "0.13.5"

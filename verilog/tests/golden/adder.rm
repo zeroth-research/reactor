@@ -1,0 +1,21 @@
+module adder
+  external
+    a : bv8
+    b : bv8
+  interface
+    sum : bv8
+    diff : bv8
+    carry : bv1
+    borrow : bv1
+  atom controls sum awaits a, b
+    init = update
+      X(sum) := ADD (X(a), X(b))
+  atom controls carry awaits a, sum
+    init = update
+      X(carry) := ULT (X(sum), X(a))
+  atom controls diff awaits a, b
+    init = update
+      X(diff) := SUB (X(a), X(b))
+  atom controls borrow awaits a, b
+    init = update
+      X(borrow) := ULT (X(a), X(b))

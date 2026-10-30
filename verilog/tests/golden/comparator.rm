@@ -1,0 +1,47 @@
+module comparator
+  external
+    a : bv8
+    b : bv8
+    sa : bv8
+    sb : bv8
+  interface
+    eq : bv1
+    ne : bv1
+    lt : bv1
+    le : bv1
+    gt : bv1
+    ge : bv1
+    slt : bv1
+    sle : bv1
+    sgt : bv1
+    sge : bv1
+  atom controls eq awaits a, b
+    init = update
+      X(eq) := EQ (X(a), X(b))
+  atom controls ne awaits a, b
+    init = update
+      X(ne) := NE (X(a), X(b))
+  atom controls lt awaits a, b
+    init = update
+      X(lt) := ULT (X(a), X(b))
+  atom controls le awaits a, b
+    init = update
+      X(le) := ULE (X(a), X(b))
+  atom controls gt awaits a, b
+    init = update
+      X(gt) := ULT (X(b), X(a))
+  atom controls ge awaits a, b
+    init = update
+      X(ge) := ULE (X(b), X(a))
+  atom controls slt awaits sa, sb
+    init = update
+      X(slt) := SLT (X(sa), X(sb))
+  atom controls sle awaits sa, sb
+    init = update
+      X(sle) := SLE (X(sa), X(sb))
+  atom controls sgt awaits sa, sb
+    init = update
+      X(sgt) := SLT (X(sb), X(sa))
+  atom controls sge awaits sa, sb
+    init = update
+      X(sge) := SLE (X(sb), X(sa))
