@@ -1,0 +1,17 @@
+module satadd
+  external
+    a : bv8
+    b : bv8
+  interface
+    y : bv8
+    sat : bv1
+  private
+    sum : bv8
+  atom controls y, sat, sum awaits a, b
+    init = update
+      sum@1 := ADD (X(a), X(b))
+      sat@1 := ULT (sum@1, X(a))
+      sum@2 := 8'd255
+      X(sum) := ITE (sat@1, sum@2, sum@1)
+      X(sat) := ID sat@1
+      X(y) := ID X(sum)

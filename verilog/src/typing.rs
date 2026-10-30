@@ -17,12 +17,17 @@ happens:
 
 On this fragment the widths of IEEE 1800 (after propagation) equal the
 self-determined widths, so the fragment has the standard's semantics.
+
+An `always_comb` block must also be free of latches and of reads of stale
+values ([`definite`]): every signal it drives is assigned on every path
+through the block, and read only after it has been assigned on every path
+to the read.
 */
 
 use crate::ast::{
     BinOp, Dir, Error, Expr, ExprKind, Item, Module, Name, Span, Stmt, StmtKind, Ty, UnOp,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -62,8 +67,11 @@ pub fn env(m: &Module) -> Result<Env> {
 /// Checks the module and returns its signals.
 ///
 /// Drivers: every signal other than an input has exactly one driver, an
-/// `assign` or an `always_ff` block. Within one `always_ff` block a signal
-/// can be assigned several times (the last assignment wins). This is the
+/// `assign`, an `always_ff` or an `always_comb` block. Within one block a
+/// signal can be assigned several times (the last assignment wins). An
+/// `always_ff` block has only non-blocking assignments `<=`, an
+/// `always_comb` block only blocking ones `=`, and every block drives
+/// something. This is the
 /// rule of IEEE 1800-2017 for whole variables: a variable assigned in an
 /// `always_ff` "shall not be written to by any other process" (§9.2.2.4),
 /// and procedural and continuous assignments to the same variable must not
@@ -111,9 +119,17 @@ pub fn check(m: &Module) -> Result<Env> {
                     Some(_) => {}
                     None => clock = Some((c, *clock_span)),
                 }
-                stmt(&env, body, &mut |lhs, span| {
+                stmt(&env, body, Proc::Ff, &mut |lhs, span| {
                     drive(&env, &mut driver, lhs, span, i)
                 })?;
+                drives_something(item)?;
+            }
+            Item::AlwaysComb { body, .. } => {
+                stmt(&env, body, Proc::Comb, &mut |lhs, span| {
+                    drive(&env, &mut driver, lhs, span, i)
+                })?;
+                drives_something(item)?;
+                definite(item)?;
             }
         }
     }
@@ -160,20 +176,211 @@ fn drive(
     }
 }
 
-/// Checks a statement of an `always_ff` block; `drive` checks the target
+/// The kind of block a statement is in.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Proc {
+    Ff,
+    Comb,
+}
+
+fn drives_something(item: &Item) -> Result<()> {
+    if item.targets().is_empty() {
+        let kw = match item {
+            Item::AlwaysComb { .. } => "always_comb",
+            _ => "always_ff",
+        };
+        return Err(Error::new(
+            item.span(),
+            format!("this `{kw}` drives nothing"),
+        ));
+    }
+    Ok(())
+}
+
+/// Checks a statement of a block of kind `proc`; `drive` checks the target
 /// of an assignment and returns its type.
-fn stmt(env: &Env, s: &Stmt, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Result<()> {
+fn stmt(
+    env: &Env,
+    s: &Stmt,
+    proc: Proc,
+    drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>,
+) -> Result<()> {
     match &s.kind {
-        StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| stmt(env, s, drive)),
+        StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| stmt(env, s, proc, drive)),
         StmtKind::If(c, a, b) => {
             expr(env, c)?;
-            stmt(env, a, drive)?;
-            stmt(env, b, drive)
+            stmt(env, a, proc, drive)?;
+            stmt(env, b, proc, drive)
         }
-        StmtKind::NonBlocking { lhs, rhs } => {
+        StmtKind::Case {
+            sel,
+            items,
+            default,
+        } => {
+            let t = expr(env, sel)?;
+            for item in items {
+                for l in &item.labels {
+                    label(t, expr(env, l)?, l.span)?;
+                }
+                stmt(env, &item.body, proc, drive)?;
+            }
+            match default {
+                Some(d) => stmt(env, d, proc, drive),
+                None => Ok(()),
+            }
+        }
+        StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
+            let blocking = matches!(s.kind, StmtKind::Blocking { .. });
+            match (proc, blocking) {
+                (Proc::Ff, true) => {
+                    return Err(Error::new(
+                        s.span,
+                        "blocking assignment not allowed in `always_ff`, use `<=`",
+                    ));
+                }
+                (Proc::Comb, false) => {
+                    return Err(Error::new(
+                        s.span,
+                        "non-blocking assignment not allowed in `always_comb`, use `=`",
+                    ));
+                }
+                _ => {}
+            }
             let ty = drive(lhs, s.span)?;
             assign(ty, expr(env, rhs)?, s.span)
         }
+    }
+}
+
+/// Checks that an `always_comb` block assigns each signal it drives on
+/// every path before reading it and by the end of the block (no
+/// latch).
+///
+/// A signal not assigned on some path would keep its value from the
+/// previous evaluation of the block: hardware needs a latch for that, a
+/// storage element outside the clocked cycle model. A read of a signal of
+/// the block before it is assigned would read that same old value. The
+/// analysis is syntactic: a `case` without `default` may assign nothing
+/// even if its labels cover every value.
+pub fn definite(item: &Item) -> Result<()> {
+    let targets = item.targets();
+    let body = item.body().expect("a block");
+    let mut d = Definite {
+        targets: &targets,
+        partial: BTreeMap::new(),
+    };
+    let mut done = BTreeSet::new();
+    d.stmt(body, &mut done)?;
+    match targets.iter().find(|y| !done.contains(**y)) {
+        None => Ok(()),
+        Some(y) => {
+            let (span, why) = &d.partial[*y];
+            Err(Error::new(
+                *span,
+                format!(
+                    "`{y}` is assigned on only some paths through this {why}, \
+                     so it would keep its old value on the others (a latch); \
+                     assign it on every path or before"
+                ),
+            ))
+        }
+    }
+}
+
+struct Definite<'t> {
+    targets: &'t [&'t Name],
+    /// For each target, the first `if` or `case` after which it is
+    /// assigned on some paths only, with a description.
+    partial: BTreeMap<Name, (Span, &'static str)>,
+}
+
+impl Definite<'_> {
+    /// Checks the reads in `e`, with `done` the targets assigned on every
+    /// path so far.
+    fn reads(&self, e: &Expr, done: &BTreeSet<Name>) -> Result<()> {
+        let mut reads = Vec::new();
+        e.reads(&mut reads);
+        match reads
+            .into_iter()
+            .find(|(x, _)| self.targets.contains(x) && !done.contains(*x))
+        {
+            None => Ok(()),
+            Some((x, span)) => Err(Error::new(
+                span,
+                format!(
+                    "`{x}` read before it is assigned on every path in this `always_comb` \
+                     (it would read its value from the previous evaluation)"
+                ),
+            )),
+        }
+    }
+
+    /// Adds to `done` the targets that `s` assigns on every path.
+    fn stmt(&mut self, s: &Stmt, done: &mut BTreeSet<Name>) -> Result<()> {
+        match &s.kind {
+            StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| self.stmt(s, done)),
+            StmtKind::If(c, a, b) => {
+                self.reads(c, done)?;
+                let branches = [a.as_ref(), b.as_ref()];
+                self.merge(&branches, false, done, s.span, "`if`")
+            }
+            StmtKind::Case {
+                sel,
+                items,
+                default,
+            } => {
+                self.reads(sel, done)?;
+                for l in items.iter().flat_map(|i| &i.labels) {
+                    self.reads(l, done)?;
+                }
+                let mut branches: Vec<&Stmt> = items.iter().map(|i| &i.body).collect();
+                let why = match default {
+                    Some(d) => {
+                        branches.push(d);
+                        "`case`"
+                    }
+                    None => "`case` (without `default`, nothing is assigned when no label matches)",
+                };
+                self.merge(&branches, default.is_none(), done, s.span, why)
+            }
+            StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
+                self.reads(rhs, done)?;
+                done.insert(lhs.clone());
+                Ok(())
+            }
+        }
+    }
+
+    /// Runs each branch from `done` and keeps the targets assigned in all
+    /// of them; `fallthrough` adds a path that runs no branch.
+    fn merge(
+        &mut self,
+        branches: &[&Stmt],
+        fallthrough: bool,
+        done: &mut BTreeSet<Name>,
+        span: Span,
+        why: &'static str,
+    ) -> Result<()> {
+        let mut outs = Vec::new();
+        for b in branches {
+            let mut out = done.clone();
+            self.stmt(b, &mut out)?;
+            outs.push(out);
+        }
+        if fallthrough {
+            outs.push(done.clone());
+        }
+        let all: BTreeSet<Name> = outs.iter().flatten().cloned().collect();
+        let every: BTreeSet<Name> = all
+            .iter()
+            .filter(|x| outs.iter().all(|o| o.contains(*x)))
+            .cloned()
+            .collect();
+        for x in all.difference(&every) {
+            self.partial.entry(x.clone()).or_insert((span, why));
+        }
+        *done = every;
+        Ok(())
     }
 }
 
@@ -235,6 +442,20 @@ pub fn cond(a: Ty, b: Ty, span: Span) -> Result<Ty> {
         Err(Error::new(
             span,
             format!("arms of `?:` differ: `{a}` and `{b}` (resize explicitly)"),
+        ))
+    }
+}
+
+/// Checks a label of type `label` of a `case` whose selector has type
+/// `sel`: both must have the same type (no implicit resizing), and they are
+/// compared with `==`.
+pub fn label(sel: Ty, label: Ty, span: Span) -> Result<()> {
+    if sel == label {
+        Ok(())
+    } else {
+        Err(Error::new(
+            span,
+            format!("`case` label `{label}` differs from selector `{sel}` (resize explicitly)"),
         ))
     }
 }

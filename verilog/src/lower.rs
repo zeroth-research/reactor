@@ -34,8 +34,31 @@ same map and the entries that differ are merged with `Ite`. The init
 action sets every register to an external variable `q@init`, so all
 initial states are possible.
 
+Every `always_comb` block becomes a combinatorial atom controlling the
+signals it assigns. Like an `assign`, it awaits the next values `X(x)`
+of the signals it reads, except its own: the statements are executed
+symbolically with a map from each of its signals to the wire holding its
+current value (SSA, the intermediate values are printed `y@1`, `y@2`, …),
+so a read of its own signal reads that wire. The map starts empty; typing
+has made sure that every read and the end of the block find an entry on
+every path (no stale reads, no latches). `if` and `case` merge entries as in
+`always_ff`; an entry missing in a branch is missing after the merge.
+
+`case (s) l1, l2: a … default: d endcase` becomes a chain of `Ite`s on
+`s == l1 | s == l2`, …, so the first matching item wins; without `default`,
+no item matching leaves the map as it was.
+
 The atoms are sorted so that each comes after the atoms controlling what it
-awaits; a cycle is a combinational loop and is rejected.
+awaits; a cycle is a combinational loop and is rejected. The check is per
+atom, as the await relation of reactive modules is: an atom's update
+is one action, so it waits for everything any of its terms reads. An
+`always_comb` block driving several signals may therefore close a loop
+that its data flow does not have (it drives `x` from `a` and `y` from `z`,
+while another block drives `z` from `x`). Such designs are rejected, with
+a message saying which block to split. Translating each signal of a block
+as its own atom would accept them with the same meaning, at the cost of
+duplicating shared subterms and of the one-to-one correspondence between
+blocks and atoms.
 */
 
 use crate::ast::{
@@ -44,7 +67,7 @@ use crate::ast::{
 use crate::typing;
 use crate::{Atom, Module, Sort, SvOp, Term, Var, Wire};
 use base::var::X;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -62,6 +85,9 @@ pub struct Translation {
     /// Inputs other than the clock that nothing reads; they are not
     /// variables of the module.
     pub unread_inputs: Vec<Name>,
+    /// Names of wires local to an atom: the intermediate values `y@1`,
+    /// `y@2`, … of the signals of `always_comb` blocks.
+    pub wire_names: HashMap<Wire, Name>,
 }
 
 /// The name of the external variable holding the initial value of the
@@ -87,7 +113,12 @@ impl Translation {
 
     /// The module printed with the signal names.
     pub fn print(&self) -> String {
-        crate::print::module(&self.module, &self.name, |v| self.name(v).to_string())
+        crate::print::module(
+            &self.module,
+            &self.name,
+            |v| self.name(v).to_string(),
+            |w| self.wire_names.get(w).cloned(),
+        )
     }
 }
 
@@ -112,20 +143,30 @@ pub fn lower(m: &ast::Module) -> Result<Translation> {
         .iter()
         .map(|item| {
             let ctrl: Vec<Name> = item.targets().into_iter().cloned().collect();
-            let (awaits, span) = match item {
-                Item::Assign { rhs, span, .. } => {
-                    let mut reads = Vec::new();
-                    rhs.reads(&mut reads);
-                    (reads.into_iter().map(|(x, _)| x.clone()).collect(), *span)
-                }
+            let awaits = match item {
                 // only the init action awaits, and only external variables
-                Item::AlwaysFf { span, .. } => (ctrl.iter().map(|q| init_name(q)).collect(), *span),
+                Item::AlwaysFf { .. } => ctrl.iter().map(|q| init_name(q)).collect(),
+                // `assign y = y` awaits itself, a block reads its own
+                // signals from its local values
+                Item::Assign { .. } => item.reads().into_iter().map(|(x, _)| x.clone()).collect(),
+                Item::AlwaysComb { .. } => item
+                    .reads()
+                    .into_iter()
+                    .map(|(x, _)| x)
+                    .filter(|x| !ctrl.contains(x))
+                    .cloned()
+                    .collect(),
+            };
+            let deps = match item {
+                Item::AlwaysComb { body, .. } if ctrl.len() > 1 => Some(dependencies(body)),
+                _ => None,
             };
             Pending {
                 item,
                 ctrl,
                 awaits,
-                span,
+                deps,
+                span: item.span(),
             }
         })
         .collect();
@@ -144,33 +185,47 @@ pub fn lower(m: &ast::Module) -> Result<Translation> {
         .collect();
 
     let mut atoms = Vec::new();
+    let mut wire_names = HashMap::new();
     for item in await_order(pending)? {
+        let span = item.span();
         let atom = match item {
-            Item::Assign { lhs, rhs, span } => {
+            Item::Assign { lhs, rhs, .. } => {
                 let mut b = Builder::new(&env, &vars, false);
                 b.used.insert(lhs.clone());
                 b.expr(rhs, Some(X(vars[lhs])))?;
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
-                Atom::combinatorial(scope, b.terms).map_err(|e| internal(*span, e))?
+                Atom::combinatorial(scope, b.terms).map_err(|e| internal(span, e))?
             }
-            Item::AlwaysFf { body, span, .. } => {
+            Item::AlwaysFf { body, .. } => {
                 let regs = item.targets();
                 let mut b = Builder::new(&env, &vars, true);
                 b.used.extend(regs.iter().map(|q| (*q).clone()));
-                let mut next: Vec<(&Name, Wire)> = regs.iter().map(|q| (*q, *vars[*q])).collect();
-                b.stmt(body, &mut next)?;
-                for (q, w) in next {
-                    b.finish(w, X(vars[q]), *span)?;
-                }
+                b.cur = regs
+                    .iter()
+                    .map(|q| ((*q).clone(), Some(*vars[*q])))
+                    .collect();
+                b.stmt(body)?;
+                b.finish_all(span)?;
                 let mut init = Vec::new();
                 for q in &regs {
                     let q0 = vars[&init_name(q)];
                     let term = Term::function(SvOp::Id, [X(vars[*q])], [X(q0)]);
-                    init.push(term.map_err(|e| internal(*span, e))?);
+                    init.push(term.map_err(|e| internal(span, e))?);
                     b.used.insert(init_name(q));
                 }
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
-                Atom::sequential(scope, init, b.terms).map_err(|e| internal(*span, e))?
+                Atom::sequential(scope, init, b.terms).map_err(|e| internal(span, e))?
+            }
+            Item::AlwaysComb { body, .. } => {
+                let targets = item.targets();
+                let mut b = Builder::new(&env, &vars, false);
+                b.used.extend(targets.iter().map(|y| (*y).clone()));
+                b.cur = targets.iter().map(|y| ((*y).clone(), None)).collect();
+                b.stmt(body)?;
+                b.finish_all(span)?;
+                wire_names.extend(b.names);
+                let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
+                Atom::combinatorial(scope, b.terms).map_err(|e| internal(span, e))?
             }
         };
         atoms.push(atom);
@@ -186,6 +241,7 @@ pub fn lower(m: &ast::Module) -> Result<Translation> {
         clock,
         registers,
         unread_inputs,
+        wire_names,
     })
 }
 
@@ -199,6 +255,8 @@ struct Pending<'m> {
     item: &'m Item,
     ctrl: Vec<Name>,
     awaits: BTreeSet<Name>,
+    /// For an `always_comb` driving several signals, what each depends on.
+    deps: Option<BTreeMap<Name, BTreeSet<Name>>>,
     span: Span,
 }
 
@@ -223,7 +281,8 @@ fn await_order<'m>(mut pending: Vec<Pending<'m>>) -> Result<Vec<&'m Item>> {
     Ok(sorted)
 }
 
-/// An error naming a cycle among items none of which is ready.
+/// An error naming a cycle among items none of which is ready, and a block
+/// through which the cycle passes only because the block is one atom.
 fn combinational_loop(pending: &[Pending]) -> Error {
     // every item awaits some other pending item: walk until one repeats,
     // recording the signal by which each item is entered
@@ -236,18 +295,100 @@ fn combinational_loop(pending: &[Pending]) -> Error {
             .find_map(|(i, b)| pending[at].awaits_from(b).map(|x| (i, x)))
             .expect("not ready");
         if let Some(start) = path.iter().position(|&(i, _)| i == next) {
-            let inner = path[start + 1..].iter().map(|(_, x)| x.unwrap().as_str());
-            let cycle: Vec<&str> = [x.as_str()]
-                .into_iter()
-                .chain(inner)
-                .chain([x.as_str()])
-                .collect();
-            return Error::new(
-                pending[next].span,
-                format!("combinational loop: {}", cycle.join(" -> ")),
-            );
+            // the items of the cycle, each with the signal it controls and
+            // the one it awaits from the next item
+            let items: Vec<usize> = path[start..].iter().map(|&(i, _)| i).collect();
+            let mut signals: Vec<&Name> = vec![x];
+            signals.extend(path[start + 1..].iter().map(|(_, x)| x.unwrap()));
+            let cycle: Vec<&str> = signals.iter().chain([&x]).map(|x| x.as_str()).collect();
+            let mut msg = format!("combinational loop: {}", cycle.join(" -> "));
+            for (k, &i) in items.iter().enumerate() {
+                let (ctrl, awaited) = (signals[k], signals[(k + 1) % signals.len()]);
+                let Some(deps) = &pending[i].deps else {
+                    continue;
+                };
+                if !deps[ctrl].contains(awaited) {
+                    msg += &format!(
+                        "; in the `always_comb` at {}, `{ctrl}` does not depend on `{awaited}`, \
+                         but the block is translated as a whole: split it",
+                        pending[i].span
+                    );
+                    break;
+                }
+            }
+            return Error::new(pending[next].span, msg);
         }
         path.push((next, Some(x)));
+    }
+}
+
+/// For each signal an `always_comb` block drives, the signals outside the
+/// block on which its final value depends, through data or control.
+fn dependencies(body: &Stmt) -> BTreeMap<Name, BTreeSet<Name>> {
+    let mut deps = BTreeMap::new();
+    depend(body, &BTreeSet::new(), &mut deps);
+    deps
+}
+
+/// Updates `deps` (the current dependencies of the signals assigned so
+/// far) by `s`, run under conditions depending on `ctrl`.
+fn depend(s: &Stmt, ctrl: &BTreeSet<Name>, deps: &mut BTreeMap<Name, BTreeSet<Name>>) {
+    let resolve = |e: &Expr, deps: &BTreeMap<Name, BTreeSet<Name>>| {
+        let mut reads = Vec::new();
+        e.reads(&mut reads);
+        let mut out = BTreeSet::new();
+        for (x, _) in reads {
+            match deps.get(x) {
+                Some(d) => out.extend(d.iter().cloned()),
+                None => {
+                    out.insert(x.clone());
+                }
+            }
+        }
+        out
+    };
+    // runs each branch under `ctrl` and joins the results; `fallthrough`
+    // adds a path that runs no branch
+    let join = |branches: &[&Stmt], ctrl, fallthrough, deps: &mut BTreeMap<_, _>| {
+        let mut joined = if fallthrough {
+            deps.clone()
+        } else {
+            BTreeMap::new()
+        };
+        for b in branches {
+            let mut out = deps.clone();
+            depend(b, ctrl, &mut out);
+            for (y, d) in out {
+                joined.entry(y).or_insert_with(BTreeSet::new).extend(d);
+            }
+        }
+        *deps = joined;
+    };
+    match &s.kind {
+        StmtKind::Block(stmts) => stmts.iter().for_each(|s| depend(s, ctrl, deps)),
+        StmtKind::If(c, a, b) => {
+            let mut inner = ctrl.clone();
+            inner.extend(resolve(c, deps));
+            join(&[a, b], &inner, false, deps);
+        }
+        StmtKind::Case {
+            sel,
+            items,
+            default,
+        } => {
+            let mut inner = ctrl.clone();
+            inner.extend(resolve(sel, deps));
+            for l in items.iter().flat_map(|i| &i.labels) {
+                inner.extend(resolve(l, deps));
+            }
+            let branches: Vec<&Stmt> = s.children();
+            join(&branches, &inner, default.is_none(), deps);
+        }
+        StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
+            let mut d = resolve(rhs, deps);
+            d.extend(ctrl.iter().cloned());
+            deps.insert(lhs.clone(), d);
+        }
     }
 }
 
@@ -261,6 +402,17 @@ struct Builder<'a> {
     /// Whether signals are read latched (`*x`, in `always_ff`) or awaited
     /// (`X(x)`).
     latched: bool,
+    /// The wire holding the value of each signal the block drives so far:
+    /// the value after the edge in `always_ff`; in `always_comb`, the
+    /// current value, or `None` if the signal may not be assigned yet.
+    cur: Vec<(Name, Option<Wire>)>,
+    /// The names of the intermediate values in `always_comb`.
+    names: HashMap<Wire, Name>,
+    /// The number of intermediate values named so far, per signal.
+    versions: BTreeMap<Name, usize>,
+    /// The wires that [`finish`](Self::finish) renamed, to the variable
+    /// wire they became.
+    renamed: HashMap<Wire, Wire>,
 }
 
 impl<'a> Builder<'a> {
@@ -271,43 +423,139 @@ impl<'a> Builder<'a> {
             terms: Vec::new(),
             used: BTreeSet::new(),
             latched,
+            cur: Vec::new(),
+            names: HashMap::new(),
+            versions: BTreeMap::new(),
+            renamed: HashMap::new(),
         }
     }
 
-    /// Lowers a statement of an `always_ff` block, with `next` holding the
-    /// wire of the value after the edge of each register so far.
-    fn stmt(&mut self, s: &Stmt, next: &mut [(&Name, Wire)]) -> Result<()> {
+    /// Lowers a statement of a block, updating [`cur`](Self::cur).
+    fn stmt(&mut self, s: &Stmt) -> Result<()> {
         match &s.kind {
-            StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| self.stmt(s, next)),
+            StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| self.stmt(s)),
             StmtKind::If(c, a, b) => {
                 let (wc, tc) = self.expr(c, None)?;
                 let wc = self.truth(wc, tc, c.span)?;
-                let mut then = next.to_vec();
-                self.stmt(a, &mut then)?;
-                let mut els = next.to_vec();
-                self.stmt(b, &mut els)?;
-                for ((entry, (_, wa)), (_, wb)) in next.iter_mut().zip(then).zip(els) {
-                    entry.1 = if wa == wb {
-                        wa
-                    } else {
-                        let sort = Sort(self.env[entry.0].ty.width);
-                        self.emit(SvOp::Ite, &[wc, wa, wb], sort, None, s.span)?
-                    };
-                }
+                let before = self.cur.clone();
+                self.stmt(a)?;
+                let then = std::mem::replace(&mut self.cur, before);
+                self.stmt(b)?;
+                let els = std::mem::take(&mut self.cur);
+                self.cur = self.merge(wc, then, els, s.span)?;
                 Ok(())
             }
-            StmtKind::NonBlocking { lhs, rhs } => {
+            StmtKind::Case {
+                sel,
+                items,
+                default,
+            } => {
+                // whether each item matches, from the values before the case
+                let (ws, _) = self.expr(sel, None)?;
+                let mut hits = Vec::new();
+                for item in items {
+                    let mut hit = None;
+                    for l in &item.labels {
+                        let (wl, _) = self.expr(l, None)?;
+                        let eq = self.emit(SvOp::Eq, &[ws, wl], Sort(1), None, l.span)?;
+                        hit = Some(match hit {
+                            None => eq,
+                            Some(h) => self.emit(SvOp::Or, &[h, eq], Sort(1), None, l.span)?,
+                        });
+                    }
+                    hits.push(hit.expect("a label"));
+                }
+                let before = self.cur.clone();
+                let mut outs = Vec::new();
+                for item in items {
+                    self.cur = before.clone();
+                    self.stmt(&item.body)?;
+                    outs.push(std::mem::take(&mut self.cur));
+                }
+                self.cur = before;
+                if let Some(d) = default {
+                    self.stmt(d)?;
+                }
+                let mut acc = std::mem::take(&mut self.cur);
+                for (hit, out) in hits.into_iter().zip(outs).rev() {
+                    acc = self.merge(hit, out, acc, s.span)?;
+                }
+                self.cur = acc;
+                Ok(())
+            }
+            StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
                 let (w, _) = self.expr(rhs, None)?;
-                let entry = next.iter_mut().find(|(q, _)| *q == lhs).expect("a target");
-                entry.1 = w;
+                self.set(lhs, w);
                 Ok(())
             }
         }
+    }
+
+    /// Makes `w` the current value of the signal `y`.
+    fn set(&mut self, y: &Name, w: Wire) {
+        self.name(y, w);
+        let entry = self.cur.iter_mut().find(|(x, _)| x == y).expect("a target");
+        entry.1 = Some(w);
+    }
+
+    /// Names `w` as the next intermediate value of `y` in `always_comb`,
+    /// unless it is not local or already has a name.
+    fn name(&mut self, y: &Name, w: Wire) {
+        if !self.latched
+            && !self.names.contains_key(&w)
+            && self.terms.iter().any(|t| t.write() == [w])
+        {
+            let k = self.versions.entry(y.clone()).or_insert(0);
+            *k += 1;
+            self.names.insert(w, format!("{y}@{k}"));
+        }
+    }
+
+    /// The map after `if (c)` with the maps `then` and `els` after the two
+    /// branches: `Ite` where they differ, `None` where either is `None`.
+    fn merge(
+        &mut self,
+        c: Wire,
+        then: Vec<(Name, Option<Wire>)>,
+        els: Vec<(Name, Option<Wire>)>,
+        span: Span,
+    ) -> Result<Vec<(Name, Option<Wire>)>> {
+        let mut out = Vec::new();
+        for ((y, a), (_, b)) in then.into_iter().zip(els) {
+            let w = match (a, b) {
+                (Some(a), Some(b)) if a == b => Some(a),
+                (Some(a), Some(b)) => {
+                    let sort = Sort(self.env[&y].ty.width);
+                    let w = self.emit(SvOp::Ite, &[c, a, b], sort, None, span)?;
+                    self.name(&y, w);
+                    Some(w)
+                }
+                _ => None,
+            };
+            out.push((y, w));
+        }
+        Ok(out)
+    }
+
+    /// Makes the next value `X(y)` of every signal of the block hold its
+    /// final value.
+    fn finish_all(&mut self, span: Span) -> Result<()> {
+        for (y, w) in std::mem::take(&mut self.cur) {
+            let w = w.ok_or_else(|| internal(span, format!("`{y}` not assigned on every path")))?;
+            self.finish(w, X(self.vars[&y]), span)?;
+        }
+        Ok(())
     }
 
     /// Makes `dest` hold the value of `w`: renames `w` to `dest` if a term
     /// of this atom writes `w` and none reads it, else adds `dest := w`.
+    /// A wire already renamed (two signals with the same final value) is
+    /// copied from the variable it became.
     fn finish(&mut self, w: Wire, dest: Wire, span: Span) -> Result<()> {
+        if let Some(&r) = self.renamed.get(&w) {
+            self.emit(SvOp::Id, &[r], *w.dtype(), Some(dest), span)?;
+            return Ok(());
+        }
         let writer = self.terms.iter().position(|t| t.write() == [w]);
         let read = self.terms.iter().any(|t| t.read().contains(&w));
         match writer {
@@ -320,6 +568,8 @@ impl<'a> Builder<'a> {
                     Term::function(op, [dest], t.read().iter().copied())
                 };
                 self.terms[i] = term.map_err(|e| internal(span, e))?;
+                self.renamed.insert(w, dest);
+                self.names.remove(&w);
             }
             _ => {
                 self.emit(SvOp::Id, &[w], *w.dtype(), Some(dest), span)?;
@@ -370,7 +620,12 @@ impl<'a> Builder<'a> {
                 let t = typing::lookup(self.env, x, span)?.ty;
                 self.used.insert(x.clone());
                 let var = self.vars[x];
-                let w = if self.latched { *var } else { X(var) };
+                let own = self.cur.iter().find(|(y, _)| y == x);
+                let w = match own {
+                    _ if self.latched => *var,
+                    Some((_, w)) => w.ok_or_else(|| internal(span, format!("`{x}` unassigned")))?,
+                    None => X(var),
+                };
                 match dest {
                     None => Ok((w, t)),
                     Some(_) => Ok((self.emit(SvOp::Id, &[w], Sort(t.width), dest, span)?, t)),

@@ -2,8 +2,8 @@
 # Printing modules with names
 
 Like `base`'s display, but plain text (for golden tests) and with readable
-names for the wires local to an atom: `%1`, `%2`, … in the order they are
-written. Delay blocks are left out: in the discrete modules here they only
+names for the wires local to an atom: the given name if there is one, else
+`%1`, `%2`, … in the order they are written. Delay blocks are left out: in the discrete modules here they only
 set every derivative to `ZERO`. When the init and update blocks of an atom
 are the same (a combinatorial atom), they are printed once as
 `init = update`.
@@ -15,8 +15,14 @@ use base::var::{X, d};
 use std::collections::HashMap;
 use std::fmt::Write;
 
-/// The module `title`, with `name` giving the names of its variables.
-pub fn module(m: &Module, title: &str, name: impl Fn(&Var) -> String) -> String {
+/// The module `title`, with `name` giving the names of its variables and
+/// `wire_name` those of some local wires.
+pub fn module(
+    m: &Module,
+    title: &str,
+    name: impl Fn(&Var) -> String,
+    wire_name: impl Fn(&Wire) -> Option<String>,
+) -> String {
     let mut out = format!("module {title}\n");
     let mut vars: HashMap<Wire, String> = HashMap::new();
     for (section, intf) in [
@@ -37,12 +43,17 @@ pub fn module(m: &Module, title: &str, name: impl Fn(&Var) -> String) -> String 
         }
     }
     for atom in m.atoms() {
-        print_atom(&mut out, atom, &vars);
+        print_atom(&mut out, atom, &vars, &wire_name);
     }
     out
 }
 
-fn print_atom(out: &mut String, a: &Atom, vars: &HashMap<Wire, String>) {
+fn print_atom(
+    out: &mut String,
+    a: &Atom,
+    vars: &HashMap<Wire, String>,
+    wire_name: &dyn Fn(&Wire) -> Option<String>,
+) {
     let list = |intf: &Interface<Sort>| {
         intf.iter()
             .map(|v| vars[&**v].as_str())
@@ -58,12 +69,18 @@ fn print_atom(out: &mut String, a: &Atom, vars: &HashMap<Wire, String>) {
     }
     out.push('\n');
 
-    // local wires, numbered in the order they are first written
+    // local wires without a name, numbered in the order they are first
+    // written
     let mut local: HashMap<Wire, String> = HashMap::new();
+    let mut unnamed = 0;
     for t in a.init().iter().chain(a.update().iter()) {
         for w in t.write() {
             if !vars.contains_key(w) && !local.contains_key(w) {
-                local.insert(*w, format!("%{}", local.len() + 1));
+                let n = wire_name(w).unwrap_or_else(|| {
+                    unnamed += 1;
+                    format!("%{unnamed}")
+                });
+                local.insert(*w, n);
             }
         }
     }

@@ -1,0 +1,43 @@
+module fsm
+  external
+    rst : bv1
+    din : bv1
+    state@init : bv2
+  interface
+    found : bv1
+  private
+    state : bv2
+    nxt : bv2
+  atom controls state reads rst, nxt awaits state@init
+    init
+      X(state) := ID X(state@init)
+    update
+      %1 := 2'd0
+      X(state) := ITE (rst, %1, nxt)
+  atom controls nxt awaits din, state
+    init = update
+      %1 := 2'd0
+      %2 := EQ (X(state), %1)
+      %3 := 2'd1
+      %4 := EQ (X(state), %3)
+      %5 := 2'd2
+      %6 := EQ (X(state), %5)
+      %7 := 2'd1
+      %8 := 2'd0
+      nxt@1 := ITE (X(din), %7, %8)
+      %9 := 2'd1
+      %10 := 2'd2
+      nxt@2 := ITE (X(din), %9, %10)
+      %11 := 2'd3
+      %12 := 2'd0
+      nxt@3 := ITE (X(din), %11, %12)
+      %13 := 2'd1
+      %14 := 2'd2
+      nxt@4 := ITE (X(din), %13, %14)
+      nxt@5 := ITE (%6, nxt@3, nxt@4)
+      nxt@6 := ITE (%4, nxt@2, nxt@5)
+      X(nxt) := ITE (%2, nxt@1, nxt@6)
+  atom controls found awaits state
+    init = update
+      %1 := 2'd3
+      X(found) := EQ (X(state), %1)

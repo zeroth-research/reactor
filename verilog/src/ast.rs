@@ -103,7 +103,7 @@ impl Module {
     pub fn clock(&self) -> Option<&Name> {
         self.items.iter().find_map(|item| match item {
             Item::AlwaysFf { clock, .. } => Some(clock),
-            Item::Assign { .. } => None,
+            Item::Assign { .. } | Item::AlwaysComb { .. } => None,
         })
     }
 
@@ -148,6 +148,8 @@ pub enum Item {
         body: Stmt,
         span: Span,
     },
+    /// `always_comb body`, with `span` the position of `always_comb`.
+    AlwaysComb { body: Stmt, span: Span },
 }
 
 impl Item {
@@ -156,11 +158,29 @@ impl Item {
     pub fn targets(&self) -> Vec<&Name> {
         match self {
             Item::Assign { lhs, .. } => vec![lhs],
-            Item::AlwaysFf { body, .. } => {
+            Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => {
                 let mut out = Vec::new();
                 body.targets(&mut out);
                 out
             }
+        }
+    }
+
+    /// The body of an `always_ff` or `always_comb` block.
+    pub fn body(&self) -> Option<&Stmt> {
+        match self {
+            Item::Assign { .. } => None,
+            Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => Some(body),
+        }
+    }
+
+    /// The position of the item: of `lhs` for an `assign`, else of the
+    /// keyword.
+    pub fn span(&self) -> Span {
+        match self {
+            Item::Assign { span, .. }
+            | Item::AlwaysFf { span, .. }
+            | Item::AlwaysComb { span, .. } => *span,
         }
     }
 
@@ -169,7 +189,7 @@ impl Item {
         let mut out = Vec::new();
         match self {
             Item::Assign { rhs, .. } => rhs.reads(&mut out),
-            Item::AlwaysFf { body, .. } => body.reads(&mut out),
+            Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => body.reads(&mut out),
         }
         out
     }
@@ -189,8 +209,25 @@ pub enum StmtKind {
     /// `if (c) s1 else s2`; a missing `else` is an empty block, and
     /// `else if` is an `if` in the `else` branch.
     If(Expr, Box<Stmt>, Box<Stmt>),
+    /// `case (sel) labels: stmt … default: stmt endcase`: the first item
+    /// with a label equal to `sel` runs, else `default` (if any). The
+    /// `default` can be written anywhere among the items.
+    Case {
+        sel: Expr,
+        items: Vec<CaseItem>,
+        default: Option<Box<Stmt>>,
+    },
     /// `lhs <= rhs;`, with `span` the position of `lhs`.
     NonBlocking { lhs: Name, rhs: Expr },
+    /// `lhs = rhs;`, with `span` the position of `lhs`.
+    Blocking { lhs: Name, rhs: Expr },
+}
+
+/// `l1, l2, …: body` in a `case`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CaseItem {
+    pub labels: Vec<Expr>,
+    pub body: Stmt,
 }
 
 impl Stmt {
@@ -201,23 +238,36 @@ impl Stmt {
         }
     }
 
+    /// The statements directly inside `self`, in source order (`default`
+    /// last).
+    pub fn children(&self) -> Vec<&Stmt> {
+        match &self.kind {
+            StmtKind::Block(stmts) => stmts.iter().collect(),
+            StmtKind::If(_, a, b) => vec![a, b],
+            StmtKind::Case { items, default, .. } => items
+                .iter()
+                .map(|i| &i.body)
+                .chain(default.as_deref())
+                .collect(),
+            StmtKind::NonBlocking { .. } | StmtKind::Blocking { .. } => Vec::new(),
+        }
+    }
+
     /// Adds the signals assigned in the statement to `out`, each once, in
     /// the order of their first assignment.
     fn targets<'s>(&'s self, out: &mut Vec<&'s Name>) {
         match &self.kind {
-            StmtKind::Block(stmts) => stmts.iter().for_each(|s| s.targets(out)),
-            StmtKind::If(_, a, b) => {
-                a.targets(out);
-                b.targets(out);
-            }
-            StmtKind::NonBlocking { lhs, .. } => {
+            StmtKind::NonBlocking { lhs, .. } | StmtKind::Blocking { lhs, .. } => {
                 if !out.contains(&lhs) {
                     out.push(lhs);
                 }
             }
+            _ => self.children().into_iter().for_each(|s| s.targets(out)),
         }
     }
 
+    /// Adds every occurrence of a signal in an expression of the statement
+    /// to `out`, in source order.
     fn reads<'s>(&'s self, out: &mut Vec<(&'s Name, Span)>) {
         match &self.kind {
             StmtKind::Block(stmts) => stmts.iter().for_each(|s| s.reads(out)),
@@ -226,7 +276,21 @@ impl Stmt {
                 a.reads(out);
                 b.reads(out);
             }
-            StmtKind::NonBlocking { rhs, .. } => rhs.reads(out),
+            StmtKind::Case {
+                sel,
+                items,
+                default,
+            } => {
+                sel.reads(out);
+                for item in items {
+                    item.labels.iter().for_each(|l| l.reads(out));
+                    item.body.reads(out);
+                }
+                if let Some(d) = default {
+                    d.reads(out);
+                }
+            }
+            StmtKind::NonBlocking { rhs, .. } | StmtKind::Blocking { rhs, .. } => rhs.reads(out),
         }
     }
 }
@@ -408,7 +472,23 @@ impl fmt::Display for Stmt {
                 write!(f, " end")
             }
             StmtKind::If(c, a, b) => write!(f, "if ({c}) {a} else {b}"),
+            StmtKind::Case {
+                sel,
+                items,
+                default,
+            } => {
+                write!(f, "case ({sel})")?;
+                for item in items {
+                    let labels: Vec<String> = item.labels.iter().map(|l| l.to_string()).collect();
+                    write!(f, " {}: {}", labels.join(", "), item.body)?;
+                }
+                if let Some(d) = default {
+                    write!(f, " default: {d}")?;
+                }
+                write!(f, " endcase")
+            }
             StmtKind::NonBlocking { lhs, rhs } => write!(f, "{lhs} <= {rhs};"),
+            StmtKind::Blocking { lhs, rhs } => write!(f, "{lhs} = {rhs};"),
         }
     }
 }
