@@ -18,12 +18,18 @@ size cast extends as its operand's type says),
 independently of [`SvOp`] and of the rewrites in lowering, so that tests
 can compare it with the translated module.
 
+A hierarchy runs as one design: every signal is known by its name (see
+[`Inst::naming`]), so a port connected to a signal is that signal, and an
+input connected to another expression is computed from it on demand.
+Register initial values are given by path (`u.q`).
+
 [`SvOp`]: crate::SvOp
 */
 
 use crate::ast::{
-    BinOp, Dir, Error, Expr, ExprKind, Item, Module, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, Dir, Error, Expr, ExprKind, Item, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
+use crate::elab::{self, Inst};
 use crate::typing::{self, Env};
 use crate::value::BitVec;
 use num_bigint::{BigInt, BigUint};
@@ -34,81 +40,169 @@ use std::collections::{BTreeMap, BTreeSet};
 pub type Values = BTreeMap<Name, BitVec>;
 
 pub struct Interp<'m> {
-    env: Env,
-    clock: Option<&'m Name>,
-    /// The driver of each signal driven by an `assign` or `always_comb`.
-    driver: BTreeMap<&'m str, &'m Item>,
-    /// The bodies of the `always_ff` blocks.
-    blocks: Vec<&'m Stmt>,
-    /// The value of every register in the current cycle.
+    /// One context per instance, the top module's first.
+    ctxs: Vec<Ctx>,
+    /// The driver of each signal driven by an `assign`, an `always_comb`
+    /// or an instance connection, with the instance it is in.
+    driver: BTreeMap<Name, (usize, Driver<'m>)>,
+    /// The bodies of the `always_ff` blocks, with their instances.
+    blocks: Vec<(usize, &'m Stmt)>,
+    /// The clock of the top module.
+    clock: Option<Name>,
+    /// Every signal but the clock, by name, with its type.
+    signals: BTreeMap<Name, Ty>,
+    /// The inputs of the top module but the clock.
+    inputs: Vec<(Name, Ty)>,
+    /// The registers: path, name and type.
+    registers: Vec<(Name, Name, Ty)>,
+    /// The value of every register in the current cycle, by name.
     state: Values,
 }
 
+/// The signals of an instance.
+struct Ctx {
+    env: Env,
+    /// The name of each signal of the instance (see [`Inst::naming`]).
+    names: BTreeMap<Name, Name>,
+}
+
+#[derive(Clone, Copy)]
+enum Driver<'m> {
+    Item(&'m Item),
+    /// An input of an instance connected to this expression of the
+    /// instantiating module.
+    Conn(&'m Expr),
+}
+
 impl<'m> Interp<'m> {
-    /// Starts with `init` giving a value for every register (and nothing
-    /// else).
-    pub fn new(m: &'m Module, init: &Values) -> Result<Self, Error> {
-        let env = typing::check(m)?;
-        let mut driver = BTreeMap::new();
-        let mut blocks = Vec::new();
+    /// Starts with `init` giving a value for every register, by path (and
+    /// nothing else).
+    pub fn new(inst: &'m Inst, init: &Values) -> Result<Self, Error> {
+        let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
+        let mut it = Interp {
+            ctxs: Vec::new(),
+            driver: BTreeMap::new(),
+            blocks: Vec::new(),
+            clock: inst.module.clock().cloned(),
+            signals: BTreeMap::new(),
+            inputs: Vec::new(),
+            registers: Vec::new(),
+            state: Values::new(),
+        };
+        it.add(inst, "", &naming)?;
+        for p in &inst.module.ports {
+            if p.dir == Dir::Input && Some(&p.decl.name) != it.clock.as_ref() {
+                it.inputs.push((p.decl.name.clone(), p.decl.ty));
+            }
+        }
+        if let Some(clock) = &it.clock {
+            it.signals.remove(clock);
+        }
+        let err = |msg: String| Error::new(Span::default(), msg);
+        for (path, name, ty) in &it.registers {
+            let v = init
+                .get(path)
+                .ok_or_else(|| err(format!("no initial value for register `{path}`")))?;
+            if v.width() != ty.width {
+                return Err(err(format!("register `{path}` given {} bits", v.width())));
+            }
+            it.state.insert(name.clone(), v.clone());
+        }
+        if let Some(x) = init
+            .keys()
+            .find(|x| !it.registers.iter().any(|r| r.0 == **x))
+        {
+            return Err(err(format!("`{x}` is not a register")));
+        }
+        Ok(it)
+    }
+
+    /// Adds the instance at path `prefix` and those below it.
+    fn add(
+        &mut self,
+        inst: &'m Inst,
+        prefix: &str,
+        naming: &BTreeMap<Name, Name>,
+    ) -> Result<(), Error> {
+        let m = &inst.module;
+        let env = typing::check(m).map_err(|e| elab::context(e, prefix))?;
+        let c = self.ctxs.len();
+        let names: BTreeMap<Name, Name> = env
+            .keys()
+            .map(|x| (x.clone(), naming[&format!("{prefix}{x}")].clone()))
+            .collect();
+        for (x, sig) in &env {
+            self.signals.insert(names[x].clone(), sig.ty);
+        }
         for item in &m.items {
             match item {
-                Item::AlwaysFf { body, .. } => blocks.push(body),
+                Item::AlwaysFf { body, .. } => {
+                    self.blocks.push((c, body));
+                    for q in item.targets() {
+                        let path = format!("{prefix}{q}");
+                        self.registers.push((path, names[q].clone(), env[q].ty));
+                    }
+                }
                 Item::Assign { .. } | Item::AlwaysComb { .. } => {
                     for y in item.targets() {
-                        driver.insert(y.as_str(), item);
+                        self.driver
+                            .insert(names[y].clone(), (c, Driver::Item(item)));
+                    }
+                }
+                Item::Instance(i) => {
+                    for (conn, f) in i.conns(Dir::Input) {
+                        if let Some(e) = &conn.actual
+                            && !matches!(e.kind, ExprKind::Var(_))
+                        {
+                            let name = naming[&format!("{prefix}{}.{}", i.name, conn.port)].clone();
+                            self.signals.insert(name.clone(), f.ty);
+                            self.driver.insert(name, (c, Driver::Conn(e)));
+                        }
                     }
                 }
             }
         }
-        let registers = m.registers();
-        let err = |msg: String| Error::new(Span::default(), msg);
-        for q in &registers {
-            let v = init
-                .get(*q)
-                .ok_or_else(|| err(format!("no initial value for register `{q}`")))?;
-            if v.width() != env[*q].ty.width {
-                return Err(err(format!("register `{q}` given {} bits", v.width())));
-            }
+        self.ctxs.push(Ctx { env, names });
+        for (u, child) in &inst.children {
+            self.add(child, &format!("{prefix}{u}."), naming)?;
         }
-        if let Some(x) = init.keys().find(|x| !registers.contains(x)) {
-            return Err(err(format!("`{x}` is not a register")));
-        }
-        Ok(Self {
-            env,
-            clock: m.clock(),
-            driver,
-            blocks,
-            state: init.clone(),
-        })
+        Ok(())
+    }
+
+    /// The registers, by path, with their types.
+    pub fn registers(&self) -> Vec<(&Name, Ty)> {
+        self.registers.iter().map(|(p, _, t)| (p, *t)).collect()
+    }
+
+    /// The inputs of the top module but the clock, with their types.
+    pub fn inputs(&self) -> &[(Name, Ty)] {
+        &self.inputs
     }
 
     /// Runs one cycle, with `inputs` giving a value for every input but
     /// the clock. Returns the value of every signal but the clock in this
-    /// cycle.
+    /// cycle, by name.
     pub fn step(&mut self, inputs: &Values) -> Result<Values, String> {
         let mut values = self.state.clone();
-        for (name, sig) in &self.env {
-            if sig.dir != Some(Dir::Input) || Some(name) == self.clock {
-                continue;
-            }
+        for (name, ty) in &self.inputs {
             let v = inputs
                 .get(name)
                 .ok_or_else(|| format!("no value for input `{name}`"))?;
-            if v.width() != sig.ty.width {
+            if v.width() != ty.width {
                 return Err(format!("input `{name}` given {} bits", v.width()));
             }
             values.insert(name.clone(), v.clone());
         }
         let mut active = BTreeSet::new();
-        for name in self.env.keys() {
-            if Some(name) != self.clock {
-                self.signal(name, &mut values, &mut active)?;
-            }
+        for name in self.signals.keys() {
+            self.signal(name, &mut values, &mut active)?;
         }
         let mut updates = Values::new();
-        for body in &self.blocks {
-            self.exec(body, false, &mut values, &mut active, &mut updates)?;
+        for &(c, body) in &self.blocks {
+            let mut out = Values::new();
+            self.exec(c, body, false, &mut values, &mut active, &mut out)?;
+            let names = &self.ctxs[c].names;
+            updates.extend(out.into_iter().map(|(q, v)| (names[&q].clone(), v)));
         }
         self.state.extend(updates);
         Ok(values)
@@ -120,6 +214,7 @@ impl<'m> Interp<'m> {
     /// there.
     fn exec(
         &self,
+        c: usize,
         s: &Stmt,
         comb: bool,
         values: &mut Values,
@@ -131,11 +226,11 @@ impl<'m> Interp<'m> {
         match &s.kind {
             StmtKind::Block(stmts) => stmts
                 .iter()
-                .try_for_each(|s| self.exec(s, comb, values, active, out)),
-            StmtKind::If(c, a, b) => {
-                let (c, _) = self.expr(c, &scope(out), values, active)?;
-                let branch = if c.is_zero() { b } else { a };
-                self.exec(branch, comb, values, active, out)
+                .try_for_each(|s| self.exec(c, s, comb, values, active, out)),
+            StmtKind::If(cond, a, b) => {
+                let (v, _) = self.expr(c, cond, &scope(out), values, active)?;
+                let branch = if v.is_zero() { b } else { a };
+                self.exec(c, branch, comb, values, active, out)
             }
             StmtKind::Case {
                 sel,
@@ -143,24 +238,25 @@ impl<'m> Interp<'m> {
                 default,
             } => {
                 let scope = scope(out);
-                let (v, _) = self.expr(sel, &scope, values, active)?;
+                let (v, _) = self.expr(c, sel, &scope, values, active)?;
                 for item in items {
                     for l in &item.labels {
-                        if self.expr(l, &scope, values, active)?.0 == v {
-                            return self.exec(&item.body, comb, values, active, out);
+                        if self.expr(c, l, &scope, values, active)?.0 == v {
+                            return self.exec(c, &item.body, comb, values, active, out);
                         }
                     }
                 }
                 match default {
-                    Some(d) => self.exec(d, comb, values, active, out),
+                    Some(d) => self.exec(c, d, comb, values, active, out),
                     None => Ok(()),
                 }
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                let (v, _) = self.expr(rhs, &scope(out), values, active)?;
+                let (v, _) = self.expr(c, rhs, &scope(out), values, active)?;
+                let env = &self.ctxs[c].env;
                 // the pieces take the bits of `v` from the top down
                 let mut top = v.width();
-                for p in typing::pieces(&self.env, lhs) {
+                for p in typing::pieces(env, lhs) {
                     let bits = slice(&v, top - 1, top - p.width());
                     top -= p.width();
                     // the other bits of a register keep their value; those
@@ -168,8 +264,8 @@ impl<'m> Interp<'m> {
                     // are read (typing), so any value does
                     let old = match out.get(&p.name) {
                         Some(old) => old.clone(),
-                        None if comb => BitVec::zero(self.env[&p.name].ty.width),
-                        None => self.state[&p.name].clone(),
+                        None if comb => BitVec::zero(env[&p.name].ty.width),
+                        None => self.state[&self.ctxs[c].names[&p.name]].clone(),
                     };
                     out.insert(p.name.clone(), write(&old, p.lo, &bits));
                 }
@@ -178,7 +274,8 @@ impl<'m> Interp<'m> {
         }
     }
 
-    /// The value of a signal, computed on demand from its driver.
+    /// The value of a signal (by name), computed on demand from its
+    /// driver.
     fn signal(
         &self,
         name: &str,
@@ -191,34 +288,45 @@ impl<'m> Interp<'m> {
         if !active.insert(name.to_string()) {
             return Err(format!("combinational loop through `{name}`"));
         }
-        match self.driver[name] {
-            Item::Assign { lhs, rhs, .. } => {
-                let (v, _) = self.expr(rhs, &Values::new(), values, active)?;
+        let (c, driver) = self
+            .driver
+            .get(name)
+            .copied()
+            .ok_or_else(|| format!("`{name}` has no driver"))?;
+        let ctx = &self.ctxs[c];
+        match driver {
+            Driver::Conn(e) => {
+                let (v, _) = self.expr(c, e, &Values::new(), values, active)?;
+                values.insert(name.to_string(), v);
+            }
+            Driver::Item(Item::Assign { lhs, rhs, .. }) => {
+                let (v, _) = self.expr(c, rhs, &Values::new(), values, active)?;
                 // an `assign` drives whole signals (typing)
                 let mut top = v.width();
-                for p in typing::pieces(&self.env, lhs) {
+                for p in typing::pieces(&ctx.env, lhs) {
                     let bits = slice(&v, top - 1, top - p.width());
                     top -= p.width();
+                    let y = &ctx.names[&p.name];
                     let old = values
-                        .get(&p.name)
+                        .get(y)
                         .cloned()
-                        .unwrap_or_else(|| BitVec::zero(self.env[&p.name].ty.width));
-                    values.insert(p.name.clone(), write(&old, p.lo, &bits));
+                        .unwrap_or_else(|| BitVec::zero(ctx.env[&p.name].ty.width));
+                    values.insert(y.clone(), write(&old, p.lo, &bits));
                 }
             }
-            item => {
+            Driver::Item(item) => {
                 let targets = item.targets();
                 for y in &targets {
-                    active.insert(y.to_string());
+                    active.insert(ctx.names[*y].clone());
                 }
                 let mut out = Values::new();
-                self.exec(item.body().unwrap(), true, values, active, &mut out)?;
+                self.exec(c, item.body().unwrap(), true, values, active, &mut out)?;
                 for y in targets {
                     let v = out
                         .remove(y)
                         .ok_or_else(|| format!("`{y}` not assigned (a latch)"))?;
-                    active.remove(y);
-                    values.insert(y.clone(), v);
+                    active.remove(&ctx.names[y]);
+                    values.insert(ctx.names[y].clone(), v);
                 }
             }
         }
@@ -230,43 +338,45 @@ impl<'m> Interp<'m> {
     /// there and all others their value in the cycle.
     fn expr(
         &self,
+        c: usize,
         e: &Expr,
         scope: &Values,
         values: &mut Values,
         active: &mut BTreeSet<Name>,
     ) -> Result<(BitVec, Ty), String> {
+        let ctx = &self.ctxs[c];
         Ok(match &e.kind {
-            ExprKind::Lit { ty, value } => (value.clone(), *ty),
+            ExprKind::Lit { ty, value } | ExprKind::Const { ty, value, .. } => (value.clone(), *ty),
             ExprKind::Var(x) => {
                 let v = match scope.get(x) {
                     Some(v) => v.clone(),
-                    None => self.signal(x, values, active)?,
+                    None => self.signal(&ctx.names[x], values, active)?,
                 };
-                (v, self.env[x].ty)
+                (v, ctx.env[x].ty)
             }
             ExprKind::Unary(op, a) => {
-                let (a, ta) = self.expr(a, scope, values, active)?;
+                let (a, ta) = self.expr(c, a, scope, values, active)?;
                 (unary(*op, &a), typing::unary(*op, ta))
             }
             ExprKind::Binary(op, a, b) => {
-                let (a, ta) = self.expr(a, scope, values, active)?;
-                let (b, tb) = self.expr(b, scope, values, active)?;
+                let (a, ta) = self.expr(c, a, scope, values, active)?;
+                let (b, tb) = self.expr(c, b, scope, values, active)?;
                 let t = typing::binary(*op, ta, tb, e.span).map_err(|e| e.to_string())?;
                 (binary(*op, &a, &b, ta.signed)?, t)
             }
-            ExprKind::Cond(c, a, b) => {
-                let (c, _) = self.expr(c, scope, values, active)?;
-                let (a, ta) = self.expr(a, scope, values, active)?;
-                let (b, tb) = self.expr(b, scope, values, active)?;
+            ExprKind::Cond(cond, a, b) => {
+                let (v, _) = self.expr(c, cond, scope, values, active)?;
+                let (a, ta) = self.expr(c, a, scope, values, active)?;
+                let (b, tb) = self.expr(c, b, scope, values, active)?;
                 let t = typing::cond(ta, tb, e.span).map_err(|e| e.to_string())?;
-                (if c.is_zero() { b } else { a }, t)
+                (if v.is_zero() { b } else { a }, t)
             }
             ExprKind::Concat(es) => {
-                let (v, ts) = self.exprs(es, scope, values, active)?;
+                let (v, ts) = self.exprs(c, es, scope, values, active)?;
                 (v, typing::concat(&ts))
             }
             ExprKind::Repl(n, es) => {
-                let (v, ts) = self.exprs(es, scope, values, active)?;
+                let (v, ts) = self.exprs(c, es, scope, values, active)?;
                 let t = typing::concat(&ts);
                 let mut acc = v.clone();
                 for _ in 1..*n {
@@ -277,11 +387,11 @@ impl<'m> Interp<'m> {
             ExprKind::Select(x, sel) => {
                 let v = match scope.get(x) {
                     Some(v) => v.clone(),
-                    None => self.signal(x, values, active)?,
+                    None => self.signal(&ctx.names[x], values, active)?,
                 };
-                let tx = self.env[x].ty;
+                let tx = ctx.env[x].ty;
                 let index = match sel.index() {
-                    Some(i) => Some(self.expr(i, scope, values, active)?),
+                    Some(i) => Some(self.expr(c, i, scope, values, active)?),
                     None => None,
                 };
                 let t = typing::select(x, tx, sel, index.as_ref().map(|i| i.1), e.span)
@@ -299,9 +409,9 @@ impl<'m> Interp<'m> {
                 };
                 (slice(&v, base + t.width - 1, base), t)
             }
-            ExprKind::Cast(c, a) => {
-                let (v, ta) = self.expr(a, scope, values, active)?;
-                let t = typing::cast(*c, ta, typing::context_free(a), e.span)
+            ExprKind::Cast(cast, a) => {
+                let (v, ta) = self.expr(c, a, scope, values, active)?;
+                let t = typing::cast(*cast, ta, typing::context_free(a), e.span)
                     .map_err(|e| e.to_string())?;
                 let v = if ta.signed {
                     BitVec::from_signed(t.width, v.signed())
@@ -316,6 +426,7 @@ impl<'m> Interp<'m> {
     /// The values of `es` concatenated, and their types.
     fn exprs(
         &self,
+        c: usize,
         es: &[Expr],
         scope: &Values,
         values: &mut Values,
@@ -324,7 +435,7 @@ impl<'m> Interp<'m> {
         let mut acc: Option<BitVec> = None;
         let mut ts = Vec::new();
         for e in es {
-            let (v, t) = self.expr(e, scope, values, active)?;
+            let (v, t) = self.expr(c, e, scope, values, active)?;
             acc = Some(match acc {
                 None => v,
                 Some(a) => concat(&a, &v),

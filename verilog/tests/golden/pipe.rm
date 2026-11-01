@@ -1,0 +1,38 @@
+module pipe
+  external
+    en : bv1
+    x : bv8
+    s1.q@init : bv8
+    s2.q@init : bv4
+  interface
+    y1 : bv8
+    y2 : bv4
+    c1 : bv1
+  private
+    s2.en : bv1
+    s2.d : bv4
+    s2.changed : bv1
+  atom controls y1 reads en, x, y1 awaits s1.q@init
+    init
+      X(y1) := ID X(s1.q@init)
+    update
+      X(y1) := ITE (en, x, y1)
+  atom controls y2 reads y2, s2.en, s2.d awaits s2.q@init
+    init
+      X(y2) := ID X(s2.q@init)
+    update
+      X(y2) := ITE (s2.en, s2.d, y2)
+  atom controls s2.d awaits x, y1
+    init = update
+      %1 := EXTRACT[3:0] X(y1)
+      %2 := EXTRACT[3:0] X(x)
+      X(s2.d) := ADD (%1, %2)
+  atom controls c1 awaits x, y1
+    init = update
+      X(c1) := NE (X(y1), X(x))
+  atom controls s2.changed awaits y2, s2.d
+    init = update
+      X(s2.changed) := NE (X(y2), X(s2.d))
+  atom controls s2.en awaits en, c1
+    init = update
+      X(s2.en) := AND (X(en), X(c1))

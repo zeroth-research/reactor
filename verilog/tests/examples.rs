@@ -6,13 +6,15 @@
 //! `UPDATE_GOLDEN=1 cargo test -p verilog --test examples` rewrites the
 //! golden files in `tests/golden/`.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use verilog::ast::{Dir, Module};
+use verilog::ast::{Dir, Item, Module, Ty};
 use verilog::ast_interp::{Interp, Values};
-use verilog::lower::{Translation, init_name, lower};
+use verilog::elab::{self, Inst};
+use verilog::lower::{Translation, init_name, lower_inst};
 use verilog::rm_sim::{Sim, Valuation};
-use verilog::{BitVec, frontend};
+use verilog::{BitVec, typing};
 
 fn examples() -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
@@ -30,10 +32,47 @@ fn stem(path: &Path) -> String {
     path.file_stem().unwrap().to_string_lossy().into_owned()
 }
 
-fn load(path: &Path) -> (Module, Translation) {
-    let m = frontend::parse_file(path).unwrap_or_else(|e| panic!("{}:{e}", path.display()));
-    let t = lower(&m).unwrap_or_else(|e| panic!("{}:{e}", path.display()));
-    (m, t)
+fn load(path: &Path) -> (Inst, Translation) {
+    let inst = elab::load_file(path).unwrap_or_else(|e| panic!("{}:{e}", path.display()));
+    let t = lower_inst(&inst).unwrap_or_else(|e| panic!("{}:{e}", path.display()));
+    (inst, t)
+}
+
+/// The registers of a hierarchy by path, with their types.
+fn registers(inst: &Inst) -> Vec<(String, Ty)> {
+    inst.registers()
+        .into_iter()
+        .map(|path| {
+            let (prefix, q) = match path.rsplit_once('.') {
+                Some((p, q)) => (format!("{p}."), q.to_string()),
+                None => (String::new(), path.clone()),
+            };
+            let env = typing::env(&inst.at(&prefix).module).unwrap();
+            let ty = env[&q].ty;
+            (path, ty)
+        })
+        .collect()
+}
+
+/// The number of atoms of a hierarchy: one per item, and one per input
+/// connected to an expression other than a name.
+fn atoms(inst: &Inst) -> usize {
+    let m = &inst.module;
+    let own = m
+        .items
+        .iter()
+        .filter(|i| !matches!(i, Item::Instance(_)))
+        .count();
+    let conns = m
+        .instances()
+        .flat_map(|i| i.conns(Dir::Input))
+        .filter(|(c, _)| {
+            c.actual
+                .as_ref()
+                .is_some_and(|e| !matches!(e.kind, verilog::ast::ExprKind::Var(_)))
+        })
+        .count();
+    own + conns + inst.children.iter().map(|(_, c)| atoms(c)).sum::<usize>()
 }
 
 #[test]
@@ -57,12 +96,14 @@ fn golden() {
 }
 
 /// Inputs and the initial values of the registers are external, outputs
-/// interface, internal signals private; an unread input and the clock are
-/// no variables at all. The update of a register atom awaits nothing.
+/// interface, all other signals of the hierarchy private; an unread input
+/// and the clock are no variables at all. The update of a register atom
+/// awaits nothing.
 #[test]
 fn structure() {
     for path in examples() {
-        let (m, t) = load(&path);
+        let (inst, t) = load(&path);
+        let m = &inst.module;
         let names = |intf: &base::Interface<verilog::Sort>| {
             let mut names: Vec<String> = intf.iter().map(|v| t.name(v).to_string()).collect();
             names.sort();
@@ -89,15 +130,28 @@ fn structure() {
             sorted(ports(Dir::Output)),
             "{display}"
         );
-        let decls = m.decls.iter().map(|d| d.name.clone()).collect();
-        assert_eq!(names(t.module.prvt()), sorted(decls), "{display}");
-        assert_eq!(t.module.atoms().len(), m.items.len());
+        let top: BTreeSet<&String> = m.ports.iter().map(|p| &p.decl.name).collect();
+        let private: BTreeSet<String> = inst
+            .naming()
+            .into_iter()
+            .map(|(_, n)| n)
+            .filter(|n| !top.contains(n))
+            .collect();
+        assert_eq!(
+            names(t.module.prvt()),
+            private.into_iter().collect::<Vec<_>>(),
+            "{display}"
+        );
+        assert_eq!(t.module.atoms().len(), atoms(&inst), "{display}");
+        let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
+        let regs: BTreeMap<&String, &String> =
+            t.registers.iter().map(|q| (&naming[q], q)).collect();
         for atom in t.module.atoms() {
             let ctrl = names(atom.ctrl());
-            if !t.registers.contains(&ctrl[0]) {
+            if !regs.contains_key(&ctrl[0]) {
                 continue;
             }
-            let inits: Vec<String> = ctrl.iter().map(|q| init_name(q)).collect();
+            let inits: Vec<String> = ctrl.iter().map(|q| init_name(regs[q])).collect();
             assert_eq!(names(atom.wait()), sorted(inits), "{display}");
             for term in atom.update().iter() {
                 for w in term.read() {
@@ -151,15 +205,11 @@ impl Rand {
             .collect()
     }
 
-    /// A value for every register.
-    fn registers(&mut self, m: &Module) -> Values {
-        let decls: Vec<_> = m.ports.iter().map(|p| &p.decl).chain(&m.decls).collect();
-        m.registers()
+    /// A value for every register, by path.
+    fn registers(&mut self, inst: &Inst) -> Values {
+        registers(inst)
             .into_iter()
-            .map(|q| {
-                let d = decls.iter().find(|d| &d.name == q).unwrap();
-                (q.clone(), self.bits(d.ty.width))
-            })
+            .map(|(q, ty)| (q, self.bits(ty.width)))
             .collect()
     }
 }
@@ -171,18 +221,19 @@ impl Rand {
 fn rm_matches_ast() {
     let mut rand = Rand(0x2545_f491_4f6c_dd1d);
     for path in examples() {
-        let (m, t) = load(&path);
+        let (inst, t) = load(&path);
+        let m = &inst.module;
         for _ in 0..10 {
-            let init = rand.registers(&m);
-            let mut interp = Interp::new(&m, &init).unwrap();
+            let init = rand.registers(&inst);
+            let mut interp = Interp::new(&inst, &init).unwrap();
             let mut sim = Sim::new(&t.module);
             for k in 0..100 {
-                let inputs = rand.inputs(&m);
+                let inputs = rand.inputs(m);
                 let expected = interp.step(&inputs).unwrap();
                 let regs = if k == 0 {
                     init.clone()
                 } else {
-                    rand.registers(&m)
+                    rand.registers(&inst)
                 };
                 let extl: Valuation = inputs
                     .iter()
@@ -234,7 +285,8 @@ fn iverilog_bin() -> Option<PathBuf> {
 /// the first edge; iverilog accepts this although the standard forbids
 /// writing an `always_ff` variable from another process. The clock starts
 /// at 0, since a change from x to 1 would be a rising edge.
-fn testbench(m: &Module, init: &Values, vectors: &[Values]) -> String {
+fn testbench(inst: &Inst, init: &Values, vectors: &[Values]) -> String {
+    let m = &inst.module;
     let mut tb = String::from("module tb;\n");
     for p in &m.ports {
         let kind = if p.dir == Dir::Input { "logic" } else { "wire" };
@@ -252,7 +304,7 @@ fn testbench(m: &Module, init: &Values, vectors: &[Values]) -> String {
     for (q, value) in init {
         tb += &format!("    dut.{q} = {}'h{:x};\n", value.width(), value.unsigned());
     }
-    let shown: Vec<String> = shown(m).iter().map(|x| format!("dut.{x}")).collect();
+    let shown: Vec<String> = shown(inst).iter().map(|x| format!("dut.{x}")).collect();
     let format = vec!["%h"; shown.len()].join(" ");
     for v in vectors {
         for (name, value) in v {
@@ -267,14 +319,23 @@ fn testbench(m: &Module, init: &Values, vectors: &[Values]) -> String {
     tb
 }
 
-/// The signals compared with iverilog: outputs and internal signals.
-fn shown(m: &Module) -> Vec<&String> {
-    let outputs = m.ports.iter().filter(|p| p.dir == Dir::Output);
-    outputs
-        .map(|p| &p.decl)
-        .chain(&m.decls)
-        .map(|d| &d.name)
-        .collect()
+/// The signals compared with iverilog: all but the inputs of the top
+/// module, by name (which is a hierarchical name, see `elab`).
+fn shown(inst: &Inst) -> Vec<String> {
+    let inputs: BTreeSet<&String> = inst
+        .module
+        .ports
+        .iter()
+        .filter(|p| p.dir == Dir::Input)
+        .map(|p| &p.decl.name)
+        .collect();
+    let mut out: Vec<String> = Vec::new();
+    for (_, name) in inst.naming() {
+        if !inputs.contains(&name) && !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
 }
 
 /// The AST semantics agree with iverilog on random vectors. Skipped (with a
@@ -290,18 +351,19 @@ fn ast_matches_iverilog() {
     std::fs::create_dir_all(&tmp).unwrap();
     let mut rand = Rand(0x9e37_79b9_7f4a_7c15);
     for path in examples() {
-        let (m, _) = load(&path);
-        let init = rand.registers(&m);
-        let vectors: Vec<Values> = (0..300).map(|_| rand.inputs(&m)).collect();
-        let mut interp = Interp::new(&m, &init).unwrap();
+        let (inst, _) = load(&path);
+        let m = &inst.module;
+        let init = rand.registers(&inst);
+        let vectors: Vec<Values> = (0..300).map(|_| rand.inputs(m)).collect();
+        let mut interp = Interp::new(&inst, &init).unwrap();
         let expected: Vec<String> = vectors
             .iter()
             .map(|v| {
                 let values = interp.step(v).unwrap();
-                shown(&m)
+                shown(&inst)
                     .into_iter()
                     .map(|x| {
-                        let v = &values[x];
+                        let v = &values[&x];
                         format!("{:0w$x}", v.unsigned(), w = v.width().div_ceil(4))
                     })
                     .collect::<Vec<_>>()
@@ -311,7 +373,7 @@ fn ast_matches_iverilog() {
 
         let tb = tmp.join(format!("tb_{}.sv", m.name));
         let out = tmp.join(format!("tb_{}.vvp", m.name));
-        std::fs::write(&tb, testbench(&m, &init, &vectors)).unwrap();
+        std::fs::write(&tb, testbench(&inst, &init, &vectors)).unwrap();
         let compile = Command::new(bin.join("iverilog"))
             .args(["-g2012", "-o"])
             .args([&out, &tb, &path])

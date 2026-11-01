@@ -71,6 +71,20 @@ impl Ty {
         width: 1,
         signed: false,
     };
+
+    /// `int`, the type of unsized decimal literals and integer parameters:
+    /// with 2-state values, the same as `logic signed [31:0]`.
+    pub const INT: Ty = Ty {
+        width: 32,
+        signed: true,
+    };
+}
+
+/// The value of a constant expression, with its type.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Const {
+    pub ty: Ty,
+    pub value: BitVec,
 }
 
 /// SystemVerilog syntax: `logic signed [7:0]`.
@@ -87,9 +101,13 @@ impl fmt::Display for Ty {
     }
 }
 
+/// A module with the values of its parameters substituted: the frontend
+/// elaborates a module once for each set of parameter values.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Module {
     pub name: Name,
+    /// The parameters and local parameters, in order, with their values.
+    pub params: Vec<Param>,
     /// The ports of the ANSI header, in order.
     pub ports: Vec<Port>,
     /// The internal signals.
@@ -98,12 +116,22 @@ pub struct Module {
 }
 
 impl Module {
-    /// The clock of the first `always_ff` block, if any. After
-    /// [`typing::check`](crate::typing::check), all blocks have this clock.
+    /// The clock of the first `always_ff` block or the first instance with
+    /// a clock, if any. After [`typing::check`](crate::typing::check), all
+    /// blocks and instances have this clock.
     pub fn clock(&self) -> Option<&Name> {
         self.items.iter().find_map(|item| match item {
             Item::AlwaysFf { clock, .. } => Some(clock),
+            Item::Instance(i) => i.clock(),
             Item::Assign { .. } | Item::AlwaysComb { .. } => None,
+        })
+    }
+
+    /// The instances, in source order.
+    pub fn instances(&self) -> impl Iterator<Item = &Instance> {
+        self.items.iter().filter_map(|item| match item {
+            Item::Instance(i) => Some(i),
+            _ => None,
         })
     }
 
@@ -136,6 +164,82 @@ pub struct Decl {
     pub span: Span,
 }
 
+/// `parameter` or `localparam`, with its value.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Param {
+    pub name: Name,
+    pub ty: Ty,
+    pub value: BitVec,
+    /// Whether instances can override it.
+    pub overridable: bool,
+    pub span: Span,
+}
+
+/// `module #(.N(v), …) name (.port(actual), …);`
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Instance {
+    pub module: Name,
+    pub name: Name,
+    /// The parameter values given, evaluated in the instantiating module.
+    pub params: Vec<Override>,
+    pub conns: Vec<Conn>,
+    /// The position of the instance name.
+    pub span: Span,
+}
+
+/// `.N(v)` in `#(…)`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Override {
+    pub name: Name,
+    pub value: Const,
+    pub span: Span,
+}
+
+/// `.port(actual)`, `.port` (short for `.port(port)`) or `.port()`
+/// (unconnected).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Conn {
+    pub port: Name,
+    pub actual: Option<Expr>,
+    pub span: Span,
+    /// The port of the instantiated module; filled in by
+    /// [`elab`](crate::elab).
+    pub formal: Option<Formal>,
+}
+
+/// A port of an instantiated module, as seen from the connection.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Formal {
+    pub dir: Dir,
+    pub ty: Ty,
+    /// Whether it is the clock of the module.
+    pub clock: bool,
+}
+
+impl Instance {
+    /// The signal connected to the clock port, if any.
+    pub fn clock(&self) -> Option<&Name> {
+        self.conns
+            .iter()
+            .find_map(|c| match (&c.formal, &c.actual) {
+                (Some(f), Some(e)) if f.clock => match &e.kind {
+                    ExprKind::Var(x) => Some(x),
+                    _ => None,
+                },
+                _ => None,
+            })
+    }
+
+    /// The connections of ports with direction `dir` (other than the
+    /// clock), with the actual if there is one.
+    pub fn conns(&self, dir: Dir) -> impl Iterator<Item = (&Conn, &Formal)> {
+        self.conns.iter().filter_map(move |c| match &c.formal {
+            Some(f) if f.dir == dir && !f.clock => Some((c, f)),
+            _ => None,
+        })
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Item {
     /// `assign lhs = rhs;`, with `span` the position of `lhs`.
@@ -150,6 +254,8 @@ pub enum Item {
     },
     /// `always_comb body`, with `span` the position of `always_comb`.
     AlwaysComb { body: Stmt, span: Span },
+    /// A module instance.
+    Instance(Instance),
 }
 
 impl Item {
@@ -167,24 +273,33 @@ impl Item {
                 body.targets(&mut out);
                 out
             }
+            // the signals connected to outputs
+            Item::Instance(i) => i
+                .conns(Dir::Output)
+                .filter_map(|(c, _)| match c.actual.as_ref().map(|e| &e.kind) {
+                    Some(ExprKind::Var(y)) => Some(y),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 
     /// The body of an `always_ff` or `always_comb` block.
     pub fn body(&self) -> Option<&Stmt> {
         match self {
-            Item::Assign { .. } => None,
+            Item::Assign { .. } | Item::Instance(_) => None,
             Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => Some(body),
         }
     }
 
-    /// The position of the item: of `lhs` for an `assign`, else of the
-    /// keyword.
+    /// The position of the item: of `lhs` for an `assign`, of the name of
+    /// an instance, else of the keyword.
     pub fn span(&self) -> Span {
         match self {
             Item::Assign { span, .. }
             | Item::AlwaysFf { span, .. }
             | Item::AlwaysComb { span, .. } => *span,
+            Item::Instance(i) => i.span,
         }
     }
 
@@ -197,6 +312,14 @@ impl Item {
                 lhs.reads(&mut out);
             }
             Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => body.reads(&mut out),
+            // the actuals of inputs; the clock has no value in a cycle
+            Item::Instance(i) => {
+                for (c, _) in i.conns(Dir::Input) {
+                    if let Some(e) = &c.actual {
+                        e.reads(&mut out);
+                    }
+                }
+            }
         }
         out
     }
@@ -350,6 +473,13 @@ pub struct Expr {
 pub enum ExprKind {
     /// A sized literal (`8'd3`, `4'sb1010`); `ty.width` is the size.
     Lit {
+        ty: Ty,
+        value: BitVec,
+    },
+    /// A parameter, or an integer constant expression over parameters
+    /// (`N - 1`), with its value; `text` is the expression as written.
+    Const {
+        text: String,
         ty: Ty,
         value: BitVec,
     },
@@ -555,7 +685,7 @@ impl Expr {
     /// Adds every occurrence of a signal in the expression to `out`.
     pub fn reads<'e>(&'e self, out: &mut Vec<(&'e Name, Span)>) {
         match &self.kind {
-            ExprKind::Lit { .. } => {}
+            ExprKind::Lit { .. } | ExprKind::Const { .. } => {}
             ExprKind::Var(x) => out.push((x, self.span)),
             ExprKind::Unary(_, a) => a.reads(out),
             ExprKind::Binary(_, a, b) => {
@@ -585,6 +715,7 @@ impl fmt::Display for Expr {
                 let s = if ty.signed { "s" } else { "" };
                 write!(f, "{}'{s}d{}", ty.width, value.unsigned())
             }
+            ExprKind::Const { text, .. } => write!(f, "{text}"),
             ExprKind::Var(x) => write!(f, "{x}"),
             ExprKind::Unary(op, e) => write!(f, "({op}{e})"),
             ExprKind::Binary(op, a, b) => write!(f, "({a} {op} {b})"),

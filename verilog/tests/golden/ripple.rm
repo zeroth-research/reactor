@@ -1,0 +1,93 @@
+module ripple
+  external
+    a : bv4
+    b : bv4
+    cin : bv1
+  interface
+    s : bv4
+    cout : bv1
+  private
+    s0 : bv1
+    s1 : bv1
+    s2 : bv1
+    s3 : bv1
+    c0 : bv1
+    c1 : bv1
+    c2 : bv1
+    f0.a : bv1
+    f0.b : bv1
+    f1.a : bv1
+    f1.b : bv1
+    f2.a : bv1
+    f2.b : bv1
+    f3.a : bv1
+    f3.b : bv1
+  atom controls f0.a awaits a
+    init = update
+      X(f0.a) := EXTRACT[0:0] X(a)
+  atom controls f0.b awaits b
+    init = update
+      X(f0.b) := EXTRACT[0:0] X(b)
+  atom controls f1.a awaits a
+    init = update
+      X(f1.a) := EXTRACT[1:1] X(a)
+  atom controls f1.b awaits b
+    init = update
+      X(f1.b) := EXTRACT[1:1] X(b)
+  atom controls f2.a awaits a
+    init = update
+      X(f2.a) := EXTRACT[2:2] X(a)
+  atom controls f2.b awaits b
+    init = update
+      X(f2.b) := EXTRACT[2:2] X(b)
+  atom controls f3.a awaits a
+    init = update
+      X(f3.a) := EXTRACT[3:3] X(a)
+  atom controls f3.b awaits b
+    init = update
+      X(f3.b) := EXTRACT[3:3] X(b)
+  atom controls s0 awaits cin, f0.a, f0.b
+    init = update
+      %1 := XOR (X(f0.a), X(f0.b))
+      X(s0) := XOR (%1, X(cin))
+  atom controls c0 awaits cin, f0.a, f0.b
+    init = update
+      %1 := AND (X(f0.a), X(f0.b))
+      %2 := XOR (X(f0.a), X(f0.b))
+      %3 := AND (X(cin), %2)
+      X(c0) := OR (%1, %3)
+  atom controls s1 awaits c0, f1.a, f1.b
+    init = update
+      %1 := XOR (X(f1.a), X(f1.b))
+      X(s1) := XOR (%1, X(c0))
+  atom controls c1 awaits c0, f1.a, f1.b
+    init = update
+      %1 := AND (X(f1.a), X(f1.b))
+      %2 := XOR (X(f1.a), X(f1.b))
+      %3 := AND (X(c0), %2)
+      X(c1) := OR (%1, %3)
+  atom controls s2 awaits c1, f2.a, f2.b
+    init = update
+      %1 := XOR (X(f2.a), X(f2.b))
+      X(s2) := XOR (%1, X(c1))
+  atom controls c2 awaits c1, f2.a, f2.b
+    init = update
+      %1 := AND (X(f2.a), X(f2.b))
+      %2 := XOR (X(f2.a), X(f2.b))
+      %3 := AND (X(c1), %2)
+      X(c2) := OR (%1, %3)
+  atom controls s3 awaits c2, f3.a, f3.b
+    init = update
+      %1 := XOR (X(f3.a), X(f3.b))
+      X(s3) := XOR (%1, X(c2))
+  atom controls cout awaits c2, f3.a, f3.b
+    init = update
+      %1 := AND (X(f3.a), X(f3.b))
+      %2 := XOR (X(f3.a), X(f3.b))
+      %3 := AND (X(c2), %2)
+      X(cout) := OR (%1, %3)
+  atom controls s awaits s0, s1, s2, s3
+    init = update
+      %1 := CONCAT (X(s1), X(s0))
+      %2 := CONCAT (X(s2), %1)
+      X(s) := CONCAT (X(s3), %2)
