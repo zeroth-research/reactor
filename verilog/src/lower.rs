@@ -5,7 +5,7 @@ Every signal becomes a variable of the width of its type: inputs are
 external, outputs are interface variables, internal signals are private.
 
 Every `assign` becomes a combinatorial atom that awaits the next values
-`X(·)` of the signals it reads and writes `X(lhs)`. The expression becomes
+`X(·)` of the signals it reads and writes the next values of its targets. The expression becomes
 one term per operator, with the source operators rewritten into [`SvOp`],
 which has no `>`, `>=` and no logical operators:
 
@@ -17,7 +17,14 @@ which has no `>`, `>=` and no logical operators:
 | `c ? a : b` | `Ite` on `RedOr c` (none for 1 bit) |
 | `~^`, `~&`, `~\|` | `Not` of `Xor`, `RedAnd`, `RedOr` |
 | `===`, `!==` | `Eq`, `Ne` |
-| unary `+` | nothing |
+| unary `+`, `$signed`, `$unsigned`, `signed'`, `unsigned'` | nothing |
+| `/`, `%` | `UDiv`/`URem`, or `SDiv`/`SRem` for signed operands |
+| `>>>` | `AShr` for a signed operand, else `LShr` |
+| `{a, b, c}` | `Concat(a, Concat(b, c))` |
+| `{n{e}}` | `n` copies of `e`'s wire, nested as above |
+| `x[h:l]`, `x[c]`, `x[c +: w]`, … (constant) | `Extract`, nothing for all bits |
+| `x[i]`, `x[i +: w]` (variable) | `Extract{w-1, 0}(LShr(x, i))` |
+| `N'(e)` | `SExt`/`ZExt` (as `e`'s signedness says) when widening, `Extract` when narrowing |
 
 Every `always_ff` block becomes a sequential atom controlling the
 registers it assigns. One round of the module is one clock cycle, and
@@ -30,7 +37,7 @@ symbolically with a map from each register to the wire holding its value
 after the edge so far, starting with `*q` (a register keeps its value on
 paths that do not assign it). `q <= e` sets the entry of `q` to the wire of
 `e`, so the last assignment wins; at `if`, both branches start from the
-same map and the entries that differ are merged with `Ite`. The init
+same map and the bits that differ are merged with `Ite`. The init
 action sets every register to an external variable `q@init`, so all
 initial states are possible.
 
@@ -43,6 +50,15 @@ so a read of its own signal reads that wire. The map starts empty; typing
 has made sure that every read and the end of the block find an entry on
 every path (no stale reads, no latches). `if` and `case` merge entries as in
 `always_ff`; an entry missing in a branch is missing after the merge.
+
+Assignment targets may be selects and concatenations (`{c, s} = …`,
+`y[3:0] = …`), so the map holds the value of each signal as segments: runs
+of bits that are bits of some wire, or not assigned yet. An assignment
+replaces the segments of the bits it assigns; the bits a target leaves
+alone keep their segments (in `always_ff`, bits of `*q`, so they keep their
+value). A read of bits of a signal of the block, and the final value,
+concatenate the segments; a merge puts an `Ite` on each run of bits that
+differs between the branches.
 
 `case (s) l1, l2: a … default: d endcase` becomes a chain of `Ite`s on
 `s == l1 | s == l2`, …, so the first matching item wins; without `default`,
@@ -62,11 +78,13 @@ blocks and atoms.
 */
 
 use crate::ast::{
-    self, BinOp, Dir, Error, Expr, ExprKind, Item, Name, Span, Stmt, StmtKind, Ty, UnOp,
+    self, BinOp, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Name, Span, Stmt, StmtKind,
+    Ty, UnOp,
 };
 use crate::typing;
 use crate::{Atom, Module, Sort, SvOp, Term, Var, Wire};
 use base::var::X;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 type Result<T> = std::result::Result<T, Error>;
@@ -191,19 +209,18 @@ pub fn lower(m: &ast::Module) -> Result<Translation> {
         let atom = match item {
             Item::Assign { lhs, rhs, .. } => {
                 let mut b = Builder::new(&env, &vars, false);
-                b.used.insert(lhs.clone());
-                b.expr(rhs, Some(X(vars[lhs])))?;
+                b.start(&item.targets(), |_| None);
+                let (w, _) = b.expr(rhs)?;
+                b.assign(lhs, w);
+                b.finish_all(span)?;
+                wire_names.extend(b.names);
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
                 Atom::combinatorial(scope, b.terms).map_err(|e| internal(span, e))?
             }
             Item::AlwaysFf { body, .. } => {
                 let regs = item.targets();
                 let mut b = Builder::new(&env, &vars, true);
-                b.used.extend(regs.iter().map(|q| (*q).clone()));
-                b.cur = regs
-                    .iter()
-                    .map(|q| ((*q).clone(), Some(*vars[*q])))
-                    .collect();
+                b.start(&regs, |q| Some(*vars[q]));
                 b.stmt(body)?;
                 b.finish_all(span)?;
                 let mut init = Vec::new();
@@ -217,10 +234,8 @@ pub fn lower(m: &ast::Module) -> Result<Translation> {
                 Atom::sequential(scope, init, b.terms).map_err(|e| internal(span, e))?
             }
             Item::AlwaysComb { body, .. } => {
-                let targets = item.targets();
                 let mut b = Builder::new(&env, &vars, false);
-                b.used.extend(targets.iter().map(|y| (*y).clone()));
-                b.cur = targets.iter().map(|y| ((*y).clone(), None)).collect();
+                b.start(&item.targets(), |_| None);
                 b.stmt(body)?;
                 b.finish_all(span)?;
                 wire_names.extend(b.names);
@@ -387,8 +402,127 @@ fn depend(s: &Stmt, ctrl: &BTreeSet<Name>, deps: &mut BTreeMap<Name, BTreeSet<Na
         StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
             let mut d = resolve(rhs, deps);
             d.extend(ctrl.iter().cloned());
-            deps.insert(lhs.clone(), d);
+            // a select keeps the dependencies of the other bits
+            let mut whole = Vec::new();
+            let mut targets = Vec::new();
+            lvalue_targets(lhs, &mut whole, &mut targets);
+            for y in targets {
+                let entry = deps.entry(y.clone()).or_default();
+                if !whole.contains(&y) {
+                    entry.extend(d.iter().cloned());
+                } else {
+                    *entry = d.clone();
+                }
+            }
         }
+    }
+}
+
+/// Bits `width` bits of a wire starting at bit `lo`, or `None` for bits
+/// of an `always_comb` signal that are not assigned yet.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Seg {
+    width: usize,
+    src: Option<(Wire, usize)>,
+}
+
+/// The value of a signal of the block so far: segments from the high bits
+/// down, with adjacent segments of the same wire (or both unassigned)
+/// joined, so that equal values have equal segments.
+type Value = Vec<Seg>;
+
+/// The value of all bits of `w`.
+fn whole(w: Wire) -> Value {
+    vec![Seg {
+        width: w.dtype().width(),
+        src: Some((w, 0)),
+    }]
+}
+
+/// The wire of a value that is all bits of one wire.
+fn as_wire(v: &Value) -> Option<Wire> {
+    match v.as_slice() {
+        [
+            Seg {
+                width,
+                src: Some((w, 0)),
+            },
+        ] if *width == w.dtype().width() => Some(*w),
+        _ => None,
+    }
+}
+
+/// Joins adjacent segments of the same wire (or both unassigned).
+fn coalesce(v: Value) -> Value {
+    let mut out: Value = Vec::new();
+    for seg in v {
+        if let Some(last) = out.last_mut() {
+            match (last.src, seg.src) {
+                (None, None) => {
+                    last.width += seg.width;
+                    continue;
+                }
+                (Some((a, alo)), Some((b, blo))) if a == b && alo == blo + seg.width => {
+                    *last = Seg {
+                        width: last.width + seg.width,
+                        src: Some((b, blo)),
+                    };
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        out.push(seg);
+    }
+    out
+}
+
+/// `v` split so that a segment boundary lies at each of the bit positions
+/// `cuts` (counted from bit 0).
+fn split(v: &Value, cuts: &BTreeSet<usize>) -> Value {
+    let mut out = Vec::new();
+    let mut top: usize = v.iter().map(|s| s.width).sum();
+    for seg in v {
+        let lo = top - seg.width;
+        // the cuts strictly inside the segment, from the top down
+        let mut hi = top;
+        for &c in cuts.range(lo + 1..top).rev() {
+            out.push(Seg {
+                width: hi - c,
+                src: seg.src.map(|(w, wlo)| (w, wlo + c - lo)),
+            });
+            hi = c;
+        }
+        out.push(Seg {
+            width: hi - lo,
+            src: seg.src,
+        });
+        top = lo;
+    }
+    out
+}
+
+/// The segment boundaries of `v`, counted from bit 0.
+fn cuts(v: &Value) -> BTreeSet<usize> {
+    let mut out = BTreeSet::new();
+    let mut lo: usize = v.iter().map(|s| s.width).sum();
+    for seg in v {
+        lo -= seg.width;
+        out.insert(lo);
+    }
+    out
+}
+
+/// Adds the signals of a target to `targets`, and those it assigns as a
+/// whole to `whole`.
+fn lvalue_targets<'l>(l: &'l Lvalue, whole: &mut Vec<&'l Name>, targets: &mut Vec<&'l Name>) {
+    match &l.kind {
+        LvalueKind::Var(y) => {
+            whole.push(y);
+            targets.push(y);
+        }
+        LvalueKind::Select(y, _) => targets.push(y),
+        LvalueKind::Concat(ls) => ls.iter().for_each(|l| lvalue_targets(l, whole, targets)),
     }
 }
 
@@ -402,10 +536,10 @@ struct Builder<'a> {
     /// Whether signals are read latched (`*x`, in `always_ff`) or awaited
     /// (`X(x)`).
     latched: bool,
-    /// The wire holding the value of each signal the block drives so far:
-    /// the value after the edge in `always_ff`; in `always_comb`, the
-    /// current value, or `None` if the signal may not be assigned yet.
-    cur: Vec<(Name, Option<Wire>)>,
+    /// The value of each signal the block drives so far: the value after
+    /// the edge in `always_ff`; in `always_comb`, the current value, with
+    /// unassigned segments for bits that may not be assigned yet.
+    cur: Vec<(Name, Value)>,
     /// The names of the intermediate values in `always_comb`.
     names: HashMap<Wire, Name>,
     /// The number of intermediate values named so far, per signal.
@@ -430,12 +564,31 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Starts the block driving `targets`, each with all bits of
+    /// `init(y)`, or all bits unassigned.
+    fn start(&mut self, targets: &[&Name], init: impl Fn(&Name) -> Option<Wire>) {
+        self.used.extend(targets.iter().map(|y| (*y).clone()));
+        self.cur = targets
+            .iter()
+            .map(|y| {
+                let value = match init(y) {
+                    Some(w) => whole(w),
+                    None => vec![Seg {
+                        width: self.env[*y].ty.width,
+                        src: None,
+                    }],
+                };
+                ((*y).clone(), value)
+            })
+            .collect();
+    }
+
     /// Lowers a statement of a block, updating [`cur`](Self::cur).
     fn stmt(&mut self, s: &Stmt) -> Result<()> {
         match &s.kind {
             StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| self.stmt(s)),
             StmtKind::If(c, a, b) => {
-                let (wc, tc) = self.expr(c, None)?;
+                let (wc, tc) = self.expr(c)?;
                 let wc = self.truth(wc, tc, c.span)?;
                 let before = self.cur.clone();
                 self.stmt(a)?;
@@ -451,16 +604,16 @@ impl<'a> Builder<'a> {
                 default,
             } => {
                 // whether each item matches, from the values before the case
-                let (ws, _) = self.expr(sel, None)?;
+                let (ws, _) = self.expr(sel)?;
                 let mut hits = Vec::new();
                 for item in items {
                     let mut hit = None;
                     for l in &item.labels {
-                        let (wl, _) = self.expr(l, None)?;
-                        let eq = self.emit(SvOp::Eq, &[ws, wl], Sort(1), None, l.span)?;
+                        let (wl, _) = self.expr(l)?;
+                        let eq = self.emit(SvOp::Eq, &[ws, wl], Sort(1), l.span)?;
                         hit = Some(match hit {
                             None => eq,
-                            Some(h) => self.emit(SvOp::Or, &[h, eq], Sort(1), None, l.span)?,
+                            Some(h) => self.emit(SvOp::Or, &[h, eq], Sort(1), l.span)?,
                         });
                     }
                     hits.push(hit.expect("a label"));
@@ -484,18 +637,101 @@ impl<'a> Builder<'a> {
                 Ok(())
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                let (w, _) = self.expr(rhs, None)?;
-                self.set(lhs, w);
+                let (w, _) = self.expr(rhs)?;
+                self.assign(lhs, w);
                 Ok(())
             }
         }
     }
 
-    /// Makes `w` the current value of the signal `y`.
-    fn set(&mut self, y: &Name, w: Wire) {
-        self.name(y, w);
-        let entry = self.cur.iter_mut().find(|(x, _)| x == y).expect("a target");
-        entry.1 = Some(w);
+    /// Assigns the value of `w` to the target `lhs`, the first piece taking
+    /// the high bits.
+    fn assign(&mut self, lhs: &Lvalue, w: Wire) {
+        let mut top = w.dtype().width();
+        for p in typing::pieces(self.env, lhs) {
+            top -= p.width();
+            self.write(&p.name, p.hi, p.lo, w, top);
+        }
+    }
+
+    /// Makes the bits `hi` down to `lo` of the signal `y` hold the bits of
+    /// `w` from `wlo` upwards.
+    fn write(&mut self, y: &Name, hi: usize, lo: usize, w: Wire, wlo: usize) {
+        let i = self.cur.iter().position(|(x, _)| x == y).expect("a target");
+        let value = &self.cur[i].1;
+        let cut = split(value, &BTreeSet::from([lo, hi + 1]));
+        let mut out = Vec::new();
+        let mut top: usize = cut.iter().map(|s| s.width).sum();
+        for seg in cut {
+            top -= seg.width;
+            if top == lo {
+                out.push(Seg {
+                    width: hi + 1 - lo,
+                    src: Some((w, wlo)),
+                });
+            }
+            if top > hi || top < lo {
+                out.push(seg);
+            }
+        }
+        let value = coalesce(out);
+        if let Some(w) = as_wire(&value) {
+            self.name(y, w);
+        }
+        self.cur[i].1 = value;
+    }
+
+    /// The wire holding the bits `hi` down to `lo` of `value`; all of them
+    /// must be assigned.
+    fn build(&mut self, value: &Value, hi: usize, lo: usize, span: Span) -> Result<Wire> {
+        let cut = split(value, &BTreeSet::from([lo, hi + 1]));
+        let mut picked = Vec::new();
+        let mut top: usize = cut.iter().map(|s| s.width).sum();
+        for seg in cut {
+            top -= seg.width;
+            if lo <= top && top <= hi {
+                picked.push(seg);
+            }
+        }
+        let mut parts = Vec::new();
+        for seg in coalesce(picked) {
+            let (w, wlo) = seg
+                .src
+                .ok_or_else(|| internal(span, "read of unassigned bits".into()))?;
+            let part = if wlo == 0 && seg.width == w.dtype().width() {
+                w
+            } else {
+                let op = SvOp::Extract {
+                    hi: wlo + seg.width - 1,
+                    lo: wlo,
+                };
+                self.emit(op, &[w], Sort(seg.width), span)?
+            };
+            parts.push(part);
+        }
+        let mut acc = parts.pop().expect("a part");
+        while let Some(part) = parts.pop() {
+            let sort = Sort(part.dtype().width() + acc.dtype().width());
+            acc = self.emit(SvOp::Concat, &[part, acc], sort, span)?;
+        }
+        Ok(acc)
+    }
+
+    /// The wire holding the bits `hi` down to `lo` of the signal `y` of the
+    /// block. If they are a concatenation of several wires, it becomes
+    /// their value, so that it is built only once.
+    fn read_own(&mut self, y: &Name, hi: usize, lo: usize, span: Span) -> Result<Wire> {
+        let i = self.cur.iter().position(|(x, _)| x == y).expect("a target");
+        let value = self.cur[i].1.clone();
+        let w = self.build(&value, hi, lo, span)?;
+        if self
+            .terms
+            .last()
+            .is_some_and(|t| t.write() == [w] && *t.itype() == SvOp::Concat)
+        {
+            self.write(y, hi, lo, w, 0);
+        }
+        Ok(w)
     }
 
     /// Names `w` as the next intermediate value of `y` in `always_comb`,
@@ -512,27 +748,59 @@ impl<'a> Builder<'a> {
     }
 
     /// The map after `if (c)` with the maps `then` and `els` after the two
-    /// branches: `Ite` where they differ, `None` where either is `None`.
+    /// branches: `Ite` on each run of bits that are assigned in both and
+    /// differ, unassigned where either is unassigned.
     fn merge(
         &mut self,
         c: Wire,
-        then: Vec<(Name, Option<Wire>)>,
-        els: Vec<(Name, Option<Wire>)>,
+        then: Vec<(Name, Value)>,
+        els: Vec<(Name, Value)>,
         span: Span,
-    ) -> Result<Vec<(Name, Option<Wire>)>> {
+    ) -> Result<Vec<(Name, Value)>> {
         let mut out = Vec::new();
         for ((y, a), (_, b)) in then.into_iter().zip(els) {
-            let w = match (a, b) {
-                (Some(a), Some(b)) if a == b => Some(a),
-                (Some(a), Some(b)) => {
-                    let sort = Sort(self.env[&y].ty.width);
-                    let w = self.emit(SvOp::Ite, &[c, a, b], sort, None, span)?;
-                    self.name(&y, w);
-                    Some(w)
-                }
-                _ => None,
+            if a == b {
+                out.push((y, a));
+                continue;
+            }
+            let mut at = cuts(&a);
+            at.extend(cuts(&b));
+            let (a, b) = (split(&a, &at), split(&b, &at));
+            // the aligned segments from the top down, with an empty pair at
+            // the end that closes the last run of differing bits
+            let end = Seg {
+                width: 0,
+                src: None,
             };
-            out.push((y, w));
+            let mut value = Vec::new();
+            let mut run: Vec<(Seg, Seg)> = Vec::new();
+            for (sa, sb) in a.into_iter().zip(b).chain([(end, end)]) {
+                let differ = sa.src.is_some() && sb.src.is_some() && sa != sb;
+                if differ {
+                    run.push((sa, sb));
+                    continue;
+                }
+                if !run.is_empty() {
+                    let (ra, rb): (Value, Value) = std::mem::take(&mut run).into_iter().unzip();
+                    let width: usize = ra.iter().map(|s| s.width).sum();
+                    let wa = self.build(&ra, width - 1, 0, span)?;
+                    let wb = self.build(&rb, width - 1, 0, span)?;
+                    let w = self.emit(SvOp::Ite, &[c, wa, wb], Sort(width), span)?;
+                    value.extend(whole(w));
+                }
+                if sa.width > 0 {
+                    let src = if sb.src.is_some() { sa.src } else { None };
+                    value.push(Seg {
+                        width: sa.width,
+                        src,
+                    });
+                }
+            }
+            let value = coalesce(value);
+            if let Some(w) = as_wire(&value) {
+                self.name(&y, w);
+            }
+            out.push((y, value));
         }
         Ok(out)
     }
@@ -540,8 +808,14 @@ impl<'a> Builder<'a> {
     /// Makes the next value `X(y)` of every signal of the block hold its
     /// final value.
     fn finish_all(&mut self, span: Span) -> Result<()> {
-        for (y, w) in std::mem::take(&mut self.cur) {
-            let w = w.ok_or_else(|| internal(span, format!("`{y}` not assigned on every path")))?;
+        // all final values are built before any wire is renamed, since one
+        // may be built from bits of another
+        let mut finals = Vec::new();
+        for (y, value) in std::mem::take(&mut self.cur) {
+            let width = self.env[&y].ty.width;
+            finals.push((self.build(&value, width - 1, 0, span)?, y));
+        }
+        for (w, y) in finals {
             self.finish(w, X(self.vars[&y]), span)?;
         }
         Ok(())
@@ -553,7 +827,7 @@ impl<'a> Builder<'a> {
     /// copied from the variable it became.
     fn finish(&mut self, w: Wire, dest: Wire, span: Span) -> Result<()> {
         if let Some(&r) = self.renamed.get(&w) {
-            self.emit(SvOp::Id, &[r], *w.dtype(), Some(dest), span)?;
+            self.emit_to(SvOp::Id, &[r], dest, span)?;
             return Ok(());
         }
         let writer = self.terms.iter().position(|t| t.write() == [w]);
@@ -572,30 +846,26 @@ impl<'a> Builder<'a> {
                 self.names.remove(&w);
             }
             _ => {
-                self.emit(SvOp::Id, &[w], *w.dtype(), Some(dest), span)?;
+                self.emit_to(SvOp::Id, &[w], dest, span)?;
             }
         }
         Ok(())
     }
 
-    /// Adds the term `dest := op(reads)`, with a fresh wire of `sort` for
-    /// `dest` if none is given.
-    fn emit(
-        &mut self,
-        op: SvOp,
-        reads: &[Wire],
-        sort: Sort,
-        dest: Option<Wire>,
-        span: Span,
-    ) -> Result<Wire> {
-        let w = dest.unwrap_or_else(|| Wire::scalar(sort));
+    /// Adds the term `w := op(reads)` with a fresh wire `w` of `sort`.
+    fn emit(&mut self, op: SvOp, reads: &[Wire], sort: Sort, span: Span) -> Result<Wire> {
+        self.emit_to(op, reads, Wire::scalar(sort), span)
+    }
+
+    /// Adds the term `dest := op(reads)`.
+    fn emit_to(&mut self, op: SvOp, reads: &[Wire], dest: Wire, span: Span) -> Result<Wire> {
         let term = if reads.is_empty() {
-            Term::constant(op, [w])
+            Term::constant(op, [dest])
         } else {
-            Term::function(op, [w], reads.iter().copied())
+            Term::function(op, [dest], reads.iter().copied())
         };
         self.terms.push(term.map_err(|e| internal(span, e))?);
-        Ok(w)
+        Ok(dest)
     }
 
     /// The wire holding whether `w` (of type `t`) is non-zero.
@@ -603,91 +873,99 @@ impl<'a> Builder<'a> {
         if t.width == 1 {
             Ok(w)
         } else {
-            self.emit(SvOp::RedOr, &[w], Sort(1), None, span)
+            self.emit(SvOp::RedOr, &[w], Sort(1), span)
         }
     }
 
-    /// Lowers `e`, writing its value to `dest` if given, and returns the
-    /// wire holding the value and its type.
-    fn expr(&mut self, e: &Expr, dest: Option<Wire>) -> Result<(Wire, Ty)> {
+    /// The wire holding the value of the signal `x`, or of its bits `hi`
+    /// down to `lo` if given (else all of them, `None` in the result).
+    fn read(
+        &mut self,
+        x: &Name,
+        bits: Option<(usize, usize)>,
+        span: Span,
+    ) -> Result<(Wire, Option<(usize, usize)>)> {
+        self.used.insert(x.clone());
+        let var = self.vars[x];
+        let own = self.cur.iter().any(|(y, _)| y == x);
+        if self.latched {
+            return Ok((*var, bits));
+        }
+        if !own {
+            return Ok((X(var), bits));
+        }
+        let (hi, lo) = bits.unwrap_or((self.env[x].ty.width - 1, 0));
+        Ok((self.read_own(x, hi, lo, span)?, None))
+    }
+
+    /// Lowers `e` and returns the wire holding its value and its type.
+    fn expr(&mut self, e: &Expr) -> Result<(Wire, Ty)> {
         let span = e.span;
         match &e.kind {
             ExprKind::Lit { ty, value } => {
-                let w = self.emit(SvOp::Lit(value.clone()), &[], Sort(ty.width), dest, span)?;
+                let w = self.emit(SvOp::Lit(value.clone()), &[], Sort(ty.width), span)?;
                 Ok((w, *ty))
             }
             ExprKind::Var(x) => {
                 let t = typing::lookup(self.env, x, span)?.ty;
-                self.used.insert(x.clone());
-                let var = self.vars[x];
-                let own = self.cur.iter().find(|(y, _)| y == x);
-                let w = match own {
-                    _ if self.latched => *var,
-                    Some((_, w)) => w.ok_or_else(|| internal(span, format!("`{x}` unassigned")))?,
-                    None => X(var),
-                };
-                match dest {
-                    None => Ok((w, t)),
-                    Some(_) => Ok((self.emit(SvOp::Id, &[w], Sort(t.width), dest, span)?, t)),
-                }
+                Ok((self.read(x, None, span)?.0, t))
             }
             ExprKind::Unary(op, a) => {
-                let (wa, ta) = self.expr(a, None)?;
+                let (wa, ta) = self.expr(a)?;
                 let t = typing::unary(*op, ta);
                 let s = Sort(t.width);
                 let w = match op {
-                    UnOp::Plus => match dest {
-                        None => wa,
-                        Some(_) => self.emit(SvOp::Id, &[wa], s, dest, span)?,
-                    },
-                    UnOp::BitNot => self.emit(SvOp::Not, &[wa], s, dest, span)?,
-                    UnOp::Neg => self.emit(SvOp::Neg, &[wa], s, dest, span)?,
+                    UnOp::Plus => wa,
+                    UnOp::BitNot => self.emit(SvOp::Not, &[wa], s, span)?,
+                    UnOp::Neg => self.emit(SvOp::Neg, &[wa], s, span)?,
                     UnOp::LogNot => {
                         let b = self.truth(wa, ta, span)?;
-                        self.emit(SvOp::Not, &[b], s, dest, span)?
+                        self.emit(SvOp::Not, &[b], s, span)?
                     }
-                    UnOp::RedAnd => self.emit(SvOp::RedAnd, &[wa], s, dest, span)?,
-                    UnOp::RedOr => self.emit(SvOp::RedOr, &[wa], s, dest, span)?,
-                    UnOp::RedXor => self.emit(SvOp::RedXor, &[wa], s, dest, span)?,
+                    UnOp::RedAnd => self.emit(SvOp::RedAnd, &[wa], s, span)?,
+                    UnOp::RedOr => self.emit(SvOp::RedOr, &[wa], s, span)?,
+                    UnOp::RedXor => self.emit(SvOp::RedXor, &[wa], s, span)?,
                     UnOp::RedNand | UnOp::RedNor | UnOp::RedXnor => {
                         let red = match op {
                             UnOp::RedNand => SvOp::RedAnd,
                             UnOp::RedNor => SvOp::RedOr,
                             _ => SvOp::RedXor,
                         };
-                        let r = self.emit(red, &[wa], s, None, span)?;
-                        self.emit(SvOp::Not, &[r], s, dest, span)?
+                        let r = self.emit(red, &[wa], s, span)?;
+                        self.emit(SvOp::Not, &[r], s, span)?
                     }
                 };
                 Ok((w, t))
             }
             ExprKind::Binary(op, a, b) => {
-                let (wa, ta) = self.expr(a, None)?;
-                let (wb, tb) = self.expr(b, None)?;
+                let (wa, ta) = self.expr(a)?;
+                let (wb, tb) = self.expr(b)?;
                 let t = typing::binary(*op, ta, tb, span)?;
                 let s = Sort(t.width);
-                let (lt, le) = if ta.signed {
-                    (SvOp::SLt, SvOp::SLe)
+                let (lt, le, div, rem) = if ta.signed {
+                    (SvOp::SLt, SvOp::SLe, SvOp::SDiv, SvOp::SRem)
                 } else {
-                    (SvOp::ULt, SvOp::ULe)
+                    (SvOp::ULt, SvOp::ULe, SvOp::UDiv, SvOp::URem)
                 };
                 let w = match op {
-                    BinOp::BitAnd => self.emit(SvOp::And, &[wa, wb], s, dest, span)?,
-                    BinOp::BitOr => self.emit(SvOp::Or, &[wa, wb], s, dest, span)?,
-                    BinOp::BitXor => self.emit(SvOp::Xor, &[wa, wb], s, dest, span)?,
+                    BinOp::BitAnd => self.emit(SvOp::And, &[wa, wb], s, span)?,
+                    BinOp::BitOr => self.emit(SvOp::Or, &[wa, wb], s, span)?,
+                    BinOp::BitXor => self.emit(SvOp::Xor, &[wa, wb], s, span)?,
                     BinOp::BitXnor => {
-                        let x = self.emit(SvOp::Xor, &[wa, wb], s, None, span)?;
-                        self.emit(SvOp::Not, &[x], s, dest, span)?
+                        let x = self.emit(SvOp::Xor, &[wa, wb], s, span)?;
+                        self.emit(SvOp::Not, &[x], s, span)?
                     }
-                    BinOp::Add => self.emit(SvOp::Add, &[wa, wb], s, dest, span)?,
-                    BinOp::Sub => self.emit(SvOp::Sub, &[wa, wb], s, dest, span)?,
-                    BinOp::Mul => self.emit(SvOp::Mul, &[wa, wb], s, dest, span)?,
-                    BinOp::Eq | BinOp::CaseEq => self.emit(SvOp::Eq, &[wa, wb], s, dest, span)?,
-                    BinOp::Ne | BinOp::CaseNe => self.emit(SvOp::Ne, &[wa, wb], s, dest, span)?,
-                    BinOp::Lt => self.emit(lt, &[wa, wb], s, dest, span)?,
-                    BinOp::Le => self.emit(le, &[wa, wb], s, dest, span)?,
-                    BinOp::Gt => self.emit(lt, &[wb, wa], s, dest, span)?,
-                    BinOp::Ge => self.emit(le, &[wb, wa], s, dest, span)?,
+                    BinOp::Add => self.emit(SvOp::Add, &[wa, wb], s, span)?,
+                    BinOp::Sub => self.emit(SvOp::Sub, &[wa, wb], s, span)?,
+                    BinOp::Mul => self.emit(SvOp::Mul, &[wa, wb], s, span)?,
+                    BinOp::Div => self.emit(div, &[wa, wb], s, span)?,
+                    BinOp::Mod => self.emit(rem, &[wa, wb], s, span)?,
+                    BinOp::Eq | BinOp::CaseEq => self.emit(SvOp::Eq, &[wa, wb], s, span)?,
+                    BinOp::Ne | BinOp::CaseNe => self.emit(SvOp::Ne, &[wa, wb], s, span)?,
+                    BinOp::Lt => self.emit(lt, &[wa, wb], s, span)?,
+                    BinOp::Le => self.emit(le, &[wa, wb], s, span)?,
+                    BinOp::Gt => self.emit(lt, &[wb, wa], s, span)?,
+                    BinOp::Ge => self.emit(le, &[wb, wa], s, span)?,
                     BinOp::LogAnd | BinOp::LogOr => {
                         let x = self.truth(wa, ta, span)?;
                         let y = self.truth(wb, tb, span)?;
@@ -696,26 +974,109 @@ impl<'a> Builder<'a> {
                         } else {
                             SvOp::Or
                         };
-                        self.emit(op, &[x, y], s, dest, span)?
+                        self.emit(op, &[x, y], s, span)?
                     }
-                    BinOp::Shl | BinOp::AShl => self.emit(SvOp::Shl, &[wa, wb], s, dest, span)?,
-                    BinOp::Shr => self.emit(SvOp::LShr, &[wa, wb], s, dest, span)?,
+                    BinOp::Shl | BinOp::AShl => self.emit(SvOp::Shl, &[wa, wb], s, span)?,
+                    BinOp::Shr => self.emit(SvOp::LShr, &[wa, wb], s, span)?,
                     BinOp::AShr => {
                         let op = if ta.signed { SvOp::AShr } else { SvOp::LShr };
-                        self.emit(op, &[wa, wb], s, dest, span)?
+                        self.emit(op, &[wa, wb], s, span)?
                     }
                 };
                 Ok((w, t))
             }
             ExprKind::Cond(c, a, b) => {
-                let (wc, tc) = self.expr(c, None)?;
+                let (wc, tc) = self.expr(c)?;
                 let wc = self.truth(wc, tc, span)?;
-                let (wa, ta) = self.expr(a, None)?;
-                let (wb, tb) = self.expr(b, None)?;
+                let (wa, ta) = self.expr(a)?;
+                let (wb, tb) = self.expr(b)?;
                 let t = typing::cond(ta, tb, span)?;
-                let w = self.emit(SvOp::Ite, &[wc, wa, wb], Sort(t.width), dest, span)?;
+                let w = self.emit(SvOp::Ite, &[wc, wa, wb], Sort(t.width), span)?;
+                Ok((w, t))
+            }
+            ExprKind::Concat(es) => {
+                let (w, ts) = self.concat(es, span)?;
+                Ok((w, typing::concat(&ts)))
+            }
+            ExprKind::Repl(n, es) => {
+                let (w, ts) = self.concat(es, span)?;
+                let t = typing::repl(*n, typing::concat(&ts));
+                let mut acc = w;
+                for _ in 1..*n {
+                    let sort = Sort(w.dtype().width() + acc.dtype().width());
+                    acc = self.emit(SvOp::Concat, &[w, acc], sort, span)?;
+                }
+                Ok((acc, t))
+            }
+            ExprKind::Select(x, sel) => {
+                let tx = typing::lookup(self.env, x, span)?.ty;
+                let index = match sel.index() {
+                    Some(i) => Some(self.expr(i)?),
+                    None => None,
+                };
+                let t = typing::select(x, tx, sel, index.map(|i| i.1), span)?;
+                let w = match index {
+                    None => {
+                        let (hi, lo) = sel.constant().flatten().expect("constant");
+                        match self.read(x, Some((hi, lo)), span)? {
+                            (w, Some((hi, lo))) if lo > 0 || hi + 1 < tx.width => {
+                                let op = SvOp::Extract { hi, lo };
+                                self.emit(op, &[w], Sort(t.width), span)?
+                            }
+                            (w, _) => w,
+                        }
+                    }
+                    // the lowest selected bit is the index: `-:` has width 1
+                    Some((wi, _)) => {
+                        let (wx, _) = self.read(x, None, span)?;
+                        let shifted = self.emit(SvOp::LShr, &[wx, wi], Sort(tx.width), span)?;
+                        let op = SvOp::Extract {
+                            hi: t.width - 1,
+                            lo: 0,
+                        };
+                        self.emit(op, &[shifted], Sort(t.width), span)?
+                    }
+                };
+                Ok((w, t))
+            }
+            ExprKind::Cast(c, a) => {
+                let (wa, ta) = self.expr(a)?;
+                let t = typing::cast(*c, ta, typing::context_free(a), span)?;
+                let s = Sort(t.width);
+                let w = match t.width.cmp(&ta.width) {
+                    Ordering::Equal => wa,
+                    Ordering::Less => {
+                        let op = SvOp::Extract {
+                            hi: t.width - 1,
+                            lo: 0,
+                        };
+                        self.emit(op, &[wa], s, span)?
+                    }
+                    Ordering::Greater if ta.signed => {
+                        self.emit(SvOp::SExt(t.width), &[wa], s, span)?
+                    }
+                    Ordering::Greater => self.emit(SvOp::ZExt(t.width), &[wa], s, span)?,
+                };
                 Ok((w, t))
             }
         }
+    }
+
+    /// The wire holding `{e1, e2, …}`, as nested binary `Concat`s
+    /// `{e1, {e2, …}}`, and the types of the items.
+    fn concat(&mut self, es: &[Expr], span: Span) -> Result<(Wire, Vec<Ty>)> {
+        let mut parts = Vec::new();
+        let mut ts = Vec::new();
+        for e in es {
+            let (w, t) = self.expr(e)?;
+            parts.push(w);
+            ts.push(t);
+        }
+        let mut acc = parts.pop().expect("an item");
+        while let Some(part) = parts.pop() {
+            let sort = Sort(part.dtype().width() + acc.dtype().width());
+            acc = self.emit(SvOp::Concat, &[part, acc], sort, span)?;
+        }
+        Ok((acc, ts))
     }
 }

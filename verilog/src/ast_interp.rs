@@ -13,7 +13,8 @@ A signal driven by an `always_comb` block is computed by running the whole
 block when one of its signals is first needed, with blocking assignments:
 a read of a signal of the block sees its latest assignment (typing makes
 sure there is one). It gives meaning to the source operators directly
-on numbers (unsigned or two's complement as the operand types say),
+on numbers (unsigned or two's complement as the operand types say; a
+size cast extends as its operand's type says),
 independently of [`SvOp`] and of the rewrites in lowering, so that tests
 can compare it with the translated module.
 
@@ -21,7 +22,7 @@ can compare it with the translated module.
 */
 
 use crate::ast::{
-    BinOp, Dir, Error, Expr, ExprKind, Item, Module, Name, Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, Dir, Error, Expr, ExprKind, Item, Module, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::typing::{self, Env};
 use crate::value::BitVec;
@@ -157,7 +158,21 @@ impl<'m> Interp<'m> {
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
                 let (v, _) = self.expr(rhs, &scope(out), values, active)?;
-                out.insert(lhs.clone(), v);
+                // the pieces take the bits of `v` from the top down
+                let mut top = v.width();
+                for p in typing::pieces(&self.env, lhs) {
+                    let bits = slice(&v, top - 1, top - p.width());
+                    top -= p.width();
+                    // the other bits of a register keep their value; those
+                    // of an `always_comb` signal are assigned before they
+                    // are read (typing), so any value does
+                    let old = match out.get(&p.name) {
+                        Some(old) => old.clone(),
+                        None if comb => BitVec::zero(self.env[&p.name].ty.width),
+                        None => self.state[&p.name].clone(),
+                    };
+                    out.insert(p.name.clone(), write(&old, p.lo, &bits));
+                }
                 Ok(())
             }
         }
@@ -177,9 +192,19 @@ impl<'m> Interp<'m> {
             return Err(format!("combinational loop through `{name}`"));
         }
         match self.driver[name] {
-            Item::Assign { rhs, .. } => {
+            Item::Assign { lhs, rhs, .. } => {
                 let (v, _) = self.expr(rhs, &Values::new(), values, active)?;
-                values.insert(name.to_string(), v);
+                // an `assign` drives whole signals (typing)
+                let mut top = v.width();
+                for p in typing::pieces(&self.env, lhs) {
+                    let bits = slice(&v, top - 1, top - p.width());
+                    top -= p.width();
+                    let old = values
+                        .get(&p.name)
+                        .cloned()
+                        .unwrap_or_else(|| BitVec::zero(self.env[&p.name].ty.width));
+                    values.insert(p.name.clone(), write(&old, p.lo, &bits));
+                }
             }
             item => {
                 let targets = item.targets();
@@ -227,7 +252,7 @@ impl<'m> Interp<'m> {
                 let (a, ta) = self.expr(a, scope, values, active)?;
                 let (b, tb) = self.expr(b, scope, values, active)?;
                 let t = typing::binary(*op, ta, tb, e.span).map_err(|e| e.to_string())?;
-                (binary(*op, &a, &b, ta.signed), t)
+                (binary(*op, &a, &b, ta.signed)?, t)
             }
             ExprKind::Cond(c, a, b) => {
                 let (c, _) = self.expr(c, scope, values, active)?;
@@ -236,8 +261,98 @@ impl<'m> Interp<'m> {
                 let t = typing::cond(ta, tb, e.span).map_err(|e| e.to_string())?;
                 (if c.is_zero() { b } else { a }, t)
             }
+            ExprKind::Concat(es) => {
+                let (v, ts) = self.exprs(es, scope, values, active)?;
+                (v, typing::concat(&ts))
+            }
+            ExprKind::Repl(n, es) => {
+                let (v, ts) = self.exprs(es, scope, values, active)?;
+                let t = typing::concat(&ts);
+                let mut acc = v.clone();
+                for _ in 1..*n {
+                    acc = concat(&acc, &v);
+                }
+                (acc, typing::repl(*n, t))
+            }
+            ExprKind::Select(x, sel) => {
+                let v = match scope.get(x) {
+                    Some(v) => v.clone(),
+                    None => self.signal(x, values, active)?,
+                };
+                let tx = self.env[x].ty;
+                let index = match sel.index() {
+                    Some(i) => Some(self.expr(i, scope, values, active)?),
+                    None => None,
+                };
+                let t = typing::select(x, tx, sel, index.as_ref().map(|i| i.1), e.span)
+                    .map_err(|e| e.to_string())?;
+                let base = match &index {
+                    None => sel.constant().flatten().expect("constant").1,
+                    // typing guarantees the index is in range
+                    Some((i, _)) => {
+                        let i = i.unsigned().to_usize().expect("an index in range");
+                        match sel {
+                            Select::Down(_, w) => i + 1 - w,
+                            _ => i,
+                        }
+                    }
+                };
+                (slice(&v, base + t.width - 1, base), t)
+            }
+            ExprKind::Cast(c, a) => {
+                let (v, ta) = self.expr(a, scope, values, active)?;
+                let t = typing::cast(*c, ta, typing::context_free(a), e.span)
+                    .map_err(|e| e.to_string())?;
+                let v = if ta.signed {
+                    BitVec::from_signed(t.width, v.signed())
+                } else {
+                    BitVec::wrap(t.width, v.unsigned().clone())
+                };
+                (v, t)
+            }
         })
     }
+
+    /// The values of `es` concatenated, and their types.
+    fn exprs(
+        &self,
+        es: &[Expr],
+        scope: &Values,
+        values: &mut Values,
+        active: &mut BTreeSet<Name>,
+    ) -> Result<(BitVec, Vec<Ty>), String> {
+        let mut acc: Option<BitVec> = None;
+        let mut ts = Vec::new();
+        for e in es {
+            let (v, t) = self.expr(e, scope, values, active)?;
+            acc = Some(match acc {
+                None => v,
+                Some(a) => concat(&a, &v),
+            });
+            ts.push(t);
+        }
+        Ok((acc.expect("an item"), ts))
+    }
+}
+
+/// Bits `hi` down to `lo` of `v`.
+fn slice(v: &BitVec, hi: usize, lo: usize) -> BitVec {
+    BitVec::wrap(hi + 1 - lo, v.unsigned() >> lo)
+}
+
+/// `{a, b}`
+fn concat(a: &BitVec, b: &BitVec) -> BitVec {
+    BitVec::wrap(
+        a.width() + b.width(),
+        (a.unsigned() << b.width()) | b.unsigned(),
+    )
+}
+
+/// `v` with the bits from `lo` upwards replaced by `bits`.
+fn write(v: &BitVec, lo: usize, bits: &BitVec) -> BitVec {
+    let mask = ones(bits.width()) << lo;
+    let kept = v.unsigned() & (ones(v.width()) ^ mask);
+    BitVec::wrap(v.width(), kept | (bits.unsigned() << lo))
 }
 
 fn bit(b: bool) -> BitVec {
@@ -266,8 +381,9 @@ fn unary(op: UnOp, a: &BitVec) -> BitVec {
     }
 }
 
-/// `signed` is the signedness of the (equally typed) operands.
-fn binary(op: BinOp, a: &BitVec, b: &BitVec, signed: bool) -> BitVec {
+/// `signed` is the signedness of the (equally typed) operands. Division by
+/// zero is an error (typing rules it out).
+fn binary(op: BinOp, a: &BitVec, b: &BitVec, signed: bool) -> Result<BitVec, String> {
     let w = a.width();
     let (x, y) = (a.unsigned(), b.unsigned());
     let cmp = if signed {
@@ -277,7 +393,10 @@ fn binary(op: BinOp, a: &BitVec, b: &BitVec, signed: bool) -> BitVec {
     };
     // shift amounts beyond any width saturate
     let amount = || y.to_usize().unwrap_or(usize::MAX).min(w);
-    match op {
+    if matches!(op, BinOp::Div | BinOp::Mod) && y.is_zero() {
+        return Err(format!("division by zero in `{op}`"));
+    }
+    Ok(match op {
         BinOp::BitAnd => BitVec::wrap(w, x & y),
         BinOp::BitOr => BitVec::wrap(w, x | y),
         BinOp::BitXor => BitVec::wrap(w, x ^ y),
@@ -297,5 +416,10 @@ fn binary(op: BinOp, a: &BitVec, b: &BitVec, signed: bool) -> BitVec {
         BinOp::Shr => BitVec::wrap(w, x >> amount()),
         BinOp::AShr if signed => BitVec::from_signed(w, a.signed() >> amount()),
         BinOp::AShr => BitVec::wrap(w, x >> amount()),
-    }
+        // `BigInt` division rounds toward zero, as SystemVerilog's does
+        BinOp::Div if signed => BitVec::from_signed(w, a.signed() / b.signed()),
+        BinOp::Div => BitVec::wrap(w, x / y),
+        BinOp::Mod if signed => BitVec::from_signed(w, a.signed() % b.signed()),
+        BinOp::Mod => BitVec::wrap(w, x % y),
+    })
 }

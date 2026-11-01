@@ -13,10 +13,29 @@ happens:
   arms of `?:`, have the same width and the same signedness;
 - the right-hand side of an assignment has the width of the left-hand side;
 - the condition of `?:` and the operands of `! && ||` and of the
-  reductions are self-determined, so any width is fine.
+  reductions are self-determined, so any width is fine, and so are the
+  shift amount and the items of `{…}` and `{n{…}}`;
+- resizing is explicit only: selects `x[…]` (always unsigned, like
+  concatenations), `{…}`, `{n{…}}` and casts `N'(e)`; `$signed`,
+  `$unsigned`, `signed'` and `unsigned'` change the signedness only;
+- the divisor of `/` and `%` is a nonzero literal, so no division by zero
+  happens (2-state values have no result for it).
 
 On this fragment the widths of IEEE 1800 (after propagation) equal the
-self-determined widths, so the fragment has the standard's semantics.
+self-determined widths, so the fragment has the standard's semantics. The
+one place where this needs a restriction is a widening cast: `N'(e)` is
+defined as assigning `e` to an `N`-bit variable, which evaluates `e` at `N`
+bits (`16'(a + b)` keeps the carry of 8-bit `a + b`). So the operand of a
+widening cast must have a width independent of its context ([`context_free`]),
+and `16'(a) + 16'(b)` is written instead. A narrowing cast evaluates its
+operand at the operand's own width and truncates.
+
+Selects never reach outside the signal: constant indices are checked, and
+a variable index is accepted only if every value it can take is in range
+(`a[i]` with `i` of 3 bits needs `a` of at least 8 bits).
+
+Assignment targets are signals, constant selects of signals, and
+concatenations of targets ([`pieces`]). An `assign` drives whole signals.
 
 An `always_comb` block must also be free of latches and of reads of stale
 values ([`definite`]): every signal it drives is assigned on every path
@@ -25,7 +44,8 @@ to the read.
 */
 
 use crate::ast::{
-    BinOp, Dir, Error, Expr, ExprKind, Item, Module, Name, Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, Cast, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Module, Name, Select, Span,
+    Stmt, StmtKind, Ty, UnOp,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -77,7 +97,8 @@ pub fn env(m: &Module) -> Result<Env> {
 /// and procedural and continuous assignments to the same variable must not
 /// be mixed (§6.5). The standard applies both rules per longest static
 /// prefix, so different bits of a vector may be driven from different
-/// places; we only assign whole signals, where the two rules coincide.
+/// places; we apply them per whole signal, which is stricter: assigning
+/// `y[3:0]` and `y[7:4]` from two `assign`s is rejected.
 ///
 /// The clock: all `always_ff` blocks are clocked by the same 1-bit
 /// input, and nothing else reads it. A round of the module is a whole
@@ -90,9 +111,28 @@ pub fn check(m: &Module) -> Result<Env> {
     for (i, item) in m.items.iter().enumerate() {
         match item {
             Item::Assign { lhs, rhs, span } => {
-                let ty = drive(&env, &mut driver, lhs, *span, i)?;
+                let width = lvalue(lhs, &mut |y, span| drive(&env, &mut driver, y, span, i))?;
                 let t = expr(&env, rhs)?;
-                assign(ty, t, *span)?;
+                assign(width, t, *span)?;
+                for y in item.targets() {
+                    let n = env[y].ty.width;
+                    let bits: BTreeSet<usize> = pieces(&env, lhs)
+                        .into_iter()
+                        .filter(|p| p.name == *y)
+                        .flat_map(|p| p.lo..=p.hi)
+                        .collect();
+                    if bits.len() < n {
+                        let missing: Vec<usize> = (0..n).filter(|b| !bits.contains(b)).collect();
+                        return Err(Error::new(
+                            *span,
+                            format!(
+                                "this `assign` leaves {} undriven: an `assign` drives whole \
+                                 signals (drive `{y}` with one `assign` of a concatenation)",
+                                bits_text(y, &missing, n)
+                            ),
+                        ));
+                    }
+                }
             }
             Item::AlwaysFf {
                 clock: c,
@@ -129,7 +169,7 @@ pub fn check(m: &Module) -> Result<Env> {
                     drive(&env, &mut driver, lhs, span, i)
                 })?;
                 drives_something(item)?;
-                definite(item)?;
+                definite(&env, item)?;
             }
         }
     }
@@ -246,10 +286,114 @@ fn stmt(
                 }
                 _ => {}
             }
-            let ty = drive(lhs, s.span)?;
-            assign(ty, expr(env, rhs)?, s.span)
+            let width = lvalue(lhs, drive)?;
+            assign(width, expr(env, rhs)?, s.span)
         }
     }
+}
+
+/// Checks an assignment target, records the driver of each of its signals
+/// with `drive`, and returns its width. A bit may be assigned only once in
+/// one target, and selects must be constant.
+fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Result<usize> {
+    fn walk(
+        l: &Lvalue,
+        drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>,
+        seen: &mut BTreeSet<(Name, usize)>,
+    ) -> Result<usize> {
+        let (y, hi, lo) = match &l.kind {
+            LvalueKind::Concat(ls) => {
+                return ls.iter().map(|l| walk(l, drive, seen)).sum();
+            }
+            LvalueKind::Var(y) => (y, drive(y, l.span)?.width - 1, 0),
+            LvalueKind::Select(y, sel) => {
+                let t = drive(y, l.span)?;
+                if let Some(i) = sel.index() {
+                    return Err(Error::new(
+                        i.span,
+                        "variable index in an assignment target not supported \
+                         (assign under a `case` instead)",
+                    ));
+                }
+                let (hi, lo) = constant_select(y, t, sel, l.span)?;
+                (y, hi, lo)
+            }
+        };
+        for b in lo..=hi {
+            if !seen.insert((y.clone(), b)) {
+                return Err(Error::new(
+                    l.span,
+                    format!("`{y}[{b}]` assigned twice in one target"),
+                ));
+            }
+        }
+        Ok(hi + 1 - lo)
+    }
+    walk(l, drive, &mut BTreeSet::new())
+}
+
+/// A part of a checked assignment target: the bits `hi` down to `lo` of a
+/// signal.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Piece {
+    pub name: Name,
+    pub hi: usize,
+    pub lo: usize,
+}
+
+impl Piece {
+    pub fn width(&self) -> usize {
+        self.hi + 1 - self.lo
+    }
+}
+
+/// The parts of a checked assignment target, the one receiving the high
+/// bits of the value first.
+pub fn pieces(env: &Env, l: &Lvalue) -> Vec<Piece> {
+    match &l.kind {
+        LvalueKind::Var(y) => vec![Piece {
+            name: y.clone(),
+            hi: env[y].ty.width - 1,
+            lo: 0,
+        }],
+        LvalueKind::Select(y, sel) => {
+            let (hi, lo) = sel.constant().flatten().expect("a checked constant select");
+            vec![Piece {
+                name: y.clone(),
+                hi,
+                lo,
+            }]
+        }
+        LvalueKind::Concat(ls) => ls.iter().flat_map(|l| pieces(env, l)).collect(),
+    }
+}
+
+/// The bits `bits` (descending or not) of the signal `y` of width `width`,
+/// as SystemVerilog: `` `y` `` for all of them, else `` `y[7:4]`, `y[1]` ``.
+fn bits_text(y: &str, bits: &[usize], width: usize) -> String {
+    if bits.len() == width {
+        return format!("`{y}`");
+    }
+    let mut bits = bits.to_vec();
+    bits.sort_unstable_by(|a, b| b.cmp(a));
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for b in bits {
+        match ranges.last_mut() {
+            Some((_, lo)) if *lo == b + 1 => *lo = b,
+            _ => ranges.push((b, b)),
+        }
+    }
+    let ranges: Vec<String> = ranges
+        .into_iter()
+        .map(|(hi, lo)| {
+            if hi == lo {
+                format!("`{y}[{hi}]`")
+            } else {
+                format!("`{y}[{hi}:{lo}]`")
+            }
+        })
+        .collect();
+    ranges.join(", ")
 }
 
 /// Checks that an `always_comb` block assigns each signal it drives on
@@ -262,61 +406,90 @@ fn stmt(
 /// the block before it is assigned would read that same old value. The
 /// analysis is syntactic: a `case` without `default` may assign nothing
 /// even if its labels cover every value.
-pub fn definite(item: &Item) -> Result<()> {
+///
+/// The analysis is per bit: `y[3:0] = a; y[7:4] = b;` assigns all of `y`.
+/// A read with a variable index reads every bit of its signal.
+pub fn definite(env: &Env, item: &Item) -> Result<()> {
     let targets = item.targets();
     let body = item.body().expect("a block");
     let mut d = Definite {
+        env,
         targets: &targets,
         partial: BTreeMap::new(),
     };
-    let mut done = BTreeSet::new();
+    let mut done = Bits::new();
     d.stmt(body, &mut done)?;
-    match targets.iter().find(|y| !done.contains(**y)) {
-        None => Ok(()),
-        Some(y) => {
-            let (span, why) = &d.partial[*y];
-            Err(Error::new(
+    for y in &targets {
+        let n = env[*y].ty.width;
+        let missing: Vec<usize> = (0..n)
+            .filter(|b| !done.contains(&((*y).clone(), *b)))
+            .collect();
+        if missing.is_empty() {
+            continue;
+        }
+        let bits = bits_text(y, &missing, n);
+        return Err(match d.partial.get(*y) {
+            Some((span, why)) => Error::new(
                 *span,
                 format!(
-                    "`{y}` is assigned on only some paths through this {why}, \
+                    "{bits} is assigned on only some paths through this {why}, \
                      so it would keep its old value on the others (a latch); \
                      assign it on every path or before"
                 ),
-            ))
-        }
+            ),
+            None => Error::new(
+                item.span(),
+                format!(
+                    "{bits} is never assigned in this `always_comb`, \
+                     so it would keep its old value (a latch)"
+                ),
+            ),
+        });
     }
+    Ok(())
 }
 
+/// Bits of signals.
+type Bits = BTreeSet<(Name, usize)>;
+
 struct Definite<'t> {
+    env: &'t Env,
     targets: &'t [&'t Name],
-    /// For each target, the first `if` or `case` after which it is
-    /// assigned on some paths only, with a description.
+    /// For each target, the first `if` or `case` after which some of its
+    /// bits are assigned on some paths only, with a description.
     partial: BTreeMap<Name, (Span, &'static str)>,
 }
 
 impl Definite<'_> {
-    /// Checks the reads in `e`, with `done` the targets assigned on every
-    /// path so far.
-    fn reads(&self, e: &Expr, done: &BTreeSet<Name>) -> Result<()> {
+    /// Checks the reads in `e`, with `done` the bits of targets assigned on
+    /// every path so far.
+    fn reads(&self, e: &Expr, done: &Bits) -> Result<()> {
         let mut reads = Vec::new();
-        e.reads(&mut reads);
-        match reads
-            .into_iter()
-            .find(|(x, _)| self.targets.contains(x) && !done.contains(*x))
-        {
-            None => Ok(()),
-            Some((x, span)) => Err(Error::new(
-                span,
-                format!(
-                    "`{x}` read before it is assigned on every path in this `always_comb` \
-                     (it would read its value from the previous evaluation)"
-                ),
-            )),
+        bit_reads(self.env, e, &mut reads);
+        for (x, hi, lo, span) in reads {
+            if !self.targets.contains(&x) {
+                continue;
+            }
+            let n = self.env[x].ty.width;
+            let missing: Vec<usize> = (lo..=hi)
+                .filter(|b| !done.contains(&(x.clone(), *b)))
+                .collect();
+            if !missing.is_empty() {
+                return Err(Error::new(
+                    span,
+                    format!(
+                        "{} read before it is assigned on every path in this `always_comb` \
+                         (it would read its value from the previous evaluation)",
+                        bits_text(x, &missing, n)
+                    ),
+                ));
+            }
         }
+        Ok(())
     }
 
-    /// Adds to `done` the targets that `s` assigns on every path.
-    fn stmt(&mut self, s: &Stmt, done: &mut BTreeSet<Name>) -> Result<()> {
+    /// Adds to `done` the bits of targets that `s` assigns on every path.
+    fn stmt(&mut self, s: &Stmt, done: &mut Bits) -> Result<()> {
         match &s.kind {
             StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| self.stmt(s, done)),
             StmtKind::If(c, a, b) => {
@@ -345,7 +518,9 @@ impl Definite<'_> {
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
                 self.reads(rhs, done)?;
-                done.insert(lhs.clone());
+                for p in pieces(self.env, lhs) {
+                    done.extend((p.lo..=p.hi).map(|b| (p.name.clone(), b)));
+                }
                 Ok(())
             }
         }
@@ -357,7 +532,7 @@ impl Definite<'_> {
         &mut self,
         branches: &[&Stmt],
         fallthrough: bool,
-        done: &mut BTreeSet<Name>,
+        done: &mut Bits,
         span: Span,
         why: &'static str,
     ) -> Result<()> {
@@ -370,13 +545,13 @@ impl Definite<'_> {
         if fallthrough {
             outs.push(done.clone());
         }
-        let all: BTreeSet<Name> = outs.iter().flatten().cloned().collect();
-        let every: BTreeSet<Name> = all
+        let all: Bits = outs.iter().flatten().cloned().collect();
+        let every: Bits = all
             .iter()
             .filter(|x| outs.iter().all(|o| o.contains(*x)))
             .cloned()
             .collect();
-        for x in all.difference(&every) {
+        for (x, _) in all.difference(&every) {
             self.partial.entry(x.clone()).or_insert((span, why));
         }
         *done = every;
@@ -395,10 +570,189 @@ pub fn expr(env: &Env, e: &Expr) -> Result<Ty> {
         ExprKind::Lit { ty, .. } => Ok(*ty),
         ExprKind::Var(x) => Ok(lookup(env, x, e.span)?.ty),
         ExprKind::Unary(op, a) => Ok(unary(*op, expr(env, a)?)),
-        ExprKind::Binary(op, a, b) => binary(*op, expr(env, a)?, expr(env, b)?, e.span),
+        ExprKind::Binary(op, a, b) => {
+            let t = binary(*op, expr(env, a)?, expr(env, b)?, e.span)?;
+            if matches!(op, BinOp::Div | BinOp::Mod) {
+                divisor(b)?;
+            }
+            Ok(t)
+        }
         ExprKind::Cond(c, a, b) => {
             expr(env, c)?;
             cond(expr(env, a)?, expr(env, b)?, e.span)
+        }
+        ExprKind::Concat(es) => {
+            let ts = es
+                .iter()
+                .map(|e| expr(env, e))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(concat(&ts))
+        }
+        ExprKind::Repl(n, es) => {
+            let ts = es
+                .iter()
+                .map(|e| expr(env, e))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(repl(*n, concat(&ts)))
+        }
+        ExprKind::Select(x, sel) => {
+            let t = lookup(env, x, e.span)?.ty;
+            let index = sel.index().map(|i| expr(env, i)).transpose()?;
+            select(x, t, sel, index, e.span)
+        }
+        ExprKind::Cast(c, a) => cast(*c, expr(env, a)?, context_free(a), e.span),
+    }
+}
+
+/// Checks that the divisor of `/` or `%` is a nonzero literal.
+fn divisor(b: &Expr) -> Result<()> {
+    match &b.kind {
+        ExprKind::Lit { value, .. } if !value.is_zero() => Ok(()),
+        _ => Err(Error::new(
+            b.span,
+            "the divisor must be a nonzero literal (2-state values have no result \
+             for a division by zero)",
+        )),
+    }
+}
+
+/// The type of `{a, b, …}` with items of types `ts`: always unsigned.
+pub fn concat(ts: &[Ty]) -> Ty {
+    Ty::unsigned(ts.iter().map(|t| t.width).sum())
+}
+
+/// The type of `{n{e}}`, with `e` of type `t`: always unsigned.
+pub fn repl(n: usize, t: Ty) -> Ty {
+    Ty::unsigned(n * t.width)
+}
+
+/// The type of the select `x[…]` of a signal of type `t`, with `index` the
+/// type of a variable index: always unsigned. The selected bits must be
+/// inside `x` whatever the value of the index is; a variable index must be
+/// unsigned.
+pub fn select(x: &Name, t: Ty, sel: &Select, index: Option<Ty>, span: Span) -> Result<Ty> {
+    let width = sel.width();
+    if let Select::Up(_, 0) | Select::Down(_, 0) = sel {
+        return Err(Error::new(span, format!("select `{x}{sel}` of width 0")));
+    }
+    let Some(i) = index else {
+        constant_select(x, t, sel, span)?;
+        return Ok(Ty::unsigned(width));
+    };
+    if i.signed {
+        return Err(Error::new(
+            span,
+            format!("the index of `{x}{sel}` must be unsigned"),
+        ));
+    }
+    // the highest bit selected for the largest index, and the lowest for
+    // the smallest index (0)
+    let max = u32::try_from(i.width)
+        .ok()
+        .and_then(|w| 1usize.checked_shl(w))
+        .map(|m| m - 1);
+    let (top, low_ok) = match sel {
+        Select::Bit(_) => (max, true),
+        Select::Up(_, w) => (max.and_then(|m| m.checked_add(w - 1)), true),
+        Select::Down(_, w) => (max, *w == 1),
+        Select::Part { .. } => unreachable!("constant"),
+    };
+    match top {
+        Some(top) if top < t.width && low_ok => Ok(Ty::unsigned(width)),
+        _ if !low_ok => Err(Error::new(
+            span,
+            format!("`{x}{sel}` reaches below bit 0 for small indices; use `+:`"),
+        )),
+        _ => Err(Error::new(
+            span,
+            format!(
+                "`{x}{sel}` may select beyond bit {} of `{x}`: the index has {} bits, \
+                 so every one of its values must be in range (narrow the index)",
+                t.width - 1,
+                i.width
+            ),
+        )),
+    }
+}
+
+/// The bits `(hi, lo)` of a constant select `x[…]` of a signal of type `t`,
+/// checked to be inside `x`.
+fn constant_select(x: &Name, t: Ty, sel: &Select, span: Span) -> Result<(usize, usize)> {
+    match sel.constant().expect("a constant select") {
+        Some((hi, lo)) if lo <= hi && hi < t.width => Ok((hi, lo)),
+        Some((hi, lo)) if lo > hi => Err(Error::new(
+            span,
+            format!("`{x}{sel}`: write the higher bit first, `[{lo}:{hi}]`"),
+        )),
+        _ => Err(Error::new(
+            span,
+            format!("`{x}{sel}` out of range: `{x}` has bits {}:0", t.width - 1),
+        )),
+    }
+}
+
+/// The type of a cast of an operand of type `t`. `context_free` says
+/// whether the operand's width is independent of its context; a widening
+/// cast needs that (see the module documentation). A size cast keeps the
+/// signedness of its operand.
+pub fn cast(c: Cast, t: Ty, context_free: bool, span: Span) -> Result<Ty> {
+    match c {
+        Cast::Signed => Ok(Ty { signed: true, ..t }),
+        Cast::Unsigned => Ok(Ty { signed: false, ..t }),
+        Cast::Size(n) if n > t.width && !context_free => Err(Error::new(
+            span,
+            format!(
+                "`{n}'(…)` would evaluate this operator expression at {n} bits rather \
+                 than {}: cast its operands instead (e.g. `{n}'(a) + {n}'(b)`)",
+                t.width
+            ),
+        )),
+        Cast::Size(n) => Ok(Ty { width: n, ..t }),
+    }
+}
+
+/// Whether the width at which `e` is evaluated does not depend on its
+/// context: signals, selects, literals, concatenations and casts. An
+/// operator expression is evaluated at the width of its context.
+pub fn context_free(e: &Expr) -> bool {
+    matches!(
+        e.kind,
+        ExprKind::Lit { .. }
+            | ExprKind::Var(_)
+            | ExprKind::Select(..)
+            | ExprKind::Concat(_)
+            | ExprKind::Repl(..)
+            | ExprKind::Cast(..)
+    )
+}
+
+/// The reads in `e` with the bits `(hi, lo)` each may read; a variable
+/// index may read any bit.
+fn bit_reads<'e>(env: &Env, e: &'e Expr, out: &mut Vec<(&'e Name, usize, usize, Span)>) {
+    match &e.kind {
+        ExprKind::Lit { .. } => {}
+        ExprKind::Var(x) => out.push((x, env[x].ty.width - 1, 0, e.span)),
+        ExprKind::Select(x, sel) => match sel.constant() {
+            Some(Some((hi, lo))) => out.push((x, hi, lo, e.span)),
+            _ => {
+                out.push((x, env[x].ty.width - 1, 0, e.span));
+                if let Some(i) = sel.index() {
+                    bit_reads(env, i, out);
+                }
+            }
+        },
+        ExprKind::Unary(_, a) | ExprKind::Cast(_, a) => bit_reads(env, a, out),
+        ExprKind::Binary(_, a, b) => {
+            bit_reads(env, a, out);
+            bit_reads(env, b, out);
+        }
+        ExprKind::Cond(c, a, b) => {
+            bit_reads(env, c, out);
+            bit_reads(env, a, out);
+            bit_reads(env, b, out);
+        }
+        ExprKind::Concat(es) | ExprKind::Repl(_, es) => {
+            es.iter().for_each(|e| bit_reads(env, e, out));
         }
     }
 }
@@ -426,7 +780,7 @@ pub fn binary(op: BinOp, a: Ty, b: Ty, span: Span) -> Result<Ty> {
         }
     };
     match op {
-        BitAnd | BitOr | BitXor | BitXnor | Add | Sub | Mul => same().map(|()| a),
+        BitAnd | BitOr | BitXor | BitXnor | Add | Sub | Mul | Div | Mod => same().map(|()| a),
         Eq | Ne | CaseEq | CaseNe | Lt | Le | Gt | Ge => same().map(|()| Ty::BIT),
         LogAnd | LogOr => Ok(Ty::BIT),
         // the shift amount is self-determined and unsigned
@@ -460,17 +814,17 @@ pub fn label(sel: Ty, label: Ty, span: Span) -> Result<()> {
     }
 }
 
-/// Checks an assignment of a value of type `rhs` to a signal of type `lhs`:
-/// only the widths must agree, the bits are copied.
-pub fn assign(lhs: Ty, rhs: Ty, span: Span) -> Result<()> {
-    if lhs.width == rhs.width {
+/// Checks an assignment of a value of type `rhs` to a target of width
+/// `lhs`: only the widths must agree, the bits are copied.
+pub fn assign(lhs: usize, rhs: Ty, span: Span) -> Result<()> {
+    if lhs == rhs.width {
         Ok(())
     } else {
         Err(Error::new(
             span,
             format!(
                 "assigning {} bits to {} bits (resize explicitly)",
-                rhs.width, lhs.width
+                rhs.width, lhs
             ),
         ))
     }

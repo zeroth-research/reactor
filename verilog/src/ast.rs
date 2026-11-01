@@ -139,7 +139,7 @@ pub struct Decl {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Item {
     /// `assign lhs = rhs;`, with `span` the position of `lhs`.
-    Assign { lhs: Name, rhs: Expr, span: Span },
+    Assign { lhs: Lvalue, rhs: Expr, span: Span },
     /// `always_ff @(posedge clock) body`, with `span` the position of
     /// `always_ff` and `clock_span` that of `clock`.
     AlwaysFf {
@@ -157,7 +157,11 @@ impl Item {
     /// assignment.
     pub fn targets(&self) -> Vec<&Name> {
         match self {
-            Item::Assign { lhs, .. } => vec![lhs],
+            Item::Assign { lhs, .. } => {
+                let mut out = Vec::new();
+                lhs.targets(&mut out);
+                out
+            }
             Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => {
                 let mut out = Vec::new();
                 body.targets(&mut out);
@@ -188,7 +192,10 @@ impl Item {
     pub fn reads(&self) -> Vec<(&Name, Span)> {
         let mut out = Vec::new();
         match self {
-            Item::Assign { rhs, .. } => rhs.reads(&mut out),
+            Item::Assign { lhs, rhs, .. } => {
+                rhs.reads(&mut out);
+                lhs.reads(&mut out);
+            }
             Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => body.reads(&mut out),
         }
         out
@@ -218,9 +225,48 @@ pub enum StmtKind {
         default: Option<Box<Stmt>>,
     },
     /// `lhs <= rhs;`, with `span` the position of `lhs`.
-    NonBlocking { lhs: Name, rhs: Expr },
+    NonBlocking { lhs: Lvalue, rhs: Expr },
     /// `lhs = rhs;`, with `span` the position of `lhs`.
-    Blocking { lhs: Name, rhs: Expr },
+    Blocking { lhs: Lvalue, rhs: Expr },
+}
+
+/// The target of an assignment.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Lvalue {
+    pub kind: LvalueKind,
+    pub span: Span,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum LvalueKind {
+    Var(Name),
+    /// `y[…]`; typing accepts constant indices only.
+    Select(Name, Select),
+    /// `{l1, l2, …}`: `l1` takes the high bits of the value.
+    Concat(Vec<Lvalue>),
+}
+
+impl Lvalue {
+    /// Adds the signals assigned to `out`, each once.
+    fn targets<'l>(&'l self, out: &mut Vec<&'l Name>) {
+        match &self.kind {
+            LvalueKind::Var(y) | LvalueKind::Select(y, _) => {
+                if !out.contains(&y) {
+                    out.push(y);
+                }
+            }
+            LvalueKind::Concat(ls) => ls.iter().for_each(|l| l.targets(out)),
+        }
+    }
+
+    /// Adds the signals read by the indices of selects to `out`.
+    fn reads<'l>(&'l self, out: &mut Vec<(&'l Name, Span)>) {
+        match &self.kind {
+            LvalueKind::Var(_) => {}
+            LvalueKind::Select(_, sel) => sel.reads(out),
+            LvalueKind::Concat(ls) => ls.iter().for_each(|l| l.reads(out)),
+        }
+    }
 }
 
 /// `l1, l2, …: body` in a `case`.
@@ -257,11 +303,7 @@ impl Stmt {
     /// the order of their first assignment.
     fn targets<'s>(&'s self, out: &mut Vec<&'s Name>) {
         match &self.kind {
-            StmtKind::NonBlocking { lhs, .. } | StmtKind::Blocking { lhs, .. } => {
-                if !out.contains(&lhs) {
-                    out.push(lhs);
-                }
-            }
+            StmtKind::NonBlocking { lhs, .. } | StmtKind::Blocking { lhs, .. } => lhs.targets(out),
             _ => self.children().into_iter().for_each(|s| s.targets(out)),
         }
     }
@@ -290,7 +332,10 @@ impl Stmt {
                     d.reads(out);
                 }
             }
-            StmtKind::NonBlocking { rhs, .. } | StmtKind::Blocking { rhs, .. } => rhs.reads(out),
+            StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
+                rhs.reads(out);
+                lhs.reads(out);
+            }
         }
     }
 }
@@ -313,6 +358,83 @@ pub enum ExprKind {
     Binary(BinOp, Box<Expr>, Box<Expr>),
     /// `c ? a : b`
     Cond(Box<Expr>, Box<Expr>, Box<Expr>),
+    /// `{a, b, …}`: `a` gives the high bits.
+    Concat(Vec<Expr>),
+    /// `{n{a, b, …}}`: `n` copies of `{a, b, …}`.
+    Repl(usize, Vec<Expr>),
+    /// `x[…]`: selects apply to signals only.
+    Select(Name, Select),
+    /// `N'(e)`, `signed'(e)`, `unsigned'(e)`, `$signed(e)`, `$unsigned(e)`.
+    Cast(Cast, Box<Expr>),
+}
+
+/// The bits picked by `x[…]`, as written.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Select {
+    /// `x[i]`
+    Bit(Index),
+    /// `x[hi:lo]`, with constant bounds.
+    Part { hi: usize, lo: usize },
+    /// `x[base +: width]`: bits `base+width-1` down to `base`.
+    Up(Index, usize),
+    /// `x[base -: width]`: bits `base` down to `base-width+1`.
+    Down(Index, usize),
+}
+
+/// A bit position in a select: a decimal constant or any expression.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Index {
+    Const(usize),
+    Expr(Box<Expr>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Cast {
+    /// `N'(e)`: resize to `N` bits.
+    Size(usize),
+    /// `signed'(e)`, `$signed(e)`
+    Signed,
+    /// `unsigned'(e)`, `$unsigned(e)`
+    Unsigned,
+}
+
+impl Select {
+    /// The bits `(hi, lo)` the select picks if they do not depend on a
+    /// signal (`None` if `lo` would be negative).
+    pub fn constant(&self) -> Option<Option<(usize, usize)>> {
+        match self {
+            Select::Bit(Index::Const(i)) => Some(Some((*i, *i))),
+            Select::Part { hi, lo } => Some(Some((*hi, *lo))),
+            Select::Up(Index::Const(b), w) => Some(Some((b + w - 1, *b))),
+            Select::Down(Index::Const(b), w) => Some((b + 1).checked_sub(*w).map(|lo| (*b, lo))),
+            Select::Bit(Index::Expr(_)) | Select::Up(..) | Select::Down(..) => None,
+        }
+    }
+
+    /// The index expression, if it is not a constant.
+    pub fn index(&self) -> Option<&Expr> {
+        match self {
+            Select::Bit(Index::Expr(e))
+            | Select::Up(Index::Expr(e), _)
+            | Select::Down(Index::Expr(e), _) => Some(e),
+            _ => None,
+        }
+    }
+
+    /// The number of bits picked.
+    pub fn width(&self) -> usize {
+        match self {
+            Select::Bit(_) => 1,
+            Select::Part { hi, lo } => (hi + 1).saturating_sub(*lo),
+            Select::Up(_, w) | Select::Down(_, w) => *w,
+        }
+    }
+
+    fn reads<'s>(&'s self, out: &mut Vec<(&'s Name, Span)>) {
+        if let Some(e) = self.index() {
+            e.reads(out);
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -352,6 +474,10 @@ pub enum BinOp {
     Add,
     Sub,
     Mul,
+    /// `/`: typing requires a nonzero literal divisor.
+    Div,
+    /// `%`: typing requires a nonzero literal divisor.
+    Mod,
     Eq,
     Ne,
     /// `===`: equal to `==` in 2-state (there are no x/z values).
@@ -405,6 +531,8 @@ impl fmt::Display for BinOp {
             Add => "+",
             Sub => "-",
             Mul => "*",
+            Div => "/",
+            Mod => "%",
             Eq => "==",
             Ne => "!=",
             CaseEq => "===",
@@ -439,6 +567,12 @@ impl Expr {
                 a.reads(out);
                 b.reads(out);
             }
+            ExprKind::Concat(es) | ExprKind::Repl(_, es) => es.iter().for_each(|e| e.reads(out)),
+            ExprKind::Select(x, sel) => {
+                out.push((x, self.span));
+                sel.reads(out);
+            }
+            ExprKind::Cast(_, e) => e.reads(out),
         }
     }
 }
@@ -455,6 +589,50 @@ impl fmt::Display for Expr {
             ExprKind::Unary(op, e) => write!(f, "({op}{e})"),
             ExprKind::Binary(op, a, b) => write!(f, "({a} {op} {b})"),
             ExprKind::Cond(c, a, b) => write!(f, "({c} ? {a} : {b})"),
+            ExprKind::Concat(es) => write!(f, "{{{}}}", list(es)),
+            ExprKind::Repl(n, es) => write!(f, "{{{n}{{{}}}}}", list(es)),
+            ExprKind::Select(x, sel) => write!(f, "{x}{sel}"),
+            ExprKind::Cast(Cast::Size(n), e) => write!(f, "{n}'({e})"),
+            ExprKind::Cast(Cast::Signed, e) => write!(f, "signed'({e})"),
+            ExprKind::Cast(Cast::Unsigned, e) => write!(f, "unsigned'({e})"),
+        }
+    }
+}
+
+fn list(items: &[impl fmt::Display]) -> String {
+    items
+        .iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+impl fmt::Display for Index {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Index::Const(i) => write!(f, "{i}"),
+            Index::Expr(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl fmt::Display for Select {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Select::Bit(i) => write!(f, "[{i}]"),
+            Select::Part { hi, lo } => write!(f, "[{hi}:{lo}]"),
+            Select::Up(b, w) => write!(f, "[{b} +: {w}]"),
+            Select::Down(b, w) => write!(f, "[{b} -: {w}]"),
+        }
+    }
+}
+
+impl fmt::Display for Lvalue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            LvalueKind::Var(y) => write!(f, "{y}"),
+            LvalueKind::Select(y, sel) => write!(f, "{y}{sel}"),
+            LvalueKind::Concat(ls) => write!(f, "{{{}}}", list(ls)),
         }
     }
 }

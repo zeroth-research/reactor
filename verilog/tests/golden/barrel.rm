@@ -1,0 +1,27 @@
+module barrel
+  external
+    op : bv2
+    n : bv4
+    a : bv8
+    s : bv8
+  interface
+    y : bv8
+    z : bv8
+  atom controls y awaits op, n, a
+    init = update
+      %1 := 2'd0
+      %2 := EQ (X(op), %1)
+      %3 := 2'd1
+      %4 := EQ (X(op), %3)
+      %5 := 2'd2
+      %6 := EQ (X(op), %5)
+      y@1 := SHL (X(a), X(n))
+      y@2 := LSHR (X(a), X(n))
+      y@3 := SHL (X(a), X(n))
+      y@4 := LSHR (X(a), X(n))
+      y@5 := ITE (%6, y@3, y@4)
+      y@6 := ITE (%4, y@2, y@5)
+      X(y) := ITE (%2, y@1, y@6)
+  atom controls z awaits n, s
+    init = update
+      X(z) := ASHR (X(s), X(n))

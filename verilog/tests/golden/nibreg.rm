@@ -1,0 +1,29 @@
+module nibreg
+  external
+    we : bv2
+    d : bv4
+    r@init : bv8
+  interface
+    r : bv8
+    flags : bv4
+  atom controls r reads we, d, r awaits r@init
+    init
+      X(r) := ID X(r@init)
+    update
+      %1 := EXTRACT[0:0] we
+      %2 := EXTRACT[3:0] r
+      %3 := ITE (%1, d, %2)
+      %4 := EXTRACT[1:1] we
+      %5 := EXTRACT[7:4] r
+      %6 := ITE (%4, d, %5)
+      X(r) := CONCAT (%6, %3)
+  atom controls flags awaits r
+    init = update
+      %1 := 8'd0
+      %2 := EQ (X(r), %1)
+      %3 := EXTRACT[7:7] X(r)
+      %4 := REDXOR X(r)
+      %5 := CONCAT (%3, %2)
+      %6 := CONCAT (%4, %5)
+      %7 := REDOR %6
+      X(flags) := CONCAT (%7, %6)

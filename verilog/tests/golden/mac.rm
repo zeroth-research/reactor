@@ -1,0 +1,22 @@
+module mac
+  external
+    clear : bv1
+    a : bv8
+    b : bv8
+    acc@init : bv16
+  interface
+    acc : bv16
+    hi : bv8
+  atom controls acc reads clear, a, b, acc awaits acc@init
+    init
+      X(acc) := ID X(acc@init)
+    update
+      %1 := 16'd0
+      %2 := SEXT[16] a
+      %3 := SEXT[16] b
+      %4 := MUL (%2, %3)
+      %5 := ADD (acc, %4)
+      X(acc) := ITE (clear, %1, %5)
+  atom controls hi awaits acc
+    init = update
+      X(hi) := EXTRACT[15:8] X(acc)

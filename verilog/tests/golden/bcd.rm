@@ -1,0 +1,46 @@
+module bcd
+  external
+    a : bv8
+    s : bv8
+  interface
+    hundreds : bv4
+    tens : bv4
+    ones : bv4
+    q : bv8
+    r : bv8
+  private
+    h : bv8
+    t : bv8
+    o : bv8
+  atom controls h awaits a
+    init = update
+      %1 := 8'd100
+      X(h) := UDIV (X(a), %1)
+  atom controls t awaits a
+    init = update
+      %1 := 8'd10
+      %2 := UDIV (X(a), %1)
+      %3 := 8'd10
+      X(t) := UREM (%2, %3)
+  atom controls o awaits a
+    init = update
+      %1 := 8'd10
+      X(o) := UREM (X(a), %1)
+  atom controls hundreds, tens, ones awaits h, t, o
+    init = update
+      %1 := EXTRACT[3:0] X(h)
+      %2 := EXTRACT[3:0] X(t)
+      %3 := EXTRACT[3:0] X(o)
+      %4 := CONCAT (%2, %3)
+      %5 := CONCAT (%1, %4)
+      X(hundreds) := EXTRACT[11:8] %5
+      X(tens) := EXTRACT[7:4] %5
+      X(ones) := EXTRACT[3:0] %5
+  atom controls q awaits s
+    init = update
+      %1 := 8'd253
+      X(q) := SDIV (X(s), %1)
+  atom controls r awaits s
+    init = update
+      %1 := 8'd3
+      X(r) := SREM (X(s), %1)

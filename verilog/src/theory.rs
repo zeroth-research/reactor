@@ -66,6 +66,18 @@ pub enum SvOp {
     Sub,
     /// `w, w → w`: multiplication modulo `2^w`.
     Mul,
+    /// `w, w → w`: unsigned division, rounding down; undefined for a zero
+    /// divisor.
+    UDiv,
+    /// `w, w → w`: unsigned remainder; undefined for a zero divisor.
+    URem,
+    /// `w, w → w`: signed (two's complement) division, rounding toward
+    /// zero, modulo `2^w` (the most negative value divided by -1 is
+    /// itself); undefined for a zero divisor.
+    SDiv,
+    /// `w, w → w`: signed remainder, with the sign of the dividend;
+    /// undefined for a zero divisor.
+    SRem,
 
     /// `w, w → 1`: equality.
     Eq,
@@ -143,7 +155,7 @@ impl SvOp {
                 arity(1)?;
                 args[0]
             }
-            And | Or | Xor | Add | Sub | Mul => {
+            And | Or | Xor | Add | Sub | Mul | UDiv | URem | SDiv | SRem => {
                 arity(2)?;
                 same(args[0], args[1])?;
                 args[0]
@@ -272,6 +284,10 @@ impl fmt::Display for SvOp {
             Add => write!(f, "ADD"),
             Sub => write!(f, "SUB"),
             Mul => write!(f, "MUL"),
+            UDiv => write!(f, "UDIV"),
+            URem => write!(f, "UREM"),
+            SDiv => write!(f, "SDIV"),
+            SRem => write!(f, "SREM"),
             Eq => write!(f, "EQ"),
             Ne => write!(f, "NE"),
             ULt => write!(f, "ULT"),

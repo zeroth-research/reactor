@@ -1,0 +1,17 @@
+module addc
+  external
+    a : bv8
+    b : bv8
+    cin : bv1
+  interface
+    s : bv8
+    cout : bv1
+  atom controls s, cout awaits a, b, cin
+    init = update
+      %1 := ZEXT[9] X(a)
+      %2 := ZEXT[9] X(b)
+      %3 := ADD (%1, %2)
+      %4 := ZEXT[9] X(cin)
+      %5 := ADD (%3, %4)
+      X(cout) := EXTRACT[8:8] %5
+      X(s) := EXTRACT[7:0] %5
