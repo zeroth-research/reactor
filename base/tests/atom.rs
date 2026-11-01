@@ -101,7 +101,7 @@ fn differential_drifting_clocks() {
     use theory::lra::{LRA, Sort};
 
     // Real scalars: 1x1 matrices.
-    let scalar = Sort::Real([1, 1]);
+    let scalar = Sort::real([1, 1]);
     // The input clock, and the two clocks drifting relative to it.
     let t = Var::new(scalar);
     let x = Var::new(scalar);
@@ -172,7 +172,7 @@ fn differential_drifting_clocks() {
 fn differential_module_rejects_dx_equals_x() {
     use theory::lra::{LRA, Sort};
 
-    let scalar = Sort::Real([1, 1]);
+    let scalar = Sort::real([1, 1]);
     let x = Var::new(scalar);
 
     // dx = x: already ill-formed at the term level.

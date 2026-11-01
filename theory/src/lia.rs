@@ -50,7 +50,7 @@ assert!(LIA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
 */
 
 use crate::signature::{Mat, Signature, SignatureElem, TypeVar, VecSignature, sig};
-use crate::sort::{MultiSort, TangentMultiSort};
+use crate::tangent::Tangent;
 use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
@@ -90,12 +90,8 @@ impl fmt::Display for Sort {
     }
 }
 
-impl MultiSort for Sort {
-    const NAME: &'static str = "LIASort";
-}
-
-impl TangentMultiSort for Sort {
-    fn T(&self) -> Self {
+impl Tangent for Sort {
+    fn tangent(&self) -> Self {
         Sort::Zero(*self.shape())
     }
 }
@@ -790,10 +786,10 @@ mod tests {
     #[test]
     fn check_derivatives() {
         // the derivatives of integers and booleans are zero
-        let z = int(2, 3).T();
+        let z = int(2, 3).tangent();
         assert_eq!(z, Sort::Zero([2, 3]));
-        assert_eq!(bool_t(2, 3).T(), z);
-        assert_eq!(z.T(), z);
+        assert_eq!(bool_t(2, 3).tangent(), z);
+        assert_eq!(z.tangent(), z);
         // operations on values do not apply to derivatives
         assert!(LIA::Add().check([z, z].map(ok), [z].map(ok)).is_err());
         assert!(LIA::Not().check([z].map(ok), [z].map(ok)).is_err());

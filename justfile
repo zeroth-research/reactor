@@ -71,6 +71,10 @@ rs-build-all:
 rs-test:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Build first: the dynamic-linker vars below must not leak into build scripts
+    # (torch-sys runs python, which crashes with the interpreter injected into it).
+    {{ CARGO }} test --features theory/pyo3 --no-run {{ profile_flag }}
+    {{ CARGO }} test -p theory --features torch --no-run {{ profile_flag }}
     TORCH_LIB="$(uv run python -c 'import torch, os; print(os.path.join(os.path.dirname(torch.__file__), "lib"))')"
     if [ "$(uname)" = "Darwin" ]; then
         export DYLD_FALLBACK_LIBRARY_PATH="$TORCH_LIB"

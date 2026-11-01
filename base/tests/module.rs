@@ -10,7 +10,7 @@ use common::{
     Atom, Module, Ops, Srt, example_counter, example_peterson1, example_tiny1, mk_op, srt,
 };
 use std::fmt;
-use theory::sort::TangentMultiSort;
+use theory::tangent::Tangent;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
 #[test]
@@ -556,7 +556,7 @@ fn heterogeneous_composition() {
     let P = base::Module::sequential(&[x], [init], [jump]).unwrap();
 
     let init = Term::constant(SeqOps::havoc(&srt("B")), [X(y)]).unwrap();
-    let flow = Term::constant(DifOps::zero(&srt("B").T()), [d(y)]).unwrap();
+    let flow = Term::constant(DifOps::zero(&srt("B").tangent()), [d(y)]).unwrap();
     let Q = base::Module::differential(&[y], [init], [flow]).unwrap();
 
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();

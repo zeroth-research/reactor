@@ -6,7 +6,7 @@ use std::fmt;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use theory::sort::TangentMultiSort;
+use theory::tangent::Tangent;
 
 #[derive(Clone, Copy)]
 pub struct Var<S> {
@@ -15,14 +15,14 @@ pub struct Var<S> {
     der: Wire<S>,
 }
 
-impl<S: TangentMultiSort> Var<S> {
+impl<S: Tangent + Copy> Var<S> {
     /// A fresh variable of the sort `dtype`: its latched and next wires carry
-    /// values of `dtype`, its derivative wire carries the tangent `dtype.T()`.
+    /// values of `dtype`, its derivative wire carries the tangent `dtype.tangent()`.
     pub fn new(dtype: S) -> Self {
         Self {
             ltc: Wire::new(dtype),
             nxt: Wire::new(dtype),
-            der: Wire::new(dtype.T()),
+            der: Wire::new(dtype.tangent()),
         }
     }
 }

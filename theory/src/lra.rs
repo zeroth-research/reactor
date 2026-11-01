@@ -4,9 +4,10 @@
 Defines the theory [`LRA`] of linear real arithmetic over matrices,
 mixing real and boolean matrices in a single signature.
 
-A [`Sort`] value is either `Real(rows, cols)` or `Bool(rows, cols)`, or
-the sort of their derivatives: `TReal(rows, cols; d)` of the degree `d >= 1`
-for reals and `Zero(rows, cols)` for booleans (see [`TangentMultiSort::T`]).
+A [`Sort`] value is either a real matrix `Real { shape, rank }` or a boolean
+matrix `Bool { shape }`, or `Zero { shape }`, the sort of the derivatives of
+booleans (see [`Tangent::tangent`]). The `rank` of a real is its differential grade:
+`0` for values, `d >= 1` for their `d`-th derivatives.
 The operations in [`LRA`] are:
 
 - [`LRA::Real`], [`LRA::Bool`] — real and boolean matrix literals.
@@ -42,19 +43,19 @@ use theory::lra::{LRA, Sort};
 let ok = |s| Ok::<_, String>(s);
 
 // Pointwise less-than on scalars: Real(1,1), Real(1,1) -> Bool(1,1).
-let i = Sort::Real([1, 1]);
-let b = Sort::Bool([1, 1]);
+let i = Sort::real([1, 1]);
+let b = Sort::Bool { shape: [1, 1] };
 assert!(LRA::Lt().check([i, i].map(ok), [b].map(ok)).is_ok());
 
 // ReLU preserves shape and stays in the real fragment.
-let m = Sort::Real([3, 4]);
+let m = Sort::real([3, 4]);
 assert!(LRA::ReLU().check([m].map(ok), [m].map(ok)).is_ok());
 assert!(LRA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
 ```
 */
 
 use crate::signature::{Mat, MatSort, Signature, SignatureElem, TypeVar, VecSignature, sig};
-use crate::sort::{MultiSort, TangentMultiSort};
+use crate::tangent::Tangent;
 use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
@@ -62,41 +63,43 @@ use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum Sort {
-    Real([usize; 2]),
-    Bool([usize; 2]),
-    // the tangent of `Real` of the given degree (>= 1), i.e., its derivative
-    TReal([usize; 2], u8),
+    // a real matrix; `rank` is the differential grade: `0` for values,
+    // `d >= 1` for their `d`-th derivatives
+    Real { shape: [usize; 2], rank: u8 },
+    Bool { shape: [usize; 2] },
     // the tangent of `Bool` (it has only the zero derivative)
-    Zero([usize; 2]),
+    Zero { shape: [usize; 2] },
 }
 
 impl Sort {
+    /// The sort of real values (of rank `0`) of the given shape
+    pub fn real(shape: [usize; 2]) -> Self {
+        Sort::Real { shape, rank: 0 }
+    }
+
     pub fn is_bool(&self) -> bool {
-        matches!(self, Sort::Bool(..))
+        matches!(self, Sort::Bool { .. })
     }
 
     pub fn is_real(&self) -> bool {
-        matches!(self, Sort::Real(..))
+        matches!(self, Sort::Real { .. })
     }
 
     /// Is this sort a tangent (i.e., a sort of derivatives)?
     pub fn is_tangent(&self) -> bool {
-        matches!(self, Sort::TReal(..) | Sort::Zero(..))
+        matches!(self, Sort::Real { rank: 1.., .. } | Sort::Zero { .. })
     }
 
     pub fn shape(&self) -> &[usize; 2] {
         match self {
-            Sort::Bool(shape) | Sort::Real(shape) | Sort::TReal(shape, _) | Sort::Zero(shape) => {
-                shape
-            }
+            Sort::Bool { shape } | Sort::Real { shape, .. } | Sort::Zero { shape } => shape,
         }
     }
 
-    /// The degree of a real sort (`0`) or of its tangent, `None` for other sorts
-    fn real_degree(&self) -> Option<u8> {
+    /// The rank of a real sort, `None` for other sorts
+    fn real_rank(&self) -> Option<u8> {
         match self {
-            Sort::Real(_) => Some(0),
-            Sort::TReal(_, degree) => Some(*degree),
+            Sort::Real { rank, .. } => Some(*rank),
             _ => None,
         }
     }
@@ -105,24 +108,28 @@ impl Sort {
 impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Sort::Real([i, j]) => write!(f, "Real({i}, {j})"),
-            Sort::Bool([i, j]) => write!(f, "Bool({i}, {j})"),
-            Sort::TReal([i, j], d) => write!(f, "TReal({i}, {j}; {d})"),
-            Sort::Zero([i, j]) => write!(f, "Zero({i}, {j})"),
+            Sort::Real {
+                shape: [i, j],
+                rank: 0,
+            } => write!(f, "Real({i}, {j})"),
+            Sort::Real {
+                shape: [i, j],
+                rank,
+            } => write!(f, "TReal({i}, {j}; {rank})"),
+            Sort::Bool { shape: [i, j] } => write!(f, "Bool({i}, {j})"),
+            Sort::Zero { shape: [i, j] } => write!(f, "Zero({i}, {j})"),
         }
     }
 }
 
-impl MultiSort for Sort {
-    const NAME: &'static str = "LRASort";
-}
-
-impl TangentMultiSort for Sort {
-    fn T(&self) -> Self {
+impl Tangent for Sort {
+    fn tangent(&self) -> Self {
         match self {
-            Sort::Real(shape) => Sort::TReal(*shape, 1),
-            Sort::TReal(shape, d) => Sort::TReal(*shape, d + 1),
-            Sort::Bool(shape) | Sort::Zero(shape) => Sort::Zero(*shape),
+            Sort::Real { shape, rank } => Sort::Real {
+                shape: *shape,
+                rank: rank + 1,
+            },
+            Sort::Bool { shape } | Sort::Zero { shape } => Sort::Zero { shape: *shape },
         }
     }
 }
@@ -181,8 +188,8 @@ impl Combinatorial for LRA {
     fn havoc(range: &Self::Sort) -> Self {
         // a derivative cannot be havoced: the check of the term with a tangent fails
         match range {
-            Sort::Bool(shape) | Sort::Zero(shape) => LRA::AnyBool(*shape),
-            Sort::Real(shape) | Sort::TReal(shape, _) => LRA::AnyReal(*shape),
+            Sort::Bool { shape } | Sort::Zero { shape } => LRA::AnyBool(*shape),
+            Sort::Real { shape, .. } => LRA::AnyReal(*shape),
         }
     }
 }
@@ -192,8 +199,8 @@ impl Differential for LRA {
         // the range is the sort of the derivative; values have no zero derivative,
         // so the check of the term with them fails
         match range {
-            Sort::Bool(shape) | Sort::Zero(shape) => LRA::BoolZerograd(*shape),
-            Sort::Real(shape) | Sort::TReal(shape, _) => LRA::RealZerograd(*shape),
+            Sort::Bool { shape } | Sort::Zero { shape } => LRA::BoolZerograd(*shape),
+            Sort::Real { shape, .. } => LRA::RealZerograd(*shape),
         }
     }
 }
@@ -219,7 +226,7 @@ impl Theory for LRA {
             // FIXME: signatures cannot restrict the sort `'t` of the arithmetic operations
             // to reals and their derivatives, so we check it here
             if is_arithmetic(self)
-                && let Some(sort) = read.iter().find(|s| s.real_degree().is_none())
+                && let Some(sort) = read.iter().find(|s| s.real_rank().is_none())
             {
                 return Err(format!("expected reals or their derivatives, got {sort}"));
             }
@@ -231,9 +238,8 @@ impl Theory for LRA {
 
 type Elem = SignatureElem<Sort>;
 
-/// Matrices in the signatures are matrices of scalars: `Real([i, j])` is
-/// `Mat(Real([1, 1]), i, j)`, `TReal([i, j], d)` is `Mat(TReal([1, 1], d), i, j)`,
-/// and similarly for `Bool` and `Zero`. The symbolic sort `'t` of the arithmetic
+/// Matrices in the signatures are matrices of scalars: `Real { shape: [i, j], rank }`
+/// is `Mat(Real { shape: [1, 1], rank }, i, j)`, and similarly for `Bool` and `Zero`. The symbolic sort `'t` of the arithmetic
 /// operations stands for reals and their derivatives, but nothing restricts it
 /// to them ([`Theory::check`] does).
 ///
@@ -288,13 +294,13 @@ fn is_arithmetic(op: &LRA) -> bool {
 fn signature(op: &LRA) -> Result<VecSignature<Sort>, String> {
     // the sorts of the elements of matrices: reals and their derivatives (of any degree,
     // see `is_arithmetic`), and booleans
-    let (real, bool) = (MatSort::from('t'), MatSort::S(Sort::Bool([1, 1])));
+    let (real, bool) = (MatSort::from('t'), MatSort::S(Sort::Bool { shape: [1, 1] }));
     // a matrix with symbolic dimensions, the same for all (pointwise) arguments
     let mat = |s: MatSort<Sort>| Mat(s, 'a', 'b');
     Ok(match op {
         LRA::Real(cm) => {
             let [rows, cols] = shape_2d(cm)?;
-            sig!(() -> Mat(Sort::Real([1, 1]), rows, cols))
+            sig!(() -> Mat(Sort::real([1, 1]), rows, cols))
         }
         LRA::Bool(cm) => {
             let [rows, cols] = shape_2d(cm)?;
@@ -328,20 +334,29 @@ fn signature(op: &LRA) -> Result<VecSignature<Sort>, String> {
         // has a fixed arity: we pick the write (used by the builder for untraced calls)
         LRA::Uninterpreted(_) => sig!(() -> TypeVar('a')),
         // the zero derivatives
-        LRA::BoolZerograd(shape) => sig!(() -> sort_elem(Sort::Bool(*shape).T())),
-        LRA::RealZerograd(shape) => sig!(() -> sort_elem(Sort::Real(*shape).T())),
-        LRA::AnyBool(shape) => sig!(() -> sort_elem(Sort::Bool(*shape))),
-        LRA::AnyReal(shape) => sig!(() -> sort_elem(Sort::Real(*shape))),
+        LRA::BoolZerograd(shape) => sig!(() -> sort_elem(Sort::Bool { shape: *shape }.tangent())),
+        LRA::RealZerograd(shape) => sig!(() -> sort_elem(Sort::real(*shape).tangent())),
+        LRA::AnyBool(shape) => sig!(() -> sort_elem(Sort::Bool { shape: *shape })),
+        LRA::AnyReal(shape) => sig!(() -> sort_elem(Sort::real(*shape))),
     })
 }
 
 /// The signature element of `sort`: a matrix of scalars
 fn sort_elem(sort: Sort) -> Elem {
     match sort {
-        Sort::Real([i, j]) => Mat(Sort::Real([1, 1]), i, j),
-        Sort::Bool([i, j]) => Mat(Sort::Bool([1, 1]), i, j),
-        Sort::TReal([i, j], degree) => Mat(Sort::TReal([1, 1], degree), i, j),
-        Sort::Zero([i, j]) => Mat(Sort::Zero([1, 1]), i, j),
+        Sort::Real {
+            shape: [i, j],
+            rank,
+        } => Mat(
+            Sort::Real {
+                shape: [1, 1],
+                rank,
+            },
+            i,
+            j,
+        ),
+        Sort::Bool { shape: [i, j] } => Mat(Sort::Bool { shape: [1, 1] }, i, j),
+        Sort::Zero { shape: [i, j] } => Mat(Sort::Zero { shape: [1, 1] }, i, j),
     }
 }
 
@@ -350,11 +365,11 @@ mod tests {
     use super::*;
 
     fn real(r: usize, c: usize) -> Sort {
-        Sort::Real([r, c])
+        Sort::real([r, c])
     }
 
     fn bool_t(r: usize, c: usize) -> Sort {
-        Sort::Bool([r, c])
+        Sort::Bool { shape: [r, c] }
     }
 
     fn ok(s: Sort) -> Result<Sort, String> {
@@ -385,7 +400,7 @@ mod tests {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64]]).into();
         assert!(
             LRA::Real(cm)
-                .check([].map(ok), [real(1, 1).T()].map(ok))
+                .check([].map(ok), [real(1, 1).tangent()].map(ok))
                 .is_err()
         );
     }
@@ -755,18 +770,18 @@ mod tests {
     fn zero_ok() {
         // the zero derivative is written to the derivative (a tangent), not to a value
         let zero = |op: LRA, s: Sort| op.check([].map(ok), [s].map(ok));
-        assert!(zero(LRA::RealZerograd([2, 1]), real(2, 1).T()).is_ok());
+        assert!(zero(LRA::RealZerograd([2, 1]), real(2, 1).tangent()).is_ok());
         assert!(zero(LRA::RealZerograd([2, 1]), real(2, 1)).is_err());
-        assert!(zero(LRA::RealZerograd([2, 1]), real(2, 1).T().T()).is_err());
-        assert!(zero(LRA::BoolZerograd([2, 1]), bool_t(2, 1).T()).is_ok());
+        assert!(zero(LRA::RealZerograd([2, 1]), real(2, 1).tangent().tangent()).is_err());
+        assert!(zero(LRA::BoolZerograd([2, 1]), bool_t(2, 1).tangent()).is_ok());
         assert!(zero(LRA::BoolZerograd([2, 1]), bool_t(2, 1)).is_err());
         // `zero` is given the sort of the derivative
         assert!(matches!(
-            LRA::zero(&real(2, 1).T()),
+            LRA::zero(&real(2, 1).tangent()),
             LRA::RealZerograd([2, 1])
         ));
         assert!(matches!(
-            LRA::zero(&bool_t(2, 1).T()),
+            LRA::zero(&bool_t(2, 1).tangent()),
             LRA::BoolZerograd([2, 1])
         ));
     }
@@ -774,12 +789,24 @@ mod tests {
     #[test]
     fn derivatives() {
         let (r, b) = (real(2, 1), bool_t(2, 1));
-        assert_eq!(r.T(), Sort::TReal([2, 1], 1));
-        assert_eq!(r.T().T(), Sort::TReal([2, 1], 2));
-        assert_eq!(b.T(), Sort::Zero([2, 1]));
-        assert_eq!(b.T().T(), Sort::Zero([2, 1]));
+        assert_eq!(
+            r.tangent(),
+            Sort::Real {
+                shape: [2, 1],
+                rank: 1
+            }
+        );
+        assert_eq!(
+            r.tangent().tangent(),
+            Sort::Real {
+                shape: [2, 1],
+                rank: 2
+            }
+        );
+        assert_eq!(b.tangent(), Sort::Zero { shape: [2, 1] });
+        assert_eq!(b.tangent().tangent(), Sort::Zero { shape: [2, 1] });
         // arithmetic works on derivatives of the same degree
-        let dr = r.T();
+        let dr = r.tangent();
         assert!(LRA::Add().check([dr, dr].map(ok), [dr].map(ok)).is_ok());
         assert!(LRA::ReLU().check([dr].map(ok), [dr].map(ok)).is_ok());
         assert!(LRA::Id().check([dr].map(ok), [dr].map(ok)).is_ok());
@@ -787,17 +814,21 @@ mod tests {
         assert!(LRA::Add().check([dr, r].map(ok), [dr].map(ok)).is_err());
         assert!(
             LRA::Add()
-                .check([dr, dr].map(ok), [dr.T()].map(ok))
+                .check([dr, dr].map(ok), [dr.tangent()].map(ok))
                 .is_err()
         );
         // `dx = x` mixes a derivative and a value
         assert!(LRA::Id().check([r].map(ok), [dr].map(ok)).is_err());
         // boolean operations and guards are on values only
-        assert!(LRA::Not().check([b.T()].map(ok), [b.T()].map(ok)).is_err());
+        assert!(
+            LRA::Not()
+                .check([b.tangent()].map(ok), [b.tangent()].map(ok))
+                .is_err()
+        );
         let g = bool_t(1, 1);
         assert!(
             LRA::Ite()
-                .check([g.T(), dr, dr].map(ok), [dr].map(ok))
+                .check([g.tangent(), dr, dr].map(ok), [dr].map(ok))
                 .is_err()
         );
         assert!(LRA::Ite().check([g, dr, dr].map(ok), [dr].map(ok)).is_ok());
@@ -892,7 +923,7 @@ mod tests {
             )
         );
         // derivatives and values do not mix
-        let dr = real(1, 1).T();
+        let dr = real(1, 1).tangent();
         assert_eq!(
             LRA::Add().check([dr, real(1, 1)].map(ok), [dr].map(ok)),
             Err(
@@ -909,7 +940,7 @@ mod tests {
             Err("Add: expected reals or their derivatives, got Bool(1, 1)".to_string())
         );
         assert_eq!(
-            LRA::Lt().check([b.T(), b.T()].map(ok), [b].map(ok)),
+            LRA::Lt().check([b.tangent(), b.tangent()].map(ok), [b].map(ok)),
             Err("Lt: expected reals or their derivatives, got Zero(1, 1)".to_string())
         );
         // errors of wires are propagated
@@ -940,7 +971,7 @@ mod tests {
         // either a single write, or a single read of any sort
         assert!(f().check([].map(ok), [t].map(ok)).is_ok());
         assert!(f().check([t].map(ok), [].map(ok)).is_ok());
-        assert!(f().check([t.T()].map(ok), [].map(ok)).is_ok());
+        assert!(f().check([t.tangent()].map(ok), [].map(ok)).is_ok());
         assert!(f().check([t].map(ok), [t].map(ok)).is_err());
         assert!(f().check([t, t].map(ok), [].map(ok)).is_err());
         assert!(f().check([].map(ok), [].map(ok)).is_err());
@@ -951,12 +982,19 @@ mod tests {
         // `2 * d(t)` folds to a Linear over derivatives
         let lin = || LRA::Linear(real_tensor(2, 3), real_tensor(2, 1));
         let (x, y) = (real(3, 1), real(2, 1));
-        assert!(lin().check([x.T()].map(ok), [y.T()].map(ok)).is_ok());
-        assert!(lin().check([x.T()].map(ok), [y].map(ok)).is_err());
-        assert!(lin().check([x].map(ok), [y.T()].map(ok)).is_err());
         assert!(
             lin()
-                .check([x.T().T()].map(ok), [y.T().T()].map(ok))
+                .check([x.tangent()].map(ok), [y.tangent()].map(ok))
+                .is_ok()
+        );
+        assert!(lin().check([x.tangent()].map(ok), [y].map(ok)).is_err());
+        assert!(lin().check([x].map(ok), [y.tangent()].map(ok)).is_err());
+        assert!(
+            lin()
+                .check(
+                    [x.tangent().tangent()].map(ok),
+                    [y.tangent().tangent()].map(ok)
+                )
                 .is_ok()
         );
     }

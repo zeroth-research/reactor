@@ -53,7 +53,7 @@ assert!(BV::Add().check([a, b].map(ok), [c].map(ok)).is_err());
 */
 
 use crate::signature::{Mat, MatSort, Signature, SignatureElem, TypeVar, VecSignature, sig};
-use crate::sort::{MultiSort, TangentMultiSort};
+use crate::tangent::Tangent;
 use crate::*;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
@@ -99,12 +99,8 @@ impl fmt::Display for Sort {
     }
 }
 
-impl MultiSort for Sort {
-    const NAME: &'static str = "BVSort";
-}
-
-impl TangentMultiSort for Sort {
-    fn T(&self) -> Self {
+impl Tangent for Sort {
+    fn tangent(&self) -> Self {
         Sort::Zero(*self.shape())
     }
 }
@@ -924,9 +920,9 @@ mod tests {
     #[test]
     fn check_derivatives() {
         // the derivatives of bit-vectors are zero
-        let z = bv(8, 2, 3).T();
+        let z = bv(8, 2, 3).tangent();
         assert_eq!(z, Sort::Zero([2, 3]));
-        assert_eq!(z.T(), z);
+        assert_eq!(z.tangent(), z);
         // operations on values do not apply to derivatives
         let t = bv(8, 2, 3);
         assert!(BV::Add().check([z, z].map(ok), [z].map(ok)).is_err());

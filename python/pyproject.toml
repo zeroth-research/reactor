@@ -40,6 +40,9 @@ build-backend = "maturin"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+# libtorch comes from the installed `torch` package at runtime: do not try to
+# bundle it into the wheel (recent maturin versions repair macOS wheels by default)
+auditwheel = "skip"
 #python-source = "zrth"
 module-name = "zrth.zrth"
 

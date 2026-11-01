@@ -1,14 +1,13 @@
 pub mod any;
+pub mod boundary;
 pub mod bv;
 pub mod lia;
 pub mod lra;
 pub mod signature;
-pub mod boundary;
-pub mod sort;
+pub mod tangent;
 pub mod tensor;
 
 use signature::{SignatureElem, VecSignature};
-use sort::MultiSort;
 use std::fmt;
 use std::fmt::Debug;
 pub use tensor::PyTensor;
@@ -19,7 +18,7 @@ pub trait Theory {
     const NAME: &'static str;
 
     /// Check that the operation can read and write wires of the given sorts.
-    /// Derivatives are wires of the tangent sorts (see [`sort::TangentMultiSort::T`]).
+    /// Derivatives are wires of the tangent sorts (see [`tangent::Tangent::tangent`]).
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
         R: IntoIterator<Item = Result<Self::Sort, E>>,
@@ -148,7 +147,7 @@ fn typecheck_wires<S>(
     elem: impl Fn(S) -> SignatureElem<S>,
 ) -> Result<(), String>
 where
-    S: MultiSort + PartialEq + fmt::Display,
+    S: tangent::Tangent + Copy + PartialEq + fmt::Display,
 {
     let wires = VecSignature {
         dom: read.iter().copied().map(&elem).collect(),

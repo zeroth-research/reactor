@@ -8,7 +8,7 @@ use base::wire::Wire;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use theory::sort::{MultiSort, TangentMultiSort};
+use theory::tangent::Tangent;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
 /// An uninterpreted sort: its name and how many times it is a tangent (`0` for
@@ -21,12 +21,8 @@ pub fn srt(name: &'static str) -> Srt {
     Srt(name, 0)
 }
 
-impl MultiSort for Srt {
-    const NAME: &'static str = "Srt";
-}
-
-impl TangentMultiSort for Srt {
-    fn T(&self) -> Self {
+impl Tangent for Srt {
+    fn tangent(&self) -> Self {
         Srt(self.0, self.1 + 1)
     }
 }

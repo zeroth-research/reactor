@@ -1,4 +1,4 @@
-use crate::sort::{MultiSort, TangentMultiSort};
+use crate::tangent::Tangent;
 use std::{fmt, ops::Mul};
 //use std::ops::Mul;
 
@@ -18,7 +18,7 @@ pub enum Dim {
 
 // A sort or a symbolic name of the elements of a matrix
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum MatSort<MS: MultiSort> {
+pub enum MatSort<MS: Tangent + Copy> {
     // symbolic name, e.g., `'t` in `Mat('t, N, 5)`; it is a type variable,
     // i.e., `'t` in `'t -> Mat('t, N, 5)` is the same variable
     // (that can be instantiated only by a sort, not by a matrix or a tangent, for now)
@@ -32,7 +32,7 @@ pub enum MatSort<MS: MultiSort> {
 /// because we need to reason about the dimensions) or a type variable.
 /// TODO: should be go with tensors instead of with a matrix?
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum SignatureElem<MS: MultiSort> {
+pub enum SignatureElem<MS: Tangent + Copy> {
     // sort
     S(MS),
     // tangent space of a sort
@@ -45,7 +45,7 @@ pub enum SignatureElem<MS: MultiSort> {
     TypeVar(Name),
 }
 
-// impl<MS: MultiSort> SignatureElem<MS> {
+// impl<MS: Tangent + Copy> SignatureElem<MS> {
 //     /// Is this element concrete (i.e., it does not contain any variables)
 //     pub fn is_concrete(&self) -> bool {
 //         match self {
@@ -57,17 +57,17 @@ pub enum SignatureElem<MS: MultiSort> {
 // }
 
 #[allow(non_snake_case)]
-pub fn TypeVar<MS: MultiSort>(name: impl Into<Name>) -> SignatureElem<MS> {
+pub fn TypeVar<MS: Tangent + Copy>(name: impl Into<Name>) -> SignatureElem<MS> {
     SignatureElem::<MS>::TypeVar(name.into())
 }
 
 #[allow(non_snake_case)]
-pub fn Tan<MS: TangentMultiSort>(srt: MS) -> SignatureElem<MS> {
+pub fn Tan<MS: Tangent + Copy>(srt: MS) -> SignatureElem<MS> {
     SignatureElem::<MS>::Tan(srt)
 }
 
 #[allow(non_snake_case)]
-pub fn Mat<MS: MultiSort>(
+pub fn Mat<MS: Tangent + Copy>(
     srt: impl Into<MatSort<MS>>,
     m: impl Into<Dim>,
     n: impl Into<Dim>,
@@ -75,19 +75,19 @@ pub fn Mat<MS: MultiSort>(
     SignatureElem::<MS>::Mat(srt.into(), m.into(), n.into())
 }
 
-impl<MS: MultiSort> From<MS> for SignatureElem<MS> {
+impl<MS: Tangent + Copy> From<MS> for SignatureElem<MS> {
     fn from(s: MS) -> Self {
         SignatureElem::S(s)
     }
 }
 
-impl<MS: MultiSort> From<MS> for MatSort<MS> {
+impl<MS: Tangent + Copy> From<MS> for MatSort<MS> {
     fn from(s: MS) -> Self {
         MatSort::S(s)
     }
 }
 
-impl<MS: MultiSort> From<char> for MatSort<MS> {
+impl<MS: Tangent + Copy> From<char> for MatSort<MS> {
     fn from(c: char) -> Self {
         MatSort::Sym(c.into())
     }
@@ -140,7 +140,7 @@ impl fmt::Display for Dim {
     }
 }
 
-impl<MS: MultiSort + fmt::Display> fmt::Display for MatSort<MS> {
+impl<MS: Tangent + Copy + fmt::Display> fmt::Display for MatSort<MS> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MatSort::Sym(name) => write!(f, "'{name}"),
@@ -149,7 +149,7 @@ impl<MS: MultiSort + fmt::Display> fmt::Display for MatSort<MS> {
     }
 }
 
-impl<MS: MultiSort + fmt::Display> fmt::Display for SignatureElem<MS> {
+impl<MS: Tangent + Copy + fmt::Display> fmt::Display for SignatureElem<MS> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SignatureElem::S(srt) => write!(f, "{srt}"),
@@ -160,7 +160,7 @@ impl<MS: MultiSort + fmt::Display> fmt::Display for SignatureElem<MS> {
     }
 }
 
-pub trait Signature<MS: MultiSort> {
+pub trait Signature<MS: Tangent + Copy> {
     fn dom(&self) -> impl Iterator<Item = SignatureElem<MS>>;
     fn cod(&self) -> impl Iterator<Item = SignatureElem<MS>>;
 
@@ -170,12 +170,12 @@ pub trait Signature<MS: MultiSort> {
 
 /// A signature given by the elements of its domain and codomain
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VecSignature<MS: MultiSort> {
+pub struct VecSignature<MS: Tangent + Copy> {
     pub dom: Vec<SignatureElem<MS>>,
     pub cod: Vec<SignatureElem<MS>>,
 }
 
-impl<MS: MultiSort> Signature<MS> for VecSignature<MS> {
+impl<MS: Tangent + Copy> Signature<MS> for VecSignature<MS> {
     fn dom(&self) -> impl Iterator<Item = SignatureElem<MS>> {
         self.dom.iter().copied()
     }
@@ -224,7 +224,7 @@ macro_rules! sig {
 pub(crate) use sig;
 
 /// Helper for substitutions in the signature (for type-checking)
-enum SubstType<MS: MultiSort> {
+enum SubstType<MS: Tangent + Copy> {
     // type variable (also as the sort of matrix elements) with elem
     Var(Name, SignatureElem<MS>),
     // variable name with name
@@ -240,7 +240,7 @@ enum SubstType<MS: MultiSort> {
 fn greatest_var_name<S, MS>(sig: &S) -> Option<Name>
 where
     S: Signature<MS>,
-    MS: MultiSort,
+    MS: Tangent + Copy,
 {
     let mut greatest: Option<Name> = None;
     for e in sig.dom().chain(sig.cod()) {
@@ -267,7 +267,7 @@ where
 fn collect_shifted<S, MS>(sig: &S, offset: usize) -> Result<Vec<SignatureElem<MS>>, String>
 where
     S: Signature<MS>,
-    MS: MultiSort,
+    MS: Tangent + Copy,
 {
     let shift = |x: Name| {
         u8::try_from(x.0 as usize + offset)
@@ -299,7 +299,7 @@ where
 
 /// Find the next substitution that unifies the elements of `sig1` and `sig2`,
 /// or `None` if there is no substitution left to do
-fn find_subst<MS: MultiSort>(
+fn find_subst<MS: Tangent + Copy>(
     sig1: &[SignatureElem<MS>],
     sig2: &[SignatureElem<MS>],
 ) -> Option<SubstType<MS>> {
@@ -361,7 +361,10 @@ fn find_subst<MS: MultiSort>(
 }
 
 /// Apply the substitution `subst` to the elements `elems`
-fn apply_subst<MS: MultiSort + PartialEq>(subst: &SubstType<MS>, elems: &mut [SignatureElem<MS>]) {
+fn apply_subst<MS: Tangent + Copy + PartialEq>(
+    subst: &SubstType<MS>,
+    elems: &mut [SignatureElem<MS>],
+) {
     // replace the dimension name `orig` with `new` in the matrix `e`
     let subst_dim = |e: &mut SignatureElem<MS>, orig: Name, new: Dim| {
         if let SignatureElem::Mat(_, m, n) = e {
@@ -398,7 +401,7 @@ fn apply_subst<MS: MultiSort + PartialEq>(subst: &SubstType<MS>, elems: &mut [Si
 pub fn typecheck<S, MS>(sig1: S, sig2: S) -> Result<(), String>
 where
     S: Signature<MS>,
-    MS: MultiSort + PartialEq + fmt::Display,
+    MS: Tangent + Copy + PartialEq + fmt::Display,
 {
     if sig1.dom_arity() != sig2.dom_arity() {
         return Err(format!(
@@ -453,7 +456,7 @@ where
 fn signature_to_string<MS, S>(sig: &S) -> String
 where
     S: Signature<MS>,
-    MS: MultiSort + fmt::Display,
+    MS: Tangent + Copy + fmt::Display,
 {
     let elems_to_string = |elems: Vec<String>| match elems.as_slice() {
         [elem] => elem.clone(),

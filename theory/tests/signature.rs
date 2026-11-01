@@ -2,7 +2,7 @@ use std::fmt;
 use theory::signature::{
     Dim, Mat, MatSort, Name, Signature, SignatureElem, Tan, TypeVar, typecheck,
 };
-use theory::sort::{MultiSort, TangentMultiSort};
+use theory::tangent::Tangent;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum TestSort {
@@ -58,10 +58,6 @@ impl fmt::Display for TestSignature {
     }
 }
 
-impl MultiSort for TestSort {
-    const NAME: &'static str = "TestSort";
-}
-
 impl fmt::Display for TestSort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -73,9 +69,9 @@ impl fmt::Display for TestSort {
     }
 }
 
-impl TangentMultiSort for TestSort {
+impl Tangent for TestSort {
     //const NAME = "TestSort";
-    fn T(&self) -> TestSort {
+    fn tangent(&self) -> TestSort {
         match self {
             TestSort::A() => TestSort::TanZero(),
             TestSort::B(n) => TestSort::TB(*n, 1),
@@ -90,7 +86,7 @@ fn test_1() {
     let t = TypeVar('a');
     let a = TestSort::A().into();
     let b = TestSort::B(8).into();
-    let _tan = Tan(TestSort::B(4).T());
+    let _tan = Tan(TestSort::B(4).tangent());
     let m1 = Mat(TestSort::B(3), 'a', 'b');
     let m2 = Mat(TestSort::B(3), 'b', 'c');
     let m3 = Mat(TestSort::B(3), 'a', 'c');

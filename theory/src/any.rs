@@ -1,7 +1,7 @@
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
-use crate::sort::{MultiSort, TangentMultiSort};
+use crate::tangent::Tangent;
 use crate::{Theory, bv, lia, lra};
 use crate::{check_havoc, check_skip, check_zero};
 use derive_more::From;
@@ -48,12 +48,8 @@ impl fmt::Display for Sort {
     }
 }
 
-impl MultiSort for Sort {
-    const NAME: &'static str = "Sort";
-}
-
-impl TangentMultiSort for Sort {
-    fn T(&self) -> Self {
+impl Tangent for Sort {
+    fn tangent(&self) -> Self {
         match self {
             Sort::Real(shape) => Sort::TReal(*shape, 1),
             Sort::TReal(shape, degree) => Sort::TReal(*shape, degree + 1),
@@ -86,10 +82,10 @@ impl From<lia::Sort> for Sort {
 impl From<lra::Sort> for Sort {
     fn from(value: lra::Sort) -> Self {
         match value {
-            lra::Sort::Bool(shape) => Sort::Bool(shape),
-            lra::Sort::Real(shape) => Sort::Real(shape),
-            lra::Sort::TReal(shape, degree) => Sort::TReal(shape, degree),
-            lra::Sort::Zero(shape) => Sort::Zero(shape),
+            lra::Sort::Bool { shape } => Sort::Bool(shape),
+            lra::Sort::Real { shape, rank: 0 } => Sort::Real(shape),
+            lra::Sort::Real { shape, rank } => Sort::TReal(shape, rank),
+            lra::Sort::Zero { shape } => Sort::Zero(shape),
         }
     }
 }
@@ -124,10 +120,10 @@ impl TryFrom<Sort> for lra::Sort {
 
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
-            Sort::Bool(shape) => Ok(lra::Sort::Bool(shape)),
-            Sort::Real(shape) => Ok(lra::Sort::Real(shape)),
-            Sort::TReal(shape, degree) => Ok(lra::Sort::TReal(shape, degree)),
-            Sort::Zero(shape) => Ok(lra::Sort::Zero(shape)),
+            Sort::Bool(shape) => Ok(lra::Sort::Bool { shape }),
+            Sort::Real(shape) => Ok(lra::Sort::real(shape)),
+            Sort::TReal(shape, rank) => Ok(lra::Sort::Real { shape, rank }),
+            Sort::Zero(shape) => Ok(lra::Sort::Zero { shape }),
             _ => Err("invalid cast".to_string()),
         }
     }
