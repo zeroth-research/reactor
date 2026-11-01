@@ -1,0 +1,45 @@
+module nest
+  external
+    a : bv4
+    m1.l.q@init : bv4
+    m2.l.q@init : bv4
+  interface
+    y : bv4
+    z : bv4
+  private
+    m1.q : bv4
+    m1.s : bv4
+    m1.l.d : bv4
+    m2.q : bv4
+    m2.s : bv4
+    m2.l.d : bv4
+  atom controls m1.q reads m1.l.d awaits m1.l.q@init
+    init
+      X(m1.q) := ID X(m1.l.q@init)
+    update
+      X(m1.q) := ID m1.l.d
+  atom controls m2.q reads m2.l.d awaits m2.l.q@init
+    init
+      X(m2.q) := ID X(m2.l.q@init)
+    update
+      X(m2.q) := ID m2.l.d
+  atom controls m1.s awaits m1.q
+    init = update
+      %1 := 4'd2
+      X(m1.s) := ADD (X(m1.q), %1)
+  atom controls m2.s awaits m2.q
+    init = update
+      %1 := 4'd7
+      X(m2.s) := ADD (X(m2.q), %1)
+  atom controls y awaits m1.q, m1.s
+    init = update
+      X(y) := ADD (X(m1.s), X(m1.q))
+  atom controls m1.l.d awaits a, m1.s
+    init = update
+      X(m1.l.d) := XOR (X(a), X(m1.s))
+  atom controls z awaits m2.q, m2.s
+    init = update
+      X(z) := ADD (X(m2.s), X(m2.q))
+  atom controls m2.l.d awaits y, m2.s
+    init = update
+      X(m2.l.d) := XOR (X(y), X(m2.s))

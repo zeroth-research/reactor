@@ -64,6 +64,16 @@ differs between the branches.
 `s == l1 | s == l2`, …, so the first matching item wins; without `default`,
 no item matching leaves the map as it was.
 
+A module with instances becomes the composition of a module made of its
+own atoms and the translations of its instances (each translated on its
+own, with fresh variables), with the module's internal signals hidden.
+A port connected to a signal name is that signal's variable; an input
+connected to another expression is a variable `u.a` driven by an extra
+atom of the module, as if by `assign u.a = …`. Variables are named as
+[`Inst::naming`] says, the initial value of a register at path `u.q` is the
+external variable `u.q@init`, and intermediate values of an instance's
+blocks are prefixed with its path.
+
 The atoms are sorted so that each comes after the atoms controlling what it
 awaits; a cycle is a combinational loop and is rejected. The check is per
 atom, as the await relation of reactive modules is: an atom's update
@@ -74,13 +84,16 @@ while another block drives `z` from `x`). Such designs are rejected, with
 a message saying which block to split. Translating each signal of a block
 as its own atom would accept them with the same meaning, at the cost of
 duplicating shared subterms and of the one-to-one correspondence between
-blocks and atoms.
+blocks and atoms. The check runs on names, not paths: a port connected to
+a signal name is that signal. A loop through instances is found on the
+atoms of the composed modules and reported with the signals on it.
 */
 
 use crate::ast::{
     self, BinOp, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Name, Span, Stmt, StmtKind,
     Ty, UnOp,
 };
+use crate::elab::{self, Inst};
 use crate::typing;
 use crate::{Atom, Module, Sort, SvOp, Term, Var, Wire};
 use base::var::X;
@@ -140,28 +153,139 @@ impl Translation {
     }
 }
 
-/// Checks and translates a module.
+/// Checks and translates a module without instances.
 pub fn lower(m: &ast::Module) -> Result<Translation> {
-    let env = typing::check(m)?;
+    lower_inst(&Inst::leaf(m.clone()))
+}
+
+/// Checks and translates an elaborated hierarchy.
+pub fn lower_inst(inst: &Inst) -> Result<Translation> {
+    let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
+    let mut out = Out {
+        naming: &naming,
+        vars: BTreeMap::new(),
+        registers: Vec::new(),
+        wire_names: HashMap::new(),
+    };
+    let module = lower_rec(inst, "", &mut out)?;
+    let m = &inst.module;
     let clock = m.clock().cloned();
-    let registers: Vec<Name> = m.registers().into_iter().cloned().collect();
-    // in declaration order, so that variable ids (and printing) follow it
-    let decls = m.ports.iter().map(|p| &p.decl).chain(&m.decls);
-    let mut vars: BTreeMap<Name, Var> = decls
-        .map(|d| (d.name.clone(), Var::new(Sort(d.ty.width))))
+    let unread_inputs = m
+        .ports
+        .iter()
+        .filter(|p| p.dir == Dir::Input && Some(&p.decl.name) != clock.as_ref())
+        .map(|p| &p.decl.name)
+        .filter(|x| !module.extl().contains(&out.vars[*x]))
+        .cloned()
         .collect();
+    Ok(Translation {
+        name: m.name.clone(),
+        module,
+        vars: out.vars,
+        clock,
+        registers: out.registers,
+        unread_inputs,
+        wire_names: out.wire_names,
+    })
+}
+
+/// What the translation of a hierarchy collects.
+struct Out<'n> {
+    /// The name of every signal path (see [`Inst::naming`]).
+    naming: &'n BTreeMap<Name, Name>,
+    /// The variables by name.
+    vars: BTreeMap<Name, Var>,
+    /// The paths of the registers.
+    registers: Vec<Name>,
+    wire_names: HashMap<Wire, Name>,
+}
+
+impl Out<'_> {
+    /// The variable named `name`, made on first use.
+    fn var(&mut self, name: &str, width: usize) -> Var {
+        *self
+            .vars
+            .entry(name.to_string())
+            .or_insert_with(|| Var::new(Sort(width)))
+    }
+}
+
+/// Translates the instance at path `prefix` (`""` or ending in `.`): its
+/// own items become atoms, its instances modules, which are composed with
+/// the signals of the module hidden.
+fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
+    let m = &inst.module;
+    let ctx = |e: Error| elab::context(e, prefix);
+    let mut env = typing::check(m).map_err(ctx)?;
+    let registers: Vec<Name> = m.registers().into_iter().cloned().collect();
+
+    // an input connected to an expression other than a name is a signal
+    // `u.a` of the module, driven by an `assign`
+    let mut connections = Vec::new();
+    for i in m.instances() {
+        for (c, f) in i.conns(Dir::Input) {
+            let Some(e) = c
+                .actual
+                .as_ref()
+                .filter(|e| !matches!(e.kind, ExprKind::Var(_)))
+            else {
+                continue;
+            };
+            let name = format!("{}.{}", i.name, c.port);
+            let sig = typing::Sig {
+                ty: f.ty,
+                dir: None,
+                span: c.span,
+            };
+            env.insert(name.clone(), sig);
+            let lhs = Lvalue {
+                kind: LvalueKind::Var(name),
+                span: c.span,
+            };
+            connections.push(Item::Assign {
+                lhs,
+                rhs: e.clone(),
+                span: c.span,
+            });
+        }
+    }
+
+    // in declaration order, so that variable ids (and printing) follow it
+    let mut vars: BTreeMap<Name, Var> = BTreeMap::new();
+    let decls = m.ports.iter().map(|p| &p.decl).chain(&m.decls);
+    let locals = decls
+        .map(|d| d.name.clone())
+        .chain(connections.iter().flat_map(|c| c.targets()).cloned());
+    for x in locals.collect::<Vec<_>>() {
+        let name = out.naming[&format!("{prefix}{x}")].clone();
+        vars.insert(x.clone(), out.var(&name, env[&x].ty.width));
+    }
     for q in &registers {
-        vars.insert(init_name(q), Var::new(Sort(env[q].ty.width)));
+        let path = format!("{prefix}{q}");
+        vars.insert(init_name(q), out.var(&init_name(&path), env[q].ty.width));
+        out.registers.push(path);
     }
 
     // the await order is computed on the AST, so that a loop is reported
     // as such before any term is built
-    let pending: Vec<Pending> = m
+    let items = m
         .items
         .iter()
+        .filter(|item| !matches!(item, Item::Instance(_)))
+        .chain(&connections);
+    // by name rather than path: ports connected to the same signal are one
+    // variable (`.a(y), .y(y)` makes `assign y = a` a loop)
+    let naming = out.naming;
+    let canon = |x: &Name| {
+        naming
+            .get(&format!("{prefix}{x}"))
+            .cloned()
+            .unwrap_or_else(|| x.clone())
+    };
+    let pending: Vec<Pending> = items
         .map(|item| {
             let ctrl: Vec<Name> = item.targets().into_iter().cloned().collect();
-            let awaits = match item {
+            let awaits: BTreeSet<Name> = match item {
                 // only the init action awaits, and only external variables
                 Item::AlwaysFf { .. } => ctrl.iter().map(|q| init_name(q)).collect(),
                 // `assign y = y` awaits itself, a block reads its own
@@ -174,37 +298,32 @@ pub fn lower(m: &ast::Module) -> Result<Translation> {
                     .filter(|x| !ctrl.contains(x))
                     .cloned()
                     .collect(),
+                Item::Instance(_) => unreachable!("not an atom"),
             };
             let deps = match item {
-                Item::AlwaysComb { body, .. } if ctrl.len() > 1 => Some(dependencies(body)),
+                Item::AlwaysComb { body, .. } if ctrl.len() > 1 => {
+                    let mut deps: BTreeMap<Name, BTreeSet<Name>> = BTreeMap::new();
+                    for (y, d) in dependencies(body) {
+                        deps.entry(canon(&y))
+                            .or_default()
+                            .extend(d.iter().map(&canon));
+                    }
+                    Some(deps)
+                }
                 _ => None,
             };
             Pending {
                 item,
-                ctrl,
-                awaits,
+                ctrl: ctrl.iter().map(&canon).collect(),
+                awaits: awaits.iter().map(&canon).collect(),
                 deps,
                 span: item.span(),
             }
         })
         .collect();
-    let read: BTreeSet<&Name> = m
-        .items
-        .iter()
-        .flat_map(|item| item.reads().into_iter().map(|(x, _)| x))
-        .collect();
-    let unread_inputs = m
-        .ports
-        .iter()
-        .map(|p| &p.decl.name)
-        .filter(|x| env[*x].dir == Some(Dir::Input) && !read.contains(x))
-        .filter(|x| Some(*x) != clock.as_ref())
-        .cloned()
-        .collect();
 
     let mut atoms = Vec::new();
-    let mut wire_names = HashMap::new();
-    for item in await_order(pending)? {
+    for item in await_order(pending).map_err(ctx)? {
         let span = item.span();
         let atom = match item {
             Item::Assign { lhs, rhs, .. } => {
@@ -213,7 +332,7 @@ pub fn lower(m: &ast::Module) -> Result<Translation> {
                 let (w, _) = b.expr(rhs)?;
                 b.assign(lhs, w);
                 b.finish_all(span)?;
-                wire_names.extend(b.names);
+                out.add_names(prefix, b.names);
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
                 Atom::combinatorial(scope, b.terms).map_err(|e| internal(span, e))?
             }
@@ -238,26 +357,143 @@ pub fn lower(m: &ast::Module) -> Result<Translation> {
                 b.start(&item.targets(), |_| None);
                 b.stmt(body)?;
                 b.finish_all(span)?;
-                wire_names.extend(b.names);
+                out.add_names(prefix, b.names);
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
                 Atom::combinatorial(scope, b.terms).map_err(|e| internal(span, e))?
             }
+            Item::Instance(_) => unreachable!("not an atom"),
         };
         atoms.push(atom);
     }
 
-    let private: BTreeSet<Var> = m.decls.iter().map(|d| vars[&d.name]).collect();
-    let module = Module::partially_observable(atoms, |v| private.contains(v))
-        .map_err(|e| internal(Span::default(), e))?;
-    Ok(Translation {
-        name: m.name.clone(),
-        module,
-        vars,
-        clock,
-        registers,
-        unread_inputs,
-        wire_names,
-    })
+    if inst.children.is_empty() {
+        let private: BTreeSet<Var> = m.decls.iter().map(|d| vars[&d.name]).collect();
+        return Module::partially_observable(atoms, |v| private.contains(v))
+            .map_err(|e| internal(Span::default(), e));
+    }
+
+    // the module's own atoms observe everything, since its instances may
+    // read and write its internal signals; hiding happens in the
+    // composition
+    let own =
+        Module::partially_observable(atoms, |_| false).map_err(|e| internal(Span::default(), e))?;
+    let mut modules = vec![(own, Span::default())];
+    let mut hidden: BTreeSet<Var> = m.decls.iter().map(|d| vars[&d.name]).collect();
+    hidden.extend(
+        connections
+            .iter()
+            .flat_map(|c| c.targets())
+            .map(|x| vars[x]),
+    );
+    for (u, child) in &inst.children {
+        let i = m.instances().find(|i| i.name == *u).expect("an instance");
+        let path = format!("{prefix}{u}.");
+        modules.push((lower_rec(child, &path, out)?, i.span));
+        // unconnected outputs are signals of the instance only
+        for p in child.module.ports.iter().filter(|p| p.dir == Dir::Output) {
+            let connected = i
+                .conns
+                .iter()
+                .any(|c| c.port == p.decl.name && c.actual.is_some());
+            if !connected {
+                hidden.insert(out.vars[&format!("{path}{}", p.decl.name)]);
+            }
+        }
+    }
+    if let Some((span, msg)) = instance_loop(&modules, &out.vars) {
+        return Err(ctx(Error::new(span, msg)));
+    }
+    Module::compose_hiding(modules.into_iter().map(|(m, _)| m), |v| hidden.contains(v))
+        .map_err(|e| internal(Span::default(), e))
+}
+
+impl Out<'_> {
+    /// Adds the names of intermediate values of an atom of the instance at
+    /// `prefix`.
+    fn add_names(&mut self, prefix: &str, names: HashMap<Wire, Name>) {
+        self.wire_names
+            .extend(names.into_iter().map(|(w, n)| (w, format!("{prefix}{n}"))));
+    }
+}
+
+/// A combinational loop through the atoms of several modules (each of them
+/// free of loops), with the position of the instance of the first module
+/// on it that is not the first of `modules`.
+fn instance_loop(modules: &[(Module, Span)], vars: &BTreeMap<Name, Var>) -> Option<(Span, String)> {
+    let atoms: Vec<(&Atom, Span)> = modules
+        .iter()
+        .flat_map(|(m, span)| m.atoms().iter().map(move |a| (a, *span)))
+        .collect();
+    let name = |v: &Var| {
+        vars.iter()
+            .find(|(_, w)| *w == v)
+            .map_or("?", |(n, _)| n.as_str())
+    };
+    // the variable by which atom `a` awaits atom `b`
+    let via = |a: usize, b: usize| {
+        atoms[a]
+            .0
+            .wait()
+            .iter()
+            .find(|v| atoms[b].0.ctrl().contains(v))
+            .copied()
+    };
+    // depth-first search for a cycle
+    let n = atoms.len();
+    let mut state = vec![0u8; n]; // 0 new, 1 on the stack, 2 done
+    let mut stack: Vec<usize> = Vec::new();
+    fn dfs(
+        a: usize,
+        n: usize,
+        via: &dyn Fn(usize, usize) -> Option<Var>,
+        state: &mut [u8],
+        stack: &mut Vec<usize>,
+    ) -> Option<Vec<usize>> {
+        state[a] = 1;
+        stack.push(a);
+        for b in 0..n {
+            if via(a, b).is_none() {
+                continue;
+            }
+            if state[b] == 1 {
+                let start = stack.iter().position(|&x| x == b).unwrap();
+                return Some(stack[start..].to_vec());
+            }
+            if state[b] == 0
+                && let Some(c) = dfs(b, n, via, state, stack)
+            {
+                return Some(c);
+            }
+        }
+        stack.pop();
+        state[a] = 2;
+        None
+    }
+    for a in 0..n {
+        if state[a] == 0
+            && let Some(cycle) = dfs(a, n, &via, &mut state, &mut stack)
+        {
+            // each atom awaits the next: the data flows backwards
+            let mut signals: Vec<&str> = (0..cycle.len())
+                .map(|k| name(&via(cycle[k], cycle[(k + 1) % cycle.len()]).unwrap()))
+                .collect();
+            signals.reverse();
+            signals.push(signals[0]);
+            let span = cycle
+                .iter()
+                .map(|&a| atoms[a].1)
+                .find(|s| *s != Span::default())
+                .unwrap_or_default();
+            return Some((
+                span,
+                format!(
+                    "combinational loop through instances: {}",
+                    signals.join(" -> ")
+                ),
+            ));
+        }
+    }
+    None
 }
 
 fn internal(span: Span, e: String) -> Error {
@@ -902,7 +1138,7 @@ impl<'a> Builder<'a> {
     fn expr(&mut self, e: &Expr) -> Result<(Wire, Ty)> {
         let span = e.span;
         match &e.kind {
-            ExprKind::Lit { ty, value } => {
+            ExprKind::Lit { ty, value } | ExprKind::Const { ty, value, .. } => {
                 let w = self.emit(SvOp::Lit(value.clone()), &[], Sort(ty.width), span)?;
                 Ok((w, *ty))
             }

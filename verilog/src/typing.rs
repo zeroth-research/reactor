@@ -37,6 +37,16 @@ a variable index is accepted only if every value it can take is in range
 Assignment targets are signals, constant selects of signals, and
 concatenations of targets ([`pieces`]). An `assign` drives whole signals.
 
+Parameters have been substituted by the frontend: a parameter is a
+constant of its type, an integer constant (`N - 1`) has type `int`, so
+`cnt == N - 1` with an 8-bit `cnt` is rejected like any other width
+mismatch (write `8'(N - 1)`, or declare a typed `localparam`).
+
+An instance drives the signals connected to its outputs, which must be
+whole signals of the port's width; the expression connected to an input
+must have the port's width. The clock port of an instance is connected to
+the clock of the module, which then counts as clocked by it.
+
 An `always_comb` block must also be free of latches and of reads of stale
 values ([`definite`]): every signal it drives is assigned on every path
 through the block, and read only after it has been assigned on every path
@@ -62,24 +72,36 @@ pub struct Sig {
 
 pub type Env = BTreeMap<Name, Sig>;
 
-/// The signals of the module, or the first one declared twice.
+/// The signals of the module, or the first name declared twice (signals,
+/// parameters and instances share one name space).
 pub fn env(m: &Module) -> Result<Env> {
-    let mut env = Env::new();
+    // all declared names, in source order, with the signal if it is one
+    let params = m.params.iter().map(|p| (&p.name, p.span, None));
+    let insts = m.instances().map(|i| (&i.name, i.span, None));
     let ports = m.ports.iter().map(|p| (&p.decl, Some(p.dir)));
     let decls = m.decls.iter().map(|d| (d, None));
-    for (d, dir) in ports.chain(decls) {
-        if let Some(prev) = env.get(&d.name) {
-            return Err(Error::new(
-                d.span,
-                format!("`{}` already declared at {}", d.name, prev.span),
-            ));
-        }
+    let sigs = ports.chain(decls).map(|(d, dir)| {
         let sig = Sig {
             ty: d.ty,
             dir,
             span: d.span,
         };
-        env.insert(d.name.clone(), sig);
+        (&d.name, d.span, Some(sig))
+    });
+    let mut names: Vec<_> = params.chain(insts).chain(sigs).collect();
+    names.sort_by_key(|(_, span, _)| *span);
+    let mut seen: BTreeMap<&Name, Span> = BTreeMap::new();
+    let mut env = Env::new();
+    for (name, span, sig) in names {
+        if let Some(prev) = seen.insert(name, span) {
+            return Err(Error::new(
+                span,
+                format!("`{name}` already declared at {prev}"),
+            ));
+        }
+        if let Some(sig) = sig {
+            env.insert(name.clone(), sig);
+        }
     }
     Ok(env)
 }
@@ -140,25 +162,7 @@ pub fn check(m: &Module) -> Result<Env> {
                 body,
                 ..
             } => {
-                let sig = lookup(&env, c, *clock_span)?;
-                if sig.dir != Some(Dir::Input) || sig.ty.width != 1 {
-                    return Err(Error::new(
-                        *clock_span,
-                        format!("the clock `{c}` must be a 1-bit input"),
-                    ));
-                }
-                match clock {
-                    Some((first, at)) if first != c => {
-                        return Err(Error::new(
-                            *clock_span,
-                            format!(
-                                "second clock `{c}`, only one clock (`{first}` at {at}) supported"
-                            ),
-                        ));
-                    }
-                    Some(_) => {}
-                    None => clock = Some((c, *clock_span)),
-                }
+                use_clock(&env, &mut clock, c, *clock_span)?;
                 stmt(&env, body, Proc::Ff, &mut |lhs, span| {
                     drive(&env, &mut driver, lhs, span, i)
                 })?;
@@ -170,6 +174,60 @@ pub fn check(m: &Module) -> Result<Env> {
                 })?;
                 drives_something(item)?;
                 definite(&env, item)?;
+            }
+            Item::Instance(inst) => {
+                for c in &inst.conns {
+                    let f = c.formal.ok_or_else(|| {
+                        Error::new(c.span, "internal error: instance not elaborated")
+                    })?;
+                    let port = format!("port `{}` of `{}`", c.port, inst.name);
+                    match (&c.actual, f.dir) {
+                        (Some(e), _) if f.clock => match &e.kind {
+                            ExprKind::Var(x) => use_clock(&env, &mut clock, x, e.span)?,
+                            _ => {
+                                return Err(Error::new(
+                                    e.span,
+                                    format!("the clock {port} must be connected to a clock input"),
+                                ));
+                            }
+                        },
+                        (Some(e), Dir::Input) => {
+                            let t = expr(&env, e)?;
+                            if t.width != f.ty.width {
+                                return Err(Error::new(
+                                    e.span,
+                                    format!(
+                                        "{port} has {} bits, the signal connected {} \
+                                         (resize explicitly){}",
+                                        f.ty.width,
+                                        t.width,
+                                        int_hint(t, f.ty.width)
+                                    ),
+                                ));
+                            }
+                        }
+                        (Some(e), Dir::Output) => {
+                            let ExprKind::Var(y) = &e.kind else {
+                                return Err(Error::new(
+                                    e.span,
+                                    format!(
+                                        "output {port} must be connected to a signal name \
+                                         (or left unconnected with `.{}()`)",
+                                        c.port
+                                    ),
+                                ));
+                            };
+                            let t = drive(&env, &mut driver, y, e.span, i)?;
+                            if t.width != f.ty.width {
+                                return Err(Error::new(
+                                    e.span,
+                                    format!("{port} has {} bits, `{y}` {}", f.ty.width, t.width),
+                                ));
+                            }
+                        }
+                        (None, _) => {}
+                    }
+                }
             }
         }
     }
@@ -189,6 +247,44 @@ pub fn check(m: &Module) -> Result<Env> {
         }
     }
     Ok(env)
+}
+
+/// Checks that `c` (used at `span`) can be the clock: a 1-bit input, the
+/// same as every clock before (`clock`).
+fn use_clock<'n>(
+    env: &Env,
+    clock: &mut Option<(&'n Name, Span)>,
+    c: &'n Name,
+    span: Span,
+) -> Result<()> {
+    let sig = lookup(env, c, span)?;
+    if sig.dir != Some(Dir::Input) || sig.ty.width != 1 {
+        return Err(Error::new(
+            span,
+            format!("the clock `{c}` must be a 1-bit input"),
+        ));
+    }
+    match clock {
+        Some((first, at)) if *first != c => Err(Error::new(
+            span,
+            format!("second clock `{c}`, only one clock (`{first}` at {at}) supported"),
+        )),
+        Some(_) => Ok(()),
+        None => {
+            *clock = Some((c, span));
+            Ok(())
+        }
+    }
+}
+
+/// A hint for a width mismatch between a value of type `t` and `width`
+/// bits: an integer constant is an `int`, which needs a cast.
+fn int_hint(t: Ty, width: usize) -> String {
+    if t == Ty::INT && width != 32 {
+        format!("; an integer constant is an `int` (32 bits): cast it, e.g. `{width}'(N - 1)`")
+    } else {
+        String::new()
+    }
 }
 
 /// Records `item` as the driver of `lhs` and returns the type of `lhs`.
@@ -567,7 +663,7 @@ pub fn lookup<'e>(env: &'e Env, name: &str, span: Span) -> Result<&'e Sig> {
 /// The type of an expression.
 pub fn expr(env: &Env, e: &Expr) -> Result<Ty> {
     match &e.kind {
-        ExprKind::Lit { ty, .. } => Ok(*ty),
+        ExprKind::Lit { ty, .. } | ExprKind::Const { ty, .. } => Ok(*ty),
         ExprKind::Var(x) => Ok(lookup(env, x, e.span)?.ty),
         ExprKind::Unary(op, a) => Ok(unary(*op, expr(env, a)?)),
         ExprKind::Binary(op, a, b) => {
@@ -604,10 +700,11 @@ pub fn expr(env: &Env, e: &Expr) -> Result<Ty> {
     }
 }
 
-/// Checks that the divisor of `/` or `%` is a nonzero literal.
+/// Checks that the divisor of `/` or `%` is a nonzero literal or
+/// constant.
 fn divisor(b: &Expr) -> Result<()> {
     match &b.kind {
-        ExprKind::Lit { value, .. } if !value.is_zero() => Ok(()),
+        ExprKind::Lit { value, .. } | ExprKind::Const { value, .. } if !value.is_zero() => Ok(()),
         _ => Err(Error::new(
             b.span,
             "the divisor must be a nonzero literal (2-state values have no result \
@@ -712,12 +809,15 @@ pub fn cast(c: Cast, t: Ty, context_free: bool, span: Span) -> Result<Ty> {
 }
 
 /// Whether the width at which `e` is evaluated does not depend on its
-/// context: signals, selects, literals, concatenations and casts. An
+/// context: signals, selects, literals, constants, concatenations and
+/// casts. (An integer constant like `N * N` is evaluated exactly, so at any
+/// width it fits in.) An
 /// operator expression is evaluated at the width of its context.
 pub fn context_free(e: &Expr) -> bool {
     matches!(
         e.kind,
         ExprKind::Lit { .. }
+            | ExprKind::Const { .. }
             | ExprKind::Var(_)
             | ExprKind::Select(..)
             | ExprKind::Concat(_)
@@ -730,7 +830,7 @@ pub fn context_free(e: &Expr) -> bool {
 /// index may read any bit.
 fn bit_reads<'e>(env: &Env, e: &'e Expr, out: &mut Vec<(&'e Name, usize, usize, Span)>) {
     match &e.kind {
-        ExprKind::Lit { .. } => {}
+        ExprKind::Lit { .. } | ExprKind::Const { .. } => {}
         ExprKind::Var(x) => out.push((x, env[x].ty.width - 1, 0, e.span)),
         ExprKind::Select(x, sel) => match sel.constant() {
             Some(Some((hi, lo))) => out.push((x, hi, lo, e.span)),
@@ -773,9 +873,14 @@ pub fn binary(op: BinOp, a: Ty, b: Ty, span: Span) -> Result<Ty> {
         if a == b {
             Ok(())
         } else {
+            let hint = if a == Ty::INT {
+                int_hint(a, b.width)
+            } else {
+                int_hint(b, a.width)
+            };
             Err(Error::new(
                 span,
-                format!("operands of `{op}` differ: `{a}` and `{b}` (resize explicitly)"),
+                format!("operands of `{op}` differ: `{a}` and `{b}` (resize explicitly){hint}"),
             ))
         }
     };
@@ -823,8 +928,10 @@ pub fn assign(lhs: usize, rhs: Ty, span: Span) -> Result<()> {
         Err(Error::new(
             span,
             format!(
-                "assigning {} bits to {} bits (resize explicitly)",
-                rhs.width, lhs
+                "assigning {} bits to {} bits (resize explicitly){}",
+                rhs.width,
+                lhs,
+                int_hint(rhs, lhs)
             ),
         ))
     }

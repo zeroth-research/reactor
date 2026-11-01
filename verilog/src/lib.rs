@@ -9,13 +9,21 @@ round of the module is one clock cycle.
 - [`value`]: bit-vector values [`BitVec`] and the evaluator [`value::eval`].
 - [`rm_sim`]: a round-by-round interpreter for modules over [`SvOp`].
 - [`ast`]: the abstract syntax of the accepted subset; [`frontend`] parses
-  into it, [`typing`] checks it, [`ast_interp`] runs it.
-- [`lower`]: the translation of the AST into a [`Module`]; [`print`] prints
-  modules with names.
+  into it (evaluating [`constant`] expressions such as parameter values),
+  [`elab`] builds the tree of module instances, [`typing`] checks each
+  module, [`ast_interp`] runs a hierarchy.
+- [`lower`]: the translation of a hierarchy into a [`Module`]; [`print`]
+  prints modules with names.
 */
+
+// rustdoc needs it to check auto traits of `frontend::Design`, which holds
+// the deeply nested syntax tree of `sv-parser`
+#![recursion_limit = "256"]
 
 pub mod ast;
 pub mod ast_interp;
+pub mod constant;
+pub mod elab;
 pub mod frontend;
 pub mod lower;
 pub mod print;

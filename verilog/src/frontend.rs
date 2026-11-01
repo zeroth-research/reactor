@@ -1,8 +1,20 @@
 /*!
 # From source text to the AST
 
-Parses with `sv-parser` and lowers its syntax tree into [`ast::Module`],
-rejecting everything outside the accepted subset with a located error.
+Parses with `sv-parser` into a [`Design`], and lowers the syntax tree of
+one of its modules into an [`ast::Module`], rejecting everything outside
+the accepted subset with a located error.
+
+A module is lowered once for each set of parameter values: the values are
+substituted while lowering, so the result has no parameters left. Ranges,
+replication counts, select bounds and cast sizes are [`constant`]
+expressions. In other expressions, a parameter of a vector type becomes a
+constant of that type, and an *integer constant* (built from unsized
+literals and `int` parameters with `+ - * / % **` and `$clog2`) is folded
+into one constant of type `int`, so that `N - 1` is one 32-bit operand.
+An integer constant without any parameter is rejected outside casts
+(`a + 1`: write the width, `8'd1`). Instances keep their parameter values
+and connections; [`elab`](crate::elab) elaborates the modules they name.
 
 `sv-parser` ignores operator precedence: a chain of binary operators comes
 out nested to the right in source order (`a * b + c` as `a * (b + c)`), and
@@ -16,12 +28,14 @@ not affected.
 */
 
 use crate::ast::{
-    BinOp, CaseItem, Cast, Decl, Dir, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind,
-    Module, Port, Select, Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, CaseItem, Cast, Conn, Const, Decl, Dir, Error, Expr, ExprKind, Index, Instance, Item,
+    Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, Span, Stmt, StmtKind, Ty,
+    UnOp,
 };
+use crate::constant::{self, Failure, Literal};
 use crate::value::BitVec;
-use num_bigint::BigUint;
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use sv_parser as sv;
 use sv_parser::{Iter, RefNode, RefNodes, SyntaxTree};
@@ -31,50 +45,190 @@ type Result<T> = std::result::Result<T, Error>;
 const VARIABLE_TARGET: &str =
     "variable index in an assignment target not supported (assign under a `case` instead)";
 
-/// Parses a file holding exactly one module.
+/// Parses a file and elaborates its top module with the default parameter
+/// values.
 pub fn parse_file(path: impl AsRef<Path>) -> Result<Module> {
+    let d = parse_design_file(path)?;
+    d.module(&d.top()?, &[])
+}
+
+/// Parses `source` and elaborates its top module with the default
+/// parameter values; `path` is used for messages of the preprocessor only.
+pub fn parse(source: &str, path: impl AsRef<Path>) -> Result<Module> {
+    let d = parse_design(source, path)?;
+    d.module(&d.top()?, &[])
+}
+
+/// Parses a file.
+pub fn parse_design_file(path: impl AsRef<Path>) -> Result<Design> {
     let path = path.as_ref();
     let source = std::fs::read_to_string(path)
         .map_err(|e| Error::new(Span::default(), format!("{}: {e}", path.display())))?;
-    parse(&source, path)
+    parse_design(&source, path)
 }
 
-/// Parses `source` holding exactly one module; `path` is used for messages
-/// of the preprocessor only.
-pub fn parse(source: &str, path: impl AsRef<Path>) -> Result<Module> {
+/// Parses `source`; `path` is used for messages of the preprocessor only.
+pub fn parse_design(source: &str, path: impl AsRef<Path>) -> Result<Design> {
     let defines: HashMap<String, Option<sv::Define>> = HashMap::new();
     let includes: [PathBuf; 0] = [];
     let mut lines = vec![0];
     lines.extend(source.match_indices('\n').map(|(i, _)| i + 1));
-    let at = |offset: usize| {
-        let line = lines.partition_point(|&start| start <= offset);
-        Span {
-            line,
-            col: offset - lines[line - 1] + 1,
-        }
-    };
     let (tree, _) =
         sv::parse_sv_str(source, path, &defines, &includes, false, false).map_err(|e| match e {
-            sv::Error::Parse(Some((_, offset))) => Error::new(at(offset), "syntax error"),
+            sv::Error::Parse(Some((_, offset))) => Error::new(at(&lines, offset), "syntax error"),
             e => Error::new(Span::default(), e.to_string()),
         })?;
-    let cx = Cx {
-        tree: &tree,
-        at: &at,
-    };
-    let source_text = (&tree)
-        .into_iter()
-        .find_map(|n| match n {
-            RefNode::SourceText(x) => Some(x),
-            _ => None,
-        })
-        .ok_or_else(|| Error::new(Span::default(), "empty source"))?;
-    cx.source_text(source_text)
+    let d = Design { tree, lines };
+    let mut seen: BTreeMap<Name, Span> = BTreeMap::new();
+    let cx = d.cx(&[]);
+    for m in d.decls()? {
+        let id = &m.nodes.0.nodes.3;
+        let name = cx.identifier(&id.nodes.0)?;
+        if let Some(prev) = seen.insert(name.clone(), cx.span(id)) {
+            return cx.err(id, format!("module `{name}` already declared at {prev}"));
+        }
+    }
+    Ok(d)
+}
+
+/// The position of a byte offset, with `lines` the offsets at which lines
+/// start.
+fn at(lines: &[usize], offset: usize) -> Span {
+    let line = lines.partition_point(|&start| start <= offset);
+    Span {
+        line,
+        col: offset - lines[line - 1] + 1,
+    }
+}
+
+/// A parsed source file. Its modules are elaborated on demand: once for
+/// each set of parameter values.
+pub struct Design {
+    tree: SyntaxTree,
+    lines: Vec<usize>,
+}
+
+impl Design {
+    fn cx<'t>(&'t self, overrides: &'t [Override]) -> Cx<'t> {
+        Cx {
+            tree: &self.tree,
+            lines: &self.lines,
+            params: RefCell::new(BTreeMap::new()),
+            overrides,
+            used: RefCell::new(BTreeSet::new()),
+        }
+    }
+
+    /// The module declarations, in source order.
+    fn decls(&self) -> Result<Vec<&sv::ModuleDeclarationAnsi>> {
+        let cx = self.cx(&[]);
+        let st = (&self.tree)
+            .into_iter()
+            .find_map(|n| match n {
+                RefNode::SourceText(x) => Some(x),
+                _ => None,
+            })
+            .ok_or_else(|| Error::new(Span::default(), "empty source"))?;
+        let (_, timeunits, descriptions) = &st.nodes;
+        cx.absent(timeunits, "timeunits declaration")?;
+        let mut modules = Vec::new();
+        for d in descriptions {
+            match d {
+                sv::Description::ModuleDeclaration(m) => match m.as_ref() {
+                    sv::ModuleDeclaration::Ansi(m) => modules.push(m.as_ref()),
+                    sv::ModuleDeclaration::Nonansi(_) => {
+                        return cx.err(m.as_ref(), "non-ANSI port list not supported");
+                    }
+                    m => return cx.unsupported(m),
+                },
+                d => return cx.unsupported(d),
+            }
+        }
+        if modules.is_empty() {
+            return Err(Error::new(Span::default(), "no module"));
+        }
+        Ok(modules)
+    }
+
+    fn find(&self, name: &str) -> Option<&sv::ModuleDeclarationAnsi> {
+        let cx = self.cx(&[]);
+        let decls = self.decls().ok()?;
+        decls
+            .into_iter()
+            .find(|m| cx.text(&m.nodes.0.nodes.3) == name)
+    }
+
+    /// The names of the modules, in source order.
+    pub fn names(&self) -> Vec<Name> {
+        let cx = self.cx(&[]);
+        let decls = self.decls().unwrap_or_default();
+        decls
+            .into_iter()
+            .map(|m| cx.text(&m.nodes.0.nodes.3))
+            .collect()
+    }
+
+    /// Whether the file declares the module `name`.
+    pub fn has(&self, name: &str) -> bool {
+        self.find(name).is_some()
+    }
+
+    /// The top module: the one no module instantiates.
+    pub fn top(&self) -> Result<Name> {
+        let cx = self.cx(&[]);
+        let mut instantiated = BTreeSet::new();
+        for m in self.decls()? {
+            for n in Iter::new(m.into()) {
+                if let RefNode::ModuleInstantiation(i) = n {
+                    instantiated.insert(cx.text(&i.nodes.0));
+                }
+            }
+        }
+        let tops: Vec<Name> = self
+            .names()
+            .into_iter()
+            .filter(|n| !instantiated.contains(n))
+            .collect();
+        match tops.as_slice() {
+            [top] => Ok(top.clone()),
+            [] => Err(Error::new(
+                Span::default(),
+                "no top module: every module is instantiated (recursive instantiation \
+                 is not supported)",
+            )),
+            _ => Err(Error::new(
+                Span::default(),
+                format!(
+                    "several top modules ({}): choose one",
+                    tops.iter()
+                        .map(|t| format!("`{t}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            )),
+        }
+    }
+
+    /// Elaborates the module `name` with the parameter values `overrides`
+    /// (the others take their defaults). The instances in it are not
+    /// elaborated (see [`elab`](crate::elab)).
+    pub fn module(&self, name: &str, overrides: &[Override]) -> Result<Module> {
+        let m = self
+            .find(name)
+            .ok_or_else(|| Error::new(Span::default(), format!("no module `{name}`")))?;
+        self.cx(overrides).module(m)
+    }
 }
 
 struct Cx<'t> {
     tree: &'t SyntaxTree,
-    at: &'t dyn Fn(usize) -> Span,
+    lines: &'t [usize],
+    /// The parameters declared so far, with their values.
+    params: RefCell<BTreeMap<Name, Const>>,
+    /// The parameter values given by the instance.
+    overrides: &'t [Override],
+    /// The overrides used so far.
+    used: RefCell<BTreeSet<Name>>,
 }
 
 /// Whether the node contains any token; optional syntax that is absent or
@@ -88,7 +242,7 @@ impl Cx<'_> {
     fn span<'a>(&self, node: impl Into<RefNodes<'a>>) -> Span {
         Iter::new(node.into())
             .find_map(|n| match n {
-                RefNode::Locate(l) => self.tree.get_origin(l).map(|(_, off)| (self.at)(off)),
+                RefNode::Locate(l) => self.tree.get_origin(l).map(|(_, off)| at(self.lines, off)),
                 _ => None,
             })
             .unwrap_or_default()
@@ -133,43 +287,23 @@ impl Cx<'_> {
     // Modules and declarations
     // ------------------------------------------------------------------
 
-    fn source_text(&self, st: &sv::SourceText) -> Result<Module> {
-        let (_, timeunits, descriptions) = &st.nodes;
-        self.absent(timeunits, "timeunits declaration")?;
-        let mut modules = Vec::new();
-        for d in descriptions {
-            match d {
-                sv::Description::ModuleDeclaration(m) => match m.as_ref() {
-                    sv::ModuleDeclaration::Ansi(m) => modules.push(m.as_ref()),
-                    sv::ModuleDeclaration::Nonansi(_) => {
-                        return self.err(m.as_ref(), "non-ANSI port list not supported");
-                    }
-                    m => return self.unsupported(m),
-                },
-                d => return self.unsupported(d),
-            }
-        }
-        match modules.as_slice() {
-            [m] => self.module(m),
-            [] => Err(Error::new(Span::default(), "no module")),
-            [_, m, ..] => self.err(*m, "more than one module not supported"),
-        }
-    }
-
     fn module(&self, m: &sv::ModuleDeclarationAnsi) -> Result<Module> {
         let (header, timeunits, items, _, _) = &m.nodes;
         let (attrs, _, lifetime, name, imports, params, ports, _) = &header.nodes;
         self.absent(attrs, "attribute")?;
         self.absent(lifetime, "lifetime")?;
         self.absent(imports, "package import")?;
-        self.absent(params, "parameter port list")?;
         self.absent(timeunits, "timeunits declaration")?;
         let mut module = Module {
             name: self.identifier(&name.nodes.0)?,
+            params: Vec::new(),
             ports: Vec::new(),
             decls: Vec::new(),
             items: Vec::new(),
         };
+        if let Some(params) = params {
+            self.parameter_port_list(params, &mut module)?;
+        }
         if let Some(ports) = ports
             && let Some(list) = &ports.nodes.0.nodes.1
         {
@@ -181,10 +315,206 @@ impl Cx<'_> {
                 module.ports.push(p);
             }
         }
+        // with a parameter port list, a `parameter` in the body is local
+        let body_overridable = params.is_none();
         for item in items {
-            self.module_item(item, &mut module)?;
+            self.module_item(item, &mut module, body_overridable)?;
+        }
+        for o in self.overrides {
+            if !self.used.borrow().contains(&o.name) {
+                let msg = if module.params.iter().any(|p| p.name == o.name) {
+                    format!("parameter `{}` of `{}` is local", o.name, module.name)
+                } else {
+                    format!("`{}` has no parameter `{}`", module.name, o.name)
+                };
+                return Err(Error::new(o.span, msg));
+            }
         }
         Ok(module)
+    }
+
+    /// `#(parameter N = 8, localparam M = N + 1, …)` or `#(N = 8, …)`.
+    fn parameter_port_list(&self, l: &sv::ParameterPortList, m: &mut Module) -> Result<()> {
+        match l {
+            sv::ParameterPortList::Assignment(a) => {
+                let (first, rest) = &a.nodes.1.nodes.1;
+                self.param_assignments(None, first, true, m)?;
+                for (_, d) in rest {
+                    self.parameter_port_declaration(d, m)?;
+                }
+                Ok(())
+            }
+            sv::ParameterPortList::Declaration(d) => {
+                for d in d.nodes.1.nodes.1.contents() {
+                    self.parameter_port_declaration(d, m)?;
+                }
+                Ok(())
+            }
+            sv::ParameterPortList::Empty(_) => Ok(()),
+        }
+    }
+
+    fn parameter_port_declaration(
+        &self,
+        d: &sv::ParameterPortDeclaration,
+        m: &mut Module,
+    ) -> Result<()> {
+        match d {
+            sv::ParameterPortDeclaration::ParameterDeclaration(p) => {
+                self.parameter_declaration(p, true, m)
+            }
+            sv::ParameterPortDeclaration::LocalParameterDeclaration(p) => match p.as_ref() {
+                sv::LocalParameterDeclaration::Param(p) => {
+                    let (_, ty, list) = &p.nodes;
+                    let ty = self.param_type(ty)?;
+                    self.param_assignments(ty, list, false, m)
+                }
+                p => self.err(p, "type parameters not supported"),
+            },
+            sv::ParameterPortDeclaration::ParamList(p) => {
+                let (ty, list) = &p.nodes;
+                let ty = self.param_data_type(ty)?;
+                self.param_assignments(Some(ty), list, true, m)
+            }
+            d => self.err(d, "type parameters not supported"),
+        }
+    }
+
+    fn parameter_declaration(
+        &self,
+        p: &sv::ParameterDeclaration,
+        overridable: bool,
+        m: &mut Module,
+    ) -> Result<()> {
+        match p {
+            sv::ParameterDeclaration::Param(p) => {
+                let (_, ty, list) = &p.nodes;
+                let ty = self.param_type(ty)?;
+                self.param_assignments(ty, list, overridable, m)
+            }
+            p => self.err(p, "type parameters not supported"),
+        }
+    }
+
+    /// The declared type of a parameter, `None` if it has none (it then
+    /// takes the type of its value).
+    fn param_type(&self, t: &sv::DataTypeOrImplicit) -> Result<Option<Ty>> {
+        match t {
+            sv::DataTypeOrImplicit::DataType(t) => self.param_data_type(t).map(Some),
+            sv::DataTypeOrImplicit::ImplicitDataType(t) => {
+                let (signing, dims) = &t.nodes;
+                if signing.is_none() && dims.is_empty() {
+                    Ok(None)
+                } else {
+                    self.vector(signing, dims).map(Some)
+                }
+            }
+        }
+    }
+
+    /// `int`, or a vector type.
+    fn param_data_type(&self, t: &sv::DataType) -> Result<Ty> {
+        match t {
+            sv::DataType::Atom(a) => match &a.nodes {
+                (sv::IntegerAtomType::Int(_), None) => Ok(Ty::INT),
+                _ => self.err(
+                    t,
+                    format!(
+                        "parameter type `{}` not supported, use `int` or `logic`",
+                        self.text(t)
+                    ),
+                ),
+            },
+            t => self.data_type(t),
+        }
+    }
+
+    /// `N = v, M = w, …` of a parameter declaration with type `ty` (`None`:
+    /// the type of the value). An overridable parameter takes the value of
+    /// the instance if it gives one.
+    fn param_assignments(
+        &self,
+        ty: Option<Ty>,
+        list: &sv::ListOfParamAssignments,
+        overridable: bool,
+        m: &mut Module,
+    ) -> Result<()> {
+        for a in list.nodes.0.contents() {
+            let (id, dims, default) = &a.nodes;
+            self.absent(dims, "unpacked dimension")?;
+            let name = self.identifier(&id.nodes.0)?;
+            let span = self.span(id);
+            if let Some(prev) = m.params.iter().find(|p| p.name == name) {
+                return self.err(id, format!("`{name}` already declared at {}", prev.span));
+            }
+            let given = self.overrides.iter().find(|o| o.name == name);
+            let (value, vspan) = match (given, default) {
+                (Some(o), _) if overridable => {
+                    self.used.borrow_mut().insert(name.clone());
+                    (o.value.clone(), o.span)
+                }
+                (_, Some((_, e))) => (self.const_expr(e)?, self.span(e)),
+                (_, None) => {
+                    return self.err(
+                        id,
+                        format!(
+                            "parameter `{name}` has no value: give it a default or set it \
+                             in the instance"
+                        ),
+                    );
+                }
+            };
+            let ty = match ty {
+                None => value.ty,
+                Some(t) if t == Ty::INT && value.ty != Ty::INT => {
+                    return Err(Error::new(
+                        vspan,
+                        format!(
+                            "parameter `{name}` is an `int`, but the value has type `{}`",
+                            value.ty
+                        ),
+                    ));
+                }
+                Some(t) if t.width != value.ty.width => {
+                    return Err(Error::new(
+                        vspan,
+                        format!(
+                            "parameter `{name}` of type `{t}` given a value of {} bits \
+                             (resize explicitly, e.g. `{}'d…` or `{}'(…)`)",
+                            value.ty.width, t.width, t.width
+                        ),
+                    ));
+                }
+                Some(t) => t,
+            };
+            self.params.borrow_mut().insert(
+                name.clone(),
+                Const {
+                    ty,
+                    value: value.value.clone(),
+                },
+            );
+            m.params.push(Param {
+                name,
+                ty,
+                value: value.value,
+                overridable,
+                span,
+            });
+        }
+        Ok(())
+    }
+
+    /// The value of a constant expression (see [`constant`]).
+    fn const_expr<'a>(&self, e: impl Into<RefNodes<'a>> + Copy) -> Result<Const> {
+        let text = self.text(e);
+        constant::eval(&text, &self.params.borrow()).or_else(|f| match f {
+            Failure::NotConstant(why) => self.err(
+                e,
+                format!("expected a constant expression, got `{text}`: {why}"),
+            ),
+            Failure::Error(msg) => self.err(e, msg),
+        })
     }
 
     /// A port of the ANSI header. Direction and type are inherited from the
@@ -311,34 +641,54 @@ impl Cx<'_> {
         Ok(Ty { width, signed })
     }
 
-    /// A decimal integer literal (parameters are not supported yet).
+    /// A non-negative integer constant (unsized literals and `int`
+    /// parameters, see [`constant`]).
     fn const_int<'a>(&self, e: impl Into<RefNodes<'a>> + Copy) -> Result<usize> {
-        match self.decimal(e) {
-            Some(n) => n,
-            None => {
-                let text = self.text(e);
-                self.err(e, format!("expected a decimal integer, got `{text}`"))
-            }
+        let text = self.text(e);
+        let c = constant::eval(&text, &self.params.borrow()).or_else(|f| match f {
+            Failure::NotConstant(why) => self.err(
+                e,
+                format!("expected a constant integer, got `{text}`: {why}"),
+            ),
+            Failure::Error(msg) => self.err(e, msg),
+        })?;
+        match constant::as_int(&c) {
+            Some(n) if n >= 0 => Ok(n as usize),
+            Some(n) => self.err(e, format!("`{text}` is negative ({n})")),
+            None => self.err(
+                e,
+                format!(
+                    "`{text}` has type `{}`, expected an integer (unsized literals and \
+                     `int` parameters)",
+                    c.ty
+                ),
+            ),
         }
     }
 
-    /// The value of the node if it is a decimal integer literal.
-    fn decimal<'a>(&self, e: impl Into<RefNodes<'a>> + Copy) -> Option<Result<usize>> {
-        let text = self.text(e).replace('_', "");
-        (!text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())).then(|| {
-            text.parse()
-                .or_else(|_| self.err(e, format!("`{text}` too large")))
-        })
-    }
-
-    fn module_item(&self, item: &sv::NonPortModuleItem, m: &mut Module) -> Result<()> {
+    /// An item of the module body; `overridable` says whether a
+    /// `parameter` there can be set by instances.
+    fn module_item(
+        &self,
+        item: &sv::NonPortModuleItem,
+        m: &mut Module,
+        overridable: bool,
+    ) -> Result<()> {
         let sv::NonPortModuleItem::ModuleOrGenerateItem(item) = item else {
+            if let sv::NonPortModuleItem::GenerateRegion(g) = item {
+                return self.err(g.as_ref(), "generate regions not supported");
+            }
             return self.unsupported(item);
         };
         let item = match item.as_ref() {
             sv::ModuleOrGenerateItem::ModuleItem(i) => i,
             sv::ModuleOrGenerateItem::Module(i) => {
-                return self.err(i.as_ref(), "module instances not supported yet");
+                let (attrs, i) = &i.nodes;
+                self.absent(attrs, "attribute")?;
+                return self.instantiation(i, m);
+            }
+            sv::ModuleOrGenerateItem::Parameter(p) => {
+                return self.err(p.as_ref(), "`defparam` not supported, use `#(.N(…))`");
             }
             i => return self.unsupported(i),
         };
@@ -347,7 +697,7 @@ impl Cx<'_> {
         match item {
             sv::ModuleCommonItem::ModuleOrGenerateItemDeclaration(d) => match d.as_ref() {
                 sv::ModuleOrGenerateItemDeclaration::PackageOrGenerateItemDeclaration(d) => {
-                    self.declaration(d, m)
+                    self.declaration(d, m, overridable)
                 }
                 d => self.unsupported(d),
             },
@@ -373,6 +723,102 @@ impl Cx<'_> {
             }
             i => self.unsupported(i),
         }
+    }
+
+    /// `module #(.N(v), …) u1 (.a(x), …), u2 (…);`: parameter values and
+    /// ports by name only.
+    fn instantiation(&self, i: &sv::ModuleInstantiation, m: &mut Module) -> Result<()> {
+        let (module, values, list, _) = &i.nodes;
+        let module = self.identifier(&module.nodes.0)?;
+        let mut params = Vec::new();
+        if let Some(values) = values {
+            match &values.nodes.1.nodes.1 {
+                None => {}
+                Some(sv::ListOfParameterAssignments::Ordered(o)) => {
+                    return self.err(
+                        o.as_ref(),
+                        "positional parameter values not supported, write `#(.N(…))`",
+                    );
+                }
+                Some(sv::ListOfParameterAssignments::Named(n)) => {
+                    for a in n.nodes.0.contents() {
+                        let (_, id, value) = &a.nodes;
+                        let name = self.identifier(&id.nodes.0)?;
+                        let Some(e) = &value.nodes.1 else {
+                            return self.err(a, format!("no value for parameter `{name}`"));
+                        };
+                        if params.iter().any(|o: &Override| o.name == name) {
+                            return self.err(id, format!("parameter `{name}` given twice"));
+                        }
+                        params.push(Override {
+                            name,
+                            value: self.const_expr(e)?,
+                            span: self.span(id),
+                        });
+                    }
+                }
+            }
+        }
+        for h in list.contents() {
+            let (name, conns) = &h.nodes;
+            let (id, dims) = &name.nodes;
+            self.absent(dims, "instance array")?;
+            let mut out = Vec::new();
+            match &conns.nodes.1 {
+                None => {}
+                Some(sv::ListOfPortConnections::Ordered(o)) => {
+                    let empty = o.nodes.0.contents().iter().all(|c| !has_tokens(*c));
+                    if !empty {
+                        return self.err(
+                            o.as_ref(),
+                            "positional port connections not supported, write `.port(signal)`",
+                        );
+                    }
+                }
+                Some(sv::ListOfPortConnections::Named(n)) => {
+                    for c in n.nodes.0.contents() {
+                        let c = match c {
+                            sv::NamedPortConnection::Identifier(c) => c,
+                            sv::NamedPortConnection::Asterisk(c) => {
+                                return self.err(
+                                    c.as_ref(),
+                                    "`.*` not supported, connect each port by name",
+                                );
+                            }
+                        };
+                        let (attrs, _, port, actual) = &c.nodes;
+                        self.absent(attrs, "attribute")?;
+                        let name = self.identifier(&port.nodes.0)?;
+                        let span = self.span(port);
+                        let actual = match actual {
+                            // `.a` is `.a(a)`
+                            None => Some(Expr {
+                                kind: ExprKind::Var(name.clone()),
+                                span,
+                            }),
+                            Some(p) => match &p.nodes.1 {
+                                None => None,
+                                Some(e) => Some(self.expr(e)?),
+                            },
+                        };
+                        out.push(Conn {
+                            port: name,
+                            actual,
+                            span,
+                            formal: None,
+                        });
+                    }
+                }
+            }
+            m.items.push(Item::Instance(Instance {
+                module: module.clone(),
+                name: self.identifier(&id.nodes.0)?,
+                params: params.clone(),
+                conns: out,
+                span: self.span(id),
+            }));
+        }
+        Ok(())
     }
 
     /// `always_comb stmt`, or `always_ff @(posedge clk) stmt`: one edge
@@ -630,7 +1076,28 @@ impl Cx<'_> {
         Ok(Lvalue { kind, span })
     }
 
-    fn declaration(&self, d: &sv::PackageOrGenerateItemDeclaration, m: &mut Module) -> Result<()> {
+    fn declaration(
+        &self,
+        d: &sv::PackageOrGenerateItemDeclaration,
+        m: &mut Module,
+        overridable: bool,
+    ) -> Result<()> {
+        match d {
+            sv::PackageOrGenerateItemDeclaration::LocalParameterDeclaration(p) => {
+                return match &p.0 {
+                    sv::LocalParameterDeclaration::Param(p) => {
+                        let (_, ty, list) = &p.nodes;
+                        let ty = self.param_type(ty)?;
+                        self.param_assignments(ty, list, false, m)
+                    }
+                    p => self.err(p, "type parameters not supported"),
+                };
+            }
+            sv::PackageOrGenerateItemDeclaration::ParameterDeclaration(p) => {
+                return self.parameter_declaration(&p.0, overridable, m);
+            }
+            _ => {}
+        }
         // (name, unpacked dimensions, initializer)
         let mut add = |id: &sv::Identifier, ty: Ty, dims: bool, init: bool| -> Result<()> {
             if dims {
@@ -718,9 +1185,13 @@ impl Cx<'_> {
         let id = self.identifier(id)?;
         let (member, bits, part) = &select.nodes;
         self.absent(member, "member select")?;
-        let index = |e: &sv::ConstantExpression| match self.decimal(e) {
-            Some(i) => i.map(Index::Const),
-            None => self.err(e, VARIABLE_TARGET),
+        let index = |e: &sv::ConstantExpression| {
+            let text = self.text(e);
+            match constant::eval(&text, &self.params.borrow()) {
+                Ok(_) => self.const_int(e).map(Index::Const),
+                Err(Failure::NotConstant(_)) => self.err(e, VARIABLE_TARGET),
+                Err(Failure::Error(msg)) => self.err(e, msg),
+            }
         };
         let bits = &bits.nodes.0;
         let sel = match (bits.as_slice(), part) {
@@ -783,11 +1254,14 @@ impl Cx<'_> {
         }
     }
 
-    /// A bit position: a decimal constant, or any expression.
+    /// A bit position: an integer constant, or any expression.
     fn index(&self, e: &sv::Expression) -> Result<Index> {
-        match self.decimal(e) {
-            Some(i) => i.map(Index::Const),
-            None => Ok(Index::Expr(Box::new(self.expr(e)?))),
+        match self.leaf_expr(e)? {
+            Leaf::Int { value, span, .. } if value < 0 => {
+                Err(Error::new(span, format!("negative index {value}")))
+            }
+            Leaf::Int { value, .. } => Ok(Index::Const(value as usize)),
+            Leaf::Expr(e) => Ok(Index::Expr(Box::new(e))),
         }
     }
 
@@ -808,10 +1282,55 @@ impl Cx<'_> {
     // ------------------------------------------------------------------
 
     fn expr(&self, e: &sv::Expression) -> Result<Expr> {
+        let l = self.leaf_expr(e)?;
+        self.leaf_to_expr(l)
+    }
+
+    /// An expression, as a [`Leaf`]: an integer constant stays a number.
+    fn leaf_expr(&self, e: &sv::Expression) -> Result<Leaf> {
         let mut operands = Vec::new();
         let mut ops = Vec::new();
         self.flatten(e, &mut operands, &mut ops)?;
-        Ok(reassociate(operands, ops))
+        self.reassociate(operands, ops)
+    }
+
+    /// The expression of a leaf. An integer constant becomes a constant of
+    /// type `int` if it mentions a parameter (or is the operand of a cast);
+    /// without one, it is made of unsized literals only, which are
+    /// rejected: write the width.
+    fn leaf_to_expr(&self, l: Leaf) -> Result<Expr> {
+        match l {
+            Leaf::Expr(e) => Ok(e),
+            Leaf::Int {
+                value,
+                text,
+                param: true,
+                span,
+            } => Ok(Expr {
+                kind: ExprKind::Const {
+                    text,
+                    ty: Ty::INT,
+                    value: BitVec::from_signed(32, value),
+                },
+                span,
+            }),
+            Leaf::Int { text, span, .. } if text.bytes().all(|b| b.is_ascii_digit()) => {
+                Err(Error::new(
+                    span,
+                    format!(
+                        "unsized literal `{text}` not supported, write the width (e.g. `8'd{text}`)"
+                    ),
+                ))
+            }
+            Leaf::Int {
+                value, text, span, ..
+            } => Err(Error::new(
+                span,
+                format!(
+                    "`{text}` is made of unsized literals only, write the width (e.g. `8'd{value}`)"
+                ),
+            )),
+        }
     }
 
     /// Flattens a chain of binary operators and conditionals into its
@@ -819,7 +1338,7 @@ impl Cx<'_> {
     fn flatten(
         &self,
         e: &sv::Expression,
-        operands: &mut Vec<Expr>,
+        operands: &mut Vec<Leaf>,
         ops: &mut Vec<Op>,
     ) -> Result<()> {
         match e {
@@ -827,7 +1346,7 @@ impl Cx<'_> {
                 let (l, op, attrs, r) = &b.nodes;
                 self.absent(attrs, "attribute")?;
                 self.flatten(l, operands, ops)?;
-                ops.push(Op::Bin(self.binop(op)?, self.span(op)));
+                ops.push(self.binop(op)?);
                 self.flatten(r, operands, ops)
             }
             sv::Expression::ConditionalExpression(c) => {
@@ -849,15 +1368,32 @@ impl Cx<'_> {
     }
 
     /// An expression that is not a binary operation or a conditional.
-    fn operand(&self, e: &sv::Expression) -> Result<Expr> {
+    fn operand(&self, e: &sv::Expression) -> Result<Leaf> {
         match e {
             sv::Expression::Primary(p) => self.primary(p),
             sv::Expression::Unary(u) => {
                 let (op, attrs, p) = &u.nodes;
                 self.absent(attrs, "attribute")?;
                 let span = self.span(op);
-                let kind = ExprKind::Unary(self.unop(op)?, Box::new(self.primary(p)?));
-                Ok(Expr { kind, span })
+                let op = self.unop(op)?;
+                match (op, self.primary(p)?) {
+                    (UnOp::Plus, l @ Leaf::Int { .. }) => Ok(l),
+                    (
+                        UnOp::Neg,
+                        Leaf::Int {
+                            value, text, param, ..
+                        },
+                    ) => Ok(Leaf::Int {
+                        value: constant::int_neg(value).map_err(|m| Error::new(span, m))?,
+                        text: format!("(-{text})"),
+                        param,
+                        span,
+                    }),
+                    (op, l) => {
+                        let kind = ExprKind::Unary(op, Box::new(self.leaf_to_expr(l)?));
+                        Ok(Leaf::Expr(Expr { kind, span }))
+                    }
+                }
             }
             sv::Expression::IncOrDecExpression(e) => {
                 self.err(e.as_ref(), "`++`/`--` not supported")
@@ -869,12 +1405,12 @@ impl Cx<'_> {
         }
     }
 
-    fn primary(&self, p: &sv::Primary) -> Result<Expr> {
+    fn primary(&self, p: &sv::Primary) -> Result<Leaf> {
         let span = self.span(p);
         let kind = match p {
             sv::Primary::PrimaryLiteral(l) => match l.as_ref() {
                 sv::PrimaryLiteral::Number(n) => match n.as_ref() {
-                    sv::Number::IntegralNumber(n) => self.literal(n)?,
+                    sv::Number::IntegralNumber(n) => return self.literal(n),
                     n => return self.err(n, "real numbers not supported"),
                 },
                 sv::PrimaryLiteral::UnbasedUnsizedLiteral(_) => {
@@ -889,13 +1425,35 @@ impl Cx<'_> {
                 let (scope, id, select) = &h.nodes;
                 self.absent(scope, "package or class scope")?;
                 let id = self.identifier(self.simple_hierarchical(id)?)?;
-                match self.select(select)? {
-                    None => ExprKind::Var(id),
-                    Some(sel) => ExprKind::Select(id, sel),
+                let param = self.params.borrow().get(&id).cloned();
+                match (self.select(select)?, param) {
+                    (None, Some(c)) => {
+                        return Ok(match constant::as_int(&c) {
+                            Some(value) => Leaf::Int {
+                                value,
+                                text: id,
+                                param: true,
+                                span,
+                            },
+                            None => Leaf::Expr(Expr {
+                                kind: ExprKind::Const {
+                                    text: id,
+                                    ty: c.ty,
+                                    value: c.value,
+                                },
+                                span,
+                            }),
+                        });
+                    }
+                    (Some(_), Some(_)) => {
+                        return self.err(p, format!("select of parameter `{id}` not supported"));
+                    }
+                    (None, None) => ExprKind::Var(id),
+                    (Some(sel), None) => ExprKind::Select(id, sel),
                 }
             }
             sv::Primary::MintypmaxExpression(m) => match &m.nodes.0.nodes.1 {
-                sv::MintypmaxExpression::Expression(e) => return self.expr(e),
+                sv::MintypmaxExpression::Expression(e) => return self.leaf_expr(e),
                 m => return self.err(m, "min:typ:max expression not supported"),
             },
             sv::Primary::Concatenation(c) => {
@@ -927,16 +1485,38 @@ impl Cx<'_> {
                         Cast::Signed
                     }
                     sv::CastingType::Signing(_) => Cast::Unsigned,
+                    // `W'(e)` parses as a cast to a type named `W`
+                    sv::CastingType::SimpleType(t)
+                        if self.params.borrow().contains_key(&self.text(t.as_ref())) =>
+                    {
+                        let n = self.const_int(t.as_ref())?;
+                        if n == 0 {
+                            return self.err(p, "cast to 0 bits");
+                        }
+                        Cast::Size(n)
+                    }
                     t => {
                         return self.err(t, format!("cast to `{}` not supported", self.text(t)));
                     }
                 };
-                ExprKind::Cast(cast, Box::new(self.expr(&e.nodes.1)?))
+                // the operand may be any integer constant: `W'(0)`
+                let e = match self.leaf_expr(&e.nodes.1)? {
+                    Leaf::Int {
+                        value, text, span, ..
+                    } => self.leaf_to_expr(Leaf::Int {
+                        value,
+                        text,
+                        param: true,
+                        span,
+                    })?,
+                    l => self.leaf_to_expr(l)?,
+                };
+                ExprKind::Cast(cast, Box::new(e))
             }
             sv::Primary::FunctionSubroutineCall(c) => return self.call(&c.nodes.0, span),
             p => return self.unsupported(p),
         };
-        Ok(Expr { kind, span })
+        Ok(Leaf::Expr(Expr { kind, span }))
     }
 
     /// The items of `{a, b, …}`.
@@ -951,8 +1531,9 @@ impl Cx<'_> {
             .collect()
     }
 
-    /// A call; only `$signed(e)` and `$unsigned(e)`, which are casts.
-    fn call(&self, c: &sv::SubroutineCall, span: Span) -> Result<Expr> {
+    /// A call; only `$signed(e)` and `$unsigned(e)`, which are casts, and
+    /// `$clog2(n)` of an integer constant.
+    fn call(&self, c: &sv::SubroutineCall, span: Span) -> Result<Leaf> {
         let unsupported = || self.err(c, format!("call `{}` not supported", self.text(c)));
         let sv::SubroutineCall::SystemTfCall(call) = c else {
             return unsupported();
@@ -978,71 +1559,150 @@ impl Cx<'_> {
             }
             sv::SystemTfCall::ArgDataType(_) => return unsupported(),
         };
-        let cast = match self.text(name).as_str() {
+        let name = self.text(name);
+        let [Some(e)] = args.as_slice() else {
+            return self.err(c, format!("`{name}` takes one argument"));
+        };
+        let cast = match name.as_str() {
             "$signed" => Cast::Signed,
             "$unsigned" => Cast::Unsigned,
+            "$clog2" => {
+                return match self.leaf_expr(e)? {
+                    Leaf::Int {
+                        value, text, param, ..
+                    } => Ok(Leaf::Int {
+                        value: constant::clog2(value).map_err(|m| Error::new(span, m))?,
+                        text: format!("$clog2({text})"),
+                        param,
+                        span,
+                    }),
+                    Leaf::Expr(_) => self.err(
+                        c,
+                        "`$clog2` of an integer constant only (unsized literals and `int` \
+                         parameters)",
+                    ),
+                };
+            }
             _ => return unsupported(),
         };
-        match args.as_slice() {
-            [Some(e)] => {
-                let kind = ExprKind::Cast(cast, Box::new(self.expr(e)?));
-                Ok(Expr { kind, span })
-            }
-            _ => self.err(c, format!("`{}` takes one argument", self.text(name))),
-        }
+        let kind = ExprKind::Cast(cast, Box::new(self.expr(e)?));
+        Ok(Leaf::Expr(Expr { kind, span }))
     }
 
-    /// A sized literal `N'[s]<base><digits>`, without x/z digits (values
-    /// are 2-state) and with a value that fits in `N` bits.
-    fn literal(&self, n: &sv::IntegralNumber) -> Result<ExprKind> {
+    /// A literal: sized `N'[s]<base><digits>`, without x/z digits (values
+    /// are 2-state) and with a value that fits in `N` bits, or an unsized
+    /// decimal, which is an integer.
+    fn literal(&self, n: &sv::IntegralNumber) -> Result<Leaf> {
         let text: String = self
             .text(n)
             .chars()
             .filter(|c| !c.is_whitespace() && *c != '_')
             .collect();
-        let Some((size, rest)) = text.split_once('\'').filter(|(size, _)| !size.is_empty()) else {
-            return self.err(
-                n,
-                format!(
-                    "unsized literal `{text}` not supported, write the width (e.g. `8'd{}`)",
-                    text.trim_start_matches('\'')
-                ),
-            );
-        };
-        let width: usize = size
-            .parse()
-            .or_else(|_| self.err(n, format!("literal size `{size}` too large")))?;
-        let (signed, rest) = match rest.strip_prefix(['s', 'S']) {
-            Some(rest) => (true, rest),
-            None => (false, rest),
-        };
-        let mut chars = rest.chars();
-        let radix = match chars.next().map(|c| c.to_ascii_lowercase()) {
-            Some('b') => 2,
-            Some('o') => 8,
-            Some('d') => 10,
-            Some('h') => 16,
-            _ => return self.err(n, format!("malformed literal `{text}`")),
-        };
-        let digits = chars.as_str();
-        if digits.contains(['x', 'X', 'z', 'Z', '?']) {
-            return self.err(
-                n,
-                format!("literal `{text}` with x/z digits not supported (2-state)"),
-            );
+        let span = self.span(n);
+        match constant::literal(&text).map_err(|m| Error::new(span, m))? {
+            Literal::Sized(ty, value) => Ok(Leaf::Expr(Expr {
+                kind: ExprKind::Lit { ty, value },
+                span,
+            })),
+            Literal::Int(value) => Ok(Leaf::Int {
+                value,
+                text,
+                param: false,
+                span,
+            }),
         }
-        let value = BigUint::parse_bytes(digits.as_bytes(), radix)
-            .ok_or_else(|| Error::new(self.span(n), format!("malformed literal `{text}`")))?;
-        let value = BitVec::new(width, value).ok_or_else(|| {
-            Error::new(
-                self.span(n),
-                format!("literal `{text}` does not fit in {width} bits"),
-            )
-        })?;
-        Ok(ExprKind::Lit {
-            ty: Ty { width, signed },
-            value,
-        })
+    }
+
+    /// Builds the tree of a flattened chain by precedence (shunting-yard).
+    /// Binary operators associate to the left, `?:` to the right. `+ - * /
+    /// % **` on integer constants fold into one integer constant.
+    fn reassociate(&self, operands: Vec<Leaf>, ops: Vec<Op>) -> Result<Leaf> {
+        let mut operands = operands.into_iter();
+        let mut out = vec![operands.next().expect("operand")];
+        let mut stack: Vec<Op> = Vec::new();
+        for (op, operand) in ops.into_iter().zip(operands) {
+            let right_assoc = matches!(op, Op::Cond(..));
+            while let Some(top) = stack.last() {
+                if top.prec() > op.prec() || (top.prec() == op.prec() && !right_assoc) {
+                    let top = stack.pop().unwrap();
+                    self.reduce(&mut out, top)?;
+                } else {
+                    break;
+                }
+            }
+            stack.push(op);
+            out.push(operand);
+        }
+        while let Some(op) = stack.pop() {
+            self.reduce(&mut out, op)?;
+        }
+        assert_eq!(out.len(), 1);
+        Ok(out.pop().unwrap())
+    }
+
+    fn reduce(&self, out: &mut Vec<Leaf>, op: Op) -> Result<()> {
+        let b = out.pop().expect("operand");
+        let a = out.pop().expect("operand");
+        let symbol = match &op {
+            Op::Bin(BinOp::Add, _) => Some("+"),
+            Op::Bin(BinOp::Sub, _) => Some("-"),
+            Op::Bin(BinOp::Mul, _) => Some("*"),
+            Op::Bin(BinOp::Div, _) => Some("/"),
+            Op::Bin(BinOp::Mod, _) => Some("%"),
+            Op::Pow(_) => Some("**"),
+            _ => None,
+        };
+        if let (
+            Some(symbol),
+            Leaf::Int {
+                value: x,
+                text: tx,
+                param: px,
+                span,
+            },
+            Leaf::Int {
+                value: y,
+                text: ty,
+                param: py,
+                ..
+            },
+        ) = (symbol, &a, &b)
+        {
+            let at = op.span();
+            out.push(Leaf::Int {
+                value: constant::int_op(symbol, *x, *y).map_err(|m| Error::new(at, m))?,
+                text: format!("({tx} {symbol} {ty})"),
+                param: *px || *py,
+                span: *span,
+            });
+            return Ok(());
+        }
+        let (kind, span) = match op {
+            Op::Bin(op, span) => (
+                ExprKind::Binary(
+                    op,
+                    Box::new(self.leaf_to_expr(a)?),
+                    Box::new(self.leaf_to_expr(b)?),
+                ),
+                span,
+            ),
+            Op::Pow(span) => {
+                return Err(Error::new(
+                    span,
+                    "`**` only between integer constants (unsized literals and `int` parameters)",
+                ));
+            }
+            Op::Cond(then, span) => (
+                ExprKind::Cond(
+                    Box::new(self.leaf_to_expr(a)?),
+                    Box::new(then),
+                    Box::new(self.leaf_to_expr(b)?),
+                ),
+                span,
+            ),
+        };
+        out.push(Leaf::Expr(Expr { kind, span }));
+        Ok(())
     }
 
     fn unop(&self, op: &sv::UnaryOperator) -> Result<UnOp> {
@@ -1062,48 +1722,68 @@ impl Cx<'_> {
         })
     }
 
-    fn binop(&self, op: &sv::BinaryOperator) -> Result<BinOp> {
+    fn binop(&self, op: &sv::BinaryOperator) -> Result<Op> {
         use BinOp::*;
-        Ok(match self.text(op).as_str() {
-            "&" => BitAnd,
-            "|" => BitOr,
-            "^" => BitXor,
-            "~^" | "^~" => BitXnor,
-            "+" => Add,
-            "-" => Sub,
-            "*" => Mul,
-            "==" => Eq,
-            "!=" => Ne,
-            "===" => CaseEq,
-            "!==" => CaseNe,
-            "<" => Lt,
-            "<=" => Le,
-            ">" => Gt,
-            ">=" => Ge,
-            "&&" => LogAnd,
-            "||" => LogOr,
-            "<<" => Shl,
-            ">>" => Shr,
-            "<<<" => AShl,
-            ">>>" => AShr,
-            "/" => Div,
-            "%" => Mod,
-            "**" => return self.err(op, "operator `**` not supported"),
-            s => return self.err(op, format!("operator `{s}` not supported")),
-        })
+        let span = self.span(op);
+        Ok(Op::Bin(
+            match self.text(op).as_str() {
+                "&" => BitAnd,
+                "|" => BitOr,
+                "^" => BitXor,
+                "~^" | "^~" => BitXnor,
+                "+" => Add,
+                "-" => Sub,
+                "*" => Mul,
+                "==" => Eq,
+                "!=" => Ne,
+                "===" => CaseEq,
+                "!==" => CaseNe,
+                "<" => Lt,
+                "<=" => Le,
+                ">" => Gt,
+                ">=" => Ge,
+                "&&" => LogAnd,
+                "||" => LogOr,
+                "<<" => Shl,
+                ">>" => Shr,
+                "<<<" => AShl,
+                ">>>" => AShr,
+                "/" => Div,
+                "%" => Mod,
+                "**" => return Ok(Op::Pow(span)),
+                s => return self.err(op, format!("operator `{s}` not supported")),
+            },
+            span,
+        ))
     }
 }
 
-/// An operator of a flattened chain: a binary operator, or `? then :` of a
-/// conditional, which acts as a right-associative binary operator between
-/// condition and else branch.
+/// An operand while an expression is built: an integer constant (unsized
+/// literals and `int` parameters, see [`constant`]) stays a number until it
+/// meets anything else, so that `N - 1` folds into one constant.
+enum Leaf {
+    Expr(Expr),
+    Int {
+        value: i64,
+        /// The expression as written, fully parenthesized.
+        text: String,
+        /// Whether it mentions a parameter (it may then stand for itself).
+        param: bool,
+        span: Span,
+    },
+}
+
+/// An operator of a flattened chain: a binary operator, `**`, or `? then :`
+/// of a conditional, which acts as a right-associative binary operator
+/// between condition and else branch.
 enum Op {
     Bin(BinOp, Span),
+    Pow(Span),
     Cond(Expr, Span),
 }
 
 /// The binding strength of an operator (higher binds tighter), after
-/// IEEE 1800-2017 Table 11-2.
+/// IEEE 1800-2017 Table 11-2 (`**` binds tighter still).
 pub fn prec(op: Option<BinOp>) -> u8 {
     use BinOp::*;
     match op {
@@ -1125,45 +1805,14 @@ impl Op {
     fn prec(&self) -> u8 {
         match self {
             Op::Bin(op, _) => prec(Some(*op)),
+            Op::Pow(_) => 11,
             Op::Cond(..) => prec(None),
         }
     }
-}
 
-/// Builds the tree of a flattened chain by precedence (shunting-yard).
-/// Binary operators associate to the left, `?:` to the right.
-fn reassociate(operands: Vec<Expr>, ops: Vec<Op>) -> Expr {
-    fn reduce(out: &mut Vec<Expr>, op: Op) {
-        let b = out.pop().expect("operand");
-        let a = out.pop().expect("operand");
-        let (kind, span) = match op {
-            Op::Bin(op, span) => (ExprKind::Binary(op, Box::new(a), Box::new(b)), span),
-            Op::Cond(then, span) => (
-                ExprKind::Cond(Box::new(a), Box::new(then), Box::new(b)),
-                span,
-            ),
-        };
-        out.push(Expr { kind, span });
-    }
-    let mut operands = operands.into_iter();
-    let mut out = vec![operands.next().expect("operand")];
-    let mut stack: Vec<Op> = Vec::new();
-    for (op, operand) in ops.into_iter().zip(operands) {
-        let right_assoc = matches!(op, Op::Cond(..));
-        while let Some(top) = stack.last() {
-            if top.prec() > op.prec() || (top.prec() == op.prec() && !right_assoc) {
-                let top = stack.pop().unwrap();
-                reduce(&mut out, top);
-            } else {
-                break;
-            }
+    fn span(&self) -> Span {
+        match self {
+            Op::Bin(_, s) | Op::Pow(s) | Op::Cond(_, s) => *s,
         }
-        stack.push(op);
-        out.push(operand);
     }
-    while let Some(op) = stack.pop() {
-        reduce(&mut out, op);
-    }
-    assert_eq!(out.len(), 1);
-    out.pop().unwrap()
 }

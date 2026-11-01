@@ -114,8 +114,21 @@ fn rejected_expressions() {
         ("  assign y = a + '1;", "'1", "unsized literal"),
         ("  assign y = 8'bx;", "8'bx", "x/z"),
         ("  assign y = 8'd256;", "8'd256", "does not fit"),
-        ("  assign y = a ** a;", "**", "operator `**`"),
-        ("  assign y = $clog2(a);", "$clog2", "call `$clog2(a)`"),
+        (
+            "  assign y = a ** a;",
+            "**",
+            "`**` only between integer constants",
+        ),
+        (
+            "  assign y = $clog2(a);",
+            "$clog2",
+            "`$clog2` of an integer constant only",
+        ),
+        (
+            "  assign y = $countones(a);",
+            "$countones",
+            "call `$countones(a)`",
+        ),
         ("  assign y = b;", "b;", "`b` is not declared"),
         ("  assign y = a + 4'd1;", "+", "operands of `+` differ"),
         (
