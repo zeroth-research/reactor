@@ -16,8 +16,8 @@ not affected.
 */
 
 use crate::ast::{
-    BinOp, CaseItem, Decl, Dir, Error, Expr, ExprKind, Item, Module, Port, Span, Stmt, StmtKind,
-    Ty, UnOp,
+    BinOp, CaseItem, Cast, Decl, Dir, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind,
+    Module, Port, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::value::BitVec;
 use num_bigint::BigUint;
@@ -27,6 +27,9 @@ use sv_parser as sv;
 use sv_parser::{Iter, RefNode, RefNodes, SyntaxTree};
 
 type Result<T> = std::result::Result<T, Error>;
+
+const VARIABLE_TARGET: &str =
+    "variable index in an assignment target not supported (assign under a `case` instead)";
 
 /// Parses a file holding exactly one module.
 pub fn parse_file(path: impl AsRef<Path>) -> Result<Module> {
@@ -309,14 +312,23 @@ impl Cx<'_> {
     }
 
     /// A decimal integer literal (parameters are not supported yet).
-    fn const_int(&self, e: &sv::ConstantExpression) -> Result<usize> {
+    fn const_int<'a>(&self, e: impl Into<RefNodes<'a>> + Copy) -> Result<usize> {
+        match self.decimal(e) {
+            Some(n) => n,
+            None => {
+                let text = self.text(e);
+                self.err(e, format!("expected a decimal integer, got `{text}`"))
+            }
+        }
+    }
+
+    /// The value of the node if it is a decimal integer literal.
+    fn decimal<'a>(&self, e: impl Into<RefNodes<'a>> + Copy) -> Option<Result<usize>> {
         let text = self.text(e).replace('_', "");
-        if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) {
+        (!text.is_empty() && text.bytes().all(|b| b.is_ascii_digit())).then(|| {
             text.parse()
                 .or_else(|_| self.err(e, format!("`{text}` too large")))
-        } else {
-            self.err(e, format!("expected a decimal integer, got `{text}`"))
-        }
+        })
     }
 
     fn module_item(&self, item: &sv::NonPortModuleItem, m: &mut Module) -> Result<()> {
@@ -346,8 +358,9 @@ impl Cx<'_> {
                     self.absent(delay, "delay")?;
                     for a in list.nodes.0.contents() {
                         let (lhs, _, rhs) = &a.nodes;
-                        let (lhs, span) = self.net_lvalue(lhs)?;
+                        let lhs = self.net_lvalue(lhs)?;
                         let rhs = self.expr(rhs)?;
+                        let span = lhs.span;
                         m.items.push(Item::Assign { lhs, rhs, span });
                     }
                     Ok(())
@@ -455,8 +468,9 @@ impl Cx<'_> {
             sv::StatementItem::NonblockingAssignment(a) => {
                 let (lhs, _, delay, rhs) = &a.0.nodes;
                 self.absent(delay, "intra-assignment delay")?;
-                let (lhs, span) = self.variable_lvalue(lhs)?;
+                let lhs = self.variable_lvalue(lhs)?;
                 let rhs = self.expr(rhs)?;
+                let span = lhs.span;
                 return Ok(Stmt {
                     kind: StmtKind::NonBlocking { lhs, rhs },
                     span,
@@ -468,8 +482,9 @@ impl Cx<'_> {
                     if self.text(op) != "=" {
                         return self.err(op, format!("`{}` not supported", self.text(op)));
                     }
-                    let (lhs, span) = self.variable_lvalue(lhs)?;
+                    let lhs = self.variable_lvalue(lhs)?;
                     let rhs = self.expr(rhs)?;
+                    let span = lhs.span;
                     return Ok(Stmt {
                         kind: StmtKind::Blocking { lhs, rhs },
                         span,
@@ -586,15 +601,33 @@ impl Cx<'_> {
         }
     }
 
-    fn variable_lvalue(&self, lv: &sv::VariableLvalue) -> Result<(String, Span)> {
-        let sv::VariableLvalue::Identifier(lv) = lv else {
-            return self.err(lv, "only a plain signal name can be assigned");
+    /// The target of `=` or `<=`: a signal, a select of a signal, or a
+    /// concatenation of targets.
+    fn variable_lvalue(&self, lv: &sv::VariableLvalue) -> Result<Lvalue> {
+        let span = self.span(lv);
+        let kind = match lv {
+            sv::VariableLvalue::Identifier(lv) => {
+                let (scope, id, select) = &lv.nodes;
+                self.absent(scope, "package or class scope")?;
+                let id = self.identifier(self.simple_hierarchical(&id.nodes.0)?)?;
+                match self.select(select)? {
+                    None => LvalueKind::Var(id),
+                    Some(sel) => LvalueKind::Select(id, sel),
+                }
+            }
+            sv::VariableLvalue::Lvalue(c) => LvalueKind::Concat(
+                c.nodes
+                    .0
+                    .nodes
+                    .1
+                    .contents()
+                    .into_iter()
+                    .map(|l| self.variable_lvalue(l))
+                    .collect::<Result<_>>()?,
+            ),
+            lv => return self.err(lv, "assignment patterns and streams not supported"),
         };
-        let (scope, id, select) = &lv.nodes;
-        self.absent(scope, "package or class scope")?;
-        let id = self.simple_hierarchical(&id.nodes.0)?;
-        self.absent(select, "bit or part select")?;
-        Ok((self.identifier(id)?, self.span(id)))
+        Ok(Lvalue { kind, span })
     }
 
     fn declaration(&self, d: &sv::PackageOrGenerateItemDeclaration, m: &mut Module) -> Result<()> {
@@ -657,9 +690,19 @@ impl Cx<'_> {
         }
     }
 
-    fn net_lvalue(&self, lv: &sv::NetLvalue) -> Result<(String, Span)> {
-        let sv::NetLvalue::Identifier(lv) = lv else {
-            return self.err(lv, "only a plain signal name can be assigned");
+    /// The target of `assign`: like [`variable_lvalue`](Self::variable_lvalue),
+    /// with constant selects only.
+    fn net_lvalue(&self, lv: &sv::NetLvalue) -> Result<Lvalue> {
+        let span = self.span(lv);
+        let lv = match lv {
+            sv::NetLvalue::Identifier(lv) => lv,
+            sv::NetLvalue::Lvalue(c) => {
+                let ls = c.nodes.0.nodes.1.contents();
+                let ls = ls.into_iter().map(|l| self.net_lvalue(l));
+                let kind = LvalueKind::Concat(ls.collect::<Result<_>>()?);
+                return Ok(Lvalue { kind, span });
+            }
+            lv => return self.err(lv, "assignment patterns not supported"),
         };
         let (id, select) = &lv.nodes;
         let id = match id {
@@ -672,8 +715,80 @@ impl Cx<'_> {
                 self.simple_hierarchical(&h.nodes.0)?
             }
         };
-        self.absent(select, "bit or part select")?;
-        Ok((self.identifier(id)?, self.span(id)))
+        let id = self.identifier(id)?;
+        let (member, bits, part) = &select.nodes;
+        self.absent(member, "member select")?;
+        let index = |e: &sv::ConstantExpression| match self.decimal(e) {
+            Some(i) => i.map(Index::Const),
+            None => self.err(e, VARIABLE_TARGET),
+        };
+        let bits = &bits.nodes.0;
+        let sel = match (bits.as_slice(), part) {
+            ([], None) => None,
+            ([b], None) => Some(Select::Bit(index(&b.nodes.1)?)),
+            ([], Some(p)) => Some(match &p.nodes.1 {
+                sv::ConstantPartSelectRange::ConstantRange(r) => {
+                    let (hi, _, lo) = &r.nodes;
+                    Select::Part {
+                        hi: self.const_int(hi)?,
+                        lo: self.const_int(lo)?,
+                    }
+                }
+                sv::ConstantPartSelectRange::ConstantIndexedRange(r) => {
+                    let (base, op, width) = &r.nodes;
+                    self.indexed(index(base)?, op, self.const_int(width)?)
+                }
+            }),
+            _ => return self.err(select, "multi-dimensional selects not supported"),
+        };
+        let kind = match sel {
+            None => LvalueKind::Var(id),
+            Some(sel) => LvalueKind::Select(id, sel),
+        };
+        Ok(Lvalue { kind, span })
+    }
+
+    /// The select `[…]` after a signal name in an expression or a
+    /// procedural assignment target, if any.
+    fn select(&self, select: &sv::Select) -> Result<Option<Select>> {
+        let (member, bits, part) = &select.nodes;
+        self.absent(member, "member select")?;
+        let bits = &bits.nodes.0;
+        Ok(match (bits.as_slice(), part) {
+            ([], None) => None,
+            ([b], None) => Some(Select::Bit(self.index(&b.nodes.1)?)),
+            ([], Some(p)) => Some(match &p.nodes.1 {
+                sv::PartSelectRange::ConstantRange(r) => {
+                    let (hi, _, lo) = &r.nodes;
+                    Select::Part {
+                        hi: self.const_int(hi)?,
+                        lo: self.const_int(lo)?,
+                    }
+                }
+                sv::PartSelectRange::IndexedRange(r) => {
+                    let (base, op, width) = &r.nodes;
+                    self.indexed(self.index(base)?, op, self.const_int(width)?)
+                }
+            }),
+            _ => return self.err(select, "multi-dimensional selects not supported"),
+        })
+    }
+
+    /// `[base +: width]` or `[base -: width]`.
+    fn indexed(&self, base: Index, op: &sv::Symbol, width: usize) -> Select {
+        if self.text(op) == "+:" {
+            Select::Up(base, width)
+        } else {
+            Select::Down(base, width)
+        }
+    }
+
+    /// A bit position: a decimal constant, or any expression.
+    fn index(&self, e: &sv::Expression) -> Result<Index> {
+        match self.decimal(e) {
+            Some(i) => i.map(Index::Const),
+            None => Ok(Index::Expr(Box::new(self.expr(e)?))),
+        }
     }
 
     /// A hierarchical identifier that is a plain name.
@@ -773,30 +888,108 @@ impl Cx<'_> {
             sv::Primary::Hierarchical(h) => {
                 let (scope, id, select) = &h.nodes;
                 self.absent(scope, "package or class scope")?;
-                let id = self.simple_hierarchical(id)?;
-                self.absent(select, "bit and part selects")?;
-                ExprKind::Var(self.identifier(id)?)
+                let id = self.identifier(self.simple_hierarchical(id)?)?;
+                match self.select(select)? {
+                    None => ExprKind::Var(id),
+                    Some(sel) => ExprKind::Select(id, sel),
+                }
             }
             sv::Primary::MintypmaxExpression(m) => match &m.nodes.0.nodes.1 {
                 sv::MintypmaxExpression::Expression(e) => return self.expr(e),
                 m => return self.err(m, "min:typ:max expression not supported"),
             },
             sv::Primary::Concatenation(c) => {
-                return self.err(c.as_ref(), "concatenation not supported yet");
+                let (c, select) = &c.nodes;
+                self.absent(select, "select of a concatenation")?;
+                ExprKind::Concat(self.concatenation(c)?)
             }
             sv::Primary::MultipleConcatenation(c) => {
-                return self.err(c.as_ref(), "replication not supported yet");
+                let (c, select) = &c.nodes;
+                self.absent(select, "select of a concatenation")?;
+                let (n, c) = &c.nodes.0.nodes.1;
+                let n = self.const_int(n)?;
+                if n == 0 {
+                    return self.err(p, "replication count 0 not supported");
+                }
+                ExprKind::Repl(n, self.concatenation(c)?)
             }
-            sv::Primary::Cast(c) => return self.err(c.as_ref(), "casts not supported yet"),
-            sv::Primary::FunctionSubroutineCall(c) => {
-                return self.err(
-                    c.as_ref(),
-                    format!("call `{}` not supported", self.text(c.as_ref())),
-                );
+            sv::Primary::Cast(c) => {
+                let (ty, _, e) = &c.nodes;
+                let cast = match ty {
+                    sv::CastingType::ConstantPrimary(n) => {
+                        let n = self.const_int(n.as_ref())?;
+                        if n == 0 {
+                            return self.err(p, "cast to 0 bits");
+                        }
+                        Cast::Size(n)
+                    }
+                    sv::CastingType::Signing(s) if self.text(s.as_ref()) == "signed" => {
+                        Cast::Signed
+                    }
+                    sv::CastingType::Signing(_) => Cast::Unsigned,
+                    t => {
+                        return self.err(t, format!("cast to `{}` not supported", self.text(t)));
+                    }
+                };
+                ExprKind::Cast(cast, Box::new(self.expr(&e.nodes.1)?))
             }
+            sv::Primary::FunctionSubroutineCall(c) => return self.call(&c.nodes.0, span),
             p => return self.unsupported(p),
         };
         Ok(Expr { kind, span })
+    }
+
+    /// The items of `{a, b, …}`.
+    fn concatenation(&self, c: &sv::Concatenation) -> Result<Vec<Expr>> {
+        c.nodes
+            .0
+            .nodes
+            .1
+            .contents()
+            .into_iter()
+            .map(|e| self.expr(e))
+            .collect()
+    }
+
+    /// A call; only `$signed(e)` and `$unsigned(e)`, which are casts.
+    fn call(&self, c: &sv::SubroutineCall, span: Span) -> Result<Expr> {
+        let unsupported = || self.err(c, format!("call `{}` not supported", self.text(c)));
+        let sv::SubroutineCall::SystemTfCall(call) = c else {
+            return unsupported();
+        };
+        let (name, args) = match call.as_ref() {
+            sv::SystemTfCall::ArgOptionl(a) => {
+                let (name, args) = &a.nodes;
+                let args = match args.as_ref().map(|a| &a.nodes.1) {
+                    Some(sv::ListOfArguments::Ordered(a)) if a.nodes.1.is_empty() => {
+                        a.nodes.0.contents()
+                    }
+                    _ => return unsupported(),
+                };
+                (name, args)
+            }
+            sv::SystemTfCall::ArgExpression(a) => {
+                let (name, args) = &a.nodes;
+                let (args, clocking) = &args.nodes.1;
+                if clocking.is_some() {
+                    return unsupported();
+                }
+                (name, args.contents())
+            }
+            sv::SystemTfCall::ArgDataType(_) => return unsupported(),
+        };
+        let cast = match self.text(name).as_str() {
+            "$signed" => Cast::Signed,
+            "$unsigned" => Cast::Unsigned,
+            _ => return unsupported(),
+        };
+        match args.as_slice() {
+            [Some(e)] => {
+                let kind = ExprKind::Cast(cast, Box::new(self.expr(e)?));
+                Ok(Expr { kind, span })
+            }
+            _ => self.err(c, format!("`{}` takes one argument", self.text(name))),
+        }
     }
 
     /// A sized literal `N'[s]<base><digits>`, without x/z digits (values
@@ -889,15 +1082,13 @@ impl Cx<'_> {
             ">=" => Ge,
             "&&" => LogAnd,
             "||" => LogOr,
-            s @ ("<<" | ">>" | "<<<" | ">>>") => {
-                return self.err(op, format!("shift `{s}` not supported yet"));
-            }
-            s @ ("/" | "%" | "**") => {
-                return self.err(
-                    op,
-                    format!("operator `{s}` not supported (no 2-state value for division by zero)"),
-                );
-            }
+            "<<" => Shl,
+            ">>" => Shr,
+            "<<<" => AShl,
+            ">>>" => AShr,
+            "/" => Div,
+            "%" => Mod,
+            "**" => return self.err(op, "operator `**` not supported"),
             s => return self.err(op, format!("operator `{s}` not supported")),
         })
     }
@@ -916,7 +1107,7 @@ enum Op {
 pub fn prec(op: Option<BinOp>) -> u8 {
     use BinOp::*;
     match op {
-        Some(Mul) => 10,
+        Some(Mul | Div | Mod) => 10,
         Some(Add | Sub) => 9,
         Some(Shl | Shr | AShl | AShr) => 8,
         Some(Lt | Le | Gt | Ge) => 7,

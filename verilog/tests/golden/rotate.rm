@@ -1,0 +1,21 @@
+module rotate
+  external
+    a : bv8
+    n : bv3
+  interface
+    rr : bv8
+    rl : bv8
+  private
+    t : bv16
+  atom controls rr awaits a, n
+    init = update
+      %1 := CONCAT (X(a), X(a))
+      %2 := LSHR (%1, X(n))
+      X(rr) := EXTRACT[7:0] %2
+  atom controls t awaits a, n
+    init = update
+      %1 := CONCAT (X(a), X(a))
+      X(t) := SHL (%1, X(n))
+  atom controls rl awaits t
+    init = update
+      X(rl) := EXTRACT[15:8] X(t)

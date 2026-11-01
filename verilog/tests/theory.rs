@@ -132,6 +132,9 @@ fn eval_edge_cases() {
 fn eval_rejects() {
     assert!(eval(&SvOp::Havoc(Sort(8)), &[]).is_err());
     assert!(eval(&SvOp::Add, &[bv(8, 1), bv(4, 1)]).is_err());
+    for op in [SvOp::UDiv, SvOp::URem, SvOp::SDiv, SvOp::SRem] {
+        assert!(eval(&op, &[bv(8, 7), bv(8, 0)]).is_err(), "{op}");
+    }
 }
 
 /// All 8-bit operand pairs, against `u8`/`i8`.
@@ -166,6 +169,14 @@ fn eval_exhaustive_8bit() {
             let shl = x.checked_shl(k).unwrap_or(0);
             let lshr = x.checked_shr(k).unwrap_or(0);
             let ashr = sx.checked_shr(k).unwrap_or(if sx < 0 { -1 } else { 0 }) as u8;
+            if let (Some(q), Some(r)) = (x.checked_div(y), x.checked_rem(y)) {
+                // Rust's `/` and `%` round toward zero like SystemVerilog's;
+                // `-128 / -1` overflows `i8` and wraps
+                assert_eq!(ev(UDiv, &args), bv(8, q.into()));
+                assert_eq!(ev(URem, &args), bv(8, r.into()));
+                assert_eq!(ev(SDiv, &args), bv(8, (sx.wrapping_div(sy) as u8).into()));
+                assert_eq!(ev(SRem, &args), bv(8, (sx.wrapping_rem(sy) as u8).into()));
+            }
             assert_eq!(ev(Shl, &args), bv(8, shl.into()));
             assert_eq!(ev(LShr, &args), bv(8, lshr.into()));
             assert_eq!(ev(AShr, &args), bv(8, ashr.into()));

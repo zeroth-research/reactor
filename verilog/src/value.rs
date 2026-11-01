@@ -95,8 +95,8 @@ impl fmt::Display for BitVec {
 }
 
 /// The value of `op` applied to `args`, or why it is undefined: the
-/// operands do not fit the op, or the op is `Havoc`, which has no single
-/// value.
+/// operands do not fit the op, the op is `Havoc`, which has no single
+/// value, or it divides by zero.
 pub fn eval(op: &SvOp, args: &[BitVec]) -> Result<BitVec, String> {
     use SvOp::*;
     let sorts: Vec<Sort> = args.iter().map(BitVec::sort).collect();
@@ -120,6 +120,15 @@ pub fn eval(op: &SvOp, args: &[BitVec]) -> Result<BitVec, String> {
         Add => u(0) + u(1),
         Sub => (BigUint::one() << w) + u(0) - u(1),
         Mul => u(0) * u(1),
+        UDiv | URem | SDiv | SRem if args[1].is_zero() => {
+            return Err(format!("{op}: division by zero"));
+        }
+        UDiv => u(0) / u(1),
+        URem => u(0) % u(1),
+        // `BigInt` division rounds toward zero, the remainder has the sign
+        // of the dividend
+        SDiv => return Ok(BitVec::from_signed(w, args[0].signed() / args[1].signed())),
+        SRem => return Ok(BitVec::from_signed(w, args[0].signed() % args[1].signed())),
 
         Eq => return Ok(BitVec::bool(u(0) == u(1))),
         Ne => return Ok(BitVec::bool(u(0) != u(1))),
