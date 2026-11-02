@@ -97,6 +97,28 @@ ASSIGN init(x) := 0ud4_7; next(x) := x mod 0ud4_3;
     assert [s["x"] for s in _run(text, [{}])] == [7, 1]
 
 
+@pytest.mark.parametrize("expr", [
+    "(-x) < 0sd4_0",
+    "(!x) < 0sd4_0",
+    "(x -> n) < 0sd4_0",
+    "(x = 0sd4_0 ? x : n) < 0sd4_0",
+    "case x = 0sd4_0 : x; TRUE : n; esac < 0sd4_0",
+])
+def test_a_signed_word_stays_signed_through_an_operator(expr):
+    """`-x` of a signed word is a signed word, and `<` compares it signed:
+    with `x = 1`, `-x < 0` holds. Read unsigned, `-x` is 15 and it does not."""
+    text = f"""MODULE main
+VAR x : signed word[4];
+    n : signed word[4];
+    b : boolean;
+ASSIGN
+  init(x) := 0sd4_1;  next(x) := x;
+  init(n) := -0sd4_1; next(n) := n;
+  init(b) := FALSE;   next(b) := {expr};
+"""
+    assert [s["b"] for s in _run(text, [{}])] == [0, 1]
+
+
 def _model(body, decls="VAR x : boolean;"):
     return f"MODULE main\n{decls}\n{body}\n"
 
