@@ -716,6 +716,7 @@ class _Lowerer:
             for c in tree.children
             if not (isinstance(c, Token) and c.type in _OP_TOKENS)
         ]
+        operands = inputs
         if op_name == "Implies":
             # No BV op: `a -> b` is `!a | b`.
             not_a = self._fresh(None, inputs[0].dtype)
@@ -731,6 +732,9 @@ class _Lowerer:
         )
         w = self._fresh(target, out_dtype)
         self.terms.append(Term(itype, [w], inputs))
+        # `-x` of a signed word is signed, and so is `c ? x : y` of two;
+        # what an Ite's condition is says nothing about its value.
+        self._propagate_type(w, *(operands[1:] if op_name == "Ite" else operands))
         return self._enforce(w, target)
 
     # --- builtin_call -------------------------------------------------------
@@ -792,6 +796,7 @@ class _Lowerer:
              node) -> Wire:
         w = self._fresh(target, a.dtype)
         self.terms.append(Term(BV.Ite(), [w], [cond, a, b]))
+        self._propagate_type(w, a, b)
         return self._enforce(w, target)
 
     # --- next(expr) ---------------------------------------------------------
