@@ -599,7 +599,11 @@ class _Lowerer:
         self.context = ""
         self.terms: list[Term] = []
         self._expanding: set[str] = set()
-        self._wire_types: dict[int, _SMVType] = {}
+        # Keyed by the wire, not its `id()`: a temporary's Python object is
+        # freed once its `Term` holds a copy, and the next wire allocated
+        # at that address took its entry. Two objects for one wire (`X(v)`
+        # twice) compare and hash equal.
+        self._wire_types: dict[Wire, _SMVType] = {}
 
     def refuse(self, why: str, node=None) -> "SMVRefused":
         where = f" (in {self.context})" if self.context else ""
@@ -755,7 +759,7 @@ class _Lowerer:
         w = self._fresh(target, out_dtype)
         self.terms.append(Term(itype, [w], [arg_w]))
         if fn_name in ("signed", "unsigned"):
-            self._wire_types[id(w)] = _SMVType(w.dtype, signed=(fn_name == "signed"))
+            self._wire_types[w] = _SMVType(w.dtype, signed=(fn_name == "signed"))
         return self._enforce(w, target)
 
     # --- case..esac ---------------------------------------------------------
@@ -859,7 +863,7 @@ class _Lowerer:
             value = value + (1 << width)
         dtype = BitVec(width, [1, 1])
         w = Wire(dtype)
-        self._wire_types[id(w)] = _SMVType(dtype, signed=signed)
+        self._wire_types[w] = _SMVType(dtype, signed=signed)
         # Word literals produce a BV constant, not an LIA Const.
         self.terms.append(Term(_bv_const(value), [w]))
         return self._maybe_bit_select(tree, w, 1, target)
@@ -892,7 +896,7 @@ class _Lowerer:
             w = self._strict_read(name, var) if self.strict else (
                 X(var) if self.is_init else var)
             if name in self.var_types:
-                self._wire_types[id(w)] = self.var_types[name]
+                self._wire_types[w] = self.var_types[name]
             return self._enforce(w, target)
         if self.strict:
             raise self.refuse(f"`{name}` is not declared")
@@ -914,7 +918,7 @@ class _Lowerer:
     # --- helpers ------------------------------------------------------------
 
     def _smv_type(self, wire: Wire) -> _SMVType | None:
-        return self._wire_types.get(id(wire))
+        return self._wire_types.get(wire)
 
     def _is_signed(self, wire: Wire) -> bool:
         t = self._smv_type(wire)
@@ -924,7 +928,7 @@ class _Lowerer:
         """Set result's _SMVType to signed if any input is signed."""
         signed = any(self._is_signed(w) for w in inputs)
         if signed or any(self._smv_type(w) is not None for w in inputs):
-            self._wire_types[id(result)] = _SMVType(result.dtype, signed=signed)
+            self._wire_types[result] = _SMVType(result.dtype, signed=signed)
 
     def _fresh(self, target: Wire | None, dtype=None) -> Wire:
         if target is not None:
@@ -955,7 +959,7 @@ class _Lowerer:
             self.terms.append(Term(self.id_op(), [target], [wire]))
             t = self._smv_type(wire)
             if t is not None:
-                self._wire_types[id(target)] = t
+                self._wire_types[target] = t
             return target
         return wire
 

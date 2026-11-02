@@ -261,3 +261,19 @@ ASSIGN
     trace = _run(text, [{}, {}], strict=strict)
     # a: 0 1 0; b: 1, ((0->1)<->0)=0, ((1->0)<->1)=0
     assert [(t["a"], t["b"]) for t in trace] == [(0, 1), (1, 0), (0, 0)]
+
+
+def test_a_wire_does_not_take_the_sign_of_a_dead_one():
+    """The lowerer records which wires hold signed words. A temporary's
+    Python object is freed once its `Term` holds a copy, and the next wire
+    is allocated at the same address: keyed by `id()`, it was signed too."""
+    from lark import Token, Tree
+
+    from zrth import BitVec, Wire
+    from zrth.smv.parser import _Lowerer
+
+    low = _Lowerer({}, {}, {}, {}, strict=True)
+    sort = BitVec(4, [1, 1])
+    low.lower(Tree("word_lit", [Token("WORD_LIT", "0sd4_1")]))
+    fresh = Wire(sort)              # first allocation after the literal's
+    assert not low._is_signed(fresh)
