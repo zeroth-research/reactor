@@ -401,3 +401,23 @@ fn rejected_parameters() {
         "generate regions not supported",
     );
 }
+
+#[test]
+fn instance_modules() {
+    // every instance keeps its module before composition, children first,
+    // titled with its parameter values and printed with the design's names
+    let t = translate(&format!(
+        "{}{CHILD}",
+        top("  child #(.K(4'd3)) u (.clk, .a(~a), .q, .y);")
+    ))
+    .unwrap();
+    let titles: Vec<&str> = t.instances.iter().map(|p| p.title.as_str()).collect();
+    assert_eq!(titles, ["child #(.W(4), .K(4'd3))"]);
+    let printed = t.print_part(&t.instances[0]);
+    assert!(
+        printed.starts_with("module child #(.W(4), .K(4'd3)) u\n"),
+        "{printed}"
+    );
+    // the connection signal `u.a` is computed by the parent, so the instance reads it
+    assert!(printed.contains("  external\n    u.a : bv4"), "{printed}");
+}
