@@ -240,7 +240,7 @@ def check_module(
             return NAEncoding(bodies)
         return NAEncoding(
             bodies,
-            pre_over_slots(ctx, _parse(module, pre_smt, "--pre", encoding), bodies),
+            pre_over_slots(ctx, encoding.parse(pre_smt, "pre"), bodies),
         )
     except NAUnsupported as e:
         raise ProveItError(f"--fbk-proveit: {e}") from e
@@ -351,33 +351,6 @@ def unpatched(cert: str, *counts: int) -> "list[str]":
             if n == 0 and hook.search(cert)]
 
 
-def _parse(module, src: str, flag: str, encoding=None):
-    """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
-
-    Read through `encoding`'s `PredicateParser` (an encoding of `module` of
-    the caller's own when it has none): the symbols are the module's, so the
-    two flags that come through here -- `--safety` and `--pre` -- read `s0`,
-    `e0`, `el0` as the same things the rest of the package does.
-
-    `Unreadable` says what is wrong with the text, with no hint of which
-    flag it came from; the flag is this function's whole reason for taking
-    one.
-    """
-    # lazy: keeps cvc5 off the critical path of a bare run
-    from ...smt.encoding import ModuleEncoding
-    from ...smt.predicates import Unreadable, parse_predicate
-
-    if encoding is None:
-        encoding = ModuleEncoding(module)
-    try:
-        term = parse_predicate(encoding.env, src)
-    except Unreadable as e:
-        raise ProveItError(f"{flag}: cannot read `{src}`: {e}") from e
-    if not term.getSort().isBoolean():
-        raise ProveItError(f"{flag} must have sort Bool, got {term.getSort()}")
-    return term
-
-
 def property_to_bool_lean(module, property_smt: str, encoding=None,
                           ctx: "LeanContext | None" = None) -> str:
     """Translate the `--safety` SMT source to Bool-valued Lean.
@@ -394,10 +367,12 @@ def property_to_bool_lean(module, property_smt: str, encoding=None,
     `ModuleEncoding`, which the property is read on.
     """
     from ...codegen.context import LeanContext
+    from ...smt.encoding import ModuleEncoding
     from .to_bool import smt_to_lean_bool
     from .na import slot_accessors
 
-    term = _parse(module, property_smt, "--safety", encoding)
+    term = (encoding or ModuleEncoding(module)).parse(
+        property_smt, "property", kind="safety")
     try:
         return smt_to_lean_bool(
             term, slot_accessors((ctx or LeanContext(module)).ctrl_next))

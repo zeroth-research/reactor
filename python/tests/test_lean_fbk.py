@@ -18,6 +18,7 @@ from zrth import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
 from zrth.lean.lowering.sorts import dtype_shape
 from zrth.lean.codegen.context import LeanContext
 from tests.verith import verith
+from zrth.lean.core.errors import PredicateRefused
 from zrth.lean.infer.fbk_proveit.engine import ProveItError, property_to_bool_lean, resolve_project
 from zrth.lean.infer.fbk_proveit.na import NAUnsupported, atom_to_lean_na, check_na_supported
 
@@ -351,7 +352,7 @@ def test_property_outside_the_fragment_aborts():
 
 
 def test_property_must_be_boolean():
-    with pytest.raises(ProveItError, match="sort Bool"):
+    with pytest.raises(PredicateRefused, match="--safety: must have sort Bool"):
         _na(_counter(), "(+ s0 1)")
 
 
