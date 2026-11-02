@@ -71,16 +71,16 @@ class ModuleEncoding:
         """
         if src is None:
             return None
+        from .predicates import Unreadable, parse_predicate
+
         hit = self._parsed.get(src)
         if hit is None:
-            from .predicates import parse_predicate
-
             try:
                 hit = parse_predicate(self.env, src)
-            except Exception as e:
+            except Unreadable as e:
                 hit = e
             self._parsed[src] = hit
-        if isinstance(hit, Exception):
+        if isinstance(hit, Unreadable):
             raise PredicateRefused(
                 role, f"cannot read `{src}`: {hit}", kind=kind) from hit
         got = hit.getSort()
