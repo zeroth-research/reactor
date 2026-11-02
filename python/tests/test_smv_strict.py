@@ -213,6 +213,10 @@ REFUSED = {
                           "next(w) := w mod 0sd4_1;",
                           "VAR w : signed word[4];"),
                    "`mod` on signed words"),
+    "signed extend": (_model("ASSIGN init(w) := 0sd4_1; next(w) := w;\n"
+                             "init(v) := extend(w, 2); next(v) := v;",
+                             "VAR w : signed word[4]; v : signed word[6];"),
+                      "`extend` of a signed word"),
 }
 
 
