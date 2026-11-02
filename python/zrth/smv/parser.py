@@ -752,6 +752,9 @@ class _Lowerer:
             itype = _BUILTIN_MAP[fn_name]()
             out_dtype = _builtin_out_dtype(fn_name, arg_w.dtype)
         elif fn_name == "extend":
+            # `Extend` zero-extends; NuSMV sign-extends a signed word.
+            if self.strict and self._is_signed(arg_w):
+                raise self.refuse("`extend` of a signed word is not read", tree)
             extra = int(str(_peel(exprs[1])))
             in_bw = _bw(arg_w.dtype)
             out_bw = in_bw + extra
