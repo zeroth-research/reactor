@@ -482,4 +482,15 @@ class PredicateParser:
             cvc5.InputLanguage.SMT_LIB_2_6, "cegis"
         )
         self.parser.appendIncrementalStringInput(smt_src)
-        return self.parser.nextTerm()
+        term = self.parser.nextTerm()
+        if term.isNull():
+            return term
+        # `nextTerm` reads one term and leaves the rest, so `(> s0 0)
+        # (< s0 5)` read as `(> s0 0)`: a weaker claim than the one written.
+        try:
+            rest = self.parser.nextTerm()
+        except RuntimeError as e:
+            raise RuntimeError(f"text after the expression: {e}") from e
+        if not rest.isNull():
+            raise RuntimeError(f"text after the expression: `{rest}`")
+        return term
