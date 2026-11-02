@@ -153,3 +153,17 @@ def test_nor_is_it_refused_as_the_claim(monkeypatch):
     module = load_module(MODS / "m_countdown.py")
     with pytest.raises(AttributeError, match="a bug"):
         predicate_terms(module, Claim(prp="s[0][0] == 0"))
+
+
+@pytest.mark.parametrize("src", ["(> s0 0) (< s0 5)", "s0 s0", "(= s0 0) junk"])
+def test_text_after_the_expression_is_refused(src):
+    """cvc5's parser reads one term and leaves the rest, so `(> s0 0)
+    (< s0 5)` was read as `(> s0 0)`: a weaker property than the one
+    written, and checked without a word."""
+    with pytest.raises(Unreadable, match="text after the expression"):
+        parse_predicate(_env("m_countdown"), src)
+
+
+def test_a_comment_after_the_expression_is_not_text():
+    env = _env("m_countdown")
+    assert parse_predicate(env, "(= s0 0) ; why") == parse_predicate(env, "(= s0 0)")
