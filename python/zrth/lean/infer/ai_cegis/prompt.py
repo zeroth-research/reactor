@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import cvc5
 
-from ...smt.predicates import PredicateParser, parse_predicate
+from ...smt.predicates import PredicateParser, Unreadable, parse_predicate
 from ..common.llm import reply_fields, source_block
 
 
@@ -288,7 +288,7 @@ def _checked(env: PredicateParser, src: str, field: str, sort: str):
     feedback."""
     try:
         term = parse_predicate(env, src)
-    except RuntimeError as e:
+    except Unreadable as e:
         raise PromptParseError(
             f"Could not parse {field} `{src}`: {e}. "
             f"Use only s0..s{len(env.state_vars) - 1}."

@@ -427,14 +427,16 @@ def predicate_terms(
     from, and what `predicate_facts` and `solver_hints` read. `smt` is the
     module, its encoding or a `smt.encoding.lazy` factory for one.
 
-    A predicate that does not parse is refused by its role; anything
-    else is the module's, and refused as that.
+    A predicate that does not parse is refused by its role, and a module
+    with no encoding (`ModuleSMT` reads one atom, `elem_sort` four sorts,
+    and both raise `ValueError`) as the module's. Anything else is a bug,
+    and keeps its traceback.
     """
     try:
         return encoding_of(smt).queries(claim, cert)
     except Refused:
         raise
-    except Exception as e:
+    except ValueError as e:
         raise Refused(
             f"the certificate predicates cannot be read for this module: {e}"
         ) from e
