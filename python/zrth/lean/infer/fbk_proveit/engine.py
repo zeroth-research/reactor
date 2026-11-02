@@ -359,19 +359,19 @@ def _parse(module, src: str, flag: str, encoding=None):
     two flags that come through here -- `--safety` and `--pre` -- read `s0`,
     `e0`, `el0` as the same things the rest of the package does.
 
-    cvc5's parser raises a bare `RuntimeError` naming the token it stopped
-    at, with no hint of which flag the text came from; the flag is this
-    function's whole reason for taking one.
+    `Unreadable` says what is wrong with the text, with no hint of which
+    flag it came from; the flag is this function's whole reason for taking
+    one.
     """
     # lazy: keeps cvc5 off the critical path of a bare run
     from ...smt.encoding import ModuleEncoding
-    from ...smt.predicates import parse_predicate
+    from ...smt.predicates import Unreadable, parse_predicate
 
     if encoding is None:
         encoding = ModuleEncoding(module)
     try:
         term = parse_predicate(encoding.env, src)
-    except RuntimeError as e:
+    except Unreadable as e:
         raise ProveItError(f"{flag}: cannot read `{src}`: {e}") from e
     if not term.getSort().isBoolean():
         raise ProveItError(f"{flag} must have sort Bool, got {term.getSort()}")

@@ -19,6 +19,7 @@ import re
 import cvc5
 from cvc5 import Kind
 
+from ..core.errors import Refused
 from ..lowering.sorts import wire_shape
 from .encode import wire_sort
 from .module import ModuleSMT
@@ -350,6 +351,14 @@ def _coerce_bare_numerals(src: str, bv_widths: dict[str, int]) -> str:
     return _BARE_EQ_RE.sub(repl, src)
 
 
+class Unreadable(Refused):
+    """Text that is no predicate of this module in either dialect: the
+    DSL's syntax and wrong in it, SMT-LIB its parser cannot read, or
+    nothing at all. It is what `parse_predicate` raises about its text,
+    and the one thing a caller turns into "cannot read"; anything else
+    raised under it is a bug, and keeps its traceback."""
+
+
 def parse_predicate(env: "PredicateParser", src: str) -> cvc5.Term:
     """Parse `src` as a cvc5 predicate. Tries the Python-expression DSL
     first (`_pyeval`), and falls back to SMT-LIB for text that is not the
@@ -357,17 +366,16 @@ def parse_predicate(env: "PredicateParser", src: str) -> cvc5.Term:
 
     Text that is the DSL's syntax and wrong in it -- a sort mismatch, an
     index past the wire, a connective given too few arguments -- is refused
-    in the DSL's terms, as the `RuntimeError` every caller reports as "could
-    not parse": handed to the SMT-LIB parser it would only be text that
-    parser cannot read, which it never was. Anything else raised is a bug,
-    and is left to say so.
+    in the DSL's terms, as `Unreadable`: handed to the SMT-LIB parser it
+    would only be text that parser cannot read, which it never was.
+    Anything else raised is a bug, and is left to say so.
     """
     try:
         result = _pyeval(src, env.namespace)
     except (SyntaxError, _NotPredicate):
         result = None
     except (TypeError, ValueError, IndexError, RuntimeError) as e:
-        raise RuntimeError(
+        raise Unreadable(
             f"`{src.strip()}` is predicate syntax, and not a predicate of "
             f"this module: {e}"
         ) from e
@@ -377,14 +385,16 @@ def parse_predicate(env: "PredicateParser", src: str) -> cvc5.Term:
         return result
     # Not the DSL, or a value no predicate is -- `5`, a whole matrix
     # variable: SMT-LIB reads the rest.
-    term = env.parse_expr(src)
+    try:
+        term = env.parse_expr(src)
+    except RuntimeError as e:       # cvc5's parser, naming where it stopped
+        raise Unreadable(str(e)) from e
     if term.isNull():
         # cvc5 parses an empty or all-blank source to a null term rather than
         # an error, and the first use of one -- `getSort()` -- raises from
         # inside the binding: an LLM that wrote `RANKING:` and nothing after
-        # it crashed `--infer ai-cegis` instead of being told. Every caller
-        # already turns a `RuntimeError` into "could not parse".
-        raise RuntimeError("the expression is empty")
+        # it crashed `--infer ai-cegis` instead of being told.
+        raise Unreadable("the expression is empty")
     return term
 
 
