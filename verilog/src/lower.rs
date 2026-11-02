@@ -119,6 +119,19 @@ pub struct Translation {
     /// Names of wires local to an atom: the intermediate values `y@1`,
     /// `y@2`, … of the signals of `always_comb` blocks.
     pub wire_names: HashMap<Wire, Name>,
+    /// The module of every instance before it is composed into its parent,
+    /// children before their parent; with the names of the whole design.
+    pub instances: Vec<Part>,
+}
+
+/// The module of an instance, as it is composed into its parent.
+pub struct Part {
+    /// The instance path, e.g. `u.v`.
+    pub path: Name,
+    /// The module name with all overridable parameter values, as in an
+    /// instantiation: `stage #(.W(4))`.
+    pub title: String,
+    pub module: Module,
 }
 
 /// The name of the external variable holding the initial value of the
@@ -144,9 +157,19 @@ impl Translation {
 
     /// The module printed with the signal names.
     pub fn print(&self) -> String {
+        self.print_module(&self.module, &self.name)
+    }
+
+    /// The module of an instance, printed with the signal names of the
+    /// whole design and titled like an instantiation: `stage #(.W(4)) s2`.
+    pub fn print_part(&self, part: &Part) -> String {
+        self.print_module(&part.module, &format!("{} {}", part.title, part.path))
+    }
+
+    fn print_module(&self, module: &Module, title: &str) -> String {
         crate::print::module(
-            &self.module,
-            &self.name,
+            module,
+            title,
             |v| self.name(v).to_string(),
             |w| self.wire_names.get(w).cloned(),
         )
@@ -166,6 +189,7 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         vars: BTreeMap::new(),
         registers: Vec::new(),
         wire_names: HashMap::new(),
+        instances: Vec::new(),
     };
     let module = lower_rec(inst, "", &mut out)?;
     let m = &inst.module;
@@ -186,6 +210,7 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         registers: out.registers,
         unread_inputs,
         wire_names: out.wire_names,
+        instances: out.instances,
     })
 }
 
@@ -198,6 +223,7 @@ struct Out<'n> {
     /// The paths of the registers.
     registers: Vec<Name>,
     wire_names: HashMap<Wire, Name>,
+    instances: Vec<Part>,
 }
 
 impl Out<'_> {
@@ -388,7 +414,13 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
     for (u, child) in &inst.children {
         let i = m.instances().find(|i| i.name == *u).expect("an instance");
         let path = format!("{prefix}{u}.");
-        modules.push((lower_rec(child, &path, out)?, i.span));
+        let module = lower_rec(child, &path, out)?;
+        out.instances.push(Part {
+            path: format!("{prefix}{u}"),
+            title: title(&child.module),
+            module: module.clone(),
+        });
+        modules.push((module, i.span));
         // unconnected outputs are signals of the instance only
         for p in child.module.ports.iter().filter(|p| p.dir == Dir::Output) {
             let connected = i
@@ -405,6 +437,25 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
     }
     Module::compose_hiding(modules.into_iter().map(|(m, _)| m), |v| hidden.contains(v))
         .map_err(|e| internal(Span::default(), e))
+}
+
+/// The module name with its overridable parameters: `stage #(.W(4))`;
+/// `int` values in decimal, others as sized literals.
+fn title(m: &ast::Module) -> String {
+    let params: Vec<String> = m
+        .params
+        .iter()
+        .filter(|p| p.overridable)
+        .map(|p| match p.ty {
+            Ty::INT => format!(".{}({})", p.name, p.value.signed()),
+            _ => format!(".{}({})", p.name, p.value),
+        })
+        .collect();
+    if params.is_empty() {
+        m.name.clone()
+    } else {
+        format!("{} #({})", m.name, params.join(", "))
+    }
 }
 
 impl Out<'_> {

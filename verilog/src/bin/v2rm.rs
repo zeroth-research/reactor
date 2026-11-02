@@ -1,23 +1,26 @@
-//! `v2rm [--top NAME] [-G NAME=VALUE]… FILE.sv`: translates the top module
-//! of a SystemVerilog file (with its instances) and prints the reactive
-//! module. `-G` sets a parameter of the top module to a constant
-//! expression.
+//! `v2rm [--top NAME] [-G NAME=VALUE]… [--instances] FILE.sv`: translates
+//! the top module of a SystemVerilog file (with its instances) and prints
+//! the reactive module. `-G` sets a parameter of the top module to a
+//! constant expression. `--instances` first prints the module of every
+//! instance as it is composed into its parent, children before parents.
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 use verilog::ast::{Error, Override, Span};
 use verilog::{constant, elab, frontend, lower};
 
-const USAGE: &str = "usage: v2rm [--top NAME] [-G NAME=VALUE]... FILE.sv";
+const USAGE: &str = "usage: v2rm [--top NAME] [-G NAME=VALUE]... [--instances] FILE.sv";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut top = None;
     let mut params = Vec::new();
     let mut path = None;
+    let mut instances = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--top" => top = args.next(),
+            "--instances" => instances = true,
             "-G" => match args.next() {
                 Some(p) => params.push(p),
                 None => return usage(),
@@ -58,6 +61,11 @@ fn main() -> ExitCode {
         Ok(t) => {
             for name in &t.unread_inputs {
                 eprintln!("{path}: warning: input `{name}` is never read and is left out");
+            }
+            if instances {
+                for part in &t.instances {
+                    println!("{}", t.print_part(part));
+                }
             }
             print!("{}", t.print());
             ExitCode::SUCCESS
