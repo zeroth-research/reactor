@@ -98,7 +98,7 @@ def parse_smv(
 def _read(text: str, overrides: dict, *, strict: bool, specs: bool = False):
     """The passes both entry points run, in order; `_build_module`'s
     result."""
-    tree = _get_parser().parse(text)
+    tree = _connectives(_get_parser().parse(text))
     decls = _collect_declarations(tree)
     _split_assigns(decls, strict=strict)
     _promote_constraints(decls, strict=strict)
@@ -107,6 +107,32 @@ def _read(text: str, overrides: dict, *, strict: bool, specs: bool = False):
         _check_strict(decls, theory)
     return _build_module(decls, overrides, strict=strict, theory=theory,
                          specs=specs)
+
+
+def _connectives(tree: Tree) -> Tree:
+    """`tree` with `a -> b` rewritten to `!a | b` and `a <-> b` (`xnor`) to
+    `!(a xor b)`, in place: neither theory has an op for either, so every
+    lowerer reads them as the connectives they are made of. A new node
+    takes the position of the one it replaces, which is where a refusal
+    about its operands points."""
+    for t in tree.iter_subtrees():                       # operands first
+        if t.data == "implies_expr":
+            a, b = t.children
+            at = ({} if t.meta.empty
+                  else {"line": t.meta.line, "column": t.meta.column})
+            t.data, t.children = "or_expr", [
+                Tree("not_expr", [Token("NOT_OP", "!", **at), a], t.meta),
+                Token("OR_OP", "|", **at), b]
+        elif t.data == "iff":
+            left = t.children[0]
+            for op, rhs in zip(t.children[1::2], t.children[2::2]):
+                xor = Tree("or_expr",
+                           [left, Token.new_borrow_pos("OR_OP", "xor", op), rhs],
+                           t.meta)
+                left = Tree("not_expr",
+                            [Token.new_borrow_pos("NOT_OP", "!", op), xor], t.meta)
+            t.data, t.children = left.data, left.children
+    return tree
 
 
 # ---------------------------------------------------------------------------
@@ -506,7 +532,6 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> _SMVType:
 # the `IType.BV` namespace (`_LIALowerer` maps them to LIA). Resolution is
 # deferred to term-construction time so missing ops produce a useful error.
 _BINOPS: dict[str, dict[str, str]] = {
-    "iff": {"<->": "Xnor", "xnor": "Xnor"},
     "or_expr": {"|": "Or", "or": "Or", "xor": "Xor"},
     "and_expr": {"&": "And", "and": "And"},
     "arith_expr": {"+": "Add", "-": "Sub"},
@@ -522,7 +547,6 @@ _OP_TOKENS = {"NOT_OP"}
 
 _NARY_OPS = {
     "ternary": "Ite",
-    "implies_expr": "Implies",
     "not_expr": "Not",
     "neg": "Neg",
     "abs_call": "Abs",
@@ -530,11 +554,7 @@ _NARY_OPS = {
 
 
 def _bv_op(name: str):
-    """Construct `BV.<name>()` (raises AttributeError if the op is missing).
-
-    Xnor and Implies, which the grammar maps name, are not BV ops: the
-    lowerer composes them (Not(Xor), Or(Not, b)) before asking here.
-    """
+    """Construct `BV.<name>()` (raises AttributeError if the op is missing)."""
     return getattr(BV, name)()
 
 
@@ -632,7 +652,7 @@ class _Lowerer:
                 tree, _BINOPS[name], target, out_dtype_fn=lambda d: d
             )
 
-        # Table-driven n-ary ops (unary / implies / ternary)
+        # Table-driven n-ary ops (unary / ternary)
         if name in _NARY_OPS:
             return self._lower_nary(tree, _NARY_OPS[name], target)
 
@@ -666,20 +686,13 @@ class _Lowerer:
             if (self.strict and op_tok == "/"
                     and (self._is_signed(left) or self._is_signed(rhs))):
                 raise self.refuse("`/` on signed words is not read", children[i])
-            operands = [left, rhs]
-            if op_map[op_tok] == "Xnor":
-                # No BV op: `a <-> b` is `!(a xor b)`.
-                x = self._fresh(None, left.dtype)
-                self.terms.append(Term(BV.Xor(), [x], operands))
-                itype, operands = BV.Not(), [x]
-            else:
-                itype = _bv_op(op_map[op_tok])
+            itype = _bv_op(op_map[op_tok])
             out = target if i + 2 >= len(children) else None
             out_dtype = (
                 out_dtype_fn(left.dtype) if (out_dtype_fn and out is None) else None
             )
             w = self._fresh(out, out_dtype)
-            self.terms.append(Term(itype, [w], operands))
+            self.terms.append(Term(itype, [w], [left, rhs]))
             self._propagate_type(w, left, rhs)
             left = w
             i += 2
@@ -708,7 +721,7 @@ class _Lowerer:
             i += 2
         return self._enforce(left, target)
 
-    # --- n-ary (unary / implies / ternary) ----------------------------------
+    # --- n-ary (unary / ternary) ---------------------------------------------
 
     def _lower_nary(self, tree: Tree, op_name: str, target: Wire | None) -> Wire:
         inputs = [
@@ -716,14 +729,7 @@ class _Lowerer:
             for c in tree.children
             if not (isinstance(c, Token) and c.type in _OP_TOKENS)
         ]
-        operands = inputs
-        if op_name == "Implies":
-            # No BV op: `a -> b` is `!a | b`.
-            not_a = self._fresh(None, inputs[0].dtype)
-            self.terms.append(Term(BV.Not(), [not_a], [inputs[0]]))
-            itype, inputs = BV.Or(), [not_a, inputs[1]]
-        else:
-            itype = _bv_op(op_name)
+        itype = _bv_op(op_name)
         # Ite: output matches then-branch (inputs[1]); others match first input
         out_dtype = (
             inputs[1].dtype
@@ -734,7 +740,7 @@ class _Lowerer:
         self.terms.append(Term(itype, [w], inputs))
         # `-x` of a signed word is signed, and so is `c ? x : y` of two;
         # what an Ite's condition is says nothing about its value.
-        self._propagate_type(w, *(operands[1:] if op_name == "Ite" else operands))
+        self._propagate_type(w, *(inputs[1:] if op_name == "Ite" else inputs))
         return self._enforce(w, target)
 
     # --- builtin_call -------------------------------------------------------
@@ -1090,11 +1096,9 @@ class _LIALowerer(_Lowerer):
 
     def _binop(self, name: str, a: Wire, b: Wire, out: Wire | None,
                tok) -> Wire:
-        if name in ("And", "Or", "Xor", "Xnor"):
+        if name in ("And", "Or", "Xor"):
             self._need(a, _BOOL, tok)
             self._need(b, _BOOL, tok)
-            if name == "Xnor":
-                return self._xnor(a, b, out, tok)
             return self._emit(getattr(LIA, name)(), _BOOL, [a, b], out, tok)
         self._need(a, _INT, tok)
         self._need(b, _INT, tok)
@@ -1110,7 +1114,7 @@ class _LIALowerer(_Lowerer):
         raise self.refuse(f"`{tok}` is not linear integer arithmetic", tok)
 
     def _xnor(self, a: Wire, b: Wire, out: Wire | None, tok) -> Wire:
-        """`a <-> b`, which LIA has no op for: `!(a xor b)`."""
+        """`a = b` of two booleans, which LIA has no op for: `!(a xor b)`."""
         x = self._emit(LIA.Xor(), _BOOL, [a, b], None)
         return self._emit(LIA.Not(), _BOOL, [x], out, tok)
 
@@ -1148,12 +1152,6 @@ class _LIALowerer(_Lowerer):
         if op_name == "Not":
             self._need(inputs[0], _BOOL, tree)
             return self._emit(LIA.Not(), _BOOL, inputs, target, tree)
-        if op_name == "Implies":
-            a, b = inputs
-            self._need(a, _BOOL, tree)
-            self._need(b, _BOOL, tree)
-            not_a = self._emit(LIA.Not(), _BOOL, [a], None)
-            return self._emit(LIA.Or(), _BOOL, [not_a, b], target, tree)
         (x,) = inputs
         self._need(x, _INT, tree)
         if op_name == "Neg":
