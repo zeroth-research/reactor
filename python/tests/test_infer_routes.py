@@ -1,4 +1,4 @@
-"""The inference-route table (`zrth.lean.infer`) and the CLI over it.
+"""The inference-route table (`reactor.lean.infer`) and the CLI over it.
 
 Two things are checked here. The table is checked for *completeness*, the way
 `test_lean_ops.py` checks the op matrix: a row that declares something the
@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from zrth.lean.cli import build_parser, parse_args
-from zrth.lean.core.errors import Refused
-from zrth.lean.infer import (
+from reactor.lean.cli import build_parser, parse_args
+from reactor.lean.core.errors import Refused
+from reactor.lean.infer import (
     ROUTES,
     InferResult,
     ProjectHandle,
@@ -26,7 +26,7 @@ from zrth.lean.infer import (
     route_by_name,
     route_names,
 )
-from zrth.lean.project.scaffold import ENCODINGS
+from reactor.lean.project.scaffold import ENCODINGS
 
 KINDS = {"safety", "buchi"}
 RETURNS = {"smt", "lean", "files"}
@@ -118,7 +118,7 @@ def test_an_option_two_routes_declare_is_one_option():
     The rule this replaces was "no two routes claim one flag", which is what
     `shared_route_options` now makes safe rather than forbidden.
     """
-    from zrth.lean.infer import shared_route_options
+    from reactor.lean.infer import shared_route_options
 
     by_dest: dict = {}
     for route, opt in all_route_options():
@@ -430,7 +430,7 @@ def test_route_option_defaults_survive(tmp_path):
 
 
 def _store(tmp_path, **kw):
-    from zrth.lean.artifacts import ArtifactStore
+    from reactor.lean.artifacts import ArtifactStore
 
     kw.setdefault("module_digest", "aaaaaaaaaaaa")
     kw.setdefault("kind", "buchi")
@@ -492,7 +492,7 @@ def test_the_declared_prefix_is_a_directory_not_a_string(tmp_path):
 
 def test_an_empty_result_is_one_with_no_predicates_and_no_files():
     """`empty` is true only when the route handed back nothing at all."""
-    from zrth.lean.core.certificate import Certificate, LeanAnswer
+    from reactor.lean.core.certificate import Certificate, LeanAnswer
 
     assert InferResult().empty
     assert not InferResult(Certificate(inv="(= s0 0)")).empty
@@ -501,7 +501,7 @@ def test_an_empty_result_is_one_with_no_predicates_and_no_files():
 
 
 def _row(returns="smt", kind="buchi", result=None):
-    from zrth.lean.infer import InferRoute
+    from reactor.lean.infer import InferRoute
 
     return InferRoute(
         name="probe",
@@ -517,8 +517,8 @@ def _row(returns="smt", kind="buchi", result=None):
 def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
                owns=()):
     """Put one synthetic row through `pipeline.certify.run_route`."""
-    from zrth.lean.pipeline import certify
-    from zrth.lean.core.certificate import Certificate, Claim
+    from reactor.lean.pipeline import certify
+    from reactor.lean.core.certificate import Certificate, Claim
 
     settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
     settings.route = _row(returns, kind, result)
@@ -533,7 +533,7 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
 
 
 def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
-    from zrth.lean.core.certificate import Certificate
+    from reactor.lean.core.certificate import Certificate
 
     result = InferResult(Certificate("(= s0 0)", "s0"))
     assert _run_infer(monkeypatch, tmp_path, result) is result
@@ -542,7 +542,7 @@ def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
 def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
     """Every SMT-LIB answer is printed as Lean in one place, so Lean from an
     `smt` row has nowhere to go."""
-    from zrth.lean.core.certificate import Certificate, LeanAnswer
+    from reactor.lean.core.certificate import Certificate, LeanAnswer
 
     both = InferResult(Certificate("(= s0 0)", "s0"),
                        LeanAnswer("fun s => s.1 = 0", "fun s => s.1"))
@@ -551,7 +551,7 @@ def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
 
 
 def test_a_lean_row_is_taken_at_its_word(monkeypatch, tmp_path):
-    from zrth.lean.core.certificate import Certificate, LeanAnswer
+    from reactor.lean.core.certificate import Certificate, LeanAnswer
 
     lean = InferResult(lean=LeanAnswer("fun s => s.1 = 0", "fun s => 1"))
     assert _run_infer(monkeypatch, tmp_path, lean, returns="lean") is lean
@@ -572,7 +572,7 @@ def test_a_files_route_hands_back_files_and_no_predicates(monkeypatch, tmp_path)
 def test_a_row_and_its_result_have_to_agree(monkeypatch, tmp_path):
     """The row declares what comes back; nothing else has to guess which of
     the two to trust."""
-    from zrth.lean.core.certificate import Certificate
+    from reactor.lean.core.certificate import Certificate
 
     with pytest.raises(SystemExit, match="declares returns='smt'"):
         _run_infer(monkeypatch, tmp_path, InferResult(), returns="smt")
@@ -625,7 +625,7 @@ def test_the_handle_writes_what_a_route_handed_back(tmp_path, capsys):
 
 @pytest.mark.parametrize("route", ROUTES, ids=route_names())
 def test_declared_artifact_roles_are_real(route):
-    from zrth.lean.artifacts import ROLES
+    from reactor.lean.artifacts import ROLES
 
     assert route.reads_artifacts <= set(ROLES)
 
@@ -652,9 +652,9 @@ def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
     knows what a stale artifact is and reports what it dropped); what is
     exercised here is the one rule left to the route.
     """
-    from zrth.lean.core.certificate import Certificate, Claim
-    from zrth.lean.infer import InferInput
-    from zrth.lean.infer.resume import resumable_inv
+    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor.lean.infer import InferInput
+    from reactor.lean.infer.resume import resumable_inv
 
     handle = _handle(tmp_path, resumes=("inv",), store=_store(tmp_path, kind=kind))
     return resumable_inv(InferInput(
@@ -696,7 +696,7 @@ def test_an_explicit_invariant_wins_over_an_inherited_one(tmp_path):
 def test_the_registry_rejects_two_rows_with_one_name():
     """`lowering/ops.py` guards its op table the same way: a shadowed row
     would also show the name twice in `--infer`'s choices."""
-    from zrth.lean.infer import index_routes
+    from reactor.lean.infer import index_routes
 
     assert index_routes(ROUTES).keys() == set(route_names())
     with pytest.raises(RuntimeError, match="two route-table rows named"):
@@ -726,7 +726,7 @@ def test_the_owned_proveit_directory_is_the_one_the_route_writes():
     """`owns` is the truth about what a route writes, and `path()` refuses
     anything undeclared -- so a renamed `PROVEIT_DIR` must not leave the row
     declaring a directory `fbk_proveit` no longer uses."""
-    from zrth.lean.infer.fbk_proveit.engine import PROVEIT_DIR
+    from reactor.lean.infer.fbk_proveit.engine import PROVEIT_DIR
 
     owns = route_by_name("fbk-proveit").owns
     assert f"{PROVEIT_DIR}/" in owns
@@ -735,14 +735,14 @@ def test_the_owned_proveit_directory_is_the_one_the_route_writes():
 def test_the_workspace_is_not_a_route_owned_path():
     """`artifacts/` outlives the run, so `create_project`'s cleanup of
     route-written files must never reach it."""
-    from zrth.lean.artifacts import ARTIFACTS_DIR
+    from reactor.lean.artifacts import ARTIFACTS_DIR
 
     for route in ROUTES:
         assert not any(o.startswith(ARTIFACTS_DIR) for o in route.owns)
 
 
 def test_owned_files_are_the_files_not_the_directories_the_rows_own():
-    from zrth.lean.infer import owned_files
+    from reactor.lean.infer import owned_files
 
     files = owned_files()
     assert files == tuple(sorted(files))
@@ -759,7 +759,7 @@ def test_owned_files_are_the_files_not_the_directories_the_rows_own():
 
 
 def _note_store(tmp_path):
-    from zrth.lean.artifacts import ArtifactStore
+    from reactor.lean.artifacts import ArtifactStore
 
     return ArtifactStore(dir=tmp_path / "artifacts", producer="test")
 
@@ -783,7 +783,7 @@ def test_a_refusal_says_whether_anything_was_searched():
 def test_a_route_that_looked_at_nothing_records_a_decline(tmp_path):
     """`NO-CERT` is three measurements in one name, and this is the one the
     prose is worst at: nothing ran, so there is no fact about the module."""
-    from zrth.lean.pipeline.certify import note_refusal
+    from reactor.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
     note_refusal(_NoteHandle(store), _NoteRoute(), Refused("s0 is (Tuple Int Int)"))
@@ -795,7 +795,7 @@ def test_a_route_that_looked_at_nothing_records_a_decline(tmp_path):
 def test_a_search_that_ran_out_records_unknown(tmp_path):
     """Not a decline: a search did run, and that it did not finish is a fact
     about how hard this module is."""
-    from zrth.lean.pipeline.certify import note_refusal
+    from reactor.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
     note_refusal(_NoteHandle(store), _NoteRoute(),
@@ -806,7 +806,7 @@ def test_a_search_that_ran_out_records_unknown(tmp_path):
 def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
     """`smt-linear`, `sygus`, `houdini` and `vampire` each leave a note with
     more in it than this one, and a second saying less is worse than none."""
-    from zrth.lean.pipeline.certify import note_refusal
+    from reactor.lean.pipeline.certify import note_refusal
 
     store = _note_store(tmp_path)
     store.note("the space is empty\n", status="no_solution", what="x", why="y")
@@ -818,11 +818,11 @@ def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
 def test_a_missing_package_is_not_filed_against_the_module(tmp_path):
     """A missing package is about how the route was asked for. Filing it as
     a decline would read as a fact about a run that never started."""
-    from zrth.lean.core.errors import require
-    from zrth.lean.pipeline.certify import note_refusal
+    from reactor.lean.core.errors import require
+    from reactor.lean.pipeline.certify import note_refusal
 
     with pytest.raises(Refused) as missing:
-        require("zrth_no_such", "--infer x")
+        require("reactor_no_such", "--infer x")
     store = _note_store(tmp_path)
     note_refusal(_NoteHandle(store), _NoteRoute(), missing.value)
     assert store.list() == ()
@@ -835,9 +835,9 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     about why no certificate came of it."""
     from types import SimpleNamespace
 
-    from zrth.lean.pipeline import certify
-    from zrth.lean.core.certificate import Certificate, Claim
-    from zrth.lean.infer import InferResult
+    from reactor.lean.pipeline import certify
+    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor.lean.infer import InferResult
 
     def refuse(*a, **k):
         raise Refused("SMT→Lean: unsupported kind INTS_MODULUS")
@@ -862,9 +862,9 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
     a route is handed of the run is what its row declares."""
     import dataclasses
 
-    from zrth.lean import inputs
-    from zrth.lean.pipeline import certify
-    from zrth.lean.core.certificate import Certificate, Claim
+    from reactor.lean import inputs
+    from reactor.lean.pipeline import certify
+    from reactor.lean.core.certificate import Certificate, Claim
 
     from pathlib import Path
 
@@ -891,9 +891,9 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
 
 
 def test_a_missing_package_is_refused_by_the_flag_that_needs_it():
-    from zrth.lean.core.errors import Refused, require
+    from reactor.lean.core.errors import Refused, require
 
     assert require("json", "--anything").dumps(1) == "1"
-    with pytest.raises(Refused, match=r"--infer x needs the `zrth_no_such` "
-                                      r"package.*uv pip install zrth_no_such"):
-        require("zrth_no_such", "--infer x")
+    with pytest.raises(Refused, match=r"--infer x needs the `reactor_no_such` "
+                                      r"package.*uv pip install reactor_no_such"):
+        require("reactor_no_such", "--infer x")

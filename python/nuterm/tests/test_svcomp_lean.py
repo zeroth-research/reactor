@@ -22,9 +22,9 @@ from nuterm._farkas import (Unsupported, certify, inductive, lex_decrease,
                                        read_system)
 from nuterm._termination import terminates
 from nuterm._termination import _v_module, compose, system_of
-from zrth import Module, X
+from reactor import Module, X
 from nuterm._property import Safety
-from zrth.sugar import ite
+from reactor.sugar import ite
 
 LEAN_DIR = Path(__file__).resolve().parents[1] / "lean"
 

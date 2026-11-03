@@ -9,8 +9,8 @@ Python semantics:
 Invariant: 0 <= i <= 3 and 0 <= j <= 3
 Ranking: (3 - i) * 4 + (3 - j) (when not at (0,0))
 """
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

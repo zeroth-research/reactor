@@ -1,6 +1,6 @@
 """LIA Max as a unary reduction: v = (x-1, 0), x' = max v — ReLU spelled Max."""
 import torch
-from zrth import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, LIA, Var, X
 
 
 def module() -> Module:

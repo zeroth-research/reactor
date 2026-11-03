@@ -4,7 +4,7 @@ Probes how far the *size* of a transition can go before elaboration or the
 tactic script gives out, independently of state width.
 """
 import torch
-from zrth import Module, Term, Wire, Int, Bool, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Bool, LIA, Var, X
 
 DEPTH = 16
 

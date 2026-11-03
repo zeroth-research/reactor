@@ -5,7 +5,7 @@
     python -m nuterm FILE.py --export out/   # write the proof as its own Lean project
     python -m nuterm FILE.py --ranks 2       # allow a lexicographic rank
 
-``FILE.py`` defines ``module()``, returning a ``zrth.Module``, or ``BENCH``, a
+``FILE.py`` defines ``module()``, returning a ``reactor.Module``, or ``BENCH``, a
 :class:`nuterm._bench.Bench`. The exit code is 0 when every file is verified
 (and kernel-checked, with ``--lean``).
 """

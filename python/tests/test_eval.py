@@ -380,7 +380,7 @@ def test_twobitcounter_mixed():
 
 def test_linear_promotes_int_weights_against_float_input():
     """The case `_linear`'s cast was written for: baked Int weights, float x."""
-    from zrth.eval import _linear
+    from reactor.eval import _linear
 
     W = torch.tensor([[2, 3]], dtype=torch.int64)
     x = torch.tensor([[1.5], [2.5]], dtype=torch.float32)
@@ -395,7 +395,7 @@ def test_linear_does_not_truncate_float_weights_against_int_input():
     `LIA.Linear` accepts float weights on Int wires, so this is reachable,
     and demoting turned every |w| < 1 into 0 with no error.
     """
-    from zrth.eval import _linear
+    from reactor.eval import _linear
 
     W = torch.tensor([[0.5, 0.5]], dtype=torch.float32)
     x = torch.tensor([[3], [3]], dtype=torch.int64)
@@ -406,7 +406,7 @@ def test_linear_does_not_truncate_float_weights_against_int_input():
 
 def test_linear_bias_follows_the_same_promotion():
     """A float bias must not be floored against an int product either."""
-    from zrth.eval import _linear
+    from reactor.eval import _linear
 
     W = torch.tensor([[1, 1]], dtype=torch.int64)
     b = torch.tensor([[0.25]], dtype=torch.float32)
@@ -417,7 +417,7 @@ def test_linear_bias_follows_the_same_promotion():
 
 def test_linear_keeps_integer_arithmetic_when_nothing_is_float():
     """All-int stays int: promotion must not silently make everything float."""
-    from zrth.eval import _linear
+    from reactor.eval import _linear
 
     W = torch.tensor([[2, 3]], dtype=torch.int64)
     x = torch.tensor([[4], [5]], dtype=torch.int64)
@@ -447,8 +447,8 @@ def test_min_max_reduce_one_operand(rows, expected_min, expected_max):
     `eval.py` computed `torch.minimum(r[0], r[1])` — an elementwise binary
     over two operands — which the theory would never typecheck.
     """
-    from zrth.eval import eval_itype
-    from zrth import LIA
+    from reactor.eval import eval_itype
+    from reactor import LIA
 
     x = torch.tensor(rows, dtype=torch.int64)
     assert eval_itype(LIA.Min(), [x])[0].item() == expected_min
@@ -457,7 +457,7 @@ def test_min_max_reduce_one_operand(rows, expected_min, expected_max):
 
 def test_min_max_agree_with_the_theory_arity():
     """One read, not two: passing a second operand is not the contract."""
-    from zrth import Wire, Term, Int, LIA
+    from reactor import Wire, Term, Int, LIA
 
     # the theory accepts exactly one read and a [1, 1] write
     Term(LIA.Min(), [Wire(Int([1, 1]))], [Wire(Int([4, 1]))])

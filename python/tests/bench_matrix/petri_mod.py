@@ -9,7 +9,7 @@ and the command that measures a case is still a command that can be pasted:
         --safety '(<= (+ (X @intf.2) (X @intf.5)) 1)' \
         --pre '(and (>= (X @extl.0) 0) (<= (X @extl.0) 5))' ...
 
-The module is built with `zrth.expr`'s `collecting()` rather than the
+The module is built with `reactor.expr`'s `collecting()` rather than the
 `sugar.Module` DSL, because the DSL binds variables to *named* parameters of
 `update` and a net's arity is not known until the table is read.
 
@@ -43,9 +43,9 @@ from __future__ import annotations
 
 import os
 
-from zrth import Int, LIA, LRA, Module, Real, Term, Var
-from zrth.expr import collecting, expr, ite
-from zrth.sugar import X          # the `next` wire of a Var *or* of an Expr
+from reactor import Int, LIA, LRA, Module, Real, Term, Var
+from reactor.expr import collecting, expr, ite
+from reactor.sugar import X          # the `next` wire of a Var *or* of an Expr
 
 
 def _num(v, theory, sort):

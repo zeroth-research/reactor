@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from zrth import Int, Var
+from reactor import Int, Var
 
 # Scalar integer sort: every program variable is a 1x1 integer matrix.
 INT = Int([1, 1])
@@ -20,7 +20,7 @@ BuildResult = tuple[object, dict[str, Var], dict[str, Var]]
 def var() -> Var:
     """A fresh scalar integer state variable.
 
-    A :class:`zrth.Var` stands for its latched wire and carries its next wire,
+    A :class:`reactor.Var` stands for its latched wire and carries its next wire,
     reached by ``X(v)`` — so one variable is both ends of a round."""
     return Var(INT)
 

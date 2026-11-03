@@ -18,8 +18,8 @@ name, so the run never becomes eventually periodic.
 
 state: s0 = h, s1 = v (Real)
 """
-from zrth import LRA, Module, Real, Var, sugar
-from zrth.sugar import expr, ite
+from reactor import LRA, Module, Real, Var, sugar
+from reactor.sugar import expr, ite
 
 REAL = Real([1, 1])
 

@@ -3,8 +3,8 @@
 Terminates lexicographically on (y, x); the single-Nat ranking has to fold
 both components.
 """
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

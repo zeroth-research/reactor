@@ -28,7 +28,7 @@ _LEAN_DIR = Path(__file__).parent
 
 def test_core_files_present(sync_core_templates):
     """Core/ template files were copied successfully."""
-    from zrth.lean.project.scaffold import CORE_FILES
+    from reactor.lean.project.scaffold import CORE_FILES
 
     for name in CORE_FILES:
         assert (_LEAN_DIR / "Core" / name).exists(), f"Core/{name} missing after sync"
@@ -315,9 +315,9 @@ def test_generated_executable_builds_and_runs(
         module_def = importlib.import_module(fixture).module()
     finally:
         sys.path.pop(0)
-    from zrth.lean.codegen.context import LeanContext
-    from zrth.lean.project.scaffold import create_project
-    from zrth.lean.proof.render import certificate_files
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.project.scaffold import create_project
+    from reactor.lean.proof.render import certificate_files
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)

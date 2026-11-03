@@ -17,12 +17,12 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import z3
-from zrth import X
-from zrth.eval import eval_itype
+from reactor import X
+from reactor.eval import eval_itype
 from torch import nn
 
-# torch must load before the zrth C-extension (see _bench)
-from ._bench import Bench  # noqa: F401  (ensures torch/zrth import order)
+# torch must load before the reactor C-extension (see _bench)
+from ._bench import Bench  # noqa: F401  (ensures torch/reactor import order)
 from nuterm._farkas import certify, resolve_domain
 from ._termination import compose_lex, prove_invariants, system_of, terminates
 

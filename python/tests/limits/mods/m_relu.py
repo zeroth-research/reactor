@@ -4,7 +4,7 @@ Counts down to 0 and stays there, so `x = 0` holds infinitely often. The
 Lean side becomes `Max.max 0 (x - 1)`.
 """
 import torch
-from zrth import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, LIA, Var, X
 
 
 def module() -> Module:

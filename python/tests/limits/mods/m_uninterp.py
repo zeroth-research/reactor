@@ -1,7 +1,7 @@
 """LIA Uninterpreted as a source (one write, no read) — the only shape the
 theory check accepts: `Uninterpreted` is a lone read *or* a lone write."""
 import torch
-from zrth import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, LIA, Var, X
 
 
 def module() -> Module:

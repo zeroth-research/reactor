@@ -1,6 +1,6 @@
 """LIA Transpose — an op with no entry in the Lean expression tables."""
 import torch
-from zrth import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, LIA, Var, X
 
 
 def module() -> Module:

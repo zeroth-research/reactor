@@ -31,7 +31,7 @@ python -m nuterm FILE.py --lean         # also kernel-check the proof
 python -m nuterm FILE.py --export out/  # write the proof as its own Lean project
 ```
 
-`FILE.py` defines `module()`, which returns a `zrth.Module`. Or it defines
+`FILE.py` defines `module()`, which returns a `reactor.Module`. Or it defines
 `BENCH`, a `Bench`. For a module, state is named `s0..` and inputs `e0..`.
 See `tests/test_nuterm_cli.py` for an example. The exit code is 0 only if
 every file is verified.

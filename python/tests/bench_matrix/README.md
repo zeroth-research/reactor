@@ -33,7 +33,7 @@ matrix cannot survive.
 ### The routes
 
 The `--infer` routes of
-[`zrth/lean/infer/`](../../zrth/lean/infer/), one column each
+[`reactor/lean/infer/`](../../reactor/lean/infer/), one column each
 -- except `houdini`, which is two: the same proposals decided by cvc5
 (`houdini`) or refuted by Vampire (`houdini-vampire`), so a cell where one
 succeeds and the other times out says which half of the route the difference
@@ -178,7 +178,7 @@ Finding the wall this way is also what turned up a missing budget: the two
 `*_circ_eq` theorems ran at Lean's default `maxHeartbeats` while `Scalar`'s
 equivalents have long carried `2000000`. Every net above four places timed
 out inside `simp` — `BUILD-FAIL` on every route, for modules nothing else was
-wrong with. [`../../zrth/lean/codegen/encodings/circuit.py`](../../zrth/lean/codegen/encodings/circuit.py)
+wrong with. [`../../reactor/lean/codegen/encodings/circuit.py`](../../reactor/lean/codegen/encodings/circuit.py)
 now raises it, and the same net builds `System.Circ` in 13 s.
 
 **What is left of the wall, measured.** With the sum encoding and the raised

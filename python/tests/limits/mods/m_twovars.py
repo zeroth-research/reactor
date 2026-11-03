@@ -1,6 +1,6 @@
 """LIA, two 1x1 wires: x counts up to y (=10), then both reset."""
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

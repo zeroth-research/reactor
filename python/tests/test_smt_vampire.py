@@ -8,7 +8,7 @@ import os
 import time
 from pathlib import Path
 
-from zrth.lean.smt.vampire import run_vampire
+from reactor.lean.smt.vampire import run_vampire
 
 
 def _stub(tmp_path: Path, body: str) -> str:

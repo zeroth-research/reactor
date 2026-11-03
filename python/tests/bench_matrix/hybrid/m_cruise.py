@@ -27,8 +27,8 @@ BUILD-FAIL on every route, measuring none of them.
 
 state: s0 = g, s1 = dv (Real)
 """
-from zrth import LRA, Module, Real, Var, sugar
-from zrth.sugar import ite
+from reactor import LRA, Module, Real, Var, sugar
+from reactor.sugar import ite
 
 REAL = Real([1, 1])
 

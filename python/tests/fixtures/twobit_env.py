@@ -3,8 +3,8 @@
 2-bit digital counter with enable action.
 Property: b0 = False holds infinitely often (when enable is always on).
 """
-from zrth.gym import Env
-from zrth import Module, Bool, LIA
+from reactor.gym import Env
+from reactor import Module, Bool, LIA
 from tests.gym.environments import TwoBitCounterEnv
 
 

@@ -12,7 +12,7 @@ from nuterm._property import Liveness
 from nuterm._termination import system_of, terminates
 from nuterm._train import learn_ranking, rollout
 from nuterm.tests._fixtures import loop_bench
-from zrth.sugar import ite
+from reactor.sugar import ite
 
 
 def _rollout(bench, claim, max_len=50):

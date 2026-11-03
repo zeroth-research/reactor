@@ -2,7 +2,7 @@
 
 `verith` is the command-line front end of the Lean pipeline. It takes a
 **module file** — a Python file exposing a callable that returns a
-`zrth.Module` — and writes a Lean 4 project holding the module's transition
+`reactor.Module` — and writes a Lean 4 project holding the module's transition
 system *and* a machine-checkable **certificate** for one temporal property:
 
 ```
@@ -29,7 +29,7 @@ Properties, invariants, ranking functions and preconditions are all written as
 * `(X @intf.0)`, `(X @intf.1)`, … — the controlled (state) wires after the round, in the order the module declares them
 * `(X @extl.0)`, … — the external inputs read in the round; `@extl.0`, … — the ones read in the round before
 * components of a vector wire take a tuple selector: `((_ tuple.select 1) (X @extl.0))`
-* a module file that names its variables (`zrth.lean.inputs.Named`) can be written in those names: `(X x)` is `x` after the round, a bare `x` is an input of the round before
+* a module file that names its variables (`reactor.lean.inputs.Named`) can be written in those names: `(X x)` is `x` after the round, a bare `x` is an input of the round before
 
 Inside certificates, SMT queries, Lean and the artifacts the same wires are
 called `s0, s1, …`, `e0, …` and `el0, …`; the outputs below show that
@@ -61,7 +61,7 @@ commands below are run from `python/`:
 
 ```bash
 cd <checkout>/python
-uv sync                    # builds zrth via maturin and installs dependencies
+uv sync                    # builds reactor via maturin and installs dependencies
 uv run verith --help
 ```
 
@@ -151,8 +151,8 @@ cat tests/limits/mods/m_countdown.py
 
 ```python
 """LIA 1x1: x = 100, then x-1 each step, reset to 100 at 0. Baseline control."""
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():
@@ -330,7 +330,7 @@ grep -E '^-- |^def RM|^theorem |^def lts' "$OUT/$PROJ/Certificate/Certificate.le
 
 ```lean
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/proof/tactics.py`.
+-- its certificate; see `reactor/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, linear
 def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
@@ -418,7 +418,7 @@ def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 9
 def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
 def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = 0) then 0 else (10 - (s 0 0))) : Int)).toNat
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/proof/tactics.py`.
+-- its certificate; see `reactor/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, linear, 1 branch point(s)
 -- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
@@ -457,7 +457,7 @@ Build completed successfully (3466 jobs).
 
 ## 4. A module read out of a gymnasium environment
 
-Nothing above is specific to hand-written modules. `zrth.gym.Env` extracts a
+Nothing above is specific to hand-written modules. `reactor.gym.Env` extracts a
 module from a plain `gymnasium.Env` by symbolically analyzing its `reset` and
 `step` methods, and the result is a module file like any other.
 `tests/fixtures/simple_env.py` wraps `SimpleEnv` — a three-cell chain where
@@ -474,8 +474,8 @@ sed -n '/class SimpleEnv/,/class TwoBitCounterEnv/p' tests/gym/environments.py
 Chain environment: state ∈ {0,1,2}, action moves left/right.
 Property: state reaches 2 infinitely often.
 """
-from zrth.gym import Env
-from zrth import Module, Real
+from reactor.gym import Env
+from reactor import Module, Real
 from tests.gym.environments import SimpleEnv
 
 
@@ -1152,7 +1152,7 @@ counterexample the next sample. An 8-bit counter to try it on:
 cat > "$OUT/m_bvcount.py" <<'PY'
 # BV 8-bit counter: 0, 1, ... 10, then back to 0.
 import torch
-from zrth import Module, Term, Wire, BitVec, BV, Var, X
+from reactor import Module, Term, Wire, BitVec, BV, Var, X
 
 
 def module() -> Module:
@@ -1315,5 +1315,5 @@ Build completed successfully (3473 jobs).
 | `--hammer-file PATH` | — | regenerate `ZerothHammer.lean` alone |
 
 Related reading: [`verith_gym.md`](verith_gym.md) for a gymnasium environment
-worked through in integer arithmetic, and `python/zrth/lean/README.md` for
+worked through in integer arithmetic, and `python/reactor/lean/README.md` for
 the pipeline's own documentation.

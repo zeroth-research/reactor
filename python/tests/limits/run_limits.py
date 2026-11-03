@@ -62,7 +62,7 @@ WORK.mkdir(parents=True, exist_ok=True)
 
 sys.path.insert(0, str(SP))
 from cases import CASES  # noqa: E402
-from zrth.lean.inputs import to_surface  # noqa: E402
+from reactor.lean.inputs import to_surface  # noqa: E402
 
 DEFAULT_TIMEOUT = 900
 

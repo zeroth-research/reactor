@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 import torch
 
-from zrth import X
-from zrth.eval import execute_init, execute_update
-from zrth.smv import SMVRefused, parse_smv
+from reactor import X
+from reactor.eval import execute_init, execute_update
+from reactor.smv import SMVRefused, parse_smv
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 
@@ -236,7 +236,7 @@ def test_hrm_is_refused_for_its_free_variables():
 
 
 def test_a_model_without_words_is_lia():
-    from zrth import Bool, Int
+    from reactor import Bool, Int
 
     text = (FIXTURES / "mod10.smv").read_text()
     module, names = parse_smv(text, strict=True)
@@ -249,8 +249,8 @@ def test_a_model_without_words_is_lia():
 
 
 def test_mod10_has_a_lean_form():
-    from zrth.lean.codegen.context import LeanContext
-    from zrth.lean.codegen.terms import lean_gaps
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.codegen.terms import lean_gaps
 
     module, _ = parse_smv((FIXTURES / "mod10.smv").read_text(), strict=True)
     assert lean_gaps(LeanContext(module)) == []
@@ -295,8 +295,8 @@ def test_a_wire_does_not_take_the_sign_of_a_dead_one():
     is allocated at the same address: keyed by `id()`, it was signed too."""
     from lark import Token, Tree
 
-    from zrth import BitVec, Wire
-    from zrth.smv.parser import _Lowerer
+    from reactor import BitVec, Wire
+    from reactor.smv.parser import _Lowerer
 
     low = _Lowerer({}, {}, {}, {}, strict=True)
     sort = BitVec(4, [1, 1])

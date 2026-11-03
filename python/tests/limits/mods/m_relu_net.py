@@ -4,7 +4,7 @@ state is a 2-vector; the step is W2 @ relu(W1 @ s + b1) + b2 with a countdown
 embedded in the first component.
 """
 import torch
-from zrth import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, LIA, Var, X
 
 
 def module() -> Module:

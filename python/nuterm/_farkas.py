@@ -45,7 +45,7 @@ from math import gcd, lcm
 
 import numpy as np
 import z3
-from zrth import Int, X
+from reactor import Int, X
 
 from ._nodes import ModeKind, Op, Unsupported, free_symbols, node_view
 from ._property import Safety

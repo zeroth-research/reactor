@@ -1,4 +1,4 @@
-"""The `--infer nuterm` route (`zrth.lean.infer.nuterm.engine`).
+"""The `--infer nuterm` route (`reactor.lean.infer.nuterm.engine`).
 
 What the route promises is that the certificate it returns has already been
 proved, so the tests that matter put its output to verith's *own* obligations
@@ -14,21 +14,21 @@ import numpy as np
 import pytest
 import torch
 
-from zrth import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
-from zrth.analyzer import convert_method
-from zrth.sugar import ite
-from zrth.lean.core.certificate import Claim
-from zrth.lean.core.errors import Refused
-from zrth.lean.infer.nuterm.engine import (
+from reactor import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
+from reactor.analyzer import convert_method
+from reactor.sugar import ite
+from reactor.lean.core.certificate import Claim
+from reactor.lean.core.errors import Refused
+from reactor.lean.infer.nuterm.engine import (
     NutermEngine,
     _parse_property,
     _prune,
     _smt_ranking,
     _smt_term,
 )
-from zrth.lean.smt.script import smt_int
-from zrth.lean.smt.limits import SmtBudget
-from zrth.lean.smt.precheck import Status, pre_check
+from reactor.lean.smt.script import smt_int
+from reactor.lean.smt.limits import SmtBudget
+from reactor.lean.smt.precheck import Status, pre_check
 
 pytest.importorskip("cvc5")
 
@@ -67,7 +67,7 @@ def _real_counter() -> Module:
         return old_x + 1.0
 
     state = Var(Real([1, 1]))
-    from zrth import LRA
+    from reactor import LRA
     return Module.sequential(
         [state],
         convert_method(init, {}, [X(state)], theory=LRA),
@@ -127,10 +127,10 @@ def test_the_route_leaves_its_answer_where_the_next_run_resumes_from(tmp_path):
     model again."""
     from types import SimpleNamespace
 
-    from zrth.lean.artifacts import ArtifactStore
-    from zrth.lean.core.certificate import Certificate
-    from zrth.lean.infer import FIXABLE
-    from zrth.lean.infer.nuterm import ROUTE
+    from reactor.lean.artifacts import ArtifactStore
+    from reactor.lean.core.certificate import Certificate
+    from reactor.lean.infer import FIXABLE
+    from reactor.lean.infer.nuterm import ROUTE
 
     store = ArtifactStore(dir=tmp_path / "artifacts", producer="nuterm")
     inp = SimpleNamespace(
@@ -306,7 +306,7 @@ def test_the_conjuncts_are_seeded_one_by_one():
     """A conjunction seeded whole survives only if all of it is inductive.
     Split, the half that is keeps working -- here `0 <= x` survives while the
     precondition's other half, about an input nothing preserves, does not."""
-    from zrth.lean.infer.nuterm.engine import _conjuncts
+    from reactor.lean.infer.nuterm.engine import _conjuncts
     import z3
     a, b = z3.Int("a"), z3.Int("b")
     assert _conjuncts(z3.And(a >= 0, b >= 0)) == [a >= 0, b >= 0]

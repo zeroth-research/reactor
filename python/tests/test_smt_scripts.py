@@ -3,7 +3,7 @@
 `--infer houdini` on Vampire, `--infer vampire` and the modes' z3 round
 each print a script from cvc5 terms. A change to how one is printed is a
 change to the question the prover answers, so the text is compared with the
-snapshots under `tests/golden/scripts/`; set `ZRTH_UPDATE_GOLDEN=1` to
+snapshots under `tests/golden/scripts/`; set `REACTOR_UPDATE_GOLDEN=1` to
 rewrite them, and only for a change that is intended. Nothing here runs a
 prover. The obligation files `--pre-check` leaves are pinned by
 `test_pipeline_golden.py`.
@@ -17,15 +17,15 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.core.certificate import Claim
-from zrth.lean.inputs.python import load_module
+from reactor.lean.core.certificate import Claim
+from reactor.lean.inputs.python import load_module
 
 pytest.importorskip("cvc5")
 
 GOLDEN = Path(__file__).parent / "golden" / "scripts"
 LIMITS = Path(__file__).parent / "limits" / "mods"
 HYBRID = Path(__file__).parent / "bench_matrix" / "hybrid"
-UPDATE = os.environ.get("ZRTH_UPDATE_GOLDEN") == "1"
+UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
 
 
 def _check(name: str, text: str) -> None:
@@ -34,7 +34,7 @@ def _check(name: str, text: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
         return
-    assert path.exists(), f"no snapshot {path}; run with ZRTH_UPDATE_GOLDEN=1"
+    assert path.exists(), f"no snapshot {path}; run with REACTOR_UPDATE_GOLDEN=1"
     assert text == path.read_text(), f"{name} differs from its snapshot"
 
 
@@ -43,8 +43,8 @@ def _module(path: Path):
 
 
 def _context(path: Path, kind: str, prp: str, route: str):
-    from zrth.lean.smt.obligations import Obligations
-    from zrth.lean.smt.claim import SynthContext
+    from reactor.lean.smt.obligations import Obligations
+    from reactor.lean.smt.claim import SynthContext
 
     ctx = SynthContext.build(_module(path), Claim(prp=prp, kind=kind),
                              route=route,
@@ -53,7 +53,7 @@ def _context(path: Path, kind: str, prp: str, route: str):
 
 
 def _candidates(ctx, srcs):
-    from zrth.lean.smt.obligations import Candidate
+    from reactor.lean.smt.obligations import Candidate
 
     return [Candidate(s, ctx.env.parse_expr(s)) for s in srcs]
 
@@ -81,7 +81,7 @@ HOUDINI = [
                          ids=[c[0] for c in HOUDINI])
 def test_houdini_vampire_scripts_are_unchanged(name, path, kind, prp, facts,
                                                rank):
-    from zrth.lean.smt.solvers import VampireSolver
+    from reactor.lean.smt.solvers import VampireSolver
 
     ctx, ob = _context(path, kind, prp, "houdini")
     kept = _candidates(ctx, facts)
@@ -116,9 +116,9 @@ VAMPIRE = [
                          ids=[c[0] for c in VAMPIRE])
 def test_vampire_conjectures_are_unchanged(name, path, kind, prp, which,
                                            fixed):
-    from zrth.lean.infer.vampire.branches import split
-    from zrth.lean.infer.vampire.question import Question
-    from zrth.lean.infer.vampire.template import template
+    from reactor.lean.infer.vampire.branches import split
+    from reactor.lean.infer.vampire.question import Question
+    from reactor.lean.infer.vampire.template import template
 
     ctx, ob = _context(path, kind, prp, "vampire")
     q = Question(ctx, ob, split(ctx, ob.init, "the initial state"),
@@ -145,7 +145,7 @@ MODES = [
 @pytest.mark.parametrize("name,path,prp", MODES, ids=[c[0] for c in MODES])
 def test_the_round_z3_reads_is_unchanged(name, path, prp, monkeypatch):
     z3 = pytest.importorskip("z3")
-    from zrth.lean.infer.houdini import modes
+    from reactor.lean.infer.houdini import modes
 
     ctx, ob = _context(path, "buchi", prp, "houdini")
     read = []
@@ -176,13 +176,13 @@ def test_the_round_z3_reads_is_unchanged(name, path, prp, monkeypatch):
     ([1, 0, 2], -1, "(+ (- 1) s0 (* 2 s2))"),       # a zero coefficient drops
 ])
 def test_an_affine_row_prints_as_one_term(coeffs, const, want):
-    from zrth.lean.smt.script import affine_smt
+    from reactor.lean.smt.script import affine_smt
 
     assert affine_smt(const, coeffs, ["s0", "s1", "s2"][:len(coeffs)]) == want
 
 
 def test_an_affine_form_over_the_reals_writes_its_literals_as_decimals():
-    from zrth.lean.smt.script import affine_smt, smt_real
+    from reactor.lean.smt.script import affine_smt, smt_real
 
     assert affine_smt(1, [2, 1], ["x", "y"], lit=smt_real) == \
         "(+ 1.0 (* 2.0 x) y)"
@@ -191,7 +191,7 @@ def test_an_affine_form_over_the_reals_writes_its_literals_as_decimals():
 def test_the_same_fact_twice_is_one_conjunct():
     """A property seeded as a candidate that the lattice also proposes survives
     as both, and the certificate should carry it once."""
-    from zrth.lean.smt.script import conjunction_smt
+    from reactor.lean.smt.script import conjunction_smt
 
     assert conjunction_smt(["(<= s0 100)", "(>= s0 0)", "(<= s0 100)"]) == \
         "(and (<= s0 100) (>= s0 0))"
