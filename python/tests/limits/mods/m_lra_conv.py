@@ -10,7 +10,7 @@ cycle, and the product of their ranges admits a run that never reaches the
 property, which makes the Buchi obligation false for *any* ranking.)
 """
 import torch
-from zrth import Module, Term, Wire, Real, Bool, LRA, Var, X
+from reactor import Module, Term, Wire, Real, Bool, LRA, Var, X
 
 
 def module() -> Module:

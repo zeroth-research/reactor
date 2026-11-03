@@ -23,8 +23,8 @@ invariant that does not relate c1 and c2 to the rod states cannot see it.
 
 state: s0 = T, s1 = c1, s2 = c2 (Real), s3 = r1, s4 = r2, s5 = down (Bool)
 """
-from zrth import Bool, LRA, Module, Real, Var, sugar
-from zrth.sugar import expr, ite
+from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor.sugar import expr, ite
 
 REAL = Real([1, 1])
 BOOL = Bool([1, 1])

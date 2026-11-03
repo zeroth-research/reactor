@@ -1,6 +1,6 @@
 """32-wide state, countdown in slot 0 — the scaling case."""
 import torch
-from zrth import Module, Term, Wire, Int, Bool, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Bool, LIA, Var, X
 
 N = 32
 

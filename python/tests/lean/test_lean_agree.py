@@ -1,7 +1,7 @@
 """The Lean encoding takes the rounds the module takes.
 
 The Lean side of `tests/test_encodings_agree.py`: the same corpus and runs,
-held to the same reference, `zrth.eval`. Each module's functional encoding
+held to the same reference, `reactor.eval`. Each module's functional encoding
 -- the `init`/`update` every certificate is a theorem about -- is `#eval`ed
 at each round's state and inputs, and has to print what the interpreter
 computed. With the SMT side held to that reference too, the two encodings
@@ -95,7 +95,7 @@ def test_the_lean_encoding_takes_the_rounds_the_module_takes(
 def test_a_wrong_lean_emitter_is_caught(tmp_path, sync_core_templates, monkeypatch):
     """The check can fail: with `Sub`'s matrix emitter swapping its
     operands, the countdown's every `update` round prints something else."""
-    from zrth.lean.lowering import ops
+    from reactor.lean.lowering import ops
 
     for key, row in list(ops._BY_KEY.items()):
         if key[1] == "Sub":

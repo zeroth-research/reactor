@@ -1,6 +1,6 @@
 """LRA (Real) countdown without ReLU: x' = x - 1.0 while x > 0, else 5.0."""
 import torch
-from zrth import Module, Term, Wire, Real, Bool, LRA, Var, X
+from reactor import Module, Term, Wire, Real, Bool, LRA, Var, X
 
 
 def module() -> Module:

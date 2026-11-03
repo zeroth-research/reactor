@@ -34,7 +34,7 @@ _SCRIPT = """
 import hashlib, importlib, json, sys
 cases, encodings = json.loads(sys.argv[1])
 sys.path[:0] = sorted({c[0] for c in cases})
-from zrth.lean import ModuleToLean4
+from reactor.lean import ModuleToLean4
 
 out = {}
 for pkg, name in cases:

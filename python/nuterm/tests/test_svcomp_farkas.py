@@ -22,10 +22,10 @@ from nuterm import _farkas
 from nuterm._bench import INT
 from nuterm._termination import _v_module, compose, system_of
 from nuterm.tests._fixtures import candidate, loop_bench
-from zrth import LIA, Int, Module, Var, X, sugar
-from zrth.sugar import argmax as dsl_argmax
-from zrth.sugar import expr as dsl_expr
-from zrth.sugar import ite as dsl_ite
+from reactor import LIA, Int, Module, Var, X, sugar
+from reactor.sugar import argmax as dsl_argmax
+from reactor.sugar import expr as dsl_expr
+from reactor.sugar import ite as dsl_ite
 from nuterm._farkas import (certify, check_supported,
                                       decrease, inductive, lex_decrease,
                                       read_system)

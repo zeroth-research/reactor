@@ -1,6 +1,6 @@
 """LRA (Real) 1x1 with ReLU: x' = relu(x - 1.0), x0 = 5.0."""
 import torch
-from zrth import Module, Term, Wire, Real, LRA, Var, X
+from reactor import Module, Term, Wire, Real, LRA, Var, X
 
 
 def module() -> Module:

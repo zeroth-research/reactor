@@ -18,8 +18,8 @@ other room's temperature in the invariant.
 
 state: s0 = T1, s1 = T2 (Real), s2 = in2 (Bool)
 """
-from zrth import Bool, LRA, Module, Real, Var, sugar
-from zrth.sugar import expr, ite
+from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor.sugar import expr, ite
 
 REAL = Real([1, 1])
 

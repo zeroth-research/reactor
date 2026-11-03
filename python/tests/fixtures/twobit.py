@@ -4,7 +4,7 @@ BV<1> state: b0, b1 are bits of a 2-bit counter, enable is external input.
 Property: b0 = 0 ∧ b1 = 0 holds infinitely often (counter visits 00).
 """
 import torch
-from zrth import Wire, Term, Module, BitVec, BV, Var, X
+from reactor import Wire, Term, Module, BitVec, BV, Var, X
 
 
 def module() -> Module:

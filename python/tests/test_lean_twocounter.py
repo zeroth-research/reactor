@@ -1,11 +1,11 @@
 """Tests for the Module-to-Lean4 functional converter."""
 
 import torch
-from zrth import Wire, Term, Module, LIA, Bool, Var, X
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.project.scaffold import create_project
-from zrth.lean.proof.render import certificate_files, lean_certificate
-from zrth.lean.core.certificate import Certificate, Claim
+from reactor import Wire, Term, Module, LIA, Bool, Var, X
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.project.scaffold import create_project
+from reactor.lean.proof.render import certificate_files, lean_certificate
+from reactor.lean.core.certificate import Certificate, Claim
 
 from os.path import dirname
 from pathlib import Path

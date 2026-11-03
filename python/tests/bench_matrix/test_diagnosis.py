@@ -22,7 +22,7 @@ TRACEBACK = '''ANTHROPIC_API_KEY is set and takes precedence over the SDK's prof
 Traceback (most recent call last):
   File "/x/bin/verith", line 10, in <module>
     sys.exit(main())
-  File "/x/zrth/lean/magic_cegar.py", line 177, in infer
+  File "/x/reactor/lean/magic_cegar.py", line 177, in infer
     raise RuntimeError(
         f"CEGAR failed after {self.max_attempts} attempts."
     )

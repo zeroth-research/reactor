@@ -7,7 +7,7 @@ certificate only ever mentions slots 0 and 1. Isolates the cost of the
 s0' = relu(s0 - 1), s1' = relu(s1) + 1, si' = relu(si) elsewhere; init s0 = 6.
 """
 import torch
-from zrth import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, LIA, Var, X
 
 N = 16
 

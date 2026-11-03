@@ -35,8 +35,8 @@ invariant.
 state:  s0 = v (Real), s1 = m1, s2 = m2 (Bool)
 inputs: e0 = r (Real), the drain's rate this tick
 """
-from zrth import Bool, LRA, Module, Real, Var, sugar
-from zrth.sugar import X, expr, ite
+from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor.sugar import X, expr, ite
 
 REAL = Real([1, 1])
 

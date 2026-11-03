@@ -4,7 +4,7 @@ Sound only under a precondition `e >= 1`; without it the ranking does not
 decrease. Used twice, with and without `--pre`.
 """
 import torch
-from zrth import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, LIA, Var, X
 
 
 def module() -> Module:

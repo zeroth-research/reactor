@@ -16,8 +16,8 @@ tensor holding it *is* the constant the certificate reasons about.
 
 state: s0 = T (Real), s1 = on (Bool)
 """
-from zrth import Bool, LRA, Module, Real, Var, sugar
-from zrth.sugar import ite
+from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor.sugar import ite
 
 
 class Thermostat(sugar.Module):

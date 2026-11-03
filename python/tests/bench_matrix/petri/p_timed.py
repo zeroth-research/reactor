@@ -27,8 +27,8 @@ working` holds only because the firing is urgent.
 state:  s0 = c (Real), s1 = working (Bool)
 inputs: e0 = dt (Real), e1 = go (Bool)
 """
-from zrth import Bool, LRA, Module, Real, Var, sugar
-from zrth.sugar import X, expr, ite
+from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor.sugar import X, expr, ite
 
 REAL = Real([1, 1])
 EARLIEST, LATEST = 2.0, 5.0

@@ -22,7 +22,7 @@ from nuterm._farkas import certify, inductive
 from nuterm._invariants import as_predicates
 from nuterm._property import Safety
 from nuterm._termination import compose, system_of, terminates
-from zrth import LIA, Var, sugar
+from reactor import LIA, Var, sugar
 
 
 @dataclass
@@ -53,7 +53,7 @@ def candidate(bench, layers, delta=1.0, invariants=()) -> Cand:
 def _of_arity(spec, params):
     """``spec`` as a block method of ``params`` variables.
 
-    :class:`zrth.sugar.Module` binds each variable to its own parameter and checks
+    :class:`reactor.sugar.Module` binds each variable to its own parameter and checks
     the count, which a fixture whose width is the caller's choice cannot write out
     — so the wrapper declares the signature it is being checked against, and the
     spec still sees the state as one value or one tuple."""

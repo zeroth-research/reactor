@@ -4,7 +4,7 @@ Boolean state: b0, b1 are bits of a 2-bit counter, enable is external input.
 Property: b0 = False ∧ b1 = False holds infinitely often (counter visits 00).
 """
 import torch
-from zrth import Wire, Term, Module, Bool, LIA, Var, X
+from reactor import Wire, Term, Module, Bool, LIA, Var, X
 
 
 def module() -> Module:

@@ -8,8 +8,8 @@ Python semantics:
 Invariant: 0 <= x <= y and y == 10
 Ranking: y - x (when x != y)
 """
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

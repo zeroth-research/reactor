@@ -14,8 +14,8 @@ even branch and x+1 is always even.
 Invariant: 1 <= x <= 8
 Ranking: x - 1 (when x != 1)
 """
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

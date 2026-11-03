@@ -3,7 +3,7 @@
 Two layers: the codegen entry points on a fixed set of modules and
 predicates, and whole in-process `verith` runs (stdout, the two certificate
 files, `artifacts/index.json`). Both are compared with the snapshots under
-`tests/golden/pipeline/`; set `ZRTH_UPDATE_GOLDEN=1` to rewrite them, and
+`tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to rewrite them, and
 only for a change to the output that is intended.
 
 No run reaches an LLM: `make_client` is replaced in both modules that build
@@ -21,22 +21,22 @@ from pathlib import Path
 import pytest
 import torch
 
-from zrth import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from zrth.lean.proof.render import (
+from reactor import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
+from reactor.lean.proof.render import (
     generate_certificate_lean,
     generate_data_lean,
     generate_standalone_cert_lean,
 )
-from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.smt.precheck import predicate_terms
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.inputs.python import load_module
+from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor.lean.smt.precheck import predicate_terms
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.inputs.python import load_module
 
 pytest.importorskip("cvc5")
 
 GOLDEN = Path(__file__).parent / "golden" / "pipeline"
 FIXTURES = Path(__file__).parent / "fixtures"
-UPDATE = os.environ.get("ZRTH_UPDATE_GOLDEN") == "1"
+UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
 
 
 def _check(name: str, text: str) -> None:
@@ -45,7 +45,7 @@ def _check(name: str, text: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
         return
-    assert path.exists(), f"no snapshot {path}; run with ZRTH_UPDATE_GOLDEN=1"
+    assert path.exists(), f"no snapshot {path}; run with REACTOR_UPDATE_GOLDEN=1"
     assert text == path.read_text(), f"{name} differs from its snapshot"
 
 
@@ -151,9 +151,9 @@ CODEGEN = [
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
-    from zrth.lean.proof.render import prepare
-    from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.proof.facts import solver_hints
+    from reactor.lean.proof.render import prepare
+    from reactor.lean.smt.limits import SmtBudget
+    from reactor.lean.proof.facts import solver_hints
 
     lean = None
     if claim is not None:
@@ -272,8 +272,8 @@ ENCODINGS = {
 
 
 def _has_vampire() -> bool:
-    from zrth.lean.core.errors import Refused
-    from zrth.lean.smt.vampire import resolve_vampire
+    from reactor.lean.core.errors import Refused
+    from reactor.lean.smt.vampire import resolve_vampire
 
     try:
         resolve_vampire(None)
@@ -296,8 +296,8 @@ def _runs() -> list:
 
 def _offline(monkeypatch) -> None:
     """Both LLM routes answer from `_AI_REPLIES` and never open a client."""
-    from zrth.lean.infer.ai import engine as ai
-    from zrth.lean.infer.ai_cegis import engine as cegis
+    from reactor.lean.infer.ai import engine as ai
+    from reactor.lean.infer.ai_cegis import engine as cegis
 
     def client(base_url, model):
         def chat(system: str, user: str) -> str:
@@ -337,7 +337,7 @@ def _index(path: Path) -> str:
 
 
 def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
-    from zrth.lean.pipeline import main
+    from reactor.lean.pipeline import main
 
     out = tmp_path / "out"
     argv = [a.replace("{out}", str(out)) for a in args]
@@ -381,7 +381,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
 
 def _count_encodings(monkeypatch) -> list:
     """Counts each `ModuleSMT` built from here on, in a one-element list."""
-    from zrth.lean.smt.module import ModuleSMT
+    from reactor.lean.smt.module import ModuleSMT
 
     built = [0]
     post_init = ModuleSMT.__post_init__

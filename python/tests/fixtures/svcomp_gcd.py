@@ -9,8 +9,8 @@ Python semantics:
 Invariant: a >= 1 and b >= 1
 Ranking: a + b - 2 (when a != b; decreases because we subtract the smaller)
 """
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

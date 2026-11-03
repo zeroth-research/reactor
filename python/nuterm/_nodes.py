@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import z3
 
-from zrth import z3 as zz3
+from reactor import z3 as zz3
 
 @dataclass(frozen=True)
 class ModeKind:
@@ -106,7 +106,7 @@ def _eval(term, reads, ops):
     name — the procedure says what it understands, and anything else stops here
     rather than being evaluated away or surfacing as a backend error.
 
-    :mod:`zrth.z3` speaks in 2-D arrays, one per wire, because a wire carries a
+    :mod:`reactor.z3` speaks in 2-D arrays, one per wire, because a wire carries a
     tensor. Every wire this procedure reads is a scalar (:func:`._farkas.read_system`
     refuses the rest), so a value is wrapped into its 1x1 array on the way in and
     read back out of one on the way out, and the maps here hold plain expressions."""

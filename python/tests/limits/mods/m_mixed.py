@@ -3,7 +3,7 @@
 x accumulates v[0]; v counts (1,2,3) down on its head and resets at 0.
 """
 import torch
-from zrth import Module, Term, Wire, Int, Bool, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Bool, LIA, Var, X
 
 
 def module() -> Module:

@@ -35,7 +35,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from probes import PROBES, REJECTED  # noqa: E402
-from zrth.lean.inputs import to_surface  # noqa: E402
+from reactor.lean.inputs import to_surface  # noqa: E402
 
 
 def _run(cmd, timeout):
@@ -116,9 +116,9 @@ def screen(opts) -> int:
     """Which modules the NA encoding refuses, and whether it is still the
     same set.  Needs no Lean, no ic3ia and no lean-ltl-certifying."""
     sys.path.insert(0, str(Path(opts.mods).resolve()))
-    from zrth.lean.codegen.context import LeanContext
-    from zrth.lean.inputs.python import load_module
-    from zrth.lean.infer.fbk_proveit.na import NAUnsupported, check_na_supported
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.inputs.python import load_module
+    from reactor.lean.infer.fbk_proveit.na import NAUnsupported, check_na_supported
 
     accepted, rejected, surprises = [], {}, []
     for path in sorted(Path(opts.mods).glob("m_*.py")):
@@ -174,7 +174,7 @@ def main() -> int:
     # The same resolution `verith` does, so that the separate `proveit.py -c`
     # invocation below accepts a build *directory* too -- otherwise it fails
     # there with no `error:` line and the probe looks like a Lean failure.
-    from zrth.lean.infer.fbk_proveit.engine import ProveItError, resolve_ic3ia
+    from reactor.lean.infer.fbk_proveit.engine import ProveItError, resolve_ic3ia
     try:
         opts.ic3ia = resolve_ic3ia(opts.ic3ia)
     except ProveItError as e:

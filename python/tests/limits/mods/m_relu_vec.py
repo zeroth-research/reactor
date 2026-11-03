@@ -1,6 +1,6 @@
 """LIA 3-vector with element-wise ReLU: v' = relu(v - 1), v0 = (3, 2, 1)."""
 import torch
-from zrth import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, LIA, Var, X
 
 
 def module() -> Module:

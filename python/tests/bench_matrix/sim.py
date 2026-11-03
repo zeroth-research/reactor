@@ -6,7 +6,7 @@ property fails. For the four original suites that field is transcribed from
 something that already paid for it -- an fbk probe's `expect`, a benchmark's
 own Houdini invariant. The `hybrid` and `petri` suites have no such upstream,
 so their `truth` is checked here instead, by stepping the module through
-`zrth.eval` and looking at the states it actually visits.
+`reactor.eval` and looking at the states it actually visits.
 
 What that buys is one-sided and the asymmetry matters:
 
@@ -54,9 +54,9 @@ from dataclasses import dataclass, field
 import torch
 import z3
 
-from zrth import X
-from zrth.eval import execute_init, execute_update
-from zrth.sort import Bool, Int, Real
+from reactor import X
+from reactor.eval import execute_init, execute_update
+from reactor.sort import Bool, Int, Real
 
 # Defaults sized for `just py-test`: deep enough to reach every counterexample
 # the `fails` rows name -- the deepest is at tick 115 -- and short enough that
