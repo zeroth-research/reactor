@@ -176,9 +176,9 @@ set_option maxHeartbeats 2000000
 
 /- Concrete constants -/
 
-@[simp] def c0 : (Mat Real 1 1) := fun _ _ => (5 : Real)
+@[simp] noncomputable def c0 : (Mat Real 1 1) := fun _ _ => (5 : Real)
 
-@[simp] def c1 : (Mat Real 1 1) := fun _ _ => (1 : Real)
+@[simp] noncomputable def c1 : (Mat Real 1 1) := fun _ _ => (1 : Real)
 
 
 @[simp] noncomputable def init (extl_n: Unit) : (Mat Real 1 1) :=
