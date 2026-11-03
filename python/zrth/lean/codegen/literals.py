@@ -101,17 +101,22 @@ def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
           match i, j with
           | 0, 0 => 0 | 0, 1 => 1
           ...
+
+    A Real one is `noncomputable`: `lean_real` writes `1.5` as
+    `((3 : Real) / 2)`, and Lean cannot compile a definition that divides
+    Reals.
     """
     shape = wire_shape(wire)
+    noncomp = "noncomputable " if isinstance(wire.dtype, Real) else ""
 
     if shape.is_scalar:
         val = lean_literal(wire.dtype, tensor.item())
         ty = dtype_to_lean_type(wire)
         assert "Mat" in ty and " 1 1" in ty, ty
-        return f"@[simp] def {name} : {ty} := fun _ _ => {val}\n"
+        return f"@[simp] {noncomp}def {name} : {ty} := fun _ _ => {val}\n"
 
     # Matrix constant
-    lines = [f"@[simp] def {name} : {dtype_to_lean_type(wire)} := fun i j =>"]
+    lines = [f"@[simp] {noncomp}def {name} : {dtype_to_lean_type(wire)} := fun i j =>"]
     lines.append("  match i, j with")
 
     data = tensor.reshape(shape.m, shape.n)
