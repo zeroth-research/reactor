@@ -7,7 +7,7 @@ These Terms are what the fixed builder would produce (`LIA.Bool`).
 b toggles between "counting up" and "counting down"; x walks 0..5..0.
 """
 import torch
-from zrth import Module, Term, Wire, Int, Bool, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Bool, LIA, Var, X
 
 
 def module() -> Module:

@@ -21,17 +21,17 @@ from pathlib import Path
 import pytest
 import torch
 
-from zrth import Module, Wire, Term, LIA, LRA, Int, Real, Bool, Var, X
-from zrth.analyzer import convert_method
-from zrth.lean.project.scaffold import generate_zeroth_hammer_lean
-from zrth.lean.proof.render import (
+from reactor import Module, Wire, Term, LIA, LRA, Int, Real, Bool, Var, X
+from reactor.analyzer import convert_method
+from reactor.lean.project.scaffold import generate_zeroth_hammer_lean
+from reactor.lean.proof.render import (
     generate_standalone_cert_lean,
     lean_certificate,
 )
-from zrth.lean.core.certificate import Certificate, Claim
-from zrth.lean.project.names import LINTERS_OFF
-from zrth.lean.project.scaffold import CORE_FILES, TEMPLATE_DIR
-from zrth.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
+from reactor.lean.core.certificate import Certificate, Claim
+from reactor.lean.project.names import LINTERS_OFF
+from reactor.lean.project.scaffold import CORE_FILES, TEMPLATE_DIR
+from reactor.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 
 _LEAN_DIR = Path(__file__).parent
 _CORE_DIR = _LEAN_DIR / "Core"
@@ -406,7 +406,7 @@ def generate_lean_files(sync_core_templates) -> None:
     # output asks. The route proves the obligations before emitting them, so
     # a failure here is the Lean side, not the certificate.
     try:
-        from zrth.lean.infer.nuterm.engine import NutermEngine
+        from reactor.lean.infer.nuterm.engine import NutermEngine
     except ImportError:
         pass
     else:
@@ -431,7 +431,7 @@ def generate_lean_files(sync_core_templates) -> None:
     # System/Scalar.lean). The `_scalar_eq` theorems only elaborate if the
     # flattening lines up, and no certificate carries a Scalar section, so
     # this is the only thing that compiles them.
-    from zrth.lean.codegen.encodings import ModuleToLean4
+    from reactor.lean.codegen.encodings import ModuleToLean4
 
     for name, make_module in _SCALAR_ENC_SPECS:
         t = ModuleToLean4(make_module())
@@ -482,11 +482,11 @@ def generate_lean_files(sync_core_templates) -> None:
     # inlining all of them in the order the project has them is the same
     # elaboration problem, and it runs in this warm build instead of a cold
     # `lake update` per case.
-    from zrth.lean.proof.render import generate_data_lean
-    from zrth.lean.codegen.context import LeanContext
-    from zrth.lean.infer.fbk_proveit.engine import property_to_bool_lean
-    from zrth.lean.infer.fbk_proveit.na import atom_to_lean_na
-    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+    from reactor.lean.proof.render import generate_data_lean
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.infer.fbk_proveit.engine import property_to_bool_lean
+    from reactor.lean.infer.fbk_proveit.na import atom_to_lean_na
+    from reactor.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     def _strip(src: str) -> str:
         out, in_doc = [], False

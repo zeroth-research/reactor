@@ -1,9 +1,9 @@
 """Random runs of a module, and what its encodings say about them.
 
-The reference is `zrth.eval`: the interpreter `zrth.gym` runs a module with.
+The reference is `reactor.eval`: the interpreter `reactor.gym` runs a module with.
 A run draws each round's awaited inputs at random; the rounds are
 `execute_init` and then `execute_update`, with the next wires latched in
-between, exactly as `zrth.gym` steps a module. An encoding is then asked
+between, exactly as `reactor.gym` steps a module. An encoding is then asked
 about each round *from the reference's own state*, so a disagreement is
 reported at the round it happens in and does not compound.
 
@@ -18,9 +18,9 @@ from pathlib import Path
 
 import torch
 
-from zrth import Bool, BitVec, Int, Real, X
-from zrth.eval import execute_init, execute_update
-from zrth.lean.lowering.sorts import wire_shape
+from reactor import Bool, BitVec, Int, Real, X
+from reactor.eval import execute_init, execute_update
+from reactor.lean.lowering.sorts import wire_shape
 
 TESTS = Path(__file__).parent
 
@@ -41,7 +41,7 @@ def _corpus() -> dict:
     """Name -> a function building the module: loaded the way `verith`
     loads a Python input, so a fixture returning a `Named` module is the
     module it names."""
-    from zrth.lean.inputs.python import load_module as _load
+    from reactor.lean.inputs.python import load_module as _load
 
     out = {}
     for p in sorted((TESTS / "limits" / "mods").glob("m_*.py")):
@@ -61,7 +61,7 @@ def _corpus() -> dict:
 def _one_op(op, ins: list, out) -> object:
     """A module whose one variable is `op` of fresh inputs, every round: so
     each round asks the op alone, at random arguments."""
-    from zrth import Module, Term, Var
+    from reactor import Module, Term, Var
 
     es = [Var(s) for s in ins]
     x = Var(out)
@@ -73,7 +73,7 @@ def _ops() -> dict:
     """One-op modules for every op the corpus never reaches but some
     encoding encodes, so that each encoded op is held to the interpreter.
     BV at width 4, where a random draw is negative as often as not."""
-    from zrth import BV, LIA, LRA
+    from reactor import BV, LIA, LRA
 
     bv, bv1 = BitVec(4, [1, 1]), BitVec(1, [1, 1])
     real, boolean = Real([1, 1]), Bool([1, 1])
@@ -109,7 +109,7 @@ CORPUS = {**_corpus(), **_ops()}
 
 
 def _draw(wire, rng: random.Random) -> torch.Tensor:
-    """A random value for `wire`, shaped as `zrth.eval` keeps it."""
+    """A random value for `wire`, shaped as `reactor.eval` keeps it."""
     dt, shape = wire.dtype, wire_shape(wire)
     if isinstance(dt, Bool):
         vals, kind = [rng.random() < 0.5 for _ in range(shape.total)], torch.bool
@@ -188,9 +188,9 @@ def _lean_value(wire, tensor) -> str:
     """`tensor` as a Lean `Mat` literal of `wire`'s sort, in the form the
     encoding prints its own constants in
     (`lowering.elements.mat_from_scalars`)."""
-    from zrth.lean.lowering.elements import mat_from_scalars
-    from zrth.lean.codegen.literals import lean_literal
-    from zrth.lean.lowering.sorts import flat_element_type
+    from reactor.lean.lowering.elements import mat_from_scalars
+    from reactor.lean.codegen.literals import lean_literal
+    from reactor.lean.lowering.sorts import flat_element_type
 
     elems = [lean_literal(wire.dtype, v) for v in flat(wire, tensor)]
     return mat_from_scalars(elems, wire_shape(wire), flat_element_type(wire))
@@ -215,10 +215,10 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     row-major. Raises `Skip` for a module Lean cannot run: a Real is
     noncomputable, and a module with no Lean form has nothing to run.
     """
-    from zrth.lean.lowering.elements import flat_layout
-    from zrth.lean.codegen.context import LeanContext
-    from zrth.lean.codegen.terms import build_tuple, lean_gaps
-    from zrth.lean.codegen.encodings import ModuleToLean4
+    from reactor.lean.lowering.elements import flat_layout
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.codegen.terms import build_tuple, lean_gaps
+    from reactor.lean.codegen.encodings import ModuleToLean4
 
     wires = list(module.ctrl) + list(module.extl)
     if any(isinstance(w.dtype, Real) for w in wires):

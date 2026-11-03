@@ -2,12 +2,12 @@
 
 import pytest
 import torch
-from zrth import Wire, Term, Module, Sort as dt, LIA as it, Bool, Int
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.project.scaffold import create_project
-from zrth.lean.proof.render import certificate_files
+from reactor import Wire, Term, Module, Sort as dt, LIA as it, Bool, Int
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.project.scaffold import create_project
+from reactor.lean.proof.render import certificate_files
 
-from zrth.expr import Expr, Bool as BoolConst
+from reactor.expr import Expr, Bool as BoolConst
 
 from os.path import dirname
 from pathlib import Path

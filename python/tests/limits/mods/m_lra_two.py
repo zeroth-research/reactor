@@ -4,7 +4,7 @@ Two independent components, so an invariant over it is naturally a conjunction
 of disjunctions — the shape a single `constructor <;> linarith` cannot close.
 """
 import torch
-from zrth import Module, Term, Wire, Real, Bool, LRA, Var, X
+from reactor import Module, Term, Wire, Real, Bool, LRA, Var, X
 
 
 def module() -> Module:

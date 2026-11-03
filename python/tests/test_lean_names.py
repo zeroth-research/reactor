@@ -1,17 +1,17 @@
-"""`zrth.lean.project.names` is what the project is written under: every
+"""`reactor.lean.project.names` is what the project is written under: every
 module the generated Lean imports from the project, the bridge's
 included, is a file the project has."""
 
 import re
 from pathlib import Path
 
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.inputs.python import load_module
-from zrth.lean.project.names import CERT_LIB, SYSTEM_LAYOUT
-from zrth.lean.project.scaffold import create_project
-from zrth.lean.proof.render import certificate_files
-from zrth.lean.infer.fbk_proveit.na import check_na_supported
-from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.inputs.python import load_module
+from reactor.lean.project.names import CERT_LIB, SYSTEM_LAYOUT
+from reactor.lean.project.scaffold import create_project
+from reactor.lean.proof.render import certificate_files
+from reactor.lean.infer.fbk_proveit.na import check_na_supported
+from reactor.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

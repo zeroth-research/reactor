@@ -2,11 +2,11 @@
 
 The package is layered. `LAYERS` names the modules of each layer and the
 layers it may import besides itself, and a module imports nothing else of
-`zrth.lean`. An import under `if TYPE_CHECKING:` is exempt: it names a type
+`reactor.lean`. An import under `if TYPE_CHECKING:` is exempt: it names a type
 for the reader and loads nothing.
 
 And a name with a leading underscore is its module's own: no module of
-`zrth.lean` imports one from another, nor reads one off an imported module.
+`reactor.lean` imports one from another, nor reads one off an imported module.
 A name another module needs is part of its module's interface, and is
 spelled without the underscore.
 """
@@ -22,13 +22,13 @@ from typing import NamedTuple
 
 import pytest
 
-LEAN = Path(__file__).parent.parent / "zrth" / "lean"
+LEAN = Path(__file__).parent.parent / "reactor" / "lean"
 INFER = LEAN / "infer"
 
 # Every module of the package.
 PACKAGE = sorted(LEAN.rglob("*.py"))
 
-# Each layer is the package `zrth.lean.<layer>` and everything under it, and
+# Each layer is the package `reactor.lean.<layer>` and everything under it, and
 # maps to the layers it may import besides itself. A module no layer names
 # is not checked, but a checked module may import it only through a layer.
 LAYERS: dict[str, frozenset[str]] = {
@@ -61,19 +61,19 @@ def _tree(path: Path) -> ast.Module:
 
 
 def _module(path: Path) -> str:
-    """`path` as a dotted module name: `zrth.lean.infer.houdini.engine`."""
+    """`path` as a dotted module name: `reactor.lean.infer.houdini.engine`."""
     parts = path.relative_to(LEAN.parent).with_suffix("").parts
     if parts[-1] == "__init__":
         parts = parts[:-1]
-    return ".".join(["zrth", *parts])
+    return ".".join(["reactor", *parts])
 
 
 MODULES = {_module(p) for p in PACKAGE}
 
 
 def _package(path: Path) -> list[str]:
-    """`path`'s package as a dotted list: `["zrth", "lean", "infer"]`."""
-    return ["zrth", *path.parent.relative_to(LEAN.parent).parts]
+    """`path`'s package as a dotted list: `["reactor", "lean", "infer"]`."""
+    return ["reactor", *path.parent.relative_to(LEAN.parent).parts]
 
 
 class Import(NamedTuple):
@@ -86,8 +86,8 @@ class Import(NamedTuple):
 
     @property
     def target(self) -> str:
-        """The module this import loads: `from zrth.lean.core import errors`
-        loads `zrth.lean.core.errors`, and so does `from zrth.lean.core.errors
+        """The module this import loads: `from reactor.lean.core import errors`
+        loads `reactor.lean.core.errors`, and so does `from reactor.lean.core.errors
         import Refused`."""
         if self.name and f"{self.module}.{self.name}" in MODULES:
             return f"{self.module}.{self.name}"
@@ -137,7 +137,7 @@ def _imports(path: Path):
 
 def _layer(module: str) -> str | None:
     parts = module.split(".")
-    if parts[:2] == ["zrth", "lean"] and len(parts) > 2 and parts[2] in LAYERS:
+    if parts[:2] == ["reactor", "lean"] and len(parts) > 2 and parts[2] in LAYERS:
         return parts[2]
     return None
 
@@ -150,9 +150,9 @@ ROUTES = {d.name for d in ROUTE_DIRS}
 
 def _route(module: str) -> str | None:
     """The route `module` belongs to: `houdini` for
-    `zrth.lean.infer.houdini.engine`."""
+    `reactor.lean.infer.houdini.engine`."""
     parts = module.split(".")
-    if parts[:3] == ["zrth", "lean", "infer"] and len(parts) > 3:
+    if parts[:3] == ["reactor", "lean", "infer"] and len(parts) > 3:
         return parts[3] if parts[3] in ROUTES else None
     return None
 
@@ -172,7 +172,7 @@ LAYERED = [p for p in PACKAGE if _layer(_module(p))]
 def test_every_module_a_layer_names_exists(layer):
     """A package moved or renamed takes its layer entry with it; a stale
     entry would check nothing."""
-    assert f"zrth.lean.{layer}" in MODULES
+    assert f"reactor.lean.{layer}" in MODULES
     assert LAYERS[layer] <= set(LAYERS), sorted(LAYERS[layer] - set(LAYERS))
 
 
@@ -182,7 +182,7 @@ def test_a_layer_imports_only_the_layers_below_it(path):
     allowed = {me} | LAYERS[me]
     bad = []
     for i in _imports(path):
-        if i.typing or not i.target.startswith("zrth.lean."):
+        if i.typing or not i.target.startswith("reactor.lean."):
             continue
         layer = _layer(i.target)
         if layer not in allowed:
@@ -225,7 +225,7 @@ def test_a_route_row_imports_its_engine_only_when_it_runs(route):
     """The CLI imports every row to print `--help`; an engine imported with
     its row would be loaded by every run, whichever route it asks for."""
     path = route / "__init__.py"
-    engine = f"zrth.lean.infer.{route.name}.engine"
+    engine = f"reactor.lean.infer.{route.name}.engine"
     bad = [f"{_name(path)}:{i.line} imports {i.target} at module level"
            for i in _imports(path)
            if i.top and not i.typing and i.target == engine]
@@ -236,7 +236,7 @@ def test_the_registry_loads_no_engine():
     """What the rule above is for, observed: importing every row, as
     `verith --help` does, imports no engine and no module an engine
     imports at its top."""
-    probe = ("import sys, zrth.lean.infer; print(sorted(m for m in "
+    probe = ("import sys, reactor.lean.infer; print(sorted(m for m in "
              "sys.modules if m.endswith('.engine')))")
     r = subprocess.run([sys.executable, "-c", probe], capture_output=True,
                        text=True, check=True)
@@ -248,7 +248,7 @@ def test_no_private_name_crosses_a_module(path):
     bad = []
     imported = set()
     for i in _imports(path):
-        if not i.module.startswith("zrth"):
+        if not i.module.startswith("reactor"):
             continue
         imported.add(i.bound)
         if i.name and _private(i.name):
@@ -270,6 +270,6 @@ def test_the_project_builder_does_not_know_the_routes():
         f"{_name(p)}:{i.line} imports {i.module}"
         for p in sorted((LEAN / "project").glob("*.py"))
         for i in _imports(p)
-        if i.module.startswith("zrth.lean.infer")
+        if i.module.startswith("reactor.lean.infer")
     ]
     assert not bad, "\n".join(bad)

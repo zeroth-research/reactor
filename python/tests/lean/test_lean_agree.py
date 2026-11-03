@@ -1,5 +1,11 @@
 """The Lean encoding takes the rounds the module takes.
 
+The corpus and runs of `tests/agree.py`, held to `reactor.eval`, the
+interpreter. Each module's functional encoding
+-- the `init`/`update` every certificate is a theorem about -- is `#eval`ed
+at each round's state and inputs, and has to print what the interpreter
+computed.
+
 A module with a Real is skipped (Lean's `Real` is noncomputable), as is one
 with no Lean form at all. Two runs a module:
 a file costs about six seconds to start and a run about one more, and the
@@ -88,7 +94,7 @@ def test_the_lean_encoding_takes_the_rounds_the_module_takes(
 def test_a_wrong_lean_emitter_is_caught(tmp_path, sync_core_templates, monkeypatch):
     """The check can fail: with `Sub`'s matrix emitter swapping its
     operands, the countdown's every `update` round prints something else."""
-    from zrth.lean.lowering import ops
+    from reactor.lean.lowering import ops
 
     for key, row in list(ops._BY_KEY.items()):
         if key[1] == "Sub":

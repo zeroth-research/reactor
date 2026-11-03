@@ -13,8 +13,8 @@ makes, in the smallest module that can show it.
 `n` is never written, so it is an external input; `x` starts at it *bare*,
 which is what lets a constraint on the input be read back as one on `x`.
 """
-from zrth import Int, LIA, Module, Term, Var, X
-from zrth.analyzer import convert_method
+from reactor import Int, LIA, Module, Term, Var, X
+from reactor.analyzer import convert_method
 
 
 def update(old_x):

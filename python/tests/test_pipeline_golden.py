@@ -3,7 +3,7 @@
 Two layers: the codegen entry points on a fixed set of modules and
 predicates, and whole in-process `verith` runs (stdout and the two certificate
 files). Both are compared with the snapshots under
-`tests/golden/pipeline/`; set `ZRTH_UPDATE_GOLDEN=1` to rewrite them, and
+`tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to rewrite them, and
 only for a change to the output that is intended.
 
 No run reaches an LLM: `make_client` is replaced in both modules that build
@@ -20,19 +20,19 @@ from pathlib import Path
 import pytest
 import torch
 
-from zrth import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from zrth.lean.proof.render import (
+from reactor import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
+from reactor.lean.proof.render import (
     generate_certificate_lean,
     generate_data_lean,
     generate_standalone_cert_lean,
 )
-from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.inputs.python import load_module
+from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.inputs.python import load_module
 
 GOLDEN = Path(__file__).parent / "golden" / "pipeline"
 FIXTURES = Path(__file__).parent / "fixtures"
-UPDATE = os.environ.get("ZRTH_UPDATE_GOLDEN") == "1"
+UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
 
 
 def _check(name: str, text: str) -> None:
@@ -41,7 +41,7 @@ def _check(name: str, text: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
         return
-    assert path.exists(), f"no snapshot {path}; run with ZRTH_UPDATE_GOLDEN=1"
+    assert path.exists(), f"no snapshot {path}; run with REACTOR_UPDATE_GOLDEN=1"
     assert text == path.read_text(), f"{name} differs from its snapshot"
 
 
@@ -146,7 +146,7 @@ CODEGEN = [
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
     """Data.lean, Certificate.lean and the standalone certificate, as one text."""
-    from zrth.lean.proof.render import prepare
+    from reactor.lean.proof.render import prepare
 
     lean = None
     ctx = LeanContext(module)
@@ -243,7 +243,7 @@ RUNS = [
 
 
 def _has_vampire() -> bool:
-    from zrth.lean.core.errors import Refused
+    from reactor.lean.core.errors import Refused
 
     return True
 
@@ -262,8 +262,8 @@ def _runs() -> list:
 
 def _offline(monkeypatch) -> None:
     """Both LLM routes answer from `_AI_REPLIES` and never open a client."""
-    from zrth.lean.infer.ai import engine as ai
-    from zrth.lean.infer.ai_cegis import engine as cegis
+    from reactor.lean.infer.ai import engine as ai
+    from reactor.lean.infer.ai_cegis import engine as cegis
 
     def client(base_url, model):
         def chat(system: str, user: str) -> str:
@@ -293,7 +293,7 @@ def _normalise(text: str, out: Path) -> str:
 
 
 def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
-    from zrth.lean.pipeline import main
+    from reactor.lean.pipeline import main
 
     out = tmp_path / "out"
     argv = [a.replace("{out}", str(out)) for a in args]

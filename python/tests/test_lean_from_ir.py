@@ -1,4 +1,4 @@
-"""Tests for the predicate printer, `zrth.lean.proof.from_ir`, which
+"""Tests for the predicate printer, `reactor.lean.proof.from_ir`, which
 prints what the native parser read.
 
 Covers the `min`/`max` peephole and the sharing pass. There is no `max` kind to translate
@@ -12,13 +12,13 @@ to be provable. `omega` handles `min`/`max` over `Int` with no split at all.
 import pytest
 import torch
 
-from zrth import Module, Term, Var, X, LIA, LRA, Int, Real
-from zrth.lean.proof.render import LeanCertificate
-from zrth.lean.core.certificate import Certificate, Claim
-from zrth.lean.core.errors import PredicateRefused
-from zrth.lean.parse.native import read_predicates
-from zrth.lean.pipeline.certificate import render
-from zrth.lean.proof.from_ir import ir_to_lean_nat
+from reactor import Module, Term, Var, X, LIA, LRA, Int, Real
+from reactor.lean.proof.render import LeanCertificate
+from reactor.lean.core.certificate import Certificate, Claim
+from reactor.lean.core.errors import PredicateRefused
+from reactor.lean.parse.native import read_predicates
+from reactor.lean.pipeline.certificate import render
+from reactor.lean.proof.from_ir import ir_to_lean_nat
 
 
 def _int_module() -> Module:

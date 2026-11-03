@@ -1,4 +1,4 @@
-"""`parse.smtlib`: SMT-LIB predicates read into zrth's terms, no solver.
+"""`parse.smtlib`: SMT-LIB predicates read into reactor's terms, no solver.
 
 Each of `READ` is read; what it does not read is refused with why.
 """
@@ -9,11 +9,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from zrth import BV, LIA, LRA, BitVec, Bool, Int, Module, Real, Term, Var, X
-from zrth.lean.core.errors import Unreadable
-from zrth.lean.lowering.sorts import itype_name
-from zrth.lean.parse.formula import family
-from zrth.lean.parse.smtlib import Scope, read_smtlib
+from reactor import BV, LIA, LRA, BitVec, Bool, Int, Module, Real, Term, Var, X
+from reactor.lean.core.errors import Unreadable
+from reactor.lean.lowering.sorts import itype_name
+from reactor.lean.parse.formula import family
+from reactor.lean.parse.smtlib import Scope, read_smtlib
 
 
 def _mixed() -> Module:

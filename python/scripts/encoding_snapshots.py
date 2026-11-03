@@ -44,16 +44,16 @@ def _write(out: Path, name: str, produce) -> None:
 
 
 def snapshot(path: Path, out: Path) -> None:
-    from zrth.lean import inputs
-    from zrth.lean.codegen.context import LeanContext
-    from zrth.lean.codegen.terms import lean_gaps
-    from zrth.lean.project.scaffold import ENCODINGS
-    from zrth.lean.proof.render import generate_standalone_cert_lean
-    from zrth.lean.codegen.encodings import ModuleToLean4
-    from zrth.lean.infer.fbk_proveit.na import (
+    from reactor.lean import inputs
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.codegen.terms import lean_gaps
+    from reactor.lean.project.scaffold import ENCODINGS
+    from reactor.lean.proof.render import generate_standalone_cert_lean
+    from reactor.lean.codegen.encodings import ModuleToLean4
+    from reactor.lean.infer.fbk_proveit.na import (
         atom_to_lean_na, check_na_supported,
     )
-    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+    from reactor.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     out.mkdir(parents=True, exist_ok=True)
     try:

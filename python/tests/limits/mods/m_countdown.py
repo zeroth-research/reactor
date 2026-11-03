@@ -1,6 +1,6 @@
 """LIA 1x1: x = 100, then x-1 each step, reset to 100 at 0. Baseline control."""
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

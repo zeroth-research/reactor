@@ -1,6 +1,6 @@
 """LIA Argmax over a 3-vector into a 1x1 index state."""
 import torch
-from zrth import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, LIA, Var, X
 
 
 def module() -> Module:

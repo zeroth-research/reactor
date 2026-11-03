@@ -1,4 +1,4 @@
-"""`parse.native`: the Python predicate syntax read into zrth's terms,
+"""`parse.native`: the Python predicate syntax read into reactor's terms,
 and a run's predicates read by the native parser.
 
 A predicate in the syntax builds the terms its SMT-LIB form builds, and one
@@ -11,15 +11,15 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean.core.errors import PredicateRefused, Unreadable
-from zrth.lean.inputs.python import load_module
-from zrth.lean.lowering.sorts import itype_name
-from zrth.lean.parse import dsl
-from zrth.lean.parse.formula import Builder
-from zrth.lean.parse.native import (
+from reactor.lean.core.errors import PredicateRefused, Unreadable
+from reactor.lean.inputs.python import load_module
+from reactor.lean.lowering.sorts import itype_name
+from reactor.lean.parse import dsl
+from reactor.lean.parse.formula import Builder
+from reactor.lean.parse.native import (
     ModuleWires, NativeParser, namespace, parse_predicate,
 )
-from zrth.lean.parse.smtlib import Elaborator
+from reactor.lean.parse.smtlib import Elaborator
 
 MODS = Path(__file__).parent / "limits" / "mods"
 
@@ -115,7 +115,7 @@ def test_the_syntax_says_what_is_wrong_with_a_predicate_in_it(src, why):
 
 
 def test_a_fault_in_the_syntax_itself_is_not_a_parse_error(monkeypatch):
-    import zrth.lean.parse.native as native
+    import reactor.lean.parse.native as native
 
     def broken(src, ns):
         raise AttributeError("a bug")

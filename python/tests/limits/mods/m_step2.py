@@ -1,6 +1,6 @@
 """LIA 1x1: x goes 0,2,4,6,8,10 then back to 0 — an even-parity invariant."""
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

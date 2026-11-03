@@ -27,20 +27,20 @@ import re
 import pytest
 import torch
 
-from zrth import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
-from zrth.lean.lowering.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
-from zrth.lean.lowering.elements import (
+from reactor import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
+from reactor.lean.lowering.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
+from reactor.lean.lowering.elements import (
     product_accessor,
     flat_indices,
     flat_size,
     mat_from_scalars,
     flat_layout,
 )
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.codegen.terms import product_type_scalar
-from zrth.lean.codegen.encodings.common import scalar_bindings_with_recon
-from zrth.lean.infer.fbk_proveit.na import slot_accessors
-from zrth.lean.codegen.encodings.scalar import _pack_body, _unpack_body
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.codegen.terms import product_type_scalar
+from reactor.lean.codegen.encodings.common import scalar_bindings_with_recon
+from reactor.lean.infer.fbk_proveit.na import slot_accessors
+from reactor.lean.codegen.encodings.scalar import _pack_body, _unpack_body
 
 # One wire list per case. The last three are the ones no fixture has: a
 # genuinely 2-D wire, and a mixed list where the wire index and the slot
@@ -237,7 +237,7 @@ def test_na_model_init_is_the_matrix_read_row_major():
     """`Definition.init_k` for a 2x3 ctrl wire, against the source tensor.
 
     """
-    from zrth.lean.infer.fbk_proveit.na import atom_to_lean_na
+    from reactor.lean.infer.fbk_proveit.na import atom_to_lean_na
 
     ctx = LeanContext(_matrix_module())
     src = atom_to_lean_na(ctx, "true", module_name="matrix")
@@ -261,7 +261,7 @@ def test_bridge_reads_the_state_exactly_as_unpack_does():
     docstring said "without either consulting the other" — and a
     disagreement makes `bridge_k` an obligation about the wrong element.
     """
-    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+    from reactor.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
     ctx = LeanContext(_matrix_module())
     src = atom_to_lean_fbk_bridge(ctx, na_module="NA")
@@ -275,7 +275,7 @@ def test_every_sort_is_two_dimensional_so_one_reading_suffices():
     else: the Sort constructor refuses a 0-D, 1-D or 3-D shape, so there is
     no other case for an encoding to read differently. A 1xn wire's Lean
     type, element order, rebuilt matrix and recon lemma all agree on it."""
-    from zrth.lean.codegen.encodings.scalar import _recon_lemma_lines
+    from reactor.lean.codegen.encodings.scalar import _recon_lemma_lines
 
     for shape in ([], [3], [2, 3, 4]):
         with pytest.raises(ValueError):

@@ -1,7 +1,7 @@
 """Two counters that both shrink — a product ranking is the natural (and
 nonlinear) choice: x in 0..3 cycles, y drops when x wraps."""
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

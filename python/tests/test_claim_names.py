@@ -1,11 +1,11 @@
-"""Claims in the reactive module's own terms: `zrth.lean.inputs.names`."""
+"""Claims in the reactive module's own terms: `reactor.lean.inputs.names`."""
 
 import shlex
 from pathlib import Path
 
 import pytest
 
-from zrth.lean.inputs import ClaimError, Names, load, to_internal, to_surface
+from reactor.lean.inputs import ClaimError, Names, load, to_internal, to_surface
 from tests.verith import verith
 
 FIXTURES = Path(__file__).parent / "fixtures"

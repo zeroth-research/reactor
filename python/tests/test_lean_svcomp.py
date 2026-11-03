@@ -13,12 +13,12 @@ import pytest
 from os.path import dirname
 from pathlib import Path
 
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.project.scaffold import create_project
-from zrth.lean.proof.render import certificate_files, lean_certificate
-from zrth.lean.core.certificate import Certificate, Claim
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.project.scaffold import create_project
+from reactor.lean.proof.render import certificate_files, lean_certificate
+from reactor.lean.core.certificate import Certificate, Claim
 
 OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
 
