@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from zrth.lean.codegen.encodings import ModuleToLean4
-from zrth.lean.codegen.terms import product_type
+from zrth.lean.codegen.terms import extl_native_type, product_type
 from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
 from zrth.lean.core.errors import PredicateRefused, Refused
 from zrth.lean.codegen.context import LeanContext
@@ -108,7 +108,7 @@ def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
             # a tactic, so it has to read whichever state the obligation
             # bound rather than a fixed name.
             text = smt_to_lean_body(cond, ctrl_next, param_name="($v)")
-        except Exception:
+        except Refused:
             continue
         determined.append((text, value))
 
@@ -117,13 +117,16 @@ def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
     # into a check. `mul_self_nonneg (a - b)` and `(a + b)` between them
     # span the products of two atoms, which is what the arithmetic rules
     # produce.
+    # Over `($v)` too: the hints are spliced into `cert_close`, a macro, and
+    # a hygienic macro reads a bare `s` as a fresh `s✝` rather than as the
+    # obligation's state.
     seen: set[str] = set()
     nlinarith: list[str] = []
     for a_term, b_term in hints.products:
         try:
-            a = smt_to_lean_body(a_term, ctrl_next)
-            b = smt_to_lean_body(b_term, ctrl_next)
-        except Exception:
+            a = smt_to_lean_body(a_term, ctrl_next, param_name="($v)")
+            b = smt_to_lean_body(b_term, ctrl_next, param_name="($v)")
+        except Refused:
             continue
         for hint in (f"mul_self_nonneg ({a} - {b})",
                      f"mul_self_nonneg ({a} + {b})"):
@@ -255,10 +258,8 @@ def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
     or `None`, in which case the template uses the placeholder value.
     """
     d = lean_cert.defs
-    extl_native = (f"({product_type(ctx.extl_latched)}) × "
-                   f"({product_type(ctx.extl_next)})")
     return dict(
-        extl_type=extl_native,
+        extl_type=extl_native_type(ctx),
         ctrl_type=product_type(ctx.ctrl_next),
         noncomp="noncomputable " if ctx.uses_real else "",
         is_safety=d.is_safety,
@@ -315,12 +316,8 @@ def generate_certificate_lean(
     lean_cert = lean_cert or LeanCertificate()
     defs = lean_cert.defs
 
-    extl_latched = ctx.extl_latched
-    extl_next = ctx.extl_next
-    ctrl_next = ctx.ctrl_next
-
-    extl_native = f"({product_type(extl_latched)}) × ({product_type(extl_next)})"
-    ctrl_native = product_type(ctrl_next)
+    extl_native = extl_native_type(ctx)
+    ctrl_native = product_type(ctx.ctrl_next)
 
     const_names = ctx.constants.names()
     const_list = ", ".join(const_names) if const_names else ""
@@ -384,7 +381,7 @@ def certificate_files(
 
 
 def generate_standalone_cert_lean(
-    module: "Module",
+    src: "LeanContext | Module",
     lean_cert: LeanCertificate | None = None,
 ) -> str:
     """Generate a self-contained certificate Lean file with init/update inlined.
@@ -394,8 +391,9 @@ def generate_standalone_cert_lean(
     is always imported from the project-level ``ZerothHammer.lean``.
 
     Suitable for placing a single .lean file inside an existing lake project
-    such as ``tests/lean/Certs/``.
+    such as ``tests/lean/Certs/``. `src` is the run's `LeanContext`, or a
+    module to build one for.
     """
-    ctx = LeanContext(module)
+    ctx = src if isinstance(src, LeanContext) else LeanContext(src)
     module_code = ModuleToLean4(ctx).to_lean_functional()
     return generate_certificate_lean(ctx, lean_cert, module_inline=module_code)

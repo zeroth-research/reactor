@@ -5,7 +5,6 @@ whatever it says must not run as Python. The DSL is walked over a whitelist
 instead, and anything outside it falls through to the SMT-LIB parser.
 """
 
-import importlib.util
 import os
 from pathlib import Path
 
@@ -13,11 +12,13 @@ import cvc5
 import pytest
 
 from zrth.lean.smt.module import ModuleSMT
+from zrth.lean.inputs.python import load_module
 from zrth.lean.smt.predicates import (
     PredicateParser,
     _NotPredicate,
     _pyeval,
     _pyeval_namespace,
+    Unreadable,
     parse_predicate,
 )
 
@@ -26,10 +27,8 @@ MODS = Path(__file__).parent / "limits" / "mods"
 
 def _env(name: str) -> PredicateParser:
     """A parser context for one `tests/limits` fixture module."""
-    spec = importlib.util.spec_from_file_location(f"_m_{name}", MODS / f"{name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return PredicateParser(ModuleSMT(tm=cvc5.TermManager(), module=mod.module()))
+    module = load_module(MODS / f"{name}.py")
+    return PredicateParser(ModuleSMT(tm=cvc5.TermManager(), module=module))
 
 
 @pytest.mark.parametrize(
@@ -73,7 +72,7 @@ def test_a_reply_that_escapes_an_eval_sandbox_runs_nothing(monkeypatch):
         "if c.__name__ == '_wrap_close'][0].__init__.__globals__"
         "['environ'].__setitem__('ZRTH_RT11_ESCAPE', '1')"
     )
-    with pytest.raises(RuntimeError):
+    with pytest.raises(Unreadable):
         parse_predicate(_env("m_countdown"), src)
     assert "ZRTH_RT11_ESCAPE" not in os.environ
 
@@ -109,3 +108,62 @@ def test_a_bare_numeral_still_falls_through_to_smtlib():
     """`0` reads as a Python int, which is not a term; SMT-LIB makes it one."""
     term = parse_predicate(_env("m_countdown"), "0")
     assert term.getSort().isInteger()
+
+
+@pytest.mark.parametrize(
+    "src, why",
+    [
+        ("s1[0][0] + s0[0][0] > 0", "arithmetic"),       # Int + Bool
+        ("s1[5][0] > 0", "out of bounds"),
+        ("Ite(s0[0][0], 1)", "missing"),
+    ],
+)
+def test_the_dsl_says_what_is_wrong_with_a_predicate_in_it(src, why):
+    """Python syntax that is not a predicate of the module is refused in
+    the DSL's terms, rather than handed to the SMT-LIB parser as text it
+    was never written as."""
+    with pytest.raises(Unreadable, match=f"is predicate syntax.*{why}"):
+        parse_predicate(_env("m_boolint"), src)
+
+
+def test_a_fault_in_the_dsl_itself_is_not_a_parse_error(monkeypatch):
+    """A bug raises as itself instead of reading as "could not parse"."""
+    import zrth.lean.smt.predicates as predicates
+
+    def broken(src, ns):
+        raise AttributeError("a bug")
+
+    monkeypatch.setattr(predicates, "_pyeval", broken)
+    with pytest.raises(AttributeError, match="a bug"):
+        parse_predicate(_env("m_countdown"), "s[0][0] == 0")
+
+
+def test_nor_is_it_refused_as_the_claim(monkeypatch):
+    """One layer up, `ModuleEncoding.parse` and `predicate_terms` caught
+    everything, so the same bug printed as `--buchi: cannot read ...` and
+    lost its traceback."""
+    import zrth.lean.smt.predicates as predicates
+    from zrth.lean.core.certificate import Claim
+    from zrth.lean.smt.precheck import predicate_terms
+
+    def broken(src, ns):
+        raise AttributeError("a bug")
+
+    monkeypatch.setattr(predicates, "_pyeval", broken)
+    module = load_module(MODS / "m_countdown.py")
+    with pytest.raises(AttributeError, match="a bug"):
+        predicate_terms(module, Claim(prp="s[0][0] == 0"))
+
+
+@pytest.mark.parametrize("src", ["(> s0 0) (< s0 5)", "s0 s0", "(= s0 0) junk"])
+def test_text_after_the_expression_is_refused(src):
+    """cvc5's parser reads one term and leaves the rest, so `(> s0 0)
+    (< s0 5)` was read as `(> s0 0)`: a weaker property than the one
+    written, and checked without a word."""
+    with pytest.raises(Unreadable, match="text after the expression"):
+        parse_predicate(_env("m_countdown"), src)
+
+
+def test_a_comment_after_the_expression_is_not_text():
+    env = _env("m_countdown")
+    assert parse_predicate(env, "(= s0 0) ; why") == parse_predicate(env, "(= s0 0)")

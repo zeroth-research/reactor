@@ -11,9 +11,9 @@ from __future__ import annotations
 import cvc5
 from cvc5 import Kind
 
-from zrth import Wire, Sort
+from zrth import Wire
 from ..core.errors import Refused
-from ..lowering.sorts import dtype_shape, is_scalar_shape, wire_shape
+from ..lowering.sorts import wire_shape
 from ..lowering.elements import product_accessor
 from ..codegen.literals import lean_bitvec, lean_int, lean_real
 from ..smt.terms import min_max_of, selector_index, state_dependent
@@ -60,9 +60,8 @@ def build_var_map(
         n = len(wires)
         for i, w in enumerate(wires):
             acc = product_accessor(i, n)
-            shape = dtype_shape(w.dtype)
             name = f"{prefix}{i}"
-            if is_scalar_shape(shape):
+            if wire_shape(w).is_scalar:
                 var_accessor[name] = f"({base}{acc} 0 0)"
             else:
                 var_accessor[name] = f"({base}{acc})"
@@ -323,21 +322,20 @@ def _walk(
         # Real literal outright; anything else elaborates at Int and is coerced.
         child = t[0]
         if child.getKind() == Kind.CONST_INTEGER:
-            return f"({child.getIntegerValue()} : Real)"
+            return lean_real(child.getIntegerValue())
         return f"((({recur(child)}) : Int) : Real)"
 
     if k == Kind.APPLY_SELECTOR:
-        sel = t[0]
         obj = t[1]
         if obj.getKind() != Kind.CONSTANT or obj.getSymbol() not in var_wire:
-            raise ValueError(
+            raise Refused(
                 f"APPLY_SELECTOR against non-bound term not supported: {t}"
             )
-        idx = selector_index(sel)
+        idx = selector_index(t)
         sname = obj.getSymbol()
         wire = var_wire[sname]
         i, j = divmod(idx, wire_shape(wire).n)
         base = var_accessor[sname]
         return f"({base} {i} {j})"
 
-    raise ValueError(f"SMT→Lean: unsupported kind {k} in {t}")
+    raise Refused(f"SMT→Lean: unsupported kind {k} in {t}")

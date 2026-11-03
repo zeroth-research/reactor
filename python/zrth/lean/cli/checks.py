@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 
 from ..artifacts import ARTIFACTS_DIR
+from ..core.options import given, missing, put_defaults
 from ..inputs import ADAPTERS, InputAdapter, adapter_by_name, adapter_for
 from ..infer import InferRoute, all_route_aliases, shared_route_options
 from .settings import SEED_FLAGS, Settings
@@ -79,26 +80,40 @@ def input_adapter(parser: argparse.ArgumentParser,
     return adapter
 
 
+def _check_row_options(parser: argparse.ArgumentParser, args, stray,
+                       meaningful, row: str, options) -> None:
+    """The rules every row's options follow (`core.options`): an option of
+    a row that was not selected is refused, `stray` naming each with the
+    rows it belongs to and `meaningful` phrasing those rows; and for the
+    selected row, `row`'s `options`, a required one has to be given and
+    the others get their row default."""
+    if stray:
+        flags = [o.flags[-1] for o, _ in stray]
+        rows = sorted({r for _, rs in stray for r in rs})
+        verb = "is" if len(flags) == 1 else "are"
+        parser.error(
+            f"{', '.join(flags)} {verb} only meaningful {meaningful(rows)}")
+    if options is None:
+        return
+    absent = [o.flags[-1] for o in missing(options, args)]
+    if absent:
+        parser.error(f"{row} requires {', '.join(absent)}")
+    put_defaults(options, args)
+
+
 def check_input_options(parser: argparse.ArgumentParser, args,
                         adapter: InputAdapter | None) -> None:
     """A format's option is only meaningful for input in that format, as a
-    route's is only with that route; and its row default is put back once
-    the format is known."""
-    stray = [
-        (a, o) for a in ADAPTERS for o in a.options
-        if a is not adapter and getattr(args, o.dest, None) is not None
-    ]
-    if stray:
-        flags = [o.flags[-1] for _, o in stray]
-        formats = sorted({a.name for a, _ in stray})
-        verb = "is" if len(flags) == 1 else "are"
-        parser.error(
-            f"{', '.join(flags)} {verb} only meaningful for "
-            f"{' or '.join(formats)} input"
-        )
-    for o in adapter.options if adapter else ():
-        if getattr(args, o.dest, None) is None and "default" in o.kwargs:
-            setattr(args, o.dest, o.kwargs["default"])
+    route's is only with that route; one its row requires has to be given;
+    and its row default is put back once the format is known."""
+    _check_row_options(
+        parser, args,
+        [(o, [a.name]) for a in ADAPTERS for o in a.options
+         if a is not adapter and given(o, args)],
+        lambda rows: f"for {' or '.join(rows)} input",
+        f"{adapter.name} input" if adapter else "",
+        adapter.options if adapter else None,
+    )
 
 
 def check_route_options(
@@ -108,43 +123,19 @@ def check_route_options(
 
     Given without it, the flag would do nothing -- which is the failure mode
     worth reporting: the run would succeed having ignored what was asked.
+    An option several routes declare is stray only when *none* of them was
+    selected: `--vampire` is meaningful to two routes and a no-op under the
+    other five.
     """
-    # Every route option is parsed with `default=None`, so `None` is "not
-    # given" -- including for an option whose row default is a real value.
-    # An option passed the same value its row defaults to still counts as
-    # given, which is what makes "only meaningful with" honest.
-    # An option several routes declare is stray only when *none* of them
-    # was selected: `--vampire` is meaningful to two routes and a no-op
-    # under the other five.
-    stray = [
-        (owners, o)
-        for o, owners in shared_route_options()
-        if route not in owners and getattr(args, o.dest, None) is not None
-    ]
-    if stray:
-        flags = [o.flags[-1] for _, o in stray]
-        owners = sorted({f"--infer {r.name}" for rs, _ in stray for r in rs})
-        verb = "is" if len(flags) == 1 else "are"
-        parser.error(
-            f"{', '.join(flags)} {verb} only meaningful together with "
-            f"{', '.join(owners)}"
-        )
-    if route is None:
-        return
-    missing = [
-        o.flags[-1]
-        for o in route.options
-        if o.required and getattr(args, o.dest, None) in (None, "")
-    ]
-    if missing:
-        parser.error(
-            f"--infer {route.name} requires {', '.join(missing)}"
-        )
-    # A route option's default has to survive the group's `default=None`
-    # override, which is there so "given" is distinguishable from "not".
-    for o in route.options:
-        if getattr(args, o.dest, None) is None and "default" in o.kwargs:
-            setattr(args, o.dest, o.kwargs["default"])
+    _check_row_options(
+        parser, args,
+        [(o, [f"--infer {r.name}" for r in owners])
+         for o, owners in shared_route_options()
+         if route not in owners and given(o, args)],
+        lambda rows: f"together with {', '.join(rows)}",
+        f"--infer {route.name}" if route else "",
+        route.options if route else None,
+    )
 
 
 def check_route(parser: argparse.ArgumentParser, args, settings: Settings) -> None:
@@ -205,7 +196,7 @@ def check_route(parser: argparse.ArgumentParser, args, settings: Settings) -> No
         )
 
     if route.extra_check is not None:
-        problem = route.extra_check(settings, settings.route_opts)
+        problem = route.extra_check(settings)
         if problem:
             parser.error(problem)
 

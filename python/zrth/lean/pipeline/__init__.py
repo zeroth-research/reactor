@@ -108,6 +108,7 @@ from ..infer import ProjectHandle
 from ..smt.encoding import lazy
 from ..smt.precheck import pre_check
 from .certify import (
+    hint_budget,
     lean_context,
     record_predicates,
     regenerate,
@@ -125,7 +126,7 @@ def main():
     settings = parse_args(argv)
 
     if settings.hammer_file:
-        hammer_only(settings)
+        hammer_only(settings.hammer_file)
         return
 
     problem = load(settings)
@@ -145,8 +146,7 @@ def main():
     # is kept.
     store = (
         None if settings.cert_file
-        else workspace(settings, module,
-                       settings.output_dir / settings.project_name, claim)
+        else workspace(settings, module, claim)
     )
     record_predicates(store, claim, given)
 
@@ -162,13 +162,14 @@ def main():
     # no route reads `Certificate/`, so cvc5 is asked for hints only about
     # the certificate the project ends up with.
     try:
-        lean_cert = render(settings, smt, claim, given,
-                           hints=settings.route is None)
+        lean_cert = render(
+            smt, claim, given,
+            hints=hint_budget(settings) if settings.route is None else None)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 
     if settings.cert_file:
-        standalone(settings, module, lean_cert)
+        standalone(settings.cert_file, ctx, lean_cert)
         return
 
     project_dir = generate(settings, module, ctx, lean_cert, problem.source)
@@ -178,7 +179,6 @@ def main():
         handle = ProjectHandle(
             dir=project_dir,
             name=settings.project_name,
-            module=module,
             ctx=ctx,
             reads=frozenset(settings.route.reads),
             owns=settings.route.owns,
@@ -191,12 +191,13 @@ def main():
         # of ours to be complete about and nothing to regenerate from.
         lean_cert = (
             None if settings.route.returns == "files"
-            else regenerate(settings, smt, handle, store, claim, result)
+            else regenerate(settings, smt, handle, claim, result)
         )
         handle.write_files(result.files)
         show_certificate(result.cert, problem.names)
 
-    build_cert(settings, project_dir, lean_cert)
+    if settings.build_cert:
+        build_cert(project_dir, lean_cert)
 
     print(f"\nProject ready at: {project_dir}")
 

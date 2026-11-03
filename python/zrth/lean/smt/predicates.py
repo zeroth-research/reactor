@@ -12,12 +12,14 @@ one parser every predicate is read with.
 from __future__ import annotations
 
 import ast
+import functools
 import operator
 import re
 
 import cvc5
 from cvc5 import Kind
 
+from ..core.errors import Refused
 from ..lowering.sorts import wire_shape
 from .encode import wire_sort
 from .module import ModuleSMT
@@ -349,27 +351,50 @@ def _coerce_bare_numerals(src: str, bv_widths: dict[str, int]) -> str:
     return _BARE_EQ_RE.sub(repl, src)
 
 
+class Unreadable(Refused):
+    """Text that is no predicate of this module in either dialect: the
+    DSL's syntax and wrong in it, SMT-LIB its parser cannot read, or
+    nothing at all. It is what `parse_predicate` raises about its text,
+    and the one thing a caller turns into "cannot read"; anything else
+    raised under it is a bug, and keeps its traceback."""
+
+
 def parse_predicate(env: "PredicateParser", src: str) -> cvc5.Term:
     """Parse `src` as a cvc5 predicate. Tries the Python-expression DSL
-    first (`_pyeval`), falls back to SMT-LIB on failure."""
-    ns = _pyeval_namespace(env)
+    first (`_pyeval`), and falls back to SMT-LIB for text that is not the
+    DSL's syntax -- `(= s0 0)` is no Python expression at all.
+
+    Text that is the DSL's syntax and wrong in it -- a sort mismatch, an
+    index past the wire, a connective given too few arguments -- is refused
+    in the DSL's terms, as `Unreadable`: handed to the SMT-LIB parser it
+    would only be text that parser cannot read, which it never was.
+    Anything else raised is a bug, and is left to say so.
+    """
     try:
-        result = _pyeval(src, ns)
-        if isinstance(result, _E):
-            return result.t
-        if isinstance(result, cvc5.Term):
-            return result
-        # Some other Python object — fall through to SMT-LIB
-    except Exception:
-        pass
-    term = env.parse_expr(src)
+        result = _pyeval(src, env.namespace)
+    except (SyntaxError, _NotPredicate):
+        result = None
+    except (TypeError, ValueError, IndexError, RuntimeError) as e:
+        raise Unreadable(
+            f"`{src.strip()}` is predicate syntax, and not a predicate of "
+            f"this module: {e}"
+        ) from e
+    if isinstance(result, _E):
+        return result.t
+    if isinstance(result, cvc5.Term):
+        return result
+    # Not the DSL, or a value no predicate is -- `5`, a whole matrix
+    # variable: SMT-LIB reads the rest.
+    try:
+        term = env.parse_expr(src)
+    except RuntimeError as e:       # cvc5's parser, naming where it stopped
+        raise Unreadable(str(e)) from e
     if term.isNull():
         # cvc5 parses an empty or all-blank source to a null term rather than
         # an error, and the first use of one -- `getSort()` -- raises from
         # inside the binding: an LLM that wrote `RANKING:` and nothing after
-        # it crashed `--infer ai-cegis` instead of being told. Every caller
-        # already turns a `RuntimeError` into "could not parse".
-        raise RuntimeError("the expression is empty")
+        # it crashed `--infer ai-cegis` instead of being told.
+        raise Unreadable("the expression is empty")
     return term
 
 
@@ -431,6 +456,13 @@ class PredicateParser:
             if sort.isBitVector()
         }
 
+    @functools.cached_property
+    def namespace(self) -> dict:
+        """What a Python-expression predicate can name, built once: every
+        candidate a search reads is parsed through it, and building it is
+        a wrapper and a shape read per variable. Its values hold no state."""
+        return _pyeval_namespace(self)
+
     # --- internals ------------------------------------------------------
 
     def _run_commands(self, text: str) -> None:
@@ -450,4 +482,15 @@ class PredicateParser:
             cvc5.InputLanguage.SMT_LIB_2_6, "cegis"
         )
         self.parser.appendIncrementalStringInput(smt_src)
-        return self.parser.nextTerm()
+        term = self.parser.nextTerm()
+        if term.isNull():
+            return term
+        # `nextTerm` reads one term and leaves the rest, so `(> s0 0)
+        # (< s0 5)` read as `(> s0 0)`: a weaker claim than the one written.
+        try:
+            rest = self.parser.nextTerm()
+        except RuntimeError as e:
+            raise RuntimeError(f"text after the expression: {e}") from e
+        if not rest.isNull():
+            raise RuntimeError(f"text after the expression: `{rest}`")
+        return term
