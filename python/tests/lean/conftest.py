@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from zrth import Module, Wire, Term, LIA, Int, Bool, Var, X
+from zrth import Module, Wire, Term, LIA, LRA, Int, Real, Bool, Var, X
 from zrth.analyzer import convert_method
 from zrth.lean.project.scaffold import generate_zeroth_hammer_lean
 from zrth.lean.proof.render import (
@@ -216,6 +216,29 @@ def _make_mixed() -> Module:
     return Module.sequential([x, v], init, update)
 
 
+
+def _make_real_half() -> Module:
+    """A Real countdown by halves: x = 5, then x - 1/2 while x > 0, else 5.
+
+    `1/2` is not a whole number, so it is printed `((1 : Real) / 2)`, and a
+    definition holding it has to be `noncomputable`: the hybrid benchmarks
+    all failed to build on exactly that, while every Real module here had
+    whole constants only.
+    """
+    x = Var(Real([1, 1]))
+    half, zero, five = Wire(Real([1, 1])), Wire(Real([1, 1])), Wire(Real([1, 1]))
+    cond, dec = Wire(Bool([1, 1])), Wire(Real([1, 1]))
+    update = [
+        Term(LRA.Real(torch.tensor([[0.5]])), [half]),
+        Term(LRA.Real(torch.tensor([[0.0]])), [zero]),
+        Term(LRA.Real(torch.tensor([[5.0]])), [five]),
+        Term(LRA.Gt(), [cond], [x, zero]),
+        Term(LRA.Sub(), [dec], [x, half]),
+        Term(LRA.Ite(), [X(x)], [cond, dec, five]),
+    ]
+    return Module.sequential(
+        [x], [Term(LRA.Real(torch.tensor([[5.0]])), [X(x)])], update)
+
 _COUNTDOWN_CERT = (
     Claim(prp="s[0][0] == 0"),
     Certificate(
@@ -236,6 +259,7 @@ _SCALAR_ENC_SPECS = [
     ("Vec6", lambda: _make_countdown_vec(6)),
     ("Counter", _make_counter),
     ("Vec32", lambda: _make_countdown_vec(32)),
+    ("RealHalf", _make_real_half),
 ]
 
 
