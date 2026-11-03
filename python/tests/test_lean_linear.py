@@ -135,6 +135,29 @@ def test_bool_matrix_constant_is_interned_not_inlined():
     assert "Mat Bool 2 3" in lean, "the Bool matrix constant was not emitted"
 
 
+@pytest.mark.parametrize("shape, data", [
+    ([1, 1], [[1.5]]),
+    ([2, 1], [[1.5], [2.0]]),
+])
+def test_a_real_constant_is_noncomputable(shape, data):
+    """`1.5` is printed `((3 : Real) / 2)`, and a `def` that divides Reals
+    does not compile: every hybrid benchmark with a fractional constant was
+    `BUILD-FAIL`. `Certs.ScalarEncRealHalf` builds one under `just test-lean`."""
+    import torch
+    from zrth import Term, Module, LRA, Var, X
+    from zrth.lean import ModuleToLean4
+
+    x = Var(Real(shape))
+    module = Module.sequential(
+        [x],
+        [Term(LRA.Real(torch.tensor(data)), [X(x)])],
+        [Term(LRA.Id(), [X(x)], [x])],
+    )
+    lean = ModuleToLean4(module).to_lean_functional()
+    defs = [l for l in lean.splitlines() if " def c" in l]
+    assert defs and all("noncomputable def" in l for l in defs), defs
+
+
 # ──────────────────────────────────────────────────────────────
 # BitVec literals
 # ──────────────────────────────────────────────────────────────
