@@ -8,8 +8,8 @@ relate the Lean encodings to each other, and can stay provable while all of
 them are wrong: `argmax1d_scalar_n_eq` did while both its sides had argmax's
 tie-breaking wrong (`test_lean_argmax.py`).
 
-So each encoding is held to the module's own semantics instead: `zrth.eval`,
-the interpreter `zrth.gym` runs modules with, on random runs. This file is
+So each encoding is held to the module's own semantics instead: `reactor.eval`,
+the interpreter `reactor.gym` runs modules with, on random runs. This file is
 the SMT side, one round at a time: the encoded round with the round's state
 and inputs as literals, which cvc5's rewriter evaluates without deciding
 anything, against the round the interpreter takes from the same state. The
@@ -47,7 +47,7 @@ def test_a_wrong_emitter_is_caught(monkeypatch):
     proves nothing about the encodings that pass it."""
     import dataclasses
 
-    from zrth.lean.smt import encode as smt_encode
+    from reactor.lean.smt import encode as smt_encode
 
     real = smt_encode.smt_emitter
 

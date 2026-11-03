@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from zrth.lean import inputs
-from zrth.smv import SMVRefused, parse_smv, read_smv
+from reactor.lean import inputs
+from reactor.smv import SMVRefused, parse_smv, read_smv
 from tests.verith import verith
 
 SMV = Path(__file__).parent / "smv_fixtures"

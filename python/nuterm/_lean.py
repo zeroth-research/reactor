@@ -52,7 +52,7 @@ import dataclasses
 from pathlib import Path
 
 import z3
-from zrth import X
+from reactor import X
 
 from ._farkas import (CellCert, Inductive, LexDecrease, Unsupported, _find_ite_cond,
                       _flatten_and, affine_coeffs, entry_predicate, reading, resolve)

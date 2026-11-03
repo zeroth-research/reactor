@@ -40,8 +40,8 @@ real encoding.
 
 from __future__ import annotations
 
-from zrth import LIA
-from zrth.sugar import Module, X, ite
+from reactor import LIA
+from reactor.sugar import Module, X, ite
 
 from .._bench import Bench, INT, var
 

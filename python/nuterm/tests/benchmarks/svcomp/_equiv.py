@@ -1,7 +1,7 @@
 """Differential equivalence checker: DSL module vs the original C program.
 
 Faithfulness guard for the hand-encodings. For random nondet inputs it runs
-**the real C** (compiled with cc) and the **DSL module** (via ``zrth.eval``)
+**the real C** (compiled with cc) and the **DSL module** (via ``reactor.eval``)
 from the same inputs, and compares the final program state. A hand-encoding
 that mis-transcribes a guard or body will diverge on some input.
 
@@ -39,8 +39,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-from zrth import X
-from zrth.eval import eval_itype
+from reactor import X
+from reactor.eval import eval_itype
 
 from nuterm._bench import Bench
 from nuterm._train import run_block

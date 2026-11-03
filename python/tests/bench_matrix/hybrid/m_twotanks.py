@@ -16,8 +16,8 @@ band is wider than either controller's own hysteresis band.
 
 state: s0 = x1, s1 = x2 (Real), s2 = v1, s3 = v2 (Bool)
 """
-from zrth import Bool, LRA, Module, Real, Var, sugar
-from zrth.sugar import expr, ite
+from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor.sugar import expr, ite
 
 REAL = Real([1, 1])
 

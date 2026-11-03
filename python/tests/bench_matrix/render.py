@@ -4,7 +4,7 @@
     uv run python tests/bench_matrix/render.py -o matrix.html
 
 No server, no network, no build step: one file that opens from the
-filesystem. The route descriptions are read from `zrth.lean.infer`
+filesystem. The route descriptions are read from `reactor.lean.infer`
 rather than restated, so the page cannot drift from the table that drives
 the CLI; everything else comes from the results file, including the machine
 the timings were taken on.
@@ -359,7 +359,7 @@ def column_docs():
     A column is not a route -- `houdini` and `houdini-vampire` are the same
     route decided by two different solvers -- so the list of columns comes
     from the harness that measured them and only the description comes from
-    `zrth.lean.infer`, which is what keeps the description from
+    `reactor.lean.infer`, which is what keeps the description from
     drifting away from what `--infer` accepts.
 
     The paths are placeholders because they only fill in a column's `args`,
@@ -367,8 +367,8 @@ def column_docs():
     drop a column whenever a results file is rendered on a machine without
     the binary it names -- and take that column's measured cells with it.
     """
-    from zrth.lean.cli import SEED_FLAGS
-    from zrth.lean.infer import ROUTES
+    from reactor.lean.cli import SEED_FLAGS
+    from reactor.lean.infer import ROUTES
 
     flag_of = {field: flag for field, _attr, flag in SEED_FLAGS}
     by_name = {r.name: r for r in ROUTES}
@@ -1291,7 +1291,7 @@ def render(data: dict, warns: list = ()) -> str:
     # ── the routes ──────────────────────────────────────────────────────
     w("<h2 id=methods>The methods</h2>")
     w(
-        "<p>A route&rsquo;s own row in <code>zrth/lean/infer_route.py</code> is what "
+        "<p>A route&rsquo;s own row in <code>reactor/lean/infer_route.py</code> is what "
         "describes it below; the CLI reads the same rows, so this cannot drift from "
         "what <code>--infer</code> actually accepts. What a route needs of the property "
         "is the first tag: a <code>--buchi</code> certificate needs an invariant "
@@ -1649,7 +1649,7 @@ def render(data: dict, warns: list = ()) -> str:
     )
     w(
         "<p>The prose above is generated too: the method cards come from "
-        "<code>zrth/lean/infer_route.py</code>, the machine block and every timing from "
+        "<code>reactor/lean/infer_route.py</code>, the machine block and every timing from "
         "<code>results.json</code>. See "
         "<code>tests/bench_matrix/README.md</code> for what to do when a number surprises "
         "you.</p>"

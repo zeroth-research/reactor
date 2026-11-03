@@ -4,7 +4,7 @@
 Lyapunov function over a two-wire state.
 """
 import torch
-from zrth import Module, Term, Wire, Int, Bool, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Bool, LIA, Var, X
 
 
 def _leg(v, init_val):

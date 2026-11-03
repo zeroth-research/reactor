@@ -6,8 +6,8 @@ from pathlib import Path
 PKG_ROOT = Path(__file__).resolve().parents[2]
 
 HEAD = '''
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

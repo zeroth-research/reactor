@@ -8,7 +8,7 @@ module extracted from a plain [gymnasium](https://gymnasium.farama.org/)
 environment:
 
 ```
-gym.Env  ──zrth.gym.Env──▶  symbolic Module (SSA term IR)  ──verith──▶  Lean 4 project + certificate
+gym.Env  ──reactor.gym.Env──▶  symbolic Module (SSA term IR)  ──verith──▶  Lean 4 project + certificate
 ```
 
 ## Prerequisites
@@ -17,7 +17,7 @@ Run everything from the repository checkout (`uv run verith` works from the
 repo root or from `python/`; it is not installed globally):
 
 ```bash
-uv sync          # builds zrth via maturin and installs dependencies
+uv sync          # builds reactor via maturin and installs dependencies
 uv run verith --help
 ```
 
@@ -28,8 +28,8 @@ and depends on Mathlib, so the first `lake build` downloads a large cache).
 ## Step 1 — Wrap a gymnasium environment as a module
 
 A *module file* is any Python file exposing a callable named `module`
-(override the name with `-d`) that returns a `zrth.Module`. For a gymnasium
-environment you don't hand-write the module — `zrth.gym.Env` extracts it by
+(override the name with `-d`) that returns a `reactor.Module`. For a gymnasium
+environment you don't hand-write the module — `reactor.gym.Env` extracts it by
 symbolically analyzing the environment's `reset` and `step` methods.
 
 Save this as `chain_env.py`:
@@ -39,8 +39,8 @@ Save this as `chain_env.py`:
 import gymnasium as gym
 from gymnasium import spaces
 
-from zrth import Module
-from zrth.gym import Env
+from reactor import Module
+from reactor.gym import Env
 
 
 class ChainEnv(gym.Env):
@@ -98,7 +98,7 @@ IR instead of delegating to the backing env:
 ```python
 import torch
 from chain_env import ChainEnv
-from zrth.gym import Env
+from reactor.gym import Env
 
 real = Env(ChainEnv())
 sim = Env(ChainEnv(), interpret=True)   # runs the symbolic IR only
@@ -261,8 +261,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from zrth import Module, LIA
-from zrth.gym import Env
+from reactor import Module, LIA
+from reactor.gym import Env
 
 
 class CycleEnv(gym.Env):
@@ -344,8 +344,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from zrth import Module, LIA
-from zrth.gym import Env
+from reactor import Module, LIA
+from reactor.gym import Env
 
 
 class MatCycleEnv(gym.Env):
@@ -449,7 +449,7 @@ counterexample until a proposal passes (or the attempt budget runs out).
 
 Requirements: `--infer` needs `-P` and, for the default Claude backend
 (model `claude-sonnet-4-6`), an `ANTHROPIC_API_KEY` in the environment plus
-the `ai` extra (`uv sync --extra ai`, or `pip install zrth[ai]`). Any other
+the `ai` extra (`uv sync --extra ai`, or `pip install reactor[ai]`). Any other
 backend — a local model or a hosted OpenAI-compatible provider — goes
 through `--base-url`; see [Using a local LLM or another
 provider](#using-a-local-llm-or-another-provider-ollama-vllm-openrouter-)
@@ -483,7 +483,7 @@ OpenAI-compatible endpoint; `--model` is the model name as that endpoint
 knows it. The only extra dependency is the `openai` client package:
 
 ```bash
-uv sync --extra ai-local        # or: pip install zrth[ai-local]
+uv sync --extra ai-local        # or: pip install reactor[ai-local]
 ```
 
 For **local servers** no API key is needed (the client is created with a

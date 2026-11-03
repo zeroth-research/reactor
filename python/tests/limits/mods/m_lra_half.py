@@ -1,6 +1,6 @@
 """LRA: x steps down by 0.5 from 3.0, resetting at 0 — a non-integral Real state."""
 import torch
-from zrth import Module, Term, Wire, Real, Bool, LRA, Var, X
+from reactor import Module, Term, Wire, Real, Bool, LRA, Var, X
 
 
 def module() -> Module:

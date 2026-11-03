@@ -26,12 +26,12 @@ import gc
 import json
 import sys
 
-import zrth.lean.pipeline as entry
+import reactor.lean.pipeline as entry
 
 print("cvc5 loaded by import:", "cvc5" in sys.modules, flush=True)
 
-from zrth.lean.infer.ai import engine as ai
-from zrth.lean.infer.ai_cegis import engine as cegis
+from reactor.lean.infer.ai import engine as ai
+from reactor.lean.infer.ai_cegis import engine as cegis
 
 def client(base_url, model):
     def chat(system, user):
@@ -58,8 +58,8 @@ PRE = ["--pre-check", "cvc5", "--smt-tactics", "cvc5"]
 
 
 def _cases(out: Path) -> list[list[str]]:
-    from zrth.lean.core.errors import Refused
-    from zrth.lean.smt.vampire import resolve_vampire
+    from reactor.lean.core.errors import Refused
+    from reactor.lean.smt.vampire import resolve_vampire
 
     counter = str(FIXTURES / "counter.py")
     countdown = str(FIXTURES / "svcomp_countdown.py")
@@ -107,7 +107,7 @@ def test_every_route_exits_cleanly(tmp_path):
 def test_a_predicate_refusal_is_shown_as_its_flag():
     """The layers below the CLI name a predicate by role; the refusal is
     read where the user can act on it, as the flag it came from."""
-    from zrth.lean.core.errors import PredicateRefused
+    from reactor.lean.core.errors import PredicateRefused
 
     assert str(PredicateRefused("property", "x", kind="safety")) == "--safety: x"
     assert str(PredicateRefused("property", "x")) == "--buchi: x"

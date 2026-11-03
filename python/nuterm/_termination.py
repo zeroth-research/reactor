@@ -25,14 +25,14 @@ from __future__ import annotations
 
 import z3
 
-# torch must load before the zrth C-extension (see _bench)
+# torch must load before the reactor C-extension (see _bench)
 from nuterm._bench import Bench, INT, var  # noqa: F401
 from nuterm._farkas import System, certify, inductive, lex_decrease, read_system
 from nuterm._invariants import as_predicates, infer_invariants
 from nuterm._property import Liveness, Safety
-from zrth import LIA, Module, Term, X
-from zrth.expr import collecting
-from zrth.sugar import expr, relu
+from reactor import LIA, Module, Term, X
+from reactor.expr import collecting
+from reactor.sugar import expr, relu
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def _v_module(state_vars, layers, *, read_next: bool):
     program they are two wires the witness can name: V at each end of a step.
 
     The blocks are written out as ordinary terms rather than through
-    :mod:`zrth.sugar`, whose methods take one parameter per variable (and which
+    :mod:`reactor.sugar`, whose methods take one parameter per variable (and which
     has no combinatorial block): the state here is as wide as the program, which
     is not known until it is read."""
     out = var()

@@ -1,4 +1,4 @@
-"""Tests for the verith CLI (zrth.lean.pipeline)."""
+"""Tests for the verith CLI (reactor.lean.pipeline)."""
 
 import os
 import subprocess
@@ -150,7 +150,7 @@ def test_a_fault_in_the_module_file_keeps_its_traceback():
 # `update` reads an `Uninterpreted` wire, which no Lean column can write.
 _NO_LEAN_FORM_MODULE = """\
 import torch
-from zrth import Int, LIA, Module, Term, Var, Wire, X
+from reactor import Int, LIA, Module, Term, Var, Wire, X
 
 def module():
     x = Var(Int([1, 1]))
@@ -175,8 +175,8 @@ def test_a_module_with_no_lean_form_is_refused_without_naming_infer(tmp_path):
 def test_a_refusal_names_only_the_flag_that_was_given():
     from types import SimpleNamespace
 
-    from zrth.lean.pipeline import certify
-    from zrth.lean.core.errors import Refused
+    from reactor.lean.pipeline import certify
+    from reactor.lean.core.errors import Refused
 
     def said(route) -> str:
         return certify.refused(route, Refused("why")).code
@@ -268,9 +268,9 @@ def test_pre_check_checks_the_inferred_certificate():
 def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
     """A route infers the invariant and the ranking function, never the
     property: that is the question it was asked."""
-    from zrth.lean.pipeline import certify
-    from zrth.lean.artifacts import ArtifactStore
-    from zrth.lean.core.certificate import Certificate, Claim
+    from reactor.lean.pipeline import certify
+    from reactor.lean.artifacts import ArtifactStore
+    from reactor.lean.core.certificate import Certificate, Claim
 
     def recorded(store) -> dict[str, str]:
         return {a.role: a.what for a in store.list() if a.indexed}
@@ -640,8 +640,8 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
     """The parse-time gate cannot see what `--infer` came back with: an LLM
     that answers nothing usable leaves `inv` or `ranking` unset, and building
     that would report a proof of `sorry`."""
-    from zrth.lean.pipeline import outputs
-    from zrth.lean.proof.render import LeanCertificate, LeanPredicates
+    from reactor.lean.pipeline import outputs
+    from reactor.lean.proof.render import LeanCertificate, LeanPredicates
 
     def lean(**defs):
         return LeanCertificate(LeanPredicates(**defs))
@@ -671,7 +671,7 @@ def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(
     """`zeroth_hammer` leaves a `sorry` where it cannot close an obligation,
     and lake reports that as a warning and exits 0 — so a plain exit code
     would make "built" mean nothing."""
-    from zrth.lean.project import build as project
+    from reactor.lean.project import build as project
 
     logs: dict[str, tuple[int, str]] = {}
     monkeypatch.setattr(
@@ -711,7 +711,7 @@ def test_a_kernel_error_after_another_one_is_not_reported_twice(
     and reads like a codegen bug rather than a proof that did not close.
     Every occurrence of it in the matrix follows an earlier error.
     """
-    from zrth.lean.project import build as project
+    from reactor.lean.project import build as project
 
     logs: dict[str, tuple[int, str]] = {}
     monkeypatch.setattr(project, "stream", lambda cmd, *, cwd: logs[cmd[1]])
@@ -739,7 +739,7 @@ def test_a_kernel_error_after_another_one_is_not_reported_twice(
 
 
 def test_the_input_format_follows_the_suffix_or_format():
-    from zrth.lean.cli import parse_args
+    from reactor.lean.cli import parse_args
 
     s = parse_args([str(COUNTER_MODULE)])
     assert (s.input_format, s.input_opts) == ("python", {"module_def": "module"})
@@ -750,7 +750,7 @@ def test_the_input_format_follows_the_suffix_or_format():
 
 
 def test_an_input_whose_format_cannot_be_told_is_refused(capsys):
-    from zrth.lean.cli import parse_args
+    from reactor.lean.cli import parse_args
 
     with pytest.raises(SystemExit):
         parse_args(["model.txt"])
@@ -761,7 +761,7 @@ SMV_FIXTURES = Path(__file__).parent / "smv_fixtures"
 
 
 def test_d_is_only_meaningful_for_python_input(capsys):
-    from zrth.lean.cli import parse_args
+    from reactor.lean.cli import parse_args
 
     with pytest.raises(SystemExit):
         parse_args([str(SMV_FIXTURES / "mod10.smv"), "-d", "other"])

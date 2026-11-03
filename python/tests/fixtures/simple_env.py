@@ -3,8 +3,8 @@
 Chain environment: state ∈ {0,1,2}, action moves left/right.
 Property: state reaches 2 infinitely often.
 """
-from zrth.gym import Env
-from zrth import Module, Real
+from reactor.gym import Env
+from reactor import Module, Real
 from tests.gym.environments import SimpleEnv
 
 

@@ -13,8 +13,8 @@ benchmark -- the safe band has to absorb one tick of actuation lag.
 
 state: s0 = h (Real), s1 = fill (Bool)
 """
-from zrth import Bool, LRA, Module, Real, Var, sugar
-from zrth.sugar import ite
+from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor.sugar import ite
 
 
 class Tank(sugar.Module):
