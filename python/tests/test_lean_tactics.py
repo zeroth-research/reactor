@@ -383,13 +383,25 @@ def test_product_hints_are_added_before_the_bare_nlinarith():
     plan = plan_for(
         LeanContext(_int_module()),
         "fun s => ((s 0 0) * (s 0 0))",       # nonlinear, so nlinarith is in
-        hints=_solver_hints(nlinarith_hints=["mul_self_nonneg ((s 0 0) - 1)"]),
+        hints=_solver_hints(nlinarith_hints=["mul_self_nonneg ((($v) 0 0) - 1)"]),
     )
     closers = plan.closers
-    assert "nlinarith [mul_self_nonneg ((s 0 0) - 1)]" in closers
-    assert closers.index("nlinarith [mul_self_nonneg ((s 0 0) - 1)]") < closers.index(
+    assert "nlinarith [mul_self_nonneg ((($v) 0 0) - 1)]" in closers
+    assert closers.index("nlinarith [mul_self_nonneg ((($v) 0 0) - 1)]") < closers.index(
         "nlinarith"
     )
+
+
+def test_a_product_hint_reads_the_obligations_own_state():
+    """The hints are spliced into `cert_close`, a macro, and a hygienic macro
+    reads a bare `s` as a fresh `s✝`. So `cert_close` takes the obligation's
+    state binder exactly when a hint names it, and is unchanged otherwise."""
+    ctx = LeanContext(_int_module())
+    text = "fun s => ((s 0 0) * (s 0 0))"
+    assert not plan_for(ctx, text).close_binds_state
+    hinted = plan_for(ctx, text, hints=_solver_hints(
+        nlinarith_hints=["mul_self_nonneg ((($v) 0 0) - 1)"]))
+    assert hinted.close_binds_state
 
 
 def test_hints_never_remove_a_closer():
@@ -451,16 +463,6 @@ def test_a_real_state_keeps_norm_num_in_prep():
 # ══════════════════════════════════════════════════════════════════════
 
 
-class _Settings:
-    """The two fields `render` reads, without building a whole CLI parse."""
-
-    def __init__(self, smt_tactics="cvc5"):
-        from zrth.lean.smt.limits import SmtBudget
-
-        self.smt_tactics = smt_tactics
-        self.budget = SmtBudget()
-
-
 def _countdown():
     from zrth.analyzer import convert_method
 
@@ -486,13 +488,15 @@ def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
     from zrth.lean.core.certificate import Certificate, Claim
     from zrth.lean.pipeline.certify import render
 
+    from zrth.lean.smt.limits import SmtBudget
+
     module = _countdown()
     claim = Claim(prp="(= s0 0)")
-    settings = _Settings(smt_tactics)
+    hints = SmtBudget() if smt_tactics == "cvc5" and verbatim is None else None
     # Before: the property is all there is to read the shape of.
-    before = render(settings, module, claim, Certificate(), hints=False)
-    after = render(settings, module, claim, Certificate(inv, ranking),
-                   hints=verbatim is None, restated=True, verbatim=verbatim)
+    before = render(module, claim, Certificate(), hints=None)
+    after = render(module, claim, Certificate(inv, ranking), hints=hints,
+                   restated=True, verbatim=verbatim)
     return module, before, after
 
 

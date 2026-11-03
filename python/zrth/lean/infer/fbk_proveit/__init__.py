@@ -19,7 +19,6 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from ...core.errors import Refused
 from ...core.options import Opt
 from ...project.names import EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file
 from ..io import InferInput, InferResult
@@ -35,7 +34,7 @@ def _resolve(opts: dict):
     return resolve_project(opts["proveit_dir"])
 
 
-def _check_project_name(settings, opts) -> "str | None":
+def _check_project_name(settings) -> "str | None":
     """`-p` becomes a Lean module name on this route, so it has to be one.
 
     Not a cell of the table: it is a rule about another flag's *value*.
@@ -55,20 +54,14 @@ def _check_project_name(settings, opts) -> "str | None":
 
 
 def _precheck(module, opts, config, claim, smt):
-    from .engine import ProveItError, check_module
+    from .engine import check_module
 
-    try:
-        return check_module(
-            module,
-            opts["fbk_simplify"] == "cvc5",
-            claim.init_pre if claim else None,
-            smt(),
-        )
-    except ProveItError as e:
-        # One exception type crosses the seam, so `main` catches what every
-        # route raises. The message keeps naming `--fbk-proveit` itself,
-        # which is what `errors_self_named` is about.
-        raise Refused(str(e)) from e
+    return check_module(
+        module,
+        opts["fbk_simplify"] == "cvc5",
+        claim.init_pre if claim else None,
+        smt(),
+    )
 
 
 def _lakefile(config, project_name: str) -> "LakefileParts":
@@ -114,26 +107,24 @@ def _lakefile(config, project_name: str) -> "LakefileParts":
 
 
 def _run(inp: InferInput) -> InferResult:
-    from .engine import ProveItError
+    from .engine import ProveIt
     from .engine import run as run_proveit
 
-    try:
-        files = run_proveit(
-            ltl_project=inp.config,
-            module=inp.module,
-            path=inp.project.path,
-            project_name=inp.project.name,
-            property_smt=str(inp.claim.prp),
-            pre_smt=inp.claim.init_pre,
-            ic3ia=inp.opts["ic3ia"],
-            simplify=inp.opts["fbk_simplify"] == "cvc5",
-            equivalence=inp.opts["fbk_equiv"] == "lean",
-            prechecked=inp.prechecked,
-            encoding=inp.smt(),
-            log=inp.log,
-        )
-    except ProveItError as e:
-        raise Refused(str(e), searched=e.searched) from e
+    proveit = ProveIt(
+        checkout=inp.config,
+        ic3ia=inp.opts["ic3ia"],
+        simplify=inp.opts["fbk_simplify"] == "cvc5",
+        equivalence=inp.opts["fbk_equiv"] == "lean",
+    )
+    files = run_proveit(
+        proveit, inp.module, inp.claim,
+        path=inp.project.path,
+        project_name=inp.project.name,
+        prechecked=inp.prechecked,
+        encoding=inp.smt(),
+        ctx=inp.project.ctx,
+        log=inp.log,
+    )
     # The certificate carries ic3ia's invariant: no predicates come back,
     # which is what this route's `returns="files"` declares.
     return InferResult(files=files)

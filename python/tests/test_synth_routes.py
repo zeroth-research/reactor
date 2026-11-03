@@ -15,7 +15,6 @@ checked here end to end, because it is the part no single route owns.
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
@@ -23,16 +22,15 @@ import pytest
 from zrth.lean.artifacts import ArtifactStore, module_digest
 from zrth.lean.core.certificate import Certificate, Claim
 from zrth.lean.core.errors import Refused
+from zrth.lean.inputs.python import load_module
+from zrth.lean.infer.resume import resumable_inv, ruled_out, taking_inv
 
 MODS = Path(__file__).parent / "limits" / "mods"
 
 
 def module_of(name: str):
     """One `tests/limits` fixture module, loaded by path."""
-    spec = importlib.util.spec_from_file_location(f"_m_{name}", MODS / f"{name}.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.module()
+    return load_module(MODS / f"{name}.py")
 
 
 def _int_cols(n: int):
@@ -113,7 +111,7 @@ def test_sygus_without_congruences_cannot_state_it():
 
 def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
     """Found, and then *resumable*: `proved` and SMT-LIB, which is what
-    `infer.FIXABLE` and `InferInput.resumable_inv`'s filter ask for."""
+    `infer.FIXABLE` and `infer.resume.resumable_inv`'s filter ask for."""
     from zrth.lean.infer.sygus.engine import SygusEngine
 
     store = store_for(tmp_path, "m_step2", kind="safety", prp="(not (= s0 1))",
@@ -582,7 +580,7 @@ def test_an_empty_ranking_is_a_parse_error_the_loop_can_answer():
         prompt_inv_ranking(env, chat, "source", "(= s0 0)", "", None)
 
 def test_only_a_proof_of_absence_reaches_the_prompt(tmp_path):
-    """`InferInput.ruled_out` filters on `no_solution`, so a timed-out search stays out."""
+    """`infer.resume.ruled_out` filters on `no_solution`, so a timed-out search stays out."""
     from zrth.lean.infer import InferInput, ProjectHandle
 
     store = store_for(tmp_path, "m_countdown", kind="buchi", prp="(= s0 0)")
@@ -591,21 +589,20 @@ def test_only_a_proof_of_absence_reaches_the_prompt(tmp_path):
     handle = ProjectHandle(
         dir=tmp_path,
         name="Rea",
-        module=module_of("m_countdown"),
         ctx=None,
         reads=frozenset(),
         owns=(),
         resumes=frozenset({"note"}),
         artifacts=store,
     )
-    known = InferInput(
+    known = ruled_out(InferInput(
         project=handle,
         module=None,
         claim=Claim(prp="(= s0 0)", kind="buchi"),
         given=Certificate(),
         opts={},
         log=lambda *_: None,
-    ).ruled_out()
+    ))
     assert known == ("proved empty\n",)
 
 
@@ -620,21 +617,20 @@ def test_a_note_about_another_property_is_not_carried_over(tmp_path):
     handle = ProjectHandle(
         dir=tmp_path,
         name="Rea",
-        module=module_of("m_countdown"),
         ctx=None,
         reads=frozenset(),
         owns=(),
         resumes=frozenset({"note"}),
         artifacts=later,
     )
-    assert InferInput(
+    assert ruled_out(InferInput(
         project=handle,
         module=None,
         claim=Claim(prp="(= s0 7)", kind="buchi"),
         given=Certificate(),
         opts={},
         log=lambda *_: None,
-    ).ruled_out() == ()
+    )) == ()
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -650,10 +646,9 @@ def obligations_hold(name: str, claim: Claim, cert: Certificate) -> list[str]:
     `inv_imp_P` the way `--pre-check cvc5` does, from the predicates alone.
     """
     from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.smt.precheck import ModuleQueries, Status
+    from zrth.lean.smt.precheck import Status, predicate_terms
 
-    q = ModuleQueries.build(module_of(name), claim, cert)
-    assert q is not None, "the predicates should be readable for this module"
+    q = predicate_terms(module_of(name), claim, cert)
     return [
         v.name
         for v in q.check_obligations(SmtBudget())
@@ -751,7 +746,6 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
     handle = ProjectHandle(
         dir=tmp_path,
         name="Rea",
-        module=module_of("m_countdown"),
         ctx=None,
         reads=frozenset(),
         owns=(),
@@ -766,7 +760,7 @@ def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
         opts={},
         log=lambda *_: None,
     )
-    inp = inp.taking_inv(inp.resumable_inv(strengthen=True), "adding to it")
+    inp = taking_inv(inp, resumable_inv(inp, strengthen=True), "adding to it")
     assert inp.given.inv == "(>= s0 0)"
 
     out = SmtLinearEngine(module_of("m_countdown"), log=lambda *_: None).infer(
@@ -783,7 +777,7 @@ def test_an_explicit_invariant_is_not_overridden_by_a_resumed_one(tmp_path):
     store = store_for(tmp_path, "m_countdown", kind="safety", prp="(<= s0 100)")
     store.put("inv", "(>= s0 0)", status="proved", language="smt", what="x")
     handle = ProjectHandle(
-        dir=tmp_path, name="Rea", module=module_of("m_countdown"), ctx=None,
+        dir=tmp_path, name="Rea", ctx=None,
         reads=frozenset(), owns=(), resumes=frozenset({"inv"}), artifacts=store,
     )
     inp = InferInput(
@@ -794,7 +788,7 @@ def test_an_explicit_invariant_is_not_overridden_by_a_resumed_one(tmp_path):
         opts={},
         log=lambda *_: None,
     )
-    assert inp.resumable_inv(strengthen=True) is None
+    assert resumable_inv(inp, strengthen=True) is None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -831,10 +825,9 @@ def bv_counter(width: int, top: int):
 
 def obligations_of(module, claim: Claim, cert: Certificate) -> list[str]:
     from zrth.lean.smt.limits import SmtBudget
-    from zrth.lean.smt.precheck import ModuleQueries, Status
+    from zrth.lean.smt.precheck import Status, predicate_terms
 
-    q = ModuleQueries.build(module, claim, cert)
-    assert q is not None
+    q = predicate_terms(module, claim, cert)
     return [v.name for v in q.check_obligations(SmtBudget())
             if v.status is not Status.HOLDS]
 
@@ -918,11 +911,7 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
 
 def _fixture(name: str):
     """One `tests/fixtures` module, loaded by path."""
-    path = Path(__file__).resolve().parent / "fixtures" / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(f"_f_{name}", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.module()
+    return load_module(Path(__file__).resolve().parent / "fixtures" / f"{name}.py")
 
 
 def test_smt_linear_zeroes_the_rank_where_the_property_holds():

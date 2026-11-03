@@ -72,12 +72,7 @@ from ...smt.limits import bounded_solver, call_ms
 from ...smt.obligations import initial, transition
 from ..common.synth import Search, body_of, readings, moduli, program_constants, record
 
-try:
-    import cvc5                                      # type: ignore
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    cvc5 = None
-    Kind = None
+from cvc5 import Kind
 
 # Grammars, by what their atoms can say.  `congruence` is the default because
 # it is the only one that says anything the rest of the package cannot: the
@@ -129,11 +124,6 @@ class SygusEngine(Engine):
         log=print,
         encoding=None,
     ):
-        if cvc5 is None:                             # pragma: no cover
-            raise Refused(
-                "--infer sygus needs the `cvc5` package, which is not "
-                "importable. Install with: uv pip install cvc5"
-            )
         if grammar not in GRAMMARS:
             raise Refused(
                 f"--sygus-grammar takes one of {', '.join(GRAMMARS)}; "
@@ -169,7 +159,7 @@ class SygusEngine(Engine):
         # so nothing here has to land in `Nat` and flooring would only lose
         # the property. `--infer smt-linear` reads the same component
         # through `to_int` because it also ranks; see `component_readings`.
-        cols = readings(ctx, allow=READS, route="sygus", floor_reals=False)
+        cols = readings(ctx, floor_reals=False)
         self.log(f"[sygus] columns: {', '.join(c.name for c in cols)}")
         consts = program_constants(ctx)
         self.log(f"[sygus] grammar: {self.grammar}, constants {list(consts)}")

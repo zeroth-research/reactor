@@ -443,7 +443,6 @@ def _handle(tmp_path, reads=(), owns=(), resumes=(), store=None):
     return ProjectHandle(
         dir=tmp_path,
         name="Rea",
-        module=None,
         ctx=None,
         reads=frozenset(reads),
         owns=tuple(owns),
@@ -647,7 +646,7 @@ def test_artifacts_defaults_to_use():
 
 
 def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
-    """`InferInput.resumable_inv`'s answer for a store that already holds artifacts.
+    """`infer.resume.resumable_inv`'s answer for a store that already holds artifacts.
 
     The store does the role/language/status filtering (it is the half that
     knows what a stale artifact is and reports what it dropped); what is
@@ -655,15 +654,16 @@ def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
     """
     from zrth.lean.core.certificate import Certificate, Claim
     from zrth.lean.infer import InferInput
+    from zrth.lean.infer.resume import resumable_inv
 
     handle = _handle(tmp_path, resumes=("inv",), store=_store(tmp_path, kind=kind))
-    return InferInput(
+    return resumable_inv(InferInput(
         project=handle,
         module=None,
         claim=Claim(prp="(= s0 0)", kind=kind),
         given=Certificate(inv=supplied_inv),
         opts={},
-    ).resumable_inv()
+    ))
 
 
 def test_an_inductive_invariant_is_taken_as_given(tmp_path):
@@ -816,12 +816,15 @@ def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
 
 
 def test_a_missing_package_is_not_filed_against_the_module(tmp_path):
-    """An `ImportError` is about how the route was asked for. Filing it as a
-    decline would read as a fact about a run that never started."""
+    """A missing package is about how the route was asked for. Filing it as
+    a decline would read as a fact about a run that never started."""
+    from zrth.lean.core.errors import require
     from zrth.lean.pipeline.certify import note_refusal
 
+    with pytest.raises(Refused) as missing:
+        require("zrth_no_such", "--infer x")
     store = _note_store(tmp_path)
-    note_refusal(_NoteHandle(store), _NoteRoute(), ImportError("no cvc5"))
+    note_refusal(_NoteHandle(store), _NoteRoute(), missing.value)
     assert store.list() == ()
 
 
@@ -842,11 +845,11 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     monkeypatch.setattr(certify, "render", refuse)
     store = _note_store(tmp_path)
     settings = SimpleNamespace(
-        pre_check=None,
+        pre_check=None, smt_tactics="none",
         route=SimpleNamespace(name="test-route", errors_self_named=False),
     )
     with pytest.raises(SystemExit, match="--infer: .*INTS_MODULUS"):
-        certify.regenerate(settings, None, _NoteHandle(store), store,
+        certify.regenerate(settings, None, _NoteHandle(store),
                            Claim(prp="(= s0 0)", kind="safety"),
                            InferResult(cert=Certificate(inv="(= (mod s0 2) 0)")))
     notes = [a for a in store.list() if a.role == "note"]
@@ -885,3 +888,12 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
             assert inp.source == problem.source and inp.names == problem.names
         else:
             assert inp.source is None and inp.names is None
+
+
+def test_a_missing_package_is_refused_by_the_flag_that_needs_it():
+    from zrth.lean.core.errors import Refused, require
+
+    assert require("json", "--anything").dumps(1) == "1"
+    with pytest.raises(Refused, match=r"--infer x needs the `zrth_no_such` "
+                                      r"package.*uv pip install zrth_no_such"):
+        require("zrth_no_such", "--infer x")

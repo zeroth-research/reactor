@@ -49,8 +49,8 @@ from dataclasses import dataclass, field
 
 from zrth import Bool, Int, Real, BitVec
 
-from ..lowering.sorts import dtype_shape, itype_name, sort_shape
-from ..lowering.elements import product_accessor
+from ..lowering.sorts import itype_name, wire_shape
+from ..lowering.elements import flat_layout
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -236,25 +236,21 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
     variable, e.g. `.2.1 0 0`, so the caller can prefix whichever binder the
     obligation uses.
     """
-    wires = list(ctx.ctrl_next)
-    n = len(wires)
-    out: list[tuple[str, str]] = []
-    for i, w in enumerate(wires):
+    layout = flat_layout(list(ctx.ctrl_next))
+    lemmas: list[str] = []
+    for w in layout.wires:
         dt = w.dtype
         if isinstance(dt, Bool):
-            lemma = "Bool.eq_false_or_eq_true"
+            lemmas.append("Bool.eq_false_or_eq_true")
         elif isinstance(dt, BitVec) and dt._0 == 1:
-            lemma = "BitVec.eq_zero_or_eq_one"
+            lemmas.append("BitVec.eq_zero_or_eq_one")
         else:
             # Wider BitVec has 2^w values and no two-way lemma; Int and Real
             # are not finite at all.
             return []
-        acc = product_accessor(i, n)
-        shape = sort_shape(dt)
-        for r in range(shape.m):
-            for c in range(shape.n):
-                out.append((f"{acc} {r} {c}", lemma))
-    return out if len(out) <= MAX_ENUMERABLE_SLOTS else []
+    if layout.total > MAX_ENUMERABLE_SLOTS:
+        return []
+    return [(layout.wire_accessor("", s), lemmas[s.wire]) for s in layout.slots]
 
 
 _BRANCHING_OPS = frozenset({"Ite", "ReLU", "Min", "Max"})
@@ -274,11 +270,7 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
 
     for w in (*ctx.ctrl_next, *ctx.extl_next):
         f.theories.add(_sort_name(w.dtype))
-        shape = dtype_shape(w.dtype)
-        n = 1
-        for d in shape:
-            n *= d
-        f.n_slots += n
+        f.n_slots += wire_shape(w).total
 
     terms = list(ctx.atom.init) + list(ctx.atom.update)
     f.n_terms = len(terms)
@@ -351,6 +343,14 @@ class TacticPlan:
     @property
     def close_tactic(self) -> str:
         return "first | " + " | ".join(self.closers)
+
+    @property
+    def close_binds_state(self) -> bool:
+        """Whether `cert_close` takes the obligation's state binder, as
+        `cert_facts` does: when a closer names the state, which only a
+        product hint does (`nlinarith [mul_self_nonneg (($v) 0 0 - 1)]`).
+        Every other plan's `cert_close` stays the macro it always was."""
+        return bool(getattr(self.hints, "nlinarith_hints", None))
 
     @property
     def state_case_tactic(self) -> str:

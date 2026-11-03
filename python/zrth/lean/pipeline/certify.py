@@ -8,7 +8,6 @@ is about (`refused`).
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from ..artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
 from ..artifacts.record import note
@@ -18,13 +17,14 @@ from ..codegen.terms import lean_gaps
 from ..core.certificate import Certificate, Claim, LeanAnswer
 from ..core.errors import Refused
 from .. import inputs
-from ..infer import InferInput, InferResult, ProjectHandle
+from ..infer import InferInput, InferResult, InferRoute, ProjectHandle
 from ..proof.facts import solver_hints
 from ..proof.render import LeanCertificate, prepare
+from ..smt.limits import SmtBudget
 from ..smt.precheck import pre_check, predicate_terms
 
 
-def refused(settings: Settings, error: Exception) -> SystemExit:
+def refused(route: "InferRoute | None", error: Exception) -> SystemExit:
     """A refusal, under the flag it is about.
 
     Most routes are asked for with `--infer`, so that is what a failure of
@@ -33,7 +33,7 @@ def refused(settings: Settings, error: Exception) -> SystemExit:
     would name two flags for one problem. With no route there is no flag to
     name: the refusal is about the module.
     """
-    if settings.route is None or settings.route.errors_self_named:
+    if route is None or route.errors_self_named:
         return SystemExit(f"error: {error}")
     return SystemExit(f"error: --infer: {error}")
 
@@ -73,7 +73,7 @@ def record_predicates(store, claim: "Claim | None", cert: Certificate, *,
         store.encoded(role, role, src.strip(), language="smt-src", what=what)
 
 
-def workspace(settings: Settings, module, project_dir: Path,
+def workspace(settings: Settings, module,
               claim: "Claim | None") -> ArtifactStore:
     """The project's `artifacts/`, as this run sees it.
 
@@ -85,7 +85,7 @@ def workspace(settings: Settings, module, project_dir: Path,
     about this run, and `usable()` says so rather than silently omitting it.
     """
     store = ArtifactStore(
-        dir=project_dir / ARTIFACTS_DIR,
+        dir=settings.output_dir / settings.project_name / ARTIFACTS_DIR,
         module_digest=module_digest(module),
         kind=settings.kind,
         prp=(claim.prp if claim else None) or "",
@@ -99,29 +99,35 @@ def workspace(settings: Settings, module, project_dir: Path,
     return store
 
 
-def render(settings: Settings, smt, claim: "Claim | None",
-           cert: Certificate, *, hints: bool, restated: bool = False,
+def hint_budget(settings: Settings) -> "SmtBudget | None":
+    """What cvc5's solver hints are asked under: the run's budget with
+    `--smt-tactics cvc5`, and `None`, no hints, without it."""
+    return settings.budget if settings.smt_tactics == "cvc5" else None
+
+
+def render(smt, claim: "Claim | None", cert: Certificate, *,
+           hints: "SmtBudget | None", restated: bool = False,
            verbatim: "LeanAnswer | None" = None) -> "LeanCertificate | None":
     """The certificate as codegen takes it. `None` without a claim: a bare
     run asks cvc5 nothing. `smt` is the run's `smt.encoding.lazy` encoding.
 
     The predicates are parsed once, and that one parse is printed as Lean,
-    read for its shape (`predicate_facts`) and, with `hints` under
-    `--smt-tactics cvc5`, put to `solver_hints` (`proof.render.prepare` says how
-    the two meet). `verbatim` is an answer that is Lean already.
+    read for its shape (`predicate_facts`) and, given a `hints` budget, put
+    to `solver_hints` under it (`proof.render.prepare` says how the two
+    meet). `verbatim` is an answer that is Lean already.
     """
     if claim is None:
         return None
     q = predicate_terms(smt, claim, cert)
     h = None
-    if hints and settings.smt_tactics == "cvc5":
+    if hints is not None:
         restating = ", restated over the inferred predicates" if restated else ""
         print(
             f".. SMT-informed tactics (cvc5){restating}: "
-            f"<={settings.budget.per_call_ms} ms per query, "
-            f"<={settings.budget.phase_ms} ms total"
+            f"<={hints.per_call_ms} ms per query, "
+            f"<={hints.phase_ms} ms total"
         )
-        h = solver_hints(q, settings.budget)
+        h = solver_hints(q, hints)
     lean = prepare(q, h, verbatim)
     if h is not None:
         reasons = [ln.removeprefix("-- cvc5: ")
@@ -131,7 +137,7 @@ def render(settings: Settings, smt, claim: "Claim | None",
     return lean
 
 
-def note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
+def note_refusal(handle: ProjectHandle, route, e: Refused) -> None:
     """Leave *why* a route gave up in `artifacts/`, if it did not say so itself.
 
     `NO-CERT` is three measurements wearing one name -- a space proved
@@ -145,14 +151,14 @@ def note_refusal(handle: ProjectHandle, route, e: Exception) -> None:
     `vampire` each leave a note of their own with more in it than this, and
     a second one saying less would be worse than none.
 
-    An `ImportError` is not about the module at all -- a package or a key is
-    missing -- so it is left unrecorded rather than filed against a run that
-    never started.
+    A `setup` refusal is not about the module at all -- a package or a key
+    is missing -- so it is left unrecorded rather than filed against a run
+    that never started.
     """
-    store = getattr(handle, "artifacts", None)
-    if store is None or store.notes or isinstance(e, ImportError):
+    store = handle.artifacts
+    if store is None or store.notes or e.setup:
         return
-    searched = getattr(e, "searched", False)
+    searched = e.searched
     store.note(
         f"{e}\n",
         status="unknown" if searched else "declined",
@@ -221,11 +227,9 @@ def run_route(
                        if route.reads_source and problem else None),
             )
         )
-    except (Refused, ImportError) as e:
-        # A missing package and a missing key are both about how the route
-        # was asked for, not about the module.
+    except Refused as e:
         note_refusal(handle, route, e)
-        raise refused(settings, e) from e
+        raise refused(route, e) from e
 
     # The row *declares* what comes back and the result carries it, so the
     # two are checked against each other once rather than each reader
@@ -275,8 +279,8 @@ def route_precheck(settings: Settings, module, claim: "Claim | None", smt):
         return route.precheck(
             module, settings.route_opts, settings.route_config, claim, smt
         )
-    except (Refused, ImportError) as e:
-        raise refused(settings, e) from e
+    except Refused as e:
+        raise refused(route, e) from e
 
 
 def lean_context(settings: Settings, module) -> LeanContext:
@@ -293,14 +297,14 @@ def lean_context(settings: Settings, module) -> LeanContext:
     ctx = LeanContext(module)
     gaps = lean_gaps(ctx)
     if gaps:
-        raise refused(settings, Refused(
+        raise refused(settings.route, Refused(
             "this module has no Lean form: "
             + "; also ".join(gaps)
         ))
     return ctx
 
 
-def regenerate(settings: Settings, smt, handle: ProjectHandle, store,
+def regenerate(settings: Settings, smt, handle: ProjectHandle,
                claim: Claim, result: InferResult) -> LeanCertificate:
     """The project's certificate, rewritten from the route's answer.
 
@@ -311,15 +315,17 @@ def regenerate(settings: Settings, smt, handle: ProjectHandle, store,
     writes more of the project and this pipeline go through one writer.
     """
     cert, lean = result.cert, result.lean
+    store = handle.artifacts
     if settings.pre_check == "cvc5":
         pre_check(smt, claim, lean or cert, settings.budget,
                   artifacts=store)
     record_predicates(store, claim, cert, inferred=True)
     try:
-        lean_cert = render(settings, smt, claim, cert,
-                           hints=lean is None, restated=True, verbatim=lean)
+        lean_cert = render(smt, claim, cert,
+                           hints=hint_budget(settings) if lean is None else None,
+                           restated=True, verbatim=lean)
     except Refused as e:
         _note_unrenderable(store, settings.route, e)
-        raise refused(settings, e) from e
+        raise refused(settings.route, e) from e
     handle.write_predicates(lean_cert)
     return lean_cert

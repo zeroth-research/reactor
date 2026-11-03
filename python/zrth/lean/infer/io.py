@@ -1,8 +1,9 @@
 """What a route is given and what it hands back.
 
 `ProjectHandle` is the generated project, as much of it as the route's row
-declared; `InferInput` is everything a route is run with, and what a
-previous run left it to resume from; `InferResult` is its answer.
+declared; `InferInput` is everything a route is run with; `InferResult` is
+its answer. What a previous run left a route to resume from is read in
+`infer.resume`.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
 from ..core.certificate import Certificate, Claim, LeanAnswer
@@ -23,19 +24,12 @@ if TYPE_CHECKING:
     from ..proof.render import LeanCertificate
     from ..codegen.context import LeanContext
     from ..smt.encoding import ModuleEncoding
+    from ..smt.limits import SmtBudget
 
 
 # ══════════════════════════════════════════════════════════════════════════
 # What a route is given
 # ══════════════════════════════════════════════════════════════════════════
-
-
-# Statuses that make a previously-found invariant a *fixed* invariant for
-# a route that holds it as given: it has to be inductive. `too_weak` is
-# inductive and merely fails to imply the property, which `rule_buchi` never
-# asked of it -- so it is usable for a Buchi certificate and is exactly the
-# wrong thing for a safety one.
-FIXABLE = ("proved", "too_weak")
 
 
 @dataclass(frozen=True)
@@ -52,7 +46,6 @@ class ProjectHandle:
 
     dir: Path
     name: str
-    module: "Module"
     ctx: "LeanContext"          # built by `create_project`; not built again
     reads: frozenset[str]       # ENCODINGS suffixes this route declared
     owns: tuple[str, ...]       # project-relative paths this route declared
@@ -178,15 +171,17 @@ class InferInput:
     # What the route starts from: `--invariant` / `--ranking`, or an
     # invariant `taking_inv` resumed from `artifacts/`.
     given: Certificate
-    opts: dict                          # this route's own options, by dest
-    config: object | None = None        # what `resolve` returned
-    prechecked: object | None = None    # what `precheck` returned
+    opts: Mapping[str, Any]             # this route's own options, by dest
+    # What the row's `resolve` and `precheck` returned, each of a type
+    # only that row and its engine know.
+    config: object | None = None
+    prechecked: object | None = None
     # This run's `--smt-timeout` / `--smt-budget`, for a route that asks cvc5
     # a question of its own. The obligation queries have always been on it
     # (`smt.limits.SmtBudget`); a route that *searches* has to be, for the
     # same reason and more so -- a synthesis with no limit hangs generation,
     # and `tlimit-per` is the option that actually stops one.
-    budget: object | None = None
+    budget: "SmtBudget | None" = None
     model: str | None = None            # meaningful iff the row uses an LLM
     base_url: str | None = None
     log: Callable = print
@@ -196,64 +191,6 @@ class InferInput:
     # declares `reads_source`; `None` for every other row.
     source: "SourceText | None" = None
     names: "Names | None" = None
-
-    # --- resuming from `artifacts/` -------------------------------------
-
-    def resumable_inv(self, *, strengthen: bool = False) -> "Artifact | None":
-        """An invariant from a previous run to start from, or `None`.
-
-        An explicit `--invariant` wins: inheriting a predicate the user did
-        not ask for, over one they did, is the kind of cross-run surprise
-        that makes two identical command lines mean different things.
-
-        By default the invariant is one to take as *given*:
-        `infer.ai_cegis.engine` infers only what is left around a fixed
-        `given.inv`, so it has to be inductive and, on a safety claim, imply
-        the property. `too_weak` is inductive and merely fails to imply it,
-        which `rule_buchi` never asked of an invariant and exactly what
-        `rule_globally` needs -- so it is skipped for a safety claim, the one
-        thing the store cannot filter on. With `strengthen=True` the
-        invariant is one to *add to*: `--infer smt-linear --safety` searches
-        for the conjuncts that are missing, so an invariant that is inductive
-        and does not yet imply the property is the best thing it can be
-        handed.
-        """
-        if self.given.inv:
-            return None
-        for a in self.project.resume(
-            "inv", languages=("smt",), statuses=FIXABLE
-        ):
-            if (a.status == "too_weak" and self.claim.is_safety
-                    and not strengthen):
-                continue
-            return a
-        return None
-
-    def taking_inv(self, resumed: "Artifact | None", what: str) -> "InferInput":
-        """This input with a resumed invariant as its given one, saying so."""
-        if resumed is None:
-            return self
-        self.log(f".. resuming from {resumed.name} ({resumed.status}): {what}")
-        inv = self.project.artifacts.read(resumed)
-        return replace(self, given=replace(self.given, inv=inv))
-
-    def ruled_out(self) -> tuple[str, ...]:
-        """What earlier runs *proved* is not there, as prose for the prompt.
-
-        Only `no_solution`: a note whose status is `unknown` records a search
-        that ran out of budget, and telling a model that a shape is empty when
-        all that happened is a timeout would put a falsehood in the prompt.
-        The store has already dropped anything found against another module,
-        property or proof rule, which is the other half of the same care.
-        """
-        notes = self.project.resume("note", languages=("md",),
-                                    statuses=("no_solution",))
-        out = []
-        for a in notes:
-            self.log(f".. resuming from {a.name}: a space an earlier run "
-                     f"ruled out")
-            out.append(self.project.artifacts.read(a))
-        return tuple(out)
 
 
 # ══════════════════════════════════════════════════════════════════════════

@@ -1,4 +1,13 @@
-"""`--infer houdini`: Houdini over facts read off simulated runs, a solver deciding each."""
+"""`--infer houdini`: Houdini over facts read off simulated runs, a solver
+deciding each.
+
+The engine runs the stages in order: `simulate` runs the module (its terms
+valued by `evaluate`), `candidates` reads facts off the runs and `modes`
+computes the bounds each mode of the Bool columns keeps, `ranks` fits
+ranking functions to the rounds, and `search` puts them to the solver
+`solvers` names -- Houdini's fixpoint, the ranking search, and the cut of
+the certificate to what the proofs used. `engine` runs them in that order.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +28,7 @@ def _resolve(opts: dict):
                           opts["vampire_cores"])
 
 
-def _check_options(settings, opts) -> "str | None":
+def _check_options(settings) -> "str | None":
     """The flags that belong to a solver this run did not choose.
 
     Not a cell of the table: `--vampire` is an option of this route
@@ -28,6 +37,7 @@ def _check_options(settings, opts) -> "str | None":
     `Opt` exists at all -- a flag that quietly does nothing is worse than
     one that is an error.
     """
+    opts = settings.route_opts
     if opts["houdini_solver"] == "vampire":
         return None
     spare = [f for f, v in (("--vampire", opts["vampire"]),

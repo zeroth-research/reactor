@@ -11,7 +11,7 @@ Neither package is imported until a client is made: `cli` imports
 import os
 
 from ...core.certificate import Claim
-from ...core.errors import Refused
+from ...core.errors import Refused, require
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
@@ -22,6 +22,28 @@ DEFAULT_MODEL = "claude-sonnet-4-6"
 # `INVARIANT: fun s => s`, and failed to parse. Kept below the size at which
 # the Anthropic SDK insists on streaming.
 MAX_TOKENS = 8192
+
+
+def reply_fields(text: str, *fields: str) -> dict[str, str]:
+    """The `FIELD: value` lines of a reply, by field, values stripped.
+
+    Both LLM routes ask for their answer as such lines after whatever the
+    model reasons first, so a line is read wherever it is and the last of
+    each field wins: a model that corrects itself writes the correction
+    after the mistake. A field the reply does not give is absent.
+    """
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        s = line.strip()
+        for f in fields:
+            if s.startswith(f"{f}:"):
+                out[f] = s[len(f) + 1:].strip()
+    return out
+
+
+def source_block(source: str) -> str:
+    """The module's Lean encoding, as the opening block of a prompt."""
+    return f"Source code:\n```lean\n{source}\n```\n\n"
 
 
 def describe_preconditions(claim: Claim) -> str:
@@ -39,13 +61,7 @@ def describe_preconditions(claim: Claim) -> str:
 def make_client(base_url: str | None, model: str):
     """Return a chat callable: (system, user) -> str."""
     if base_url is not None:
-        try:
-            import openai
-        except ImportError:
-            raise ImportError(
-                "openai package is required for local LLM support. "
-                "Install with: pip install zrth[ai-local]"
-            ) from None
+        openai = require("openai", "--base-url", install="zrth[ai-local]")
         # Hosted OpenAI-compatible providers (e.g. OpenRouter) need a real
         # key; local servers (Ollama, vLLM) accept any placeholder.
         api_key = (
@@ -68,13 +84,7 @@ def make_client(base_url: str | None, model: str):
 
         return chat
     else:
-        try:
-            import anthropic
-        except ImportError:
-            raise ImportError(
-                "anthropic package is required for the LLM routes. "
-                "Install with: pip install zrth[ai]"
-            ) from None
+        anthropic = require("anthropic", "An LLM route", install="zrth[ai]")
         # Without a key the request itself fails with a TypeError about
         # header resolution, which says nothing about the flag that needs
         # one. A run that never asks the model never gets here: the routes
@@ -84,7 +94,8 @@ def make_client(base_url: str | None, model: str):
                 "ANTHROPIC_API_KEY is not set, and the default model is "
                 "reached through the Anthropic API. Set it, or point "
                 "--base-url at an OpenAI-compatible server (a local one "
-                "needs no key)."
+                "needs no key).",
+                setup=True,
             )
         client = anthropic.Anthropic()
 

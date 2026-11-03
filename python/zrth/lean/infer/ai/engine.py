@@ -7,7 +7,10 @@ import re
 
 from ...core.certificate import Claim, LeanAnswer
 from ...core.errors import Refused
-from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
+from ..common.llm import (
+    DEFAULT_MODEL, describe_preconditions, make_client, reply_fields,
+    source_block,
+)
 
 GENERATE_SYSTEM = """\
 You are a formal verification expert. Given Lean4 source code of a reactive module \
@@ -219,7 +222,7 @@ class AiEngine:
     def _generate(self, claim: Claim, feedback: str | None) -> tuple[str, str]:
         preconds = describe_preconditions(claim)
         user_msg = (
-            f"Source code:\n```lean\n{self.source}\n```\n\n"
+            f"{source_block(self.source)}"
             f"{_state_type_line(self.source)}"
             f"Property (prp): {claim.prp}\n\n"
             f"{preconds}\n"
@@ -238,7 +241,7 @@ class AiEngine:
     ) -> tuple[bool, str | None]:
         preconds = describe_preconditions(claim)
         user_msg = (
-            f"Source code:\n```lean\n{self.source}\n```\n\n"
+            f"{source_block(self.source)}"
             f"{_state_type_line(self.source)}"
             f"Property (prp): {claim.prp}\n\n"
             f"{preconds}\n\n"
@@ -265,15 +268,8 @@ class AiEngine:
 
     @staticmethod
     def _parse_generate_response(text: str) -> tuple[str, str]:
-        inv = None
-        ranking = None
-        for line in text.strip().splitlines():
-            line = line.strip()
-            if line.startswith("INVARIANT:"):
-                inv = _parenthesise_elements(_unquote(line[len("INVARIANT:"):]))
-            elif line.startswith("RANKING:"):
-                ranking = _parenthesise_elements(
-                    _unquote(line[len("RANKING:"):]))
-        if inv is None or ranking is None:
+        got = reply_fields(text, "INVARIANT", "RANKING")
+        if "INVARIANT" not in got or "RANKING" not in got:
             raise ValueError(f"Failed to parse AI response:\n{text}")
-        return inv, ranking
+        return tuple(_parenthesise_elements(_unquote(got[f]))
+                     for f in ("INVARIANT", "RANKING"))

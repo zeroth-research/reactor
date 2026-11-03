@@ -42,10 +42,13 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
 from ...codegen.context import LeanContext
+from ...core.certificate import Claim
+from ...core.errors import Refused
 from ...project.names import (
     EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
 )
@@ -71,18 +74,16 @@ def na_module_name(project_name: str) -> str:
     return f"{project_name}NA"
 
 
-class ProveItError(RuntimeError):
+class ProveItError(Refused):
     """A step of the proveit route could not be carried out.
 
-    `searched` is `Refused.searched`, for the one step that searches:
-    `proveit.py` failing is ic3ia running and not deciding, which says
-    something about the module, where every other failure here is about
-    what the encoding or the checkout can take.
+    A `Refused`, so it reaches `main` as every route's refusal does. Its
+    message names `--fbk-proveit` itself, which is what the row's
+    `errors_self_named` is about. `searched` is set by the one step that
+    searches: `proveit.py` failing is ic3ia running and not deciding, which
+    says something about the module, where every other failure here is
+    about what the encoding or the checkout can take.
     """
-
-    def __init__(self, message: str, *, searched: bool = False):
-        super().__init__(message)
-        self.searched = searched
 
 
 class NAEncoding(NamedTuple):
@@ -239,7 +240,7 @@ def check_module(
             return NAEncoding(bodies)
         return NAEncoding(
             bodies,
-            pre_over_slots(ctx, _parse(module, pre_smt, "--pre", encoding), bodies),
+            pre_over_slots(ctx, encoding.parse(pre_smt, "pre"), bodies),
         )
     except NAUnsupported as e:
         raise ProveItError(f"--fbk-proveit: {e}") from e
@@ -350,34 +351,8 @@ def unpatched(cert: str, *counts: int) -> "list[str]":
             if n == 0 and hook.search(cert)]
 
 
-def _parse(module, src: str, flag: str, encoding=None):
-    """`src` as a cvc5 Bool term over this module's symbols, or `ProveItError`.
-
-    Read through `encoding`'s `PredicateParser` (an encoding of `module` of
-    the caller's own when it has none): the symbols are the module's, so the
-    two flags that come through here -- `--safety` and `--pre` -- read `s0`,
-    `e0`, `el0` as the same things the rest of the package does.
-
-    cvc5's parser raises a bare `RuntimeError` naming the token it stopped
-    at, with no hint of which flag the text came from; the flag is this
-    function's whole reason for taking one.
-    """
-    # lazy: keeps cvc5 off the critical path of a bare run
-    from ...smt.encoding import ModuleEncoding
-    from ...smt.predicates import parse_predicate
-
-    if encoding is None:
-        encoding = ModuleEncoding(module)
-    try:
-        term = parse_predicate(encoding.env, src)
-    except RuntimeError as e:
-        raise ProveItError(f"{flag}: cannot read `{src}`: {e}") from e
-    if not term.getSort().isBoolean():
-        raise ProveItError(f"{flag} must have sort Bool, got {term.getSort()}")
-    return term
-
-
-def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
+def property_to_bool_lean(module, property_smt: str, encoding=None,
+                          ctx: "LeanContext | None" = None) -> str:
     """Translate the `--safety` SMT source to Bool-valued Lean.
 
     The result reads state through `(var_k state)`, exactly as
@@ -387,17 +362,21 @@ def property_to_bool_lean(module, property_smt: str, encoding=None) -> str:
     Both sides get that map from `na.slot_accessors`, which is what keeps
     the property and the transition talking about the same variables.
 
-    The layout comes from the module's own wires. `encoding` is the run's
+    The layout comes from the module's own wires, read off `ctx` (the run's
+    `LeanContext`, or one built here). `encoding` is the run's
     `ModuleEncoding`, which the property is read on.
     """
     from ...codegen.context import LeanContext
+    from ...smt.encoding import ModuleEncoding
     from .to_bool import smt_to_lean_bool
     from .na import slot_accessors
 
-    term = _parse(module, property_smt, "--safety", encoding)
+    term = (encoding or ModuleEncoding(module)).parse(
+        property_smt, "property", kind="safety")
     try:
-        return smt_to_lean_bool(term, slot_accessors(LeanContext(module).ctrl_next))
-    except ValueError as e:
+        return smt_to_lean_bool(
+            term, slot_accessors((ctx or LeanContext(module)).ctrl_next))
+    except Refused as e:
         raise ProveItError(f"--fbk-proveit: cannot encode --safety: {e}") from e
 
 
@@ -487,24 +466,37 @@ def _why(out: str) -> str:
     return "  (see the output above)"
 
 
+@dataclass(frozen=True)
+class ProveIt:
+    """How `proveit.py` is run: the `lean-ltl-certifying` checkout it is
+    part of, the ic3ia it calls (`None`: the checkout's own) and the Python
+    it runs under (`None`: this one); and the two choices about what is
+    handed to it -- the NA model simplified through cvc5 or not
+    (`--fbk-simplify`), and the proof that the model is the module written
+    or not (`--fbk-equiv`)."""
+
+    checkout: str | Path
+    ic3ia: str | None = None
+    python: str | None = None
+    simplify: bool = True
+    equivalence: bool = True
+
+
 def run(
-    *,
-    ltl_project: str | Path,
+    proveit: ProveIt,
     module,
+    claim: Claim,
+    *,
     path: Callable[[str], Path],
     project_name: str,
-    property_smt: str,
-    pre_smt: str | None = None,
-    ic3ia: str | None = None,
-    python: str | None = None,
-    simplify: bool = True,
-    equivalence: bool = True,
     prechecked: NAEncoding | None = None,
     encoding=None,
+    ctx: LeanContext | None = None,
     log: Callable = print,
 ) -> dict[str, str]:
-    """Run the whole route and return the certificate it made, and the proof
-    that the model is the module, as text by project-relative path.
+    """Run the whole route on `claim`, a `--safety` one, and return the
+    certificate it made, and the proof that the model is the module, as
+    text by project-relative path.
 
     Only `ProveIt/` is written here, through `path` (the project handle's),
     because `proveit.py` works on files; the two Lean files that are the
@@ -513,30 +505,34 @@ def run(
     `prechecked` is what `check_module` returned to a caller that has
     already made the check -- the pipeline does, before it generates the
     project.  The check is repeated here when it is left out, because `run`
-    is also called on its own; `pre_smt` is what it is repeated over, so a
-    direct caller gets the same refusals the pipeline gets early.
+    is also called on its own; the claim's `--pre` is what it is repeated
+    over, so a direct caller gets the same refusals the pipeline gets early.
 
     `encoding` is the run's `ModuleEncoding` (`InferInput.smt()`): the check
     and the `--safety` property are both read on it.  A direct caller that
-    passes none gets one `run` makes, so the two still share it.
+    passes none gets one `run` makes, so the two still share it.  `ctx` is
+    the run's `LeanContext` (`ProjectHandle.ctx`), built likewise when it
+    is left out.
     """
-    python = python or sys.executable
-    root = resolve_project(ltl_project)
+    python = proveit.python or sys.executable
+    simplify = proveit.simplify
+    root = resolve_project(proveit.checkout)
     # Resolve before anything expensive: a bad --ic3ia would otherwise
     # surface only after the model is written and lake has run.
-    ic3ia = resolve_ic3ia(ic3ia)
+    ic3ia = resolve_ic3ia(proveit.ic3ia)
     check_toolchain(python)
 
     if encoding is None:
         from ...smt.encoding import ModuleEncoding
 
         encoding = ModuleEncoding(module)
-    ctx = LeanContext(module)
+    ctx = ctx or LeanContext(module)
     if prechecked is None:
-        prechecked = check_module(module, simplify, pre_smt, encoding)
+        prechecked = check_module(module, simplify, claim.init_pre, encoding)
     bodies, pre_lean = prechecked
 
-    property_lean = property_to_bool_lean(module, property_smt, encoding=encoding)
+    property_lean = property_to_bool_lean(module, str(claim.prp),
+                                          encoding=encoding, ctx=ctx)
     model = write_na_model(
         path, project_name, ctx, property_lean, simplify, bodies, pre_lean
     )
@@ -576,7 +572,7 @@ def run(
             f"its template may have changed under this patch")
 
     files = {cert_file(PROOF): text}
-    if equivalence:
+    if proveit.equivalence:
         files[cert_file(EQUIVALENCE)] = equivalence_lean(
             project_name, ctx,
             simplify=simplify, bodies=bodies, pre_lean=pre_lean,

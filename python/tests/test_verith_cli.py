@@ -7,19 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.verith import verith
+
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 COUNTER_MODULE = FIXTURE_DIR / "counter.py"
-# Root of the python package (where pyproject.toml lives)
-PKG_ROOT = Path(__file__).parent.parent
-
-
-def _verith(*args) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["uv", "run", "verith", *args],
-        capture_output=True,
-        text=True,
-        cwd=PKG_ROOT,
-    )
 
 
 def _ollama_available() -> bool:
@@ -41,7 +32,7 @@ def _ollama_available() -> bool:
 def test_verith_no_property():
     """Without a property the certificate uses sorry placeholders."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "CounterBasic")
+        r = verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "CounterBasic")
         assert r.returncode == 0, r.stderr
         assert "Inferring" not in r.stdout, "no route was asked for"
         assert (Path(tmpdir) / "CounterBasic").exists()
@@ -57,19 +48,19 @@ def test_the_flags_the_cli_offers_are_flags_it_reads():
     a project name that cannot be a Lean module name are rejected where they
     are given, not four steps later in generated code."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(str(COUNTER_MODULE), "-n", "Foo", "-o", tmpdir)
+        r = verith(str(COUNTER_MODULE), "-n", "Foo", "-o", tmpdir)
         assert r.returncode != 0 and "unrecognized arguments" in r.stderr
 
         for flag in ("--smt-timeout", "--smt-budget"):
             for value in ("0", "-5"):
-                r = _verith(str(COUNTER_MODULE), flag, value, "-o", tmpdir)
+                r = verith(str(COUNTER_MODULE), flag, value, "-o", tmpdir)
                 assert r.returncode != 0, f"{flag} {value} was accepted"
                 assert "must be a positive number" in r.stderr, r.stderr
 
         # `-p` only has to be a Lean identifier where a module name is made
         # of it, which is the proveit route -- elsewhere it names a package
         # directory and lake takes what it is given.
-        r = _verith(str(COUNTER_MODULE), "-p", "my-proj", "-o", tmpdir)
+        r = verith(str(COUNTER_MODULE), "-p", "my-proj", "-o", tmpdir)
         assert r.returncode == 0, r.stderr
 
 
@@ -86,12 +77,12 @@ def test_a_predicate_of_the_wrong_sort_is_refused():
             ("--buchi", "(= (X @intf.0) 0)", "--ranking", "(= (X @intf.0) 0)"),  # Bool as a Nat
         ]
         for args in refused:
-            r = _verith(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Sorts")
+            r = verith(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Sorts")
             assert r.returncode != 0, f"{args} was accepted"
             assert "must have sort" in r.stderr, r.stderr
 
         # and the shapes that are right still pass
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)", "--ranking", "(X @intf.0)",
             "-o", tmpdir, "-p", "Sorts",
         )
@@ -111,7 +102,7 @@ def test_a_predicate_cvc5_cannot_read_is_refused_not_pasted():
             (("--safety", "true", "--invariant", "(bogus (X @intf.0))"), "--invariant"),
         ]
         for args, flag in cases:
-            r = _verith(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Unparsed")
+            r = verith(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Unparsed")
             assert r.returncode != 0, f"{args} was accepted"
             assert "Traceback" not in r.stderr, r.stderr
             assert flag in r.stderr, f"{args} did not name the flag:\n{r.stderr}"
@@ -137,10 +128,23 @@ def test_a_refusal_is_an_error_line_not_a_traceback():
             (str(COUNTER_MODULE), "--pre", "(= (X @intf.0) 0)"),
         ]
         for case in cases:
-            r = _verith(*case, "-o", tmpdir, "-p", "Refused")
+            r = verith(*case, "-o", tmpdir, "-p", "Refused")
             assert r.returncode != 0, f"{case} was accepted"
             assert "Traceback" not in r.stderr, f"{case} crashed:\n{r.stderr}"
             assert "error:" in r.stderr, f"{case} said nothing:\n{r.stderr}"
+
+
+def test_a_fault_in_the_module_file_keeps_its_traceback():
+    """What the user's `module()` raises is not a refusal by the loader, and
+    one `error:` line would read like "must define `module`"."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        broken = Path(tmpdir) / "broken.py"
+        for body, raised in (("return None.state", "AttributeError"),
+                             ("open('/nonexistent/weights')", "FileNotFoundError")):
+            broken.write_text(f"def module():\n    {body}\n")
+            r = verith(str(broken), "-o", tmpdir, "-p", "Broken")
+            assert r.returncode != 0
+            assert "Traceback" in r.stderr and raised in r.stderr, r.stderr
 
 
 # `update` reads an `Uninterpreted` wire, which no Lean column can write.
@@ -162,7 +166,7 @@ def test_a_module_with_no_lean_form_is_refused_without_naming_infer(tmp_path):
     not be told about one."""
     path = tmp_path / "uninterp.py"
     path.write_text(_NO_LEAN_FORM_MODULE)
-    r = _verith(str(path), "-o", str(tmp_path), "-p", "P")
+    r = verith(str(path), "-o", str(tmp_path), "-p", "P")
     assert r.returncode != 0
     assert "error: this module has no Lean form" in r.stderr, r.stderr
     assert "--infer" not in r.stderr, r.stderr
@@ -175,7 +179,7 @@ def test_a_refusal_names_only_the_flag_that_was_given():
     from zrth.lean.core.errors import Refused
 
     def said(route) -> str:
-        return certify.refused(SimpleNamespace(route=route), Refused("why")).code
+        return certify.refused(route, Refused("why")).code
 
     assert said(None) == "error: why"
     assert said(SimpleNamespace(errors_self_named=False)) == "error: --infer: why"
@@ -192,7 +196,7 @@ def test_a_stale_bridge_is_not_left_for_lake_to_build():
         cert_dir.mkdir(parents=True)
         (cert_dir / "Equivalence.lean").write_text("import NoSuchModule\n")
 
-        r = _verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "Stale")
+        r = verith(str(COUNTER_MODULE), "-o", tmpdir, "-p", "Stale")
         assert r.returncode == 0, r.stderr
         assert not (cert_dir / "Equivalence.lean").exists()
         assert (cert_dir / "Certificate.lean").exists()
@@ -201,7 +205,7 @@ def test_a_stale_bridge_is_not_left_for_lake_to_build():
 def test_verith_with_property():
     """A property without --infer writes prp as sorry (string not compiled to Terms)."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE), "--buchi", "X(@intf.0) == 0", "-o", tmpdir, "-p", "CounterProp"
         )
         assert r.returncode == 0, r.stderr
@@ -211,14 +215,14 @@ def test_verith_with_property():
 def test_verith_infer_requires_property():
     """--infer without --safety or --buchi exits with a non-zero status."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(str(COUNTER_MODULE), "--infer", "-o", tmpdir)
+        r = verith(str(COUNTER_MODULE), "--infer", "-o", tmpdir)
         assert r.returncode != 0
 
 
 def test_verith_infer_rejects_cert_file():
     """The standalone certificate is written before inference could reach it."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE),
             "--buchi",
             "(= (X @intf.0) 0)",
@@ -248,7 +252,7 @@ CEGIS_FIXED = (
 def test_pre_check_checks_the_inferred_certificate():
     """`--pre-check` has to wait for `--infer`, or it checks nothing."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE), *CEGIS_FIXED, "--pre-check", "cvc5",
             "-o", tmpdir, "-p", "CounterPreCheck",
         )
@@ -304,7 +308,7 @@ def _cert(tmpdir, name) -> tuple[str, str]:
 
 def test_buchi_generates_a_ranking_certificate():
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)",
             "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
             "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
@@ -322,7 +326,7 @@ def test_safety_generates_a_rule_globally_certificate():
     one, and a `def ranking := sorry` would be a `sorry` in a file whose
     point is that it has none."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)",
             "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
             "-o", tmpdir, "-p", "CounterSafety",
@@ -336,7 +340,7 @@ def test_safety_generates_a_rule_globally_certificate():
 
 
 def test_safety_and_buchi_are_mutually_exclusive(tmp_path):
-    r = _verith(
+    r = verith(
         str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)", "--buchi", "(= (X @intf.0) 0)",
         "-o", str(tmp_path), "-p", "P",
     )
@@ -346,7 +350,7 @@ def test_safety_and_buchi_are_mutually_exclusive(tmp_path):
 
 def test_safety_rejects_a_ranking(tmp_path):
     """Taking a ranking function and dropping it would look like it was used."""
-    r = _verith(
+    r = verith(
         str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)", "--ranking", "(X @intf.0)",
         "-o", str(tmp_path), "-p", "P",
     )
@@ -356,7 +360,7 @@ def test_safety_rejects_a_ranking(tmp_path):
 
 def test_safety_rejects_the_unchecked_inference_route(tmp_path):
     """`--infer ai` infers a ranking function and checks nothing with cvc5."""
-    r = _verith(
+    r = verith(
         str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)", "--infer", "ai",
         "-o", str(tmp_path), "-p", "P",
     )
@@ -386,7 +390,7 @@ def test_learn_infers_a_buchi_certificate_and_it_pre_checks():
     certifies it, and the certificate it writes is one cvc5 then confirms."""
     pytest.importorskip("cvc5")
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTDOWN_MODULE), "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
             "--pre-check", "cvc5", "-o", tmpdir, "-p", "CountdownLearn",
         )
@@ -405,7 +409,7 @@ def test_learn_serves_safety_as_well():
     --infer ai-cegis."""
     pytest.importorskip("cvc5")
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTDOWN_MODULE), "--safety", "(<= (X @intf.0) 100)", "--infer", "nuterm",
             "--pre-check", "cvc5", "-o", tmpdir, "-p", "BoundedLearn",
         )
@@ -424,7 +428,7 @@ def test_learn_takes_the_precondition_as_its_entry_assumption(tmp_path):
     larger set, so this run is the flag doing the work -- and `--pre-check`
     grants the same assumption the search made, which is what makes the
     certificate one verith's own obligations accept."""
-    r = _verith(
+    r = verith(
         str(BOUNDED_INPUT_MODULE), "--safety", "(>= (X @intf.0) 0)", "--infer", "nuterm",
         "--pre", "(>= (X @extl.0) 0)", "--pre-check", "cvc5", "-o", str(tmp_path), "-p", "P",
     )
@@ -439,7 +443,7 @@ def test_without_the_precondition_the_same_run_finds_nothing(tmp_path):
     """The control for the test above: not a module the route cannot read,
     and not a false property -- a question that is only answerable from the
     states the precondition admits."""
-    r = _verith(
+    r = verith(
         str(BOUNDED_INPUT_MODULE), "--safety", "(>= (X @intf.0) 0)", "--infer", "nuterm",
         "-o", str(tmp_path), "-p", "P",
     )
@@ -458,7 +462,7 @@ def test_learn_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
     alongside would be dropped -- and an LLM flag names a model it never
     calls. `--pre` is not one of these: it is an assumption rather than a
     candidate, and the two tests above are it being used."""
-    r = _verith(
+    r = verith(
         str(COUNTDOWN_MODULE), "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
         *extra, "-o", str(tmp_path), "-p", "P",
     )
@@ -470,7 +474,7 @@ def test_learn_is_an_answer_to_safety_where_the_ai_route_is_not():
     """The message that turns --safety away from `--infer ai` names both routes
     that can serve it."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTDOWN_MODULE), "--safety", "(<= (X @intf.0) 100)", "--infer", "ai",
             "-o", tmpdir, "-p", "P",
         )
@@ -483,7 +487,7 @@ def test_cegis_infers_a_safety_certificate():
     the safety obligations (init, inductive, `inv -> P`) and verifies them,
     which is the whole route minus the prompting."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)",
             "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
             "--infer", "ai-cegis", "--pre-check", "cvc5",
@@ -507,7 +511,7 @@ def test_cegis_infers_a_safety_certificate():
 def test_verith_infer_claude():
     """--infer with Claude API produces a certificate with inv, P, and ranking."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE),
             "--buchi",
             "X(@intf.0) == 0",
@@ -533,7 +537,7 @@ def test_verith_infer_claude():
 def test_verith_infer_ollama():
     """--infer with local Ollama LLM produces a certificate with inv, P, and ranking."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE),
             "--buchi",
             "X(@intf.0) == 0",
@@ -562,14 +566,14 @@ def test_verith_infer_ollama():
 def test_build_cert_needs_a_certificate_to_build(tmp_path):
     """A bare project's `ranking` is `sorry`, and no tactic closes an
     obligation stated over it, so asking for the build is a mistake."""
-    r = _verith(
+    r = verith(
         str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)",
         "-o", str(tmp_path), "-p", "P", "--build-cert",
     )
     assert r.returncode != 0
     assert "--build-cert needs a certificate to build" in r.stderr
     # An invariant without a ranking is still a `sorry`, so it is not enough.
-    r = _verith(
+    r = verith(
         str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)", "--invariant", "(<= (X @intf.0) 100)",
         "-o", str(tmp_path), "-p", "P", "--build-cert",
     )
@@ -610,7 +614,7 @@ def test_build_cert_is_accepted_by_every_route_that_fills_the_certificate(
         str(_fake_ltl_checkout(tmp_path / "ltl")) if a == "<checkout>" else a
         for a in route
     ]
-    r = _verith(
+    r = verith(
         str(tmp_path / "no-such-module.py"),
         "-o", str(tmp_path), "-p", "P", "--build-cert", *route,
     )
@@ -623,7 +627,7 @@ def test_build_cert_rejects_the_routes_that_generate_no_project(tmp_path):
         ("--cert-file", str(tmp_path / "C.lean")),
         ("--hammer-file", str(tmp_path / "H.lean")),
     ):
-        r = _verith(
+        r = verith(
             str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)", "--invariant", "(<= (X @intf.0) 100)",
             "--ranking", "(X @intf.0)", "-o", str(tmp_path), "-p", "P",
             "--build-cert", flag, value,
@@ -636,8 +640,6 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
     """The parse-time gate cannot see what `--infer` came back with: an LLM
     that answers nothing usable leaves `inv` or `ranking` unset, and building
     that would report a proof of `sorry`."""
-    from types import SimpleNamespace
-
     from zrth.lean.pipeline import outputs
     from zrth.lean.proof.render import LeanCertificate, LeanPredicates
 
@@ -646,26 +648,21 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
 
     built: list[Path] = []
     monkeypatch.setattr(outputs, "build_certificate", built.append)
-    on = SimpleNamespace(build_cert=True)
-
-    outputs.build_cert(on, Path("/complete"), lean(prp="p", inv="i", ranking="r"))
+    outputs.build_cert(Path("/complete"), lean(prp="p", inv="i", ranking="r"))
     assert built == [Path("/complete")]
 
     with pytest.raises(SystemExit, match="no ranking"):
-        outputs.build_cert(on, Path("/p"), lean(prp="p", inv="i"))
+        outputs.build_cert(Path("/p"), lean(prp="p", inv="i"))
     with pytest.raises(SystemExit, match="no invariant, ranking"):
-        outputs.build_cert(on, Path("/p"), lean(prp="p"))
+        outputs.build_cert(Path("/p"), lean(prp="p"))
     # A safety certificate has no ranking to be missing.
-    outputs.build_cert(on, Path("/safe"), lean(kind="safety", prp="p", inv="i"))
+    outputs.build_cert(Path("/safe"), lean(kind="safety", prp="p", inv="i"))
     assert built == [Path("/complete"), Path("/safe")]
 
     # --fbk-proveit installs ic3ia's certificate, which nothing here
     # describes, so there is nothing to be complete about.
-    outputs.build_cert(on, Path("/proveit"), None)
+    outputs.build_cert(Path("/proveit"), None)
     assert built == [Path("/complete"), Path("/safe"), Path("/proveit")]
-
-    outputs.build_cert(SimpleNamespace(build_cert=False), Path("/off"), None)
-    assert len(built) == 3
 
 
 def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(
@@ -776,9 +773,9 @@ def test_an_smv_model_is_certified_in_its_own_names(tmp_path):
     """mod10 counts to 9 and wraps: `x` stays in 0..9, and cvc5 checks the
     invariant that says so before a line of the certificate is written."""
     band = "(and (>= (X x) 0) (<= (X x) 9))"
-    r = _verith(str(SMV_FIXTURES / "mod10.smv"), "--safety", band,
-                "--invariant", band, "--pre-check", "cvc5",
-                "--cert-file", str(tmp_path / "Mod10.lean"))
+    r = verith(str(SMV_FIXTURES / "mod10.smv"), "--safety", band,
+               "--invariant", band, "--pre-check", "cvc5",
+               "--cert-file", str(tmp_path / "Mod10.lean"))
     assert r.returncode == 0, r.stderr
     assert ".. --safety, in internal names: (and (>= s0 0) (<= s0 9))" in r.stdout
     assert (tmp_path / "Mod10.lean").exists()
@@ -787,7 +784,7 @@ def test_an_smv_model_is_certified_in_its_own_names(tmp_path):
 def test_a_model_strict_smv_refuses_is_an_error_line(tmp_path):
     free = tmp_path / "free.smv"
     free.write_text("MODULE main\nVAR x : boolean;\nASSIGN init(x) := TRUE;\n")
-    r = _verith(str(free), "-o", str(tmp_path))
+    r = verith(str(free), "-o", str(tmp_path))
     assert r.returncode != 0
     assert "Traceback" not in r.stderr, r.stderr
     assert "error:" in r.stderr and "`x` has no next value" in r.stderr

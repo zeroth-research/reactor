@@ -88,13 +88,11 @@ class ModuleQueries:
     """A cvc5 view of one module together with its certificate predicates.
 
     `source` is the module or its `smt.encoding.ModuleEncoding`; a run gets these
-    from `ModuleEncoding.queries`, which builds one per claim and certificate.
-    Construct with `build`, which returns `None` rather than raising when the
-    module or the predicates are outside what the encoder covers -- the whole
-    point is that the caller can carry on without cvc5. A caller that cannot
-    carry on -- `predicate_terms`, whose terms *are* what the Lean is
-    printed from -- constructs directly and reports what went wrong:
-    `Refused` for a predicate, anything else for the module.
+    from `ModuleEncoding.queries`, which builds one per claim and certificate,
+    through `predicate_terms`, which refuses a predicate that does not parse
+    by its role and anything else as the module's. A predicate the claim or
+    the certificate leaves out is `None` here, and every reader states
+    nothing for it.
     """
 
     def __init__(self, source, claim: Claim, cert: Certificate | None = None):
@@ -115,31 +113,7 @@ class ModuleQueries:
         self.init_pre = enc.parse(claim.init_pre, "pre")
         self.update_pre = enc.parse(claim.update_pre, "pre")
 
-    @classmethod
-    def build(cls, source, claim: Claim,
-              cert: Certificate | None = None) -> "ModuleQueries | None":
-        try:
-            return cls(source, claim, cert)
-        except Exception:
-            return None
-
     # ── plumbing ──────────────────────────────────────────────────────
-
-    def _true(self):
-        return self.tm.mkBoolean(True)
-
-    def _and(self, *ts):
-        from cvc5 import Kind
-
-        ts = [t for t in ts if t is not None]
-        if not ts:
-            return self._true()
-        return ts[0] if len(ts) == 1 else self.tm.mkTerm(Kind.AND, *ts)
-
-    def _not(self, t):
-        from cvc5 import Kind
-
-        return self.tm.mkTerm(Kind.NOT, t)
 
     def solver(self, budget: SmtBudget):
         """A solver on this module's terms, held to `budget`'s next call."""
@@ -453,14 +427,16 @@ def predicate_terms(
     from, and what `predicate_facts` and `solver_hints` read. `smt` is the
     module, its encoding or a `smt.encoding.lazy` factory for one.
 
-    A predicate that does not parse is refused by its role; anything
-    else is the module's, and refused as that.
+    A predicate that does not parse is refused by its role, and a module
+    with no encoding (`ModuleSMT` reads one atom, `elem_sort` four sorts,
+    and both raise `ValueError`) as the module's. Anything else is a bug,
+    and keeps its traceback.
     """
     try:
         return encoding_of(smt).queries(claim, cert)
     except Refused:
         raise
-    except Exception as e:
+    except ValueError as e:
         raise Refused(
             f"the certificate predicates cannot be read for this module: {e}"
         ) from e

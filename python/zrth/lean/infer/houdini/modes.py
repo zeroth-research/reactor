@@ -48,17 +48,10 @@ import time
 from fractions import Fraction
 from itertools import product
 
-try:
-    import z3                                        # type: ignore
-except ImportError:                                  # pragma: no cover
-    z3 = None
+import z3
+from cvc5 import Kind
 
-try:
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    Kind = None
-
-from ...smt.script import decimals, declarations, smt_lit
+from ...smt.script import conjunction_smt, decimals, declarations, smt_lit
 from ...smt.terms import free_constants, literals
 
 # A mode is a valuation of the Bool columns, so the modes are exponential in
@@ -93,8 +86,6 @@ def mode_bounds(ctx, ob, *, seconds: float = 8.0, log=print) -> list[str]:
     descent reached, and whole numbers, which are what a reader of the
     certificate expects and often all a proof needs.
     """
-    if z3 is None:                                   # pragma: no cover
-        return []
     t0 = time.monotonic()
     try:
         model = _Model.of(ctx, ob, t0 + seconds)
@@ -314,7 +305,7 @@ class _Model:
             return out
         for m in self.modes:
             lits = [f"s{b}" if v else f"(not s{b})" for b, v in zip(self.bits, m)]
-            guard = lits[0] if len(lits) == 1 else f"(and {' '.join(lits)})"
+            guard = conjunction_smt(lits)
             if a[m] is None:
                 out.append(f"(not {guard})")
                 continue

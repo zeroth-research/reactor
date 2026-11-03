@@ -38,6 +38,22 @@ def reading_kind(sort) -> "str | None":
     return None
 
 
+def sorts_where(ctx: "SynthContext", bad) -> list[str]:
+    """Each state component and input of `ctx` whose sort is `bad`, or has
+    an element that is, as `s1 is (_ BitVec 8)`: what a route that reads
+    fewer sorts than `build` lets through names in its refusal."""
+    def hit(sort) -> bool:
+        if sort.isTuple():
+            return any(hit(e) for e in sort.getTupleSorts())
+        return bad(sort)
+
+    return ([f"s{i} is {s}" for i, s in enumerate(ctx.env.state_sorts)
+             if hit(s)]
+            + [f"{c} is {c.getSort()}"
+               for c in (*ctx.extl_next, *ctx.extl_latched)
+               if hit(c.getSort())])
+
+
 @dataclass
 class SynthContext:
     """One module and its property in cvc5, for a search over shapes.
@@ -92,28 +108,16 @@ class SynthContext:
         """The context, or the reason this module is not one `route` reads.
         `source` is the module, its encoding or a `smt.encoding.lazy` factory.
 
-        ``takes`` is the route's contract, as :data:`READING_KINDS`, and it
-        is the same tuple :func:`readings` is given -- a route that declines
-        a kind here declines it there, so there is one answer to "what can
-        this route read" rather than two that have to agree. What a sort
-        costs beyond being readable is the route's own business:
-        `--infer sygus` takes the context's Bool and then refuses it in
-        `readings`, because its `synthFun` has nowhere to put a Bool column
-        even though the context can weigh one.
+        ``takes`` is the route's contract, as :data:`READING_KINDS`, and
+        this is the one place it is checked: there is one answer to "what
+        can this route read", and `infer.common.synth.readings` reads every
+        component of a context that was built.
 
         A kind outside ``takes`` is refused here, before a solver starts,
         and named: `--infer houdini` states its candidates in real
         arithmetic and so asks for `real`; `--infer smt-linear` reads a
         Real through a floor and asks for it too.
         """
-        try:
-            import cvc5                              # noqa: F401
-        except ImportError:                          # pragma: no cover
-            raise Refused(
-                f"--infer {route} needs the `cvc5` package, which is not "
-                f"importable. Install with: uv pip install cvc5"
-            ) from None
-
         if claim.prp is None:
             raise Refused(
                 f"--infer {route} needs a property: pass --safety or --buchi"

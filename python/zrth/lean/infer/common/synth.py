@@ -50,18 +50,13 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import TYPE_CHECKING
 
-from ...core.errors import Refused
 from ...smt.claim import SynthContext, reading_kind
 from ...artifacts.record import found, note
-from ...smt.script import decimals, smt_int, smt_lit
+from ...smt.encode import tuple_select
+from ...smt.script import decimals, smt_lit
 from ...smt.terms import free_constants, literals, nodes
 
-try:
-    import cvc5                                      # type: ignore
-    from cvc5 import Kind
-except ImportError:                                  # pragma: no cover
-    cvc5 = None
-    Kind = None
+from cvc5 import Kind
 
 if TYPE_CHECKING:
     from ...smt.obligations import Obligations
@@ -131,9 +126,7 @@ def element(ctx: "SynthContext", i: int, slot: "int | None") -> tuple:
     var = ctx.state[i]
     if slot is None:
         return f"s{i}", var
-    ctor = ctx.env.state_sorts[i].getDatatype()[0]
-    return (f"((_ tuple.select {slot}) s{i})",
-            ctx.tm.mkTerm(Kind.APPLY_SELECTOR, ctor[slot].getTerm(), var))
+    return f"((_ tuple.select {slot}) s{i})", tuple_select(ctx.tm, var, slot)
 
 
 @dataclass(frozen=True)
@@ -229,7 +222,7 @@ def floor_real(tm, term, scale: int = 1):
 
     The reading :func:`component_readings` gives a Real under
     `floor_reals`, for a caller that holds the term rather than the
-    component -- `infer.vampire.engine` floors a column it has already built
+    component -- `infer.vampire.question` floors a column it has already built
     for the rank while the same column keeps its rationals in the invariant
     rows. :func:`floor_real_src` is the other half, the SMT-LIB a
     certificate carries; the two have to say the same thing, so they are
@@ -249,37 +242,20 @@ def floor_real_src(src: str, sort, scale: int = 1) -> str:
     return f"(to_int {src if scale == 1 else f'(* {scale}.0 {src})'})"
 
 
-def readings(ctx: "SynthContext", *, allow: tuple[str, ...], route: str,
-             scale: int = 1, floor_reals: bool = True) -> list[Reading]:
-    """The columns `route` weighs this module by, or why one component is not.
+def readings(ctx: "SynthContext", *, scale: int = 1,
+             floor_reals: bool = True) -> list[Reading]:
+    """The columns a route weighs this module by, component by component.
 
-    `allow` is the route's own contract rather than the context's: a route
-    whose obligations are stated in integer arithmetic has nowhere to put a
-    Real column, while a template weighs whatever has a reading. Refused by
-    name either way -- naming the component and the route that does read it
-    is the difference between "try something else" and "try everything
-    else".
+    Every component has one: `SynthContext.build` has already refused a
+    module with a component of a kind the route does not take, by name.
 
     ``scale`` and ``floor_reals`` are passed through to
     :func:`component_readings`, which is where what a Real costs is
     written down.
     """
-    out: list[Reading] = []
-    refused: list[str] = []
-    for i, sort in enumerate(ctx.env.state_sorts):
-        if reading_kind(sort) not in allow:
-            refused.append(f"s{i} is {sort}")
-            continue
-        out.extend(component_readings(ctx, i, scale=scale,
-                                      floor_reals=floor_reals))
-    if refused:
-        raise Refused(
-            f"--infer {route} reads a state of scalar integers, and this "
-            f"module's is not one: {', '.join(refused)}. `--infer smt-linear` "
-            f"weighs a Bool component as 0/1 and a bitvector as its unsigned "
-            f"value, and `--infer ai-cegis` reads whatever cvc5 encodes."
-        )
-    return out
+    return [r for i in range(len(ctx.env.state_sorts))
+            for r in component_readings(ctx, i, scale=scale,
+                                        floor_reals=floor_reals)]
 
 
 # The most branch conditions `split_conditions` offers.
@@ -338,6 +314,15 @@ _CONSTANT_LIMIT = 10_000
 _CONSTANT_COUNT = 16
 
 
+def _module_roots(ctx: SynthContext) -> list:
+    """The terms a module's own literals are read from: the property, the
+    preconditions, and the initial and next state."""
+    roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
+    roots += ctx.enc.init_state(ctx.extl_next)
+    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
+    return roots
+
+
 def program_constants(ctx: SynthContext) -> tuple[int, ...]:
     """The integer literals this module and its property mention.
 
@@ -348,10 +333,7 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
     invented numbers is both bigger and worse.
     """
     seen: set[int] = set(_BASE_CONSTANTS)
-    roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
-    roots += ctx.enc.init_state(ctx.extl_next)
-    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
-    for t in literals(roots):
+    for t in literals(_module_roots(ctx)):
         if t.getKind() == Kind.CONST_INTEGER:
             value = int(t.getIntegerValue())
             if abs(value) <= _CONSTANT_LIMIT:
@@ -384,11 +366,8 @@ def program_rationals(ctx: SynthContext) -> tuple:
     bounds, the value sets and the lattice a state is drawn on all come from
     here instead.
     """
-    roots = [ctx.prp, ctx.init_pre, ctx.update_pre]
-    roots += ctx.enc.init_state(ctx.extl_next)
-    roots += ctx.enc.next_state(ctx.state, ctx.extl_latched, ctx.extl_next)
     seen: set = set()
-    for t in literals(roots):
+    for t in literals(_module_roots(ctx)):
         if t.getKind() == Kind.CONST_RATIONAL:
             q = t.getRealValue()
             if abs(q) <= _CONSTANT_LIMIT:
@@ -434,44 +413,6 @@ def moduli(constants: tuple[int, ...]) -> tuple[int, ...]:
     """
     ks = {2} | {abs(c) for c in constants if 2 <= abs(c) <= 16}
     return tuple(sorted(ks))
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# SMT-LIB out
-# ══════════════════════════════════════════════════════════════════════════
-
-
-def affine_smt(const: int, coeffs, names) -> str:
-    """``k + Σ cᵢ·sᵢ`` as SMT-LIB, with the terms that say nothing dropped.
-
-    Written out here rather than printed from the model's own term: what this
-    string has to survive is being parsed back and rendered as the body of a
-    Lean definition, and a printer that `let`-binds a repeated subterm
-    produces something that cannot be one (`infer.nuterm.engine._smt_term`
-    refuses exactly that).
-    """
-    parts = [] if not int(const) else [smt_int(const)]
-    for c, n in zip(coeffs, names):
-        c = int(c)
-        if c == 1:
-            parts.append(n)
-        elif c == -1:
-            parts.append(f"(- {n})")
-        elif c:
-            parts.append(f"(* {smt_int(c)} {n})")
-    if not parts:
-        return "0"
-    return parts[0] if len(parts) == 1 else "(+ " + " ".join(parts) + ")"
-
-
-def conjunction_smt(parts) -> str:
-    """SMT-LIB Bool terms as one. Empty is `true`, one is itself."""
-    rendered = list(dict.fromkeys(p for p in parts if p and p != "true"))
-    if not rendered:
-        return "true"
-    if len(rendered) == 1:
-        return rendered[0]
-    return "(and " + " ".join(rendered) + ")"
 
 
 def body_of(solution) -> tuple:

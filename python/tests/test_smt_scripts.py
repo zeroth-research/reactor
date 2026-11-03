@@ -11,7 +11,6 @@ prover. The obligation files `--pre-check` leaves are pinned by
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import time
 from pathlib import Path
@@ -19,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from zrth.lean.core.certificate import Claim
+from zrth.lean.inputs.python import load_module
 
 pytest.importorskip("cvc5")
 
@@ -39,10 +39,7 @@ def _check(name: str, text: str) -> None:
 
 
 def _module(path: Path):
-    spec = importlib.util.spec_from_file_location(f"_m_{path.stem}", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.module()
+    return load_module(path)
 
 
 def _context(path: Path, kind: str, prp: str, route: str):
@@ -119,7 +116,9 @@ VAMPIRE = [
                          ids=[c[0] for c in VAMPIRE])
 def test_vampire_conjectures_are_unchanged(name, path, kind, prp, which,
                                            fixed):
-    from zrth.lean.infer.vampire.engine import Question, split, template
+    from zrth.lean.infer.vampire.branches import split
+    from zrth.lean.infer.vampire.question import Question
+    from zrth.lean.infer.vampire.template import template
 
     ctx, ob = _context(path, kind, prp, "vampire")
     q = Question(ctx, ob, split(ctx, ob.init, "the initial state"),
@@ -160,3 +159,41 @@ def test_the_round_z3_reads_is_unchanged(name, path, prp, monkeypatch):
     assert modes._Model.of(ctx, ob, time.monotonic() + 5) is not None
     assert len(read) == 1
     _check(f"modes-{name}.golden", read[0] + "\n")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Predicates written out
+# ══════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize("coeffs, const, want", [
+    ([0], 0, "0"),                                  # nothing at all
+    ([0], 5, "5"),                                  # a constant alone
+    ([1], 0, "s0"),                                 # a bare column
+    ([-1], 0, "(- s0)"),
+    ([2], 0, "(* 2 s0)"),
+    ([1, -1], 3, "(+ 3 s0 (- s1))"),
+    ([1, 0, 2], -1, "(+ (- 1) s0 (* 2 s2))"),       # a zero coefficient drops
+])
+def test_an_affine_row_prints_as_one_term(coeffs, const, want):
+    from zrth.lean.smt.script import affine_smt
+
+    assert affine_smt(const, coeffs, ["s0", "s1", "s2"][:len(coeffs)]) == want
+
+
+def test_an_affine_form_over_the_reals_writes_its_literals_as_decimals():
+    from zrth.lean.smt.script import affine_smt, smt_real
+
+    assert affine_smt(1, [2, 1], ["x", "y"], lit=smt_real) == \
+        "(+ 1.0 (* 2.0 x) y)"
+
+
+def test_the_same_fact_twice_is_one_conjunct():
+    """A property seeded as a candidate that the lattice also proposes survives
+    as both, and the certificate should carry it once."""
+    from zrth.lean.smt.script import conjunction_smt
+
+    assert conjunction_smt(["(<= s0 100)", "(>= s0 0)", "(<= s0 100)"]) == \
+        "(and (<= s0 100) (>= s0 0))"
+    assert conjunction_smt(["(<= s0 100)", "true"]) == "(<= s0 100)"
+    assert conjunction_smt([]) == "true"
