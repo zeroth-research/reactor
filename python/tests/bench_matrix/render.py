@@ -38,62 +38,238 @@ from suites import column_of, routes as bench_routes  # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 
+# What each suite is, in three parts: the benchmarks themselves -- what is in
+# them and what they exercise; what a route has to produce to answer them,
+# as far as that is known; and where they live and how they were obtained.
 SUITE_BLURB = {
-    "limits": (
-        "The limit matrix, <code>tests/limits/cases.py</code>. Its 77 cases vary the "
-        "<em>supplied</em> <code>--invariant</code> and <code>--ranking</code> over a much "
-        "smaller set of questions, and no <code>--infer</code> route reads a supplied "
-        "predicate, so the cases collapse onto their (module, property, precondition) key "
-        "the way <code>run_limits.py</code> collapses them: 30 distinct questions. "
-        "Every property is a <code>--buchi</code> reachability target."
+    "limits": dict(
+        what=(
+            "Thirty small deterministic modules, each written to isolate one feature "
+            "of the encoding or of the Lean back end rather than to be hard as a "
+            "verification problem. A countdown from 100 is the baseline; around it are "
+            "two coupled counters, a nested loop (<code>m_lex</code>), a counter that "
+            "steps by two (<code>m_step2</code>), mixed Bool+Int and BitVec state, "
+            "vector state whose wire indices and flat slots disagree "
+            "(<code>m_mixed</code>), Real state stepping by 1 and by 0.5, ReLU, Max, "
+            "Min and Argmax in the transition, a Linear&rarr;ReLU&rarr;Linear network "
+            "as the whole transition (small, 8 and 16 wide), plants that converge to a "
+            "setpoint from either side (<code>m_toward5</code>, "
+            "<code>m_toward2d</code>), a 32-wide state and a 64-deep straight-line "
+            "body for scale, and two operations with no Lean counterpart "
+            "(<code>Transpose</code>, an uninterpreted source)."
+        ),
+        needs=(
+            "Every row asks that the module return to a state &mdash; usually its "
+            "reset point &mdash; infinitely often, which takes an inductive invariant "
+            "and a ranking function into &#8469; that drops on every step away from "
+            "it. Mathematically nearly all are easy: a box invariant and the distance "
+            "to the target. What the rows test is whether a route can <em>state</em> "
+            "that certificate over the feature in question, and whether Lean then "
+            "closes it &mdash; <code>split_ifs</code> over the ReLU <code>ite</code>s, "
+            "<code>omega</code> over Int against <code>linarith</code> over Real, "
+            "BitVec, sheer size. A few need more than a box: <code>m_lex</code> a "
+            "lexicographic ranking folded into one number, <code>m_step2</code> a "
+            "parity or exact-value invariant, the Real countdowns one that pins exact "
+            "values (an interval is not inductive over the reals), "
+            "<code>m_lra_conv</code> a conjunction of "
+            "disjunctions, <code>ReluInput</code> its precondition &mdash; "
+            "<code>ReluInputNoPre</code> asks the same without it, and is false. "
+            "<code>Transpose</code> and the uninterpreted source were expected to "
+            "fail translation."
+        ),
+        source=(
+            "The limit matrix, <code>tests/limits/cases.py</code>. Its 77 cases vary the "
+            "<em>supplied</em> <code>--invariant</code> and <code>--ranking</code> over a "
+            "much smaller set of questions, and no <code>--infer</code> route reads a "
+            "supplied predicate, so the cases collapse onto their (module, property, "
+            "precondition) key the way <code>run_limits.py</code> collapses them: 30 "
+            "distinct questions. Every property is a <code>--buchi</code> reachability "
+            "target."
+        ),
     ),
-    "fbk": (
-        "The <code>--fbk-proveit</code> sweep, <code>tests/lean/fbk/probes.py</code>. "
-        "39 <code>--safety</code> properties over the same module fixtures. The first "
-        "group are the limit matrix's own invariants reused as safety properties, so they "
-        "are inductive by construction and measure the plumbing; the rest are net-shaped, "
-        "hand-written or deliberately hard."
+    "fbk": dict(
+        what=(
+            "Safety properties over a dozen of the limit matrix&rsquo;s modules "
+            "&mdash; the countdown, the step-by-two counter, the coupled counters, the "
+            "nested loop, the converging plants, Bool+Int and ReLU state, bodies 8, 48 "
+            "and 64 deep. In four groups: the limit matrix&rsquo;s own invariants, "
+            "restated as properties; the same box and Lyapunov arguments written as "
+            "ReLU nets; properties written to make a model checker work &mdash; true "
+            "but not inductive (<code>x &ne; 101</code> where only 0..100 is "
+            "reachable), parity, a relational diagonal (<code>x + y = 10</code>), a "
+            "product (<code>x&middot;y &le; 9</code>), a counterexample 100 steps "
+            "deep; and harder ones, found by running the whole limit matrix through "
+            "<code>--fbk-proveit</code>, that each need a strengthening they do not "
+            "state. Four are false."
+        ),
+        needs=(
+            "An inductive invariant that implies the property, or a counterexample "
+            "for the four false ones. The first two groups are inductive as written, "
+            "so they ask only that a route carry the property through to Lean; the "
+            "rest ask it to <em>find</em> an invariant &mdash; the bound behind a "
+            "disequality, a parity argument (<code>mod 2</code>), a coupling between "
+            "two components, a case split into bands. <code>NonlinLexMul</code> needs "
+            "nonlinear arithmetic, beyond the linear IC3 behind "
+            "<code>fbk-proveit</code> by construction."
+        ),
+        source=(
+            "The <code>--fbk-proveit</code> sweep, <code>tests/lean/fbk/probes.py</code>. "
+            "39 <code>--safety</code> properties over the same module fixtures. The first "
+            "group are the limit matrix's own invariants reused as safety properties, so "
+            "they are inductive by construction and measure the plumbing; the rest are "
+            "net-shaped, hand-written or deliberately hard."
+        ),
     ),
-    "tests": (
-        "The CLI's own fixtures, <code>tests/fixtures/</code>. Each states its "
-        "<code>--buchi</code> property in its docstring (&ldquo;Property: x == 0 holds "
-        "infinitely often&rdquo;); that line, as SMT-LIB, is what is asked here. "
-        "<code>counter</code>, <code>twobit</code> and <code>twobit_lia</code> also appear "
-        "in the limit matrix, under other properties."
+    "tests": dict(
+        what=(
+            "Six small closed integer programs, no inputs: a counter that runs 0 to 10 "
+            "and resets, and five toy versions of SV-COMP loops made reactive by "
+            "restarting at the exit &mdash; a countdown, a Collatz-like iteration with "
+            "<code>x + 1</code> for <code>3x + 1</code>, Euclid&rsquo;s GCD by "
+            "subtraction, a nested <code>i</code>/<code>j</code> loop, and "
+            "<code>x</code> counting up to <code>y</code>. Each runs one fixed orbit, "
+            "and every property holds."
+        ),
+        needs=(
+            "An invariant and a ranking function that each docstring already writes "
+            "down: a box or a relational bound (<code>0 &le; x &le; y</code>, "
+            "<code>a, b &ge; 1</code>), and a linear ranking &mdash; for the nested "
+            "loop, a lexicographic one folded into <code>(3 &minus; i)&middot;4 + (3 "
+            "&minus; j)</code>. The suite is a smoke test: a route that cannot do "
+            "these cannot do anything else here."
+        ),
+        source=(
+            "The CLI's own fixtures, <code>tests/fixtures/</code>. Each states its "
+            "<code>--buchi</code> property in its docstring (&ldquo;Property: x == 0 "
+            "holds infinitely often&rdquo;); that line, as SMT-LIB, is what is asked "
+            "here. <code>counter</code>, <code>twobit</code> and <code>twobit_lia</code> "
+            "also appear in the limit matrix, under other properties."
+        ),
     ),
-    "svcomp": (
-        "The SV-COMP <code>termination-crafted-lit</code> corpus, "
-        "<code>benchmarks/svcomp/dsl/</code> &mdash; 57 benchmarks, the ones the nuterm "
-        "learner is scored on. No property is written down in the corpus, because "
-        "these are termination benchmarks and the Farkas pipeline states termination as a "
-        "claim over wires rather than as the one-state predicate <code>verith</code> wants. "
-        "Each benchmark is asked <code>terminates</code>, read off its loop guard, and the 23 "
-        "Houdini finds invariants for are also asked <code>houdini-inv</code>; how is "
-        "recorded per property."
+    "svcomp": dict(
+        what=(
+            "Single-loop integer programs from the termination-analysis literature "
+            "&mdash; Alias et al. (SAS 2010), Bradley&ndash;Manna&ndash;Sipma, "
+            "Chen&ndash;Flur&ndash;Mukhopadhyay (SAS 2012), Heizmann et al. (ATVA "
+            "2013), Leike&ndash;Heizmann (TACAS 2014), Podelski&ndash;Rybalchenko, "
+            "Cook&ndash;See&ndash;Zuleger, Nori&ndash;Sharma and others. Each is one "
+            "<code>while</code> loop over one to seven unbounded integers, parameters "
+            "included, in linear arithmetic, and nearly all start from arbitrary "
+            "values; the body is "
+            "deterministic &mdash; straight-line affine updates or an if/else &mdash; "
+            "and the module stutters once the guard fails. The corpus&rsquo;s other 15 "
+            "programs are not encoded: ten have nested loops, the rest divide, take a "
+            "remainder, or draw a fresh nondeterministic value inside the loop."
+        ),
+        needs=(
+            "For <code>terminates</code>, a ranking function valid from every entry "
+            "state the program admits, and the paper a benchmark comes from is usually "
+            "about the shape that takes. A linear one does for the countdowns; the "
+            "loops that simulate a nested loop (<code>cousot9</code>, "
+            "<code>speedpldi2</code>/<code>3</code>) need a lexicographic one; coupled "
+            "updates such as <code>x = x + y; y = y &minus; 1</code>, which make up "
+            "the Chen&ndash;Flur&ndash;Mukhopadhyay and Leike&ndash;Heizmann clusters, "
+            "have no linear ranking function at all and need a multiphase one or a "
+            "supporting invariant; and where a variable flips sign every iteration "
+            "(<code>y = &minus;2y</code>, <code>z = &minus;z</code>, <code>b = "
+            "&minus;b &minus; 1</code>) the decrease shows only over two. Termination "
+            "is not recorded as known here, and at least one, "
+            "<code>Ex2.06</code>, does not terminate from every input. "
+            "<code>houdini-inv</code> is inductive by construction and needs no "
+            "search."
+        ),
+        source=(
+            "The SV-COMP <code>termination-crafted-lit</code> corpus, "
+            "<code>benchmarks/svcomp/dsl/</code> &mdash; 57 benchmarks, the ones the "
+            "nuterm learner is scored on. No property is written down in the corpus, "
+            "because these are termination benchmarks and the Farkas pipeline states "
+            "termination as a claim over wires rather than as the one-state predicate "
+            "<code>verith</code> wants. Each benchmark is asked <code>terminates</code>, "
+            "read off its loop guard, and the 23 Houdini finds invariants for are also "
+            "asked <code>houdini-inv</code>; how is recorded per property."
+        ),
     ),
-    "hybrid": (
-        "Hybrid and continuous systems, <code>tests/bench_matrix/hybrid/</code> "
-        "&mdash; a thermostat, three tank systems, a room-heating benchmark, a "
-        "bouncing ball, an adaptive cruise controller and a reactor&rsquo;s rod "
-        "control, each a textbook hybrid automaton under a first-order Euler step: "
-        "<em>Real</em> state, discrete time, piecewise-affine updates. Every "
-        "coefficient is a dyadic rational, so the float32 tensor holding it is the "
-        "constant the certificate reasons about. <code>hybrid/cases.py</code> asks "
-        "each plant a safe-band <code>--safety</code> property, one or more "
-        "<code>--buchi</code> recurrences, and at least one property that is "
-        "<em>false</em>."
+    "hybrid": dict(
+        what=(
+            "Eight textbook hybrid systems: a thermostat with hysteresis, the "
+            "ARCH-COMP leaking water tank and the same tank against an adversarial "
+            "consumption bounded by a precondition, the Fehnker&ndash;Ivan&#269;i&#263; "
+            "two-tank and room-heating benchmarks, a bouncing ball, an adaptive cruise "
+            "controller, and Alur&rsquo;s reactor with two control rods and their "
+            "recovery timers. <em>Real</em> state, discrete time, piecewise-affine "
+            "updates switched by a controller that reads its mode off the current "
+            "state &mdash; so each one overshoots its own setpoints by a tick, and the "
+            "safe bands are wider than the guards. The properties are safe bands and "
+            "boxes, recurrences (the room always eventually warms, the tank refills, "
+            "the ball lands, the gap settles, the core cools), and controls that are "
+            "false: a setpoint mistaken for a bound, a bound the transient breaks, "
+            "<code>G F (p &and; q)</code> read as <code>G F p &and; G F q</code>."
+        ),
+        needs=(
+            "Real arithmetic throughout. A safe band needs an invariant that relates "
+            "the level or temperature to the controller&rsquo;s mode &mdash; a plain "
+            "interval is not inductive here &mdash; the two-variable plants a "
+            "relational one, and the reactor one that keeps both rod timers. A "
+            "recurrence needs a ranking function that counts down to a mode switch "
+            "(the heater&rsquo;s return, a rod becoming available) rather than "
+            "following one variable: the cruise loop&rsquo;s eigenvalues are complex, "
+            "the ball converges to a velocity no constant names, and under the "
+            "disturbance the ranking has to drop for every admissible input. The "
+            "false rows are refuted by counterexamples that appear only in the "
+            "transient, or on the reactor&rsquo;s second cycle."
+        ),
+        source=(
+            "Hybrid and continuous systems, <code>tests/bench_matrix/hybrid/</code> "
+            "&mdash; each a textbook hybrid automaton under a first-order Euler step, "
+            "stating where it comes from in its own docstring. Every coefficient is a "
+            "dyadic rational, so the float32 tensor holding it is the constant the "
+            "certificate reasons about. <code>hybrid/cases.py</code> asks each plant a "
+            "safe-band <code>--safety</code> property, one or more <code>--buchi</code> "
+            "recurrences, and at least one property that is <em>false</em>."
+        ),
     ),
-    "petri": (
-        "Petri nets and their extensions, <code>tests/bench_matrix/petri/</code>. "
-        "Thirteen place/transition nets live as data in <code>petri/nets.py</code> and "
-        "are built by one adapter; a time Petri net and a hybrid Petri net, which "
-        "carry clocks and a fluid level rather than only a marking, are written out. "
-        "Firing is one step and <em>which</em> transition fires is an input, so a "
-        "<code>--safety</code> property here is a claim about every firing sequence, "
-        "and recurrence is asked of the round-robin variants, where the scheduler is "
-        "part of the state. Beyond the classical nets, the inhibitor, reset, transfer "
-        "and continuous extensions each carry a property that turns on that arc "
-        "&mdash; two that hold because of it and two classical invariants it breaks."
+    "petri": dict(
+        what=(
+            "Classical nets &mdash; mutual exclusion, a producer and consumer over a "
+            "three-slot buffer, readers and writers with weighted arcs, three dining "
+            "philosophers, a semaphore &mdash; and one net for each extension: "
+            "inhibitor arcs guarding two priority queues, a reset arc, a transfer arc, "
+            "and the semaphore&rsquo;s continuous relaxation, whose markings are "
+            "fractions. Four come in a round-robin variant too. Beside them, a time "
+            "Petri net (a clock and a firing window, under strong semantics, with the "
+            "time step an input) and a hybrid Petri net (a fluid buffer between a "
+            "feeder and a drain whose rate is an input in [7/8, 1]). Firing is one "
+            "step and <em>which</em> transition fires is an input, so a "
+            "<code>--safety</code> property is a claim about every firing sequence; "
+            "recurrence is asked of the round-robin variants, where the scheduler is "
+            "part of the state."
+        ),
+        needs=(
+            "Almost every safety row goes through a P-semiflow &mdash; a linear "
+            "equality that conserves tokens &mdash; sometimes weighted (readers and "
+            "writers, forks), sometimes several at once (the philosophers). Some rows "
+            "state one directly, which needs no search. The extension rows ask whether "
+            "a route reads the arc: two properties hold <em>because</em> of an arc "
+            "(<code>inhibit/queue-bound</code>, <code>transfer/conserved</code>) and "
+            "two classical invariants are broken by one (<code>reset/slots-eq</code>, "
+            "and integrality in the continuous net, refuted by a fraction of a token). "
+            "A recurrence needs a ranking over the scheduler&rsquo;s counter, plus a "
+            "reachability fact for the producer and consumer; "
+            "<code>philo1-eats</code> is false because round-robin starves it. The "
+            "timed and fluid modules need Real invariants that see the step truncated "
+            "at the deadline and the level clamped at empty, and rankings that hold "
+            "across the whole input interval. Counterexamples run from two firings to "
+            "a full cycle, and one lies off the integer grid."
+        ),
+        source=(
+            "Petri nets and their extensions, <code>tests/bench_matrix/petri/</code>. "
+            "Thirteen place/transition nets, round-robin variants included, live as "
+            "data in <code>petri/nets.py</code> and are built by one adapter; the time "
+            "Petri net and the hybrid Petri net, which carry clocks and a fluid level "
+            "rather than only a marking, are written out. Each net carries at least "
+            "one property that is false, and what is known about each row comes from "
+            "simulating it (<code>test_rows.py</code>)."
+        ),
     ),
 }
 
@@ -352,6 +528,7 @@ h3.dir{margin:2.2em 0 .7em;font-size:1.05rem}
 dl.suites{font-size:.9rem;margin:.6em 0 1.4em}
 dl.suites dt{font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:.7em}
 dl.suites dd{margin:.15em 0 0 1.4em;color:var(--dim)}
+dl.suites dd p{margin:.35em 0}
 .tocdir{margin:.5em 0;break-inside:avoid}
 .tocb{font-size:11.5px;line-height:1.55;margin:.2em 0 0 1em}
 .tocb a{display:inline;margin-right:.55em;white-space:nowrap}
@@ -1266,17 +1443,21 @@ def render(data: dict, warns: list = ()) -> str:
     warnings_section(list(warns), w)
 
     # ── the matrix ──────────────────────────────────────────────────────
-    # Where the properties come from and an index into them, then the
-    # scoreboard -- what each route carried, by suite -- and then the same
+    # What the suites are and where they come from, an index into them, then
+    # the scoreboard -- what each route carried, by suite -- and then the same
     # measurements one at a time: benchmark file, the properties asked of it
     # (from whichever suite asked them, since the fbk probes and the limit
     # matrix share modules), then one row per `--infer` route, every route
     # on every property.
     w("<h2 id=matrix>The matrix</h2>")
     suites = [s for s in SUITE_BLURB if any(v["suite"] == s for v in rows.values())]
-    w("<p>Where the properties come from:</p><dl class=suites>")
+    w("<p>The suites &mdash; what is in each, what it takes to answer it, and "
+      "where it comes from:</p><dl class=suites>")
     for s_ in suites:
-        w(f"<dt>{esc(s_)}</dt><dd>{SUITE_BLURB[s_]}</dd>")
+        b = SUITE_BLURB[s_]
+        w(f"<dt>{esc(s_)}</dt><dd><p>{b['what']}</p>"
+          f"<p><b>To solve:</b> {b['needs']}</p>"
+          f"<p><b>Source:</b> {b['source']}</p></dd>")
     w("</dl>")
 
     by_file: dict = {}
