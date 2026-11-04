@@ -283,9 +283,9 @@ def generate_data_lean(
 ) -> str:
     """Generate Certificate/Data.lean: init_pre, update_pre, inv, P, ranking.
 
-    Imports only ``Core.Basic``.  ``Certificate.lean`` imports this file so that
-    only the data file needs regeneration when the certificate data changes
-    (e.g. after --infer).
+    Imports only ``Relational.Basic``.  ``Certificate.lean`` imports this
+    file so that only the data file needs regeneration when the certificate
+    data changes (e.g. after --infer).
 
     It sits under ``Certificate/`` rather than ``System/`` because that is what
     it is about: ``System/`` is the module, which is the same whatever is being

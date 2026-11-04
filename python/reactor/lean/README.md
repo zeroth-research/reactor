@@ -73,13 +73,30 @@ NAME/
                                 inv, ranking
   Certificate/Certificate.lean  the proof rule's obligations, and the
                                 tactics that close them
-  Core/                         matrices, ReactiveModule, LTL, the proof
-                                rules (rule_globally, rule_buchi)
-  ZerothHammer.lean, LeanAI/    the zeroth_hammer and ai_solve tactics
+  ZerothHammer.lean             the zeroth_hammer tactic
   artifacts/                    what earlier runs found, for the next run
   dbg/                          the module as printed, and a copy of the input
   lakefile.toml, lean-toolchain
 ```
+
+The Lean library the project is stated in is not part of it: the lakefile
+requires two packages of [reactor-lean][reactor-lean], each in its own
+directory of that repository.
+
+| Package | Modules | Contents |
+|---------|---------|----------|
+| `Relational` | `Relational.Mat`, `.Box`, `.LTL`, `.Basic` | matrices, ReactiveModule, LTL, the proof rules (`rule_globally`, `rule_buchi`) |
+| `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
+
+By default they are git requires at `project/lakefile.py`'s
+`REACTOR_LEAN_REV`. With `REACTOR_LEAN` set to a reactor-lean checkout they
+are path requires on it instead, which is how to change the library and the
+generator together; `verith` refuses a `REACTOR_LEAN` that is not a
+checkout before it writes anything. The tests set it to the checkout beside
+this repository when there is one, and `tests/lean`'s lakefile requires
+`Relational` from there.
+
+[reactor-lean]: https://github.com/zeroth-research/reactor-lean
 
 The certificate in `Data.lean` depends on the run:
 
@@ -427,7 +444,7 @@ that is `None` becomes a `True` / `sorry` placeholder.
 
 `generate_certificate_lean(ctx, lean_cert, *, module_inline=None)`:
 
-1. Emits imports (`Mathlib`, `Core.Basic`, module import or inline, hammer).
+1. Emits imports (`Mathlib`, `Relational.Basic`, module import or inline, hammer).
 2. Emits `init_pre`, `update_pre`, `inv`, `P`, `DecidablePred P`, `ranking`.
 3. Emits `def RM : ReactiveModule Extl State` wiring `init`/`update` in.
 4. Emits module-specific macros `simp_mat`, `simp_defs`, `mat_collapse` that
@@ -524,7 +541,7 @@ that certificate files override.
 
 ---
 
-## Key Lemmas (in `Core.Basic`)
+## Key Lemmas (in `Relational.Basic`)
 
 | Lemma | Effect |
 |-------|--------|
@@ -650,8 +667,6 @@ uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lea
     Data.lean                 # certificate predicates
     Certificate.lean          # obligations + proofs
   ZerothHammer.lean           # standalone zeroth_hammer tactic
-  LeanAI.lean, LeanAI/        # the ai_solve tactic
-  Core/                       # library files (Mat, Box, ReactiveModule, LTL, proof rules)
   artifacts/                  # what runs found, for the next run (see below)
   dbg/                        # system.txt (the module) and a copy of the input
   Main.lean                   # only with --executable
@@ -1248,7 +1263,7 @@ not one of the five above — though the project does build it, as the
 | next state as `var_i statenext` | this is how `collectLatchesIndices` finds the latches at all | `(newstate i)` |
 | `INIT` / `TRANS` / `PROPERTY` | they become `:init`, `:trans`, `:invar-property` | `InitCond`, `TransRel`, nothing |
 | top-level `StateType`, `abbrev M : … NA …` | the certificate template imports the model and names both | everything inside a namespace |
-| self-contained imports | it is elaborated inside the `lean-ltl-certifying` package | imports `Core.Basic`, `System.Scalar`, … |
+| self-contained imports | it is elaborated inside the `lean-ltl-certifying` package | imports `Relational.Basic`, `System.Scalar`, … |
 
 The right-hand column is what the project's own Bool-valued relational
 encoding emitted. That encoding — `System/FBK.lean`, one of six until this

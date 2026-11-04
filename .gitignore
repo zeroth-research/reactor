@@ -18,4 +18,3 @@ __pycache__/
 tutorials/generated/Counter/.lake/
 tutorials/.ipynb_checkpoints/
 python/tests/LeanTests
-python/tests/lean/Core

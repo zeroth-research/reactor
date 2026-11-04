@@ -248,7 +248,7 @@ paid for them.
 
 **One shared build dir takes one writer, so the pass is strictly serial.**
 Every generated project symlinks its `.lake` to one shared build dir, so
-Mathlib, Core, LeanAI and ZerothHammer are compiled once and only
+Mathlib, Relational, LeanAI and ZerothHammer are compiled once and only
 `System/*` and `Certificate/*` recompile per cell. Module names are
 identical across projects, so two concurrent runs overwrite each other's
 oleans — and it does not fail cleanly: it reads as heartbeat timeouts and

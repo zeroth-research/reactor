@@ -448,7 +448,8 @@ OPS: tuple[Op, ...] = (
     # which does not elaborate). These use BitVec's own operators and
     # compare a 1-bit value against 1 directly, rather than converting
     # through `BV.BVToBool`. `Box.and`/`not`/`or` are likewise fixed to
-    # `Mat Bool 1 1` — see the note beside the `bv*` boxes in Core/Box.lean.
+    # `Mat Bool 1 1` — see the note beside the `bv*` boxes in
+    # `Relational.Box`.
     Op(
         "Not",
         BV_ONLY,
@@ -527,7 +528,7 @@ OPS: tuple[Op, ...] = (
         BV_ONLY,
         mat=_bv_only_in_smt(
             "The matrix form would be `BitVec.udiv`, the Box a new "
-            "`Box.bvUDiv` in Core/Box.lean."
+            "`Box.bvUDiv` in `Relational.Box`."
         ),
         scalar=_SEE_MAT,
         box=_SEE_MAT,
@@ -538,7 +539,7 @@ OPS: tuple[Op, ...] = (
         BV_ONLY,
         mat=_bv_only_in_smt(
             "The matrix form would be `BitVec.sdiv`, the Box a new "
-            "`Box.bvSDiv` in Core/Box.lean."
+            "`Box.bvSDiv` in `Relational.Box`."
         ),
         scalar=_SEE_MAT,
         box=_SEE_MAT,
@@ -634,7 +635,7 @@ OPS: tuple[Op, ...] = (
             mat=_bv_only_in_smt(
                 "The matrix form would compare with `BitVec`'s own "
                 "ordering and reify the answer as a 1-bit value, the Box a "
-                "new `Box.bv*` in Core/Box.lean."
+                "new `Box.bv*` in `Relational.Box`."
             ),
             scalar=_SEE_MAT,
             box=_SEE_MAT,

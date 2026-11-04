@@ -5,9 +5,11 @@
 
 Every project gets `.lake` symlinked to a single shared build dir whose
 `packages` points at the already-built Mathlib/cslib/lean-smt of
-python/tests/lean. Core, LeanAI and ZerothHammer are byte-identical across
-projects, so they are built once and hit the cache afterwards; only
-System/* and Certificate/* recompile per case.
+python/tests/lean. ZerothHammer is byte-identical across projects, and
+reactor-lean's Relational and LeanAI are path requires on one checkout
+(`$REACTOR_LEAN`, by default the one beside this repository), so they are
+built once and hit the cache afterwards; only System/* and Certificate/*
+recompile per case.
 
 Verdicts land in $VERITH_LIMITS_WORK/results.json (default
 /tmp/verith-limits); a table is printed as it goes.
@@ -63,6 +65,14 @@ WORK.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(SP))
 from cases import CASES  # noqa: E402
 from reactor.lean.inputs import to_surface  # noqa: E402
+from reactor.lean.project.lakefile import (  # noqa: E402
+    REACTOR_LEAN_ENV, reactor_lean_checkout, with_reactor_lean,
+)
+
+# The reactor-lean checkout every project requires by path; the `verith`
+# runs below inherit it.
+os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "reactor-lean"))
+REACTOR_LEAN = reactor_lean_checkout()
 
 DEFAULT_TIMEOUT = 900
 
@@ -175,13 +185,20 @@ def ensure_shared_lake() -> None:
     link.symlink_to(warm)
 
 
+def write_manifest(proj: Path) -> None:
+    """The manifest the project builds against: the warm one, with
+    reactor-lean's packages entered as path requires on the checkout."""
+    manifest = with_reactor_lean(json.loads(MANIFEST.read_text()), REACTOR_LEAN)
+    (proj / "lake-manifest.json").write_text(json.dumps(manifest, indent=2))
+
+
 def run_lake(case) -> dict:
     proj = PROJECTS / case["name"] / "Rea"
     lake = proj / ".lake"
     if lake.exists() or lake.is_symlink():
         lake.unlink()
     lake.symlink_to(SHARED)
-    shutil.copy2(MANIFEST, proj / "lake-manifest.json")
+    write_manifest(proj)
 
     t0 = time.time()
     try:
