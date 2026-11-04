@@ -1,9 +1,9 @@
-import Core.Mat
+import Relational.Mat
 
 /-!
 # ManualTests.Argmax
 
-Pins the semantics of `Core.Mat.argmax_1d` and `Core.Mat.argmax` to
+Pins the semantics of `Relational.Mat.argmax_1d` and `Relational.Mat.argmax` to
 `torch.argmax`, the runtime reference that the SMT encoder in
 `tests/test_lean_argmax.py`.
 

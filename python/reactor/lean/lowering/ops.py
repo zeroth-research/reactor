@@ -210,7 +210,8 @@ OPS: tuple[Op, ...] = (
     # which does not elaborate). These use BitVec's own operators and
     # compare a 1-bit value against 1 directly, rather than converting
     # through `BV.BVToBool`. `Box.and`/`not`/`or` are likewise fixed to
-    # `Mat Bool 1 1` — see the note beside the `bv*` boxes in Core/Box.lean.
+    # `Mat Bool 1 1` — see the note beside the `bv*` boxes in
+    # `Relational.Box`.
     Op(
         "Not",
         BV_ONLY,

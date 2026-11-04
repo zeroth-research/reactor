@@ -71,7 +71,7 @@ def _linear_box(term: Term) -> str:
     """Box for a baked-constant LIA/LRA `Linear` op: `Box.linear m A b` (x ↦ A·x + b).
 
     A and b are emitted as list literals; `Box.linear` applies the reflected
-    `matVecAffine` (see `Core.Mat`). Column output only (batch = 1).
+    `matVecAffine` (see `Relational.Mat`). Column output only (batch = 1).
     """
     out_m, a_lit, b_lit, _ = linear_list_literals(term)
     return f"(Box.linear {out_m} {a_lit} {b_lit})"

@@ -2,9 +2,6 @@
  version = "0.1.0"
  defaultTargets = ["ZerothHammerTests", "ZerothHammer", "Certs", "ManualTests", "Playground"]
 
- [[lean_lib]]
- name = "Core"
-
  # Generated: standalone zeroth_hammer tactic (no module-specific macros)
  [[lean_lib]]
  name = "ZerothHammer"
@@ -14,7 +11,7 @@
  name = "Certs"
 
  # Manually written: test zeroth_hammer on standalone goal shapes, and pin
- # the semantics of Core.Mat definitions that no certificate exercises
+ # the semantics of Relational.Mat definitions that no certificate exercises
  [[lean_lib]]
  name = "ManualTests"
  roots = ["ManualTests.Basic", "ManualTests.Argmax", "ManualTests.Reduce"]
@@ -32,3 +29,8 @@
  name = "cslib"
  scope = "leanprover"
  rev = "v4.28.0"
+
+ # `Relational.*`, from the reactor-lean checkout beside this repository.
+ [[require]]
+ name = "Relational"
+ path = "../../../../reactor-lean/Relational"

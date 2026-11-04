@@ -4,7 +4,7 @@ These are fast, Lean-free checks that the Python side emits the correct list
 literals for a `LIA.Linear`/`LRA.Linear` op: right orientation (row-major
 `A[i][l]`, not transposed), signs, bias (incl. empty → zeros), non-square
 shapes, and element formatting (Int/Real). They complement the lake-verified
-`Core.Mat.matVecAffine_eq`, which checks the *Lean* side reduces to the intended
+`Relational.Mat.matVecAffine_eq`, which checks the *Lean* side reduces to the intended
 affine map — here we guard the *generator* that feeds it.
 """
 

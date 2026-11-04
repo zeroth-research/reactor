@@ -106,11 +106,12 @@ def _recon_lemma_lines(w) -> "list[str]":
 def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
     """Emit a scalar def and simp theorem for argmax over n elements.
 
-    Mirrors ``Core.Mat.argmax_1d`` step for step -- seeded with element 0 and
-    updating on a strict ``<`` so the first maximal index wins -- because
-    ``{name}_eq`` below proves the two equal by unfolding both. A neutral
-    seed or a non-strict comparison here would either break that proof or,
-    worse, keep it provable against an equally wrong matrix definition.
+    Mirrors ``Relational.Mat.argmax_1d`` step for step -- seeded with
+    element 0 and updating on a strict ``<`` so the first maximal index
+    wins -- because ``{name}_eq`` below proves the two equal by unfolding
+    both. A neutral seed or a non-strict comparison here would either break
+    that proof or, worse, keep it provable against an equally wrong matrix
+    definition.
     """
     name = argmax_scalar_name(elem_ty, n)
     noncomp = "noncomputable " if elem_ty == "Real" else ""

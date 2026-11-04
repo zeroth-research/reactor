@@ -90,6 +90,7 @@ from __future__ import annotations
 from ..cli import parse_args
 from ..core.errors import Refused
 from ..infer import ProjectHandle
+from ..project.lakefile import reactor_lean_checkout
 from .certify import (
     lean_context,
     regenerate,
@@ -107,6 +108,14 @@ def main():
     if settings.hammer_file:
         hammer_only(settings.hammer_file)
         return
+
+    # `$REACTOR_LEAN` is a checkout the project's lakefile will require, so
+    # a bad one is refused here, before any of the project is written.
+    if not settings.cert_file:
+        try:
+            reactor_lean_checkout()
+        except Refused as e:
+            raise SystemExit(f"error: {e}") from e
 
     problem = load(settings)
     module = problem.module

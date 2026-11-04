@@ -1,5 +1,5 @@
 === Certificate/Data.lean
-import Core.Basic
+import Relational.Basic
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -21,7 +21,7 @@ def ranking (s : (Mat Int 1 1)) : Nat := sorry
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin
-import Core.Basic
+import Relational.Basic
 import System.System
 import Certificate.Data
 import ZerothHammer
@@ -155,8 +155,8 @@ end TS
 
 === standalone
 import Mathlib.Algebra.BigOperators.Fin
-import Core.Basic
-import Core.Box
+import Relational.Basic
+import Relational.Box
 import ZerothHammer
 
 set_option linter.unusedVariables false
