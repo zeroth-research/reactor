@@ -10,9 +10,9 @@ agree with each other without either being parsed back into the other.
 A module with a Real is skipped (Lean's `Real` is noncomputable), as is one
 with no Lean form at all. Two runs a module rather than the SMT side's six:
 a file costs about six seconds to start and a run about one more, and the
-modules are compiled `_PER_FILE` to a file, in parallel, against this lake
-project's `Core`. A module whose encoding does not compile is still
-reported as that module, since its rounds print nothing.
+modules are compiled `_PER_FILE` to a file, in parallel, against the
+`Relational` this lake project requires. A module whose encoding does not
+compile is still reported as that module, since its rounds print nothing.
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ _RUNS = 2
 _PER_FILE = 8
 
 
-def _build_core() -> None:
-    built = subprocess.run(["lake", "build", "Core.Box"], cwd=_LEAN_DIR,
+def _build_relational() -> None:
+    built = subprocess.run(["lake", "build", "Relational.Box"], cwd=_LEAN_DIR,
                            capture_output=True, text=True, timeout=1800)
     assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
 
@@ -56,7 +56,7 @@ def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
         chunk = scripts[k:k + _PER_FILE]
         body = "\n".join(t for _, t, _ in chunk)
         path = tmp_path / f"agree{k // _PER_FILE}.lean"
-        path.write_text("import Core.Box\n" + body)
+        path.write_text("import Relational.Box\n" + body)
         files.append((path, chunk))
 
     def lean(path: Path) -> str:
@@ -83,16 +83,15 @@ def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
 
 
 @pytest.mark.slow
-def test_the_lean_encoding_takes_the_rounds_the_module_takes(
-        tmp_path, sync_core_templates):
-    _build_core()
+def test_the_lean_encoding_takes_the_rounds_the_module_takes(tmp_path):
+    _build_relational()
     bad, checked = _disagreements(sorted(CORPUS), tmp_path)
     assert checked, "nothing to check"
     assert not bad, f"{len(bad)} disagreement(s):\n" + "\n".join(bad)
 
 
 @pytest.mark.slow
-def test_a_wrong_lean_emitter_is_caught(tmp_path, sync_core_templates, monkeypatch):
+def test_a_wrong_lean_emitter_is_caught(tmp_path, monkeypatch):
     """The check can fail: with `Sub`'s matrix emitter swapping its
     operands, the countdown's every `update` round prints something else."""
     from reactor.lean.lowering import ops
@@ -101,7 +100,7 @@ def test_a_wrong_lean_emitter_is_caught(tmp_path, sync_core_templates, monkeypat
         if key[1] == "Sub":
             monkeypatch.setitem(ops._BY_KEY, key, dataclasses.replace(
                 row, mat=lambda a: f"({a[1]} - {a[0]})"))
-    _build_core()
+    _build_relational()
     bad, checked = _disagreements(["limits/m_countdown"], tmp_path)
     assert checked == 1
     assert bad and "the interpreter computed" in bad[0]

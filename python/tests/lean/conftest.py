@@ -1,9 +1,10 @@
 """
 Session-scoped fixtures that prepare the tests/lean/ lake project before any
-test in this directory runs:
+test in this directory runs. The Lean library the files import,
+``Relational.*``, is reactor-lean's: the lakefile requires it by path from
+the checkout beside this repository.
 
-1. ``sync_core_templates`` — copies template files into Core/ (same as before).
-2. ``generate_lean_files`` — generates:
+``generate_lean_files`` generates:
      • ZerothHammer.lean  (the zeroth_hammer tactic, standalone)
      • Certs/Countdown.lean  (self-contained certificate, inline module)
      • Certs/TwoVars.lean
@@ -15,7 +16,6 @@ test in this directory runs:
 The generated files import ZerothHammer for the tactic and define their own
 module-specific ``simp_mat`` / ``simp_defs`` / ``mat_collapse`` macros.
 """
-import shutil
 from pathlib import Path
 
 import pytest
@@ -30,11 +30,9 @@ from reactor.lean.proof.render import (
 )
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.project.names import LINTERS_OFF
-from reactor.lean.project.scaffold import CORE_FILES, TEMPLATE_DIR
 from reactor.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 
 _LEAN_DIR = Path(__file__).parent
-_CORE_DIR = _LEAN_DIR / "Core"
 _CERTS_DIR = _LEAN_DIR / "Certs"
 
 
@@ -370,20 +368,7 @@ _CERT_SPECS = [
 
 
 @pytest.fixture(scope="session", autouse=True)
-def sync_core_templates() -> None:
-    """Copy the current template files into Core/ before the test session."""
-    _CORE_DIR.mkdir(exist_ok=True)
-    for name in CORE_FILES:
-        src = TEMPLATE_DIR / "Core" / name
-        dst = _CORE_DIR / name
-        if src.is_dir():
-            shutil.copytree(src, dst, dirs_exist_ok=True)
-        else:
-            shutil.copy2(src, dst)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def generate_lean_files(sync_core_templates) -> None:
+def generate_lean_files() -> None:
     """Generate ZerothHammer.lean and Certs/*.lean for the lake project."""
     # ZerothHammer.lean — standalone tactic
     hammer_file = _LEAN_DIR / "ZerothHammer.lean"
@@ -424,7 +409,7 @@ def generate_lean_files(sync_core_templates) -> None:
 
     # Certs/ArgmaxScalar.lean — the scalar Argmax variants exactly as the
     # generator emits them. Each carries an `argmax1d_scalar_n_eq` theorem
-    # proving it equal to Core.Mat.argmax_1d, so building this file is what
+    # proving it equal to Relational.Mat.argmax_1d, so building this file is what
     # keeps the unrolled scalar form and the matrix definition in step. No
     # certificate module currently uses Argmax, so nothing else compiles it.
     # Certs/ScalarEnc.lean — the functional and scalar encodings together, the
@@ -437,7 +422,7 @@ def generate_lean_files(sync_core_templates) -> None:
     for name, make_module in _SCALAR_ENC_SPECS:
         t = ModuleToLean4(make_module())
         (_CERTS_DIR / f"ScalarEnc{name}.lean").write_text(
-            f"import Core.Mat\nimport Core.Box\n\n{LINTERS_OFF}\n\n"
+            f"import Relational.Mat\nimport Relational.Box\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_functional()
             + "\n\n"
             + t.to_lean_scalar()
@@ -464,15 +449,15 @@ def generate_lean_files(sync_core_templates) -> None:
         d = _CERTS_DIR / f"RelEnc{name}"
         d.mkdir(exist_ok=True)
         (d / "Base.lean").write_text(
-            f"import Core.Mat\nimport Core.Box\n\n{LINTERS_OFF}\n\n"
+            f"import Relational.Mat\nimport Relational.Box\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_functional() + "\n"
         )
         (d / "Scalar.lean").write_text(
-            f"import Core.Basic\nimport {base}.Base\n\n{LINTERS_OFF}\n\n"
+            f"import Relational.Basic\nimport {base}.Base\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_scalar() + "\n"
         )
         (d / "ScalarRel.lean").write_text(
-            f"import Core.Basic\nimport {base}.Scalar\n\n{LINTERS_OFF}\n\n"
+            f"import Relational.Basic\nimport {base}.Scalar\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_rel() + "\n"
         )
         (_CERTS_DIR / f"RelEnc{name}.lean").write_text(f"import {base}.ScalarRel\n")
@@ -510,7 +495,7 @@ def generate_lean_files(sync_core_templates) -> None:
         cert = lean_certificate(module, Claim(prp=prop, kind="safety"))
         (_CERTS_DIR / f"Bridge{name}.lean").write_text(
             "\n".join([
-                "import Core.Basic", "import Core.Box", "import Core.Mat",
+                "import Relational.Basic", "import Relational.Box", "import Relational.Mat",
                 "import Smt", "", LINTERS_OFF, "",
                 t.to_lean_functional(), "",
                 t.to_lean_scalar(), "",
@@ -521,7 +506,7 @@ def generate_lean_files(sync_core_templates) -> None:
             ]) + "\n"
         )
 
-    argmax_lines = ["import Core.Mat", ""]
+    argmax_lines = ["import Relational.Mat", ""]
     for elem_ty, n in _ARGMAX_SCALAR_SPECS:
         argmax_lines.extend(_argmax_scalar_def_lines(elem_ty, n))
     (_CERTS_DIR / "ArgmaxScalar.lean").write_text("\n".join(argmax_lines))

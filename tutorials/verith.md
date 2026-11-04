@@ -68,28 +68,36 @@ uv run verith --help
 **One output directory for every command.** `verith` regenerates
 `<OUT>/<PROJ>` in place — it never wipes the directory — so the project's
 `.lake` survives from one example to the next, and with it every `.olean` of
-Mathlib, cslib, lean-smt, `Core` and `ZerothHammer`. Only `System/*` and
-`Certificate/*` recompile per example: the first `lake build` below costs
-about 15 s and each later one about 10 s, against an hour from cold.
+Mathlib, cslib, lean-smt and `ZerothHammer`; reactor-lean's `Relational` is
+built once, in the checkout itself. Only `System/*` and `Certificate/*`
+recompile per example: the first `lake build` below costs about 15 s and each
+later one about 10 s, against an hour from cold.
 
 ```bash
 export REPO=$(cd .. && pwd)
 export OUT=/tmp/verith-tutorial.noindex       # keep the .noindex suffix on macOS
 export PROJ=Rea
+export REACTOR_LEAN=$(cd "$REPO/../reactor-lean" && pwd)   # a reactor-lean checkout
 
 mkdir -p "$OUT/shared_lake"
 ln -sfn "$REPO/python/tests/lean/.lake/packages" "$OUT/shared_lake/packages"
 ```
 
-Two things make that work:
+Three things make that work:
 
 * `<OUT>/<PROJ>/.lake` is a symlink to one shared build directory whose
   `packages` points at the already-built packages of `python/tests/lean`.
   Build those once with `cd python/tests/lean && lake build`.
+* The Lean library the project is stated in, `Relational`, is not one of
+  those packages. It is a package of [reactor-lean], which the lakefile
+  requires from git; with `REACTOR_LEAN` set to a checkout of it, `verith`
+  writes the lakefile to require the checkout by path instead.
 * Keep the `.noindex` suffix on `OUT` if you are on macOS. A build writes tens
   of thousands of `.olean` files; Spotlight indexing them has turned a 9 s
   build into a 928 s one, and a directory whose name ends in `.noindex` is
   skipped.
+
+[reactor-lean]: https://github.com/zeroth-research/reactor-lean
 
 One shared build directory takes **one writer** — don't run two of these
 sessions, or `tests/limits/run_limits.py`, against the same `OUT` at the same
@@ -100,13 +108,20 @@ builds serve each other's oleans, and the symptom is
 Building the certificate is `lake build Certificate` in the generated project.
 `verith --build-cert` does it in one flag, which is what you would type at a
 terminal — but it runs `lake update` first, and that re-queries every
-dependency's git remote. Copying the warm manifest instead keeps every example
+dependency's git remote. Writing the warm manifest instead, with reactor-lean's
+packages entered as path dependencies on the checkout, keeps every example
 below off the network:
 
 ```bash
 lake_cert() {                                  # build the certificate of $OUT/$PROJ
   ln -sfn "$OUT/shared_lake" "$OUT/$PROJ/.lake"
-  cp "$REPO/python/tests/lean/lake-manifest.json" "$OUT/$PROJ/lake-manifest.json"
+  uv run python -c '
+import json, sys, torch
+from pathlib import Path
+from reactor.lean.project.lakefile import reactor_lean_checkout, with_reactor_lean
+warm = json.loads(Path(sys.argv[1]).read_text())
+Path(sys.argv[2]).write_text(json.dumps(with_reactor_lean(warm, reactor_lean_checkout())))
+' "$REPO/python/tests/lean/lake-manifest.json" "$OUT/$PROJ/lake-manifest.json"
   (cd "$OUT/$PROJ" && lake build Certificate)
 }
 ```
@@ -207,12 +222,6 @@ Wrote system.py
 Wrote /tmp/verith-tutorial.noindex/Rea/lakefile.toml
 Wrote /tmp/verith-tutorial.noindex/Rea/lean-toolchain
 Wrote /tmp/verith-tutorial.noindex/Rea/ZerothHammer.lean
-Copied Basic.lean -> Core/
-Copied Box.lean -> Core/
-Copied LTL.lean -> Core/
-Copied Mat.lean -> Core/
-Copied template file LeanAI.lean -> /
-Copied template directory LeanAI -> /
 Wrote root module /tmp/verith-tutorial.noindex/Rea/System.lean
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/System.lean ++
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/Circ.lean ++
@@ -232,8 +241,7 @@ writes `100` into its next value, and `update` computes
 `ite (#0 = 0, 100, #0 - 1)`. Everything under `Wrote` is the Lean package:
 
 ```bash
-find "$OUT/$PROJ" -maxdepth 2 -not -path '*/.lake*' -not -path '*/artifacts*' \
-     -not -path '*/LeanAI*' -not -path '*/Core*' | sort      # minus the vendored libraries
+find "$OUT/$PROJ" -maxdepth 2 -not -path '*/.lake*' -not -path '*/artifacts*' | sort
 ```
 
 ```
@@ -306,7 +314,7 @@ cat "$OUT/$PROJ"/*/Data.lean
 ```
 
 ```lean
-import Core.Basic
+import Relational.Basic
 
 def init_pre (e : (Unit) × (Unit)) : Prop := True
 

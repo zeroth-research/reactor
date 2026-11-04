@@ -595,8 +595,8 @@ def equivalence_lean(
 
     Lake reaches it through the `Certificate` lean_lib's glob, not through
     the root `Certificate.lean`'s import list, and that is not a detail:
-    this file is stated in `Core.LTL`'s vocabulary and the certificate in
-    `LTLCertifying`'s, and both libraries declare a top-level `LTLFormula`.
+    this file is stated in `Relational.LTL`'s vocabulary and the certificate
+    in `LTLCertifying`'s, and both libraries declare a top-level `LTLFormula`.
     A module importing the two is rejected before it is elaborated
     ("environment already contains 'LTLFormula'"), so `--build-cert` builds
     them as two modules, which is also all the bridge needs today: its

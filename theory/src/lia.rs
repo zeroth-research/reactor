@@ -390,7 +390,7 @@ where
         // Argmax reduces the whole matrix to one index. It follows
         // `torch.argmax`, which flattens row-major and returns the single
         // index `i * n + j`, so the output holds exactly one element -- the
-        // SMT encoding and `Core.Mat.argmax` in the Lean codegen both agree
+        // SMT encoding and `Relational.Mat.argmax` in the Lean codegen both agree
         // on that. A wider output would have to mean per-column argmax,
         // which nothing implements.
         LIA::Argmax() => {

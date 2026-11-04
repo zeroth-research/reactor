@@ -155,7 +155,7 @@ def _linear_expr(term, wire_expr: dict[int, str]) -> str:
     into the op; the read wire supplies `X` (`[in, batch]`). They are emitted as
     plain `List (List t)` / `List t` literals: cheap to elaborate (no dense
     `match`), and `matVecAffine` reduces to a linear expression under `simp`
-    (no symbolic `∑`). `Core.Mat.matVecAffine_eq` proves this equals
+    (no symbolic `∑`). `Relational.Mat.matVecAffine_eq` proves this equals
     `affineLinear (matrixOf A) X (colOf b)` for any batch width, so the
     contraction is machine-checked rather than trusted.
     """

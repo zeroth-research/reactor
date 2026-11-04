@@ -6,7 +6,7 @@
 Three numbers, and they answer different questions.
 
 `first_build_s` is the one that matters operationally: the first project
-built into an **empty** build dir, which compiles Core, LeanAI and
+built into an **empty** build dir, which compiles Relational, LeanAI and
 ZerothHammer against Mathlib and caches the oleans every later project then
 hits. It is paid once per build dir, not once per case, and it is why the
 first row of a fresh pass looks like a catastrophe next to its neighbours.
@@ -44,6 +44,16 @@ SP = Path(__file__).resolve().parent
 PY = SP.parent.parent
 WARM = PY / "tests" / "lean"
 MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
+
+sys.path.insert(0, str(PY))
+from reactor.lean.project.lakefile import (  # noqa: E402
+    REACTOR_LEAN_ENV, reactor_lean_checkout, with_reactor_lean,
+)
+
+# The reactor-lean checkout the project requires by path; the `verith`
+# runs below inherit it.
+os.environ.setdefault(REACTOR_LEAN_ENV, str(PY.parent.parent / "reactor-lean"))
+REACTOR_LEAN = reactor_lean_checkout()
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 RESULTS = WORK / "results.json"
 
@@ -59,7 +69,7 @@ COLD = WORK / "coldstart.noindex"
 # the two numbers were taken on different days and only this one has its
 # target list attached.
 FIRST_BUILD_NOTE = (
-    "{n} targets &mdash; <code>Core.*</code>, <code>System.*</code>, "
+    "{n} targets &mdash; <code>Relational.*</code>, <code>System.*</code>, "
     "<code>ZerothHammer</code>, <code>Certificate.Data</code> &mdash; into a "
     "build dir holding nothing but the <code>packages</code> symlink. This is "
     "the shared cache filling, paid once per build dir. Routes that declare a "
@@ -82,7 +92,7 @@ MATHLIB_NOTE = (
 )
 
 EXPLAIN = (
-    "Read the first two rows together: the pass compiles Core, LeanAI and "
+    "Read the first two rows together: the pass compiles Relational, LeanAI and "
     "ZerothHammer once, and every project after that hits the cache, which is "
     "the whole reason one shared build dir is worth the serialisation it forces. "
     "The <code>--infer fbk-proveit</code> column has a second such cost of its "
@@ -90,6 +100,12 @@ EXPLAIN = (
     "into the checkout's own <code>.lake/build</code> the first time the route "
     "runs, and shared by every probe after."
 )
+
+
+def write_manifest(proj: Path) -> None:
+    """The warm manifest, with reactor-lean's packages as path requires."""
+    manifest = with_reactor_lean(json.loads(MANIFEST.read_text()), REACTOR_LEAN)
+    (proj / "lake-manifest.json").write_text(json.dumps(manifest, indent=2))
 
 
 def run(cmd, cwd, timeout=3600):
@@ -118,7 +134,7 @@ def main() -> None:
     (COLD / "packages").symlink_to(WARM / ".lake" / "packages")
     (proj / ".lake").unlink(missing_ok=True)
     (proj / ".lake").symlink_to(COLD)
-    shutil.copy2(MANIFEST, proj / "lake-manifest.json")
+    write_manifest(proj)
 
     print(f"cold build into an empty build dir ({COLD}) ... this is the slow one")
     cold_s, r = run(["lake", "build"], proj)
@@ -142,7 +158,7 @@ def main() -> None:
          "-o", str(proj_root), "-p", "Rea"], PY, 600)
     (proj / ".lake").unlink(missing_ok=True)
     (proj / ".lake").symlink_to(COLD)
-    shutil.copy2(MANIFEST, proj / "lake-manifest.json")
+    write_manifest(proj)
     warm_s, _ = run(["lake", "build"], proj)
     print(f"  {warm_s:.1f}s")
 

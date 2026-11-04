@@ -49,7 +49,15 @@ sys.path.insert(0, str(PY))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
 from reactor.lean.project.build import without_cascades
+from reactor.lean.project.lakefile import (  # noqa: E402
+    REACTOR_LEAN_ENV, reactor_lean_checkout, with_reactor_lean,
+)
 from reactor.lean.inputs import to_surface  # noqa: E402
+
+# The reactor-lean checkout every project requires by path, so a pass
+# measures the libraries on disk; the `verith` runs below inherit it.
+os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "reactor-lean"))
+REACTOR_LEAN = reactor_lean_checkout()
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 PROJECTS = WORK / "projects"
@@ -110,8 +118,9 @@ def write_manifest(proj: Path, route_name: str) -> None:
     `lean-ltl-certifying` checkout, and lake refuses a dependency the
     manifest does not list. It needs no fetch -- it is a local directory --
     so the entry is added here rather than by a `lake update`, which would
-    re-resolve the other thirteen packages."""
-    manifest = json.loads(MANIFEST.read_text())
+    re-resolve the other thirteen packages. reactor-lean's packages are
+    path requires too, for the same reason."""
+    manifest = with_reactor_lean(json.loads(MANIFEST.read_text()), REACTOR_LEAN)
     if route_name == "fbk-proveit":
         manifest["packages"].append({
             "type": "path", "scope": "", "name": "LTL_Certifying",
@@ -350,7 +359,7 @@ _ERR = re.compile(r"^(?:error|warning): (?P<file>[^:]+\.lean):(\d+):(\d+):\s*(?P
 # `BUILD-FAIL` could not be told from `PROOF-FAIL`.
 _FAILED = re.compile(r"^✖ \[[\d/]+\] Buil(?:t|ding) (?P<t>\S+)")
 _SORRY = re.compile(r"declaration uses [`']sorry[`']")
-OURS = ("Certificate/", "System/", "Core/", "LeanAI/", "ZerothHammer/", "ProveIt/")
+OURS = ("Certificate/", "System/", "Relational/", "LeanAI/", "ZerothHammer/", "ProveIt/")
 
 
 def build(row, route, out: Path) -> dict:
@@ -415,7 +424,7 @@ _NO_LEAN = re.compile(r"has no Lean form")
 
 
 # What a certificate is made of. Everything else a project builds -- the five
-# encodings under `System/`, `Core`, the hammer -- is the module, and a failure
+# encodings under `System/`, `Relational`, the hammer -- is the module, and a failure
 # there is not the certificate's.
 _CERT_FILES = {"Certificate.lean", "Data.lean", "Equivalence.lean"}
 

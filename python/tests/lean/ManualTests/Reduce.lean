@@ -1,9 +1,9 @@
-import Core.Mat
+import Relational.Mat
 
 /-!
 # ManualTests.Reduce
 
-Pins `Core.Mat.matMin` and `Core.Mat.matMax`, the two reductions no
+Pins `Relational.Mat.matMin` and `Relational.Mat.matMax`, the two reductions no
 certificate in `Certs` exercises. `ManualTests.Argmax` does the same for
 their two siblings, against `torch.argmax`; these two answer to
 `torch.amin` / `torch.amax`, and the SMT encoder follows the same reference

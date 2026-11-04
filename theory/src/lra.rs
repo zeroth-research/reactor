@@ -413,7 +413,7 @@ where
             Ok(())
         }
         // See the note on `LIA::Argmax`: one index out, matching
-        // `torch.argmax`, the SMT encoding and `Core.Mat.argmax`. An LRA
+        // `torch.argmax`, the SMT encoding and `Relational.Mat.argmax`. An LRA
         // module carries that index on a Real wire.
         LRA::Argmax() => {
             // TODO: check whether the conditions of the read are sound
