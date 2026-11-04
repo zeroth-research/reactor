@@ -26,14 +26,6 @@ _LEAN_DIR = Path(__file__).parent
 # ──────────────────────────────────────────────────────────────
 
 
-def test_core_files_present(sync_core_templates):
-    """Core/ template files were copied successfully."""
-    from reactor.lean.project.scaffold import CORE_FILES
-
-    for name in CORE_FILES:
-        assert (_LEAN_DIR / "Core" / name).exists(), f"Core/{name} missing after sync"
-
-
 def test_generated_files_present(generate_lean_files):
     """ZerothHammer.lean and Certs/*.lean exist after generation fixture runs."""
     assert (_LEAN_DIR / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
@@ -59,7 +51,7 @@ def test_generated_argmax_scalar_mirrors_matrix_form(generate_lean_files):
     """The emitted scalar Argmax must seed from s0 and compare strictly.
 
     `argmax1d_scalar_n_eq` proves the unrolled form equal to
-    `Core.Mat.argmax_1d` by unfolding both, so a neutral seed or a
+    `Relational.Mat.argmax_1d` by unfolding both, so a neutral seed or a
     non-strict comparison here would leave that proof passing against a
     definition that disagrees with `torch.argmax`.
     """
@@ -114,7 +106,7 @@ def test_manual_tests_build(generate_lean_files):
 def test_argmax_scalar_equiv_build(generate_lean_files):
     """Certs/ArgmaxScalar.lean compiles — each `argmax1d_scalar_n_eq` proof
     goes through, which is what ties the generated unrolled form to
-    `Core.Mat.argmax_1d`."""
+    `Relational.Mat.argmax_1d`."""
     r = _lake_build("Certs.ArgmaxScalar")
     assert r.returncode == 0, (
         f"lake build Certs.ArgmaxScalar failed.\n"
@@ -299,14 +291,19 @@ def test_generated_executable_builds_and_runs(
     Reuses this project's already-built `.lake/packages` so the run does not
     refetch Mathlib; skipped if they are not built yet.
     """
-    import shutil
+    import json
     import sys
     import tempfile
+
+    from reactor.lean.project.lakefile import reactor_lean_checkout, with_reactor_lean
 
     packages = _LEAN_DIR / ".lake" / "packages"
     manifest = _LEAN_DIR / "lake-manifest.json"
     if not packages.is_dir() or not manifest.is_file():
         pytest.skip("tests/lean packages not built; run the other slow tests first")
+    checkout = reactor_lean_checkout()
+    if checkout is None:
+        pytest.skip("no reactor-lean checkout: set $REACTOR_LEAN")
 
     import importlib
 
@@ -327,7 +324,10 @@ def test_generated_executable_builds_and_runs(
 
         (project / ".lake").mkdir(exist_ok=True)
         (project / ".lake" / "packages").symlink_to(packages)
-        shutil.copy2(manifest, project / "lake-manifest.json")
+        # This project's `dir`s are relative to it; the generated one
+        # requires reactor-lean by path too, and needs them as its own.
+        (project / "lake-manifest.json").write_text(json.dumps(
+            with_reactor_lean(json.loads(manifest.read_text()), checkout)))
 
         build = subprocess.run(
             ["lake", "build", "main"],

@@ -1,7 +1,7 @@
 """Tests for the module -> cvc5 encoder (`reactor.lean.smt.encode`).
 
 `Min` / `Max` are unary *reductions* in the theory: one read wire of any
-shape, a `Mat t 1 1` written, matching `Core.Mat.matMin` / `matMax` and the
+shape, a `Mat t 1 1` written, matching `Relational.Mat.matMin` / `matMax` and the
 shape of `Argmax`. They had been wired to the binary `_elementwise` path, so
 building the SMT term for any module using one raised `TypeError` and took
 down every cvc5 query about that module.

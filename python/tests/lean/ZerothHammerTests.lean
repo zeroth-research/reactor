@@ -1,6 +1,6 @@
 import Mathlib.Algebra.BigOperators.Fin
 import Mathlib.Tactic
-import Core.Mat
+import Relational.Mat
 
 /-!
 # ZerothHammerTests
@@ -14,18 +14,21 @@ arithmetic the remaining obligations are plain integer arithmetic.
 
 ## How to run
 
-**Via pytest (recommended)** — syncs `Core/` from templates automatically:
+**Via pytest (recommended)** — generates `ZerothHammer.lean` and `Certs/`:
 
 ```
-just pytest tests/lean/                   # fast: only checks Core/ sync
+just pytest tests/lean/                   # fast: only generates the files
 just pytest tests/lean/ -m slow           # slow: also runs lake build
 ```
 
-**Directly with lake** — first sync Core/ from templates, then build:
+**Directly with lake** — generate the files first, then build:
 
 ```
 just pytest tests/lean/ && lake build ZerothHammerTests
 ```
+
+`Relational.*` comes from the reactor-lean checkout beside this repository,
+which the lakefile requires by path.
 
 The first `lake build` downloads Mathlib and may take several minutes.
 Subsequent runs use the cache.

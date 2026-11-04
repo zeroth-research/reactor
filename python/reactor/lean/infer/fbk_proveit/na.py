@@ -22,8 +22,9 @@ binders `state`,        `emitDefs` looks the binders up by  `state`, `newstate`,
 `PROPERTY`              `:invar-property`                   `TransRel`, nothing
 top-level `StateType`,  the certificate template imports    all inside
 `abbrev M : … NA …`     the model and refers to both        a namespace
-self-contained          it is elaborated inside the         imports `Core.Basic`,
-                        `lean-ltl-certifying` package       `System.Scalar`, …
+self-contained          it is elaborated inside the         imports
+                        `lean-ltl-certifying` package       `Relational.Basic`,
+                                                            `System.Scalar`, …
 ======================  ==================================  ==================
 
 The right-hand column is what this file's predecessor emitted: a Bool-valued

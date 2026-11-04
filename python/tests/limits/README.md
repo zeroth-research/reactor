@@ -57,7 +57,7 @@ Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs
 `python/tests/lean/.lake` already built (Mathlib, cslib, lean-smt; the first
 `(cd tests/lean && lake build)` takes about an hour cold): every
 generated project symlinks its `.lake` to one shared build dir whose
-`packages` the runner points there, so Core / LeanAI / ZerothHammer are
+`packages` the runner points there, so Relational / LeanAI / ZerothHammer are
 compiled once and only `System/*` and `Certificate/*` recompile per case.
 
 The **first** case in a fresh work directory pays for all of that: 654 s
@@ -176,7 +176,7 @@ difference `y − x`; a lexicographic order on two counters folded into one
 translator has no `max`, so it must be written as an `Ite`); as a ReLU-shaped
 *invariant* (`x = ite(x≥0, x, 0)`); in a `Linear → ReLU → Linear` net, the
 shape a small Q-network compiles to; and combined with an external input under
-`--pre "(>= (X @extl.0) 1)"`. It works because `Core/Mat.lean` gives `ReLu` a `@[simp]
+`--pre "(>= (X @extl.0) 1)"`. It works because `Relational.Mat` gives `ReLu` a `@[simp]
 relu_apply` and `omega` understands `max` over `Int`.
 
 **Scale.** A 32-wide state verifies. A straight-line transition body verifies

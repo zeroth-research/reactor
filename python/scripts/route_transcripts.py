@@ -305,7 +305,7 @@ def transcript(mod: Path, args: list[str], out: Path, name: str) -> str:
             parts += [f"=== ProveIt/{p.name}", p.read_text()]
     files = sorted(
         str(p.relative_to(project)) for p in project.rglob("*")
-        if p.is_file() and not any(s in p.parts for s in ("Core", "LeanAI", ".lake"))
+        if p.is_file() and ".lake" not in p.parts
     ) if project.is_dir() else []
     parts += ["=== files", "\n".join(files)]
     return "\n".join(parts)

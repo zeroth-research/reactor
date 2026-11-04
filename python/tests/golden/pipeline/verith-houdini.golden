@@ -27,12 +27,6 @@ Wrote system.py
 Wrote <OUT>/G/lakefile.toml
 Wrote <OUT>/G/lean-toolchain
 Wrote <OUT>/G/ZerothHammer.lean
-Copied Basic.lean -> Core/
-Copied Box.lean -> Core/
-Copied LTL.lean -> Core/
-Copied Mat.lean -> Core/
-Copied template file LeanAI.lean -> /
-Copied template directory LeanAI -> /
 Wrote root module <OUT>/G/System.lean
 ++ Generated <OUT>/G/System/System.lean ++
 ++ Generated <OUT>/G/System/Circ.lean ++
@@ -76,7 +70,7 @@ Project ready at: <OUT>/G
 === stderr
 
 === Certificate/Data.lean
-import Core.Basic
+import Relational.Basic
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -97,7 +91,7 @@ instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsi
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin
-import Core.Basic
+import Relational.Basic
 import System.System
 import Certificate.Data
 import ZerothHammer

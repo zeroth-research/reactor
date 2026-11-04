@@ -905,7 +905,7 @@ def test_the_bridge_closes_goals_only_with_tactics_it_imports():
 
 
 def test_the_bridge_is_not_imported_by_the_certificate_root():
-    """The bridge speaks `Core.LTL` and the certificate speaks
+    """The bridge speaks `Relational.LTL` and the certificate speaks
     `LTLCertifying`, and both declare a top-level `LTLFormula`: one module
     importing the two is rejected before it is elaborated. Lake reaches the
     bridge through the `Certificate` lean_lib's glob instead."""

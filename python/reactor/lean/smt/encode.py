@@ -210,7 +210,8 @@ def _argmax_flat(
     strict against the incumbent, so the lowest flat index wins a tie, and
     the scan starts from element 0 rather than a neutral value. For a single
     row the flat index is the column index, which is what
-    `Core.Mat.argmax_1d` computes; `Core.Mat.argmax` covers the general case.
+    `Relational.Mat.argmax_1d` computes; `Relational.Mat.argmax` covers the
+    general case.
     """
     xs = [
         mat_select(tm, x, shape, i, j)
@@ -237,7 +238,7 @@ def _reduce_flat(
     """Scalar: the min/max element of a `Mat t m n`, folded row-major.
 
     `Min`/`Max` are *unary reductions* in the theory -- one read wire of any
-    shape, a `Mat t 1 1` written -- exactly like `Argmax`, and `Core.Mat`
+    shape, a `Mat t 1 1` written -- exactly like `Argmax`, and `Relational.Mat`
     folds them row-major from element `(0,0)`. They were wired to
     `_elementwise` with a binary lambda instead, so a real `Max` term raised
     `TypeError: <lambda>() missing 1 required positional argument`, taking

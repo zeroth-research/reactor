@@ -71,7 +71,7 @@ Project ready at: <OUT>/G
 === stderr
 
 === Certificate/Data.lean
-import Core.Basic
+import Relational.Basic
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -92,7 +92,7 @@ instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsi
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin
-import Core.Basic
+import Relational.Basic
 import System.System
 import Certificate.Data
 import ZerothHammer

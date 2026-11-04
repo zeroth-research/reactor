@@ -1,5 +1,5 @@
 import ZerothHammer
-import Core.Mat
+import Relational.Mat
 
 /-!
 # ManualTests.Basic
