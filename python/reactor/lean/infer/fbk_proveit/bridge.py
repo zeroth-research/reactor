@@ -190,8 +190,13 @@ def atom_to_lean_fbk_bridge(
         "    the order `Scalar.unpack_ctrl` unpacks in -- the same call, not",
         "    a matching one. The last arm is `_ + n` rather",
         "    than `_`: at a variable index `TypeMap` is stuck, and only the",
-        "    successor pattern lets it reduce to the fallback type. -/",
-        "def toSlots (s : CtrlNative) : StateType",
+        "    successor pattern lets it reduce to the fallback type.",
+        "    `reducible` because the model's `PROPERTY` is a `decide` over",
+        "    `var_k (toSlots s)`: once `simp` has unfolded it in the",
+        "    proposition the instance still names it, and from Lean v4.34",
+        "    `simp` will not rewrite a term whose instance agrees with it",
+        "    only through a semireducible unfolding. -/",
+        "@[reducible] def toSlots (s : CtrlNative) : StateType",
     ]
     for k, slot in enumerate(layout.slots):
         lines.append(f"  | {k} => {layout.wire_accessor('s', slot)}")
