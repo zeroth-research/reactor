@@ -2,8 +2,8 @@
 //! uninterpreted `Ops` theory and the example modules built over it.
 #![allow(dead_code)]
 
-use base::term::Term;
 use base::wire::Wire;
+use dataflow::diagram::Term;
 use reactive::var::{Var, X};
 use std::collections::HashMap;
 use std::fmt;
