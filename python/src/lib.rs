@@ -68,11 +68,13 @@ fn try_var_iter_cloned(
     Ok(seq)
 }
 
-fn try_term_iter_cloned<T>(seq: &Bound<'_, PyAny>) -> PyResult<impl Iterator<Item = base::Term<T>>>
+fn try_term_iter_cloned<T>(
+    seq: &Bound<'_, PyAny>,
+) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<T>>>
 where
     T: Theory,
-    base::Term<Any>: TryInto<base::Term<T>>,
-    <base::Term<Any> as TryInto<base::Term<T>>>::Error: Debug,
+    dataflow::diagram::Term<Any>: TryInto<dataflow::diagram::Term<T>>,
+    <dataflow::diagram::Term<Any> as TryInto<dataflow::diagram::Term<T>>>::Error: Debug,
 {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;

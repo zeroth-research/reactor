@@ -5,7 +5,7 @@ use theory::any::Any;
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
-    base: base::Term<Any>,
+    base: dataflow::diagram::Term<Any>,
 }
 
 #[pymethods]
@@ -20,7 +20,7 @@ impl Term {
         let write = try_wire_iter_cloned(write)?;
         let read = try_wire_iter_cloned(read)?;
 
-        match base::Term::function(itype, write, read) {
+        match dataflow::diagram::Term::function(itype, write, read) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -31,7 +31,7 @@ impl Term {
         let itype: Any = itype.extract()?;
         let write = try_wire_iter_cloned(write)?;
 
-        match base::Term::constant(itype, write) {
+        match dataflow::diagram::Term::constant(itype, write) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -71,7 +71,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &base::Term<Any> {
+    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Any> {
         &self.base
     }
 
@@ -84,8 +84,8 @@ impl Term {
     }
 }
 
-impl From<base::Term<Any>> for Term {
-    fn from(base: base::Term<Any>) -> Self {
+impl From<dataflow::diagram::Term<Any>> for Term {
+    fn from(base: dataflow::diagram::Term<Any>) -> Self {
         Self { base }
     }
 }
