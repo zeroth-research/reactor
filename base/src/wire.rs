@@ -25,7 +25,8 @@ pub struct Wire<S> {
 }
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-pub(crate) const PREFIX: &str = "#";
+/// The prefix that marks a wire id when displayed, as in `#3`.
+pub const PREFIX: &str = "#";
 
 impl<S> Wire<S> {
     /// The wire's process-unique identity, assigned at creation; wires are

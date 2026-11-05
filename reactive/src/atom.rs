@@ -1,6 +1,6 @@
 use crate::Module;
-use crate::term::{Block, Term};
-use crate::wire::Wire;
+use base::Wire;
+use base::term::{Block, Term};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
