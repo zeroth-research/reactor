@@ -1,6 +1,6 @@
 use crate::atom::Atom;
 use crate::topological_order;
-use crate::var::{Interface, Var};
+use crate::var::{Interface, Wire3};
 use base::Wire;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
@@ -170,7 +170,7 @@ where
             debug_assert_eq!(obs.len(), extl.len() + intf.len());
             debug_assert_eq!(ctrl.len(), intf.len() + prvt.len());
 
-            let mut module_vars: HashSet<&Var<S>> = HashSet::new();
+            let mut module_vars: HashSet<&Wire3<S>> = HashSet::new();
 
             // extl & intf & prvt = empty
             debug_assert!(extl.iter().all(|v| module_vars.insert(v)));
@@ -185,7 +185,7 @@ where
             debug_assert!(ctrl.iter().all(|v| intf.contains(v) || prvt.contains(v)));
 
             // check atoms consistency
-            let mut written: HashSet<&Var<S>> = HashSet::new();
+            let mut written: HashSet<&Wire3<S>> = HashSet::new();
             written.extend(extl.iter());
             for atom in atoms.iter() {
                 for var in atom.read().iter() {
@@ -226,7 +226,7 @@ where
             atom_used_wires.extend(atoms.iter().flat_map(Atom::used));
 
             let atom_decl_wires: HashSet<_> =
-                atom_decl_vars.into_iter().flat_map(Var::wires).collect();
+                atom_decl_vars.into_iter().flat_map(Wire3::wires).collect();
             let atom_local_wires: HashSet<_> = atom_used_wires
                 .difference(&atom_decl_wires)
                 .cloned()
@@ -335,13 +335,13 @@ where
     pub fn partially_observable<A, H>(atoms: A, hide: H) -> Result<Self, String>
     where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
-        H: Fn(&Var<S>) -> bool,
+        H: Fn(&Wire3<S>) -> bool,
     {
         let mut used: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
 
-        let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
-        let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut obs: BTreeSet<Wire3<S>> = BTreeSet::new();
+        let mut ctrl: BTreeSet<Wire3<S>> = BTreeSet::new();
         let atoms = atoms.into_iter();
         let mut past_atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(atoms.size_hint().0);
 
@@ -393,7 +393,7 @@ where
         //============================================================
         // Determine private, interface, and external
         //============================================================
-        let prvt: Vec<Var<S>> = obs.extract_if(.., &hide).collect();
+        let prvt: Vec<Wire3<S>> = obs.extract_if(.., &hide).collect();
         let intf = ctrl.iter().filter(|v| prvt.binary_search(v).is_err());
         let extl = obs.difference(&ctrl);
 
@@ -473,7 +473,7 @@ where
     /// - [`Module::compose_hiding`], hiding several modules at their composition.
     pub fn hide<H>(self, hide: H) -> Result<Self, String>
     where
-        H: Fn(&Var<S>) -> bool,
+        H: Fn(&Wire3<S>) -> bool,
     {
         Self::compose_hiding(std::iter::once(self), hide)
     }
@@ -509,18 +509,18 @@ where
     pub fn compose_hiding<M, H>(modules: M, hide: H) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
-        H: Fn(&Var<S>) -> bool,
+        H: Fn(&Wire3<S>) -> bool,
     {
         let mut used: BTreeSet<Wire<S>> = BTreeSet::new();
         let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
 
         let mut prvt_pre_hiding: HashSet<usize> = HashSet::new();
 
-        let mut extl: BTreeSet<Var<S>> = BTreeSet::new();
-        let mut intf: BTreeSet<Var<S>> = BTreeSet::new();
-        let mut prvt: BTreeSet<Var<S>> = BTreeSet::new();
-        let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
-        let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut extl: BTreeSet<Wire3<S>> = BTreeSet::new();
+        let mut intf: BTreeSet<Wire3<S>> = BTreeSet::new();
+        let mut prvt: BTreeSet<Wire3<S>> = BTreeSet::new();
+        let mut obs: BTreeSet<Wire3<S>> = BTreeSet::new();
+        let mut ctrl: BTreeSet<Wire3<S>> = BTreeSet::new();
 
         let mut atoms_pre_ordering: Vec<Atom<I, J, F, S>> = Vec::new();
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
@@ -686,7 +686,7 @@ where
     J: Sequential<Sort = S> + fmt::Display,
     F: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
-    N: Fn(&Var<S>) -> Cow<'a, str>,
+    N: Fn(&Wire3<S>) -> Cow<'a, str>,
 {
     fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
@@ -729,7 +729,7 @@ where
     J: Sequential<Sort = S> + fmt::Display,
     F: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
-    N: Fn(&Var<S>) -> Cow<'a, str>,
+    N: Fn(&Wire3<S>) -> Cow<'a, str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, "")
@@ -750,14 +750,14 @@ where
     pub fn with_varnames<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    ) -> Display<'a, I, J, D, S, impl Fn(&Wire3<S>) -> Cow<'a, str>>
     where
-        N: Fn(&Var<S>) -> R,
+        N: Fn(&Wire3<S>) -> R,
         R: Into<Cow<'a, str>>,
     {
         Display {
             module: self,
-            name: move |v: &Var<S>| name(v).into(),
+            name: move |v: &Wire3<S>| name(v).into(),
         }
     }
 }

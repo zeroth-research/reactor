@@ -1,15 +1,15 @@
 use base::Wire;
 use base::tangent::Tangent;
 use dataflow::diagram::Term;
-use reactive::Var;
+use reactive::Wire3;
 use reactive::var::{X, X_ref, d, d_ref};
 use theory::lra::{LRA, Sort};
 
 #[test]
 fn variables_are_globally_ordered_by_creation() {
-    let x = Var::new(Sort::real([1, 1]));
-    let y = Var::new(Sort::real([1, 1]));
-    let z = Var::new(Sort::real([1, 1]));
+    let x = Wire3::new(Sort::real([1, 1]));
+    let y = Wire3::new(Sort::real([1, 1]));
+    let z = Wire3::new(Sort::real([1, 1]));
 
     // the latched wire's id increases with creation
     assert!(x < y && y < z);
@@ -21,7 +21,7 @@ fn variables_are_globally_ordered_by_creation() {
     assert_eq!(vars, [x, y, z]);
 }
 
-fn borrow_copy_and_compare(x: &Var<Sort>, nxt: Wire<Sort>, der: Wire<Sort>) {
+fn borrow_copy_and_compare(x: &Wire3<Sort>, nxt: Wire<Sort>, der: Wire<Sort>) {
     assert_eq!(d(x), nxt);
     assert_eq!(X(x), der);
 }
@@ -30,7 +30,7 @@ fn borrow_copy_and_compare(x: &Var<Sort>, nxt: Wire<Sort>, der: Wire<Sort>) {
 fn variable_casts_to_its_wires() {
     // variables are Copy: owned bindings, ampersand-free use everywhere
     let real = Sort::real([1, 1]);
-    let x = Var::new(real);
+    let x = Wire3::new(real);
 
     let a: Wire<_> = *x; // the latched wire
     let b: Wire<_> = d(x); //     its derivative
@@ -82,7 +82,7 @@ fn variables_pass_into_term_constructors() {
     use crate::Term;
     use theory::lra::{LRA, Sort};
 
-    let x = Var::new(Sort::real([1, 1]));
+    let x = Wire3::new(Sort::real([1, 1]));
 
     // a variable stands for its latched wire in a term position
     let t = Term::constant(LRA::AnyReal(1, 1), [x]).unwrap();
@@ -96,7 +96,7 @@ fn variables_pass_into_term_constructors() {
 
 #[test]
 fn variable_fail_into_term_constructors() {
-    let x = Var::new(Sort::real([1, 1]));
+    let x = Wire3::new(Sort::real([1, 1]));
     // dx = x: the derivative has the tangent sort, not the sort of `x`
     assert!(Term::function(LRA::IdReal(1, 1), [d(x)], [x]).is_err());
     assert!(Term::function(LRA::TId(1, 1, 1), [d(x)], [x]).is_err());

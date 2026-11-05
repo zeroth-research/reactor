@@ -9,7 +9,7 @@ use common::{
     Atom, Module, Ops, Srt, example_counter, example_peterson1, example_tiny1, mk_op, srt,
 };
 use dataflow::diagram::Term;
-use reactive::var::{Var, X, d};
+use reactive::var::{Wire3, X, d};
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
@@ -17,8 +17,8 @@ use theory::{Combinatorial, Differential, Sequential, Theory};
 fn can_instantiate_partially_observable_module() {
     let (m, _) = example_counter().unwrap();
     let vars = m.obs().clone();
-    let mut obs: Vec<Var<Srt>> = Vec::new();
-    let mut prvt: Vec<Var<Srt>> = Vec::new();
+    let mut obs: Vec<Wire3<Srt>> = Vec::new();
+    let mut prvt: Vec<Wire3<Srt>> = Vec::new();
     for var in vars {
         if var.id() == 0 {
             prvt.push(var);
@@ -39,8 +39,8 @@ fn cannot_instantiate_external_unobservable_wire() {
     // the fourth observable is an external variable: making it private must
     // fail, privates have to be controlled
     let target = vars.iter().nth(3).unwrap().id();
-    let mut obs: Vec<Var<Srt>> = Vec::new();
-    let mut prvt: Vec<Var<Srt>> = Vec::new();
+    let mut obs: Vec<Wire3<Srt>> = Vec::new();
+    let mut prvt: Vec<Wire3<Srt>> = Vec::new();
     for var in vars {
         if var.id() == target {
             prvt.push(var);
@@ -65,24 +65,24 @@ fn can_compose_example_peterson1_with_empty_module() {
 
 #[test]
 fn can_instantiate_example_tiny1_0123() {
-    let x = Var::new(srt("Tny"));
-    let y = Var::new(srt("Tny"));
+    let x = Wire3::new(srt("Tny"));
+    let y = Wire3::new(srt("Tny"));
     let m = example_tiny1(x, y, true).unwrap();
     assert!(m.is_open());
 }
 
 #[test]
 fn can_instantiate_example_tiny1_2301() {
-    let x = Var::new(srt("Tny"));
-    let y = Var::new(srt("Tny"));
+    let x = Wire3::new(srt("Tny"));
+    let y = Wire3::new(srt("Tny"));
     let m = example_tiny1(y, x, true).unwrap();
     assert!(m.is_open());
 }
 
 #[test]
 fn can_compose_example_tiny1() {
-    let x = Var::new(srt("x"));
-    let y = Var::new(srt("y"));
+    let x = Wire3::new(srt("x"));
+    let y = Wire3::new(srt("y"));
     let m1 = example_tiny1(x, y, false).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
@@ -92,8 +92,8 @@ fn can_compose_example_tiny1() {
 
 #[test]
 fn cannot_compose_example_tiny1_with_cyclic_await() {
-    let x = Var::new(srt("Tny"));
-    let y = Var::new(srt("Tny"));
+    let x = Wire3::new(srt("Tny"));
+    let y = Wire3::new(srt("Tny"));
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, true).unwrap();
 
@@ -103,8 +103,8 @@ fn cannot_compose_example_tiny1_with_cyclic_await() {
 
 #[test]
 fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let x = Var::new(srt("Tny"));
-    let y = Var::new(srt("Tny"));
+    let x = Wire3::new(srt("Tny"));
+    let y = Wire3::new(srt("Tny"));
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
@@ -114,9 +114,9 @@ fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
 
 #[test]
 fn can_compose_three_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let x = Var::new(srt("Tny"));
-    let y = Var::new(srt("Tny"));
-    let z = Var::new(srt("Tny"));
+    let x = Wire3::new(srt("Tny"));
+    let y = Wire3::new(srt("Tny"));
+    let z = Wire3::new(srt("Tny"));
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
     let m3 = example_tiny1(y, z, false).unwrap();
@@ -133,9 +133,9 @@ fn compose_seq() {
     //
     //  M1 and M2 are compatible (disjoint interface variables and acyclic waiting dependencies),
     //  and we test that they are composable
-    let x = Var::new(srt("real"));
-    let y = Var::new(srt("real"));
-    let z = Var::new(srt("real"));
+    let x = Wire3::new(srt("real"));
+    let y = Wire3::new(srt("real"));
+    let z = Wire3::new(srt("real"));
 
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
     let m1 = Module::combinatorial(&[x, y], assign).unwrap();
@@ -160,9 +160,9 @@ fn compose_seq() {
 /// must be controlled.
 #[test]
 fn compose_hiding() {
-    let x = &Var::new(srt("real"));
-    let y = &Var::new(srt("real"));
-    let z = &Var::new(srt("real"));
+    let x = &Wire3::new(srt("real"));
+    let y = &Wire3::new(srt("real"));
+    let z = &Wire3::new(srt("real"));
 
     let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
     let m1 = Module::combinatorial([x, y], assign).unwrap();
@@ -199,9 +199,9 @@ fn compose_hiding() {
 /// ```
 #[test]
 fn constructor_then_hiding() {
-    let x = &Var::new(srt("real"));
-    let p = &Var::new(srt("real"));
-    let e = &Var::new(srt("real"));
+    let x = &Wire3::new(srt("real"));
+    let p = &Wire3::new(srt("real"));
+    let e = &Wire3::new(srt("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -240,8 +240,8 @@ fn constructor_then_hiding() {
 /// erred while `[b, a]` slipped through to an inconsistent module.)
 #[test]
 fn local_coupling_is_order_independent() {
-    let v = Var::new(srt("real"));
-    let w = Var::new(srt("real"));
+    let v = Wire3::new(srt("real"));
+    let w = Wire3::new(srt("real"));
 
     let a_upd = term!(mk_op("A"), [X(v)]).unwrap();
     let a = Atom::jump([&v], [a_upd]).unwrap();
@@ -262,8 +262,8 @@ fn local_coupling_is_order_independent() {
 /// in one module and when two atomic modules are composed.
 #[test]
 fn cannot_share_local_wires() {
-    let x = Var::new(srt("real"));
-    let y = Var::new(srt("real"));
+    let x = Wire3::new(srt("real"));
+    let y = Wire3::new(srt("real"));
     // the shared temporary: both atoms compute through it
     let tmp = Wire::new(srt("real"));
 
@@ -293,12 +293,12 @@ fn cannot_share_local_wires() {
 
 #[test]
 fn compose_seq_2() {
-    let x = Var::new(srt("real"));
-    let y = Var::new(srt("real"));
-    let z = Var::new(srt("real"));
-    let y0 = Var::new(srt("real"));
-    let z0 = Var::new(srt("real"));
-    let inv = Var::new(srt("real"));
+    let x = Wire3::new(srt("real"));
+    let y = Wire3::new(srt("real"));
+    let z = Wire3::new(srt("real"));
+    let y0 = Wire3::new(srt("real"));
+    let z0 = Wire3::new(srt("real"));
+    let inv = Wire3::new(srt("real"));
 
     // class Module(smt.Module):
     //     def init(self, extl) -> None:
@@ -378,9 +378,9 @@ fn compose_seq_2() {
 
 #[test]
 fn more_controlled_than_external() {
-    let x = &Var::new(srt("A"));
-    let y = &Var::new(srt("B"));
-    let z = &Var::new(srt("C"));
+    let x = &Wire3::new(srt("A"));
+    let y = &Wire3::new(srt("B"));
+    let z = &Wire3::new(srt("C"));
 
     let init = Term::constant(mk_op("A"), [X(y), X(z)]).unwrap();
     let update = Term::function(mk_op("A"), [X(y), X(z)], [*y, *z]).unwrap();
@@ -464,9 +464,9 @@ impl fmt::Display for SeqOps {
 /// regressions — a leaked, dropped, or misclassified variable fails here.
 #[test]
 fn constructor_interfaces_are_exact() {
-    let x = &Var::new(srt("real"));
-    let p = &Var::new(srt("real"));
-    let e = &Var::new(srt("real"));
+    let x = &Wire3::new(srt("real"));
+    let p = &Wire3::new(srt("real"));
+    let e = &Wire3::new(srt("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -484,9 +484,9 @@ fn constructor_interfaces_are_exact() {
 /// and enters `prvt`, while staying in `ctrl`; every other set is untouched.
 #[test]
 fn hiding_interfaces_are_exact() {
-    let x = &Var::new(srt("real"));
-    let p = &Var::new(srt("real"));
-    let e = &Var::new(srt("real"));
+    let x = &Wire3::new(srt("real"));
+    let p = &Wire3::new(srt("real"));
+    let e = &Wire3::new(srt("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -507,9 +507,9 @@ fn hiding_interfaces_are_exact() {
 /// interface entry: the module equals the one built from the plain scope.
 #[test]
 fn duplicate_scope_variable_is_collapsed() {
-    let x = &Var::new(srt("real"));
-    let p = &Var::new(srt("real"));
-    let e = &Var::new(srt("real"));
+    let x = &Wire3::new(srt("real"));
+    let p = &Wire3::new(srt("real"));
+    let e = &Wire3::new(srt("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -527,10 +527,10 @@ fn duplicate_scope_variable_is_collapsed() {
 /// the interfaces are inferred from the terms, not from the scope.
 #[test]
 fn unused_scope_variable_does_not_leak() {
-    let x = &Var::new(srt("real"));
-    let p = &Var::new(srt("real"));
-    let e = &Var::new(srt("real"));
-    let unused = &Var::new(srt("real"));
+    let x = &Wire3::new(srt("real"));
+    let p = &Wire3::new(srt("real"));
+    let e = &Wire3::new(srt("real"));
+    let unused = &Wire3::new(srt("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -547,9 +547,9 @@ fn unused_scope_variable_does_not_leak() {
 #[test]
 #[allow(non_snake_case)]
 fn heterogeneous_composition() {
-    let x = Var::new(srt("A"));
-    let y = Var::new(srt("B"));
-    let z = Var::new(srt("C"));
+    let x = Wire3::new(srt("A"));
+    let y = Wire3::new(srt("B"));
+    let z = Wire3::new(srt("C"));
 
     let init = Term::constant(SeqOps::havoc(&srt("A")), [X(x)]).unwrap();
     let jump = Term::function(SeqOps::skip(&srt("A")), [X(x)], [x]).unwrap();

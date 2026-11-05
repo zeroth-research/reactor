@@ -9,13 +9,13 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 #[derive(Clone, Copy)]
-pub struct Var<S> {
+pub struct Wire3<S> {
     ltc: Wire<S>,
     nxt: Wire<S>,
     der: Wire<S>,
 }
 
-impl<S: Tangent + Copy> Var<S> {
+impl<S: Tangent + Copy> Wire3<S> {
     /// A fresh variable of the sort `dtype`: its latched and next wires carry
     /// values of `dtype`, its derivative wire carries the tangent `dtype.tangent()`.
     pub fn new(dtype: S) -> Self {
@@ -27,7 +27,7 @@ impl<S: Tangent + Copy> Var<S> {
     }
 }
 
-impl<S> Var<S> {
+impl<S> Wire3<S> {
     pub(crate) fn ltc(&self) -> &Wire<S> {
         &self.ltc
     }
@@ -48,16 +48,16 @@ impl<S> Var<S> {
 /// Equality goes through the latched wire — the variable's bearing element,
 /// consistent with its [`Deref`] view: two variables are the same variable
 /// iff they share the same latched wire.
-impl<S> PartialEq for Var<S> {
+impl<S> PartialEq for Wire3<S> {
     fn eq(&self, other: &Self) -> bool {
         self.ltc == other.ltc
     }
 }
 
-impl<S> Eq for Var<S> {}
+impl<S> Eq for Wire3<S> {}
 
 /// Hashing matches equality: only the latched wire is hashed.
-impl<S> Hash for Var<S> {
+impl<S> Hash for Wire3<S> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.ltc.hash(state);
     }
@@ -65,13 +65,13 @@ impl<S> Hash for Var<S> {
 
 /// Variables are totally ordered by their latched wire — the
 /// bearing element of equality — which globally orders them by creation.
-impl<S> Ord for Var<S> {
+impl<S> Ord for Wire3<S> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.ltc.cmp(&other.ltc)
     }
 }
 
-impl<S> PartialOrd for Var<S> {
+impl<S> PartialOrd for Wire3<S> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -80,16 +80,16 @@ impl<S> PartialOrd for Var<S> {
 /// A variable casts into its latched wire: `let a: Wire<_> = *x;`, and
 /// implicitly at any call boundary bounded on `Into<Wire<S>>` (e.g. the term
 /// constructors).
-impl<S> From<Var<S>> for Wire<S> {
-    fn from(var: Var<S>) -> Self {
+impl<S> From<Wire3<S>> for Wire<S> {
+    fn from(var: Wire3<S>) -> Self {
         var.ltc
     }
 }
 
 /// A variable borrows as its latched wire, consistently with `Eq`, `Ord`,
-/// and `Hash`, which all delegate to it: a `Var` stands for its latched wire
+/// and `Hash`, which all delegate to it: a `Wire3` stands for its latched wire
 /// wherever a `Borrow<Wire<S>>` is accepted (e.g. keyed lookups, printing).
-impl<S> Borrow<Wire<S>> for Var<S> {
+impl<S> Borrow<Wire<S>> for Wire3<S> {
     fn borrow(&self) -> &Wire<S> {
         self
     }
@@ -101,7 +101,7 @@ impl<S> Borrow<Wire<S>> for Var<S> {
 ///
 /// `Deref` for a non-pointer type is deliberate here: the latched wire is the
 /// variable's primary view, the way `String` derefs to `str`.
-impl<S> Deref for Var<S> {
+impl<S> Deref for Wire3<S> {
     type Target = Wire<S>;
 
     fn deref(&self) -> &Self::Target {
@@ -114,7 +114,7 @@ impl<S> Deref for Var<S> {
 /// Bounded on `Borrow`, so it accepts the variable by value (`d(x)`, natural
 /// for `Copy` sorts) or by reference (`d(&x)`); either way only the wire is
 /// cloned and the variable stays usable.
-pub fn d<S: Clone>(var: impl Borrow<Var<S>>) -> Wire<S> {
+pub fn d<S: Clone>(var: impl Borrow<Wire3<S>>) -> Wire<S> {
     var.borrow().der.clone()
 }
 
@@ -122,7 +122,7 @@ pub fn d<S: Clone>(var: impl Borrow<Var<S>>) -> Wire<S> {
 /// (derivative) wire, `let w: &Wire<_> = d_ref(&x);`.
 ///
 /// Reference in, reference out — no clone
-pub fn d_ref<S>(var: &Var<S>) -> &Wire<S> {
+pub fn d_ref<S>(var: &Wire3<S>) -> &Wire<S> {
     &var.der
 }
 
@@ -132,7 +132,7 @@ pub fn d_ref<S>(var: &Var<S>) -> &Wire<S> {
 /// for `Copy` sorts) or by reference (`X(&x)`); either way only the wire is
 /// cloned and the variable stays usable.
 #[allow(non_snake_case)]
-pub fn X<S: Clone>(var: impl Borrow<Var<S>>) -> Wire<S> {
+pub fn X<S: Clone>(var: impl Borrow<Wire3<S>>) -> Wire<S> {
     var.borrow().nxt.clone()
 }
 
@@ -141,12 +141,12 @@ pub fn X<S: Clone>(var: impl Borrow<Var<S>>) -> Wire<S> {
 ///
 /// Reference in, reference out — no clone
 #[allow(non_snake_case)]
-pub fn X_ref<S>(var: &Var<S>) -> &Wire<S> {
+pub fn X_ref<S>(var: &Wire3<S>) -> &Wire<S> {
     &var.nxt
 }
 
 pub struct Display<'a, S> {
-    var: &'a Var<S>,
+    var: &'a Wire3<S>,
     name: Cow<'a, str>,
 }
 
@@ -162,17 +162,17 @@ impl<S: Debug> Debug for Display<'_, S> {
     }
 }
 
-impl<'a, S> Var<S> {
+impl<'a, S> Wire3<S> {
     pub fn with_name(&'a self, name: Cow<'a, str>) -> Display<'a, S> {
         Display { var: self, name }
     }
 }
 
-impl<S: Debug> Debug for Var<S> {
+impl<S: Debug> Debug for Wire3<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Var {{ ltc: {PREFIX}{:?}, nxt: {PREFIX}{:?}, der: {PREFIX}{:?}, dtype: {:?} }} ",
+            "Wire3 {{ ltc: {PREFIX}{:?}, nxt: {PREFIX}{:?}, der: {PREFIX}{:?}, dtype: {:?} }} ",
             self.ltc.id(),
             self.nxt.id(),
             self.der.id(),
@@ -183,8 +183,8 @@ impl<S: Debug> Debug for Var<S> {
 
 #[derive(Clone)]
 pub struct Interface<S> {
-    vars: Vec<Var<S>>,
-    wires: Vec<(Wire<S>, Var<S>)>,
+    vars: Vec<Wire3<S>>,
+    wires: Vec<(Wire<S>, Wire3<S>)>,
 }
 
 impl<S> Interface<S> {
@@ -214,20 +214,20 @@ impl<S> Interface<S> {
         self.vars.is_empty()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Var<S>> {
+    pub fn iter(&self) -> impl Iterator<Item = &Wire3<S>> {
         self.vars.iter()
     }
 
-    pub fn var(&self, wire: &Wire<S>) -> Option<&Var<S>> {
+    pub fn var(&self, wire: &Wire<S>) -> Option<&Wire3<S>> {
         let res = self.wires.binary_search_by_key(&wire, |(w, _)| w);
         res.map(|idx| &self.wires[idx].1).ok()
     }
 
-    pub fn nth(&self, index: usize) -> Option<&Var<S>> {
+    pub fn nth(&self, index: usize) -> Option<&Wire3<S>> {
         self.vars.get(index)
     }
 
-    pub fn contains(&self, var: &Var<S>) -> bool {
+    pub fn contains(&self, var: &Wire3<S>) -> bool {
         self.vars.binary_search(var).is_ok()
     }
 }
@@ -235,25 +235,25 @@ impl<S> Interface<S> {
 impl<S: Debug + Clone> Interface<S> {
     pub(crate) fn from_iter_unchecked<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = Var<S>>,
+        I: IntoIterator<Item = Wire3<S>>,
     {
-        let vars: Vec<Var<S>> = iter.into_iter().collect();
+        let vars: Vec<Wire3<S>> = iter.into_iter().collect();
         Self::from_exact_iter_unchecked(vars)
     }
 
     pub(crate) fn from_exact_iter_unchecked<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = Var<S>>,
+        I: IntoIterator<Item = Wire3<S>>,
         I::IntoIter: ExactSizeIterator,
     {
         let iter = iter.into_iter();
         let mut vars = Vec::with_capacity(iter.len());
         vars.extend(iter);
 
-        let mut wires: Vec<(Wire<S>, Var<S>)> = Vec::with_capacity(3 * vars.len());
-        wires.extend(vars.iter().map(|v: &Var<S>| (v.ltc.clone(), v.clone())));
-        wires.extend(vars.iter().map(|v: &Var<S>| (v.nxt.clone(), v.clone())));
-        wires.extend(vars.iter().map(|v: &Var<S>| (v.der.clone(), v.clone())));
+        let mut wires: Vec<(Wire<S>, Wire3<S>)> = Vec::with_capacity(3 * vars.len());
+        wires.extend(vars.iter().map(|v: &Wire3<S>| (v.ltc.clone(), v.clone())));
+        wires.extend(vars.iter().map(|v: &Wire3<S>| (v.nxt.clone(), v.clone())));
+        wires.extend(vars.iter().map(|v: &Wire3<S>| (v.der.clone(), v.clone())));
         wires.sort_unstable();
 
         // variables must be unique and sorted
@@ -268,8 +268,8 @@ impl<S: Debug + Clone> Interface<S> {
 }
 
 impl<S> IntoIterator for Interface<S> {
-    type Item = Var<S>;
-    type IntoIter = std::vec::IntoIter<Var<S>>;
+    type Item = Wire3<S>;
+    type IntoIter = std::vec::IntoIter<Wire3<S>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.vars.into_iter()
@@ -277,8 +277,8 @@ impl<S> IntoIterator for Interface<S> {
 }
 
 impl<'a, S> IntoIterator for &'a Interface<S> {
-    type Item = &'a Var<S>;
-    type IntoIter = std::slice::Iter<'a, Var<S>>;
+    type Item = &'a Wire3<S>;
+    type IntoIter = std::slice::Iter<'a, Wire3<S>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.vars.iter()

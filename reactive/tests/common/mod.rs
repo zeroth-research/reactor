@@ -5,7 +5,7 @@
 use base::tangent::Tangent;
 use base::wire::Wire;
 use dataflow::diagram::Term;
-use reactive::var::{Var, X};
+use reactive::var::{Wire3, X};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -94,12 +94,12 @@ macro_rules! term {
 }
 
 #[allow(clippy::vec_init_then_push)]
-pub fn example_counter() -> Result<(Module, HashMap<Var<Srt>, String>), String> {
-    let x = Var::new(srt("real"));
-    let y = Var::new(srt("real"));
-    let z = Var::new(srt("real"));
-    let y0 = Var::new(srt("real"));
-    let z0 = Var::new(srt("real"));
+pub fn example_counter() -> Result<(Module, HashMap<Wire3<Srt>, String>), String> {
+    let x = Wire3::new(srt("real"));
+    let y = Wire3::new(srt("real"));
+    let z = Wire3::new(srt("real"));
+    let y0 = Wire3::new(srt("real"));
+    let z0 = Wire3::new(srt("real"));
 
     let mut init: Vec<Term<Ops>> = Vec::new();
 
@@ -148,10 +148,10 @@ pub fn example_counter() -> Result<(Module, HashMap<Var<Srt>, String>), String> 
 #[allow(clippy::vec_init_then_push)]
 pub fn example_peterson1() -> Result<Module, String> {
     let stype = "{outCS, reqCS, inCS}";
-    let pc1 = Var::new(srt(stype));
-    let x1 = Var::new(srt("bool"));
-    let pc2 = Var::new(srt(stype));
-    let x2 = Var::new(srt("bool"));
+    let pc1 = Wire3::new(srt(stype));
+    let x1 = Wire3::new(srt("bool"));
+    let pc2 = Wire3::new(srt(stype));
+    let x2 = Wire3::new(srt("bool"));
 
     let mut init: Vec<Term<Ops>> = Vec::new();
     init.push(term!(mk_op("CONST(outCS)"), [X(pc1)]).unwrap());
@@ -201,11 +201,11 @@ pub fn example_peterson1() -> Result<Module, String> {
 }
 
 pub fn example_tiny1(
-    external: Var<Srt>,
-    interface: Var<Srt>,
+    external: Wire3<Srt>,
+    interface: Wire3<Srt>,
     wait: bool,
 ) -> Result<Module, String> {
-    let private = Var::new(srt("Tny"));
+    let private = Wire3::new(srt("Tny"));
     let temp = Wire::new(srt("Tny"));
 
     let cons = Term::constant(mk_op("CONST"), [temp]).unwrap();

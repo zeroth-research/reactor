@@ -5,7 +5,7 @@ pub mod var;
 pub use crate::atom::Atom;
 pub use crate::module::Module;
 pub use crate::var::Interface;
-pub use crate::var::Var;
+pub use crate::var::Wire3;
 
 /// Computes a topological ordering of a directed graph using **Kahn’s algorithm**.
 ///
