@@ -169,7 +169,10 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
 
     lines += ["namespace Scalar", ""]
 
-    # 1. Unpack functions
+    # 1. Unpack functions. `reducible` for the reason the constants are
+    #    (`literals.tensor_to_lean_def`): a `decide` over an unpacked input
+    #    keeps `unpack_*` in its instance after `simp` has unfolded it in the
+    #    proposition, and from Lean v4.34 that stops `simp` there.
     for param, wires in input_groups:
         if not wires:
             continue
@@ -177,7 +180,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         scalar_ty = product_type_scalar(wires)
         body = _unpack_body(param, wires)
         lines.append(
-            f"@[simp] {noncomp}def unpack_{param} ({param} : {mat_ty}) : {scalar_ty} :="
+            f"@[simp, reducible] {noncomp}def unpack_{param} ({param} : {mat_ty}) : {scalar_ty} :="
         )
         lines.append(f"  {body}")
         lines.append("")

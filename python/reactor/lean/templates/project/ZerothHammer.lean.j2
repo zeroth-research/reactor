@@ -72,7 +72,7 @@ syntax "zeroth_hammer" : tactic
 /-- Zeroth hammer: cascading automated prover for reactive module goals.
     Phase 0: simp alone (closes trivially-True invariants)
     Phase 1: fast arithmetic — omega, norm_cast+omega, simp+omega, simp+linarith
-    Phase 2: push_neg + simp + omega (negated arithmetic)
+    Phase 2: push Not + simp + omega (negated arithmetic)
     Phase 3: simp + deep case-split + omega/linarith/norm_cast (branching goals)
     Phase 4: simp_defs + case-split (unfold defs before splitting)
     Phase 5: full reduction + mat_collapse + split_ifs + omega/linarith (hrank)
@@ -101,10 +101,10 @@ elab_rules : tactic
         evalTactic (← `(tactic| simp_mat <;> linarith))
         return
       catch _ => pure ()
-      -- Phase 2: push_neg normalises negated arithmetic before omega
+      -- Phase 2: push Not normalises negated arithmetic before omega
       -- (e.g. ¬(x > 0) → x ≤ 0; useful when inv or P contains negated comparisons)
       try
-        evalTactic (← `(tactic| push_neg; simp_mat <;> omega))
+        evalTactic (← `(tactic| push Not; simp_mat <;> omega))
         return
       catch _ => pure ()
       -- Phase 3: simp_mat + deep case-split cascade (branching state machines)
@@ -116,7 +116,7 @@ elab_rules : tactic
             | omega
             | linarith
             | (norm_cast; omega)
-            | (push_neg; omega)
+            | (push Not; omega)
             | (simp_all; omega)
             | (split <;> simp_all <;> omega)
             | (split <;> split <;> simp_all <;> omega)

@@ -74,14 +74,14 @@ cmake .. -DMATHSAT_DIR=$MSAT -DCMAKE_BUILD_TYPE=Release && make
 export IC3IA=$PWD/ic3ia
 ```
 
-### 4. `lean-ltl-certifying`, on **v4.28.0**
+### 4. `lean-ltl-certifying`, on **v4.34.0**
 
 Clone [`proof-prototyping`][ltl] and use `lean-ltl-certifying/`.  It has to
 be on the same toolchain as the generated projects; if the checkout still
-says `v4.27.0`, port it the way commit *"lean-ltl-certifying: port to Lean
-v4.28.0"* did — `lean-toolchain` to `v4.28.0`, and the requires to `cslib
-v4.28.0` + `smt f58d19d…`, with Mathlib inherited through cslib rather than
-required directly.
+says an older one, port it the way commit *"lean-ltl-certifying: port to
+Lean v4.34.0"* did — `lean-toolchain` to `v4.34.0`, and the requires to
+`cslib v4.34.0` + `smt db545be…`, with Mathlib inherited through cslib
+rather than required directly.
 
 That last point is what makes the cold start cheap: the package set then
 matches this project's exactly, so **one already-built `.lake/packages`
