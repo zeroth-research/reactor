@@ -101,7 +101,7 @@ fn differential_drifting_clocks() {
     use theory::lra::{LRA, Sort};
 
     // Real scalars: 1x1 matrices.
-    let scalar = Sort::Real([1, 1]);
+    let scalar = Sort::real([1, 1]);
     // The input clock, and the two clocks drifting relative to it.
     let t = Var::new(scalar);
     let x = Var::new(scalar);
@@ -110,16 +110,16 @@ fn differential_drifting_clocks() {
     // delay: the derivatives, both driven by the input's derivative `d(t)`.
     let delay = [
         // dx = 2 dt, synthesised tensor-free as dt + dt
-        Term::function(LRA::Add(), [d(x)], [d(t), d(t)]).unwrap(),
+        Term::function(LRA::TAdd(1, 1, 1), [d(x)], [d(t), d(t)]).unwrap(),
         // dy = 1 dt
-        Term::function(LRA::Id(), [d(y)], [d(t)]).unwrap(),
+        Term::function(LRA::TId(1, 1, 1), [d(y)], [d(t)]).unwrap(),
     ];
 
     // init: the initial derivatives are left unconstrained (Havoc). Every
     // controlled wire must be written by the init block too.
     let init = [
-        Term::constant(LRA::AnyReal([1, 1]), [X(x)]).unwrap(),
-        Term::constant(LRA::AnyReal([1, 1]), [X(y)]).unwrap(),
+        Term::constant(LRA::AnyReal(1, 1), [X(x)]).unwrap(),
+        Term::constant(LRA::AnyReal(1, 1), [X(y)]).unwrap(),
     ];
 
     // The atom writes only d(x) and d(y), so `t` is inferred external.
@@ -167,19 +167,19 @@ fn differential_drifting_clocks() {
 ///
 /// and expects it to be rejected: the delay term drives the derivative
 /// `d(x)` (of the tangent sort) directly from the value wire `x`, and
-/// ordinary operations require the same sorts of their operands.
+/// the operations on derivatives do not read values.
 #[test]
 fn differential_module_rejects_dx_equals_x() {
     use theory::lra::{LRA, Sort};
 
-    let scalar = Sort::Real([1, 1]);
+    let scalar = Sort::real([1, 1]);
     let x = Var::new(scalar);
 
     // dx = x: already ill-formed at the term level.
-    let delay = Term::function(LRA::Id(), [d(x)], [x]);
+    let delay = Term::function(LRA::TId(1, 1, 1), [d(x)], [x]);
 
     let module = delay.and_then(|delay| {
-        let init = [Term::constant(LRA::AnyReal([1, 1]), [X(x)]).unwrap()];
+        let init = [Term::constant(LRA::AnyReal(1, 1), [X(x)]).unwrap()];
         reactive::Module::<LRA, LRA, LRA>::differential(&[x], init, [delay])
     });
     assert!(module.is_err());
