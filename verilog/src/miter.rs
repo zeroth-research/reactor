@@ -1,44 +1,61 @@
 /*!
 # Comparing a translation with Yosys
 
-Checks that one round of our module computes the same next values as one
-transition of Yosys's translation of the same design ([`yosys`](crate::yosys)), for every
-state and every input: a *miter*, a script that is satisfiable exactly when
-the two disagree on a variable.
+Checks that our module computes the same values as Yosys's translation of
+the same design ([`yosys`](crate::yosys)): our init round the values of
+Yosys's state, and our update round the next values of one transition,
+for every state and every input. A *miter* is a script that is
+satisfiable exactly when the two disagree on a variable.
 
 ## The script
 
-[`build`] puts together, in this order:
+[`build`] puts together a part both rounds share ([`Miter::script`]):
 
 1. `(set-logic QF_UFBV)`: bit vectors plus uninterpreted sorts and
    functions, since Yosys declares its state sort `|T_s|` with
    `declare-sort` and its accessors as functions over it (`QF_BV` is not
    enough; the arrays of `QF_AUFBV` would only be needed for memories);
 2. Yosys's output ([`Smt2::text`]);
-3. our update round ([`smt::round`] with [`Phase::Update`]);
-4. two states `|s|` and `|s'|` of sort `|T_s|`, with the hierarchy
+3. two states `|s|` and `|s'|` of sort `|T_s|`, with the hierarchy
    predicate asserted for both and the transition `(|T_t| |s| |s'|)`;
-5. the ties, matching names: every latched value `|*v|` of the round is
-   the wire `v` in `|s|`, and every next input `|X(v)|` is the wire `v` in
-   `|s'|`.
 
-Each controlled variable `v` of our module then gives a [`Query`]: can
-`|X(v)|` differ from the wire `v` in `|s'|`? [`check`] asks all of them
-in one z3 run, each between `push` and `pop`.
+and one part per round of ours ([`Miter::init`], [`Miter::update`]), both
+defining the constants `|X(v)|`, so only one of them is asserted at a
+time:
+
+- our init round ([`smt::round`] with [`Phase::Init`]) and its ties: the
+  initial value `|X(p@init)|` of every register `p` is the register `p` in
+  `|s|`, every input `|X(v)|` is the wire `v` in `|s|`;
+- our update round ([`Phase::Update`]) and its ties, matching names: every
+  latched value `|*v|` of the round is the wire `v` in `|s|`, and every next
+  input `|X(v)|` is the wire `v` in `|s'|`.
+
+Each controlled variable `v` of our module then gives a [`Query`] per
+round: can `|X(v)|` differ from the wire `v`, in `|s|` after our init round,
+in `|s'|` after our update round? [`check`] asks all of them, in one z3
+run per round, each query between `push` and `pop`.
 
 ## What it shows
 
 If every query is `unsat`, the two translations agree on every variable
-in every round after the first, from every state and for every input: the
-latched values of the registers are arbitrary in `|s|`, and Yosys's
+in every round, from every initial state and for every input. Yosys's
 registers are exactly ours, with the same widths ([`build`] checks this
-with [`registers`]), so this covers every reachable state without
-induction. Latched
+with [`registers`]), and they are arbitrary in `|s|`. Without initializers
+both sides allow every initial register value, so the init queries cover
+round 0 from every initial state: our init round computes Yosys's values
+of every signal in `|s|`, for every value of the registers and inputs.
+The update queries cover every later round without induction: the
+latched values of the registers are arbitrary in `|s|`, and the latched
 values of combinational signals (read by `always_ff` blocks) are tied to
-their wires in `|s|`, where Yosys computes them from the registers and
-inputs, as our previous round did. The init round is not compared: without
-initializers both sides allow every initial register value, and the
-combinational atoms have the same init and update blocks.
+their wires in `|s|`, which by the init queries are the values our
+module computes from the registers and inputs there (the combinational
+atoms have the same init and update blocks).
+
+The update round alone is not enough: it compares next values only in
+states a transition reaches. A combinational signal that differs only for
+register values no transition produces (a register that is always set to
+`0`, read by an `assign`) differs in round 0, and a register latching it
+carries the difference on, while every update query is `unsat`.
 
 ## Counterexamples
 
@@ -73,13 +90,20 @@ const NEXT: &str = "|s'|";
 /// The miter of a translation and Yosys's output, without the queries.
 #[derive(Clone, Debug)]
 pub struct Miter {
-    /// The script up to and including the ties (see the module docs).
+    /// The script up to and including the transition (see the module
+    /// docs): what both rounds share.
     pub script: String,
-    /// One query per controlled variable, in the order of the round.
+    /// Our init round with its ties, to be asserted after [`script`](Self::script).
+    pub init: String,
+    /// Our update round with its ties, likewise.
+    pub update: String,
+    /// One query per controlled variable and round: the init round's
+    /// first, each in the order of the round.
     pub queries: Vec<Query>,
     /// The values a [`counterexample`] reads from a model: every register
     /// in `|s|`, by path, and every input but the clock in `|s|` and in
-    /// `|s'|` (Yosys wires); every latched value `|*v|` of our round.
+    /// `|s'|` (Yosys wires); every latched value `|*v|` of our update
+    /// round. A counterexample of the init round reads only the first two.
     pub registers: Vec<Probe>,
     pub inputs: Vec<Probe>,
     pub next_inputs: Vec<Probe>,
@@ -97,12 +121,25 @@ pub struct Probe {
 /// Can the next value of a variable differ between the two sides?
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Query {
+    /// The round of ours that is compared.
+    pub phase: Phase,
     /// The variable.
     pub name: Name,
     /// Our next value, `|X(v)|`.
     pub ours: String,
-    /// Yosys's: the wire `v` in `|s'|`.
+    /// Yosys's: the wire `v` in `|s|` for the init round, in `|s'|` for
+    /// the update round.
     pub theirs: String,
+}
+
+impl Miter {
+    /// Our round of phase `phase` with its ties.
+    pub fn round(&self, phase: Phase) -> &str {
+        match phase {
+            Phase::Init => &self.init,
+            Phase::Update => &self.update,
+        }
+    }
 }
 
 impl Query {
@@ -160,6 +197,7 @@ pub fn registers(t: &Translation, ys: &Smt2) -> Vec<String> {
 /// has a different width there.
 pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
     let round = smt::round(t, Phase::Update);
+    let first = smt::round(t, Phase::Init);
     let mut errors = registers(t, ys);
     let mut value = |name: &str, state: &str| {
         let width = t.var(name).dtype().width();
@@ -178,29 +216,49 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
 
     let mut script = String::from("(set-logic QF_UFBV)\n");
     script += &ys.text;
-    script += &round.text;
-    script += "; the miter\n";
+    script += "; the states\n";
     for s in [S, NEXT] {
         script += &format!("(declare-const {s} {})\n", ys.state_sort());
         script += &format!("(assert {})\n", ys.hierarchy(s));
     }
     script += &format!("(assert {})\n", ys.transition(S, NEXT));
+
+    // the init round in `|s|`: the initial values are the registers
+    let mut init = first.text.clone();
+    init += "; the ties\n";
+    for name in &first.inputs {
+        let theirs = match name.strip_suffix("@init") {
+            // a missing register is reported by `registers`
+            Some(path) => ys.value(path, S),
+            None => value(name, S),
+        };
+        if let Some(theirs) = theirs {
+            init += &format!("(assert (= {} {theirs}))\n", smt::next_symbol(name));
+        }
+    }
+    let mut update = round.text.clone();
+    update += "; the ties\n";
     let latched = round.latched.iter().map(|n| (n, smt::latched_symbol(n), S));
     let inputs = round.inputs.iter().map(|n| (n, smt::next_symbol(n), NEXT));
     for (name, ours, state) in latched.chain(inputs) {
         if let Some(theirs) = value(name, state) {
-            script += &format!("(assert (= {ours} {theirs}))\n");
+            update += &format!("(assert (= {ours} {theirs}))\n");
         }
     }
     let mut queries = vec![];
-    for name in &round.next {
-        if let Some(theirs) = value(name, NEXT) {
-            let ours = smt::next_symbol(name);
-            queries.push(Query {
-                name: name.clone(),
-                ours,
-                theirs,
-            });
+    for (phase, names, state) in [
+        (Phase::Init, &first.next, S),
+        (Phase::Update, &round.next, NEXT),
+    ] {
+        for name in names {
+            if let Some(theirs) = value(name, state) {
+                queries.push(Query {
+                    phase,
+                    name: name.clone(),
+                    ours: smt::next_symbol(name),
+                    theirs,
+                });
+            }
         }
     }
     // what a counterexample reads: registers and inputs but the clock
@@ -241,6 +299,8 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
     }
     Ok(Miter {
         script,
+        init,
+        update,
         queries,
         registers,
         inputs,
@@ -249,52 +309,69 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
     })
 }
 
-/// Asks every query of `m` in one run of the z3 binary `z3`. Fails if z3
-/// cannot be started or answers anything but one `sat`, `unsat` or
-/// `unknown` per query (z3 reports errors in its output and goes on).
-pub fn check(z3: &Path, m: &Miter) -> Result<Vec<(Name, Verdict)>, String> {
-    let mut script = m.script.clone();
-    for q in &m.queries {
-        script += &format!("(push 1)\n{}\n(check-sat)\n(pop 1)\n", q.differ());
-    }
-    let out = crate::z3::run(z3, &script)?;
-    let verdicts: Option<Vec<Verdict>> = out
-        .iter()
-        .map(|line| match line.as_str() {
-            "unsat" => Some(Verdict::Equal),
-            "sat" => Some(Verdict::Differs),
-            "unknown" => Some(Verdict::Unknown),
-            _ => None,
-        })
-        .collect();
-    match verdicts {
-        Some(v) if v.len() == m.queries.len() => {
-            let names = m.queries.iter().map(|q| q.name.clone());
-            Ok(names.zip(v).collect())
+/// Asks every query of `m`, in one run of the z3 binary `z3` per round,
+/// each query between `push` and `pop`. Fails if z3 cannot be started or
+/// answers anything but one `sat`, `unsat` or `unknown` per query (z3
+/// reports errors in its output and goes on).
+///
+/// The rounds run separately so that their ties are at the outermost
+/// level, where z3 simplifies with them; asserted within a `push`, they
+/// can make a query much slower (`mac`: seconds instead of milliseconds).
+pub fn check(z3: &Path, m: &Miter) -> Result<Vec<(Phase, Name, Verdict)>, String> {
+    let mut verdicts = vec![];
+    for phase in [Phase::Init, Phase::Update] {
+        let queries: Vec<&Query> = m.queries.iter().filter(|q| q.phase == phase).collect();
+        let mut script = format!("{}{}", m.script, m.round(phase));
+        for q in &queries {
+            script += &format!("(push 1)\n{}\n(check-sat)\n(pop 1)\n", q.differ());
         }
-        _ => Err(format!(
-            "unexpected z3 output for {} queries:\n{}",
-            m.queries.len(),
-            out.join("\n")
-        )),
+        let out = crate::z3::run(z3, &script)?;
+        let answers: Option<Vec<Verdict>> = out
+            .iter()
+            .map(|line| match line.as_str() {
+                "unsat" => Some(Verdict::Equal),
+                "sat" => Some(Verdict::Differs),
+                "unknown" => Some(Verdict::Unknown),
+                _ => None,
+            })
+            .collect();
+        match answers {
+            Some(v) if v.len() == queries.len() => {
+                let names = queries.iter().map(|q| (phase, q.name.clone()));
+                verdicts.extend(names.zip(v).map(|((p, n), v)| (p, n, v)));
+            }
+            _ => {
+                return Err(format!(
+                    "unexpected z3 output for {} queries:\n{}",
+                    queries.len(),
+                    out.join("\n")
+                ));
+            }
+        }
     }
+    Ok(verdicts)
 }
 
 /// A state and inputs on which the two sides compute different next
 /// values for a variable: a model of a [`Query`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cex {
+    /// The round of the query.
+    pub phase: Phase,
     /// The variable.
     pub name: Name,
     /// The registers in `|s|`, by path.
     pub registers: Values,
-    /// The inputs but the clock in `|s|`, and in `|s'|`.
+    /// The inputs but the clock in `|s|`, and in `|s'|` (empty for the
+    /// init round).
     pub inputs: Values,
     pub next_inputs: Values,
-    /// The latched values our round reads, by variable: by the ties, the
-    /// values of these Yosys wires in `|s|`.
+    /// The latched values our update round reads, by variable: by the
+    /// ties, the values of these Yosys wires in `|s|` (empty for the init
+    /// round).
     pub latched: Values,
-    /// The next value of the variable: ours, `|X(v)|`, and Yosys's.
+    /// The value of the variable after the round: ours, `|X(v)|`, and
+    /// Yosys's.
     pub ours: BitVec,
     pub theirs: BitVec,
 }
@@ -304,7 +381,12 @@ pub struct Cex {
 /// sides of `q`. Fails if the query is `unsat` (or `unknown`), or if the
 /// output cannot be read.
 pub fn counterexample(z3: &Path, m: &Miter, q: &Query) -> Result<Cex, String> {
-    let groups = [&m.registers, &m.inputs, &m.next_inputs, &m.latched];
+    let none = vec![];
+    let (next_inputs, latched) = match q.phase {
+        Phase::Init => (&none, &none),
+        Phase::Update => (&m.next_inputs, &m.latched),
+    };
+    let groups = [&m.registers, &m.inputs, next_inputs, latched];
     let probes = groups.iter().flat_map(|g| g.iter());
     let terms: Vec<&str> = probes
         .clone()
@@ -312,8 +394,9 @@ pub fn counterexample(z3: &Path, m: &Miter, q: &Query) -> Result<Cex, String> {
         .chain([q.ours.as_str(), q.theirs.as_str()])
         .collect();
     let script = format!(
-        "(set-option :produce-models true)\n{}{}\n(check-sat)\n(get-value ({}))\n",
+        "(set-option :produce-models true)\n{}{}{}\n(check-sat)\n(get-value ({}))\n",
         m.script,
+        m.round(q.phase),
         q.differ(),
         terms.join(" ")
     );
@@ -348,11 +431,12 @@ pub fn counterexample(z3: &Path, m: &Miter, q: &Query) -> Result<Cex, String> {
     };
     let registers = take(&m.registers)?;
     let inputs = take(&m.inputs)?;
-    let next_inputs = take(&m.next_inputs)?;
-    let latched = take(&m.latched)?;
+    let next_inputs = take(next_inputs)?;
+    let latched = take(latched)?;
     let ours = values.next().expect("counted");
     let theirs = values.next().expect("counted");
     Ok(Cex {
+        phase: q.phase,
         name: q.name.clone(),
         registers,
         inputs,
@@ -503,7 +587,8 @@ pub struct Via {
 /// (combinational atoms have the same init and update blocks); round 1
 /// with the inputs of `|s'|` then computes the next values. The reference
 /// interpreter starts from the registers of `|s|` and runs the same two
-/// cycles; the second gives the values in `|s'|`.
+/// cycles; the second gives the values in `|s'|`. A counterexample of the
+/// init round is replayed in round 0 and the first cycle only.
 ///
 /// The side is decided on values that each come from one side only: the
 /// next value in `rm_sim` (ours), in the reference, and in Yosys's `|s'|`,
@@ -533,12 +618,18 @@ pub fn replay(inst: &Inst, t: &Translation, cex: &Cex) -> Result<Replay, String>
     };
     let mut sim = Sim::new(&t.module);
     let now = sim.step(&extl(&cex.inputs)?)?;
-    let next = sim.step(&extl(&cex.next_inputs)?)?;
-    let rm_sim = next[var(&cex.name)?].clone();
-
     let mut interp = Interp::new(inst, &cex.registers).map_err(|e| e.to_string())?;
     let reference_now = interp.step(&cex.inputs)?;
-    let reference = interp.step(&cex.next_inputs)?;
+    let (rm_sim, reference) = match cex.phase {
+        Phase::Init => (now[var(&cex.name)?].clone(), reference_now.clone()),
+        Phase::Update => {
+            let next = sim.step(&extl(&cex.next_inputs)?)?;
+            (
+                next[var(&cex.name)?].clone(),
+                interp.step(&cex.next_inputs)?,
+            )
+        }
+    };
     let get = |values: &Values, name: &str| {
         values
             .get(name)
@@ -600,16 +691,25 @@ impl fmt::Display for Cex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "`{}` is {} in ours, {} in Yosys's, from registers [{}], inputs [{}], \
-             next inputs [{}], latched [{}]",
-            self.name,
-            self.ours,
-            self.theirs,
-            values(&self.registers),
-            values(&self.inputs),
-            values(&self.next_inputs),
-            values(&self.latched)
-        )
+            "`{}` is {} in ours, {} in Yosys's, ",
+            self.name, self.ours, self.theirs
+        )?;
+        match self.phase {
+            Phase::Init => write!(
+                f,
+                "in the init round, from initial registers [{}], inputs [{}]",
+                values(&self.registers),
+                values(&self.inputs)
+            ),
+            Phase::Update => write!(
+                f,
+                "from registers [{}], inputs [{}], next inputs [{}], latched [{}]",
+                values(&self.registers),
+                values(&self.inputs),
+                values(&self.next_inputs),
+                values(&self.latched)
+            ),
+        }
     }
 }
 
