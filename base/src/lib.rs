@@ -1,4 +1,5 @@
 pub mod atom;
+pub mod boundary;
 pub mod module;
 pub mod tangent;
 pub mod term;

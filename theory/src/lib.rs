@@ -1,5 +1,4 @@
 pub mod any;
-pub mod boundary;
 pub mod bv;
 pub mod lia;
 pub mod lra;
