@@ -244,6 +244,47 @@ impl<G> std::iter::Sum for Poly<G> {
     }
 }
 
+/// Prints the base types joined by `⊗`, or `I` for the unit type.
+impl<G: std::fmt::Display> std::fmt::Display for Mono<G> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_empty() {
+            return f.write_str("I");
+        }
+        for (i, g) in self.iter().enumerate() {
+            if i > 0 {
+                f.write_str(" ⊗ ")?;
+            }
+            write!(f, "{g}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Prints the variants joined by `⊕`, or `0` for the empty type. Among two
+/// or more variants, those of two or more base types are put in parentheses
+/// (`(x ⊗ y) ⊕ z`); a single variant is printed as a [`Mono`] (`x ⊗ y`).
+impl<G: std::fmt::Display> std::fmt::Display for Poly<G> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.as_slice() {
+            [] => f.write_str("0"),
+            [m] => write!(f, "{m}"),
+            ms => {
+                for (i, m) in ms.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(" ⊕ ")?;
+                    }
+                    if m.0.len() > 1 {
+                        write!(f, "({m})")?;
+                    } else {
+                        write!(f, "{m}")?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 /// The boundary of a morphism: the type of its inputs,
 /// [`dom`](Self::dom), and the type of its outputs, [`cod`](Self::cod), both
 /// polynomials over the base types `G` (for a theory's operations, its
