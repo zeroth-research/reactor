@@ -1,8 +1,8 @@
 pub mod any;
+pub mod boundary;
 pub mod bv;
 pub mod lia;
 pub mod lra;
-pub mod boundary;
 pub mod tensor;
 
 use std::fmt;

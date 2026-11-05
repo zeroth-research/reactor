@@ -1,5 +1,6 @@
 pub mod atom;
 pub mod module;
+pub mod tangent;
 pub mod term;
 pub mod var;
 pub mod wire;
