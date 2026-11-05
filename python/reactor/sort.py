@@ -16,6 +16,10 @@ for _name in dir(_Sort):
         globals()[_name] = getattr(_Sort, _name)
 
 # Exhaustive on purpose: a new sort must be added here, never given a default.
+# The tangent sorts (`TReal`, `Zero`) are left out deliberately: they type derivative
+# wires, and the theories have no literals of them — their literal ops reject a derivative
+# write wire (a derivative is set to zero by the ZERO ops instead) — so there is no
+# constant of a tangent sort to convert.
 _KINDS = (
     (_Sort.Bool, torch.bool, "boolean"),
     (_Sort.Int, torch.int64, "integer"),

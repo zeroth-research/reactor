@@ -1,3 +1,4 @@
+use base::tangent::Tangent;
 use dataflow::diagram::Wire;
 use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
@@ -13,12 +14,14 @@ pub struct Var<S> {
     der: Wire<S>,
 }
 
-impl<S: Clone> Var<S> {
+impl<S: Tangent + Copy> Var<S> {
+    /// A fresh variable of the sort `dtype`: its latched and next wires carry
+    /// values of `dtype`, its derivative wire carries the tangent `dtype.tangent()`.
     pub fn new(dtype: S) -> Self {
         Self {
-            ltc: Wire::scalar(dtype.clone()),
-            nxt: Wire::scalar(dtype.clone()),
-            der: Wire::covector(dtype),
+            ltc: Wire::new(dtype),
+            nxt: Wire::new(dtype),
+            der: Wire::new(dtype.tangent()),
         }
     }
 }
@@ -92,8 +95,8 @@ impl<S> Borrow<Wire<S>> for Var<S> {
 }
 
 /// A variable dereferences to its latched wire: `&x` coerces to `&Wire<S>`
-/// wherever one is expected, and `Wire`'s methods (`x.id()`, `x.dtype()`,
-/// `x.degree()`) apply to the variable directly.
+/// wherever one is expected, and `Wire`'s methods (`x.id()`, `x.dtype()`)
+/// apply to the variable directly.
 ///
 /// `Deref` for a non-pointer type is deliberate here: the latched wire is the
 /// variable's primary view, the way `String` derefs to `str`.

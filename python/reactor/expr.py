@@ -9,6 +9,11 @@ are split by *operation family* (the sort picks the class):
     BExpr  — Boolean       Bool           &  |  ~  ^
     WExpr  — Word (BV)     BitVec         AExpr + bitwise + signed/unsigned + width
 
+A derivative (``d(v)``) has the tangent sort of its variable's sort: ``TReal(shape, k)`` for
+the ``k``-th derivative of a ``Real`` — an ``AExpr`` (``d(t) + d(t)``, ``2 * d(t)``) — and
+``Zero(shape)`` for the other sorts, whose derivative is always zero — a plain ``Expr``,
+with no operators of its own.
+
 An ``Expr`` itself is a pure handle — it stores its wire, its theory, the ``next`` wire (for
 a variable), and, for a constant, its tensor ``value`` (needed by the ``mul``/``matmul``
 folds). It does **not** hold the term: terms are gathered as they are built. To collect the
@@ -42,7 +47,7 @@ from typing import override
 import torch
 
 from .reactor import Term, Wire, LRA, LIA, BV, Var, X as _X, d as _d
-from .sort import Sort, Bool, Int, Real, BitVec, tensor_for
+from .sort import Sort, Bool, Int, Real, BitVec, TReal, Zero, tensor_for
 from .builder import NonLinearError
 
 
@@ -51,9 +56,9 @@ from .builder import NonLinearError
 
 def _shape(sort: Sort) -> list:
     match sort:
-        case Bool(s) | Int(s) | Real(s):
+        case Bool(s) | Int(s) | Real(s) | Zero(s):
             return list(s)
-        case BitVec(_, s):
+        case BitVec(_, s) | TReal(s, _):
             return list(s)
     raise TypeError(f"sort has no shape: {sort}")
 
@@ -68,6 +73,10 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Real(shape)
         case BitVec(bw, _):
             return BitVec(bw, shape)
+        case TReal(_, degree):
+            return TReal(shape, degree)
+        case Zero(_):
+            return Zero(shape)
     raise TypeError(f"unknown sort: {sort}")
 
 
@@ -80,17 +89,34 @@ def _bv_width(sort: Sort) -> int:
 
 def _family(sort: Sort) -> str:
     """A key identifying a sort's family (ignoring shape); two exprs may combine only
-    if their families match."""
+    if their families match.
+
+    A derivative of a real (``TReal``) is in the ``Real`` family, whatever its degree: a
+    literal (always a value) may scale it (``2 * d(t)``), and ``x * d(t)`` is reported as
+    non-linear. Combining a value with a derivative where the theory forbids it (e.g.
+    ``d(t) + x``) is rejected by the theory's check when the term is built."""
     match sort:
         case Bool(_):
             return "Bool"
         case Int(_):
             return "Int"
-        case Real(_):
+        case Real(_) | TReal(_, _):
             return "Real"
         case BitVec(bw, _):
             return f"BitVec{bw}"
+        case Zero(_):
+            return "Zero"
     raise TypeError(f"unknown sort: {sort}")
+
+
+def _literal_family(sort: Sort):
+    """The sort family of a literal coerced next to an expression of ``sort``: the theories'
+    literal ops reject derivative write wires, so a literal is always a value, and beside a
+    derivative of a real (``TReal``) it is a ``Real``."""
+    match sort:
+        case TReal(_, _):
+            return Real
+    return type(sort)
 
 
 def _normalize_shape(shape: list) -> list:
@@ -142,10 +168,13 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
     match wire.dtype:
         case Bool(_):
             return BExpr(wire, theory, next=next, value=value, tag=tag)
-        case Int(_) | Real(_):
+        case Int(_) | Real(_) | TReal(_, _):
             return AExpr(wire, theory, next=next, value=value, tag=tag)
         case BitVec(_, _):
             return WExpr(wire, theory, next=next, value=value, signed=signed, tag=tag)
+        case Zero(_):
+            # the derivative of a Bool/Int/BitVec: no operators apply to it
+            return Expr(wire, theory, next=next, value=value, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
 
 
@@ -155,7 +184,8 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
 
 
 class Expr:
-    """Shared plumbing; instances are always one of AExpr / BExpr / WExpr (via ``expr()``)."""
+    """Shared plumbing; instances are one of AExpr / BExpr / WExpr (via ``expr()``), or a
+    plain ``Expr`` for a ``Zero`` derivative (see ``_wrap``)."""
 
     def __init__(self, wire, theory, *, next=None, value=None, tag=None, var=None):
         if next is not None and next.dtype != wire.dtype:
@@ -205,7 +235,8 @@ class Expr:
         # agree for a signed bit-vector `xs`); it is ignored for non bit-vector sorts.
 
         return o if isinstance(o, Expr) else expr(
-            o, theory=self._theory, sort=type(self.dtype), bw=self._bw(), signed=getattr(self, "_signed", False))
+            o, theory=self._theory, sort=_literal_family(self.dtype), bw=self._bw(),
+            signed=getattr(self, "_signed", False))
 
     def _coerce_same(self, o) -> "Expr":
         o = self._coerce(o)
@@ -236,14 +267,14 @@ class Expr:
     def _binop(self, op, out: Sort, o) -> "Expr":
         """Coerce `o` to my sort, then build a binary Term with `op` and output sort `out`.
 
-        The result wire inherits this expression's degree, so operations over
-        derivative wires (e.g. `d(t) + d(t)`) stay in the derivative fragment."""
+        A derivative is told by its (tangent) sort, so passing `self.dtype` as `out` keeps
+        operations over derivative wires (e.g. `d(t) + d(t)`) in the derivative fragment."""
         o = self._coerce_same(o)
-        return self._result(Term(op, [Wire(out, self._wire.degree)], [self._wire, o._wire]))
+        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
 
     def _unop(self, op, out: Sort | None = None) -> "Expr":
         out = out if out is not None else self.dtype
-        return self._result(Term(op, [Wire(out, self._wire.degree)], [self._wire]))
+        return self._result(Term(op, [Wire(out)], [self._wire]))
 
     @override
     def __repr__(self) -> str:
@@ -301,7 +332,7 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
         n = v.shape[0]
         A = torch.eye(n, dtype=scalar_dtype) * c._value.item()
         bias = torch.zeros(n, 1, dtype=scalar_dtype)
-        return Term(linear(A, bias), [Wire(v.dtype, degree=v._wire.degree)], [v._wire])
+        return Term(linear(A, bias), [Wire(v.dtype)], [v._wire])
     raise NonLinearError(theory.__name__)
 
 
@@ -309,11 +340,13 @@ def _matmul(theory, a: Expr, b: Expr) -> Term:
     out_shape = [a.shape[0], b.shape[1]]
     if a._value is not None:  # constant left operand
         if theory is LRA:
-            linear, out_sort = LRA.Linear, Real(out_shape)
+            linear = LRA.Linear
         elif theory is LIA:
-            linear, out_sort = LIA.Linear, Int(out_shape)
+            linear = LIA.Linear
         else:
             raise TypeError(f"{theory.__name__} has no linear fold (expected LRA or LIA)")
+        # the map keeps the sort of `b` (a derivative stays a derivative), only the shape changes
+        out_sort = _with_shape(b.dtype, out_shape)
         return Term(linear(a._value, torch.empty(0, 0)), [Wire(out_sort)], [b._wire])
     raise RuntimeError(f"{theory.__name__} matmul requires a constant left operand; use a Linear instead")
 
@@ -549,7 +582,8 @@ def X(v: Expr) -> Expr:
 
 
 def d(v: Expr) -> Expr:
-    """The `derived` wire of a variable expr (as built from a wire pair)."""
+    """The derivative wire of a variable expr (as built from a wire pair); its sort is
+    the tangent of the variable's sort (``TReal`` for a ``Real``, ``Zero`` otherwise)."""
     # if v._next is None:
     #     raise ValueError("nxt() expects a variable (built from a wire pair)")
     return _wrap(_d(v._wire), v._theory, signed=getattr(v, "_signed", False))

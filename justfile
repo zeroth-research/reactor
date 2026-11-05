@@ -71,6 +71,10 @@ rs-build-all:
 rs-test:
     #!/usr/bin/env bash
     set -euo pipefail
+    # Build first: build scripts (e.g. torch-sys's, which runs python) must not
+    # inherit the DYLD_INSERT_LIBRARIES set below, or python crashes on import.
+    {{ CARGO }} test --features theory/pyo3 {{ profile_flag }} --no-run
+    {{ CARGO }} test -p theory --features torch {{ profile_flag }} --no-run
     TORCH_LIB="$(uv run python -c 'import torch, os; print(os.path.join(os.path.dirname(torch.__file__), "lib"))')"
     if [ "$(uname)" = "Darwin" ]; then
         export DYLD_FALLBACK_LIBRARY_PATH="$TORCH_LIB"

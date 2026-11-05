@@ -4,12 +4,14 @@ They support type checking (mypy) and editor hints only, with no runtime effect,
 are maintained by hand: PyO3 does not generate stubs, so adding a theory or an op means
 updating this file too (see https://pyo3.rs/v0.29.0/python-typing-hints).
 
-The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec), the per-theory
+The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec, and the tangent
+sorts TReal/Zero of derivatives), the per-theory
 op enums `LRA` / `LIA` / `BV` (complex enums: each variant is its own subclass,
 payloads are read via `match`/unpacking), and the structural layer `Wire` / `Var` /
 `Term` / `Atom` / `Module`. A `Var` bundles the latched, next (`X(v)`), and
 derivative (`d(v)`) wires of a state variable and stands for its latched wire
-wherever a wire is expected.
+wherever a wire is expected. A wire's sort says whether it carries a value or a
+derivative: `d(v)` has the tangent of `v`'s sort (`TReal(shape, 1)` for `Real(shape)`).
 """
 
 from torch import Tensor as TorchTensor
@@ -54,6 +56,18 @@ class Real(Sort):
 
 class BitVec(Sort):
     def __init__(self, width: int, shape: list[int]) -> None: ...
+
+
+class TReal(Sort):
+    """The tangent of `Real`: the sort of its `degree`-th derivative (`degree >= 1`)."""
+
+    def __init__(self, shape: list[int], degree: int) -> None: ...
+
+
+class Zero(Sort):
+    """The tangent of `Bool`, `Int`, and `BitVec`: their derivative is always zero."""
+
+    def __init__(self, shape: list[int]) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -320,16 +334,13 @@ class BV:
 # ---------------------------------------------------------------------------
 
 class Wire:
-    def __init__(self, dtype: Sort, degree: int = 0) -> None: ...
+    def __init__(self, dtype: Sort) -> None: ...
 
     @property
     def id(self) -> int: ...
 
     @property
     def dtype(self) -> Sort: ...
-
-    @property
-    def degree(self) -> int: ...
 
     @override
     def __eq__(self, other: object) -> bool: ...
@@ -352,9 +363,9 @@ class Wire:
 class Var:
     """A state variable: three wires (latched, next, derivative).
 
-    A variable stands for its latched wire — attribute lookups (`id`, `dtype`,
-    `degree`), equality, hashing, and ordering all go through it, so a `Var`
-    and its latched `Wire` are interchangeable e.g. as dictionary keys.
+    A variable stands for its latched wire — attribute lookups (`id`, `dtype`),
+    equality, hashing, and ordering all go through it, so a `Var` and its
+    latched `Wire` are interchangeable e.g. as dictionary keys.
     """
 
     def __init__(self, dtype: Sort) -> None: ...
@@ -364,9 +375,6 @@ class Var:
 
     @property
     def dtype(self) -> Sort: ...
-
-    @property
-    def degree(self) -> int: ...
 
     @override
     def __eq__(self, other: object) -> bool: ...
@@ -395,7 +403,7 @@ def X(var: Var) -> Wire:
 
 
 def d(var: Var) -> Wire:
-    """The variable's derivative wire."""
+    """The variable's derivative wire; its sort is the tangent of the variable's sort."""
     ...
 
 

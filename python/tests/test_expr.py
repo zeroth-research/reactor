@@ -7,10 +7,10 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from reactor import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, Var, X as _X
+from reactor import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, TReal, Zero, Var, X as _X
 from reactor.builder import NonLinearError
 from reactor.eval import eval_itype
-from reactor.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
+from reactor.expr import expr, cast, ite, collecting, Expr, AExpr, BExpr, WExpr, X, d
 
 INT = Int([1, 1])
 REAL = Real([1, 1])
@@ -339,6 +339,26 @@ def test_scaling_a_column_vector_by_a_constant(n):
     vals = torch.arange(1, n + 1, dtype=torch.int64).reshape(n, 1)
     got = _run(terms, {x.wire: vals})[e.wire]
     assert got.flatten().tolist() == [3 * v for v in range(1, n + 1)]
+
+
+def test_derivative_of_real_keeps_its_tangent_sort():
+    t = _varexpr(REAL, theory=LRA)
+    dt = d(t)
+    assert isinstance(dt, AExpr) and dt.dtype == TReal([1, 1], 1)
+    # arithmetic over derivatives stays a derivative; a constant scales it
+    assert (dt + dt).dtype == dt.dtype
+    assert (2 * dt).dtype == dt.dtype
+    assert (expr(torch.tensor([[2.0], [3.0]]), theory=LRA, sort=Real) @ dt).dtype == TReal([2, 1], 1)
+    # comparing derivatives gives a value
+    assert (dt < dt).dtype == Bool([1, 1])
+    # a derivative does not combine with a value
+    with pytest.raises(Exception):
+        dt + t
+
+
+def test_derivative_of_discrete_sort_is_zero():
+    dx = d(_varexpr(INT))
+    assert type(dx) is Expr and dx.dtype == Zero([1, 1])
 
 
 def test_mul_of_two_variables_is_nonlinear():
