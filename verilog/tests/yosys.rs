@@ -5,9 +5,11 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use verilog::ast::{Const, Dir, Override, Ty};
+use verilog::ast_interp::{Interp, Values};
 use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, lower_inst};
 use verilog::miter::{self, Side, Verdict};
+use verilog::smt::Phase;
 use verilog::{BitVec, typing, yosys, z3};
 
 fn examples() -> Vec<PathBuf> {
@@ -194,20 +196,25 @@ fn miter_of(yosys: &Path, path: &Path) -> (Translation, yosys::Smt2, miter::Mite
     (t, ys, m)
 }
 
-/// On every example, one round of our module and one transition of Yosys's
-/// agree on every controlled variable, and every one is queried.
+/// On every example, our init round and Yosys's state, and one round of
+/// our module and one transition of Yosys's, agree on every controlled
+/// variable, and every one is queried in both rounds.
 #[test]
 fn miter_examples() {
     let Some((yosys, z3)) = tools() else { return };
     for path in examples() {
         let (t, _, m) = miter_of(&yosys, &path);
-        let mut queried: Vec<&str> = m.queries.iter().map(|q| q.name.as_str()).collect();
-        queried.sort();
         let mut controlled: Vec<&str> = t.module.ctrl().iter().map(|v| t.name(v)).collect();
         controlled.sort();
-        assert_eq!(queried, controlled, "{}", path.display());
-        for (name, verdict) in miter::check(&z3, &m).unwrap() {
-            assert_eq!(verdict, Verdict::Equal, "{}: `{name}`", path.display());
+        for phase in [Phase::Init, Phase::Update] {
+            let queries = m.queries.iter().filter(|q| q.phase == phase);
+            let mut queried: Vec<&str> = queries.map(|q| q.name.as_str()).collect();
+            queried.sort();
+            assert_eq!(queried, controlled, "{}: {phase:?}", path.display());
+        }
+        for (phase, name, verdict) in miter::check(&z3, &m).unwrap() {
+            let at = format!("{}: `{name}` in {phase:?}", path.display());
+            assert_eq!(verdict, Verdict::Equal, "{at}");
         }
     }
 }
@@ -224,26 +231,44 @@ fn miter_differs() {
     let (_, _, mut m) = miter_of(&yosys, &path);
     // `q` counts down instead of up; `full` reads our `X(q)`
     let up = "(bvadd |*q| |%1|)";
-    assert!(m.script.contains(up));
-    m.script = m.script.replace(up, "(bvsub |*q| |%1|)");
+    assert!(m.update.contains(up));
+    m.update = m.update.replace(up, "(bvsub |*q| |%1|)");
     let verdicts = miter::check(&z3, &m).unwrap();
-    let get = |n: &str| verdicts.iter().find(|(m, _)| m == n).unwrap().1;
-    assert_eq!(get("q"), Verdict::Differs);
-    assert_eq!(get("full"), Verdict::Differs);
+    let get = |p: Phase, n: &str| verdicts.iter().find(|q| q.0 == p && q.1 == n).unwrap().2;
+    assert_eq!(get(Phase::Init, "q"), Verdict::Equal);
+    assert_eq!(get(Phase::Init, "full"), Verdict::Equal);
+    assert_eq!(get(Phase::Update, "q"), Verdict::Differs);
+    assert_eq!(get(Phase::Update, "full"), Verdict::Differs);
 
-    // `full` alone is wrong: set when `q` is all zeros
-    let (_, _, mut m) = miter_of(&yosys, &path);
+    // `full` alone is wrong, in one round or the other: set when `q` is
+    // all zeros
     let ones = "(= |X(q)| #b11111111)";
-    assert!(m.script.contains(ones));
-    m.script = m.script.replace(ones, "(= |X(q)| #b00000000)");
-    let verdicts = miter::check(&z3, &m).unwrap();
-    assert_eq!(
-        verdicts,
-        [
-            ("q".into(), Verdict::Equal),
-            ("full".into(), Verdict::Differs)
-        ]
-    );
+    for phase in [Phase::Init, Phase::Update] {
+        let (_, _, mut m) = miter_of(&yosys, &path);
+        let round = match phase {
+            Phase::Init => &mut m.init,
+            Phase::Update => &mut m.update,
+        };
+        assert!(round.contains(ones));
+        *round = round.replace(ones, "(= |X(q)| #b00000000)");
+        let verdicts = miter::check(&z3, &m).unwrap();
+        let differs = |p| {
+            if p == phase {
+                Verdict::Differs
+            } else {
+                Verdict::Equal
+            }
+        };
+        assert_eq!(
+            verdicts,
+            [
+                (Phase::Init, "q".into(), Verdict::Equal),
+                (Phase::Init, "full".into(), differs(Phase::Init)),
+                (Phase::Update, "q".into(), Verdict::Equal),
+                (Phase::Update, "full".into(), differs(Phase::Update)),
+            ]
+        );
+    }
 }
 
 /// A variable missing on the Yosys side or of another width is an error,
@@ -354,7 +379,8 @@ fn registers_mismatch() {
 
 /// The variables on which `m` finds the two sides different, each with
 /// the side the replay of its counterexample attributes it to, and the
-/// latched variable it is decided on, if any.
+/// latched variable it is decided on, if any. A variable is named `v` for
+/// the update round, `init:v` for the init round.
 type Blame = (String, Side, Option<String>);
 
 /// Every input is made to differ between `|s|` and `|s'|`, so that a
@@ -366,8 +392,12 @@ fn blame(z3: &Path, inst: &Inst, t: &Translation, m: &miter::Miter) -> Vec<Blame
     }
     let m = &m;
     let mut blamed = vec![];
-    for (name, verdict) in miter::check(z3, m).unwrap() {
-        let q = m.queries.iter().find(|q| q.name == name).unwrap();
+    for (phase, name, verdict) in miter::check(z3, m).unwrap() {
+        let q = m
+            .queries
+            .iter()
+            .find(|q| q.phase == phase && q.name == name);
+        let q = q.unwrap();
         if verdict == Verdict::Equal {
             let e = miter::counterexample(z3, m, q).unwrap_err();
             assert!(e.contains("the query is unsat"), "{e}");
@@ -378,7 +408,11 @@ fn blame(z3: &Path, inst: &Inst, t: &Translation, m: &miter::Miter) -> Vec<Blame
         assert_ne!(cex.ours, cex.theirs, "{cex}");
         let r = miter::replay(inst, t, &cex).unwrap();
         eprintln!("{cex}\n  {r}");
-        blamed.push((name, r.side, r.via.map(|v| v.name)));
+        let label = match phase {
+            Phase::Init => format!("init:{name}"),
+            Phase::Update => name,
+        };
+        blamed.push((label, r.side, r.via.map(|v| v.name)));
     }
     blamed
 }
@@ -392,10 +426,20 @@ fn counterexample_ours_wrong() {
     let Some((yosys, z3)) = tools() else { return };
     for (example, from, to, expected) in [
         ("counter.sv", "q + 8'd1", "q - 8'd1", &["q", "full"][..]),
-        ("counter.sv", "&q", "|q", &["full"]),
-        ("nest.sv", "o = s + q", "o = s - q", &["y", "z", "m2.l.d"]),
+        ("counter.sv", "&q", "|q", &["init:full", "full"]),
+        (
+            "nest.sv",
+            "o = s + q",
+            "o = s - q",
+            &["init:y", "init:z", "init:m2.l.d", "y", "z", "m2.l.d"],
+        ),
         // combinational: the next values depend on the inputs of `|s'|`
-        ("adder.sv", "sum = a + b", "sum = a - b", &["sum", "carry"]),
+        (
+            "adder.sv",
+            "sum = a + b",
+            "sum = a - b",
+            &["init:sum", "init:carry", "sum", "carry"],
+        ),
     ] {
         let path = examples()
             .into_iter()
@@ -431,18 +475,24 @@ fn counterexample_theirs_wrong() {
         // the increment of `q`
         ("counter.sv", "(bvadd ", "(bvsub ", direct(&["q", "full"])),
         // combinational: the next values depend on the inputs of `|s'|`
-        ("adder.sv", "(bvadd ", "(bvsub ", direct(&["carry", "sum"])),
+        (
+            "adder.sv",
+            "(bvadd ",
+            "(bvsub ",
+            direct(&["init:carry", "init:sum", "carry", "sum"]),
+        ),
         // the constant K = 4'd7 of `m2.l`
         (
             "nest.sv",
             "#b0111)",
             "#b0110)",
-            direct(&["m2.l.d", "m2.s", "z"]),
+            direct(&["init:m2.l.d", "init:m2.s", "init:z", "m2.l.d", "m2.s", "z"]),
         ),
-        // only the named wire `m2.l.d`, which our round reads latched (as
-        // the next value of register `m2.l.q`): Yosys's transition does not
-        // use it, so the variables computed from `m2.q` differ only through
-        // that latched value, on which the replay then decides
+        // only the named wire `m2.l.d`, which our update round reads latched
+        // (as the next value of register `m2.l.q`): Yosys's transition does
+        // not use it, so the variables computed from `m2.q` differ only
+        // through that latched value, on which the replay then decides; the
+        // init round compares the wire itself
         (
             "nest.sv",
             "(define-fun |nest_n m2.l.d| ((state |nest_s|)) (_ BitVec 4) (|nest#7| state))",
@@ -452,6 +502,7 @@ fn counterexample_theirs_wrong() {
                 via("m2.s"),
                 via("z"),
                 ("m2.l.d".into(), Side::Ours, None),
+                ("init:m2.l.d".into(), Side::Ours, None),
             ],
         ),
     ] {
@@ -469,6 +520,43 @@ fn counterexample_theirs_wrong() {
         expected.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(blamed, expected, "{example}: {from} -> {to}");
     }
+}
+
+/// A difference only for register values no transition produces is found
+/// in the init round: `r` is always `0` after a transition, so the update
+/// round sees our wrong `y` only through `q`, which latches Yosys's `y`.
+#[test]
+fn counterexample_init_round() {
+    let Some((yosys, z3)) = tools() else { return };
+    let source = "\
+module gap (
+  input  logic       clk,
+  input  logic [7:0] a, b,
+  output logic [7:0] y, q
+);
+  logic [7:0] r;
+  always_ff @(posedge clk) begin
+    r <= 8'd0;
+    q <= y;
+  end
+  assign y = r[0] ? a : b;
+endmodule
+";
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("gap.sv");
+    std::fs::write(&path, source).unwrap();
+    let inst = elab::load(source, &path).unwrap();
+    let ys = yosys::run(&yosys, &path, "gap", &[]).unwrap();
+    let t = lower_inst(&inst).unwrap();
+    let m = miter::build(&t, &ys).unwrap();
+    assert_eq!(blame(&z3, &inst, &t, &m), []);
+
+    let edited = elab::load(&source.replace("r[0] ? a : b", "b"), &path).unwrap();
+    let t = lower_inst(&edited).unwrap();
+    let m = miter::build(&t, &ys).unwrap();
+    assert_eq!(
+        blame(&z3, &inst, &t, &m),
+        [("init:y".into(), Side::Theirs, None)]
+    );
 }
 
 /// Wrong on both sides: our `q` counts down, Yosys's stays, the reference
@@ -507,8 +595,8 @@ fn counterexample_our_smt_wrong() {
         (inst, t, m)
     };
     let up = "(bvadd |*q| |%1|)";
-    assert!(m.script.contains(up));
-    m.script = m.script.replace(up, "(bvsub |*q| |%1|)");
+    assert!(m.update.contains(up));
+    m.update = m.update.replace(up, "(bvsub |*q| |%1|)");
     assert_eq!(
         blame(&z3, &inst, &t, &m),
         [
@@ -528,7 +616,8 @@ fn counterexample_contents() {
         .find(|p| p.ends_with("nest.sv"))
         .unwrap();
     let (_, ys, m) = miter_of(&yosys, &path);
-    let mut q = m.queries.iter().find(|q| q.name == "z").unwrap().clone();
+    let z = |q: &&miter::Query| q.phase == Phase::Update && q.name == "z";
+    let mut q = m.queries.iter().find(z).unwrap().clone();
     // make the query satisfiable: our `z` is off by one
     q.ours = format!("(bvadd {} #b0001)", q.ours);
     let cex = miter::counterexample(&z3, &m, &q).unwrap();
@@ -544,4 +633,476 @@ fn counterexample_contents() {
     assert!(ys.inputs.contains_key("clk"));
     let text = cex.to_string();
     assert!(text.starts_with("`z` is "), "{text}");
+}
+
+/// `v2rm --yosys`: a summary line and success if every query is equal;
+/// failure with a message for parameter overrides, and with the usage if
+/// combined with another output.
+#[test]
+fn cli_yosys() {
+    let Some(_) = tools() else { return };
+    let v2rm = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_v2rm"))
+            .args(args)
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .unwrap();
+        let text = |b: Vec<u8>| String::from_utf8(b).unwrap();
+        (out.status.success(), text(out.stdout), text(out.stderr))
+    };
+    let (ok, stdout, _) = v2rm(&["--yosys", "examples/counter.sv"]);
+    assert!(ok);
+    assert_eq!(
+        stdout,
+        "examples/counter.sv: 4 of 4 queries equal (every controlled variable, \
+         in the init and the update round)\n"
+    );
+    let (ok, _, stderr) = v2rm(&["--yosys", "-G", "N=5", "examples/modcount.sv"]);
+    assert!(!ok);
+    assert!(
+        stderr.contains("parameter overrides are not supported"),
+        "{stderr}"
+    );
+    let (ok, _, stderr) = v2rm(&["--yosys", "--smt", "examples/counter.sv"]);
+    assert!(!ok);
+    assert!(stderr.starts_with("usage:"), "{stderr}");
+}
+
+/// A planted bug: one change to the source of an example.
+struct Mutant {
+    /// Where and what, e.g. ``8:24 `+` -> `-` ``.
+    what: String,
+    source: String,
+}
+
+/// The operators a mutant replaces, with their replacements; `""` deletes.
+const OPERATORS: &[(&str, &str)] = &[
+    ("+", "-"),
+    ("-", "+"),
+    ("*", "+"),
+    ("/", "*"),
+    ("%", "/"),
+    ("&", "|"),
+    ("|", "&"),
+    ("^", "&"),
+    ("~^", "^"),
+    ("&&", "||"),
+    ("||", "&&"),
+    ("==", "!="),
+    ("!=", "=="),
+    ("<", "<="),
+    ("<=", "<"),
+    (">", ">="),
+    (">=", ">"),
+    ("<<", ">>"),
+    (">>", "<<"),
+    (">>>", ">>"),
+    ("+:", "-:"),
+    ("-:", "+:"),
+    ("~", ""),
+    ("!", ""),
+];
+
+/// The tokens of `source` that mutants change, with their byte ranges:
+/// operators (longest match), sized literals `8'd3`, unsized decimal
+/// numbers and the keyword `if`. Comments are skipped.
+fn tokens(source: &str) -> Vec<(usize, usize, &str)> {
+    let b = source.as_bytes();
+    let mut ops: Vec<&str> = OPERATORS.iter().map(|(o, _)| *o).collect();
+    ops.extend([
+        "=", "(", ")", "[", "]", "{", "}", ":", "?", ";", ",", "'", "#", ".", "@",
+    ]);
+    ops.sort_by_key(|o| std::cmp::Reverse(o.len()));
+    let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'$';
+    let mut out = vec![];
+    let mut i = 0;
+    while i < b.len() {
+        let start = i;
+        if source[i..].starts_with("//") {
+            i += source[i..].find('\n').unwrap_or(b.len() - i);
+        } else if source[i..].starts_with("/*") {
+            i += source[i..].find("*/").unwrap() + 2;
+        } else if b[i].is_ascii_digit() {
+            while i < b.len() && (b[i].is_ascii_digit() || b[i] == b'_') {
+                i += 1;
+            }
+            let rest = &source[i..];
+            let base = rest
+                .strip_prefix('\'')
+                .map(|r| r.strip_prefix('s').unwrap_or(r));
+            if let Some(r) = base.filter(|r| r.starts_with(['b', 'o', 'd', 'h'])) {
+                i = b.len() - r.len() + 1;
+                while i < b.len() && (b[i].is_ascii_hexdigit() || b[i] == b'_') {
+                    i += 1;
+                }
+            }
+            out.push((start, i, &source[start..i]));
+        } else if word(b[i]) {
+            while i < b.len() && word(b[i]) {
+                i += 1;
+            }
+            if &source[start..i] == "if" {
+                out.push((start, i, "if"));
+            }
+        } else if let Some(op) = ops.iter().find(|o| source[i..].starts_with(**o)) {
+            i += op.len();
+            out.push((start, i, op));
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Every mutant of `source` with one change: an operator replaced (see
+/// [`OPERATORS`]), a sized literal one larger (wrapping), an unsized
+/// number one smaller (`0` becomes `1`), or the condition of an `if`
+/// negated.
+fn mutants(source: &str) -> Vec<Mutant> {
+    let at = |offset: usize| {
+        let line = source[..offset].matches('\n').count() + 1;
+        let col = offset - source[..offset].rfind('\n').map_or(0, |n| n + 1) + 1;
+        format!("{line}:{col}")
+    };
+    let mutant = |start: usize, end: usize, to: &str| Mutant {
+        what: format!("{} `{}` -> `{to}`", at(start), &source[start..end]),
+        source: format!("{}{to}{}", &source[..start], &source[end..]),
+    };
+    let tokens = tokens(source);
+    let mut out = vec![];
+    for (k, &(start, end, text)) in tokens.iter().enumerate() {
+        if let Some((_, to)) = OPERATORS.iter().find(|(o, _)| *o == text) {
+            out.push(mutant(start, end, to));
+        } else if text == "if" {
+            // the condition: from `(` to its `)`
+            let (open, _, _) = tokens[k + 1];
+            let mut depth = 0;
+            let close = tokens[k + 1..]
+                .iter()
+                .find(|(_, _, t)| {
+                    depth += match *t {
+                        "(" => 1,
+                        ")" => -1,
+                        _ => 0,
+                    };
+                    depth == 0
+                })
+                .unwrap()
+                .1;
+            let cond = &source[open..close];
+            out.push(Mutant {
+                what: format!("{} `if {cond}` -> `if (!{cond})`", at(start)),
+                source: format!("{}(!{cond}){}", &source[..open], &source[close..]),
+            });
+        } else if let Some((width, rest)) = text.split_once('\'').filter(|(w, _)| !w.is_empty()) {
+            let width: u32 = width.parse().unwrap();
+            let (signed, rest) = match rest.strip_prefix('s') {
+                Some(r) => ("s", r),
+                None => ("", rest),
+            };
+            let radix = match &rest[..1] {
+                "b" => 2,
+                "o" => 8,
+                "d" => 10,
+                _ => 16,
+            };
+            let digits = rest[1..].replace('_', "");
+            let v = u128::from_str_radix(&digits, radix).unwrap();
+            let v = (v + 1) & ((1u128 << width) - 1);
+            out.push(mutant(start, end, &format!("{width}'{signed}d{v}")));
+        } else if text.starts_with(|c: char| c.is_ascii_digit()) {
+            let n: u64 = text.replace('_', "").parse().unwrap();
+            let to = if n == 0 { 1 } else { n - 1 };
+            out.push(mutant(start, end, &to.to_string()));
+        }
+    }
+    out
+}
+
+#[test]
+fn mutants_of_text() {
+    let source = "// a + b\nassign y = a+b; always_ff @(posedge clk) if (en && (x)) q <= 4'hf;\n\
+                  assign z = w[3 +: 2] >>> 8'sd1;";
+    let whats: Vec<String> = mutants(source).into_iter().map(|m| m.what).collect();
+    assert_eq!(
+        whats,
+        [
+            "2:13 `+` -> `-`",
+            "2:42 `if (en && (x))` -> `if (!(en && (x)))`",
+            "2:49 `&&` -> `||`",
+            "2:59 `<=` -> `<`",
+            "2:62 `4'hf` -> `4'd0`",
+            "3:14 `3` -> `2`",
+            "3:16 `+:` -> `-:`",
+            "3:19 `2` -> `1`",
+            "3:22 `>>>` -> `>>`",
+            "3:26 `8'sd1` -> `8'sd2`",
+        ]
+    );
+    let m = mutants(source);
+    assert!(m[1].source.contains("if (!(en && (x))) q"));
+    assert!(m[4].source.contains("q <= 4'd0;"));
+}
+
+/// A pseudo-random generator (64-bit LCG), as in `tests/examples.rs`.
+struct Rand(u64);
+
+impl Rand {
+    fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        self.0 >> 16
+    }
+
+    /// A value biased towards 0, 1, all ones and small values.
+    fn bits(&mut self, width: usize) -> BitVec {
+        let ones = (1u128 << width) - 1;
+        let v = match self.next() % 8 {
+            0 => 0,
+            1 => 1,
+            2 => ones,
+            3 => (self.next() % 4) as u128,
+            _ => ((self.next() as u128) << 64 | self.next() as u128) & ones,
+        };
+        BitVec::new(width, v & ones).unwrap()
+    }
+
+    fn values<'a>(&mut self, names: impl Iterator<Item = (&'a String, Ty)>) -> Values {
+        names
+            .map(|(n, ty)| (n.clone(), self.bits(ty.width)))
+            .collect()
+    }
+}
+
+/// The first difference random simulation finds between the reference
+/// semantics of `inst` and of `mutant`, on the same random initial
+/// registers and inputs: the values of every signal in every cycle,
+/// including the first.
+fn simulated_difference(inst: &Inst, mutant: &Inst, rand: &mut Rand) -> Option<String> {
+    for _ in 0..10 {
+        let init: Values = registers(inst)
+            .into_iter()
+            .map(|(p, w)| (p, rand.bits(w)))
+            .collect();
+        let mut original = Interp::new(inst, &init).unwrap();
+        let mut edited = match Interp::new(mutant, &init) {
+            Ok(i) => i,
+            Err(e) => return Some(format!("the mutant does not start: {e}")),
+        };
+        let inputs: Vec<(String, Ty)> = original.inputs().to_vec();
+        for k in 0..30 {
+            let ins = rand.values(inputs.iter().map(|(n, t)| (n, *t)));
+            let a = original.step(&ins).unwrap();
+            let b = match edited.step(&ins) {
+                Ok(b) => b,
+                Err(e) => return Some(format!("cycle {k}: {e}")),
+            };
+            if a != b {
+                let name = a.keys().chain(b.keys()).find(|n| a.get(*n) != b.get(*n));
+                return Some(format!(
+                    "cycle {k}: `{}`, from {init:?} with inputs {ins:?}",
+                    name.unwrap()
+                ));
+            }
+        }
+    }
+    None
+}
+
+/// What one direction of a mutant gives.
+#[derive(Debug, PartialEq)]
+enum Found {
+    /// `build` rejects the pair: the registers or names differ.
+    Mismatch,
+    /// These variables differ, each replayed as the expected side.
+    Differs(Vec<String>),
+    Equal,
+}
+
+/// The miter of `t` and `ys`, with a counterexample and replay against
+/// the reference on `inst` for every differing variable, which must be
+/// attributed to `side`.
+fn direction(
+    z3: &Path,
+    inst: &Inst,
+    t: &Translation,
+    ys: &yosys::Smt2,
+    side: Side,
+) -> Result<Found, String> {
+    let Ok(m) = miter::build(t, ys) else {
+        return Ok(Found::Mismatch);
+    };
+    let mut differs = vec![];
+    for (phase, name, verdict) in miter::check(z3, &m)? {
+        match verdict {
+            Verdict::Equal => {}
+            Verdict::Unknown => return Err(format!("`{name}` in {phase:?}: unknown")),
+            Verdict::Differs => {
+                let q = m
+                    .queries
+                    .iter()
+                    .find(|q| q.phase == phase && q.name == name);
+                let q = q.unwrap();
+                let cex = miter::counterexample(z3, &m, q)?;
+                let r = miter::replay(inst, t, &cex)?;
+                if r.side != side {
+                    return Err(format!("{cex}\n  {r}"));
+                }
+                differs.push(format!("{name} in {phase:?}"));
+            }
+        }
+    }
+    Ok(if differs.is_empty() {
+        Found::Equal
+    } else {
+        Found::Differs(differs)
+    })
+}
+
+/// What a mutant gives.
+#[derive(Debug, PartialEq)]
+enum Outcome {
+    /// Our frontend or typing rejects it.
+    Rejected,
+    /// Both directions find no difference, and neither does simulation.
+    Equivalent,
+    /// Both directions find a difference (or mismatching registers).
+    Caught,
+}
+
+/// Plants mutant `m` of the example at `path` (hierarchy `inst`, our
+/// translation `t`, Yosys's `ys`) on each side in turn:
+/// - in ours: `t` is lowered from the mutant and compared with `ys`; every
+///   difference must replay as Yosys's side being right (`Theirs`);
+/// - in Yosys's: Yosys translates the mutant and is compared with `t`;
+///   every difference must replay as ours being right (`Ours`).
+///
+/// The reference always runs the original. Both directions must agree on
+/// whether there is a difference, and so must random simulation of the
+/// original against the mutant, an oracle independent of the miter. Fails
+/// with a description if not.
+fn plant(
+    (yosys, z3): (&Path, &Path),
+    path: &Path,
+    (inst, t, ys): (&Inst, &Translation, &yosys::Smt2),
+    m: &Mutant,
+    rand: &mut Rand,
+) -> Result<Outcome, String> {
+    let Ok(edited) = elab::load(&m.source, path) else {
+        return Ok(Outcome::Rejected);
+    };
+    let Ok(ours) = lower_inst(&edited) else {
+        return Ok(Outcome::Rejected);
+    };
+    let file = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "mutant-{}",
+        path.file_name().unwrap().to_string_lossy()
+    ));
+    std::fs::write(&file, &m.source).unwrap();
+    let theirs = yosys::run(yosys, &file, &t.name, &[]).map_err(|e| format!("Yosys: {e}"))?;
+
+    let a = direction(z3, inst, &ours, ys, Side::Theirs).map_err(|e| format!("in ours: {e}"))?;
+    let b = direction(z3, inst, t, &theirs, Side::Ours).map_err(|e| format!("in Yosys's: {e}"))?;
+    let simulated = simulated_difference(inst, &edited, rand);
+    match (a == Found::Equal, b == Found::Equal, simulated) {
+        (true, true, None) => Ok(Outcome::Equivalent),
+        (false, false, _) => Ok(Outcome::Caught),
+        (true, true, Some(d)) => Err(format!("missed in both directions: {d}")),
+        _ => Err(format!(
+            "the directions disagree: in ours {a:?}, in Yosys's {b:?}"
+        )),
+    }
+}
+
+/// The mutants of the examples that change nothing the miter can see,
+/// each with the reason.
+const EQUIVALENT: &[(&str, &str, &str)] = &[
+    (
+        "barrel.sv",
+        "18:22 `>>>` -> `>>`",
+        "`y` is unsigned: `>>>` shifts in zeros",
+    ),
+    (
+        "decode.sv",
+        "16:13 `3'd0` -> `3'd1`",
+        "both labels are shadowed by earlier items",
+    ),
+    (
+        "mux4.sv",
+        "21:21 `-:` -> `+:`",
+        "a select of width 1 is the same bit either way",
+    ),
+    (
+        "nest.sv",
+        "6:41 `4'd1` -> `4'd2`",
+        "every instance of `leaf` overrides this default of `K`",
+    ),
+];
+
+/// What the mutants of one example give: descriptions of the failures,
+/// the equivalent mutants, the number caught and rejected.
+type Outcomes = (Vec<String>, Vec<(String, String)>, usize, usize);
+
+fn plant_all((yosys, z3): (&Path, &Path), path: &Path, seed: u64) -> Outcomes {
+    let mut rand = Rand(seed);
+    let (inst, t) = load(path);
+    let ys = yosys::run(yosys, path, &t.name, &[]).unwrap();
+    let example = path.file_name().unwrap().to_string_lossy().to_string();
+    let source = std::fs::read_to_string(path).unwrap();
+    let mut out: Outcomes = Default::default();
+    for m in mutants(&source) {
+        match plant((yosys, z3), path, (&inst, &t, &ys), &m, &mut rand) {
+            Ok(Outcome::Rejected) => out.3 += 1,
+            Ok(Outcome::Caught) => out.2 += 1,
+            Ok(Outcome::Equivalent) => out.1.push((example.clone(), m.what)),
+            Err(e) => out.0.push(format!("{example} {}: {e}", m.what)),
+        }
+    }
+    out
+}
+
+/// The planted-bug suite: every mutant of every example (see [`mutants`])
+/// is planted on our side and on Yosys's ([`plant`]). Each one our typing
+/// accepts must be caught in both directions, with every difference
+/// attributed to the mutated side, unless it is listed in [`EQUIVALENT`];
+/// and the list must be exactly the mutants found equivalent. The
+/// examples run in parallel, each with its own seed.
+#[test]
+fn planted_bugs() {
+    let Some((yosys, z3)) = tools() else { return };
+    let paths = examples();
+    let results: Vec<Outcomes> = std::thread::scope(|scope| {
+        let handles: Vec<_> = paths
+            .iter()
+            .enumerate()
+            .map(|(i, path)| {
+                let seed = 0x1405_7b7e_f767_814f ^ i as u64;
+                let tools = (yosys.as_path(), z3.as_path());
+                scope.spawn(move || plant_all(tools, path, seed))
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let (mut failures, mut equivalent, mut caught, mut rejected) = Outcomes::default();
+    for (f, e, c, r) in results {
+        failures.extend(f);
+        equivalent.extend(e);
+        caught += c;
+        rejected += r;
+    }
+    eprintln!(
+        "planted bugs: {caught} caught, {} equivalent, {rejected} rejected by typing",
+        equivalent.len()
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    let listed: Vec<(String, String)> = EQUIVALENT
+        .iter()
+        .map(|(e, w, _)| (e.to_string(), w.to_string()))
+        .collect();
+    assert_eq!(
+        equivalent, listed,
+        "mutants found equivalent (left), listed (right)"
+    );
 }
