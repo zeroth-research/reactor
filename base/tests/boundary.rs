@@ -224,3 +224,15 @@ fn iteration_preserves_order() {
     assert_eq!(Poly::<char>::zero().iter().count(), 0);
     assert_eq!(Poly::<char>::unit().iter().count(), 1);
 }
+
+#[test]
+fn display() {
+    assert_eq!(Poly::<char>::zero().to_string(), "0");
+    assert_eq!(Poly::<char>::unit().to_string(), "I");
+    assert_eq!(Mono::<char>::unit().to_string(), "I");
+    assert_eq!(Poly::from_iter(['x', 'y']).to_string(), "x ⊗ y");
+    let (x, y, z) = (mono("x"), mono("y"), mono("z"));
+    assert_eq!(((x + y) * Poly::from(z)).to_string(), "x ⊗ z ⊕ y ⊗ z");
+    // the unit monomial is printed also as a summand
+    assert_eq!(poly(&["", "x"]).to_string(), "I ⊕ x");
+}
