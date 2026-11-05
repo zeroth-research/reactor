@@ -292,7 +292,7 @@ def test_collecting_records_deps_first():
     with collecting() as terms:
         ite(x < y, x + 1, y)
     optypes = [type(t.itype) for t in terms]
-    assert optypes == [LIA.Lt, LIA.Int, LIA.Add, LIA.Ite]
+    assert optypes == [LIA.Lt, LIA.Int, LIA.Add, LIA.IteInt]
 
 
 def test_shared_subexpression_recorded_once():

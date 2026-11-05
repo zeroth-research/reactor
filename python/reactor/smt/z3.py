@@ -27,7 +27,7 @@ def fresh(dtype, prefix):
 
 def interpret(itype):
     match itype:
-        case LRA.Id() | LIA.Id():
+        case LRA.IdReal() | LRA.IdBool() | LRA.TId() | LIA.IdInt() | LIA.IdBool():
             return lambda x: x
         case LRA.Bool(t) | LIA.Bool(t):
             return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(t.detach().numpy())
@@ -39,11 +39,11 @@ def interpret(itype):
             return lambda: fresh(dtype, f"HAVOC")
 
         # arithmetic
-        case LRA.Sub() | LIA.Sub():
+        case LRA.Sub() | LRA.TSub() | LIA.Sub():
             return _np.frompyfunc(operator.sub, 2, 1)
-        case LRA.Add() | LIA.Add():
+        case LRA.Add() | LRA.TAdd() | LIA.Add():
             return _np.frompyfunc(operator.add, 2, 1)
-        case LRA.Linear(weight, bias) | LIA.Linear(weight, bias):
+        case LRA.Linear(weight, bias) | LRA.TLinear(weight, bias) | LIA.Linear(weight, bias):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
 
         # comparisons (produce Bool)
@@ -71,7 +71,7 @@ def interpret(itype):
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
 
         # control flow
-        case LRA.Ite() | LIA.Ite():
+        case LRA.IteReal() | LRA.IteBool() | LRA.TIte() | LIA.IteInt() | LIA.IteBool():
             return _np.frompyfunc(lambda c, tt, ff: _z3.If(c, tt, ff), 3, 1)
 
         # neural-ish / aggregate
@@ -82,9 +82,10 @@ def interpret(itype):
         case LRA.Max() | LIA.Max():
             return _np.frompyfunc(lambda x, y: _z3.If(x >= y, x, y), 2, 1)
 
-        case LRA.Transpose() | LIA.Transpose():
+        case LRA.TransposeReal() | LRA.TransposeBool() | LIA.TransposeInt() | LIA.TransposeBool():
             return _np.transpose
-        case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):
+        case (LRA.UninterpretedReal(name) | LRA.UninterpretedBool(name)
+              | LIA.UninterpretedInt(name) | LIA.UninterpretedBool(name) | BV.Uninterpreted(name)):
             raise RuntimeError(f"cannot translate uninterpreted '{name}' to Z3")
         case _:
             raise NotImplementedError(f"itype: {itype}")

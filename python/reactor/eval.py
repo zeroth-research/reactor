@@ -41,9 +41,10 @@ def eval_itype(itype, read, out_sort=None):
     r = read
     match itype:
         # --- identity / control flow ---
-        case LRA.Id() | LIA.Id() | BV.Id():
+        case LRA.IdReal() | LRA.IdBool() | LRA.TId() | LIA.IdInt() | LIA.IdBool() | BV.Id():
             return [r[0].clone()]
-        case LRA.Ite() | LIA.Ite() | BV.Ite():
+        case (LRA.IteReal() | LRA.IteBool() | LRA.TIte() | LIA.IteInt() | LIA.IteBool()
+              | BV.Ite()):
             return [torch.where(r[0].bool(), r[1], r[2])]
 
         # --- constants (payload bound from the op) ---
@@ -51,9 +52,9 @@ def eval_itype(itype, read, out_sort=None):
             return [t.clone()]
 
         # --- arithmetic: LIA/LRA (exact, no wraparound) ---
-        case LRA.Add() | LIA.Add():
+        case LRA.Add() | LRA.TAdd() | LIA.Add():
             return [r[0] + r[1]]
-        case LRA.Sub() | LIA.Sub():
+        case LRA.Sub() | LRA.TSub() | LIA.Sub():
             return [r[0] - r[1]]
 
         # --- arithmetic: BV (modulo 2^width) ---
@@ -79,7 +80,7 @@ def eval_itype(itype, read, out_sort=None):
             return [_wrap(r[0] @ r[1], out_sort)]
 
         # --- Linear (LIA/LRA): A, B constants carried in the op ---
-        case LRA.Linear(weight, bias) | LIA.Linear(weight, bias):
+        case LRA.Linear(weight, bias) | LRA.TLinear(weight, bias) | LIA.Linear(weight, bias):
             return [_linear(weight, bias, r[0])]
 
         # --- comparisons: LIA/LRA produce a boolean tensor ---
@@ -149,11 +150,12 @@ def eval_itype(itype, read, out_sort=None):
             return [torch.maximum(r[0], r[1])]
 
         # --- matrix ---
-        case LRA.Transpose() | LIA.Transpose():
+        case LRA.TransposeReal() | LRA.TransposeBool() | LIA.TransposeInt() | LIA.TransposeBool():
             return [r[0].transpose(0, 1)]
 
         # --- uninterpreted ---
-        case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):
+        case (LRA.UninterpretedReal(name) | LRA.UninterpretedBool(name)
+              | LIA.UninterpretedInt(name) | LIA.UninterpretedBool(name) | BV.Uninterpreted(name)):
             raise RuntimeError(f"cannot evaluate uninterpreted function '{name}'")
 
     raise RuntimeError(f"cannot evaluate op: {itype}")

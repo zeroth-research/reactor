@@ -22,10 +22,11 @@ def _is_float_sort(sort) -> bool:
 
 def _validate_theory_supports_nn(theory):
     """A neural module needs the matrix ops a `Linear`+`ReLU` net compiles to. LRA and
-    LIA provide them; BV does not (no Transpose/Linear), so reject it with a clear error
-    rather than a deep AttributeError from the builder."""
+    LIA provide them; BV does not (no Transpose/Linear/ReLU), so reject it with a clear
+    error rather than a deep error from the builder. (Transpose comes in one op per kind of
+    values, e.g., `LRA.TransposeReal`, so `Linear` and `ReLU` stand for the matrix ops.)"""
     ns = builder_for(theory)._ns
-    missing = [op for op in ("Transpose", "Linear", "ReLU") if not hasattr(ns, op)]
+    missing = [op for op in ("Linear", "ReLU") if not hasattr(ns, op)]
     if missing:
         tname = getattr(theory, "__name__", "LRA")
         raise NotImplementedError(

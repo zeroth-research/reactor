@@ -339,7 +339,7 @@ def test_untraced_call():
     for atom in e.atoms:
         for t in list(atom.update):
             match t.itype:
-                case LRA.Uninterpreted(name):
+                case LRA.UninterpretedReal(name):
                     labels.append(name)
     assert any('(...)' in lbl for lbl in labels), "expected an Uninterpreted term"
     e.reset();
