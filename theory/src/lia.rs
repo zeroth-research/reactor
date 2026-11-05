@@ -4,7 +4,8 @@
 Defines the theory [`LIA`] of linear integer arithmetic over matrices,
 mixing integer and boolean matrices in a single signature.
 
-A [`Sort`] value is either `Int(rows, cols)` or `Bool(rows, cols)`.
+A [`Sort`] value is either `Int(rows, cols)` or `Bool(rows, cols)`, or `Zero(rows, cols)`,
+the sort of their derivatives (see [`Tangent::tangent`]).
 `Type` converts to and from [`int::IntType`] and [`bool::PropType`]
 so that integer and propositional terms embed directly into `LIA`. The
 operations in [`LIA`] are:
@@ -29,22 +30,23 @@ shapes against the selected operation.
 use theory::Theory;
 use theory::lia::{LIA, Sort};
 
-// Wires carry a sort and a degree; ordinary operands are degree 0.
-let deg0 = |s| Ok::<_, String>((s, 0u8));
+// Wires carry a sort (derivatives carry the tangent sorts).
+let ok = |s| Ok::<_, String>(s);
 
 // Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
 let i = Sort::Int([1, 1]);
 let b = Sort::Bool([1, 1]);
-assert!(LIA::Lt().check([i, i].map(deg0), [b].map(deg0)).is_ok());
+assert!(LIA::Lt().check([i, i].map(ok), [b].map(ok)).is_ok());
 
 // ReLU preserves shape and stays in the integer fragment.
 let m = Sort::Int([3, 4]);
-assert!(LIA::ReLU().check([m].map(deg0), [m].map(deg0)).is_ok());
-assert!(LIA::ReLU().check([b].map(deg0), [b].map(deg0)).is_err());
+assert!(LIA::ReLU().check([m].map(ok), [m].map(ok)).is_ok());
+assert!(LIA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
 ```
 */
 
 use crate::*;
+use base::tangent::Tangent;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 use std::fmt;
@@ -53,6 +55,8 @@ use std::fmt;
 pub enum Sort {
     Int([usize; 2]),
     Bool([usize; 2]),
+    // the tangent of `Int` and `Bool` (they have only the zero derivative)
+    Zero([usize; 2]),
 }
 
 impl Sort {
@@ -66,8 +70,13 @@ impl Sort {
 
     pub fn shape(&self) -> &[usize; 2] {
         match self {
-            Sort::Bool(shape) | Sort::Int(shape) => shape,
+            Sort::Bool(shape) | Sort::Int(shape) | Sort::Zero(shape) => shape,
         }
+    }
+
+    /// Is this sort a tangent (i.e., a sort of derivatives)?
+    pub fn is_tangent(&self) -> bool {
+        matches!(self, Sort::Zero(..))
     }
 }
 
@@ -76,7 +85,14 @@ impl fmt::Display for Sort {
         match self {
             Sort::Int([i, j]) => write!(f, "Int({i}, {j})"),
             Sort::Bool([i, j]) => write!(f, "Bool({i}, {j})"),
+            Sort::Zero([i, j]) => write!(f, "Zero({i}, {j})"),
         }
+    }
+}
+
+impl Tangent for Sort {
+    fn tangent(&self) -> Self {
+        Sort::Zero(*self.shape())
     }
 }
 
@@ -129,8 +145,9 @@ impl Sequential for LIA {
 
 impl Combinatorial for LIA {
     fn havoc(range: &Sort) -> Self {
+        // a derivative cannot be havoced: the check of the term with `Zero` fails
         match range {
-            Sort::Int(shape) => LIA::AnyInt(*shape),
+            Sort::Int(shape) | Sort::Zero(shape) => LIA::AnyInt(*shape),
             Sort::Bool(shape) => LIA::AnyBool(*shape),
         }
     }
@@ -142,8 +159,8 @@ impl Theory for LIA {
 
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
+        R: IntoIterator<Item = Result<Sort, E>>,
+        W: IntoIterator<Item = Result<Sort, E>>,
     {
         match self {
             LIA::Int(cm) | LIA::Bool(cm) => check_const(cm, read, write),
@@ -200,10 +217,24 @@ impl Theory for LIA {
     }
 }
 
+/// The next sort, that must be a value (not a derivative)
+fn next_value<R, E: fmt::Display>(iter: &mut R, pos: usize) -> Result<Sort, String>
+where
+    R: Iterator<Item = Result<Sort, E>>,
+{
+    let sort = next_sort(iter, pos)?;
+    if sort.is_tangent() {
+        return Err(format!(
+            "Arg {pos} expected to be a value, got derivative {sort}"
+        ));
+    }
+    Ok(sort)
+}
+
 fn check_const<R, W, E: fmt::Display>(cm: &crate::PyTensor, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(Sort, u8), E>>,
-    W: IntoIterator<Item = Result<(Sort, u8), E>>,
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
@@ -211,7 +242,7 @@ where
         return Err("Const: cannot read values".into());
     }
     // the sort comes from the write wire; validate the tensor's kind matches it
-    let [i, j] = match next_expect_degree(&mut write, 0, 0)? {
+    let [i, j] = match next_value(&mut write, 0)? {
         Sort::Int([i, j]) => {
             if cm.is_bool() {
                 return Err("Const: write wire is Int but initializer is a boolean tensor".into());
@@ -226,6 +257,7 @@ where
             }
             [i, j]
         }
+        Sort::Zero(_) => unreachable!("`next_value` returns only values"),
     };
     let size = cm.size();
     if size.len() != 2 {
@@ -251,17 +283,14 @@ where
 
 fn check_bool<R, W, E: fmt::Display>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(Sort, u8), E>>,
-    W: IntoIterator<Item = Result<(Sort, u8), E>>,
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
         LIA::Not() => {
-            let (r, w) = (
-                next_expect_degree(&mut read, 0, 0)?,
-                next_expect_degree(&mut write, 0, 0)?,
-            );
+            let (r, w) = (next_value(&mut read, 0)?, next_value(&mut write, 0)?);
             if !matches!(r, Sort::Bool(..)) {
                 return Err(format!("{:?}: input must be Bool", op));
             }
@@ -277,10 +306,10 @@ where
             Ok(())
         }
         LIA::And() | LIA::Or() | LIA::Xor() => {
-            let w1 = next_expect_degree(&mut write, 0, 0)?;
+            let w1 = next_value(&mut write, 0)?;
             let (r1, r2, None) = (
-                next_expect_degree(&mut read, 0, 0)?,
-                next_expect_degree(&mut read, 1, 0)?,
+                next_value(&mut read, 0)?,
+                next_value(&mut read, 1)?,
                 read.next(),
             ) else {
                 return Err(format!("{:?}: must read exactly two values", op));
@@ -305,13 +334,13 @@ where
 
 fn check_cmp<R, W, E: fmt::Display>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(Sort, u8), E>>,
-    W: IntoIterator<Item = Result<(Sort, u8), E>>,
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    let r1 = next_expect_degree(&mut read, 0, 0)?;
-    let r2 = next_expect_degree(&mut read, 1, 0)?;
+    let r1 = next_value(&mut read, 0)?;
+    let r2 = next_value(&mut read, 1)?;
     if r1 != r2 {
         return Err(format!("{:?}: input values must have the same type", op));
     }
@@ -319,7 +348,7 @@ where
         Sort::Int(s) => s,
         _ => return Err(format!("{:?}: inputs must be Int matrices, got {r1}", op)),
     };
-    let w1 = next_expect_degree(&mut write, 0, 0)?;
+    let w1 = next_value(&mut write, 0)?;
     if w1 != Sort::Bool(shape) {
         return Err(format!(
             "{:?}: output must be Bool({:?}), got {w1}",
@@ -331,21 +360,21 @@ where
 
 fn check_mat_ops<R, W, E: fmt::Display>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(Sort, u8), E>>,
-    W: IntoIterator<Item = Result<(Sort, u8), E>>,
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
         LIA::Add() | LIA::Sub() => {
             let (r1, r2, None) = (
-                next_expect_degree(&mut read, 0, 0)?,
-                next_expect_degree(&mut read, 1, 0)?,
+                next_value(&mut read, 0)?,
+                next_value(&mut read, 1)?,
                 read.next(),
             ) else {
                 return Err(format!("{:?}: must read exactly two values", op));
             };
-            let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+            let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
 
@@ -367,10 +396,10 @@ where
             Ok(())
         }
         LIA::ReLU() => {
-            let (r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
+            let (r1, None) = (next_value(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+            let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             if r1 != w1 {
@@ -388,10 +417,10 @@ where
             Ok(())
         }
         LIA::Argmax() | LIA::Min() | LIA::Max() => {
-            let (_r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
+            let (_r1, None) = (next_value(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+            let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             match w1 {
@@ -420,13 +449,13 @@ fn check_linear_affine<R, W, E: fmt::Display>(
     write: &mut W,
 ) -> Result<(), String>
 where
-    R: Iterator<Item = Result<(Sort, u8), E>>,
-    W: Iterator<Item = Result<(Sort, u8), E>>,
+    R: Iterator<Item = Result<Sort, E>>,
+    W: Iterator<Item = Result<Sort, E>>,
 {
-    let (r1, None) = (next_expect_degree(read, 0, 0)?, read.next()) else {
+    let (r1, None) = (next_value(read, 0)?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
     };
-    let (w1, None) = (next_expect_degree(write, 0, 0)?, write.next()) else {
+    let (w1, None) = (next_value(write, 0)?, write.next()) else {
         return Err(format!("{:?}: must write exactly one value", op));
     };
 
@@ -482,15 +511,15 @@ where
 
 fn check_transpose<R, W, E: fmt::Display>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(Sort, u8), E>>,
-    W: IntoIterator<Item = Result<(Sort, u8), E>>,
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    let (r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
+    let (r1, None) = (next_value(&mut read, 0)?, read.next()) else {
         return Err(format!("{:?}: must read exactly one value", op));
     };
-    let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+    let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
         return Err(format!("{:?}: must write exactly one value", op));
     };
     match (r1, w1) {
@@ -509,17 +538,17 @@ where
 
 fn check_flow<R, W, E: fmt::Display>(op: &LIA, read: R, write: W) -> Result<(), String>
 where
-    R: IntoIterator<Item = Result<(Sort, u8), E>>,
-    W: IntoIterator<Item = Result<(Sort, u8), E>>,
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
         LIA::Id() => {
-            let (r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
+            let (r1, None) = (next_value(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
-            let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+            let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             if r1 != w1 {
@@ -532,14 +561,14 @@ where
         }
         LIA::Ite() => {
             let (r1, r2, r3, None) = (
-                next_expect_degree(&mut read, 0, 0)?,
-                next_expect_degree(&mut read, 1, 0)?,
-                next_expect_degree(&mut read, 2, 0)?,
+                next_value(&mut read, 0)?,
+                next_value(&mut read, 1)?,
+                next_value(&mut read, 2)?,
                 read.next(),
             ) else {
                 return Err(format!("{:?}: must read exactly three values", op));
             };
-            let (w1, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+            let (w1, None) = (next_value(&mut write, 0)?, write.next()) else {
                 return Err(format!("{:?}: must write exactly one value", op));
             };
             if r2 != r3 {
@@ -578,8 +607,8 @@ mod tests {
         Sort::Bool([r, c])
     }
 
-    fn deg0(s: Sort) -> Result<(Sort, u8), String> {
-        Ok((s, 0))
+    fn ok(s: Sort) -> Result<Sort, String> {
+        Ok(s)
     }
 
     #[test]
@@ -592,18 +621,14 @@ mod tests {
     #[test]
     fn const_int_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
-        assert!(
-            LIA::Int(cm)
-                .check([].map(deg0), [int(2, 2)].map(deg0))
-                .is_ok()
-        );
+        assert!(LIA::Int(cm).check([].map(ok), [int(2, 2)].map(ok)).is_ok());
     }
 
     #[test]
     fn const_int_bool_write_fails() {
         assert!(
             LIA::Int(tch::Tensor::from_slice2(&[[0i64]]).into())
-                .check([].map(deg0), [bool_t(1, 1)].map(deg0))
+                .check([].map(ok), [bool_t(1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -612,7 +637,7 @@ mod tests {
     fn const_int_wrong_rows_fails() {
         assert!(
             LIA::Int(tch::Tensor::from_slice2(&[[0i64]]).into())
-                .check([].map(deg0), [int(2, 1)].map(deg0))
+                .check([].map(ok), [int(2, 1)].map(ok))
                 .is_err()
         );
     }
@@ -622,7 +647,7 @@ mod tests {
         let t = int(1, 1);
         assert!(
             LIA::Int(tch::Tensor::from_slice2(&[[0i64]]).into())
-                .check([t].map(deg0), [t].map(deg0))
+                .check([t].map(ok), [t].map(ok))
                 .is_err()
         );
     }
@@ -632,7 +657,7 @@ mod tests {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
             LIA::Int(cm)
-                .check([].map(deg0), [bool_t(2, 2)].map(deg0))
+                .check([].map(ok), [bool_t(2, 2)].map(ok))
                 .is_ok()
         );
     }
@@ -641,7 +666,7 @@ mod tests {
     fn const_bool_int_write_fails() {
         assert!(
             LIA::Int(tch::Tensor::from_slice2(&[[true]]).into())
-                .check([].map(deg0), [int(1, 1)].map(deg0))
+                .check([].map(ok), [int(1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -649,31 +674,31 @@ mod tests {
     #[test]
     fn not_ok() {
         let b = bool_t(2, 3);
-        assert!(LIA::Not().check([b].map(deg0), [b].map(deg0)).is_ok());
+        assert!(LIA::Not().check([b].map(ok), [b].map(ok)).is_ok());
     }
 
     #[test]
     fn not_int_input_fails() {
         let t = int(1, 1);
-        assert!(LIA::Not().check([t].map(deg0), [t].map(deg0)).is_err());
+        assert!(LIA::Not().check([t].map(ok), [t].map(ok)).is_err());
     }
 
     #[test]
     fn and_ok() {
         let b = bool_t(2, 2);
-        assert!(LIA::And().check([b, b].map(deg0), [b].map(deg0)).is_ok());
+        assert!(LIA::And().check([b, b].map(ok), [b].map(ok)).is_ok());
     }
 
     #[test]
     fn or_ok() {
         let b = bool_t(1, 1);
-        assert!(LIA::Or().check([b, b].map(deg0), [b].map(deg0)).is_ok());
+        assert!(LIA::Or().check([b, b].map(ok), [b].map(ok)).is_ok());
     }
 
     #[test]
     fn xor_ok() {
         let b = bool_t(3, 1);
-        assert!(LIA::Xor().check([b, b].map(deg0), [b].map(deg0)).is_ok());
+        assert!(LIA::Xor().check([b, b].map(ok), [b].map(ok)).is_ok());
     }
 
     #[test]
@@ -681,7 +706,7 @@ mod tests {
         let b = bool_t(1, 1);
         assert!(
             LIA::And()
-                .check([b, b].map(deg0), [int(1, 1)].map(deg0))
+                .check([b, b].map(ok), [int(1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -690,10 +715,7 @@ mod tests {
     fn and_type_mismatch_fails() {
         assert!(
             LIA::And()
-                .check(
-                    [bool_t(1, 1), bool_t(1, 2)].map(deg0),
-                    [bool_t(1, 1)].map(deg0)
-                )
+                .check([bool_t(1, 1), bool_t(1, 2)].map(ok), [bool_t(1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -702,14 +724,14 @@ mod tests {
     fn lt_ok() {
         assert!(
             LIA::Lt()
-                .check([int(1, 1), int(1, 1)].map(deg0), [bool_t(1, 1)].map(deg0))
+                .check([int(1, 1), int(1, 1)].map(ok), [bool_t(1, 1)].map(ok))
                 .is_ok()
         );
     }
 
     #[test]
     fn le_ok() {
-        let res = LIA::Le().check([int(2, 3), int(2, 3)].map(deg0), [bool_t(2, 3)].map(deg0));
+        let res = LIA::Le().check([int(2, 3), int(2, 3)].map(ok), [bool_t(2, 3)].map(ok));
         assert!(res.is_ok(), "result: {:?}", res);
     }
 
@@ -717,17 +739,17 @@ mod tests {
     fn eq_ok() {
         assert!(
             LIA::Eq()
-                .check([int(3, 2), int(3, 2)].map(deg0), [bool_t(3, 2)].map(deg0))
+                .check([int(3, 2), int(3, 2)].map(ok), [bool_t(3, 2)].map(ok))
                 .is_ok()
         );
         assert!(
             LIA::Eq()
-                .check([int(3, 3), int(3, 2)].map(deg0), [bool_t(3, 2)].map(deg0))
+                .check([int(3, 3), int(3, 2)].map(ok), [bool_t(3, 2)].map(ok))
                 .is_err()
         );
         assert!(
             LIA::Eq()
-                .check([int(3, 2), int(3, 2)].map(deg0), [bool_t(3, 3)].map(deg0))
+                .check([int(3, 2), int(3, 2)].map(ok), [bool_t(3, 3)].map(ok))
                 .is_err()
         );
     }
@@ -735,14 +757,14 @@ mod tests {
     #[test]
     fn cmp_non_bool_output_fails() {
         let t = int(1, 1);
-        assert!(LIA::Lt().check([t, t].map(deg0), [t].map(deg0)).is_err());
+        assert!(LIA::Lt().check([t, t].map(ok), [t].map(ok)).is_err());
     }
 
     #[test]
     fn cmp_input_mismatch_fails() {
         assert!(
             LIA::Eq()
-                .check([int(1, 1), int(1, 2)].map(deg0), [bool_t(1, 1)].map(deg0))
+                .check([int(1, 1), int(1, 2)].map(ok), [bool_t(1, 1)].map(ok))
                 .is_err()
         );
     }
@@ -750,14 +772,14 @@ mod tests {
     #[test]
     fn add_ok() {
         let t = int(3, 4);
-        assert!(LIA::Add().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(LIA::Add().check([t, t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn add_shape_mismatch_fails() {
         assert!(
             LIA::Add()
-                .check([int(1, 2), int(2, 1)].map(deg0), [int(1, 2)].map(deg0))
+                .check([int(1, 2), int(2, 1)].map(ok), [int(1, 2)].map(ok))
                 .is_err()
         );
     }
@@ -765,26 +787,26 @@ mod tests {
     #[test]
     fn add_bool_fails() {
         let b = bool_t(1, 1);
-        assert!(LIA::Add().check([b, b].map(deg0), [b].map(deg0)).is_err());
+        assert!(LIA::Add().check([b, b].map(ok), [b].map(ok)).is_err());
     }
 
     #[test]
     fn relu_ok() {
         let t = int(3, 4);
-        assert!(LIA::ReLU().check([t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(LIA::ReLU().check([t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn relu_bool_fails() {
         let b = bool_t(1, 1);
-        assert!(LIA::ReLU().check([b].map(deg0), [b].map(deg0)).is_err());
+        assert!(LIA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
     }
 
     #[test]
     fn argmax_ok() {
         assert!(
             LIA::Argmax()
-                .check([int(3, 4)].map(deg0), [int(1, 4)].map(deg0))
+                .check([int(3, 4)].map(ok), [int(1, 4)].map(ok))
                 .is_ok()
         );
     }
@@ -793,7 +815,7 @@ mod tests {
     fn argmax_matrix_output_fails() {
         assert!(
             LIA::Argmax()
-                .check([int(3, 4)].map(deg0), [int(3, 4)].map(deg0))
+                .check([int(3, 4)].map(ok), [int(3, 4)].map(ok))
                 .is_err()
         );
     }
@@ -802,7 +824,7 @@ mod tests {
     fn min_ok() {
         assert!(
             LIA::Min()
-                .check([int(4, 1)].map(deg0), [int(1, 1)].map(deg0))
+                .check([int(4, 1)].map(ok), [int(1, 1)].map(ok))
                 .is_ok()
         );
     }
@@ -817,7 +839,7 @@ mod tests {
             tch::Tensor::zeros([0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(
             LIA::Linear(a, b)
-                .check([int(3, 4)].map(deg0), [int(2, 4)].map(deg0))
+                .check([int(3, 4)].map(ok), [int(2, 4)].map(ok))
                 .is_ok()
         );
     }
@@ -831,7 +853,7 @@ mod tests {
             tch::Tensor::zeros([2, 1], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(
             LIA::Linear(a, b)
-                .check([int(3, 1)].map(deg0), [int(2, 1)].map(deg0))
+                .check([int(3, 1)].map(ok), [int(2, 1)].map(ok))
                 .is_ok()
         );
     }
@@ -845,7 +867,7 @@ mod tests {
             tch::Tensor::zeros([0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(
             LIA::Linear(a, b)
-                .check([int(4, 1)].map(deg0), [int(2, 1)].map(deg0))
+                .check([int(4, 1)].map(ok), [int(2, 1)].map(ok))
                 .is_err()
         );
     }
@@ -854,7 +876,7 @@ mod tests {
     fn transpose_ok() {
         assert!(
             LIA::Transpose()
-                .check([int(3, 4)].map(deg0), [int(4, 3)].map(deg0))
+                .check([int(3, 4)].map(ok), [int(4, 3)].map(ok))
                 .is_ok()
         );
     }
@@ -863,7 +885,7 @@ mod tests {
     fn transpose_wrong_shape_fails() {
         assert!(
             LIA::Transpose()
-                .check([int(3, 4)].map(deg0), [int(3, 4)].map(deg0))
+                .check([int(3, 4)].map(ok), [int(3, 4)].map(ok))
                 .is_err()
         );
     }
@@ -873,7 +895,7 @@ mod tests {
         let t = int(3, 4);
         assert!(
             LIA::Ite()
-                .check([bool_t(1, 1), t, t].map(deg0), [t].map(deg0))
+                .check([bool_t(1, 1), t, t].map(ok), [t].map(ok))
                 .is_ok()
         );
     }
@@ -881,11 +903,7 @@ mod tests {
     #[test]
     fn ite_non_bool_guard_fails() {
         let t = int(1, 1);
-        assert!(
-            LIA::Ite()
-                .check([t, t, t].map(deg0), [t].map(deg0))
-                .is_err()
-        );
+        assert!(LIA::Ite().check([t, t, t].map(ok), [t].map(ok)).is_err());
     }
 
     #[test]
@@ -893,8 +911,8 @@ mod tests {
         assert!(
             LIA::Ite()
                 .check(
-                    [bool_t(1, 1), int(1, 1), int(1, 2)].map(deg0),
-                    [int(1, 1)].map(deg0)
+                    [bool_t(1, 1), int(1, 1), int(1, 2)].map(ok),
+                    [int(1, 1)].map(ok)
                 )
                 .is_err()
         );
@@ -903,15 +921,30 @@ mod tests {
     #[test]
     fn id_ok() {
         let t = int(4, 4);
-        assert!(LIA::Id().check([t].map(deg0), [t].map(deg0)).is_ok());
+        assert!(LIA::Id().check([t].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]
     fn id_type_mismatch_fails() {
         assert!(
             LIA::Id()
-                .check([int(1, 1)].map(deg0), [int(2, 2)].map(deg0))
+                .check([int(1, 1)].map(ok), [int(2, 2)].map(ok))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn check_derivatives() {
+        // the derivatives of integers and booleans are zero
+        let z = int(2, 3).tangent();
+        assert_eq!(z, Sort::Zero([2, 3]));
+        assert_eq!(bool_t(2, 3).tangent(), z);
+        assert_eq!(z.tangent(), z);
+        // operations on values do not apply to derivatives
+        let t = int(2, 3);
+        assert!(LIA::Add().check([z, z].map(ok), [z].map(ok)).is_err());
+        assert!(LIA::Add().check([t, t].map(ok), [z].map(ok)).is_err());
+        assert!(LIA::Id().check([z].map(ok), [z].map(ok)).is_err());
+        assert!(LIA::AnyInt([2, 3]).check([].map(ok), [z].map(ok)).is_err());
     }
 }

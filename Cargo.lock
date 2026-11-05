@@ -819,6 +819,7 @@ dependencies = [
 name = "theory"
 version = "0.1.0"
 dependencies = [
+ "base",
  "derive_more",
  "pyo3",
  "pyo3-tch",
