@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use verilog::ast::{Const, Dir, Override, Ty};
 use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, lower_inst};
-use verilog::miter::{self, Verdict};
+use verilog::miter::{self, Side, Verdict};
 use verilog::{BitVec, typing, yosys, z3};
 
 fn examples() -> Vec<PathBuf> {
@@ -350,4 +350,198 @@ fn registers_mismatch() {
         "the translations do not match: register `q` has width 8, in Yosys 4; \
          `en` is not a Yosys wire"
     );
+}
+
+/// The variables on which `m` finds the two sides different, each with
+/// the side the replay of its counterexample attributes it to, and the
+/// latched variable it is decided on, if any.
+type Blame = (String, Side, Option<String>);
+
+/// Every input is made to differ between `|s|` and `|s'|`, so that a
+/// replay that mixes them up gives other values.
+fn blame(z3: &Path, inst: &Inst, t: &Translation, m: &miter::Miter) -> Vec<Blame> {
+    let mut m = m.clone();
+    for (i, n) in m.inputs.iter().zip(&m.next_inputs) {
+        m.script += &format!("(assert (distinct {} {}))\n", i.term, n.term);
+    }
+    let m = &m;
+    let mut blamed = vec![];
+    for (name, verdict) in miter::check(z3, m).unwrap() {
+        let q = m.queries.iter().find(|q| q.name == name).unwrap();
+        if verdict == Verdict::Equal {
+            let e = miter::counterexample(z3, m, q).unwrap_err();
+            assert!(e.contains("the query is unsat"), "{e}");
+            continue;
+        }
+        assert_eq!(verdict, Verdict::Differs);
+        let cex = miter::counterexample(z3, m, q).unwrap();
+        assert_ne!(cex.ours, cex.theirs, "{cex}");
+        let r = miter::replay(inst, t, &cex).unwrap();
+        eprintln!("{cex}\n  {r}");
+        blamed.push((name, r.side, r.via.map(|v| v.name)));
+    }
+    blamed
+}
+
+/// A wrong round on our side: the module is lowered from an edited source,
+/// the reference runs the original, and the replay finds that it agrees
+/// with Yosys on every differing variable. Also in a hierarchy, where the
+/// registers are known by path (`m1.l.q`) and not by their variables.
+#[test]
+fn counterexample_ours_wrong() {
+    let Some((yosys, z3)) = tools() else { return };
+    for (example, from, to, expected) in [
+        ("counter.sv", "q + 8'd1", "q - 8'd1", &["q", "full"][..]),
+        ("counter.sv", "&q", "|q", &["full"]),
+        ("nest.sv", "o = s + q", "o = s - q", &["y", "z", "m2.l.d"]),
+        // combinational: the next values depend on the inputs of `|s'|`
+        ("adder.sv", "sum = a + b", "sum = a - b", &["sum", "carry"]),
+    ] {
+        let path = examples()
+            .into_iter()
+            .find(|p| p.ends_with(example))
+            .unwrap();
+        let (inst, _) = load(&path);
+        let source = std::fs::read_to_string(&path).unwrap();
+        assert!(source.contains(from));
+        let edited = elab::load(&source.replace(from, to), &path).unwrap();
+        let t = lower_inst(&edited).unwrap();
+        let ys = yosys::run(&yosys, &path, &t.name, &[]).unwrap();
+        let m = miter::build(&t, &ys).unwrap();
+        let blamed = blame(&z3, &inst, &t, &m);
+        let names: Vec<&str> = blamed.iter().map(|(n, ..)| n.as_str()).collect();
+        assert_eq!(names, expected, "{example}: {from} -> {to}");
+        for (name, side, via) in blamed {
+            assert_eq!((side, via), (Side::Theirs, None), "{example}: `{name}`");
+        }
+    }
+}
+
+/// A wrong transition on Yosys's side, edited in its SMT-LIB text: the
+/// replay finds that the reference agrees with ours.
+#[test]
+fn counterexample_theirs_wrong() {
+    let Some((yosys, z3)) = tools() else { return };
+    let direct = |names: &[&str]| -> Vec<Blame> {
+        let blame = |n: &&str| (n.to_string(), Side::Ours, None);
+        names.iter().map(blame).collect()
+    };
+    let via = |name: &str| (name.to_string(), Side::Ours, Some("m2.l.d".to_string()));
+    for (example, from, to, mut expected) in [
+        // the increment of `q`
+        ("counter.sv", "(bvadd ", "(bvsub ", direct(&["q", "full"])),
+        // combinational: the next values depend on the inputs of `|s'|`
+        ("adder.sv", "(bvadd ", "(bvsub ", direct(&["carry", "sum"])),
+        // the constant K = 4'd7 of `m2.l`
+        (
+            "nest.sv",
+            "#b0111)",
+            "#b0110)",
+            direct(&["m2.l.d", "m2.s", "z"]),
+        ),
+        // only the named wire `m2.l.d`, which our round reads latched (as
+        // the next value of register `m2.l.q`): Yosys's transition does not
+        // use it, so the variables computed from `m2.q` differ only through
+        // that latched value, on which the replay then decides
+        (
+            "nest.sv",
+            "(define-fun |nest_n m2.l.d| ((state |nest_s|)) (_ BitVec 4) (|nest#7| state))",
+            "(define-fun |nest_n m2.l.d| ((state |nest_s|)) (_ BitVec 4) (bvnot (|nest#7| state)))",
+            vec![
+                via("m2.q"),
+                via("m2.s"),
+                via("z"),
+                ("m2.l.d".into(), Side::Ours, None),
+            ],
+        ),
+    ] {
+        let path = examples()
+            .into_iter()
+            .find(|p| p.ends_with(example))
+            .unwrap();
+        let (inst, t) = load(&path);
+        let mut ys = yosys::run(&yosys, &path, &t.name, &[]).unwrap();
+        assert_eq!(ys.text.matches(from).count(), 1, "{example}: {from}");
+        ys.text = ys.text.replace(from, to);
+        let m = miter::build(&t, &ys).unwrap();
+        let mut blamed = blame(&z3, &inst, &t, &m);
+        blamed.sort_by(|a, b| a.0.cmp(&b.0));
+        expected.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(blamed, expected, "{example}: {from} -> {to}");
+    }
+}
+
+/// Wrong on both sides: our `q` counts down, Yosys's stays, the reference
+/// counts up, so the reference agrees with neither.
+#[test]
+fn counterexample_both_wrong() {
+    let Some((yosys, z3)) = tools() else { return };
+    let path = examples()
+        .into_iter()
+        .find(|p| p.ends_with("counter.sv"))
+        .unwrap();
+    let (inst, _) = load(&path);
+    let source = std::fs::read_to_string(&path).unwrap();
+    let edited = elab::load(&source.replace("q + 8'd1", "q - 8'd1"), &path).unwrap();
+    let t = lower_inst(&edited).unwrap();
+    let mut ys = yosys::run(&yosys, &path, &t.name, &[]).unwrap();
+    assert_eq!(ys.text.matches("(bvadd ").count(), 1);
+    ys.text = ys.text.replace("(bvadd ", "(bvmul ");
+    let m = miter::build(&t, &ys).unwrap();
+    let blamed = blame(&z3, &inst, &t, &m);
+    assert_eq!(blamed[0], ("q".into(), Side::Neither, None));
+}
+
+/// A wrong SMT text of our round, with our module right: `rm_sim` does not
+/// compute the value of our side in the model.
+#[test]
+fn counterexample_our_smt_wrong() {
+    let Some((yosys, z3)) = tools() else { return };
+    let path = examples()
+        .into_iter()
+        .find(|p| p.ends_with("counter.sv"))
+        .unwrap();
+    let (inst, t, mut m) = {
+        let (inst, _) = load(&path);
+        let (t, _, m) = miter_of(&yosys, &path);
+        (inst, t, m)
+    };
+    let up = "(bvadd |*q| |%1|)";
+    assert!(m.script.contains(up));
+    m.script = m.script.replace(up, "(bvsub |*q| |%1|)");
+    assert_eq!(
+        blame(&z3, &inst, &t, &m),
+        [
+            ("q".into(), Side::OurSmt, None),
+            ("full".into(), Side::OurSmt, None)
+        ]
+    );
+}
+
+/// A counterexample names every register by path and every input but the
+/// clock, on both states, with their widths.
+#[test]
+fn counterexample_contents() {
+    let Some((yosys, z3)) = tools() else { return };
+    let path = examples()
+        .into_iter()
+        .find(|p| p.ends_with("nest.sv"))
+        .unwrap();
+    let (_, ys, m) = miter_of(&yosys, &path);
+    let mut q = m.queries.iter().find(|q| q.name == "z").unwrap().clone();
+    // make the query satisfiable: our `z` is off by one
+    q.ours = format!("(bvadd {} #b0001)", q.ours);
+    let cex = miter::counterexample(&z3, &m, &q).unwrap();
+    let widths = |vs: &verilog::ast_interp::Values| -> Vec<(String, usize)> {
+        vs.iter().map(|(n, v)| (n.clone(), v.width())).collect()
+    };
+    let regs = [("m1.l.q".to_string(), 4), ("m2.l.q".to_string(), 4)];
+    assert_eq!(widths(&cex.registers), regs);
+    assert_eq!(widths(&cex.inputs), [("a".to_string(), 4)]);
+    assert_eq!(widths(&cex.next_inputs), [("a".to_string(), 4)]);
+    assert_eq!(cex.ours.width(), 4);
+    assert_eq!(BitVec::wrap(4, cex.theirs.unsigned() + 1u32), cex.ours);
+    assert!(ys.inputs.contains_key("clk"));
+    let text = cex.to_string();
+    assert!(text.starts_with("`z` is "), "{text}");
 }
