@@ -1,12 +1,15 @@
  name = "ZerothHammerTests"
  version = "0.1.0"
- defaultTargets = ["ZerothHammerTests", "ZerothHammer", "Certs", "ManualTests", "Playground"]
+ defaultTargets = ["ZerothHammerTests", "ZerothHammer", "ManualTests", "Playground"]
 
  # Generated: standalone zeroth_hammer tactic (no module-specific macros)
  [[lean_lib]]
  name = "ZerothHammer"
 
- # Generated: self-contained certificate proofs (one per module, inline init/update)
+ # Generated: self-contained certificate proofs (one per module, inline init/update).
+ # Not a default target: there is no root `Certs.lean`, and there cannot be
+ # one -- every file declares its own `init`/`update` -- so each is built as
+ # a module of its own (`lake build Certs.<Name>`).
  [[lean_lib]]
  name = "Certs"
 
@@ -28,7 +31,7 @@
  [[require]]
  name = "cslib"
  scope = "leanprover"
- rev = "v4.28.0"
+ rev = "v4.34.0"
 
  # `Relational.*`, from the reactor-lean checkout beside this repository.
  [[require]]

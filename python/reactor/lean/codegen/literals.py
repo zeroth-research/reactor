@@ -97,7 +97,7 @@ def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     Generate a top-level Lean definition for a constant tensor.
 
     E.g.:
-        @[simp] def A : Fin 3 → Fin 2 → Int := fun i j =>
+        @[simp, reducible] def A : Fin 3 → Fin 2 → Int := fun i j =>
           match i, j with
           | 0, 0 => 0 | 0, 1 => 1
           ...
@@ -105,6 +105,13 @@ def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     A Real one is `noncomputable`: `lean_real` writes `1.5` as
     `((3 : Real) / 2)`, and Lean cannot compile a definition that divides
     Reals.
+
+    It is `reducible` because a comparison against it becomes a `decide`,
+    whose `Decidable` instance still names the constant once `simp` has
+    unfolded it in the proposition. From Lean v4.34 `simp` will not rewrite
+    a term whose instance only agrees with it through a semireducible
+    unfolding ("not type-correct under the `implicit` transparency
+    level"), so the `_scalar_eq` proofs stop short of the `if` it guards.
     """
     shape = wire_shape(wire)
     noncomp = "noncomputable " if isinstance(wire.dtype, Real) else ""
@@ -113,10 +120,10 @@ def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
         val = lean_literal(wire.dtype, tensor.item())
         ty = dtype_to_lean_type(wire)
         assert "Mat" in ty and " 1 1" in ty, ty
-        return f"@[simp] {noncomp}def {name} : {ty} := fun _ _ => {val}\n"
+        return f"@[simp, reducible] {noncomp}def {name} : {ty} := fun _ _ => {val}\n"
 
     # Matrix constant
-    lines = [f"@[simp] {noncomp}def {name} : {dtype_to_lean_type(wire)} := fun i j =>"]
+    lines = [f"@[simp, reducible] {noncomp}def {name} : {dtype_to_lean_type(wire)} := fun i j =>"]
     lines.append("  match i, j with")
 
     data = tensor.reshape(shape.m, shape.n)

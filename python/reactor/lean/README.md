@@ -455,7 +455,7 @@ A Lean 4 elaborator tactic that cascades proof strategies:
 |-------|--------|
 | 0 | `simp_mat` alone (trivial / True goals) |
 | 1 | `omega`, `norm_cast; omega`, `simp_mat; omega`, `simp_mat; linarith` |
-| 2 | `push_neg; simp_mat; omega` |
+| 2 | `push Not; simp_mat; omega` |
 | 3 | `simp_mat` + nested `split` (up to 4 levels) + `omega`/`linarith` |
 | 4 | `simp_defs` + nested `split` + `omega` |
 | 5 | `simp_defs` → `simp_mat` → `mat_collapse` → `split_ifs` → `omega` |
