@@ -269,3 +269,85 @@ fn miter_errors() {
     let e = miter::check(&z3, &bad).unwrap_err();
     assert!(e.contains("unexpected z3 output"), "{e}");
 }
+
+/// On every example, the registers of our translation are Yosys's, with
+/// the same widths.
+#[test]
+fn registers_match_examples() {
+    let Some(yosys) = yosys::find() else {
+        eprintln!("yosys not found: skipped");
+        return;
+    };
+    for path in examples() {
+        let (inst, t) = load(&path);
+        let ys = yosys::run(&yosys, &path, &t.name, &[])
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert_eq!(
+            miter::registers(&t, &ys),
+            Vec::<String>::new(),
+            "{}",
+            path.display()
+        );
+        assert_eq!(ys.registers, registers(&inst), "{}", path.display());
+    }
+}
+
+/// A register on one side only, or of another width, is named in the
+/// error of `build`, next to the other mismatches; registers are compared
+/// by path, also where the register's variable has another name.
+#[test]
+fn registers_mismatch() {
+    let Some(yosys) = yosys::find() else {
+        eprintln!("yosys not found: skipped");
+        return;
+    };
+    let example = |name: &str| {
+        let path = examples().into_iter().find(|p| p.ends_with(name)).unwrap();
+        let (_, t) = load(&path);
+        let ys = yosys::run(&yosys, &path, &t.name, &[]).unwrap();
+        (t, ys)
+    };
+
+    // `nest`: register `m1.l.q` is the variable `m1.q`
+    let (t, ys) = example("nest.sv");
+    assert!(ys.registers.contains_key("m1.l.q"));
+    assert!(!t.vars.contains_key("m1.l.q"));
+    let mut other = ys.clone();
+    other.registers.remove("m1.l.q");
+    other.registers.insert("m2.l.q".into(), 3);
+    other.registers.insert("m1.q".into(), 4);
+    assert_eq!(
+        miter::registers(&t, &other),
+        [
+            "register `m1.l.q` is not a Yosys register",
+            "Yosys register `m1.q` is not one of ours",
+            "register `m2.l.q` has width 4, in Yosys 3",
+        ]
+    );
+    let e = miter::build(&t, &other).unwrap_err();
+    assert!(
+        e.contains("register `m1.l.q` is not a Yosys register"),
+        "{e}"
+    );
+
+    // a register we lost: the miter would be unsound without the check,
+    // since every name the round uses is still a Yosys wire
+    let (mut t, ys) = example("counter.sv");
+    t.registers.clear();
+    assert_eq!(
+        miter::registers(&t, &ys),
+        ["Yosys register `q` is not one of ours"]
+    );
+    assert!(miter::build(&t, &ys).is_err());
+
+    // register errors come first, wire errors are still reported
+    let (t, mut ys) = example("counter.sv");
+    ys.registers.insert("q".into(), 4);
+    ys.wires.remove("en");
+    let e = miter::build(&t, &ys).unwrap_err();
+    assert_eq!(
+        e,
+        "the translations do not match: register `q` has width 8, in Yosys 4; \
+         `en` is not a Yosys wire"
+    );
+}

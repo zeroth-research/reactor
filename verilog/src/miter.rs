@@ -31,8 +31,9 @@ in one z3 run, each between `push` and `pop`.
 If every query is `unsat`, the two translations agree on every variable
 in every round after the first, from every state and for every input: the
 latched values of the registers are arbitrary in `|s|`, and Yosys's
-registers are exactly ours ([`Smt2::registers`] = the register
-paths), so this covers every reachable state without induction. Latched
+registers are exactly ours, with the same widths ([`build`] checks this
+with [`registers`]), so this covers every reachable state without
+induction. Latched
 values of combinational signals (read by `always_ff` blocks) are tied to
 their wires in `|s|`, where Yosys computes them from the registers and
 inputs, as our previous round did. The init round is not compared: without
@@ -41,9 +42,10 @@ combinational atoms have the same init and update blocks.
 */
 
 use crate::ast::Name;
-use crate::lower::Translation;
+use crate::lower::{Translation, init_name};
 use crate::smt::{self, Phase};
 use crate::yosys::Smt2;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 /// The state before the transition.
@@ -89,12 +91,44 @@ pub enum Verdict {
     Unknown,
 }
 
+/// The differences between the registers of `t` and those of Yosys's
+/// translation `ys`, one message each, by path: a register on one side
+/// only, or of different widths. Registers are compared by path (`u.v.q`),
+/// as Yosys names them, not by the name of their variable in `t`, which
+/// can be a parent's signal connected to the instance's output; the width
+/// of a register `p` is that of its variable `p@init`.
+pub fn registers(t: &Translation, ys: &Smt2) -> Vec<String> {
+    let ours: BTreeMap<&str, usize> = t
+        .registers
+        .iter()
+        .map(|p| (p.as_str(), t.var(&init_name(p)).dtype().width()))
+        .collect();
+    let paths: BTreeSet<&str> = ours
+        .keys()
+        .copied()
+        .chain(ys.registers.keys().map(|p| p.as_str()))
+        .collect();
+    let mut errors = vec![];
+    for p in paths {
+        match (ours.get(p), ys.registers.get(p)) {
+            (Some(w), Some(y)) if w != y => {
+                errors.push(format!("register `{p}` has width {w}, in Yosys {y}"));
+            }
+            (Some(_), None) => errors.push(format!("register `{p}` is not a Yosys register")),
+            (None, Some(_)) => errors.push(format!("Yosys register `{p}` is not one of ours")),
+            _ => {}
+        }
+    }
+    errors
+}
+
 /// The miter of the update round of `t` and the Yosys translation `ys` of
-/// the same design. Fails, listing them all, if a variable the round uses
-/// is not a Yosys wire or has a different width there.
+/// the same design. Fails, listing them all, if the registers differ
+/// ([`registers`]), or if a variable the round uses is not a Yosys wire or
+/// has a different width there.
 pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
     let round = smt::round(t, Phase::Update);
-    let mut errors = vec![];
+    let mut errors = registers(t, ys);
     let mut value = |name: &str, state: &str| {
         let width = t.var(name).dtype().width();
         match ys.wires.get(name) {
@@ -139,7 +173,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
     }
     if !errors.is_empty() {
         return Err(format!(
-            "the translations do not match by name: {}",
+            "the translations do not match: {}",
             errors.join("; ")
         ));
     }
