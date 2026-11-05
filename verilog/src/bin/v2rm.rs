@@ -1,15 +1,19 @@
-//! `v2rm [--top NAME] [-G NAME=VALUE]… [--instances] FILE.sv`: translates
-//! the top module of a SystemVerilog file (with its instances) and prints
-//! the reactive module. `-G` sets a parameter of the top module to a
-//! constant expression. `--instances` first prints the module of every
+//! `v2rm [--top NAME] [-G NAME=VALUE]… [--instances | --smt | --smt-init] FILE.sv`:
+//! translates the top module of a SystemVerilog file (with its instances)
+//! and prints the reactive module. `-G` sets a parameter of the top module
+//! to a constant expression. `--instances` first prints the module of every
 //! instance as it is composed into its parent, children before parents.
+//! `--smt` prints an update round of the module as an SMT-LIB script
+//! instead, `--smt-init` the init round.
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 use verilog::ast::{Error, Override, Span};
+use verilog::smt::{self, Phase};
 use verilog::{constant, elab, frontend, lower};
 
-const USAGE: &str = "usage: v2rm [--top NAME] [-G NAME=VALUE]... [--instances] FILE.sv";
+const USAGE: &str =
+    "usage: v2rm [--top NAME] [-G NAME=VALUE]... [--instances | --smt | --smt-init] FILE.sv";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -17,10 +21,13 @@ fn main() -> ExitCode {
     let mut params = Vec::new();
     let mut path = None;
     let mut instances = false;
+    let mut smt = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--top" => top = args.next(),
             "--instances" => instances = true,
+            "--smt" => smt = Some(Phase::Update),
+            "--smt-init" => smt = Some(Phase::Init),
             "-G" => match args.next() {
                 Some(p) => params.push(p),
                 None => return usage(),
@@ -33,6 +40,9 @@ fn main() -> ExitCode {
     let Some(path) = path else {
         return usage();
     };
+    if instances && smt.is_some() {
+        return usage();
+    }
     let result = (|| {
         let d = frontend::parse_design_file(&path)?;
         let top = match top {
@@ -61,6 +71,10 @@ fn main() -> ExitCode {
         Ok(t) => {
             for name in &t.unread_inputs {
                 eprintln!("{path}: warning: input `{name}` is never read and is left out");
+            }
+            if let Some(phase) = smt {
+                print!("(set-logic QF_BV)\n{}", smt::round(&t, phase).text);
+                return ExitCode::SUCCESS;
             }
             if instances {
                 for part in &t.instances {

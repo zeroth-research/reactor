@@ -1,7 +1,8 @@
 //! The example designs in `examples/`: printed modules against golden
-//! files, structure, the AST semantics against the translated module, and
-//! the AST semantics against iverilog, on random initial register values
-//! and random input traces.
+//! files, structure, the AST semantics against the
+//! translated module, the SMT-LIB rounds against the translated module (with
+//! z3), and the AST semantics against iverilog, on random initial register
+//! values and random input traces.
 //!
 //! `UPDATE_GOLDEN=1 cargo test -p verilog --test examples` rewrites the
 //! golden files in `tests/golden/`.
@@ -14,7 +15,8 @@ use verilog::ast_interp::{Interp, Values};
 use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, init_name, lower_inst};
 use verilog::rm_sim::{Sim, Valuation};
-use verilog::{BitVec, typing};
+use verilog::smt::{self, Phase};
+use verilog::{BitVec, typing, z3};
 
 fn examples() -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
@@ -260,6 +262,75 @@ fn rm_matches_ast() {
             }
         }
     }
+}
+
+/// The SMT-LIB rounds define the next values `rm_sim` computes: on random
+/// traces, z3 proves that each round, given the declared values of the
+/// trace (latched values from the previous round, next values of external
+/// variables from this one), defines the next value of every controlled
+/// variable as in the trace. The first round is the init round, the
+/// others are update rounds. Skipped (with a message) if z3 is not found.
+#[test]
+fn smt_matches_rm() {
+    let Some(bin) = z3::find() else {
+        eprintln!("z3 not found: skipped");
+        return;
+    };
+    let mut rand = Rand(0x5851_f42d_4c95_7f2d);
+    for path in examples() {
+        let (_, t) = load(&path);
+        let m = &t.module;
+        let rounds = [Phase::Init, Phase::Update].map(|phase| smt::round(&t, phase));
+        let mut controlled: Vec<&str> = m.ctrl().iter().map(|v| t.name(v)).collect();
+        controlled.sort();
+        for r in &rounds {
+            let mut next: Vec<&str> = r.next.iter().map(String::as_str).collect();
+            next.sort();
+            assert_eq!(next, controlled, "{}", path.display());
+            assert!(r.inputs.iter().all(|n| m.extl().contains(&t.var(n))));
+        }
+        assert!(rounds[0].latched.is_empty());
+
+        let mut script = String::from("(set-logic QF_BV)\n");
+        let mut checks = 0;
+        for _ in 0..5 {
+            let mut sim = Sim::new(m);
+            let mut last: Option<Valuation> = None;
+            for k in 0..10 {
+                let extl: Valuation = m
+                    .extl()
+                    .iter()
+                    .map(|v| (*v, rand.bits(v.dtype().width())))
+                    .collect();
+                let got = sim.step(&extl).unwrap();
+                let r = &rounds[usize::from(k > 0)];
+                script += "(push)\n";
+                script += &r.text;
+                if let Some(last) = &last {
+                    let eq = equal(&t, &r.latched, last, smt::latched_symbol);
+                    script += &format!("(assert {eq})\n");
+                }
+                let eq = equal(&t, &r.inputs, &got, smt::next_symbol);
+                script += &format!("(assert {eq})\n");
+                let eq = equal(&t, &r.next, &got, smt::next_symbol);
+                script += &format!("(assert (not {eq}))\n(check-sat)\n(pop)\n");
+                checks += 1;
+                last = Some(got);
+            }
+        }
+        let out = z3::run(&bin, &script).unwrap();
+        assert_eq!(out, vec!["unsat"; checks], "{}", path.display());
+    }
+}
+
+/// The SMT-LIB formula saying that the constant `sym(n)` is the value of
+/// variable `n` in `values`, for each of the `names`.
+fn equal(t: &Translation, names: &[String], values: &Valuation, sym: fn(&str) -> String) -> String {
+    let eqs: Vec<String> = names
+        .iter()
+        .map(|n| format!("(= {} {})", sym(n), smt::lit(&values[&t.var(n)])))
+        .collect();
+    format!("(and true {})", eqs.join(" "))
 }
 
 fn iverilog_bin() -> Option<PathBuf> {

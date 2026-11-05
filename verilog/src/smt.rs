@@ -1,9 +1,11 @@
 /*!
-# SvOp terms as SMT-LIB
+# Modules as SMT-LIB
 
 Prints sorts, values and op applications of [`SvOp`] as SMT-LIB 2.6 text
-in the logic `QF_BV`. Each function returns one SMT-LIB expression; a
-caller combines them into a script (declarations, definitions, asserts).
+in the logic `QF_BV` ([`sort`], [`lit`], [`apply`]), and one round of a
+translated module as a list of declarations and definitions ([`round`]).
+A caller combines them into a script (adding `(set-logic QF_BV)`, asserts
+and queries).
 
 ## Sorts and values
 
@@ -63,10 +65,55 @@ blocks, which have no counterpart here. [`apply`] panics on both.
 
 Operands are repeated in the output (`RedXor`, saturated shift amounts),
 so they should be short: names or literals.
+
+## A round of a module
+
+[`round`] prints one round of a [`Translation`]: the init round (the init
+block of every atom) or an update round (the update block of every atom).
+Its values are constants named after the variables:
+
+| constant | meaning | |
+|---|---|---|
+| `\|*v\|` | the latched value of `v` (its value in the previous round) | declared |
+| `\|X(v)\|`, `v` external | the next value of `v`, given by the environment | declared |
+| `\|X(v)\|`, `v` controlled | the next value of `v`, computed by the round | defined |
+
+A variable name is the name of the signal (`q`, `u.q`, `q@init`); `*`, `(`
+and `)` cannot occur in one, so these symbols never collide. Only the
+values the round reads are declared: the init round reads no latched
+values, and an update round does not read `X(q@init)`.
+
+Then come the atoms, in the module's order (which respects the await
+relation), each after a comment `; atom controls v, w`, and the terms of
+the block in their order. Every term defines the wire it writes:
+`(define-fun |name| () (_ BitVec w) expr)`, with `expr` as [`apply`]
+prints it on the symbols of the read wires; the wire is `|X(v)|` if it is
+the next value of a controlled variable, else a wire local to its atom
+named `|y@1|` (an intermediate value of the signal `y`, as in the module
+printer) or `|%k|` (numbered across the whole round, so unlike the module
+printer's per-atom numbering). The term `Havoc` declares its wire instead:
+`(declare-const |name| (_ BitVec w))`. So every symbol is declared or
+defined before it is used, and the definitions of a round are equivalent
+to the round of the module: a model of the declared constants determines
+all defined ones, as [`rm_sim`](crate::rm_sim) computes them.
+
+For tools that read the text, every variable's constant is preceded by a
+comment line, like those of Yosys's `write_smt2`:
+
+```text
+; v2rm-latched NAME WIDTH
+; v2rm-input NAME WIDTH
+; v2rm-next NAME WIDTH interface|private
+```
 */
 
+use crate::ast::Name;
+use crate::lower::Translation;
 use crate::theory::{Sort, SvOp};
 use crate::value::BitVec;
+use crate::{Atom, Term, Var, Wire};
+use base::var::X;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// `(_ BitVec N)`.
 pub fn sort(s: Sort) -> String {
@@ -189,4 +236,148 @@ fn amount(b: &str, k: usize, w: usize) -> String {
 /// The value with all `w` bits set.
 fn ones(w: usize) -> BitVec {
     BitVec::from_signed(w, -1)
+}
+
+/// Which block of each atom a round runs.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Phase {
+    /// The first round: the init blocks.
+    Init,
+    /// Every later round: the update blocks.
+    Update,
+}
+
+/// One round of a module as SMT-LIB declarations and definitions, with
+/// the names of the variables whose constants it declares or defines.
+#[derive(Clone, Debug)]
+pub struct Round {
+    pub text: String,
+    /// The variables whose latched value `|*v|` is read and declared.
+    pub latched: Vec<Name>,
+    /// The external variables whose next value `|X(v)|` is read and
+    /// declared.
+    pub inputs: Vec<Name>,
+    /// The controlled variables, whose next value `|X(v)|` is defined.
+    pub next: Vec<Name>,
+}
+
+/// `|*v|`: the latched value of the variable `v`.
+pub fn latched_symbol(v: &str) -> String {
+    symbol(&format!("*{v}"))
+}
+
+/// `|X(v)|`: the next value of the variable `v`.
+pub fn next_symbol(v: &str) -> String {
+    symbol(&format!("X({v})"))
+}
+
+/// The round `phase` of the module of `t`. Panics if the module reads a
+/// wire before writing it (atoms out of await order), if two local wires
+/// have the same name, or if the init round reads a latched value.
+pub fn round(t: &Translation, phase: Phase) -> Round {
+    let m = &t.module;
+    let block = |a| block(a, phase);
+    let reads: HashSet<Wire> = m
+        .atoms()
+        .iter()
+        .flat_map(block)
+        .flat_map(|term| term.read().iter().copied())
+        .collect();
+    let vars: Vec<&Var> = m
+        .extl()
+        .iter()
+        .chain(m.intf().iter())
+        .chain(m.prvt().iter())
+        .collect();
+    let width = |v: &Var| v.dtype().width();
+
+    let mut text = String::new();
+    // the symbol of every wire declared or defined so far
+    let mut symbols: HashMap<Wire, String> = HashMap::new();
+    let mut latched = vec![];
+    for v in vars.iter().filter(|v| reads.contains(&***v)) {
+        let name = t.name(v);
+        assert!(phase == Phase::Update, "the init round reads `*{name}`");
+        let sym = latched_symbol(name);
+        text += &format!("; v2rm-latched {name} {}\n", width(v));
+        text += &format!("(declare-const {sym} {})\n", sort(*v.dtype()));
+        symbols.insert(***v, sym);
+        latched.push(name.to_string());
+    }
+    let mut inputs = vec![];
+    for v in m.extl().iter().filter(|v| reads.contains(&X(*v))) {
+        let name = t.name(v);
+        let sym = next_symbol(name);
+        text += &format!("; v2rm-input {name} {}\n", width(v));
+        text += &format!("(declare-const {sym} {})\n", sort(*v.dtype()));
+        symbols.insert(X(v), sym);
+        inputs.push(name.to_string());
+    }
+
+    let controlled: HashMap<Wire, &Var> = m.ctrl().iter().map(|v| (X(v), v)).collect();
+    let mut next = vec![];
+    let mut local: BTreeSet<Name> = BTreeSet::new();
+    let mut unnamed = 0;
+    for atom in m.atoms() {
+        let ctrl: Vec<&str> = atom.ctrl().iter().map(|v| t.name(v)).collect();
+        text += &format!("; atom controls {}\n", ctrl.join(", "));
+        for term in block(atom) {
+            let w = term.write()[0];
+            let sym = match controlled.get(&w) {
+                Some(v) => {
+                    let name = t.name(v);
+                    let class = if m.intf().contains(v) {
+                        "interface"
+                    } else {
+                        "private"
+                    };
+                    text += &format!("; v2rm-next {name} {} {class}\n", width(v));
+                    next.push(name.to_string());
+                    next_symbol(name)
+                }
+                None => {
+                    let name = t.wire_names.get(&w).cloned().unwrap_or_else(|| {
+                        unnamed += 1;
+                        format!("%{unnamed}")
+                    });
+                    assert!(local.insert(name.clone()), "two wires named `{name}`");
+                    symbol(&name)
+                }
+            };
+            let s = sort(*w.dtype());
+            if let SvOp::Havoc(_) = term.itype() {
+                text += &format!("(declare-const {sym} {s})\n");
+            } else {
+                let args: Vec<(String, Sort)> = term
+                    .read()
+                    .iter()
+                    .map(|r| match symbols.get(r) {
+                        Some(sym) => (sym.clone(), *r.dtype()),
+                        None => panic!("{sym} reads a wire before it is written"),
+                    })
+                    .collect();
+                text += &format!("(define-fun {sym} () {s} {})\n", apply(term.itype(), &args));
+            }
+            symbols.insert(w, sym);
+        }
+    }
+    assert_eq!(
+        next.len(),
+        m.ctrl().len(),
+        "a controlled variable is not defined"
+    );
+    Round {
+        text,
+        latched,
+        inputs,
+        next,
+    }
+}
+
+/// The terms of the block of `a` that round `phase` runs.
+fn block(a: &Atom, phase: Phase) -> impl Iterator<Item = &Term> {
+    match phase {
+        Phase::Init => a.init().iter(),
+        Phase::Update => a.update().iter(),
+    }
 }
