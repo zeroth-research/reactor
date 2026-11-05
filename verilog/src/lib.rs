@@ -11,7 +11,7 @@ round of the module is one clock cycle.
 - [`smt`]: sorts, values, ops and rounds of modules as SMT-LIB text; [`z3`]
   runs the solver on it; [`yosys`] translates a design into SMT-LIB
   independently, for comparison, and [`miter`] checks that one round of
-  both agrees.
+  both agrees, replaying counterexamples in both interpreters.
 - [`ast`]: the abstract syntax of the accepted subset; [`frontend`] parses
   into it (evaluating [`constant`] expressions such as parameter values),
   [`elab`] builds the tree of module instances, [`typing`] checks each
