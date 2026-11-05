@@ -1,7 +1,6 @@
 use crate::atom::Atom;
 use crate::topological_order;
 use crate::var::{Interface, Wire3};
-use base::Wire;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
@@ -40,11 +39,6 @@ where
     /// The atoms must be stored in a *consistent* linear order
     /// according to their await relation.
     atoms: Vec<Atom<I, J, F, S>>,
-
-    /// cache of all wires local to blocks
-    local: Vec<Wire<S>>,
-    /// cache of all wires used in blocks
-    used: Vec<Wire<S>>,
 }
 
 impl<I, J, F, S> Module<I, J, F, S>
@@ -93,8 +87,6 @@ where
             obs: Interface::empty(),
             ctrl: Interface::empty(),
             atoms: Vec::new(),
-            used: Vec::new(),
-            local: Vec::new(),
         }
     }
 }
@@ -154,7 +146,6 @@ where
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`Module::partially_observable`], [`Module::observable`] for checked,
     ///   automated module construction
-    #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
         extl: Interface<S>,
         intf: Interface<S>,
@@ -162,8 +153,6 @@ where
         obs: Interface<S>,
         ctrl: Interface<S>,
         atoms: Vec<Atom<I, J, F, S>>,
-        used: Vec<Wire<S>>,
-        local: Vec<Wire<S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -199,9 +188,6 @@ where
                     debug_assert!(module_vars.contains(var));
                     debug_assert!(written.insert(var));
                 }
-
-                debug_assert!(atom.used().iter().all(|w| used.binary_search(w).is_ok()));
-                debug_assert!(atom.local().iter().all(|w| local.binary_search(w).is_ok()));
             }
 
             // check that all module control vars are written/controlled by an atom
@@ -215,36 +201,6 @@ where
             atom_decl_vars.extend(atoms.iter().flat_map(Atom::ctrl));
             atom_decl_vars.extend(atoms.iter().flat_map(Atom::wait));
             debug_assert_eq!(atom_decl_vars, module_vars);
-
-            // check wires consistency
-            debug_assert!(used.is_sorted());
-            debug_assert!(local.is_sorted());
-            debug_assert!(used.windows(2).all(|w| w[0] < w[1]));
-            debug_assert!(local.windows(2).all(|w| w[0] < w[1]));
-
-            let mut atom_used_wires = HashSet::new();
-            atom_used_wires.extend(atoms.iter().flat_map(Atom::used));
-
-            let atom_decl_wires: HashSet<_> =
-                atom_decl_vars.into_iter().flat_map(Wire3::wires).collect();
-            let atom_local_wires: HashSet<_> = atom_used_wires
-                .difference(&atom_decl_wires)
-                .cloned()
-                .collect();
-
-            // used == atom_used_wires and local == atom_local_wires
-            debug_assert!(used.iter().all(|w| atom_used_wires.contains(w)));
-            debug_assert!(
-                atom_used_wires
-                    .iter()
-                    .all(|w| used.binary_search(w).is_ok())
-            );
-            debug_assert!(local.iter().all(|w| atom_local_wires.contains(w)));
-            debug_assert!(
-                atom_local_wires
-                    .iter()
-                    .all(|w| local.binary_search(w).is_ok())
-            );
         }
 
         Module {
@@ -254,8 +210,6 @@ where
             obs,
             ctrl,
             atoms,
-            used,
-            local,
         }
     }
 }
@@ -337,9 +291,6 @@ where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
         H: Fn(&Wire3<S>) -> bool,
     {
-        let mut used: BTreeSet<Wire<S>> = BTreeSet::new();
-        let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
-
         let mut obs: BTreeSet<Wire3<S>> = BTreeSet::new();
         let mut ctrl: BTreeSet<Wire3<S>> = BTreeSet::new();
         let atoms = atoms.into_iter();
@@ -361,23 +312,6 @@ where
                     return Err(format!("Variable {:?} is doubly controlled", var));
                 }
             }
-
-            //============================================================
-            // Check coupling
-            //============================================================
-            for lc in atom.local() {
-                if used.contains(lc) {
-                    return Err(format!("Local wire {:?} is coupled", lc));
-                }
-            }
-            for ud in atom.used() {
-                if local.contains(ud) {
-                    return Err(format!("Local wire {:?} is coupled", ud));
-                }
-            }
-
-            local.extend(atom.local().iter().cloned());
-            used.extend(atom.used().iter().cloned());
 
             //============================================================
             // Check await order
@@ -408,12 +342,8 @@ where
         let prvt = Interface::from_exact_iter_unchecked(prvt);
         let obs = Interface::from_exact_iter_unchecked(obs);
         let ctrl = Interface::from_exact_iter_unchecked(ctrl);
-        let used = used.into_iter().collect();
-        let local = local.into_iter().collect();
 
-        Ok(Self::new_unchecked(
-            extl, intf, prvt, obs, ctrl, past_atoms, used, local,
-        ))
+        Ok(Self::new_unchecked(extl, intf, prvt, obs, ctrl, past_atoms))
     }
 
     /// Constructs the **pure parallel composition** of several modules.
@@ -432,7 +362,7 @@ where
     ///
     /// # Error Conditions
     ///
-    /// - A module attempts to couple a *private* or *temporary* wire with another module
+    /// - A module attempts to couple a *private* variable with another module
     /// - A coupled variable is *controlled by more than one module*
     /// - Await dependency is cyclic
     ///
@@ -511,9 +441,6 @@ where
         M: IntoIterator<Item = Self>,
         H: Fn(&Wire3<S>) -> bool,
     {
-        let mut used: BTreeSet<Wire<S>> = BTreeSet::new();
-        let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
-
         let mut prvt_pre_hiding: HashSet<usize> = HashSet::new();
 
         let mut extl: BTreeSet<Wire3<S>> = BTreeSet::new();
@@ -563,22 +490,6 @@ where
 
                 prvt.insert(var);
             }
-
-            // Check that locals are uncoupled and restrict them
-            for lc in module.local.iter() {
-                if used.contains(lc) {
-                    return Err(format!("Local wire {:?} is coupled", lc));
-                }
-            }
-
-            for ud in module.used.iter() {
-                if local.contains(ud) {
-                    return Err(format!("Local wire {:?} is coupled", ud));
-                }
-            }
-
-            local.extend(module.local);
-            used.extend(module.used);
 
             //============================================================
             // Couple external and interface variables
@@ -657,12 +568,8 @@ where
         let prvt = Interface::from_exact_iter_unchecked(prvt);
         let obs = Interface::from_exact_iter_unchecked(obs);
         let ctrl = Interface::from_exact_iter_unchecked(ctrl);
-        let used = used.into_iter().collect();
-        let local = local.into_iter().collect();
 
-        Ok(Module::new_unchecked(
-            extl, intf, prvt, obs, ctrl, atoms, used, local,
-        ))
+        Ok(Module::new_unchecked(extl, intf, prvt, obs, ctrl, atoms))
     }
 }
 

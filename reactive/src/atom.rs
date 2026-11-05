@@ -7,8 +7,6 @@ use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
 use crate::var::{Interface, Wire3};
-#[cfg(debug_assertions)]
-use std::collections::HashSet;
 use std::fmt::Debug;
 
 //============================================================
@@ -35,11 +33,6 @@ where
     update: Block<J>,
     /// Corresponds to the delay activity.
     delay: Block<F>,
-
-    /// cache of all wires local to blocks
-    local: Vec<Wire<S>>,
-    /// cache of all wires used in blocks
-    used: Vec<Wire<S>>,
 }
 
 impl<I, J, F, S> Atom<I, J, F, S>
@@ -77,15 +70,6 @@ where
         &self.read
     }
 
-    /// Returns an iterator over the temporary, local wires.
-    pub(crate) fn local(&self) -> &[Wire<S>] {
-        self.local.as_slice()
-    }
-
-    pub(crate) fn used(&self) -> &[Wire<S>] {
-        self.used.as_slice()
-    }
-
     /// Constructs an atom with no variables and empty blocks.
     pub fn empty() -> Self {
         Self {
@@ -95,8 +79,6 @@ where
             init: Block::empty(),
             update: Block::empty(),
             delay: Block::empty(),
-            used: Vec::new(),
-            local: Vec::new(),
         }
     }
 }
@@ -131,8 +113,8 @@ where
     ///
     /// This constructor provides **full control** to the caller and performs
     /// no inference or validation. Unlike the public constructors, which
-    /// infer the interfaces and the wire caches from the blocks, it takes
-    /// every component as given. It should be used only when all necessary
+    /// infer the interfaces from the blocks, it takes every component as
+    /// given. It should be used only when all necessary
     /// checks and inference have already been handled externally.
     ///
     /// # Parameters
@@ -140,9 +122,6 @@ where
     /// - `wait`: The awaited variables, whose next or derivative wires the blocks read.
     /// - `read`: The read variables, whose latched wires the blocks read.
     /// - `init`, `update`, `delay`: The blocks of the atom.
-    /// - `used`: Sorted cache of all wires the blocks touch.
-    /// - `local`: Sorted cache of the wires local to the blocks (used but not
-    ///   belonging to any declared variable).
     ///
     /// # Returns
     /// The constructed atom.
@@ -150,13 +129,11 @@ where
     /// # Correctness
     /// This function performs **no validation or inference** (beyond
     /// debug-only assertions). It is the caller’s responsibility to ensure
-    /// that the interfaces, blocks, and wire caches are well-formed and
-    /// consistent.
+    /// that the interfaces and blocks are well-formed and consistent.
     ///
     /// # See Also
     /// - [`Atom::sequential`], [`Atom::combinatorial`] and the other public
     ///   constructors for checked, automated atom construction.
-    #[allow(clippy::too_many_arguments)]
     fn new_unchecked(
         ctrl: Interface<S>,
         wait: Interface<S>,
@@ -164,8 +141,6 @@ where
         init: Block<I>,
         update: Block<J>,
         delay: Block<F>,
-        used: Vec<Wire<S>>,
-        local: Vec<Wire<S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -173,6 +148,10 @@ where
             // Check declared wires
             //================================================================================
             debug_assert!(ctrl.is_disjoint(&wait));
+            // the wires of declared variables; all other written wires are local
+            let declared = |w: &&Wire<S>| {
+                read.var(w).is_some() | ctrl.var(w).is_some() | wait.var(w).is_some()
+            };
 
             //================================================================================
             // Check init block
@@ -180,8 +159,8 @@ where
             // all read wires are wait X wires
             let mut riter = init.read().iter();
             debug_assert!(riter.all(|w| wait.var(w).is_some_and(|v| v.nxt() == w)));
-            // all write wires are ctrl X wires or local
-            let mut witer = init.write().iter().filter(|w| !local.contains(w));
+            // all write wires of declared variables are ctrl X wires; the rest are local
+            let mut witer = init.write().iter().filter(declared);
             debug_assert!(witer.all(|w| ctrl.var(w).is_some_and(|v| v.nxt() == w)));
             // all control X wires are written
             debug_assert!(
@@ -197,8 +176,8 @@ where
             let mut riter = update.read().iter();
             debug_assert!(riter.all(|w| read.var(w).is_some_and(|v| v.ltc() == w)
                 | wait.var(w).is_some_and(|v| v.nxt() == w)));
-            // all write wires are ctrl X wires or local
-            let mut witer = update.write().iter().filter(|w| !local.contains(w));
+            // all write wires of declared variables are ctrl X wires; the rest are local
+            let mut witer = update.write().iter().filter(declared);
             debug_assert!(witer.all(|w| ctrl.var(w).is_some_and(|v| v.nxt() == w)));
             // all control X wires are written
             let citer = ctrl.iter();
@@ -211,8 +190,8 @@ where
             let mut riter = delay.read().iter();
             debug_assert!(riter.all(|w| read.var(w).is_some_and(|v| v.ltc() == w)
                 | wait.var(w).is_some_and(|v| v.der() == w)));
-            // all write wires are ctrl X wires or local
-            let mut witer = delay.write().iter().filter(|w| !local.contains(w));
+            // all write wires of declared variables are ctrl d wires; the rest are local
+            let mut witer = delay.write().iter().filter(declared);
             debug_assert!(witer.all(|w| ctrl.var(w).is_some_and(|v| v.der() == w)));
             // all control d wires are written
             debug_assert!(
@@ -220,27 +199,6 @@ where
                     .map(Wire3::der)
                     .all(|w| delay.write().contains(w))
             );
-
-            //================================================================================
-            // Check wires and locals
-            //================================================================================
-            let mut found: HashSet<_> = HashSet::new();
-            found.extend(init.read().iter().chain(init.write().iter()));
-            found.extend(update.read().iter().chain(update.write().iter()));
-            found.extend(delay.read().iter().chain(delay.write().iter()));
-
-            // found == used
-            debug_assert!(used.is_sorted());
-            debug_assert!(used.windows(2).all(|w| w[0] < w[1]));
-            debug_assert!(found.iter().all(|w| used.binary_search(w).is_ok()));
-            debug_assert!(used.iter().all(|w| found.contains(w)));
-
-            // found \ (ctrl U read U wait) == local
-            found.retain(|w| read.var(w).is_none() & ctrl.var(w).is_none() & wait.var(w).is_none());
-            debug_assert!(local.is_sorted());
-            debug_assert!(local.windows(2).all(|w| w[0] < w[1]));
-            debug_assert!(found.iter().all(|w| local.binary_search(w).is_ok()));
-            debug_assert!(local.iter().all(|w| found.contains(w)));
         }
 
         Self {
@@ -250,8 +208,6 @@ where
             init,
             update,
             delay,
-            used,
-            local,
         }
     }
 
@@ -325,11 +281,8 @@ where
     ) -> Result<Self, String> {
         let mut read: BTreeSet<Wire3<S>> = BTreeSet::new();
         let mut wait: BTreeSet<Wire3<S>> = BTreeSet::new();
-        let mut used: BTreeSet<Wire<S>> = BTreeSet::new();
-        let mut local: BTreeSet<Wire<S>> = BTreeSet::new();
 
         for rd in init.read().iter() {
-            used.insert(rd.clone());
             // init can only read from next wires
             if let Some(&var) = wmap.nxt.get(&rd) {
                 wait.insert(var.clone());
@@ -346,7 +299,6 @@ where
         }
 
         for rd in update.read().iter() {
-            used.insert(rd.clone());
             // if the update reads from a next wire, then this is awaited
             // otherwise, it must be read from outside the atom (dangling)
             if let Some(&var) = wmap.ltc.get(&rd) {
@@ -367,7 +319,6 @@ where
         }
 
         for rd in delay.read().iter() {
-            used.insert(rd.clone());
             // if the delay reads from a derived wire, then this is awaited
             // otherwise, it must be read from outside the atom (dangling)
             if let Some(&var) = wmap.ltc.get(&rd) {
@@ -388,7 +339,6 @@ where
         }
 
         for wt in init.write().iter().chain(update.write().iter()) {
-            used.insert(wt.clone());
             // if the init/update writes to a next wire, then this wire must be controlled
             // otherwise, it must be local
             if let Some(&var) = wmap.nxt.get(&wt) {
@@ -403,12 +353,9 @@ where
             } else if wmap.der.contains_key(&wt) {
                 return Err(format!("Init/update writes d wire {:?}", wt));
             }
-
-            local.insert(wt.clone());
         }
 
         for wt in delay.write().iter() {
-            used.insert(wt.clone());
             // if the delay writes to a derived wire, then this wire is controlled
             // otherwise, it must be local
             if let Some(&var) = wmap.der.get(&wt) {
@@ -423,8 +370,6 @@ where
             } else if wmap.nxt.contains_key(&wt) {
                 return Err(format!("Delay writes X wire {:?}", wt));
             }
-
-            local.insert(wt.clone());
         }
 
         for ctr in ctrl.iter() {
@@ -455,8 +400,6 @@ where
             init,
             update,
             delay,
-            used.into_iter().collect(),
-            local.into_iter().collect(),
         ))
     }
 }

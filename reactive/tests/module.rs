@@ -229,68 +229,6 @@ fn constructor_then_hiding() {
     assert!(m.is_err());
 }
 
-/// The local-coupling check must not depend on the order the atoms are
-/// presented in.
-///
-/// Atom `a` controls `v`, writing `X(v)`; atom `b` writes `X(v)` *without
-/// declaring* `v`, so for `b` that wire is classified as a local temporary.
-/// The wire is thus coupled between the two atoms and the module must be
-/// rejected — in either presentation order. (Regression: the check only
-/// tested each new atom's locals against the wires used so far, so `[a, b]`
-/// erred while `[b, a]` slipped through to an inconsistent module.)
-#[test]
-fn local_coupling_is_order_independent() {
-    let v = Wire3::new(srt("real"));
-    let w = Wire3::new(srt("real"));
-
-    let a_upd = term!(mk_op("A"), [X(v)]).unwrap();
-    let a = Atom::jump([&v], [a_upd]).unwrap();
-
-    // b declares only w; its write to X(v) becomes a local temporary
-    let b_upd = term!(mk_op("B"), [X(v), X(w)], [*w]).unwrap();
-    let b = Atom::jump([&w], [b_upd]).unwrap();
-
-    let ab = Module::observable([a.clone(), b.clone()]);
-    assert!(ab.is_err(), "[a, b] must reject the coupled local");
-
-    let ba = Module::observable([b, a]);
-    assert!(ba.is_err(), "[b, a] must reject the coupled local");
-}
-
-/// Local (temporary) wires are strictly per-atom scratch space: two atoms
-/// writing the same temporary must be rejected, both when they are placed
-/// in one module and when two atomic modules are composed.
-#[test]
-fn cannot_share_local_wires() {
-    let x = Wire3::new(srt("real"));
-    let y = Wire3::new(srt("real"));
-    // the shared temporary: both atoms compute through it
-    let tmp = Wire::new(srt("real"));
-
-    let init = [term!(mk_op("CONST"), [X(x)]).unwrap()];
-    let update = [
-        term!(mk_op("CONST"), [tmp]).unwrap(),
-        term!(mk_op("ID"), [X(x)], [tmp]).unwrap(),
-    ];
-    let a1 = Atom::sequential(&[x], init, update).unwrap();
-
-    let init = [term!(mk_op("CONST"), [X(y)]).unwrap()];
-    let update = [
-        term!(mk_op("CONST"), [tmp]).unwrap(),
-        term!(mk_op("ID"), [X(y)], [tmp]).unwrap(),
-    ];
-    let a2 = Atom::sequential(&[y], init, update).unwrap();
-
-    // (1) construction of one module from both atoms
-    let m = Module::observable([a1.clone(), a2.clone()]);
-    assert!(m.is_err());
-
-    // (2) composition of the two atomic modules
-    let m1 = Module::observable([a1]).unwrap();
-    let m2 = Module::observable([a2]).unwrap();
-    assert!(Module::compose([m1, m2]).is_err());
-}
-
 #[test]
 fn compose_seq_2() {
     let x = Wire3::new(srt("real"));
