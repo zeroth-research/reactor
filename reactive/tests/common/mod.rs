@@ -3,8 +3,8 @@
 #![allow(dead_code)]
 
 use base::term::Term;
-use base::var::{Var, X};
 use base::wire::Wire;
+use reactive::var::{Var, X};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -51,8 +51,8 @@ impl Display for Ops {
     }
 }
 
-pub type Module = base::Module<Ops, Ops, Ops>;
-pub type Atom = base::Atom<Ops, Ops, Ops>;
+pub type Module = reactive::Module<Ops, Ops, Ops>;
+pub type Atom = reactive::Atom<Ops, Ops, Ops>;
 
 pub fn mk_op(name: &'static str) -> Ops {
     Ops(name)

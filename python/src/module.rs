@@ -8,25 +8,25 @@ use theory::any::{Combinatorial, Differential, Sequential};
 
 #[pyclass(subclass, frozen)]
 pub(crate) struct Module {
-    pub(crate) base: base::Module<Combinatorial, Sequential, Differential>,
+    pub(crate) base: reactive::Module<Combinatorial, Sequential, Differential>,
 }
 
 impl Module {
     fn partially_observable<A>(atoms: A, hide: &Bound<'_, PyAny>) -> PyResult<Self>
     where
-        A: IntoIterator<Item = base::Atom<Combinatorial, Sequential, Differential>>,
+        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential>>,
     {
         let hide = Hide::try_from(hide)?;
-        let module = base::Module::partially_observable(atoms, hide.as_fn());
+        let module = reactive::Module::partially_observable(atoms, hide.as_fn());
         hide.err()
             .and_then(|()| module.map(Into::into).map_err(PyException::new_err))
     }
 
     fn observable<A>(atoms: A) -> PyResult<Self>
     where
-        A: IntoIterator<Item = base::Atom<Combinatorial, Sequential, Differential>>,
+        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential>>,
     {
-        let module = base::Module::observable(atoms);
+        let module = reactive::Module::observable(atoms);
         module.map(Into::into).map_err(PyException::new_err)
     }
 }
@@ -71,7 +71,7 @@ impl Module {
                 "missing `vars`? An atomic module needs some",
             ))
         } else {
-            Ok(base::Module::empty().into())
+            Ok(reactive::Module::empty().into())
         }
     }
 
@@ -120,11 +120,11 @@ impl Module {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
 
         if let Some(hide) = hide {
-            let atom =
-                base::Atom::sequential(vars.iter(), init, update).map_err(PyException::new_err)?;
+            let atom = reactive::Atom::sequential(vars.iter(), init, update)
+                .map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::sequential(vars.iter(), init, update);
+            let module = reactive::Module::sequential(vars.iter(), init, update);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -140,10 +140,10 @@ impl Module {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
             let atom =
-                base::Atom::combinatorial(vars.iter(), assign).map_err(PyException::new_err)?;
+                reactive::Atom::combinatorial(vars.iter(), assign).map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::combinatorial(vars.iter(), assign);
+            let module = reactive::Module::combinatorial(vars.iter(), assign);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -160,11 +160,11 @@ impl Module {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom =
-                base::Atom::differential(vars.iter(), init, delay).map_err(PyException::new_err)?;
+            let atom = reactive::Atom::differential(vars.iter(), init, delay)
+                .map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::differential(vars.iter(), init, delay);
+            let module = reactive::Module::differential(vars.iter(), init, delay);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -183,11 +183,11 @@ impl Module {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = base::Atom::hybrid(vars.iter(), init, update, delay)
+            let atom = reactive::Atom::hybrid(vars.iter(), init, update, delay)
                 .map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::hybrid(vars.iter(), init, update, delay);
+            let module = reactive::Module::hybrid(vars.iter(), init, update, delay);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -202,10 +202,10 @@ impl Module {
         let update = try_term_iter_cloned(&update)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = base::Atom::jump(vars.iter(), update).map_err(PyException::new_err)?;
+            let atom = reactive::Atom::jump(vars.iter(), update).map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::jump(vars.iter(), update);
+            let module = reactive::Module::jump(vars.iter(), update);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -222,11 +222,11 @@ impl Module {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = base::Atom::uninitialized(vars.iter(), update, delay)
+            let atom = reactive::Atom::uninitialized(vars.iter(), update, delay)
                 .map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::uninitialized(vars.iter(), update, delay);
+            let module = reactive::Module::uninitialized(vars.iter(), update, delay);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -236,10 +236,10 @@ impl Module {
     fn hold(vars: &Bound<'_, PyAny>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = base::Atom::hold(vars.iter()).map_err(PyException::new_err)?;
+            let atom = reactive::Atom::hold(vars.iter()).map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::hold(vars.iter());
+            let module = reactive::Module::hold(vars.iter());
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -254,10 +254,10 @@ impl Module {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = base::Atom::flow(vars.iter(), delay).map_err(PyException::new_err)?;
+            let atom = reactive::Atom::flow(vars.iter(), delay).map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::flow(vars.iter(), delay);
+            let module = reactive::Module::flow(vars.iter(), delay);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -272,10 +272,10 @@ impl Module {
         let init = try_term_iter_cloned(&init)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = base::Atom::constant(vars.iter(), init).map_err(PyException::new_err)?;
+            let atom = reactive::Atom::constant(vars.iter(), init).map_err(PyException::new_err)?;
             Self::partially_observable([atom], hide)
         } else {
-            let module = base::Module::constant(vars.iter(), init);
+            let module = reactive::Module::constant(vars.iter(), init);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -290,11 +290,11 @@ impl Module {
         let modules = modules.iter().map(|r| r.base.clone());
         if let Some(hide) = hide {
             let hide = Hide::try_from(hide)?;
-            let module = base::Module::compose_hiding(modules, hide.as_fn());
+            let module = reactive::Module::compose_hiding(modules, hide.as_fn());
             hide.err()
                 .and_then(|()| module.map(Into::into).map_err(PyException::new_err))
         } else {
-            let module = base::Module::compose(modules);
+            let module = reactive::Module::compose(modules);
             module.map(Into::into).map_err(PyException::new_err)
         }
     }
@@ -361,7 +361,7 @@ impl Module {
     }
 
     fn __mul__(&self, other: PyRef<Module>) -> PyResult<Module> {
-        let module = base::Module::compose([self.base.clone(), other.base.clone()]);
+        let module = reactive::Module::compose([self.base.clone(), other.base.clone()]);
         module.map(Into::into).map_err(PyException::new_err)
     }
 
@@ -373,8 +373,8 @@ impl Module {
     }
 }
 
-impl From<base::Module<Combinatorial, Sequential, Differential>> for Module {
-    fn from(base: base::Module<Combinatorial, Sequential, Differential>) -> Self {
+impl From<reactive::Module<Combinatorial, Sequential, Differential>> for Module {
+    fn from(base: reactive::Module<Combinatorial, Sequential, Differential>) -> Self {
         Self { base }
     }
 }
@@ -405,7 +405,7 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &base::Interface<Sort> {
+    fn base(&self) -> &reactive::Interface<Sort> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),
