@@ -60,7 +60,7 @@ where
 
 fn try_var_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Var<theory::any::Sort>>> {
+) -> PyResult<impl Iterator<Item = reactive::Var<theory::any::Sort>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Var>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
@@ -106,7 +106,7 @@ fn try_wire_iter_cloned(
 /// variables (e.g. a lambda), or any iterable of variables (preferably a
 /// set); `None` hides nothing.
 pub(crate) enum Hide<'py> {
-    Set(HashSet<base::Var<Sort>>),
+    Set(HashSet<reactive::Var<Sort>>),
     Call(
         &'py Bound<'py, PyAny>,
         // errors raised by the callable, surfaced after the base call
@@ -128,7 +128,7 @@ impl<'py> Hide<'py> {
     }
 
     /// The predicate handed to the base constructors.
-    pub(crate) fn as_fn(&self) -> impl Fn(&base::Var<Sort>) -> bool + '_ {
+    pub(crate) fn as_fn(&self) -> impl Fn(&reactive::Var<Sort>) -> bool + '_ {
         move |var| match self {
             Hide::Set(set) => set.contains(var),
             Hide::Call(hide, err) => {

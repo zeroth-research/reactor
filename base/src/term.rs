@@ -16,7 +16,7 @@ use theory::{Combinatorial, Differential, Sequential, Theory, any};
 ///
 /// A list of terms represents a compute graph. A term is a node in the graph,
 /// and it references the input/output edges (read/write wires).
-/// [`Interface`](crate::var::Interface)s are essentially single static assignments.
+/// `Interface`s are essentially single static assignments.
 #[derive(Debug, Clone)]
 pub struct Term<T: Theory> {
     /// The instruction to be executed by this node.
@@ -301,7 +301,7 @@ impl<T: Theory> Block<T> {
         self.terms.is_empty()
     }
 
-    pub(crate) fn empty() -> Self {
+    pub fn empty() -> Self {
         Self {
             terms: Vec::new(),
             read: Vec::new(),
@@ -340,7 +340,7 @@ where
     ///
     /// The error type is fixed to `String` — the crate's uniform error
     /// model — so that `Ok` needs no annotation at infallible call sites.
-    pub(crate) fn try_from_iter<U, V>(iter: V) -> Result<Self, String>
+    pub fn try_from_iter<U, V>(iter: V) -> Result<Self, String>
     where
         U: Theory<Sort = T::Sort> + Into<T>,
         V: IntoIterator<Item = Result<Term<U>, String>>,
@@ -375,7 +375,7 @@ where
         })
     }
 
-    pub(crate) fn convert<U>(block: Block<U>) -> Self
+    pub fn convert<U>(block: Block<U>) -> Self
     where
         U: Theory<Sort = T::Sort> + Into<T>,
     {
@@ -394,7 +394,7 @@ where
     /// Builds a block of one `ZERO` term per write wire, so that theories can
     /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
     /// the compute graph.
-    pub(crate) fn zero<W: IntoIterator<Item = Wire<F::Sort>>>(write: W) -> Result<Self, String> {
+    pub fn zero<W: IntoIterator<Item = Wire<F::Sort>>>(write: W) -> Result<Self, String> {
         let write = write.into_iter();
         Block::try_from_iter(write.map(|w| Term::constant(F::zero(w.dtype()), [w])))
     }
@@ -408,10 +408,7 @@ where
     /// that theories can keep `SKIP` at a fixed arity and each pair is an
     /// independent edge in the compute graph (no spurious dependency of one
     /// write on all the other reads).
-    pub(crate) fn skip<
-        W: IntoIterator<Item = Wire<J::Sort>>,
-        R: IntoIterator<Item = Wire<J::Sort>>,
-    >(
+    pub fn skip<W: IntoIterator<Item = Wire<J::Sort>>, R: IntoIterator<Item = Wire<J::Sort>>>(
         write: W,
         read: R,
     ) -> Result<Self, String> {
@@ -432,7 +429,7 @@ where
     I::Sort: Clone + Debug,
 {
     /// Builds a block of one `HAVOC` term per write wire
-    pub(crate) fn havoc<W: IntoIterator<Item = Wire<I::Sort>>>(write: W) -> Result<Self, String> {
+    pub fn havoc<W: IntoIterator<Item = Wire<I::Sort>>>(write: W) -> Result<Self, String> {
         let write = write.into_iter();
         Block::try_from_iter(write.map(|w| Term::constant(I::havoc(w.dtype()), [w])))
     }
