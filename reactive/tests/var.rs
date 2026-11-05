@@ -77,11 +77,11 @@ fn variables_pass_into_term_constructors() {
     let x = Var::new(Sort::Real([1, 1], 0));
 
     // a variable stands for its latched wire in a term position
-    let t = Term::constant(LRA::AnyReal([1, 1]), [x]).unwrap();
+    let t = Term::constant(LRA::AnyReal(1, 1), [x]).unwrap();
     assert_eq!(t.write().iter().next().map(Wire::id), Some(x.id()));
 
     // and its views pass as well: x' = x
-    let t = Term::function(LRA::Id(), [X(x)], [x]).unwrap();
+    let t = Term::function(LRA::IdReal(1, 1), [X(x)], [x]).unwrap();
     assert_eq!(t.write().iter().next().map(Wire::id), Some(X(x).id()));
     assert_eq!(t.read().iter().next().map(Wire::id), Some(x.id()));
 }
@@ -91,5 +91,6 @@ fn variable_fail_into_term_constructors() {
     let x = Var::new(Sort::Real([1, 1], 0));
     // dx = x: the derivative has the tangent sort, not the sort of `x`
     // (this test works because Sort::Real(., 0) != Sort::Real(., 0).tangent())
-    assert!(Term::function(LRA::Id(), [d(x)], [x]).is_err());
+    assert!(Term::function(LRA::IdReal(1, 1), [d(x)], [x]).is_err());
+    assert!(Term::function(LRA::TId(1, 1, 1), [d(x)], [x]).is_err());
 }

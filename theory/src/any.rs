@@ -1,8 +1,8 @@
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
-use crate::{Theory, bv, lia, lra};
-use crate::{check_havoc, check_skip, check_zero};
+use crate::{Theory, bv, check_wires, lia, lra};
+use base::boundary::Mono;
 use base::tangent::Tangent;
 use derive_more::From;
 #[cfg(feature = "pyo3")]
@@ -255,6 +255,30 @@ impl crate::Differential for Differential {
     }
 }
 
+// The distinguished operations are unary, matching the `Id`, `Any*`/`Havoc`, and
+// `*Zerograd` operations of the base theories: `HAVOC` writes any value of its range
+// (`I -> range`), `SKIP` copies a value of its range (`range -> range`), and `ZERO` writes
+// the zero derivative of its range (`I -> range`).
+
+/// Check the application of the distinguished operation `op` with the domain and the
+/// codomain the products of the sorts `dom` and `cod` to the read and written wires
+fn check_special_op<R, W, E>(
+    op: &impl fmt::Debug,
+    dom: impl IntoIterator<Item = Sort>,
+    cod: impl IntoIterator<Item = Sort>,
+    read: R,
+    write: W,
+) -> Result<(), String>
+where
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
+    E: fmt::Display,
+{
+    let dom = dom.into_iter().product::<Mono<Sort>>();
+    let cod = cod.into_iter().product::<Mono<Sort>>();
+    check_wires(dom.into(), cod.into(), read, write).map_err(|e| format!("{op:?}: {e}"))
+}
+
 impl Theory for Any {
     type Sort = Sort;
     const NAME: &'static str = "Any";
@@ -264,12 +288,11 @@ impl Theory for Any {
         R: IntoIterator<Item = Result<Sort, E>>,
         W: IntoIterator<Item = Result<Sort, E>>,
     {
-        // let read = read.into_iter().map(TryInto::try_into);
-        // let write = write.into_iter().map(TryInto::try_into);
         match self {
-            Any::HAVOC(range) => check_havoc(range, read, write),
-            Any::SKIP(range) => check_skip(range, read, write),
-            Any::ZERO(range) => check_zero(range, read, write),
+            Any::HAVOC(range) | Any::ZERO(range) => {
+                check_special_op(self, [], [*range], read, write)
+            }
+            Any::SKIP(range) => check_special_op(self, [*range], [*range], read, write),
             Any::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Any::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Any::BV(itype) => itype.check(try_into(read), try_into(write)),
@@ -300,8 +323,8 @@ impl Theory for Sequential {
         W: IntoIterator<Item = Result<Sort, E>>,
     {
         match self {
-            Sequential::HAVOC(range) => check_havoc(range, read, write),
-            Sequential::SKIP(range) => check_skip(range, read, write),
+            Sequential::HAVOC(range) => check_special_op(self, [], [*range], read, write),
+            Sequential::SKIP(range) => check_special_op(self, [*range], [*range], read, write),
             Sequential::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Sequential::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Sequential::BV(itype) => itype.check(try_into(read), try_into(write)),
@@ -318,10 +341,8 @@ impl Theory for Combinatorial {
         R: IntoIterator<Item = Result<Sort, E>>,
         W: IntoIterator<Item = Result<Sort, E>>,
     {
-        // let read = read.into_iter().map(TryInto::try_into);
-        // let write = write.into_iter().map(TryInto::try_into);
         match self {
-            Combinatorial::HAVOC(range) => check_havoc(range, read, write),
+            Combinatorial::HAVOC(range) => check_special_op(self, [], [*range], read, write),
             Combinatorial::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Combinatorial::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Combinatorial::BV(itype) => itype.check(try_into(read), try_into(write)),
@@ -338,10 +359,8 @@ impl Theory for Differential {
         R: IntoIterator<Item = Result<Sort, E>>,
         W: IntoIterator<Item = Result<Sort, E>>,
     {
-        // let read = read.into_iter().map(TryInto::try_into);
-        // let write = write.into_iter().map(TryInto::try_into);
         match self {
-            Differential::ZERO(range) => check_zero(range, read, write),
+            Differential::ZERO(range) => check_special_op(self, [], [*range], read, write),
             Differential::LRA(itype) => itype.check(try_into(read), try_into(write)),
         }
     }
@@ -373,19 +392,20 @@ mod tests {
 
     #[test]
     fn base_theories_cast_up() {
-        assert!(matches!(LRA::Add().into(), Combinatorial::LRA(LRA::Add())));
-        assert!(matches!(LRA::Add().into(), Sequential::LRA(LRA::Add())));
-        assert!(matches!(LRA::Add().into(), Differential::LRA(LRA::Add())));
-        assert!(matches!(LIA::Add().into(), Combinatorial::LIA(LIA::Add())));
-        assert!(matches!(LIA::Add().into(), Sequential::LIA(LIA::Add())));
-        assert!(matches!(BV::And().into(), Combinatorial::BV(BV::And())));
-        assert!(matches!(BV::And().into(), Sequential::BV(BV::And())));
+        let (lra, lia, bv) = (|| LRA::Add(1, 1), || LIA::Add(1, 1), || BV::And(8, 1, 1));
+        assert!(matches!(lra().into(), Combinatorial::LRA(LRA::Add(1, 1))));
+        assert!(matches!(lra().into(), Sequential::LRA(LRA::Add(1, 1))));
+        assert!(matches!(lra().into(), Differential::LRA(LRA::Add(1, 1))));
+        assert!(matches!(lia().into(), Combinatorial::LIA(LIA::Add(1, 1))));
+        assert!(matches!(lia().into(), Sequential::LIA(LIA::Add(1, 1))));
+        assert!(matches!(bv().into(), Combinatorial::BV(BV::And(8, 1, 1))));
+        assert!(matches!(bv().into(), Sequential::BV(BV::And(8, 1, 1))));
     }
 
     #[test]
     fn catch_alls_cast_up() {
-        let comb: Sequential = Combinatorial::LRA(LRA::Add()).into();
-        assert!(matches!(comb, Sequential::LRA(LRA::Add())));
+        let comb: Sequential = Combinatorial::LRA(LRA::Add(1, 1)).into();
+        assert!(matches!(comb, Sequential::LRA(LRA::Add(1, 1))));
         let t = Sort::Real([1, 1], 0);
         assert!(matches!(
             Combinatorial::HAVOC(t).into(),
@@ -404,19 +424,25 @@ mod tests {
         assert_eq!(Any::HAVOC(t).to_string(), "HAVOC");
         assert_eq!(Sequential::SKIP(t).to_string(), "SKIP");
         assert_eq!(Differential::ZERO(t).to_string(), "ZERO");
-        assert_eq!(Any::LRA(LRA::Add()).to_string(), "Add");
-        assert_eq!(Sequential::LIA(LIA::ReLU()).to_string(), "ReLU");
-        assert_eq!(Combinatorial::BV(BV::MatMul()).to_string(), "MatMul");
+        assert_eq!(Any::LRA(LRA::Add(1, 1)).to_string(), "Add");
+        assert_eq!(Sequential::LIA(LIA::ReLU(1, 1)).to_string(), "ReLU");
+        assert_eq!(
+            Combinatorial::BV(BV::MatMul(8, 1, 1, 1)).to_string(),
+            "MatMul"
+        );
         // Base-theory special cases keep their formats.
         assert_eq!(
-            LRA::Uninterpreted("f".to_string()).to_string(),
-            "Uninterpreted(f)"
+            Any::LRA(LRA::UninterpretedReal("f".to_string(), 1, 1)).to_string(),
+            "UninterpretedReal(f)"
         );
-        assert_eq!(
-            BV::BitSelect { high: 7, low: 0 }.to_string(),
-            "BitSelect[7:0]"
-        );
-        assert_eq!(BV::Extend { extra: 8 }.to_string(), "Extend(+8)");
+        let bit_select = BV::BitSelect {
+            high: 7,
+            low: 0,
+            width: 8,
+            rows: 1,
+            cols: 1,
+        };
+        assert_eq!(Any::BV(bit_select).to_string(), "BitSelect[7:0]");
     }
 
     #[test]
@@ -510,6 +536,33 @@ mod tests {
             Differential::ZERO(t())
                 .check([].map(ok), [t(), u()].map(ok))
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn check_errors() {
+        let t = Sort::Real([1, 1], 0);
+        assert_eq!(
+            Any::HAVOC(t).check([t].map(ok), [t].map(ok)),
+            Err("HAVOC(Real([1, 1], 0)): expected `I -> Real([1,1])`, \
+                 got `Real([1,1]) -> Real([1,1])`"
+                .to_string())
+        );
+        // the operations of the base theories are checked over their sorts
+        let lra = || Any::LRA(LRA::Add(1, 1));
+        assert!(lra().check([t, t].map(ok), [t].map(ok)).is_ok());
+        let i = Sort::Int([1, 1]);
+        assert_eq!(
+            lra().check([i, i].map(ok), [i].map(ok)),
+            Err("Add(1, 1): invalid cast".to_string())
+        );
+        let lia = || Any::LIA(LIA::Add(1, 1));
+        assert!(lia().check([i, i].map(ok), [i].map(ok)).is_ok());
+        assert_eq!(
+            lia().check([i, i].map(ok), [Sort::Int([2, 1])].map(ok)),
+            Err("Add(1, 1): expected `Int(1, 1) ⊗ Int(1, 1) -> Int(1, 1)`, \
+                 got `Int(1, 1) ⊗ Int(1, 1) -> Int(2, 1)`"
+                .to_string())
         );
     }
 }

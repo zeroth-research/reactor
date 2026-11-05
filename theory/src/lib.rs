@@ -4,16 +4,23 @@ pub mod lia;
 pub mod lra;
 pub mod tensor;
 
+use base::boundary::{Mono, Poly};
 use std::fmt;
-use std::fmt::Debug;
 pub use tensor::PyTensor;
+
 pub trait Theory {
     type Sort;
 
     const NAME: &'static str;
 
-    /// Check that the operation can read and write wires of the given sorts.
+    /// Check that the operation can read and write wires of the given sorts: the sorts of
+    /// the read and written wires (the boundary of the application) must be the domain and
+    /// the codomain of the operation (its [`base::boundary::Boundary`]).
     /// Derivatives are wires of the tangent sorts (see [`base::tangent::Tangent::tangent`]).
+    ///
+    /// # Panics
+    ///
+    /// If the operation is ill-formed (see the panics of its boundary).
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
         R: IntoIterator<Item = Result<Self::Sort, E>>,
@@ -38,96 +45,72 @@ pub trait Differential: Theory {
 
 // Helpers for type-checking procedures
 
-// SKIP is unary: it copies exactly one read wire to one write wire of the
-// same sort, matching the arity of the base theories' `Id`.
-// This is a helper routine; concrete theories are free to implement their own
-fn check_skip<R, W, S, E>(range: &S, read: R, write: W) -> Result<(), String>
+/// Check the application of an operation with the domain `dom` and the codomain `cod` to
+/// wires: the sorts of the read wires are the domain of the application and the sorts of
+/// the written wires its codomain. The application is well-formed iff its domain is `dom`
+/// and its codomain is `cod`.
+fn check_wires<S, R, W, E>(dom: Poly<S>, cod: Poly<S>, read: R, write: W) -> Result<(), String>
 where
+    S: PartialEq + fmt::Display,
     R: IntoIterator<Item = Result<S, E>>,
     W: IntoIterator<Item = Result<S, E>>,
-    S: Eq + Debug,
-{
-    let mut read = read.into_iter();
-    let mut write = write.into_iter();
-    match (read.next(), write.next()) {
-        (Some(Ok(r)), Some(Ok(w))) if r != w || &w != range => {
-            return Err(format!(
-                "SKIP expects exactly one read and one write of sort {:?}",
-                range
-            ));
-        }
-        (Some(_), Some(_)) => {}
-        _ => {
-            return Err("SKIP expects exactly one read and one write".to_string());
-        }
-    }
-    if read.next().is_some() || write.next().is_some() {
-        return Err("SKIP expects exactly one read and one write".to_string());
-    }
-    Ok(())
-}
-
-// HAVOC is unary: it writes exactly one wire and reads none.
-// This is a helper routine; concrete theories are free to implement their own
-pub(crate) fn check_havoc<S, R, W, E>(range: &S, read: R, write: W) -> Result<(), String>
-where
-    R: IntoIterator<Item = Result<S, E>>,
-    W: IntoIterator<Item = Result<S, E>>,
-    S: Eq + Debug,
     E: fmt::Display,
 {
-    if read.into_iter().next().is_some() {
-        return Err("HAVOC expects no read wires".to_string());
-    }
-    let mut write = write.into_iter();
-    match write.next() {
-        Some(Ok(sort)) if &sort != range => {
-            return Err(format!("HAVOC expects write of dtype {:?}", range));
-        }
-        Some(Err(e)) => return Err(e.to_string()),
-        None => return Err("HAVOC expects exactly one write wire, got none".to_string()),
-        _ => {}
-    }
-    if write.next().is_some() {
-        return Err("HAVOC expects exactly one write wire, got more".to_string());
+    let (read, write) = (wire_sorts(read)?, wire_sorts(write)?);
+    if (&dom, &cod) != (&read, &write) {
+        return Err(format!(
+            "expected `{dom} -> {cod}`, got `{read} -> {write}`"
+        ));
     }
     Ok(())
 }
 
-// ZERO is unary: it writes exactly one wire and reads none.
-// This is a helper routine; concrete theories are free to implement their own
-pub(crate) fn check_zero<S, R, W, E>(range: &S, read: R, write: W) -> Result<(), String>
+/// The sorts of `wires` (read or written all at once, i.e., a monomial), or the error of
+/// the first wire that has none
+fn wire_sorts<S, I, E: fmt::Display>(wires: I) -> Result<Poly<S>, String>
 where
-    R: IntoIterator<Item = Result<S, E>>,
-    W: IntoIterator<Item = Result<S, E>>,
-    S: Eq + Debug,
-    E: fmt::Display,
+    I: IntoIterator<Item = Result<S, E>>,
 {
-    if read.into_iter().next().is_some() {
-        return Err("ZERO expects no read wires".to_string());
-    }
-    let mut write = write.into_iter();
-    match write.next() {
-        Some(Ok(sort)) if &sort != range => {
-            return Err(format!("ZERO expects write of dtype {:?}", range));
-        }
-        Some(Err(e)) => return Err(e.to_string()),
-        None => return Err("ZERO expects exactly one write wire, got none".to_string()),
-        _ => {}
-    }
-    if write.next().is_some() {
-        return Err("ZERO expects exactly one write wire, got more".to_string());
-    }
-    Ok(())
+    wires
+        .into_iter()
+        .map(|w| w.map_err(|e| e.to_string()))
+        .collect::<Result<Mono<S>, _>>()
+        .map(Poly::from)
 }
 
-fn next_sort<R, S, E: fmt::Display>(iter: &mut R, pos: usize) -> Result<S, String>
-where
-    R: Iterator<Item = Result<S, E>>,
-{
-    if let Some(item) = iter.next() {
-        item.map_err(|e| e.to_string())
-    } else {
-        Err(format!("Arg {pos} expected, but got none"))
+/// The `[rows, cols]` shape of the 2D tensor `t`
+///
+/// # Panics
+///
+/// If `t` is not 2D.
+fn shape_2d(t: &PyTensor) -> [usize; 2] {
+    match t.size().as_slice() {
+        &[rows, cols] => [rows as usize, cols as usize],
+        size => panic!("expected a 2D tensor, got {}D", size.len()),
     }
+}
+
+/// The number of inputs of the affine map `x ↦ A·x + B` with `A` of the shape
+/// `[outputs, inputs]`
+///
+/// # Panics
+///
+/// If `A` is not 2D.
+fn linear_inputs(a: &PyTensor) -> usize {
+    let [_, inp] = shape_2d(a);
+    inp
+}
+
+/// The number of outputs of the affine map `x ↦ A·x + B` with `A` of the shape
+/// `[outputs, inputs]`
+///
+/// # Panics
+///
+/// If `A` is not 2D, or `B` is neither empty nor a column vector `[outputs, 1]`.
+fn linear_outputs(a: &PyTensor, b: &PyTensor) -> usize {
+    let [out, _] = shape_2d(a);
+    if b.numel() != 0 && shape_2d(b) != [out, 1] {
+        panic!("`B` must be a column vector [{out}x1]");
+    }
+    out
 }
