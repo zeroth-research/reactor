@@ -2,14 +2,15 @@
 //! printed as closed terms; z3 must prove each term equal to the literal of
 //! the value `eval` gives. Shifts are also checked exhaustively on small
 //! widths. Skipped (with a message) if z3 is not found in `$Z3_BIN`,
-//! `~/tools/oss-cad-suite/bin` or the `PATH`.
+//! `~/tools/oss-cad-suite/bin` or the `PATH`. And the exact text of a few
+//! rounds of examples, which pins the documented format (what the rounds of
+//! all examples mean is checked in `examples.rs`).
 
 use num_bigint::BigUint;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::Path;
+use verilog::smt::Phase;
 use verilog::value::eval;
-use verilog::{BitVec, Sort, SvOp, smt};
+use verilog::{BitVec, Sort, SvOp, elab, lower, smt, z3};
 
 struct Rand(u64);
 
@@ -150,44 +151,6 @@ fn shift_cases() -> Vec<(SvOp, Vec<BitVec>)> {
     cases
 }
 
-fn z3_bin() -> Option<PathBuf> {
-    let candidates = [
-        std::env::var_os("Z3_BIN").map(PathBuf::from),
-        std::env::var_os("HOME").map(|h| Path::new(&h).join("tools/oss-cad-suite/bin")),
-    ];
-    let found = candidates
-        .into_iter()
-        .flatten()
-        .find(|dir| dir.join("z3").exists())
-        .map(|dir| dir.join("z3"));
-    found.or_else(|| {
-        let ok = Command::new("z3").arg("--version").output().is_ok();
-        ok.then(|| PathBuf::from("z3"))
-    })
-}
-
-/// Runs z3 on `script` and returns its output lines.
-fn z3(bin: &Path, script: &str) -> Vec<String> {
-    let mut child = Command::new(bin)
-        .args(["-smt2", "-in"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("z3 starts");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(script.as_bytes())
-        .unwrap();
-    let out = child.wait_with_output().unwrap();
-    String::from_utf8(out.stdout)
-        .unwrap()
-        .lines()
-        .map(str::to_string)
-        .collect()
-}
-
 /// Checks each case with z3: the printed term differs from the literal of
 /// its value must be unsatisfiable. One line of the script per case, after
 /// a one-line header, so a z3 error names the case by its line.
@@ -212,7 +175,7 @@ fn check(bin: &Path, cases: &[(SvOp, Vec<BitVec>)]) {
             args.join(", ")
         ));
     }
-    let out = z3(bin, &script);
+    let out = z3::run(bin, &script).unwrap();
     if let Some(e) = out.iter().find(|l| l.starts_with("(error")) {
         panic!("z3: {e}\n(line 2 is the first case)");
     }
@@ -239,7 +202,7 @@ fn check(bin: &Path, cases: &[(SvOp, Vec<BitVec>)]) {
 
 #[test]
 fn ops_match_eval() {
-    let Some(bin) = z3_bin() else {
+    let Some(bin) = z3::find() else {
         eprintln!("z3 not found: skipped");
         return;
     };
@@ -254,7 +217,7 @@ fn ops_match_eval() {
 
 #[test]
 fn shifts_match_eval() {
-    let Some(bin) = z3_bin() else {
+    let Some(bin) = z3::find() else {
         eprintln!("z3 not found: skipped");
         return;
     };
@@ -293,4 +256,156 @@ fn printed_forms() {
 #[should_panic(expected = "cannot be an SMT-LIB symbol")]
 fn symbol_rejects_bar() {
     smt::symbol("a|b");
+}
+
+/// A `Havoc` term declares its wire (lowering produces none yet, so no
+/// example has one).
+#[test]
+fn round_declares_havoc() {
+    use base::var::X;
+    use std::collections::{BTreeMap, HashMap};
+    use verilog::lower::Translation;
+    use verilog::{Atom, Module, Term, Var, Wire};
+    let (a, y) = (Var::new(Sort(8)), Var::new(Sort(8)));
+    let h = Wire::scalar(Sort(8));
+    let assign = [
+        Term::constant(SvOp::Havoc(Sort(8)), [h]).unwrap(),
+        Term::function(SvOp::Xor, [X(y)], [X(a), h]).unwrap(),
+    ];
+    let atom = Atom::combinatorial(&[a, y], assign).unwrap();
+    let t = Translation {
+        name: "noise".into(),
+        module: Module::observable([atom]).unwrap(),
+        vars: BTreeMap::from([("a".into(), a), ("y".into(), y)]),
+        clock: None,
+        registers: vec![],
+        unread_inputs: vec![],
+        wire_names: HashMap::new(),
+        instances: vec![],
+    };
+    let expected = "\
+; v2rm-input a 8
+(declare-const |X(a)| (_ BitVec 8))
+; atom controls y
+(declare-const |%1| (_ BitVec 8))
+; v2rm-next y 8 interface
+(define-fun |X(y)| () (_ BitVec 8) (bvxor |X(a)| |%1|))
+";
+    for phase in [Phase::Init, Phase::Update] {
+        let r = smt::round(&t, phase);
+        assert_eq!(r.text, expected);
+        assert_eq!(
+            (r.latched.len(), r.inputs, r.next),
+            (0, vec!["a".to_string()], vec!["y".to_string()])
+        );
+    }
+}
+
+/// The round of an example, with the exact text of the format.
+fn example_round(name: &str, phase: Phase) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("examples/{name}.sv"));
+    let inst = elab::load_file(&path).unwrap();
+    smt::round(&lower::lower_inst(&inst).unwrap(), phase).text
+}
+
+/// Latched values and inputs, the comments, and the init round.
+#[test]
+fn round_counter() {
+    assert_eq!(
+        example_round("counter", Phase::Update),
+        "\
+; v2rm-latched en 1
+(declare-const |*en| (_ BitVec 1))
+; v2rm-latched q 8
+(declare-const |*q| (_ BitVec 8))
+; atom controls q
+(define-fun |%1| () (_ BitVec 8) #b00000001)
+(define-fun |%2| () (_ BitVec 8) (bvadd |*q| |%1|))
+; v2rm-next q 8 interface
+(define-fun |X(q)| () (_ BitVec 8) (ite (= |*en| #b1) |%2| |*q|))
+; atom controls full
+; v2rm-next full 1 interface
+(define-fun |X(full)| () (_ BitVec 1) (ite (= |X(q)| #b11111111) #b1 #b0))
+"
+    );
+    assert_eq!(
+        example_round("counter", Phase::Init),
+        "\
+; v2rm-input q@init 8
+(declare-const |X(q@init)| (_ BitVec 8))
+; atom controls q
+; v2rm-next q 8 interface
+(define-fun |X(q)| () (_ BitVec 8) |X(q@init)|)
+; atom controls full
+; v2rm-next full 1 interface
+(define-fun |X(full)| () (_ BitVec 1) (ite (= |X(q)| #b11111111) #b1 #b0))
+"
+    );
+}
+
+/// The intermediate values `sum@1`, `sum@2`, … of an `always_comb` block.
+#[test]
+fn round_satadd() {
+    assert_eq!(
+        example_round("satadd", Phase::Update),
+        "\
+; v2rm-input a 8
+(declare-const |X(a)| (_ BitVec 8))
+; v2rm-input b 8
+(declare-const |X(b)| (_ BitVec 8))
+; atom controls y, sat, sum
+(define-fun |sum@1| () (_ BitVec 8) (bvadd |X(a)| |X(b)|))
+(define-fun |sat@1| () (_ BitVec 1) (ite (bvult |sum@1| |X(a)|) #b1 #b0))
+(define-fun |sum@2| () (_ BitVec 8) #b11111111)
+; v2rm-next sum 8 private
+(define-fun |X(sum)| () (_ BitVec 8) (ite (= |sat@1| #b1) |sum@2| |sum@1|))
+; v2rm-next sat 1 interface
+(define-fun |X(sat)| () (_ BitVec 1) |sat@1|)
+; v2rm-next y 8 interface
+(define-fun |X(y)| () (_ BitVec 8) |X(sum)|)
+"
+    );
+}
+
+/// A composed design: path names, the variable `m1.l.d` of a connection, and
+/// `%k` numbered across atoms.
+#[test]
+fn round_nest() {
+    assert_eq!(
+        example_round("nest", Phase::Update),
+        "\
+; v2rm-latched m1.l.d 4
+(declare-const |*m1.l.d| (_ BitVec 4))
+; v2rm-latched m2.l.d 4
+(declare-const |*m2.l.d| (_ BitVec 4))
+; v2rm-input a 4
+(declare-const |X(a)| (_ BitVec 4))
+; atom controls m1.q
+; v2rm-next m1.q 4 private
+(define-fun |X(m1.q)| () (_ BitVec 4) |*m1.l.d|)
+; atom controls m2.q
+; v2rm-next m2.q 4 private
+(define-fun |X(m2.q)| () (_ BitVec 4) |*m2.l.d|)
+; atom controls m1.s
+(define-fun |%1| () (_ BitVec 4) #b0010)
+; v2rm-next m1.s 4 private
+(define-fun |X(m1.s)| () (_ BitVec 4) (bvadd |X(m1.q)| |%1|))
+; atom controls m2.s
+(define-fun |%2| () (_ BitVec 4) #b0111)
+; v2rm-next m2.s 4 private
+(define-fun |X(m2.s)| () (_ BitVec 4) (bvadd |X(m2.q)| |%2|))
+; atom controls y
+; v2rm-next y 4 interface
+(define-fun |X(y)| () (_ BitVec 4) (bvadd |X(m1.s)| |X(m1.q)|))
+; atom controls m1.l.d
+; v2rm-next m1.l.d 4 private
+(define-fun |X(m1.l.d)| () (_ BitVec 4) (bvxor |X(a)| |X(m1.s)|))
+; atom controls z
+; v2rm-next z 4 interface
+(define-fun |X(z)| () (_ BitVec 4) (bvadd |X(m2.s)| |X(m2.q)|))
+; atom controls m2.l.d
+; v2rm-next m2.l.d 4 private
+(define-fun |X(m2.l.d)| () (_ BitVec 4) (bvxor |X(y)| |X(m2.s)|))
+"
+    );
 }

@@ -8,7 +8,8 @@ round of the module is one clock cycle.
 - [`theory`]: the sort [`Sort`] (a bit width) and the op set [`SvOp`].
 - [`value`]: bit-vector values [`BitVec`] and the evaluator [`value::eval`].
 - [`rm_sim`]: a round-by-round interpreter for modules over [`SvOp`].
-- [`smt`]: sorts, values and ops of [`SvOp`] as SMT-LIB text.
+- [`smt`]: sorts, values, ops and rounds of modules as SMT-LIB text; [`z3`]
+  runs the solver on it.
 - [`ast`]: the abstract syntax of the accepted subset; [`frontend`] parses
   into it (evaluating [`constant`] expressions such as parameter values),
   [`elab`] builds the tree of module instances, [`typing`] checks each
@@ -33,6 +34,7 @@ pub mod smt;
 pub mod theory;
 pub mod typing;
 pub mod value;
+pub mod z3;
 
 pub use crate::theory::{Sort, SvOp};
 pub use crate::value::BitVec;
