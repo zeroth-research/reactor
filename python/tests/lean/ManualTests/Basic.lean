@@ -69,7 +69,7 @@ example (a b c : Int) (h1 : 2 * a ≤ b + 3) (h2 : b ≤ a + c) (h3 : c ≤ 1) :
     a ≤ 4 := by zeroth_hammer
 
 -- ──────────────────────────────────────────────────────────────
--- Phase 2: push_neg normalises negated arithmetic
+-- Phase 2: push Not normalises negated arithmetic
 -- ──────────────────────────────────────────────────────────────
 
 example (x : Int) (h : ¬(x > 10)) : x ≤ 10 := by zeroth_hammer

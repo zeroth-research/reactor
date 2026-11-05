@@ -527,7 +527,7 @@ A Lean 4 elaborator tactic that cascades proof strategies:
 |-------|--------|
 | 0 | `simp_mat` alone (trivial / True goals) |
 | 1 | `omega`, `norm_cast; omega`, `simp_mat; omega`, `simp_mat; linarith` |
-| 2 | `push_neg; simp_mat; omega` |
+| 2 | `push Not; simp_mat; omega` |
 | 3 | `simp_mat` + nested `split` (up to 4 levels) + `omega`/`linarith` |
 | 4 | `simp_defs` + nested `split` + `omega` |
 | 5 | `simp_defs` → `simp_mat` → `mat_collapse` → `split_ifs` → `omega` |
@@ -1341,17 +1341,24 @@ see [Building the certificate](#building-the-certificate---build-cert).
 ### The `lean-ltl-certifying` side
 
 The route needs that checkout on the same toolchain as the generated
-projects, **v4.28.0**; it was pinned to v4.27.0 with `mathlib a3a10db` and
-`cslib d69fa7d`. Ported by matching `project/lakefile.py`'s package set exactly
-(`cslib v4.28.0`, `smt f58d19d…`, Mathlib inherited through cslib), which
-lets one already-built `.lake/packages` — e.g. `python/tests/lean`'s — serve
-both. One source fix was needed: `bv_decide_light` dropped `bvSimprocs`
-along with the `seval` simp sets, and without it the `Bool` structure of a
-hypothesis reaches the bitblaster unnormalised, which abstracts whole
-`||`/`&&`/`==` compounds as opaque variables and reports a "potentially
-spurious counterexample". That is the SAT path (`vmt2lean -m sat`), not the
-`smt` one this route uses, but it is what `NACounterBoolTS_cert` and
-`lmcs06mutex0` are built on.
+projects, **v4.34.0**. It is kept there by matching `project/lakefile.py`'s
+package set exactly (`cslib v4.34.0`, `smt db545be…`, Mathlib inherited
+through cslib), which lets one already-built `.lake/packages` — e.g.
+`python/tests/lean`'s — serve both.
+
+The port from v4.28.0 needed, on the `smt` path this route uses, the move
+of `Mathlib.Logic.Basic` to `Mathlib.Basic.Logic.Basic` and one `simp at ih`
+in `Safety/Lemmas` that no longer makes progress. On the SAT path
+(`vmt2lean -m sat`, which `NACounterBoolTS_cert` and `lmcs06mutex0` are
+built on), `bv_decide_light` was a copy of the `bv_decide` frontend with a
+lighter rewrite pass. v4.34 rewrote that frontend, and its rewrite pass is
+now the light one, so the tactic is `bv_decide`. The SAT template no longer
+turns off `andFlattening` and `embeddedConstraintSubst`: on the new frontend
+they are what keeps the SAT problem small, and `lmcs06mutex0` builds in 83 s
+with them rather than 169 s without. The port from v4.27.0 before that fixed
+the same tactic: without `bvSimprocs` the `Bool` structure of a hypothesis
+reached the bitblaster unnormalised and it reported a "potentially spurious
+counterexample".
 
 [ltl]: https://github.com/zeroth/proof-prototyping
 
