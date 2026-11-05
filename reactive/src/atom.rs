@@ -1,6 +1,6 @@
 use crate::Module;
 use base::Wire;
-use base::term::{Block, Term};
+use dataflow::diagram::{Block, Term};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;

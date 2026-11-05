@@ -315,7 +315,7 @@ pub(crate) struct AtomBlock {
 }
 
 // impl AtomBlock {
-//     fn base(&self) -> &base::Block<Sequential> {
+//     fn base(&self) -> &dataflow::diagram::Block<Sequential> {
 //         let atom = &self.atom.get().base;
 //         match self.block {
 //             BlockType::Init => atom.init(),
@@ -357,7 +357,7 @@ impl AtomBlock {
 
     fn __getitem__(&self, index: usize) -> PyResult<Term> {
         let atom = &self.atom.get().base;
-        let item: Option<base::Term<Any>> = match self.block {
+        let item: Option<dataflow::diagram::Term<Any>> = match self.block {
             BlockType::Init => atom.init().get(index).cloned().map(Into::into),
             BlockType::Update => atom.update().get(index).cloned().map(Into::into),
             BlockType::Delay => atom.delay().get(index).cloned().map(Into::into),

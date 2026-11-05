@@ -1,4 +1,4 @@
-use crate::wire::Wire;
+use base::Wire;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug};
