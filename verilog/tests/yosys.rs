@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use verilog::ast::{Const, Dir, Override, Ty};
 use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, lower_inst};
+use verilog::miter::{self, Verdict};
 use verilog::{BitVec, typing, yosys, z3};
 
 fn examples() -> Vec<PathBuf> {
@@ -171,4 +172,100 @@ fn names_match_examples() {
             assert_eq!(out, ["sat"], "{}", at("accessor sorts"));
         }
     }
+}
+
+/// Yosys and z3, or `None` (with a message) if one is missing.
+fn tools() -> Option<(PathBuf, PathBuf)> {
+    match (yosys::find(), z3::find()) {
+        (Some(y), Some(z)) => Some((y, z)),
+        _ => {
+            eprintln!("yosys or z3 not found: skipped");
+            None
+        }
+    }
+}
+
+/// The miter of an example, from Yosys's translation of it.
+fn miter_of(yosys: &Path, path: &Path) -> (Translation, yosys::Smt2, miter::Miter) {
+    let (_, t) = load(path);
+    let ys =
+        yosys::run(yosys, path, &t.name, &[]).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let m = miter::build(&t, &ys).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    (t, ys, m)
+}
+
+/// On every example, one round of our module and one transition of Yosys's
+/// agree on every controlled variable, and every one is queried.
+#[test]
+fn miter_examples() {
+    let Some((yosys, z3)) = tools() else { return };
+    for path in examples() {
+        let (t, _, m) = miter_of(&yosys, &path);
+        let mut queried: Vec<&str> = m.queries.iter().map(|q| q.name.as_str()).collect();
+        queried.sort();
+        let mut controlled: Vec<&str> = t.module.ctrl().iter().map(|v| t.name(v)).collect();
+        controlled.sort();
+        assert_eq!(queried, controlled, "{}", path.display());
+        for (name, verdict) in miter::check(&z3, &m).unwrap() {
+            assert_eq!(verdict, Verdict::Equal, "{}: `{name}`", path.display());
+        }
+    }
+}
+
+/// A change to our round shows up as `Differs` on the variables it
+/// affects, and only there.
+#[test]
+fn miter_differs() {
+    let Some((yosys, z3)) = tools() else { return };
+    let path = examples()
+        .into_iter()
+        .find(|p| p.ends_with("counter.sv"))
+        .unwrap();
+    let (_, _, mut m) = miter_of(&yosys, &path);
+    // `q` counts down instead of up; `full` reads our `X(q)`
+    let up = "(bvadd |*q| |%1|)";
+    assert!(m.script.contains(up));
+    m.script = m.script.replace(up, "(bvsub |*q| |%1|)");
+    let verdicts = miter::check(&z3, &m).unwrap();
+    let get = |n: &str| verdicts.iter().find(|(m, _)| m == n).unwrap().1;
+    assert_eq!(get("q"), Verdict::Differs);
+    assert_eq!(get("full"), Verdict::Differs);
+
+    // `full` alone is wrong: set when `q` is all zeros
+    let (_, _, mut m) = miter_of(&yosys, &path);
+    let ones = "(= |X(q)| #b11111111)";
+    assert!(m.script.contains(ones));
+    m.script = m.script.replace(ones, "(= |X(q)| #b00000000)");
+    let verdicts = miter::check(&z3, &m).unwrap();
+    assert_eq!(
+        verdicts,
+        [
+            ("q".into(), Verdict::Equal),
+            ("full".into(), Verdict::Differs)
+        ]
+    );
+}
+
+/// A variable missing on the Yosys side or of another width is an error,
+/// and so is z3 output that is not one answer per query.
+#[test]
+fn miter_errors() {
+    let Some((yosys, z3)) = tools() else { return };
+    let path = examples()
+        .into_iter()
+        .find(|p| p.ends_with("counter.sv"))
+        .unwrap();
+    let (t, ys, m) = miter_of(&yosys, &path);
+    let mut other = ys.clone();
+    other.wires.remove("en");
+    other.wires.insert("q".into(), 4);
+    let e = miter::build(&t, &other).unwrap_err();
+    assert!(e.contains("`en` is not a Yosys wire"), "{e}");
+    assert!(e.contains("`q` has width 8, in Yosys 4"), "{e}");
+
+    // under QF_BV, z3 rejects Yosys's declarations but still answers
+    let mut bad = m.clone();
+    bad.script = bad.script.replace("QF_UFBV", "QF_BV");
+    let e = miter::check(&z3, &bad).unwrap_err();
+    assert!(e.contains("unexpected z3 output"), "{e}");
 }

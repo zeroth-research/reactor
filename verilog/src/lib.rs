@@ -10,7 +10,8 @@ round of the module is one clock cycle.
 - [`rm_sim`]: a round-by-round interpreter for modules over [`SvOp`].
 - [`smt`]: sorts, values, ops and rounds of modules as SMT-LIB text; [`z3`]
   runs the solver on it; [`yosys`] translates a design into SMT-LIB
-  independently, for comparison.
+  independently, for comparison, and [`miter`] checks that one round of
+  both agrees.
 - [`ast`]: the abstract syntax of the accepted subset; [`frontend`] parses
   into it (evaluating [`constant`] expressions such as parameter values),
   [`elab`] builds the tree of module instances, [`typing`] checks each
@@ -29,6 +30,7 @@ pub mod constant;
 pub mod elab;
 pub mod frontend;
 pub mod lower;
+pub mod miter;
 pub mod print;
 pub mod rm_sim;
 pub mod smt;
