@@ -15,49 +15,15 @@ fn poly(words: &[&str]) -> Poly<char> {
 
 #[test]
 fn boundaries() {
-    // Bool = I ⊕ I, and ⊗ distributes: Bool ⊗ x has two summands
-    let boolean = Poly::<char>::unit() + Poly::unit();
-    let paired = boolean * Poly::from_iter(['x']);
-    assert_eq!(paired, Poly::from_iter(['x']) + Poly::from_iter(['x']));
-
     // ⊗ of monomials is concatenation, with the unit I
-    let xy = Poly::from_iter(['x']) * Poly::from_iter(['y']);
-    assert_eq!(xy, Poly::from_iter(['x', 'y']));
-    assert_eq!(xy.clone() * Poly::unit(), xy);
+    let xy = Mono::from_iter(['x']) * Mono::from_iter(['y']);
+    assert_eq!(Poly::from(xy.clone()), Poly::from_iter(['x', 'y']));
+    assert_eq!(xy.clone() * Mono::unit(), xy);
 
-    // 0 annihilates
-    assert_eq!(xy.clone() * Poly::zero(), Poly::zero());
-
-    // operator syntax: (x + y) * z = xz ⊕ yz
-    let (x, y, z) = (
-        Mono::from_iter(['x']),
-        Mono::from_iter(['y']),
-        Mono::from_iter(['z']),
-    );
-    assert_eq!(
-        (x + y) * Poly::from(z),
-        Poly::from_iter([Mono::from_iter(['x', 'z']), Mono::from_iter(['y', 'z'])])
-    );
+    // operator syntax: x * y = xy
     assert_eq!(
         Mono::from_iter(['x']) * Mono::from_iter(['y']),
         Mono::from_iter(['x', 'y'])
-    );
-
-    // ⊗ of sums keeps the order: (x + y) * (z + w) = xz ⊕ xw ⊕ yz ⊕ yw
-    let (x, y, z, w) = (
-        Mono::from_iter(['x']),
-        Mono::from_iter(['y']),
-        Mono::from_iter(['z']),
-        Mono::from_iter(['w']),
-    );
-    assert_eq!(
-        (x + y) * (z + w),
-        Poly::from_iter([
-            Mono::from_iter(['x', 'z']),
-            Mono::from_iter(['x', 'w']),
-            Mono::from_iter(['y', 'z']),
-            Mono::from_iter(['y', 'w']),
-        ])
     );
 }
 
@@ -72,9 +38,6 @@ fn concatenation_of_monomials() {
         mn.iter().collect::<Vec<_>>(),
         m.iter().chain(n.iter()).collect::<Vec<_>>()
     );
-
-    // likewise for single-summand polynomials: one summand, concatenated
-    assert_eq!(Poly::from(m) * Poly::from(n), poly(&["xyzwv"]));
 }
 
 #[test]
@@ -95,7 +58,7 @@ fn addition_of_polynomials() {
 
 #[test]
 fn unit_on_both_sides() {
-    // I is the unit of ⊗ on both sides, for monomials and polynomials
+    // I is the unit of ⊗ on both sides
     let m = mono("xy");
     assert_eq!(Mono::unit() * m.clone(), m);
     assert_eq!(m.clone() * Mono::unit(), m);
@@ -104,13 +67,8 @@ fn unit_on_both_sides() {
     assert_eq!(mono(""), Mono::unit());
     assert_eq!(Mono::unit() * mono(""), Mono::unit());
 
-    let p = poly(&["xy", "z"]);
-    assert_eq!(Poly::unit() * p.clone(), p);
-    assert_eq!(p.clone() * Poly::unit(), p);
-
-    // the sum of the empty word alone is I, and I ⊗ I = I
+    // the sum of the empty word alone is I
     assert_eq!(poly(&[""]), Poly::unit());
-    assert_eq!(Poly::unit() * poly(&[""]), Poly::unit());
 }
 
 #[test]
@@ -124,43 +82,15 @@ fn zero_on_both_sides() {
     // 0 is the unit of ⊕ on both sides
     assert_eq!(Poly::zero() + p.clone(), p);
     assert_eq!(p.clone() + Poly::zero(), p);
-
-    // and annihilates under ⊗ on both sides
-    assert_eq!(Poly::zero() * p.clone(), Poly::zero());
-    assert_eq!(p * Poly::zero(), Poly::zero());
 }
 
 #[test]
 fn associativity() {
     let (p, q, r) = (poly(&["a", "b"]), poly(&["c", "d"]), poly(&["e", "f"]));
-    assert_eq!(
-        (p.clone() + q.clone()) + r.clone(),
-        p.clone() + (q.clone() + r.clone())
-    );
-    assert_eq!((p.clone() * q.clone()) * r.clone(), p * (q * r));
+    assert_eq!((p.clone() + q.clone()) + r.clone(), p + (q + r));
 
     let (x, y, z) = (mono("ab"), mono("c"), mono("de"));
     assert_eq!((x.clone() * y.clone()) * z.clone(), x * (y * z));
-}
-
-#[test]
-fn right_distributivity_is_structural() {
-    // (p ⊕ q) ⊗ r = p⊗r ⊕ q⊗r, summands in the same order
-    let (p, q, r) = (poly(&["a", "b"]), poly(&["c", "d"]), poly(&["e", "f"]));
-    assert_eq!((p.clone() + q.clone()) * r.clone(), p * r.clone() + q * r);
-}
-
-#[test]
-fn left_distributivity_only_up_to_reordering() {
-    // p ⊗ (c ⊕ d) and p⊗c ⊕ p⊗d have the same summands in a different
-    // order, so they are isomorphic but not structurally equal. Pinned here
-    // so that changing this, either way, is a deliberate decision.
-    let (p, c, d) = (poly(&["a", "b"]), poly(&["c"]), poly(&["d"]));
-    let factored = p.clone() * (c.clone() + d.clone());
-    let distributed = p.clone() * c + p * d;
-    assert_eq!(factored, poly(&["ac", "ad", "bc", "bd"]));
-    assert_eq!(distributed, poly(&["ac", "bc", "ad", "bd"]));
-    assert_ne!(factored, distributed);
 }
 
 #[test]
@@ -172,7 +102,7 @@ fn equality_is_structural() {
     assert_ne!(poly(&["x"]) + poly(&["y"]), poly(&["y"]) + poly(&["x"]));
 
     // nor does ⊗: words are ordered
-    assert_ne!(poly(&["x"]) * poly(&["y"]), poly(&["y"]) * poly(&["x"]));
+    assert_ne!(mono("x") * mono("y"), mono("y") * mono("x"));
 
     // the impossible boundary 0 is not the empty boundary I
     assert_ne!(Poly::<char>::zero(), Poly::unit());

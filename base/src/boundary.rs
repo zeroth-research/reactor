@@ -186,19 +186,25 @@ impl<G> std::ops::Add for Poly<G> {
     }
 }
 
+// The next trait impl is commented out because the result
+// of `(a ⊕ b) ⊗ (c ⊕ d)` depends on whether we distribute from left or right
+// (the results are isomorphic but not equal). To avoid bugs and surprises,
+// a creator of `Poly` needs to decide how to distribute if it is necessary.
+// (The implementation below is right-distribution).
+//
 /// Distributing copies base types into several variants, hence `G: Clone`.
-impl<G: Clone> std::ops::Mul for Poly<G> {
-    type Output = Poly<G>;
-
-    /// `⊗` of sum types, distributed into a sum of products: one variant for
-    /// every pair of a variant of `self` and a variant of `other`, in that
-    /// order, so `(a ⊕ b) ⊗ (c ⊕ d) = a ⊗ c ⊕ a ⊗ d ⊕ b ⊗ c ⊕ b ⊗ d`.
-    fn mul(self, other: Self) -> Poly<G> {
-        self.iter()
-            .flat_map(|m| other.iter().map(|n| m.clone() * n.clone()))
-            .collect()
-    }
-}
+// impl<G: Clone> std::ops::Mul for Poly<G> {
+//     type Output = Poly<G>;
+//
+//     /// `⊗` of sum types, distributed into a sum of products: one variant for
+//     /// every pair of a variant of `self` and a variant of `other`, in that
+//     /// order, so `(a ⊕ b) ⊗ (c ⊕ d) = a ⊗ c ⊕ a ⊗ d ⊕ b ⊗ c ⊕ b ⊗ d`.
+//     fn mul(self, other: Self) -> Poly<G> {
+//         self.iter()
+//             .flat_map(|m| other.iter().map(|n| m.clone() * n.clone()))
+//             .collect()
+//     }
+// }
 
 /// The boundary of a morphism: the type of its inputs,
 /// [`dom`](Self::dom), and the type of its outputs, [`cod`](Self::cod), both
