@@ -17,7 +17,10 @@ fn poly(words: &[&str]) -> Poly<char> {
 fn boundaries() {
     // ⊗ of monomials is concatenation, with the unit I
     let xy = Mono::from_iter(['x']) * Mono::from_iter(['y']);
-    assert_eq!(Poly::from(xy.clone()), Poly::from_iter(['x', 'y']));
+    assert_eq!(
+        Poly::from(xy.clone()),
+        Poly::from_iter([Mono::from_iter(['x', 'y'])])
+    );
     assert_eq!(xy.clone() * Mono::unit(), xy);
 
     // operator syntax: x * y = xy
@@ -110,12 +113,6 @@ fn equality_is_structural() {
 
 #[test]
 fn collecting_nothing() {
-    // an empty word collects into I: a single summand, the empty word
-    assert_eq!(
-        Poly::<char>::from_iter(std::iter::empty::<char>()),
-        Poly::unit()
-    );
-
     // an empty sum collects into 0: no summands at all
     assert_eq!(
         Poly::<char>::from_iter(std::iter::empty::<Mono<char>>()),
