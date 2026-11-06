@@ -1,4 +1,5 @@
 use base::Wire;
+use base::boundary::{Boundary, Poly};
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug};
@@ -325,6 +326,21 @@ impl<T: Theory> IntoIterator for Block<T> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.terms.into_iter()
+    }
+}
+
+/// The boundary of a block: the product of the sorts of its inputs, and the
+/// product of the sorts of its outputs, in order.
+impl<T: Theory> Boundary<T::Sort> for Block<T>
+where
+    T::Sort: Clone,
+{
+    fn dom(&self) -> Poly<T::Sort> {
+        self.read.iter().map(|w| w.dtype().clone()).collect()
+    }
+
+    fn cod(&self) -> Poly<T::Sort> {
+        self.write.iter().map(|w| w.dtype().clone()).collect()
     }
 }
 
