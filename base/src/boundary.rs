@@ -101,14 +101,6 @@ impl<G> From<Mono<G>> for Poly<G> {
     }
 }
 
-/// A word of base types is the sum type with a single variant: their tuple
-/// type. An empty word therefore gives `I`, not `0`.
-impl<G> FromIterator<G> for Poly<G> {
-    fn from_iter<I: IntoIterator<Item = G>>(word: I) -> Self {
-        Mono::from_iter(word).into()
-    }
-}
-
 /// Product types, taken as alternatives in order, form their sum type. No
 /// alternatives give the empty type `0`.
 impl<G> FromIterator<Mono<G>> for Poly<G> {
