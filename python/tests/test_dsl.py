@@ -7,6 +7,7 @@ plus check the ctrl/extl partition and the config surface.
 """
 
 import pytest
+import torch
 
 from reactor import LIA, Module, Sort, Wire, sugar, Int, Var, Real, LRA, X as _X, d as _d, NonLinearError
 from reactor.sugar import ite, d, X
@@ -327,3 +328,30 @@ def test_compose_hiding_coupled_variables():
 
     # the coupling took place regardless: hiding only restricts visibility
     assert y not in m.obs and y not in m.extl
+
+
+def test_init_takes_the_next_values():
+    """The init has no latched values: its parameters give the next values of the
+    external variables through X(), and reading them as latched is rejected."""
+
+    class Follow(sugar.Module):
+        def init(self, t):
+            return X(t)
+
+        def update(self, x, t):
+            return X(t)
+
+    x, t = Var(INT), Var(INT)
+    m = Follow(theory=LIA, ctrl=(x,), extl=(t,))
+    assert m.atoms[0].wait == [t]
+
+    state = {_X(t): torch.tensor([[7]])}
+    execute_init(state, m.atoms)
+    assert state[_X(x)].item() == 7
+
+    class Latched(sugar.Module):
+        def init(self, t):
+            return t
+
+    with pytest.raises(ValueError, match="latched value"):
+        Latched(theory=LIA, ctrl=(x,), extl=(t,))

@@ -17,13 +17,13 @@ module is built in the constructor:
 
 The module is a single atom, and its interfaces come from the configuration: it
 controls ``ctrl``, awaits ``extl``, and reads both ``ctrl`` and ``extl``. The methods
-receive the variables **unpacked, as positional parameters**: ``init`` takes the next
-values of the ``extl`` variables, ``update`` and ``delay`` take the latched values of
-``ctrl`` followed by ``extl`` (all of them — arities are checked). For a parameter ``v``
-of an ``extl`` variable, ``X(v)`` is its next value and ``d(v)`` its derivative. Each
-method returns a tuple aligned with ``ctrl`` (a single value for a single variable): entry
-*i* drives the next value (``init`` / ``update``) or the derivative (``delay``) of
-``ctrl[i]``.
+receive the variables **unpacked, as positional parameters**: ``init`` takes the ``extl``
+variables, ``update`` and ``delay`` take ``ctrl`` followed by ``extl`` (all of them —
+arities are checked). A parameter reads as the variable's latched value; for an ``extl``
+variable ``v``, ``X(v)`` is its next value and ``d(v)`` its derivative. ``init`` has no
+latched values: it uses ``X(v)`` only. Each method returns a tuple aligned with ``ctrl`` (a
+single value for a single variable): entry *i* drives the next value (``init`` /
+``update``) or the derivative (``delay``) of ``ctrl[i]``.
 
 A method not overridden takes its default: ``init`` leaves the initial values arbitrary
 (havoc), ``update`` keeps the values (skip), and ``delay`` keeps them constant (zero).
@@ -56,7 +56,7 @@ Two base-class constraints force this (both flagged for design review):
 
 import inspect
 
-from .reactor import Atom as _Atom, Module as _Module, Term as _Term, X as base_X, d as base_d, Var
+from .reactor import Atom as _Atom, Module as _Module, Term as _Term, Wire, X as base_X, d as base_d, Var
 from .ops import op as _op
 from .blocks import boundary as _boundary, block as _block, havoc as _havoc, skip as _skip, zero as _zero
 
@@ -85,19 +85,23 @@ def _build_block(cls, kind, ctrl, extl, theory):
     """The block of the ``kind`` of the atom of the module, from the method of the same
     name, or None if the class does not override it.
 
-    The method takes the next values of ``extl`` (``init``), or the latched values of
-    ``ctrl`` followed by ``extl`` (``update``, ``delay``), and returns the values of
-    ``ctrl`` the block gives: their next values, or their derivatives (``delay``)."""
+    The method takes the variables ``extl`` (``init``), or ``ctrl`` followed by ``extl``
+    (``update``, ``delay``), and returns the values of ``ctrl`` the block gives: their next
+    values, or their derivatives (``delay``)."""
     fn = getattr(cls, kind, None)
     if fn is None:
         return None
     nparams = len(inspect.signature(fn).parameters)
 
     inputs, outputs = _boundary(kind, ctrl=ctrl, wait=extl, read=ctrl + extl)
-    params = tuple(base_X(v) for v in extl) if kind == "init" else ctrl + extl
+    params = extl if kind == "init" else ctrl + extl
     out = base_d if kind == "delay" else base_X
 
-    with collecting() as terms, binding({**inputs, **outputs}):
+    # the init takes no latched values: its parameters stand for the variables, so that
+    # X(v) gives their next values, on wires off the boundary of the block
+    unbound = {v: Wire(v.dtype) for v in extl} if kind == "init" else {}
+
+    with collecting() as terms, binding({**unbound, **inputs, **outputs}):
         # we assume all arguments are taken, otherwise it's too ambiguous
         args = tuple(expr(v, theory=theory) for v in params)
         if nparams != len(args) + 1:
@@ -111,6 +115,14 @@ def _build_block(cls, kind, ctrl, extl, theory):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
             terms.append(_id(theory, outputs[out(var)], e.wire))
 
+    latched = {w: v for v, w in unbound.items()}
+    for term in terms:
+        for w in term.read:
+            if w in latched:
+                raise ValueError(
+                    f"{cls.__name__}.init reads the latched value of {latched[w]}, which an "
+                    f"init does not have; use X() for its next value"
+                )
     return _block(inputs, outputs, terms)
 
 

@@ -168,13 +168,23 @@ def eval_itype(itype, read, out_sort=None):
 # ============================================================================
 
 
-def execute_block(state, atom, kind):
+def _eval_term(term, read):
+    """The values the term writes, from the values it reads, as torch tensors."""
+    return eval_itype(term.itype, read, term.write[0].dtype)
+
+
+def execute_block(state, atom, kind, evaluate=_eval_term):
     """Evaluate the block of the ``kind`` of the atom.
 
     ``state`` maps the views of the variables (a variable for its latched value,
     ``X(v)`` for its next value, ``d(v)`` for its derivative) to their values. The
     block takes the values of the views of its boundary inputs, by position, and
     gives those of its outputs, which are stored back into ``state``.
+
+    ``evaluate(term, read)`` gives the values a term writes from the values it reads:
+    torch tensors by default, or e.g. Z3 expressions with ``reactor.z3.eval``::
+
+        execute_block(state, atom, "update", lambda t, read: z3.eval(t.itype, read))
     """
     block = getattr(atom, kind)
     inputs, outputs = views(kind, atom.ctrl, atom.wait, atom.read)
@@ -191,8 +201,7 @@ def execute_block(state, atom, kind):
         if not len(term.write):
             continue
         read = [value(w) for w in term.read]
-        out_sort = term.write[0].dtype
-        results = eval_itype(term.itype, read, out_sort)
+        results = evaluate(term, read)
         for w, val in zip(term.write, results):
             values[w] = val
 
