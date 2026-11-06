@@ -2,7 +2,7 @@ use crate::Module;
 use base::Wire;
 use dataflow::diagram::{Block, Term};
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
@@ -27,11 +27,14 @@ where
     wait: Interface<S>,
     /// Corresponds to read wires.
     read: Interface<S>,
-    /// Corresponds to the initial condition.
+    /// Corresponds to the initial condition, with the boundary
+    /// `X(wait) -> X(ctrl)`.
     init: Block<I>,
-    /// Corresponds to the update action.
+    /// Corresponds to the update action, with the boundary
+    /// `read ++ X(wait) -> X(ctrl)`.
     update: Block<J>,
-    /// Corresponds to the delay activity.
+    /// Corresponds to the delay activity, with the boundary
+    /// `read ++ d(wait) -> d(ctrl)`.
     delay: Block<F>,
 }
 
@@ -121,7 +124,13 @@ where
     /// - `ctrl`: The controlled variables, whose next and derivative wires the blocks write.
     /// - `wait`: The awaited variables, whose next or derivative wires the blocks read.
     /// - `read`: The read variables, whose latched wires the blocks read.
-    /// - `init`, `update`, `delay`: The blocks of the atom.
+    /// - `init`, `update`, `delay`: The blocks of the atom. Their boundaries
+    ///   list the wires of the variables in the order of the interfaces: the
+    ///   init maps the next wires of `wait` to the next wires of `ctrl`; the
+    ///   update maps the latched wires of `read` followed by the next wires of
+    ///   `wait` to the next wires of `ctrl`; and the delay maps the latched
+    ///   wires of `read` followed by the derivative wires of `wait` to the
+    ///   derivative wires of `ctrl`.
     ///
     /// # Returns
     /// The constructed atom.
@@ -142,64 +151,24 @@ where
         update: Block<J>,
         delay: Block<F>,
     ) -> Self {
-        #[cfg(debug_assertions)]
-        {
-            //================================================================================
-            // Check declared wires
-            //================================================================================
-            debug_assert!(ctrl.is_disjoint(&wait));
-            // the wires of declared variables; all other written wires are local
-            let declared = |w: &&Wire<S>| {
-                read.var(w).is_some() | ctrl.var(w).is_some() | wait.var(w).is_some()
-            };
-
-            //================================================================================
-            // Check init block
-            //================================================================================
-            // all read wires are wait X wires
-            let mut riter = init.read().iter();
-            debug_assert!(riter.all(|w| wait.var(w).is_some_and(|v| v.nxt() == w)));
-            // all write wires of declared variables are ctrl X wires; the rest are local
-            let mut witer = init.write().iter().filter(declared);
-            debug_assert!(witer.all(|w| ctrl.var(w).is_some_and(|v| v.nxt() == w)));
-            // all control X wires are written
-            debug_assert!(
-                ctrl.iter()
-                    .map(Wire3::nxt)
-                    .all(|w| init.write().contains(w))
-            );
-
-            //================================================================================
-            // Check update block
-            //================================================================================
-            // all read wires are either read latched wires or wait X wires
-            let mut riter = update.read().iter();
-            debug_assert!(riter.all(|w| read.var(w).is_some_and(|v| v.ltc() == w)
-                | wait.var(w).is_some_and(|v| v.nxt() == w)));
-            // all write wires of declared variables are ctrl X wires; the rest are local
-            let mut witer = update.write().iter().filter(declared);
-            debug_assert!(witer.all(|w| ctrl.var(w).is_some_and(|v| v.nxt() == w)));
-            // all control X wires are written
-            let citer = ctrl.iter();
-            debug_assert!(citer.map(Wire3::nxt).all(|w| update.write().contains(w)));
-
-            //================================================================================
-            // Check delay block
-            //================================================================================
-            // all read wires are either read latched wires or wait d wires
-            let mut riter = delay.read().iter();
-            debug_assert!(riter.all(|w| read.var(w).is_some_and(|v| v.ltc() == w)
-                | wait.var(w).is_some_and(|v| v.der() == w)));
-            // all write wires of declared variables are ctrl d wires; the rest are local
-            let mut witer = delay.write().iter().filter(declared);
-            debug_assert!(witer.all(|w| ctrl.var(w).is_some_and(|v| v.der() == w)));
-            // all control d wires are written
-            debug_assert!(
-                ctrl.iter()
-                    .map(Wire3::der)
-                    .all(|w| delay.write().contains(w))
-            );
-        }
+        // the boundaries of the blocks are given by the interfaces
+        debug_assert!(ctrl.is_disjoint(&wait));
+        debug_assert!(init.read().iter().eq(wait.iter().map(Wire3::nxt)));
+        debug_assert!(init.write().iter().eq(ctrl.iter().map(Wire3::nxt)));
+        debug_assert!(
+            update.read().iter().eq(read
+                .iter()
+                .map(Wire3::ltc)
+                .chain(wait.iter().map(Wire3::nxt)))
+        );
+        debug_assert!(update.write().iter().eq(ctrl.iter().map(Wire3::nxt)));
+        debug_assert!(
+            delay.read().iter().eq(read
+                .iter()
+                .map(Wire3::ltc)
+                .chain(wait.iter().map(Wire3::der)))
+        );
+        debug_assert!(delay.write().iter().eq(ctrl.iter().map(Wire3::der)));
 
         Self {
             ctrl,
@@ -393,15 +362,45 @@ where
             }
         }
 
-        Ok(Self::new_unchecked(
-            Interface::from_exact_iter_unchecked(ctrl),
-            Interface::from_exact_iter_unchecked(wait),
-            Interface::from_exact_iter_unchecked(read),
-            init,
-            update,
-            delay,
-        ))
+        let ctrl = Interface::from_exact_iter_unchecked(ctrl);
+        let wait = Interface::from_exact_iter_unchecked(wait);
+        let read = Interface::from_exact_iter_unchecked(read);
+
+        let ctrl_nxt = || ctrl.iter().map(Wire3::nxt);
+        let ctrl_der = || ctrl.iter().map(Wire3::der);
+        let read_ltc = || read.iter().map(Wire3::ltc);
+        let wait_nxt = || wait.iter().map(Wire3::nxt);
+        let wait_der = || wait.iter().map(Wire3::der);
+
+        let init = with_boundary(init, wait_nxt(), ctrl_nxt())?;
+        let update = with_boundary(update, read_ltc().chain(wait_nxt()), ctrl_nxt())?;
+        let delay = with_boundary(delay, read_ltc().chain(wait_der()), ctrl_der())?;
+
+        Ok(Self::new_unchecked(ctrl, wait, read, init, update, delay))
     }
+}
+
+/// Rebuilds the block with the boundary `read -> write`, consuming the inputs
+/// its terms do not read with [`Theory::discard`] terms.
+fn with_boundary<'a, T, S, R, W>(block: Block<T>, read: R, write: W) -> Result<Block<T>, String>
+where
+    T: Theory<Sort = S>,
+    S: Clone + Debug + 'a,
+    R: IntoIterator<Item = &'a Wire<S>>,
+    W: IntoIterator<Item = &'a Wire<S>>,
+{
+    let read: Vec<Wire<S>> = read.into_iter().cloned().collect();
+    let write: Vec<Wire<S>> = write.into_iter().cloned().collect();
+
+    let used: HashSet<&Wire<S>> = block.iter().flat_map(Term::read).collect();
+    let discard = |w: &Wire<S>| {
+        let nothing: [Wire<S>; 0] = [];
+        Term::function(T::discard(w.dtype()), nothing, [w.clone()])
+    };
+    let unused = read.iter().filter(|w| !used.contains(w));
+    let discards: Vec<Term<T>> = unused.map(discard).collect::<Result<_, _>>()?;
+
+    Block::new(read, write, block.into_iter().chain(discards))
 }
 
 //============================================================

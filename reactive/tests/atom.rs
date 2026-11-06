@@ -150,10 +150,12 @@ fn differential_drifting_clocks() {
 
     // Block sizes: 2 derivative terms, 2 init terms, and the update is the
     // implicit `skip` synthesised by the constructor, one term per
-    // controlled variable.
-    assert_eq!(atom.delay().len(), 2);
-    assert_eq!(atom.init().len(), 2);
-    assert_eq!(atom.update().len(), 2);
+    // controlled variable. The blocks discard the inputs they do not read:
+    // init and update the next value of `t`, and the delay the latched
+    // values of the clocks, which only the update reads.
+    assert_eq!(atom.delay().len(), 2 + 2);
+    assert_eq!(atom.init().len(), 2 + 1);
+    assert_eq!(atom.update().len(), 2 + 1);
 
     // All three variables are observable.
     assert_eq!(module.obs().len(), 3);
@@ -201,10 +203,11 @@ fn uninitialized_module_ok() {
     let atom = &m.atoms()[0];
 
     // One synthesised HAVOC init and one synthesised ZERO delay for the
-    // single controlled variable, next to the explicit update.
+    // single controlled variable, next to the explicit update. The delay
+    // discards the latched value of `y`, which only the update reads.
     assert_eq!(atom.init().len(), 1);
     assert_eq!(atom.update().len(), 1);
-    assert_eq!(atom.delay().len(), 1);
+    assert_eq!(atom.delay().len(), 1 + 1);
 }
 
 /// The update of an jump module must drive next wires; writing a
@@ -233,10 +236,11 @@ fn constant_module_ok() {
     let atom = &m.atoms()[0];
 
     // The explicit init, next to one synthesised SKIP update and one
-    // synthesised ZERO delay for the single controlled variable.
+    // synthesised ZERO delay for the single controlled variable. The delay
+    // discards the latched value of `x`, which only the update reads.
     assert_eq!(atom.init().len(), 1);
     assert_eq!(atom.update().len(), 1);
-    assert_eq!(atom.delay().len(), 1);
+    assert_eq!(atom.delay().len(), 1 + 1);
 }
 
 /// The init of a constant module must drive next wires; writing a latched
@@ -300,10 +304,11 @@ fn simple_timed_automaton() {
     assert_eq!(atom.ctrl().len(), 2);
 
     // Nothing is synthesised: exactly the three explicit blocks, with the
-    // guard as a temporary wire of the update.
+    // guard as a temporary wire of the update, and the delay discarding the
+    // latched values of both variables, which only the update reads.
     assert_eq!(atom.init().len(), 2);
     assert_eq!(atom.update().len(), 3);
-    assert_eq!(atom.delay().len(), 2);
+    assert_eq!(atom.delay().len(), 2 + 2);
 }
 
 /// A hybrid module synthesises nothing: forgetting the zero drift of the
@@ -347,4 +352,57 @@ fn coupled_atoms_can_construct_module() {
 
     let m = Module::observable([a1, a2]);
     assert!(m.is_ok());
+}
+
+/// The blocks of an atom have the boundaries `X(wait) -> X(ctrl)` (init),
+/// `read ++ X(wait) -> X(ctrl)` (update), and `read ++ d(wait) -> d(ctrl)`
+/// (delay), each in the order of the interfaces; the inputs a block does not
+/// read are discarded.
+#[test]
+fn blocks_have_the_boundaries_of_the_interfaces() {
+    let x = Wire3::new(srt("Int"));
+    let e = Wire3::new(srt("Int"));
+
+    // x controlled, read (x, e), wait (e)
+    let init = [term!(mk_op("F"), [X(x)], [X(e)]).unwrap()];
+    let update = [term!(mk_op("G"), [X(x)], [*x, *e, X(e)]).unwrap()];
+    let atom = Atom::sequential(&[x, e], init, update).unwrap();
+
+    assert_eq!(atom.ctrl().iter().collect::<Vec<_>>(), [&x]);
+    assert_eq!(atom.read().iter().collect::<Vec<_>>(), [&x, &e]);
+    assert_eq!(atom.wait().iter().collect::<Vec<_>>(), [&e]);
+
+    assert_eq!(atom.init().read(), [X(e)]);
+    assert_eq!(atom.init().write(), [X(x)]);
+    assert_eq!(atom.update().read(), [*x, *e, X(e)]);
+    assert_eq!(atom.update().write(), [X(x)]);
+    assert_eq!(atom.delay().read(), [*x, *e, d(e)]);
+    assert_eq!(atom.delay().write(), [d(x)]);
+
+    // the synthesised delay writes the zero derivative of `x` and reads
+    // nothing: all its inputs are discarded
+    let ops: Vec<_> = atom.delay().iter().map(|t| t.itype().0).collect();
+    assert_eq!(ops, ["ZERO", "DISCARD", "DISCARD", "DISCARD"]);
+    let discarded: Vec<_> = atom.delay().iter().skip(1).flat_map(|t| t.read()).collect();
+    assert_eq!(discarded, [&*x, &*e, &d(e)]);
+}
+
+/// An input that only some blocks read is discarded by the others.
+#[test]
+fn unread_inputs_are_discarded_per_block() {
+    let x = Wire3::new(srt("Int"));
+    let e = Wire3::new(srt("Int"));
+
+    // the init ignores `e`, the update awaits it
+    let init = [term!(mk_op("CONST"), [X(x)]).unwrap()];
+    let update = [term!(mk_op("ID"), [X(x)], [X(e)]).unwrap()];
+    let atom = Atom::sequential(&[x, e], init, update).unwrap();
+
+    assert_eq!(atom.init().read(), [X(e)]);
+    let ops: Vec<_> = atom.init().iter().map(|t| t.itype().0).collect();
+    assert_eq!(ops, ["CONST", "DISCARD"]);
+
+    // the update reads all its inputs, nothing is discarded
+    assert_eq!(atom.update().read(), [X(e)]);
+    assert_eq!(atom.update().len(), 1);
 }
