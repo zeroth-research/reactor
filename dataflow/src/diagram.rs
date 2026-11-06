@@ -551,16 +551,97 @@ where
     }
 }
 
-impl<F: Differential> Block<F>
+//============================================================
+// Positional constructors
+//============================================================
+
+impl<T: Theory> Block<T>
 where
-    F::Sort: Clone + Debug,
+    T::Sort: Clone + Debug,
 {
-    /// Builds a block of one `ZERO` term per write wire, so that theories can
-    /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
-    /// the compute graph.
-    pub fn zero<W: IntoIterator<Item = Wire<F::Sort>>>(write: W) -> Result<Self, String> {
-        let write = write.into_iter();
-        Block::try_from_iter(write.map(|w| Term::constant(F::zero(w.dtype()), [w])))
+    /// Builds the block of the single operation `itype`, reading all the
+    /// inputs, of the sorts `dom`, and writing all the outputs, of the sorts
+    /// `cod`, in order.
+    ///
+    /// # Errors
+    /// If the operation does not type-check against the sorts.
+    pub fn op<D, C>(itype: T, dom: D, cod: C) -> Result<Self, String>
+    where
+        D: IntoIterator<Item = T::Sort>,
+        C: IntoIterator<Item = T::Sort>,
+    {
+        let read: Vec<Wire<T::Sort>> = dom.into_iter().map(Wire::new).collect();
+        let write: Vec<Wire<T::Sort>> = cod.into_iter().map(Wire::new).collect();
+        let term = Term::function(itype, write.clone(), read.clone())?;
+        Block::new(read, write, [term])
+    }
+
+    /// Builds the block taking inputs of the sorts `dom` and giving an output
+    /// per operation of `ops`, in order. Each of `ops` is an operation, the
+    /// positions of the inputs it reads (an input may be read any number of
+    /// times), and the sort of the output it writes. The inputs no operation
+    /// reads are discarded, after the operations.
+    ///
+    /// # Errors
+    /// If an operation reads a position beyond the inputs, or does not
+    /// type-check against the sorts.
+    pub fn pointwise<D, O, R>(dom: D, ops: O) -> Result<Self, String>
+    where
+        D: IntoIterator<Item = T::Sort>,
+        O: IntoIterator<Item = (T, R, T::Sort)>,
+        R: IntoIterator<Item = usize>,
+    {
+        let read: Vec<Wire<T::Sort>> = dom.into_iter().map(Wire::new).collect();
+        let mut unread = vec![true; read.len()];
+        let mut write = Vec::new();
+        let mut terms = Vec::new();
+        for (itype, at, sort) in ops {
+            let mut args = Vec::new();
+            for k in at {
+                let arg = read.get(k).ok_or_else(|| out_of_range(k, read.len()))?;
+                unread[k] = false;
+                args.push(arg.clone());
+            }
+            let out = Wire::new(sort);
+            terms.push(Term::function(itype, [out.clone()], args)?);
+            write.push(out);
+        }
+
+        let nothing = || std::iter::empty::<Wire<T::Sort>>();
+        for (w, _) in read.iter().zip(unread).filter(|(_, unread)| *unread) {
+            terms.push(Term::function(
+                T::discard(w.dtype()),
+                nothing(),
+                [w.clone()],
+            )?);
+        }
+        Block::new(read, write, terms)
+    }
+}
+
+/// The error of an operation reading the input `at` of a block with `len`
+/// inputs.
+fn out_of_range(at: usize, len: usize) -> String {
+    format!("Operation reads the input {at}, but the block has {len} inputs")
+}
+
+impl<I: Combinatorial> Block<I>
+where
+    I::Sort: Clone + Debug,
+{
+    /// Builds the block taking inputs of the sorts `dom` and giving outputs
+    /// of the sorts `cod`, each from its own `HAVOC`: arbitrary values. The
+    /// inputs are discarded.
+    ///
+    /// # Errors
+    /// If `HAVOC` does not type-check against an output sort.
+    pub fn havoc<D, C>(dom: D, cod: C) -> Result<Self, String>
+    where
+        D: IntoIterator<Item = I::Sort>,
+        C: IntoIterator<Item = I::Sort>,
+    {
+        let ops = cod.into_iter().map(|s| (I::havoc(&s), [], s));
+        Block::pointwise(dom, ops)
     }
 }
 
@@ -568,33 +649,46 @@ impl<J: Sequential> Block<J>
 where
     J::Sort: Clone + Debug,
 {
-    /// Builds a block of one `SKIP` term per `(write, read)` wire pair, so
-    /// that theories can keep `SKIP` at a fixed arity and each pair is an
-    /// independent edge in the compute graph (no spurious dependency of one
-    /// write on all the other reads).
-    pub fn skip<W: IntoIterator<Item = Wire<J::Sort>>, R: IntoIterator<Item = Wire<J::Sort>>>(
-        write: W,
-        read: R,
-    ) -> Result<Self, String> {
-        let mut write = write.into_iter();
-        let mut read = read.into_iter();
-        Block::try_from_iter(std::iter::from_fn(move || {
-            match (write.next(), read.next()) {
-                (Some(w), Some(r)) => Some(Term::function(J::skip(w.dtype()), [w], [r])),
-                (None, None) => None,
-                _ => Some(Err("skip requires as many write as read wires".to_string())),
-            }
-        }))
+    /// Builds the block taking inputs of the sorts `dom` and giving, for each
+    /// of the positions `from`, the input at that position, through its own
+    /// `SKIP`. The inputs not given are discarded.
+    ///
+    /// # Errors
+    /// If a position is beyond the inputs, or `SKIP` does not type-check
+    /// against a sort.
+    pub fn skip<D, F>(dom: D, from: F) -> Result<Self, String>
+    where
+        D: IntoIterator<Item = J::Sort>,
+        F: IntoIterator<Item = usize>,
+    {
+        let dom: Vec<J::Sort> = dom.into_iter().collect();
+        let ops = from
+            .into_iter()
+            .map(|k| match dom.get(k) {
+                Some(s) => Ok((J::skip(s), [k], s.clone())),
+                None => Err(out_of_range(k, dom.len())),
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Block::pointwise(dom, ops)
     }
 }
 
-impl<I: Combinatorial> Block<I>
+impl<F: Differential> Block<F>
 where
-    I::Sort: Clone + Debug,
+    F::Sort: Clone + Debug,
 {
-    /// Builds a block of one `HAVOC` term per write wire
-    pub fn havoc<W: IntoIterator<Item = Wire<I::Sort>>>(write: W) -> Result<Self, String> {
-        let write = write.into_iter();
-        Block::try_from_iter(write.map(|w| Term::constant(I::havoc(w.dtype()), [w])))
+    /// Builds the block taking inputs of the sorts `dom` and giving outputs
+    /// of the sorts `cod` (sorts of derivatives), each from its own `ZERO`.
+    /// The inputs are discarded.
+    ///
+    /// # Errors
+    /// If `ZERO` does not type-check against an output sort.
+    pub fn zero<D, C>(dom: D, cod: C) -> Result<Self, String>
+    where
+        D: IntoIterator<Item = F::Sort>,
+        C: IntoIterator<Item = F::Sort>,
+    {
+        let ops = cod.into_iter().map(|s| (F::zero(&s), [], s));
+        Block::pointwise(dom, ops)
     }
 }

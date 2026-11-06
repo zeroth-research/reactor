@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use base::tangent::Tangent;
-use dataflow::diagram::{Block, Term, Wire};
+use dataflow::diagram::Block;
 use reactive::AtomInterface;
 use reactive::var::Var;
 use std::collections::HashMap;
@@ -29,52 +29,43 @@ pub fn iface<S: Clone + PartialEq + Debug>(
     AtomInterface::try_from_iter(vars).unwrap()
 }
 
-/// A fresh wire of the sort of values named `sort`
-pub fn wire(sort: &'static str) -> Wire<Srt> {
-    Wire::new(srt(sort))
+/// The sorts of the variables, in order
+pub fn sorts<S: Clone>(vars: &AtomInterface<S>) -> Vec<S> {
+    vars.iter().map(|var| var.dtype().clone()).collect()
 }
 
-/// A fresh wire of the tangent of the sort of values named `sort`: a wire
-/// carrying derivatives
-pub fn dwire(sort: &'static str) -> Wire<Srt> {
-    Wire::new(srt(sort).tangent())
+/// The sorts of the derivatives of the variables, in order
+pub fn tangents<S: Tangent>(vars: &AtomInterface<S>) -> Vec<S> {
+    vars.iter().map(|var| var.dtype().tangent()).collect()
 }
 
-/// A fresh wire carrying values of the variable
-pub fn wire_of<S: Clone>(var: &Var<S>) -> Wire<S> {
-    Wire::new(var.dtype().clone())
+/// The boundary `X(wait) -> X(ctrl)` of an init: the sorts of its inputs
+/// and of its outputs
+pub fn init_boundary<S: Clone>(
+    ctrl: &AtomInterface<S>,
+    wait: &AtomInterface<S>,
+) -> (Vec<S>, Vec<S>) {
+    (sorts(wait), sorts(ctrl))
 }
 
-/// A fresh wire carrying derivatives of the variable
-pub fn dwire_of<S: Tangent>(var: &Var<S>) -> Wire<S> {
-    Wire::new(var.dtype().tangent())
+/// The boundary `read ++ X(wait) -> X(ctrl)` of an update: the sorts of its
+/// inputs and of its outputs
+pub fn update_boundary<S: Clone>(
+    ctrl: &AtomInterface<S>,
+    wait: &AtomInterface<S>,
+    read: &AtomInterface<S>,
+) -> (Vec<S>, Vec<S>) {
+    ([sorts(read), sorts(wait)].concat(), sorts(ctrl))
 }
 
-/// Fresh wires carrying values of the variables, in order
-pub fn wires<S: Clone>(vars: &AtomInterface<S>) -> Vec<Wire<S>> {
-    vars.iter().map(wire_of).collect()
-}
-
-/// Fresh wires carrying derivatives of the variables, in order
-pub fn dwires<S: Tangent>(vars: &AtomInterface<S>) -> Vec<Wire<S>> {
-    vars.iter().map(dwire_of).collect()
-}
-
-/// The wires, each carrying a variable, in the order of the names of the
-/// variables: the order of the interfaces
-pub fn by_name<S>(wires: impl IntoIterator<Item = (Var<S>, Wire<S>)>) -> Vec<Wire<S>> {
-    let mut wires: Vec<(Var<S>, Wire<S>)> = wires.into_iter().collect();
-    wires.sort_by_key(|(var, _)| var.name());
-    wires.into_iter().map(|(_, wire)| wire).collect()
-}
-
-/// The term discarding the wire
-pub fn discard<T: Theory>(wire: &Wire<T::Sort>) -> Term<T>
-where
-    T::Sort: Clone,
-{
-    let nothing: [Wire<T::Sort>; 0] = [];
-    Term::function(T::discard(wire.dtype()), nothing, [wire.clone()]).unwrap()
+/// The boundary `read ++ d(wait) -> d(ctrl)` of a delay: the sorts of its
+/// inputs and of its outputs
+pub fn delay_boundary<S: Clone + Tangent>(
+    ctrl: &AtomInterface<S>,
+    wait: &AtomInterface<S>,
+    read: &AtomInterface<S>,
+) -> (Vec<S>, Vec<S>) {
+    ([sorts(read), tangents(wait)].concat(), tangents(ctrl))
 }
 
 /// The init `X(wait) -> X(ctrl)` leaving the controlled variables
@@ -84,10 +75,8 @@ where
     I: Combinatorial<Sort = S>,
     S: Clone + Debug,
 {
-    let (inputs, outputs) = (wires(wait), wires(ctrl));
-    let havoc = |w: &Wire<S>| Term::constant(I::havoc(w.dtype()), [w.clone()]).unwrap();
-    let terms = outputs.iter().map(havoc).chain(inputs.iter().map(discard));
-    Block::new(inputs.clone(), outputs.clone(), terms.collect::<Vec<_>>()).unwrap()
+    let (dom, cod) = init_boundary(ctrl, wait);
+    Block::havoc(dom, cod).unwrap()
 }
 
 /// The update `read ++ X(wait) -> X(ctrl)` keeping the controlled
@@ -101,24 +90,13 @@ where
     J: Sequential<Sort = S>,
     S: Clone + Debug,
 {
-    let inputs = [wires(read), wires(wait)].concat();
-    let outputs = wires(ctrl);
-
-    let mut used = vec![false; inputs.len()];
-    let mut terms: Vec<Term<J>> = Vec::new();
-    for (var, out) in ctrl.iter().zip(outputs.iter()) {
-        let at = read
-            .iter()
+    let (dom, _) = update_boundary(ctrl, wait, read);
+    let from = ctrl.iter().map(|var| {
+        read.iter()
             .position(|v| v == var)
-            .expect("skip reads the variables it keeps");
-        used[at] = true;
-        let skip = J::skip(out.dtype());
-        terms.push(Term::function(skip, [out.clone()], [inputs[at].clone()]).unwrap());
-    }
-    let unused = inputs.iter().zip(used).filter(|(_, used)| !used);
-    terms.extend(unused.map(|(w, _)| discard(w)));
-
-    Block::new(inputs, outputs, terms).unwrap()
+            .expect("skip reads the variables it keeps")
+    });
+    Block::skip(dom, from).unwrap()
 }
 
 /// The delay `read ++ d(wait) -> d(ctrl)` keeping the controlled variables
@@ -132,16 +110,18 @@ where
     F: Differential<Sort = S>,
     S: Clone + Debug + Tangent,
 {
-    let inputs = [wires(read), dwires(wait)].concat();
-    let outputs = dwires(ctrl);
-    let zero = |w: &Wire<S>| Term::constant(F::zero(w.dtype()), [w.clone()]).unwrap();
-    let terms = outputs.iter().map(zero).chain(inputs.iter().map(discard));
-    Block::new(inputs.clone(), outputs.clone(), terms.collect::<Vec<_>>()).unwrap()
+    let (dom, cod) = delay_boundary(ctrl, wait, read);
+    Block::zero(dom, cod).unwrap()
 }
 
 /// The uninterpreted sort of values named `name`
 pub fn srt(name: &'static str) -> Srt {
     Srt(name, 0)
+}
+
+/// The sort of the derivatives of the values of the sort named `name`
+pub fn dsrt(name: &'static str) -> Srt {
+    srt(name).tangent()
 }
 
 impl Tangent for Srt {
@@ -209,17 +189,6 @@ pub fn mk_op(name: &'static str) -> Ops {
     Ops(name)
 }
 
-#[macro_export]
-macro_rules! term {
-    ($itype:expr, $write:expr) => {
-        Term::constant($itype, $write)
-    };
-
-    ($itype:expr, $write:expr, $read:expr) => {
-        Term::function($itype, $write, $read)
-    };
-}
-
 /// A counter over the variables `x`, `y`, `z` and the inputs `y0`, `z0`
 /// (named `0` to `4`), with the names of the variables
 pub fn example_counter() -> Result<(Module, HashMap<Var<Srt>, String>), String> {
@@ -228,45 +197,24 @@ pub fn example_counter() -> Result<(Module, HashMap<Var<Srt>, String>), String> 
     let wait = iface([y0, z0]);
     let read = iface([x, y, z, y0, z0]);
 
-    // X(y0), X(z0) -> X(x), X(y), X(z)
-    let init = {
-        let [ny0, nz0, nx, ny, nz] = ["real"; 5].map(wire);
-        let tmp1 = wire("real");
-        let tmp2 = wire("bool");
-        let tmp3 = wire("bool");
-        let terms = [
-            term!(mk_op("ZERO"), [tmp1])?,
-            term!(mk_op("ID"), [nx], [tmp1])?,
-            term!(mk_op("ABS"), [tmp2], [ny0])?,
-            term!(mk_op("ID"), [ny], [tmp2])?,
-            term!(mk_op("ABS"), [tmp3], [nz0])?,
-            term!(mk_op("ID"), [nz], [tmp3])?,
-        ];
-        Block::new([ny0, nz0], [nx, ny, nz], terms)?
-    };
+    // X(y0), X(z0) -> X(x), X(y), X(z): x = 0, y = y0, z = z0
+    let (dom, _) = init_boundary(&ctrl, &wait);
+    let ops = [
+        (mk_op("ZERO"), vec![], srt("real")),
+        (mk_op("ID"), vec![0], srt("real")),
+        (mk_op("ID"), vec![1], srt("real")),
+    ];
+    let init = Block::pointwise(dom, ops)?;
 
-    // x, y, z, y0, z0, X(y0), X(z0) -> X(x), X(y), X(z)
-    let update = {
-        let [x, y, z, y0, z0, ny0, nz0] = ["real"; 7].map(wire);
-        let [nx, ny, nz] = ["real"; 3].map(wire);
-        let tmp1 = wire("real");
-        let [tmp4, tmp5, tmp6] = ["bool"; 3].map(wire);
-        let [tmp7, tmp8] = ["real"; 2].map(wire);
-        let terms = [
-            term!(mk_op("ZERO"), [tmp1])?,
-            term!(mk_op("LEQ"), [tmp4], [x, y])?,
-            term!(mk_op("LEQ"), [tmp5], [x, z])?,
-            term!(mk_op("OR"), [tmp6], [tmp4, tmp5])?,
-            term!(mk_op("ONE"), [tmp7])?,
-            term!(mk_op("ADD"), [tmp8], [x, tmp7])?,
-            term!(mk_op("ITE"), [nx], [tmp6, tmp8, tmp1])?,
-            term!(mk_op("ID"), [ny], [y0])?,
-            term!(mk_op("ID"), [nz], [z0])?,
-            discard(&ny0),
-            discard(&nz0),
-        ];
-        Block::new([x, y, z, y0, z0, ny0, nz0], [nx, ny, nz], terms)?
-    };
+    // x, y, z, y0, z0, X(y0), X(z0) -> X(x), X(y), X(z): x counts up while
+    // below y or z, y = y0, z = z0
+    let (dom, _) = update_boundary(&ctrl, &wait, &read);
+    let ops = [
+        (mk_op("COUNT"), vec![0, 1, 2], srt("real")),
+        (mk_op("ID"), vec![3], srt("real")),
+        (mk_op("ID"), vec![4], srt("real")),
+    ];
+    let update = Block::pointwise(dom, ops)?;
 
     let delay = zero_delay(&ctrl, &wait, &read);
     let atom = Atom::new(ctrl, wait, read, init, update, delay)?;
@@ -290,44 +238,15 @@ pub fn example_peterson1() -> Result<Module, String> {
     let read = iface([pc1, x1, pc2, x2]);
 
     // () -> X(pc1), X(x1)
-    let init = {
-        let (npc1, nx1) = (wire(stype), wire("bool"));
-        let terms = [
-            term!(mk_op("CONST(outCS)"), [npc1])?,
-            term!(mk_op("CONST(true)"), [nx1])?,
-        ];
-        Block::new([], [npc1, nx1], terms)?
-    };
+    let ops = [
+        (mk_op("CONST(outCS)"), vec![], srt(stype)),
+        (mk_op("CONST(true)"), vec![], srt("bool")),
+    ];
+    let init = Block::pointwise([], ops)?;
 
-    // pc1, x1, pc2, x2 -> X(pc1), X(x1)
-    let update = {
-        let (pc1, x1, pc2, x2) = (wire(stype), wire("bool"), wire(stype), wire("bool"));
-        let (npc1, nx1) = (wire(stype), wire("bool"));
-        let [out_cs, req_cs, in_cs] = [stype; 3].map(wire);
-        let [cond1, cond2, cond3, const_true] = ["bool"; 4].map(wire);
-        let [tmp11, tmp12, tmp13, tmp14] = ["bool"; 4].map(wire);
-        let terms = [
-            term!(mk_op("CONST(outCS)"), [out_cs])?,
-            term!(mk_op("EQ"), [cond1], [out_cs, pc1])?,
-            term!(mk_op("CONST(reqCS)"), [req_cs])?,
-            term!(mk_op("EQ"), [tmp11], [req_cs, pc1])?,
-            term!(mk_op("EQ"), [tmp12], [out_cs, pc2])?,
-            term!(mk_op("NEQ"), [tmp13], [x1, x2])?,
-            term!(mk_op("OR"), [tmp14], [tmp12, tmp13])?,
-            term!(mk_op("AND"), [cond2], [tmp14, tmp11])?,
-            term!(mk_op("CONST(inCS)"), [in_cs])?,
-            term!(mk_op("EQ"), [cond3], [in_cs, pc1])?,
-            term!(mk_op("CONST(true)"), [const_true])?,
-            term!(
-                mk_op("CASE"),
-                [npc1, nx1],
-                [
-                    cond1, req_cs, x2, cond2, in_cs, x1, cond3, out_cs, x1, const_true, pc1, x1
-                ]
-            )?,
-        ];
-        Block::new([pc1, x1, pc2, x2], [npc1, nx1], terms)?
-    };
+    // pc1, x1, pc2, x2 -> X(pc1), X(x1): the protocol step
+    let (dom, cod) = update_boundary(&ctrl, &wait, &read);
+    let update = Block::op(mk_op("PETERSON"), dom, cod)?;
 
     let delay = zero_delay(&ctrl, &wait, &read);
     let atom = Atom::new(ctrl, wait, read, init, update, delay)?;
@@ -350,31 +269,14 @@ pub fn example_tiny1(
     };
 
     // X(external) if awaited -> X(interface), X(private)
-    let init = {
-        let (ni, np) = (wire_of(&interface), wire_of(&private));
-        let ne = wait.then(|| wire_of(&external));
-        let mut terms = vec![Term::constant(mk_op("INIT"), [ni, np])?];
-        terms.extend(ne.iter().map(discard));
-        Block::new(ne, by_name([(interface, ni), (private, np)]), terms)?
-    };
+    let (dom, cod) = init_boundary(&ctrl, &awaited);
+    let init = Block::op(mk_op("INIT"), dom, cod)?;
 
     // private, X(external) if awaited, else external, private ->
     // X(interface), X(private)
-    let update = {
-        let (ni, np) = (wire_of(&interface), wire_of(&private));
-        let (e, p) = (wire_of(&external), wire_of(&private));
-        let temp = wire("Tny");
-        let (op, inputs) = if wait {
-            ("AWAIT", vec![p, e])
-        } else {
-            ("SEQ", by_name([(external, e), (private, p)]))
-        };
-        let terms = [
-            Term::constant(mk_op("CONST"), [temp])?,
-            Term::function(mk_op(op), [ni, np], [e, p, temp])?,
-        ];
-        Block::new(inputs, by_name([(interface, ni), (private, np)]), terms)?
-    };
+    let op = if wait { "AWAIT" } else { "SEQ" };
+    let (dom, cod) = update_boundary(&ctrl, &awaited, &read);
+    let update = Block::op(mk_op(op), dom, cod)?;
 
     let delay = zero_delay(&ctrl, &awaited, &read);
     let atom = Atom::new(ctrl, awaited, read, init, update, delay)?;

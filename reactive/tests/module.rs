@@ -3,12 +3,11 @@
 
 mod common;
 
-use base::tangent::Tangent;
 use common::{
-    Atom, Module, Srt, by_name, discard, dwire_of, example_counter, example_peterson1,
-    example_tiny1, havoc_init, iface, mk_op, skip_update, var, wire, wire_of, zero_delay,
+    Atom, Module, Srt, example_counter, example_peterson1, example_tiny1, havoc_init, iface, mk_op,
+    skip_update, sorts, srt, var, zero_delay,
 };
-use dataflow::diagram::{Block, Term};
+use dataflow::diagram::Block;
 use reactive::ModuleInterface;
 use reactive::var::Var;
 use std::fmt;
@@ -24,10 +23,8 @@ fn copy(x: Var<Srt>, y: Var<Srt>) -> Result<Module, String> {
     let (ctrl, wait, read) = (iface([x]), iface([y]), iface([]));
 
     // X(y) -> X(x), both as init and as update
-    let assign = || {
-        let (ny, nx) = (wire_of(&y), wire_of(&x));
-        Block::new([ny], [nx], [term!(mk_op("ID"), [nx], [ny]).unwrap()])
-    };
+    let (dom, cod) = (sorts(&wait), sorts(&ctrl));
+    let assign = || Block::op(mk_op("ID"), dom.clone(), cod.clone());
     let delay = zero_delay(&ctrl, &wait, &read);
 
     let a = Atom::new(ctrl, wait, read, assign()?, assign()?, delay)?;
@@ -43,19 +40,10 @@ fn step(x: Var<Srt>, p: Var<Srt>, e: Var<Srt>) -> Result<Module, String> {
     let (ctrl, wait, read) = (iface([x, p]), iface([]), iface([p, e]));
 
     // () -> X(x), X(p)
-    let init = {
-        let (nx, np) = (wire_of(&x), wire_of(&p));
-        let terms = [Term::constant(mk_op("INIT"), [nx, np])?];
-        Block::new([], by_name([(x, nx), (p, np)]), terms)?
-    };
+    let init = Block::op(mk_op("INIT"), [], sorts(&ctrl))?;
 
     // p, e -> X(x), X(p)
-    let update = {
-        let (lp, le, nx, np) = (wire_of(&p), wire_of(&e), wire_of(&x), wire_of(&p));
-        let terms = [Term::function(mk_op("STEP"), [nx, np], [lp, le])?];
-        let inputs = by_name([(p, lp), (e, le)]);
-        Block::new(inputs, by_name([(x, nx), (p, np)]), terms)?
-    };
+    let update = Block::op(mk_op("STEP"), sorts(&read), sorts(&ctrl))?;
 
     let delay = zero_delay(&ctrl, &wait, &read);
     let a = Atom::new(ctrl, wait, read, init, update, delay)?;
@@ -82,7 +70,7 @@ fn can_instantiate_partially_observable_module() {
 }
 
 #[test]
-fn cannot_instantiate_external_unobservable_wire() {
+fn cannot_instantiate_external_unobservable_variable() {
     let (m, _) = example_counter().unwrap();
     let vars = m.obs().clone();
     // the fourth observable is an external variable: making it private must
@@ -271,36 +259,24 @@ fn compose_seq_2() {
     //
     let (ctrl, wait, read) = (iface([x, y, z]), iface([y0, z0]), iface([x, y, z]));
 
-    // X(y0), X(z0) -> X(x), X(y), X(z)
-    let init = {
-        let [ny0, nz0, nx, ny, nz] = ["real"; 5].map(wire);
-        let terms = [
-            term!(mk_op("Const(0)"), [nx]).unwrap(),
-            term!(mk_op("Id"), [ny], [ny0]).unwrap(),
-            term!(mk_op("Id"), [nz], [nz0]).unwrap(),
-        ];
-        Block::new([ny0, nz0], [nx, ny, nz], terms).unwrap()
-    };
+    let real = srt("real");
 
-    // x, y, z, X(y0), X(z0) -> X(x), X(y), X(z)
-    let update = {
-        let [x, y, z, ny0, nz0, nx, ny, nz] = ["real"; 8].map(wire);
-        let tmps = ["real"; 6].map(wire);
-        let terms = [
-            term!(mk_op("Lt"), [tmps[0]], [x, y]).unwrap(),
-            term!(mk_op("Lt"), [tmps[1]], [x, z]).unwrap(),
-            term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
-            term!(mk_op("Const(0)"), [tmps[3]]).unwrap(),
-            term!(mk_op("Const(1)"), [tmps[4]]).unwrap(),
-            term!(mk_op("Add"), [tmps[5]], [x, tmps[4]]).unwrap(),
-            term!(mk_op("Ite"), [nx], [tmps[2], tmps[5], tmps[3]]).unwrap(),
-            term!(mk_op("Id"), [ny], [y]).unwrap(),
-            term!(mk_op("Id"), [nz], [z]).unwrap(),
-            discard(&ny0),
-            discard(&nz0),
-        ];
-        Block::new([x, y, z, ny0, nz0], [nx, ny, nz], terms).unwrap()
-    };
+    // X(y0), X(z0) -> X(x), X(y), X(z)
+    let ops = [
+        (mk_op("Const(0)"), vec![], real),
+        (mk_op("Id"), vec![0], real),
+        (mk_op("Id"), vec![1], real),
+    ];
+    let init = Block::pointwise([real; 2], ops).unwrap();
+
+    // x, y, z, X(y0), X(z0) -> X(x), X(y), X(z): x counts up while below y
+    // or z
+    let ops = [
+        (mk_op("Count"), vec![0, 1, 2], real),
+        (mk_op("Id"), vec![1], real),
+        (mk_op("Id"), vec![2], real),
+    ];
+    let update = Block::pointwise([real; 5], ops).unwrap();
 
     let delay = zero_delay(&ctrl, &wait, &read);
     let a1 = Atom::new(ctrl, wait, read, init, update, delay).unwrap();
@@ -319,17 +295,7 @@ fn compose_seq_2() {
 
     // X(x), X(y), X(z) -> X(inv), both as init and as update: a
     // combinatorial atom
-    let assign = || {
-        let [nx, ny, nz, ninv] = ["real"; 4].map(wire);
-        let tmps = ["real"; 3].map(wire);
-        let terms = [
-            term!(mk_op("Le"), [tmps[0]], [nx, ny]).unwrap(),
-            term!(mk_op("Le"), [tmps[1]], [nx, nz]).unwrap(),
-            term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
-            term!(mk_op("Id"), [ninv], [tmps[2]]).unwrap(),
-        ];
-        Block::new([nx, ny, nz], [ninv], terms).unwrap()
-    };
+    let assign = || Block::op(mk_op("Inv"), [real; 3], [real]).unwrap();
 
     let delay = zero_delay(&ctrl, &wait, &read);
     let a2 = Atom::new(ctrl, wait, read, assign(), assign(), delay).unwrap();
@@ -346,21 +312,9 @@ fn more_controlled_than_external() {
     let (ctrl, wait, read) = (iface([y, z]), iface([]), iface([y, z]));
 
     // () -> X(y), X(z)
-    let init = {
-        let (ny, nz) = (wire("B"), wire("C"));
-        Block::new(
-            [],
-            [ny, nz],
-            [Term::constant(mk_op("A"), [ny, nz]).unwrap()],
-        )
-        .unwrap()
-    };
+    let init = Block::op(mk_op("A"), [], sorts(&ctrl)).unwrap();
     // y, z -> X(y), X(z)
-    let update = {
-        let (y, z, ny, nz) = (wire("B"), wire("C"), wire("B"), wire("C"));
-        let terms = [Term::function(mk_op("A"), [ny, nz], [y, z]).unwrap()];
-        Block::new([y, z], [ny, nz], terms).unwrap()
-    };
+    let update = Block::op(mk_op("A"), sorts(&read), sorts(&ctrl)).unwrap();
     let delay = zero_delay(&ctrl, &wait, &read);
 
     let a = Atom::new(ctrl, wait, read, init, update, delay);
@@ -492,21 +446,14 @@ fn heterogeneous_composition() {
     let (ctrl, wait, read) = (iface([y]), iface([]), iface([y]));
     let init = havoc_init::<SeqOps, _>(&ctrl, &wait);
     let jump = skip_update::<SeqOps, _>(&ctrl, &wait, &read);
-    let flow = {
-        let (ly, dy) = (wire_of(&y), dwire_of(&y));
-        let zero = Term::constant(DifOps::zero(&srt_tangent("B")), [dy]).unwrap();
-        Block::new([ly], [dy], [zero, discard(&ly)]).unwrap()
-    };
+    let flow = zero_delay::<DifOps, _>(&ctrl, &wait, &read);
     let Q = reactive::Atom::new(ctrl, wait, read, init, jump, flow).unwrap();
     let Q = reactive::Module::observable([Q]).unwrap();
 
     // z = x + y, at every step
     let (ctrl, wait, read) = (iface([z]), iface([x, y]), iface([]));
-    let comb = || {
-        let (nx, ny, nz) = (wire_of(&x), wire_of(&y), wire_of(&z));
-        let comb = Term::function(SeqOps("+"), [nz], [nx, ny]).unwrap();
-        Block::new([nx, ny], [nz], [comb]).unwrap()
-    };
+    let (dom, cod) = (sorts(&wait), sorts(&ctrl));
+    let comb = || Block::op(SeqOps("+"), dom.clone(), cod.clone()).unwrap();
     let flow = zero_delay::<DifOps, _>(&ctrl, &wait, &read);
     let R = reactive::Atom::new(ctrl, wait, read, comb(), comb(), flow).unwrap();
     let R = reactive::Module::observable([R]).unwrap();
@@ -515,20 +462,13 @@ fn heterogeneous_composition() {
     assert!(S.is_ok());
 }
 
-/// The sort of the derivatives of the values of the sort named `sort`
-fn srt_tangent(sort: &'static str) -> Srt {
-    common::srt(sort).tangent()
-}
-
 /// The atom controlling the variable `v` with a constant
 fn constant(v: Var<Srt>) -> Atom {
     let (ctrl, wait, read) = (iface([v]), iface([]), iface([]));
 
     // () -> X(v)
-    let assign = || {
-        let nv = wire_of(&v);
-        Block::new([], [nv], [term!(mk_op("CONST"), [nv]).unwrap()]).unwrap()
-    };
+    let cod = sorts(&ctrl);
+    let assign = || Block::op(mk_op("CONST"), [], cod.clone()).unwrap();
     let delay = zero_delay(&ctrl, &wait, &read);
     Atom::new(ctrl, wait, read, assign(), assign(), delay).unwrap()
 }
@@ -540,17 +480,13 @@ fn follow(w: Var<Srt>, v: Var<Srt>) -> Atom {
 
     let init = havoc_init(&ctrl, &wait);
     // v -> X(w)
-    let update = {
-        let (lv, nw) = (wire_of(&v), wire_of(&w));
-        Block::new([lv], [nw], [term!(mk_op("ID"), [nw], [lv]).unwrap()]).unwrap()
-    };
+    let update = Block::op(mk_op("ID"), sorts(&read), sorts(&ctrl)).unwrap();
     let delay = zero_delay(&ctrl, &wait, &read);
     Atom::new(ctrl, wait, read, init, update, delay).unwrap()
 }
 
 /// Atoms connect by the names of their variables: an atom reading the name
-/// another atom controls reads that variable, whatever the wires of their
-/// blocks.
+/// another atom controls reads that variable.
 #[test]
 fn atoms_connect_by_name() {
     let v = var(7, "real");
