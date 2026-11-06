@@ -8,6 +8,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The Python `uv sync` puts things in .venv. torch-sys records the venv's torch
+  # path (`.venv/lib/python3.X/...`) in its build output and does not rebuild when
+  # they change, so a cached `target/` from another Python version or torch wheel
+  # fails to link. The version is therefore pinned here, and it and `uv.lock`
+  # (which pins the torch wheel) are part of every Rust cache key below.
+  UV_PYTHON: "3.13"
 
 # The theory crate depends on tch/torch-sys, which locates libtorch via the
 # installed python `torch` package (LIBTORCH_USE_PYTORCH=1 in .cargo/config.toml).
@@ -34,6 +40,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: py${{ env.UV_PYTHON }}-${{ hashFiles('uv.lock') }}
       - name: Install latest nightly
         uses: dtolnay/rust-toolchain@nightly
         with:
@@ -57,7 +65,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: stable-torch
+          shared-key: stable-torch-py${{ env.UV_PYTHON }}-${{ hashFiles('uv.lock') }}
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
@@ -81,7 +89,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: stable-torch
+          shared-key: stable-torch-py${{ env.UV_PYTHON }}-${{ hashFiles('uv.lock') }}
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
