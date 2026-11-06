@@ -10,7 +10,7 @@ use theory::any::{Any, Sort};
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: reactive::Atom<Any>,
+    base: reactive::Atom<dataflow::diagram::Block<Any>, Sort>,
 }
 
 #[pymethods]
@@ -89,7 +89,7 @@ impl Atom {
 }
 
 impl Atom {
-    pub(crate) fn base(&self) -> &reactive::Atom<Any> {
+    pub(crate) fn base(&self) -> &reactive::Atom<dataflow::diagram::Block<Any>, Sort> {
         &self.base
     }
 
@@ -100,8 +100,8 @@ impl Atom {
     }
 }
 
-impl From<reactive::Atom<Any>> for Atom {
-    fn from(base: reactive::Atom<Any>) -> Self {
+impl From<reactive::Atom<dataflow::diagram::Block<Any>, Sort>> for Atom {
+    fn from(base: reactive::Atom<dataflow::diagram::Block<Any>, Sort>) -> Self {
         Self { base }
     }
 }

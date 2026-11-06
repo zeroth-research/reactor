@@ -1,6 +1,7 @@
 use crate::atom::Atom;
 use crate::topological_order;
 use crate::var::{ModuleInterface, Var};
+use dataflow::diagram::Block;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
@@ -12,11 +13,11 @@ use theory::Theory;
 //============================================================
 
 /// This data structure corresponds to the module of reactive modules.
+///
+/// A module is made of atoms with the init, update and delay of the type
+/// `B`, over variables of the sorts `S` (see [`Atom`]).
 #[derive(Debug, Clone)]
-pub struct Module<T, S = <T as Theory>::Sort>
-where
-    T: Theory<Sort = S>,
-{
+pub struct Module<B, S> {
     /// The variables of the module divided by visibility
     /// ```text
     ///     *====================*
@@ -36,14 +37,11 @@ where
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
     /// according to their await relation.
-    atoms: Vec<Atom<T, S>>,
+    atoms: Vec<Atom<B, S>>,
 }
 
-impl<T, S> Module<T, S>
-where
-    T: Theory<Sort = S>,
-{
-    pub fn atoms(&self) -> &[Atom<T, S>] {
+impl<B, S> Module<B, S> {
+    pub fn atoms(&self) -> &[Atom<B, S>] {
         &self.atoms
     }
 
@@ -91,9 +89,8 @@ where
 // Private routines
 //============================================================
 
-impl<T, S> Module<T, S>
+impl<B, S> Module<B, S>
 where
-    T: Theory<Sort = S>,
     S: Debug,
 {
     /// Constructs a module **without performing any consistency or visibility checks**.
@@ -146,7 +143,7 @@ where
         prvt: ModuleInterface<S>,
         obs: ModuleInterface<S>,
         ctrl: ModuleInterface<S>,
-        atoms: Vec<Atom<T, S>>,
+        atoms: Vec<Atom<B, S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -212,9 +209,8 @@ where
 // Public constructors
 //============================================================
 
-impl<T, S> Module<T, S>
+impl<B, S> Module<B, S>
 where
-    T: Theory<Sort = S>,
     S: Clone + PartialEq + Debug,
 {
     /// Constructs a **fully observable module** from a set of atoms.
@@ -245,7 +241,7 @@ where
     /// - [`Atom::new`] for creating individual atoms.
     pub fn observable<A>(atoms: A) -> Result<Self, String>
     where
-        A: IntoIterator<Item = Atom<T, S>> + Sized,
+        A: IntoIterator<Item = Atom<B, S>> + Sized,
     {
         Self::partially_observable(atoms, |_| false)
     }
@@ -280,14 +276,14 @@ where
     /// - [`Atom::new`] for creating individual atoms.
     pub fn partially_observable<A, H>(atoms: A, hide: H) -> Result<Self, String>
     where
-        A: IntoIterator<Item = Atom<T, S>> + Sized,
+        A: IntoIterator<Item = Atom<B, S>> + Sized,
         H: Fn(&Var<S>) -> bool,
     {
         let mut sorts: HashMap<u32, S> = HashMap::new();
         let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
         let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
         let atoms = atoms.into_iter();
-        let mut past_atoms: Vec<Atom<T, S>> = Vec::with_capacity(atoms.size_hint().0);
+        let mut past_atoms: Vec<Atom<B, S>> = Vec::with_capacity(atoms.size_hint().0);
 
         for (n, atom) in atoms.enumerate() {
             //============================================================
@@ -448,7 +444,7 @@ where
         let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
         let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
 
-        let mut atoms_pre_ordering: Vec<Atom<T, S>> = Vec::new();
+        let mut atoms_pre_ordering: Vec<Atom<B, S>> = Vec::new();
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
 
         for module in modules {
@@ -556,10 +552,13 @@ where
         let await_order = topological_order(&await_graph).ok_or("Invalid await dependency")?;
         debug_assert_eq!(await_order.len(), await_graph.len());
 
-        let mut atoms: Vec<Atom<T, S>> = Vec::with_capacity(await_graph.len());
-        for idx in await_order {
-            atoms.push(std::mem::take(&mut atoms_pre_ordering[idx]));
-        }
+        // the await order is a permutation: every atom is taken exactly once
+        let mut atoms_pre_ordering: Vec<Option<Atom<B, S>>> =
+            atoms_pre_ordering.into_iter().map(Some).collect();
+        let atoms: Vec<Atom<B, S>> = await_order
+            .into_iter()
+            .map(|idx| atoms_pre_ordering[idx].take().expect("atom taken twice"))
+            .collect();
 
         //============================================================
         // Collect and construct
@@ -600,15 +599,12 @@ where
 // Display routines
 //============================================================
 
-pub struct Display<'a, T, S, N>
-where
-    T: Theory<Sort = S>,
-{
-    module: &'a Module<T, S>,
+pub struct Display<'a, B, S, N> {
+    module: &'a Module<B, S>,
     name: N,
 }
 
-impl<'a, T, S, N> Display<'a, T, S, N>
+impl<'a, T, S, N> Display<'a, Block<T>, S, N>
 where
     T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
@@ -649,7 +645,7 @@ where
     }
 }
 
-impl<'a, T, S, N> fmt::Display for Display<'a, T, S, N>
+impl<'a, T, S, N> fmt::Display for Display<'a, Block<T>, S, N>
 where
     T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
@@ -660,7 +656,7 @@ where
     }
 }
 
-impl<T, S> Module<T, S>
+impl<T, S> Module<Block<T>, S>
 where
     T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
@@ -672,7 +668,7 @@ where
     pub fn with_varnames<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, T, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    ) -> Display<'a, Block<T>, S, impl Fn(&Var<S>) -> Cow<'a, str>>
     where
         N: Fn(&Var<S>) -> R,
         R: Into<Cow<'a, str>>,

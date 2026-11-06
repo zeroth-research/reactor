@@ -156,8 +156,8 @@ impl Display for Ops {
     }
 }
 
-pub type Module = reactive::Module<Ops>;
-pub type Atom = reactive::Atom<Ops>;
+pub type Module = reactive::Module<Block<Ops>, Srt>;
+pub type Atom = reactive::Atom<Block<Ops>, Srt>;
 
 pub fn mk_op(name: &'static str) -> Ops {
     Ops(name)

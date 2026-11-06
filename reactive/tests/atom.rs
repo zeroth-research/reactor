@@ -128,8 +128,9 @@ fn differential_drifting_clocks() {
     let ops = [0, 1].map(|at| (LRA::IdReal(1, 1), [at], scalar));
     let update = Block::pointwise(dom, ops).unwrap();
 
-    let atom: reactive::Atom<LRA> = reactive::Atom::new(ctrl, wait, read, init, update, delay)
-        .expect("differential atom should be well-formed");
+    let atom: reactive::Atom<Block<LRA>, Sort> =
+        reactive::Atom::new(ctrl, wait, read, init, update, delay)
+            .expect("differential atom should be well-formed");
     let module =
         reactive::Module::observable([atom]).expect("differential module should be well-formed");
 

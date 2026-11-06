@@ -14,13 +14,12 @@ use std::fmt::Debug;
 
 /// This data structure corresponds to the atom of reactive modules.
 ///
-/// An atom names its variables in its interfaces and binds them to the
-/// boundaries of its blocks by position (see [`Atom::new`]).
+/// An atom names its variables, of the sorts `S`, in its interfaces and
+/// binds them to the boundaries of its init, update and delay, of the type
+/// `B`, by position (see [`Atom::new`]). The atoms of reactive modules have
+/// the blocks of a theory, `B = Block<T>`.
 #[derive(Debug, Clone)]
-pub struct Atom<T, S = <T as Theory>::Sort>
-where
-    T: Theory<Sort = S>,
-{
+pub struct Atom<B, S> {
     /// The controlled variables.
     ctrl: AtomInterface<S>,
     /// The awaited variables.
@@ -29,30 +28,27 @@ where
     read: AtomInterface<S>,
     /// Corresponds to the initial condition, with the boundary
     /// `X(wait) -> X(ctrl)`.
-    init: Block<T>,
+    init: B,
     /// Corresponds to the update action, with the boundary
     /// `read ++ X(wait) -> X(ctrl)`.
-    update: Block<T>,
+    update: B,
     /// Corresponds to the delay activity, with the boundary
     /// `read ++ d(wait) -> d(ctrl)`.
-    delay: Block<T>,
+    delay: B,
 }
 
-impl<T, S> Atom<T, S>
-where
-    T: Theory<Sort = S>,
-{
+impl<B, S> Atom<B, S> {
     /// Returns a reference to the initial action.
-    pub fn init(&self) -> &Block<T> {
+    pub fn init(&self) -> &B {
         &self.init
     }
     /// Returns a reference to the update action.
-    pub fn update(&self) -> &Block<T> {
+    pub fn update(&self) -> &B {
         &self.update
     }
 
     /// Returns a reference to the delay activity.
-    pub fn delay(&self) -> &Block<T> {
+    pub fn delay(&self) -> &B {
         &self.delay
     }
 
@@ -70,7 +66,12 @@ where
     pub fn read(&self) -> &AtomInterface<S> {
         &self.read
     }
+}
 
+impl<T, S> Atom<Block<T>, S>
+where
+    T: Theory<Sort = S>,
+{
     /// Constructs an atom with no variables and empty blocks.
     pub fn empty() -> Self {
         Self {
@@ -84,7 +85,7 @@ where
     }
 }
 
-impl<T, S> Default for Atom<T, S>
+impl<T, S> Default for Atom<Block<T>, S>
 where
     T: Theory<Sort = S>,
 {
@@ -97,12 +98,9 @@ where
 // Private routines
 //============================================================
 
-impl<T, S> Atom<T, S>
-where
-    T: Theory<Sort = S>,
-{
+impl<B, S> Atom<B, S> {
     /// Returns true if this atom awaits the other atom.
-    pub fn awaits(&self, other: &Atom<T, S>) -> bool {
+    pub fn awaits(&self, other: &Atom<B, S>) -> bool {
         !self.wait.is_disjoint(&other.ctrl)
     }
 }
@@ -111,9 +109,9 @@ where
 // Public constructors
 //============================================================
 
-impl<T, S> Atom<T, S>
+impl<B, S> Atom<B, S>
 where
-    T: Theory<Sort = S>,
+    B: Boundary<S>,
     S: Clone + PartialEq + Debug + Tangent,
 {
     /// Constructs an atom from its interfaces and its blocks.
@@ -141,9 +139,9 @@ where
         ctrl: AtomInterface<S>,
         wait: AtomInterface<S>,
         read: AtomInterface<S>,
-        init: Block<T>,
-        update: Block<T>,
-        delay: Block<T>,
+        init: B,
+        update: B,
+        delay: B,
     ) -> Result<Self, String> {
         if let Some(var) = ctrl.iter().find(|var| wait.contains(var)) {
             return Err(format!(
@@ -198,14 +196,9 @@ fn tangents<S: Tangent>(vars: &AtomInterface<S>) -> impl Iterator<Item = S> + '_
 
 /// Checks that the boundary of the block is `dom -> cod`: the products of
 /// the sorts, position by position.
-fn check_boundary<T, S>(
-    name: &str,
-    block: &Block<T>,
-    dom: Poly<S>,
-    cod: Poly<S>,
-) -> Result<(), String>
+fn check_boundary<B, S>(name: &str, block: &B, dom: Poly<S>, cod: Poly<S>) -> Result<(), String>
 where
-    T: Theory<Sort = S>,
+    B: Boundary<S>,
     S: Clone + PartialEq + Debug,
 {
     let (read, write) = (block.dom(), block.cod());
@@ -228,12 +221,11 @@ where
 // Display routines
 //============================================================
 
-pub struct Display<'a, T, S, N>
+pub struct Display<'a, B, S, N>
 where
-    T: Theory<Sort = S>,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
-    atom: &'a Atom<T, S>,
+    atom: &'a Atom<B, S>,
     name: N,
     typed: bool,
 }
@@ -247,7 +239,7 @@ enum View {
     Der,
 }
 
-impl<'a, T, S, N> Display<'a, T, S, N>
+impl<'a, T, S, N> Display<'a, Block<T>, S, N>
 where
     T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
@@ -328,7 +320,7 @@ where
     }
 }
 
-impl<'a, T, S, N> fmt::Display for Display<'a, T, S, N>
+impl<'a, T, S, N> fmt::Display for Display<'a, Block<T>, S, N>
 where
     T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
@@ -339,7 +331,7 @@ where
     }
 }
 
-impl<T, S> Atom<T, S>
+impl<T, S> Atom<Block<T>, S>
 where
     T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
@@ -349,7 +341,7 @@ where
     pub fn with_varnames<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, T, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    ) -> Display<'a, Block<T>, S, impl Fn(&Var<S>) -> Cow<'a, str>>
     where
         N: Fn(&Var<S>) -> R,
         R: Into<Cow<'a, str>>,
@@ -366,7 +358,7 @@ where
     pub fn with_varnames_untyped<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, T, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    ) -> Display<'a, Block<T>, S, impl Fn(&Var<S>) -> Cow<'a, str>>
     where
         N: Fn(&Var<S>) -> R,
         R: Into<Cow<'a, str>>,

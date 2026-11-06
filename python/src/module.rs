@@ -6,14 +6,14 @@ use pyo3::types::PyTuple;
 use reactive::var::PREFIX;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::any::Any;
+use theory::any::{Any, Sort};
 
 #[pyclass(subclass, frozen)]
 pub(crate) struct Module {
-    pub(crate) base: reactive::Module<Any>,
+    pub(crate) base: reactive::Module<dataflow::diagram::Block<Any>, Sort>,
 }
 
-type Base = reactive::Module<Any>;
+type Base = reactive::Module<dataflow::diagram::Block<Any>, Sort>;
 
 impl Module {
     /// Wraps the base module, or raises its error.
