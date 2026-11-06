@@ -1,7 +1,7 @@
 use base::Wire;
 use base::boundary::{Boundary, Poly};
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::{self, Debug};
 use std::vec;
 use theory::{Combinatorial, Differential, Sequential, Theory, any};
@@ -272,19 +272,21 @@ impl<T: Theory> Block<T> {
         self.terms.iter()
     }
 
-    /// Returns a reference to the *read interface* of the block.
+    /// Returns a reference to the *read interface* of the block: its inputs.
     ///
-    /// The read interface lists all wires that must be provided externally
-    /// for the block to operate, and are not written internally by the block.
-    /// These wires are inputs required by the block as a whole.
+    /// The read interface lists the wires that must be provided externally
+    /// for the block to operate, in the order of the block's boundary (see
+    /// [`Block::new`]). A block built by [`Block::try_from_iter`] lists all
+    /// wires it reads but does not write, sorted.
     pub fn read(&self) -> &[Wire<T::Sort>] {
         self.read.as_slice()
     }
 
-    /// Returns a reference to the *write interface* of the block.
+    /// Returns a reference to the *write interface* of the block: its outputs.
     ///
-    /// The write interface lists all wires that the block writes. These wires represent
-    /// the outputs of the block as a whole; they can all be read outside the block.
+    /// The write interface lists the wires the block provides to the outside,
+    /// in the order of the block's boundary (see [`Block::new`]). A block
+    /// built by [`Block::try_from_iter`] lists all wires it writes, sorted.
     pub fn write(&self) -> &[Wire<T::Sort>] {
         self.write.as_slice()
     }
@@ -341,6 +343,92 @@ where
 
     fn cod(&self) -> Poly<T::Sort> {
         self.write.iter().map(|w| w.dtype().clone()).collect()
+    }
+}
+
+impl<T: Theory> Block<T>
+where
+    T::Sort: Debug,
+{
+    /// Builds a block with the given boundary: the wires `read` it takes as
+    /// inputs and the wires `write` it gives as outputs, both in order.
+    ///
+    /// The terms compute the outputs from the inputs in the order given:
+    /// each term reads only inputs and wires written by earlier terms. Every
+    /// input must be read by some term (an input the block has no other use
+    /// for is consumed by a [`Theory::discard`] term), every output must be
+    /// written by exactly one term, and no term may write an input. Wires that
+    /// are written but are not outputs are internal to the block.
+    ///
+    /// # Errors
+    /// If a wire is repeated in the boundary, or the terms violate the rules
+    /// above.
+    pub fn new<R, W, V>(read: R, write: W, terms: V) -> Result<Self, String>
+    where
+        R: IntoIterator<Item = Wire<T::Sort>>,
+        W: IntoIterator<Item = Wire<T::Sort>>,
+        V: IntoIterator<Item = Term<T>>,
+    {
+        let block = Block {
+            terms: terms.into_iter().collect(),
+            read: read.into_iter().collect(),
+            write: write.into_iter().collect(),
+        };
+        block.check_boundary()?;
+        Ok(block)
+    }
+
+    /// Checks that the terms compute the outputs from the inputs as required
+    /// by [`Block::new`].
+    fn check_boundary(&self) -> Result<(), String> {
+        let mut inputs: HashSet<&Wire<T::Sort>> = HashSet::new();
+        for rd in self.read.iter() {
+            if !inputs.insert(rd) {
+                return Err(format!("Input wire {:?} is repeated", rd));
+            }
+        }
+        let mut outputs: HashSet<&Wire<T::Sort>> = HashSet::new();
+        for wt in self.write.iter() {
+            if inputs.contains(wt) {
+                return Err(format!("Wire {:?} is both an input and an output", wt));
+            }
+            if !outputs.insert(wt) {
+                return Err(format!("Output wire {:?} is repeated", wt));
+            }
+        }
+
+        // the wires the next term may read, and the inputs no term has read yet
+        let mut available: HashSet<&Wire<T::Sort>> = inputs.clone();
+        let mut unread: HashSet<&Wire<T::Sort>> = inputs.clone();
+        let mut written: HashSet<&Wire<T::Sort>> = HashSet::new();
+        for term in self.terms.iter() {
+            for rd in term.read().iter() {
+                if !available.contains(rd) {
+                    return Err(format!(
+                        "Wire {:?} is read but is neither an input nor written before",
+                        rd
+                    ));
+                }
+                unread.remove(rd);
+            }
+            for wt in term.write().iter() {
+                if inputs.contains(wt) {
+                    return Err(format!("Input wire {:?} is written", wt));
+                }
+                if !written.insert(wt) {
+                    return Err(format!("Wire {:?} is written more than once", wt));
+                }
+                available.insert(wt);
+            }
+        }
+
+        if let Some(wt) = self.write.iter().find(|w| !written.contains(w)) {
+            return Err(format!("Output wire {:?} is not written", wt));
+        }
+        if let Some(rd) = self.read.iter().find(|w| unread.contains(w)) {
+            return Err(format!("Input wire {:?} is not read", rd));
+        }
+        Ok(())
     }
 }
 
