@@ -1,13 +1,14 @@
 //! Helpers shared by the `atom` and `module` integration tests: the
-//! uninterpreted `Ops` theory and the example modules built over it.
+//! uninterpreted `Ops` theory, the blocks and the example modules built over
+//! it.
 #![allow(dead_code)]
 
 use base::tangent::Tangent;
 use base::wire::Wire;
 use dataflow::diagram::{Block, Term};
 use reactive::AtomInterface;
-use reactive::var::{Var, Wire3, X, d, d_ref};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use reactive::var::Var;
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use theory::{Combinatorial, Differential, Sequential, Theory};
@@ -17,124 +18,126 @@ use theory::{Combinatorial, Differential, Sequential, Theory};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Srt(pub &'static str, pub u8);
 
-/// The name of a variable in the tests: the id of its latched wire, so the
-/// same wires get the same name in every atom
-pub fn name<S: Clone>(var: &Wire3<S>) -> Var<S> {
-    Var::new(u32::try_from(var.id()).unwrap(), var.dtype().clone())
+/// The variable of the name, holding values of the sort named `sort`
+pub fn var(name: u32, sort: &'static str) -> Var<Srt> {
+    Var::new(name, srt(sort))
 }
 
-/// The interface of the variables, under their names
-pub fn interface<'a, S: Clone + PartialEq + Debug + 'a>(
-    vars: impl IntoIterator<Item = &'a Wire3<S>>,
+/// The interface of the variables
+pub fn iface<S: Clone + PartialEq + Debug>(
+    vars: impl IntoIterator<Item = Var<S>>,
 ) -> AtomInterface<S> {
-    AtomInterface::try_from_iter(vars.into_iter().map(name)).unwrap()
+    AtomInterface::try_from_iter(vars).unwrap()
 }
 
-/// Builds the block with the boundary `read -> write`, discarding the inputs
-/// no term reads
-pub fn block<T, R, W, V>(read: R, write: W, terms: V) -> Result<Block<T>, String>
+/// A fresh wire of the sort of values named `sort`
+pub fn wire(sort: &'static str) -> Wire<Srt> {
+    Wire::new(srt(sort))
+}
+
+/// A fresh wire of the tangent of the sort of values named `sort`: a wire
+/// carrying derivatives
+pub fn dwire(sort: &'static str) -> Wire<Srt> {
+    Wire::new(srt(sort).tangent())
+}
+
+/// A fresh wire carrying values of the variable
+pub fn wire_of<S: Clone>(var: &Var<S>) -> Wire<S> {
+    Wire::new(var.dtype().clone())
+}
+
+/// A fresh wire carrying derivatives of the variable
+pub fn dwire_of<S: Tangent>(var: &Var<S>) -> Wire<S> {
+    Wire::new(var.dtype().tangent())
+}
+
+/// Fresh wires carrying values of the variables, in order
+pub fn wires<S: Clone>(vars: &AtomInterface<S>) -> Vec<Wire<S>> {
+    vars.iter().map(wire_of).collect()
+}
+
+/// Fresh wires carrying derivatives of the variables, in order
+pub fn dwires<S: Tangent>(vars: &AtomInterface<S>) -> Vec<Wire<S>> {
+    vars.iter().map(dwire_of).collect()
+}
+
+/// The wires, each carrying a variable, in the order of the names of the
+/// variables: the order of the interfaces
+pub fn by_name<S>(wires: impl IntoIterator<Item = (Var<S>, Wire<S>)>) -> Vec<Wire<S>> {
+    let mut wires: Vec<(Var<S>, Wire<S>)> = wires.into_iter().collect();
+    wires.sort_by_key(|(var, _)| var.name());
+    wires.into_iter().map(|(_, wire)| wire).collect()
+}
+
+/// The term discarding the wire
+pub fn discard<T: Theory>(wire: &Wire<T::Sort>) -> Term<T>
 where
-    T: Theory,
-    T::Sort: Clone + Debug,
-    R: IntoIterator<Item = Wire<T::Sort>>,
-    W: IntoIterator<Item = Wire<T::Sort>>,
-    V: IntoIterator<Item = Term<T>>,
+    T::Sort: Clone,
 {
-    let read: Vec<Wire<T::Sort>> = read.into_iter().collect();
-    let mut terms: Vec<Term<T>> = terms.into_iter().collect();
-
-    let used: HashSet<&Wire<T::Sort>> = terms.iter().flat_map(Term::read).collect();
     let nothing: [Wire<T::Sort>; 0] = [];
-    let discards = read
-        .iter()
-        .filter(|w| !used.contains(w))
-        .map(|w| Term::function(T::discard(w.dtype()), nothing.clone(), [w.clone()]))
-        .collect::<Result<Vec<_>, _>>()?;
-    terms.extend(discards);
-
-    Block::new(read, write, terms)
+    Term::function(T::discard(wire.dtype()), nothing, [wire.clone()]).unwrap()
 }
 
-/// Builds the atom over `Ops` controlling `ctrl`, awaiting `wait` and
-/// reading `read` (see [`generic_atom`])
-pub fn atom(
-    ctrl: &[Wire3<Srt>],
-    wait: &[Wire3<Srt>],
-    read: &[Wire3<Srt>],
-    init: impl IntoIterator<Item = Term<Ops>>,
-    update: impl IntoIterator<Item = Term<Ops>>,
-    delay: impl IntoIterator<Item = Term<Ops>>,
-) -> Result<Atom, String> {
-    generic_atom(ctrl, wait, read, init, update, delay)
-}
-
-/// Builds the atom controlling `ctrl`, awaiting `wait` and reading `read`,
-/// with blocks of the given terms over the wires of the variables. The blocks
-/// take the wires in the order of the names of the variables (the order they
-/// were created in), and discard the inputs they do not read.
-pub fn generic_atom<I, J, F, S>(
-    ctrl: &[Wire3<S>],
-    wait: &[Wire3<S>],
-    read: &[Wire3<S>],
-    init: impl IntoIterator<Item = Term<I>>,
-    update: impl IntoIterator<Item = Term<J>>,
-    delay: impl IntoIterator<Item = Term<F>>,
-) -> Result<reactive::Atom<I, J, F, S>, String>
+/// The init `X(wait) -> X(ctrl)` leaving the controlled variables
+/// unconstrained
+pub fn havoc_init<I, S>(ctrl: &AtomInterface<S>, wait: &AtomInterface<S>) -> Block<I>
 where
     I: Combinatorial<Sort = S>,
+    S: Clone + Debug,
+{
+    let (inputs, outputs) = (wires(wait), wires(ctrl));
+    let havoc = |w: &Wire<S>| Term::constant(I::havoc(w.dtype()), [w.clone()]).unwrap();
+    let terms = outputs.iter().map(havoc).chain(inputs.iter().map(discard));
+    Block::new(inputs.clone(), outputs.clone(), terms.collect::<Vec<_>>()).unwrap()
+}
+
+/// The update `read ++ X(wait) -> X(ctrl)` keeping the controlled
+/// variables, all of which it reads
+pub fn skip_update<J, S>(
+    ctrl: &AtomInterface<S>,
+    wait: &AtomInterface<S>,
+    read: &AtomInterface<S>,
+) -> Block<J>
+where
     J: Sequential<Sort = S>,
+    S: Clone + Debug,
+{
+    let inputs = [wires(read), wires(wait)].concat();
+    let outputs = wires(ctrl);
+
+    let mut used = vec![false; inputs.len()];
+    let mut terms: Vec<Term<J>> = Vec::new();
+    for (var, out) in ctrl.iter().zip(outputs.iter()) {
+        let at = read
+            .iter()
+            .position(|v| v == var)
+            .expect("skip reads the variables it keeps");
+        used[at] = true;
+        let skip = J::skip(out.dtype());
+        terms.push(Term::function(skip, [out.clone()], [inputs[at].clone()]).unwrap());
+    }
+    let unused = inputs.iter().zip(used).filter(|(_, used)| !used);
+    terms.extend(unused.map(|(w, _)| discard(w)));
+
+    Block::new(inputs, outputs, terms).unwrap()
+}
+
+/// The delay `read ++ d(wait) -> d(ctrl)` keeping the controlled variables
+/// constant
+pub fn zero_delay<F, S>(
+    ctrl: &AtomInterface<S>,
+    wait: &AtomInterface<S>,
+    read: &AtomInterface<S>,
+) -> Block<F>
+where
     F: Differential<Sort = S>,
-    S: Clone + PartialEq + Debug + Tangent,
+    S: Clone + Debug + Tangent,
 {
-    // the variables are named after their latched wires, which order them
-    // like their names
-    let sorted = |vars: &[Wire3<S>]| vars.iter().cloned().collect::<BTreeSet<_>>();
-    let (ctrl, wait, read) = (sorted(ctrl), sorted(wait), sorted(read));
-
-    let ltc = |vars: &BTreeSet<Wire3<S>>| vars.iter().map(|v| (**v).clone()).collect::<Vec<_>>();
-    let nxt = |vars: &BTreeSet<Wire3<S>>| vars.iter().map(X).collect::<Vec<_>>();
-    let der = |vars: &BTreeSet<Wire3<S>>| vars.iter().map(d).collect::<Vec<_>>();
-
-    let init = block(nxt(&wait), nxt(&ctrl), init)?;
-    let update = block([ltc(&read), nxt(&wait)].concat(), nxt(&ctrl), update)?;
-    let delay = block([ltc(&read), der(&wait)].concat(), der(&ctrl), delay)?;
-
-    reactive::Atom::new(
-        interface(&ctrl),
-        interface(&wait),
-        interface(&read),
-        init,
-        update,
-        delay,
-    )
-}
-
-/// The init leaving the next values of the variables unconstrained
-pub fn havoc<I: Combinatorial>(vars: &[Wire3<I::Sort>]) -> Vec<Term<I>>
-where
-    I::Sort: Clone,
-{
-    let havoc = |v: &Wire3<I::Sort>| Term::constant(I::havoc(v.dtype()), [X(v)]).unwrap();
-    vars.iter().map(havoc).collect()
-}
-
-/// The update keeping the values of the variables
-pub fn skip<J: Sequential>(vars: &[Wire3<J::Sort>]) -> Vec<Term<J>>
-where
-    J::Sort: Clone,
-{
-    let skip =
-        |v: &Wire3<J::Sort>| Term::function(J::skip(v.dtype()), [X(v)], [(**v).clone()]).unwrap();
-    vars.iter().map(skip).collect()
-}
-
-/// The delay keeping the variables constant
-pub fn zero<F: Differential>(vars: &[Wire3<F::Sort>]) -> Vec<Term<F>>
-where
-    F::Sort: Clone,
-{
-    let zero = |v: &Wire3<F::Sort>| Term::constant(F::zero(d_ref(v).dtype()), [d(v)]).unwrap();
-    vars.iter().map(zero).collect()
+    let inputs = [wires(read), dwires(wait)].concat();
+    let outputs = dwires(ctrl);
+    let zero = |w: &Wire<S>| Term::constant(F::zero(w.dtype()), [w.clone()]).unwrap();
+    let terms = outputs.iter().map(zero).chain(inputs.iter().map(discard));
+    Block::new(inputs.clone(), outputs.clone(), terms.collect::<Vec<_>>()).unwrap()
 }
 
 /// The uninterpreted sort of values named `name`
@@ -218,157 +221,163 @@ macro_rules! term {
     };
 }
 
-#[allow(clippy::vec_init_then_push)]
+/// A counter over the variables `x`, `y`, `z` and the inputs `y0`, `z0`
+/// (named `0` to `4`), with the names of the variables
 pub fn example_counter() -> Result<(Module, HashMap<Var<Srt>, String>), String> {
-    let x = Wire3::new(srt("real"));
-    let y = Wire3::new(srt("real"));
-    let z = Wire3::new(srt("real"));
-    let y0 = Wire3::new(srt("real"));
-    let z0 = Wire3::new(srt("real"));
+    let [x, y, z, y0, z0] = [0, 1, 2, 3, 4].map(|n| var(n, "real"));
+    let ctrl = iface([x, y, z]);
+    let wait = iface([y0, z0]);
+    let read = iface([x, y, z, y0, z0]);
 
-    let mut init: Vec<Term<Ops>> = Vec::new();
+    // X(y0), X(z0) -> X(x), X(y), X(z)
+    let init = {
+        let [ny0, nz0, nx, ny, nz] = ["real"; 5].map(wire);
+        let tmp1 = wire("real");
+        let tmp2 = wire("bool");
+        let tmp3 = wire("bool");
+        let terms = [
+            term!(mk_op("ZERO"), [tmp1])?,
+            term!(mk_op("ID"), [nx], [tmp1])?,
+            term!(mk_op("ABS"), [tmp2], [ny0])?,
+            term!(mk_op("ID"), [ny], [tmp2])?,
+            term!(mk_op("ABS"), [tmp3], [nz0])?,
+            term!(mk_op("ID"), [nz], [tmp3])?,
+        ];
+        Block::new([ny0, nz0], [nx, ny, nz], terms)?
+    };
 
-    let tmp1 = Wire::new(srt("real"));
-    init.push(term!(mk_op("ZERO"), [tmp1])?);
+    // x, y, z, y0, z0, X(y0), X(z0) -> X(x), X(y), X(z)
+    let update = {
+        let [x, y, z, y0, z0, ny0, nz0] = ["real"; 7].map(wire);
+        let [nx, ny, nz] = ["real"; 3].map(wire);
+        let tmp1 = wire("real");
+        let [tmp4, tmp5, tmp6] = ["bool"; 3].map(wire);
+        let [tmp7, tmp8] = ["real"; 2].map(wire);
+        let terms = [
+            term!(mk_op("ZERO"), [tmp1])?,
+            term!(mk_op("LEQ"), [tmp4], [x, y])?,
+            term!(mk_op("LEQ"), [tmp5], [x, z])?,
+            term!(mk_op("OR"), [tmp6], [tmp4, tmp5])?,
+            term!(mk_op("ONE"), [tmp7])?,
+            term!(mk_op("ADD"), [tmp8], [x, tmp7])?,
+            term!(mk_op("ITE"), [nx], [tmp6, tmp8, tmp1])?,
+            term!(mk_op("ID"), [ny], [y0])?,
+            term!(mk_op("ID"), [nz], [z0])?,
+            discard(&ny0),
+            discard(&nz0),
+        ];
+        Block::new([x, y, z, y0, z0, ny0, nz0], [nx, ny, nz], terms)?
+    };
 
-    let tmp2 = Wire::new(srt("bool"));
-    let tmp3 = Wire::new(srt("bool"));
-    init.push(term!(mk_op("ID"), [X(x)], [tmp1])?);
-    init.push(term!(mk_op("ABS"), [tmp2], [X(y0)])?);
-    init.push(term!(mk_op("ID"), [X(y)], [tmp2])?);
-    init.push(term!(mk_op("ABS"), [tmp3], [X(z0)])?);
-    init.push(term!(mk_op("ID"), [X(z)], [tmp3])?);
-
-    let mut update: Vec<Term<Ops>> = Vec::new();
-
-    let tmp4 = Wire::new(srt("bool"));
-    let tmp5 = Wire::new(srt("bool"));
-    let tmp6 = Wire::new(srt("bool"));
-    update.push(term!(mk_op("ZERO"), [tmp1])?);
-    update.push(term!(mk_op("LEQ"), [tmp4], [x, y])?);
-    update.push(term!(mk_op("LEQ"), [tmp5], [x, z])?);
-    update.push(term!(mk_op("OR"), [tmp6], [tmp4, tmp5])?);
-
-    let tmp7 = Wire::new(srt("real"));
-    let tmp8 = Wire::new(srt("real"));
-    update.push(term!(mk_op("ONE"), [tmp7])?);
-    update.push(term!(mk_op("ADD"), [tmp8], [*x, tmp7])?);
-
-    update.push(term!(mk_op("ITE"), [X(x)], [tmp6, tmp8, tmp1])?);
-    update.push(term!(mk_op("ID"), [X(y)], [y0])?);
-    update.push(term!(mk_op("ID"), [X(z)], [z0])?);
-
-    let ctrl = [x, y, z];
-    let atom = atom(
-        &ctrl,
-        &[y0, z0],
-        &[x, y, z, y0, z0],
-        init,
-        update,
-        zero(&ctrl),
-    )?;
+    let delay = zero_delay(&ctrl, &wait, &read);
+    let atom = Atom::new(ctrl, wait, read, init, update, delay)?;
     let module = Module::observable([atom])?;
+
     // every module variable needs a name: the display indexes them all
     let varnames = [(x, "x"), (y, "y"), (z, "z"), (y0, "y0"), (z0, "z0")]
         .into_iter()
-        .map(|(var, varname)| (name(&var), varname.to_string()))
+        .map(|(var, varname)| (var, varname.to_string()))
         .collect();
 
     Ok((module, varnames))
 }
 
-#[allow(clippy::vec_init_then_push)]
+/// One of the two processes of Peterson's mutual exclusion protocol
 pub fn example_peterson1() -> Result<Module, String> {
     let stype = "{outCS, reqCS, inCS}";
-    let pc1 = Wire3::new(srt(stype));
-    let x1 = Wire3::new(srt("bool"));
-    let pc2 = Wire3::new(srt(stype));
-    let x2 = Wire3::new(srt("bool"));
+    let [pc1, x1, pc2, x2] = [var(0, stype), var(1, "bool"), var(2, stype), var(3, "bool")];
+    let ctrl = iface([pc1, x1]);
+    let wait = iface([]);
+    let read = iface([pc1, x1, pc2, x2]);
 
-    let mut init: Vec<Term<Ops>> = Vec::new();
-    init.push(term!(mk_op("CONST(outCS)"), [X(pc1)]).unwrap());
-    init.push(term!(mk_op("CONST(true)"), [X(x1)]).unwrap());
+    // () -> X(pc1), X(x1)
+    let init = {
+        let (npc1, nx1) = (wire(stype), wire("bool"));
+        let terms = [
+            term!(mk_op("CONST(outCS)"), [npc1])?,
+            term!(mk_op("CONST(true)"), [nx1])?,
+        ];
+        Block::new([], [npc1, nx1], terms)?
+    };
 
-    let mut update: Vec<Term<Ops>> = Vec::new();
-    let out_cs = Wire::new(srt(stype));
-    let cond1 = Wire::new(srt("bool"));
-    update.push(term!(mk_op("CONST(outCS)"), [out_cs]).unwrap());
-    update.push(term!(mk_op("EQ"), [cond1], [out_cs, *pc1]).unwrap());
+    // pc1, x1, pc2, x2 -> X(pc1), X(x1)
+    let update = {
+        let (pc1, x1, pc2, x2) = (wire(stype), wire("bool"), wire(stype), wire("bool"));
+        let (npc1, nx1) = (wire(stype), wire("bool"));
+        let [out_cs, req_cs, in_cs] = [stype; 3].map(wire);
+        let [cond1, cond2, cond3, const_true] = ["bool"; 4].map(wire);
+        let [tmp11, tmp12, tmp13, tmp14] = ["bool"; 4].map(wire);
+        let terms = [
+            term!(mk_op("CONST(outCS)"), [out_cs])?,
+            term!(mk_op("EQ"), [cond1], [out_cs, pc1])?,
+            term!(mk_op("CONST(reqCS)"), [req_cs])?,
+            term!(mk_op("EQ"), [tmp11], [req_cs, pc1])?,
+            term!(mk_op("EQ"), [tmp12], [out_cs, pc2])?,
+            term!(mk_op("NEQ"), [tmp13], [x1, x2])?,
+            term!(mk_op("OR"), [tmp14], [tmp12, tmp13])?,
+            term!(mk_op("AND"), [cond2], [tmp14, tmp11])?,
+            term!(mk_op("CONST(inCS)"), [in_cs])?,
+            term!(mk_op("EQ"), [cond3], [in_cs, pc1])?,
+            term!(mk_op("CONST(true)"), [const_true])?,
+            term!(
+                mk_op("CASE"),
+                [npc1, nx1],
+                [
+                    cond1, req_cs, x2, cond2, in_cs, x1, cond3, out_cs, x1, const_true, pc1, x1
+                ]
+            )?,
+        ];
+        Block::new([pc1, x1, pc2, x2], [npc1, nx1], terms)?
+    };
 
-    let req_cs = Wire::new(srt(stype));
-    let cond2 = Wire::new(srt("bool"));
-    update.push(term!(mk_op("CONST(reqCS)"), [req_cs]).unwrap());
-    let tmp11 = Wire::new(srt("bool"));
-    update.push(term!(mk_op("EQ"), [tmp11], [req_cs, *pc1]).unwrap());
-
-    let tmp12 = Wire::new(srt("bool"));
-    let tmp13 = Wire::new(srt("bool"));
-    let tmp14 = Wire::new(srt("bool"));
-    update.push(term!(mk_op("EQ"), [tmp12], [out_cs, *pc2]).unwrap());
-    update.push(term!(mk_op("NEQ"), [tmp13], [x1, x2]).unwrap());
-    update.push(term!(mk_op("OR"), [tmp14], [tmp12, tmp13]).unwrap());
-    update.push(term!(mk_op("AND"), [cond2], [tmp14, tmp11]).unwrap());
-
-    let in_cs = Wire::new(srt(stype));
-    let cond3 = Wire::new(srt("bool"));
-    update.push(term!(mk_op("CONST(inCS)"), [in_cs]).unwrap());
-    update.push(term!(mk_op("EQ"), [cond3], [in_cs, *pc1]).unwrap());
-
-    let const_true = Wire::new(srt("bool"));
-    update.push(term!(mk_op("CONST(true)"), [const_true]).unwrap());
-
-    update.push(
-        term!(
-            mk_op("CASE"),
-            [X(pc1), X(x1)],
-            [
-                cond1, req_cs, *x2, cond2, in_cs, *x1, cond3, out_cs, *x1, const_true, *pc1, *x1,
-            ]
-        )
-        .unwrap(),
-    );
-
-    let ctrl = [pc1, x1];
-    let atom = atom(&ctrl, &[], &[pc1, x1, pc2, x2], init, update, zero(&ctrl))?;
+    let delay = zero_delay(&ctrl, &wait, &read);
+    let atom = Atom::new(ctrl, wait, read, init, update, delay)?;
     Module::observable([atom])
 }
 
+/// The module controlling `interface` and the private `private` from
+/// `external`, which it awaits if `wait` and reads otherwise
 pub fn example_tiny1(
-    external: Wire3<Srt>,
-    interface: Wire3<Srt>,
+    external: Var<Srt>,
+    interface: Var<Srt>,
+    private: Var<Srt>,
     wait: bool,
 ) -> Result<Module, String> {
-    let private = Wire3::new(srt("Tny"));
-    let temp = Wire::new(srt("Tny"));
-
-    let cons = Term::constant(mk_op("CONST"), [temp]).unwrap();
-
-    let update = if wait {
-        Term::function(
-            mk_op("AWAIT"),
-            [X(interface), X(private)],
-            [X(external), *private, temp],
-        )
-        .unwrap()
-    } else {
-        Term::function(
-            mk_op("SEQ"),
-            [X(interface), X(private)],
-            [*external, *private, temp],
-        )
-        .unwrap()
-    };
-
-    let init = Term::constant(mk_op("INIT"), [X(interface), X(private)]).unwrap();
-
-    let ctrl = [interface, private];
+    let ctrl = iface([interface, private]);
     let (awaited, read) = if wait {
-        (vec![external], vec![private])
+        (iface([external]), iface([private]))
     } else {
-        (vec![], vec![external, private])
+        (iface([]), iface([external, private]))
     };
-    let prvt = [name(&private)];
 
-    let atom = atom(&ctrl, &awaited, &read, [init], [cons, update], zero(&ctrl))?;
-    Module::partially_observable([atom], |v| prvt.contains(v))
+    // X(external) if awaited -> X(interface), X(private)
+    let init = {
+        let (ni, np) = (wire_of(&interface), wire_of(&private));
+        let ne = wait.then(|| wire_of(&external));
+        let mut terms = vec![Term::constant(mk_op("INIT"), [ni, np])?];
+        terms.extend(ne.iter().map(discard));
+        Block::new(ne, by_name([(interface, ni), (private, np)]), terms)?
+    };
+
+    // private, X(external) if awaited, else external, private ->
+    // X(interface), X(private)
+    let update = {
+        let (ni, np) = (wire_of(&interface), wire_of(&private));
+        let (e, p) = (wire_of(&external), wire_of(&private));
+        let temp = wire("Tny");
+        let (op, inputs) = if wait {
+            ("AWAIT", vec![p, e])
+        } else {
+            ("SEQ", by_name([(external, e), (private, p)]))
+        };
+        let terms = [
+            Term::constant(mk_op("CONST"), [temp])?,
+            Term::function(mk_op(op), [ni, np], [e, p, temp])?,
+        ];
+        Block::new(inputs, by_name([(interface, ni), (private, np)]), terms)?
+    };
+
+    let delay = zero_delay(&ctrl, &awaited, &read);
+    let atom = Atom::new(ctrl, awaited, read, init, update, delay)?;
+    Module::partially_observable([atom], |v| *v == private)
 }
