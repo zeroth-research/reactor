@@ -6,7 +6,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
-use crate::var::{Interface, Wire3};
+use crate::var::{AtomInterface, Var, Wire3};
+use base::tangent::Tangent;
 use std::fmt::Debug;
 
 //============================================================
@@ -21,12 +22,12 @@ where
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
 {
-    /// Corresponds to ctr wires.
-    ctrl: Interface<S>,
-    /// Corresponds to wait wires.
-    wait: Interface<S>,
-    /// Corresponds to read wires.
-    read: Interface<S>,
+    /// The controlled variables.
+    ctrl: AtomInterface<S>,
+    /// The awaited variables.
+    wait: AtomInterface<S>,
+    /// The read variables.
+    read: AtomInterface<S>,
     /// Corresponds to the initial condition, with the boundary
     /// `X(wait) -> X(ctrl)`.
     init: Block<I>,
@@ -59,26 +60,26 @@ where
     }
 
     /// Returns a reference to the controlled variables.
-    pub fn ctrl(&self) -> &Interface<S> {
+    pub fn ctrl(&self) -> &AtomInterface<S> {
         &self.ctrl
     }
 
     /// Returns a reference to the awaited variables.
-    pub fn wait(&self) -> &Interface<S> {
+    pub fn wait(&self) -> &AtomInterface<S> {
         &self.wait
     }
 
     /// Returns a reference to the read variables.
-    pub fn read(&self) -> &Interface<S> {
+    pub fn read(&self) -> &AtomInterface<S> {
         &self.read
     }
 
     /// Constructs an atom with no variables and empty blocks.
     pub fn empty() -> Self {
         Self {
-            ctrl: Interface::empty(),
-            wait: Interface::empty(),
-            read: Interface::empty(),
+            ctrl: AtomInterface::empty(),
+            wait: AtomInterface::empty(),
+            read: AtomInterface::empty(),
             init: Block::empty(),
             update: Block::empty(),
             delay: Block::empty(),
@@ -111,7 +112,15 @@ where
     pub fn awaits(&self, other: &Atom<I, J, F, S>) -> bool {
         !self.wait.is_disjoint(&other.ctrl)
     }
+}
 
+impl<I, J, F, S> Atom<I, J, F, S>
+where
+    I: Combinatorial<Sort = S>,
+    J: Sequential<Sort = S>,
+    F: Differential<Sort = S>,
+    S: Clone + PartialEq + Debug + Tangent,
+{
     /// Constructs an atom **without performing any consistency checks**.
     ///
     /// This constructor provides **full control** to the caller and performs
@@ -125,12 +134,12 @@ where
     /// - `wait`: The awaited variables, whose next or derivative wires the blocks read.
     /// - `read`: The read variables, whose latched wires the blocks read.
     /// - `init`, `update`, `delay`: The blocks of the atom. Their boundaries
-    ///   list the wires of the variables in the order of the interfaces: the
-    ///   init maps the next wires of `wait` to the next wires of `ctrl`; the
-    ///   update maps the latched wires of `read` followed by the next wires of
-    ///   `wait` to the next wires of `ctrl`; and the delay maps the latched
-    ///   wires of `read` followed by the derivative wires of `wait` to the
-    ///   derivative wires of `ctrl`.
+    ///   list the wires of the variables in the order of the interfaces (of
+    ///   the names): the init maps the next wires of `wait` to the next wires
+    ///   of `ctrl`; the update maps the latched wires of `read` followed by the
+    ///   next wires of `wait` to the next wires of `ctrl`; and the delay maps
+    ///   the latched wires of `read` followed by the derivative wires of
+    ///   `wait` to the derivative wires of `ctrl`.
     ///
     /// # Returns
     /// The constructed atom.
@@ -144,31 +153,27 @@ where
     /// - [`Atom::sequential`], [`Atom::combinatorial`] and the other public
     ///   constructors for checked, automated atom construction.
     fn new_unchecked(
-        ctrl: Interface<S>,
-        wait: Interface<S>,
-        read: Interface<S>,
+        ctrl: AtomInterface<S>,
+        wait: AtomInterface<S>,
+        read: AtomInterface<S>,
         init: Block<I>,
         update: Block<J>,
         delay: Block<F>,
     ) -> Self {
-        // the boundaries of the blocks are given by the interfaces
         debug_assert!(ctrl.is_disjoint(&wait));
-        debug_assert!(init.read().iter().eq(wait.iter().map(Wire3::nxt)));
-        debug_assert!(init.write().iter().eq(ctrl.iter().map(Wire3::nxt)));
-        debug_assert!(
-            update.read().iter().eq(read
-                .iter()
-                .map(Wire3::ltc)
-                .chain(wait.iter().map(Wire3::nxt)))
-        );
-        debug_assert!(update.write().iter().eq(ctrl.iter().map(Wire3::nxt)));
-        debug_assert!(
-            delay.read().iter().eq(read
-                .iter()
-                .map(Wire3::ltc)
-                .chain(wait.iter().map(Wire3::der)))
-        );
-        debug_assert!(delay.write().iter().eq(ctrl.iter().map(Wire3::der)));
+
+        // the boundaries of the blocks carry the sorts of the interfaces, the
+        // derivatives their tangents
+        let sorts = |vars: &AtomInterface<S>| vars.iter().map(|v| v.dtype().clone()).collect();
+        let tangents = |vars: &AtomInterface<S>| vars.iter().map(|v| v.dtype().tangent()).collect();
+        let wires = |wires: &[Wire<S>]| wires.iter().map(|w| w.dtype().clone()).collect::<Vec<S>>();
+        let concat = |a: Vec<S>, b: Vec<S>| [a, b].concat();
+        debug_assert_eq!(wires(init.read()), sorts(&wait));
+        debug_assert_eq!(wires(init.write()), sorts(&ctrl));
+        debug_assert_eq!(wires(update.read()), concat(sorts(&read), sorts(&wait)));
+        debug_assert_eq!(wires(update.write()), sorts(&ctrl));
+        debug_assert_eq!(wires(delay.read()), concat(sorts(&read), tangents(&wait)));
+        debug_assert_eq!(wires(delay.write()), tangents(&ctrl));
 
         Self {
             ctrl,
@@ -179,37 +184,72 @@ where
             delay,
         }
     }
-
-    fn var(&self, wire: &Wire<S>) -> Option<&Wire3<S>> {
-        self.read
-            .var(wire)
-            .or_else(|| self.ctrl.var(wire))
-            .or_else(|| self.wait.var(wire))
-    }
 }
 
+/// The variables in scope for an atom: the variables of their wires, and
+/// their names.
 struct WireMap<'a, S> {
     ltc: HashMap<&'a Wire<S>, &'a Wire3<S>>,
     nxt: HashMap<&'a Wire<S>, &'a Wire3<S>>,
     der: HashMap<&'a Wire<S>, &'a Wire3<S>>,
+    names: HashMap<&'a Wire3<S>, Var<S>>,
 }
 
-impl<'a, S> WireMap<'a, S> {
-    fn unpack<V>(vars: V) -> Self
+impl<'a, S: PartialEq + Debug> WireMap<'a, S> {
+    /// Unpacks the variables, each bound to its name.
+    ///
+    /// # Errors
+    /// If the sort of a name is not the sort of the variable bound to it, or
+    /// the binding is not one-to-one: a name is bound to two variables, or a
+    /// variable to two names. Binding the same name to the same variable more
+    /// than once is fine.
+    fn unpack<V>(vars: V) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
     {
         let mut ltc: HashMap<&Wire<S>, &Wire3<S>> = HashMap::new();
         let mut nxt: HashMap<&Wire<S>, &Wire3<S>> = HashMap::new();
         let mut der: HashMap<&Wire<S>, &Wire3<S>> = HashMap::new();
+        let mut names: HashMap<&Wire3<S>, Var<S>> = HashMap::new();
+        let mut bound: HashMap<u32, &Wire3<S>> = HashMap::new();
 
-        for var in vars.into_iter() {
+        for (name, var) in vars.into_iter() {
+            if name.dtype() != var.dtype() {
+                return Err(format!(
+                    "Variable {} of sort {:?} is bound to wires of sort {:?}",
+                    name.name(),
+                    name.dtype(),
+                    var.dtype()
+                ));
+            }
+            if bound.get(&name.name()).is_some_and(|&other| other != var) {
+                return Err(format!(
+                    "Variable {} is bound to two different wires",
+                    name.name()
+                ));
+            }
+            if let Some(other) = names.get(var).filter(|other| *other != &name) {
+                return Err(format!(
+                    "Wires {:?} are bound to two variables {} and {}",
+                    var,
+                    other.name(),
+                    name.name()
+                ));
+            }
+
+            bound.insert(name.name(), var);
+            names.insert(var, name);
             ltc.insert(var.ltc(), var);
             nxt.insert(var.nxt(), var);
             der.insert(var.der(), var);
         }
 
-        Self { ltc, nxt, der }
+        Ok(Self {
+            ltc,
+            nxt,
+            der,
+            names,
+        })
     }
 }
 
@@ -239,7 +279,7 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Clone + Debug,
+    S: Clone + PartialEq + Debug + Tangent,
 {
     fn with_ctrl(
         wmap: WireMap<S>,
@@ -362,21 +402,39 @@ where
             }
         }
 
-        let ctrl = Interface::from_exact_iter_unchecked(ctrl);
-        let wait = Interface::from_exact_iter_unchecked(wait);
-        let read = Interface::from_exact_iter_unchecked(read);
+        // the interfaces, and the boundaries, list the variables in the order
+        // of their names
+        let named = |vars: BTreeSet<Wire3<S>>| {
+            let mut vars: Vec<(Var<S>, Wire3<S>)> = vars
+                .into_iter()
+                .map(|var| (wmap.names[&var].clone(), var))
+                .collect();
+            vars.sort_by_key(|(name, _)| name.name());
+            vars
+        };
+        let (ctrl, wait, read) = (named(ctrl), named(wait), named(read));
 
-        let ctrl_nxt = || ctrl.iter().map(Wire3::nxt);
-        let ctrl_der = || ctrl.iter().map(Wire3::der);
-        let read_ltc = || read.iter().map(Wire3::ltc);
-        let wait_nxt = || wait.iter().map(Wire3::nxt);
-        let wait_der = || wait.iter().map(Wire3::der);
+        let ctrl_nxt = || ctrl.iter().map(|(_, var)| var.nxt());
+        let ctrl_der = || ctrl.iter().map(|(_, var)| var.der());
+        let read_ltc = || read.iter().map(|(_, var)| var.ltc());
+        let wait_nxt = || wait.iter().map(|(_, var)| var.nxt());
+        let wait_der = || wait.iter().map(|(_, var)| var.der());
 
         let init = with_boundary(init, wait_nxt(), ctrl_nxt())?;
         let update = with_boundary(update, read_ltc().chain(wait_nxt()), ctrl_nxt())?;
         let delay = with_boundary(delay, read_ltc().chain(wait_der()), ctrl_der())?;
 
-        Ok(Self::new_unchecked(ctrl, wait, read, init, update, delay))
+        let interface = |vars: Vec<(Var<S>, Wire3<S>)>| {
+            AtomInterface::from_sorted_unchecked(vars.into_iter().map(|(name, _)| name).collect())
+        };
+        Ok(Self::new_unchecked(
+            interface(ctrl),
+            interface(wait),
+            interface(read),
+            init,
+            update,
+            delay,
+        ))
     }
 }
 
@@ -412,7 +470,7 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Clone + Debug,
+    S: Clone + PartialEq + Debug + Tangent,
 {
     /// Constructs a **sequential atom**: behaviour that evolves over discrete
     /// time steps.
@@ -427,7 +485,7 @@ where
     /// are those whose next wire is written by `init`.
     ///
     /// # Parameters
-    /// - `vars`: The variables in scope for the atom.
+    /// - `vars`: The variables in scope for the atom, each bound to its name.
     /// - `init`: The terms defining the initial action of the atom.
     /// - `update`: The terms defining the discrete state update at each time step.
     ///
@@ -441,12 +499,12 @@ where
     /// - [`Atom::combinatorial`], for time-independent, purely reactive behaviour.
     pub fn sequential<'b, V, W, U>(vars: V, init: W, update: U) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'b Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'b Wire3<S>)>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
         S: 'b,
     {
-        let wires = WireMap::unpack(vars);
+        let wires = WireMap::unpack(vars)?;
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
         let ctrl = infer_ctrl(&init, &wires.nxt);
@@ -471,7 +529,7 @@ where
     /// are those whose next wire is written by `init`.
     ///
     /// # Parameters
-    /// - `vars`: The variables in scope for the atom.
+    /// - `vars`: The variables in scope for the atom, each bound to its name.
     /// - `init`: The terms defining the initial action of the atom.
     /// - `delay`: The terms defining the continuous evolution of the derivatives.
     ///
@@ -484,12 +542,12 @@ where
     /// - [`Atom::hybrid`], when both discrete and continuous dynamics are explicit.
     pub fn differential<'b, V, W, Z>(vars: V, init: W, delay: Z) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'b Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'b Wire3<S>)>,
         W: IntoIterator<Item = Term<I>>,
         Z: IntoIterator<Item = Term<F>>,
         S: 'b,
     {
-        let wires = WireMap::unpack(vars);
+        let wires = WireMap::unpack(vars)?;
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
         let ctrl = infer_ctrl(&init, &wires.nxt);
@@ -516,7 +574,7 @@ where
     /// are those whose next wire is written by `init`.
     ///
     /// # Parameters
-    /// - `vars`: The variables in scope for the atom.
+    /// - `vars`: The variables in scope for the atom, each bound to its name.
     /// - `init`: The terms defining the initial action of the atom.
     /// - `update`: The terms defining the discrete state update at each time step.
     /// - `delay`: The terms defining the continuous evolution of the derivatives.
@@ -530,13 +588,13 @@ where
     /// - [`Atom::differential`], for purely continuous behaviour (update is skip).
     pub fn hybrid<'a, V, W, U, Z>(vars: V, init: W, update: U, delay: Z) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
     {
-        let wires = WireMap::unpack(vars);
+        let wires = WireMap::unpack(vars)?;
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
@@ -557,7 +615,7 @@ where
     /// continuous dynamics.
     ///
     /// # Parameters
-    /// - `vars`: The variables in scope for the atom.
+    /// - `vars`: The variables in scope for the atom, each bound to its name.
     /// - `update`: The terms defining the discrete state update at each time step.
     ///
     /// # Returns
@@ -569,11 +627,11 @@ where
     /// - [`Atom::constant`], the dual: only the initial state, no update.
     pub fn jump<'a, V, U>(vars: V, update: U) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         U: IntoIterator<Item = Term<J>>,
         S: 'a,
     {
-        let wires = WireMap::unpack(vars);
+        let wires = WireMap::unpack(vars)?;
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
         let ctrl = infer_ctrl(&update, &wires.nxt);
@@ -595,7 +653,7 @@ where
     /// controlled variable, so the initial values are arbitrary.
     ///
     /// # Parameters
-    /// - `vars`: The variables in scope for the atom.
+    /// - `vars`: The variables in scope for the atom, each bound to its name.
     /// - `update`: The terms defining the discrete state update at each time step.
     /// - `delay`: The terms defining the continuous evolution of the derivatives.
     ///
@@ -609,12 +667,12 @@ where
     ///   continuous special cases.
     pub fn uninitialized<'a, V, U, Z>(vars: V, update: U, delay: Z) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         U: IntoIterator<Item = Term<J>>,
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
     {
-        let wires = WireMap::unpack(vars);
+        let wires = WireMap::unpack(vars)?;
 
         let update = Block::try_from_iter(update.into_iter().map(Ok))?;
         let ctrl = infer_ctrl(&update, &wires.nxt);
@@ -636,7 +694,7 @@ where
     /// so the values never drift.
     ///
     /// # Parameters
-    /// - `vars`: The variables in scope for the atom.
+    /// - `vars`: The variables in scope for the atom, each bound to its name.
     /// - `init`: The terms defining the (only) assignment of the variables.
     ///
     /// # Returns
@@ -648,11 +706,11 @@ where
     /// - [`Atom::sequential`], when the variables also evolve over time.
     pub fn constant<'a, V, W>(vars: V, init: W) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         W: IntoIterator<Item = Term<I>>,
         S: 'a,
     {
-        let wires = WireMap::unpack(vars);
+        let wires = WireMap::unpack(vars)?;
 
         let init = Block::try_from_iter(init.into_iter().map(Ok))?;
         let ctrl = infer_ctrl(&init, &wires.nxt);
@@ -676,7 +734,8 @@ where
     /// quantities a system depends on but does not compute.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the atom, all of which it controls.
+    /// - `vars`: The variables of the atom, all of which it controls, each bound
+    ///   to its name.
     ///
     /// # Returns
     /// A `Result` containing the constructed hold atom if successful,
@@ -688,10 +747,10 @@ where
     /// - [`Module::hold`], for the module-level shorthand.
     pub fn hold<'a, V>(vars: V) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         S: 'a,
     {
-        let wires = WireMap::unpack(vars);
+        let wires = WireMap::unpack(vars)?;
 
         // every variable is controlled
         let ctrl: BTreeSet<Wire3<S>> = wires.ltc.values().cloned().cloned().collect();
@@ -716,7 +775,7 @@ where
     /// `SKIP`, so all change comes from the continuous dynamics.
     ///
     /// # Parameters
-    /// - `vars`: The variables in scope for the atom.
+    /// - `vars`: The variables in scope for the atom, each bound to its name.
     /// - `delay`: The terms defining the continuous evolution of the derivatives.
     ///
     /// # Returns
@@ -728,11 +787,11 @@ where
     /// - [`Atom::hybrid`], when discrete dynamics are involved as well.
     pub fn flow<'a, V, Z>(vars: V, delay: Z) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
     {
-        let wires = WireMap::unpack(vars);
+        let wires = WireMap::unpack(vars)?;
 
         let delay = Block::try_from_iter(delay.into_iter().map(Ok))?;
         let ctrl = infer_ctrl(&delay, &wires.der);
@@ -758,7 +817,7 @@ where
     /// are those whose next wire is written by `assign`.
     ///
     /// # Parameters
-    /// - `vars`: The variables in scope for the atom.
+    /// - `vars`: The variables in scope for the atom, each bound to its name.
     /// - `assign`: The terms defining the combinatorial relationships between next wires.
     ///
     /// # Returns
@@ -771,11 +830,11 @@ where
     pub fn combinatorial<'a, T, V, W>(vars: V, assign: W) -> Result<Self, String>
     where
         T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         W: IntoIterator<Item = Term<T>>,
         S: 'a,
     {
-        let wires = WireMap::unpack(vars);
+        let wires = WireMap::unpack(vars)?;
 
         let assign: Block<T> = Block::try_from_iter(assign.into_iter().map(Ok))?;
         let ctrl = infer_ctrl(&assign, &wires.nxt);
@@ -797,11 +856,20 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    N: Fn(&Wire3<S>) -> Cow<'a, str>,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
 {
     atom: &'a Atom<I, J, F, S>,
     name: N,
     typed: bool,
+}
+
+/// The value of a variable a boundary wire of a block carries: latched, next,
+/// or derivative.
+#[derive(Clone, Copy)]
+enum View {
+    Ltc,
+    Nxt,
+    Der,
 }
 
 impl<'a, I, J, F, S, N> Display<'a, I, J, F, S, N>
@@ -810,9 +878,9 @@ where
     J: Sequential<Sort = S> + fmt::Display,
     F: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
-    N: Fn(&Wire3<S>) -> Cow<'a, str>,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
 {
-    fn fmt_vars<V: Iterator<Item = &'a Wire3<S>>>(
+    fn fmt_vars<V: Iterator<Item = &'a Var<S>>>(
         &self,
         f: &mut fmt::Formatter<'_>,
         iter: V,
@@ -822,7 +890,7 @@ where
                 write!(f, ", ")?;
             }
             if self.typed {
-                write!(f, "{}", var.with_name((self.name)(var)))?;
+                write!(f, "{} : {}", (self.name)(var), var.dtype())?;
             } else {
                 write!(f, "{}", (self.name)(var))?;
             }
@@ -830,33 +898,46 @@ where
         Ok(())
     }
 
-    fn fmt_wirename(&self, wire: &Wire<S>) -> Cow<'a, str> {
-        if let Some(var) = self.atom.var(wire) {
-            if wire == var.ltc() {
-                // the plain name passes through as-is: borrowed stays borrowed
-                (self.name)(var)
-            } else if wire == var.nxt() {
-                Cow::Owned(format!("X({})", (self.name)(var)))
-            } else {
-                assert!(wire == var.der());
-                Cow::Owned(format!("d({})", (self.name)(var)))
-            }
-        } else {
-            Cow::Owned(format!("{}", wire.untyped()))
-        }
+    /// Names the boundary wires of the block after the variables they carry:
+    /// the inputs after `inputs`, and the outputs after `outputs`, in order.
+    fn wirenames<T, V, W>(
+        &self,
+        block: &'a Block<T>,
+        inputs: V,
+        outputs: W,
+    ) -> HashMap<&'a Wire<S>, Cow<'a, str>>
+    where
+        T: Theory<Sort = S>,
+        V: Iterator<Item = (&'a Var<S>, View)>,
+        W: Iterator<Item = (&'a Var<S>, View)>,
+    {
+        let name = |(var, view): (&'a Var<S>, View)| match view {
+            // the plain name passes through as-is: borrowed stays borrowed
+            View::Ltc => (self.name)(var),
+            View::Nxt => Cow::Owned(format!("X({})", (self.name)(var))),
+            View::Der => Cow::Owned(format!("d({})", (self.name)(var))),
+        };
+        let inputs = block.read().iter().zip(inputs.map(name));
+        let outputs = block.write().iter().zip(outputs.map(name));
+        inputs.chain(outputs).collect()
     }
 
-    fn fmt_terms<T: 'a + Theory<Sort = S> + fmt::Display, U: Iterator<Item = &'a Term<T>>>(
+    fn fmt_terms<T: 'a + Theory<Sort = S> + fmt::Display>(
         &self,
         f: &mut fmt::Formatter<'_>,
-        iter: U,
+        block: &'a Block<T>,
+        names: &HashMap<&'a Wire<S>, Cow<'a, str>>,
         pad: &str,
     ) -> fmt::Result {
-        // the argument annotation makes the closure higher-ranked over the
-        // wire's lifetime, as `with_wirenames`'s `Fn` bound requires
-        let name = |w: &Wire<S>| self.fmt_wirename(w);
+        // the wires internal to the block are not named after variables; the
+        // argument annotation makes the closure higher-ranked over the wire's
+        // lifetime, as `with_wirenames`'s `Fn` bound requires
+        let name = |w: &Wire<S>| match names.get(w) {
+            Some(name) => name.clone(),
+            None => Cow::Owned(format!("{}", w.untyped())),
+        };
 
-        for term in iter {
+        for term in block.iter() {
             let display = term.with_wirenames(name);
             writeln!(f, "{pad}{}", display)?;
         }
@@ -880,13 +961,29 @@ where
             write!(f, " {BOLD}awaits{RESET} ")?;
             self.fmt_vars(f, a.wait.iter())?;
         }
+
+        // the boundaries of the blocks, as in `Atom::new_unchecked`
+        let view = |vars: &'a AtomInterface<S>, view: View| vars.iter().map(move |v| (v, view));
+        let (ctrl, read, wait) = (&a.ctrl, &a.read, &a.wait);
+        let init = self.wirenames(&a.init, view(wait, View::Nxt), view(ctrl, View::Nxt));
+        let update = self.wirenames(
+            &a.update,
+            view(read, View::Ltc).chain(view(wait, View::Nxt)),
+            view(ctrl, View::Nxt),
+        );
+        let delay = self.wirenames(
+            &a.delay,
+            view(read, View::Ltc).chain(view(wait, View::Der)),
+            view(ctrl, View::Der),
+        );
+
         let tpad = format!("{pad}{INDENT}");
         writeln!(f, "\n{pad}{BOLD}init{RESET}")?;
-        self.fmt_terms(f, a.init.iter(), tpad.as_str())?;
+        self.fmt_terms(f, &a.init, &init, tpad.as_str())?;
         writeln!(f, "{pad}{BOLD}delay{RESET}")?;
-        self.fmt_terms(f, a.delay.iter(), tpad.as_str())?;
+        self.fmt_terms(f, &a.delay, &delay, tpad.as_str())?;
         writeln!(f, "{pad}{BOLD}update{RESET}")?;
-        self.fmt_terms(f, a.update.iter(), tpad.as_str())?;
+        self.fmt_terms(f, &a.update, &update, tpad.as_str())?;
 
         Ok(())
     }
@@ -898,7 +995,7 @@ where
     J: Sequential<Sort = S> + fmt::Display,
     F: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
-    N: Fn(&Wire3<S>) -> Cow<'a, str>,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.fmt_indent(f, "")
@@ -912,32 +1009,36 @@ where
     D: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
 {
+    /// Displays the atom with variables under the names the given function
+    /// assigns, typed.
     pub fn with_varnames<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, I, J, D, S, impl Fn(&Wire3<S>) -> Cow<'a, str>>
+    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
     where
-        N: Fn(&Wire3<S>) -> R,
+        N: Fn(&Var<S>) -> R,
         R: Into<Cow<'a, str>>,
     {
         Display {
             atom: self,
-            name: move |v: &Wire3<S>| name(v).into(),
+            name: move |v: &Var<S>| name(v).into(),
             typed: true,
         }
     }
 
+    /// Displays the atom with variables under the names the given function
+    /// assigns, untyped.
     pub fn with_varnames_untyped<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, I, J, D, S, impl Fn(&Wire3<S>) -> Cow<'a, str>>
+    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
     where
-        N: Fn(&Wire3<S>) -> R,
+        N: Fn(&Var<S>) -> R,
         R: Into<Cow<'a, str>>,
     {
         Display {
             atom: self,
-            name: move |v: &Wire3<S>| name(v).into(),
+            name: move |v: &Var<S>| name(v).into(),
             typed: false,
         }
     }
@@ -952,7 +1053,7 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Clone + Debug,
+    S: Clone + PartialEq + Debug + Tangent,
 {
     /// Constructs a **sequential module**: behaviour that evolves over
     /// discrete time steps.
@@ -963,7 +1064,7 @@ where
     /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the module.
+    /// - `vars`: The variables of the module, each bound to its name.
     /// - `init`: The set of terms defining the module's initial state.
     /// - `update`: The set of terms defining the module's state update at each time step.
     ///
@@ -978,7 +1079,7 @@ where
     /// - [`Atom::sequential`], for creating individual sequential atoms.
     pub fn sequential<'a, V, W, U>(vars: V, init: W, update: U) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
         S: 'a,
@@ -996,7 +1097,7 @@ where
     /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the module.
+    /// - `vars`: The variables of the module, each bound to its name.
     /// - `init`: The set of terms defining the module's initial state.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
     ///
@@ -1010,7 +1111,7 @@ where
     /// - [`Atom::differential`], for creating individual differential atoms.
     pub fn differential<'a, V, W, Z>(vars: V, init: W, delay: Z) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         W: IntoIterator<Item = Term<I>>,
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
@@ -1028,7 +1129,7 @@ where
     /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the module.
+    /// - `vars`: The variables of the module, each bound to its name.
     /// - `init`: The set of terms defining the module's initial state.
     /// - `update`: The set of terms defining the discrete state update.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
@@ -1043,7 +1144,7 @@ where
     /// - [`Atom::hybrid`], for creating individual hybrid atoms.
     pub fn hybrid<'a, V, W, U, Z>(vars: V, init: W, update: U, delay: Z) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         W: IntoIterator<Item = Term<I>>,
         U: IntoIterator<Item = Term<J>>,
         Z: IntoIterator<Item = Term<F>>,
@@ -1062,7 +1163,7 @@ where
     /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the module.
+    /// - `vars`: The variables of the module, each bound to its name.
     /// - `update`: The set of terms defining the module's state update at each time step.
     ///
     /// # Returns
@@ -1075,7 +1176,7 @@ where
     pub fn jump<'a, V, U>(vars: V, update: U) -> Result<Self, String>
     where
         U: IntoIterator<Item = Term<J>>,
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         S: 'a,
     {
         let atom = Atom::jump(vars, update)?;
@@ -1091,7 +1192,7 @@ where
     /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the module.
+    /// - `vars`: The variables of the module, each bound to its name.
     /// - `update`: The set of terms defining the discrete state update.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
     ///
@@ -1107,7 +1208,7 @@ where
     where
         U: IntoIterator<Item = Term<J>>,
         Z: IntoIterator<Item = Term<F>>,
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         S: 'a,
     {
         let atom = Atom::uninitialized(vars, update, delay)?;
@@ -1123,7 +1224,7 @@ where
     /// **fully observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the module.
+    /// - `vars`: The variables of the module, each bound to its name.
     ///
     /// # Returns
     /// A `Result` containing the constructed hold module if successful,
@@ -1135,7 +1236,7 @@ where
     /// - [`Atom::hold`], for creating individual hold atoms.
     pub fn hold<'a, V>(vars: V) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         S: 'a,
     {
         let atom = Atom::hold(vars)?;
@@ -1151,7 +1252,7 @@ where
     /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the module.
+    /// - `vars`: The variables of the module, each bound to its name.
     /// - `delay`: The set of terms defining the continuous evolution of the derivatives.
     ///
     /// # Returns
@@ -1163,7 +1264,7 @@ where
     /// - [`Atom::flow`], for creating individual flow atoms.
     pub fn flow<'a, V, Z>(vars: V, delay: Z) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         Z: IntoIterator<Item = Term<F>>,
         S: 'a,
     {
@@ -1180,7 +1281,7 @@ where
     /// [`Module::hide`] to make variables private.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the module.
+    /// - `vars`: The variables of the module, each bound to its name.
     /// - `init`: The set of terms defining the (only) assignment of the variables.
     ///
     /// # Returns
@@ -1192,7 +1293,7 @@ where
     /// - [`Atom::constant`], for creating individual constant atoms.
     pub fn constant<'a, V, W>(vars: V, init: W) -> Result<Self, String>
     where
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         W: IntoIterator<Item = Term<I>>,
         S: 'a,
     {
@@ -1209,7 +1310,7 @@ where
     /// observable**: use [`Module::hide`] to make variables private.
     ///
     /// # Parameters
-    /// - `vars`: The variables of the module.
+    /// - `vars`: The variables of the module, each bound to its name.
     /// - `assign`: The set of combinatorial assignment terms defining how the
     ///   output is computed from the input.
     ///
@@ -1223,7 +1324,7 @@ where
     pub fn combinatorial<'a, T, V, W>(vars: V, assign: W) -> Result<Self, String>
     where
         T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
-        V: IntoIterator<Item = &'a Wire3<S>>,
+        V: IntoIterator<Item = (Var<S>, &'a Wire3<S>)>,
         W: IntoIterator<Item = Term<T>>,
         S: 'a,
     {

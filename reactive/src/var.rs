@@ -39,10 +39,6 @@ impl<S> Wire3<S> {
     pub(crate) fn der(&self) -> &Wire<S> {
         &self.der
     }
-
-    pub(crate) fn wires(&self) -> [&Wire<S>; 3] {
-        [&self.ltc, &self.nxt, &self.der]
-    }
 }
 
 /// Equality goes through the latched wire — the variable's bearing element,
@@ -181,116 +177,6 @@ impl<S: Debug> Debug for Wire3<S> {
     }
 }
 
-#[derive(Clone)]
-pub struct Interface<S> {
-    vars: Vec<Wire3<S>>,
-    wires: Vec<(Wire<S>, Wire3<S>)>,
-}
-
-impl<S> Interface<S> {
-    pub fn empty() -> Self {
-        Self {
-            vars: Vec::new(),
-            wires: Vec::new(),
-        }
-    }
-
-    /// Returns true if the variables of self are disjoint from the variables of other
-    /// This function runs in place, in O(self.len() * log(other.len())) time
-    pub fn is_disjoint(&self, other: &Interface<S>) -> bool {
-        for a in self.vars.iter() {
-            if other.vars.binary_search(a).is_ok() {
-                return false;
-            }
-        }
-        true
-    }
-
-    pub fn len(&self) -> usize {
-        self.vars.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.vars.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Wire3<S>> {
-        self.vars.iter()
-    }
-
-    pub fn var(&self, wire: &Wire<S>) -> Option<&Wire3<S>> {
-        let res = self.wires.binary_search_by_key(&wire, |(w, _)| w);
-        res.map(|idx| &self.wires[idx].1).ok()
-    }
-
-    pub fn nth(&self, index: usize) -> Option<&Wire3<S>> {
-        self.vars.get(index)
-    }
-
-    pub fn contains(&self, var: &Wire3<S>) -> bool {
-        self.vars.binary_search(var).is_ok()
-    }
-}
-
-impl<S: Debug + Clone> Interface<S> {
-    pub(crate) fn from_iter_unchecked<I>(iter: I) -> Self
-    where
-        I: IntoIterator<Item = Wire3<S>>,
-    {
-        let vars: Vec<Wire3<S>> = iter.into_iter().collect();
-        Self::from_exact_iter_unchecked(vars)
-    }
-
-    pub(crate) fn from_exact_iter_unchecked<I>(iter: I) -> Self
-    where
-        I: IntoIterator<Item = Wire3<S>>,
-        I::IntoIter: ExactSizeIterator,
-    {
-        let iter = iter.into_iter();
-        let mut vars = Vec::with_capacity(iter.len());
-        vars.extend(iter);
-
-        let mut wires: Vec<(Wire<S>, Wire3<S>)> = Vec::with_capacity(3 * vars.len());
-        wires.extend(vars.iter().map(|v: &Wire3<S>| (v.ltc.clone(), v.clone())));
-        wires.extend(vars.iter().map(|v: &Wire3<S>| (v.nxt.clone(), v.clone())));
-        wires.extend(vars.iter().map(|v: &Wire3<S>| (v.der.clone(), v.clone())));
-        wires.sort_unstable();
-
-        // variables must be unique and sorted
-        debug_assert!(
-            vars.is_sorted_by(|a, b| a < b),
-            "duplicate or unsorted {:?}",
-            vars
-        );
-
-        Self { vars, wires }
-    }
-}
-
-impl<S> IntoIterator for Interface<S> {
-    type Item = Wire3<S>;
-    type IntoIter = std::vec::IntoIter<Wire3<S>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.vars.into_iter()
-    }
-}
-
-impl<'a, S> IntoIterator for &'a Interface<S> {
-    type Item = &'a Wire3<S>;
-    type IntoIter = std::slice::Iter<'a, Wire3<S>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.vars.iter()
-    }
-}
-
-impl<S: Debug> Debug for Interface<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Interface {{ vars: {:?} }}", self.vars)
-    }
-}
-
 /// A variable identified by its name.
 ///
 /// Unlike [`Wire3`], a `Var` carries no wires: it is a name and the sort of
@@ -421,6 +307,23 @@ impl<S: PartialEq + Debug> ModuleInterface<S> {
         Ok(Self { vars })
     }
 }
+
+impl<S: Debug> ModuleInterface<S> {
+    /// The interface of the variables `vars`, which must be sorted by name
+    /// without duplicates; not checked beyond debug assertions.
+    pub(crate) fn from_sorted_unchecked(vars: Vec<Var<S>>) -> Self {
+        debug_assert!(
+            vars.is_sorted_by(|a, b| a < b),
+            "duplicate or unsorted {:?}",
+            vars
+        );
+        Self { vars }
+    }
+}
+
+/// The interface of an atom: the set of the named variables it controls,
+/// awaits, or reads. It is the same set as that of a module.
+pub type AtomInterface<S> = ModuleInterface<S>;
 
 impl<S> Default for ModuleInterface<S> {
     fn default() -> Self {

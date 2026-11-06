@@ -1,8 +1,8 @@
 use crate::atom::Atom;
 use crate::topological_order;
-use crate::var::{Interface, Wire3};
+use crate::var::{ModuleInterface, Var};
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
 use theory::{Combinatorial, Differential, Sequential, Theory};
@@ -19,7 +19,7 @@ where
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
 {
-    /// Correspond to the wires of the module divided by visibility
+    /// The variables of the module divided by visibility
     /// ```text
     ///     *====================*
     ///     | extl | intf | prvt |
@@ -29,11 +29,11 @@ where
     ///     | extl |    ctrl     |
     ///     *====================*
     /// ```
-    extl: Interface<S>,
-    intf: Interface<S>,
-    prvt: Interface<S>,
-    obs: Interface<S>,
-    ctrl: Interface<S>,
+    extl: ModuleInterface<S>,
+    intf: ModuleInterface<S>,
+    prvt: ModuleInterface<S>,
+    obs: ModuleInterface<S>,
+    ctrl: ModuleInterface<S>,
 
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
@@ -51,23 +51,23 @@ where
         &self.atoms
     }
 
-    pub fn extl(&self) -> &Interface<S> {
+    pub fn extl(&self) -> &ModuleInterface<S> {
         &self.extl
     }
 
-    pub fn intf(&self) -> &Interface<S> {
+    pub fn intf(&self) -> &ModuleInterface<S> {
         &self.intf
     }
 
-    pub fn prvt(&self) -> &Interface<S> {
+    pub fn prvt(&self) -> &ModuleInterface<S> {
         &self.prvt
     }
 
-    pub fn ctrl(&self) -> &Interface<S> {
+    pub fn ctrl(&self) -> &ModuleInterface<S> {
         &self.ctrl
     }
 
-    pub fn obs(&self) -> &Interface<S> {
+    pub fn obs(&self) -> &ModuleInterface<S> {
         &self.obs
     }
 
@@ -81,11 +81,11 @@ where
 
     pub fn empty() -> Self {
         Module {
-            extl: Interface::empty(),
-            intf: Interface::empty(),
-            prvt: Interface::empty(),
-            obs: Interface::empty(),
-            ctrl: Interface::empty(),
+            extl: ModuleInterface::empty(),
+            intf: ModuleInterface::empty(),
+            prvt: ModuleInterface::empty(),
+            obs: ModuleInterface::empty(),
+            ctrl: ModuleInterface::empty(),
             atoms: Vec::new(),
         }
     }
@@ -108,14 +108,14 @@ where
     /// or validation. It should be used only when all necessary checks or automation
     /// have already been handled externally.
     ///
-    /// Unlike the other constructors, which automatically infer wire visibility and module
-    /// properties, `new_unchecked` allows manually specifying all wire sets and atoms.
+    /// Unlike the other constructors, which automatically infer variable visibility and module
+    /// properties, `new_unchecked` allows manually specifying all variable sets and atoms.
     /// This is useful for advanced scenarios or for optimising performance when redundant
     /// automation would otherwise occur.
     ///
-    /// # Wire layout and visibility
+    /// # Variable layout and visibility
     ///
-    /// Wire visibility and organization within a module can be visualized as follows:
+    /// Variable visibility and organization within a module can be visualized as follows:
     ///
     /// ```text
     ///     *====================*
@@ -127,11 +127,11 @@ where
     ///     *====================*
     /// ```
     /// # Parameters
-    /// - `extl` are external wires, exposed to the environment (module inputs).
-    /// - `intf` are interface wires, forming the module’s public outputs.
-    /// - `prvt` are private wires, hidden from external access.
-    /// - `obs` are observable wires, visible through the module interface.
-    /// - `ctrl` are controlled wires, used for state management and internal coordination.
+    /// - `extl` are external variables, exposed to the environment (module inputs).
+    /// - `intf` are interface variables, forming the module’s public outputs.
+    /// - `prvt` are private variables, hidden from external access.
+    /// - `obs` are observable variables, visible through the module interface.
+    /// - `ctrl` are controlled variables, used for state management and internal coordination.
     /// - `atoms`: The list of atoms defining the module’s internal behaviour.
     ///
     /// # Returns
@@ -140,18 +140,18 @@ where
     /// # Correctness
     /// This function performs **no validation or inference** (beyond
     /// debug-only assertions). It is the caller’s responsibility to ensure
-    /// that all wires, atoms, and interfaces are well-formed and consistent.
+    /// that all variables, atoms, and interfaces are well-formed and consistent.
     ///
     /// # See Also
     /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
     /// - [`Module::partially_observable`], [`Module::observable`] for checked,
     ///   automated module construction
     fn new_unchecked(
-        extl: Interface<S>,
-        intf: Interface<S>,
-        prvt: Interface<S>,
-        obs: Interface<S>,
-        ctrl: Interface<S>,
+        extl: ModuleInterface<S>,
+        intf: ModuleInterface<S>,
+        prvt: ModuleInterface<S>,
+        obs: ModuleInterface<S>,
+        ctrl: ModuleInterface<S>,
         atoms: Vec<Atom<I, J, F, S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
@@ -159,7 +159,7 @@ where
             debug_assert_eq!(obs.len(), extl.len() + intf.len());
             debug_assert_eq!(ctrl.len(), intf.len() + prvt.len());
 
-            let mut module_vars: HashSet<&Wire3<S>> = HashSet::new();
+            let mut module_vars: HashSet<&Var<S>> = HashSet::new();
 
             // extl & intf & prvt = empty
             debug_assert!(extl.iter().all(|v| module_vars.insert(v)));
@@ -174,7 +174,7 @@ where
             debug_assert!(ctrl.iter().all(|v| intf.contains(v) || prvt.contains(v)));
 
             // check atoms consistency
-            let mut written: HashSet<&Wire3<S>> = HashSet::new();
+            let mut written: HashSet<&Var<S>> = HashSet::new();
             written.extend(extl.iter());
             for atom in atoms.iter() {
                 for var in atom.read().iter() {
@@ -223,7 +223,7 @@ where
     I: Combinatorial<Sort = S>,
     J: Sequential<Sort = S>,
     F: Differential<Sort = S>,
-    S: Clone + Debug,
+    S: Clone + PartialEq + Debug,
 {
     /// Constructs a **fully observable module** from a set of atoms.
     ///
@@ -289,10 +289,11 @@ where
     pub fn partially_observable<A, H>(atoms: A, hide: H) -> Result<Self, String>
     where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
-        H: Fn(&Wire3<S>) -> bool,
+        H: Fn(&Var<S>) -> bool,
     {
-        let mut obs: BTreeSet<Wire3<S>> = BTreeSet::new();
-        let mut ctrl: BTreeSet<Wire3<S>> = BTreeSet::new();
+        let mut sorts: HashMap<u32, S> = HashMap::new();
+        let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
         let atoms = atoms.into_iter();
         let mut past_atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(atoms.size_hint().0);
 
@@ -300,6 +301,10 @@ where
             //============================================================
             // Collect variables
             //============================================================
+            let vars = atom.read().iter().chain(atom.wait()).chain(atom.ctrl());
+            for var in vars {
+                check_sort(&mut sorts, var)?;
+            }
             obs.extend(atom.read().iter().cloned());
             obs.extend(atom.wait().iter().cloned());
             obs.extend(atom.ctrl().iter().cloned());
@@ -327,7 +332,7 @@ where
         //============================================================
         // Determine private, interface, and external
         //============================================================
-        let prvt: Vec<Wire3<S>> = obs.extract_if(.., &hide).collect();
+        let prvt: Vec<Var<S>> = obs.extract_if(.., &hide).collect();
         let intf = ctrl.iter().filter(|v| prvt.binary_search(v).is_err());
         let extl = obs.difference(&ctrl);
 
@@ -337,11 +342,11 @@ where
             }
         }
 
-        let extl = Interface::from_iter_unchecked(extl.cloned());
-        let intf = Interface::from_iter_unchecked(intf.cloned());
-        let prvt = Interface::from_exact_iter_unchecked(prvt);
-        let obs = Interface::from_exact_iter_unchecked(obs);
-        let ctrl = Interface::from_exact_iter_unchecked(ctrl);
+        let extl = ModuleInterface::from_sorted_unchecked(extl.cloned().collect());
+        let intf = ModuleInterface::from_sorted_unchecked(intf.cloned().collect());
+        let prvt = ModuleInterface::from_sorted_unchecked(prvt.into_iter().collect());
+        let obs = ModuleInterface::from_sorted_unchecked(obs.into_iter().collect());
+        let ctrl = ModuleInterface::from_sorted_unchecked(ctrl.into_iter().collect());
 
         Ok(Self::new_unchecked(extl, intf, prvt, obs, ctrl, past_atoms))
     }
@@ -363,6 +368,7 @@ where
     /// # Error Conditions
     ///
     /// - A module attempts to couple a *private* variable with another module
+    /// - Coupled variables (of the same name) have different sorts
     /// - A coupled variable is *controlled by more than one module*
     /// - Await dependency is cyclic
     ///
@@ -403,7 +409,7 @@ where
     /// - [`Module::compose_hiding`], hiding several modules at their composition.
     pub fn hide<H>(self, hide: H) -> Result<Self, String>
     where
-        H: Fn(&Wire3<S>) -> bool,
+        H: Fn(&Var<S>) -> bool,
     {
         Self::compose_hiding(std::iter::once(self), hide)
     }
@@ -439,15 +445,16 @@ where
     pub fn compose_hiding<M, H>(modules: M, hide: H) -> Result<Self, String>
     where
         M: IntoIterator<Item = Self>,
-        H: Fn(&Wire3<S>) -> bool,
+        H: Fn(&Var<S>) -> bool,
     {
-        let mut prvt_pre_hiding: HashSet<usize> = HashSet::new();
+        let mut sorts: HashMap<u32, S> = HashMap::new();
+        let mut prvt_pre_hiding: HashSet<u32> = HashSet::new();
 
-        let mut extl: BTreeSet<Wire3<S>> = BTreeSet::new();
-        let mut intf: BTreeSet<Wire3<S>> = BTreeSet::new();
-        let mut prvt: BTreeSet<Wire3<S>> = BTreeSet::new();
-        let mut obs: BTreeSet<Wire3<S>> = BTreeSet::new();
-        let mut ctrl: BTreeSet<Wire3<S>> = BTreeSet::new();
+        let mut extl: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut intf: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut prvt: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
+        let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
 
         let mut atoms_pre_ordering: Vec<Atom<I, J, F, S>> = Vec::new();
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
@@ -457,9 +464,14 @@ where
             // Ensure decoupling and restrict visibility
             //============================================================
 
+            // Check that coupled variables agree on their sorts
+            for var in module.obs.iter().chain(module.prvt.iter()) {
+                check_sort(&mut sorts, var)?;
+            }
+
             // Check that observables are either uncoupled or coupled in right direction
             for var in module.obs {
-                if prvt_pre_hiding.contains(&var.id()) {
+                if prvt_pre_hiding.contains(&var.name()) {
                     return Err(format!("Coupling private variable {:?}", var));
                 }
 
@@ -483,10 +495,8 @@ where
                     return Err(format!("Coupling private variable {:?}", var));
                 }
 
-                for wire in var.wires() {
-                    debug_assert!(!prvt_pre_hiding.contains(&wire.id()));
-                    prvt_pre_hiding.insert(wire.id());
-                }
+                debug_assert!(!prvt_pre_hiding.contains(&var.name()));
+                prvt_pre_hiding.insert(var.name());
 
                 prvt.insert(var);
             }
@@ -563,13 +573,34 @@ where
         // Collect and construct
         //============================================================
 
-        let extl = Interface::from_exact_iter_unchecked(extl);
-        let intf = Interface::from_exact_iter_unchecked(intf);
-        let prvt = Interface::from_exact_iter_unchecked(prvt);
-        let obs = Interface::from_exact_iter_unchecked(obs);
-        let ctrl = Interface::from_exact_iter_unchecked(ctrl);
+        let extl = ModuleInterface::from_sorted_unchecked(extl.into_iter().collect());
+        let intf = ModuleInterface::from_sorted_unchecked(intf.into_iter().collect());
+        let prvt = ModuleInterface::from_sorted_unchecked(prvt.into_iter().collect());
+        let obs = ModuleInterface::from_sorted_unchecked(obs.into_iter().collect());
+        let ctrl = ModuleInterface::from_sorted_unchecked(ctrl.into_iter().collect());
 
         Ok(Module::new_unchecked(extl, intf, prvt, obs, ctrl, atoms))
+    }
+}
+
+/// Checks that the variable has the sort of the variables of the same name
+/// seen before, and records its sort.
+fn check_sort<S>(sorts: &mut HashMap<u32, S>, var: &Var<S>) -> Result<(), String>
+where
+    S: Clone + PartialEq + Debug,
+{
+    match sorts.get(&var.name()) {
+        Some(sort) if sort != var.dtype() => Err(format!(
+            "Variable {} has conflicting sorts {:?} and {:?}",
+            var.name(),
+            sort,
+            var.dtype()
+        )),
+        Some(_) => Ok(()),
+        None => {
+            sorts.insert(var.name(), var.dtype().clone());
+            Ok(())
+        }
     }
 }
 
@@ -593,7 +624,7 @@ where
     J: Sequential<Sort = S> + fmt::Display,
     F: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
-    N: Fn(&Wire3<S>) -> Cow<'a, str>,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
 {
     fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
         const BOLD: &str = "\x1b[1m";
@@ -636,7 +667,7 @@ where
     J: Sequential<Sort = S> + fmt::Display,
     F: Differential<Sort = S> + fmt::Display,
     S: fmt::Display,
-    N: Fn(&Wire3<S>) -> Cow<'a, str>,
+    N: Fn(&Var<S>) -> Cow<'a, str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.fmt_indent(f, "")
@@ -657,14 +688,14 @@ where
     pub fn with_varnames<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, I, J, D, S, impl Fn(&Wire3<S>) -> Cow<'a, str>>
+    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
     where
-        N: Fn(&Wire3<S>) -> R,
+        N: Fn(&Var<S>) -> R,
         R: Into<Cow<'a, str>>,
     {
         Display {
             module: self,
-            name: move |v: &Wire3<S>| name(v).into(),
+            name: move |v: &Var<S>| name(v).into(),
         }
     }
 }

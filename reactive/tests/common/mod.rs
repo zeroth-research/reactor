@@ -5,7 +5,7 @@
 use base::tangent::Tangent;
 use base::wire::Wire;
 use dataflow::diagram::Term;
-use reactive::var::{Wire3, X};
+use reactive::var::{Var, Wire3, X};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -15,6 +15,19 @@ use theory::{Combinatorial, Differential, Sequential, Theory};
 /// values), e.g., `Srt("real", 1)` is the sort of the derivatives of `real`
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Srt(pub &'static str, pub u8);
+
+/// The name of a variable in the tests: the id of its latched wire, so the
+/// same wires get the same name in every atom
+pub fn name<S: Clone>(var: &Wire3<S>) -> Var<S> {
+    Var::new(u32::try_from(var.id()).unwrap(), var.dtype().clone())
+}
+
+/// Binds each variable to its name
+pub fn named<'a, S: Clone + 'a>(
+    vars: impl IntoIterator<Item = &'a Wire3<S>>,
+) -> Vec<(Var<S>, &'a Wire3<S>)> {
+    vars.into_iter().map(|var| (name(var), var)).collect()
+}
 
 /// The uninterpreted sort of values named `name`
 pub fn srt(name: &'static str) -> Srt {
@@ -98,7 +111,7 @@ macro_rules! term {
 }
 
 #[allow(clippy::vec_init_then_push)]
-pub fn example_counter() -> Result<(Module, HashMap<Wire3<Srt>, String>), String> {
+pub fn example_counter() -> Result<(Module, HashMap<Var<Srt>, String>), String> {
     let x = Wire3::new(srt("real"));
     let y = Wire3::new(srt("real"));
     let z = Wire3::new(srt("real"));
@@ -139,11 +152,11 @@ pub fn example_counter() -> Result<(Module, HashMap<Wire3<Srt>, String>), String
 
     let obs = [x, y, z, y0, z0];
 
-    let module = Module::sequential(&obs, init, update)?;
+    let module = Module::sequential(named(&obs), init, update)?;
     // every module variable needs a name: the display indexes them all
     let varnames = [(x, "x"), (y, "y"), (z, "z"), (y0, "y0"), (z0, "z0")]
         .into_iter()
-        .map(|(var, name)| (var, name.to_string()))
+        .map(|(var, varname)| (name(&var), varname.to_string()))
         .collect();
 
     Ok((module, varnames))
@@ -201,7 +214,7 @@ pub fn example_peterson1() -> Result<Module, String> {
     );
 
     let obs = [pc1, x1, pc2, x2];
-    Module::sequential(&obs, init, update)
+    Module::sequential(named(&obs), init, update)
 }
 
 pub fn example_tiny1(
@@ -234,8 +247,8 @@ pub fn example_tiny1(
 
     let vars = [external, interface, private];
     let _obs = [external, interface];
-    let prvt = [private];
+    let prvt = [name(&private)];
 
-    let atom = Atom::sequential(&vars, [init], [cons, update])?;
+    let atom = Atom::sequential(named(&vars), [init], [cons, update])?;
     Module::partially_observable([atom], |v| prvt.contains(v))
 }
