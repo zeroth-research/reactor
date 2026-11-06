@@ -197,8 +197,18 @@ impl<'py> FromPyObject<'py> for Any {
         if let Ok(a) = obj.extract::<BV>() {
             return Ok(Any::BV(a));
         }
+        // the distinguished operations, as their catch-alls give them
+        if let Ok(a) = obj.extract::<Combinatorial>() {
+            return Ok(a.into());
+        }
+        if let Ok(a) = obj.extract::<Sequential>() {
+            return Ok(a.into());
+        }
+        if let Ok(a) = obj.extract::<Differential>() {
+            return Ok(a.into());
+        }
         Err(pyo3::exceptions::PyTypeError::new_err(
-            "expected one of LRA, LIA, or BV",
+            "expected one of LRA, LIA, BV, Combinatorial, Sequential, or Differential",
         ))
     }
 }

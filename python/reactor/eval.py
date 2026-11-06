@@ -7,8 +7,9 @@ needs the output Sort for its width — threaded in as `out_sort`.
 """
 
 import torch
-from .reactor import LRA, LIA, BV
+from .reactor import LRA, LIA, BV, Sequential
 from .sort import BitVec
+from .blocks import views
 
 
 def _bv_width(sort):
@@ -41,7 +42,8 @@ def eval_itype(itype, read, out_sort=None):
     r = read
     match itype:
         # --- identity / control flow ---
-        case LRA.IdReal() | LRA.IdBool() | LRA.TId() | LIA.IdInt() | LIA.IdBool() | BV.Id():
+        case (LRA.IdReal() | LRA.IdBool() | LRA.TId() | LIA.IdInt() | LIA.IdBool() | BV.Id()
+              | Sequential.SKIP()):
             return [r[0].clone()]
         case (LRA.IteReal() | LRA.IteBool() | LRA.TIte() | LIA.IteInt() | LIA.IteBool()
               | BV.Ite()):
@@ -166,28 +168,52 @@ def eval_itype(itype, read, out_sort=None):
 # ============================================================================
 
 
-def _execute_block(state, atoms, get_block):
-    """Evaluate a block from each atom."""
+def execute_block(state, atom, kind):
+    """Evaluate the block of the ``kind`` of the atom.
+
+    ``state`` maps the views of the variables (a variable for its latched value,
+    ``X(v)`` for its next value, ``d(v)`` for its derivative) to their values. The
+    block takes the values of the views of its boundary inputs, by position, and
+    gives those of its outputs, which are stored back into ``state``.
+    """
+    block = getattr(atom, kind)
+    inputs, outputs = views(kind, atom.ctrl, atom.wait, atom.read)
+    wires = {w: view for w, view in zip(block.read, inputs)}
+    values = {w: state[view] for w, view in wires.items() if view in state}
+
+    def value(w):
+        if w not in values:
+            raise KeyError(f"no value for {wires.get(w, w)} in the {kind} of {atom}")
+        return values[w]
+
+    for term in block:
+        # a term that writes nothing (a discard of an unused input) has no effect
+        if not len(term.write):
+            continue
+        read = [value(w) for w in term.read]
+        out_sort = term.write[0].dtype
+        results = eval_itype(term.itype, read, out_sort)
+        for w, val in zip(term.write, results):
+            values[w] = val
+
+    for w, view in zip(block.write, outputs):
+        state[view] = values[w]
+
+
+def _execute_block(state, atoms, kind):
+    """Evaluate the block of the ``kind`` of each atom, in order."""
     for atom in atoms:
-        for term in get_block(atom):
-            # a term that writes nothing (a discard of an unused input) has no effect
-            if not len(term.write):
-                continue
-            read = [state[w] for w in term.read]
-            out_sort = term.write[0].dtype if len(term.write) else None
-            results = eval_itype(term.itype, read, out_sort)
-            for w, val in zip(term.write, results):
-                state[w] = val
+        execute_block(state, atom, kind)
 
 
 def execute_init(state, atoms):
     """Evaluate the init block of all atoms."""
-    _execute_block(state, atoms, lambda a: a.init)
+    _execute_block(state, atoms, "init")
 
 
 def execute_update(state, atoms):
     """Evaluate the update block of all atoms."""
-    _execute_block(state, atoms, lambda a: a.update)
+    _execute_block(state, atoms, "update")
 
 
 def read_wire(state, wire):

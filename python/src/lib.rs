@@ -5,7 +5,6 @@ use pyo3::PyClass;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
-use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fmt::Write;
@@ -13,15 +12,17 @@ use theory::Theory;
 use theory::any::{Any, Combinatorial, Differential, Sequential, Sort};
 
 mod atom;
+mod block;
 mod module;
 mod term;
 mod var;
 mod wire;
 
 use crate::atom::Atom;
+use crate::block::Block;
 use crate::module::Module;
 use crate::term::Term;
-use crate::var::{Bindings, Var};
+use crate::var::{Var, View};
 use crate::wire::Wire;
 
 #[pymodule]
@@ -29,8 +30,10 @@ fn reactor(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Sort>()?;
     m.add_class::<Wire>()?;
     m.add_class::<Var>()?;
+    m.add_class::<View>()?;
     m.add_class::<Atom>()?;
     m.add_class::<Term>()?;
+    m.add_class::<Block>()?;
     m.add_class::<Module>()?;
 
     m.add_class::<Combinatorial>()?;
@@ -58,50 +61,37 @@ where
     Ok(iter)
 }
 
+/// The variables of the python sequence.
 fn try_var_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = reactive::Wire3<theory::any::Sort>>> {
-    // TODO: make base take result iterator to avoid unwrap
+) -> PyResult<impl Iterator<Item = PyResult<reactive::Var<Sort>>>> {
     let seq = try_iter_borrow::<Var>(seq)?;
-    let seq = seq.into_iter().map(Result::unwrap);
-    let seq = seq.map(|r| *r.base());
-    Ok(seq)
+    Ok(seq.map(|var| var.map(|var| *var.base())))
 }
 
+/// The terms of the python sequence, over the theory `T`.
 fn try_term_iter_cloned<T>(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<T>>>
+) -> PyResult<impl Iterator<Item = PyResult<dataflow::diagram::Term<T>>>>
 where
     T: Theory,
     dataflow::diagram::Term<Any>: TryInto<dataflow::diagram::Term<T>>,
     <dataflow::diagram::Term<Any> as TryInto<dataflow::diagram::Term<T>>>::Error: Debug,
 {
-    // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;
-    let seq = seq.into_iter().map(Result::unwrap);
-    let seq = seq.map(|r| r.base().clone().try_into().unwrap());
-    Ok(seq)
+    Ok(seq.map(|term| {
+        let term = term?.base().clone();
+        term.try_into()
+            .map_err(|e| PyException::new_err(format!("{e:?}")))
+    }))
 }
 
+/// The wires of the python sequence.
 fn try_wire_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Wire<theory::any::Sort>>> {
-    // TODO: make base take result iterator to avoid unwrap
-    let seq = seq.try_iter()?.map(|i| -> PyResult<_> {
-        let i = i?;
-        if let Ok(wire) = i.extract::<PyRef<Wire>>() {
-            return Ok(wire.base().clone());
-        }
-        // a variable stands for its latched wire in a wire position
-        if let Ok(var) = i.extract::<PyRef<Var>>() {
-            return Ok(base::Wire::from(*var.base()));
-        }
-        Err(pyo3::exceptions::PyTypeError::new_err(
-            "expected a Wire or a Variable",
-        ))
-    });
-    let seq = seq.map(Result::unwrap);
-    Ok(seq)
+) -> PyResult<impl Iterator<Item = PyResult<base::Wire<Sort>>>> {
+    let seq = try_iter_borrow::<Wire>(seq)?;
+    Ok(seq.map(|wire| wire.map(|wire| *wire.base())))
 }
 
 /// The python-facing `hide` argument: either a callable predicate over
@@ -122,7 +112,8 @@ impl<'py> Hide<'py> {
         if hide.is_callable() {
             Ok(Hide::Call(hide, Default::default()))
         } else if let Ok(iter) = try_var_iter_cloned(hide) {
-            Ok(Hide::Set(iter.map(|var| var::name(&var).name()).collect()))
+            let names = iter.map(|var| var.map(|var| var.name()));
+            Ok(Hide::Set(names.collect::<PyResult<_>>()?))
         } else {
             Err(PyException::new_err(
                 "hide must be either callable or iterable",
@@ -131,18 +122,15 @@ impl<'py> Hide<'py> {
     }
 
     /// The predicate handed to the base constructors; the callable is given
-    /// the python variables of the names `bindings` binds.
-    pub(crate) fn as_fn<'a>(
-        &'a self,
-        bindings: &'a Bindings,
-    ) -> impl Fn(&reactive::Var<Sort>) -> bool + 'a {
+    /// the python variables.
+    pub(crate) fn as_fn(&self) -> impl Fn(&reactive::Var<Sort>) -> bool + '_ {
         move |var| match self {
             Hide::Set(set) => set.contains(&var.name()),
             Hide::Call(hide, err) => {
                 if err.borrow().is_some() {
                     return false;
                 }
-                match hide.call1((bindings.var(var),)).and_then(|r| r.is_truthy()) {
+                match hide.call1((Var::from(*var),)).and_then(|r| r.is_truthy()) {
                     Ok(hidden) => hidden,
                     Err(e) => {
                         *err.borrow_mut() = Some(e);
@@ -163,20 +151,18 @@ impl<'py> Hide<'py> {
     }
 }
 
-/// Renders wires untyped and comma-separated. Accepts references to wires
-/// and to variables alike: a `Var` borrows as its latched `Wire`.
-pub(crate) fn wires_untyped_to_repr<'a, S, W, I>(wires: I) -> String
+/// Renders wires untyped and comma-separated.
+pub(crate) fn wires_untyped_to_repr<'a, S, I>(wires: I) -> String
 where
     S: Debug + 'a,
-    W: Borrow<base::Wire<S>> + 'a,
-    I: IntoIterator<Item = &'a W>,
+    I: IntoIterator<Item = &'a base::Wire<S>>,
 {
     let mut s = String::from("[");
     for (i, wire) in wires.into_iter().enumerate() {
         if i > 0 {
             s.push_str(", ");
         }
-        write!(s, "{:?}", wire.borrow().typed()).unwrap(); // we know it's infallible
+        write!(s, "{:?}", wire.typed()).unwrap(); // we know it's infallible
     }
     s.push_str("]");
     s

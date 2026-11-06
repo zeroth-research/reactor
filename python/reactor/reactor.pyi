@@ -7,18 +7,23 @@ updating this file too (see https://pyo3.rs/v0.29.0/python-typing-hints).
 The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec, and the sorts of
 their derivatives TReal/Zero), the per-theory
 op enums `LRA` / `LIA` / `BV` (complex enums: each variant is its own subclass,
-payloads are read via `match`/unpacking), and the structural layer `Wire` / `Var` /
-`Term` / `Atom` / `Module`. A `Var` bundles the latched, next (`X(v)`), and
-derivative (`d(v)`) wires of a state variable and stands for its latched wire
-wherever a wire is expected.
+payloads are read via `match`/unpacking), the distinguished ops `Combinatorial` /
+`Sequential` / `Differential` (`HAVOC`, `SKIP`, `ZERO`, `DISCARD`), and the structural
+layer `Wire` / `Term` / `Block` / `Var` / `Atom` / `Module`. A `Var` is a name and a
+sort, and holds no wires: an atom binds its variables to the boundaries of its blocks
+by position, where a variable stands for its latched value, `X(v)` for its next value
+and `d(v)` for its derivative.
 """
 
 from torch import Tensor as TorchTensor
-from typing import Callable, Iterable, Mapping, Sequence, override
+from typing import Callable, Iterable, Iterator, Mapping, Sequence, override
 
 # A `hide` argument selects the variables to make private: a predicate over
 # variables, or any iterable of them (preferably a set); None hides nothing.
 type Hide = Callable[[Var], bool] | Iterable[Var] | None
+
+# The ops a term may carry: those of a base theory, or a distinguished one.
+type Op = LRA | LIA | BV | Combinatorial | Sequential | Differential
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +379,41 @@ class BV:
 
 
 # ---------------------------------------------------------------------------
+# Distinguished operations (theory-agnostic)
+# ---------------------------------------------------------------------------
+
+class Combinatorial:
+    class HAVOC(Combinatorial):
+        """Any value of the sort: `I -> sort`."""
+        def __init__(self, sort: Sort) -> None: ...
+
+    class DISCARD(Combinatorial):
+        """Consumes a value of the sort: `sort -> I`."""
+        def __init__(self, sort: Sort) -> None: ...
+
+
+class Sequential:
+    class HAVOC(Sequential):
+        def __init__(self, sort: Sort) -> None: ...
+
+    class SKIP(Sequential):
+        """Keeps a value of the sort: `sort -> sort`."""
+        def __init__(self, sort: Sort) -> None: ...
+
+    class DISCARD(Sequential):
+        def __init__(self, sort: Sort) -> None: ...
+
+
+class Differential:
+    class ZERO(Differential):
+        """The zero derivative of the sort: `I -> sort`."""
+        def __init__(self, sort: Sort) -> None: ...
+
+    class DISCARD(Differential):
+        def __init__(self, sort: Sort) -> None: ...
+
+
+# ---------------------------------------------------------------------------
 # Wires / Variables / Terms
 # ---------------------------------------------------------------------------
 
@@ -405,17 +445,21 @@ class Wire:
 
 
 class Var:
-    """A state variable: three wires (latched, next, derivative).
+    """A state variable: a name, and the sort of the values it holds.
 
-    A variable stands for its latched wire — attribute lookups (`id`, `dtype`),
-    equality, hashing, and ordering all go through it, so a `Var` and its
-    latched `Wire` are interchangeable e.g. as dictionary keys.
+    A variable holds no wires: the blocks of an atom take and give the values
+    of its variables at the positions of their boundaries. A variable stands
+    for its latched value, `X(var)` for its next value, and `d(var)` for its
+    derivative. Equality, hashing and ordering go through the name.
     """
 
-    def __init__(self, dtype: Sort) -> None: ...
+    def __init__(self, dtype: Sort) -> None:
+        """A fresh variable of the sort `dtype`, under a name no other
+        variable has."""
+        ...
 
     @property
-    def id(self) -> int: ...
+    def name(self) -> int: ...
 
     @property
     def dtype(self) -> Sort: ...
@@ -423,51 +467,77 @@ class Var:
     @override
     def __eq__(self, other: object) -> bool: ...
 
-    def __lt__(self, other: Var | Wire) -> bool: ...
+    def __lt__(self, other: Var) -> bool: ...
 
-    def __le__(self, other: Var | Wire) -> bool: ...
+    def __le__(self, other: Var) -> bool: ...
 
-    def __gt__(self, other: Var | Wire) -> bool: ...
+    def __gt__(self, other: Var) -> bool: ...
 
-    def __ge__(self, other: Var | Wire) -> bool: ...
+    def __ge__(self, other: Var) -> bool: ...
 
     @override
     def __hash__(self) -> int: ...
 
     @override
-    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+
+
+class View:
+    """The next value, or the derivative, of a variable. A view is no wire: it
+    names the value a block takes or gives at a position of its boundary."""
+
+    @property
+    def var(self) -> Var: ...
+
+    @property
+    def dtype(self) -> Sort:
+        """The sort of the variable for the next value, its tangent for the
+        derivative: `TReal(shape, 1)` for a `Real` variable, `Zero(shape)` for
+        the others."""
+        ...
+
+    @property
+    def next(self) -> bool: ...
+
+    @property
+    def derivative(self) -> bool: ...
+
+    @override
+    def __eq__(self, other: object) -> bool: ...
+
+    @override
+    def __hash__(self) -> int: ...
 
     @override
     def __repr__(self) -> str: ...
 
 
-def X(var: Var) -> Wire:
-    """The variable's next wire."""
+def X(var: Var) -> View:
+    """The next value of the variable."""
     ...
 
 
-def d(var: Var) -> Wire:
-    """The variable's derivative wire: its sort is `TReal(shape, 1)` for a `Real`
-    variable, and `Zero(shape)` for the others."""
+def d(var: Var) -> View:
+    """The derivative of the variable."""
     ...
 
 
 class Term:
     @staticmethod
     def function(
-            itype: LRA | LIA | BV,
-            write: Sequence[Wire | Var],
-            read: Sequence[Wire | Var],
+            itype: Op,
+            write: Sequence[Wire],
+            read: Sequence[Wire],
     ) -> Term: ...
 
     @staticmethod
-    def constant(itype: LRA | LIA | BV, write: Sequence[Wire | Var]) -> Term: ...
+    def constant(itype: Op, write: Sequence[Wire]) -> Term: ...
 
     def __init__(
             self,
-            itype: LRA | LIA | BV,
-            write: Sequence[Wire | Var],
-            read: Sequence[Wire | Var] | None = None,
+            itype: Op,
+            write: Sequence[Wire],
+            read: Sequence[Wire] | None = None,
     ) -> None: ...
 
     @property
@@ -477,10 +547,39 @@ class Term:
     def read(self) -> Sequence[Wire]: ...
 
     @property
-    def itype(self) -> LRA | LIA | BV: ...
+    def itype(self) -> Op: ...
 
     @override
     def __str__(self) -> str: ...
+
+    @override
+    def __repr__(self) -> str: ...
+
+
+# ---------------------------------------------------------------------------
+# Blocks
+# ---------------------------------------------------------------------------
+
+class Block:
+    """Terms computing the outputs `write` from the inputs `read`, both in
+    order. Every input is read (an input the block has no use for is consumed
+    by a `DISCARD` term), and every output written exactly once."""
+
+    def __init__(
+            self, read: Sequence[Wire], write: Sequence[Wire], terms: Iterable[Term]
+    ) -> None: ...
+
+    @property
+    def read(self) -> Sequence[Wire]: ...
+
+    @property
+    def write(self) -> Sequence[Wire]: ...
+
+    def __getitem__(self, index: int) -> Term: ...
+
+    def __len__(self) -> int: ...
+
+    def __iter__(self) -> Iterator[Term]: ...
 
     @override
     def __repr__(self) -> str: ...
@@ -491,51 +590,23 @@ class Term:
 # ---------------------------------------------------------------------------
 
 class Atom:
+    """An atom: its interfaces, and its blocks bound to them by position.
+
+    The interfaces list the variables in the order of their names, and so do
+    the boundaries of the blocks: `init` maps `X(wait)` to `X(ctrl)`, `update`
+    maps `read` followed by `X(wait)` to `X(ctrl)`, and `delay` maps `read`
+    followed by `d(wait)` to `d(ctrl)`.
+    """
+
     def __init__(
             self,
-            vars: Iterable[Var],
-            init: Iterable[Term] | None = None,
-            delay: Iterable[Term] | None = None,
-            update: Iterable[Term] | None = None,
+            ctrl: Iterable[Var],
+            wait: Iterable[Var],
+            read: Iterable[Var],
+            init: Block,
+            update: Block,
+            delay: Block,
     ) -> None: ...
-
-    @staticmethod
-    def sequential(
-            vars: Iterable[Var], init: Iterable[Term], update: Iterable[Term]
-    ) -> Atom: ...
-
-    @staticmethod
-    def differential(
-            vars: Iterable[Var], init: Iterable[Term], delay: Iterable[Term]
-    ) -> Atom: ...
-
-    @staticmethod
-    def hybrid(
-            vars: Iterable[Var],
-            init: Iterable[Term],
-            update: Iterable[Term],
-            delay: Iterable[Term],
-    ) -> Atom: ...
-
-    @staticmethod
-    def jump(vars: Iterable[Var], update: Iterable[Term]) -> Atom: ...
-
-    @staticmethod
-    def uninitialized(
-            vars: Iterable[Var], update: Iterable[Term], delay: Iterable[Term]
-    ) -> Atom: ...
-
-    @staticmethod
-    def constant(vars: Iterable[Var], init: Iterable[Term]) -> Atom: ...
-
-    @staticmethod
-    def hold(vars: Iterable[Var]) -> Atom: ...
-
-    @staticmethod
-    def flow(vars: Iterable[Var], delay: Iterable[Term]) -> Atom: ...
-
-    @staticmethod
-    def combinatorial(vars: Iterable[Var], assign: Iterable[Term]) -> Atom: ...
 
     @property
     def read(self) -> Sequence[Var]: ...
@@ -547,18 +618,15 @@ class Atom:
     def wait(self) -> Sequence[Var]: ...
 
     @property
-    def init(self) -> Sequence[Term]: ...
+    def init(self) -> Block: ...
 
     @property
-    def update(self) -> Sequence[Term]: ...
+    def update(self) -> Block: ...
 
     @property
-    def delay(self) -> Sequence[Term]: ...
+    def delay(self) -> Block: ...
 
     def show(self, names: Mapping[Var, str]) -> str: ...
-
-    @override
-    def __str__(self) -> str: ...
 
     @override
     def __repr__(self) -> str: ...
@@ -569,85 +637,11 @@ class Atom:
 # ---------------------------------------------------------------------------
 
 class Module:
-    def __init__(
-            self,
-            *args: Atom | Module,
-            init: Iterable[Term] | None = None,
-            delay: Iterable[Term] | None = None,
-            update: Iterable[Term] | None = None,
-            vars: Iterable[Var] | None = None,
-            hide: Hide = None,
-    ) -> None: ...
-
-    @staticmethod
-    def atomic(
-            vars: Iterable[Var],
-            init: Iterable[Term] | None = None,
-            delay: Iterable[Term] | None = None,
-            update: Iterable[Term] | None = None,
-            *,
-            hide: Hide = None,
-    ) -> Module: ...
-
-    @staticmethod
-    def sequential(
-            vars: Iterable[Var],
-            init: Iterable[Term],
-            update: Iterable[Term],
-            *,
-            hide: Hide = None,
-    ) -> Module: ...
-
-    @staticmethod
-    def combinatorial(
-            vars: Iterable[Var], assign: Iterable[Term], *, hide: Hide = None
-    ) -> Module: ...
-
-    @staticmethod
-    def differential(
-            vars: Iterable[Var],
-            init: Iterable[Term],
-            delay: Iterable[Term],
-            *,
-            hide: Hide = None,
-    ) -> Module: ...
-
-    @staticmethod
-    def hybrid(
-            vars: Iterable[Var],
-            init: Iterable[Term],
-            update: Iterable[Term],
-            delay: Iterable[Term],
-            *,
-            hide: Hide = None,
-    ) -> Module: ...
-
-    @staticmethod
-    def jump(
-            vars: Iterable[Var], update: Iterable[Term], *, hide: Hide = None
-    ) -> Module: ...
-
-    @staticmethod
-    def uninitialized(
-            vars: Iterable[Var],
-            update: Iterable[Term],
-            delay: Iterable[Term],
-            *,
-            hide: Hide = None,
-    ) -> Module: ...
-
-    @staticmethod
-    def hold(vars: Iterable[Var], *, hide: Hide = None) -> Module: ...
-
-    @staticmethod
-    def flow(
-            vars: Iterable[Var], delay: Iterable[Term], *, hide: Hide = None
-    ) -> Module: ...
-
-    @staticmethod
-    def constant(
-            vars: Iterable[Var], init: Iterable[Term], *, hide: Hide = None
-    ) -> Module: ...
+    def __init__(self, *args: Atom | Module, hide: Hide = None) -> None:
+        """The module of the atoms `args`, or the parallel composition of the
+        modules `args`, hiding the `hide` variables; the empty module, given
+        nothing."""
+        ...
 
     @staticmethod
     def compose(*modules: Module, hide: Hide = None) -> Module: ...

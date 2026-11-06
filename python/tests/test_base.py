@@ -1,6 +1,8 @@
 import pytest
 import torch
-from reactor import Wire, Term, Atom, Module, LIA, Bool, Int, LRA, Real, TReal, Zero, Var, X, d
+from reactor import Wire, Term, Block, Atom, Module, LIA, Bool, Int, LRA, Real, TReal, Zero, Var, X, d
+from reactor import Combinatorial, Sequential, Differential
+from reactor.blocks import boundary, block, discard, havoc, skip, zero, views
 
 
 def _bool_t(v):
@@ -30,50 +32,64 @@ def test_term_new():
     Term(LIA.Lt(1, 3), [Wire(Bool([1, 3]))], [w4, Wire(Int([1, 3]))])
     Term.constant(LIA.Int(torch.tensor([[3, 2, 1]])), [Wire(Int([1, 3]))])
 
+    # the distinguished operations are terms too
+    Term(Combinatorial.HAVOC(Int([1, 3])), [w4])
+    Term(Sequential.SKIP(Int([1, 3])), [w5], [w4])
+    Term(Differential.ZERO(Zero([1, 3])), [Wire(Zero([1, 3]))])
+    Term(Combinatorial.DISCARD(Int([1, 3])), [], [w4])
 
-def test_var_derefs_to_wire():
+
+def test_var_is_a_name_and_a_sort():
     v = Var(Real([2, 3]))
+    u = Var(Real([1, 1]))
 
-    # attributes Var does not define fall through to the latched wire,
-    # mirroring Rust's Deref
+    # every variable gets a fresh name, in the order of creation
     assert v.dtype == Real([2, 3])
-    assert v.id == Wire(Real([1, 1])).id - 3  # ltc is first of the var's three wires
+    assert v.name != u.name
+    assert v < u and sorted([u, v]) == [v, u]
 
-    # the next wire carries values, the derivative wire the tangent
+    # the views of a variable: the next value carries values, the derivative
+    # the tangent
     assert X(v).dtype == Real([2, 3])
     assert d(v).dtype == TReal([2, 3], 1)
     assert d(Var(Int([2, 3]))).dtype == Zero([2, 3])
+    assert X(v).var == v and X(v).next and d(v).derivative
 
-    # unknown attributes still raise, from the wire's lookup
-    with pytest.raises(AttributeError):
-        _ = v.no_such_attribute
+    # views are values: equal views hash alike, and differ from the variable
+    assert X(v) == X(v) and hash(X(v)) == hash(X(v))
+    assert {X(v): "found"}[X(v)] == "found"
+    assert v != X(v) and X(v) != d(v) and X(v) != X(u)
 
-    # a variable equals its latched wire (both directions), and they are
-    # interchangeable dictionary keys; the other views stay distinct
-    ltc = Term(LRA.IdReal(2, 3), [X(v)], [v]).read[0]
-    assert v == ltc and ltc == v
-    assert v is not ltc
-    assert hash(v) == hash(ltc)
-    assert {v: "found"}[ltc] == "found"
-    assert v != X(v) and v != d(v)
+    # a variable is no wire
+    with pytest.raises(TypeError):
+        Term(LRA.IdReal(2, 3), [Wire(Real([2, 3]))], [v])
 
-    # ordering among variables is by creation
-    u = Var(Real([1, 1]))
-    assert v < u and sorted([u, v]) == [v, u]
+
+def _counter(x):
+    """The atom counting `x` up from false: X(x) = x and X(x)."""
+    inputs, outputs = boundary("init", ctrl=[x])
+    init = block(inputs, outputs, [Term.constant(LIA.Bool(_bool_t(True)), [outputs[X(x)]])])
+    inputs, outputs = boundary("update", ctrl=[x], read=[x])
+    update = block(inputs, outputs, [Term(LIA.IdBool(1, 1), [outputs[X(x)]], [inputs[x]])])
+    return Atom([x], [], [x], init, update, zero([x], read=[x]))
 
 
 def test_module_sequential():
     x = Var(Bool([1, 1]))
-    init = [Term.constant(LIA.Bool(_bool_t(True)), [X(x)])]
-    update = [Term(LIA.IdBool(1, 1), [X(x)], [x])]
-    _ = Module.sequential([x], init, update)
+    m = Module(_counter(x))
+    assert m.closed() and m.intf == [x]
 
 
 def test_module_combinatorial():
     x = Var(Bool([1, 1]))
 
-    assign = [Term.constant(LIA.Bool(_bool_t(False)), [X(x)])]
-    _ = Module.combinatorial([x], assign)
+    # the same assignment initialises and updates
+    def assign():
+        inputs, outputs = boundary("init", ctrl=[x])
+        return block(inputs, outputs, [Term.constant(LIA.Bool(_bool_t(False)), [outputs[X(x)]])])
+
+    m = Module(Atom([x], [], [], assign(), assign(), zero([x])))
+    assert m.closed() and m.intf == [x]
 
 
 def test_module_parallel():
@@ -82,33 +98,38 @@ def test_module_parallel():
     z = Var(Bool([1, 1]))
     w = Var(Bool([1, 1]))
     v = Var(Bool([1, 1]))
+    false = Term.constant
 
-    init = [Term.constant(LIA.Bool(_bool_t(False)), [X(x)])]
-    update = [Term(LIA.And(1, 1), [X(x)], [x, X(y)])]
-    p = Module.sequential([x, y], init, update)
+    # p: X(x) = x and X(y), from false
+    i, o = boundary("init", ctrl=[x], wait=[y])
+    init = block(i, o, [false(LIA.Bool(_bool_t(False)), [o[X(x)]])])
+    i, o = boundary("update", ctrl=[x], wait=[y], read=[x])
+    update = block(i, o, [Term(LIA.And(1, 1), [o[X(x)]], [i[x], i[X(y)]])])
+    p = Module(Atom([x], [y], [x], init, update, zero([x], [y], [x])))
 
-    init = [
-        Term.constant(LIA.Bool(_bool_t(False)), [X(v)]),
-        Term.constant(LIA.Bool(_bool_t(False)), [X(y)]),
-    ]
-    update = [Term(LIA.And(1, 1), [X(v)], [v, x]), Term(LIA.IdBool(1, 1), [X(y)], [x])]
-    q = Module.sequential([x, y, v], init, update, hide=[v])
+    # q: X(v) = v and x, X(y) = x, from false, hiding v
+    i, o = boundary("init", ctrl=[v, y])
+    init = block(i, o, [false(LIA.Bool(_bool_t(False)), [o[X(v)]]),
+                        false(LIA.Bool(_bool_t(False)), [o[X(y)]])])
+    i, o = boundary("update", ctrl=[v, y], read=[v, x])
+    update = block(i, o, [Term(LIA.And(1, 1), [o[X(v)]], [i[v], i[x]]),
+                          Term(LIA.IdBool(1, 1), [o[X(y)]], [i[x]])])
+    q = Module(Atom([v, y], [], [v, x], init, update, zero([v, y], read=[v, x])), hide=[v])
 
-    assign = [Term(LIA.Or(1, 1), [X(z)], [X(y), X(w)])]
-    r = Module.combinatorial((z, y, w), assign)
+    # r: X(z) = X(y) or X(w), at every step
+    def assign():
+        i, o = boundary("init", ctrl=[z], wait=[y, w])
+        return block(i, o, [Term(LIA.Or(1, 1), [o[X(z)]], [i[X(y)], i[X(w)]])])
+
+    r = Module(Atom([z], [y, w], [], assign(), assign(), zero([z], [y, w])))
 
     m = Module.compose(p, q, r)
 
-    c = m.ctrl
-    print(c)
-
-    for var in c:
+    for var in m.ctrl:
         print(var)
-
     for atom in m.atoms:
         print(atom)
 
-    print(m.intf)
     assert m.intf == [x, y, z]
     assert m.extl == [w]
     assert m.prvt == [v]
@@ -138,114 +159,152 @@ def test_interface():
         print("-->", w[i])
 
 
-def _stateful_blocks():
-    """Helper: two variables with init, update, and delay blocks over them."""
-    zero = torch.tensor([[0.0]])
+def test_block_boundary():
+    x, y, xn = Wire(Int([1, 1])), Wire(Int([1, 1])), Wire(Int([1, 1]))
+
+    # the block lists its boundary in order
+    b = Block([y, x], [xn], [Term(LIA.Add(1, 1), [xn], [x, y])])
+    assert b.read == [y, x] and b.write == [xn]
+    assert len(b) == 1 and b[0].write == [xn]
+    assert [t.write for t in b] == [[xn]]
+
+    # every input is read: an unused one is discarded
+    with pytest.raises(Exception, match="not read"):
+        Block([x, y], [xn], [Term(LIA.IdInt(1, 1), [xn], [x])])
+    b = Block([x, y], [xn], [Term(LIA.IdInt(1, 1), [xn], [x]), discard(y)])
+    assert len(b) == 2
+
+    # every output is written, and no input is
+    with pytest.raises(Exception, match="not written"):
+        Block([x], [xn], [discard(x)])
+    with pytest.raises(Exception, match="written"):
+        Block([x, y], [xn], [Term(LIA.IdInt(1, 1), [x], [y]), Term(LIA.IdInt(1, 1), [xn], [y])])
+
+    # `block` discards the inputs no term reads
+    b = block([x, y], [xn], [Term(LIA.IdInt(1, 1), [xn], [x])])
+    assert len(b) == 2 and b.read == [x, y]
+
+
+def test_views_follow_the_order_of_names():
+    x, e = Var(Int([1, 1])), Var(Bool([1, 1]))
+
+    # the interfaces are sets in the order of the names
+    assert views("init", ctrl=[x], wait=[e]) == ([X(e)], [X(x)])
+    assert views("update", ctrl=[x], wait=[e], read=[e, x, x]) == ([x, e, X(e)], [X(x)])
+    assert views("delay", ctrl=[x], wait=[e], read=[e, x]) == ([x, e, d(e)], [d(x)])
+
+    # each view gets a wire of its sort
+    inputs, outputs = boundary("delay", ctrl=[x], wait=[e], read=[x])
+    assert [w.dtype for w in inputs.values()] == [Int([1, 1]), Zero([1, 1])]
+    assert [w.dtype for w in outputs.values()] == [Zero([1, 1])]
+
+    with pytest.raises(ValueError):
+        views("jump", ctrl=[x])
+
+
+def _stateful():
+    """Helper: an atom controlling and reading two variables, with its blocks."""
+    zero_t = torch.tensor([[0.0]])
     x = Var(Real([1, 1]))
     p = Var(Real([1, 1]))
-    init = [Term(LRA.Real(zero), [X(x)]), Term(LRA.Real(zero), [X(p)])]
-    update = [Term(LRA.IdReal(1, 1), [X(x)], [x]), Term(LRA.IdReal(1, 1), [X(p)], [p])]
-    delay = [Term(LRA.RealZerograd(1, 1, 1), [d(x)]), Term(LRA.RealZerograd(1, 1, 1), [d(p)])]
+
+    i, o = boundary("init", ctrl=[x, p])
+    init = block(i, o, [Term(LRA.Real(zero_t), [o[X(x)]]), Term(LRA.Real(zero_t), [o[X(p)]])])
+    i, o = boundary("update", ctrl=[x, p], read=[x, p])
+    update = block(i, o, [Term(LRA.IdReal(1, 1), [o[X(x)]], [i[x]]),
+                          Term(LRA.IdReal(1, 1), [o[X(p)]], [i[p]])])
+    i, o = boundary("delay", ctrl=[x, p], read=[x, p])
+    delay = block(i, o, [Term(LRA.RealZerograd(1, 1, 1), [o[d(x)]]),
+                         Term(LRA.RealZerograd(1, 1, 1), [o[d(p)]])])
     return x, p, init, update, delay
 
 
-def test_module_new_dispatches_on_blocks():
-    x, p, init, update, delay = _stateful_blocks()
+def test_module_of_an_atom():
+    x, p, init, update, delay = _stateful()
+    atom = Atom([x, p], [], [x, p], init, update, delay)
 
-    # each block combination selects the corresponding constructor
-    sequential = Module(init=init, update=update, vars=[x, p])
-    differential = Module(init=init, delay=delay, vars=[x, p])
-    hybrid = Module(init=init, update=update, delay=delay, vars=[x, p])
-    jump = Module(update=update, vars=[x, p])
-    constant = Module(init=init, vars=[x, p])
+    m = Module(atom)
+    assert m.closed()
+    assert m.intf == [x, p]
 
-    for m in (sequential, differential, hybrid, jump, constant):
-        assert m.closed()
-        assert m.intf == [x, p]
-
-    # the hybrid keeps all three blocks as given, the others synthesise; the
-    # delay also discards the latched x and p, which only the update reads
-    atom = hybrid.atoms[0]
+    # the atom keeps the blocks as given; the delay discards the latched x
+    # and p, which only the update reads
+    atom = m.atoms[0]
     assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2 + 2
-
-
-def test_module_new_partially_observable():
-    x, p, init, update, delay = _stateful_blocks()
-
-    for kwargs in (
-            dict(init=init, update=update),
-            dict(init=init, delay=delay),
-            dict(init=init, update=update, delay=delay),
-            dict(update=update),
-            dict(update=update, delay=delay),
-    ):
-        m = Module(**kwargs, vars=[x, p], hide=[p])
-        assert m.intf == [x]
-        assert m.prvt == [p]
+    assert atom.ctrl == [x, p] and atom.read == [x, p] and len(atom.wait) == 0
 
 
 def test_module_hide_accepts_predicate_set_and_iterable():
-    x, p, init, update, _delay = _stateful_blocks()
+    x, p, init, update, delay = _stateful()
+    atom = Atom([x, p], [], [x, p], init, update, delay)
 
     # hide accepts a callable predicate over variables ...
-    m = Module.sequential([x, p], init, update, hide=lambda v: v == p)
+    m = Module(atom, hide=lambda v: v == p)
     assert m.intf == [x]
     assert m.prvt == [p]
 
-    m = Module.sequential([x, p], init, update, hide={p})
+    m = Module(atom, hide={p})
     assert m.intf == [x]
     assert m.prvt == [p]
 
     S = {p}
-    m = Module.sequential([x, p], init, update, hide=S.__contains__)
+    m = Module(atom, hide=S.__contains__)
     assert m.intf == [x]
     assert m.prvt == [p]
 
-    m = Module.sequential([x, p], init, update, hide=[p])
+    m = Module(atom, hide=[p])
     assert m.intf == [x]
     assert m.prvt == [p]
 
-    m = Module.sequential([x, p], init, update, hide=iter([p]))
+    m = Module(atom, hide=iter([p]))
     assert m.intf == [x]
     assert m.prvt == [p]
 
     # hiding nothing yields a fully observable module
-    m = Module.sequential([x, p], init, update, hide=lambda v: False)
+    m = Module(atom, hide=lambda v: False)
     assert m.intf == [x, p] and m.prvt == []
+
+    # and so does hiding afterwards
+    m = Module(atom).hide([p])
+    assert m.intf == [x] and m.prvt == [p]
 
 
 def test_module_hide_predicate_errors_propagate():
-    x, p, init, update, _delay = _stateful_blocks()
+    x, p, init, update, delay = _stateful()
+    atom = Atom([x, p], [], [x, p], init, update, delay)
 
     def broken(v):
         raise ValueError("boom")
 
     with pytest.raises(ValueError, match="boom"):
-        Module.sequential([x, p], init, update, hide=broken)
+        Module(atom, hide=broken)
 
 
 def test_module_new_positional_is_parallel():
-    x, p, init, update, _ = _stateful_blocks()
+    x, p, init, update, delay = _stateful()
     y = Var(Real([1, 1]))
 
-    p1 = Module(init=init, update=update, vars=[x, p])
-    p2 = Module(init=[Term(LRA.Real(torch.tensor([[0.0]])), [X(y)])], vars=[y])
+    p1 = Module(Atom([x, p], [], [x, p], init, update, delay))
+    i, o = boundary("init", ctrl=[y])
+    p2 = Module(Atom([y], [], [y],
+                     block(i, o, [Term(LRA.Real(torch.tensor([[0.0]])), [o[X(y)]])]),
+                     skip([y], read=[y]),
+                     zero([y], read=[y])))
 
     m = Module(p1, p2)
     assert m.intf == [x, p, y]
-
-    # positional arguments cannot be combined with keyword blocks
-    with pytest.raises(TypeError, match="take atoms or modules"):
-        Module(p1, init=init, vars=[x])
 
     # module composition with hiding
     m1 = Module(p1, p2, hide=[p])
     assert p in m1.prvt
     assert m1.intf == [x, y]
 
+    # and the product composes too
+    assert (p1 * p2).intf == [x, p, y]
+
 
 def test_compose_hiding_coupled_variables():
-    zero = torch.tensor([[0.0]])
+    zero_t = torch.tensor([[0.0]])
     x = Var(Real([1, 1]))
     y = Var(Real([1, 1]))
     z = Var(Real([1, 1]))
@@ -253,13 +312,18 @@ def test_compose_hiding_coupled_variables():
 
     # m1 controls x and y, reading the shared input w; m2 reads y and w and
     # controls z: y couples the two, w is external on both sides
-    init = [Term(LRA.Real(zero), [X(x)]), Term(LRA.Real(zero), [X(y)])]
-    update = [Term(LRA.IdReal(1, 1), [X(x)], [w]), Term(LRA.IdReal(1, 1), [X(y)], [y])]
-    m1 = Module.sequential([x, y, w], init, update)
+    i, o = boundary("init", ctrl=[x, y])
+    init = block(i, o, [Term(LRA.Real(zero_t), [o[X(x)]]), Term(LRA.Real(zero_t), [o[X(y)]])])
+    i, o = boundary("update", ctrl=[x, y], read=[y, w])
+    update = block(i, o, [Term(LRA.IdReal(1, 1), [o[X(x)]], [i[w]]),
+                          Term(LRA.IdReal(1, 1), [o[X(y)]], [i[y]])])
+    m1 = Module(Atom([x, y], [], [y, w], init, update, zero([x, y], read=[y, w])))
 
-    init = [Term(LRA.Real(zero), [X(z)])]
-    update = [Term(LRA.Add(1, 1), [X(z)], [y, w])]
-    m2 = Module.sequential([y, z, w], init, update)
+    i, o = boundary("init", ctrl=[z])
+    init = block(i, o, [Term(LRA.Real(zero_t), [o[X(z)]])])
+    i, o = boundary("update", ctrl=[z], read=[y, w])
+    update = block(i, o, [Term(LRA.Add(1, 1), [o[X(z)]], [i[y], i[w]])])
+    m2 = Module(Atom([z], [], [y, w], init, update, zero([z], read=[y, w])))
 
     assert y in m1.intf and y in m2.extl
     assert w in m1.extl and w in m2.extl
@@ -280,153 +344,110 @@ def test_compose_hiding_coupled_variables():
 
 
 def test_module_new_positional_atoms():
-    x, p, init, update, _ = _stateful_blocks()
+    x, p, init, update, delay = _stateful()
+    atom = Atom([x, p], [], [x, p], init, update, delay)
 
     # a sequence of atoms builds an observable module...
-    atom = Atom.sequential([x, p], init, update)
     m = Module(atom)
     assert m.closed() and m.intf == [x, p]
 
-    # ...and hides the `prvt` variables when given
-    m = Module(atom, hide=[p])
-    assert m.intf == [x] and m.prvt == [p]
-
-    # the explicit `proc` staticmethod behaves the same
-    m = Module(atom)
-    assert m.closed() and m.intf == [x, p]
+    # ...and hides the `hide` variables when given
     m = Module(atom, hide=[p])
     assert m.intf == [x] and m.prvt == [p]
 
     # several atoms compose into one module
     y = Var(Real([1, 1]))
-    zero = torch.tensor([[0.0]])
-    other = Atom.constant([y], [Term(LRA.Real(zero), [X(y)])])
+    i, o = boundary("init", ctrl=[y])
+    init = block(i, o, [Term(LRA.Real(torch.tensor([[0.0]])), [o[X(y)]])])
+    other = Atom([y], [], [y], init, skip([y], read=[y]), zero([y], read=[y]))
     m = Module(atom, other)
     assert m.intf == [x, p, y]
     assert len(m.atoms) == 2
 
 
 def test_module_new_rejects_bad_declarations():
-    x, p, init, update, delay = _stateful_blocks()
+    x, p, init, update, delay = _stateful()
 
-    # a module needs its observable variables
-    with pytest.raises(TypeError, match="vars"):
+    # modules are built from atoms or modules, not from blocks
+    with pytest.raises(TypeError):
         Module(init=init, update=update)
 
-    # constant and hold modules can be partially observable too
-    m = Module(init=init, vars=[x, p], hide=[p])
-    assert m.intf == [x] and m.prvt == [p]
-    m = Module(vars=[x, p], hide=[p])
-    assert m.intf == [x] and m.prvt == [p]
+    # an empty module hides nothing
+    with pytest.raises(TypeError):
+        Module(hide=[x])
+
+    assert Module().closed() and len(Module().atoms) == 0
 
 
-def test_atom_constructors():
-    x, p, init, update, delay = _stateful_blocks()
+def test_synthesised_blocks():
+    x, p = Var(Real([1, 1])), Var(Real([1, 1]))
+    t = Var(Real([1, 1]))
 
-    # each staticmethod builds an atom controlling both variables
-    for atom in (
-            Atom.sequential([x, p], init, update),
-            Atom.differential([x, p], init, delay),
-            Atom.hybrid([x, p], init, update, delay),
-            Atom.jump([x, p], update),
-            Atom.constant([x, p], init),
-    ):
-        assert len(atom.ctrl) == 2
-        assert atom.ctrl == [x, p]
-        assert len(atom.wait) == 0
+    # havoc: an arbitrary next value per controlled variable, discarding the
+    # awaited ones
+    init = havoc([x, p], wait=[t])
+    assert len(init) == 2 + 1 and len(init.read) == 1 and len(init.write) == 2
 
-    # combinatorial reuses the assignments for init and update
-    atom = Atom.combinatorial([x, p], init)
-    assert atom.ctrl == [x, p]
-    assert len(atom.init) == len(atom.update) == 2
+    # skip: the latched value per controlled variable, which it reads
+    update = skip([x, p], wait=[t], read=[x, p])
+    assert len(update) == 2 + 1
+    with pytest.raises(ValueError):
+        skip([x, p], read=[x])
 
+    # zero: the zero derivative per controlled variable
+    delay = zero([x, p], wait=[t], read=[x, p])
+    assert len(delay) == 2 + 3 and [w.dtype for w in delay.write] == [TReal([1, 1], 1)] * 2
 
-def test_atom_new_dispatches_on_blocks():
-    x, p, init, update, delay = _stateful_blocks()
-
-    # the hybrid keeps the three explicit blocks, the others synthesise; the
-    # delays also discard the latched x and p, which only the updates read
-    atom = Atom([x, p], init=init, update=update, delay=delay)
-    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2 + 2
-
-    # a synthesised block per controlled variable where a block is implicit
-    atom = Atom([x, p], init=init, update=update)  # sequential: delay is zero
-    assert len(atom.delay) == 2 + 2
-    atom = Atom([x, p], init=init, delay=delay)  # differential: update is skip
-    assert len(atom.update) == 2
-    atom = Atom([x, p], update=update)  # jump: init is havoc
-    assert len(atom.init) == 2
-    atom = Atom([x, p], update=update, delay=delay)  # uninitialized: init is havoc
-    assert len(atom.init) == 2 and len(atom.delay) == 2 + 2
-    atom = Atom([x, p], init=init)  # constant: update skip, delay zero
-    assert len(atom.update) == 2 and len(atom.delay) == 2 + 2
-    atom = Atom([x, p], delay=delay)  # flow: init havoc, update skip
-    assert len(atom.init) == 2 and len(atom.update) == 2
-    atom = Atom([x, p])  # hold: everything synthesised
-    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2 + 2
-
-
-def test_module_hold_and_flow():
-    x, p, init, update, delay = _stateful_blocks()
-
-    # hold: no blocks, every variable a symbolic constant
-    m = Module(vars=[x, p])
+    # a hold atom: every variable an arbitrary constant
+    m = Module(Atom([x, p], [], [x, p], havoc([x, p]), skip([x, p], read=[x, p]),
+                    zero([x, p], read=[x, p])))
     assert m.closed() and m.intf == [x, p]
-    m = Module.hold([x, p])
-    assert m.intf == [x, p] and len(m.prvt) == 0
-    m = Module.hold([x, p], hide=[p])
-    assert m.intf == [x] and m.prvt == [p]
-
-    # flow: only the continuous dynamics, initial state havoced; the delay
-    # discards the latched x and p, which only the synthesised update reads
-    m = Module(delay=delay, vars=[x, p])
-    assert m.closed()
-    atom = m.atoms[0]
-    assert len(atom.init) == 2 and len(atom.delay) == 2 + 2
-    m = Module.flow([x, p], delay, hide=[p])
-    assert m.intf == [x] and m.prvt == [p]
 
 
-def test_atom_infers_awaited_variables():
-    zero = torch.tensor([[0.0]])
+def test_atom_awaits_stated_variables():
+    zero_t = torch.tensor([[0.0]])
     x = Var(Real([1, 1]))
     t = Var(Real([1, 1]))
 
     # x' = X(t): the atom awaits t rather than controlling it
-    init = [Term(LRA.Real(zero), [X(x)])]
-    update = [Term(LRA.IdReal(1, 1), [X(x)], [X(t)])]
-    atom = Atom([x, t], init=init, update=update)
+    i, o = boundary("init", ctrl=[x], wait=[t])
+    init = block(i, o, [Term(LRA.Real(zero_t), [o[X(x)]])])
+    i, o = boundary("update", ctrl=[x], wait=[t])
+    update = block(i, o, [Term(LRA.IdReal(1, 1), [o[X(x)]], [i[X(t)]])])
+    atom = Atom([x], [t], [], init, update, zero([x], wait=[t]))
 
     assert atom.ctrl == [x]
     assert atom.wait == [t]
+    assert len(atom.read) == 0
 
 
 def test_atom_rejects_ill_formed_blocks():
-    zero = torch.tensor([[0.0]])
+    zero_t = torch.tensor([[0.0]])
     x = Var(Real([1, 1]))
+    t = Var(Int([1, 1]))
 
-    # the update writes the latched wire instead of the next wire
-    init = [Term(LRA.Real(zero), [X(x)])]
-    update = [Term(LRA.IdReal(1, 1), [x], [X(x)])]
-    with pytest.raises(Exception):
-        Atom.sequential([x], init, update)
+    i, o = boundary("init", ctrl=[x])
+    init = block(i, o, [Term(LRA.Real(zero_t), [o[X(x)]])])
 
+    # the update writes the latched value instead of the next value
+    i, o = boundary("update", ctrl=[x], read=[x])
+    with pytest.raises(Exception, match="written"):
+        Block(list(i.values()), list(o.values()), [Term(LRA.IdReal(1, 1), [i[x]], [o[X(x)]])])
 
-def test_atoms_compose_into_modules():
-    x, p, init, update, _ = _stateful_blocks()
+    # the update takes inputs other than the interfaces say
+    i, o = boundary("update", ctrl=[x], read=[x, t])
+    update = block(i, o, [Term(LRA.IdReal(1, 1), [o[X(x)]], [i[x]])])
+    with pytest.raises(Exception, match="boundary"):
+        Atom([x], [], [x], init, update, zero([x], read=[x]))
 
-    # an explicitly built atom yields the same module as the shorthand
-    atom = Atom.sequential([x, p], init, update)
-    direct = Module(init=init, update=update, vars=[x, p], hide=[p])
-
-    assert len(direct.atoms) == 1
-    assert direct.atoms[0].ctrl == atom.ctrl
-    assert direct.atoms[0].wait == atom.wait
+    # a variable both controlled and awaited
+    with pytest.raises(Exception, match="controlled and awaited"):
+        Atom([x], [x], [], havoc([x], [x]), skip([x], [x], [x]), zero([x], [x]))
 
 
 def test_show_named_rendering():
-    x, p, init, update, delay = _stateful_blocks()
-    m = Module(init=init, update=update, vars=[x, p])
+    x, p, init, update, delay = _stateful()
+    m = Module(Atom([x, p], [], [x, p], init, update, delay))
 
     # named variables render by name, in interfaces and wire positions
     out = m.with_varnames({x: "x", p: "p"})
@@ -452,16 +473,28 @@ def test_heterogeneous_composition():
     y = Var(Real([1, 1]))
     z = Var(Real([1, 1]))
 
-    zero = torch.tensor([[0]])
-    init = [Term(LRA.Real(zero), [X(x)])]
-    update = [Term(LRA.IdReal(1, 1), [X(x)], [x])]
-    P = Module.sequential([x], init, update)
+    zero_t = torch.tensor([[0]])
 
-    init = [Term(LRA.Real(zero), [X(y)])]
-    flow = [Term(LRA.RealZerograd(1, 1, 1), [d(y)])]
-    Q = Module.differential([y], init, flow)
+    # P: x' = x from 0
+    i, o = boundary("init", ctrl=[x])
+    init = block(i, o, [Term(LRA.Real(zero_t), [o[X(x)]])])
+    i, o = boundary("update", ctrl=[x], read=[x])
+    update = block(i, o, [Term(LRA.IdReal(1, 1), [o[X(x)]], [i[x]])])
+    P = Module(Atom([x], [], [x], init, update, zero([x], read=[x])))
 
-    comb = [Term(LRA.Add(1, 1), [X(z)], [X(x), X(y)])]
-    R = Module.combinatorial([x, y, z], comb)
+    # Q: dy = 0 from 0
+    i, o = boundary("init", ctrl=[y])
+    init = block(i, o, [Term(LRA.Real(zero_t), [o[X(y)]])])
+    i, o = boundary("delay", ctrl=[y], read=[y])
+    flow = block(i, o, [Term(LRA.RealZerograd(1, 1, 1), [o[d(y)]])])
+    Q = Module(Atom([y], [], [y], init, skip([y], read=[y]), flow))
+
+    # R: z = x + y at every step
+    def comb():
+        i, o = boundary("init", ctrl=[z], wait=[x, y])
+        return block(i, o, [Term(LRA.Add(1, 1), [o[X(z)]], [i[X(x)], i[X(y)]])])
+
+    R = Module(Atom([z], [x, y], [], comb(), comb(), zero([z], wait=[x, y])))
 
     S = Module.compose(P, Q, R)
+    assert S.closed()

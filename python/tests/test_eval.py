@@ -5,7 +5,8 @@ multi-step execution of hand-built modules.
 """
 import pytest
 import torch
-from reactor import Wire, Term, Module, LIA, BV, Bool, Real, Int, BitVec, Var, X
+from reactor import Wire, Term, Atom, Module, LIA, BV, Bool, Real, Int, BitVec, Var, X
+from reactor.blocks import build, zero
 from reactor.eval import eval_itype, execute_init, execute_update
 
 
@@ -14,7 +15,7 @@ from reactor.eval import eval_itype, execute_init, execute_update
 def _run_module(module, n_steps, env_inputs_fn=None):
     """Run a hand-built module for n_steps, returning state after each step.
 
-    env_inputs_fn(step) returns a dict of {wire: tensor} or None.
+    env_inputs_fn(step) returns a dict of {view: tensor} or None.
     """
     state = {}
 
@@ -31,8 +32,8 @@ def _run_module(module, n_steps, env_inputs_fn=None):
         if env_inputs_fn:
             inputs = env_inputs_fn(step)
             if inputs:
-                for wire, tensor in inputs.items():
-                    state[wire] = tensor
+                for view, tensor in inputs.items():
+                    state[view] = tensor
         execute_update(state, module.atoms)
         for var in module.ctrl:
             if X(var) in state:
@@ -42,9 +43,18 @@ def _run_module(module, n_steps, env_inputs_fn=None):
     return state, history
 
 
-def _get(state, wire):
-    """Read a wire value from state."""
-    return state[wire]
+def _get(state, view):
+    """Read the value of a view from state."""
+    return state[view]
+
+
+def _sequential(ctrl, wait, read, init, update):
+    """The module of the atom controlling `ctrl`, awaiting `wait` and reading
+    `read`, with the init and the update of the terms the functions give over
+    the wires of the views of their boundaries, and a zero delay."""
+    init = build("init", init, ctrl, wait)
+    update = build("update", update, ctrl, wait, read)
+    return Module(Atom(ctrl, wait, read, init, update, zero(ctrl, wait, read)))
 
 
 # ── counter ──────────────────────────────────────────────────────────────────
@@ -53,13 +63,13 @@ def _make_counter():
     """Simple counter: init x=0, update x'=x+1."""
     x = Var(Int([1, 1]))
 
-    init = [Term(LIA.Int(torch.tensor([[0]], dtype=torch.int64)), [X(x)])]
+    init = lambda w: [Term(LIA.Int(torch.tensor([[0]], dtype=torch.int64)), [w[X(x)]])]
     one = Wire(Int([1, 1]))
-    update = [
+    update = lambda w: [
         Term(LIA.Int(torch.tensor([[1]], dtype=torch.int64)), [one]),
-        Term(LIA.Add(1, 1), [X(x)], [x, one]),
+        Term(LIA.Add(1, 1), [w[X(x)]], [w[x], one]),
     ]
-    m = Module.sequential([x], init, update)
+    m = _sequential([x], [], [x], init, update)
     return m, x
 
 
@@ -78,15 +88,19 @@ def test_basic_eval_counter():
     m, x = _make_counter()
     assert m.closed()
 
-    state = {}
-    for t in (t for a in m.atoms for t in a.init):
-        state.update(zip(t.write, eval_itype(t.itype, [state[w] for w in t.read])))
+    # the init takes nothing, and gives X(x)
+    (atom,) = m.atoms
+    values = {}
+    for t in atom.init:
+        values.update(zip(t.write, eval_itype(t.itype, [values[w] for w in t.read])))
+    latched = values[atom.init.write[0]]
 
-    state = {var: state[X(var)] for var in m.ctrl}
-    for t in (t for a in m.atoms for t in a.update):
-        state.update(zip(t.write, eval_itype(t.itype, [state[w] for w in t.read])))
+    # the update takes x, and gives X(x)
+    values = {atom.update.read[0]: latched}
+    for t in atom.update:
+        values.update(zip(t.write, eval_itype(t.itype, [values[w] for w in t.read])))
 
-    assert state[X(x)] == 1
+    assert values[atom.update.write[0]] == 1
 
 
 # ── boolean logic ────────────────────────────────────────────────────────────
@@ -97,17 +111,17 @@ def test_boolean_logic():
     b = Var(Bool([1, 1]))
     c = Var(Bool([1, 1]))
 
-    init = [
-        Term(LIA.Bool(torch.tensor([[True]])), [X(a)]),
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b)]),
-        Term(LIA.Not(1, 1), [X(c)], [X(a)]),
+    init = lambda w: [
+        Term(LIA.Bool(torch.tensor([[True]])), [w[X(a)]]),
+        Term(LIA.Bool(torch.tensor([[False]])), [w[X(b)]]),
+        Term(LIA.Not(1, 1), [w[X(c)]], [w[X(a)]]),
     ]
-    update = [
-        Term(LIA.And(1, 1), [X(a)], [a, b]),
-        Term(LIA.Or(1, 1), [X(b)], [a, b]),
-        Term(LIA.Not(1, 1), [X(c)], [c]),
+    update = lambda w: [
+        Term(LIA.And(1, 1), [w[X(a)]], [w[a], w[b]]),
+        Term(LIA.Or(1, 1), [w[X(b)]], [w[a], w[b]]),
+        Term(LIA.Not(1, 1), [w[X(c)]], [w[c]]),
     ]
-    m = Module.sequential([a, b, c], init, update)
+    m = _sequential([a, b, c], [], [a, b, c], init, update)
     state, history = _run_module(m, 2)
 
     # After init: a=True, b=False, c=not(True)=False
@@ -133,9 +147,9 @@ def test_ite():
     cond = Var(Bool([1, 1]))
     x = Var(Int([1, 1]))
 
-    init = [
-        Term(LIA.Bool(torch.tensor([[True]])), [X(cond)]),
-        Term(LIA.Int(torch.tensor([[0]], dtype=torch.int64)), [X(x)]),
+    init = lambda w: [
+        Term(LIA.Bool(torch.tensor([[True]])), [w[X(cond)]]),
+        Term(LIA.Int(torch.tensor([[0]], dtype=torch.int64)), [w[X(x)]]),
     ]
 
     one = Wire(Int([1, 1]))
@@ -143,15 +157,15 @@ def test_ite():
     tmp1 = Wire(Int([1, 1]))
     tmp2 = Wire(Int([1, 1]))
 
-    update = [
-        Term(LIA.Not(1, 1), [X(cond)], [cond]),
+    update = lambda w: [
+        Term(LIA.Not(1, 1), [w[X(cond)]], [w[cond]]),
         Term(LIA.Int(torch.tensor([[1]], dtype=torch.int64)), [one]),
         Term(LIA.Int(torch.tensor([[2]], dtype=torch.int64)), [two]),
-        Term(LIA.Add(1, 1), [tmp1], [x, one]),
-        Term(LIA.Add(1, 1), [tmp2], [x, two]),
-        Term(LIA.IteInt(1, 1), [X(x)], [cond, tmp1, tmp2]),
+        Term(LIA.Add(1, 1), [tmp1], [w[x], one]),
+        Term(LIA.Add(1, 1), [tmp2], [w[x], two]),
+        Term(LIA.IteInt(1, 1), [w[X(x)]], [w[cond], tmp1, tmp2]),
     ]
-    m = Module.sequential([cond, x], init, update)
+    m = _sequential([cond, x], [], [cond, x], init, update)
     state, history = _run_module(m, 2)
 
     # After init: cond=True, x=0
@@ -173,13 +187,13 @@ def test_tensor_ops():
     """ReLU on an Int vector state."""
     data = Var(Int([1, 4]))
 
-    init = [
-        Term(LIA.Int(torch.tensor([[-1, 2, 3, -4]], dtype=torch.int64)), [X(data)]),
+    init = lambda w: [
+        Term(LIA.Int(torch.tensor([[-1, 2, 3, -4]], dtype=torch.int64)), [w[X(data)]]),
     ]
-    update = [
-        Term(LIA.ReLU(1, 4), [X(data)], [data]),
+    update = lambda w: [
+        Term(LIA.ReLU(1, 4), [w[X(data)]], [w[data]]),
     ]
-    m = Module.sequential([data], init, update)
+    m = _sequential([data], [], [data], init, update)
     state, history = _run_module(m, 2)
 
     # Wire data is stored as 2-D `(1, N)`; reshape to match.
@@ -211,50 +225,48 @@ def test_bv_add_masks_to_width(a, b, width, expected):
 # ── comparisons ──────────────────────────────────────────────────────────────
 
 def test_comparisons():
-    """Eq and Lt comparisons over multiple steps."""
+    """Eq and Lt comparisons over multiple steps, observed as variables."""
     a = Var(Int([1, 1]))
     b = Var(Int([1, 1]))
-    eq_wire = Wire(Bool([1, 1]))
-    lt_wire = Wire(Bool([1, 1]))
+    eq = Var(Bool([1, 1]))
+    lt = Var(Bool([1, 1]))
 
-    init = [
-        Term(LIA.Int(torch.tensor([[3]], dtype=torch.int64)), [X(a)]),
-        Term(LIA.Int(torch.tensor([[5]], dtype=torch.int64)), [X(b)]),
-        Term(LIA.Eq(1, 1), [eq_wire], [X(a), X(b)]),
-        Term(LIA.Lt(1, 1), [lt_wire], [X(a), X(b)]),
+    init = lambda w: [
+        Term(LIA.Int(torch.tensor([[3]], dtype=torch.int64)), [w[X(a)]]),
+        Term(LIA.Int(torch.tensor([[5]], dtype=torch.int64)), [w[X(b)]]),
+        Term(LIA.Eq(1, 1), [w[X(eq)]], [w[X(a)], w[X(b)]]),
+        Term(LIA.Lt(1, 1), [w[X(lt)]], [w[X(a)], w[X(b)]]),
     ]
 
     one = Wire(Int([1, 1]))
-    eq_wire2 = Wire(Bool([1, 1]))
-    lt_wire2 = Wire(Bool([1, 1]))
-    update = [
+    update = lambda w: [
         Term(LIA.Int(torch.tensor([[1]], dtype=torch.int64)), [one]),
-        Term(LIA.Add(1, 1), [X(a)], [a, one]),
-        Term(LIA.IdInt(1, 1), [X(b)], [b]),
-        Term(LIA.Eq(1, 1), [eq_wire2], [a, b]),
-        Term(LIA.Lt(1, 1), [lt_wire2], [a, b]),
+        Term(LIA.Add(1, 1), [w[X(a)]], [w[a], one]),
+        Term(LIA.IdInt(1, 1), [w[X(b)]], [w[b]]),
+        Term(LIA.Eq(1, 1), [w[X(eq)]], [w[a], w[b]]),
+        Term(LIA.Lt(1, 1), [w[X(lt)]], [w[a], w[b]]),
     ]
-    m = Module.sequential([a, b], init, update)
+    m = _sequential([a, b, eq, lt], [], [a, b], init, update)
     state, history = _run_module(m, 3)
 
     # After init: a=3, b=5, eq(3,5)=F, lt(3,5)=T
-    assert bool(history[0][eq_wire].item()) is False
-    assert bool(history[0][lt_wire].item()) is True
+    assert bool(history[0][eq].item()) is False
+    assert bool(history[0][lt].item()) is True
 
     # Step 1: a'=4; eq(3,5)=F, lt(3,5)=T
     assert int(_get(history[1], a).item()) == 4
-    assert bool(history[1][eq_wire2].item()) is False
-    assert bool(history[1][lt_wire2].item()) is True
+    assert bool(history[1][eq].item()) is False
+    assert bool(history[1][lt].item()) is True
 
     # Step 2: a'=5; eq(4,5)=F, lt(4,5)=T
     assert int(_get(history[2], a).item()) == 5
-    assert bool(history[2][eq_wire2].item()) is False
-    assert bool(history[2][lt_wire2].item()) is True
+    assert bool(history[2][eq].item()) is False
+    assert bool(history[2][lt].item()) is True
 
     # Step 3: a'=6; eq(5,5)=T, lt(5,5)=F
     assert int(_get(history[3], a).item()) == 6
-    assert bool(history[3][eq_wire2].item()) is True
-    assert bool(history[3][lt_wire2].item()) is False
+    assert bool(history[3][eq].item()) is True
+    assert bool(history[3][lt].item()) is False
 
 
 # ── env inputs ───────────────────────────────────────────────────────────────
@@ -264,13 +276,13 @@ def test_env_inputs():
     x = Var(Int([1, 1]))
     env = Var(Int([1, 1]))
 
-    init = [
-        Term(LIA.Int(torch.tensor([[0]], dtype=torch.int64)), [X(x)]),
+    init = lambda w: [
+        Term(LIA.Int(torch.tensor([[0]], dtype=torch.int64)), [w[X(x)]]),
     ]
-    update = [
-        Term(LIA.Add(1, 1), [X(x)], [x, X(env)]),
+    update = lambda w: [
+        Term(LIA.Add(1, 1), [w[X(x)]], [w[x], w[X(env)]]),
     ]
-    m = Module.sequential([x, env], init, update)
+    m = _sequential([x], [env], [x], init, update)
 
     inputs_seq = [
         {X(env): torch.tensor([[5]], dtype=torch.int64)},
@@ -290,24 +302,24 @@ def _make_twobitcounter():
     b1 = Var(Bool([1, 1]))
     enable = Var(Bool([1, 1]))
 
-    init = [
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b0)]),
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b1)]),
+    init = lambda w: [
+        Term(LIA.Bool(torch.tensor([[False]])), [w[X(b0)]]),
+        Term(LIA.Bool(torch.tensor([[False]])), [w[X(b1)]]),
     ]
 
     not_b0 = Wire(Bool([1, 1]))
     not_b1 = Wire(Bool([1, 1]))
     b0_and_enable = Wire(Bool([1, 1]))
 
-    update = [
-        Term(LIA.Not(1, 1), [not_b0], [b0]),
-        Term(LIA.IteBool(1, 1), [X(b0)], [X(enable), not_b0, b0]),
-        Term(LIA.And(1, 1), [b0_and_enable], [b0, X(enable)]),
-        Term(LIA.Not(1, 1), [not_b1], [b1]),
-        Term(LIA.IteBool(1, 1), [X(b1)], [b0_and_enable, not_b1, b1]),
+    update = lambda w: [
+        Term(LIA.Not(1, 1), [not_b0], [w[b0]]),
+        Term(LIA.IteBool(1, 1), [w[X(b0)]], [w[X(enable)], not_b0, w[b0]]),
+        Term(LIA.And(1, 1), [b0_and_enable], [w[b0], w[X(enable)]]),
+        Term(LIA.Not(1, 1), [not_b1], [w[b1]]),
+        Term(LIA.IteBool(1, 1), [w[X(b1)]], [b0_and_enable, not_b1, w[b1]]),
     ]
 
-    m = Module.sequential([b0, b1, enable], init, update)
+    m = _sequential([b0, b1], [enable], [b0, b1], init, update)
     return m, b0, b1, enable
 
 

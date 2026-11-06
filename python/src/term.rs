@@ -17,8 +17,8 @@ impl Term {
         read: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let itype: Any = itype.extract()?;
-        let write = try_wire_iter_cloned(write)?;
-        let read = try_wire_iter_cloned(read)?;
+        let write = try_wire_iter_cloned(write)?.collect::<PyResult<Vec<_>>>()?;
+        let read = try_wire_iter_cloned(read)?.collect::<PyResult<Vec<_>>>()?;
 
         match dataflow::diagram::Term::function(itype, write, read) {
             Ok(base) => Ok(base.into()),
@@ -29,7 +29,7 @@ impl Term {
     #[staticmethod]
     fn constant(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>) -> PyResult<Self> {
         let itype: Any = itype.extract()?;
-        let write = try_wire_iter_cloned(write)?;
+        let write = try_wire_iter_cloned(write)?.collect::<PyResult<Vec<_>>>()?;
 
         match dataflow::diagram::Term::constant(itype, write) {
             Ok(base) => Ok(base.into()),
