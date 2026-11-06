@@ -199,6 +199,51 @@ impl<G> std::ops::Add for Poly<G> {
 //     }
 // }
 
+// The `Sum` and `Product` impls below fold with `⊕` and `⊗` from their
+// units, so that empty sums are `0` and empty products are `I`. Because
+// `G` is generic, a `Mono` or a `Poly` may itself be a base type, and then
+// more than one impl applies: name the base type of the result, as in
+// `.product::<Mono<Sort>>()`, rather than leaving it as `Mono<_>`.
+
+/// `⊗` of base types: their tuple type, in order. The empty product is `I`.
+impl<G> std::iter::Product<G> for Mono<G> {
+    fn product<I: Iterator<Item = G>>(factors: I) -> Self {
+        Self(factors.collect())
+    }
+}
+
+/// `⊗` of tuple types: the tuple type with their components concatenated,
+/// in order. The empty product is `I`.
+impl<G> std::iter::Product for Mono<G> {
+    fn product<I: Iterator<Item = Self>>(factors: I) -> Self {
+        Self(factors.flat_map(|m| m.0).collect())
+    }
+}
+
+/// `⊕` of base types: the sum type with one variant for each, a tuple of
+/// that base type alone, in order. The empty sum is `0`.
+impl<G> std::iter::Sum<G> for Poly<G> {
+    fn sum<I: Iterator<Item = G>>(summands: I) -> Self {
+        Self(summands.map(|g| Mono(vec![g])).collect())
+    }
+}
+
+/// `⊕` of tuple types: the sum type with them as its variants, in order.
+/// The empty sum is `0`.
+impl<G> std::iter::Sum<Mono<G>> for Poly<G> {
+    fn sum<I: Iterator<Item = Mono<G>>>(summands: I) -> Self {
+        Self(summands.collect())
+    }
+}
+
+/// `⊕` of sum types: the sum type with their variants concatenated, in
+/// order. The empty sum is `0`.
+impl<G> std::iter::Sum for Poly<G> {
+    fn sum<I: Iterator<Item = Self>>(summands: I) -> Self {
+        Self(summands.flat_map(|p| p.0).collect())
+    }
+}
+
 /// The boundary of a morphism: the type of its inputs,
 /// [`dom`](Self::dom), and the type of its outputs, [`cod`](Self::cod), both
 /// polynomials over the base types `G` (for a theory's operations, its
