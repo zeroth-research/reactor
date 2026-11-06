@@ -6,14 +6,14 @@ use pyo3::types::PyTuple;
 use reactive::var::PREFIX;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::any::{Combinatorial, Differential, Sequential};
+use theory::any::Any;
 
 #[pyclass(subclass, frozen)]
 pub(crate) struct Module {
-    pub(crate) base: reactive::Module<Combinatorial, Sequential, Differential>,
+    pub(crate) base: reactive::Module<Any>,
 }
 
-type Base = reactive::Module<Combinatorial, Sequential, Differential>;
+type Base = reactive::Module<Any>;
 
 impl Module {
     /// Wraps the base module, or raises its error.

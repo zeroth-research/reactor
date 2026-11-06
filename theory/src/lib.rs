@@ -27,22 +27,6 @@ pub trait Theory {
     fn discard(domain: &Self::Sort) -> Self;
 }
 
-pub trait Combinatorial: Theory {
-    // Returns the unary itype that chooses an element within the range
-    fn havoc(range: &Self::Sort) -> Self;
-}
-
-pub trait Sequential: Theory {
-    // Returns the unary itype that copies a value within the range
-    fn skip(range: &Self::Sort) -> Self;
-}
-
-pub trait Differential: Theory {
-    // Returns the unary itype that indicates zero derivative, the range is the sort
-    // of the derivative (i.e., a tangent sort)
-    fn zero(range: &Self::Sort) -> Self;
-}
-
 // Helpers for type-checking procedures
 
 /// The product `s₁ ⊗ … ⊗ sₙ` of the sorts of objects read or written all at once

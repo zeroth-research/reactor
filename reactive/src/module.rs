@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::fmt::Debug;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::Theory;
 
 //============================================================
 // Module
@@ -13,11 +13,9 @@ use theory::{Combinatorial, Differential, Sequential, Theory};
 
 /// This data structure corresponds to the module of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Module<I, J, F, S = <I as Theory>::Sort>
+pub struct Module<T, S = <T as Theory>::Sort>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
 {
     /// The variables of the module divided by visibility
     /// ```text
@@ -38,16 +36,14 @@ where
     /// The atoms of this module.
     /// The atoms must be stored in a *consistent* linear order
     /// according to their await relation.
-    atoms: Vec<Atom<I, J, F, S>>,
+    atoms: Vec<Atom<T, S>>,
 }
 
-impl<I, J, F, S> Module<I, J, F, S>
+impl<T, S> Module<T, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
 {
-    pub fn atoms(&self) -> &[Atom<I, J, F, S>] {
+    pub fn atoms(&self) -> &[Atom<T, S>] {
         &self.atoms
     }
 
@@ -95,11 +91,9 @@ where
 // Private routines
 //============================================================
 
-impl<I, J, F, S> Module<I, J, F, S>
+impl<T, S> Module<T, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
     S: Debug,
 {
     /// Constructs a module **without performing any consistency or visibility checks**.
@@ -152,7 +146,7 @@ where
         prvt: ModuleInterface<S>,
         obs: ModuleInterface<S>,
         ctrl: ModuleInterface<S>,
-        atoms: Vec<Atom<I, J, F, S>>,
+        atoms: Vec<Atom<T, S>>,
     ) -> Self {
         #[cfg(debug_assertions)]
         {
@@ -218,11 +212,9 @@ where
 // Public constructors
 //============================================================
 
-impl<I, J, F, S> Module<I, J, F, S>
+impl<T, S> Module<T, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
     S: Clone + PartialEq + Debug,
 {
     /// Constructs a **fully observable module** from a set of atoms.
@@ -253,7 +245,7 @@ where
     /// - [`Atom::new`] for creating individual atoms.
     pub fn observable<A>(atoms: A) -> Result<Self, String>
     where
-        A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
+        A: IntoIterator<Item = Atom<T, S>> + Sized,
     {
         Self::partially_observable(atoms, |_| false)
     }
@@ -288,14 +280,14 @@ where
     /// - [`Atom::new`] for creating individual atoms.
     pub fn partially_observable<A, H>(atoms: A, hide: H) -> Result<Self, String>
     where
-        A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
+        A: IntoIterator<Item = Atom<T, S>> + Sized,
         H: Fn(&Var<S>) -> bool,
     {
         let mut sorts: HashMap<u32, S> = HashMap::new();
         let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
         let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
         let atoms = atoms.into_iter();
-        let mut past_atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(atoms.size_hint().0);
+        let mut past_atoms: Vec<Atom<T, S>> = Vec::with_capacity(atoms.size_hint().0);
 
         for (n, atom) in atoms.enumerate() {
             //============================================================
@@ -456,7 +448,7 @@ where
         let mut obs: BTreeSet<Var<S>> = BTreeSet::new();
         let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
 
-        let mut atoms_pre_ordering: Vec<Atom<I, J, F, S>> = Vec::new();
+        let mut atoms_pre_ordering: Vec<Atom<T, S>> = Vec::new();
         let mut await_graph: Vec<Vec<usize>> = Vec::new();
 
         for module in modules {
@@ -564,7 +556,7 @@ where
         let await_order = topological_order(&await_graph).ok_or("Invalid await dependency")?;
         debug_assert_eq!(await_order.len(), await_graph.len());
 
-        let mut atoms: Vec<Atom<I, J, F, S>> = Vec::with_capacity(await_graph.len());
+        let mut atoms: Vec<Atom<T, S>> = Vec::with_capacity(await_graph.len());
         for idx in await_order {
             atoms.push(std::mem::take(&mut atoms_pre_ordering[idx]));
         }
@@ -608,21 +600,17 @@ where
 // Display routines
 //============================================================
 
-pub struct Display<'a, I, J, F, S, N>
+pub struct Display<'a, T, S, N>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
 {
-    module: &'a Module<I, J, F, S>,
+    module: &'a Module<T, S>,
     name: N,
 }
 
-impl<'a, I, J, F, S, N> Display<'a, I, J, F, S, N>
+impl<'a, T, S, N> Display<'a, T, S, N>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    F: Differential<Sort = S> + fmt::Display,
+    T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
@@ -661,11 +649,9 @@ where
     }
 }
 
-impl<'a, I, J, F, S, N> fmt::Display for Display<'a, I, J, F, S, N>
+impl<'a, T, S, N> fmt::Display for Display<'a, T, S, N>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    F: Differential<Sort = S> + fmt::Display,
+    T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
@@ -674,11 +660,9 @@ where
     }
 }
 
-impl<I, J, D, S> Module<I, J, D, S>
+impl<T, S> Module<T, S>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    D: Differential<Sort = S> + fmt::Display,
+    T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
 {
     /// Displays the module with variables under the names the given
@@ -688,7 +672,7 @@ where
     pub fn with_varnames<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    ) -> Display<'a, T, S, impl Fn(&Var<S>) -> Cow<'a, str>>
     where
         N: Fn(&Var<S>) -> R,
         R: Into<Cow<'a, str>>,

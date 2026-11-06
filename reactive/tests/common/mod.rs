@@ -10,7 +10,7 @@ use reactive::var::Var;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::Theory;
 
 /// An uninterpreted sort: its name and how many times it is a tangent (`0` for
 /// values), e.g., `Srt("real", 1)` is the sort of the derivatives of `real`
@@ -69,49 +69,41 @@ pub fn delay_boundary<S: Clone + Tangent>(
 }
 
 /// The init `X(wait) -> X(ctrl)` leaving the controlled variables
-/// unconstrained
-pub fn havoc_init<I, S>(ctrl: &AtomInterface<S>, wait: &AtomInterface<S>) -> Block<I>
-where
-    I: Combinatorial<Sort = S>,
-    S: Clone + Debug,
-{
+/// unconstrained, each by its own `HAVOC`
+pub fn havoc_init(ctrl: &AtomInterface<Srt>, wait: &AtomInterface<Srt>) -> Block<Ops> {
     let (dom, cod) = init_boundary(ctrl, wait);
-    Block::havoc(dom, cod).unwrap()
+    let ops = cod.into_iter().map(|s| (Ops("HAVOC"), [], s));
+    Block::pointwise(dom, ops).unwrap()
 }
 
 /// The update `read ++ X(wait) -> X(ctrl)` keeping the controlled
-/// variables, all of which it reads
-pub fn skip_update<J, S>(
-    ctrl: &AtomInterface<S>,
-    wait: &AtomInterface<S>,
-    read: &AtomInterface<S>,
-) -> Block<J>
-where
-    J: Sequential<Sort = S>,
-    S: Clone + Debug,
-{
+/// variables, all of which it reads, each through its own `SKIP`
+pub fn skip_update(
+    ctrl: &AtomInterface<Srt>,
+    wait: &AtomInterface<Srt>,
+    read: &AtomInterface<Srt>,
+) -> Block<Ops> {
     let (dom, _) = update_boundary(ctrl, wait, read);
-    let from = ctrl.iter().map(|var| {
-        read.iter()
+    let ops = ctrl.iter().map(|var| {
+        let at = read
+            .iter()
             .position(|v| v == var)
-            .expect("skip reads the variables it keeps")
+            .expect("skip reads the variables it keeps");
+        (Ops("SKIP"), [at], *var.dtype())
     });
-    Block::skip(dom, from).unwrap()
+    Block::pointwise(dom, ops).unwrap()
 }
 
 /// The delay `read ++ d(wait) -> d(ctrl)` keeping the controlled variables
-/// constant
-pub fn zero_delay<F, S>(
-    ctrl: &AtomInterface<S>,
-    wait: &AtomInterface<S>,
-    read: &AtomInterface<S>,
-) -> Block<F>
-where
-    F: Differential<Sort = S>,
-    S: Clone + Debug + Tangent,
-{
+/// constant, each by its own `ZERO`
+pub fn zero_delay(
+    ctrl: &AtomInterface<Srt>,
+    wait: &AtomInterface<Srt>,
+    read: &AtomInterface<Srt>,
+) -> Block<Ops> {
     let (dom, cod) = delay_boundary(ctrl, wait, read);
-    Block::zero(dom, cod).unwrap()
+    let ops = cod.into_iter().map(|s| (Ops("ZERO"), [], s));
+    Block::pointwise(dom, ops).unwrap()
 }
 
 /// The uninterpreted sort of values named `name`
@@ -158,32 +150,14 @@ impl Theory for Ops {
     }
 }
 
-impl Combinatorial for Ops {
-    fn havoc(_range: &Self::Sort) -> Self {
-        Ops("HAVOC")
-    }
-}
-
-impl Sequential for Ops {
-    fn skip(_range: &Self::Sort) -> Self {
-        Ops("SKIP")
-    }
-}
-
-impl Differential for Ops {
-    fn zero(_range: &Self::Sort) -> Self {
-        Ops("ZERO")
-    }
-}
-
 impl Display for Ops {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-pub type Module = reactive::Module<Ops, Ops, Ops>;
-pub type Atom = reactive::Atom<Ops, Ops, Ops>;
+pub type Module = reactive::Module<Ops>;
+pub type Atom = reactive::Atom<Ops>;
 
 pub fn mk_op(name: &'static str) -> Ops {
     Ops(name)

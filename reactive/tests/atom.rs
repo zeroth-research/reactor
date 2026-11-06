@@ -5,7 +5,7 @@ mod common;
 
 use common::{
     Atom, Module, Ops, Srt, delay_boundary, dsrt, example_counter, example_peterson1, havoc_init,
-    iface, init_boundary, mk_op, skip_update, sorts, srt, var, zero_delay,
+    iface, init_boundary, mk_op, skip_update, sorts, srt, update_boundary, var, zero_delay,
 };
 use dataflow::diagram::Block;
 use reactive::var::Var;
@@ -109,7 +109,8 @@ fn differential_drifting_clocks() {
 
     // X(t) -> X(x), X(y): the initial values are left unconstrained.
     let (dom, cod) = init_boundary(&ctrl, &wait);
-    let init = Block::havoc(dom, cod).unwrap();
+    let ops = cod.into_iter().map(|s| (LRA::AnyReal(1, 1), [], s));
+    let init = Block::pointwise(dom, ops).unwrap();
 
     // x, y, d(t) -> d(x), d(y): the derivatives, both driven by the input's
     // derivative `d(t)`, the third input.
@@ -123,11 +124,12 @@ fn differential_drifting_clocks() {
     let delay = Block::pointwise(dom, ops).unwrap();
 
     // x, y, X(t) -> X(x), X(y): the clocks keep their values.
-    let update = skip_update(&ctrl, &wait, &read);
+    let (dom, _) = update_boundary(&ctrl, &wait, &read);
+    let ops = [0, 1].map(|at| (LRA::IdReal(1, 1), [at], scalar));
+    let update = Block::pointwise(dom, ops).unwrap();
 
-    let atom: reactive::Atom<LRA, LRA, LRA> =
-        reactive::Atom::new(ctrl, wait, read, init, update, delay)
-            .expect("differential atom should be well-formed");
+    let atom: reactive::Atom<LRA> = reactive::Atom::new(ctrl, wait, read, init, update, delay)
+        .expect("differential atom should be well-formed");
     let module =
         reactive::Module::observable([atom]).expect("differential module should be well-formed");
 
@@ -363,7 +365,13 @@ fn blocks_have_the_boundaries_of_the_interfaces() {
     // x, e, X(e) -> X(x)
     let update = || Block::op(mk_op("G"), [int, bool, bool], [int]).unwrap();
     // x, e, d(e) -> d(x)
-    let delay = || Block::zero([int, bool, dsrt("Bool")], [dsrt("Int")]).unwrap();
+    let delay = || {
+        Block::pointwise(
+            [int, bool, dsrt("Bool")],
+            [(mk_op("ZERO"), [], dsrt("Int"))],
+        )
+        .unwrap()
+    };
 
     let a = Atom::new(
         ctrl.clone(),
@@ -435,7 +443,7 @@ fn interfaces_agree_on_sorts() {
     // x -> X(x)
     let update = |sort| Block::op(mk_op("C"), [srt(sort)], [srt("Int")]).unwrap();
     // x -> d(x)
-    let delay = |sort| Block::zero([srt(sort)], [dsrt("Int")]).unwrap();
+    let delay = |sort| Block::pointwise([srt(sort)], [(mk_op("ZERO"), [], dsrt("Int"))]).unwrap();
 
     // read as a Bool
     let read = iface([var(0, "Bool")]);
@@ -472,7 +480,9 @@ fn boundaries_follow_the_order_of_names() {
     // e, x -> X(x), or x, e -> X(x) in the order of mention
     let update = |mentioned| Block::op(mk_op("G"), inputs(mentioned), [int]).unwrap();
     // e, x -> d(x), or x, e -> d(x) in the order of mention
-    let delay = |mentioned| Block::zero(inputs(mentioned), [dsrt("Int")]).unwrap();
+    let delay = |mentioned| {
+        Block::pointwise(inputs(mentioned), [(mk_op("ZERO"), [], dsrt("Int"))]).unwrap()
+    };
 
     let (c, w, r) = (ctrl.clone(), wait.clone(), read.clone());
     assert!(Atom::new(c, w, r, init(), update(false), delay(false)).is_ok());

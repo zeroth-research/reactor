@@ -211,22 +211,6 @@ impl fmt::Display for BV {
     }
 }
 
-impl Sequential for BV {
-    fn skip(range: &Self::Sort) -> Self {
-        // a zero derivative cannot be copied: the check of the term with `Zero` fails
-        let [r, c] = *range.shape();
-        BV::Id(range.bw(), r, c)
-    }
-}
-
-impl Combinatorial for BV {
-    fn havoc(range: &Self::Sort) -> Self {
-        // a derivative cannot be havoced: the check of the term with `Zero` fails
-        let [r, c] = *range.shape();
-        BV::Havoc(range.bw(), r, c)
-    }
-}
-
 impl Theory for BV {
     type Sort = Sort;
     const NAME: &'static str = "BV";
@@ -1005,8 +989,7 @@ mod tests {
         assert!(BV::Add(8, 2, 3).check([t, z].map(ok), [t].map(ok)).is_err());
         assert!(BV::Not(8, 2, 3).check([z].map(ok), [t].map(ok)).is_err());
         assert!(BV::Havoc(8, 2, 3).check([].map(ok), [z].map(ok)).is_err());
-        assert!(BV::havoc(&z).check([].map(ok), [z].map(ok)).is_err());
-        assert!(BV::skip(&z).check([z].map(ok), [z].map(ok)).is_err());
+        assert!(BV::Id(8, 2, 3).check([z].map(ok), [z].map(ok)).is_err());
         assert!(
             BV::Const(int_tensor(2, 3), 8)
                 .check([].map(ok), [z].map(ok))
@@ -1014,8 +997,8 @@ mod tests {
         );
         assert!(BV::Id(8, 2, 3).check([t].map(ok), [z].map(ok)).is_err());
         // ... but values can be copied and havoced
-        assert!(BV::skip(&t).check([t].map(ok), [t].map(ok)).is_ok());
-        assert!(BV::havoc(&t).check([].map(ok), [t].map(ok)).is_ok());
+        assert!(BV::Id(8, 2, 3).check([t].map(ok), [t].map(ok)).is_ok());
+        assert!(BV::Havoc(8, 2, 3).check([].map(ok), [t].map(ok)).is_ok());
     }
 
     #[test]

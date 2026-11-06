@@ -62,20 +62,9 @@ impl Block {
 }
 
 impl Block {
-    /// The block over the theory `T`, or the error naming the first term
-    /// not in `T`.
-    pub(crate) fn narrow<T>(&self) -> PyResult<dataflow::diagram::Block<T>>
-    where
-        T: theory::Theory<Sort = theory::any::Sort>,
-        dataflow::diagram::Term<Any>: TryInto<dataflow::diagram::Term<T>, Error = String>,
-    {
-        let terms = self.base.iter().cloned().map(TryInto::try_into);
-        let terms = terms.collect::<Result<Vec<_>, String>>();
-        let read = self.base.read().to_vec();
-        let write = self.base.write().to_vec();
-        terms
-            .and_then(|terms| dataflow::diagram::Block::new(read, write, terms))
-            .map_err(PyException::new_err)
+    /// The base block, over all the theories.
+    pub(crate) fn base(&self) -> &dataflow::diagram::Block<Any> {
+        &self.base
     }
 }
 

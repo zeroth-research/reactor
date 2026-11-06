@@ -6,11 +6,11 @@ use pyo3::prelude::*;
 use reactive::var::PREFIX;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::any::{Combinatorial, Differential, Sequential, Sort};
+use theory::any::{Any, Sort};
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: reactive::Atom<Combinatorial, Sequential, Differential>,
+    base: reactive::Atom<Any>,
 }
 
 #[pymethods]
@@ -34,9 +34,9 @@ impl Atom {
             interface(ctrl)?,
             interface(wait)?,
             interface(read)?,
-            init.narrow()?,
-            update.narrow()?,
-            delay.narrow()?,
+            init.base().clone(),
+            update.base().clone(),
+            delay.base().clone(),
         );
         base.map(|base| Self { base }).map_err(PyException::new_err)
     }
@@ -89,7 +89,7 @@ impl Atom {
 }
 
 impl Atom {
-    pub(crate) fn base(&self) -> &reactive::Atom<Combinatorial, Sequential, Differential> {
+    pub(crate) fn base(&self) -> &reactive::Atom<Any> {
         &self.base
     }
 
@@ -100,8 +100,8 @@ impl Atom {
     }
 }
 
-impl From<reactive::Atom<Combinatorial, Sequential, Differential>> for Atom {
-    fn from(base: reactive::Atom<Combinatorial, Sequential, Differential>) -> Self {
+impl From<reactive::Atom<Any>> for Atom {
+    fn from(base: reactive::Atom<Any>) -> Self {
         Self { base }
     }
 }

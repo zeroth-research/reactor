@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::vec;
-use theory::{Combinatorial, Differential, Sequential, Theory, any};
+use theory::Theory;
 
 //============================================================
 // Term
@@ -114,59 +114,6 @@ impl<T: Theory> Term<T> {
         U: Theory<Sort = T::Sort> + Into<T>,
     {
         Self::new_unchecked(term.itype.into(), term.write, term.read)
-    }
-
-    /// Re-types a term along a fallible theory cast (`U: TryInto<T>`),
-    /// failing exactly when the instruction does not belong to `T`.
-    ///
-    /// Only the instruction is converted; the wires are untouched, so a term
-    /// that was well-formed over `U` stays well-formed over `T` and no
-    /// re-validation is needed.
-    fn try_convert<U, E>(term: Term<U>) -> Result<Self, E>
-    where
-        U: Theory<Sort = T::Sort> + TryInto<T, Error = E>,
-    {
-        let itype = term.itype.try_into()?;
-        Ok(Self::new_unchecked(itype, term.write, term.read))
-    }
-}
-
-impl From<Term<any::Combinatorial>> for Term<any::Any> {
-    fn from(term: Term<any::Combinatorial>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl From<Term<any::Sequential>> for Term<any::Any> {
-    fn from(term: Term<any::Sequential>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl From<Term<any::Differential>> for Term<any::Any> {
-    fn from(term: Term<any::Differential>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl TryFrom<Term<any::Any>> for Term<any::Combinatorial> {
-    type Error = String;
-    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
-    }
-}
-
-impl TryFrom<Term<any::Any>> for Term<any::Sequential> {
-    type Error = String;
-    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
-    }
-}
-
-impl TryFrom<Term<any::Any>> for Term<any::Differential> {
-    type Error = String;
-    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 
@@ -623,72 +570,4 @@ where
 /// inputs.
 fn out_of_range(at: usize, len: usize) -> String {
     format!("Operation reads the input {at}, but the block has {len} inputs")
-}
-
-impl<I: Combinatorial> Block<I>
-where
-    I::Sort: Clone + Debug,
-{
-    /// Builds the block taking inputs of the sorts `dom` and giving outputs
-    /// of the sorts `cod`, each from its own `HAVOC`: arbitrary values. The
-    /// inputs are discarded.
-    ///
-    /// # Errors
-    /// If `HAVOC` does not type-check against an output sort.
-    pub fn havoc<D, C>(dom: D, cod: C) -> Result<Self, String>
-    where
-        D: IntoIterator<Item = I::Sort>,
-        C: IntoIterator<Item = I::Sort>,
-    {
-        let ops = cod.into_iter().map(|s| (I::havoc(&s), [], s));
-        Block::pointwise(dom, ops)
-    }
-}
-
-impl<J: Sequential> Block<J>
-where
-    J::Sort: Clone + Debug,
-{
-    /// Builds the block taking inputs of the sorts `dom` and giving, for each
-    /// of the positions `from`, the input at that position, through its own
-    /// `SKIP`. The inputs not given are discarded.
-    ///
-    /// # Errors
-    /// If a position is beyond the inputs, or `SKIP` does not type-check
-    /// against a sort.
-    pub fn skip<D, F>(dom: D, from: F) -> Result<Self, String>
-    where
-        D: IntoIterator<Item = J::Sort>,
-        F: IntoIterator<Item = usize>,
-    {
-        let dom: Vec<J::Sort> = dom.into_iter().collect();
-        let ops = from
-            .into_iter()
-            .map(|k| match dom.get(k) {
-                Some(s) => Ok((J::skip(s), [k], s.clone())),
-                None => Err(out_of_range(k, dom.len())),
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        Block::pointwise(dom, ops)
-    }
-}
-
-impl<F: Differential> Block<F>
-where
-    F::Sort: Clone + Debug,
-{
-    /// Builds the block taking inputs of the sorts `dom` and giving outputs
-    /// of the sorts `cod` (sorts of derivatives), each from its own `ZERO`.
-    /// The inputs are discarded.
-    ///
-    /// # Errors
-    /// If `ZERO` does not type-check against an output sort.
-    pub fn zero<D, C>(dom: D, cod: C) -> Result<Self, String>
-    where
-        D: IntoIterator<Item = F::Sort>,
-        C: IntoIterator<Item = F::Sort>,
-    {
-        let ops = cod.into_iter().map(|s| (F::zero(&s), [], s));
-        Block::pointwise(dom, ops)
-    }
 }

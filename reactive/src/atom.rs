@@ -1,7 +1,7 @@
 use dataflow::diagram::Block;
 use std::borrow::Cow;
 use std::fmt;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::Theory;
 
 use crate::var::{AtomInterface, Var};
 use base::boundary::{Boundary, Poly};
@@ -17,11 +17,9 @@ use std::fmt::Debug;
 /// An atom names its variables in its interfaces and binds them to the
 /// boundaries of its blocks by position (see [`Atom::new`]).
 #[derive(Debug, Clone)]
-pub struct Atom<I, J, F, S = <I as Theory>::Sort>
+pub struct Atom<T, S = <T as Theory>::Sort>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
 {
     /// The controlled variables.
     ctrl: AtomInterface<S>,
@@ -31,32 +29,30 @@ where
     read: AtomInterface<S>,
     /// Corresponds to the initial condition, with the boundary
     /// `X(wait) -> X(ctrl)`.
-    init: Block<I>,
+    init: Block<T>,
     /// Corresponds to the update action, with the boundary
     /// `read ++ X(wait) -> X(ctrl)`.
-    update: Block<J>,
+    update: Block<T>,
     /// Corresponds to the delay activity, with the boundary
     /// `read ++ d(wait) -> d(ctrl)`.
-    delay: Block<F>,
+    delay: Block<T>,
 }
 
-impl<I, J, F, S> Atom<I, J, F, S>
+impl<T, S> Atom<T, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
 {
     /// Returns a reference to the initial action.
-    pub fn init(&self) -> &Block<I> {
+    pub fn init(&self) -> &Block<T> {
         &self.init
     }
     /// Returns a reference to the update action.
-    pub fn update(&self) -> &Block<J> {
+    pub fn update(&self) -> &Block<T> {
         &self.update
     }
 
     /// Returns a reference to the delay activity.
-    pub fn delay(&self) -> &Block<F> {
+    pub fn delay(&self) -> &Block<T> {
         &self.delay
     }
 
@@ -88,11 +84,9 @@ where
     }
 }
 
-impl<I, J, F, S> Default for Atom<I, J, F, S>
+impl<T, S> Default for Atom<T, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
 {
     fn default() -> Self {
         Self::empty()
@@ -103,14 +97,12 @@ where
 // Private routines
 //============================================================
 
-impl<I, J, F, S> Atom<I, J, F, S>
+impl<T, S> Atom<T, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
 {
     /// Returns true if this atom awaits the other atom.
-    pub fn awaits(&self, other: &Atom<I, J, F, S>) -> bool {
+    pub fn awaits(&self, other: &Atom<T, S>) -> bool {
         !self.wait.is_disjoint(&other.ctrl)
     }
 }
@@ -119,11 +111,9 @@ where
 // Public constructors
 //============================================================
 
-impl<I, J, F, S> Atom<I, J, F, S>
+impl<T, S> Atom<T, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
     S: Clone + PartialEq + Debug + Tangent,
 {
     /// Constructs an atom from its interfaces and its blocks.
@@ -151,9 +141,9 @@ where
         ctrl: AtomInterface<S>,
         wait: AtomInterface<S>,
         read: AtomInterface<S>,
-        init: Block<I>,
-        update: Block<J>,
-        delay: Block<F>,
+        init: Block<T>,
+        update: Block<T>,
+        delay: Block<T>,
     ) -> Result<Self, String> {
         if let Some(var) = ctrl.iter().find(|var| wait.contains(var)) {
             return Err(format!(
@@ -238,14 +228,12 @@ where
 // Display routines
 //============================================================
 
-pub struct Display<'a, I, J, F, S, N>
+pub struct Display<'a, T, S, N>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    T: Theory<Sort = S>,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
-    atom: &'a Atom<I, J, F, S>,
+    atom: &'a Atom<T, S>,
     name: N,
     typed: bool,
 }
@@ -259,11 +247,9 @@ enum View {
     Der,
 }
 
-impl<'a, I, J, F, S, N> Display<'a, I, J, F, S, N>
+impl<'a, T, S, N> Display<'a, T, S, N>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    F: Differential<Sort = S> + fmt::Display,
+    T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
@@ -342,11 +328,9 @@ where
     }
 }
 
-impl<'a, I, J, F, S, N> fmt::Display for Display<'a, I, J, F, S, N>
+impl<'a, T, S, N> fmt::Display for Display<'a, T, S, N>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    F: Differential<Sort = S> + fmt::Display,
+    T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
@@ -355,11 +339,9 @@ where
     }
 }
 
-impl<I, J, D, S> Atom<I, J, D, S>
+impl<T, S> Atom<T, S>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    D: Differential<Sort = S> + fmt::Display,
+    T: Theory<Sort = S> + fmt::Display,
     S: fmt::Display,
 {
     /// Displays the atom with variables under the names the given function
@@ -367,7 +349,7 @@ where
     pub fn with_varnames<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    ) -> Display<'a, T, S, impl Fn(&Var<S>) -> Cow<'a, str>>
     where
         N: Fn(&Var<S>) -> R,
         R: Into<Cow<'a, str>>,
@@ -384,7 +366,7 @@ where
     pub fn with_varnames_untyped<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, I, J, D, S, impl Fn(&Var<S>) -> Cow<'a, str>>
+    ) -> Display<'a, T, S, impl Fn(&Var<S>) -> Cow<'a, str>>
     where
         N: Fn(&Var<S>) -> R,
         R: Into<Cow<'a, str>>,

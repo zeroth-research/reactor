@@ -161,26 +161,6 @@ impl fmt::Display for LIA {
     }
 }
 
-impl Sequential for LIA {
-    fn skip(range: &Self::Sort) -> Self {
-        // a zero derivative cannot be copied: the check of the term with it fails
-        match *range {
-            Sort::Int([r, c]) | Sort::Zero([r, c]) => LIA::IdInt(r, c),
-            Sort::Bool([r, c]) => LIA::IdBool(r, c),
-        }
-    }
-}
-
-impl Combinatorial for LIA {
-    fn havoc(range: &Sort) -> Self {
-        // a derivative cannot be havoced: the check of the term with `Zero` fails
-        match *range {
-            Sort::Int([r, c]) | Sort::Zero([r, c]) => LIA::AnyInt(r, c),
-            Sort::Bool([r, c]) => LIA::AnyBool(r, c),
-        }
-    }
-}
-
 impl Theory for LIA {
     type Sort = Sort;
     const NAME: &'static str = "LIA";
@@ -800,14 +780,14 @@ mod tests {
     #[test]
     fn check_skip_and_havoc() {
         let (i, b) = (int(2, 3), bool_t(2, 3));
-        assert!(LIA::skip(&i).check([i].map(ok), [i].map(ok)).is_ok());
-        assert!(LIA::skip(&b).check([b].map(ok), [b].map(ok)).is_ok());
-        assert!(LIA::havoc(&i).check([].map(ok), [i].map(ok)).is_ok());
-        assert!(LIA::havoc(&b).check([].map(ok), [b].map(ok)).is_ok());
+        assert!(LIA::IdInt(2, 3).check([i].map(ok), [i].map(ok)).is_ok());
+        assert!(LIA::IdBool(2, 3).check([b].map(ok), [b].map(ok)).is_ok());
+        assert!(LIA::AnyInt(2, 3).check([].map(ok), [i].map(ok)).is_ok());
+        assert!(LIA::AnyBool(2, 3).check([].map(ok), [b].map(ok)).is_ok());
         // derivatives cannot be copied or havoced
         let z = i.tangent();
-        assert!(LIA::skip(&z).check([z].map(ok), [z].map(ok)).is_err());
-        assert!(LIA::havoc(&z).check([].map(ok), [z].map(ok)).is_err());
+        assert!(LIA::IdInt(2, 3).check([z].map(ok), [z].map(ok)).is_err());
+        assert!(LIA::AnyInt(2, 3).check([].map(ok), [z].map(ok)).is_err());
     }
 
     #[test]

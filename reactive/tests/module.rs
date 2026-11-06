@@ -5,13 +5,11 @@ mod common;
 
 use common::{
     Atom, Module, Srt, example_counter, example_peterson1, example_tiny1, havoc_init, iface, mk_op,
-    skip_update, sorts, srt, var, zero_delay,
+    sorts, srt, var, zero_delay,
 };
 use dataflow::diagram::Block;
 use reactive::ModuleInterface;
 use reactive::var::Var;
-use std::fmt;
-use theory::{Combinatorial, Differential, Sequential, Theory};
 
 /// The names of the variables, in order
 fn names(vars: &ModuleInterface<Srt>) -> Vec<u32> {
@@ -323,73 +321,6 @@ fn more_controlled_than_external() {
     assert!(m.unwrap().obs().is_empty());
 }
 
-#[allow(unused)]
-#[derive(Clone, Copy)]
-struct SeqOps(&'static str);
-#[allow(unused)]
-#[derive(Clone, Copy)]
-struct DifOps(&'static str);
-
-impl Theory for SeqOps {
-    type Sort = Srt;
-    const NAME: &'static str = "SeqOps";
-    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Self::Sort, E>>,
-        W: IntoIterator<Item = Result<Self::Sort, E>>,
-    {
-        Ok(())
-    }
-
-    fn discard(_domain: &Self::Sort) -> Self {
-        Self("DISCARD")
-    }
-}
-
-impl Theory for DifOps {
-    type Sort = Srt;
-    const NAME: &'static str = "DifOps";
-    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Self::Sort, E>>,
-        W: IntoIterator<Item = Result<Self::Sort, E>>,
-    {
-        Ok(())
-    }
-
-    fn discard(_domain: &Self::Sort) -> Self {
-        Self("DISCARD")
-    }
-}
-
-impl Differential for DifOps {
-    fn zero(_range: &Self::Sort) -> Self {
-        Self("ZERO")
-    }
-}
-impl Sequential for SeqOps {
-    fn skip(_range: &Self::Sort) -> Self {
-        Self("SKIP")
-    }
-}
-
-impl Combinatorial for SeqOps {
-    fn havoc(_range: &Self::Sort) -> Self {
-        Self("HAVOC")
-    }
-}
-
-impl fmt::Display for DifOps {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-impl fmt::Display for SeqOps {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 /// The visibility sets of a constructed module, compared against the exact
 /// expected variables:
 ///
@@ -427,39 +358,6 @@ fn hiding_interfaces_are_exact() {
     assert_eq!(names(m.prvt()), vec![p.name()]);
     assert_eq!(names(m.obs()), vec![x.name(), e.name()]);
     assert_eq!(names(m.ctrl()), vec![x.name(), p.name()]);
-}
-
-#[test]
-#[allow(non_snake_case)]
-fn heterogeneous_composition() {
-    let (x, y, z) = (var(0, "A"), var(1, "B"), var(2, "C"));
-
-    // x' = x, from an arbitrary initial value
-    let (ctrl, wait, read) = (iface([x]), iface([]), iface([x]));
-    let init = havoc_init::<SeqOps, _>(&ctrl, &wait);
-    let jump = skip_update::<SeqOps, _>(&ctrl, &wait, &read);
-    let flow = zero_delay::<DifOps, _>(&ctrl, &wait, &read);
-    let P = reactive::Atom::new(ctrl, wait, read, init, jump, flow).unwrap();
-    let P = reactive::Module::observable([P]).unwrap();
-
-    // dy = 0, from an arbitrary initial value
-    let (ctrl, wait, read) = (iface([y]), iface([]), iface([y]));
-    let init = havoc_init::<SeqOps, _>(&ctrl, &wait);
-    let jump = skip_update::<SeqOps, _>(&ctrl, &wait, &read);
-    let flow = zero_delay::<DifOps, _>(&ctrl, &wait, &read);
-    let Q = reactive::Atom::new(ctrl, wait, read, init, jump, flow).unwrap();
-    let Q = reactive::Module::observable([Q]).unwrap();
-
-    // z = x + y, at every step
-    let (ctrl, wait, read) = (iface([z]), iface([x, y]), iface([]));
-    let (dom, cod) = (sorts(&wait), sorts(&ctrl));
-    let comb = || Block::op(SeqOps("+"), dom.clone(), cod.clone()).unwrap();
-    let flow = zero_delay::<DifOps, _>(&ctrl, &wait, &read);
-    let R = reactive::Atom::new(ctrl, wait, read, comb(), comb(), flow).unwrap();
-    let R = reactive::Module::observable([R]).unwrap();
-
-    let S = reactive::Module::compose([P, Q, R]);
-    assert!(S.is_ok());
 }
 
 /// The atom controlling the variable `v` with a constant

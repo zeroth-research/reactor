@@ -208,47 +208,6 @@ impl fmt::Display for LRA {
     }
 }
 
-impl Sequential for LRA {
-    fn skip(range: &Self::Sort) -> Self {
-        match *range {
-            Sort::Real {
-                shape: [r, c],
-                rank: 0,
-            } => LRA::IdReal(r, c),
-            Sort::Real {
-                shape: [r, c],
-                rank,
-            } => LRA::TId(r, c, rank),
-            // a zero derivative cannot be copied: the check of the term with it fails
-            Sort::Bool { shape: [r, c] } | Sort::Zero { shape: [r, c] } => LRA::IdBool(r, c),
-        }
-    }
-}
-
-impl Combinatorial for LRA {
-    fn havoc(range: &Self::Sort) -> Self {
-        // a derivative cannot be havoced: the check of the term with a tangent fails
-        match *range {
-            Sort::Bool { shape: [r, c] } | Sort::Zero { shape: [r, c] } => LRA::AnyBool(r, c),
-            Sort::Real { shape: [r, c], .. } => LRA::AnyReal(r, c),
-        }
-    }
-}
-
-impl Differential for LRA {
-    fn zero(range: &Self::Sort) -> Self {
-        // the range is the sort of the derivative; values have no zero derivative,
-        // so the check of the term with them fails
-        match *range {
-            Sort::Bool { shape: [r, c] } | Sort::Zero { shape: [r, c] } => LRA::BoolZerograd(r, c),
-            Sort::Real {
-                shape: [r, c],
-                rank,
-            } => LRA::RealZerograd(r, c, rank),
-        }
-    }
-}
-
 impl Theory for LRA {
     type Sort = Sort;
     const NAME: &'static str = "LRA";
@@ -814,9 +773,6 @@ mod tests {
                 .check([].map(ok), [bool_t(1, 1)].map(ok))
                 .is_ok()
         );
-        // `havoc` is given the sort of the written wire
-        assert!(matches!(LRA::havoc(&real(2, 1)), LRA::AnyReal(2, 1)));
-        assert!(matches!(LRA::havoc(&bool_t(2, 1)), LRA::AnyBool(2, 1)));
     }
 
     #[test]
@@ -843,16 +799,13 @@ mod tests {
 
     #[test]
     fn skip_ok() {
-        // `skip` copies a value, or a derivative, of the given sort
+        // the identities copy a value, or a derivative, of their sort
         let (r, dr) = (real(2, 1), real(2, 1).tangent());
-        assert!(matches!(LRA::skip(&r), LRA::IdReal(2, 1)));
-        assert!(matches!(LRA::skip(&dr), LRA::TId(2, 1, 1)));
-        assert!(matches!(LRA::skip(&bool_t(2, 1)), LRA::IdBool(2, 1)));
-        assert!(LRA::skip(&r).check([r].map(ok), [r].map(ok)).is_ok());
-        assert!(LRA::skip(&dr).check([dr].map(ok), [dr].map(ok)).is_ok());
+        assert!(LRA::IdReal(2, 1).check([r].map(ok), [r].map(ok)).is_ok());
+        assert!(LRA::TId(2, 1, 1).check([dr].map(ok), [dr].map(ok)).is_ok());
         // a zero derivative cannot be copied
         let z = bool_t(2, 1).tangent();
-        assert!(LRA::skip(&z).check([z].map(ok), [z].map(ok)).is_err());
+        assert!(LRA::IdBool(2, 1).check([z].map(ok), [z].map(ok)).is_err());
     }
 
     #[test]
@@ -866,14 +819,8 @@ mod tests {
         assert!(zero(LRA::RealZerograd(2, 1, 2), r.tangent().tangent()).is_ok());
         assert!(zero(LRA::BoolZerograd(2, 1), b.tangent()).is_ok());
         assert!(zero(LRA::BoolZerograd(2, 1), b).is_err());
-        // `zero` is given the sort of the derivative
-        assert!(matches!(
-            LRA::zero(&r.tangent()),
-            LRA::RealZerograd(2, 1, 1)
-        ));
-        assert!(matches!(LRA::zero(&b.tangent()), LRA::BoolZerograd(2, 1)));
         // values have no zero derivative
-        assert!(zero(LRA::zero(&r), r).is_err());
+        assert!(zero(LRA::RealZerograd(2, 1, 0), r).is_err());
     }
 
     #[test]

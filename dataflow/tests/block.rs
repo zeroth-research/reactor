@@ -1,8 +1,7 @@
 use base::boundary::{Boundary, Poly};
-use base::tangent::Tangent;
 use dataflow::diagram::{Block, Term, Wire};
+use theory::Theory;
 use theory::lra::{LRA, Sort};
-use theory::{Combinatorial, Differential, Sequential, Theory};
 
 fn real() -> Sort {
     Sort::real([1, 1])
@@ -168,43 +167,6 @@ fn pointwise_reads_inputs_by_position() {
     assert!(Block::pointwise([real(); 3], beyond).is_err());
     let unary = [(LRA::Add(1, 1), vec![0], real())];
     assert!(Block::pointwise([real(); 3], unary).is_err());
-}
-
-#[test]
-fn havoc_skip_and_zero_give_their_outputs_and_discard_the_rest() {
-    let bool = Sort::Bool { shape: [1, 1] };
-    let dreal = real().tangent();
-
-    // a -> arbitrary, arbitrary
-    let havoc = Block::havoc([real()], [real(), bool]).unwrap();
-    assert_eq!(havoc.cod(), [real(), bool].into_iter().collect::<Poly<_>>());
-    let expected = [
-        LRA::havoc(&real()),
-        LRA::havoc(&bool),
-        LRA::discard(&real()),
-    ];
-    assert_eq!(itypes(&havoc), expected.map(|op| op.to_string()));
-
-    // a, p -> p, a
-    let skip = Block::skip([real(), bool], [1, 0]).unwrap();
-    assert_eq!(skip.cod(), [bool, real()].into_iter().collect::<Poly<_>>());
-    assert_eq!(skip.get(0).unwrap().read(), [skip.read()[1]]);
-    assert_eq!(skip.get(1).unwrap().read(), [skip.read()[0]]);
-    assert_eq!(
-        itypes(&skip),
-        [LRA::skip(&bool), LRA::skip(&real())].map(|op| op.to_string())
-    );
-    assert!(Block::<LRA>::skip([real()], [1]).is_err());
-
-    // a -> 0
-    let zero = Block::zero([real()], [dreal]).unwrap();
-    assert_eq!(zero.cod(), [dreal].into_iter().collect::<Poly<_>>());
-    assert_eq!(
-        itypes(&zero),
-        [LRA::zero(&dreal), LRA::discard(&real())].map(|op| op.to_string())
-    );
-    // a zero is a derivative
-    assert!(Block::<LRA>::zero([], [real()]).is_err());
 }
 
 #[test]

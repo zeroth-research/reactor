@@ -236,30 +236,6 @@ impl<'py> IntoPyObject<'py> for Any {
     }
 }
 
-impl crate::Sequential for Sequential {
-    fn skip(range: &Sort) -> Self {
-        Sequential::SKIP(*range)
-    }
-}
-
-impl crate::Combinatorial for Sequential {
-    fn havoc(range: &Sort) -> Self {
-        Sequential::HAVOC(*range)
-    }
-}
-
-impl crate::Combinatorial for Combinatorial {
-    fn havoc(range: &Sort) -> Self {
-        Combinatorial::HAVOC(*range)
-    }
-}
-
-impl crate::Differential for Differential {
-    fn zero(range: &Sort) -> Self {
-        Differential::ZERO(*range)
-    }
-}
-
 // The distinguished operations are unary, matching the `Id`, `Any*`/`Havoc`, `*Zerograd`,
 // and `*Discard` operations of the base theories: `HAVOC` writes any value of its range
 // (`I -> range`), `SKIP` copies a value of its range (`range -> range`), `ZERO` writes
