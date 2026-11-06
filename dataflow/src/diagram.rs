@@ -1,7 +1,10 @@
-use crate::Wire;
+pub mod wire;
+
+pub use wire::Wire;
+
 use base::boundary::{Boundary, Poly};
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::vec;
 use theory::{Combinatorial, Differential, Sequential, Theory, any};
@@ -328,6 +331,63 @@ impl<T: Theory> IntoIterator for Block<T> {
 
     fn into_iter(self) -> Self::IntoIter {
         self.terms.into_iter()
+    }
+}
+
+/// Displays a block, a term per line; see [`Block::with_boundary_names`].
+pub struct BlockDisplay<'a, T: Theory> {
+    block: &'a Block<T>,
+    names: HashMap<&'a Wire<T::Sort>, Cow<'a, str>>,
+}
+
+impl<'a, T> BlockDisplay<'a, T>
+where
+    T: Theory + fmt::Display + 'a,
+    T::Sort: fmt::Display,
+{
+    /// Writes the terms of the block, each on its own line prefixed by `pad`.
+    pub fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
+        // the argument annotation makes the closure higher-ranked over the
+        // wire's lifetime, as `with_wirenames`'s `Fn` bound requires
+        let name = |w: &Wire<T::Sort>| match self.names.get(w) {
+            Some(name) => name.clone(),
+            None => Cow::Owned(w.untyped().to_string()),
+        };
+        for term in self.block.iter() {
+            writeln!(f, "{pad}{}", term.with_wirenames(name))?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a, T> fmt::Display for BlockDisplay<'a, T>
+where
+    T: Theory + fmt::Display + 'a,
+    T::Sort: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_indent(f, "")
+    }
+}
+
+impl<T: Theory> Block<T> {
+    /// Displays the block, a term per line, with its inputs under the names
+    /// `read` gives and its outputs under the names `write` gives, both in
+    /// the order of its boundary. The wires internal to the block, and any
+    /// input or output left without a name, print as themselves.
+    pub fn with_boundary_names<'a, R, W, N, M>(&'a self, read: R, write: W) -> BlockDisplay<'a, T>
+    where
+        R: IntoIterator<Item = N>,
+        W: IntoIterator<Item = M>,
+        N: Into<Cow<'a, str>>,
+        M: Into<Cow<'a, str>>,
+    {
+        let read = self.read.iter().zip(read.into_iter().map(Into::into));
+        let write = self.write.iter().zip(write.into_iter().map(Into::into));
+        BlockDisplay {
+            block: self,
+            names: read.chain(write).collect(),
+        }
     }
 }
 

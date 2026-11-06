@@ -89,7 +89,7 @@ where
 /// The wires of the python sequence.
 fn try_wire_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = PyResult<dataflow::Wire<Sort>>>> {
+) -> PyResult<impl Iterator<Item = PyResult<dataflow::diagram::Wire<Sort>>>> {
     let seq = try_iter_borrow::<Wire>(seq)?;
     Ok(seq.map(|wire| wire.map(|wire| *wire.base())))
 }
@@ -155,7 +155,7 @@ impl<'py> Hide<'py> {
 pub(crate) fn wires_untyped_to_repr<'a, S, I>(wires: I) -> String
 where
     S: Debug + 'a,
-    I: IntoIterator<Item = &'a dataflow::Wire<S>>,
+    I: IntoIterator<Item = &'a dataflow::diagram::Wire<S>>,
 {
     let mut s = String::from("[");
     for (i, wire) in wires.into_iter().enumerate() {

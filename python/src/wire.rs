@@ -4,14 +4,14 @@ use theory::any::Sort;
 #[pyclass(frozen, eq, hash, ord)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub(crate) struct Wire {
-    base: dataflow::Wire<Sort>,
+    base: dataflow::diagram::Wire<Sort>,
 }
 
 #[pymethods]
 impl Wire {
     #[new]
     pub(crate) fn new(dtype: Sort) -> Self {
-        let base = dataflow::Wire::new(dtype);
+        let base = dataflow::diagram::Wire::new(dtype);
         Self { base }
     }
 
@@ -31,13 +31,13 @@ impl Wire {
 }
 
 impl Wire {
-    pub(crate) fn base(&self) -> &dataflow::Wire<Sort> {
+    pub(crate) fn base(&self) -> &dataflow::diagram::Wire<Sort> {
         &self.base
     }
 }
 
-impl From<dataflow::Wire<Sort>> for Wire {
-    fn from(base: dataflow::Wire<Sort>) -> Self {
+impl From<dataflow::diagram::Wire<Sort>> for Wire {
+    fn from(base: dataflow::diagram::Wire<Sort>) -> Self {
         Self { base }
     }
 }

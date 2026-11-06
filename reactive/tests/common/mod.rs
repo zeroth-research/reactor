@@ -4,8 +4,7 @@
 #![allow(dead_code)]
 
 use base::tangent::Tangent;
-use dataflow::Wire;
-use dataflow::diagram::{Block, Term};
+use dataflow::diagram::{Block, Term, Wire};
 use reactive::AtomInterface;
 use reactive::var::Var;
 use std::collections::HashMap;

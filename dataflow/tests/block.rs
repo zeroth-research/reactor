@@ -1,6 +1,5 @@
 use base::boundary::{Boundary, Poly};
-use dataflow::Wire;
-use dataflow::diagram::{Block, Term};
+use dataflow::diagram::{Block, Term, Wire};
 use theory::Theory;
 use theory::lra::{LRA, Sort};
 

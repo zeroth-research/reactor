@@ -1,11 +1,10 @@
-use dataflow::Wire;
 use dataflow::diagram::Block;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
 use crate::var::{AtomInterface, Var};
+use base::boundary::{Boundary, Poly};
 use base::tangent::Tangent;
 use std::fmt::Debug;
 
@@ -15,9 +14,8 @@ use std::fmt::Debug;
 
 /// This data structure corresponds to the atom of reactive modules.
 ///
-/// An atom holds no wires of its own: it names its variables in its
-/// interfaces and binds them to the boundaries of its blocks by position (see
-/// [`Atom::new`]).
+/// An atom names its variables in its interfaces and binds them to the
+/// boundaries of its blocks by position (see [`Atom::new`]).
 #[derive(Debug, Clone)]
 pub struct Atom<I, J, F, S = <I as Theory>::Sort>
 where
@@ -142,9 +140,8 @@ where
     ///   `read ++ d(wait) -> d(ctrl)`.
     ///
     /// The latched and next values of a variable have its sort, and its
-    /// derivative has the tangent of the sort. The atom knows nothing of the
-    /// wires of its blocks: a block that does not use an input still takes it
-    /// (see [`Block::new`]).
+    /// derivative has the tangent of the sort. A block that does not use an
+    /// input still takes it (see [`Block::new`]).
     ///
     /// # Errors
     /// If a variable is both controlled and awaited, a name has different
@@ -209,26 +206,31 @@ fn tangents<S: Tangent>(vars: &AtomInterface<S>) -> impl Iterator<Item = S> + '_
     vars.iter().map(|var| var.dtype().tangent())
 }
 
-/// Checks that the boundary of the block has the sorts `dom -> cod`, position
-/// by position.
+/// Checks that the boundary of the block is `dom -> cod`: the products of
+/// the sorts, position by position.
 fn check_boundary<T, S>(
     name: &str,
     block: &Block<T>,
-    dom: Vec<S>,
-    cod: Vec<S>,
+    dom: Poly<S>,
+    cod: Poly<S>,
 ) -> Result<(), String>
 where
     T: Theory<Sort = S>,
     S: Clone + PartialEq + Debug,
 {
-    let sorts = |wires: &[Wire<S>]| wires.iter().map(|w| w.dtype().clone()).collect::<Vec<S>>();
-    let (read, write) = (sorts(block.read()), sorts(block.write()));
+    let (read, write) = (block.dom(), block.cod());
     if read == dom && write == cod {
         return Ok(());
     }
+    // the boundary of a block is a product: its sorts, in order
+    let sorts = |poly: &Poly<S>| poly.iter().flatten().cloned().collect::<Vec<S>>();
     Err(format!(
         "{} has the boundary {:?} -> {:?}, but the interfaces expect {:?} -> {:?}",
-        name, read, write, dom, cod
+        name,
+        sorts(&read),
+        sorts(&write),
+        sorts(&dom),
+        sorts(&cod)
     ))
 }
 
@@ -248,8 +250,8 @@ where
     typed: bool,
 }
 
-/// The value of a variable a boundary wire of a block carries: latched, next,
-/// or derivative.
+/// The value of a variable on the boundary of a block: latched, next, or
+/// derivative.
 #[derive(Clone, Copy)]
 enum View {
     Ltc,
@@ -283,50 +285,14 @@ where
         Ok(())
     }
 
-    /// Names the boundary wires of the block after the variables they carry:
-    /// the inputs after `inputs`, and the outputs after `outputs`, in order.
-    fn wirenames<T, V, W>(
-        &self,
-        block: &'a Block<T>,
-        inputs: V,
-        outputs: W,
-    ) -> HashMap<&'a Wire<S>, Cow<'a, str>>
-    where
-        T: Theory<Sort = S>,
-        V: Iterator<Item = (&'a Var<S>, View)>,
-        W: Iterator<Item = (&'a Var<S>, View)>,
-    {
-        let name = |(var, view): (&'a Var<S>, View)| match view {
+    /// The name of the view of the variable.
+    fn view_name(&self, (var, view): (&'a Var<S>, View)) -> Cow<'a, str> {
+        match view {
             // the plain name passes through as-is: borrowed stays borrowed
             View::Ltc => (self.name)(var),
             View::Nxt => Cow::Owned(format!("X({})", (self.name)(var))),
             View::Der => Cow::Owned(format!("d({})", (self.name)(var))),
-        };
-        let inputs = block.read().iter().zip(inputs.map(name));
-        let outputs = block.write().iter().zip(outputs.map(name));
-        inputs.chain(outputs).collect()
-    }
-
-    fn fmt_terms<T: 'a + Theory<Sort = S> + fmt::Display>(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        block: &'a Block<T>,
-        names: &HashMap<&'a Wire<S>, Cow<'a, str>>,
-        pad: &str,
-    ) -> fmt::Result {
-        // the wires internal to the block are not named after variables; the
-        // argument annotation makes the closure higher-ranked over the wire's
-        // lifetime, as `with_wirenames`'s `Fn` bound requires
-        let name = |w: &Wire<S>| match names.get(w) {
-            Some(name) => name.clone(),
-            None => Cow::Owned(format!("{}", w.untyped())),
-        };
-
-        for term in block.iter() {
-            let display = term.with_wirenames(name);
-            writeln!(f, "{pad}{}", display)?;
         }
-        Ok(())
     }
 
     pub fn fmt_indent(&self, f: &mut fmt::Formatter<'_>, pad: &str) -> fmt::Result {
@@ -347,28 +313,30 @@ where
             self.fmt_vars(f, a.wait.iter())?;
         }
 
-        // the boundaries of the blocks, as in `Atom::new_unchecked`
-        let view = |vars: &'a AtomInterface<S>, view: View| vars.iter().map(move |v| (v, view));
+        // the boundaries of the blocks, as in `Atom::new`
+        let view = |vars: &'a AtomInterface<S>, view: View| {
+            vars.iter().map(move |v| self.view_name((v, view)))
+        };
         let (ctrl, read, wait) = (&a.ctrl, &a.read, &a.wait);
-        let init = self.wirenames(&a.init, view(wait, View::Nxt), view(ctrl, View::Nxt));
-        let update = self.wirenames(
-            &a.update,
+        let init = a
+            .init
+            .with_boundary_names(view(wait, View::Nxt), view(ctrl, View::Nxt));
+        let update = a.update.with_boundary_names(
             view(read, View::Ltc).chain(view(wait, View::Nxt)),
             view(ctrl, View::Nxt),
         );
-        let delay = self.wirenames(
-            &a.delay,
+        let delay = a.delay.with_boundary_names(
             view(read, View::Ltc).chain(view(wait, View::Der)),
             view(ctrl, View::Der),
         );
 
         let tpad = format!("{pad}{INDENT}");
         writeln!(f, "\n{pad}{BOLD}init{RESET}")?;
-        self.fmt_terms(f, &a.init, &init, tpad.as_str())?;
+        init.fmt_indent(f, &tpad)?;
         writeln!(f, "{pad}{BOLD}delay{RESET}")?;
-        self.fmt_terms(f, &a.delay, &delay, tpad.as_str())?;
+        delay.fmt_indent(f, &tpad)?;
         writeln!(f, "{pad}{BOLD}update{RESET}")?;
-        self.fmt_terms(f, &a.update, &update, tpad.as_str())?;
+        update.fmt_indent(f, &tpad)?;
 
         Ok(())
     }
