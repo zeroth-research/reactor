@@ -1,7 +1,8 @@
 import inspect
 import torch.nn as nn
 
-from ..reactor import Module as _BaseModule, X
+from ..reactor import Atom as _Atom, Module as _BaseModule, X
+from ..blocks import boundary, block, havoc, zero
 from ..sort import Real
 from ..builder import builder_for
 from ..analyzer import convert_method, resolve_wire
@@ -101,23 +102,29 @@ def _extract_nn_module(nn_instance, theory=None, combinatorial=False, **kwargs):
 
     layer_out_features = {name: out for name, (_, out) in layers.items()}
 
-    def _forward_terms(read_next: bool):
-        # `forward` reads its input as the variable's *latched* slot (index 0). Put the
-        # next wire there (read_next=True) to read s'; put the latched wire there
-        # (read_next=False) to read s. The output is always the next intf wire.
-        in_wire, other = (X(extl), extl) if read_next else (extl, X(extl))
-        return convert_method(
-            nn_cls.forward, {obs_param: [in_wire, other]}, [X(ctrl)], cls=nn_cls,
+    def _forward(kind, wait, read):
+        # `forward` reads its input from the boundary of the block: the next value
+        # of the input when it awaits it (s'), its latched value when it reads it
+        # (s). The output is always the next value of the controlled variable.
+        inputs, outputs = boundary(kind, [ctrl], wait, read)
+        given = inputs[X(extl)] if wait else inputs[extl]
+        terms = convert_method(
+            nn_cls.forward, {obs_param: given}, [outputs[X(ctrl)]], cls=nn_cls,
             layers=layer_out_features, live_layers=live_layers, theory=theory,
         )
+        return block(inputs, outputs, terms)
 
     if combinatorial:
-        # V(s'): memoryless, reads the awaited next input.
-        assign = _forward_terms(True)
-        return dict(init=assign, update=assign, vars=[ctrl, extl])
+        # V(s'): memoryless, reads the awaited next input, at init as at every step.
+        wait, read = [extl], []
+        init = _forward("init", wait, read)
+        update = _forward("update", wait, read)
     else:
         # V(s): init havocs; update reads the latched input.
-        return dict(update=_forward_terms(False), vars=[ctrl, extl])
+        wait, read = [], [extl]
+        init = havoc([ctrl], wait)
+        update = _forward("update", wait, read)
+    return _Atom([ctrl], wait, read, init, update, zero([ctrl], wait, read))
 
 
 class Module(_BaseModule, nn.Module):
@@ -147,10 +154,10 @@ class Module(_BaseModule, nn.Module):
     def __new__(cls, nn_module, theory=None, combinatorial=False, **kwargs):
         if not isinstance(nn_module, nn.Module):
             raise TypeError(f"Expected nn.Module, got {type(nn_module)}")
-        parts = _extract_nn_module(
+        atom = _extract_nn_module(
             nn_module, theory=theory, combinatorial=combinatorial, **kwargs
         )
-        return _BaseModule.__new__(cls, **parts)
+        return _BaseModule.__new__(cls, atom)
 
     def __init__(self, nn_module, theory=None, combinatorial=False, **kwargs):
         nn.Module.__init__(self)

@@ -10,7 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..reactor import Wire, Term, Module, BV, Var, X
+from ..reactor import Wire, Term, Atom, Module, BV, Var, X
+from ..blocks import boundary, block, zero
 from ..sort import Sort, BitVec, Bool
 from ..ops import op, bv_const
 
@@ -55,13 +56,16 @@ def _get_parser():
 
 def parse_smv(
         text: str,
-        overrides: dict[str, tuple[Wire, Wire]] | None = None,
-) -> tuple[Module, dict[str, tuple[Wire, Wire]]]:
+        overrides: dict[str, Var] | None = None,
+) -> tuple[Module, dict[str, Var]]:
     """Parse an SMV source string and return ``(Module, name_map)``.
 
-    *name_map* maps every variable name to its ``(latched, next)`` wire pair.
-    *overrides* lets the caller supply pre-existing wires for specific
-    variables (used for module composition via shared wires).
+    *name_map* maps every variable name to its variable.
+    *overrides* lets the caller supply pre-existing variables for specific
+    names (used for module composition via shared variables).
+
+    The module is a single atom: it controls the state variables (``VAR``,
+    ``FROZENVAR``), awaits the input variables (``IVAR``), and reads them all.
     """
     tree = _get_parser().parse(text)
     decls = _collect_declarations(tree)
@@ -376,13 +380,17 @@ class _Lowerer:
 
     def __init__(
             self,
-            name_map: dict[str, tuple[Wire, Wire]],
+            name_map: dict[str, Var],
             defines: dict[str, Tree],
             enum_values: dict[str, int],
             var_types: dict[str, _SMVType],
+            wires: dict,
             is_init: bool = False,
     ):
+        # the variables of the names, and the wires the boundary of the block
+        # gives their views (see `reactor.blocks`)
         self.name_map = name_map
+        self.wires = wires
         self.defines = defines
         self.enum_values = enum_values
         self.var_types = var_types
@@ -559,7 +567,7 @@ class _Lowerer:
         inner = tree.children[0]
         name = _extract_name(_peel(inner))
         if name and name in self.name_map:
-            _, next_w = self.name_map[name]
+            next_w = self._wire(X(self.name_map[name]))
             return self._enforce(next_w, target)
         return self.lower(inner, target)
 
@@ -608,7 +616,7 @@ class _Lowerer:
         # Wire lookup
         if name in self.name_map:
             var = self.name_map[name]
-            w = X(var) if self.is_init else var
+            w = self._wire(X(var) if self.is_init else var)
             if name in self.var_types:
                 self._wire_types[id(w)] = self.var_types[name]
             return self._enforce(w, target)
@@ -617,6 +625,13 @@ class _Lowerer:
         return self._emit_const(0, target)
 
     # --- helpers ------------------------------------------------------------
+
+    def _wire(self, view) -> Wire:
+        """The wire the boundary of the block gives the view."""
+        if view not in self.wires:
+            block = "init" if self.is_init else "update"
+            raise ValueError(f"the {block} cannot read {view}")
+        return self.wires[view]
 
     def _smv_type(self, wire: Wire) -> _SMVType | None:
         return self._wire_types.get(id(wire))
@@ -697,8 +712,18 @@ def _build_module(
             else Var(smv_type.dtype)
         )
 
-    init_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types, is_init=True)
-    update_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types, is_init=False)
+    # the atom controls the state variables, awaits the input variables, and
+    # reads them all
+    ctrl = [name_map[n] for n, _ in all_var_decls]
+    wait = [name_map[n] for n, _ in d.ivar_decls]
+    read = [name_map[n] for n, _ in all_decls]
+    init_in, init_out = boundary("init", ctrl, wait, read)
+    update_in, update_out = boundary("update", ctrl, wait, read)
+
+    init_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types,
+                        {**init_in, **init_out}, is_init=True)
+    update_low = _Lowerer(name_map, d.define_map, d.enum_values, var_types,
+                          {**update_in, **update_out}, is_init=False)
 
     for name, smv_type in all_var_decls:
         var = name_map[name]
@@ -706,19 +731,23 @@ def _build_module(
         # --- INIT ---
         init_expr = d.init_assigns.get(name)
         if init_expr is not None:
-            init_low.lower(init_expr, X(var))
+            init_low.lower(init_expr, init_out[X(var)])
         else:
-            init_low.terms.append(Term(_bv_const(0, var.dtype), [X(var)]))
+            init_low.terms.append(Term(_bv_const(0, var.dtype), [init_out[X(var)]]))
 
         # --- UPDATE ---
         next_expr = d.next_assigns.get(name)
         if next_expr is not None:
-            update_low.lower(next_expr, X(var))
+            update_low.lower(next_expr, update_out[X(var)])
         else:
-            update_low.terms.append(Term(_bv_op("Id", var.dtype), [X(var)], [var]))
+            update_low.terms.append(
+                Term(_bv_op("Id", var.dtype), [update_out[X(var)]], [update_in[var]])
+            )
 
-    # Build obs_pairs: all variables (state + ivar)
-    obs_pairs = [name_map[n] for n, _ in all_decls]
-
-    module = Module.sequential(obs_pairs, init_low.terms, update_low.terms)
-    return module, name_map
+    atom = Atom(
+        ctrl, wait, read,
+        block(init_in, init_out, init_low.terms),
+        block(update_in, update_out, update_low.terms),
+        zero(ctrl, wait, read),
+    )
+    return Module(atom), name_map

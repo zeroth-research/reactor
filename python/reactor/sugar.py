@@ -15,17 +15,19 @@ module is built in the constructor:
     x = Var(Int([1, 1]))
     m = Counter(theory=LIA, ctrl=(x,))      # a closed sequential base Module
 
-The methods receive the variables **unpacked, as positional parameters**: ``init`` takes
-the ``extl`` variables, ``update`` and ``delay`` take ``ctrl`` followed by ``extl`` (all
-of them — arities are checked). A parameter reads as the variable's latched value;
-``X(v)`` is its next and ``d(v)`` its derivative expression. Each method returns a tuple
-aligned with ``ctrl`` (a single value for a single variable): entry *i* drives
-``ctrl[i]``'s next wire (``init`` / ``update``) or its derivative wire (``delay``).
+The module is a single atom, and its interfaces come from the configuration: it
+controls ``ctrl``, awaits ``extl``, and reads both ``ctrl`` and ``extl``. The methods
+receive the variables **unpacked, as positional parameters**: ``init`` takes the next
+values of the ``extl`` variables, ``update`` and ``delay`` take the latched values of
+``ctrl`` followed by ``extl`` (all of them — arities are checked). For a parameter ``v``
+of an ``extl`` variable, ``X(v)`` is its next value and ``d(v)`` its derivative. Each
+method returns a tuple aligned with ``ctrl`` (a single value for a single variable): entry
+*i* drives the next value (``init`` / ``update``) or the derivative (``delay``) of
+``ctrl[i]``.
 
-The **combination of overridden methods selects the module kind**, mirroring the base
-constructors: ``init``+``update`` is sequential, ``init``+``delay`` differential, all
-three hybrid, ``update`` alone jump, ``update``+``delay`` uninitialized, ``delay`` alone
-flow, ``init`` alone constant, and none hold. For example, an open hybrid clock:
+A method not overridden takes its default: ``init`` leaves the initial values arbitrary
+(havoc), ``update`` keeps the values (skip), and ``delay`` keeps them constant (zero).
+For example, an open hybrid clock:
 
     class Clock(Module):
         def init(self, t):        return 0
@@ -39,8 +41,9 @@ flow, ``init`` alone constant, and none hold. For example, an open hybrid clock:
 determines how the variables bind to the positional parameters of ``init`` / ``update``
 / ``delay`` and how the returned values align with ``ctrl``. ``hide`` is only tested
 for membership, so it can be any collection — preferably a ``set``. ``extl`` variables
-are external inputs: declared but not driven here, so a module with ``extl`` is open;
-``prvt`` hides the given variables in the built module (partially observable).
+are external inputs: declared but not driven here, so a module with ``extl`` is open (it
+awaits them all, even those its methods do not use); ``hide`` hides the given variables in
+the built module (partially observable).
 
 Config comes from **constructor kwargs** (``theory=``, ``ctrl=``, ``extl=``, ``hide=``).
 Two base-class constraints force this (both flagged for design review):
@@ -53,10 +56,11 @@ Two base-class constraints force this (both flagged for design review):
 
 import inspect
 
-from .reactor import Module as _Module, Term as _Term, X as base_X, d as base_d, Var
+from .reactor import Atom as _Atom, Module as _Module, Term as _Term, X as base_X, d as base_d, Var
 from .ops import op as _op
+from .blocks import boundary as _boundary, block as _block, havoc as _havoc, skip as _skip, zero as _zero
 
-from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
+from .expr import expr, cast, ite, relu, argmax, collecting, binding, Expr, X as expr_X, d as expr_d  # re-exported for authoring
 
 # Public authoring surface: `from reactor.sugar import Module, expr, X, d, ite, cast, ...`
 __all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var"]
@@ -77,67 +81,37 @@ def _id(theory, write, read) -> _Term:
     return _Term(_op(theory, "Id", write.dtype), [write], [read])
 
 
-def _build_init_block(cls, ctrl, extl, theory) -> list:
-    fn = getattr(cls, "init", None)
+def _build_block(cls, kind, ctrl, extl, theory):
+    """The block of the ``kind`` of the atom of the module, from the method of the same
+    name, or None if the class does not override it.
+
+    The method takes the next values of ``extl`` (``init``), or the latched values of
+    ``ctrl`` followed by ``extl`` (``update``, ``delay``), and returns the values of
+    ``ctrl`` the block gives: their next values, or their derivatives (``delay``)."""
+    fn = getattr(cls, kind, None)
     if fn is None:
         return None
     nparams = len(inspect.signature(fn).parameters)
 
-    # we assume all arguments are taken , otherwise it's too ambiguous
-    args = tuple(expr(v, theory=theory) for v in extl)
-    if nparams != len(args) + 1:
-        raise ValueError(f"init expects len(extl) == {len(args)} params, got {nparams - 1}")
+    inputs, outputs = _boundary(kind, ctrl=ctrl, wait=extl, read=ctrl + extl)
+    params = tuple(base_X(v) for v in extl) if kind == "init" else ctrl + extl
+    out = base_d if kind == "delay" else base_X
 
-    with collecting() as terms:
+    with collecting() as terms, binding({**inputs, **outputs}):
+        # we assume all arguments are taken, otherwise it's too ambiguous
+        args = tuple(expr(v, theory=theory) for v in params)
+        if nparams != len(args) + 1:
+            names = "len(extl)" if kind == "init" else "len(ctrl + extl)"
+            raise ValueError(f"{kind} expects {names} == {len(args)} params, got {nparams - 1}")
+
         vals = _as_tuple(fn(None, *args))
         if len(vals) != len(ctrl):
-            raise ValueError(f"init expects {len(ctrl)} return values, got {len(vals)}")
+            raise ValueError(f"{kind} expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_id(theory, base_X(var), e.wire))
-        return terms
+            terms.append(_id(theory, outputs[out(var)], e.wire))
 
-
-def _build_update_block(cls, ctrl, extl, theory) -> list:
-    fn = getattr(cls, "update", None)
-    if fn is None:
-        return None
-    nparams = len(inspect.signature(fn).parameters)
-
-    # we assume all arguments are taken, otherwise it's too ambiguous
-    args = tuple(expr(v, theory=theory) for v in ctrl + extl)
-    if nparams != len(args) + 1:
-        raise ValueError(f"update expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
-
-    with collecting() as terms:
-        vals = _as_tuple(fn(None, *args))
-        if len(vals) != len(ctrl):
-            raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
-        for var, val in zip(ctrl, vals):
-            e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_id(theory, base_X(var), e.wire))
-        return terms
-
-
-def _build_delay_block(cls, ctrl, extl, theory) -> list:
-    fn = getattr(cls, "delay", None)
-    if fn is None:
-        return None
-    nparams = len(inspect.signature(fn).parameters)
-
-    # we assume all arguments are taken, otherwise it's too ambiguous
-    args = tuple(expr(v, theory=theory) for v in ctrl + extl)
-    if nparams != len(args) + 1:
-        raise ValueError(f"delay expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
-
-    with collecting() as terms:
-        vals = _as_tuple(fn(None, *args))
-        if len(vals) != len(ctrl):
-            raise ValueError(f"delay expects {len(ctrl)} return values, got {len(vals)}")
-        for var, val in zip(ctrl, vals):
-            e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_id(theory, base_d(var), e.wire))
-        return terms
+    return _block(inputs, outputs, terms)
 
 
 def X(var):
@@ -166,12 +140,17 @@ class Module(_Module):
         ctrl = tuple(v for v in ctrl)
         extl = tuple(v for v in extl)
 
-        init = _build_init_block(cls, ctrl, extl, theory)
-        update = _build_update_block(cls, ctrl, extl, theory)
-        delay = _build_delay_block(cls, ctrl, extl, theory)
+        read = ctrl + extl
 
-        self = super().__new__(
-            cls, init=init, update=update, delay=delay, vars=ctrl + extl, hide=hide
-        )
+        def build(kind, default):
+            block = _build_block(cls, kind, ctrl, extl, theory)
+            return default() if block is None else block
+
+        init = build("init", lambda: _havoc(ctrl, extl))
+        update = build("update", lambda: _skip(ctrl, extl, read))
+        delay = build("delay", lambda: _zero(ctrl, extl, read))
+
+        atom = _Atom(ctrl, extl, read, init, update, delay)
+        self = super().__new__(cls, atom, hide=hide)
         self._theory = theory
         return self

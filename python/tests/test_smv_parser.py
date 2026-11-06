@@ -24,7 +24,7 @@ def test_counter_basic():
         assert v in name_map
         var = name_map[v]
         assert isinstance(var, Var)
-        assert isinstance(X(var), Wire)
+        assert X(var).dtype == var.dtype
         assert var != X(var)
 
     # IVAR names
@@ -60,7 +60,7 @@ def test_test_itypes():
 
     assert isinstance(module, Module)
     assert len(name_map) == 6  # i, j, a, i0, j0, a0
-    assert len(module.obs) == 5  # j0 is unused
+    assert len(module.obs) == 6  # the inputs are all external, j0 too, unused
 
 
 def test_hrm_word_level():

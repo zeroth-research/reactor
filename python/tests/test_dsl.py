@@ -1,7 +1,7 @@
 """Tests for `sugar.Module` — the subclass-a-Module DSL front-end.
 
-A `sugar.Module` subclass *is* a base Module: pass `theory` and the `ctrl`(/`extl`) wire
-pairs and override `init`/`update`, and the sequential module is built in the constructor.
+A `sugar.Module` subclass *is* a base Module: pass `theory` and the `ctrl`(/`extl`)
+variables and override `init`/`update`/`delay`, and the module is built in the constructor.
 These tests build small modules and step them through `reactor.eval` (mirroring test_eval),
 plus check the ctrl/extl partition and the config surface.
 """
@@ -10,31 +10,24 @@ import pytest
 
 from reactor import LIA, Module, Sort, Wire, sugar, Int, Var, Real, LRA, X as _X, d as _d, NonLinearError
 from reactor.sugar import ite, d, X
-from reactor.eval import eval_itype
+from reactor.eval import execute_init, execute_update
 
 INT = Int([1, 1])
 Real1 = Real([1, 1])
 
 
 def _pair():
-    """A fresh (latched, next) wire pair (test helper)."""
+    """A fresh variable (test helper)."""
     return Var(INT)
 
 
 # --- stepping helpers (same shape as test_eval) -----------------------------
 
 
-def _run_block(m, state, get_block):
-    for a in m.atoms:
-        for t in get_block(a):
-            read = [state[w] for w in t.read]
-            out_sort = t.write[0].dtype if len(t.write) else None
-            state.update(zip(t.write, eval_itype(t.itype, read, out_sort)))
-    return state
-
-
 def _init(m):
-    return _run_block(m, {}, lambda a: a.init)
+    state = {}
+    execute_init(state, m.atoms)
+    return state
 
 
 def _latch(m, state):
@@ -42,16 +35,17 @@ def _latch(m, state):
 
 
 def _update(m, state):
-    return _run_block(m, state, lambda a: a.update)
+    execute_update(state, m.atoms)
+    return state
 
 
-def _trace(m, steps, wire):
-    """Latched value of `wire` after init and after each of `steps` updates."""
+def _trace(m, steps, view):
+    """The value of `view` after init and after each of `steps` updates."""
     state = _init(m)
-    out = [state[wire].item()]
+    out = [state[view].item()]
     for _ in range(steps):
         state = _update(m, _latch(m, state))
-        out.append(state[wire].item())
+        out.append(state[view].item())
     return out
 
 
@@ -207,11 +201,12 @@ def test_differential_sugar_module():
     assert m.extl == [t]
 
     a = m.atoms[0]
-    # the delay drives d(x); the synthesised skip update drives X(x), and
-    # discards the next value of t, which only the delay awaits (as d(t))
-    assert _d(x) in a.delay.write()
-    assert _X(x) in a.update.write()
-    assert len(a.update) == 1 + 1
+    # the atom controls x and awaits t; the delay drives d(x), the default skip
+    # update keeps x, and discards the next value of t, which only the delay
+    # uses (as d(t))
+    assert a.ctrl == [x] and a.wait == [t] and a.read == [x, t]
+    assert [w.dtype for w in a.delay.write] == [_d(x).dtype]
+    assert len(a.update) == 1 + 2
 
 
 def test_hybrid_sugar_module():
@@ -238,12 +233,13 @@ def test_hybrid_sugar_module():
     assert m.extl == [t]
 
     a = m.atoms[0]
-    # every block is explicit and drives its wire of x
-    assert _X(x) in a.init.write()
-    assert _X(x) in a.update.write()
-    assert _d(x) in a.delay.write()
-    # the update reads the reset guard from the input's next value
-    assert _X(t) in a.update.read()
+    # every block is explicit and drives its value of x
+    assert [w.dtype for w in a.init.write] == [_X(x).dtype]
+    assert [w.dtype for w in a.update.write] == [_X(x).dtype]
+    assert [w.dtype for w in a.delay.write] == [_d(x).dtype]
+    # the update takes the latched x and t, and the next value of t (the
+    # reset guard)
+    assert len(a.update.read) == 3 and a.wait == [t]
 
 
 def test_invalid_nonlinear():
@@ -273,8 +269,9 @@ def test_useless_module():
 
     i = Var(Real1)
     m = Useless(ctrl=(), extl=(i,), theory=LRA)
-    assert m.closed()  # unused externals and no control -> closed module
-    assert len(m.extl) + len(m.intf) + len(m.prvt) == 0
+    # no control: the declared external is the only variable, awaited though unused
+    assert m.extl == [i]
+    assert len(m.intf) + len(m.prvt) == 0
 
 
 def test_private():

@@ -1,6 +1,7 @@
 import pytest
 import gymnasium as gym
-from reactor import Module, Wire, Term, Sort, LRA, Bool, Real, Int, BitVec, Var, X
+from reactor import Atom, Module, Wire, Term, Sort, LRA, Bool, Real, Int, BitVec, Var, X
+from reactor.blocks import boundary, block, zero
 from gymnasium import spaces
 
 
@@ -24,14 +25,23 @@ class SimpleEnv(gym.Env, Module):
         truncated = Var(Real([1, 1]))
         state = Var(Real([1, 1]))
 
-        result = (X(observation), X(reward), X(terminated), X(truncated))
-        reset = convert_method(cls.reset, read={}, write={"self.state": X(state)}, result=result)
-        step = convert_method(cls.step, read={"q_value": q_values, "self.state": state},
-                              write={"self.state": X(state)}, result=result)
+        # the env controls its outputs and its state, and reads the q-values and
+        # its state
+        ctrl = [observation, reward, terminated, truncated, state]
+        read = [q_values, state]
+        outputs = (observation, reward, terminated, truncated)
 
-        obs = [q_values, observation, reward, terminated, truncated]
-        prvt = [state]
-        return super().__new__(cls, init=reset, update=step, vars=obs + prvt, hide=prvt)
+        i, o = boundary("init", ctrl)
+        reset = block(i, o, convert_method(
+            cls.reset, read={}, write={"self.state": o[X(state)]},
+            result=[o[X(v)] for v in outputs]))
+        i, o = boundary("update", ctrl, read=read)
+        step = block(i, o, convert_method(
+            cls.step, read={"q_value": i[q_values], "self.state": i[state]},
+            write={"self.state": o[X(state)]}, result=[o[X(v)] for v in outputs]))
+
+        atom = Atom(ctrl, [], read, reset, step, zero(ctrl, read=read))
+        return super().__new__(cls, atom, hide=[state])
 
     def __init__(self):
         """Initialize simple chain environment"""

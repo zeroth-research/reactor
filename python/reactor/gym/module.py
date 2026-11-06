@@ -3,7 +3,7 @@ import torch
 import inspect
 import gymnasium as gym
 
-from ..reactor import Module, Wire, LIA, BV, X, Var
+from ..reactor import Atom, Module, Wire, LIA, BV, X, Var
 from ..sort import Sort, Bool, Real, Int, BitVec
 from ..builder import builder_for, _normalize_shape, _shape
 from ..analyzer import (
@@ -14,7 +14,8 @@ from ..analyzer import (
     resolve_wire,
     AbstractValue,
 )
-from ..eval import eval_itype, read_wire, getattr_wire
+from ..blocks import boundary, block, zero
+from ..eval import execute_block, read_wire, getattr_wire
 
 
 # ============================================================================
@@ -73,25 +74,13 @@ def _normalize_attrs(attrs, prvt_names):
 
 
 def _resolve_attr_wire(name, spec):
-    """Turn an `attrs` override (a Sort, or a (latched, next) wire pair) into a
-    validated [latched, next] wire pair."""
+    """Turn an `attrs` override (a Sort, or a variable) into a variable."""
     if isinstance(spec, Sort):
         return wire_pair(spec)
-    is_var = (
-        isinstance(spec, Var)
-        # and len(spec) == 2
-        # and all(isinstance(w, Wire) for w in spec)
-    )
-    if is_var:
-        if spec.dtype != X(spec).dtype:
-            raise ValueError(
-                f"attrs['{name}']: latched/next dtype mismatch "
-                f"({spec.dtype} vs {X(spec).dtype})"
-            )
+    if isinstance(spec, Var):
         return spec
     raise TypeError(
-        f"attrs['{name}'] must be a Sort or a (latched, next) wire pair, "
-        f"got {type(spec).__name__}"
+        f"attrs['{name}'] must be a Sort or a variable, got {type(spec).__name__}"
     )
 
 
@@ -205,26 +194,44 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
     terminated = resolve_wire("terminated", Bool([1, 1]), user_wires["terminated"])
     truncated = resolve_wire("truncated", Bool([1, 1]), user_wires["truncated"])
 
-    wires = {action_param: action, **prvt_wires, **const_wires}
+    # The interfaces of the env atom: it controls its outputs and its private
+    # state, and reads the action and its private state
+    ctrl = [observation, reward, terminated, truncated, *prvt_wires.values()]
+    read = [action, *prvt_wires.values()]
+
+    # reset reads no latched values; step reads the action and the private state.
+    # Both give the next values of the outputs and of the private state.
+    reset_in, reset_out = boundary("init", ctrl)
+    step_in, step_out = boundary("update", ctrl, read=read)
+
+    def next_wires(outputs):
+        return {name: outputs[X(var)] for name, var in prvt_wires.items()}
+
+    reset_wires = dict(const_wires)
+    step_wires = {
+        action_param: step_in[action],
+        **{name: step_in[var] for name, var in prvt_wires.items()},
+        **const_wires,
+    }
 
     # gym reset returns (obs, info) → 1 result wire; step returns 4
-    reset_result = [X(observation)]
-    step_result = [X(observation), X(reward), X(terminated), X(truncated)]
+    reset_result = [reset_out[X(observation)]]
+    step_result = [step_out[X(v)] for v in (observation, reward, terminated, truncated)]
 
     reset_terms = convert_method(
-        env_cls.reset, wires, reset_result, cls=env_cls,
-        theory=theory, static_attrs=static_attrs,
+        env_cls.reset, reset_wires, reset_result, cls=env_cls,
+        theory=theory, static_attrs=static_attrs, next_wires=next_wires(reset_out),
     )
     step_terms = convert_method(
-        env_cls.step, wires, step_result, cls=env_cls,
-        theory=theory, static_attrs=static_attrs,
+        env_cls.step, step_wires, step_result, cls=env_cls,
+        theory=theory, static_attrs=static_attrs, next_wires=next_wires(step_out),
     )
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [
-        _value_to_const_term(0.0, X(reward), _builder),
-        _value_to_const_term(False, X(terminated), _builder),
-        _value_to_const_term(False, X(truncated), _builder),
+        _value_to_const_term(0.0, reset_out[X(reward)], _builder),
+        _value_to_const_term(False, reset_out[X(terminated)], _builder),
+        _value_to_const_term(False, reset_out[X(truncated)], _builder),
     ]
 
     # Prepend constant terms so wires have values before they're read
@@ -234,9 +241,14 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
                      for n in const_wires
                  ] + step_terms
 
-    obs = [action, observation, reward, terminated, truncated]
+    atom = Atom(
+        ctrl, [], read,
+        block(reset_in, reset_out, reset_terms),
+        block(step_in, step_out, step_terms),
+        zero(ctrl, read=read),
+    )
 
-    # Build name → (latched, next) wire mapping
+    # Build name → variable mapping
     wire_names = {name: pair for name, pair in prvt_wires.items()}
     wire_names["action"] = action
     wire_names["observation"] = observation
@@ -245,9 +257,7 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
     wire_names["truncated"] = truncated
 
     return dict(
-        init=reset_terms,
-        update=step_terms,
-        vars=obs + list(prvt_wires.values()),
+        atom=atom,
         hide=list(prvt_wires.values()),
         _wire_names=wire_names,
     )
@@ -315,7 +325,7 @@ class Env(Module, gym.Wrapper):
             gym_env = raw_envs[0]
             extracted = _extract_env_module(gym_env, theory=theory, **kwargs)
             wire_names = extracted.pop("_wire_names", {})
-            env_module = Module.__new__(Module, **extracted)
+            env_module = Module.__new__(Module, extracted["atom"], hide=extracted["hide"])
             env_ctrl_ids = {w for w in env_module.atoms[0].ctrl}
             modules = [env_module] + modules
             backing_env = gym_env
@@ -440,17 +450,9 @@ class Env(Module, gym.Wrapper):
                 action_tensor = one_hot
         return action_tensor
 
-    def _run_block(self, atom, get_block):
+    def _run_block(self, atom, kind):
         """Interpret an atom's init/update block, writing results to state."""
-        for term in get_block(atom):
-            # a term that writes nothing (a discard of an unused input) has no effect
-            if not len(term.write):
-                continue
-            read = [self._state[w] for w in term.read]
-            out_sort = term.write[0].dtype if len(term.write) else None
-            results = eval_itype(term.itype, read, out_sort)
-            for w, val in zip(term.write, results):
-                self._state[w] = val
+        execute_block(self._state, atom, kind)
 
     def _latch(self):
         for ctrl in self.ctrl:
@@ -484,7 +486,7 @@ class Env(Module, gym.Wrapper):
                     self._state[X(p["truncated"])] = torch.tensor([0.0])
                 self._sync_private_state_from_env()
             else:
-                self._run_block(atom, lambda a: a.init)
+                self._run_block(atom, "init")
 
         self._latch()
         self._initialized = True
@@ -530,7 +532,7 @@ class Env(Module, gym.Wrapper):
                     )
                 self._sync_private_state_from_env()
             else:
-                self._run_block(atom, lambda a: a.update)
+                self._run_block(atom, "update")
 
         self._latch()
         obs = read_wire(self._state, p["observation"])

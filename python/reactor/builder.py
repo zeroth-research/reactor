@@ -9,7 +9,7 @@ helpers below).
 """
 
 import torch
-from .reactor import Wire, Term, LRA, LIA, BV, Var
+from .reactor import Wire, Term, LRA, LIA, BV
 from .sort import Sort, Bool, Real, Int, BitVec
 from .ops import op, linear, bv_const
 
@@ -19,8 +19,6 @@ def _wire(t) -> Wire:
         return t.write[0]
     elif isinstance(t, list):
         return t[0]
-    elif isinstance(t, Var):
-        return t
     elif isinstance(t, Wire):
         return t
     else:

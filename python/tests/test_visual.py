@@ -1,6 +1,6 @@
 from reactor import Int, LIA, Var, X
 from reactor.sugar import Module
-from reactor.visual.server import _serialize_module
+from reactor.visual.server import _serialize_module, _view_id
 
 
 class _Counter(Module):
@@ -21,4 +21,4 @@ def test_serialize_module_links_vars_to_term_wires():
     assert ctrl_ids <= {w for t in atom["update"] for w in t["writes"]}
     assert {c["id"] for c in atom["read"]} <= {r for t in atom["update"] for r in t["reads"]}
     assert out["extl"] == []
-    assert out["intf"] == [{"ltc": v.id, "nxt": X(v).id, "dtype": str(v.dtype)}]
+    assert out["intf"] == [{"ltc": _view_id(v), "nxt": _view_id(X(v)), "dtype": str(v.dtype)}]

@@ -12,21 +12,28 @@ are split by *operation family* (the sort picks the class):
 
 The zero derivatives (``Zero``, of Bool / Int / BitVec) are plain ``Expr``s with no operations.
 
-An ``Expr`` itself is a pure handle — it stores its wire, its theory, the ``next`` wire (for
-a variable), and, for a constant, its tensor ``value`` (needed by the ``mul``/``matmul``
-folds). It does **not** hold the term: terms are gathered as they are built. To collect the
-terms of a block, build the exprs inside a ``with collecting() as terms:`` context; ``terms``
-ends up holding every term in dependency order (and a shared sub-expression appears once,
-because a term is emitted exactly when it is created).
+An ``Expr`` itself is a pure handle — it stores its wire, its theory, the variable (for a
+variable's latched value), and, for a constant, its tensor ``value`` (needed by the
+``mul``/``matmul`` folds). It does **not** hold the term: terms are gathered as they are built.
+To collect the terms of a block, build the exprs inside a ``with collecting() as terms:``
+context; ``terms`` ends up holding every term in dependency order (and a shared sub-expression
+appears once, because a term is emitted exactly when it is created).
+
+Variables hold no wires: the block an expression is built for gives the values of the views
+of the variables on its boundary (see ``reactor.blocks``). Build the exprs of variables inside
+a ``with binding(wires):`` context, ``wires`` mapping the views of the boundary to its wires;
+``expr(v)`` takes the wire of the latched value of ``v``, and ``X(e)`` / ``d(e)`` the wires of
+the next value / derivative of the variable of ``e``.
 
 Construction and coercion go through ``expr()``:
 
-    expr((latched, next), theory=LRA)          # a state variable (nxt(v) gives its next)
+    expr(v, theory=LRA)                        # a variable's latched value (X(e) its next)
+    expr(X(v), theory=LRA)                     # a variable's next value
     expr(Wire(...), theory=LRA)                # a bare wire
     expr(True, theory=LRA)                     # a Bool constant
     expr(3, theory=LRA, sort=Real)             # a numeric constant (sort is REQUIRED)
     expr(5, theory=BV, sort=BitVec(32, [1, 1]), signed=True)
-    expr((latched, next), theory=LRA, tag="x")  # `tag` is a display label only, no meaning
+    expr(v, theory=LRA, tag="x")               # `tag` is a display label only, no meaning
 
 ``expr()`` is **not idempotent** — passing an existing ``Expr`` is an error. Operators coerce
 a *raw* operand through it (using the sibling's sort) but never convert between sorts: mixing
@@ -44,7 +51,7 @@ from typing import override
 
 import torch
 
-from .reactor import Term, Wire, LRA, LIA, BV, Var, X as _X, d as _d
+from .reactor import Term, Wire, LRA, LIA, BV, Var, View, X as _X, d as _d
 from .sort import Sort, Bool, Int, Real, BitVec, TReal, Zero, tensor_for
 from .builder import NonLinearError
 from .ops import op as _op, linear as _linear, bv_const as _bv_const
@@ -149,6 +156,50 @@ class collecting:
         _open_collectors.pop()
 
 
+# ---------------------------------------------------------------------------
+# Bindings: the views of the variables on the boundary of the block being built,
+# mapped to its wires, in the innermost active `binding()` context.
+# ---------------------------------------------------------------------------
+
+_open_bindings: list[dict] = []
+
+
+class binding:
+    """Context manager: gives the views of the variables (a variable for its latched
+    value, ``X(v)`` for its next value, ``d(v)`` for its derivative) the wires the
+    boundary of a block gives them.
+
+        inputs, outputs = blocks.boundary("update", ctrl=[x], read=[x])
+        with collecting() as terms, binding({**inputs, **outputs}):
+            e = expr(x, theory=LIA) + 1     # reads the wire of the latched x
+    """
+
+    def __init__(self, wires):
+        """``wires`` maps the views to the wires; any mapping, raising ``KeyError`` for
+        the views off the boundary."""
+        self._wires = wires
+
+    def __enter__(self) -> dict:
+        _open_bindings.append(self._wires)
+        return self._wires
+
+    def __exit__(self, *exc):
+        _open_bindings.pop()
+
+
+def _resolve(view) -> Wire:
+    """The wire the boundary of the block being built gives the view."""
+    if not _open_bindings:
+        raise RuntimeError(f"build the Expr of {view} inside a `with binding(...):` block")
+    wires = _open_bindings[-1]
+    try:
+        return wires[view]
+    except KeyError:
+        raise ValueError(
+            f"{view} is not on the boundary of the block (expected one of {list(wires)})"
+        ) from None
+
+
 def _emit(term: Term) -> Term:
     if not _open_collectors:
         raise RuntimeError("build Exprs inside a `with collecting():` block")
@@ -159,18 +210,18 @@ def _emit(term: Term) -> Term:
 # --- result-sort -> subclass (the ONE place mapping sort to class) ----------
 
 
-def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Expr":
+def _wrap(wire, theory, *, var=None, value=None, signed=False, tag=None) -> "Expr":
     match wire.dtype:
         case Bool(_):
-            return BExpr(wire, theory, next=next, value=value, tag=tag)
+            return BExpr(wire, theory, var=var, value=value, tag=tag)
         case Int(_) | Real(_):
-            return AExpr(wire, theory, next=next, value=value, tag=tag)
+            return AExpr(wire, theory, var=var, value=value, tag=tag)
         case BitVec(_, _):
-            return WExpr(wire, theory, next=next, value=value, signed=signed, tag=tag)
+            return WExpr(wire, theory, var=var, value=value, signed=signed, tag=tag)
         case TReal(_, _):
-            return AExpr(wire, theory, next=next, value=value, tag=tag)
+            return AExpr(wire, theory, var=var, value=value, tag=tag)
         case Zero(_):
-            return Expr(wire, theory, next=next, value=value, tag=tag)
+            return Expr(wire, theory, var=var, value=value, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
 
 
@@ -183,15 +234,10 @@ class Expr:
     """Shared plumbing; instances are one of AExpr / BExpr / WExpr (via ``expr()``), or ``Expr``
     itself for a zero derivative."""
 
-    def __init__(self, wire, theory, *, next=None, value=None, tag=None, var=None):
-        if next is not None and next.dtype != wire.dtype:
-            raise TypeError(
-                f"a variable's (latched, next) wires must have the same sort, "
-                f"got {wire.dtype} and {next.dtype}"
-            )
+    def __init__(self, wire, theory, *, value=None, tag=None, var=None):
         self._wire = wire
         self._theory = theory
-        self._next = next  # next wire, for a variable leaf (nxt(v))
+        self._var = var  # the variable, for its latched value (X(e), d(e))
         self._value = value  # tensor, for a constant leaf (mul/matmul folds)
         self._tag = tag  # optional human label; carries NO logical meaning
 
@@ -373,8 +419,8 @@ class BExpr(Expr):
 
 
 class WExpr(AExpr):
-    def __init__(self, wire, theory, *, next=None, value=None, signed=False, tag=None):
-        super().__init__(wire, theory, next=next, value=value, tag=tag)
+    def __init__(self, wire, theory, *, var=None, value=None, signed=False, tag=None):
+        super().__init__(wire, theory, var=var, value=value, tag=tag)
         self._signed = signed
 
     @property
@@ -427,10 +473,12 @@ def expr(value, *, theory=None, sort=None, signed=False, bw=None, tag=None) -> E
     elif theory is None:
         raise TypeError("expr() requires theory=")
 
-    if isinstance(value, Wire):  # single wire -> bare expr (no nxt)
+    if isinstance(value, Wire):  # single wire -> bare expr (no X/d)
         return _wrap(value, theory, signed=signed, tag=tag)
-    elif isinstance(value, Var):
-        return _wrap(value, theory, signed=signed, tag=tag)
+    elif isinstance(value, Var):  # a variable's latched value (X/d give its other views)
+        return _wrap(_resolve(value), theory, var=value, signed=signed, tag=tag)
+    elif isinstance(value, View):  # a variable's next value or derivative
+        return _wrap(_resolve(value), theory, signed=signed, tag=tag)
     elif isinstance(value, bool) and sort is None:
         return _const(value, theory, Bool, signed=signed, tag=tag)
     else:
@@ -574,21 +622,24 @@ def cast(e: Expr, sort) -> Expr:
 # ---------------------------------------------------------------------------
 
 
+def _variable(v, fn: str) -> Var:
+    if not isinstance(v, Expr):
+        raise TypeError(f"expr.{fn} expects an expression, got {v}")
+    if v._var is None:
+        raise TypeError(f"expr.{fn} expects the expression of a variable, got {v}")
+    return v._var
+
+
 def X(v: Expr) -> Expr:
-    """The `next` wire of a variable expr (as built from a wire pair)."""
-    # if v._next is None:
-    #     raise ValueError("nxt() expects a variable (built from a wire pair)")
-    if isinstance(v, Expr):
-        return _wrap(_X(v._wire), v._theory, signed=getattr(v, "_signed", False))
-    else:
-        raise ValueError(f"expr.X expects an expression, got {v}")
+    """The next value of the variable of the expr, from the block being built."""
+    var = _variable(v, "X")
+    return expr(_X(var), theory=v._theory, signed=getattr(v, "_signed", False))
 
 
 def d(v: Expr) -> Expr:
-    """The `derived` wire of a variable expr (as built from a wire pair)."""
-    # if v._next is None:
-    #     raise ValueError("nxt() expects a variable (built from a wire pair)")
-    return _wrap(_d(v._wire), v._theory, signed=getattr(v, "_signed", False))
+    """The derivative of the variable of the expr, from the block being built."""
+    var = _variable(v, "d")
+    return expr(_d(var), theory=v._theory, signed=getattr(v, "_signed", False))
 
 
 def ite(cond: Expr, iftrue, iffalse) -> Expr:

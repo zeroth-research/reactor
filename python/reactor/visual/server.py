@@ -17,23 +17,43 @@ import asyncio
 import websockets
 
 from ..reactor import Var, X
+from ..blocks import views
 
 
 _TEMPLATE_PATH = Path(__file__).parent / "template.html"
 
 
-def _serialize_terms(terms, atom_idx, phase, counter):
-    """Serialize a block of terms to JSON-compatible dicts."""
+# The ids of the views of the variables start here, above the ids of any wire.
+_VIEW_IDS = 1 << 40
+
+
+def _view_id(view) -> int:
+    """The id of the view of a variable: its latched value, or its next value. The
+    blocks of the atoms give the views wires of their own, which the visualizer
+    shows under the ids of the views, to link the atoms and the interfaces."""
+    if isinstance(view, Var):
+        return _VIEW_IDS + 2 * view.name
+    return _VIEW_IDS + 2 * view.var.name + 1
+
+
+def _serialize_terms(atom, kind, atom_idx, counter):
+    """Serialize a block of terms to JSON-compatible dicts: the wires of the boundary
+    under the ids of their views, the others under their own."""
+    block = getattr(atom, kind)
+    inputs, outputs = views(kind, atom.ctrl, atom.wait, atom.read)
+    ids = {w: _view_id(v) for w, v in zip(block.read, inputs)}
+    ids.update({w: _view_id(v) for w, v in zip(block.write, outputs)})
+
     result = []
-    for term in terms:
-        tid = f"a{atom_idx}_{phase}_{counter[0]}"
+    for term in block:
+        tid = f"a{atom_idx}_{kind}_{counter[0]}"
         counter[0] += 1
         writes = list(term.write)
         result.append({
             "id": tid,
             "label": str(term.itype),
-            "reads": [w.id for w in term.read],
-            "writes": [w.id for w in writes],
+            "reads": [ids.get(w, w.id) for w in term.read],
+            "writes": [ids.get(w, w.id) for w in writes],
             "dtype": str(writes[0].dtype) if writes else None,
         })
     return result
@@ -47,17 +67,17 @@ def _serialize_module(module):
     for atom_idx, atom in enumerate(module.atoms):
         atoms.append({
             "id": atom_idx,
-            # ctrl and wait circles must carry the next-wire ids, the ones the
+            # ctrl and wait circles carry the ids of the next values, the ones the
             # init/update terms actually write and await; reads are latched
-            "ctrl": [{"id": X(v).id, "dtype": str(v.dtype)} for v in atom.ctrl],
-            "wait": [{"id": X(v).id, "dtype": str(v.dtype)} for v in atom.wait],
-            "read": [{"id": v.id, "dtype": str(v.dtype)} for v in atom.read],
-            "init": _serialize_terms(atom.init, atom_idx, "init", counter),
-            "update": _serialize_terms(atom.update, atom_idx, "update", counter),
+            "ctrl": [{"id": _view_id(X(v)), "dtype": str(v.dtype)} for v in atom.ctrl],
+            "wait": [{"id": _view_id(X(v)), "dtype": str(v.dtype)} for v in atom.wait],
+            "read": [{"id": _view_id(v), "dtype": str(v.dtype)} for v in atom.read],
+            "init": _serialize_terms(atom, "init", atom_idx, counter),
+            "update": _serialize_terms(atom, "update", atom_idx, counter),
         })
 
     def wire_pairs(iface):
-        return [{"ltc": v.id, "nxt": X(v).id, "dtype": str(v.dtype)} for v in iface]
+        return [{"ltc": _view_id(v), "nxt": _view_id(X(v)), "dtype": str(v.dtype)} for v in iface]
 
     return {
         "atoms": atoms,
@@ -79,8 +99,8 @@ def show(module, names=None, poll=0.5, open_browser=True):
     Args:
         module: A reactor Module (or Env/torch.Module instance).
         names: Optional dict mapping Vars, Wires, or wire ids to display
-               names (str); a Var names its latched wire and, primed, its
-               next wire. If None, circles show no labels (topology only).
+               names (str); a Var names its latched value and, primed, its
+               next value. If None, circles show no labels (topology only).
         poll: Interval in seconds between state pushes.
         open_browser: Whether to open the browser automatically. Overridden
                by the REACTOR_NO_BROWSER environment variable (for headless
@@ -93,8 +113,8 @@ def show(module, names=None, poll=0.5, open_browser=True):
     if names:
         for k, v in names.items():
             if isinstance(k, Var):
-                wire_names[k.id] = str(v)
-                wire_names[X(k).id] = str(v) + "'"
+                wire_names[_view_id(k)] = str(v)
+                wire_names[_view_id(X(k))] = str(v) + "'"
             else:
                 wire_names[k.id if hasattr(k, 'id') else int(k)] = str(v)
     http_port = _find_free_port()

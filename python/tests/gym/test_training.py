@@ -71,10 +71,10 @@ def test_training_with_shared_wires():
     print(f'NN output wires: {wrapped_nn.obs[1]}')
 
     # Verify shared wires match
-    assert wrapped_env.obs[0].id == action.id
-    assert X(wrapped_env.obs[0]).id == X(action).id
-    assert wrapped_nn.obs[0].id == input_wire.id
-    assert X(wrapped_nn.obs[0]).id == X(input_wire).id
+    assert wrapped_env.obs[0] == action
+    assert X(wrapped_env.obs[0]) == X(action)
+    assert wrapped_nn.obs[0] == input_wire
+    assert X(wrapped_nn.obs[0]) == X(input_wire)
 
 
 if __name__ == "__main__":

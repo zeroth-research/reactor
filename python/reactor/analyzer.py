@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
-from .reactor import Wire, Term, Var, X
+from .reactor import Wire, Term, Var
 from .sort import Bool, Real, Int, BitVec
 from .builder import (
     TermBuilder,
@@ -1376,7 +1376,7 @@ class MethodVisitor(ast.NodeVisitor):
 
     def __init__(
             self,
-            wire_pairs: dict[str, tuple[Wire, Wire]],
+            wire_pairs: dict[str, Wire],
             result_wires: list[Wire],
             cls=None,
             layers: dict[str, int] | None = None,
@@ -1384,8 +1384,12 @@ class MethodVisitor(ast.NodeVisitor):
             live_layers: dict | None = None,
             builder: TermBuilder | None = None,
             static_attrs: dict[str, Any] | None = None,
+            next_wires: dict[str, Wire] | None = None,
     ):
+        # the wires the names read (the latched values of the variables), and
+        # the wires the state attributes write (their next values)
         self.wire_pairs = wire_pairs
+        self.next_wires = next_wires or {}
         self.result_wires = result_wires
         self.cls = cls
         self.layers = layers or {}
@@ -1481,8 +1485,8 @@ class MethodVisitor(ast.NodeVisitor):
                 # If this is a state wire and we're at top level, write the merged
                 # value to the output wire — replacing any earlier Id term, since
                 # this if-branch supersedes whatever was assigned before it.
-                if var in self.wire_pairs and len(self.scopes) == 0:
-                    output_wire = X(self.wire_pairs[var])
+                if var in self.next_wires and len(self.scopes) == 0:
+                    output_wire = self.next_wires[var]
                     if var in self.written_wires:
                         for i in range(len(self.terms) - 1, -1, -1):
                             t = self.terms[i]
@@ -1497,12 +1501,12 @@ class MethodVisitor(ast.NodeVisitor):
 
                 # Write only if top-level, not yet written, and newly assigned in this branch
                 if (
-                        var in self.wire_pairs
+                        var in self.next_wires
                         and len(self.scopes) == 0
                         and var not in parent_scope
                         and var not in self.written_wires
                 ):
-                    output_wire = X(self.wire_pairs[var])
+                    output_wire = self.next_wires[var]
                     term = self.builder.id_(if_wire, output_wire=output_wire)
                     self.terms.append(term)
                     self.written_wires.add(var)
@@ -1540,14 +1544,14 @@ class MethodVisitor(ast.NodeVisitor):
                     "Tuple unpacking supports tuple literals or untraced calls"
                 )
 
-        elif isinstance(target, ast.Attribute) and target.attr in self.wire_pairs:
+        elif isinstance(target, ast.Attribute) and target.attr in self.next_wires:
             wire_name = target.attr
-            target_dtype = X(self.wire_pairs[wire_name]).dtype
+            target_dtype = self.next_wires[wire_name].dtype
             result_val = self._convert_expr(node.value, target_dtype=target_dtype)
             self.temp_vars[wire_name] = result_val
 
             if len(self.scopes) == 0:
-                output_wire = X(self.wire_pairs[wire_name])
+                output_wire = self.next_wires[wire_name]
                 if wire_name in self.written_wires:
                     # Re-assignment: drop the previous Id term for this output wire
                     for i in range(len(self.terms) - 1, -1, -1):
@@ -1894,7 +1898,7 @@ class MethodVisitor(ast.NodeVisitor):
         return t
 
     def _should_escape_scope(self, k: str) -> bool:
-        return k in self.wire_pairs or k.startswith("_ret_")
+        return k in self.wire_pairs or k in self.next_wires or k.startswith("_ret_")
 
     def _convert_unaryop(self, unaryop, target_dtype=None):
         """Convert unary operation (not, -, +)
@@ -2143,7 +2147,7 @@ class MethodVisitor(ast.NodeVisitor):
 
 def convert_method(
         method,
-        wires: dict[str, Var],
+        wires: dict[str, Wire],
         result: list[Wire],
         cls=None,
         layers: dict[str, int] | None = None,
@@ -2152,20 +2156,26 @@ def convert_method(
         builder: TermBuilder | None = None,
         theory=None,
         static_attrs: dict[str, Any] | None = None,
+        next_wires: dict[str, Wire] | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
 
+    The method reads and writes the wires of the boundary of the block it becomes
+    (see ``reactor.blocks``): variables hold no wires of their own.
+
     Args:
         method: Unbound method to convert (e.g. cls.reset, cls.step, cls.forward)
-        wires: All named wire pairs available to the method - both method
+        wires: The wires the names available to the method read - both method
                parameters (by parameter name) and self.* attributes (by attr name)
-        result: Ordered list of next-wires matched positionally to the return tuple
+        result: Ordered list of output wires matched positionally to the return tuple
         cls: Class owning the method, needed only for inlining self.helper() calls
         params: Read-only parameter wires (single wires, not pairs) for self.* constants
         live_layers: Optional dict of {layer_name: nn.Linear} for live tensor references
         builder: Optional TermBuilder instance; if provided takes precedence over theory
         theory: IType.LRA (default), IType.LIA, or IType.BV — selects the term builder
                 (ignored if builder is provided)
+        next_wires: The wires the self.* state attributes write (by attr name): the
+               method assigning an attribute gives its next value
 
     Returns:
         List of Terms representing the method as a reactive diagram
@@ -2193,6 +2203,7 @@ def convert_method(
         live_layers=live_layers,
         builder=builder,
         static_attrs=static_attrs,
+        next_wires=next_wires,
     )
     visitor.temp_vars.update(
         {name: wires[name] for name in param_names if name in wires}

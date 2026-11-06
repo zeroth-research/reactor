@@ -10,19 +10,28 @@ import pytest
 from reactor import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, Var, X as _X
 from reactor.builder import NonLinearError
 from reactor.eval import eval_itype
-from reactor.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
+from reactor.expr import expr, cast, ite, collecting, binding, AExpr, BExpr, WExpr, X
 
 INT = Int([1, 1])
 REAL = Real([1, 1])
 BV32 = BitVec(32, [1, 1])
 
 
+class _FreshWires(dict):
+    """The wires of a block taking the views of any variables: a fresh wire per view."""
+
+    def __missing__(self, view):
+        self[view] = Wire(view.dtype)
+        return self[view]
+
+
 @pytest.fixture(autouse=True)
 def _collector():
-    # Building a Term requires an active collector; wrap every test in one. Tests that
-    # need the captured terms open their own nested `with collecting() as terms:`.
-    with collecting():
-        yield
+    # Building a Term requires an active collector, and the Expr of a variable a binding
+    # of its views to wires; wrap every test in both. Tests that need the captured terms
+    # open their own nested `with collecting() as terms:`.
+    with collecting(), binding(_FreshWires()) as wires:
+        yield wires
 
 
 # --- helpers ----------------------------------------------------------------
@@ -157,11 +166,20 @@ def test_explicit_sort_wins_for_bool_value():
 # --- variables & nxt --------------------------------------------------------
 
 
-def test_variable_reads_latched_and_nxt():
-    pair = _var(INT)
-    x = expr(pair, theory=LIA)
-    assert x.wire is pair
-    assert X(x).wire == _X(pair)
+def test_variable_reads_latched_and_nxt(_collector):
+    v = _var(INT)
+    x = expr(v, theory=LIA)
+    # the binding gives the latched and the next value of the variable their wires
+    assert x.wire == _collector[v]
+    assert X(x).wire == _collector[_X(v)]
+    assert X(x).wire != x.wire
+
+
+def test_variable_off_the_boundary_is_rejected():
+    v = _var(INT)
+    with binding({}):
+        with pytest.raises(ValueError, match="not on the boundary"):
+            expr(v, theory=LIA)
 
 
 def test_nxt_requires_a_variable():
@@ -359,7 +377,7 @@ def test_single_entry_point_spec():
     with pytest.raises(TypeError):
         expr((Wire(BOOL), Wire(BOOL)))
 
-    # wire pair -> state variable; bool literal and bare wire -> all BExpr (Bool sort)
+    # variable -> its latched value; bool literal and bare wire -> all BExpr (Bool sort)
     x = expr(Var(BOOL), theory=LRA)
     y = expr(True, theory=LRA)
     w = expr(Wire(BOOL), theory=LRA)
