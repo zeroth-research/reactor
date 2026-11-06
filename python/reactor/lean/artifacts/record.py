@@ -11,7 +11,7 @@ from __future__ import annotations
 def found(store, role: str, src: str, *, what: str) -> None:
     """`src`, the `role` this run found and proved, as SMT-LIB.
 
-    `proved` is the status that makes it resumable: `infer.FIXABLE`
+    `proved` is the status that makes it resumable: `verith.FIXABLE`
     is what a later `--infer ai-cegis` takes as given.
     """
     if store is None:

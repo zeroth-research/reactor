@@ -13,8 +13,9 @@ from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
 from ..core.errors import Refused
 from .. import inputs
-from ..infer import owned_files
 from ..project.build import LakeBuildError, build_certificate
+from ..project.lakefile import LakefileParts
+from ..project.names import CERT_LIB
 from ..project.scaffold import (
     ENCODINGS,
     Layout,
@@ -97,29 +98,50 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
 
 def generate(settings: Settings, module, ctx: LeanContext,
              lean_cert: "LeanCertificate | None",
-             source: "inputs.SourceText") -> Path:
-    """The Lean project, with the certificate as it stands before inference."""
+             source: "inputs.SourceText", *,
+             lakefile: "LakefileParts | None" = None) -> Path:
+    """The Lean project, with the certificate as it stands before inference.
+
+    `lakefile` is what an inference route adds to the lakefile (`certify`
+    passes its route's); the lakefile is written here, before a route runs.
+    """
     print(".. Generating lean code")
+    certificate = certificate_files(ctx, lean_cert)
     try:
         return create_project(
             output_dir=settings.output_dir,
             module=module,
             project_name=settings.project_name,
             executable=settings.executable,
-            certificate=certificate_files(ctx, lean_cert),
+            certificate=certificate,
             source=source,
-            lakefile=(
-                settings.route.lakefile(
-                    settings.route_config, settings.project_name)
-                if settings.route is not None and settings.route.lakefile
-                else None
-            ),
-            # `Certificate/` is globbed by the build, so a copy of a file a
-            # route writes, left by an earlier run in this `-o`, would be
-            # built against this run's module. Directories are left alone:
-            # nothing globs them until a route declares a lean_lib for them.
-            remove=owned_files(),
+            lakefile=lakefile,
+            remove=stale_certificate_files(
+                settings.output_dir / settings.project_name, certificate),
             ctx=ctx,
         )
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e
+
+
+def stale_certificate_files(project_dir: Path,
+                            certificate: "dict[str, str]") -> tuple[str, ...]:
+    """The files under `Certificate/` this run will not write.
+
+    `Certificate/` is globbed by the build, so a file an earlier run in this
+    `-o` left there -- an inference route's `Equivalence.lean`, say -- would
+    be built against this run's module. Which route wrote it is not the
+    point, and not something this package knows: anything there that is not
+    this run's certificate is a leftover. A route that writes there runs
+    after the project is generated, so its own files are written after
+    this. Directories beside `Certificate/` are left alone: nothing globs
+    them until a route declares a lean_lib for them.
+    """
+    root = project_dir / CERT_LIB
+    if not root.is_dir():
+        return ()
+    return tuple(sorted(
+        rel for rel in (p.relative_to(project_dir).as_posix()
+                        for p in root.rglob("*.lean"))
+        if rel not in certificate
+    ))

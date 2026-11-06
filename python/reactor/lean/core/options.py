@@ -1,6 +1,6 @@
 """A command-line option that belongs to one row of a registry -- an
-inference route (`infer`) or an input format (`inputs`) -- rather
-than to verith, and the three rules both registries' options follow. A
+inference route (`verith`) or an input format (`inputs`) -- rather
+than to the command, and the three rules both registries' options follow. A
 leaf module, so both registries can import it."""
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Opt:
-    """One command-line option that belongs to a row, not to verith.
+    """One command-line option that belongs to a row, not to the command.
 
     Given without its row selected it is an error rather than a no-op --
     which is what `--ic3ia`, `--fbk-simplify` and `--fbk-equiv` each said by

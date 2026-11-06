@@ -82,9 +82,9 @@ def test_a_candidate_accumulates_and_a_question_does_not(tmp_path):
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _verith(out: Path, *args) -> str:
+def _reactor(out: Path, *args) -> str:
     r = subprocess.run(
-        ["uv", "run", "verith", str(MODULE), "--buchi", "(= (X @intf.0) 0)",
+        ["uv", "run", "reactor", str(MODULE), "--buchi", "(= (X @intf.0) 0)",
          "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))", "--ranking", "(X @intf.0)",
          *args, "-o", str(out), "-p", "Rea"],
         cwd=PY_DIR, capture_output=True, text=True,
@@ -99,7 +99,7 @@ def test_an_obligation_answers_the_same_from_the_file_alone():
     a refuted obligation is then a file to bisect rather than a line to
     trust."""
     with tempfile.TemporaryDirectory() as tmp:
-        out = _verith(Path(tmp), "--pre-check", "cvc5")
+        out = _reactor(Path(tmp), "--pre-check", "cvc5")
         art = Path(tmp) / "Rea" / "artifacts"
 
         reported = {line.split()[0]: line.split()[1]
@@ -120,7 +120,7 @@ def test_the_system_is_the_whole_problem_and_it_parses():
     """One file with the transition and all three predicates over the same
     state, so the obligations beside it can be read against something."""
     with tempfile.TemporaryDirectory() as tmp:
-        _verith(Path(tmp), "--pre-check", "cvc5")
+        _reactor(Path(tmp), "--pre-check", "cvc5")
         text = (Path(tmp) / "Rea" / "artifacts" / "system.smt2").read_text()
 
         assert "(define-fun init0" in text and "(define-fun next0" in text
@@ -133,7 +133,7 @@ def test_the_predicates_are_kept_as_the_text_they_were_given_as():
     """`.smt` is one predicate and not a script -- what a flag was handed,
     before anything encoded it. The README says which is which."""
     with tempfile.TemporaryDirectory() as tmp:
-        _verith(Path(tmp))
+        _reactor(Path(tmp))
         art = Path(tmp) / "Rea" / "artifacts"
         assert (art / "property.smt").read_text().strip() == "(= s0 0)"
         assert (art / "ranking.smt").read_text().strip() == "s0"
@@ -146,7 +146,7 @@ def test_artifacts_ignore_still_records_this_run():
     silently stopped recording would make the directory untrustworthy as a
     record, which is the one thing it has to be."""
     with tempfile.TemporaryDirectory() as tmp:
-        _verith(Path(tmp), "--pre-check", "cvc5", "--artifacts", "ignore")
+        _reactor(Path(tmp), "--pre-check", "cvc5", "--artifacts", "ignore")
         art = Path(tmp) / "Rea" / "artifacts"
         assert (art / "system.smt2").is_file()
         assert (art / "obligation-step_inv.smt2").is_file()
@@ -197,7 +197,7 @@ def test_the_precheck_verdict_lands_on_the_obligation_it_answers():
     counterexample -- not only which ones this run thought to ask."""
     with tempfile.TemporaryDirectory() as tmp:
         # `--ranking 0` last wins, and a constant rank cannot decrease.
-        _verith(Path(tmp), "--pre-check", "cvc5", "--ranking", "0")
+        _reactor(Path(tmp), "--pre-check", "cvc5", "--ranking", "0")
         got = _obligations(Path(tmp) / "Rea" / "artifacts")
 
         assert got["init_inv"][0] == "proved"
@@ -213,7 +213,7 @@ def test_a_refuted_obligation_says_so_in_the_readme_as_an_answer():
     obligation is a question, so its `why` is what came back -- not the
     "rather than in the certificate" a rejected candidate's would be."""
     with tempfile.TemporaryDirectory() as tmp:
-        _verith(Path(tmp), "--pre-check", "cvc5", "--ranking", "0")
+        _reactor(Path(tmp), "--pre-check", "cvc5", "--ranking", "0")
         readme = (Path(tmp) / "Rea" / "artifacts" / "README.md").read_text()
 
         assert "What the solver answered:" in readme

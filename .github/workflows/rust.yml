@@ -101,6 +101,8 @@ jobs:
       # via `lake` (see `just test-lean`); CI intentionally does not run those.
       - name: Run Python tests (builds the extension via maturin)
         run: just py-test
+      - name: Run verith tests
+        run: just vr-test
 
   nb-strip:
     runs-on: ubuntu-latest

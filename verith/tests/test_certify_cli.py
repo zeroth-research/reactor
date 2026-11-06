@@ -1,0 +1,837 @@
+"""Tests for the `certify` CLI: `reactor`'s flags and `--infer`.
+
+`certify` is the command `verith` was before the inference routes moved to
+their own project, so these are that command's tests, run against it."""
+
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
+import pytest
+
+# The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
+PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
+FIXTURE_DIR = PYTHON_TESTS / "fixtures"
+# Where `uv run certify` finds the command.
+VERITH_ROOT = Path(__file__).resolve().parents[1]
+
+
+def run_certify(*args) -> subprocess.CompletedProcess:
+    """`uv run certify *args` from the verith project, its output captured."""
+    return subprocess.run(
+        ["uv", "run", "certify", *args],
+        capture_output=True,
+        text=True,
+        cwd=VERITH_ROOT,
+    )
+
+COUNTER_MODULE = FIXTURE_DIR / "counter.py"
+
+
+def _ollama_available() -> bool:
+    try:
+        r = subprocess.run(["ollama", "list"], capture_output=True, timeout=5)
+        return r.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+    try:
+        import openai
+    except ImportError:
+        return False
+
+
+# ── Basic invocation ────────────────────────────────────────────────────────
+
+
+def test_certify_no_property():
+    """Without a property the certificate uses sorry placeholders."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(str(COUNTER_MODULE), "-o", tmpdir, "-p", "CounterBasic")
+        assert r.returncode == 0, r.stderr
+        assert "Inferring" not in r.stdout, "no route was asked for"
+        assert (Path(tmpdir) / "CounterBasic").exists()
+        data = (
+            Path(tmpdir) / "CounterBasic" / "Certificate" / "Data.lean"
+        ).read_text()
+        assert "sorry" in data
+
+
+def test_the_flags_the_cli_offers_are_flags_it_reads():
+    """`-n/--module-name` was parsed, defaulted, and never read: the module
+    file is named after the project. A budget that cannot bound anything and
+    a project name that cannot be a Lean module name are rejected where they
+    are given, not four steps later in generated code."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(str(COUNTER_MODULE), "-n", "Foo", "-o", tmpdir)
+        assert r.returncode != 0 and "unrecognized arguments" in r.stderr
+
+        for flag in ("--smt-timeout", "--smt-budget"):
+            for value in ("0", "-5"):
+                r = run_certify(str(COUNTER_MODULE), flag, value, "-o", tmpdir)
+                assert r.returncode != 0, f"{flag} {value} was accepted"
+                assert "must be a positive number" in r.stderr, r.stderr
+
+        # `-p` only has to be a Lean identifier where a module name is made
+        # of it, which is the proveit route -- elsewhere it names a package
+        # directory and lake takes what it is given.
+        r = run_certify(str(COUNTER_MODULE), "-p", "my-proj", "-o", tmpdir)
+        assert r.returncode == 0, r.stderr
+
+
+def test_a_predicate_of_the_wrong_sort_is_refused():
+    """The fields are declared: a property, an invariant and a precondition
+    become the body of a `Prop`, a ranking function the body of a `Nat`. An
+    Int property printed as a `Prop` and a Bool ranking printed as
+    `((… = 0) : Int).toNat` are both only Lean's problem otherwise, and
+    `--fbk-proveit` has always checked its own."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        refused = [
+            ("--safety", "(X @intf.0)"),                              # Int as a Prop
+            ("--pre", "(+ 1 1)"),                            # Int as a Prop
+            ("--buchi", "(= (X @intf.0) 0)", "--ranking", "(= (X @intf.0) 0)"),  # Bool as a Nat
+        ]
+        for args in refused:
+            r = run_certify(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Sorts")
+            assert r.returncode != 0, f"{args} was accepted"
+            assert "must have sort" in r.stderr, r.stderr
+
+        # and the shapes that are right still pass
+        r = run_certify(
+            str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)", "--ranking", "(X @intf.0)",
+            "-o", tmpdir, "-p", "Sorts",
+        )
+        assert r.returncode == 0, r.stderr
+
+
+def test_a_predicate_cvc5_cannot_read_is_refused_not_pasted():
+    """The fields become the bodies of `def P`, `def inv`, `def ranking`.
+    A source that does not parse used to be interpolated into them verbatim
+    -- `def P : … → Prop := (= s0` -- and the run still said `Project ready`,
+    leaving a Lean parse error in generated code as the first sign."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cases = [
+            (("--safety", "(= (X @intf.0)"), "--safety"),          # unbalanced
+            (("--safety", "(= (X @intf.9) 0)"), "--safety"),       # no such state var
+            (("--buchi", "(and (X @intf.0)"), "--buchi"),
+            (("--safety", "true", "--invariant", "(bogus (X @intf.0))"), "--invariant"),
+        ]
+        for args, flag in cases:
+            r = run_certify(str(COUNTER_MODULE), *args, "-o", tmpdir, "-p", "Unparsed")
+            assert r.returncode != 0, f"{args} was accepted"
+            assert "Traceback" not in r.stderr, r.stderr
+            assert flag in r.stderr, f"{args} did not name the flag:\n{r.stderr}"
+            data = Path(tmpdir) / "Unparsed" / "Certificate" / "Data.lean"
+            if data.exists():
+                assert args[1] not in data.read_text(), "the SMT source was pasted"
+
+
+def test_a_refusal_is_an_error_line_not_a_traceback():
+    """Every one of these is a decision the generator makes about its input,
+    and each already carries a message saying why. A traceback buries that
+    message under frames the user cannot act on."""
+    real_module = FIXTURE_DIR / "simple_env.py"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cases = [
+            # `Real` is noncomputable in Lean, so `-x` cannot print it
+            (str(real_module), "-x"),
+            # a path that is not there
+            ("/nonexistent/module.py",),
+            # a `-d` the file does not define
+            (str(COUNTER_MODULE), "-d", "no_such_function"),
+            # a state variable in a precondition, which reads inputs
+            (str(COUNTER_MODULE), "--pre", "(= (X @intf.0) 0)"),
+        ]
+        for case in cases:
+            r = run_certify(*case, "-o", tmpdir, "-p", "Refused")
+            assert r.returncode != 0, f"{case} was accepted"
+            assert "Traceback" not in r.stderr, f"{case} crashed:\n{r.stderr}"
+            assert "error:" in r.stderr, f"{case} said nothing:\n{r.stderr}"
+
+
+def test_a_fault_in_the_module_file_keeps_its_traceback():
+    """What the user's `module()` raises is not a refusal by the loader, and
+    one `error:` line would read like "must define `module`"."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        broken = Path(tmpdir) / "broken.py"
+        for body, raised in (("return None.state", "AttributeError"),
+                             ("open('/nonexistent/weights')", "FileNotFoundError")):
+            broken.write_text(f"def module():\n    {body}\n")
+            r = run_certify(str(broken), "-o", tmpdir, "-p", "Broken")
+            assert r.returncode != 0
+            assert "Traceback" in r.stderr and raised in r.stderr, r.stderr
+
+
+# `update` reads an `Uninterpreted` wire, which no Lean column can write.
+_NO_LEAN_FORM_MODULE = """\
+import torch
+from reactor import Int, LIA, Module, Term, Var, Wire, X
+
+def module():
+    x = Var(Int([1, 1]))
+    y = Wire(Int([1, 1]))
+    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
+    update = [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])]
+    return Module.sequential([x], init, update)
+"""
+
+
+def test_a_module_with_no_lean_form_is_refused_without_naming_infer(tmp_path):
+    """The refusal is about the module. A run that gave no `--infer` must
+    not be told about one."""
+    path = tmp_path / "uninterp.py"
+    path.write_text(_NO_LEAN_FORM_MODULE)
+    r = run_certify(str(path), "-o", str(tmp_path), "-p", "P")
+    assert r.returncode != 0
+    assert "error: this module has no Lean form" in r.stderr, r.stderr
+    assert "--infer" not in r.stderr, r.stderr
+
+
+def test_a_refusal_names_only_the_flag_that_was_given():
+    from types import SimpleNamespace
+
+    from verith.run import refused
+    from reactor.lean.core.errors import Refused
+
+    def said(route) -> str:
+        return refused(route, Refused("why")).code
+
+    assert said(None) == "error: why"
+    assert said(SimpleNamespace(errors_self_named=False)) == "error: --infer: why"
+    assert said(SimpleNamespace(errors_self_named=True)) == "error: why"
+
+
+def test_a_stale_bridge_is_not_left_for_lake_to_build():
+    """`Certificate/` is globbed by the lakefile, so every file in it is
+    built. Only `--fbk-proveit` writes `Equivalence.lean`, and it is about
+    the module of the run that wrote it -- a copy left in an `-o` reused by
+    another module would be built against the wrong `System/`."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cert_dir = Path(tmpdir) / "Stale" / "Certificate"
+        cert_dir.mkdir(parents=True)
+        (cert_dir / "Equivalence.lean").write_text("import NoSuchModule\n")
+
+        r = run_certify(str(COUNTER_MODULE), "-o", tmpdir, "-p", "Stale")
+        assert r.returncode == 0, r.stderr
+        assert not (cert_dir / "Equivalence.lean").exists()
+        assert (cert_dir / "Certificate.lean").exists()
+
+
+def test_certify_with_property():
+    """A property without --infer writes prp as sorry (string not compiled to Terms)."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTER_MODULE), "--buchi", "X(@intf.0) == 0", "-o", tmpdir, "-p", "CounterProp"
+        )
+        assert r.returncode == 0, r.stderr
+        assert (Path(tmpdir) / "CounterProp").exists()
+
+
+def test_certify_infer_requires_property():
+    """--infer without --safety or --buchi exits with a non-zero status."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(str(COUNTER_MODULE), "--infer", "-o", tmpdir)
+        assert r.returncode != 0
+
+
+def test_certify_infer_rejects_cert_file():
+    """The standalone certificate is written before inference could reach it."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTER_MODULE),
+            "--buchi",
+            "(= (X @intf.0) 0)",
+            "--infer",
+            "--cert-file",
+            str(Path(tmpdir) / "Cert.lean"),
+            "-o",
+            tmpdir,
+        )
+        assert r.returncode != 0
+        assert "--cert-file" in r.stderr
+
+
+# ── the pre-check and inference, in that order ──────────────────────────────
+
+
+# `--infer ai-cegis` with both predicates fixed makes no LLM call: the CEGIS
+# loop just verifies them once. That is the whole inference path, offline.
+CEGIS_FIXED = (
+    "--buchi", "(= (X @intf.0) 0)",
+    "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+    "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
+    "--infer", "ai-cegis",
+)
+
+
+def test_pre_check_checks_the_inferred_certificate():
+    """`--pre-check` has to wait for `--infer`, or it checks nothing."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTER_MODULE), *CEGIS_FIXED, "--pre-check", "cvc5",
+            "-o", tmpdir, "-p", "CounterPreCheck",
+        )
+        assert r.returncode == 0, r.stderr
+        out = r.stdout
+        assert "init_inv" in out and "step_inv" in out and "hrank" in out
+        assert "nothing to check" not in out
+        # After inference, not before: the certificate it reports on is the
+        # one the project was written with.
+        assert out.index(".. Inferring the certificate") < out.index("SMT pre-check")
+
+
+def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
+    """A route infers the invariant and the ranking function, never the
+    property: that is the question it was asked."""
+    from reactor.lean.pipeline import certificate as certify
+    from reactor.lean.artifacts import ArtifactStore
+    from reactor.lean.core.certificate import Certificate, Claim
+
+    def recorded(store) -> dict[str, str]:
+        return {a.role: a.what for a in store.list() if a.indexed}
+
+    # As `main` does it: once before the route, once after.
+    store = ArtifactStore(dir=tmp_path / "run", kind="buchi", prp="(= s0 0)")
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    certify.record_predicates(store, claim, Certificate())
+    cert = Certificate("(>= s0 0)", "s0")
+    certify.record_predicates(store, claim, cert, inferred=True)
+    what = recorded(store)
+    assert set(what) == {"property", "inv", "ranking"}
+    assert "Inferred" not in what["property"]
+    assert "Inferred" in what["inv"] and "Inferred" in what["ranking"]
+
+    # And without the first record to fall back on.
+    fresh = ArtifactStore(dir=tmp_path / "fresh", kind="buchi", prp="(= s0 0)")
+    certify.record_predicates(fresh, claim, cert, inferred=True)
+    what = recorded(fresh)
+    assert "Inferred" not in what["property"]
+    assert "Inferred" in what["inv"] and "Inferred" in what["ranking"]
+
+
+# ── safety and Buchi are different certificates ─────────────────────────────
+
+
+def _cert(tmpdir, name) -> tuple[str, str]:
+    """(Data.lean, Certificate.lean) of a generated project."""
+    root = Path(tmpdir) / name
+    return (
+        (root / "Certificate" / "Data.lean").read_text(),
+        (root / "Certificate" / "Certificate.lean").read_text(),
+    )
+
+
+def test_buchi_generates_a_ranking_certificate():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)",
+            "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+            "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
+            "-o", tmpdir, "-p", "CounterBuchi",
+        )
+        assert r.returncode == 0, r.stderr
+        data, cert = _cert(tmpdir, "CounterBuchi")
+        assert "def ranking" in data
+        assert "rule_buchi" in cert and "theorem hrank" in cert
+
+
+def test_safety_generates_a_rule_globally_certificate():
+    """`G P` is proved by an invariant that implies `P`. No ranking function
+    is defined, stated or mentioned -- `rule_globally` has nowhere to put
+    one, and a `def ranking := sorry` would be a `sorry` in a file whose
+    point is that it has none."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)",
+            "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+            "-o", tmpdir, "-p", "CounterSafety",
+        )
+        assert r.returncode == 0, r.stderr
+        data, cert = _cert(tmpdir, "CounterSafety")
+        assert "ranking" not in data and "ranking" not in cert
+        assert "rule_globally" in cert and "def safety" in cert
+        assert "theorem inv_imp_P" in cert
+        assert "rule_buchi" not in cert
+
+
+def test_safety_and_buchi_are_mutually_exclusive(tmp_path):
+    r = run_certify(
+        str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)", "--buchi", "(= (X @intf.0) 0)",
+        "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert "mutually exclusive" in r.stderr
+
+
+def test_safety_rejects_a_ranking(tmp_path):
+    """Taking a ranking function and dropping it would look like it was used."""
+    r = run_certify(
+        str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)", "--ranking", "(X @intf.0)",
+        "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert "--ranking is meaningless with --safety" in r.stderr
+
+
+def test_safety_rejects_the_unchecked_inference_route(tmp_path):
+    """`--infer ai` infers a ranking function and checks nothing with cvc5."""
+    r = run_certify(
+        str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)", "--infer", "ai",
+        "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert "--safety needs --infer ai-cegis" in r.stderr
+
+
+# ── the learning route ──────────────────────────────────────────────────────
+
+COUNTDOWN_MODULE = FIXTURE_DIR / "svcomp_countdown.py"
+
+_OBLIGATIONS = ("init_inv", "step_inv", "hrank", "inv_imp_P")
+
+
+def _pre_check(stdout: str) -> dict:
+    """The `--pre-check` verdict per obligation, read off its report."""
+    out = {}
+    for line in stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] in _OBLIGATIONS:
+            out[parts[0]] = parts[1]
+    return out
+
+
+def test_learn_infers_a_buchi_certificate_and_it_pre_checks():
+    """`--infer nuterm` needs no key and no LLM: it trains a ranking function,
+    certifies it, and the certificate it writes is one cvc5 then confirms."""
+    pytest.importorskip("cvc5")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTDOWN_MODULE), "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
+            "--pre-check", "cvc5", "-o", tmpdir, "-p", "CountdownLearn",
+        )
+        assert r.returncode == 0, r.stderr
+        assert "-- certified" in r.stdout, r.stdout
+        data, _ = _cert(tmpdir, "CountdownLearn")
+        assert "sorry" not in data
+        assert _pre_check(r.stdout) == {
+            "init_inv": "holds", "step_inv": "holds", "hrank": "holds"
+        }, r.stdout
+
+
+def test_learn_serves_safety_as_well():
+    """`rule_globally` takes an invariant alone, and the route infers one --
+    which is what makes it an alternative to --fbk-proveit and not only to
+    --infer ai-cegis."""
+    pytest.importorskip("cvc5")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTDOWN_MODULE), "--safety", "(<= (X @intf.0) 100)", "--infer", "nuterm",
+            "--pre-check", "cvc5", "-o", tmpdir, "-p", "BoundedLearn",
+        )
+        assert r.returncode == 0, r.stderr
+        assert "[nuterm] safety invariant certified" in r.stdout
+        assert _pre_check(r.stdout) == {
+            "init_inv": "holds", "step_inv": "holds", "inv_imp_P": "holds"
+        }, r.stdout
+
+
+BOUNDED_INPUT_MODULE = FIXTURE_DIR / "svcomp_bounded_input.py"
+
+
+def test_learn_takes_the_precondition_as_its_entry_assumption(tmp_path):
+    """`0 <= x` is inductive from the states `0 <= n` admits and from no
+    larger set, so this run is the flag doing the work -- and `--pre-check`
+    grants the same assumption the search made, which is what makes the
+    certificate one certify's own obligations accept."""
+    r = run_certify(
+        str(BOUNDED_INPUT_MODULE), "--safety", "(>= (X @intf.0) 0)", "--infer", "nuterm",
+        "--pre", "(>= (X @extl.0) 0)", "--pre-check", "cvc5", "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode == 0, r.stderr
+    assert "[nuterm] --pre at entry: e0=s0" in r.stdout, r.stdout
+    assert _pre_check(r.stdout) == {
+        "init_inv": "holds", "step_inv": "holds", "inv_imp_P": "holds"
+    }, r.stdout
+
+
+def test_without_the_precondition_the_same_run_finds_nothing(tmp_path):
+    """The control for the test above: not a module the route cannot read,
+    and not a false property -- a question that is only answerable from the
+    states the precondition admits."""
+    r = run_certify(
+        str(BOUNDED_INPUT_MODULE), "--safety", "(>= (X @intf.0) 0)", "--infer", "nuterm",
+        "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert "no inductive invariant" in r.stderr, r.stderr
+
+
+@pytest.mark.parametrize("extra, expected", [
+    (["--invariant", "(<= (X @intf.0) 100)"], "--invariant"),
+    (["--ranking", "(X @intf.0)"], "--ranking"),
+    (["--model", "claude-sonnet-4-6-x"], "--model and --base-url"),
+    (["--base-url", "http://localhost:11434/v1"], "--model and --base-url"),
+])
+def test_learn_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
+    """The learner computes the whole certificate, so a predicate passed
+    alongside would be dropped -- and an LLM flag names a model it never
+    calls. `--pre` is not one of these: it is an assumption rather than a
+    candidate, and the two tests above are it being used."""
+    r = run_certify(
+        str(COUNTDOWN_MODULE), "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
+        *extra, "-o", str(tmp_path), "-p", "P",
+    )
+    assert r.returncode != 0
+    assert expected in r.stderr, r.stderr
+
+
+def test_learn_is_an_answer_to_safety_where_the_ai_route_is_not():
+    """The message that turns --safety away from `--infer ai` names both routes
+    that can serve it."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTDOWN_MODULE), "--safety", "(<= (X @intf.0) 100)", "--infer", "ai",
+            "-o", tmpdir, "-p", "P",
+        )
+        assert r.returncode != 0
+        assert "--infer ai-cegis or --infer nuterm" in r.stderr
+
+
+def test_cegis_infers_a_safety_certificate():
+    """The CEGIS loop with the invariant fixed makes no LLM call: it states
+    the safety obligations (init, inductive, `inv -> P`) and verifies them,
+    which is the whole route minus the prompting."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTER_MODULE), "--safety", "(<= (X @intf.0) 9)",
+            "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+            "--infer", "ai-cegis", "--pre-check", "cvc5",
+            "-o", tmpdir, "-p", "CounterSafetyInfer",
+        )
+        assert r.returncode == 0, r.stderr
+        assert "all obligations UNSAT" in r.stdout
+        # The pre-check states the safety obligation, not `hrank`.
+        assert "inv_imp_P" in r.stdout and "hrank" not in r.stdout
+        data, cert = _cert(tmpdir, "CounterSafetyInfer")
+        assert "ranking" not in data and "rule_globally" in cert
+
+
+# ── AI inference ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="ANTHROPIC_API_KEY not set",
+)
+def test_certify_infer_claude():
+    """--infer with Claude API produces a certificate with inv, P, and ranking."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTER_MODULE),
+            "--buchi",
+            "X(@intf.0) == 0",
+            "--infer",
+            "-o",
+            tmpdir,
+            "-p",
+            "CounterInferClaude",
+        )
+        assert r.returncode == 0, r.stderr
+        cert = (
+            Path(tmpdir) / "CounterInferClaude" / "Certificate" / "Certificate.lean"
+        ).read_text()
+        assert "def inv" in cert
+        assert "def P" in cert
+        assert "def ranking" in cert
+        assert "sorry" not in cert.split("hrank")[1]  # hrank proof may still have sorry
+
+
+@pytest.mark.skipif(
+    not _ollama_available(), reason="Ollama or openai package not available"
+)
+def test_certify_infer_ollama():
+    """--infer with local Ollama LLM produces a certificate with inv, P, and ranking."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = run_certify(
+            str(COUNTER_MODULE),
+            "--buchi",
+            "X(@intf.0) == 0",
+            "--infer",
+            "--model",
+            "qwen3-coder",
+            "--base-url",
+            "http://localhost:11434/v1",
+            "-o",
+            tmpdir,
+            "-p",
+            "CounterInferOllama",
+        )
+        assert r.returncode == 0, r.stderr
+        cert = (
+            Path(tmpdir) / "CounterInferOllama" / "Certificate" / "Certificate.lean"
+        ).read_text()
+        assert "def inv" in cert
+        assert "def P" in cert
+        assert "def ranking" in cert
+
+
+# ── --build-cert ────────────────────────────────────────────────────────────
+
+
+def test_build_cert_needs_a_certificate_to_build(tmp_path):
+    """A bare project's `ranking` is `sorry`, and no tactic closes an
+    obligation stated over it, so asking for the build is a mistake."""
+    r = run_certify(
+        str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)",
+        "-o", str(tmp_path), "-p", "P", "--build-cert",
+    )
+    assert r.returncode != 0
+    assert "--build-cert needs a certificate to build" in r.stderr
+    # An invariant without a ranking is still a `sorry`, so it is not enough.
+    r = run_certify(
+        str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)", "--invariant", "(<= (X @intf.0) 100)",
+        "-o", str(tmp_path), "-p", "P", "--build-cert",
+    )
+    assert r.returncode != 0
+    assert "--build-cert needs a certificate to build" in r.stderr
+
+
+def _fake_ltl_checkout(root: Path) -> Path:
+    """The four files `resolve_project` looks for, and nothing else."""
+    (root / "LTLCertifying").mkdir(parents=True)
+    (root / "LTLCertifying" / "lean2vmt.lean").write_text("")
+    for name in ("proveit.py", "vmt2lean.py", "lakefile.toml"):
+        (root / name).write_text("")
+    return root
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        ["--buchi", "(= (X @intf.0) 0)", "--invariant", "(<= (X @intf.0) 100)", "--ranking", "(X @intf.0)"],
+        # A safety certificate is complete without a ranking function.
+        ["--safety", "(<= (X @intf.0) 100)", "--invariant", "(<= (X @intf.0) 100)"],
+        ["--buchi", "(= (X @intf.0) 0)", "--infer"],
+        ["--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm"],
+        ["--safety", "(= (X @intf.0) 0)", "--fbk-proveit", "<checkout>"],
+    ],
+)
+def test_build_cert_is_accepted_by_every_route_that_fills_the_certificate(
+    route, tmp_path
+):
+    """Every way a certificate acquires predicates passes the gate.
+
+    The module file does not exist, so each run stops at loading it -- after
+    the gate and before any project, LLM or lake. What this pins is that the
+    failure is never the gate.
+    """
+    route = [
+        str(_fake_ltl_checkout(tmp_path / "ltl")) if a == "<checkout>" else a
+        for a in route
+    ]
+    r = run_certify(
+        str(tmp_path / "no-such-module.py"),
+        "-o", str(tmp_path), "-p", "P", "--build-cert", *route,
+    )
+    assert r.returncode != 0
+    assert "--build-cert" not in r.stderr
+
+
+def test_build_cert_rejects_the_routes_that_generate_no_project(tmp_path):
+    for flag, value in (
+        ("--cert-file", str(tmp_path / "C.lean")),
+        ("--hammer-file", str(tmp_path / "H.lean")),
+    ):
+        r = run_certify(
+            str(COUNTER_MODULE), "--buchi", "(= (X @intf.0) 0)", "--invariant", "(<= (X @intf.0) 100)",
+            "--ranking", "(X @intf.0)", "-o", str(tmp_path), "-p", "P",
+            "--build-cert", flag, value,
+        )
+        assert r.returncode != 0
+        assert f"--build-cert is incompatible with {flag}" in r.stderr
+
+
+def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
+    """The parse-time gate cannot see what `--infer` came back with: an LLM
+    that answers nothing usable leaves `inv` or `ranking` unset, and building
+    that would report a proof of `sorry`."""
+    from reactor.lean.pipeline import outputs
+    from reactor.lean.proof.render import LeanCertificate, LeanPredicates
+
+    def lean(**defs):
+        return LeanCertificate(LeanPredicates(**defs))
+
+    built: list[Path] = []
+    monkeypatch.setattr(outputs, "build_certificate", built.append)
+    outputs.build_cert(Path("/complete"), lean(prp="p", inv="i", ranking="r"))
+    assert built == [Path("/complete")]
+
+    with pytest.raises(SystemExit, match="no ranking"):
+        outputs.build_cert(Path("/p"), lean(prp="p", inv="i"))
+    with pytest.raises(SystemExit, match="no invariant, ranking"):
+        outputs.build_cert(Path("/p"), lean(prp="p"))
+    # A safety certificate has no ranking to be missing.
+    outputs.build_cert(Path("/safe"), lean(kind="safety", prp="p", inv="i"))
+    assert built == [Path("/complete"), Path("/safe")]
+
+    # --fbk-proveit installs ic3ia's certificate, which nothing here
+    # describes, so there is nothing to be complete about.
+    outputs.build_cert(Path("/proveit"), None)
+    assert built == [Path("/complete"), Path("/safe"), Path("/proveit")]
+
+
+def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(
+    monkeypatch, tmp_path
+):
+    """`zeroth_hammer` leaves a `sorry` where it cannot close an obligation,
+    and lake reports that as a warning and exits 0 — so a plain exit code
+    would make "built" mean nothing."""
+    from reactor.lean.project import build as project
+
+    logs: dict[str, tuple[int, str]] = {}
+    monkeypatch.setattr(
+        project, "stream", lambda cmd, *, cwd: logs[cmd[1]]
+    )
+
+    logs["update"] = (0, "")
+    logs["build"] = (
+        0,
+        "warning: Certificate/Certificate.lean:42:0: declaration uses 'sorry'\n"
+        "Build completed successfully (3 jobs).\n",
+    )
+    with pytest.raises(project.LakeBuildError, match="not proved"):
+        project.build_certificate(tmp_path)
+
+    # A `sorry` in a dependency is not ours: lean-smt ships one.
+    logs["build"] = (
+        0,
+        "warning: Smt/Reconstruct/BitVec/Bitblast.lean:36:4: declaration uses 'sorry'\n"
+        "Build completed successfully (3 jobs).\n",
+    )
+    project.build_certificate(tmp_path)
+
+    logs["build"] = (1, "error: Certificate/Certificate.lean:9:2: omega failed\n")
+    with pytest.raises(project.LakeBuildError, match="omega failed"):
+        project.build_certificate(tmp_path)
+
+
+def test_a_kernel_error_after_another_one_is_not_reported_twice(
+    monkeypatch, tmp_path
+):
+    """A declaration that fails to elaborate is never added to the
+    environment, so the next one to mention it fails again in the kernel.
+
+    `hrank` times out at `whnf`, and then `(kernel) unknown constant
+    'hrank'` -- which names a symbol where the first line named a cause,
+    and reads like a codegen bug rather than a proof that did not close.
+    Every occurrence of it in the matrix follows an earlier error.
+    """
+    from reactor.lean.project import build as project
+
+    logs: dict[str, tuple[int, str]] = {}
+    monkeypatch.setattr(project, "stream", lambda cmd, *, cwd: logs[cmd[1]])
+    logs["update"] = (0, "")
+    logs["build"] = (
+        1,
+        "error: Certificate/Certificate.lean:117:4: (deterministic) timeout "
+        "at `whnf`, maximum number of heartbeats (400000) has been reached\n"
+        "error: Certificate/Certificate.lean:119:4: (kernel) unknown "
+        "constant 'hrank'\n",
+    )
+    with pytest.raises(project.LakeBuildError) as raised:
+        project.build_certificate(tmp_path)
+    assert "heartbeats" in str(raised.value)
+    assert "unknown constant" not in str(raised.value)
+
+    # On its own it is nobody's shadow, and something really is missing.
+    logs["build"] = (
+        1,
+        "error: Certificate/Certificate.lean:119:4: (kernel) unknown "
+        "constant 'hrank'\n",
+    )
+    with pytest.raises(project.LakeBuildError, match="unknown constant"):
+        project.build_certificate(tmp_path)
+
+
+def test_the_input_format_follows_the_suffix_or_format():
+    from certify.cli import parse_args
+
+    s = parse_args([str(COUNTER_MODULE)])
+    assert (s.input_format, s.input_opts) == ("python", {"module_def": "module"})
+    s = parse_args([str(COUNTER_MODULE), "-d", "other"])
+    assert s.input_opts == {"module_def": "other"}
+    s = parse_args(["--format", "python", "model.txt"])
+    assert s.input_format == "python"
+
+
+def test_an_input_whose_format_cannot_be_told_is_refused(capsys):
+    from certify.cli import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args(["model.txt"])
+    assert "cannot tell the format of model.txt" in capsys.readouterr().err
+
+
+SMV_FIXTURES = PYTHON_TESTS / "smv_fixtures"
+
+
+def test_d_is_only_meaningful_for_python_input(capsys):
+    from certify.cli import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args([str(SMV_FIXTURES / "mod10.smv"), "-d", "other"])
+    assert "--module-def is only meaningful for python input" in \
+        capsys.readouterr().err
+
+
+def test_an_smv_model_is_certified_in_its_own_names(tmp_path):
+    """mod10 counts to 9 and wraps: `x` stays in 0..9, and cvc5 checks the
+    invariant that says so before a line of the certificate is written."""
+    band = "(and (>= (X x) 0) (<= (X x) 9))"
+    r = run_certify(str(SMV_FIXTURES / "mod10.smv"), "--safety", band,
+               "--invariant", band, "--pre-check", "cvc5",
+               "--cert-file", str(tmp_path / "Mod10.lean"))
+    assert r.returncode == 0, r.stderr
+    assert ".. --safety, in internal names: (and (>= s0 0) (<= s0 9))" in r.stdout
+    assert (tmp_path / "Mod10.lean").exists()
+
+
+def test_a_model_strict_smv_refuses_is_an_error_line(tmp_path):
+    free = tmp_path / "free.smv"
+    free.write_text("MODULE main\nVAR x : boolean;\nASSIGN init(x) := TRUE;\n")
+    r = run_certify(str(free), "-o", str(tmp_path))
+    assert r.returncode != 0
+    assert "Traceback" not in r.stderr, r.stderr
+    assert "error:" in r.stderr and "`x` has no next value" in r.stderr
+
+
+# ── what a route found, and the claim an input states ───────────────────────
+
+
+def test_a_found_certificate_is_shown_as_the_flags_take_it(tmp_path):
+    """What one run found, the next can be given: printed in the input's
+    names, quoted for a shell."""
+    import shlex
+
+    r = run_certify(str(FIXTURE_DIR / "counter.py"), "--buchi", "(= (X @intf.0) 0)",
+                    "--infer", "houdini", "-o", str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    shown = r.stdout.split(".. The certificate, in the input's names:\n")[1]
+    flags = [shlex.split(line) for line in shown.splitlines()[:2]]
+    assert [f for f, _ in flags] == ["--invariant", "--ranking"]
+    again = run_certify(str(FIXTURE_DIR / "counter.py"), "--buchi", "(= (X @intf.0) 0)",
+                        *(word for pair in flags for word in pair),
+                        "--pre-check", "cvc5", "--cert-file", str(tmp_path / "C.lean"))
+    assert again.returncode == 0, again.stderr
+
+
+def test_the_chosen_spec_is_the_claim_a_route_is_asked(tmp_path):
+    """The claim an SMV input states is read with `certify`'s own flags, so
+    the route's rules apply to it as to a --safety on the command line."""
+    r = run_certify(str(SMV_FIXTURES / "mod10_specs.smv"), "--spec", "1",
+                    "--infer", "houdini", "--pre-check", "cvc5",
+                    "-o", str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    assert ".. the claim is the input's line 14: INVARSPEC (--safety)" in r.stdout
+    assert ".. --safety, in internal names: (and (<= 0 s0) (<= s0 9))" in r.stdout

@@ -4,7 +4,7 @@ A run that does not prove the property still produces something.  An
 invariant that was inductive but too weak, a ranking function that dropped
 on the right rounds but used an op the certificate cannot express, the cvc5
 model that refuted attempt four -- today all of it is lost with the process,
-and the next `uv run verith` starts from nothing.  Kept in `artifacts/`, it
+and the next `certify` run starts from nothing.  Kept in `artifacts/`, it
 is what the next run starts from: strengthen this invariant rather than
 search for one, or take it as given and infer only the ranking function.
 
@@ -99,7 +99,7 @@ What this run left behind: the questions it asked, and the answers it found
 that did not make it into the certificate.
 
 Every `.smt2` file here is self-contained -- declarations, assertions,
-`(check-sat)` -- so it can be run without `verith` in the loop:
+`(check-sat)` -- so it can be run without `reactor` in the loop:
 
 ```bash
 cvc5 <file>        # or: z3 <file>
