@@ -1,9 +1,9 @@
 use crate::block::Block;
 use crate::var::{Var, View};
 use crate::{try_iter_borrow, try_var_iter_cloned};
-use base::wire::PREFIX;
 use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
+use reactive::var::PREFIX;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use theory::any::{Combinatorial, Differential, Sequential, Sort};

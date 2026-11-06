@@ -1,4 +1,4 @@
-use base::Wire;
+use dataflow::Wire;
 use dataflow::diagram::Block;
 use std::borrow::Cow;
 use std::collections::HashMap;

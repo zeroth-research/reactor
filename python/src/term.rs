@@ -102,7 +102,7 @@ struct TermInterface {
 }
 
 impl TermInterface {
-    fn base(&self) -> &[base::Wire<Sort>] {
+    fn base(&self) -> &[dataflow::Wire<Sort>] {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),

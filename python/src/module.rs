@@ -1,9 +1,9 @@
 use crate::atom::{interface_contains, interface_eq, interface_repr, varnames};
 use crate::*;
-use base::wire::PREFIX;
 use pyo3::Py;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::PyTuple;
+use reactive::var::PREFIX;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use theory::any::{Combinatorial, Differential, Sequential};

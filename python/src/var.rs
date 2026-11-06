@@ -1,6 +1,6 @@
 use base::tangent::Tangent;
-use base::wire::PREFIX;
 use pyo3::prelude::*;
+use reactive::var::PREFIX;
 use std::sync::atomic::{AtomicU32, Ordering};
 use theory::any::Sort;
 

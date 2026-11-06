@@ -5,8 +5,8 @@ use std::{cmp, fmt};
 
 /// A typed signal carrying one value per round.
 ///
-/// A wire is the unit of data flow: terms read and write wires, and blocks,
-/// atoms, and modules are wired together by sharing them. Two wires are the
+/// A wire is the unit of data flow: terms read and write wires, and are
+/// wired together within a block by sharing them. Two wires are the
 /// *same* wire exactly when they share their `id` — a process-unique number
 /// assigned at creation — so equality, hashing, and ordering all go through it,
 /// and ordering doubles as creation order. The sort `S` types the value on

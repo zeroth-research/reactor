@@ -2,13 +2,16 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
+/// The prefix that marks a variable name when displayed, as in `#3`.
+pub const PREFIX: &str = "#";
+
 /// A variable identified by its name.
 ///
 /// A `Var` carries no wires: it is a name and the sort of the values it
 /// holds. Two variables are the same variable exactly when they
 /// have the same name, so a `Var` mentioned by an atom and by a module refers
 /// to one variable. Equality, hashing, and ordering all go through the name;
-/// as for a [`Wire`](base::Wire), the sort does not take part in identity.
+/// as for a [`Wire`](dataflow::Wire), the sort does not take part in identity.
 #[derive(Debug, Clone, Copy)]
 pub struct Var<S> {
     name: u32,

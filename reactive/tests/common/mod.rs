@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use base::tangent::Tangent;
-use base::wire::Wire;
+use dataflow::Wire;
 use dataflow::diagram::{Block, Term};
 use reactive::AtomInterface;
 use reactive::var::Var;

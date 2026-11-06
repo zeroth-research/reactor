@@ -1,4 +1,4 @@
-use base::Wire;
+use crate::Wire;
 use base::boundary::{Boundary, Poly};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
