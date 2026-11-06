@@ -143,7 +143,7 @@ where
     /// that all variables, atoms, and interfaces are well-formed and consistent.
     ///
     /// # See Also
-    /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
+    /// - [`Atom::new`] for creating individual atoms.
     /// - [`Module::partially_observable`], [`Module::observable`] for checked,
     ///   automated module construction
     fn new_unchecked(
@@ -250,7 +250,7 @@ where
     ///
     /// # See Also
     /// - [`Module::partially_observable`], for modules with private state.
-    /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
+    /// - [`Atom::new`] for creating individual atoms.
     pub fn observable<A>(atoms: A) -> Result<Self, String>
     where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,
@@ -285,7 +285,7 @@ where
     ///
     /// # See Also
     /// - [`Module::observable`], the fully observable special case.
-    /// - [`Atom::sequential`], [`Atom::combinatorial`] for creating individual atoms.
+    /// - [`Atom::new`] for creating individual atoms.
     pub fn partially_observable<A, H>(atoms: A, hide: H) -> Result<Self, String>
     where
         A: IntoIterator<Item = Atom<I, J, F, S>> + Sized,

@@ -1,12 +1,17 @@
-//! Tests for atomic modules: modules made of a single atom, built through
-//! the `sequential`, `differential`, and related constructors.
+//! Tests for atoms: their construction from interfaces and blocks bound by
+//! position, and atomic modules, made of a single atom.
 
 mod common;
 
 use base::wire::Wire;
-use common::{Atom, Module, Ops, example_counter, example_peterson1, mk_op, name, named, srt};
-use dataflow::diagram::Term;
+use common::{
+    Atom, Module, Ops, atom, block, example_counter, example_peterson1, generic_atom, havoc, mk_op,
+    skip, srt, zero,
+};
+use dataflow::diagram::{Block, Term};
+use reactive::AtomInterface;
 use reactive::var::{Var, Wire3, X, d};
+use theory::Theory;
 
 #[test]
 fn can_instantiate_and_print_sequential_module() {
@@ -28,42 +33,44 @@ fn can_instantiate_example_peterson1() {
     assert_eq!(m.intf().len(), 2);
 }
 
+/// The init and the update write the next values of all the controlled
+/// variables: they are the outputs of their blocks.
 #[test]
-fn module_write_all_ctrl() {
+fn blocks_write_all_ctrl() {
     let x = Wire3::new(srt("real"));
     let y = Wire3::new(srt("real"));
     let x0 = Wire3::new(srt("real"));
 
-    let update: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [x]).unwrap()].to_vec();
+    let init = || {
+        [
+            term!(mk_op("ID"), [X(x)], [X(x0)]).unwrap(),
+            term!(mk_op("ID"), [X(y)], [X(x0)]).unwrap(),
+        ]
+    };
+    let update = || {
+        [
+            term!(mk_op("ID"), [X(x)], [x]).unwrap(),
+            term!(mk_op("ID"), [X(y)], [y]).unwrap(),
+        ]
+    };
+    let (ctrl, wait, read) = (&[x, y], &[x0], &[x, y]);
 
-    let obs = &[x, y, x0];
+    let a = atom(ctrl, wait, read, init(), update(), zero(ctrl));
+    assert!(a.is_ok());
 
-    let m = Module::sequential(named(obs), vec![], update.clone());
-    assert!(m.is_err());
+    // the update leaves `y` unwritten
+    let partial = [term!(mk_op("ID"), [X(x)], [x]).unwrap()];
+    assert!(atom(ctrl, wait, read, init(), partial, zero(ctrl)).is_err());
 
-    let init: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x0)], [X(x)]).unwrap()].to_vec();
-    let m = Module::sequential(named(obs), init, update.clone());
-    assert!(m.is_err());
+    // the init leaves `y` unwritten
+    let partial = [term!(mk_op("ID"), [X(x)], [X(x0)]).unwrap()];
+    assert!(atom(ctrl, wait, read, partial, update(), zero(ctrl)).is_err());
 
-    let init: Vec<Term<Ops>> = [
-        term!(mk_op("ID"), [X(x)], [X(x0)]).unwrap(),
-        term!(mk_op("ID"), [X(y)], [X(x0)]).unwrap(),
-    ]
-    .to_vec();
-
-    let m = Module::sequential(named(obs), init.clone(), update);
-    assert!(m.is_err());
-
-    let update: Vec<Term<Ops>> = [
-        term!(mk_op("ID"), [X(x)], [x]).unwrap(),
-        term!(mk_op("ID"), [X(y)], [y]).unwrap(),
-    ]
-    .to_vec();
-
-    let m = Module::sequential(named(obs), init, update);
-    assert!(m.is_ok());
+    // the delay leaves `y` unwritten
+    assert!(atom(ctrl, wait, read, init(), update(), zero(&[x])).is_err());
 }
 
+/// A block reads only its inputs, and the wires its terms write.
 #[test]
 fn atom_with_invalid_read() {
     let x = Wire3::new(srt("A"));
@@ -74,12 +81,10 @@ fn atom_with_invalid_read() {
     let init = Term::function(mk_op("i"), [X(y), X(z)], [p, X(x)]).unwrap();
     let update = Term::function(mk_op("u"), [X(y), X(z)], [p, X(x), *y, *z]).unwrap();
 
-    let a = Atom::sequential(named(&[x, y, z]), [init], [update]);
+    let ctrl = &[y, z];
+    let a = atom(ctrl, &[x], ctrl, [init], [update], zero(ctrl));
     println!("{:?}", a);
     assert!(a.is_err());
-    // the failure carries over: an invalid atom cannot be promoted to a module
-    let m = a.and_then(|a| Module::partially_observable([a], |v| *v == name(&y) || *v == name(&z)));
-    assert!(m.is_err());
 }
 
 /// Builds an open differential module encoding the drifting clocks
@@ -115,19 +120,20 @@ fn differential_drifting_clocks() {
         Term::function(LRA::TId(1, 1, 1), [d(y)], [d(t)]).unwrap(),
     ];
 
-    // init: the initial derivatives are left unconstrained (Havoc). Every
-    // controlled wire must be written by the init block too.
+    // init: the initial values are left unconstrained.
     let init = [
         Term::constant(LRA::AnyReal(1, 1), [X(x)]).unwrap(),
         Term::constant(LRA::AnyReal(1, 1), [X(y)]).unwrap(),
     ];
 
-    // The atom writes only d(x) and d(y), so `t` is inferred external.
-    let obs = &[x, y, t];
-
-    let module: reactive::Module<LRA, LRA, LRA> =
-        reactive::Module::differential(named(obs), init, delay)
-            .expect("differential module should be well-formed");
+    // The atom controls the clocks, keeps them in the update, and awaits the
+    // derivative of the input clock.
+    let ctrl = &[x, y];
+    let atom: reactive::Atom<LRA, LRA, LRA> =
+        generic_atom(ctrl, &[t], ctrl, init, skip(ctrl), delay)
+            .expect("differential atom should be well-formed");
+    let module =
+        reactive::Module::observable([atom]).expect("differential module should be well-formed");
 
     // An open module: the input clock is external.
     assert!(module.is_open());
@@ -138,7 +144,6 @@ fn differential_drifting_clocks() {
     let intf: HashSet<usize> = module.intf().iter().map(|v| v.name() as usize).collect();
     assert_eq!(intf, HashSet::from([x.id(), y.id()]));
 
-    // The differential constructor produces exactly one atom.
     assert_eq!(module.atoms().len(), 1);
     let atom = &module.atoms()[0];
 
@@ -149,11 +154,10 @@ fn differential_drifting_clocks() {
     let wait: HashSet<usize> = atom.wait().iter().map(|v| v.name() as usize).collect();
     assert_eq!(wait, HashSet::from([t.id()]));
 
-    // Block sizes: 2 derivative terms, 2 init terms, and the update is the
-    // implicit `skip` synthesised by the constructor, one term per
-    // controlled variable. The blocks discard the inputs they do not read:
-    // init and update the next value of `t`, and the delay the latched
-    // values of the clocks, which only the update reads.
+    // Block sizes: 2 derivative terms, 2 init terms, and 2 skip terms in the
+    // update. The blocks discard the inputs they do not read: init and
+    // update the next value of `t`, and the delay the latched values of the
+    // clocks, which only the update reads.
     assert_eq!(atom.delay().len(), 2 + 2);
     assert_eq!(atom.init().len(), 2 + 1);
     assert_eq!(atom.update().len(), 2 + 1);
@@ -181,78 +185,80 @@ fn differential_module_rejects_dx_equals_x() {
     // dx = x: already ill-formed at the term level.
     let delay = Term::function(LRA::TId(1, 1, 1), [d(x)], [x]);
 
-    let module = delay.and_then(|delay| {
+    let atom = delay.and_then(|delay| {
         let init = [Term::constant(LRA::AnyReal(1, 1), [X(x)]).unwrap()];
-        reactive::Module::<LRA, LRA, LRA>::differential(named(&[x]), init, [delay])
+        generic_atom::<LRA, LRA, LRA, _>(&[x], &[], &[x], init, skip(&[x]), [delay])
     });
-    assert!(module.is_err());
+    assert!(atom.is_err());
 }
 
-/// A jump module: only the update is given, the initial state is
-/// havoced and the delay is zero, both synthesised by the constructor.
+/// An atom whose initial state is left unconstrained and whose delay is
+/// zero: only the update says anything.
 #[test]
-fn uninitialized_module_ok() {
+fn jump_atom_ok() {
     let x = Wire3::new(srt("real"));
     let y = Wire3::new(srt("real"));
 
-    // x' = y: x is controlled, y is inferred external.
+    // x' = y: x is controlled, y is read
     let update = [Term::function(mk_op("ID"), [X(x)], [y]).unwrap()];
-    let m = Module::jump(named(&[x, y]), update).unwrap();
+    let a = atom(&[x], &[], &[y], havoc(&[x]), update, zero(&[x])).unwrap();
+    let m = Module::observable([a]).unwrap();
 
     assert!(m.is_open());
     assert_eq!(m.atoms().len(), 1);
     let atom = &m.atoms()[0];
 
-    // One synthesised HAVOC init and one synthesised ZERO delay for the
-    // single controlled variable, next to the explicit update. The delay
-    // discards the latched value of `y`, which only the update reads.
+    // One HAVOC init and one ZERO delay for the single controlled variable,
+    // next to the update. The delay discards the latched value of `y`,
+    // which only the update reads.
     assert_eq!(atom.init().len(), 1);
     assert_eq!(atom.update().len(), 1);
     assert_eq!(atom.delay().len(), 1 + 1);
 }
 
-/// The update of an jump module must drive next wires; writing a
-/// latched wire is rejected.
+/// The update drives next wires; writing a latched wire leaves the next
+/// wire of the controlled variable unwritten.
 #[test]
-fn uninitialized_module_rejects_latched_write() {
+fn jump_atom_rejects_latched_write() {
     let x = Wire3::new(srt("real"));
     let y = Wire3::new(srt("real"));
 
     // writes the latched wire `x` instead of the next wire `X(x)`
     let update = [Term::function(mk_op("ID"), [*x], [y]).unwrap()];
-    assert!(Module::jump(named(&[x, y]), update).is_err());
+    assert!(atom(&[x], &[], &[y], havoc(&[x]), update, zero(&[x])).is_err());
 }
 
-/// A constant module: only the init is given, the variable is held by a
-/// synthesised SKIP update and a synthesised ZERO delay.
+/// An atom setting its variable once at initialisation and keeping it ever
+/// after.
 #[test]
-fn constant_module_ok() {
+fn constant_atom_ok() {
     let x = Wire3::new(srt("real"));
 
     let init = [Term::constant(mk_op("CONST(0)"), [X(x)]).unwrap()];
-    let m = Module::constant(named(&[x]), init).unwrap();
+    let a = atom(&[x], &[], &[x], init, skip(&[x]), zero(&[x])).unwrap();
+    let m = Module::observable([a]).unwrap();
 
     assert!(m.is_closed());
     assert_eq!(m.atoms().len(), 1);
     let atom = &m.atoms()[0];
 
-    // The explicit init, next to one synthesised SKIP update and one
-    // synthesised ZERO delay for the single controlled variable. The delay
-    // discards the latched value of `x`, which only the update reads.
+    // The init, next to one SKIP update and one ZERO delay for the single
+    // controlled variable. The delay discards the latched value of `x`,
+    // which only the update reads.
     assert_eq!(atom.init().len(), 1);
     assert_eq!(atom.update().len(), 1);
     assert_eq!(atom.delay().len(), 1 + 1);
 }
 
-/// The init of a constant module must drive next wires; writing a latched
-/// wire is rejected.
+/// The init drives next wires; writing a latched wire leaves the next wire
+/// of the controlled variable unwritten.
 #[test]
-fn constant_module_rejects_latched_write() {
+fn constant_atom_rejects_latched_write() {
     let x = Wire3::new(srt("real"));
 
     // writes the latched wire `x` instead of the next wire `X(x)`
     let init = [Term::constant(mk_op("CONST(0)"), [*x]).unwrap()];
-    assert!(Module::constant(named(&[x]), init).is_err());
+    assert!(atom(&[x], &[], &[x], init, skip(&[x]), zero(&[x])).is_err());
 }
 
 /// A hybrid module encoding a simple timed automaton: a switch with one
@@ -266,9 +272,9 @@ fn constant_module_rejects_latched_write() {
 ///     jump:  when x >= 1, toggle loc and reset x; otherwise hold
 /// ```
 ///
-/// All three blocks are explicit: the discrete jump drives the next wires,
-/// the continuous flow drives the derivatives — the clock at rate 1, the
-/// location with zero drift, since it only changes at jumps.
+/// The discrete jump drives the next wires, the continuous flow drives the
+/// derivatives — the clock at rate 1, the location with zero drift, since
+/// it only changes at jumps.
 #[test]
 fn simple_timed_automaton() {
     let x = Wire3::new(srt("real"));
@@ -295,7 +301,9 @@ fn simple_timed_automaton() {
         Term::constant(mk_op("ZERO"), [d(loc)]).unwrap(),
     ];
 
-    let m = Module::hybrid(named(&[x, loc]), init, update, delay).unwrap();
+    let vars = &[x, loc];
+    let a = atom(vars, &[], vars, init, update, delay).unwrap();
+    let m = Module::observable([a]).unwrap();
 
     // A closed module controlling both the clock and the location.
     assert!(m.is_closed());
@@ -304,17 +312,16 @@ fn simple_timed_automaton() {
     let atom = &m.atoms()[0];
     assert_eq!(atom.ctrl().len(), 2);
 
-    // Nothing is synthesised: exactly the three explicit blocks, with the
-    // guard as a temporary wire of the update, and the delay discarding the
-    // latched values of both variables, which only the update reads.
+    // The three blocks, with the guard as a temporary wire of the update,
+    // and the delay discarding the latched values of both variables, which
+    // only the update reads.
     assert_eq!(atom.init().len(), 2);
     assert_eq!(atom.update().len(), 3);
     assert_eq!(atom.delay().len(), 2 + 2);
 }
 
-/// A hybrid module synthesises nothing: forgetting the zero drift of the
-/// discrete location leaves its derivative unwritten, and the timed
-/// automaton is rejected.
+/// Forgetting the zero drift of the discrete location leaves its derivative
+/// unwritten, and the timed automaton is rejected.
 #[test]
 fn hybrid_rejects_missing_flow() {
     let x = Wire3::new(srt("real"));
@@ -335,8 +342,8 @@ fn hybrid_rejects_missing_flow() {
     // flow: dx = 1, but no dloc = 0
     let delay = [Term::constant(mk_op("ONE"), [d(x)]).unwrap()];
 
-    let m = Module::hybrid(named(&[x, loc]), init, update, delay);
-    assert!(m.is_err());
+    let vars = &[x, loc];
+    assert!(atom(vars, &[], vars, init, update, delay).is_err());
 }
 
 #[test]
@@ -346,106 +353,242 @@ fn coupled_atoms_can_construct_module() {
     let z = Wire3::new(srt("real"));
 
     let u1 = Term::function(mk_op("u1"), [X(y)], [x]).unwrap();
-    let a1 = Atom::jump(named(&[x, y]), [u1]).unwrap();
+    let a1 = atom(&[y], &[], &[x], havoc(&[y]), [u1], zero(&[y])).unwrap();
 
     let u2 = Term::function(mk_op("u2"), [X(z)], [y]).unwrap();
-    let a2 = Atom::jump(named(&[y, z]), [u2]).unwrap();
+    let a2 = atom(&[z], &[], &[y], havoc(&[z]), [u2], zero(&[z])).unwrap();
 
     let m = Module::observable([a1, a2]);
     assert!(m.is_ok());
 }
 
-/// The blocks of an atom have the boundaries `X(wait) -> X(ctrl)` (init),
-/// `read ++ X(wait) -> X(ctrl)` (update), and `read ++ d(wait) -> d(ctrl)`
-/// (delay), each in the order of the interfaces; the inputs a block does not
-/// read are discarded.
-#[test]
-fn blocks_have_the_boundaries_of_the_interfaces() {
-    let x = Wire3::new(srt("Int"));
-    let e = Wire3::new(srt("Int"));
-
-    // x controlled, read (x, e), wait (e)
-    let init = [term!(mk_op("F"), [X(x)], [X(e)]).unwrap()];
-    let update = [term!(mk_op("G"), [X(x)], [*x, *e, X(e)]).unwrap()];
-    let atom = Atom::sequential(named(&[x, e]), init, update).unwrap();
-
-    let vars = |i: &reactive::AtomInterface<_>| i.iter().cloned().collect::<Vec<_>>();
-    assert_eq!(vars(atom.ctrl()), [name(&x)]);
-    assert_eq!(vars(atom.read()), [name(&x), name(&e)]);
-    assert_eq!(vars(atom.wait()), [name(&e)]);
-
-    assert_eq!(atom.init().read(), [X(e)]);
-    assert_eq!(atom.init().write(), [X(x)]);
-    assert_eq!(atom.update().read(), [*x, *e, X(e)]);
-    assert_eq!(atom.update().write(), [X(x)]);
-    assert_eq!(atom.delay().read(), [*x, *e, d(e)]);
-    assert_eq!(atom.delay().write(), [d(x)]);
-
-    // the synthesised delay writes the zero derivative of `x` and reads
-    // nothing: all its inputs are discarded
-    let ops: Vec<_> = atom.delay().iter().map(|t| t.itype().0).collect();
-    assert_eq!(ops, ["ZERO", "DISCARD", "DISCARD", "DISCARD"]);
-    let discarded: Vec<_> = atom.delay().iter().skip(1).flat_map(|t| t.read()).collect();
-    assert_eq!(discarded, [&*x, &*e, &d(e)]);
+/// The interface of the variables, of the given names and sorts
+fn vars(vars: &[(u32, &'static str)]) -> AtomInterface<common::Srt> {
+    AtomInterface::try_from_iter(vars.iter().map(|&(n, s)| Var::new(n, srt(s)))).unwrap()
 }
 
-/// An input that only some blocks read is discarded by the others.
+/// A fresh wire of the sort
+fn wire(sort: &'static str) -> Wire<common::Srt> {
+    Wire::new(srt(sort))
+}
+
+/// A fresh wire of the tangent of the sort
+fn tangent(sort: &'static str) -> Wire<common::Srt> {
+    Wire::new(common::Srt(sort, 1))
+}
+
+/// The term discarding the wire
+fn discard(w: Wire<common::Srt>) -> Term<Ops> {
+    let nothing: [Wire<common::Srt>; 0] = [];
+    Term::function(Ops::discard(w.dtype()), nothing, [w]).unwrap()
+}
+
+/// The blocks of an atom have the boundaries `X(wait) -> X(ctrl)` (init),
+/// `read ++ X(wait) -> X(ctrl)` (update), and `read ++ d(wait) -> d(ctrl)`
+/// (delay), each in the order of the interfaces; the atom binds its
+/// variables to them by position, and checks their sorts.
 #[test]
-fn unread_inputs_are_discarded_per_block() {
+fn blocks_have_the_boundaries_of_the_interfaces() {
+    // x : Int controlled, read (x : Int, e : Bool), wait (e : Bool)
+    let (ctrl, read, wait) = (
+        vars(&[(0, "Int")]),
+        vars(&[(0, "Int"), (1, "Bool")]),
+        vars(&[(1, "Bool")]),
+    );
+
+    let init = || {
+        let (we, wx) = (wire("Bool"), wire("Int"));
+        Block::new([we], [wx], [term!(mk_op("F"), [wx], [we]).unwrap()]).unwrap()
+    };
+    let update = || {
+        let (x, e, we, wx) = (wire("Int"), wire("Bool"), wire("Bool"), wire("Int"));
+        let terms = [term!(mk_op("G"), [wx], [x, e, we]).unwrap()];
+        Block::new([x, e, we], [wx], terms).unwrap()
+    };
+    let delay = || {
+        let (x, e, de, dx) = (wire("Int"), wire("Bool"), tangent("Bool"), tangent("Int"));
+        let zero = term!(mk_op("ZERO"), [dx]).unwrap();
+        let terms = [zero, discard(x), discard(e), discard(de)];
+        Block::new([x, e, de], [dx], terms).unwrap()
+    };
+
+    let a = Atom::new(
+        ctrl.clone(),
+        wait.clone(),
+        read.clone(),
+        init(),
+        update(),
+        delay(),
+    );
+    let a = a.unwrap();
+    assert_eq!(a.ctrl(), &ctrl);
+    assert_eq!(a.read(), &read);
+    assert_eq!(a.wait(), &wait);
+
+    // the inputs of the update out of the order of the interfaces
+    let swapped = {
+        let (x, e, we, wx) = (wire("Int"), wire("Bool"), wire("Bool"), wire("Int"));
+        let terms = [term!(mk_op("G"), [wx], [x, e, we]).unwrap()];
+        Block::new([e, x, we], [wx], terms).unwrap()
+    };
+    let a = Atom::new(
+        ctrl.clone(),
+        wait.clone(),
+        read.clone(),
+        init(),
+        swapped,
+        delay(),
+    );
+    assert!(a.is_err());
+
+    // a delay writing the next value of `x` instead of its derivative
+    let next = {
+        let (x, e, de, wx) = (wire("Int"), wire("Bool"), tangent("Bool"), wire("Int"));
+        let terms = [
+            term!(mk_op("C"), [wx]).unwrap(),
+            discard(x),
+            discard(e),
+            discard(de),
+        ];
+        Block::new([x, e, de], [wx], terms).unwrap()
+    };
+    let a = Atom::new(
+        ctrl.clone(),
+        wait.clone(),
+        read.clone(),
+        init(),
+        update(),
+        next,
+    );
+    assert!(a.is_err());
+
+    // an init leaving out the awaited `e`
+    let short = {
+        let wx = wire("Int");
+        Block::new([], [wx], [term!(mk_op("C"), [wx]).unwrap()]).unwrap()
+    };
+    let a = Atom::new(ctrl, wait, read, short, update(), delay());
+    assert!(a.is_err());
+}
+
+/// A block takes every input of its boundary, and has to read it: the inputs
+/// it has no use for, it discards.
+#[test]
+fn unread_inputs_are_discarded() {
     let x = Wire3::new(srt("Int"));
     let e = Wire3::new(srt("Int"));
 
     // the init ignores `e`, the update awaits it
     let init = [term!(mk_op("CONST"), [X(x)]).unwrap()];
-    let update = [term!(mk_op("ID"), [X(x)], [X(e)]).unwrap()];
-    let atom = Atom::sequential(named(&[x, e]), init, update).unwrap();
+    assert!(Block::new([X(e)], [X(x)], init.clone()).is_err());
 
-    assert_eq!(atom.init().read(), [X(e)]);
-    let ops: Vec<_> = atom.init().iter().map(|t| t.itype().0).collect();
+    let a = atom(
+        &[x],
+        &[e],
+        &[],
+        init,
+        [term!(mk_op("ID"), [X(x)], [X(e)]).unwrap()],
+        zero(&[x]),
+    );
+    let a = a.unwrap();
+
+    assert_eq!(a.init().read(), [X(e)]);
+    let ops: Vec<_> = a.init().iter().map(|t| t.itype().0).collect();
     assert_eq!(ops, ["CONST", "DISCARD"]);
 
     // the update reads all its inputs, nothing is discarded
-    assert_eq!(atom.update().read(), [X(e)]);
-    assert_eq!(atom.update().len(), 1);
+    assert_eq!(a.update().read(), [X(e)]);
+    assert_eq!(a.update().len(), 1);
 }
 
-/// The variables in scope are bound to their names one-to-one, each name of
-/// the sort of its variable.
+/// A variable is not both controlled and awaited by an atom.
 #[test]
-fn variables_are_bound_to_names_one_to_one() {
-    let x = Wire3::new(srt("real"));
-    let y = Wire3::new(srt("real"));
-    let update = || [term!(mk_op("ID"), [X(x)], [*y]).unwrap()];
+fn controlled_variables_are_not_awaited() {
+    let ctrl = vars(&[(0, "Int")]);
+    let (wi, wo) = (wire("Int"), wire("Int"));
+    let init = Block::new([wi], [wo], [term!(mk_op("ID"), [wo], [wi]).unwrap()]).unwrap();
+    let (wi, wo) = (wire("Int"), wire("Int"));
+    let update = Block::new([wi], [wo], [term!(mk_op("ID"), [wo], [wi]).unwrap()]).unwrap();
+    let (di, dout) = (tangent("Int"), tangent("Int"));
+    let delay = Block::new([di], [dout], [term!(mk_op("ID"), [dout], [di]).unwrap()]).unwrap();
 
-    let (vx, vy) = (Var::new(0, srt("real")), Var::new(1, srt("real")));
-    assert!(Atom::jump([(vx, &x), (vy, &y)], update()).is_ok());
-    // binding the same name to the same variable again is fine
-    assert!(Atom::jump([(vx, &x), (vy, &y), (vx, &x)], update()).is_ok());
-
-    // a name of another sort than its variable
-    let bool_x = Var::new(0, srt("bool"));
-    assert!(Atom::jump([(bool_x, &x), (vy, &y)], update()).is_err());
-    // a name bound to two variables
-    assert!(Atom::jump([(vx, &x), (vx, &y)], update()).is_err());
-    // a variable bound to two names
-    assert!(Atom::jump([(vx, &x), (vy, &y), (vy, &x)], update()).is_err());
+    let a = Atom::new(ctrl.clone(), ctrl, vars(&[]), init, update, delay);
+    assert!(a.is_err());
 }
 
-/// The interfaces, and the boundaries of the blocks, follow the order of the
-/// names, not the order the variables were created in.
+/// The same name is the same variable in all the interfaces of an atom, of
+/// one sort.
+#[test]
+fn interfaces_agree_on_sorts() {
+    // `x` is controlled as an Int and read as a Bool
+    let (ctrl, read) = (vars(&[(0, "Int")]), vars(&[(0, "Bool")]));
+
+    let init = || {
+        let wx = wire("Int");
+        Block::new([], [wx], [term!(mk_op("C"), [wx]).unwrap()]).unwrap()
+    };
+    let update = |sort| {
+        let (x, wx) = (wire(sort), wire("Int"));
+        Block::new([x], [wx], [term!(mk_op("C"), [wx]).unwrap(), discard(x)]).unwrap()
+    };
+    let delay = |sort| {
+        let (x, dx) = (wire(sort), tangent("Int"));
+        Block::new([x], [dx], [term!(mk_op("ZERO"), [dx]).unwrap(), discard(x)]).unwrap()
+    };
+
+    let a = Atom::new(
+        ctrl.clone(),
+        vars(&[]),
+        read,
+        init(),
+        update("Bool"),
+        delay("Bool"),
+    );
+    assert!(a.is_err());
+
+    // read as an Int, it is fine
+    let read = vars(&[(0, "Int")]);
+    let a = Atom::new(ctrl, vars(&[]), read, init(), update("Int"), delay("Int"));
+    assert!(a.is_ok());
+}
+
+/// The interfaces, and so the boundaries of the blocks, follow the order of
+/// the names, not the order the variables were created in.
 #[test]
 fn boundaries_follow_the_order_of_names() {
     let x = Wire3::new(srt("Int"));
-    let e = Wire3::new(srt("Int"));
+    let e = Wire3::new(srt("Bool"));
 
     // `e` is named before `x`
-    let (vx, ve) = (Var::new(1, srt("Int")), Var::new(0, srt("Int")));
-    let init = [term!(mk_op("F"), [X(x)], [X(e)]).unwrap()];
-    let update = [term!(mk_op("G"), [X(x)], [*x, *e, X(e)]).unwrap()];
-    let atom = Atom::sequential([(vx, &x), (ve, &e)], init, update).unwrap();
+    let (vx, ve) = (Var::new(1, srt("Int")), Var::new(0, srt("Bool")));
+    let ctrl = AtomInterface::try_from_iter([vx]).unwrap();
+    let read = AtomInterface::try_from_iter([vx, ve]).unwrap();
+    assert_eq!(read.iter().cloned().collect::<Vec<_>>(), [ve, vx]);
 
-    let vars = |i: &reactive::AtomInterface<_>| i.iter().cloned().collect::<Vec<_>>();
-    assert_eq!(vars(atom.read()), [ve, vx]);
-    assert_eq!(atom.update().read(), [*e, *x, X(e)]);
-    assert_eq!(atom.delay().read(), [*e, *x, d(e)]);
+    let init = || block([], [X(x)], [term!(mk_op("C"), [X(x)]).unwrap()]).unwrap();
+    let update = |read: [Wire<_>; 2]| {
+        block(read, [X(x)], [term!(mk_op("G"), [X(x)], [*x, *e]).unwrap()]).unwrap()
+    };
+    let delay = |read: [Wire<_>; 2]| block(read, [d(x)], zero(&[x])).unwrap();
+
+    let a = Atom::new(
+        ctrl.clone(),
+        vars(&[]),
+        read.clone(),
+        init(),
+        update([*e, *x]),
+        delay([*e, *x]),
+    );
+    assert!(a.is_ok());
+
+    // in the order of creation
+    let a = Atom::new(
+        ctrl,
+        vars(&[]),
+        read,
+        init(),
+        update([*x, *e]),
+        delay([*x, *e]),
+    );
+    assert!(a.is_err());
 }

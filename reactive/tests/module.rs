@@ -6,13 +6,34 @@ mod common;
 use base::tangent::Tangent;
 use base::wire::Wire;
 use common::{
-    Atom, Module, Ops, Srt, example_counter, example_peterson1, example_tiny1, mk_op, name, named,
-    srt,
+    Atom, Module, Ops, Srt, atom, block, example_counter, example_peterson1, example_tiny1,
+    generic_atom, mk_op, name, skip, srt, zero,
 };
 use dataflow::diagram::Term;
+use reactive::AtomInterface;
 use reactive::var::{Var, Wire3, X, d};
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
+
+/// The combinatorial module setting `x` to the next value of `y`
+fn copy(x: &Wire3<Srt>, y: &Wire3<Srt>) -> Result<Module, String> {
+    let assign = || [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()];
+    let a = atom(&[*x], &[*y], &[], assign(), assign(), zero(&[*x]))?;
+    Module::observable([a])
+}
+
+/// The module stepping `x` and `p` from the latched values of `p` and `e`
+///
+/// ```text
+///     M: x' = p, p' = e   (controls x and p, reads external e)
+/// ```
+fn step(x: &Wire3<Srt>, p: &Wire3<Srt>, e: &Wire3<Srt>) -> Result<Module, String> {
+    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
+    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let ctrl = [*x, *p];
+    let a = atom(&ctrl, &[], &[*p, *e], [init], [update], zero(&ctrl))?;
+    Module::observable([a])
+}
 
 #[test]
 fn can_instantiate_partially_observable_module() {
@@ -138,11 +159,8 @@ fn compose_seq() {
     let y = Wire3::new(srt("real"));
     let z = Wire3::new(srt("real"));
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
-    let m1 = Module::combinatorial(named(&[x, y]), assign).unwrap();
-
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
-    let m2 = Module::combinatorial(named(&[x, z]), assign).unwrap();
+    let m1 = copy(&x, &y).unwrap();
+    let m2 = copy(&z, &x).unwrap();
 
     Module::compose([m1, m2]).unwrap();
 }
@@ -165,11 +183,8 @@ fn compose_hiding() {
     let y = &Wire3::new(srt("real"));
     let z = &Wire3::new(srt("real"));
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
-    let m1 = Module::combinatorial(named([x, y]), assign).unwrap();
-
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
-    let m2 = Module::combinatorial(named([x, z]), assign).unwrap();
+    let m1 = copy(x, y).unwrap();
+    let m2 = copy(z, x).unwrap();
 
     // hiding the shared variable privatises it in the composite
     let m = Module::compose_hiding([m1.clone(), m2.clone()], |v| *v == name(x)).unwrap();
@@ -205,9 +220,7 @@ fn constructor_then_hiding() {
     let p = &Wire3::new(srt("real"));
     let e = &Wire3::new(srt("real"));
 
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
-    let m = Module::sequential(named([x, p, e]), [init], [update]).unwrap();
+    let m = step(x, p, e).unwrap();
 
     let ids =
         |i: &reactive::ModuleInterface<_>| i.iter().map(|v| v.name() as usize).collect::<Vec<_>>();
@@ -226,10 +239,7 @@ fn constructor_then_hiding() {
     assert_eq!(ids(m.intf()), vec![x.id()]);
 
     // an external variable cannot be hidden
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
-    let m = Module::sequential(named([x, p, e]), [init], [update])
-        .and_then(|m| m.hide(|v| *v == name(e)));
+    let m = step(x, p, e).and_then(|m| m.hide(|v| *v == name(e)));
     assert!(m.is_err());
 }
 
@@ -282,8 +292,9 @@ fn compose_seq_2() {
         term!(mk_op("Id"), [X(z)], [z]).unwrap(),
     ]
     .to_vec();
-    let obs = &[x, y, z, y0, z0];
-    let m1 = Module::sequential(named(obs), init, update).unwrap();
+    let ctrl = &[x, y, z];
+    let a1 = atom(ctrl, &[y0, z0], ctrl, init, update, zero(ctrl)).unwrap();
+    let m1 = Module::observable([a1]).unwrap();
 
     //
     // class Inv(smt.Module):
@@ -307,13 +318,18 @@ fn compose_seq_2() {
     ]
     .to_vec();
 
-    let obs = &[x, y, z, inv];
-    let m2 = Module::combinatorial(named(obs), assign.clone()).unwrap();
+    // a combinatorial atom: the same assignment initialises and updates
+    let a2 = atom(
+        &[inv],
+        &[x, y, z],
+        &[],
+        assign.clone(),
+        assign,
+        zero(&[inv]),
+    )
+    .unwrap();
+    let m2 = Module::observable([a2]).unwrap();
 
-    Module::compose([m1.clone(), m2]).unwrap();
-
-    // try to use a `sequential_observable` ctor instead of combinatorial
-    let m2 = Module::sequential(named(obs), assign.clone(), assign).unwrap();
     let _m = Module::compose([m1, m2]).unwrap();
     println!("{:?}", _m);
 }
@@ -327,10 +343,13 @@ fn more_controlled_than_external() {
     let init = Term::constant(mk_op("A"), [X(y), X(z)]).unwrap();
     let update = Term::function(mk_op("A"), [X(y), X(z)], [*y, *z]).unwrap();
 
-    let a = Atom::sequential(named([x, y, z]), [init], [update]);
+    let ctrl = [*y, *z];
+    let a = atom(&ctrl, &[], &ctrl, [init], [update], zero(&ctrl));
     assert!(a.is_ok());
     let m = Module::partially_observable([a.unwrap()], |v| *v == name(y) || *v == name(z));
     assert!(m.is_ok());
+    // the atom does not know `x`
+    assert!(!m.unwrap().obs().contains(&name(x)));
 }
 
 #[allow(unused)]
@@ -418,9 +437,7 @@ fn constructor_interfaces_are_exact() {
     let p = &Wire3::new(srt("real"));
     let e = &Wire3::new(srt("real"));
 
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
-    let m = Module::sequential(named([x, p, e]), [init], [update]).unwrap();
+    let m = step(x, p, e).unwrap();
 
     let ids =
         |i: &reactive::ModuleInterface<_>| i.iter().map(|v| v.name() as usize).collect::<Vec<_>>();
@@ -439,12 +456,7 @@ fn hiding_interfaces_are_exact() {
     let p = &Wire3::new(srt("real"));
     let e = &Wire3::new(srt("real"));
 
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
-    let m = Module::sequential(named([x, p, e]), [init], [update])
-        .unwrap()
-        .hide(|v| *v == name(p))
-        .unwrap();
+    let m = step(x, p, e).unwrap().hide(|v| *v == name(p)).unwrap();
 
     let ids =
         |i: &reactive::ModuleInterface<_>| i.iter().map(|v| v.name() as usize).collect::<Vec<_>>();
@@ -452,49 +464,6 @@ fn hiding_interfaces_are_exact() {
     assert_eq!(ids(m.intf()), vec![x.id()]);
     assert_eq!(ids(m.prvt()), vec![p.id()]);
     assert_eq!(ids(m.obs()), vec![x.id(), e.id()]);
-    assert_eq!(ids(m.ctrl()), vec![x.id(), p.id()]);
-}
-
-/// A variable presented twice in the scope iterable must not duplicate any
-/// interface entry: the module equals the one built from the plain scope.
-#[test]
-fn duplicate_scope_variable_is_collapsed() {
-    let x = &Wire3::new(srt("real"));
-    let p = &Wire3::new(srt("real"));
-    let e = &Wire3::new(srt("real"));
-
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
-    let m = Module::sequential(named([x, p, e, x, e]), [init], [update]).unwrap();
-
-    let ids =
-        |i: &reactive::ModuleInterface<_>| i.iter().map(|v| v.name() as usize).collect::<Vec<_>>();
-    assert_eq!(ids(m.extl()), vec![e.id()]);
-    assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
-    assert_eq!(ids(m.prvt()), Vec::<usize>::new());
-    assert_eq!(ids(m.obs()), vec![x.id(), p.id(), e.id()]);
-    assert_eq!(ids(m.ctrl()), vec![x.id(), p.id()]);
-}
-
-/// A scope variable used by no term must not leak into any visibility set:
-/// the interfaces are inferred from the terms, not from the scope.
-#[test]
-fn unused_scope_variable_does_not_leak() {
-    let x = &Wire3::new(srt("real"));
-    let p = &Wire3::new(srt("real"));
-    let e = &Wire3::new(srt("real"));
-    let unused = &Wire3::new(srt("real"));
-
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
-    let m = Module::sequential(named([x, p, e, unused]), [init], [update]).unwrap();
-
-    let ids =
-        |i: &reactive::ModuleInterface<_>| i.iter().map(|v| v.name() as usize).collect::<Vec<_>>();
-    assert_eq!(ids(m.extl()), vec![e.id()]);
-    assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
-    assert_eq!(ids(m.prvt()), Vec::<usize>::new());
-    assert_eq!(ids(m.obs()), vec![x.id(), p.id(), e.id()]);
     assert_eq!(ids(m.ctrl()), vec![x.id(), p.id()]);
 }
 
@@ -507,34 +476,77 @@ fn heterogeneous_composition() {
 
     let init = Term::constant(SeqOps::havoc(&srt("A")), [X(x)]).unwrap();
     let jump = Term::function(SeqOps::skip(&srt("A")), [X(x)], [x]).unwrap();
-    let P = reactive::Module::sequential(named(&[x]), [init], [jump]).unwrap();
+    let P = generic_atom(&[x], &[], &[x], [init], [jump], zero::<DifOps>(&[x]));
+    let P = reactive::Module::observable([P.unwrap()]).unwrap();
 
     let init = Term::constant(SeqOps::havoc(&srt("B")), [X(y)]).unwrap();
     let flow = Term::constant(DifOps::zero(&srt("B").tangent()), [d(y)]).unwrap();
-    let Q = reactive::Module::differential(named(&[y]), [init], [flow]).unwrap();
+    let Q = generic_atom(&[y], &[], &[y], [init], skip::<SeqOps>(&[y]), [flow]);
+    let Q = reactive::Module::observable([Q.unwrap()]).unwrap();
 
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();
-    let R = reactive::Module::combinatorial(named(&[x, y, z]), [comb]).unwrap();
+    let R = generic_atom(
+        &[z],
+        &[x, y],
+        &[],
+        [comb.clone()],
+        [comb],
+        zero::<DifOps>(&[z]),
+    );
+    let R = reactive::Module::observable([R.unwrap()]).unwrap();
 
     let S = reactive::Module::compose([P, Q, R]);
     assert!(S.is_ok());
 }
 
+/// The atom controlling the variable `v` with a constant, under the wires
+/// of its blocks only
+fn constant(v: Var<Srt>) -> Atom {
+    let ctrl = AtomInterface::try_from_iter([v]).unwrap();
+    let (init, update, der) = (
+        Wire::new(*v.dtype()),
+        Wire::new(*v.dtype()),
+        Wire::new(v.dtype().tangent()),
+    );
+    let init = block([], [init], [term!(mk_op("CONST"), [init]).unwrap()]).unwrap();
+    let update = block([], [update], [term!(mk_op("CONST"), [update]).unwrap()]).unwrap();
+    let delay = block([], [der], [term!(mk_op("ZERO"), [der]).unwrap()]).unwrap();
+    Atom::new(
+        ctrl,
+        AtomInterface::empty(),
+        AtomInterface::empty(),
+        init,
+        update,
+        delay,
+    )
+    .unwrap()
+}
+
+/// The atom controlling the variable `w` with the latched value of the
+/// variable `v`, under the wires of its blocks only
+fn follow(w: Var<Srt>, v: Var<Srt>) -> Atom {
+    let (ctrl, read) = (
+        AtomInterface::try_from_iter([w]).unwrap(),
+        AtomInterface::try_from_iter([v]).unwrap(),
+    );
+    let init = Wire::new(*w.dtype());
+    let init = block([], [init], [term!(mk_op("CONST"), [init]).unwrap()]).unwrap();
+    let (rd, wt) = (Wire::new(*v.dtype()), Wire::new(*w.dtype()));
+    let update = block([rd], [wt], [term!(mk_op("ID"), [wt], [rd]).unwrap()]).unwrap();
+    let (rd, der) = (Wire::new(*v.dtype()), Wire::new(w.dtype().tangent()));
+    let delay = block([rd], [der], [term!(mk_op("ZERO"), [der]).unwrap()]).unwrap();
+    Atom::new(ctrl, AtomInterface::empty(), read, init, update, delay).unwrap()
+}
+
 /// Atoms connect by the names of their variables: an atom reading the name
-/// another atom controls reads that variable.
+/// another atom controls reads that variable, whatever the wires of their
+/// blocks.
 #[test]
 fn atoms_connect_by_name() {
-    let x = Wire3::new(srt("real"));
-    let y = Wire3::new(srt("real"));
     let v = Var::new(7, srt("real"));
+    let w = Var::new(8, srt("real"));
 
-    // the first atom controls `v` through `x`, the second reads it through `y`
-    let a = Atom::jump([(v, &x)], [term!(mk_op("CONST"), [X(x)]).unwrap()]).unwrap();
-    let w = Wire3::new(srt("real"));
-    let b_update = [term!(mk_op("ID"), [X(w)], [*y]).unwrap()];
-    let b = Atom::jump([(v, &y), (name(&w), &w)], b_update).unwrap();
-
-    let m = Module::observable([a, b]).unwrap();
+    let m = Module::observable([constant(v), follow(w, v)]).unwrap();
     assert!(m.is_closed());
     assert!(m.ctrl().contains(&v));
     assert_eq!(m.obs().len(), 2);
@@ -544,15 +556,10 @@ fn atoms_connect_by_name() {
 /// both within a module and across composed modules.
 #[test]
 fn coupled_variables_agree_on_sorts() {
-    let x = Wire3::new(srt("real"));
-    let y = Wire3::new(srt("bool"));
     let (v_real, v_bool) = (Var::new(7, srt("real")), Var::new(7, srt("bool")));
+    let w = Var::new(8, srt("real"));
 
-    let a = Atom::jump([(v_real, &x)], [term!(mk_op("CONST"), [X(x)]).unwrap()]).unwrap();
-    let w = Wire3::new(srt("real"));
-    let b_update = [term!(mk_op("ID"), [X(w)], [*y]).unwrap()];
-    let b = Atom::jump([(v_bool, &y), (name(&w), &w)], b_update).unwrap();
-
+    let (a, b) = (constant(v_real), follow(w, v_bool));
     assert!(Module::observable([a.clone(), b.clone()]).is_err());
 
     let ma = Module::observable([a]).unwrap();

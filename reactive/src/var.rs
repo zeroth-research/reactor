@@ -27,20 +27,6 @@ impl<S: Tangent + Copy> Wire3<S> {
     }
 }
 
-impl<S> Wire3<S> {
-    pub(crate) fn ltc(&self) -> &Wire<S> {
-        &self.ltc
-    }
-
-    pub(crate) fn nxt(&self) -> &Wire<S> {
-        &self.nxt
-    }
-
-    pub(crate) fn der(&self) -> &Wire<S> {
-        &self.der
-    }
-}
-
 /// Equality goes through the latched wire — the variable's bearing element,
 /// consistent with its [`Deref`] view: two variables are the same variable
 /// iff they share the same latched wire.
