@@ -1,5 +1,5 @@
 use crate::term::{Term, TermInterfaceType};
-use crate::var::Var;
+use crate::var::{Bindings, Var, name, named};
 use crate::wire::Wire;
 use crate::{try_iter_borrow, try_term_iter_cloned, try_var_iter_cloned, wires_untyped_to_repr};
 use pyo3::exceptions::{PyException, PyIndexError};
@@ -11,12 +11,8 @@ use theory::any::{Any, Combinatorial, Differential, Sequential};
 #[pyclass(frozen)]
 pub(crate) struct Atom {
     base: reactive::Atom<Combinatorial, Sequential, Differential>,
-}
-
-impl From<reactive::Atom<Combinatorial, Sequential, Differential>> for Atom {
-    fn from(base: reactive::Atom<Combinatorial, Sequential, Differential>) -> Self {
-        Self { base }
-    }
+    // the python variables of the names of the atom
+    bindings: Bindings,
 }
 
 #[pymethods]
@@ -51,8 +47,8 @@ impl Atom {
         let init = try_term_iter_cloned(&init)?;
         let update = try_term_iter_cloned(&update)?;
 
-        match reactive::Atom::sequential(vars.iter(), init, update) {
-            Ok(base) => Ok(base.into()),
+        match reactive::Atom::sequential(named(&vars), init, update) {
+            Ok(base) => Ok(Self::from_base(base, Bindings::new(&vars))),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
@@ -67,8 +63,8 @@ impl Atom {
         let init = try_term_iter_cloned(&init)?;
         let delay = try_term_iter_cloned(&delay)?;
 
-        match reactive::Atom::differential(vars.iter(), init, delay) {
-            Ok(base) => Ok(base.into()),
+        match reactive::Atom::differential(named(&vars), init, delay) {
+            Ok(base) => Ok(Self::from_base(base, Bindings::new(&vars))),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
@@ -85,8 +81,8 @@ impl Atom {
         let update = try_term_iter_cloned(&update)?;
         let delay = try_term_iter_cloned(&delay)?;
 
-        match reactive::Atom::hybrid(vars.iter(), init, update, delay) {
-            Ok(base) => Ok(base.into()),
+        match reactive::Atom::hybrid(named(&vars), init, update, delay) {
+            Ok(base) => Ok(Self::from_base(base, Bindings::new(&vars))),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
@@ -96,8 +92,8 @@ impl Atom {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         let update = try_term_iter_cloned(&update)?;
 
-        match reactive::Atom::jump(vars.iter(), update) {
-            Ok(base) => Ok(base.into()),
+        match reactive::Atom::jump(named(&vars), update) {
+            Ok(base) => Ok(Self::from_base(base, Bindings::new(&vars))),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
@@ -112,8 +108,8 @@ impl Atom {
         let update = try_term_iter_cloned(&update)?;
         let delay = try_term_iter_cloned(&delay)?;
 
-        match reactive::Atom::uninitialized(vars.iter(), update, delay) {
-            Ok(base) => Ok(base.into()),
+        match reactive::Atom::uninitialized(named(&vars), update, delay) {
+            Ok(base) => Ok(Self::from_base(base, Bindings::new(&vars))),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
@@ -123,8 +119,8 @@ impl Atom {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         let init = try_term_iter_cloned(&init)?;
 
-        match reactive::Atom::constant(vars.iter(), init) {
-            Ok(base) => Ok(base.into()),
+        match reactive::Atom::constant(named(&vars), init) {
+            Ok(base) => Ok(Self::from_base(base, Bindings::new(&vars))),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
@@ -133,8 +129,8 @@ impl Atom {
     fn hold(vars: &Bound<'_, PyAny>) -> PyResult<Self> {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
 
-        match reactive::Atom::hold(vars.iter()) {
-            Ok(base) => Ok(base.into()),
+        match reactive::Atom::hold(named(&vars)) {
+            Ok(base) => Ok(Self::from_base(base, Bindings::new(&vars))),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
@@ -144,8 +140,8 @@ impl Atom {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         let delay = try_term_iter_cloned(&delay)?;
 
-        match reactive::Atom::flow(vars.iter(), delay) {
-            Ok(base) => Ok(base.into()),
+        match reactive::Atom::flow(named(&vars), delay) {
+            Ok(base) => Ok(Self::from_base(base, Bindings::new(&vars))),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
@@ -155,8 +151,8 @@ impl Atom {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
 
-        match reactive::Atom::combinatorial(vars.iter(), assign) {
-            Ok(base) => Ok(base.into()),
+        match reactive::Atom::combinatorial(named(&vars), assign) {
+            Ok(base) => Ok(Self::from_base(base, Bindings::new(&vars))),
             Err(msg) => Err(PyException::new_err(msg)),
         }
     }
@@ -203,10 +199,14 @@ impl Atom {
     /// Renders the atom with variables named by `names`; variables
     /// without an entry print as `#{id}`. Don't rely on the fallback - it may change anytime
     fn show(&self, names: HashMap<Var, String>) -> String {
+        let names: HashMap<u32, &str> = names
+            .iter()
+            .map(|(var, varname)| (name(var.base()).name(), varname.as_str()))
+            .collect();
         self.base
-            .with_varnames(|v| match names.get(v) {
-                Some(name) => Cow::Borrowed(name.as_str()),
-                None => Cow::Owned(format!("#{}", v.id())),
+            .with_varnames(|v| match names.get(&v.name()) {
+                Some(varname) => Cow::Borrowed(*varname),
+                None => Cow::Owned(format!("#{}", v.name())),
             })
             .to_string()
     }
@@ -217,8 +217,19 @@ impl Atom {
 }
 
 impl Atom {
+    pub(crate) fn from_base(
+        base: reactive::Atom<Combinatorial, Sequential, Differential>,
+        bindings: Bindings,
+    ) -> Self {
+        Self { base, bindings }
+    }
+
     pub(crate) fn base(&self) -> &reactive::Atom<Combinatorial, Sequential, Differential> {
         &self.base
+    }
+
+    pub(crate) fn bindings(&self) -> &Bindings {
+        &self.bindings
     }
 
     fn interface(slf: PyRef<'_, Self>, interface: AtomInterfaceType) -> PyResult<AtomInterface> {
@@ -242,7 +253,7 @@ struct AtomInterface {
 }
 
 impl AtomInterface {
-    fn base(&self) -> &reactive::Interface<theory::any::Sort> {
+    fn base(&self) -> &reactive::AtomInterface<theory::any::Sort> {
         let atom = &self.atom.get().base;
         match self.interface {
             AtomInterfaceType::Read => atom.read(),
@@ -250,17 +261,21 @@ impl AtomInterface {
             AtomInterfaceType::Ctrl => atom.ctrl(),
         }
     }
+
+    fn bindings(&self) -> &Bindings {
+        &self.atom.get().bindings
+    }
 }
 #[pymethods]
 impl AtomInterface {
     fn __repr__(&self) -> String {
-        wires_untyped_to_repr(self.base())
+        interface_repr(self.base(), self.bindings())
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Var> {
         self.base()
             .nth(index)
-            .map(|v| Var::from(*v))
+            .map(|v| self.bindings().var(v))
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
@@ -269,36 +284,67 @@ impl AtomInterface {
     }
 
     fn __eq__<'py>(&self, other: &Bound<'py, PyAny>) -> bool {
-        let other = match try_iter_borrow::<Var>(other) {
-            Ok(other) => other,
-            Err(_) => return false,
-        };
-
-        let mut this = self.base().iter();
-        let mut other = other.into_iter();
-        loop {
-            match (this.next(), other.next()) {
-                (Some(this), Some(Ok(other))) => {
-                    if this != other.base() {
-                        return false;
-                    }
-                }
-                (None, None) => return true,
-                _ => return false,
-            }
-        }
+        interface_eq(self.base(), other)
     }
 
     fn __contains__(&self, item: &Bound<'_, PyAny>) -> bool {
-        if let Ok(var) = item.extract::<PyRef<Var>>() {
-            return self.base().contains(var.base());
-        }
-        //also checking containment of any wire (latched, next, derived)
-        if let Ok(wire) = item.extract::<PyRef<Wire>>() {
-            return self.base().var(wire.base()).is_some();
-        }
-        false
+        interface_contains(self.base(), self.bindings(), item)
     }
+}
+
+/// Renders the latched wires of the variables of the interface, untyped and
+/// comma-separated.
+pub(crate) fn interface_repr(
+    interface: &reactive::ModuleInterface<theory::any::Sort>,
+    bindings: &Bindings,
+) -> String {
+    let vars: Vec<_> = interface.iter().map(|v| *bindings.wires(v)).collect();
+    wires_untyped_to_repr(&vars)
+}
+
+/// Whether the interface lists exactly the python variables of `other`, in
+/// order.
+pub(crate) fn interface_eq(
+    interface: &reactive::ModuleInterface<theory::any::Sort>,
+    other: &Bound<'_, PyAny>,
+) -> bool {
+    let other = match try_iter_borrow::<Var>(other) {
+        Ok(other) => other,
+        Err(_) => return false,
+    };
+
+    let mut this = interface.iter();
+    let mut other = other.into_iter();
+    loop {
+        match (this.next(), other.next()) {
+            (Some(this), Some(Ok(other))) => {
+                if *this != name(other.base()) {
+                    return false;
+                }
+            }
+            (None, None) => return true,
+            _ => return false,
+        }
+    }
+}
+
+/// Whether the interface contains the python variable `item`, or the variable
+/// of the wire `item` (latched, next, or derivative).
+pub(crate) fn interface_contains(
+    interface: &reactive::ModuleInterface<theory::any::Sort>,
+    bindings: &Bindings,
+    item: &Bound<'_, PyAny>,
+) -> bool {
+    if let Ok(var) = item.extract::<PyRef<Var>>() {
+        return interface.contains(&name(var.base()));
+    }
+    if let Ok(wire) = item.extract::<PyRef<Wire>>() {
+        let wire = wire.base();
+        return interface.iter().map(|v| bindings.wires(v)).any(|var| {
+            **var == *wire || reactive::var::X_ref(var) == wire || reactive::var::d_ref(var) == wire
+        });
+    }
+    false
 }
 
 #[derive(Clone)]

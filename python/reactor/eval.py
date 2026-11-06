@@ -170,6 +170,9 @@ def _execute_block(state, atoms, get_block):
     """Evaluate a block from each atom."""
     for atom in atoms:
         for term in get_block(atom):
+            # a term that writes nothing (a discard of an unused input) has no effect
+            if not len(term.write):
+                continue
             read = [state[w] for w in term.read]
             out_sort = term.write[0].dtype if len(term.write) else None
             results = eval_itype(term.itype, read, out_sort)

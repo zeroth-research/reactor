@@ -21,7 +21,7 @@ mod wire;
 use crate::atom::Atom;
 use crate::module::Module;
 use crate::term::Term;
-use crate::var::Var;
+use crate::var::{Bindings, Var};
 use crate::wire::Wire;
 
 #[pymodule]
@@ -108,7 +108,8 @@ fn try_wire_iter_cloned(
 /// variables (e.g. a lambda), or any iterable of variables (preferably a
 /// set); `None` hides nothing.
 pub(crate) enum Hide<'py> {
-    Set(HashSet<reactive::Wire3<Sort>>),
+    // the names of the variables
+    Set(HashSet<u32>),
     Call(
         &'py Bound<'py, PyAny>,
         // errors raised by the callable, surfaced after the base call
@@ -121,7 +122,7 @@ impl<'py> Hide<'py> {
         if hide.is_callable() {
             Ok(Hide::Call(hide, Default::default()))
         } else if let Ok(iter) = try_var_iter_cloned(hide) {
-            Ok(Hide::Set(iter.collect()))
+            Ok(Hide::Set(iter.map(|var| var::name(&var).name()).collect()))
         } else {
             Err(PyException::new_err(
                 "hide must be either callable or iterable",
@@ -129,15 +130,19 @@ impl<'py> Hide<'py> {
         }
     }
 
-    /// The predicate handed to the base constructors.
-    pub(crate) fn as_fn(&self) -> impl Fn(&reactive::Wire3<Sort>) -> bool + '_ {
+    /// The predicate handed to the base constructors; the callable is given
+    /// the python variables of the names `bindings` binds.
+    pub(crate) fn as_fn<'a>(
+        &'a self,
+        bindings: &'a Bindings,
+    ) -> impl Fn(&reactive::Var<Sort>) -> bool + 'a {
         move |var| match self {
-            Hide::Set(set) => set.contains(var),
+            Hide::Set(set) => set.contains(&var.name()),
             Hide::Call(hide, err) => {
                 if err.borrow().is_some() {
                     return false;
                 }
-                match hide.call1((Var::from(*var),)).and_then(|r| r.is_truthy()) {
+                match hide.call1((bindings.var(var),)).and_then(|r| r.is_truthy()) {
                     Ok(hidden) => hidden,
                     Err(e) => {
                         *err.borrow_mut() = Some(e);

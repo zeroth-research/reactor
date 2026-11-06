@@ -207,10 +207,11 @@ def test_differential_sugar_module():
     assert m.extl == [t]
 
     a = m.atoms[0]
-    # the delay drives d(x); the synthesised skip update drives X(x)
+    # the delay drives d(x); the synthesised skip update drives X(x), and
+    # discards the next value of t, which only the delay awaits (as d(t))
     assert _d(x) in a.delay.write()
     assert _X(x) in a.update.write()
-    assert len(a.update) == 1
+    assert len(a.update) == 1 + 1
 
 
 def test_hybrid_sugar_module():

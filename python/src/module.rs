@@ -1,4 +1,7 @@
+use crate::atom::{interface_contains, interface_eq, interface_repr};
+use crate::var::{Bindings, named};
 use crate::*;
+use base::wire::PREFIX;
 use pyo3::Py;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
@@ -9,25 +12,38 @@ use theory::any::{Combinatorial, Differential, Sequential};
 #[pyclass(subclass, frozen)]
 pub(crate) struct Module {
     pub(crate) base: reactive::Module<Combinatorial, Sequential, Differential>,
+    // the python variables of the names of the module
+    bindings: Bindings,
 }
 
+type Base = reactive::Module<Combinatorial, Sequential, Differential>;
+
 impl Module {
-    fn partially_observable<A>(atoms: A, hide: &Bound<'_, PyAny>) -> PyResult<Self>
+    /// Wraps the base module, or raises its error.
+    fn wrap(module: Result<Base, String>, bindings: Bindings) -> PyResult<Self> {
+        module
+            .map(|base| Self { base, bindings })
+            .map_err(PyException::new_err)
+    }
+
+    fn partially_observable<A>(
+        atoms: A,
+        hide: &Bound<'_, PyAny>,
+        bindings: Bindings,
+    ) -> PyResult<Self>
     where
         A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential>>,
     {
         let hide = Hide::try_from(hide)?;
-        let module = reactive::Module::partially_observable(atoms, hide.as_fn());
-        hide.err()
-            .and_then(|()| module.map(Into::into).map_err(PyException::new_err))
+        let module = reactive::Module::partially_observable(atoms, hide.as_fn(&bindings));
+        hide.err().and_then(|()| Self::wrap(module, bindings))
     }
 
-    fn observable<A>(atoms: A) -> PyResult<Self>
+    fn observable<A>(atoms: A, bindings: Bindings) -> PyResult<Self>
     where
         A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential>>,
     {
-        let module = reactive::Module::observable(atoms);
-        module.map(Into::into).map_err(PyException::new_err)
+        Self::wrap(reactive::Module::observable(atoms), bindings)
     }
 }
 
@@ -54,11 +70,12 @@ impl Module {
             } else if args.get_item(0)?.downcast::<Atom>().is_ok() {
                 // a sequence of atoms builds a single module
                 let atoms: Vec<_> = try_iter_borrow::<Atom>(args)?.collect::<PyResult<_>>()?;
+                let bindings = Bindings::merge(atoms.iter().map(|a| a.bindings()));
                 let atoms = atoms.iter().map(|a| a.base().clone());
                 if let Some(hide) = hide {
-                    Self::partially_observable(atoms, hide)
+                    Self::partially_observable(atoms, hide, bindings)
                 } else {
-                    Self::observable(atoms)
+                    Self::observable(atoms, bindings)
                 }
             } else {
                 // sequence of modules composes in parallel
@@ -71,7 +88,7 @@ impl Module {
                 "missing `vars`? An atomic module needs some",
             ))
         } else {
-            Ok(reactive::Module::empty().into())
+            Self::wrap(Ok(reactive::Module::empty()), Bindings::default())
         }
     }
 
@@ -120,12 +137,12 @@ impl Module {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
 
         if let Some(hide) = hide {
-            let atom = reactive::Atom::sequential(vars.iter(), init, update)
+            let atom = reactive::Atom::sequential(named(&vars), init, update)
                 .map_err(PyException::new_err)?;
-            Self::partially_observable([atom], hide)
+            Self::partially_observable([atom], hide, Bindings::new(&vars))
         } else {
-            let module = reactive::Module::sequential(vars.iter(), init, update);
-            module.map(Into::into).map_err(PyException::new_err)
+            let module = reactive::Module::sequential(named(&vars), init, update);
+            Self::wrap(module, Bindings::new(&vars))
         }
     }
 
@@ -139,12 +156,12 @@ impl Module {
         let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom =
-                reactive::Atom::combinatorial(vars.iter(), assign).map_err(PyException::new_err)?;
-            Self::partially_observable([atom], hide)
+            let atom = reactive::Atom::combinatorial(named(&vars), assign)
+                .map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide, Bindings::new(&vars))
         } else {
-            let module = reactive::Module::combinatorial(vars.iter(), assign);
-            module.map(Into::into).map_err(PyException::new_err)
+            let module = reactive::Module::combinatorial(named(&vars), assign);
+            Self::wrap(module, Bindings::new(&vars))
         }
     }
 
@@ -160,12 +177,12 @@ impl Module {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = reactive::Atom::differential(vars.iter(), init, delay)
+            let atom = reactive::Atom::differential(named(&vars), init, delay)
                 .map_err(PyException::new_err)?;
-            Self::partially_observable([atom], hide)
+            Self::partially_observable([atom], hide, Bindings::new(&vars))
         } else {
-            let module = reactive::Module::differential(vars.iter(), init, delay);
-            module.map(Into::into).map_err(PyException::new_err)
+            let module = reactive::Module::differential(named(&vars), init, delay);
+            Self::wrap(module, Bindings::new(&vars))
         }
     }
 
@@ -183,12 +200,12 @@ impl Module {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = reactive::Atom::hybrid(vars.iter(), init, update, delay)
+            let atom = reactive::Atom::hybrid(named(&vars), init, update, delay)
                 .map_err(PyException::new_err)?;
-            Self::partially_observable([atom], hide)
+            Self::partially_observable([atom], hide, Bindings::new(&vars))
         } else {
-            let module = reactive::Module::hybrid(vars.iter(), init, update, delay);
-            module.map(Into::into).map_err(PyException::new_err)
+            let module = reactive::Module::hybrid(named(&vars), init, update, delay);
+            Self::wrap(module, Bindings::new(&vars))
         }
     }
 
@@ -202,11 +219,11 @@ impl Module {
         let update = try_term_iter_cloned(&update)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = reactive::Atom::jump(vars.iter(), update).map_err(PyException::new_err)?;
-            Self::partially_observable([atom], hide)
+            let atom = reactive::Atom::jump(named(&vars), update).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide, Bindings::new(&vars))
         } else {
-            let module = reactive::Module::jump(vars.iter(), update);
-            module.map(Into::into).map_err(PyException::new_err)
+            let module = reactive::Module::jump(named(&vars), update);
+            Self::wrap(module, Bindings::new(&vars))
         }
     }
 
@@ -222,12 +239,12 @@ impl Module {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = reactive::Atom::uninitialized(vars.iter(), update, delay)
+            let atom = reactive::Atom::uninitialized(named(&vars), update, delay)
                 .map_err(PyException::new_err)?;
-            Self::partially_observable([atom], hide)
+            Self::partially_observable([atom], hide, Bindings::new(&vars))
         } else {
-            let module = reactive::Module::uninitialized(vars.iter(), update, delay);
-            module.map(Into::into).map_err(PyException::new_err)
+            let module = reactive::Module::uninitialized(named(&vars), update, delay);
+            Self::wrap(module, Bindings::new(&vars))
         }
     }
 
@@ -236,11 +253,11 @@ impl Module {
     fn hold(vars: &Bound<'_, PyAny>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = reactive::Atom::hold(vars.iter()).map_err(PyException::new_err)?;
-            Self::partially_observable([atom], hide)
+            let atom = reactive::Atom::hold(named(&vars)).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide, Bindings::new(&vars))
         } else {
-            let module = reactive::Module::hold(vars.iter());
-            module.map(Into::into).map_err(PyException::new_err)
+            let module = reactive::Module::hold(named(&vars));
+            Self::wrap(module, Bindings::new(&vars))
         }
     }
 
@@ -254,11 +271,11 @@ impl Module {
         let delay = try_term_iter_cloned(&delay)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = reactive::Atom::flow(vars.iter(), delay).map_err(PyException::new_err)?;
-            Self::partially_observable([atom], hide)
+            let atom = reactive::Atom::flow(named(&vars), delay).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide, Bindings::new(&vars))
         } else {
-            let module = reactive::Module::flow(vars.iter(), delay);
-            module.map(Into::into).map_err(PyException::new_err)
+            let module = reactive::Module::flow(named(&vars), delay);
+            Self::wrap(module, Bindings::new(&vars))
         }
     }
 
@@ -272,11 +289,12 @@ impl Module {
         let init = try_term_iter_cloned(&init)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
-            let atom = reactive::Atom::constant(vars.iter(), init).map_err(PyException::new_err)?;
-            Self::partially_observable([atom], hide)
+            let atom =
+                reactive::Atom::constant(named(&vars), init).map_err(PyException::new_err)?;
+            Self::partially_observable([atom], hide, Bindings::new(&vars))
         } else {
-            let module = reactive::Module::constant(vars.iter(), init);
-            module.map(Into::into).map_err(PyException::new_err)
+            let module = reactive::Module::constant(named(&vars), init);
+            Self::wrap(module, Bindings::new(&vars))
         }
     }
 
@@ -287,15 +305,14 @@ impl Module {
     #[pyo3(signature = (*modules, hide = None))]
     fn compose(modules: &Bound<'_, PyTuple>, hide: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let modules: Vec<_> = try_iter_borrow::<Self>(modules)?.collect::<PyResult<_>>()?;
+        let bindings = Bindings::merge(modules.iter().map(|r| &r.bindings));
         let modules = modules.iter().map(|r| r.base.clone());
         if let Some(hide) = hide {
             let hide = Hide::try_from(hide)?;
-            let module = reactive::Module::compose_hiding(modules, hide.as_fn());
-            hide.err()
-                .and_then(|()| module.map(Into::into).map_err(PyException::new_err))
+            let module = reactive::Module::compose_hiding(modules, hide.as_fn(&bindings));
+            hide.err().and_then(|()| Self::wrap(module, bindings))
         } else {
-            let module = reactive::Module::compose(modules);
-            module.map(Into::into).map_err(PyException::new_err)
+            Self::wrap(reactive::Module::compose(modules), bindings)
         }
     }
 
@@ -342,10 +359,14 @@ impl Module {
     /// Renders the module with variables named by `names`; variables
     /// without an entry print as an untyped wire.
     fn with_varnames(&self, names: HashMap<Var, String>) -> String {
+        let names: HashMap<u32, &str> = names
+            .iter()
+            .map(|(var, varname)| (var::name(var.base()).name(), varname.as_str()))
+            .collect();
         self.base
-            .with_varnames(|v| match names.get(v) {
-                Some(name) => Cow::Borrowed(name.as_str()),
-                None => Cow::Owned(format!("{}", v.untyped())), //
+            .with_varnames(|v| match names.get(&v.name()) {
+                Some(varname) => Cow::Borrowed(*varname),
+                None => Cow::Owned(format!("{PREFIX}{}", v.name())),
             })
             .to_string()
     }
@@ -356,26 +377,20 @@ impl Module {
 
     fn __str__(&self) -> String {
         self.base
-            .with_varnames(|v| Cow::Owned(format!("{}", v.untyped())))
+            .with_varnames(|v| Cow::Owned(format!("{PREFIX}{}", v.name())))
             .to_string()
     }
 
     fn __mul__(&self, other: PyRef<Module>) -> PyResult<Module> {
         let module = reactive::Module::compose([self.base.clone(), other.base.clone()]);
-        module.map(Into::into).map_err(PyException::new_err)
+        Self::wrap(module, Bindings::merge([&self.bindings, &other.bindings]))
     }
 
     fn hide(&self, hide: &Bound<'_, PyAny>) -> PyResult<Module> {
         let hide = Hide::try_from(hide)?;
-        let module = self.base.clone().hide(hide.as_fn());
+        let module = self.base.clone().hide(hide.as_fn(&self.bindings));
         hide.err()?;
-        module.map(Into::into).map_err(PyException::new_err)
-    }
-}
-
-impl From<reactive::Module<Combinatorial, Sequential, Differential>> for Module {
-    fn from(base: reactive::Module<Combinatorial, Sequential, Differential>) -> Self {
-        Self { base }
+        Self::wrap(module, self.bindings.clone())
     }
 }
 
@@ -405,7 +420,11 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &reactive::Interface<Sort> {
+    fn bindings(&self) -> &Bindings {
+        &self.module.get().bindings
+    }
+
+    fn base(&self) -> &reactive::ModuleInterface<Sort> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),
@@ -419,13 +438,13 @@ impl ModuleInterface {
 #[pymethods]
 impl ModuleInterface {
     fn __repr__(&self) -> String {
-        wires_untyped_to_repr(self.base())
+        interface_repr(self.base(), self.bindings())
     }
 
     fn __getitem__(&self, index: usize) -> PyResult<Var> {
         self.base()
             .nth(index)
-            .map(|v| Var::from(*v))
+            .map(|v| self.bindings().var(v))
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
@@ -434,35 +453,11 @@ impl ModuleInterface {
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
-        let other = match try_iter_borrow::<Var>(other) {
-            Ok(other) => other,
-            Err(_) => return false,
-        };
-
-        let mut this = self.base().iter();
-        let mut other = other.into_iter();
-        loop {
-            match (this.next(), other.next()) {
-                (Some(this), Some(Ok(other))) => {
-                    if this != other.base() {
-                        return false;
-                    }
-                }
-                (None, None) => return true,
-                _ => return false,
-            }
-        }
+        interface_eq(self.base(), other)
     }
 
     fn __contains__(&self, item: &Bound<'_, PyAny>) -> bool {
-        if let Ok(var) = item.extract::<PyRef<Var>>() {
-            return self.base().contains(var.base());
-        }
-        //also checking containment of any wire (latched, next, derived)
-        if let Ok(wire) = item.extract::<PyRef<Wire>>() {
-            return self.base().var(wire.base()).is_some();
-        }
-        false
+        interface_contains(self.base(), self.bindings(), item)
     }
 }
 
@@ -474,9 +469,12 @@ struct ModuleAtoms {
 #[pymethods]
 impl ModuleAtoms {
     fn __getitem__(&self, index: usize) -> PyResult<Atom> {
-        let module = &self.module.get().base;
-        let atoms = module.atoms();
-        let result = atoms.get(index).map(Clone::clone).map(Into::into);
+        let module = self.module.get();
+        let atoms = module.base.atoms();
+        let bindings = &module.bindings;
+        let result = atoms
+            .get(index)
+            .map(|atom| Atom::from_base(atom.clone(), bindings.clone()));
         result.ok_or(PyIndexError::new_err("index out of bounds"))
     }
 

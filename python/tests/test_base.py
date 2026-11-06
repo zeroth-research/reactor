@@ -163,9 +163,10 @@ def test_module_new_dispatches_on_blocks():
         assert m.closed()
         assert m.intf == [x, p]
 
-    # the hybrid keeps all three blocks as given, the others synthesise
+    # the hybrid keeps all three blocks as given, the others synthesise; the
+    # delay also discards the latched x and p, which only the update reads
     atom = hybrid.atoms[0]
-    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2
+    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2 + 2
 
 
 def test_module_new_partially_observable():
@@ -343,25 +344,26 @@ def test_atom_constructors():
 def test_atom_new_dispatches_on_blocks():
     x, p, init, update, delay = _stateful_blocks()
 
-    # the hybrid keeps the three explicit blocks, the others synthesise
+    # the hybrid keeps the three explicit blocks, the others synthesise; the
+    # delays also discard the latched x and p, which only the updates read
     atom = Atom([x, p], init=init, update=update, delay=delay)
-    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2
+    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2 + 2
 
     # a synthesised block per controlled variable where a block is implicit
     atom = Atom([x, p], init=init, update=update)  # sequential: delay is zero
-    assert len(atom.delay) == 2
+    assert len(atom.delay) == 2 + 2
     atom = Atom([x, p], init=init, delay=delay)  # differential: update is skip
     assert len(atom.update) == 2
     atom = Atom([x, p], update=update)  # jump: init is havoc
     assert len(atom.init) == 2
     atom = Atom([x, p], update=update, delay=delay)  # uninitialized: init is havoc
-    assert len(atom.init) == 2 and len(atom.delay) == 2
+    assert len(atom.init) == 2 and len(atom.delay) == 2 + 2
     atom = Atom([x, p], init=init)  # constant: update skip, delay zero
-    assert len(atom.update) == 2 and len(atom.delay) == 2
+    assert len(atom.update) == 2 and len(atom.delay) == 2 + 2
     atom = Atom([x, p], delay=delay)  # flow: init havoc, update skip
     assert len(atom.init) == 2 and len(atom.update) == 2
     atom = Atom([x, p])  # hold: everything synthesised
-    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2
+    assert len(atom.init) == 2 and len(atom.update) == 2 and len(atom.delay) == 2 + 2
 
 
 def test_module_hold_and_flow():
@@ -375,11 +377,12 @@ def test_module_hold_and_flow():
     m = Module.hold([x, p], hide=[p])
     assert m.intf == [x] and m.prvt == [p]
 
-    # flow: only the continuous dynamics, initial state havoced
+    # flow: only the continuous dynamics, initial state havoced; the delay
+    # discards the latched x and p, which only the synthesised update reads
     m = Module(delay=delay, vars=[x, p])
     assert m.closed()
     atom = m.atoms[0]
-    assert len(atom.init) == 2 and len(atom.delay) == 2
+    assert len(atom.init) == 2 and len(atom.delay) == 2 + 2
     m = Module.flow([x, p], delay, hide=[p])
     assert m.intf == [x] and m.prvt == [p]
 

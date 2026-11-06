@@ -443,6 +443,9 @@ class Env(Module, gym.Wrapper):
     def _run_block(self, atom, get_block):
         """Interpret an atom's init/update block, writing results to state."""
         for term in get_block(atom):
+            # a term that writes nothing (a discard of an unused input) has no effect
+            if not len(term.write):
+                continue
             read = [self._state[w] for w in term.read]
             out_sort = term.write[0].dtype if len(term.write) else None
             results = eval_itype(term.itype, read, out_sort)
