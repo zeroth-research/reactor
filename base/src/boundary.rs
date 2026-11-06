@@ -23,14 +23,15 @@
 //! For example, `I ⊕ I` has two values and carries no data, like `bool`, and
 //! `I ⊕ Real` is either nothing or a real, like `Option<Real>`.
 //!
-//! # Normal form
+//! # Representation
 //!
-//! As for ordinary types, `⊗` distributes over `⊕`: a value of
-//! `(x ⊕ y) ⊗ z` is either an `(x, z)` or a `(y, z)`, so the type is
-//! `x ⊗ z ⊕ y ⊗ z`. Every polynomial therefore has a normal form as a sum of
-//! products, and that is how it is stored: a [`Poly`] is a list of
-//! alternatives, each alternative is a [`Mono`]. A `Mono` is a sequence of base
-//! types.
+//! A [`Mono`] is a list of base types and a [`Poly`] is a list of `Mono`s.
+//! Concatenation on lists is associative and thus admits a normal form.
+//! Operation `⊗` on monomials concatenates their words, so [`Mono`]s are
+//! kept in normal form, with the empty word as `I`.
+//! Operation `⊕` on polynomials concatenates their lists of summands,
+//! so [`Poly`]s are also kept in a normal form, with the empty list as
+//! `0`.
 //!
 //! # Equality
 //!
@@ -192,7 +193,7 @@ impl<G> std::ops::Add for Poly<G> {
 // a creator of `Poly` needs to decide how to distribute if it is necessary.
 // (The implementation below is right-distribution).
 //
-/// Distributing copies base types into several variants, hence `G: Clone`.
+// /// Distributing copies base types into several variants, hence `G: Clone`.
 // impl<G: Clone> std::ops::Mul for Poly<G> {
 //     type Output = Poly<G>;
 //
