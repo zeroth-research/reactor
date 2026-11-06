@@ -138,6 +138,11 @@ pub enum LIA {
     UninterpretedBool(String, usize, usize),
     AnyInt(usize, usize),
     AnyBool(usize, usize),
+    // discarding a value (read, nothing written): of an integer, a boolean, and a zero
+    // derivative
+    DiscardInt(usize, usize),
+    DiscardBool(usize, usize),
+    DiscardZero(usize, usize),
 }
 
 /// Prints the name of the operation, the tensors of the literals and of the affine maps,
@@ -189,6 +194,14 @@ impl Theory for LIA {
             .and_then(|dom| check_wires(dom, try_cod(self)?, read, write))
             .map_err(|e| format!("{self:?}: {e}"))
     }
+
+    fn discard(domain: &Sort) -> Self {
+        match *domain {
+            Sort::Int([r, c]) => LIA::DiscardInt(r, c),
+            Sort::Bool([r, c]) => LIA::DiscardBool(r, c),
+            Sort::Zero([r, c]) => LIA::DiscardZero(r, c),
+        }
+    }
 }
 
 impl Boundary<Sort> for LIA {
@@ -239,6 +252,9 @@ fn try_dom(op: &LIA) -> Result<Poly<Sort>, String> {
         | LIA::AnyInt(..)
         | LIA::UninterpretedBool(..)
         | LIA::AnyBool(..) => Poly::unit(),
+        LIA::DiscardInt(r, c) => prod([int(r, c)]),
+        LIA::DiscardBool(r, c) => prod([bool(r, c)]),
+        LIA::DiscardZero(r, c) => prod([Sort::Zero([r, c])]),
     })
 }
 
@@ -276,6 +292,10 @@ fn try_cod(op: &LIA) -> Result<Poly<Sort>, String> {
         LIA::IteBool(r, c) | LIA::IdBool(r, c) => bool(r, c),
         LIA::UninterpretedInt(_, r, c) | LIA::AnyInt(r, c) => int(r, c),
         LIA::UninterpretedBool(_, r, c) | LIA::AnyBool(r, c) => bool(r, c),
+        // nothing is written
+        LIA::DiscardInt(..) | LIA::DiscardBool(..) | LIA::DiscardZero(..) => {
+            return Ok(Poly::unit());
+        }
     };
     Ok(prod([sort]))
 }
@@ -806,5 +826,28 @@ mod tests {
                 .check([int(2, 3)].map(ok), [z].map(ok))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn discard_ok() {
+        // `discard` reads one wire of the given sort and writes none
+        let (i, b, z) = (int(2, 1), bool_t(2, 1), int(2, 1).tangent());
+        assert!(matches!(LIA::discard(&i), LIA::DiscardInt(2, 1)));
+        assert!(matches!(LIA::discard(&b), LIA::DiscardBool(2, 1)));
+        assert!(matches!(LIA::discard(&z), LIA::DiscardZero(2, 1)));
+        for s in [i, b, z] {
+            assert!(LIA::discard(&s).check([s].map(ok), [].map(ok)).is_ok());
+            assert_eq!(LIA::discard(&s).cod(), Poly::unit());
+        }
+    }
+
+    #[test]
+    fn discard_write_or_mismatch_fails() {
+        let (i, b) = (int(2, 1), bool_t(2, 1));
+        let discard = LIA::discard(&i);
+        assert!(discard.check([i].map(ok), [i].map(ok)).is_err());
+        assert!(discard.check([].map(ok), [].map(ok)).is_err());
+        assert!(discard.check([b].map(ok), [].map(ok)).is_err());
+        assert!(discard.check([int(1, 1)].map(ok), [].map(ok)).is_err());
     }
 }

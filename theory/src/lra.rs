@@ -184,6 +184,12 @@ pub enum LRA {
     // the zero derivatives
     RealZerograd(usize, usize, u8), // unstable
     BoolZerograd(usize, usize),     // unstable
+    // discarding a value (read, nothing written): of a real, a boolean, a derivative of a
+    // real of the rank `rank`, and a zero derivative of a boolean
+    DiscardReal(usize, usize),
+    DiscardBool(usize, usize),
+    TDiscard(usize, usize, u8),
+    DiscardZero(usize, usize),
 }
 
 /// Prints the name of the operation, the tensors of the literals and of the affine maps,
@@ -255,6 +261,21 @@ impl Theory for LRA {
         try_dom(self)
             .and_then(|dom| check_wires(dom, try_cod(self)?, read, write))
             .map_err(|e| format!("{self:?}: {e}"))
+    }
+
+    fn discard(domain: &Sort) -> Self {
+        match *domain {
+            Sort::Real {
+                shape: [r, c],
+                rank: 0,
+            } => LRA::DiscardReal(r, c),
+            Sort::Real {
+                shape: [r, c],
+                rank,
+            } => LRA::TDiscard(r, c, rank),
+            Sort::Bool { shape: [r, c] } => LRA::DiscardBool(r, c),
+            Sort::Zero { shape: [r, c] } => LRA::DiscardZero(r, c),
+        }
     }
 }
 
@@ -330,6 +351,10 @@ fn try_dom(op: &LRA) -> Result<Poly<Sort>, String> {
         }
         LRA::TId(r, c, rank) => prod([treal(r, c, rank)?]),
         LRA::RealZerograd(..) | LRA::BoolZerograd(..) => Poly::unit(),
+        LRA::DiscardReal(r, c) => prod([real(r, c)]),
+        LRA::DiscardBool(r, c) => prod([bool(r, c)]),
+        LRA::TDiscard(r, c, rank) => prod([treal(r, c, rank)?]),
+        LRA::DiscardZero(r, c) => prod([bool(r, c).tangent()]),
     })
 }
 
@@ -374,6 +399,10 @@ fn try_cod(op: &LRA) -> Result<Poly<Sort>, String> {
         | LRA::RealZerograd(r, c, rank) => treal(r, c, rank)?,
         LRA::TLinear(ref a, ref b, batch, rank) => treal(linear_outputs(a, b)?, batch, rank)?,
         LRA::BoolZerograd(r, c) => bool(r, c).tangent(),
+        // nothing is written
+        LRA::DiscardReal(..) | LRA::DiscardBool(..) | LRA::TDiscard(..) | LRA::DiscardZero(..) => {
+            return Ok(Poly::unit());
+        }
     };
     Ok(prod([sort]))
 }
@@ -1129,6 +1158,40 @@ mod tests {
         assert!(
             linear
                 .check([x.tangent()].map(ok), [y.tangent()].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn discard_ok() {
+        // `discard` reads one wire of the given sort, a value or a derivative, and writes none
+        let (r, b) = (real(2, 1), bool_t(2, 1));
+        let (dr, db) = (r.tangent(), b.tangent());
+        assert!(matches!(LRA::discard(&r), LRA::DiscardReal(2, 1)));
+        assert!(matches!(LRA::discard(&b), LRA::DiscardBool(2, 1)));
+        assert!(matches!(LRA::discard(&dr), LRA::TDiscard(2, 1, 1)));
+        assert!(matches!(LRA::discard(&db), LRA::DiscardZero(2, 1)));
+        for s in [r, b, dr, db] {
+            assert!(LRA::discard(&s).check([s].map(ok), [].map(ok)).is_ok());
+            assert_eq!(LRA::discard(&s).cod(), Poly::unit());
+        }
+    }
+
+    #[test]
+    fn discard_write_or_mismatch_fails() {
+        let (r, b) = (real(2, 1), bool_t(2, 1));
+        let discard = LRA::discard(&r);
+        // nothing is written
+        assert!(discard.check([r].map(ok), [r].map(ok)).is_err());
+        // exactly one wire of the domain is read
+        assert!(discard.check([].map(ok), [].map(ok)).is_err());
+        assert!(discard.check([r, r].map(ok), [].map(ok)).is_err());
+        assert!(discard.check([b].map(ok), [].map(ok)).is_err());
+        assert!(discard.check([r.tangent()].map(ok), [].map(ok)).is_err());
+        // the rank of a discarded derivative is at least 1
+        assert!(
+            LRA::TDiscard(2, 1, 0)
+                .check([r].map(ok), [].map(ok))
                 .is_err()
         );
     }

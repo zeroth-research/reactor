@@ -189,6 +189,10 @@ pub enum BV {
     /// Uninterpreted value (written, used by the builder for untraced calls)
     Uninterpreted(String, usize, usize, usize),
     Havoc(usize, usize, usize),
+    /// Discards a bitvector matrix (read, nothing written)
+    Discard(usize, usize, usize),
+    /// Discards a zero derivative of a bitvector matrix (read, nothing written)
+    DiscardZero(usize, usize),
 }
 
 /// Prints the name of the operation, the tensors of the literals, the bits of
@@ -236,6 +240,13 @@ impl Theory for BV {
             .and_then(|cod| check_wires(self.dom(), cod, read, write))
             .map_err(|e| format!("{self:?}: {e}"))
     }
+
+    fn discard(domain: &Sort) -> Self {
+        match *domain {
+            Sort::BV(w, [r, c]) => BV::Discard(w, r, c),
+            Sort::Zero([r, c]) => BV::DiscardZero(r, c),
+        }
+    }
 }
 
 impl Boundary<Sort> for BV {
@@ -276,6 +287,8 @@ impl Boundary<Sort> for BV {
             } => prod([bv(width, rows, cols)]),
             BV::Ite(w, r, c) => prod([bv(1, 1, 1), bv(w, r, c), bv(w, r, c)]),
             BV::Uninterpreted(..) | BV::Havoc(..) => Poly::unit(),
+            BV::Discard(w, r, c) => prod([bv(w, r, c)]),
+            BV::DiscardZero(r, c) => prod([Sort::Zero([r, c])]),
         }
     }
 
@@ -345,6 +358,8 @@ fn try_cod(op: &BV) -> Result<Poly<Sort>, String> {
             cols,
         } => bv(width + extra, rows, cols),
         BV::Ite(w, r, c) | BV::Uninterpreted(_, w, r, c) | BV::Havoc(w, r, c) => bv(w, r, c),
+        // nothing is written
+        BV::Discard(..) | BV::DiscardZero(..) => return Ok(Poly::unit()),
     };
     Ok(prod([sort]))
 }
@@ -1001,5 +1016,26 @@ mod tests {
         // ... but values can be copied and havoced
         assert!(BV::skip(&t).check([t].map(ok), [t].map(ok)).is_ok());
         assert!(BV::havoc(&t).check([].map(ok), [t].map(ok)).is_ok());
+    }
+
+    #[test]
+    fn discard_ok() {
+        // `discard` reads one wire of the given sort and writes none
+        let (t, z) = (bv(8, 2, 1), bv(8, 2, 1).tangent());
+        assert!(matches!(BV::discard(&t), BV::Discard(8, 2, 1)));
+        assert!(matches!(BV::discard(&z), BV::DiscardZero(2, 1)));
+        for s in [t, z] {
+            assert!(BV::discard(&s).check([s].map(ok), [].map(ok)).is_ok());
+            assert_eq!(BV::discard(&s).cod(), Poly::unit());
+        }
+    }
+
+    #[test]
+    fn discard_write_or_mismatch_fails() {
+        let t = bv(8, 2, 1);
+        let discard = BV::discard(&t);
+        assert!(discard.check([t].map(ok), [t].map(ok)).is_err());
+        assert!(discard.check([].map(ok), [].map(ok)).is_err());
+        assert!(discard.check([bv(4, 2, 1)].map(ok), [].map(ok)).is_err());
     }
 }

@@ -346,6 +346,10 @@ impl Theory for SeqOps {
     {
         Ok(())
     }
+
+    fn discard(_domain: &Self::Sort) -> Self {
+        Self("DISCARD")
+    }
 }
 
 impl Theory for DifOps {
@@ -357,6 +361,10 @@ impl Theory for DifOps {
         W: IntoIterator<Item = Result<Self::Sort, E>>,
     {
         Ok(())
+    }
+
+    fn discard(_domain: &Self::Sort) -> Self {
+        Self("DISCARD")
     }
 }
 

@@ -172,6 +172,9 @@ pub enum Any {
     #[from(skip)]
     ZERO(Sort),
     #[subenum(Combinatorial, Differential, Sequential)]
+    #[from(skip)]
+    DISCARD(Sort),
+    #[subenum(Combinatorial, Differential, Sequential)]
     #[strum(to_string = "{0}")]
     LRA(LRA),
     #[subenum(Combinatorial, Sequential)]
@@ -213,6 +216,9 @@ impl<'py> IntoPyObject<'py> for Any {
                 .map(Bound::into_any),
             Any::SKIP(a) => Sequential::SKIP(a).into_pyobject(py).map(Bound::into_any),
             Any::ZERO(a) => Differential::ZERO(a).into_pyobject(py).map(Bound::into_any),
+            Any::DISCARD(a) => Combinatorial::DISCARD(a)
+                .into_pyobject(py)
+                .map(Bound::into_any),
             Any::LRA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::LIA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::BV(a) => a.into_pyobject(py).map(Bound::into_any),
@@ -244,10 +250,11 @@ impl crate::Differential for Differential {
     }
 }
 
-// The distinguished operations are unary, matching the `Id`, `Any*`/`Havoc`, and
-// `*Zerograd` operations of the base theories: `HAVOC` writes any value of its range
-// (`I -> range`), `SKIP` copies a value of its range (`range -> range`), and `ZERO` writes
-// the zero derivative of its range (`I -> range`).
+// The distinguished operations are unary, matching the `Id`, `Any*`/`Havoc`, `*Zerograd`,
+// and `*Discard` operations of the base theories: `HAVOC` writes any value of its range
+// (`I -> range`), `SKIP` copies a value of its range (`range -> range`), `ZERO` writes
+// the zero derivative of its range (`I -> range`), and `DISCARD` reads a value of its
+// domain and writes nothing (`domain -> I`).
 
 /// Check the application of the distinguished operation `op` with the domain `dom` and the
 /// codomain `cod` to the read and written wires
@@ -280,10 +287,17 @@ impl Theory for Any {
                 check_special_op(self, Poly::unit(), prod([*range]), read, write)
             }
             Any::SKIP(range) => check_special_op(self, prod([*range]), prod([*range]), read, write),
+            Any::DISCARD(domain) => {
+                check_special_op(self, prod([*domain]), Poly::unit(), read, write)
+            }
             Any::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Any::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Any::BV(itype) => itype.check(try_into(read), try_into(write)),
         }
+    }
+
+    fn discard(domain: &Sort) -> Self {
+        Any::DISCARD(*domain)
     }
 }
 
@@ -316,10 +330,17 @@ impl Theory for Sequential {
             Sequential::SKIP(range) => {
                 check_special_op(self, prod([*range]), prod([*range]), read, write)
             }
+            Sequential::DISCARD(domain) => {
+                check_special_op(self, prod([*domain]), Poly::unit(), read, write)
+            }
             Sequential::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Sequential::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Sequential::BV(itype) => itype.check(try_into(read), try_into(write)),
         }
+    }
+
+    fn discard(domain: &Sort) -> Self {
+        Sequential::DISCARD(*domain)
     }
 }
 
@@ -336,10 +357,17 @@ impl Theory for Combinatorial {
             Combinatorial::HAVOC(range) => {
                 check_special_op(self, Poly::unit(), prod([*range]), read, write)
             }
+            Combinatorial::DISCARD(domain) => {
+                check_special_op(self, prod([*domain]), Poly::unit(), read, write)
+            }
             Combinatorial::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Combinatorial::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Combinatorial::BV(itype) => itype.check(try_into(read), try_into(write)),
         }
+    }
+
+    fn discard(domain: &Sort) -> Self {
+        Combinatorial::DISCARD(*domain)
     }
 }
 
@@ -356,8 +384,15 @@ impl Theory for Differential {
             Differential::ZERO(range) => {
                 check_special_op(self, Poly::unit(), prod([*range]), read, write)
             }
+            Differential::DISCARD(domain) => {
+                check_special_op(self, prod([*domain]), Poly::unit(), read, write)
+            }
             Differential::LRA(itype) => itype.check(try_into(read), try_into(write)),
         }
+    }
+
+    fn discard(domain: &Sort) -> Self {
+        Differential::DISCARD(*domain)
     }
 }
 
@@ -368,6 +403,7 @@ impl From<Combinatorial> for Sequential {
     fn from(op: Combinatorial) -> Self {
         match op {
             Combinatorial::HAVOC(range) => Sequential::HAVOC(range),
+            Combinatorial::DISCARD(domain) => Sequential::DISCARD(domain),
             Combinatorial::BV(bv) => Sequential::BV(bv),
             Combinatorial::LRA(lra) => Sequential::LRA(lra),
             Combinatorial::LIA(lia) => Sequential::LIA(lia),
@@ -559,5 +595,44 @@ mod tests {
                  got `Int(1, 1) ⊗ Int(1, 1) -> Int(2, 1)`"
                 .to_string())
         );
+    }
+
+    #[test]
+    fn discard_is_unary_with_no_output() {
+        let t = || Sort::Real([1, 1]);
+        let u = || Sort::Real([2, 1]);
+        for discard in [
+            Any::discard(&t()).check([t()].map(ok), [].map(ok)),
+            Sequential::discard(&t()).check([t()].map(ok), [].map(ok)),
+            Combinatorial::discard(&t()).check([t()].map(ok), [].map(ok)),
+            Differential::discard(&t()).check([t()].map(ok), [].map(ok)),
+        ] {
+            assert!(discard.is_ok());
+        }
+        // nothing is written, and exactly one wire of the domain is read
+        assert!(
+            Any::DISCARD(t())
+                .check([t()].map(ok), [t()].map(ok))
+                .is_err()
+        );
+        assert!(Any::DISCARD(t()).check([].map(ok), [].map(ok)).is_err());
+        assert!(Any::DISCARD(t()).check([u()].map(ok), [].map(ok)).is_err());
+        assert!(
+            Differential::DISCARD(t())
+                .check([t(), t()].map(ok), [].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn discard_casts_up() {
+        let t = Sort::Real([1, 1]);
+        assert!(matches!(
+            Combinatorial::DISCARD(t).into(),
+            Sequential::DISCARD(_)
+        ));
+        assert!(matches!(Sequential::DISCARD(t).into(), Any::DISCARD(_)));
+        assert!(matches!(Differential::DISCARD(t).into(), Any::DISCARD(_)));
+        assert_eq!(Any::DISCARD(t).to_string(), "DISCARD");
     }
 }

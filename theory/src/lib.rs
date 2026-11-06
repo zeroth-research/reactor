@@ -21,6 +21,10 @@ pub trait Theory {
     where
         R: IntoIterator<Item = Result<Self::Sort, E>>,
         W: IntoIterator<Item = Result<Self::Sort, E>>;
+
+    /// Returns the unary itype that discards a value of the domain (`domain -> I`): it
+    /// reads one wire and writes none, consuming an input a block does not otherwise use.
+    fn discard(domain: &Self::Sort) -> Self;
 }
 
 pub trait Combinatorial: Theory {

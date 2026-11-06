@@ -49,6 +49,10 @@ impl Theory for Ops {
     {
         Ok(())
     }
+
+    fn discard(_domain: &Self::Sort) -> Self {
+        Ops("DISCARD")
+    }
 }
 
 impl Combinatorial for Ops {
