@@ -2,7 +2,7 @@
 
 ``--infer houdini`` proposes and a solver decides.  *What* it proposes --
 the invariant facts read off simulated runs of the module, the ranking
-shapes tried smallest first -- is :mod:`reactor.lean.infer.houdini`
+shapes tried smallest first -- is :mod:`verith.houdini`
 (``candidates``, ``ranks``), and is the same whichever solver answers.
 This module is the seam between the two: an obligation as a *question*
 rather than as a file, and the solvers that answer one.
@@ -257,7 +257,7 @@ class Cvc5Solver(Solver):
     def __init__(self, tm, *, seconds: float = DEFAULT_TIMEOUT, log=print):
         super().__init__(seconds=seconds, log=log)
         # Lazily, so that the route table above can name this class without
-        # a bare `verith` run paying for the import.
+        # a bare run paying for the import.
         from cvc5 import Kind
 
         self.kind = Kind

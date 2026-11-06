@@ -82,7 +82,7 @@ def decimals(text: str) -> str:
 # A route that found a predicate writes it as text rather than printing the
 # term it found it as: the string is parsed back and rendered as the body of
 # a Lean definition, and a printer that `let`-binds a repeated subterm writes
-# something that cannot be one (`infer.nuterm.engine._smt_term` refuses
+# something that cannot be one (`verith.nuterm.engine._smt_term` refuses
 # exactly that).
 
 

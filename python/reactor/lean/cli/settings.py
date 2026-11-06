@@ -1,5 +1,5 @@
-"""A validated command line (`Settings`), and the predicate flags a route
-can be seeded from (`SEED_FLAGS`).
+"""A validated command line (`Settings`), and the predicate flags an
+inference route can be seeded from (`SEED_FLAGS`).
 """
 
 from __future__ import annotations
@@ -7,7 +7,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..infer import InferRoute
 from ..smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 
@@ -27,9 +26,9 @@ class Settings:
     """A validated command line.
 
     The decisions the grammar makes are made here, once: which proof rule
-    (`kind`), which route (`route`), what that route resolved at parse time
-    (`route_config`), and the SMT budget.  The pipeline reads; it does not
-    re-derive.
+    (`kind`), which input format, and the SMT budget.  The pipeline reads;
+    it does not re-derive. `certify` extends it with the inference route
+    it runs.
     """
 
     module_file: str | None
@@ -47,10 +46,6 @@ class Settings:
 
     input_opts: dict = field(default_factory=dict)
 
-    route: InferRoute | None = None
-    route_opts: dict = field(default_factory=dict)
-    route_config: object | None = None
-
     cert_file: str | None = None
     hammer_file: str | None = None
     build_cert: bool = False
@@ -63,9 +58,6 @@ class Settings:
             per_call_ms=DEFAULT_CALL_MS, phase_ms=DEFAULT_PHASE_MS
         )
     )
-
-    model: str | None = None
-    base_url: str | None = None
 
     # No --safety/--buchi, and the input's format can state its own
     # property: the checks that need the claim wait until it is read

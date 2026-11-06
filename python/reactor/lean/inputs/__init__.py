@@ -7,7 +7,7 @@ about, the text it was read from, and the names claims may use (`names`)
 loading reads the `Problem`, not the file, so a new format is a new row
 rather than a branch in the pipeline.
 
-Lazy imports, as in `infer`: a row module imports only `api` at module
+Lazy imports, as in `verith`'s route table: a row module imports only `api` at module
 level, and its `load` imports the parser when it is called.
 
 Adding a format: write `inputs/<name>.py` exporting `ADAPTER`, and add it

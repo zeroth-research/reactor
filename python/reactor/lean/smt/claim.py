@@ -23,7 +23,7 @@ from .encoding import encoding_of
 # `tuple` is the odd one out, and deliberately: it is not a kind anything is
 # *read* as, it is the kind that has elements. A route that takes it is
 # saying it states itself over elements rather than over components -- see
-# `infer.common.synth.component_slots` -- and what each element is read as
+# `verith.common.synth.component_slots` -- and what each element is read as
 # is one of the other four.
 READING_KINDS = ("int", "bool", "bv", "real", "tuple")
 
@@ -110,7 +110,7 @@ class SynthContext:
 
         ``takes`` is the route's contract, as :data:`READING_KINDS`, and
         this is the one place it is checked: there is one answer to "what
-        can this route read", and `infer.common.synth.readings` reads every
+        can this route read", and `verith.common.synth.readings` reads every
         component of a context that was built.
 
         A kind outside ``takes`` is refused here, before a solver starts,

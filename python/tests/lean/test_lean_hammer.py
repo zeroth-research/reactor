@@ -30,7 +30,16 @@ def test_generated_files_present(generate_lean_files):
     """ZerothHammer.lean and Certs/*.lean exist after generation fixture runs."""
     assert (_LEAN_DIR / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
     for name in ("Countdown", "CountdownSafe", "TwoVars", "Collatz",
-                 "ArgmaxScalar", "BridgeCountdown", "BridgeTwoVars"):
+                 "ArgmaxScalar"):
+        path = _LEAN_DIR / "Certs" / f"{name}.lean"
+        assert path.exists(), f"Certs/{name}.lean not generated"
+
+
+def test_the_bridges_are_generated(generate_lean_files):
+    """The `--fbk-proveit` bridges, which the route in the `verith/`
+    project writes; without it installed there are none."""
+    pytest.importorskip("verith")
+    for name in ("BridgeCountdown", "BridgeTwoVars"):
         path = _LEAN_DIR / "Certs" / f"{name}.lean"
         assert path.exists(), f"Certs/{name}.lean not generated"
 
@@ -38,8 +47,10 @@ def test_generated_files_present(generate_lean_files):
 def test_the_learned_certificate_is_generated(generate_lean_files):
     """`--infer nuterm` writes one too, so the `Certs` build elaborates a
     ranking function of the shape the learner produces. It needs cvc5 to
-    render its SMT-LIB as Lean, so its absence is a skip, not a failure."""
+    render its SMT-LIB as Lean, so its absence is a skip, not a failure, and
+    the route is the `verith/` project's, so is that one's."""
     pytest.importorskip("cvc5")
+    pytest.importorskip("verith")
     path = _LEAN_DIR / "Certs" / "LearnedCountdown.lean"
     assert path.exists(), "Certs/LearnedCountdown.lean not generated"
     src = path.read_text()
@@ -125,6 +136,7 @@ def test_the_learned_certificate_closes_in_lean(generate_lean_files):
     ReLU units rather than the single `ite` every hand-written certificate in
     this suite uses."""
     pytest.importorskip("cvc5")
+    pytest.importorskip("verith")
     r = _lake_build("Certs.LearnedCountdown")
     assert r.returncode == 0, (
         f"lake build Certs.LearnedCountdown failed.\n"
@@ -221,6 +233,7 @@ def test_fbk_bridge_builds(generate_lean_files, name):
     `translate_terms_scalar` -- so nothing here closes by `rfl` alone, and
     a translation defect in either shows up as an unclosed goal.
     """
+    pytest.importorskip("verith")
     r = _lake_build(f"Certs.Bridge{name}")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (

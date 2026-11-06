@@ -98,7 +98,7 @@ def test_a_reactor_lean_that_is_not_a_checkout_is_refused_before_the_project(
         reactor_lean_checkout()
     out = tmp_path / "out"
     monkeypatch.setattr("sys.argv", [
-        "verith", str(FIXTURES / "counter.py"),
+        "reactor", str(FIXTURES / "counter.py"),
         "--safety", "(>= (X @intf.0) 0)", "-o", str(out), "-p", "P"])
     with pytest.raises(SystemExit, match="is not a reactor-lean checkout"):
         main()
@@ -170,17 +170,3 @@ def test_the_certificate_simp_set_unfolds_them():
     assert simp_mat, "the simp_mat macro moved"
     for name in REDUCTIONS:
         assert name in simp_mat[0], f"{name} is not in simp_mat"
-
-
-def test_the_fbk_bridge_simp_set_agrees_with_it():
-    """The bridge proves the NA model is the module, over the same terms."""
-    from reactor.lean.infer.fbk_proveit.na import check_na_supported
-    from reactor.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
-
-    ctx = _counter_ctx()
-    bridge = atom_to_lean_fbk_bridge(ctx, na_module="NA",
-                                     bodies=check_na_supported(ctx))
-    cascade = [ln for ln in bridge.splitlines() if "MatAdd_apply" in ln]
-    assert cascade, "the bridge's cascade has no matrix simp set"
-    for name in REDUCTIONS:
-        assert name in cascade[0], f"{name} is not in the fbk bridge's simp set"

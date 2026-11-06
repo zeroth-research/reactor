@@ -116,6 +116,20 @@ def write_files(project_dir: Path, files: Mapping[str, str]) -> None:
         print(f"Wrote {path}")
 
 
+def write_lakefile(project_dir: Path, project_name: str, *,
+                   executable: bool, parts: LakefileParts) -> Path:
+    """The project's `lakefile.toml`, with what an inference route adds.
+
+    `create_project` writes it; `verith`, run on a project generated
+    without its route, writes it again with the route's `parts`.
+    """
+    path = project_dir / "lakefile.toml"
+    path.write_text(
+        generate_lakefile(project_name, executable=executable, parts=parts))
+    print(f"Wrote {path}")
+    return path
+
+
 def create_project(
     output_dir: Path,
     module: Module,
@@ -171,14 +185,8 @@ def create_project(
         print(f"Wrote {copy}")
 
     # Render and write project-level files from templates
-    lakefile_path = project_dir / "lakefile.toml"
-    lakefile_path.write_text(
-        generate_lakefile(
-            project_name, executable=executable,
-            parts=lakefile or LakefileParts(),
-        )
-    )
-    print(f"Wrote {lakefile_path}")
+    write_lakefile(project_dir, project_name, executable=executable,
+                   parts=lakefile or LakefileParts())
 
     toolchain = project_dir / "lean-toolchain"
     toolchain.write_text(

@@ -15,7 +15,7 @@ are enforced by cvc5's own `tlimit`, so a hard problem returns `unknown`
 rather than hanging the generator. Any failure at all -- a timeout, an
 `unknown`, an unsupported operator, a cvc5 exception -- is reported as
 `Status.UNKNOWN` and the caller falls back to what it did before. Nothing
-here may change what `verith` emits except by *adding* information.
+here may change what `reactor` emits except by *adding* information.
 """
 
 from __future__ import annotations

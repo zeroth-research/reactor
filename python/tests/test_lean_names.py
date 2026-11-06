@@ -1,6 +1,7 @@
 """`reactor.lean.project.names` is what the project is written under: every
-module the generated Lean imports from the project, the bridge's
-included, is a file the project has."""
+module the generated Lean imports from the project is a file the project
+has. (The fbk-proveit bridge's imports are checked with the route, in
+`verith/tests/test_fbk_layout.py`.)"""
 
 import re
 from pathlib import Path
@@ -10,8 +11,6 @@ from reactor.lean.inputs.python import load_module
 from reactor.lean.project.names import CERT_LIB, SYSTEM_LAYOUT
 from reactor.lean.project.scaffold import create_project
 from reactor.lean.proof.render import certificate_files
-from reactor.lean.infer.fbk_proveit.na import check_na_supported
-from reactor.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -26,11 +25,7 @@ def test_every_project_module_imported_is_a_file_the_project_has(tmp_path):
     module = load_module(FIXTURES / "counter.py")
     project = create_project(tmp_path, module, "Rea",
                              certificate=certificate_files(LeanContext(module)))
-    ctx = LeanContext(module)
-    bridge = atom_to_lean_fbk_bridge(ctx, na_module="ReaNA",
-                                     bodies=check_na_supported(ctx))
     texts = {
-        "bridge": bridge,
         "certificate": (project / CERT_LIB / "Certificate.lean").read_text(),
         "root": (project / f"{CERT_LIB}.lean").read_text(),
     }
@@ -49,3 +44,24 @@ def test_the_lakefile_builds_the_certificate_library(tmp_path):
     lakefile = (project / "lakefile.toml").read_text()
     assert f'name = "{CERT_LIB}"' in lakefile
     assert re.search(rf'defaultTargets = \[[^\]]*"{CERT_LIB}"', lakefile)
+
+
+def test_a_certificate_file_this_run_does_not_write_is_removed(tmp_path):
+    """`Certificate/` is globbed by the build, so a file an earlier run left
+    there -- an inference route's `Equivalence.lean`, say -- would be built
+    against this run's module. Generating the project again removes it,
+    without knowing which route wrote it."""
+    from reactor.lean.pipeline.outputs import stale_certificate_files
+
+    module = load_module(FIXTURES / "counter.py")
+    files = certificate_files(LeanContext(module))
+    project = create_project(tmp_path, module, "Rea", certificate=files)
+    assert stale_certificate_files(project, files) == ()
+
+    stale = project / CERT_LIB / "Equivalence.lean"
+    stale.write_text("-- an earlier run's\n")
+    remove = stale_certificate_files(project, files)
+    assert remove == (f"{CERT_LIB}/Equivalence.lean",)
+    create_project(tmp_path, module, "Rea", certificate=files, remove=remove)
+    assert not stale.exists()
+    assert all((project / rel).exists() for rel in files)

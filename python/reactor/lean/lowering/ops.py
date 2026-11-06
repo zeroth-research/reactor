@@ -35,7 +35,7 @@ row, and a row no theory backs fails it too.
 
 This module never imports cvc5, on purpose: `codegen/terms.py` and
 `codegen/boxes.py` import *it*, and the Lean path has to keep working where
-cvc5 is absent (see `infer/ai_cegis/engine.py`'s guarded import). The SMT
+cvc5 is absent (see `verith/ai_cegis/engine.py`'s guarded import, in the `verith/` project). The SMT
 emitters reach cvc5 only through the `SmtOp` context `smt.encode` hands
 them — `op.K` is `cvc5.Kind`.
 """

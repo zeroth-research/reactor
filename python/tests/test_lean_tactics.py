@@ -486,7 +486,7 @@ def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
     after the route has answered."""
     pytest.importorskip("cvc5")
     from reactor.lean.core.certificate import Certificate, Claim
-    from reactor.lean.pipeline.certify import render
+    from reactor.lean.pipeline.certificate import render
 
     from reactor.lean.smt.limits import SmtBudget
 
