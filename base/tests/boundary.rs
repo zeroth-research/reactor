@@ -151,3 +151,72 @@ fn iteration_preserves_order() {
     assert_eq!(Poly::<char>::zero().iter().count(), 0);
     assert_eq!(Poly::<char>::unit().iter().count(), 1);
 }
+
+#[test]
+fn products_fold_with_tensor() {
+    // a product of base types is their tuple, in order
+    assert_eq!("xyz".chars().product::<Mono<char>>(), mono("xyz"));
+
+    // a product of monomials is their ⊗, in order
+    let (x, y, z) = (mono("x"), mono("yw"), mono("z"));
+    assert_eq!(
+        [x.clone(), y.clone(), z.clone()]
+            .into_iter()
+            .product::<Mono<char>>(),
+        x.clone() * y.clone() * z.clone()
+    );
+    assert_ne!(
+        [y.clone(), x.clone()].into_iter().product::<Mono<char>>(),
+        [x, y].into_iter().product::<Mono<char>>()
+    );
+
+    // the empty product is I, from base types and from monomials alike
+    assert_eq!(
+        std::iter::empty::<char>().product::<Mono<char>>(),
+        Mono::unit()
+    );
+    assert_eq!(
+        std::iter::empty::<Mono<char>>().product::<Mono<char>>(),
+        Mono::unit()
+    );
+}
+
+#[test]
+fn sums_fold_with_plus() {
+    // a sum of base types has one single-component summand for each, in
+    // order
+    assert_eq!("xyz".chars().sum::<Poly<char>>(), poly(&["x", "y", "z"]));
+
+    // a sum of monomials is their ⊕, in order
+    let (x, y, z) = (mono("x"), mono("yw"), mono(""));
+    assert_eq!(
+        [x.clone(), y.clone(), z.clone()]
+            .into_iter()
+            .sum::<Poly<char>>(),
+        x.clone() + y.clone() + Poly::from(z)
+    );
+    assert_ne!(
+        [y.clone(), x.clone()].into_iter().sum::<Poly<char>>(),
+        [x, y].into_iter().sum::<Poly<char>>()
+    );
+
+    // a sum of polynomials concatenates their summands, in order
+    let (p, q) = (poly(&["xy", ""]), poly(&["z"]));
+    assert_eq!(
+        [p.clone(), Poly::zero(), q.clone()]
+            .into_iter()
+            .sum::<Poly<char>>(),
+        p + q
+    );
+
+    // the empty sum is 0, from base types, monomials and polynomials alike
+    assert_eq!(std::iter::empty::<char>().sum::<Poly<char>>(), Poly::zero());
+    assert_eq!(
+        std::iter::empty::<Mono<char>>().sum::<Poly<char>>(),
+        Poly::zero()
+    );
+    assert_eq!(
+        std::iter::empty::<Poly<char>>().sum::<Poly<char>>(),
+        Poly::zero()
+    );
+}
