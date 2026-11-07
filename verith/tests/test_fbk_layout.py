@@ -116,7 +116,7 @@ def test_na_model_init_is_the_matrix_read_row_major():
     """`Definition.init_k` for a 2x3 ctrl wire, against the source tensor.
 
     The whole chain in one assertion: the Python tensor, `smt.encode`'s cvc5
-    tuple, `smt.slots.scalar_element`'s selection, and the slot numbering
+    tuple, `fbk_proveit.slots.scalar_element`'s selection, and the slot numbering
     `lowering.elements` owns. Transpose any one of them and the constants
     come back permuted.
     """

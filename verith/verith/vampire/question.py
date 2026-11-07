@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from reactor.lean.core.errors import Refused
 from reactor.lean.smt import obligations as obl
-from reactor.lean.smt.obligations import Obligations
+from ..common.obligations import Obligations
 from reactor.lean.smt.script import decimals, script
 from reactor.lean.smt.terms import free_constants, ite_conditions
-from reactor.lean.smt.claim import SynthContext
+from ..common.claim import SynthContext
 from ..common.synth import (
     denominator_scale,
     floor_real,

@@ -10,7 +10,7 @@ from itertools import product
 
 from reactor.lean.core.errors import Refused
 from reactor.lean.smt.terms import ite_conditions
-from reactor.lean.smt.claim import SynthContext
+from ..common.claim import SynthContext
 
 from cvc5 import Kind
 

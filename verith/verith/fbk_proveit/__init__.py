@@ -20,12 +20,17 @@ import re
 from typing import TYPE_CHECKING
 
 from reactor.lean.core.options import Opt
-from reactor.lean.project.names import EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file
+from reactor.lean.project.names import PROOF, cert_file
 from ..io import InferInput, InferResult
 from ..route import Alias, InferRoute
 
 if TYPE_CHECKING:
     from reactor.lean.project.lakefile import LakefileParts
+
+# The project files this route adds beside `reactor`'s, which it owns.
+EQUIVALENCE = "Equivalence"     # `Certificate/`: the NA model is the module
+# Where `lean-ltl-certifying`'s side of the proof is installed.
+PROVEIT_DIR = "ProveIt"
 
 
 def _resolve(opts: dict):

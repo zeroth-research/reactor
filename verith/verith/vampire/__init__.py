@@ -13,14 +13,14 @@ from __future__ import annotations
 from reactor.lean.core.options import Opt
 # Constants only -- the module imports cvc5 lazily, so naming its defaults
 # in the row costs a bare run nothing.
-from reactor.lean.smt.solvers import DEFAULT_TIMEOUT
+from ..common.solvers import DEFAULT_TIMEOUT
 from ..common.options import VAMPIRE
 from ..io import InferInput, InferResult
 from ..route import InferRoute
 
 
 def _resolve(opts: dict):
-    from reactor.lean.smt.vampire import resolve_vampire
+    from ..common.vampire import resolve_vampire
 
     return resolve_vampire(opts["vampire"])
 

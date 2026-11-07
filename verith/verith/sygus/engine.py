@@ -67,7 +67,7 @@ from __future__ import annotations
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..engine import Engine
-from reactor.lean.smt.claim import READING_KINDS, SynthContext
+from ..common.claim import READING_KINDS, SynthContext
 from reactor.lean.smt.limits import bounded_solver, call_ms
 from reactor.lean.smt.obligations import initial, transition
 from ..common.synth import Search, body_of, readings, moduli, program_constants, record

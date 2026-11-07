@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import combinations
 
-from reactor.lean.smt.claim import SynthContext
+from ..common.claim import SynthContext
 from ..common.synth import columns, program_constants
 
 from cvc5 import Kind

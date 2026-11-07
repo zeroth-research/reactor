@@ -3,5 +3,8 @@
 `llm`: the model both LLM routes ask. `synth`: what a searching route
 reads a module as -- its columns and readings, and the constants and branch
 conditions a template may use. `options`: the options two rows spell the
-same way, declared once.
+same way, declared once. `claim`: a claim read against the run's encoding
+for a search (`SynthContext`). `obligations`: the obligations over the
+frame a search asks them in (`Obligations`, `Candidate`). `solvers`: cvc5
+and Vampire answering a `Query`. `vampire`: the Vampire driver.
 """

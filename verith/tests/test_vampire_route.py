@@ -43,7 +43,7 @@ def module_at(path: Path):
 
 
 def vampire_or_skip() -> str:
-    from reactor.lean.smt.vampire import resolve_vampire
+    from verith.common.vampire import resolve_vampire
 
     try:
         return resolve_vampire(None)
@@ -53,10 +53,10 @@ def vampire_or_skip() -> str:
 
 def parts(name: str, kind: str, prp: str, fixture: Path = LIMITS):
     """A module's context, obligations and branches, without asking anything."""
-    from reactor.lean.smt.obligations import Obligations
+    from verith.common.obligations import Obligations
     from verith.vampire.branches import split
     from verith.vampire.question import Question
-    from reactor.lean.smt.claim import SynthContext
+    from verith.common.claim import SynthContext
 
     ctx = SynthContext.build(module_at(fixture / f"{name}.py"),
                              Claim(prp=prp, kind=kind),
@@ -392,7 +392,7 @@ def test_a_real_component_reaches_the_templates():
     """
     from verith.vampire.engine import VampireEngine
     from verith.vampire.template import template
-    from reactor.lean.smt.claim import SynthContext
+    from verith.common.claim import SynthContext
 
     magic = VampireEngine(module_at(LIMITS / "m_lra_lin.py"),
                           vampire="/nowhere", log=lambda *_: None)
@@ -428,7 +428,7 @@ def test_a_bool_column_is_carried_rather_than_refused():
     """
     from verith.vampire.engine import VampireEngine
     from verith.vampire.template import template
-    from reactor.lean.smt.claim import SynthContext
+    from verith.common.claim import SynthContext
 
     magic = VampireEngine(module_at(LIMITS / "m_boolint.py"),
                           vampire="/nowhere", log=lambda *_: None)
@@ -452,7 +452,7 @@ def test_a_module_with_nothing_to_bound_is_refused():
     invariant would be `true`, which is inductive and proves nothing, so
     the module is turned away up front rather than searched."""
     from verith.vampire.engine import VampireEngine
-    from reactor.lean.smt.claim import SynthContext
+    from verith.common.claim import SynthContext
 
     magic = VampireEngine(module_at(FIXTURES / "twobit_lia.py"),
                           vampire="/nowhere", log=lambda *_: None)

@@ -26,7 +26,7 @@ solver decides what stays:
 
 Which solver
 ============
-``--houdini-solver`` picks it and :mod:`reactor.lean.smt.solvers` is the
+``--houdini-solver`` picks it and :mod:`verith.common.solvers` is the
 seam.  The engine here never asks which one it is holding; it asks each
 query for an unsat core and for a counter-model and uses whichever came
 back.  The difference the choice makes is one thing, and it runs through
@@ -114,10 +114,10 @@ from __future__ import annotations
 from reactor.lean.artifacts.record import found, note
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.claim import SynthContext, sorts_where
-from reactor.lean.smt.obligations import Candidate, Obligations
+from ..common.claim import SynthContext, sorts_where
+from ..common.obligations import Candidate, Obligations
 from reactor.lean.smt.script import conjunction_smt
-from reactor.lean.smt.solvers import DEFAULT_TIMEOUT
+from ..common.solvers import DEFAULT_TIMEOUT
 from ..common.synth import (
     columns,
     denominator_scale,

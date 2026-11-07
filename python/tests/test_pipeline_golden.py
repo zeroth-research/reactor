@@ -227,27 +227,9 @@ ENCODINGS = {
 }
 
 
-def _has_vampire() -> bool:
-    from reactor.lean.core.errors import Refused
-    from reactor.lean.smt.vampire import resolve_vampire
-
-    try:
-        resolve_vampire(None)
-    except Refused:
-        return False
-    return True
-
-
 def _runs() -> list:
-    out = []
-    for name, fixture, args in RUNS:
-        marks = ()
-        if "vampire" in args:
-            marks = pytest.mark.skipif(
-                not _has_vampire(),
-                reason="no Vampire binary: set $VAMPIRE or put `vampire` on PATH")
-        out.append(pytest.param(name, fixture, args, id=name, marks=marks))
-    return out
+    return [pytest.param(name, fixture, args, id=name)
+            for name, fixture, args in RUNS]
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")

@@ -4,7 +4,7 @@
 is about *that model*. Every encoding in `codegen.encodings` carries an
 equivalence theorem to the functional one and would be worthless without
 it; this route had none, so a mistranslation anywhere in
-`smt.encode`, `smt.slots`, cvc5's rewriter or `smt_to_lean_bool`
+`smt.encode`, `slots`, cvc5's rewriter or `smt_to_lean_bool`
 produced a model that parses, model-checks, and describes a different
 system.
 

@@ -3,16 +3,16 @@
 `SynthContext` is the property and preconditions of a `Claim`, parsed over
 the run's `smt.encoding.ModuleEncoding`, with the module's state sorts
 checked against what the searching route reads (`READING_KINDS`). The
-obligations (`smt.obligations.Obligations`) are stated over one.
+obligations (`common.obligations.Obligations`) are stated over one.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..core.certificate import Claim
-from ..core.errors import Refused
-from .encoding import encoding_of
+from reactor.lean.core.certificate import Claim
+from reactor.lean.core.errors import Refused
+from reactor.lean.smt.encoding import encoding_of
 
 
 # Every kind of state component there is a reading for. A sort absent from

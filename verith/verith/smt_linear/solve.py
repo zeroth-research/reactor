@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.claim import SynthContext
+from ..common.claim import SynthContext
 from reactor.lean.smt.limits import bounded_solver, call_ms
 from ..common.synth import program_constants
 

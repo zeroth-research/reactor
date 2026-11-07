@@ -10,7 +10,7 @@ from fractions import Fraction
 from itertools import product
 
 from reactor.lean.core.errors import PredicateRefused
-from reactor.lean.smt.claim import SynthContext
+from ..common.claim import SynthContext
 from reactor.lean.smt.script import affine_smt, smt_int, smt_real
 from ..common.synth import Column, columns
 from .candidates import reading

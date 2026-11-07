@@ -12,14 +12,6 @@ wrote it. It is written into the project, and Lean checks it.
 
 `reactor.lean` imports nothing of `verith`: the routes are built on it.
 
-![The verification pipeline](figures/pipeline.png)
-
-Solid arrows are the run's control flow. Dashed ones are data: what the
-decision procedure may read, and the project that the check builds the
-certificate in. The picture is of a `certify` run, which is `reactor`'s
-stages with stage 5 between them. Its source is
-[`figures/pipeline.tex`](figures/pipeline.tex).
-
 ## The pipeline, stage by stage
 
 `pipeline.main` runs the stages in this order, all but stage 5; `certify`
@@ -241,7 +233,7 @@ layer.
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) and `record` (`found`, `note`, the writes a route makes) |
 | `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
-| `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `claim` (`SynthContext`, a claim read against the encoding), `obligations` (stated once over a frame), `precheck` (`--pre-check`: `ModuleQueries`, `pre_check`, `predicate_terms`), `solvers` (cvc5 and Vampire answering a `Query`), `limits` (time limits), `terms` (walks over terms), `script` (the SMT-LIB printer), `slots`, `vampire` (the Vampire driver) |
+| `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `obligations` (stated once over a frame), `precheck` (`--pre-check`: `ModuleQueries`, `pre_check`, `predicate_terms`), `limits` (time limits), `terms` (walks over terms), `script` (the SMT-LIB printer) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `build` (`lake build`), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), the certificate's files as the text it is handed |
 | `proof/` | The certificate as Lean: `render` (`prepare`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean), `facts` (what the terms and cvc5 say about the proof the tactics attempt: `predicate_facts`, and `solver_hints` under `--smt-tactics`), `tactics` (the plan read off them) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`, `smv`), and `names`, which translates a claim's names to the internal ones and back |

@@ -1,20 +1,19 @@
-"""A module's transition as one scalar term per state slot: what the
-fbk-proveit NA encoding (`verith/fbk_proveit/na`) prints, built on the run's
-encoding. The state, latched and awaited inputs are the encoding's
-constants `s*`, `el*` and `en*`, which is what the printer's accessor maps
-are keyed by."""
+"""A module's transition as one scalar term per state slot: what the NA
+encoding (`na`) prints, built on the run's encoding. The state, latched
+and awaited inputs are the encoding's constants `s*`, `el*` and `en*`,
+which is what the printer's accessor maps are keyed by."""
 
 from __future__ import annotations
 
-from ..lowering.elements import flat_layout
-from ..lowering.sorts import wire_shape
+from reactor.lean.lowering.elements import flat_layout
+from reactor.lean.lowering.sorts import wire_shape
 
 
 def scalar_element(tm, term, shape, i: int, j: int):
     """Element `[i][j]` of a matrix-valued term, as a *scalar* term:
     `select_element`, which is what turns a wire's transition into one
     scalar expression per slot, and cvc5's own simplifier does the rest."""
-    from .encode import select_element
+    from reactor.lean.smt.encode import select_element
 
     if shape.is_scalar:
         return term

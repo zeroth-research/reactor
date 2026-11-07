@@ -19,6 +19,14 @@ needs of a project `reactor` generates -- the encodings it reads, the
 lakefile entries it adds, the files it owns -- it declares as data on its
 row, and the commands here hand that to `reactor`.
 
+![The verification pipeline](figures/pipeline.png)
+
+A `certify` run: `reactor`'s stages, with the decision procedure -- the
+route, untrusted -- between the project and the certificate. Solid arrows
+are the run's control flow. Dashed ones are data: what the decision
+procedure may read, and the project that the check builds the certificate
+in. Its source is [`figures/pipeline.tex`](figures/pipeline.tex).
+
 ## Three commands
 
 | command | project | what it does |
