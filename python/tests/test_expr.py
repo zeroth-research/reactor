@@ -292,7 +292,7 @@ def test_collecting_records_deps_first():
     with collecting() as terms:
         ite(x < y, x + 1, y)
     optypes = [type(t.itype) for t in terms]
-    assert optypes == [LIA.Lt, LIA.Int, LIA.Add, LIA.Ite]
+    assert optypes == [LIA.Lt, LIA.Int, LIA.Add, LIA.IteInt]
 
 
 def test_shared_subexpression_recorded_once():
@@ -348,9 +348,11 @@ def test_derivative_of_real_keeps_its_tangent_sort():
     # arithmetic over derivatives stays a derivative; a constant scales it
     assert (dt + dt).dtype == dt.dtype
     assert (2 * dt).dtype == dt.dtype
-    assert (expr(torch.tensor([[2.0], [3.0]]), theory=LRA, sort=Real) @ dt).dtype == Real([2, 1], 1)
-    # comparing derivatives gives a value
-    assert (dt < dt).dtype == Bool([1, 1])
+    # a value guard selects between derivatives
+    assert ite(t < t, dt, dt).dtype == dt.dtype
+    # the theories have no comparisons of derivatives
+    with pytest.raises(TypeError):
+        dt < dt
     # a derivative does not combine with a value
     with pytest.raises(Exception):
         dt + t

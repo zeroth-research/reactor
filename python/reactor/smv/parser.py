@@ -12,6 +12,7 @@ from lark import Lark, Transformer, Tree, Token
 
 from ..reactor import Wire, Term, Module, BV, Var, X
 from ..sort import Sort, BitVec, Bool
+from ..ops import op, bv_const
 
 
 def _bw(sort) -> int:
@@ -22,9 +23,18 @@ def _bw(sort) -> int:
     raise TypeError(f"not a BitVec sort: {sort}")
 
 
-def _bv_const(value) -> "BV.Const":
-    """A scalar BV constant op from an int value (2-D initializer)."""
-    return BV.Const(torch.tensor([[int(value)]], dtype=torch.int64))
+def _shape(sort) -> list:
+    """The `[rows, cols]` shape of a BitVec Sort."""
+    match sort:
+        case BitVec(_, shape):
+            return list(shape)
+    raise TypeError(f"not a BitVec sort: {sort}")
+
+
+def _bv_const(value, sort) -> "BV.Const":
+    """A scalar BV constant op from an int value (2-D initializer), written to a wire of
+    the sort `sort`."""
+    return bv_const(torch.tensor([[int(value)]], dtype=torch.int64), sort)
 
 
 # ---------------------------------------------------------------------------
@@ -323,14 +333,15 @@ _NARY_OPS = {
 }
 
 
-def _bv_op(name: str):
-    """Construct `BV.<name>()` (raises AttributeError if the op is missing).
+def _bv_op(name: str, sort):
+    """Construct `BV.<name>` on operands of the sort `sort` (raises TypeError if the op
+    is missing).
 
     Note: Xnor / Implies are referenced by the grammar maps but are NOT BV ops;
     those SMV constructs aren't exercised by the fixtures. If needed later, compose
     them (Not(Xor) / Or(Not, b)) here.
     """
-    return getattr(BV, name)()
+    return op(BV, name, sort)
 
 
 _METHODS = {
@@ -342,18 +353,13 @@ _METHODS = {
     "paren_expr": "_lower_paren",
 }
 
+# the builtins and their ops (on the sort of the argument)
 _BUILTIN_MAP = {
-    "bool": lambda: BV.BVToBool(),
-    "word1": lambda: BV.Id(),
-    "unsigned": lambda: BV.Id(),
-    "signed": lambda: BV.Id(),
+    "bool": "BVToBool",
+    "word1": "Id",
+    "unsigned": "Id",
+    "signed": "Id",
 }
-
-
-def _const_out_dtype(itype):
-    """Output Sort for a scalar const op, or None to defer to the target wire."""
-    # BV-only parser: const width defers to the target/default width.
-    return None
 
 
 def _builtin_out_dtype(fn_name: str, in_dtype):
@@ -394,7 +400,7 @@ class _Lowerer:
             if tree.type == "IDENT":
                 return self._lower_name(str(tree), target)
             if tree.type == "NUMBER":
-                return self._emit_const(_bv_const(int(str(tree))), target)
+                return self._emit_const(int(str(tree)), target)
             raise ValueError(f"unexpected token type: {tree.type}")
 
         name = tree.data
@@ -416,13 +422,13 @@ class _Lowerer:
         if name == "var_ref":
             return self._lower_name(str(tree.children[0]), target)
         if name == "int_lit":
-            return self._emit_const(_bv_const(int(str(tree.children[0]))), target)
+            return self._emit_const(int(str(tree.children[0])), target)
         if name in ("true_lit", "false_lit"):
             # Boolean literals live in BV<1>; the parser's `_DEFAULT_INT_BW`
             # fallback would otherwise widen them to BV<32>.
             w = self._fresh(target, BitVec(1, [1, 1]))
             self.terms.append(
-                Term(_bv_const(1 if name == "true_lit" else 0), [w])
+                Term(_bv_const(1 if name == "true_lit" else 0, w.dtype), [w])
             )
             return self._enforce(w, target)
 
@@ -442,7 +448,7 @@ class _Lowerer:
         while i < len(children):
             op_tok = str(children[i])
             rhs = self.lower(children[i + 1])
-            itype = _bv_op(op_map[op_tok])
+            itype = _bv_op(op_map[op_tok], left.dtype)
             out = target if i + 2 >= len(children) else None
             out_dtype = (
                 out_dtype_fn(left.dtype) if (out_dtype_fn and out is None) else None
@@ -458,9 +464,9 @@ class _Lowerer:
 
     def _cmp_itype(self, op_tok: str, left: Wire):
         if op_tok in _CMP_FIXED:
-            return _bv_op(_CMP_FIXED[op_tok])
+            return _bv_op(_CMP_FIXED[op_tok], left.dtype)
         prefix = "S" if self._is_signed(left) else "U"
-        return _bv_op(prefix + _CMP_ORDERED[op_tok])
+        return _bv_op(prefix + _CMP_ORDERED[op_tok], left.dtype)
 
     def _lower_cmp(self, tree: Tree, target: Wire | None) -> Wire:
         children = tree.children
@@ -485,13 +491,13 @@ class _Lowerer:
             for c in tree.children
             if not (isinstance(c, Token) and c.type in _OP_TOKENS)
         ]
-        itype = _bv_op(op_name)
         # Ite: output matches then-branch (inputs[1]); others match first input
         out_dtype = (
             inputs[1].dtype
             if (op_name == "Ite" and len(inputs) >= 2)
             else inputs[0].dtype
         )
+        itype = _bv_op(op_name, out_dtype)
         w = self._fresh(target, out_dtype)
         self.terms.append(Term(itype, [w], inputs))
         return self._enforce(w, target)
@@ -508,13 +514,14 @@ class _Lowerer:
         arg_w = self.lower(exprs[0])
 
         if fn_name in _BUILTIN_MAP:
-            itype = _BUILTIN_MAP[fn_name]()
+            itype = _bv_op(_BUILTIN_MAP[fn_name], arg_w.dtype)
             out_dtype = _builtin_out_dtype(fn_name, arg_w.dtype)
         elif fn_name == "extend":
             extra = int(str(_peel(exprs[1])))
             in_bw = _bw(arg_w.dtype)
             out_bw = in_bw + extra
-            itype = BV.Extend(extra=extra)
+            rows, cols = _shape(arg_w.dtype)
+            itype = BV.Extend(extra=extra, width=in_bw, rows=rows, cols=cols)
             out_dtype = BitVec(out_bw, [1, 1])
         else:
             raise ValueError(f"unknown builtin: {fn_name}")
@@ -535,7 +542,7 @@ class _Lowerer:
 
     def _lower_case_rec(self, branches, idx, target):
         if idx >= len(branches):
-            return self._emit_const(_bv_const(0), target)
+            return self._emit_const(0, target)
         cond_tree, val_tree = branches[idx].children
         if idx == len(branches) - 1:
             return self.lower(val_tree, target)
@@ -543,7 +550,7 @@ class _Lowerer:
         then_w = self.lower(val_tree)
         else_w = self._lower_case_rec(branches, idx + 1, None)
         w = self._fresh(target, then_w.dtype)
-        self.terms.append(Term(BV.Ite(), [w], [cond, then_w, else_w]))
+        self.terms.append(Term(_bv_op("Ite", then_w.dtype), [w], [cond, then_w, else_w]))
         return self._enforce(w, target)
 
     # --- next(expr) ---------------------------------------------------------
@@ -573,7 +580,7 @@ class _Lowerer:
         w = Wire(dtype)
         self._wire_types[id(w)] = _SMVType(dtype, signed=signed)
         # Word literals produce a BV constant, not an LIA Const.
-        self.terms.append(Term(_bv_const(value), [w]))
+        self.terms.append(Term(_bv_const(value, dtype), [w]))
         return self._maybe_bit_select(tree, w, 1, target)
 
     # --- paren_expr ---------------------------------------------------------
@@ -597,7 +604,7 @@ class _Lowerer:
             return result
         # Check enum
         if name in self.enum_values:
-            return self._emit_const(_bv_const(self.enum_values[name]), target)
+            return self._emit_const(self.enum_values[name], target)
         # Wire lookup
         if name in self.name_map:
             var = self.name_map[name]
@@ -607,7 +614,7 @@ class _Lowerer:
             return self._enforce(w, target)
         # Unknown name — emit zero with warning
         warnings.warn(f"undeclared variable '{name}', defaulting to 0")
-        return self._emit_const(_bv_const(0), target)
+        return self._emit_const(0, target)
 
     # --- helpers ------------------------------------------------------------
 
@@ -629,15 +636,15 @@ class _Lowerer:
             return target
         return Wire(dtype if dtype is not None else BitVec(_DEFAULT_INT_BW, [1, 1]))
 
-    def _emit_const(self, itype, target: Wire | None) -> Wire:
-        out_dtype = _const_out_dtype(itype)
-        w = self._fresh(target, out_dtype)
-        self.terms.append(Term(itype, [w]))
+    def _emit_const(self, value: int, target: Wire | None) -> Wire:
+        # BV-only parser: const width defers to the target/default width.
+        w = self._fresh(target)
+        self.terms.append(Term(_bv_const(value, w.dtype), [w]))
         return self._enforce(w, target)
 
     def _enforce(self, wire: Wire, target: Wire | None) -> Wire:
         if target is not None and target != wire:
-            self.terms.append(Term(BV.Id(), [target], [wire]))
+            self.terms.append(Term(_bv_op("Id", wire.dtype), [target], [wire]))
             t = self._smv_type(wire)
             if t is not None:
                 self._wire_types[id(target)] = t
@@ -656,7 +663,11 @@ class _Lowerer:
             high, low = int(str(bs.children[0])), int(str(bs.children[1]))
             out_dtype = BitVec(high - low + 1, [1, 1])
             w = self._fresh(target, out_dtype)
-            self.terms.append(Term(BV.BitSelect(high=high, low=low), [w], [base_w]))
+            rows, cols = _shape(base_w.dtype)
+            itype = BV.BitSelect(
+                high=high, low=low, width=_bw(base_w.dtype), rows=rows, cols=cols
+            )
+            self.terms.append(Term(itype, [w], [base_w]))
             return self._enforce(w, target)
         return self._enforce(base_w, target)
 
@@ -697,14 +708,14 @@ def _build_module(
         if init_expr is not None:
             init_low.lower(init_expr, X(var))
         else:
-            init_low.terms.append(Term(_bv_const(0), [X(var)]))
+            init_low.terms.append(Term(_bv_const(0, var.dtype), [X(var)]))
 
         # --- UPDATE ---
         next_expr = d.next_assigns.get(name)
         if next_expr is not None:
             update_low.lower(next_expr, X(var))
         else:
-            update_low.terms.append(Term(BV.Id(), [X(var)], [var]))
+            update_low.terms.append(Term(_bv_op("Id", var.dtype), [X(var)], [var]))
 
     # Build obs_pairs: all variables (state + ivar)
     obs_pairs = [name_map[n] for n, _ in all_decls]

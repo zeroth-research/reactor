@@ -1,18 +1,16 @@
 import pytest
 import gymnasium as gym
-from reactor import Module, Wire, Term, Sort, LIA, Bool, Real, Int, BitVec, Var, X
+from reactor import Module, Wire, Term, Sort, LRA, Bool, Real, Int, BitVec, Var, X
 from gymnasium import spaces
 
 
 def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result: list[Wire]):
-    # `Uninterpreted` is single-read-or-single-write; emit one Term per wire
+    # `Uninterpreted` writes a single value; emit one Term per written wire
     # so the multi-arity "method" is modeled as a bag of independent
-    # uninterpreted reads / writes.
+    # uninterpreted writes (its reads are not modeled: `Uninterpreted` reads nothing).
     terms = []
-    for r in read.values():
-        terms.append(Term(LIA.Uninterpreted("method"), [], [r]))
     for w in list(write.values()) + list(result):
-        terms.append(Term.constant(LIA.Uninterpreted("method"), [w]))
+        terms.append(Term.constant(LRA.UninterpretedReal("method", 1, 1), [w]))
     return terms
 
 

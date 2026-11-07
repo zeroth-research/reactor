@@ -57,7 +57,7 @@ def _make_counter():
     one = Wire(Int([1, 1]))
     update = [
         Term(LIA.Int(torch.tensor([[1]], dtype=torch.int64)), [one]),
-        Term(LIA.Add(), [X(x)], [x, one]),
+        Term(LIA.Add(1, 1), [X(x)], [x, one]),
     ]
     m = Module.sequential([x], init, update)
     return m, x
@@ -100,12 +100,12 @@ def test_boolean_logic():
     init = [
         Term(LIA.Bool(torch.tensor([[True]])), [X(a)]),
         Term(LIA.Bool(torch.tensor([[False]])), [X(b)]),
-        Term(LIA.Not(), [X(c)], [X(a)]),
+        Term(LIA.Not(1, 1), [X(c)], [X(a)]),
     ]
     update = [
-        Term(LIA.And(), [X(a)], [a, b]),
-        Term(LIA.Or(), [X(b)], [a, b]),
-        Term(LIA.Not(), [X(c)], [c]),
+        Term(LIA.And(1, 1), [X(a)], [a, b]),
+        Term(LIA.Or(1, 1), [X(b)], [a, b]),
+        Term(LIA.Not(1, 1), [X(c)], [c]),
     ]
     m = Module.sequential([a, b, c], init, update)
     state, history = _run_module(m, 2)
@@ -144,12 +144,12 @@ def test_ite():
     tmp2 = Wire(Int([1, 1]))
 
     update = [
-        Term(LIA.Not(), [X(cond)], [cond]),
+        Term(LIA.Not(1, 1), [X(cond)], [cond]),
         Term(LIA.Int(torch.tensor([[1]], dtype=torch.int64)), [one]),
         Term(LIA.Int(torch.tensor([[2]], dtype=torch.int64)), [two]),
-        Term(LIA.Add(), [tmp1], [x, one]),
-        Term(LIA.Add(), [tmp2], [x, two]),
-        Term(LIA.Ite(), [X(x)], [cond, tmp1, tmp2]),
+        Term(LIA.Add(1, 1), [tmp1], [x, one]),
+        Term(LIA.Add(1, 1), [tmp2], [x, two]),
+        Term(LIA.IteInt(1, 1), [X(x)], [cond, tmp1, tmp2]),
     ]
     m = Module.sequential([cond, x], init, update)
     state, history = _run_module(m, 2)
@@ -177,7 +177,7 @@ def test_tensor_ops():
         Term(LIA.Int(torch.tensor([[-1, 2, 3, -4]], dtype=torch.int64)), [X(data)]),
     ]
     update = [
-        Term(LIA.ReLU(), [X(data)], [data]),
+        Term(LIA.ReLU(1, 4), [X(data)], [data]),
     ]
     m = Module.sequential([data], init, update)
     state, history = _run_module(m, 2)
@@ -203,7 +203,7 @@ def test_bv_add_masks_to_width(a, b, width, expected):
     """BV results are masked to the wire's bit-width, which needs the width read off
     the output Sort."""
     out = Wire(BitVec(width, [1, 1]))
-    term = Term(BV.Add(), [out], [Wire(BitVec(width, [1, 1])), Wire(BitVec(width, [1, 1]))])
+    term = Term(BV.Add(width, 1, 1), [out], [Wire(BitVec(width, [1, 1])), Wire(BitVec(width, [1, 1]))])
     got = eval_itype(term.itype, [torch.tensor([[a]]), torch.tensor([[b]])], out.dtype)
     assert got[0].flatten().tolist() == [expected]
 
@@ -220,8 +220,8 @@ def test_comparisons():
     init = [
         Term(LIA.Int(torch.tensor([[3]], dtype=torch.int64)), [X(a)]),
         Term(LIA.Int(torch.tensor([[5]], dtype=torch.int64)), [X(b)]),
-        Term(LIA.Eq(), [eq_wire], [X(a), X(b)]),
-        Term(LIA.Lt(), [lt_wire], [X(a), X(b)]),
+        Term(LIA.Eq(1, 1), [eq_wire], [X(a), X(b)]),
+        Term(LIA.Lt(1, 1), [lt_wire], [X(a), X(b)]),
     ]
 
     one = Wire(Int([1, 1]))
@@ -229,10 +229,10 @@ def test_comparisons():
     lt_wire2 = Wire(Bool([1, 1]))
     update = [
         Term(LIA.Int(torch.tensor([[1]], dtype=torch.int64)), [one]),
-        Term(LIA.Add(), [X(a)], [a, one]),
-        Term(LIA.Id(), [X(b)], [b]),
-        Term(LIA.Eq(), [eq_wire2], [a, b]),
-        Term(LIA.Lt(), [lt_wire2], [a, b]),
+        Term(LIA.Add(1, 1), [X(a)], [a, one]),
+        Term(LIA.IdInt(1, 1), [X(b)], [b]),
+        Term(LIA.Eq(1, 1), [eq_wire2], [a, b]),
+        Term(LIA.Lt(1, 1), [lt_wire2], [a, b]),
     ]
     m = Module.sequential([a, b], init, update)
     state, history = _run_module(m, 3)
@@ -268,7 +268,7 @@ def test_env_inputs():
         Term(LIA.Int(torch.tensor([[0]], dtype=torch.int64)), [X(x)]),
     ]
     update = [
-        Term(LIA.Add(), [X(x)], [x, X(env)]),
+        Term(LIA.Add(1, 1), [X(x)], [x, X(env)]),
     ]
     m = Module.sequential([x, env], init, update)
 
@@ -300,11 +300,11 @@ def _make_twobitcounter():
     b0_and_enable = Wire(Bool([1, 1]))
 
     update = [
-        Term(LIA.Not(), [not_b0], [b0]),
-        Term(LIA.Ite(), [X(b0)], [X(enable), not_b0, b0]),
-        Term(LIA.And(), [b0_and_enable], [b0, X(enable)]),
-        Term(LIA.Not(), [not_b1], [b1]),
-        Term(LIA.Ite(), [X(b1)], [b0_and_enable, not_b1, b1]),
+        Term(LIA.Not(1, 1), [not_b0], [b0]),
+        Term(LIA.IteBool(1, 1), [X(b0)], [X(enable), not_b0, b0]),
+        Term(LIA.And(1, 1), [b0_and_enable], [b0, X(enable)]),
+        Term(LIA.Not(1, 1), [not_b1], [b1]),
+        Term(LIA.IteBool(1, 1), [X(b1)], [b0_and_enable, not_b1, b1]),
     ]
 
     m = Module.sequential([b0, b1, enable], init, update)

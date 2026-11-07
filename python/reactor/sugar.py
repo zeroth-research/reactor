@@ -54,6 +54,7 @@ Two base-class constraints force this (both flagged for design review):
 import inspect
 
 from .reactor import Module as _Module, Term as _Term, X as base_X, d as base_d, Var
+from .ops import op as _op
 
 from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
 
@@ -69,6 +70,11 @@ def _as_tuple(r) -> tuple:
     if isinstance(r, list):
         return tuple(r)
     return (r,)
+
+
+def _id(theory, write, read) -> _Term:
+    """The term copying the wire ``read`` to the wire ``write`` (of the same sort)."""
+    return _Term(_op(theory, "Id", write.dtype), [write], [read])
 
 
 def _build_init_block(cls, ctrl, extl, theory) -> list:
@@ -88,7 +94,7 @@ def _build_init_block(cls, ctrl, extl, theory) -> list:
             raise ValueError(f"init expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_Term(theory.Id(), [base_X(var)], [e.wire]))
+            terms.append(_id(theory, base_X(var), e.wire))
         return terms
 
 
@@ -109,7 +115,7 @@ def _build_update_block(cls, ctrl, extl, theory) -> list:
             raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_Term(theory.Id(), [base_X(var)], [e.wire]))
+            terms.append(_id(theory, base_X(var), e.wire))
         return terms
 
 
@@ -130,7 +136,7 @@ def _build_delay_block(cls, ctrl, extl, theory) -> list:
             raise ValueError(f"delay expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_Term(theory.Id(), [base_d(var)], [e.wire]))
+            terms.append(_id(theory, base_d(var), e.wire))
         return terms
 
 
