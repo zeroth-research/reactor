@@ -17,18 +17,18 @@ class Refused(ValueError):
 
     `searched` is whether anything was *looked for* before giving up, and it
     is the difference between two refusals that read alike and mean opposite
-    things: a route that declines a module's shape has learned nothing about
-    it, while one whose budget ran out has learned that this shape is not
-    cheap. The default is `False` because most refusals are gates -- a sort
-    the route cannot weigh, an operator with no encoding, a flag that does
-    not apply -- and every one of those is reached before a solver starts.
-    A route that gives up *after* searching says so, and `main` records the
-    two under different statuses.
+    things: a search that declines a module's shape has learned nothing
+    about it, while one whose budget ran out has learned that this shape is
+    not cheap. The default is `False` because most refusals are gates -- a
+    sort that cannot be weighed, an operator with no encoding, a flag that
+    does not apply -- and every one of those is reached before a solver
+    starts. A search that gives up *after* searching says so, and the two
+    are recorded under different statuses.
 
     `setup` is whether the refusal is about how the run was asked for -- a
     package not installed, a key not set -- rather than about the module.
     Filed in `artifacts/` it would read as a fact about a run that never
-    started, so `main` leaves it out.
+    started, so it is left out.
     """
 
     def __init__(self, *args, searched: bool = False, setup: bool = False):
@@ -40,7 +40,7 @@ class Refused(ValueError):
 class PredicateRefused(Refused):
     """A refusal about one of the claim's predicates, named by its `role`:
     "property" (of `kind` "safety" or "buchi"), "pre", "invariant" or
-    "ranking" -- or any other label, for a term a route made up itself.
+    "ranking" -- or any other label, for a term made up along the way.
     The layers that raise it know predicates by role; a claim's predicate
     is shown as the command-line flag it came from, which is where a user
     can act on it, and this is the one place that spelling lives."""

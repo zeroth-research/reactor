@@ -23,7 +23,7 @@ def stream(cmd: list[str], *, cwd: Path) -> tuple[int, str]:
 
     Returns the exit code *and* the output rather than raising, so each
     caller can say what went wrong in its own vocabulary -- `lake` and
-    the tool a route runs do not fail in the same words. `FileNotFoundError`
+    other tools do not fail in the same words. `FileNotFoundError`
     propagates: a missing executable is the caller's to name.
     """
     print(f"$ {' '.join(cmd)}")
@@ -48,8 +48,8 @@ def build_certificate(project_dir: Path) -> None:
     """`lake build` the certificate of a generated project.
 
     `lake update` runs first: a freshly generated project has no manifest at
-    all, and one left by an earlier run predates this run's lakefile -- a
-    route's lakefile can add a require the manifest has never seen, and
+    all, and one left by an earlier run predates this run's lakefile --
+    `LakefileParts` can add a require the manifest has never seen, and
     `lake build` resolves neither case.
 
     A build that succeeds while the certificate still holds `sorry` is not a

@@ -6,11 +6,9 @@ and the argument grammar are two things.  What the pipeline gets back is
 decided -- rather than an `argparse.Namespace` to re-derive facts from.
 `parser` is the flags (`build_parser`), `checks` the rules about which go
 together, `settings` what they are read into; `parse_args` runs the three.
-
-Nothing here knows an inference route. `certify` and `verith` (the
-`verith/` project beside this one) build their command lines from the same
-groups (`parser.add_*`), checks and fields (`settings_fields`), and add the
-routes' flags and rules of their own.
+A command built on this one assembles its command line from the same
+groups (`parser.add_*`), checks and fields (`settings_fields`), and adds
+flags and rules of its own.
 """
 
 from __future__ import annotations

@@ -4,19 +4,13 @@
 Lean project in which `lake build` checks a proof of the property. The proof
 rests on a certificate: an inductive invariant, and for a Büchi property
 also a ranking function. `reactor` takes the certificate as given
-(`--invariant`, `--ranking`); finding one is a decision procedure's job,
-and those live in the [`verith/`](../../../verith/README.md) project beside this one: `verith`
-infers a certificate and prints it, and `certify` is `reactor` and
-`--infer` in one run. The pipeline does not trust a certificate, whoever
-wrote it. It is written into the project, and Lean checks it.
-
-`reactor.lean` imports nothing of `verith`: the routes are built on it.
+(`--invariant`, `--ranking`). The pipeline does not trust a certificate,
+whoever wrote it. It is written into the project, and Lean checks it.
 
 ## The pipeline, stage by stage
 
-`pipeline.main` runs the stages in this order, all but stage 5; `certify`
-runs all seven. Each one names the code that does it and the section of
-this file (or of [`verith`'s](../../../verith/README.md)) that covers it in full.
+`pipeline.main` runs the stages in this order. Each one names the code that
+does it and the section of this file that covers it in full.
 
 ### 1. Input (`inputs/`)
 
@@ -25,8 +19,8 @@ file's suffix picks:
 
 | format | suffix | what it gives |
 |---|---|---|
-| `python` | `.py` | the `reactor.Module` that `module()` (or `-d NAME`) returns. Returning `inputs.Named(module, {"x": var})` instead adds names to write claims in. A Gymnasium environment comes in this way, through `reactor.gym` ([tutorial](../../../tutorials/verith_gym.md)) |
-| `smv` | `.smv` | a NuSMV model with one `MODULE main`, read as NuSMV reads it; a model that NuSMV would read differently is refused. Its variable names are the claim's names, and its `INVARSPEC` / `LTLSPEC G F` is the claim when neither `--safety` nor `--buchi` is given (`--spec N` picks one of several). The picture does not show this input |
+| `python` | `.py` | the `reactor.Module` that `module()` (or `-d NAME`) returns. Returning `inputs.Named(module, {"x": var})` instead adds names to write claims in. A Gymnasium environment comes in this way, through `reactor.gym` |
+| `smv` | `.smv` | a NuSMV model with one `MODULE main`, read as NuSMV reads it; a model that NuSMV would read differently is refused. Its variable names are the claim's names, and its `INVARSPEC` / `LTLSPEC G F` is the claim when neither `--safety` nor `--buchi` is given (`--spec N` picks one of several) |
 
 The adapter returns an `inputs.Problem`: the module, the source text, the
 names, and the claims the input states. A new input format is a new
@@ -52,12 +46,8 @@ when a certificate is shown.
 ### 3. Reactive module (`reactor.Module`)
 
 The module is the IR: `init` and `update` in SSA form over typed matrix
-wires ([Reactive Module IR](#reactive-module-ir)). Two checks run before any
-Lean is written:
-
-- under `certify`, the route's `precheck` refuses a module that its
-  procedure cannot read;
-- `lean_gaps` refuses an operator with no Lean form.
+wires ([Reactive Module IR](#reactive-module-ir)). Before any Lean is
+written, `lean_gaps` refuses an operator with no Lean form.
 
 ### 4. Lean project (`project/`, `codegen/encodings/`, `templates/`)
 
@@ -91,43 +81,23 @@ directory of that repository.
 By default they are git requires at `project/lakefile.py`'s
 `REACTOR_LEAN_REV`. With `REACTOR_LEAN` set to a reactor-lean checkout they
 are path requires on it instead, which is how to change the library and the
-generator together; `reactor` (and `certify`) refuse a `REACTOR_LEAN` that
-is not a checkout before they write anything. The tests set it to the checkout beside
+generator together; `reactor` refuses a `REACTOR_LEAN` that is not a
+checkout before it writes anything. The tests set it to the checkout beside
 this repository when there is one, and `tests/lean`'s lakefile requires
 `Relational` from there.
 
 [reactor-lean]: https://github.com/zeroth-research/reactor-lean
 
-The certificate in `Data.lean` depends on the run:
-
-- with no certificate given and no route, the predicates are `sorry`;
-- with no route, it is the certificate given by `--invariant` and
-  `--ranking`;
-- with a route (`certify --infer`), it is a placeholder that stage 6
-  replaces.
+The certificate in `Data.lean` is the one given by `--invariant` and
+`--ranking`; with none given, its predicates are `sorry`.
 
 `--cert-file PATH.lean` writes a self-contained certificate instead, with
 the relational and scalar encodings beside it, and the run ends there.
 [What gets generated](#what-gets-generated) has the details.
 
-### 5. Decision procedure (`verith`), untrusted
+### 5. Lean certificate (`proof/render.py`, `smt/precheck.py`, `proof/tactics.py`, `proof/from_smt.py`)
 
-Not `reactor`'s: the routes are the `verith` package, in the
-[`verith/`](../../../verith/README.md) project. `certify --infer NAME` runs one against the
-project stage 4 wrote, and `verith --infer NAME` runs one without a project
-and prints what it found, in the form `--invariant` and `--ranking` take.
-Either way the answer is only a certificate to check: stage 6 renders it
-and stage 7 has Lean check it. What `reactor` provides a route with is
-data -- the encodings it reads, the lakefile entries it adds
-(`pipeline.outputs.generate(lakefile=...)`), `artifacts/` to resume from --
-so `reactor.lean` never imports one.
-
-
-### 6. Lean certificate (`proof/render.py`, `smt/precheck.py`, `proof/tactics.py`, `proof/from_smt.py`)
-
-Under `certify`, the route's answer becomes the project's certificate.
-Under `reactor` there is no route, and the same steps turn the given
-predicates into the certificate, before stage 4:
+These steps turn the given predicates into the certificate, before stage 4:
 
 - `predicate_terms` parses the predicates once, into cvc5 terms over the
   module's encoding.
@@ -139,15 +109,9 @@ predicates into the certificate, before stage 4:
   `Data.lean`, and the tactic plan in `Certificate.lean`.
 
 `--pre-check cvc5` first asks cvc5 whether the obligations hold, so that a
-wrong answer fails in seconds rather than in the build. `certify` then
-prints the certificate in the input's names.
+wrong certificate fails in seconds rather than in the build.
 
-`fbk-proveit` is different: it returns files, and nothing is regenerated.
-It installs ic3ia's certificate and, unless `--fbk-equiv none` is given,
-`Certificate/Equivalence.lean`, which ties ic3ia's model back to the
-module.
-
-### 7. The check (`--build-cert`)
+### 6. The check (`--build-cert`)
 
 `lake update` and `lake build Certificate` run in the project. This is the
 step the result rests on: Lean checks the certificate's obligations against
@@ -161,23 +125,11 @@ the certificate](#building-the-certificate---build-cert).
 Record each of these at the commit before the change and after it, and
 compare; every difference must be one the change means.
 
-- **Route transcripts**: `uv run python scripts/route_transcripts.py OUTDIR`
-  from `verith/`, then `diff -r`. 42 `certify` runs over all eight routes, with the
-  LLM replies scripted; the docstring names the variables that find the
-  external tools. Record on a quiet machine, and re-run a `vampire_*` case
-  alone before reading a difference in it as a change: under load its
-  templates run out of their shared deadline.
-- **Encoding snapshots**: `scripts/encoding_snapshots.py OUTDIR` writes what
-  the transcripts do not cover: the `System/*.lean` encodings, the bare
-  `--cert-file` certificate, and (with `verith` installed) the NA model and
-  bridge, per fixture.
-- **Goldens**: `tests/test_pipeline_golden.py`, and `certify`'s in
-  `verith/tests/test_certify_golden.py`; `REACTOR_UPDATE_GOLDEN=1` rewrites
-  them.
-- **Suites**: `just py-test` and `just vr-test` (`uv run pytest -m 'not
-  slow' -q` from `python/` and from `verith/`; set `VAMPIRE` to the binary
-  for the Vampire tests), and `just test-lean` for the lake builds after
-  any change to the generated Lean.
+- **Goldens**: `tests/test_pipeline_golden.py`; `REACTOR_UPDATE_GOLDEN=1`
+  rewrites them.
+- **Suites**: `just py-test` (`uv run pytest -m 'not slow' -q` from
+  `python/`), and `just test-lean` for the lake builds after any change to
+  the generated Lean.
 - **Encodings against the module**: after a change to an encoder or to the
   op table, `tests/test_encodings_agree.py` (the SMT encoding, two seconds)
   and `tests/lean/test_lean_agree.py` (the Lean one, `-m slow`, a minute)
@@ -189,12 +141,8 @@ compare; every difference must be one the change means.
 
 - [`TODO.md`](../../../TODO.md): what is still to do, known defects
   included.
-- [`verith/README.md`](../../../verith/README.md): the routes, and the `verith` and `certify`
-  commands.
-- [`tests/limits/`](../../tests/limits/README.md): the limit matrix the
-  routes are measured on, with its runners and baseline.
-- [`tutorials/verith.md`](../../../tutorials/verith.md): a walk through
-  every route on worked examples.
+- [`tests/limits/`](../../tests/limits/README.md): the limit matrix of
+  generated projects built with lake, with its runners and baseline.
 
 The rest of this file is the reference, starting from the IR.
 
@@ -229,18 +177,16 @@ layer.
 
 | Package | What it holds |
 |------|------|
-| `core/` | The vocabulary every layer is written in, importing nothing of `reactor.lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option a route or an input format declares) |
+| `core/` | The vocabulary every layer is written in, importing nothing of `reactor.lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares) |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
-| `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) and `record` (`found`, `note`, the writes a route makes) |
+| `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) and `record` (`found`, `note`: a predicate found, or a note) |
 | `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
-| `smt/` | The module in cvc5, and what the cvc5 routes and the pre-check share: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `obligations` (stated once over a frame), `precheck` (`--pre-check`: `ModuleQueries`, `pre_check`, `predicate_terms`), `limits` (time limits), `terms` (walks over terms), `script` (the SMT-LIB printer) |
+| `smt/` | The module in cvc5, which the certificate's predicates are read against and the pre-check asks: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `obligations` (stated once over a frame), `precheck` (`--pre-check`: `ModuleQueries`, `pre_check`, `predicate_terms`), `limits` (time limits), `terms` (walks over terms), `script` (the SMT-LIB printer) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `build` (`lake build`), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), the certificate's files as the text it is handed |
 | `proof/` | The certificate as Lean: `render` (`prepare`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean), `facts` (what the terms and cvc5 say about the proof the tactics attempt: `predicate_facts`, and `solver_hints` under `--smt-tactics`), `tactics` (the plan read off them) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`, `smv`), and `names`, which translates a claim's names to the internal ones and back |
-| `cli/` | The command line: `parser` (the flags, one `add_*` per group, which `certify` and `verith` assemble too), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
+| `cli/` | The command line: `parser` (the flags, one `add_*` per group), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
 | `pipeline/` | `uv run reactor`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, `artifacts/`, the certificate rendered), `outputs` (the project, `--cert-file`, `--hammer-file`, `--build-cert`) |
-
-The inference routes are the `verith` package, in [`verith/`](../../../verith/README.md), with the commands that run them; it is built on these packages, and none of them imports it.
 
 ---
 
@@ -465,11 +411,10 @@ terms. `share=False` prints repeated subterms in full; `proof.render.prepare`
 always shares, because a hint's `if_pos` matches once `simp` has
 zeta-reduced the `let`s. `verbatim` takes the invariant and ranking of a
 `LeanAnswer` as they are. Every certificate is printed through `prepare`,
-the pipeline's (`pipeline.certify.render`) and the tests'
+the pipeline's (`pipeline.certificate.render`) and the tests'
 (`lean_certificate(module, claim, cert)`, which is `prepare` with no solver
 hints) alike; `certificate_files` renders the project's `Data.lean` and
-`Certificate.lean` from it, and `create_project` and
-`ProjectHandle.write_predicates` write that text as it is.
+`Certificate.lean` from it, and `create_project` writes that text as it is.
 
 ---
 
@@ -508,7 +453,7 @@ BitVec certificate from 10 s to 977 s while closing nothing `decide` had not
 already closed.
 
 Because the plan depends on the predicates, `Certificate.lean` is not stable
-across a change of invariant: `--infer` rewrites it alongside `Data.lean`.
+across a change of invariant: it is regenerated alongside `Data.lean`.
 `tests/test_lean_tactics.py` pins these decisions in the fast suite, so a
 plan regression does not wait for a Lean build.
 
@@ -549,8 +494,7 @@ that certificate files override.
 
 `reactor` is the command-line tool that drives the pipeline: Python module
 → Lean project or standalone certificate files, with the certificate as
-given. `certify` takes every flag below and `--infer`; the flags of the
-inference routes are documented with them, in [`verith/README.md`](../../../verith/README.md).
+given.
 
 ### Module file format
 
@@ -653,11 +597,10 @@ uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.le
   Main.lean                   # only with --executable
 ```
 
-`certify --infer fbk-proveit` adds `ProveIt/` and `Certificate/Equivalence.lean`.
-A file in `Certificate/` the run does not write -- an earlier
-`Equivalence.lean`, say -- is deleted when the project is generated
-again: the `Certificate` library globs the directory, and the file would be
-built against this run's module.
+A file in `Certificate/` the run does not write -- one an earlier run left
+there, say -- is deleted when the project is generated again: the
+`Certificate` library globs the directory, and the file would be built
+against this run's module.
 
 **Standalone certificate** (`--cert-file path/Name.lean`):
 
@@ -681,13 +624,10 @@ certificate consists of.
 | certificate | an invariant that **implies** `P` | an invariant **and** a ranking function that decreases wherever `P` is false |
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
-| routes (`certify`, `verith`) | `--fbk-proveit` (ic3ia finds the invariant), `--infer ai-cegis`, `--infer nuterm`, `--infer sygus`, `--infer smt-linear`, `--infer houdini`, or `--infer vampire` | `--infer ai`, `--infer ai-cegis`, `--infer nuterm`, `--infer smt-linear`, `--infer houdini`, or `--infer vampire` |
 
-Neither flag *requires* a route: `reactor` generates the project from
-whatever predicates were supplied, and the two flags simply say which
-certificate to emit. `--safety` and `--buchi` are mutually exclusive, and
-`--fbk-proveit` takes only `--safety` — ic3ia decides reachability of `¬P`,
-which is not a question about recurrence.
+`reactor` generates the project from whatever predicates were supplied, and
+the two flags say which certificate to emit. `--safety` and `--buchi` are
+mutually exclusive.
 
 The distinction is not academic. Countdown starts at 100 and counts down, so
 `(= (X @intf.0) 0)` is reached over and over — true under `--buchi`, and false under
@@ -703,11 +643,11 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `-d` / `--module-def` | `module` | Name of the factory function in the Python file (python input only) |
 | `--safety` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold in every reachable state (`G P`) |
 | `--buchi` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold infinitely often (`G (F P)`) |
-| `--invariant` | — | SMT-LIB 2 Bool invariant (under `certify --infer`, skips invariant inference) |
-| `--ranking` | — | SMT-LIB 2 Int ranking (under `certify --infer`, skips ranking inference) |
+| `--invariant` | — | SMT-LIB 2 Bool invariant |
+| `--ranking` | — | SMT-LIB 2 Int ranking (`--buchi` only) |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
-| `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets a route resume from what an earlier run left, `ignore` searches afresh, `reset` empties it first |
+| `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets the run read what an earlier run left, `ignore` reads nothing back but still records, `reset` empties it first |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
 
 ### Writing a claim on the command line
@@ -728,10 +668,9 @@ An interface variable's latched value cannot be named yet. A name like `x`
 comes from an input that provides one (a module file returning
 `reactor.lean.inputs.Named(module, {"x": var})`); `@intf.N` works for any
 module. `reactor.lean.inputs.to_surface(text)` turns internal text into this
-spelling. Each command prints one `.. --FLAG, in internal names: ...` line
+spelling. A run prints one `.. --FLAG, in internal names: ...` line
 per claim flag it was given. Everything past the command line (`Claim`,
-`Certificate`, SMT, Lean, `artifacts/`, LLM replies) still uses the internal
-names below.
+`Certificate`, SMT, Lean, `artifacts/`) still uses the internal names below.
 
 ### State variable naming in SMT-LIB predicates (internal)
 
@@ -742,47 +681,31 @@ SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 
 ## Building the certificate (`--build-cert`)
 
-`--build-cert` is route-independent: it builds whatever certificate the run
-produced, with `lake update` then `lake build Certificate` in the generated
-project. All three ways of filling a certificate qualify — `reactor`'s, and
-`certify`'s two —
+`--build-cert` builds the certificate the run produced, with `lake update`
+then `lake build Certificate` in the generated project:
 
 ```bash
-# predicates supplied
 uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" \
     --ranking "(X @intf.0)" --build-cert -o out/ -p Counter
-
-# predicates inferred
-uv run certify mymodule.py --buchi "(= (X @intf.0) 0)" --infer --build-cert -o out/ -p Counter
-
-# predicates from ic3ia
-uv run certify mymodule.py --safety "(not (= (X @intf.0) 15))" --build-cert -o out/ -p Counter \
-    --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying
 ```
 
-— and the two that do not are refused rather than silently doing nothing:
+Two kinds of run are refused rather than silently doing nothing:
 
 | refused | because |
 |---|---|
-| no `--invariant`/`--ranking`, no `--infer`, no `--fbk-proveit` | every obligation in a bare project is `sorry`. Lake compiles that and exits 0, so "built" would mean nothing |
+| no `--invariant`/`--ranking` | every obligation in a bare project is `sorry`. Lake compiles that and exits 0, so "built" would mean nothing |
 | `--cert-file`, `--hammer-file` | they write a file and return; there is no project to build |
 
 `--invariant` without `--ranking` (or either without a property) is the
 first row: a missing predicate is a `sorry`, not a weaker proof.
 
-Two checks sit past the parse-time gate, because a flag cannot promise what
-inference returns and lake cannot be trusted to fail loudly:
-
-* **After the route, before the build.** `--infer` can come back without an
-  invariant or a ranking — an LLM that answers nothing usable — and the
-  error names which one is missing instead of building a proof of `sorry`.
-  (`--fbk-proveit` is exempt: its certificate is ic3ia's, installed by the
-  route itself, and no `Certificate` describes it.)
-* **After the build.** `zeroth_hammer` leaves a `sorry` where it cannot
-  close an obligation, and lake reports that as a *warning* and exits 0. So
-  `build_certificate` also scans the log for `sorry` under `Certificate/` —
-  a dependency's own `sorry` (lean-smt ships one) is not ours — and raises
-  if it finds any.
+Past the parse-time gate, the certificate is checked again before the build
+(a predicate it lacks is named rather than built as a proof of `sorry`),
+and once more after it, because lake cannot be trusted to fail loudly:
+`zeroth_hammer` leaves a `sorry` where it cannot close an obligation, and
+lake reports that as a *warning* and exits 0. So `build_certificate` also
+scans the log for `sorry` under `Certificate/` — a dependency's own `sorry`
+(lean-smt ships one) is not ours — and raises if it finds any.
 
 A build that fails is a `LakeBuildError`, and the run exits non-zero with
 the Lean diagnostics restated: lake's log ends with thousands of replayed
@@ -812,18 +735,17 @@ so does a row no theory backs.
 
 ## `artifacts/` — the project as a workspace
 
-The project is generated *before* inference runs, and what a run leaves in
-`<project>/artifacts/` outlives it: an invariant that was inductive but too
-weak, a ranking function that used an op the certificate cannot express, a
-note for the next prompt.  A second `uv run certify` into the same `-o`
-continues rather than restarts — take that invariant and strengthen it, or
-take it as given and infer only the ranking function.
+What a run leaves in `<project>/artifacts/` outlives it: the predicates it
+was given, the questions it asked of cvc5, and whatever else a writer of
+the store found worth keeping -- an invariant that was inductive but too
+weak, a note.  A later run into the same `-o` can read it back and continue
+rather than restart.
 
 Artifacts are arbitrary files (`.smt2` and `.md`, mostly, plus whatever a
 subprocess drops there); `artifacts/index.json` types the ones it knows, and
 a file with no entry is still listed, as `role="other"`.  Each entry carries
-`status` — what a consumer filters on — and `why`, the prose it puts in a
-prompt.  Three more fields exist only so a stale artifact is not trusted:
+`status` — what a consumer filters on — and `why`, the prose it shows a
+reader.  Three more fields exist only so a stale artifact is not trusted:
 `module_digest`, `prp` and `kind`.  An invariant found for another property,
 another proof rule or a since-edited module is not about this run, and
 `usable()` drops it and says so, because two identical command lines that
@@ -831,8 +753,8 @@ resume differently is the one thing a workspace must not do quietly.
 
 `--artifacts ignore` searches afresh; `--artifacts reset` empties the
 directory first, which is what to pass when a bad artifact is being
-inherited by every run.  `artifacts/` belongs to no route, so a regenerating
-run must never treat it as its own output to clean up.
+inherited by every run.  `artifacts/` belongs to no one run, so a
+regenerating run must never treat it as its own output to clean up.
 
 ### The questions, not only the answers
 
@@ -847,7 +769,7 @@ inside the process.  What reached the user was a project and a line saying
 |---|---|
 | `system.smt2` | the whole problem as cvc5 encoded it: `init<i>` / `next<i>` per state component, and `P`, `inv`, `ranking` over the same state |
 | `obligation-<name>.smt2` | one obligation, **negated**, exactly as it was asked |
-| `property.smt`, `inv.smt`, `ranking.smt` | the predicate source, as a flag was given it or a route found it |
+| `property.smt`, `inv.smt`, `ranking.smt` | the predicate source, as a flag gave it or a run found it |
 
 `.smt2` is a script — declarations, definitions, `(check-sat)` — so
 `cvc5 artifacts/obligation-step_inv.smt2` answers without `reactor` in the
@@ -864,8 +786,8 @@ about what it leaves.
 ### `README.md` — the index components write
 
 `artifacts/README.md` is the human-readable half of `index.json`, and nothing
-assembles it centrally: no one place knows what a run will produce, which
-routes will run, or what a component added later will want to leave behind.
+assembles it centrally: no one place knows what a run will produce, or what
+a component added later will want to leave behind.
 So each component passes `what=` to `store.put` / `store.encoded` — one
 sentence saying what its file *is* — and the README is rendered from the index
 after every write.  It is therefore always exactly what was written, in the
@@ -894,10 +816,9 @@ rather than gaining a second one.
 If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth
 time: build a `RelSyntax` and a `RelBlock` and call `emit_rel_block` from
-`codegen/encodings/skeleton.py`, as `Rel`, `ScalarRel` (both in
-`codegen/encodings/relational.py`) and the NA model
-(`verith/fbk_proveit/na.py`, in the `verith/` project) do.  It is parameterised on the type builder,
-the projection, and the spelling
+`codegen/encodings/skeleton.py`, as `Rel` and `ScalarRel` (both in
+`codegen/encodings/relational.py`) do.  It is parameterised on the type
+builder, the projection, and the spelling
 (`def`/`abbrev`, `Prop`/`Bool`, `=`/`==`, `∧`/`&&`); the body producer stays
 yours, and the per-slot `*_eq` theorems are emitted only if you name a
 functional counterpart to prove them against.

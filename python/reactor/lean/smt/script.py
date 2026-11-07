@@ -1,5 +1,5 @@
 """SMT-LIB out: the script printer, the literals written into one, and
-the sums and conjunctions a route writes a certificate's predicates as.
+the sums and conjunctions a certificate's predicates are written as.
 
 Every script handed to a solver outside this process, or left in
 `artifacts/` for a reader, is printed by :func:`script`.
@@ -79,11 +79,10 @@ def decimals(text: str) -> str:
 # Predicates written out
 # ══════════════════════════════════════════════════════════════════════════
 #
-# A route that found a predicate writes it as text rather than printing the
-# term it found it as: the string is parsed back and rendered as the body of
-# a Lean definition, and a printer that `let`-binds a repeated subterm writes
-# something that cannot be one (`verith.nuterm.engine._smt_term` refuses
-# exactly that).
+# A predicate found as a term is written as text rather than printed from
+# that term: the string is parsed back and rendered as the body of a Lean
+# definition, and a printer that `let`-binds a repeated subterm writes
+# something that cannot be one.
 
 
 def sum_smt(parts: Iterable[str]) -> str:

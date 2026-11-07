@@ -308,9 +308,8 @@ def _walk(
 
     if k == Kind.BITVECTOR_UBV_TO_INT:
         # `bv2nat`/`ubv_to_int`: a bitvector read as the number it holds.
-        # `--infer smt-linear` weighs a BitVec state component this way, so
-        # one `Int` template covers a mixed state instead of a template per
-        # sort. `Int.ofNat` rather than a coercion arrow: the surrounding
+        # A linear predicate can weigh a BitVec state component this way, so
+        # one `Int` expression covers a mixed state instead of one per sort. `Int.ofNat` rather than a coercion arrow: the surrounding
         # expression is `Int`-typed and an inserted `↑` there is a different
         # elaboration problem in each place it lands.
         return f"(Int.ofNat (BitVec.toNat {recur(t[0])}))"

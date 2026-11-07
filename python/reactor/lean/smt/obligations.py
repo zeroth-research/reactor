@@ -192,7 +192,7 @@ def hrank(f, hyps: list, prp, rank) -> Query:
 
 
 def ranked(f, hyps: list, prp, goal, *, given=()) -> Query:
-    """`hyps s /\\ ~P s /\\ update_pre e -> goal`, for a route that states
+    """`hyps s /\\ ~P s /\\ update_pre e -> goal`, for a caller that states
     `hrank`'s conclusion in a shape of its own (read at `f.succ`)."""
     named = _outside(f, hyps, prp)
     return _query(named + _given(given), goal, defines=f.define_next())
@@ -224,7 +224,7 @@ def rank_positive(f, hyps: list, prp, rank) -> Query:
 # ══════════════════════════════════════════════════════════════════════════
 # The round as relations
 #
-# `--infer sygus` states `G P` as SyGuS-IF does, over `pre(s)` and
+# SyGuS-IF states `G P` over `pre(s)` and
 # `trans(s, s')`: predicates on states alone, so the inputs that make a
 # state initial, or take one state to the next, are closed existentially.
 # Existential rather than fresh constants, because the relation is about the

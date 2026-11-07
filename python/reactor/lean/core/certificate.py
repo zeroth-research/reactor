@@ -6,8 +6,8 @@ inputs `e0..` (awaited) / `el0..` (latched) -- the text
 the CLI and library edge only; Lean is produced from these in one place,
 `proof.render.render_certificate`.
 
-A leaf module: it imports neither cvc5 nor Jinja, so a route, the CLI and
-the solver layer can all depend on it.
+A leaf module: it imports neither cvc5 nor Jinja, so the CLI, the solver
+layer and the code generators can all depend on it.
 """
 
 from __future__ import annotations
@@ -56,8 +56,8 @@ class Certificate:
 class LeanAnswer:
     """A certificate that exists only as Lean `fun s => ...` text.
 
-    `--infer ai` asks a model for Lean and gets Lean back. Nothing parses it
-    into a term, so no solver can check it and nothing records it as SMT.
+    Nothing parses it into a term, so no solver can check it and nothing
+    records it as SMT; Lean is the only check it gets.
     """
 
     inv: str

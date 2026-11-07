@@ -5,11 +5,6 @@ be proved of it; `certificate` checks the module and renders the
 certificate; `outputs` writes the project, or the one file asked for, and
 builds it.
 
-Inference lives in the `verith/` project beside this one: `verith` infers
-the invariant and the ranking function of a module and prints them as
---invariant and --ranking take them, and `certify` is this command and
-`--infer` together. Nothing here imports either.
-
 Quick start
 -----------
 A *module file* is a Python file that defines a ``module()`` function (or
