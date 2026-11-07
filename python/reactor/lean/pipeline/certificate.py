@@ -2,10 +2,6 @@
 the project's `artifacts/` as a run sees it (`workspace`), and the
 predicates recorded there and rendered as codegen takes them
 (`record_predicates`, `render`).
-
-What an inference route adds -- its precheck, the route run and the
-certificate rewritten from its answer -- is `certify`'s, in the `verith/`
-project beside this one.
 """
 
 from __future__ import annotations
@@ -46,7 +42,9 @@ def record_predicates(store, claim: "Claim | None", cert: Certificate, *,
     comparing `system.smt2` with a refuted obligation has the third side of it
     here rather than having to dig it out of `Certificate/Data.lean`, where it is
     Lean and no longer the text any solver was given. An answer that is Lean
-    only (`--infer ai`) has no SMT-LIB to record.
+    only (`LeanAnswer`) has no SMT-LIB to record. `inferred` marks the
+    certificate's predicates, never the property, as found by the run
+    rather than given to it.
     """
     if store is None or claim is None:
         return
@@ -54,7 +52,6 @@ def record_predicates(store, claim: "Claim | None", cert: Certificate, *,
         src = claim.prp if field is None else getattr(cert, field)
         if not (src and src.strip()):
             continue
-        # A route infers the certificate, never the property it was asked about.
         if inferred and role != "property":
             what += " Inferred by this run's route."
         store.encoded(role, role, src.strip(), language="smt-src", what=what)
@@ -65,13 +62,13 @@ def workspace(project_dir: Path, module, claim: "Claim | None", *,
               producer: str = "") -> ArtifactStore:
     """The project's `artifacts/`, as this run sees it.
 
-    The project is generated before inference runs and `artifacts/` outlives
-    the run that wrote it, so a sequence of runs in one `-o` continues
-    rather than restarts. The three fields that are not the directory are
-    what stop a stale artifact being trusted: an invariant found for another
-    property, another proof rule or another module is not about this run,
-    and `usable()` says so rather than silently omitting it. `mode` is
-    `--artifacts`; `producer` names the route that writes, if one does.
+    `artifacts/` outlives the run that wrote it, so a sequence of runs in
+    one `-o` continues rather than restarts. The three fields that are not
+    the directory are what stop a stale artifact being trusted: an invariant
+    found for another property, another proof rule or another module is not
+    about this run, and `usable()` says so rather than silently omitting it.
+    `mode` is `--artifacts`; `producer` names what writes, if anything
+    other than the run itself does.
     """
     store = ArtifactStore(
         dir=project_dir / ARTIFACTS_DIR,
@@ -129,13 +126,12 @@ def render(smt, claim: "Claim | None", cert: Certificate, *,
 def lean_context(module) -> LeanContext:
     """The module's `LeanContext`, refusing a module with no Lean form.
 
-    After an inference route's own check, so a route with an opinion about
-    this module states it in its own words. An operator with no Lean form
-    is a fact about the module, said here once, before any of the project
-    exists, rather than as a missing table cell in the middle of a file.
+    An operator with no Lean form is a fact about the module, said here
+    once, before any of the project exists, rather than as a missing table
+    cell in the middle of a file.
 
     Built once and threaded: its discovery pass interns every init/update
-    term, and codegen and the rewrites after inference need the same one.
+    term, and everything that prints the module needs the same one.
     """
     ctx = LeanContext(module)
     gaps = lean_gaps(ctx)

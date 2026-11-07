@@ -1,10 +1,8 @@
 """The flags: `build_parser`, with the help each input format contributes
 assembled from its rows.
 
-Each group is its own `add_*` so that the commands built on this one --
-`certify` adds the inference routes' flags, `verith` takes the module, the
-claim and the SMT budget and none of the outputs -- assemble the same flags
-rather than copies of them.
+Each group is its own `add_*` so that a command built on this one
+assembles the same flags rather than copies of them.
 """
 
 from __future__ import annotations
@@ -34,10 +32,6 @@ examples:
   # build the certificate: `lake build Certificate`
   uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
       --build-cert -o out/ -p MyProject
-
-To have the invariant and the ranking function inferred, run `certify`,
-which takes these flags and `--infer`, or `verith`, which infers them and
-prints them in the form --invariant and --ranking take.
 """
 
 
@@ -78,7 +72,7 @@ def add_input(parser: argparse.ArgumentParser, *, project: bool = True,
     """The input: the module file, the format it is read in and that
     format's own options, and, with `project`, where the project is
     written. `required` for a command with no `--hammer-file` to run
-    without a module; `verith`, which writes no project, passes neither."""
+    without a module; a command that writes no project passes neither."""
     parser.add_argument(
         "module_file",
         nargs=None if required else "?",
@@ -110,7 +104,7 @@ def add_input(parser: argparse.ArgumentParser, *, project: bool = True,
         help=_format_help(),
     )
     # A format's own options, one group per format, parsed `default=None`
-    # so "given" is distinguishable from "not given" -- as the routes' are.
+    # so "given" is distinguishable from "not given".
     for adapter in ADAPTERS:
         if adapter.options:
             group = parser.add_argument_group(f"--format {adapter.name}")
@@ -172,8 +166,7 @@ def add_claim(parser: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "Invariant as an SMT-LIB 2 Bool expression over the state, "
-            "named as --safety names it. With an inference route that seeds from it, "
-            "only what is left of the certificate is inferred. Example: "
+            "named as --safety names it. Example: "
             "'(= (X @intf.0) (X @intf.5))'."
         ),
     )
@@ -182,8 +175,7 @@ def add_claim(parser: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "Ranking as an SMT-LIB 2 Int expression over the state, named "
-            "as --buchi names it, for --buchi only. With an inference route that seeds "
-            "from it, only the invariant is inferred. Must satisfy `ranking "
+            "as --buchi names it, for --buchi only. Must satisfy `ranking "
             ">= 0` under the invariant. Example: "
             "'(ite (X @intf.5) (ite (X @intf.4) 1 2) 0)'."
         ),
@@ -215,8 +207,8 @@ def add_outputs(parser: argparse.ArgumentParser) -> None:
         help=(
             "Build the generated certificate: `lake update` then `lake "
             "build Certificate` in the project. Needs a certificate with "
-            "predicates in it, so pass --invariant and --ranking, or, under "
-            "`certify`, --infer; an obligation left as `sorry` is an error, as is one "
+            "predicates in it, so pass --invariant and --ranking; an "
+            "obligation left as `sorry` is an error, as is one "
             "lake cannot close. Off by default because the build resolves "
             "and compiles cslib, Mathlib, lean-smt and cvc5 -- minutes "
             "against a warm package cache, much longer against a cold one."
@@ -229,13 +221,12 @@ def add_outputs(parser: argparse.ArgumentParser) -> None:
         help=(
             f"What to do with the project's `{ARTIFACTS_DIR}/` directory, "
             f"which is how a sequence of runs in one -o continues rather "
-            f"than restarts: a predicate a previous run found but could not "
-            f"prove enough of is left there, and an inference route (`certify --infer`, `verith`) that understands it "
-            f"starts from it. `use` (default) lets the route read it -- an "
-            f"artifact written for a different module, property or proof "
-            f"rule is skipped, and what is picked up is printed, because two "
+            f"than restarts: what a previous run found or asked is left "
+            f"there. `use` (default) lets the run read it -- an artifact "
+            f"written for a different module, property or proof rule is "
+            f"skipped, and what is picked up is printed, because two "
             f"identical command lines must not quietly mean different "
-            f"things. `ignore` searches from scratch and still records what "
+            f"things. `ignore` reads nothing back and still records what "
             f"this run finds. `reset` empties it first, which is what to "
             f"pass when a bad artifact is being inherited by every run."
         ),
@@ -252,9 +243,7 @@ def add_smt_checks(parser: argparse.ArgumentParser) -> None:
             "Before generating, ask cvc5 whether the certificate obligations "
             "are actually true. A refuted obligation means the invariant or "
             "ranking is wrong, which a failing `lake build` cannot tell you "
-            "apart from tactics that are merely too weak. With `certify --infer` the "
-            "check runs after inference, on the certificate that was "
-            "inferred -- before it there is no invariant to check. Bounded "
+            "apart from tactics that are merely too weak. Bounded "
             "by --smt-timeout / --smt-budget; anything cvc5 cannot answer is "
             "reported as unknown and changes nothing."
         ),

@@ -783,3 +783,18 @@ build Lean. The modules they run on are `reactor`'s fixtures, read from
 `fbk-proveit` route ([README](tests/fbk/README.md)), and
 `scripts/route_transcripts.py` records `certify` transcripts to diff a
 refactor against.
+
+A change to `reactor` is checked here too. Record each of these at the
+commit before it and after it, and compare:
+
+- **Route transcripts**: `uv run python scripts/route_transcripts.py OUTDIR`,
+  then `diff -r`. 42 `certify` runs over all eight routes, with the LLM
+  replies scripted; the docstring names the variables that find the
+  external tools. Record on a quiet machine, and re-run a `vampire_*` case
+  alone before reading a difference in it as a change: under load its
+  templates run out of their shared deadline.
+- **Encoding snapshots**: `scripts/encoding_snapshots.py OUTDIR` writes what
+  the transcripts do not cover: the `System/*.lean` encodings, the bare
+  `--cert-file` certificate, and the NA model and bridge, per fixture.
+- **Goldens**: `tests/test_certify_golden.py`; `REACTOR_UPDATE_GOLDEN=1`
+  rewrites them. Set `VAMPIRE` to the binary for the Vampire tests.

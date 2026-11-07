@@ -2,9 +2,8 @@
 about: an input format's options, the claim, the SMT budget and the
 outputs a run can write.
 
-Public so that `certify` and `verith`, which take these flags too, apply
-the same rules; the rules about an inference route are theirs
-(`verith.flags`).
+Public so that a command built on this one, which takes these flags too,
+applies the same rules.
 """
 
 from __future__ import annotations
@@ -20,11 +19,11 @@ from .settings import Settings
 def check_blanks(parser: argparse.ArgumentParser, args) -> None:
     """An option given an empty string is the error, not "not passed".
 
-    `--proveit-dir "$LTL"` with `LTL` unset -- which is how a copied
+    `--invariant "$INV"` with `INV` unset -- which is how a copied
     benchmark command reads -- reads as "not passed" to every
-    truthiness test below.  The route behind the flag would be dropped and
-    the run would *succeed*, having quietly generated an ordinary project
-    instead.  No option here has a meaningful empty value.
+    truthiness test below.  The invariant would be dropped and the run
+    would *succeed*, having quietly generated a project with no
+    certificate instead.  No option here has a meaningful empty value.
     """
     blank = [
         action.option_strings[-1]
@@ -78,9 +77,9 @@ def check_row_options(parser: argparse.ArgumentParser, args, stray,
 
 def check_input_options(parser: argparse.ArgumentParser, args,
                         adapter: InputAdapter | None) -> None:
-    """A format's option is only meaningful for input in that format, as a
-    route's is only with that route; one its row requires has to be given;
-    and its row default is put back once the format is known."""
+    """A format's option is only meaningful for input in that format; one
+    its row requires has to be given; and its row default is put back once
+    the format is known."""
     check_row_options(
         parser, args,
         [(o, [a.name]) for a in ADAPTERS for o in a.options
@@ -129,11 +128,11 @@ def check_budget(parser: argparse.ArgumentParser, args) -> None:
 
 def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
                   infer: str | None = None) -> None:
-    """What the run writes, against what it was given. `infer` is the
-    `--infer` route a command built on this one runs, by name: with one,
-    --build-cert has a certificate to build without --invariant."""
-    # --build-cert is route-independent, but it needs a certificate worth
-    # building. A bare project's unsupplied fields default to `True`
+    """What the run writes, against what it was given. `infer` names what
+    a command built on this one runs to find the certificate, if anything:
+    with it, --build-cert has a certificate to build without --invariant."""
+    # --build-cert needs a certificate worth building. A bare project's
+    # unsupplied fields default to `True`
     # (`inv`, the preconditions) or to `sorry` (`P`, `ranking`), and its
     # obligations are still handed to the tactics -- which cannot close one
     # stated over a `sorry`, so `lake build` fails on it rather than
@@ -150,12 +149,11 @@ def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
             parser.error(
                 "--build-cert needs a certificate to build: pass --safety "
                 "with --invariant, or --buchi with --invariant and "
-                "--ranking, or have `certify --infer` infer them. Without "
-                "them the certificate's predicates are `True` or `sorry`, "
-                "and its obligations cannot be discharged."
+                "--ranking. Without them the certificate's predicates are "
+                "`True` or `sorry`, and its obligations cannot be discharged."
             )
 
-    # `artifacts/` lives in the project, so the routes that write a file and
+    # `artifacts/` lives in the project, so the runs that write a file and
     # return have none. Said rather than ignored: the flag asks for
     # cross-run behaviour that this invocation cannot have.
     if settings.artifacts != "use" and (settings.cert_file or settings.hammer_file):
@@ -166,10 +164,9 @@ def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
             f"writes a file and generates none"
         )
 
-    # `--hammer-file` writes one tactic file and returns, so a route asked
-    # for alongside it would never run -- any route, the file routes too, for
-    # the same reason `--build-cert` is incompatible with them: there is no
-    # project.
+    # `--hammer-file` writes one tactic file and returns, so whatever `infer`
+    # names would never run, for the same reason `--build-cert` is
+    # incompatible with it: there is no project.
     if settings.hammer_file and infer is not None:
         parser.error(
             f"--infer {infer} is incompatible with --hammer-file: that "

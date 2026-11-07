@@ -2,12 +2,10 @@
 
 Codegen writes the project's files and modules under these names, and the
 rest of the pipeline refers to them: the lake build target and its `sorry`
-filter, the fbk bridge's imports, the files the fbk-proveit route returns
-and owns. Each is defined here once, so a reference cannot drift from what
-was written. A leaf: it imports nothing from the package, so `project`,
-`fbk/` and the route rows can all use it. The templates under
-`templates/project/` spell the same names, and `tests/test_lean_names.py`
-holds the two together.
+filter, among others. Each is defined here once, so a reference cannot
+drift from what was written. A leaf: it imports nothing from the package,
+so anything can use it. The templates under `templates/project/` spell the
+same names, and `tests/test_lean_names.py` holds the two together.
 """
 
 from __future__ import annotations
@@ -87,8 +85,8 @@ LINTERS_OFF = "\n".join(
 def rm_def(extl_type: str, ctrl_type: str, noncomputable: bool = False) -> str:
     """`RM`, the module as a `ReactiveModule` over the functional
     encoding's `init`/`update` and the certificate's preconditions. The
-    certificate states its theorems about it and the fbk bridge relates it
-    to the NA model, each in its own namespace, so both print this one."""
+    certificate states its theorems about it, and any other proof about the
+    module can print this same one in its own namespace."""
     return "\n".join([
         f"{'noncomputable ' if noncomputable else ''}def RM : ReactiveModule "
         f"({extl_type}) ({ctrl_type}) := {{",

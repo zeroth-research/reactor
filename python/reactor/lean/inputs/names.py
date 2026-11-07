@@ -8,8 +8,8 @@ by position: `@intf.{i}` is interface (ctrl) variable `i`, `@extl.{i}`
 external variable `i`. The `@` keeps a positional name from ever being a
 source name.
 
-The rest of the pipeline -- the SMT encoding, the Lean, the artifacts, the
-LLM prompts -- reads positional internal names, so a claim is rewritten
+The rest of the pipeline -- the SMT encoding, the Lean, the artifacts --
+reads positional internal names, so a claim is rewritten
 here, once, on the way in, and a predicate shown to the user is rewritten
 back on the way out:
 

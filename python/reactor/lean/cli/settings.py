@@ -1,5 +1,5 @@
-"""A validated command line (`Settings`), and the predicate flags an
-inference route can be seeded from (`SEED_FLAGS`).
+"""A validated command line (`Settings`), and the predicate flags
+(`SEED_FLAGS`).
 """
 
 from __future__ import annotations
@@ -10,9 +10,9 @@ from pathlib import Path
 from ..smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 
-# One row per predicate flag: the seed it supplies, as a route's `seeds`
-# names it; the `Settings` attribute that carries it; and the flag to name
-# in a refusal. The first two differ for `inv`, which is why the attribute
+# One row per predicate flag: the predicate it supplies, by its short name;
+# the `Settings` attribute that carries it; and the flag to name in a
+# refusal. The first two differ for `inv`, which is why the attribute
 # is in the table rather than patched at the one place that reads it.
 SEED_FLAGS: tuple[tuple[str, str, str], ...] = (
     ("inv", "invariant", "--invariant"),
@@ -27,8 +27,7 @@ class Settings:
 
     The decisions the grammar makes are made here, once: which proof rule
     (`kind`), which input format, and the SMT budget.  The pipeline reads;
-    it does not re-derive. `certify` extends it with the inference route
-    it runs.
+    it does not re-derive.
     """
 
     module_file: str | None

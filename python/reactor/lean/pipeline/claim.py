@@ -65,8 +65,8 @@ def claim_from_flags(
 
 
 def show_certificate(cert: Certificate, names: "inputs.Names") -> None:
-    """An inference route's answer in the input's names, as `--invariant`
-    and `--ranking` take it: what one run found, the next can be given."""
+    """A certificate in the input's names, as `--invariant` and
+    `--ranking` take it: what one run found, the next can be given."""
     shown = [(flag, text) for flag, text in (("--invariant", cert.inv),
                                              ("--ranking", cert.ranking))
              if text]
@@ -88,8 +88,8 @@ def stated_claim(settings: Settings, problem: "inputs.Problem",
     so every rule about the flags applies to it unchanged. Given both, the
     run would prove one and ignore the other, so that is refused.
 
-    `reparse` is the command's own `parse_args`: `certify` and `verith`
-    read the claim with this one and their own flags.
+    `reparse` is the command's own `parse_args`, for a command that reads
+    the claim with this one and flags of its own.
     """
     stated = problem.claims
     chosen = settings.input_opts.get("spec")
