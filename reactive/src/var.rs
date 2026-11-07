@@ -1,5 +1,5 @@
-use crate::Wire;
-use crate::wire::PREFIX;
+use base::Wire;
+use base::wire::PREFIX;
 use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
 use std::fmt;

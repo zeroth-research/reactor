@@ -1,7 +1,7 @@
 use crate::atom::Atom;
 use crate::topological_order;
 use crate::var::{Interface, Var};
-use crate::wire::Wire;
+use base::Wire;
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;

@@ -3,10 +3,10 @@
 
 mod common;
 
-use base::term::Term;
-use base::var::{Var, X, d};
 use base::wire::Wire;
 use common::{Atom, Module, Ops, example_counter, example_peterson1, example_tiny1, mk_op};
+use dataflow::diagram::Term;
+use reactive::var::{Var, X, d};
 use std::fmt;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
@@ -169,7 +169,7 @@ fn compose_hiding() {
 
     // hiding the shared variable privatises it in the composite
     let m = Module::compose_hiding([m1.clone(), m2.clone()], |v| v == x).unwrap();
-    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
     assert_eq!(ids(m.prvt()), vec![x.id()]);
     assert_eq!(ids(m.intf()), vec![z.id()]);
     assert_eq!(ids(m.extl()), vec![y.id()]);
@@ -204,7 +204,7 @@ fn constructor_then_hiding() {
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e], [init], [update]).unwrap();
 
-    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
     assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
     assert_eq!(m.prvt().len(), 0);
 
@@ -469,7 +469,7 @@ fn constructor_interfaces_are_exact() {
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e], [init], [update]).unwrap();
 
-    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
     assert_eq!(ids(m.extl()), vec![e.id()]);
     assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
     assert_eq!(ids(m.prvt()), Vec::<usize>::new());
@@ -492,7 +492,7 @@ fn hiding_interfaces_are_exact() {
         .hide(|v| v == p)
         .unwrap();
 
-    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
     assert_eq!(ids(m.extl()), vec![e.id()]);
     assert_eq!(ids(m.intf()), vec![x.id()]);
     assert_eq!(ids(m.prvt()), vec![p.id()]);
@@ -512,7 +512,7 @@ fn duplicate_scope_variable_is_collapsed() {
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e, x, e], [init], [update]).unwrap();
 
-    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
     assert_eq!(ids(m.extl()), vec![e.id()]);
     assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
     assert_eq!(ids(m.prvt()), Vec::<usize>::new());
@@ -533,7 +533,7 @@ fn unused_scope_variable_does_not_leak() {
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e, unused], [init], [update]).unwrap();
 
-    let ids = |i: &base::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
+    let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
     assert_eq!(ids(m.extl()), vec![e.id()]);
     assert_eq!(ids(m.intf()), vec![x.id(), p.id()]);
     assert_eq!(ids(m.prvt()), Vec::<usize>::new());
@@ -550,15 +550,15 @@ fn heterogeneous_composition() {
 
     let init = Term::constant(SeqOps::havoc(&"A"), [X(x)]).unwrap();
     let jump = Term::function(SeqOps::skip(&"A"), [X(x)], [x]).unwrap();
-    let P = base::Module::sequential(&[x], [init], [jump]).unwrap();
+    let P = reactive::Module::sequential(&[x], [init], [jump]).unwrap();
 
     let init = Term::constant(SeqOps::havoc(&"B"), [X(y)]).unwrap();
     let flow = Term::constant(DifOps::zero(&"B"), [d(y)]).unwrap();
-    let Q = base::Module::differential(&[y], [init], [flow]).unwrap();
+    let Q = reactive::Module::differential(&[y], [init], [flow]).unwrap();
 
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();
-    let R = base::Module::combinatorial(&[x, y, z], [comb]).unwrap();
+    let R = reactive::Module::combinatorial(&[x, y, z], [comb]).unwrap();
 
-    let S = base::Module::compose([P, Q, R]);
+    let S = reactive::Module::compose([P, Q, R]);
     assert!(S.is_ok());
 }

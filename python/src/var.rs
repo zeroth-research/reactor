@@ -9,14 +9,14 @@ use theory::any::Sort;
 #[pyclass(frozen)] // eq, hash, ord are implemented manually for compat with polymorphic __richcmp__
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub(crate) struct Var {
-    base: base::Var<Sort>,
+    base: reactive::Var<Sort>,
 }
 
 #[pymethods]
 impl Var {
     #[new]
     pub(crate) fn new(dtype: Sort) -> Self {
-        let base = base::Var::new(dtype);
+        let base = reactive::Var::new(dtype);
         Self { base }
     }
 
@@ -65,7 +65,7 @@ impl Var {
 }
 
 impl Var {
-    pub(crate) fn base(&self) -> &base::Var<Sort> {
+    pub(crate) fn base(&self) -> &reactive::Var<Sort> {
         &self.base
     }
 }
@@ -73,15 +73,15 @@ impl Var {
 /// For keying purposes, a python `Var` is its base var: the borrowed view
 /// hashes and compares identically (the wrapper's `Hash`/`Eq`/`Ord` all
 /// delegate to the base), so maps keyed by `Var` can be probed with a
-/// `&base::Var<Sort>` directly.
-impl std::borrow::Borrow<base::Var<Sort>> for Var {
-    fn borrow(&self) -> &base::Var<Sort> {
+/// `&reactive::Var<Sort>` directly.
+impl std::borrow::Borrow<reactive::Var<Sort>> for Var {
+    fn borrow(&self) -> &reactive::Var<Sort> {
         &self.base
     }
 }
 
-impl From<base::Var<Sort>> for Var {
-    fn from(base: base::Var<Sort>) -> Self {
+impl From<reactive::Var<Sort>> for Var {
+    fn from(base: reactive::Var<Sort>) -> Self {
         Self { base }
     }
 }
@@ -90,11 +90,11 @@ impl From<base::Var<Sort>> for Var {
 #[pyfunction]
 #[pyo3(name = "X")]
 pub(crate) fn x(var: PyRef<'_, Var>) -> Wire {
-    base::var::X(&var.base).into()
+    reactive::var::X(&var.base).into()
 }
 
 /// The derivative wire of the variable.
 #[pyfunction]
 pub(crate) fn d(var: PyRef<'_, Var>) -> Wire {
-    base::var::d(&var.base).into()
+    reactive::var::d(&var.base).into()
 }

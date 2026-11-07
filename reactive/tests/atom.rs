@@ -3,10 +3,10 @@
 
 mod common;
 
-use base::term::Term;
-use base::var::{Var, X, d};
 use base::wire::Wire;
 use common::{Atom, Module, Ops, example_counter, example_peterson1, mk_op};
+use dataflow::diagram::Term;
+use reactive::var::{Var, X, d};
 
 #[test]
 fn can_instantiate_and_print_sequential_module() {
@@ -125,7 +125,7 @@ fn differential_drifting_clocks() {
     // The atom writes only d(x) and d(y), so `t` is inferred external.
     let obs = &[x, y, t];
 
-    let module: base::Module<LRA, LRA, LRA> = base::Module::differential(obs, init, delay)
+    let module: reactive::Module<LRA, LRA, LRA> = reactive::Module::differential(obs, init, delay)
         .expect("differential module should be well-formed");
 
     // An open module: the input clock is external.
@@ -180,7 +180,7 @@ fn differential_module_rejects_dx_equals_x() {
 
     let module = delay.and_then(|delay| {
         let init = [Term::constant(LRA::AnyReal([1, 1]), [X(x)]).unwrap()];
-        base::Module::<LRA, LRA, LRA>::differential(&[x], init, [delay])
+        reactive::Module::<LRA, LRA, LRA>::differential(&[x], init, [delay])
     });
     assert!(module.is_err());
 }

@@ -1,0 +1,8 @@
+[package]
+name = "dataflow"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base = { path = "../base" }
+theory = { path = "../theory" }

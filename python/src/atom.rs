@@ -10,11 +10,11 @@ use theory::any::{Any, Combinatorial, Differential, Sequential};
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: base::Atom<Combinatorial, Sequential, Differential>,
+    base: reactive::Atom<Combinatorial, Sequential, Differential>,
 }
 
-impl From<base::Atom<Combinatorial, Sequential, Differential>> for Atom {
-    fn from(base: base::Atom<Combinatorial, Sequential, Differential>) -> Self {
+impl From<reactive::Atom<Combinatorial, Sequential, Differential>> for Atom {
+    fn from(base: reactive::Atom<Combinatorial, Sequential, Differential>) -> Self {
         Self { base }
     }
 }
@@ -51,7 +51,7 @@ impl Atom {
         let init = try_term_iter_cloned(&init)?;
         let update = try_term_iter_cloned(&update)?;
 
-        match base::Atom::sequential(vars.iter(), init, update) {
+        match reactive::Atom::sequential(vars.iter(), init, update) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -67,7 +67,7 @@ impl Atom {
         let init = try_term_iter_cloned(&init)?;
         let delay = try_term_iter_cloned(&delay)?;
 
-        match base::Atom::differential(vars.iter(), init, delay) {
+        match reactive::Atom::differential(vars.iter(), init, delay) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -85,7 +85,7 @@ impl Atom {
         let update = try_term_iter_cloned(&update)?;
         let delay = try_term_iter_cloned(&delay)?;
 
-        match base::Atom::hybrid(vars.iter(), init, update, delay) {
+        match reactive::Atom::hybrid(vars.iter(), init, update, delay) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -96,7 +96,7 @@ impl Atom {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         let update = try_term_iter_cloned(&update)?;
 
-        match base::Atom::jump(vars.iter(), update) {
+        match reactive::Atom::jump(vars.iter(), update) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -112,7 +112,7 @@ impl Atom {
         let update = try_term_iter_cloned(&update)?;
         let delay = try_term_iter_cloned(&delay)?;
 
-        match base::Atom::uninitialized(vars.iter(), update, delay) {
+        match reactive::Atom::uninitialized(vars.iter(), update, delay) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -123,7 +123,7 @@ impl Atom {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         let init = try_term_iter_cloned(&init)?;
 
-        match base::Atom::constant(vars.iter(), init) {
+        match reactive::Atom::constant(vars.iter(), init) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -133,7 +133,7 @@ impl Atom {
     fn hold(vars: &Bound<'_, PyAny>) -> PyResult<Self> {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
 
-        match base::Atom::hold(vars.iter()) {
+        match reactive::Atom::hold(vars.iter()) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -144,7 +144,7 @@ impl Atom {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         let delay = try_term_iter_cloned(&delay)?;
 
-        match base::Atom::flow(vars.iter(), delay) {
+        match reactive::Atom::flow(vars.iter(), delay) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -155,7 +155,7 @@ impl Atom {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
 
-        match base::Atom::combinatorial(vars.iter(), assign) {
+        match reactive::Atom::combinatorial(vars.iter(), assign) {
             Ok(base) => Ok(base.into()),
             Err(msg) => Err(PyException::new_err(msg)),
         }
@@ -217,7 +217,7 @@ impl Atom {
 }
 
 impl Atom {
-    pub(crate) fn base(&self) -> &base::Atom<Combinatorial, Sequential, Differential> {
+    pub(crate) fn base(&self) -> &reactive::Atom<Combinatorial, Sequential, Differential> {
         &self.base
     }
 
@@ -242,7 +242,7 @@ struct AtomInterface {
 }
 
 impl AtomInterface {
-    fn base(&self) -> &base::Interface<theory::any::Sort> {
+    fn base(&self) -> &reactive::Interface<theory::any::Sort> {
         let atom = &self.atom.get().base;
         match self.interface {
             AtomInterfaceType::Read => atom.read(),
@@ -315,7 +315,7 @@ pub(crate) struct AtomBlock {
 }
 
 // impl AtomBlock {
-//     fn base(&self) -> &base::Block<Sequential> {
+//     fn base(&self) -> &dataflow::diagram::Block<Sequential> {
 //         let atom = &self.atom.get().base;
 //         match self.block {
 //             BlockType::Init => atom.init(),
@@ -357,7 +357,7 @@ impl AtomBlock {
 
     fn __getitem__(&self, index: usize) -> PyResult<Term> {
         let atom = &self.atom.get().base;
-        let item: Option<base::Term<Any>> = match self.block {
+        let item: Option<dataflow::diagram::Term<Any>> = match self.block {
             BlockType::Init => atom.init().get(index).cloned().map(Into::into),
             BlockType::Update => atom.update().get(index).cloned().map(Into::into),
             BlockType::Delay => atom.delay().get(index).cloned().map(Into::into),
