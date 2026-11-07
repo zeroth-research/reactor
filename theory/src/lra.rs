@@ -33,12 +33,12 @@ use theory::lra::{LRA, Sort};
 let ok = |s| Ok::<_, String>(s);
 
 // Pointwise less-than on scalars: Real(1,1), Real(1,1) -> Bool(1,1).
-let i = Sort::Real([1, 1]);
+let i = Sort::Real([1, 1], 0);
 let b = Sort::Bool([1, 1]);
 assert!(LRA::Lt().check([i, i].map(ok), [b].map(ok)).is_ok());
 
 // ReLU preserves shape and stays in the real fragment.
-let m = Sort::Real([3, 4]);
+let m = Sort::Real([3, 4], 0);
 assert!(LRA::ReLU().check([m].map(ok), [m].map(ok)).is_ok());
 assert!(LRA::ReLU().check([b].map(ok), [b].map(ok)).is_err());
 ```
@@ -52,10 +52,10 @@ use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum Sort {
-    Real([usize; 2]),
+    // a real of the given shape and degree: a value at degree 0, its derivative
+    // of that order (the tangent of the degree below) at degree >= 1
+    Real([usize; 2], u8),
     Bool([usize; 2]),
-    // the tangent of `Real` of the given degree (>= 1), i.e., its derivative
-    TReal([usize; 2], u8),
     // the tangent of `Bool` (it has only the zero derivative)
     Zero([usize; 2]),
 }
@@ -65,28 +65,26 @@ impl Sort {
         matches!(self, Sort::Bool(..))
     }
 
+    /// Is this sort a real value (i.e., a real of degree 0)?
     pub fn is_real(&self) -> bool {
-        matches!(self, Sort::Real(..))
+        matches!(self, Sort::Real(_, 0))
     }
 
     /// Is this sort a tangent (i.e., a sort of derivatives)?
     pub fn is_tangent(&self) -> bool {
-        matches!(self, Sort::TReal(..) | Sort::Zero(..))
+        matches!(self, Sort::Real(_, 1..) | Sort::Zero(..))
     }
 
     pub fn shape(&self) -> &[usize; 2] {
         match self {
-            Sort::Bool(shape) | Sort::Real(shape) | Sort::TReal(shape, _) | Sort::Zero(shape) => {
-                shape
-            }
+            Sort::Bool(shape) | Sort::Real(shape, _) | Sort::Zero(shape) => shape,
         }
     }
 
     /// The shape and the degree of a real sort or its tangent, `None` for other sorts
     fn real_with_degree(&self) -> Option<([usize; 2], u8)> {
         match self {
-            Sort::Real(shape) => Some((*shape, 0)),
-            Sort::TReal(shape, degree) => Some((*shape, *degree)),
+            Sort::Real(shape, degree) => Some((*shape, *degree)),
             _ => None,
         }
     }
@@ -95,9 +93,9 @@ impl Sort {
 impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Sort::Real([i, j]) => write!(f, "Real({i}, {j})"),
+            Sort::Real([i, j], 0) => write!(f, "Real({i}, {j})"),
+            Sort::Real([i, j], d) => write!(f, "Real({i}, {j}; {d})"),
             Sort::Bool([i, j]) => write!(f, "Bool({i}, {j})"),
-            Sort::TReal([i, j], d) => write!(f, "TReal({i}, {j}; {d})"),
             Sort::Zero([i, j]) => write!(f, "Zero({i}, {j})"),
         }
     }
@@ -106,8 +104,7 @@ impl fmt::Display for Sort {
 impl Tangent for Sort {
     fn tangent(&self) -> Self {
         match self {
-            Sort::Real(shape) => Sort::TReal(*shape, 1),
-            Sort::TReal(shape, d) => Sort::TReal(*shape, d + 1),
+            Sort::Real(shape, d) => Sort::Real(*shape, d + 1),
             Sort::Bool(shape) | Sort::Zero(shape) => Sort::Zero(*shape),
         }
     }
@@ -168,7 +165,7 @@ impl Combinatorial for LRA {
         // a derivative cannot be havoced: the check of the term with a tangent fails
         match range {
             Sort::Bool(shape) | Sort::Zero(shape) => LRA::AnyBool(*shape),
-            Sort::Real(shape) | Sort::TReal(shape, _) => LRA::AnyReal(*shape),
+            Sort::Real(shape, _) => LRA::AnyReal(*shape),
         }
     }
 }
@@ -179,7 +176,7 @@ impl Differential for LRA {
         // so the check of the term with them fails
         match range {
             Sort::Bool(shape) | Sort::Zero(shape) => LRA::BoolZerograd(*shape),
-            Sort::Real(shape) | Sort::TReal(shape, _) => LRA::RealZerograd(*shape),
+            Sort::Real(shape, _) => LRA::RealZerograd(*shape),
         }
     }
 }
@@ -196,9 +193,9 @@ impl Theory for LRA {
         match self {
             LRA::Real(cm) | LRA::Bool(cm) => check_const(cm, read, write),
             LRA::BoolZerograd(shape) => check_zero(&Sort::Bool(*shape).tangent(), read, write),
-            LRA::RealZerograd(shape) => check_zero(&Sort::Real(*shape).tangent(), read, write),
+            LRA::RealZerograd(shape) => check_zero(&Sort::Real(*shape, 0).tangent(), read, write),
             LRA::AnyBool(shape) => check_havoc(&Sort::Bool(*shape), read, write),
-            LRA::AnyReal(shape) => check_havoc(&Sort::Real(*shape), read, write),
+            LRA::AnyReal(shape) => check_havoc(&Sort::Real(*shape, 0), read, write),
             LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => check_bool(self, read, write),
             LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
                 check_cmp(self, read, write)
@@ -276,7 +273,7 @@ where
     }
     // the sort comes from the write wire; validate the tensor's kind matches it
     let [i, j] = match next_sort(&mut write, 0)? {
-        Sort::Real([i, j]) => {
+        Sort::Real([i, j], 0) => {
             if cm.is_bool() {
                 return Err("Const: write wire is Real but initializer is a boolean tensor".into());
             }
@@ -290,7 +287,7 @@ where
             }
             [i, j]
         }
-        Sort::TReal(..) => {
+        Sort::Real(..) => {
             return Err("Cannot derive a real. Use ZERO to apply a no change".to_string());
         }
         Sort::Zero(..) => {
@@ -651,7 +648,7 @@ mod tests {
     use super::*;
 
     fn real(r: usize, c: usize) -> Sort {
-        Sort::Real([r, c])
+        Sort::Real([r, c], 0)
     }
 
     fn bool_t(r: usize, c: usize) -> Sort {
@@ -1076,8 +1073,8 @@ mod tests {
     #[test]
     fn derivatives() {
         let (r, b) = (real(2, 1), bool_t(2, 1));
-        assert_eq!(r.tangent(), Sort::TReal([2, 1], 1));
-        assert_eq!(r.tangent().tangent(), Sort::TReal([2, 1], 2));
+        assert_eq!(r.tangent(), Sort::Real([2, 1], 1));
+        assert_eq!(r.tangent().tangent(), Sort::Real([2, 1], 2));
         assert_eq!(b.tangent(), Sort::Zero([2, 1]));
         assert_eq!(b.tangent().tangent(), Sort::Zero([2, 1]));
         // arithmetic works on derivatives of the same degree

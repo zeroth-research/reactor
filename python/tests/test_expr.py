@@ -7,7 +7,7 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from reactor import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, TReal, Zero, Var, X as _X
+from reactor import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, Zero, Var, X as _X
 from reactor.builder import NonLinearError
 from reactor.eval import eval_itype
 from reactor.expr import expr, cast, ite, collecting, Expr, AExpr, BExpr, WExpr, X, d
@@ -344,11 +344,11 @@ def test_scaling_a_column_vector_by_a_constant(n):
 def test_derivative_of_real_keeps_its_tangent_sort():
     t = _varexpr(REAL, theory=LRA)
     dt = d(t)
-    assert isinstance(dt, AExpr) and dt.dtype == TReal([1, 1], 1)
+    assert isinstance(dt, AExpr) and dt.dtype == Real([1, 1], 1)
     # arithmetic over derivatives stays a derivative; a constant scales it
     assert (dt + dt).dtype == dt.dtype
     assert (2 * dt).dtype == dt.dtype
-    assert (expr(torch.tensor([[2.0], [3.0]]), theory=LRA, sort=Real) @ dt).dtype == TReal([2, 1], 1)
+    assert (expr(torch.tensor([[2.0], [3.0]]), theory=LRA, sort=Real) @ dt).dtype == Real([2, 1], 1)
     # comparing derivatives gives a value
     assert (dt < dt).dtype == Bool([1, 1])
     # a derivative does not combine with a value

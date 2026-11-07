@@ -56,8 +56,8 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Bool(shape)
         case Int(_):
             return Int(shape)
-        case Real(_):
-            return Real(shape)
+        case Real(_, degree):
+            return Real(shape, degree)
         case BitVec(bw, _):
             return BitVec(bw, shape)
     raise TypeError(f"unknown sort: {sort}")

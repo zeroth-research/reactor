@@ -10,18 +10,32 @@ use pyo3::prelude::*;
 use std::fmt;
 use subenum::subenum;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "pyo3", pyclass(frozen, eq, str))]
-pub enum Sort {
-    Bool([usize; 2]),
-    Real([usize; 2]),
-    Int([usize; 2]),
-    BitVec(usize, [usize; 2]),
-    // the tangent of `Real` of the given degree (>= 1), i.e., its derivative
-    TReal([usize; 2], u8),
-    // the tangent of `Bool`, `Int`, and `BitVec` (they have only the zero derivative)
-    Zero([usize; 2]),
+// `pyclass` does not see a `cfg_attr` on a variant (inner `cfg_attr`s are not
+// evaluated before attribute macros), so the variant attributes that only exist
+// with the `pyo3` feature are passed in by the invocations below.
+macro_rules! sort {
+    ($(#[$real:meta])*) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[cfg_attr(feature = "pyo3", pyclass(frozen, eq, str))]
+        pub enum Sort {
+            Bool([usize; 2]),
+            // a real of the given shape and degree: a value at degree 0, its
+            // derivative of that order (the tangent of the degree below) at degree >= 1
+            $(#[$real])*
+            Real([usize; 2], u8),
+            Int([usize; 2]),
+            BitVec(usize, [usize; 2]),
+            // the tangent of `Bool`, `Int`, and `BitVec` (they have only the zero derivative)
+            Zero([usize; 2]),
+        }
+    };
 }
+
+// in Python, `Real(shape)` is a value: the degree (`_1`) defaults to 0
+#[cfg(feature = "pyo3")]
+sort!(#[pyo3(constructor = (_0, _1 = 0))]);
+#[cfg(not(feature = "pyo3"))]
+sort!();
 
 impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -29,17 +43,17 @@ impl fmt::Display for Sort {
             Sort::Bool(shape) => {
                 write!(f, "Bool([{},{}])", shape[0], shape[1])
             }
-            Sort::Real(shape) => {
+            Sort::Real(shape, 0) => {
                 write!(f, "Real([{},{}])", shape[0], shape[1])
+            }
+            Sort::Real(shape, degree) => {
+                write!(f, "Real([{},{}], {})", shape[0], shape[1], degree)
             }
             Sort::Int(shape) => {
                 write!(f, "Int([{},{}])", shape[0], shape[1])
             }
             Sort::BitVec(bw, shape) => {
                 write!(f, "Bv{}([{},{}])", bw, shape[0], shape[1])
-            }
-            Sort::TReal(shape, degree) => {
-                write!(f, "TReal([{},{}], {})", shape[0], shape[1], degree)
             }
             Sort::Zero(shape) => {
                 write!(f, "Zero([{},{}])", shape[0], shape[1])
@@ -51,8 +65,7 @@ impl fmt::Display for Sort {
 impl Tangent for Sort {
     fn tangent(&self) -> Self {
         match self {
-            Sort::Real(shape) => Sort::TReal(*shape, 1),
-            Sort::TReal(shape, degree) => Sort::TReal(*shape, degree + 1),
+            Sort::Real(shape, degree) => Sort::Real(*shape, degree + 1),
             Sort::Bool(shape) | Sort::Int(shape) | Sort::BitVec(_, shape) | Sort::Zero(shape) => {
                 Sort::Zero(*shape)
             }
@@ -83,8 +96,7 @@ impl From<lra::Sort> for Sort {
     fn from(value: lra::Sort) -> Self {
         match value {
             lra::Sort::Bool(shape) => Sort::Bool(shape),
-            lra::Sort::Real(shape) => Sort::Real(shape),
-            lra::Sort::TReal(shape, degree) => Sort::TReal(shape, degree),
+            lra::Sort::Real(shape, degree) => Sort::Real(shape, degree),
             lra::Sort::Zero(shape) => Sort::Zero(shape),
         }
     }
@@ -121,8 +133,7 @@ impl TryFrom<Sort> for lra::Sort {
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
             Sort::Bool(shape) => Ok(lra::Sort::Bool(shape)),
-            Sort::Real(shape) => Ok(lra::Sort::Real(shape)),
-            Sort::TReal(shape, degree) => Ok(lra::Sort::TReal(shape, degree)),
+            Sort::Real(shape, degree) => Ok(lra::Sort::Real(shape, degree)),
             Sort::Zero(shape) => Ok(lra::Sort::Zero(shape)),
             _ => Err("invalid cast".to_string()),
         }
@@ -375,7 +386,7 @@ mod tests {
     fn catch_alls_cast_up() {
         let comb: Sequential = Combinatorial::LRA(LRA::Add()).into();
         assert!(matches!(comb, Sequential::LRA(LRA::Add())));
-        let t = Sort::Real([1, 1]);
+        let t = Sort::Real([1, 1], 0);
         assert!(matches!(
             Combinatorial::HAVOC(t).into(),
             Sequential::HAVOC(_)
@@ -389,7 +400,7 @@ mod tests {
     #[test]
     fn display_is_stable() {
         // Elements print their name, member ops delegate to the base theory.
-        let t = Sort::Real([1, 1]);
+        let t = Sort::Real([1, 1], 0);
         assert_eq!(Any::HAVOC(t).to_string(), "HAVOC");
         assert_eq!(Sequential::SKIP(t).to_string(), "SKIP");
         assert_eq!(Differential::ZERO(t).to_string(), "ZERO");
@@ -410,7 +421,7 @@ mod tests {
 
     #[test]
     fn any_casts_down_or_rejects() {
-        let t = Sort::Real([1, 1]);
+        let t = Sort::Real([1, 1], 0);
         assert!(matches!(Any::SKIP(t).try_into(), Ok(Sequential::SKIP(_))));
         assert!(matches!(
             Any::HAVOC(t).try_into(),
@@ -428,8 +439,8 @@ mod tests {
 
     #[test]
     fn skip_is_unary() {
-        let t = || Sort::Real([1, 1]);
-        let u = || Sort::Real([2, 1]);
+        let t = || Sort::Real([1, 1], 0);
+        let u = || Sort::Real([2, 1], 0);
         for skip in [
             Any::SKIP(t()).check([t()].map(ok), [t()].map(ok)),
             Sequential::SKIP(t()).check([t()].map(ok), [t()].map(ok)),
@@ -453,8 +464,8 @@ mod tests {
 
     #[test]
     fn havoc_is_unary() {
-        let t = || Sort::Real([1, 1]);
-        let u = || Sort::Real([2, 1]);
+        let t = || Sort::Real([1, 1], 0);
+        let u = || Sort::Real([2, 1], 0);
         for havoc in [
             Any::HAVOC(t()).check([].map(ok), [t()].map(ok)),
             Sequential::HAVOC(t()).check([].map(ok), [t()].map(ok)),
@@ -479,8 +490,8 @@ mod tests {
 
     #[test]
     fn zero_is_unary() {
-        let t = || Sort::Real([1, 1]);
-        let u = || Sort::Real([2, 1]);
+        let t = || Sort::Real([1, 1], 0);
+        let u = || Sort::Real([2, 1], 0);
         for zero in [
             Any::ZERO(t()).check([].map(ok), [t()].map(ok)),
             Differential::ZERO(t()).check([].map(ok), [t()].map(ok)),

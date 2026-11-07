@@ -10,7 +10,7 @@ pub(crate) struct Wire {
 #[pymethods]
 impl Wire {
     /// A fresh wire carrying values of the sort `dtype`; a derivative wire
-    /// carries a tangent sort (e.g. `TReal`), so the sort encodes the degree.
+    /// carries a tangent sort (e.g. a `Real` of degree >= 1), so the sort encodes the degree.
     #[new]
     pub(crate) fn new(dtype: Sort) -> Self {
         let base = dataflow::diagram::Wire::new(dtype);

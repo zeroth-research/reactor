@@ -1,6 +1,6 @@
 import pytest
 import torch
-from reactor import Wire, Term, Atom, Module, LIA, Bool, Int, BitVec, LRA, Real, TReal, Zero, Var, X, d
+from reactor import Wire, Term, Atom, Module, LIA, Bool, Int, BitVec, LRA, Real, Zero, Var, X, d
 
 
 def _bool_t(v):
@@ -61,7 +61,7 @@ def test_var_derivative_has_tangent_sort():
     # the latched and next wires carry the variable's sort, the derivative
     # wire its tangent: the degree of a wire is encoded in its sort
     for sort, tangent in [
-        (Real([2, 3]), TReal([2, 3], 1)),
+        (Real([2, 3]), Real([2, 3], 1)),
         (Bool([1, 2]), Zero([1, 2])),
         (Int([3, 1]), Zero([3, 1])),
         (BitVec(8, [1, 1]), Zero([1, 1])),
@@ -72,7 +72,7 @@ def test_var_derivative_has_tangent_sort():
 
     # terms are checked over the sorts: derivatives combine only with derivatives
     x = Var(Real([1, 1]))
-    Term(LRA.Add(), [Wire(TReal([1, 1], 1))], [d(x), d(x)])
+    Term(LRA.Add(), [Wire(Real([1, 1], 1))], [d(x), d(x)])
     with pytest.raises(Exception):
         Term(LRA.Add(), [Wire(Real([1, 1]))], [d(x), x])
 

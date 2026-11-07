@@ -6,9 +6,9 @@ use theory::lra::{LRA, Sort};
 
 #[test]
 fn variables_are_globally_ordered_by_creation() {
-    let x = Var::new(Sort::Real([1, 1]));
-    let y = Var::new(Sort::Real([1, 1]));
-    let z = Var::new(Sort::Real([1, 1]));
+    let x = Var::new(Sort::Real([1, 1], 0));
+    let y = Var::new(Sort::Real([1, 1], 0));
+    let z = Var::new(Sort::Real([1, 1], 0));
 
     // the latched wire's id increases with creation
     assert!(x < y && y < z);
@@ -28,7 +28,7 @@ fn borrow_copy_and_compare(x: &Var<Sort>, nxt: Wire<Sort>, der: Wire<Sort>) {
 #[test]
 fn variable_casts_to_its_wires() {
     // variables are Copy: owned bindings, ampersand-free use everywhere
-    let real = Sort::Real([1, 1]);
+    let real = Sort::Real([1, 1], 0);
     let x = Var::new(real);
 
     let a: Wire<_> = *x; // the latched wire
@@ -48,7 +48,7 @@ fn variable_casts_to_its_wires() {
     assert_eq!(*a.dtype(), real);
     assert_eq!(*c.dtype(), real);
     assert_eq!(*b.dtype(), real.tangent());
-    assert_eq!(*b.dtype(), Sort::TReal([1, 1], 1));
+    assert_eq!(*b.dtype(), Sort::Real([1, 1], 1));
 
     // the variable dereferences to its latched wire: `Wire`'s methods
     // apply to it directly, and `&x` coerces to `&Wire<_>`
@@ -74,7 +74,7 @@ fn variable_casts_to_its_wires() {
 fn variables_pass_into_term_constructors() {
     use theory::lra::{LRA, Sort};
 
-    let x = Var::new(Sort::Real([1, 1]));
+    let x = Var::new(Sort::Real([1, 1], 0));
 
     // a variable stands for its latched wire in a term position
     let t = Term::constant(LRA::AnyReal([1, 1]), [x]).unwrap();
@@ -88,8 +88,8 @@ fn variables_pass_into_term_constructors() {
 
 #[test]
 fn variable_fail_into_term_constructors() {
-    let x = Var::new(Sort::Real([1, 1]));
+    let x = Var::new(Sort::Real([1, 1], 0));
     // dx = x: the derivative has the tangent sort, not the sort of `x`
-    // (this test works because Sort::Real(.) != Sort::Real(.).tangent())
+    // (this test works because Sort::Real(., 0) != Sort::Real(., 0).tangent())
     assert!(Term::function(LRA::Id(), [d(x)], [x]).is_err());
 }

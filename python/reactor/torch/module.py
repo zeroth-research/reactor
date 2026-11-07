@@ -15,7 +15,7 @@ def _numeric_sort(theory, n):
 
 def _is_float_sort(sort) -> bool:
     match sort:
-        case Real(_):
+        case Real(_, 0):
             return True
     return False
 

@@ -16,8 +16,8 @@ for _name in dir(_Sort):
         globals()[_name] = getattr(_Sort, _name)
 
 # Exhaustive on purpose: a new sort must be added here, never given a default.
-# The tangent sorts (`TReal`, `Zero`) are left out deliberately: they type derivative
-# wires, and the theories have no literals of them — their literal ops reject a derivative
+# The tangent sorts (a `Real` of degree >= 1, `Zero`) are left out deliberately: they type
+# derivative wires, and the theories have no literals of them — their literal ops reject a derivative
 # write wire (a derivative is set to zero by the ZERO ops instead) — so there is no
 # constant of a tangent sort to convert.
 _KINDS = (
@@ -31,8 +31,9 @@ _KINDS = (
 def tensor_for(value, sort):
     """``value`` as a tensor of the kind ``sort`` requires (``sort`` may be a family or an
     instance). A value the conversion would alter is rejected, never silently cast."""
+    is_derivative = isinstance(sort, _Sort.Real) and sort._1 > 0  # a tangent sort, see above
     for family, dtype, name in _KINDS:
-        if sort is family or isinstance(sort, family):
+        if not is_derivative and (sort is family or isinstance(sort, family)):
             break
     else:
         raise TypeError(f"no tensor representation for sort {sort!r}")

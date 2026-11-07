@@ -9,8 +9,8 @@ are split by *operation family* (the sort picks the class):
     BExpr  — Boolean       Bool           &  |  ~  ^
     WExpr  — Word (BV)     BitVec         AExpr + bitwise + signed/unsigned + width
 
-A derivative (``d(v)``) has the tangent sort of its variable's sort: ``TReal(shape, k)`` for
-the ``k``-th derivative of a ``Real`` — an ``AExpr`` (``d(t) + d(t)``, ``2 * d(t)``) — and
+A derivative (``d(v)``) has the tangent sort of its variable's sort: ``Real(shape, k)`` for
+the ``k``-th derivative of a ``Real`` (a value is ``Real(shape)``, i.e. degree ``0``) — an ``AExpr`` (``d(t) + d(t)``, ``2 * d(t)``) — and
 ``Zero(shape)`` for the other sorts, whose derivative is always zero — a plain ``Expr``,
 with no operators of its own.
 
@@ -47,7 +47,7 @@ from typing import override
 import torch
 
 from .reactor import Term, Wire, LRA, LIA, BV, Var, X as _X, d as _d
-from .sort import Sort, Bool, Int, Real, BitVec, TReal, Zero, tensor_for
+from .sort import Sort, Bool, Int, Real, BitVec, Zero, tensor_for
 from .builder import NonLinearError
 
 
@@ -58,7 +58,7 @@ def _shape(sort: Sort) -> list:
     match sort:
         case Bool(s) | Int(s) | Real(s) | Zero(s):
             return list(s)
-        case BitVec(_, s) | TReal(s, _):
+        case BitVec(_, s):
             return list(s)
     raise TypeError(f"sort has no shape: {sort}")
 
@@ -69,12 +69,10 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Bool(shape)
         case Int(_):
             return Int(shape)
-        case Real(_):
-            return Real(shape)
+        case Real(_, degree):
+            return Real(shape, degree)
         case BitVec(bw, _):
             return BitVec(bw, shape)
-        case TReal(_, degree):
-            return TReal(shape, degree)
         case Zero(_):
             return Zero(shape)
     raise TypeError(f"unknown sort: {sort}")
@@ -91,7 +89,7 @@ def _family(sort: Sort) -> str:
     """A key identifying a sort's family (ignoring shape); two exprs may combine only
     if their families match.
 
-    A derivative of a real (``TReal``) is in the ``Real`` family, whatever its degree: a
+    A derivative of a real (a ``Real`` of degree >= 1) is in the ``Real`` family: a
     literal (always a value) may scale it (``2 * d(t)``), and ``x * d(t)`` is reported as
     non-linear. Combining a value with a derivative where the theory forbids it (e.g.
     ``d(t) + x``) is rejected by the theory's check when the term is built."""
@@ -100,7 +98,7 @@ def _family(sort: Sort) -> str:
             return "Bool"
         case Int(_):
             return "Int"
-        case Real(_) | TReal(_, _):
+        case Real(_):
             return "Real"
         case BitVec(bw, _):
             return f"BitVec{bw}"
@@ -112,10 +110,7 @@ def _family(sort: Sort) -> str:
 def _literal_family(sort: Sort):
     """The sort family of a literal coerced next to an expression of ``sort``: the theories'
     literal ops reject derivative write wires, so a literal is always a value, and beside a
-    derivative of a real (``TReal``) it is a ``Real``."""
-    match sort:
-        case TReal(_, _):
-            return Real
+    derivative of a real it is a ``Real`` (a value, of degree ``0``)."""
     return type(sort)
 
 
@@ -168,7 +163,7 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
     match wire.dtype:
         case Bool(_):
             return BExpr(wire, theory, next=next, value=value, tag=tag)
-        case Int(_) | Real(_) | TReal(_, _):
+        case Int(_) | Real(_):
             return AExpr(wire, theory, next=next, value=value, tag=tag)
         case BitVec(_, _):
             return WExpr(wire, theory, next=next, value=value, signed=signed, tag=tag)
@@ -492,7 +487,7 @@ def _unpack_sort_user_argument(sort, *, bw=None):
         match sort:
             case Bool(shape):
                 return Bool, None, shape
-            case Real(shape):
+            case Real(shape, 0):
                 return Real, None, shape
             case Int(shape):
                 return Int, None, shape
@@ -583,7 +578,8 @@ def X(v: Expr) -> Expr:
 
 def d(v: Expr) -> Expr:
     """The derivative wire of a variable expr (as built from a wire pair); its sort is
-    the tangent of the variable's sort (``TReal`` for a ``Real``, ``Zero`` otherwise)."""
+    the tangent of the variable's sort (``Real`` of one degree higher for a ``Real``,
+    ``Zero`` otherwise)."""
     # if v._next is None:
     #     raise ValueError("nxt() expects a variable (built from a wire pair)")
     return _wrap(_d(v._wire), v._theory, signed=getattr(v, "_signed", False))

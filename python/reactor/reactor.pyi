@@ -4,14 +4,14 @@ They support type checking (mypy) and editor hints only, with no runtime effect,
 are maintained by hand: PyO3 does not generate stubs, so adding a theory or an op means
 updating this file too (see https://pyo3.rs/v0.29.0/python-typing-hints).
 
-The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec, and the tangent
-sorts TReal/Zero of derivatives), the per-theory
+The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec, with derivatives
+typed by a Real of degree >= 1 or by Zero), the per-theory
 op enums `LRA` / `LIA` / `BV` (complex enums: each variant is its own subclass,
 payloads are read via `match`/unpacking), and the structural layer `Wire` / `Var` /
 `Term` / `Atom` / `Module`. A `Var` bundles the latched, next (`X(v)`), and
 derivative (`d(v)`) wires of a state variable and stands for its latched wire
 wherever a wire is expected. A wire's sort says whether it carries a value or a
-derivative: `d(v)` has the tangent of `v`'s sort (`TReal(shape, 1)` for `Real(shape)`).
+derivative: `d(v)` has the tangent of `v`'s sort (`Real(shape, 1)` for `Real(shape)`).
 """
 
 from torch import Tensor as TorchTensor
@@ -51,17 +51,14 @@ class Int(Sort):
 
 
 class Real(Sort):
-    def __init__(self, shape: list[int]) -> None: ...
+    """A real of the given shape and `degree`: a value at degree `0` (the default), the
+    sort of its `degree`-th derivative at `degree >= 1`."""
+
+    def __init__(self, shape: list[int], degree: int = 0) -> None: ...
 
 
 class BitVec(Sort):
     def __init__(self, width: int, shape: list[int]) -> None: ...
-
-
-class TReal(Sort):
-    """The tangent of `Real`: the sort of its `degree`-th derivative (`degree >= 1`)."""
-
-    def __init__(self, shape: list[int], degree: int) -> None: ...
 
 
 class Zero(Sort):

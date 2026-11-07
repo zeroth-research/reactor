@@ -15,7 +15,7 @@ import operator
 
 def fresh(dtype, prefix):
     match dtype:
-        case Real([n, m]):
+        case Real([n, m], 0):
             return _np.array([[_z3.FreshReal(f'{prefix}[{i},{j}]') for j in range(m)] for i in range(n)], dtype=object)
         case Bool([n, m]):
             return _np.array([[_z3.FreshBool(f'{prefix}[{i},{j}]') for j in range(m)] for i in range(n)], dtype=object)
