@@ -1,4 +1,4 @@
-use base::Wire;
+use super::Wire;
 use std::borrow::Cow;
 use std::fmt;
 use theory::{Theory, any};

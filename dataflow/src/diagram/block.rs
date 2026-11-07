@@ -1,5 +1,5 @@
 use super::Term;
-use base::Wire;
+use super::Wire;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::vec;

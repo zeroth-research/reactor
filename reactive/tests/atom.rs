@@ -3,9 +3,9 @@
 
 mod common;
 
-use base::wire::Wire;
 use common::{Atom, Module, Ops, example_counter, example_peterson1, mk_op};
 use dataflow::diagram::Term;
+use dataflow::diagram::Wire;
 use reactive::var::{Var, X, d};
 
 #[test]

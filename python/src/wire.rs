@@ -4,7 +4,7 @@ use theory::any::Sort;
 #[pyclass(frozen, eq, hash, ord)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub(crate) struct Wire {
-    base: base::Wire<Sort>,
+    base: dataflow::diagram::Wire<Sort>,
 }
 
 #[pymethods]
@@ -12,7 +12,7 @@ impl Wire {
     #[new]
     #[pyo3(signature = (dtype, degree = 0))]
     pub(crate) fn new(dtype: Sort, degree: u8) -> Self {
-        let base = base::Wire::new(dtype, degree);
+        let base = dataflow::diagram::Wire::new(dtype, degree);
         Self { base }
     }
 
@@ -37,13 +37,13 @@ impl Wire {
 }
 
 impl Wire {
-    pub(crate) fn base(&self) -> &base::Wire<Sort> {
+    pub(crate) fn base(&self) -> &dataflow::diagram::Wire<Sort> {
         &self.base
     }
 }
 
-impl From<base::Wire<Sort>> for Wire {
-    fn from(base: base::Wire<Sort>) -> Self {
+impl From<dataflow::diagram::Wire<Sort>> for Wire {
+    fn from(base: dataflow::diagram::Wire<Sort>) -> Self {
         Self { base }
     }
 }

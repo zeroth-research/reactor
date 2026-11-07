@@ -1,5 +1,4 @@
-use base::Wire;
-use base::wire::PREFIX;
+use dataflow::diagram::Wire;
 use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
 use std::fmt;
@@ -7,7 +6,7 @@ use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Var<S> {
     ltc: Wire<S>,
     nxt: Wire<S>,
@@ -162,19 +161,6 @@ impl<S: Debug> Debug for Display<'_, S> {
 impl<'a, S> Var<S> {
     pub fn with_name(&'a self, name: Cow<'a, str>) -> Display<'a, S> {
         Display { var: self, name }
-    }
-}
-
-impl<S: Debug> Debug for Var<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Var {{ ltc: {PREFIX}{:?}, nxt: {PREFIX}{:?}, der: {PREFIX}{:?}, dtype: {:?} }} ",
-            self.ltc.id(),
-            self.nxt.id(),
-            self.der.id(),
-            self.dtype()
-        )
     }
 }
 

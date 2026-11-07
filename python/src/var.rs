@@ -25,7 +25,7 @@ impl Var {
     /// (`id`, `dtype`, `degree`, ...).
     fn __getattr__(slf: PyRef<'_, Self>, name: &str) -> PyResult<Py<PyAny>> {
         let py = slf.py();
-        let wire: Wire = base::Wire::from(*slf.base()).into();
+        let wire: Wire = dataflow::diagram::Wire::from(*slf.base()).into();
         wire.into_pyobject(py)?.getattr(name).map(Into::into)
     }
 
@@ -41,7 +41,7 @@ impl Var {
         let ordering = if let Ok(var) = other.extract::<PyRef<Var>>() {
             self.base.cmp(&var.base)
         } else if let Ok(wire) = other.extract::<PyRef<Wire>>() {
-            let ltc: &base::Wire<Sort> = &self.base;
+            let ltc: &dataflow::diagram::Wire<Sort> = &self.base;
             ltc.cmp(wire.base())
         } else {
             return Ok(PyNotImplemented::get(py).into_any());
