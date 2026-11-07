@@ -51,10 +51,6 @@ SYSTEM_LAYOUT = Layout(base="System", prefix="System.")
 CERT_LIB = "Certificate"
 DATA = "Data"                   # the predicates (`Data.lean.j2`)
 PROOF = "Certificate"           # the proof (`Certificate.lean.j2`)
-EQUIVALENCE = "Equivalence"     # fbk-proveit: the NA model is the module
-
-# Where fbk-proveit installs `lean-ltl-certifying`'s side of the proof.
-PROVEIT_DIR = "ProveIt"
 
 
 # The lemmas `simp_mat` reduces matrix arithmetic with, after the

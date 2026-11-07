@@ -1,5 +1,5 @@
 """The one Vampire driver: `--houdini-solver vampire` and `--infer vampire`
-both run the prover through `smt.vampire.run_vampire`. Stubs stand in for
+both run the prover through `common.vampire.run_vampire`. Stubs stand in for
 the binary, so nothing here needs Vampire."""
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ import os
 import time
 from pathlib import Path
 
-from reactor.lean.smt.vampire import run_vampire
+from verith.common.vampire import run_vampire
 
 
 def _stub(tmp_path: Path, body: str) -> str:

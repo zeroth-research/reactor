@@ -92,17 +92,17 @@ from ..engine import Engine
 from .solve import HOW_QUANTIFIED, Outcome, Template, decide
 from dataclasses import dataclass
 
-from reactor.lean.smt.claim import SynthContext
+from ..common.claim import SynthContext
 from reactor.lean.smt.script import affine_smt, conjunction_smt, decimals
 from reactor.lean.smt.obligations import (
     Frame,
-    Obligations,
     conjunction,
     init_inv,
     inv_imp_P,
     ranked,
     step_inv,
 )
+from ..common.obligations import Obligations
 from ..common.synth import (
     Search,
     denominator_scale,

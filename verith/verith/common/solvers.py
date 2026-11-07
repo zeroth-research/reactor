@@ -53,10 +53,10 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 
-from ..core.errors import Refused
-from .obligations import Query
-from .limits import bounded_solver
-from .script import decimals, script
+from reactor.lean.core.errors import Refused
+from reactor.lean.smt.obligations import Query
+from reactor.lean.smt.limits import bounded_solver
+from reactor.lean.smt.script import decimals, script
 from .vampire import run_vampire
 
 DEFAULT_TIMEOUT = 120

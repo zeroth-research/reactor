@@ -105,7 +105,7 @@ ENCODINGS = {
 
 def _has_vampire() -> bool:
     from reactor.lean.core.errors import Refused
-    from reactor.lean.smt.vampire import resolve_vampire
+    from verith.common.vampire import resolve_vampire
 
     try:
         resolve_vampire(None)

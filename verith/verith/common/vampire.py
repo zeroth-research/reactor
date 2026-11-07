@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..core.errors import Refused
+from reactor.lean.core.errors import Refused
 
 ENV = "VAMPIRE"
 

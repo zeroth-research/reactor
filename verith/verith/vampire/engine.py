@@ -151,7 +151,7 @@ An answer literal is a substitution *a* refutation used, and a refutation of
 a mis-stated question proves nothing about the module -- nor does one branch
 of a disjunctive answer.  So the coefficients Vampire returns are put back
 into the template and the obligations are re-asked of cvc5 -- through the
-same :mod:`reactor.lean.smt.solvers` seam `--infer houdini` uses, in
+same :mod:`verith.common.solvers` seam `--infer houdini` uses, in
 milliseconds.  A certificate that does not survive that is reported as not
 found, with what Vampire said.  This is not Houdini: nothing is filtered and
 nothing is proposed, it is the one check that the derivation is honest.
@@ -162,12 +162,12 @@ from __future__ import annotations
 
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import PredicateRefused, Refused
-from reactor.lean.smt.solvers import DEFAULT_TIMEOUT, Cvc5Solver
+from ..common.solvers import DEFAULT_TIMEOUT, Cvc5Solver
 from ..engine import Engine
-from reactor.lean.smt.obligations import Candidate, Obligations
+from ..common.obligations import Candidate, Obligations
 from reactor.lean.artifacts.record import found, note
 from reactor.lean.smt.script import affine_smt, conjunction_smt, smt_int
-from reactor.lean.smt.claim import SynthContext, sorts_where
+from ..common.claim import SynthContext, sorts_where
 from ..common.synth import columns, floor_real_src
 from .answers import Answers, Derived
 from .branches import split

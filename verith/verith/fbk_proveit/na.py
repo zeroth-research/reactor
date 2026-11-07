@@ -474,7 +474,7 @@ def _slot_bodies(
 ) -> SlotBodies:
     """`(update, init)` Lean text for every state slot, in slot order.
 
-    The terms are `smt.slots.slot_terms` of `encoding` -- the run's one
+    The terms are `slots.slot_terms` of `encoding` -- the run's one
     encoding of the module, which also does the rewriting -- or of an
     encoding of `ctx.module` made for the call when there is none; this
     only prints them. Callers go through :func:`check_na_supported` and
@@ -487,7 +487,7 @@ def _slot_bodies(
     to be what `lean2vmt` translates.
     """
     from reactor.lean.smt.encoding import encoding_of
-    from reactor.lean.smt.slots import slot_terms
+    from .slots import slot_terms
     from .to_bool import smt_to_lean_bool
 
     # An input reading is marked rather than translated: it has no Lean form

@@ -44,8 +44,8 @@ def _module(path: Path):
 
 
 def _context(path: Path, kind: str, prp: str, route: str):
-    from reactor.lean.smt.obligations import Obligations
-    from reactor.lean.smt.claim import SynthContext
+    from verith.common.obligations import Obligations
+    from verith.common.claim import SynthContext
 
     ctx = SynthContext.build(_module(path), Claim(prp=prp, kind=kind),
                              route=route,
@@ -54,7 +54,7 @@ def _context(path: Path, kind: str, prp: str, route: str):
 
 
 def _candidates(ctx, srcs):
-    from reactor.lean.smt.obligations import Candidate
+    from verith.common.obligations import Candidate
 
     return [Candidate(s, ctx.env.parse_expr(s)) for s in srcs]
 
@@ -82,7 +82,7 @@ HOUDINI = [
                          ids=[c[0] for c in HOUDINI])
 def test_houdini_vampire_scripts_are_unchanged(name, path, kind, prp, facts,
                                                rank):
-    from reactor.lean.smt.solvers import VampireSolver
+    from verith.common.solvers import VampireSolver
 
     ctx, ob = _context(path, kind, prp, "houdini")
     kept = _candidates(ctx, facts)

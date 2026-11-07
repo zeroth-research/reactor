@@ -13,8 +13,8 @@ import time
 from dataclasses import dataclass
 from fractions import Fraction
 
-from reactor.lean.smt.claim import SynthContext
-from reactor.lean.smt.obligations import Obligations
+from ..common.claim import SynthContext
+from ..common.obligations import Obligations
 from ..common.synth import component_slots
 from .evaluate import Evaluator, Unevaluable
 

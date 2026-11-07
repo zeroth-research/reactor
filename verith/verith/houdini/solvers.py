@@ -1,7 +1,7 @@
 """`--houdini-solver`: which solver judges the search's candidates, resolved
 at parse time.
 
-The solvers themselves are `smt.solvers`; this is the choice between them,
+The solvers themselves are `common.solvers`; this is the choice between them,
 and the flags that belong to the one chosen.
 """
 
@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.solvers import DEFAULT_CORES, Cvc5Solver, Solver, VampireSolver
-from reactor.lean.smt.vampire import resolve_vampire
+from ..common.solvers import DEFAULT_CORES, Cvc5Solver, Solver, VampireSolver
+from ..common.vampire import resolve_vampire
 
 SOLVERS = ("cvc5", "vampire")
 DEFAULT_SOLVER = "cvc5"

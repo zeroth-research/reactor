@@ -49,9 +49,8 @@ from typing import NamedTuple
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
-from reactor.lean.project.names import (
-    EQUIVALENCE, PROOF, PROVEIT_DIR, cert_file,
-)
+from reactor.lean.project.names import PROOF, cert_file
+from . import EQUIVALENCE, PROVEIT_DIR
 from reactor.lean.project.build import stream
 from .na import (
     NA_IMPORTS,

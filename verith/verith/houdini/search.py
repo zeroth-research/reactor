@@ -12,9 +12,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from reactor.lean.core.errors import PredicateRefused
-from reactor.lean.smt.claim import SynthContext
-from reactor.lean.smt.obligations import Candidate, Obligations
-from reactor.lean.smt.solvers import Solver
+from ..common.claim import SynthContext
+from ..common.obligations import Candidate, Obligations
+from ..common.solvers import Solver
 from reactor.lean.smt.terms import free_constants
 from ..common.synth import Column
 from .evaluate import Evaluator, Unevaluable

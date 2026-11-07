@@ -314,7 +314,7 @@ def test_an_element_is_read_by_its_own_sort_not_the_component_s():
     import torch
 
     from reactor import LIA, Bool, Module, Term, Var, Wire, X
-    from reactor.lean.smt.claim import SynthContext
+    from verith.common.claim import SynthContext
     from verith.common.synth import component_readings, component_slots
 
     b, n = Var(Bool([2, 1])), Wire(Bool([2, 1]))

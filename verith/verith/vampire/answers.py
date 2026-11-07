@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.vampire import run_vampire
+from ..common.vampire import run_vampire
 
 
 # `% SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert`, and the
