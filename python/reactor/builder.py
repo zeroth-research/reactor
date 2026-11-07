@@ -512,16 +512,16 @@ class BVTermBuilder(TermBuilder):
     def bit_select(self, a, high: int, low: int) -> Term:
         a_w = _wire(a)
         bw = high - low + 1
-        out = Wire(BitVec(bw, [1, 1]))
         rows, cols = _shape(a_w.dtype)
+        out = Wire(BitVec(bw, [rows, cols]))
         op_ = BV.BitSelect(high=high, low=low, width=_bv_width(a_w.dtype), rows=rows, cols=cols)
         return Term(op_, [out], [a_w])
 
     def extend(self, a, extra: int) -> Term:
         a_w = _wire(a)
         new_bw = _bv_width(a_w.dtype) + extra
-        out = Wire(BitVec(new_bw, [1, 1]))
         rows, cols = _shape(a_w.dtype)
+        out = Wire(BitVec(new_bw, [rows, cols]))
         op_ = BV.Extend(extra=extra, width=_bv_width(a_w.dtype), rows=rows, cols=cols)
         return Term(op_, [out], [a_w])
 

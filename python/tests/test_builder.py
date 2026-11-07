@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from reactor import LRA, LIA, Real, Int, Wire
+from reactor import LRA, LIA, BV, Real, Int, BitVec, Wire
 from reactor.builder import builder_for
 from reactor.eval import eval_itype
 
@@ -23,3 +23,11 @@ def test_mul_scales_a_column_vector(theory, sort, dtype, n):
     vals = torch.arange(1, n + 1, dtype=dtype).reshape(n, 1)
     out = eval_itype(term.itype, [vals], term.write[0].dtype)[0]
     assert out.flatten().tolist() == [3 * v for v in range(1, n + 1)]
+
+
+def test_bv_bit_select_and_extend_keep_the_shape():
+    # the ops are pointwise: only the width changes
+    builder = builder_for(BV)
+    a = Wire(BitVec(8, [2, 3]))
+    assert builder.bit_select(a, 5, 2).write[0].dtype == BitVec(4, [2, 3])
+    assert builder.extend(a, 8).write[0].dtype == BitVec(16, [2, 3])

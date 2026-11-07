@@ -301,7 +301,10 @@ class AExpr(Expr):
     def __rmul__(self, o):  return self._coerce(o).__mul__(self)
 
     def __matmul__(self, o):  # a constant left operand folds to Linear
-        o = self._coerce_same(o)
+        o = self._coerce(o)
+        # a real constant also maps a derivative of a real (e.g. `A @ d(t)`)
+        if _family(_value_sort(self.dtype)) != _family(_value_sort(o.dtype)):
+            raise TypeError(f"cannot combine {self.dtype} and {o.dtype} implicitly; use cast()")
         return self._result(_matmul(self._theory, self, o))
 
     # comparisons -> Bool -> BExpr
@@ -337,12 +340,10 @@ def _mul_as_linear(theory, a: Expr, b: Expr) -> Term:
 def _matmul(theory, a: Expr, b: Expr) -> Term:
     out_shape = [a.shape[0], b.shape[1]]
     if a._value is not None:  # constant left operand
-        if theory is LRA:
-            out_sort = Real(out_shape)
-        elif theory is LIA:
-            out_sort = Int(out_shape)
-        else:
+        if theory is not LRA and theory is not LIA:
             raise TypeError(f"{theory.__name__} has no linear fold (expected LRA or LIA)")
+        # the map keeps the sort of `b` (a derivative stays a derivative), only the shape changes
+        out_sort = _with_shape(b.dtype, out_shape)
         linear = _linear(theory, a._value, torch.empty(0, 0), b.dtype)
         return Term(linear, [Wire(out_sort)], [b._wire])
     raise RuntimeError(f"{theory.__name__} matmul requires a constant left operand; use a Linear instead")

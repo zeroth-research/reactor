@@ -348,6 +348,7 @@ def test_derivative_of_real_keeps_its_tangent_sort():
     # arithmetic over derivatives stays a derivative; a constant scales it
     assert (dt + dt).dtype == dt.dtype
     assert (2 * dt).dtype == dt.dtype
+    assert (expr(torch.tensor([[2.0], [3.0]]), theory=LRA, sort=Real) @ dt).dtype == Real([2, 1], 1)
     # a value guard selects between derivatives
     assert ite(t < t, dt, dt).dtype == dt.dtype
     # the theories have no comparisons of derivatives
