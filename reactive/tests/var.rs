@@ -1,5 +1,5 @@
-use base::Wire;
 use dataflow::diagram::Term;
+use dataflow::diagram::Wire;
 use reactive::Var;
 use reactive::var::{X, X_ref, d, d_ref};
 use theory::lra::{LRA, Sort};

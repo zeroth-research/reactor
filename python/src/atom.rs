@@ -383,7 +383,7 @@ struct AtomBlockInterface {
 }
 
 impl AtomBlockInterface {
-    fn base(&self) -> &[base::Wire<theory::any::Sort>] {
+    fn base(&self) -> &[dataflow::diagram::Wire<theory::any::Sort>] {
         let atom = &self.block.get().atom.get().base;
         match (&self.block.get().block, &self.interface) {
             (BlockType::Init, TermInterfaceType::Read) => atom.init().read(),

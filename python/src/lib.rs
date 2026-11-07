@@ -85,7 +85,7 @@ where
 
 fn try_wire_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = base::Wire<theory::any::Sort>>> {
+) -> PyResult<impl Iterator<Item = dataflow::diagram::Wire<theory::any::Sort>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = seq.try_iter()?.map(|i| -> PyResult<_> {
         let i = i?;
@@ -94,7 +94,7 @@ fn try_wire_iter_cloned(
         }
         // a variable stands for its latched wire in a wire position
         if let Ok(var) = i.extract::<PyRef<Var>>() {
-            return Ok(base::Wire::from(*var.base()));
+            return Ok(dataflow::diagram::Wire::from(*var.base()));
         }
         Err(pyo3::exceptions::PyTypeError::new_err(
             "expected a Wire or a Variable",
@@ -163,7 +163,7 @@ impl<'py> Hide<'py> {
 pub(crate) fn wires_untyped_to_repr<'a, S, W, I>(wires: I) -> String
 where
     S: Debug + 'a,
-    W: Borrow<base::Wire<S>> + 'a,
+    W: Borrow<dataflow::diagram::Wire<S>> + 'a,
     I: IntoIterator<Item = &'a W>,
 {
     let mut s = String::from("[");

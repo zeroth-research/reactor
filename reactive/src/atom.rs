@@ -1,5 +1,5 @@
 use crate::Module;
-use base::Wire;
+use dataflow::diagram::Wire;
 use dataflow::diagram::{Block, Term};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
