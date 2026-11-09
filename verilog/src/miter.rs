@@ -2,10 +2,12 @@
 # Comparing a translation with Yosys
 
 Checks that our module computes the same values as Yosys's translation of
-the same design ([`yosys`](crate::yosys)): our init round the values of
-Yosys's state, and our update round the next values of one transition,
-for every state and every input. A *miter* is a script that is
-satisfiable exactly when the two disagree on a variable.
+the same design ([`yosys`], with `clk2fflogic`, so that one
+Yosys transition is one time step, as one of our rounds is): our init
+round the values of Yosys's initial states, and our update round the next
+values of one transition, for every state and every input, clocks
+included. A *miter* is a script that is satisfiable exactly when the two
+disagree on a variable.
 
 ## The script
 
@@ -23,9 +25,10 @@ and one part per round of ours ([`Miter::init`], [`Miter::update`]), both
 defining the constants `|X(v)|`, so only one of them is asserted at a
 time:
 
-- our init round ([`smt::round`] with [`Phase::Init`]) and its ties: the
-  initial value `|X(p@init)|` of every register `p` is the register `p` in
-  `|s|`, every input `|X(v)|` is the wire `v` in `|s|`;
+- our init round ([`smt::round`] with [`Phase::Init`]) and its ties, with
+  `|s|` an initial state (`|T_i|`): the initial value `|X(p@init)|` of every
+  register `p` is its output sample in `|s|` ([`registers`]), every input
+  `|X(v)|` is the wire `v` in `|s|`;
 - our update round ([`Phase::Update`]) and its ties, matching names: every
   latched value `|*v|` of the round is the wire `v` in `|s|`, and every next
   input `|X(v)|` is the wire `v` in `|s'|`.
@@ -38,18 +41,21 @@ run per round, each query between `push` and `pop`.
 ## What it shows
 
 If every query is `unsat`, the two translations agree on every variable
-in every round, from every initial state and for every input. Yosys's
-registers are exactly ours, with the same widths ([`build`] checks this
-with [`registers`]), and they are arbitrary in `|s|`. Without initializers
-both sides allow every initial register value, so the init queries cover
-round 0 from every initial state: our init round computes Yosys's values
-of every signal in `|s|`, for every value of the registers and inputs.
-The update queries cover every later round without induction: the
-latched values of the registers are arbitrary in `|s|`, and the latched
-values of combinational signals (read by `always_ff` blocks) are tied to
-their wires in `|s|`, which by the init queries are the values our
-module computes from the registers and inputs there (the combinational
-atoms have the same init and update blocks).
+in every round, from every initial state and for every input sequence,
+clocks included: by induction on the rounds, with the queries as the
+steps. Round 0: in every initial state of Yosys, our init round, started
+from the output samples, computes Yosys's wires; this includes each
+register's own wire, so the output sample is the register's value there
+(no edge happens in the first step). [`registers`] checks that Yosys has
+one flip-flop per register of ours and that `|T_i|` leaves the output
+samples free, so every initial value of ours is one of Yosys's too.
+Round k + 1: if our values in round k are Yosys's wires in a state `|s|`,
+the update queries show that our next values are Yosys's wires in any
+`|s'|` after `|s|` with the same inputs. They are asked for every state
+`|s|`, reachable or not, and our round reads only latched values tied to
+wires in `|s|` and next inputs tied to `|s'|`. In both systems a register
+changes only in a round where its clock edge happens (latched level and
+new level), and reads the values just before it.
 
 The update round alone is not enough: it compares next values only in
 states a transition reaches. A combinational signal that differs only for
@@ -62,7 +68,7 @@ carries the difference on, while every update query is `unsat`.
 For a query that is `sat`, [`counterexample`] runs z3 again on that query
 alone and reads a model: the registers (by path) and inputs in `|s|`, the
 inputs in `|s'|`, the latched values of our round and both sides' next
-values ([`Cex`]). [`replay`] runs that cycle in [`rm_sim`](crate::rm_sim)
+values ([`Cex`]). [`replay`] runs that step in [`rm_sim`](crate::rm_sim)
 on our module and in the reference interpreter
 [`ast_interp`](crate::ast_interp) on the source, and says which side the
 reference agrees with ([`Side`]), also telling a wrong SMT text of our
@@ -75,7 +81,7 @@ use crate::elab::Inst;
 use crate::lower::{Translation, init_name};
 use crate::rm_sim::{Sim, Valuation};
 use crate::smt::{self, Phase};
-use crate::yosys::Smt2;
+use crate::yosys::{self, Sample, Smt2};
 use crate::{BitVec, Var};
 use num_bigint::BigUint;
 use std::collections::{BTreeMap, BTreeSet};
@@ -101,9 +107,12 @@ pub struct Miter {
     /// first, each in the order of the round.
     pub queries: Vec<Query>,
     /// The values a [`counterexample`] reads from a model: every register
-    /// in `|s|`, by path, and every input but the clock in `|s|` and in
-    /// `|s'|` (Yosys wires); every latched value `|*v|` of our update
-    /// round. A counterexample of the init round reads only the first two.
+    /// in `|s|`, by path, as the output sample our init round starts from
+    /// (`initial`) and as the wire, the value after the step (`registers`);
+    /// every input in `|s|` and in `|s'|` (Yosys wires); every latched
+    /// value `|*v|` of our update round. A counterexample of the init round
+    /// reads `initial` and `inputs`, one of the update round the others.
+    pub initial: Vec<Probe>,
     pub registers: Vec<Probe>,
     pub inputs: Vec<Probe>,
     pub next_inputs: Vec<Probe>,
@@ -160,45 +169,91 @@ pub enum Verdict {
     Unknown,
 }
 
-/// The differences between the registers of `t` and those of Yosys's
-/// translation `ys`, one message each, by path: a register on one side
-/// only, or of different widths. Registers are compared by path (`u.v.q`),
-/// as Yosys names them, not by the name of their variable in `t`, which
-/// can be a parent's signal connected to the instance's output; the width
-/// of a register `p` is that of its variable `p@init`.
-pub fn registers(t: &Translation, ys: &Smt2) -> Vec<String> {
-    let ours: BTreeMap<&str, usize> = t
-        .registers
-        .iter()
-        .map(|p| (p.as_str(), t.var(&init_name(p)).dtype().width()))
-        .collect();
-    let paths: BTreeSet<&str> = ours
-        .keys()
-        .copied()
-        .chain(ys.registers.keys().map(|p| p.as_str()))
-        .collect();
+/// The output sample of every register of `t` in Yosys's translation
+/// `ys`, by path, or the differences between the two, one message each.
+///
+/// After `clk2fflogic`, Yosys has three registers per flip-flop (see
+/// [`yosys`]): an edge sample, a data input sample and an
+/// output sample. So there must be as many edge samples as registers of
+/// ours and twice as many data samples, and no other Yosys registers. The
+/// output sample of a register `p` (a path, as Yosys names it, not the
+/// name of its variable in `t`, which can be a parent's signal connected
+/// to the instance's output) is the data sample named after `p` that
+/// `|T_i|` leaves free ([`Smt2::free_initially`]); a data input sample can
+/// carry the same name, but is set to 0 initially. Its width must be that
+/// of `p@init`. [`build`] ties the initial value `p@init` to it, and the
+/// init query of `p`'s variable then checks that it is the output sample:
+/// Yosys's wire `p` equals it in every initial state.
+pub fn registers(t: &Translation, ys: &Smt2) -> Result<BTreeMap<Name, String>, Vec<String>> {
     let mut errors = vec![];
-    for p in paths {
-        match (ours.get(p), ys.registers.get(p)) {
-            (Some(w), Some(y)) if w != y => {
-                errors.push(format!("register `{p}` has width {w}, in Yosys {y}"));
+    let (mut edges, mut data) = (0, 0);
+    // the data samples, by the wire they are named after
+    let mut named: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for name in ys.registers.keys() {
+        match yosys::sample(name) {
+            Some(Sample::Edge(_)) => edges += 1,
+            Some(Sample::Data(wire)) => {
+                data += 1;
+                if let Some(wire) = wire {
+                    named.entry(wire).or_default().push(name);
+                }
             }
-            (Some(_), None) => errors.push(format!("register `{p}` is not a Yosys register")),
-            (None, Some(_)) => errors.push(format!("Yosys register `{p}` is not one of ours")),
-            _ => {}
+            None => errors.push(format!(
+                "Yosys register `{name}` is not a sample of `clk2fflogic`"
+            )),
         }
     }
-    errors
+    let n = t.registers.len();
+    if edges != n || data != 2 * n {
+        errors.push(format!(
+            "Yosys has {edges} clock samples and {data} data samples, \
+             for {n} registers there should be {n} and {}",
+            2 * n
+        ));
+    }
+    let mut out = BTreeMap::new();
+    for p in &t.registers {
+        let width = t.var(&init_name(p)).dtype().width();
+        let free: Vec<&str> = named
+            .get(p.as_str())
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|r| ys.free_initially(r))
+            .collect();
+        match free.as_slice() {
+            [] => errors.push(format!("register `{p}` has no output sample in Yosys")),
+            [r] if ys.registers[*r] != width => errors.push(format!(
+                "register `{p}` has width {width}, in Yosys {}",
+                ys.registers[*r]
+            )),
+            [r] => {
+                out.insert(p.clone(), r.to_string());
+            }
+            _ => errors.push(format!(
+                "register `{p}` has several output samples in Yosys: {}",
+                free.join(", ")
+            )),
+        }
+    }
+    if errors.is_empty() {
+        Ok(out)
+    } else {
+        Err(errors)
+    }
 }
 
-/// The miter of the update round of `t` and the Yosys translation `ys` of
-/// the same design. Fails, listing them all, if the registers differ
-/// ([`registers`]), or if a variable the round uses is not a Yosys wire or
+/// The miter of the rounds of `t` and the Yosys translation `ys` of the
+/// same design. Fails, listing them all, if the registers do not match
+/// ([`registers`]), or if a variable the rounds use is not a Yosys wire or
 /// has a different width there.
 pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
     let round = smt::round(t, Phase::Update);
     let first = smt::round(t, Phase::Init);
-    let mut errors = registers(t, ys);
+    let (samples, mut errors) = match registers(t, ys) {
+        Ok(samples) => (samples, vec![]),
+        Err(errors) => (BTreeMap::new(), errors),
+    };
     let mut value = |name: &str, state: &str| {
         let width = t.var(name).dtype().width();
         match ys.wires.get(name) {
@@ -223,13 +278,15 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
     }
     script += &format!("(assert {})\n", ys.transition(S, NEXT));
 
-    // the init round in `|s|`: the initial values are the registers
-    let mut init = first.text.clone();
+    // the init round in an initial state `|s|`: the initial values are
+    // the output samples of the registers
+    let mut init = format!("(assert {})\n", ys.initial(S));
+    init += &first.text;
     init += "; the ties\n";
     for name in &first.inputs {
         let theirs = match name.strip_suffix("@init") {
             // a missing register is reported by `registers`
-            Some(path) => ys.value(path, S),
+            Some(path) => samples.get(path).and_then(|r| ys.value(r, S)),
             None => value(name, S),
         };
         if let Some(theirs) = theirs {
@@ -261,25 +318,36 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
             }
         }
     }
-    // what a counterexample reads: registers and inputs but the clock
-    let mut probes = |names: &BTreeMap<String, usize>, state: &str| -> Vec<Probe> {
-        let names = names.iter().filter(|(n, _)| t.clock.as_ref() != Some(*n));
-        let probe = |(name, &width): (&String, &usize)| match ys.value(name, state) {
+    // what a counterexample reads: the registers by path (their output
+    // samples, or their wires) and the inputs
+    let mut probes = |names: &mut dyn Iterator<Item = (&String, &str, usize)>, state: &str| {
+        let probe = |(name, wire, width): (&String, &str, usize)| match ys.value(wire, state) {
             Some(term) => Some(Probe {
                 name: name.clone(),
                 term,
                 width,
             }),
             None => {
-                errors.push(format!("`{name}` is not a Yosys wire"));
+                errors.push(format!("`{wire}` is not a Yosys wire"));
                 None
             }
         };
-        names.filter_map(probe).collect()
+        names.filter_map(probe).collect::<Vec<Probe>>()
     };
-    let registers = probes(&ys.registers, S);
-    let inputs = probes(&ys.inputs, S);
-    let next_inputs = probes(&ys.inputs, NEXT);
+    let width = |p: &String| t.var(&init_name(p)).dtype().width();
+    let initial = probes(
+        &mut samples.iter().map(|(p, r)| (p, r.as_str(), width(p))),
+        S,
+    );
+    let registers = probes(
+        &mut t.registers.iter().map(|p| (p, p.as_str(), width(p))),
+        S,
+    );
+    let inputs = probes(&mut ys.inputs.iter().map(|(n, w)| (n, n.as_str(), *w)), S);
+    let next_inputs = probes(
+        &mut ys.inputs.iter().map(|(n, w)| (n, n.as_str(), *w)),
+        NEXT,
+    );
     let latched = round
         .latched
         .iter()
@@ -302,6 +370,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         init,
         update,
         queries,
+        initial,
         registers,
         inputs,
         next_inputs,
@@ -360,10 +429,10 @@ pub struct Cex {
     pub phase: Phase,
     /// The variable.
     pub name: Name,
-    /// The registers in `|s|`, by path.
+    /// The registers in `|s|`, by path: their output samples for the init
+    /// round, their wires for the update round.
     pub registers: Values,
-    /// The inputs but the clock in `|s|`, and in `|s'|` (empty for the
-    /// init round).
+    /// The inputs in `|s|`, and in `|s'|` (empty for the init round).
     pub inputs: Values,
     pub next_inputs: Values,
     /// The latched values our update round reads, by variable: by the
@@ -382,11 +451,11 @@ pub struct Cex {
 /// output cannot be read.
 pub fn counterexample(z3: &Path, m: &Miter, q: &Query) -> Result<Cex, String> {
     let none = vec![];
-    let (next_inputs, latched) = match q.phase {
-        Phase::Init => (&none, &none),
-        Phase::Update => (&m.next_inputs, &m.latched),
+    let (registers, next_inputs, latched) = match q.phase {
+        Phase::Init => (&m.initial, &none, &none),
+        Phase::Update => (&m.registers, &m.next_inputs, &m.latched),
     };
-    let groups = [&m.registers, &m.inputs, next_inputs, latched];
+    let groups = [registers, &m.inputs, next_inputs, latched];
     let probes = groups.iter().flat_map(|g| g.iter());
     let terms: Vec<&str> = probes
         .clone()
@@ -429,7 +498,7 @@ pub fn counterexample(z3: &Path, m: &Miter, q: &Query) -> Result<Cex, String> {
             })
             .collect()
     };
-    let registers = take(&m.registers)?;
+    let registers = take(registers)?;
     let inputs = take(&m.inputs)?;
     let next_inputs = take(next_inputs)?;
     let latched = take(latched)?;
@@ -578,17 +647,18 @@ pub struct Via {
     pub reference: BitVec,
 }
 
-/// Replays the cycle of `cex` in `rm_sim` on the module of `t` and in the
+/// Replays the step of `cex` in `rm_sim` on the module of `t` and in the
 /// reference interpreter on `inst`, the hierarchy `t` was lowered from.
 ///
 /// `rm_sim` starts in the init round, so the state `|s|` is rebuilt there:
-/// round 0 gets the registers of `|s|` as the initial values `p@init` and
-/// the inputs of `|s|`, which gives the values of every signal in `|s|`
-/// (combinational atoms have the same init and update blocks); round 1
-/// with the inputs of `|s'|` then computes the next values. The reference
-/// interpreter starts from the registers of `|s|` and runs the same two
-/// cycles; the second gives the values in `|s'|`. A counterexample of the
-/// init round is replayed in round 0 and the first cycle only.
+/// round 0 gets the registers of `|s|` (their wires, the values in `|s|`)
+/// as the initial values `p@init` and the inputs of `|s|`, which gives the
+/// values of every signal in `|s|` (combinational atoms have the same init
+/// and update blocks, and no edge happens in round 0); round 1 with the
+/// inputs of `|s'|` then computes the next values. The reference
+/// interpreter starts from the same registers and runs the same two
+/// rounds; the second gives the values in `|s'|`. A counterexample of the
+/// init round is replayed in round 0 only, from the output samples.
 ///
 /// The side is decided on values that each come from one side only: the
 /// next value in `rm_sim` (ours), in the reference, and in Yosys's `|s'|`,

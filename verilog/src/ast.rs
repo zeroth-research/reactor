@@ -10,6 +10,7 @@ Lean inductive types.
 */
 
 use crate::value::BitVec;
+use std::collections::BTreeSet;
 use std::fmt;
 
 /// A source position, 1-based.
@@ -116,15 +117,17 @@ pub struct Module {
 }
 
 impl Module {
-    /// The clock of the first `always_ff` block or the first instance with
-    /// a clock, if any. After [`typing::check`](crate::typing::check), all
-    /// blocks and instances have this clock.
-    pub fn clock(&self) -> Option<&Name> {
-        self.items.iter().find_map(|item| match item {
-            Item::AlwaysFf { clock, .. } => Some(clock),
-            Item::Instance(i) => i.clock(),
-            Item::Assign { .. } | Item::AlwaysComb { .. } => None,
-        })
+    /// The clocks: the signals whose edges clock an `always_ff` block, and
+    /// those connected to the clock ports of instances.
+    pub fn clocks(&self) -> BTreeSet<&Name> {
+        self.items
+            .iter()
+            .flat_map(|item| match item {
+                Item::AlwaysFf { clock, .. } => vec![clock],
+                Item::Instance(i) => i.clocks().collect(),
+                Item::Assign { .. } | Item::AlwaysComb { .. } => Vec::new(),
+            })
+            .collect()
     }
 
     /// The instances, in source order.
@@ -212,16 +215,16 @@ pub struct Conn {
 pub struct Formal {
     pub dir: Dir,
     pub ty: Ty,
-    /// Whether it is the clock of the module.
+    /// Whether it is a clock of the module (see [`Module::clocks`]).
     pub clock: bool,
 }
 
 impl Instance {
-    /// The signal connected to the clock port, if any.
-    pub fn clock(&self) -> Option<&Name> {
+    /// The signals connected to clock ports.
+    pub fn clocks(&self) -> impl Iterator<Item = &Name> {
         self.conns
             .iter()
-            .find_map(|c| match (&c.formal, &c.actual) {
+            .filter_map(|c| match (&c.formal, &c.actual) {
                 (Some(f), Some(e)) if f.clock => match &e.kind {
                     ExprKind::Var(x) => Some(x),
                     _ => None,
@@ -230,11 +233,11 @@ impl Instance {
             })
     }
 
-    /// The connections of ports with direction `dir` (other than the
-    /// clock), with the actual if there is one.
+    /// The connections of ports with direction `dir` (clock ports
+    /// included), with the actual if there is one.
     pub fn conns(&self, dir: Dir) -> impl Iterator<Item = (&Conn, &Formal)> {
         self.conns.iter().filter_map(move |c| match &c.formal {
-            Some(f) if f.dir == dir && !f.clock => Some((c, f)),
+            Some(f) if f.dir == dir => Some((c, f)),
             _ => None,
         })
     }
@@ -244,10 +247,12 @@ impl Instance {
 pub enum Item {
     /// `assign lhs = rhs;`, with `span` the position of `lhs`.
     Assign { lhs: Lvalue, rhs: Expr, span: Span },
-    /// `always_ff @(posedge clock) body`, with `span` the position of
-    /// `always_ff` and `clock_span` that of `clock`.
+    /// `always_ff @(posedge clock) body` or `always_ff @(negedge clock)
+    /// body`, with `span` the position of `always_ff` and `clock_span` that
+    /// of `clock`.
     AlwaysFf {
         clock: Name,
+        edge: Edge,
         clock_span: Span,
         body: Stmt,
         span: Span,
@@ -312,7 +317,7 @@ impl Item {
                 lhs.reads(&mut out);
             }
             Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => body.reads(&mut out),
-            // the actuals of inputs; the clock has no value in a cycle
+            // the actuals of inputs, clocks included
             Item::Instance(i) => {
                 for (c, _) in i.conns(Dir::Input) {
                     if let Some(e) = &c.actual {
@@ -322,6 +327,25 @@ impl Item {
             }
         }
         out
+    }
+}
+
+/// The edge of a clock that an `always_ff` block runs at.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Edge {
+    /// The rising edge: the clock goes from 0 to 1.
+    Pos,
+    /// The falling edge: from 1 to 0.
+    Neg,
+}
+
+/// SystemVerilog syntax: `posedge`, `negedge`.
+impl fmt::Display for Edge {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Edge::Pos => write!(f, "posedge"),
+            Edge::Neg => write!(f, "negedge"),
+        }
     }
 }
 

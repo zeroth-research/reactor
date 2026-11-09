@@ -1,7 +1,7 @@
 //! The frontend and typing: operator precedence, ports, and a located error
 //! for every rejected construct.
 
-use verilog::ast::{Dir, Item, Ty};
+use verilog::ast::{Dir, Edge, Item, Ty};
 use verilog::lower::Translation;
 use verilog::{frontend, lower};
 
@@ -259,10 +259,16 @@ fn if_else_chains() {
         "{HEADER_FF}\n  always_ff @(posedge clk)\n    if (a == 8'd0) y <= a; else if (a < 8'd9) y <= 8'd1; else if (|a) ;\nendmodule\n"
     );
     let m = frontend::parse(&src, "test.sv").unwrap();
-    let [Item::AlwaysFf { clock, body, .. }] = &m.items[..] else {
+    let [
+        Item::AlwaysFf {
+            clock, edge, body, ..
+        },
+    ] = &m.items[..]
+    else {
         panic!("{:?}", m.items);
     };
     assert_eq!(clock, "clk");
+    assert_eq!(*edge, Edge::Pos);
     assert_eq!(
         body.to_string(),
         "if ((a == 8'd0)) y <= a; else if ((a < 8'd9)) y <= 8'd1; else if ((|a)) begin end else begin end"
@@ -274,15 +280,60 @@ fn accepted_always_ff() {
     // several assignments to one register in a block: the last one wins
     let t = translate_ff("  always_ff @(posedge clk) begin y <= a; y <= y; end");
     assert_eq!(t.registers, ["y"]);
-    assert_eq!(t.clock.as_deref(), Some("clk"));
+    assert_eq!(t.clocks, ["clk"]);
     // a loop through a register is no combinational loop
     let t =
         translate_ff("  logic [7:0] t;\n  assign t = y + a;\n  always_ff @(posedge clk) y <= t;");
     assert_eq!(t.module.atoms().len(), 2);
-    // the clock is no variable, and not an unread input
+    // the clock is an external variable
     assert!(t.unread_inputs.is_empty());
     let clk = t.var("clk");
-    assert!(!t.module.extl().contains(&clk));
+    assert!(t.module.extl().contains(&clk));
+}
+
+/// Several clocks, both edges, and clocks read as data.
+#[test]
+fn accepted_clocks() {
+    let src = "module m(input logic clk, input logic [7:0] a, output logic [7:0] y);\n  \
+               always_ff @(negedge clk) y <= a;\nendmodule\n";
+    let m = frontend::parse(src, "test.sv").unwrap();
+    let [Item::AlwaysFf { edge, .. }] = &m.items[..] else {
+        panic!("{:?}", m.items);
+    };
+    assert_eq!(*edge, Edge::Neg);
+    // both edges of one clock, in different blocks; a block on one edge
+    // reads a register of the other
+    let t = translate_ff(
+        "  logic [7:0] n;\n  always_ff @(negedge clk) n <= a;\n  always_ff @(posedge clk) y <= n;",
+    );
+    assert_eq!(t.clocks, ["clk"]);
+    // the clock read as data, in an `if` and through an `assign`
+    let t = translate_ff("  always_ff @(posedge clk) if (clk) y <= a;");
+    assert_eq!(t.registers, ["y"]);
+    let t = translate_ff(
+        "  logic [7:0] t;\n  assign t = clk ? a : y;\n  always_ff @(negedge clk) y <= t;",
+    );
+    assert_eq!(t.clocks, ["clk"]);
+    // two unrelated clocks, each register reading inputs and its own
+    // domain only; an `assign` may combine both domains
+    let two = "module m(input logic ca, cb, input logic [7:0] a, output logic [7:0] y, z, s);";
+    let src = format!(
+        "{two}\n  always_ff @(posedge ca) y <= y + a;\n  always_ff @(negedge cb) z <= z + a;\n  \
+         assign s = y + z;\nendmodule\n"
+    );
+    let t = frontend::parse(&src, "test.sv")
+        .and_then(|m| lower::lower(&m))
+        .unwrap();
+    assert_eq!(t.clocks, ["ca", "cb"]);
+    // a clock that is only read as data is no clock
+    let src = format!(
+        "{two}\n  always_ff @(posedge ca) y <= a;\n  always_ff @(posedge ca) z <= cb ? a : z;\n  \
+         assign s = a;\nendmodule\n"
+    );
+    let t = frontend::parse(&src, "test.sv")
+        .and_then(|m| lower::lower(&m))
+        .unwrap();
+    assert_eq!(t.clocks, ["ca"]);
 }
 
 #[test]
@@ -294,9 +345,14 @@ fn rejected_always() {
             "blocking assignment",
         ),
         (
-            "  always_ff @(negedge clk) y <= a;",
-            "negedge",
-            "`negedge` not supported",
+            "  always_ff @(edge clk) y <= a;",
+            "edge",
+            "`edge` not supported: use separate `posedge` and `negedge` blocks",
+        ),
+        (
+            "  always_ff @(posedge clk, negedge clk) y <= a;",
+            "posedge",
+            "only one event",
         ),
         (
             "  always_ff @(posedge clk or posedge a) y <= a;",
@@ -352,15 +408,6 @@ fn rejected_always() {
 
 #[test]
 fn rejected_clocks() {
-    let two =
-        Some("module m(input logic clk, clk2, input logic [7:0] a, output logic [7:0] y, z);");
-    rejects(
-        two,
-        "  always_ff @(posedge clk) y <= a;\n  always_ff @(posedge clk2) z <= a;",
-        3,
-        "clk2",
-        "second clock `clk2`, only one clock (`clk` at 2:23) supported",
-    );
     rejects(
         Some(HEADER_FF),
         "  always_ff @(posedge a) y <= a;",
@@ -373,21 +420,53 @@ fn rejected_clocks() {
         "  logic c;\n  assign c = &a;\n  always_ff @(posedge c) y <= a;",
         4,
         "c)",
-        "the clock `c` must be a 1-bit input",
+        "the clock `c` is computed combinationally: gated clocks are not supported",
     );
     rejects(
         Some(HEADER_FF),
-        "  always_ff @(posedge clk) if (clk) y <= a;",
+        "  logic g;\n  always_comb g = clk & a[0];\n  always_ff @(negedge g) y <= a;",
+        4,
+        "g)",
+        "the clock `g` is computed combinationally",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic s;\n  always_ff @(posedge clk) s <= !s;\n  always_ff @(posedge s) y <= a;",
+        4,
+        "s)",
+        "the clock `s` is a register: clocks derived from registers are not supported yet",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  always_ff @(posedge y[0]) y <= a;",
         2,
-        "clk) y",
-        "clock `clk` read",
+        "y[0]",
+        "the clock must be a signal name",
     );
     rejects(
         Some(HEADER_FF),
-        "  logic t;\n  assign t = clk;\n  always_ff @(posedge clk) y <= a;",
+        "  always_ff @(posedge nope) y <= a;",
+        2,
+        "nope",
+        "`nope`",
+    );
+    // reads across unrelated clocks, directly and through `assign`
+    let two = Some("module m(input logic ca, cb, input logic [7:0] a, output logic [7:0] y, z);");
+    rejects(
+        two,
+        "  always_ff @(posedge ca) y <= a;\n  always_ff @(posedge cb) z <= y;",
         3,
-        "clk",
-        "clock `clk` read",
+        "y;",
+        "`z` (clocked by `cb`) reads `y`, which depends on registers clocked by `ca`: \
+         crossings between unrelated clocks are not supported yet",
+    );
+    rejects(
+        two,
+        "  logic [7:0] t;\n  assign t = a + y;\n  always_ff @(negedge ca) y <= a;\n  \
+         always_ff @(negedge cb) if (t[0]) z <= a;",
+        5,
+        "t[0]",
+        "`z` (clocked by `cb`) reads `t`, which depends on registers clocked by `ca`",
     );
 }
 

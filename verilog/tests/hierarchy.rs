@@ -159,9 +159,20 @@ fn rejected_instances() {
             "must be connected to a clock input",
         ),
         (
-            "  child u (.clk, .a({3'd0, clk}), .q, .y);",
-            "clk}",
-            "clock `clk` read",
+            "  logic g;\n  assign g = clk & a[0];\n  child u (.clk(g), .a, .q, .y);",
+            "g)",
+            "the clock `g` is computed combinationally: gated clocks are not supported",
+        ),
+        (
+            "  logic s;\n  always_ff @(posedge clk) s <= !s;\n  child u (.clk(s), .a, .q, .y);",
+            "s)",
+            "the clock `s` is a register: clocks derived from registers are not supported yet",
+        ),
+        (
+            "  logic [3:0] w;\n  logic s;\n  assign s = w[0];\n  child u (.clk, .a, .q(w), .y);\n  \
+             child v (.clk(s), .a, .q, .y());",
+            "s)",
+            "the clock `s` is computed combinationally",
         ),
         (
             "  child #(.Z(1)) u (.clk, .a, .q, .y);",
@@ -203,6 +214,34 @@ fn rejected_instances() {
         let line = 2 + body.lines().position(|l| l.contains(needle)).unwrap();
         rejects(&top(body), line, needle, msg);
     }
+    // a clock driven by an instance output
+    rejects(
+        "module top(input logic clk, input logic [3:0] a, output logic [3:0] q, y);
+  logic g;
+  one o (.y(g));
+  child u (.clk(g), .a, .q, .y);
+endmodule
+module one(output logic y);
+  assign y = 1'b1;
+endmodule
+",
+        4,
+        "g)",
+        "the clock `g` is driven by instance `o`: clocks must be inputs",
+    );
+    // a register of one clock domain read in another, through instances
+    rejects(
+        "module top(input logic clk, clk2, input logic [3:0] a, output logic [3:0] q, y);
+  logic [3:0] w;
+  child u (.clk, .a, .q(w), .y());
+  child v (.clk(clk2), .a(w), .q, .y);
+endmodule
+",
+        8 + 4,
+        "a;",
+        "`q` (clocked by `clk2`) reads `a`, which depends on registers clocked by `clk`: \
+         crossings between unrelated clocks are not supported yet (in instance `v`)",
+    );
 }
 
 #[test]
@@ -418,6 +457,15 @@ fn instance_modules() {
         printed.starts_with("module child #(.W(4), .K(4'd3)) u\n"),
         "{printed}"
     );
-    // the connection signal `u.a` is computed by the parent, so the instance reads it
-    assert!(printed.contains("  external\n    u.a : bv4"), "{printed}");
+    // the connection signal `u.a` is computed by the parent, so the instance
+    // reads it; the clock is the parent's, and the edge test is named after
+    // the instance's port
+    assert!(
+        printed.contains("  external\n    clk : bv1\n    u.a : bv4"),
+        "{printed}"
+    );
+    assert!(
+        printed.contains("      u.clk@pos := AND (%1, X(clk))\n"),
+        "{printed}"
+    );
 }

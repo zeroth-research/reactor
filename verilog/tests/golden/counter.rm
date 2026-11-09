@@ -1,17 +1,21 @@
 module counter
   external
+    clk : bv1
     en : bv1
     q@init : bv8
   interface
     q : bv8
     full : bv1
-  atom controls q reads en, q awaits q@init
+  atom controls q reads clk, en, q awaits clk, q@init
     init
       X(q) := ID X(q@init)
     update
-      %1 := 8'd1
-      %2 := ADD (q, %1)
-      X(q) := ITE (en, %2, q)
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 8'd1
+      %3 := ADD (q, %2)
+      %4 := ITE (en, %3, q)
+      X(q) := ITE (clk@pos, %4, q)
   atom controls full awaits q
     init = update
       X(full) := REDAND X(q)

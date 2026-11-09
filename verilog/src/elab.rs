@@ -94,7 +94,7 @@ fn inst(
         let path = format!("{prefix}{}.", i.name);
         let child = inst(d, &i.module, &i.params, &path, stack)?;
         let ports = &child.module.ports;
-        let clock = child.module.clock();
+        let clocks = child.module.clocks();
         let mut seen = BTreeSet::new();
         for c in &mut i.conns {
             let Some(p) = ports.iter().find(|p| p.decl.name == c.port) else {
@@ -106,7 +106,7 @@ fn inst(
             c.formal = Some(Formal {
                 dir: p.dir,
                 ty: p.decl.ty,
-                clock: clock == Some(&p.decl.name),
+                clock: clocks.contains(&p.decl.name),
             });
         }
         for p in ports.iter().filter(|p| p.dir == Dir::Input) {

@@ -1,5 +1,6 @@
 module accum
   external
+    clk : bv1
     clear : bv1
     x : bv8
     acc@init : bv8
@@ -11,25 +12,31 @@ module accum
     acc : bv8
     next : bv8
     carry : bv1
-  atom controls acc reads clear, next awaits acc@init
+  atom controls acc reads clk, clear, acc, next awaits clk, acc@init
     init
       X(acc) := ID X(acc@init)
     update
-      %1 := 8'd0
-      X(acc) := ITE (clear, %1, next)
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 8'd0
+      %3 := ITE (clear, %2, next)
+      X(acc) := ITE (clk@pos, %3, acc)
   atom controls next awaits x, acc
     init = update
       X(next) := ADD (X(acc), X(x))
   atom controls carry awaits acc, next
     init = update
       X(carry) := ULT (X(next), X(acc))
-  atom controls overflow reads clear, overflow, carry awaits overflow@init
+  atom controls overflow reads clk, clear, overflow, carry awaits clk, overflow@init
     init
       X(overflow) := ID X(overflow@init)
     update
-      %1 := 1'd0
-      %2 := OR (carry, overflow)
-      X(overflow) := ITE (clear, %1, %2)
+      %1 := NOT clk
+      clk@pos#2 := AND (%1, X(clk))
+      %2 := 1'd0
+      %3 := OR (carry, overflow)
+      %4 := ITE (clear, %2, %3)
+      X(overflow) := ITE (clk@pos#2, %4, overflow)
   atom controls sum awaits acc
     init = update
       X(sum) := ID X(acc)

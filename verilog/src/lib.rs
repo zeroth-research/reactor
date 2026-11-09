@@ -2,8 +2,10 @@
 # SystemVerilog to reactive modules
 
 Translates a synthesizable SystemVerilog subset into reactive modules over
-the op set [`SvOp`]. The target semantics is 2-state and cycle-level: one
-round of the module is one clock cycle.
+the op set [`SvOp`]. The target semantics is 2-state, with time in steps:
+one round of the module is one time step, in which the clocks and the
+other inputs take new values, and a register changes only in a round
+where the edge of its clock happens (see [`lower`]).
 
 - [`theory`]: the sort [`Sort`] (a bit width) and the op set [`SvOp`].
 - [`value`]: bit-vector values [`BitVec`] and the evaluator [`value::eval`].
@@ -11,7 +13,7 @@ round of the module is one clock cycle.
 - [`smt`]: sorts, values, ops and rounds of modules as SMT-LIB text; [`z3`]
   runs the solver on it; [`yosys`] translates a design into SMT-LIB
   independently, for comparison, and [`miter`] checks that both agree on
-  the init round and on one transition, replaying counterexamples in both
+  the init round and on one time step, replaying counterexamples in both
   interpreters.
 - [`ast`]: the abstract syntax of the accepted subset; [`frontend`] parses
   into it (evaluating [`constant`] expressions such as parameter values),

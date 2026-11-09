@@ -1,22 +1,26 @@
 module nibreg
   external
+    clk : bv1
     we : bv2
     d : bv4
     r@init : bv8
   interface
     r : bv8
     flags : bv4
-  atom controls r reads we, d, r awaits r@init
+  atom controls r reads clk, we, d, r awaits clk, r@init
     init
       X(r) := ID X(r@init)
     update
-      %1 := EXTRACT[0:0] we
-      %2 := EXTRACT[3:0] r
-      %3 := ITE (%1, d, %2)
-      %4 := EXTRACT[1:1] we
-      %5 := EXTRACT[7:4] r
-      %6 := ITE (%4, d, %5)
-      X(r) := CONCAT (%6, %3)
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := EXTRACT[0:0] we
+      %3 := EXTRACT[3:0] r
+      %4 := ITE (%2, d, %3)
+      %5 := EXTRACT[1:1] we
+      %6 := EXTRACT[7:4] r
+      %7 := ITE (%5, d, %6)
+      %8 := CONCAT (%7, %4)
+      X(r) := ITE (clk@pos, %8, r)
   atom controls flags awaits r
     init = update
       %1 := 8'd0

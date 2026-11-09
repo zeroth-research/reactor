@@ -1,5 +1,6 @@
 module traffic
   external
+    clk : bv1
     rst : bv1
     state@init : bv2
     timer@init : bv3
@@ -10,29 +11,33 @@ module traffic
     state : bv2
     timer : bv3
     done : bv1
-  atom controls state, timer reads rst, state, timer, done awaits state@init, timer@init
+  atom controls state, timer reads clk, rst, state, timer, done awaits clk, state@init, timer@init
     init
       X(state) := ID X(state@init)
       X(timer) := ID X(timer@init)
     update
-      %1 := 2'd0
-      %2 := 3'd0
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 2'd0
       %3 := 3'd0
-      %4 := 2'd0
-      %5 := EQ (state, %4)
-      %6 := 2'd1
-      %7 := EQ (state, %6)
-      %8 := 2'd1
-      %9 := 2'd2
-      %10 := 2'd0
-      %11 := ITE (%7, %9, %10)
-      %12 := ITE (%5, %8, %11)
-      %13 := 3'd1
-      %14 := ADD (timer, %13)
-      %15 := ITE (done, %12, state)
-      %16 := ITE (done, %3, %14)
-      X(state) := ITE (rst, %1, %15)
-      X(timer) := ITE (rst, %2, %16)
+      %4 := 3'd0
+      %5 := 2'd0
+      %6 := EQ (state, %5)
+      %7 := 2'd1
+      %8 := EQ (state, %7)
+      %9 := 2'd1
+      %10 := 2'd2
+      %11 := 2'd0
+      %12 := ITE (%8, %10, %11)
+      %13 := ITE (%6, %9, %12)
+      %14 := 3'd1
+      %15 := ADD (timer, %14)
+      %16 := ITE (done, %13, state)
+      %17 := ITE (done, %4, %15)
+      %18 := ITE (rst, %2, %16)
+      %19 := ITE (rst, %3, %17)
+      X(state) := ITE (clk@pos, %18, state)
+      X(timer) := ITE (clk@pos, %19, timer)
   atom controls done awaits state, timer
     init = update
       %1 := 2'd0

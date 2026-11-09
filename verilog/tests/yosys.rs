@@ -66,6 +66,11 @@ const SAMPLE: &str = "\
 ; yosys-smt2-output y 8
 ; yosys-smt2-wire y 8
 ; yosys-smt2-witness {\"type\": \"reg\"}
+(define-fun |top_i| ((state |top_s|)) Bool (and
+  (= (= ((_ extract 0 0) (|top#0| state)) #b1) true) ; $auto$clk2fflogic.cc:87:sample_control_edge$/clk#sampled$9
+  (= (|top#1| state) #b00) ; $auto$clk2fflogic.cc:101:sample_data$/u.q#sampled$7
+  (= (bvand (|top#2| state) #b00) #b00) ; $auto$clk2fflogic.cc:101:sample_data$/u.q#sampled$5
+))
 ; yosys-smt2-topmod top
 ";
 
@@ -90,6 +95,43 @@ fn parse_comments() {
         "(ite (|top_n a b| s) #b1 #b0)"
     );
     assert_eq!(s.value("z", "s"), None);
+    assert_eq!(s.initial("s"), "(|top_i| s)");
+    assert_eq!(s.initial.len(), 3);
+    let edge = "$auto$clk2fflogic.cc:87:sample_control_edge$/clk#sampled$9";
+    let data = "$auto$clk2fflogic.cc:101:sample_data$/u.q#sampled$7";
+    let output = "$auto$clk2fflogic.cc:101:sample_data$/u.q#sampled$5";
+    assert!(!s.free_initially(edge));
+    assert!(!s.free_initially(data));
+    assert!(s.free_initially(output));
+    assert!(s.free_initially("not mentioned"));
+}
+
+/// The names of the registers `clk2fflogic` makes.
+#[test]
+fn sample_names() {
+    use yosys::Sample;
+    let cases = [
+        (
+            "$auto$clk2fflogic.cc:87:sample_control_edge$/m1.l.clk#sampled$31",
+            Some(Sample::Edge("m1.l.clk")),
+        ),
+        (
+            "$auto$clk2fflogic.cc:101:sample_data$/s1#sampled$26",
+            Some(Sample::Data(Some("s1"))),
+        ),
+        (
+            "$auto$clk2fflogic.cc:101:sample_data$$flatten/s2.$procmux$7_Y#sampled$17",
+            Some(Sample::Data(None)),
+        ),
+        ("$auto$clk2fflogic.cc:101:sample_data$/s1", None),
+        ("$auto$clk2fflogic.cc::sample_data$/s1#sampled$2", None),
+        ("$auto$clk2fflogic.cc:101:sample_data$/s1#sampled$", None),
+        ("$auto$clk2fflogic.cc:101:other$/s1#sampled$2", None),
+        ("q", None),
+    ];
+    for (name, expected) in cases {
+        assert_eq!(yosys::sample(name), expected, "{name}");
+    }
 }
 
 #[test]
@@ -111,6 +153,24 @@ fn parse_errors() {
     );
     let malformed = format!("{SAMPLE}; yosys-smt2-wire y\n");
     assert!(err(&malformed).contains("malformed"), "{}", err(&malformed));
+    let (head, _) = SAMPLE.split_once("(define-fun |top_i|").unwrap();
+    let no_init = format!("{head}; yosys-smt2-topmod top\n");
+    assert!(err(&no_init).contains("no `top_i`"), "{}", err(&no_init));
+    let open = SAMPLE.replace("))\n", "");
+    assert!(
+        err(&open).contains("unexpected Yosys line"),
+        "{}",
+        err(&open)
+    );
+    let open = SAMPLE.split_once("))\n").unwrap().0;
+    assert!(err(open).contains("topmod"), "{}", err(open));
+    let open = format!("{open}; yosys-smt2-topmod top\n");
+    let open = open.replace("  (= (bvand", "; yosys-smt2-topmod top\n  (= (bvand");
+    assert!(
+        err(&open).contains("unexpected Yosys line"),
+        "{}",
+        err(&open)
+    );
 }
 
 /// Overrides are rejected before Yosys is started.
@@ -128,8 +188,9 @@ fn overrides_rejected() {
     assert!(e.contains("parameter overrides are not supported"), "{e}");
 }
 
-/// Yosys's registers are our register paths, its inputs and outputs are the
-/// top ports (the clock and unread inputs included), and every variable of
+/// Yosys's registers are three samples per register path of ours, its
+/// inputs and outputs are the top ports (clocks and unread inputs
+/// included), and every variable of
 /// our module except `q@init` is a Yosys wire of the same width. With z3,
 /// every accessor of [`yosys::Smt2::value`] is a bit vector of the listed
 /// width, and the transition and hierarchy predicates are satisfiable.
@@ -149,7 +210,12 @@ fn names_match_examples() {
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let at = |what| format!("{}: {what}", path.display());
         assert_eq!(ys.top, t.name, "{}", at("top"));
-        assert_eq!(ys.registers, registers(&inst), "{}", at("registers"));
+        assert_eq!(
+            ys.registers.len(),
+            3 * registers(&inst).len(),
+            "{}",
+            at("registers")
+        );
         assert_eq!(ys.inputs, ports(&inst, Dir::Input), "{}", at("inputs"));
         assert_eq!(ys.outputs, ports(&inst, Dir::Output), "{}", at("outputs"));
         for (name, var) in &t.vars {
@@ -230,9 +296,9 @@ fn miter_differs() {
         .unwrap();
     let (_, _, mut m) = miter_of(&yosys, &path);
     // `q` counts down instead of up; `full` reads our `X(q)`
-    let up = "(bvadd |*q| |%1|)";
+    let up = "(bvadd |*q| |%2|)";
     assert!(m.update.contains(up));
-    m.update = m.update.replace(up, "(bvsub |*q| |%1|)");
+    m.update = m.update.replace(up, "(bvsub |*q| |%2|)");
     let verdicts = miter::check(&z3, &m).unwrap();
     let get = |p: Phase, n: &str| verdicts.iter().find(|q| q.0 == p && q.1 == n).unwrap().2;
     assert_eq!(get(Phase::Init, "q"), Verdict::Equal);
@@ -295,8 +361,8 @@ fn miter_errors() {
     assert!(e.contains("unexpected z3 output"), "{e}");
 }
 
-/// On every example, the registers of our translation are Yosys's, with
-/// the same widths.
+/// On every example, every register of our translation has one output
+/// sample in Yosys, of the same width, and Yosys has no other flip-flops.
 #[test]
 fn registers_match_examples() {
     let Some(yosys) = yosys::find() else {
@@ -307,19 +373,22 @@ fn registers_match_examples() {
         let (inst, t) = load(&path);
         let ys = yosys::run(&yosys, &path, &t.name, &[])
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        assert_eq!(
-            miter::registers(&t, &ys),
-            Vec::<String>::new(),
-            "{}",
-            path.display()
-        );
-        assert_eq!(ys.registers, registers(&inst), "{}", path.display());
+        let samples =
+            miter::registers(&t, &ys).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
+        let widths: BTreeMap<String, usize> = samples
+            .iter()
+            .map(|(p, r)| (p.clone(), ys.registers[r]))
+            .collect();
+        assert_eq!(widths, registers(&inst), "{}", path.display());
+        for (p, r) in &samples {
+            assert!(r.contains(&format!("sample_data$/{p}#sampled$")), "{r}");
+        }
     }
 }
 
-/// A register on one side only, or of another width, is named in the
-/// error of `build`, next to the other mismatches; registers are compared
-/// by path, also where the register's variable has another name.
+/// Missing, ambiguous, foreign and resized registers are named in the
+/// error of `build`, next to the other mismatches; registers are known by
+/// path, also where the register's variable has another name.
 #[test]
 fn registers_mismatch() {
     let Some(yosys) = yosys::find() else {
@@ -332,27 +401,54 @@ fn registers_mismatch() {
         let ys = yosys::run(&yosys, &path, &t.name, &[]).unwrap();
         (t, ys)
     };
+    let output = |ys: &yosys::Smt2, p: &str| -> String {
+        ys.registers
+            .keys()
+            .find(|r| r.contains(&format!("sample_data$/{p}#sampled$")) && ys.free_initially(r))
+            .unwrap()
+            .clone()
+    };
 
     // `nest`: register `m1.l.q` is the variable `m1.q`
     let (t, ys) = example("nest.sv");
-    assert!(ys.registers.contains_key("m1.l.q"));
     assert!(!t.vars.contains_key("m1.l.q"));
+    let samples = miter::registers(&t, &ys).unwrap();
+    assert_eq!(samples["m1.l.q"], output(&ys, "m1.l.q"));
     let mut other = ys.clone();
-    other.registers.remove("m1.l.q");
-    other.registers.insert("m2.l.q".into(), 3);
+    other.registers.remove(&output(&ys, "m1.l.q"));
+    let resized = output(&ys, "m2.l.q");
+    other.registers.insert(resized, 3);
     other.registers.insert("m1.q".into(), 4);
     assert_eq!(
-        miter::registers(&t, &other),
+        miter::registers(&t, &other).unwrap_err(),
         [
-            "register `m1.l.q` is not a Yosys register",
-            "Yosys register `m1.q` is not one of ours",
+            "Yosys register `m1.q` is not a sample of `clk2fflogic`",
+            "Yosys has 2 clock samples and 3 data samples, for 2 registers there should be 2 and 4",
+            "register `m1.l.q` has no output sample in Yosys",
             "register `m2.l.q` has width 4, in Yosys 3",
         ]
     );
     let e = miter::build(&t, &other).unwrap_err();
+    assert!(e.contains("register `m1.l.q` has no output sample"), "{e}");
+
+    // `shiftreg`: the data input sample of `s2` is named after `s1`, and
+    // only its initial value tells it from the output sample of `s1`
+    let (t, ys) = example("shiftreg.sv");
+    let named: Vec<&String> = ys
+        .registers
+        .keys()
+        .filter(|r| r.contains("sample_data$/s1#sampled$"))
+        .collect();
+    assert_eq!(named.len(), 2);
+    let mut other = ys.clone();
+    for r in named {
+        other.initial.remove(r);
+    }
+    let e = miter::registers(&t, &other).unwrap_err();
+    assert_eq!(e.len(), 1);
     assert!(
-        e.contains("register `m1.l.q` is not a Yosys register"),
-        "{e}"
+        e[0].starts_with("register `s1` has several output samples in Yosys: "),
+        "{e:?}"
     );
 
     // a register we lost: the miter would be unsound without the check,
@@ -360,14 +456,14 @@ fn registers_mismatch() {
     let (mut t, ys) = example("counter.sv");
     t.registers.clear();
     assert_eq!(
-        miter::registers(&t, &ys),
-        ["Yosys register `q` is not one of ours"]
+        miter::registers(&t, &ys).unwrap_err(),
+        ["Yosys has 1 clock samples and 2 data samples, for 0 registers there should be 0 and 0"]
     );
     assert!(miter::build(&t, &ys).is_err());
 
     // register errors come first, wire errors are still reported
     let (t, mut ys) = example("counter.sv");
-    ys.registers.insert("q".into(), 4);
+    ys.registers.insert(output(&ys, "q"), 4);
     ys.wires.remove("en");
     let e = miter::build(&t, &ys).unwrap_err();
     assert_eq!(
@@ -495,8 +591,8 @@ fn counterexample_theirs_wrong() {
         // init round compares the wire itself
         (
             "nest.sv",
-            "(define-fun |nest_n m2.l.d| ((state |nest_s|)) (_ BitVec 4) (|nest#7| state))",
-            "(define-fun |nest_n m2.l.d| ((state |nest_s|)) (_ BitVec 4) (bvnot (|nest#7| state)))",
+            "(define-fun |nest_n m2.l.d| ((state |nest_s|)) (_ BitVec 4) (|nest#15| state))",
+            "(define-fun |nest_n m2.l.d| ((state |nest_s|)) (_ BitVec 4) (bvnot (|nest#15| state)))",
             vec![
                 via("m2.q"),
                 via("m2.s"),
@@ -522,9 +618,10 @@ fn counterexample_theirs_wrong() {
     }
 }
 
-/// A difference only for register values no transition produces is found
-/// in the init round: `r` is always `0` after a transition, so the update
-/// round sees our wrong `y` only through `q`, which latches Yosys's `y`.
+/// A difference only for register values no clock edge produces: `r` is
+/// always `0` after an edge. With rounds as time steps, a register keeps
+/// any initial value until its first edge, so the update round finds the
+/// difference too, in a step without an edge.
 #[test]
 fn counterexample_init_round() {
     let Some((yosys, z3)) = tools() else { return };
@@ -555,7 +652,10 @@ endmodule
     let m = miter::build(&t, &ys).unwrap();
     assert_eq!(
         blame(&z3, &inst, &t, &m),
-        [("init:y".into(), Side::Theirs, None)]
+        [
+            ("init:y".into(), Side::Theirs, None),
+            ("y".into(), Side::Theirs, None)
+        ]
     );
 }
 
@@ -594,9 +694,9 @@ fn counterexample_our_smt_wrong() {
         let (t, _, m) = miter_of(&yosys, &path);
         (inst, t, m)
     };
-    let up = "(bvadd |*q| |%1|)";
+    let up = "(bvadd |*q| |%2|)";
     assert!(m.update.contains(up));
-    m.update = m.update.replace(up, "(bvsub |*q| |%1|)");
+    m.update = m.update.replace(up, "(bvsub |*q| |%2|)");
     assert_eq!(
         blame(&z3, &inst, &t, &m),
         [
@@ -606,8 +706,8 @@ fn counterexample_our_smt_wrong() {
     );
 }
 
-/// A counterexample names every register by path and every input but the
-/// clock, on both states, with their widths.
+/// A counterexample names every register by path and every input, the
+/// clock included, on both states, with their widths.
 #[test]
 fn counterexample_contents() {
     let Some((yosys, z3)) = tools() else { return };
@@ -626,8 +726,9 @@ fn counterexample_contents() {
     };
     let regs = [("m1.l.q".to_string(), 4), ("m2.l.q".to_string(), 4)];
     assert_eq!(widths(&cex.registers), regs);
-    assert_eq!(widths(&cex.inputs), [("a".to_string(), 4)]);
-    assert_eq!(widths(&cex.next_inputs), [("a".to_string(), 4)]);
+    let inputs = [("a".to_string(), 4), ("clk".to_string(), 1)];
+    assert_eq!(widths(&cex.inputs), inputs);
+    assert_eq!(widths(&cex.next_inputs), inputs);
     assert_eq!(cex.ours.width(), 4);
     assert_eq!(BitVec::wrap(4, cex.theirs.unsigned() + 1u32), cex.ours);
     assert!(ys.inputs.contains_key("clk"));
@@ -705,7 +806,8 @@ const OPERATORS: &[(&str, &str)] = &[
 
 /// The tokens of `source` that mutants change, with their byte ranges:
 /// operators (longest match), sized literals `8'd3`, unsized decimal
-/// numbers and the keyword `if`. Comments are skipped.
+/// numbers and the keywords `if`, `posedge` and `negedge`. Comments are
+/// skipped.
 fn tokens(source: &str) -> Vec<(usize, usize, &str)> {
     let b = source.as_bytes();
     let mut ops: Vec<&str> = OPERATORS.iter().map(|(o, _)| *o).collect();
@@ -741,8 +843,9 @@ fn tokens(source: &str) -> Vec<(usize, usize, &str)> {
             while i < b.len() && word(b[i]) {
                 i += 1;
             }
-            if &source[start..i] == "if" {
-                out.push((start, i, "if"));
+            let w = &source[start..i];
+            if ["if", "posedge", "negedge"].contains(&w) {
+                out.push((start, i, w));
             }
         } else if let Some(op) = ops.iter().find(|o| source[i..].starts_with(**o)) {
             i += op.len();
@@ -756,8 +859,9 @@ fn tokens(source: &str) -> Vec<(usize, usize, &str)> {
 
 /// Every mutant of `source` with one change: an operator replaced (see
 /// [`OPERATORS`]), a sized literal one larger (wrapping), an unsized
-/// number one smaller (`0` becomes `1`), or the condition of an `if`
-/// negated.
+/// number one smaller (`0` becomes `1`), the condition of an `if`
+/// negated, or the edge of an `always_ff` block swapped (`posedge` and
+/// `negedge`).
 fn mutants(source: &str) -> Vec<Mutant> {
     let at = |offset: usize| {
         let line = source[..offset].matches('\n').count() + 1;
@@ -773,6 +877,10 @@ fn mutants(source: &str) -> Vec<Mutant> {
     for (k, &(start, end, text)) in tokens.iter().enumerate() {
         if let Some((_, to)) = OPERATORS.iter().find(|(o, _)| *o == text) {
             out.push(mutant(start, end, to));
+        } else if text == "posedge" {
+            out.push(mutant(start, end, "negedge"));
+        } else if text == "negedge" {
+            out.push(mutant(start, end, "posedge"));
         } else if text == "if" {
             // the condition: from `(` to its `)`
             let (open, _, _) = tokens[k + 1];
@@ -822,12 +930,13 @@ fn mutants(source: &str) -> Vec<Mutant> {
 #[test]
 fn mutants_of_text() {
     let source = "// a + b\nassign y = a+b; always_ff @(posedge clk) if (en && (x)) q <= 4'hf;\n\
-                  assign z = w[3 +: 2] >>> 8'sd1;";
+                  assign z = w[3 +: 2] >>> 8'sd1; always_ff @(negedge c) r <= 1'b0;";
     let whats: Vec<String> = mutants(source).into_iter().map(|m| m.what).collect();
     assert_eq!(
         whats,
         [
             "2:13 `+` -> `-`",
+            "2:29 `posedge` -> `negedge`",
             "2:42 `if (en && (x))` -> `if (!(en && (x)))`",
             "2:49 `&&` -> `||`",
             "2:59 `<=` -> `<`",
@@ -837,11 +946,16 @@ fn mutants_of_text() {
             "3:19 `2` -> `1`",
             "3:22 `>>>` -> `>>`",
             "3:26 `8'sd1` -> `8'sd2`",
+            "3:45 `negedge` -> `posedge`",
+            "3:58 `<=` -> `<`",
+            "3:61 `1'b0` -> `1'd1`",
         ]
     );
     let m = mutants(source);
-    assert!(m[1].source.contains("if (!(en && (x))) q"));
-    assert!(m[4].source.contains("q <= 4'd0;"));
+    assert!(m[1].source.contains("@(negedge clk) if"));
+    assert!(m[2].source.contains("if (!(en && (x))) q"));
+    assert!(m[5].source.contains("q <= 4'd0;"));
+    assert!(m[11].source.contains("@(posedge c) r"));
 }
 
 /// A pseudo-random generator (64-bit LCG), as in `tests/examples.rs`.
@@ -878,8 +992,8 @@ impl Rand {
 
 /// The first difference random simulation finds between the reference
 /// semantics of `inst` and of `mutant`, on the same random initial
-/// registers and inputs: the values of every signal in every cycle,
-/// including the first.
+/// registers and inputs (clocks at random levels): the values of every
+/// signal in every round, including the first.
 fn simulated_difference(inst: &Inst, mutant: &Inst, rand: &mut Rand) -> Option<String> {
     for _ in 0..10 {
         let init: Values = registers(inst)
@@ -897,12 +1011,12 @@ fn simulated_difference(inst: &Inst, mutant: &Inst, rand: &mut Rand) -> Option<S
             let a = original.step(&ins).unwrap();
             let b = match edited.step(&ins) {
                 Ok(b) => b,
-                Err(e) => return Some(format!("cycle {k}: {e}")),
+                Err(e) => return Some(format!("round {k}: {e}")),
             };
             if a != b {
                 let name = a.keys().chain(b.keys()).find(|n| a.get(*n) != b.get(*n));
                 return Some(format!(
-                    "cycle {k}: `{}`, from {init:?} with inputs {ins:?}",
+                    "round {k}: `{}`, from {init:?} with inputs {ins:?}",
                     name.unwrap()
                 ));
             }

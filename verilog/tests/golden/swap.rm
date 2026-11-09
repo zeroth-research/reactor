@@ -1,5 +1,6 @@
 module swap
   external
+    clk : bv1
     load : bv1
     sw : bv1
     a : bv4
@@ -9,12 +10,16 @@ module swap
   interface
     x : bv4
     y : bv4
-  atom controls x, y reads load, sw, a, b, x, y awaits x@init, y@init
+  atom controls x, y reads clk, load, sw, a, b, x, y awaits clk, x@init, y@init
     init
       X(x) := ID X(x@init)
       X(y) := ID X(y@init)
     update
-      %1 := ITE (sw, y, x)
-      %2 := ITE (sw, x, y)
-      X(x) := ITE (load, a, %1)
-      X(y) := ITE (load, b, %2)
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := ITE (sw, y, x)
+      %3 := ITE (sw, x, y)
+      %4 := ITE (load, a, %2)
+      %5 := ITE (load, b, %3)
+      X(x) := ITE (clk@pos, %4, x)
+      X(y) := ITE (clk@pos, %5, y)

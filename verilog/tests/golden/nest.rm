@@ -1,5 +1,6 @@
 module nest
   external
+    clk : bv1
     a : bv4
     m1.l.q@init : bv4
     m2.l.q@init : bv4
@@ -13,16 +14,20 @@ module nest
     m2.q : bv4
     m2.s : bv4
     m2.l.d : bv4
-  atom controls m1.q reads m1.l.d awaits m1.l.q@init
+  atom controls m1.q reads clk, m1.q, m1.l.d awaits clk, m1.l.q@init
     init
       X(m1.q) := ID X(m1.l.q@init)
     update
-      X(m1.q) := ID m1.l.d
-  atom controls m2.q reads m2.l.d awaits m2.l.q@init
+      %1 := NOT clk
+      m1.l.clk@pos := AND (%1, X(clk))
+      X(m1.q) := ITE (m1.l.clk@pos, m1.l.d, m1.q)
+  atom controls m2.q reads clk, m2.q, m2.l.d awaits clk, m2.l.q@init
     init
       X(m2.q) := ID X(m2.l.q@init)
     update
-      X(m2.q) := ID m2.l.d
+      %1 := NOT clk
+      m2.l.clk@pos := AND (%1, X(clk))
+      X(m2.q) := ITE (m2.l.clk@pos, m2.l.d, m2.q)
   atom controls m1.s awaits m1.q
     init = update
       %1 := 4'd2

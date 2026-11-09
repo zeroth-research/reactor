@@ -1,0 +1,28 @@
+module ddr
+  external
+    clk : bv1
+    d : bv4
+    p@init : bv4
+    n@init : bv4
+  interface
+    y : bv4
+  private
+    p : bv4
+    n : bv4
+  atom controls p reads clk, d, p awaits clk, p@init
+    init
+      X(p) := ID X(p@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      X(p) := ITE (clk@pos, d, p)
+  atom controls n reads clk, d, n awaits clk, n@init
+    init
+      X(n) := ID X(n@init)
+    update
+      %1 := NOT X(clk)
+      clk@neg := AND (clk, %1)
+      X(n) := ITE (clk@neg, d, n)
+  atom controls y awaits clk, p, n
+    init = update
+      X(y) := ITE (X(clk), X(p), X(n))

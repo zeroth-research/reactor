@@ -1,13 +1,18 @@
 /*!
-# The reference cycle semantics on the AST
+# The reference semantics on the AST
 
-[`Interp::step`] runs one clock cycle: given the inputs, it computes the
-value of every signal in the cycle, from the inputs and the registers,
-and then the register values of the next cycle by executing every
-`always_ff` block on the values of this cycle. The assignments `q <= e`
-of all blocks are collected and take effect together at the end of the
-cycle (the rising clock edge), the last one to a register winning; a
-register that no executed assignment targets keeps its value.
+[`Interp::step`] runs one round, a time step: given the values of the
+inputs in the round, clocks included, it returns the value of every signal
+in the round. First, unless it is the first round, every `always_ff` block
+whose clock edge happens in the round runs: its clock was 0 in the
+previous round and is 1 now (`posedge`), or 1 and now 0 (`negedge`). A
+block runs on the values of the previous round, the values just before
+the edge. The assignments `q <= e` of all these blocks are collected and
+take effect together, the last one to a register winning; a register that
+no executed assignment targets keeps its value. Then the combinational
+signals are computed from the new register values and the inputs of the
+round. In the first round no edge happens: the registers have their
+initial values.
 
 A signal driven by an `always_comb` block is computed by running the whole
 block when one of its signals is first needed, with blocking assignments:
@@ -27,7 +32,7 @@ Register initial values are given by path (`u.q`).
 */
 
 use crate::ast::{
-    BinOp, Dir, Error, Expr, ExprKind, Item, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, Dir, Edge, Error, Expr, ExprKind, Item, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::typing::{self, Env};
@@ -45,18 +50,19 @@ pub struct Interp<'m> {
     /// The driver of each signal driven by an `assign`, an `always_comb`
     /// or an instance connection, with the instance it is in.
     driver: BTreeMap<Name, (usize, Driver<'m>)>,
-    /// The bodies of the `always_ff` blocks, with their instances.
-    blocks: Vec<(usize, &'m Stmt)>,
-    /// The clock of the top module.
-    clock: Option<Name>,
-    /// Every signal but the clock, by name, with its type.
+    /// The bodies of the `always_ff` blocks, with their instances, the
+    /// names of their clocks and their edges.
+    blocks: Vec<(usize, &'m Stmt, Name, Edge)>,
+    /// Every signal, by name, with its type.
     signals: BTreeMap<Name, Ty>,
-    /// The inputs of the top module but the clock.
+    /// The inputs of the top module.
     inputs: Vec<(Name, Ty)>,
     /// The registers: path, name and type.
     registers: Vec<(Name, Name, Ty)>,
-    /// The value of every register in the current cycle, by name.
+    /// The value of every register in the current round, by name.
     state: Values,
+    /// The values of the previous round; none before the first round.
+    prev: Option<Values>,
 }
 
 /// The signals of an instance.
@@ -83,20 +89,17 @@ impl<'m> Interp<'m> {
             ctxs: Vec::new(),
             driver: BTreeMap::new(),
             blocks: Vec::new(),
-            clock: inst.module.clock().cloned(),
             signals: BTreeMap::new(),
             inputs: Vec::new(),
             registers: Vec::new(),
             state: Values::new(),
+            prev: None,
         };
         it.add(inst, "", &naming)?;
         for p in &inst.module.ports {
-            if p.dir == Dir::Input && Some(&p.decl.name) != it.clock.as_ref() {
+            if p.dir == Dir::Input {
                 it.inputs.push((p.decl.name.clone(), p.decl.ty));
             }
-        }
-        if let Some(clock) = &it.clock {
-            it.signals.remove(clock);
         }
         let err = |msg: String| Error::new(Span::default(), msg);
         for (path, name, ty) in &it.registers {
@@ -136,8 +139,10 @@ impl<'m> Interp<'m> {
         }
         for item in &m.items {
             match item {
-                Item::AlwaysFf { body, .. } => {
-                    self.blocks.push((c, body));
+                Item::AlwaysFf {
+                    clock, edge, body, ..
+                } => {
+                    self.blocks.push((c, body, names[clock].clone(), *edge));
                     for q in item.targets() {
                         let path = format!("{prefix}{q}");
                         self.registers.push((path, names[q].clone(), env[q].ty));
@@ -174,15 +179,39 @@ impl<'m> Interp<'m> {
         self.registers.iter().map(|(p, _, t)| (p, *t)).collect()
     }
 
-    /// The inputs of the top module but the clock, with their types.
+    /// The inputs of the top module, clocks included, with their types.
     pub fn inputs(&self) -> &[(Name, Ty)] {
         &self.inputs
     }
 
-    /// Runs one cycle, with `inputs` giving a value for every input but
-    /// the clock. Returns the value of every signal but the clock in this
-    /// cycle, by name.
+    /// Runs one round, with `inputs` giving a value for every input,
+    /// clocks included. Returns the value of every signal in this round,
+    /// by name.
     pub fn step(&mut self, inputs: &Values) -> Result<Values, String> {
+        if let Some(prev) = &self.prev {
+            let mut values = prev.clone();
+            let mut active = BTreeSet::new();
+            let mut updates = Values::new();
+            for (c, body, clock, edge) in &self.blocks {
+                let before = prev[clock].is_zero();
+                let after = inputs
+                    .get(clock)
+                    .ok_or_else(|| format!("no value for input `{clock}`"))?
+                    .is_zero();
+                let fires = match edge {
+                    Edge::Pos => before && !after,
+                    Edge::Neg => !before && after,
+                };
+                if !fires {
+                    continue;
+                }
+                let mut out = Values::new();
+                self.exec(*c, body, false, &mut values, &mut active, &mut out)?;
+                let names = &self.ctxs[*c].names;
+                updates.extend(out.into_iter().map(|(q, v)| (names[&q].clone(), v)));
+            }
+            self.state.extend(updates);
+        }
         let mut values = self.state.clone();
         for (name, ty) in &self.inputs {
             let v = inputs
@@ -197,14 +226,7 @@ impl<'m> Interp<'m> {
         for name in self.signals.keys() {
             self.signal(name, &mut values, &mut active)?;
         }
-        let mut updates = Values::new();
-        for &(c, body) in &self.blocks {
-            let mut out = Values::new();
-            self.exec(c, body, false, &mut values, &mut active, &mut out)?;
-            let names = &self.ctxs[c].names;
-            updates.extend(out.into_iter().map(|(q, v)| (names[&q].clone(), v)));
-        }
-        self.state.extend(updates);
+        self.prev = Some(values.clone());
         Ok(values)
     }
 

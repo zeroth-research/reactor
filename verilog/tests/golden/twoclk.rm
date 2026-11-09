@@ -1,0 +1,33 @@
+module twoclk
+  external
+    clk_a : bv1
+    clk_b : bv1
+    en : bv1
+    qa@init : bv8
+    qb@init : bv8
+  interface
+    qa : bv8
+    qb : bv8
+    sum : bv8
+  atom controls qa reads clk_a, en, qa awaits clk_a, qa@init
+    init
+      X(qa) := ID X(qa@init)
+    update
+      %1 := NOT clk_a
+      clk_a@pos := AND (%1, X(clk_a))
+      %2 := 8'd1
+      %3 := ADD (qa, %2)
+      %4 := ITE (en, %3, qa)
+      X(qa) := ITE (clk_a@pos, %4, qa)
+  atom controls qb reads clk_b, qb awaits clk_b, qb@init
+    init
+      X(qb) := ID X(qb@init)
+    update
+      %1 := NOT clk_b
+      clk_b@pos := AND (%1, X(clk_b))
+      %2 := 8'd3
+      %3 := ADD (qb, %2)
+      X(qb) := ITE (clk_b@pos, %3, qb)
+  atom controls sum awaits qa, qb
+    init = update
+      X(sum) := ADD (X(qa), X(qb))
