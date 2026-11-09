@@ -143,7 +143,9 @@ def _eval(op, r, rng):
             return r[0] == 0
         case SPN.ClkIsZero():
             return r[0] == 0.0
-        case SPN.ClkGe() | SPN.NatGe():
+        case SPN.ClkGe(b):
+            return r[0] >= b
+        case SPN.NatGe():
             return r[0] >= r[1]
         case SPN.Inc():
             return r[0] + 1
@@ -231,21 +233,11 @@ def _affine(op, r, in_flow, breakpoints):
                 return a.c == 0.0
             _breakpoint(breakpoints, -a.c / a.k, [(a.var, 0.0)] if a.var is not None else [])
             return TDEP
-        case SPN.ClkGe():
-            a, b = _clock(r[0], op), _clock(r[1], op)
-            c, k = a.c - b.c, a.k - b.k
-            if k == 0.0:
-                return c >= 0.0
-            delta = -c / k
-            if a.var is not None and b.k == 0.0:
-                pins = [(a.var, b.c)]
-            elif b.var is not None and a.k == 0.0:
-                pins = [(b.var, a.c)]
-            elif a.var is not None and b.var is not None:
-                pins = [(b.var, a.c + a.k * delta)]
-            else:
-                pins = []
-            _breakpoint(breakpoints, delta, pins)
+        case SPN.ClkGe(b):
+            a = _clock(r[0], op)
+            if a.k == 0.0:
+                return a.c >= b
+            _breakpoint(breakpoints, (b - a.c) / a.k, [(a.var, b)] if a.var is not None else [])
             return TDEP
         case SPN.IsZero():
             return TDEP if r[0] is TDEP else r[0] == 0

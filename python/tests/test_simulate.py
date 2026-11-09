@@ -190,13 +190,13 @@ def test_uniform_lands_on_the_expiry_after_a_few_random_rounds():
 
 
 def test_a_window_is_where_the_guard_holds_up_to_the_invariant():
-    # fires once the clock is at most 1, while it is non-negative: any round in [2, 3]
+    # fires once the clock is below 1, while it is non-negative: any round in (2, 3]
     class M(Module):
         def init(self, t):
             return 3.0, 0
 
         def next(self, c, k, t):
-            return ite(1 >= c, 5.0, c), ite(1 >= c, k + 1, k)
+            return ite(c < 1, 5.0, c), ite(c < 1, k + 1, k)
 
         def flow(self, c, k, t):
             return ite(c >= 0, -1 * d(t), None), 0
@@ -206,8 +206,8 @@ def test_a_window_is_where_the_guard_holds_up_to_the_invariant():
         trace = simulate(m, t=t, horizon=4.0, seed=7, scheduler=scheduler)
         return next(time for time, s in trace if s[k] == 1)
 
-    assert fired_at(last()) == 3.0 and fired_at(first(0.5)) == 2.0
-    assert 2.0 <= fired_at(uniform(0.5)) <= 3.0
+    assert fired_at(last()) == 3.0 and fired_at(first(0.5)) == 2.5
+    assert 2.0 < fired_at(uniform(0.5)) <= 3.0
 
 
 def test_a_scheduler_must_stay_inside_the_step():

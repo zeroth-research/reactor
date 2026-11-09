@@ -423,11 +423,11 @@ class SPN:
         def __init__(self) -> None: ...
 
     class ClkGe(SPN):
-        """Is the first clock at least the second? `Clock, Clock -> Bool`, the
-        theory's one ordering comparison. It compares clock values, never rates;
-        with a `Clock` literal on one side it is a threshold guard."""
+        """Has the clock at least this much time left? `Clock -> Bool`, a
+        threshold on a clock value, never a rate; clocks are not compared with
+        one another."""
 
-        def __init__(self) -> None: ...
+        def __init__(self, bound: float) -> None: ...
 
     class IsZero(SPN):
         """Is the place empty? `Nat -> Bool`"""

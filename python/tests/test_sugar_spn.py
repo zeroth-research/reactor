@@ -150,27 +150,32 @@ def test_if_then_needs_an_expr_branch_and_an_spn_guard():
 @pytest.mark.parametrize(
     "body, ops",
     [
-        (lambda a, b: a >= b, ["ClkGe"]),
-        (lambda a, b: a <= b, ["ClkGe"]),  # the swap is in the operands
-        (lambda a, b: a < b, ["ClkGe", "Not"]),  # not (a >= b)
-        (lambda a, b: a > b, ["ClkGe", "Not"]),  # not (b >= a)
-        (lambda a, b: a >= 2.5, ["Clock", "ClkGe"]),  # the bound is a clock literal
-        (lambda a, b: 2.5 <= a, ["Clock", "ClkGe"]),  # python reflects it to `a >= 2.5`
+        (lambda a: a >= 2.5, ["ClkGe"]),  # the bound rides on the op
+        (lambda a: 2.5 <= a, ["ClkGe"]),  # python reflects it to `a >= 2.5`
+        (lambda a: a < 2.5, ["ClkGe", "Not"]),  # not (a >= 2.5)
+        (lambda a: a >= 0, ["ClkGe"]),
     ],
 )
-def test_clock_orderings_fold_to_clkge(body, ops):
+def test_clock_bounds_fold_to_clkge(body, ops):
     with collecting() as terms:
-        a, b = expr(Var(Clock()), theory=SPN), expr(Var(Clock()), theory=SPN)
-        body(a, b)
+        body(expr(Var(Clock()), theory=SPN))
     assert _ops(terms) == ops
 
 
-def test_le_swaps_the_operands_rather_than_negating():
-    a, b = Var(Clock()), Var(Clock())
+def test_clocks_are_bounded_not_compared():
     with collecting() as terms:
-        expr(a, theory=SPN) <= expr(b, theory=SPN)
-    [ge] = terms
-    assert list(ge.read) == [b, a]
+        a, b = expr(Var(Clock()), theory=SPN), expr(Var(Clock()), theory=SPN)
+        with pytest.raises(TypeError, match="never two clocks"):
+            a >= b
+        with pytest.raises(TypeError, match="never two clocks"):
+            a < b
+        with pytest.raises(TypeError, match="from below"):
+            a <= 2.5
+        with pytest.raises(TypeError, match="from below"):
+            a > 2.5
+        with pytest.raises(TypeError, match="from below"):
+            2.5 >= a  # python reflects it to `a <= 2.5`
+    assert terms == []
 
 
 @pytest.mark.parametrize(
@@ -195,31 +200,12 @@ def test_orderings_stay_within_one_sort():
         n = expr(Var(Nat()), theory=SPN)
         c = expr(Var(Clock()), theory=SPN)
         rate = d(expr(Var(Clock()), theory=SPN))
-        with pytest.raises(TypeError, match="one sort"):
+        with pytest.raises(TypeError, match="never two clocks"):
             c >= n
         with pytest.raises(TypeError, match="one sort"):
             n >= c
         with pytest.raises(TypeError, match="a rate is not a time"):
             rate >= rate
-
-
-def test_the_earlier_of_two_clocks():
-    """`min(a, b)` -- the term the module docs promise, in the DSL."""
-
-    class M(Module):
-        def init(self, t):
-            return exp(2.0), exp(1.0), 0.0
-
-        def next(self, a, b, first, t):
-            return a, b, ite(a >= b, b, a)
-
-        def flow(self, a, b, first, t):
-            return -1 * d(t), -1 * d(t), -1 * d(t)
-
-    a, b, first, t = Var(Clock()), Var(Clock()), Var(Clock()), Var(Clock())
-    m = M(theory=SPN, ctrl=(a, b, first), extl=(t,))
-    ops = _ops(m.atoms[0].update)
-    assert ops.count("ClkGe") == 1 and "Ite" in ops and "Not" not in ops
 
 
 # --- flows -------------------------------------------------------------------
@@ -306,7 +292,7 @@ def test_ite_to_none_in_a_flow_is_the_invariant():
 
     c, t = Var(Clock()), Var(Clock())
     m = M(theory=SPN, ctrl=(c,), extl=(t,))
-    assert _ops(m.atoms[0].delay) == ["Clock", "ClkGe", "ClkMul", "IfThen", "Id"]
+    assert _ops(m.atoms[0].delay) == ["ClkGe", "ClkMul", "IfThen", "Id"]
     [guard] = [term for term in m.atoms[0].delay if _ops([term]) == ["IfThen"]]
     assert guard.write[0].dtype == Clock(1) and _d(c) in m.atoms[0].delay.write()
 

@@ -36,9 +36,9 @@ The operations in [`SPN`] are:
 - [`SPN::IsZero`], [`SPN::ClkIsZero`] — tests for an empty place (`Nat`) and for
   an expired clock (`Clock`); both produce a `Bool` — or an `Event`, e.g. the
   firing an expiry triggers.
-- [`SPN::ClkGe`] — is the first clock at least the second? `Clock, Clock ->
-  Bool`. It relates two clock values — times, never rates — and with a
-  [`SPN::Clock`] literal on one side it reads as a threshold guard.
+- [`SPN::ClkGe`]`(b)` — has the clock at least `b` left? `Clock -> Bool`, a
+  threshold on a clock value — a time, never a rate. Clocks are compared
+  against bounds alone, never with one another.
 - [`SPN::NatGe`] — does the first place hold at least as many tokens as the
   second? `Nat, Nat -> Bool`; with a [`SPN::Nat`] literal on one side it is the
   guard of a weighted arc: enough tokens to fire, or few enough not to inhibit.
@@ -73,16 +73,16 @@ The operations in [`SPN`] are:
 
 Beyond [`SPN::ClkGe`] and [`SPN::NatGe`] there are no ordering comparisons,
 and there is no arithmetic beyond `Inc`/`Dec` on tokens and `ClkMul` on rates:
-the guards of a Petri net ask whether a place holds enough tokens, whether a
-clock has expired, and which of two clocks expires first.
+the guards of a Petri net ask whether a place holds enough tokens and whether a
+clock has expired, or still has at least so much time left.
 
 [`SPN::ClkIsZero`] holds exactly at zero, and the theory says which clocks run
 and how fast, never when time stops: advancing to the first expiry — the
 minimum over the running clocks — and taking the discrete step there is the
-executor's obligation. With [`SPN::ClkGe`] that minimum is a term —
-`Ite(ClkGe(a, b), b, a)` over finitely many clocks — but *advancing* to it is
-not, and cannot be: nothing in the signature makes time pass. A model with
-several clocks is well defined only under that convention.
+executor's obligation. That minimum is not a term — clocks are not compared
+with one another — and advancing to it cannot be one: nothing in the signature
+makes time pass. A model with several clocks is well defined only under that
+convention.
 
 `SPN` implements [`Signature`], [`Sequential`], [`Combinatorial`] and
 [`Differential`]; [`Signature::check`] validates the sorts of the read/write
@@ -105,9 +105,9 @@ assert!(SPN::IsZero().check([Sort::Nat()].map(ok), [Sort::Bool()].map(ok)).is_ok
 assert!(SPN::IsZero().check([clk].map(ok), [Sort::Bool()].map(ok)).is_err());
 assert!(SPN::ClkIsZero().check([clk].map(ok), [Sort::Bool()].map(ok)).is_ok());
 
-// The ordering comparisons: clock against clock, count against count, never across.
-assert!(SPN::ClkGe().check([clk, clk].map(ok), [Sort::Bool()].map(ok)).is_ok());
-assert!(SPN::ClkGe().check([clk, Sort::Nat()].map(ok), [Sort::Bool()].map(ok)).is_err());
+// The comparisons: a clock against a bound, a count against a count, never across.
+assert!(SPN::ClkGe(2.5).check([clk].map(ok), [Sort::Bool()].map(ok)).is_ok());
+assert!(SPN::ClkGe(2.5).check([Sort::Nat()].map(ok), [Sort::Bool()].map(ok)).is_err());
 assert!(SPN::NatGe().check([Sort::Nat(), Sort::Nat()].map(ok), [Sort::Bool()].map(ok)).is_ok());
 assert!(SPN::NatGe().check([Sort::Nat(), clk].map(ok), [Sort::Bool()].map(ok)).is_err());
 
@@ -259,10 +259,10 @@ pub enum SPN {
     /// Has the clock expired? `Clock -> Bool`. The test is exact: see the
     /// module docs on who is responsible for stopping time at zero.
     ClkIsZero(),
-    /// Is the first clock at least the second? `Clock, Clock -> Bool`, on clock
-    /// values alone; with a [`SPN::Clock`] literal on one side it is a threshold
-    /// guard.
-    ClkGe(),
+    /// Has the clock at least this much time left? `Clock -> Bool`, a threshold
+    /// on a clock value alone: clocks are never compared with one another.
+    #[strum(to_string = "ClkGe({0})")]
+    ClkGe(f64),
     /// Is the place empty? `Nat -> Bool`
     IsZero(),
     /// Does the first place hold at least as many tokens as the second?
@@ -348,8 +348,8 @@ impl Signature for SPN {
         match self {
             SPN::Nat(_) | SPN::Bool(_) | SPN::Clock(_) => check_const(self, read, write),
             SPN::And() | SPN::Or() | SPN::Not() => check_bool(self, read, write),
-            SPN::IsZero() | SPN::ClkIsZero() => check_is_zero(self, read, write),
-            SPN::ClkGe() | SPN::NatGe() => check_ge(self, read, write),
+            SPN::IsZero() | SPN::ClkIsZero() | SPN::ClkGe(_) => check_test(self, read, write),
+            SPN::NatGe() => check_ge(self, read, write),
             SPN::Inc() | SPN::Dec() => check_nat_ops(self, read, write),
             SPN::Id() | SPN::Ite() | SPN::IfThen() => check_flow(self, read, write),
             SPN::Nondet(sort) => check_nondet(sort, read, write),
@@ -451,9 +451,9 @@ where
     }
 }
 
-// Both tests are unary and produce a Bool; they differ in the sort they accept:
-// `IsZero` tests a place (Nat), `ClkIsZero` a clock value.
-fn check_is_zero<R, W, E: fmt::Display>(op: &SPN, read: R, write: W) -> Result<(), String>
+// The tests are unary and produce a Bool; they differ in the sort they accept:
+// `IsZero` tests a place (Nat), `ClkIsZero` and `ClkGe` a clock value.
+fn check_test<R, W, E: fmt::Display>(op: &SPN, read: R, write: W) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
     W: IntoIterator<Item = Result<Sort, E>>,
@@ -462,7 +462,7 @@ where
     let mut write = write.into_iter();
     let expected = match op {
         SPN::IsZero() => Sort::Nat(),
-        SPN::ClkIsZero() => Sort::clock(),
+        SPN::ClkIsZero() | SPN::ClkGe(_) => Sort::clock(),
         _ => unreachable!(),
     };
     let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
@@ -480,9 +480,7 @@ where
     Ok(())
 }
 
-// Both orderings are binary and produce a Bool; they differ in the sort they
-// compare: `ClkGe` two clock values (times and only times: a rate is not a
-// time, so the clock tangents are out), `NatGe` two token counts.
+// The one ordering, `NatGe`, is binary on token counts and produces a Bool.
 fn check_ge<R, W, E: fmt::Display>(op: &SPN, read: R, write: W) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
@@ -490,11 +488,7 @@ where
 {
     let mut read = read.into_iter();
     let mut write = write.into_iter();
-    let expected = match op {
-        SPN::ClkGe() => Sort::clock(),
-        SPN::NatGe() => Sort::Nat(),
-        _ => unreachable!(),
-    };
+    let expected = Sort::Nat();
     let (r1, r2, None) = (
         next_sort(&mut read, 0)?,
         next_sort(&mut read, 1)?,
@@ -814,7 +808,7 @@ mod tests {
         assert_eq!(SPN::Id().to_string(), "Id");
         assert_eq!(SPN::Ite().to_string(), "Ite");
         assert_eq!(SPN::IfThen().to_string(), "IfThen");
-        assert_eq!(SPN::ClkGe().to_string(), "ClkGe");
+        assert_eq!(SPN::ClkGe(2.5).to_string(), "ClkGe(2.5)");
         assert_eq!(SPN::NatGe().to_string(), "NatGe");
         assert_eq!(SPN::ClkZero().to_string(), "ClkZero");
         assert_eq!(SPN::Zero().to_string(), "Zero");
@@ -1015,14 +1009,20 @@ mod tests {
     #[test]
     fn clk_ge_ok() {
         assert!(
-            SPN::ClkGe()
-                .check([CLOCK, CLOCK].map(ok), [BOOL].map(ok))
+            SPN::ClkGe(2.5)
+                .check([CLOCK].map(ok), [BOOL].map(ok))
                 .is_ok()
         );
         // the answer is a Bool, and so an Event as readily
         assert!(
-            SPN::ClkGe()
-                .check([CLOCK, CLOCK].map(ok), [EVENT].map(ok))
+            SPN::ClkGe(2.5)
+                .check([CLOCK].map(ok), [EVENT].map(ok))
+                .is_ok()
+        );
+        // the bound at zero is the invariant of a clock counting down
+        assert!(
+            SPN::ClkGe(0.0)
+                .check([CLOCK].map(ok), [BOOL].map(ok))
                 .is_ok()
         );
     }
@@ -1030,61 +1030,37 @@ mod tests {
     #[test]
     fn clk_ge_wrong_sorts_fail() {
         assert!(
-            SPN::ClkGe()
-                .check([NAT, NAT].map(ok), [BOOL].map(ok))
+            SPN::ClkGe(2.5)
+                .check([NAT].map(ok), [BOOL].map(ok))
+                .is_err()
+        );
+        // it bounds a time, and a rate is not a time
+        assert!(
+            SPN::ClkGe(2.5)
+                .check([DCLOCK].map(ok), [BOOL].map(ok))
                 .is_err()
         );
         assert!(
-            SPN::ClkGe()
-                .check([CLOCK, NAT].map(ok), [BOOL].map(ok))
-                .is_err()
-        );
-        // it compares times, and a rate is not a time
-        assert!(
-            SPN::ClkGe()
-                .check([DCLOCK, DCLOCK].map(ok), [BOOL].map(ok))
-                .is_err()
-        );
-        assert!(
-            SPN::ClkGe()
-                .check([CLOCK, CLOCK].map(ok), [NAT].map(ok))
+            SPN::ClkGe(2.5)
+                .check([CLOCK].map(ok), [NAT].map(ok))
                 .is_err()
         );
     }
 
     #[test]
     fn clk_ge_arity_fails() {
-        assert!(SPN::ClkGe().check([CLOCK].map(ok), [BOOL].map(ok)).is_err());
+        // two clocks are never compared with one another
         assert!(
-            SPN::ClkGe()
-                .check([CLOCK, CLOCK, CLOCK].map(ok), [BOOL].map(ok))
-                .is_err()
-        );
-        assert!(
-            SPN::ClkGe()
-                .check([CLOCK, CLOCK].map(ok), [].map(ok))
-                .is_err()
-        );
-        assert!(
-            SPN::ClkGe()
-                .check([CLOCK, CLOCK].map(ok), [BOOL, BOOL].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn clk_ge_gives_the_earlier_of_two_clocks() {
-        // `min(a, b) = Ite(ClkGe(a, b), b, a)`: the minimum is a term, and
-        // advancing time to it is still the executor's obligation
-        assert!(
-            SPN::ClkGe()
+            SPN::ClkGe(2.5)
                 .check([CLOCK, CLOCK].map(ok), [BOOL].map(ok))
-                .is_ok()
+                .is_err()
         );
+        assert!(SPN::ClkGe(2.5).check([].map(ok), [BOOL].map(ok)).is_err());
+        assert!(SPN::ClkGe(2.5).check([CLOCK].map(ok), [].map(ok)).is_err());
         assert!(
-            SPN::Ite()
-                .check([BOOL, CLOCK, CLOCK].map(ok), [CLOCK].map(ok))
-                .is_ok()
+            SPN::ClkGe(2.5)
+                .check([CLOCK].map(ok), [BOOL, BOOL].map(ok))
+                .is_err()
         );
     }
 

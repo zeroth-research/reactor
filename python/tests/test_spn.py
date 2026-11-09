@@ -57,21 +57,17 @@ def test_event_and_bool_are_interchangeable():
     Term(SPN.Id(), [X(b)], [ev])                 # each flows into the other
 
 
-def test_clkge_compares_two_clocks():
-    # the theory's one ordering comparison
+def test_clkge_bounds_a_clock():
+    # a threshold on one clock; clocks are never compared with one another
     a, b = Var(Clock()), Var(Clock())
-    Term(SPN.ClkGe(), [Wire(BOOL)], [a, b])
-    bound = Wire(Clock())
-    Term.constant(SPN.Clock(2.5), [bound])
-    Term(SPN.ClkGe(), [Wire(BOOL)], [a, bound])  # against a literal: a threshold
-    with pytest.raises(Exception, match="inputs must be Clock"):
-        Term(SPN.ClkGe(), [Wire(BOOL)], [a, Var(Nat())])
-    with pytest.raises(Exception, match="inputs must be Clock"):
-        Term(SPN.ClkGe(), [Wire(BOOL)], [d(a), d(b)])  # times, not rates
-    with pytest.raises(Exception, match="must read exactly two"):
-        Term(SPN.ClkGe(), [Wire(BOOL)], [a, b, a])
-    with pytest.raises(Exception, match="Arg 1 expected"):
-        Term(SPN.ClkGe(), [Wire(BOOL)], [a])
+    Term(SPN.ClkGe(2.5), [Wire(BOOL)], [a])
+    Term(SPN.ClkGe(0.0), [Wire(Event())], [a])  # the invariant of a countdown, as an event
+    with pytest.raises(Exception, match="input must be Clock"):
+        Term(SPN.ClkGe(2.5), [Wire(BOOL)], [Var(Nat())])
+    with pytest.raises(Exception, match="input must be Clock"):
+        Term(SPN.ClkGe(2.5), [Wire(BOOL)], [d(a)])  # a time, not a rate
+    with pytest.raises(Exception, match="must read exactly one"):
+        Term(SPN.ClkGe(2.5), [Wire(BOOL)], [a, b])
 
 
 def test_ifthen_is_ite_without_the_else_branch():
