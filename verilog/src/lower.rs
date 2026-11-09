@@ -96,6 +96,35 @@ new bits (metastability). Such reads across clock domains are rejected for
 now ([`typing::domains`]); so are clocks computed by logic (gated clocks)
 and clock loops.
 
+## Asynchronous resets
+
+A block `always_ff @(posedge clk or posedge rst) if (rst) q <= c; else …`
+(or `negedge rst_n` with `if (!rst_n)`) has an asynchronous reset: a
+flip-flop whose reset input acts at once, as a level, not at an edge. The
+reset is active in a round when its next level `X(rst)` is 1 (`X(rst_n)`
+is 0). While it is active, every register the reset branch assigns has its
+reset value, whether or not a clock edge happens:
+
+```text
+X(q) := ITE (X(rst), c, ITE (clk@pos, new, q))     update
+X(q) := ITE (X(rst), c, X(q@init))                 init
+```
+
+so the atom also awaits the reset (and a register reset by a signal
+computed from itself is a loop). The value after the edge, `new`, comes
+from the body as written, `if (rst)` included, which reads the latched
+reset like any other value. So a clock edge in the round where the reset
+is released sees the reset still active and keeps the reset values:
+releasing the reset takes effect at the next edge. This is the timing
+assumption of resets: the release meets the recovery and removal times of
+the registers (it does not change too close to an edge), just as data
+inputs meet setup and hold. Registers of the block that the reset branch
+does not assign are not reset; they keep their value while the reset is
+active, as plain registers whose value at an edge depends on the latched
+reset. A reset must come from an input or a register, possibly through
+copies (see [`typing::domains`]): a reset computed by logic could glitch
+within a time step and reset registers, which rounds cannot express.
+
 ## Combinational blocks, instances and loops
 
 Every `always_comb` block becomes a combinatorial atom controlling the
@@ -148,8 +177,8 @@ atoms of the composed modules and reported with the signals on it.
 */
 
 use crate::ast::{
-    self, BinOp, Dir, Edge, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Name, Span, Stmt,
-    StmtKind, Ty, UnOp,
+    self, BinOp, Dir, Edge, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Name, Reset, Span,
+    Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::typing;
@@ -172,6 +201,9 @@ pub struct Translation {
     pub clocks: Vec<Name>,
     /// The signals assigned in `always_ff` blocks, in source order.
     pub registers: Vec<Name>,
+    /// The registers with an asynchronous reset (those the reset branch of
+    /// their block assigns), by path, in source order.
+    pub reset_registers: Vec<Name>,
     /// Inputs that nothing reads; they are not variables of the module.
     pub unread_inputs: Vec<Name>,
     /// Names of wires local to an atom: the intermediate values `y@1`,
@@ -249,6 +281,7 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         naming: &naming,
         vars: BTreeMap::new(),
         registers: Vec::new(),
+        reset_registers: Vec::new(),
         wire_names: HashMap::new(),
         instances: Vec::new(),
     };
@@ -269,6 +302,7 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         vars: out.vars,
         clocks,
         registers: out.registers,
+        reset_registers: out.reset_registers,
         unread_inputs,
         wire_names: out.wire_names,
         instances: out.instances,
@@ -283,6 +317,8 @@ struct Out<'n> {
     vars: BTreeMap<Name, Var>,
     /// The paths of the registers.
     registers: Vec<Name>,
+    /// The paths of the registers with an asynchronous reset.
+    reset_registers: Vec<Name>,
     wire_names: HashMap<Wire, Name>,
     instances: Vec<Part>,
 }
@@ -352,6 +388,9 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
         vars.insert(init_name(q), out.var(&init_name(&path), env[q].ty.width));
         out.registers.push(path);
     }
+    for (q, _) in m.items.iter().filter_map(reset_of).flat_map(|(_, v)| v) {
+        out.reset_registers.push(format!("{prefix}{q}"));
+    }
 
     // the await order is computed on the AST, so that a loop is reported
     // as such before any term is built
@@ -374,11 +413,13 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
             let ctrl: Vec<Name> = item.targets().into_iter().cloned().collect();
             let awaits: BTreeSet<Name> = match item {
                 // the init action awaits the initial values, the update
-                // the next value of the clock (for the edge test)
+                // the next value of the clock (for the edge test); both
+                // await the next value of an asynchronous reset
                 Item::AlwaysFf { clock, .. } => ctrl
                     .iter()
                     .map(|q| init_name(q))
                     .chain([clock.clone()])
+                    .chain(reset_of(item).map(|(r, _)| r.name.clone()))
                     .collect(),
                 // `assign y = y` awaits itself, a block reads its own
                 // signals from its local values
@@ -406,6 +447,7 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
             };
             Pending {
                 item,
+                reset: reset_of(item).map(|(r, _)| canon(&r.name)),
                 ctrl: ctrl.iter().map(&canon).collect(),
                 awaits: awaits.iter().map(&canon).collect(),
                 deps,
@@ -434,6 +476,7 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
                 clock, edge, body, ..
             } => {
                 let regs = item.targets();
+                let reset = reset_of(item);
                 let mut b = Builder::new(&env, &vars, true);
                 let e = b.edge(clock, *edge, span)?;
                 let base = format!("{clock}@{}", if *edge == Edge::Pos { "pos" } else { "neg" });
@@ -443,17 +486,32 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
                 b.names.insert(e, name);
                 b.start(&regs, |q| Some(*vars[q]));
                 b.stmt(body)?;
-                b.finish_guarded(e, span)?;
+                let active = reset
+                    .as_ref()
+                    .map(|(r, values)| (b.reset_level(r), values.as_slice()));
+                b.finish_guarded(e, active, span)?;
                 out.add_names(prefix, std::mem::take(&mut b.names));
-                let mut init = Vec::new();
+                // the init action: the initial value, or the reset value
+                // if the reset is active in the first round
+                let mut init = Builder::new(&env, &vars, true);
+                let active = reset.as_ref().map(|(r, _)| init.reset_level(r));
                 for q in &regs {
-                    let q0 = vars[&init_name(q)];
-                    let term = Term::function(SvOp::Id, [X(vars[*q])], [X(q0)]);
-                    init.push(term.map_err(|e| internal(span, e))?);
-                    b.used.insert(init_name(q));
+                    let (q0, var) = (vars[&init_name(q)], vars[*q]);
+                    init.used.insert(init_name(q));
+                    let value = reset.iter().flat_map(|(_, v)| v).find(|(r, _)| r == q);
+                    match (active, value) {
+                        (Some(a), Some((_, c))) => {
+                            let (c, _) = init.expr(c)?;
+                            init.emit_to(SvOp::Ite, &[a, c, X(q0)], X(var), span)?;
+                        }
+                        _ => {
+                            init.emit_to(SvOp::Id, &[X(q0)], X(var), span)?;
+                        }
+                    }
                 }
+                b.used.extend(init.used);
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
-                Atom::sequential(scope, init, b.terms).map_err(|e| internal(span, e))?
+                Atom::sequential(scope, init.terms, b.terms).map_err(|e| internal(span, e))?
             }
             Item::AlwaysComb { body, .. } => {
                 let mut b = Builder::new(&env, &vars, false);
@@ -632,6 +690,8 @@ fn internal(span: Span, e: String) -> Error {
 /// awaits.
 struct Pending<'m> {
     item: &'m Item,
+    /// The asynchronous reset of an `always_ff` block, by canonical name.
+    reset: Option<Name>,
     ctrl: Vec<Name>,
     awaits: BTreeSet<Name>,
     /// For an `always_comb` driving several signals, what each depends on.
@@ -681,14 +741,20 @@ fn combinational_loop(pending: &[Pending]) -> Error {
             signals.extend(path[start + 1..].iter().map(|(_, x)| x.unwrap()));
             let cycle: Vec<&str> = signals.iter().chain([&x]).map(|x| x.as_str()).collect();
             let mut msg = format!("combinational loop: {}", cycle.join(" -> "));
-            // a register atom awaits only its clock: the loop goes through
-            // the edge test
-            if let Some(&i) = items
+            // a register atom awaits only its clock and its reset: the
+            // loop goes through the edge test or the reset
+            if let Some(k) = items
                 .iter()
-                .find(|&&i| matches!(pending[i].item, Item::AlwaysFf { .. }))
+                .position(|&i| matches!(pending[i].item, Item::AlwaysFf { .. }))
             {
+                let (i, awaited) = (items[k], signals[(k + 1) % signals.len()]);
+                let what = if pending[i].reset.as_ref() == Some(awaited) {
+                    "reset"
+                } else {
+                    "clock"
+                };
                 msg += &format!(
-                    " (through the clock of the `always_ff` at {})",
+                    " (through the {what} of the `always_ff` at {})",
                     pending[i].span
                 );
             }
@@ -710,6 +776,21 @@ fn combinational_loop(pending: &[Pending]) -> Error {
         }
         path.push((next, Some(x)));
     }
+}
+
+/// The asynchronous reset of an `always_ff` block and its reset values, if
+/// it resets any register.
+fn reset_of(item: &Item) -> Option<(&Reset, Vec<(&Name, &Expr)>)> {
+    let Item::AlwaysFf {
+        reset: Some(r),
+        body,
+        ..
+    } = item
+    else {
+        return None;
+    };
+    let values = body.reset_values();
+    (!values.is_empty()).then_some((r, values))
 }
 
 /// For each signal an `always_comb` block drives, the signals outside the
@@ -1216,18 +1297,55 @@ impl<'a> Builder<'a> {
     }
 
     /// Makes the next value `X(q)` of every register of the block its
-    /// final value if the edge `e` happens, else its latched value `*q`.
-    fn finish_guarded(&mut self, e: Wire, span: Span) -> Result<()> {
+    /// final value if the edge `e` happens, else its latched value `*q`;
+    /// with an asynchronous reset (`reset` = the wire saying whether it is
+    /// active, and the reset values), a register with a reset value gets
+    /// that value instead while the reset is active.
+    fn finish_guarded(
+        &mut self,
+        e: Wire,
+        reset: Option<(Wire, &[(&Name, &Expr)])>,
+        span: Span,
+    ) -> Result<()> {
         let mut finals = Vec::new();
         for (q, value) in std::mem::take(&mut self.cur) {
             let width = self.env[&q].ty.width;
-            finals.push((self.build(&value, width - 1, 0, span)?, q));
+            finals.push((self.build(&value, width - 1, 0, span)?, q, width));
         }
-        for (w, q) in finals {
+        for (w, q, width) in finals {
             let var = self.vars[&q];
-            self.emit_to(SvOp::Ite, &[e, w, *var], X(var), span)?;
+            let value = reset.and_then(|(a, values)| {
+                values.iter().find(|(r, _)| **r == q).map(|(_, c)| (a, *c))
+            });
+            match value {
+                Some((a, c)) => {
+                    let g = self.emit(SvOp::Ite, &[e, w, *var], Sort(width), span)?;
+                    let (c, _) = self.expr(c)?;
+                    self.emit_to(SvOp::Ite, &[a, c, g], X(var), span)?;
+                }
+                None => {
+                    self.emit_to(SvOp::Ite, &[e, w, *var], X(var), span)?;
+                }
+            }
         }
         Ok(())
+    }
+
+    /// The wire saying whether the asynchronous reset `r` is active in
+    /// this round: its next level `X(rst)`, or `NOT X(rst_n)` for an
+    /// active-low reset.
+    fn reset_level(&mut self, r: &Reset) -> Wire {
+        self.used.insert(r.name.clone());
+        let level = X(self.vars[&r.name]);
+        match r.edge {
+            Edge::Pos => level,
+            Edge::Neg => {
+                let low = Wire::scalar(Sort(1));
+                let term = Term::function(SvOp::Not, [low], [level]);
+                self.terms.push(term.expect("a 1-bit reset"));
+                low
+            }
+        }
     }
 
     /// Makes `dest` hold the value of `w`: renames `w` to `dest` if a term

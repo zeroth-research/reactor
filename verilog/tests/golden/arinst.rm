@@ -1,0 +1,53 @@
+module arinst
+  external
+    clk : bv1
+    rst : bv1
+    go : bv1
+    go_n@init : bv1
+    u.q@init : bv4
+    v.q@init : bv6
+  interface
+    p : bv4
+    q : bv6
+  private
+    go_n : bv1
+    vr : bv1
+  atom controls go_n reads clk, go, go_n awaits clk, go_n@init
+    init
+      X(go_n) := ID X(go_n@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := NOT go
+      X(go_n) := ITE (clk@pos, %2, go_n)
+  atom controls p reads clk, rst, p awaits clk, rst, u.q@init
+    init
+      %1 := 4'd0
+      X(p) := ITE (X(rst), %1, X(u.q@init))
+    update
+      %2 := NOT clk
+      u.clk@pos := AND (%2, X(clk))
+      %3 := 4'd0
+      %4 := 4'd1
+      %5 := ADD (p, %4)
+      %6 := ITE (rst, %3, %5)
+      %7 := ITE (u.clk@pos, %6, p)
+      %8 := 4'd0
+      X(p) := ITE (X(rst), %8, %7)
+  atom controls vr awaits go_n
+    init = update
+      X(vr) := ID X(go_n)
+  atom controls q reads clk, q, vr awaits clk, vr, v.q@init
+    init
+      %1 := 6'd9
+      X(q) := ITE (X(vr), %1, X(v.q@init))
+    update
+      %2 := NOT clk
+      v.clk@pos := AND (%2, X(clk))
+      %3 := 6'd9
+      %4 := 6'd1
+      %5 := ADD (q, %4)
+      %6 := ITE (vr, %3, %5)
+      %7 := ITE (v.clk@pos, %6, q)
+      %8 := 6'd9
+      X(q) := ITE (X(vr), %8, %7)

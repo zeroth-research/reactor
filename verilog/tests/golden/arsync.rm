@@ -1,0 +1,46 @@
+module arsync
+  external
+    clk : bv1
+    rst : bv1
+    r1@init : bv1
+    r2@init : bv1
+    q@init : bv4
+  interface
+    q : bv4
+  private
+    r1 : bv1
+    r2 : bv1
+  atom controls r1, r2 reads clk, rst, r1, r2 awaits clk, rst, r1@init, r2@init
+    init
+      %1 := 1'd1
+      X(r1) := ITE (X(rst), %1, X(r1@init))
+      %2 := 1'd1
+      X(r2) := ITE (X(rst), %2, X(r2@init))
+    update
+      %3 := NOT clk
+      clk@pos := AND (%3, X(clk))
+      %4 := 1'd1
+      %5 := 1'd1
+      %6 := 1'd0
+      %7 := ITE (rst, %4, %6)
+      %8 := ITE (rst, %5, r1)
+      %9 := ITE (clk@pos, %7, r1)
+      %10 := 1'd1
+      X(r1) := ITE (X(rst), %10, %9)
+      %11 := ITE (clk@pos, %8, r2)
+      %12 := 1'd1
+      X(r2) := ITE (X(rst), %12, %11)
+  atom controls q reads clk, q, r2 awaits clk, r2, q@init
+    init
+      %1 := 4'd0
+      X(q) := ITE (X(r2), %1, X(q@init))
+    update
+      %2 := NOT clk
+      clk@pos#2 := AND (%2, X(clk))
+      %3 := 4'd0
+      %4 := 4'd1
+      %5 := ADD (q, %4)
+      %6 := ITE (r2, %3, %5)
+      %7 := ITE (clk@pos#2, %6, q)
+      %8 := 4'd0
+      X(q) := ITE (X(r2), %8, %7)

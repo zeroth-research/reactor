@@ -279,6 +279,7 @@ fn round_declares_havoc() {
         vars: BTreeMap::from([("a".into(), a), ("y".into(), y)]),
         clocks: vec![],
         registers: vec![],
+        reset_registers: vec![],
         unread_inputs: vec![],
         wire_names: HashMap::new(),
         instances: vec![],

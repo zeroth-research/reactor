@@ -515,3 +515,35 @@ fn instance_modules() {
         "{printed}"
     );
 }
+
+/// A reset passed to an instance must be a name of a reset-capable
+/// signal: an inverted reset is computed.
+#[test]
+fn rejected_reset_ports() {
+    let child = "
+module rc (
+  input  logic       clk, rst,
+  output logic [3:0] q
+);
+  always_ff @(posedge clk or posedge rst)
+    if (rst) q <= 4'd0;
+    else q <= q + 4'd1;
+endmodule
+";
+    let src = format!(
+        "module top(input logic clk, input logic rst_n, output logic [3:0] q);\n  \
+         rc u (.clk, .rst(!rst_n), .q);\nendmodule\n{child}"
+    );
+    let err = translate(&src)
+        .err()
+        .unwrap_or_else(|| panic!("accepted:\n{src}"));
+    assert_eq!(
+        err.to_string(),
+        "9:38: the reset `rst` comes from `u.rst`, computed combinationally at 2:16: \
+         computed asynchronous resets are not supported (they could glitch) (in instance `u`)"
+    );
+    // through a name it is fine
+    let src = src.replace(".rst(!rst_n)", ".rst(rst_n)");
+    let t = translate(&src).unwrap();
+    assert_eq!(t.reset_registers, ["u.q"]);
+}

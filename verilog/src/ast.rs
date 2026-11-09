@@ -249,11 +249,14 @@ pub enum Item {
     Assign { lhs: Lvalue, rhs: Expr, span: Span },
     /// `always_ff @(posedge clock) body` or `always_ff @(negedge clock)
     /// body`, with `span` the position of `always_ff` and `clock_span` that
-    /// of `clock`.
+    /// of `clock`. With an asynchronous reset, `@(posedge clock or posedge
+    /// rst) if (rst) … else …` (or `negedge rst_n` and `if (!rst_n)`): the
+    /// body is the `if` as written, see [`Stmt::reset_values`].
     AlwaysFf {
         clock: Name,
         edge: Edge,
         clock_span: Span,
+        reset: Option<Reset>,
         body: Stmt,
         span: Span,
     },
@@ -337,6 +340,16 @@ pub enum Edge {
     Pos,
     /// The falling edge: from 1 to 0.
     Neg,
+}
+
+/// The asynchronous reset of an `always_ff` block: the event `posedge rst`
+/// (active high, `edge` is [`Edge::Pos`]) or `negedge rst_n` (active low),
+/// with `span` the position of the name in the event list.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Reset {
+    pub name: Name,
+    pub edge: Edge,
+    pub span: Span,
 }
 
 /// SystemVerilog syntax: `posedge`, `negedge`.
@@ -443,6 +456,40 @@ impl Stmt {
                 .chain(default.as_deref())
                 .collect(),
             StmtKind::NonBlocking { .. } | StmtKind::Blocking { .. } => Vec::new(),
+        }
+    }
+
+    /// The assignments of the reset branch of the body of an `always_ff`
+    /// block with an asynchronous reset: the `then` branch of the `if` the
+    /// body consists of (possibly inside `begin … end`), in source order.
+    /// Typing makes sure it holds only assignments of constants to whole
+    /// registers, so other statements are skipped.
+    pub fn reset_values(&self) -> Vec<(&Name, &Expr)> {
+        fn walk<'s>(s: &'s Stmt, out: &mut Vec<(&'s Name, &'s Expr)>) {
+            match &s.kind {
+                StmtKind::Block(stmts) => stmts.iter().for_each(|s| walk(s, out)),
+                StmtKind::NonBlocking { lhs, rhs } => {
+                    if let LvalueKind::Var(q) = &lhs.kind {
+                        out.push((q, rhs));
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        if let Some(branch) = self.reset_branch() {
+            walk(branch, &mut out);
+        }
+        out
+    }
+
+    /// The `then` branch of the `if` that the body of a block with an
+    /// asynchronous reset consists of.
+    pub fn reset_branch(&self) -> Option<&Stmt> {
+        match &self.kind {
+            StmtKind::If(_, then, _) => Some(then),
+            StmtKind::Block(stmts) if stmts.len() == 1 => stmts[0].reset_branch(),
+            _ => None,
         }
     }
 
