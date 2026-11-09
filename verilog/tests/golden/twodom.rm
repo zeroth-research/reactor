@@ -1,0 +1,35 @@
+module twodom
+  external
+    clk_a : bv1
+    clk_b : bv1
+    step : bv4
+    ua.q@init : bv4
+    ub.q@init : bv4
+  interface
+    a : bv4
+    b : bv4
+    same : bv1
+  private
+    ub.step : bv4
+  atom controls ub.step awaits step
+    init = update
+      X(ub.step) := NOT X(step)
+  atom controls a reads clk_a, step, a awaits clk_a, ua.q@init
+    init
+      X(a) := ID X(ua.q@init)
+    update
+      %1 := NOT clk_a
+      ua.clk@pos := AND (%1, X(clk_a))
+      %2 := ADD (a, step)
+      X(a) := ITE (ua.clk@pos, %2, a)
+  atom controls b reads clk_b, b, ub.step awaits clk_b, ub.q@init
+    init
+      X(b) := ID X(ub.q@init)
+    update
+      %1 := NOT clk_b
+      ub.clk@pos := AND (%1, X(clk_b))
+      %2 := ADD (b, ub.step)
+      X(b) := ITE (ub.clk@pos, %2, b)
+  atom controls same awaits a, b
+    init = update
+      X(same) := EQ (X(a), X(b))

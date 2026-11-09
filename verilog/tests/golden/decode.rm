@@ -1,34 +1,38 @@
 module decode
   external
+    clk : bv1
     cmd : bv3
     d : bv8
     q@init : bv8
   interface
     q : bv8
-  atom controls q reads cmd, d, q awaits q@init
+  atom controls q reads clk, cmd, d, q awaits clk, q@init
     init
       X(q) := ID X(q@init)
     update
-      %1 := 3'd0
-      %2 := EQ (cmd, %1)
-      %3 := 3'd1
-      %4 := EQ (cmd, %3)
-      %5 := 3'd2
-      %6 := EQ (cmd, %5)
-      %7 := OR (%4, %6)
-      %8 := 3'd3
-      %9 := EQ (cmd, %8)
-      %10 := 3'd4
-      %11 := EQ (cmd, %10)
-      %12 := 3'd0
-      %13 := EQ (cmd, %12)
-      %14 := OR (%11, %13)
-      %15 := 8'd0
-      %16 := 8'd1
-      %17 := ADD (q, %16)
-      %18 := 8'd1
-      %19 := SUB (q, %18)
-      %20 := ITE (%14, %19, q)
-      %21 := ITE (%9, %17, %20)
-      %22 := ITE (%7, d, %21)
-      X(q) := ITE (%2, %15, %22)
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 3'd0
+      %3 := EQ (cmd, %2)
+      %4 := 3'd1
+      %5 := EQ (cmd, %4)
+      %6 := 3'd2
+      %7 := EQ (cmd, %6)
+      %8 := OR (%5, %7)
+      %9 := 3'd3
+      %10 := EQ (cmd, %9)
+      %11 := 3'd4
+      %12 := EQ (cmd, %11)
+      %13 := 3'd0
+      %14 := EQ (cmd, %13)
+      %15 := OR (%12, %14)
+      %16 := 8'd0
+      %17 := 8'd1
+      %18 := ADD (q, %17)
+      %19 := 8'd1
+      %20 := SUB (q, %19)
+      %21 := ITE (%15, %20, q)
+      %22 := ITE (%10, %18, %21)
+      %23 := ITE (%8, d, %22)
+      %24 := ITE (%3, %16, %23)
+      X(q) := ITE (clk@pos, %24, q)

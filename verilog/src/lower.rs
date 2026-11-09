@@ -5,7 +5,8 @@ Every signal becomes a variable of the width of its type: inputs are
 external, outputs are interface variables, internal signals are private.
 
 Every `assign` becomes a combinatorial atom that awaits the next values
-`X(·)` of the signals it reads and writes the next values of its targets. The expression becomes
+`X(·)` of the signals it reads and writes the next values of its targets,
+in every round. The expression becomes
 one term per operator, with the source operators rewritten into [`SvOp`],
 which has no `>`, `>=` and no logical operators:
 
@@ -26,20 +27,55 @@ which has no `>`, `>=` and no logical operators:
 | `x[i]`, `x[i +: w]` (variable) | `Extract{w-1, 0}(LShr(x, i))` |
 | `N'(e)` | `SExt`/`ZExt` (as `e`'s signedness says) when widening, `Extract` when narrowing |
 
+## Time and clocks
+
+One round of the module is one time step. A clock is a 1-bit input like
+any other: an external variable, whose level the environment chooses
+freely in every round, as it chooses the other inputs. So rounds can
+contain any interleaving of the edges of several clocks, edges of
+different clocks in the same round, and rounds without any edge; a design
+clocked by one clock that toggles in every round takes two rounds per
+cycle. The edge of a clock `c` happens in a round when its latched level
+`*c` and its next level `X(c)` are 0 and 1 (`posedge`), or 1 and 0
+(`negedge`). No edge happens in the first round, the init round.
+
 Every `always_ff` block becomes a sequential atom controlling the
-registers it assigns. One round of the module is one clock cycle, and
-the clock itself is no variable: its rising edge is the step from one
-round to the next. So the update reads the *latched* values `*x` (the
-values of the previous cycle, just before the edge) and writes the next
-values `X(q)` (the values after the edge). It awaits nothing, so a
-register never closes a combinational loop. The statements are executed
-symbolically with a map from each register to the wire holding its value
-after the edge so far, starting with `*q` (a register keeps its value on
-paths that do not assign it). `q <= e` sets the entry of `q` to the wire of
-`e`, so the last assignment wins; at `if`, both branches start from the
-same map and the bits that differ are merged with `Ite`. The init
-action sets every register to an external variable `q@init`, so all
-initial states are possible.
+registers it assigns. Its update first tests the edge of its clock,
+`clk@pos := AND (NOT clk, X(clk))` (`clk@neg := AND (clk, NOT X(clk))`),
+then computes the value after the edge, and finally sets each register `q`
+to `X(q) := ITE (clk@pos, new, q)`: the new value if the edge happens,
+else the old one. The value after the edge reads the *latched* values
+`*x`, the values of the previous round, just before the edge. So the
+update awaits only the next level of the clock, and a register never
+closes a combinational loop. The statements are executed symbolically
+with a map from each register to the wire holding its value after the
+edge so far, starting with `*q` (a register keeps its value on paths that
+do not assign it). `q <= e` sets the entry of `q` to the wire of `e`, so
+the last assignment wins; at `if`, both branches start from the same map
+and the bits that differ are merged with `Ite`. The init action sets
+every register to an external variable `q@init`, so all initial states
+are possible.
+
+Reading values just before the edge is what hardware does under two
+timing assumptions, which this semantics makes and does not check:
+
+- data inputs meet the setup and hold times of the registers reading
+  them: an input does not change in the round where an edge samples it
+  (it takes its new value in the round, but the edge sees the latched
+  one);
+- at an edge, the registers of one clock (on either edge) and the signals
+  computed from them change only after the edge, as their clock-to-output
+  delay makes them do; so a register clocked by `negedge clk` reading one
+  clocked by `posedge clk` sees its value from before that edge.
+
+The two edges of one clock never happen in the same round. Registers of
+different input clocks are unrelated: an edge of one may come at any time
+relative to the other, so a register sampling a value from another clock
+domain in a round where that value changes could store any mix of old and
+new bits (metastability). Such reads across clock domains are rejected for
+now ([`typing::domains`]); so are clocks computed in the design.
+
+## Combinational blocks, instances and loops
 
 Every `always_comb` block becomes a combinatorial atom controlling the
 signals it assigns. Like an `assign`, it awaits the next values `X(x)`
@@ -67,8 +103,9 @@ no item matching leaves the map as it was.
 A module with instances becomes the composition of a module made of its
 own atoms and the translations of its instances (each translated on its
 own, with fresh variables), with the module's internal signals hidden.
-A port connected to a signal name is that signal's variable; an input
-connected to another expression is a variable `u.a` driven by an extra
+A port connected to a signal name is that signal's variable (so a clock
+port is the clock of the instantiating module, and the instance's blocks
+test its edges themselves); an input connected to another expression is a variable `u.a` driven by an extra
 atom of the module, as if by `assign u.a = …`. Variables are named as
 [`Inst::naming`] says, the initial value of a register at path `u.q` is the
 external variable `u.q@init`, and intermediate values of an instance's
@@ -90,8 +127,8 @@ atoms of the composed modules and reported with the signals on it.
 */
 
 use crate::ast::{
-    self, BinOp, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Name, Span, Stmt, StmtKind,
-    Ty, UnOp,
+    self, BinOp, Dir, Edge, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Name, Span, Stmt,
+    StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::typing;
@@ -108,16 +145,18 @@ pub struct Translation {
     pub module: Module,
     /// Every source signal, and `q@init` for every register `q`, by name.
     pub vars: BTreeMap<Name, Var>,
-    /// The clock of the `always_ff` blocks; it is not a variable of the
-    /// module, since a round is a whole clock cycle.
-    pub clock: Option<Name>,
+    /// The clocks of the `always_ff` blocks of the whole design (inputs
+    /// of the top module), by name, sorted.
+    pub clocks: Vec<Name>,
     /// The signals assigned in `always_ff` blocks, in source order.
     pub registers: Vec<Name>,
-    /// Inputs other than the clock that nothing reads; they are not
-    /// variables of the module.
+    /// Inputs that nothing reads; they are not variables of the module.
     pub unread_inputs: Vec<Name>,
     /// Names of wires local to an atom: the intermediate values `y@1`,
-    /// `y@2`, … of the signals of `always_comb` blocks.
+    /// `y@2`, … of the signals of `always_comb` blocks, and the edge tests
+    /// `clk@pos`, `clk@neg` of `always_ff` blocks (`clk@pos#2` for the
+    /// second block of a module on the same edge, so that names are unique
+    /// in the whole design).
     pub wire_names: HashMap<Wire, Name>,
     /// The module of every instance before it is composed into its parent,
     /// children before their parent; with the names of the whole design.
@@ -192,12 +231,13 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         instances: Vec::new(),
     };
     let module = lower_rec(inst, "", &mut out)?;
+    typing::domains(inst)?;
     let m = &inst.module;
-    let clock = m.clock().cloned();
+    let clocks = clocks(inst, "", &naming).into_iter().collect();
     let unread_inputs = m
         .ports
         .iter()
-        .filter(|p| p.dir == Dir::Input && Some(&p.decl.name) != clock.as_ref())
+        .filter(|p| p.dir == Dir::Input)
         .map(|p| &p.decl.name)
         .filter(|x| !module.extl().contains(&out.vars[*x]))
         .cloned()
@@ -206,12 +246,26 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         name: m.name.clone(),
         module,
         vars: out.vars,
-        clock,
+        clocks,
         registers: out.registers,
         unread_inputs,
         wire_names: out.wire_names,
         instances: out.instances,
     })
+}
+
+/// The clocks of the instance at `prefix` and below, by name.
+fn clocks(inst: &Inst, prefix: &str, naming: &BTreeMap<Name, Name>) -> BTreeSet<Name> {
+    let mut out: BTreeSet<Name> = inst
+        .module
+        .clocks()
+        .into_iter()
+        .map(|c| naming[&format!("{prefix}{c}")].clone())
+        .collect();
+    for (u, child) in &inst.children {
+        out.extend(clocks(child, &format!("{prefix}{u}."), naming));
+    }
+    out
 }
 
 /// What the translation of a hierarchy collects.
@@ -312,8 +366,13 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
         .map(|item| {
             let ctrl: Vec<Name> = item.targets().into_iter().cloned().collect();
             let awaits: BTreeSet<Name> = match item {
-                // only the init action awaits, and only external variables
-                Item::AlwaysFf { .. } => ctrl.iter().map(|q| init_name(q)).collect(),
+                // the init action awaits the initial values, the update
+                // the next value of the clock (for the edge test)
+                Item::AlwaysFf { clock, .. } => ctrl
+                    .iter()
+                    .map(|q| init_name(q))
+                    .chain([clock.clone()])
+                    .collect(),
                 // `assign y = y` awaits itself, a block reads its own
                 // signals from its local values
                 Item::Assign { .. } => item.reads().into_iter().map(|(x, _)| x.clone()).collect(),
@@ -349,6 +408,8 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
         .collect();
 
     let mut atoms = Vec::new();
+    // the number of edge tests named so far, per name
+    let mut edges: BTreeMap<Name, usize> = BTreeMap::new();
     for item in await_order(pending).map_err(ctx)? {
         let span = item.span();
         let atom = match item {
@@ -362,12 +423,21 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
                 Atom::combinatorial(scope, b.terms).map_err(|e| internal(span, e))?
             }
-            Item::AlwaysFf { body, .. } => {
+            Item::AlwaysFf {
+                clock, edge, body, ..
+            } => {
                 let regs = item.targets();
                 let mut b = Builder::new(&env, &vars, true);
+                let e = b.edge(clock, *edge, span)?;
+                let base = format!("{clock}@{}", if *edge == Edge::Pos { "pos" } else { "neg" });
+                let k = edges.entry(base.clone()).or_insert(0);
+                *k += 1;
+                let name = if *k == 1 { base } else { format!("{base}#{k}") };
+                b.names.insert(e, name);
                 b.start(&regs, |q| Some(*vars[q]));
                 b.stmt(body)?;
-                b.finish_all(span)?;
+                b.finish_guarded(e, span)?;
+                out.add_names(prefix, std::mem::take(&mut b.names));
                 let mut init = Vec::new();
                 for q in &regs {
                     let q0 = vars[&init_name(q)];
@@ -1104,6 +1174,40 @@ impl<'a> Builder<'a> {
         }
         for (w, y) in finals {
             self.finish(w, X(self.vars[&y]), span)?;
+        }
+        Ok(())
+    }
+
+    /// The wire holding whether the edge `edge` of `clock` happens in the
+    /// round: the latched level and the next one are 0 and 1 (`posedge`),
+    /// or 1 and 0 (`negedge`).
+    fn edge(&mut self, clock: &Name, edge: Edge, span: Span) -> Result<Wire> {
+        self.used.insert(clock.clone());
+        let var = self.vars[clock];
+        let (before, after) = (*var, X(var));
+        Ok(match edge {
+            Edge::Pos => {
+                let low = self.emit(SvOp::Not, &[before], Sort(1), span)?;
+                self.emit(SvOp::And, &[low, after], Sort(1), span)?
+            }
+            Edge::Neg => {
+                let low = self.emit(SvOp::Not, &[after], Sort(1), span)?;
+                self.emit(SvOp::And, &[before, low], Sort(1), span)?
+            }
+        })
+    }
+
+    /// Makes the next value `X(q)` of every register of the block its
+    /// final value if the edge `e` happens, else its latched value `*q`.
+    fn finish_guarded(&mut self, e: Wire, span: Span) -> Result<()> {
+        let mut finals = Vec::new();
+        for (q, value) in std::mem::take(&mut self.cur) {
+            let width = self.env[&q].ty.width;
+            finals.push((self.build(&value, width - 1, 0, span)?, q));
+        }
+        for (w, q) in finals {
+            let var = self.vars[&q];
+            self.emit_to(SvOp::Ite, &[e, w, *var], X(var), span)?;
         }
         Ok(())
     }

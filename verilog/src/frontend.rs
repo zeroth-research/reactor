@@ -28,9 +28,9 @@ not affected.
 */
 
 use crate::ast::{
-    BinOp, CaseItem, Cast, Conn, Const, Decl, Dir, Error, Expr, ExprKind, Index, Instance, Item,
-    Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, Span, Stmt, StmtKind, Ty,
-    UnOp,
+    BinOp, CaseItem, Cast, Conn, Const, Decl, Dir, Edge, Error, Expr, ExprKind, Index, Instance,
+    Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, Span, Stmt, StmtKind,
+    Ty, UnOp,
 };
 use crate::constant::{self, Failure, Literal};
 use crate::value::BitVec;
@@ -821,8 +821,9 @@ impl Cx<'_> {
         Ok(())
     }
 
-    /// `always_comb stmt`, or `always_ff @(posedge clk) stmt`: one edge
-    /// of one clock signal, no other events (asynchronous resets come later).
+    /// `always_comb stmt`, or `always_ff @(posedge clk) stmt` (or
+    /// `negedge`): one edge of one clock signal, no other events
+    /// (asynchronous resets come later).
     fn always(&self, a: &sv::AlwaysConstruct) -> Result<Item> {
         let (kw, stmt) = &a.nodes;
         match kw {
@@ -847,33 +848,55 @@ impl Cx<'_> {
         self.absent(label, "statement label")?;
         self.absent(attrs, "attribute")?;
         let sv::StatementItem::ProceduralTimingControlStatement(t) = item else {
-            return self.err(stmt, "`always_ff` needs `@(posedge <clock>)`");
+            return self.err(
+                stmt,
+                "`always_ff` needs `@(posedge <clock>)` or `@(negedge <clock>)`",
+            );
         };
         let (ctrl, body) = &t.nodes;
         let event = match ctrl {
             sv::ProceduralTimingControl::EventControl(e) => match e.as_ref() {
                 sv::EventControl::EventExpression(e) => &e.nodes.1.nodes.1,
-                e => return self.err(e, "`always_ff` needs `@(posedge <clock>)`"),
+                e => {
+                    return self.err(
+                        e,
+                        "`always_ff` needs `@(posedge <clock>)` or `@(negedge <clock>)`",
+                    );
+                }
             },
-            c => return self.err(c, "`always_ff` needs `@(posedge <clock>)`"),
+            c => {
+                return self.err(
+                    c,
+                    "`always_ff` needs `@(posedge <clock>)` or `@(negedge <clock>)`",
+                );
+            }
         };
         let sv::EventExpression::Expression(event) = event else {
             return self.err(
                 event,
-                "only one event `posedge <clock>` supported (no asynchronous reset)",
+                "only one event `posedge <clock>` or `negedge <clock>` supported (no asynchronous reset)",
             );
         };
         let (edge, clock, iff) = &event.nodes;
-        match edge {
-            Some(sv::EdgeIdentifier::Posedge(_)) => {}
+        let edge = match edge {
+            Some(sv::EdgeIdentifier::Posedge(_)) => Edge::Pos,
+            Some(sv::EdgeIdentifier::Negedge(_)) => Edge::Neg,
             Some(e) => {
                 return self.err(
                     e,
-                    format!("`{}` not supported, only `posedge`", self.text(e)),
+                    format!(
+                        "`{}` not supported: use separate `posedge` and `negedge` blocks",
+                        self.text(e)
+                    ),
                 );
             }
-            None => return self.err(clock, "level-sensitive event not supported, use `posedge`"),
-        }
+            None => {
+                return self.err(
+                    clock,
+                    "level-sensitive event not supported, use `posedge` or `negedge`",
+                );
+            }
+        };
         self.absent(iff, "`iff`")?;
         let clock_span = self.span(clock);
         let ExprKind::Var(clock) = self.expr(clock)?.kind else {
@@ -881,6 +904,7 @@ impl Cx<'_> {
         };
         Ok(Item::AlwaysFf {
             clock,
+            edge,
             clock_span,
             body: self.stmt(body)?,
             span: self.span(kw),

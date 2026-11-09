@@ -277,7 +277,7 @@ fn round_declares_havoc() {
         name: "noise".into(),
         module: Module::observable([atom]).unwrap(),
         vars: BTreeMap::from([("a".into(), a), ("y".into(), y)]),
-        clock: None,
+        clocks: vec![],
         registers: vec![],
         unread_inputs: vec![],
         wire_names: HashMap::new(),
@@ -314,15 +314,22 @@ fn round_counter() {
     assert_eq!(
         example_round("counter", Phase::Update),
         "\
+; v2rm-latched clk 1
+(declare-const |*clk| (_ BitVec 1))
 ; v2rm-latched en 1
 (declare-const |*en| (_ BitVec 1))
 ; v2rm-latched q 8
 (declare-const |*q| (_ BitVec 8))
+; v2rm-input clk 1
+(declare-const |X(clk)| (_ BitVec 1))
 ; atom controls q
-(define-fun |%1| () (_ BitVec 8) #b00000001)
-(define-fun |%2| () (_ BitVec 8) (bvadd |*q| |%1|))
+(define-fun |%1| () (_ BitVec 1) (bvnot |*clk|))
+(define-fun |clk@pos| () (_ BitVec 1) (bvand |%1| |X(clk)|))
+(define-fun |%2| () (_ BitVec 8) #b00000001)
+(define-fun |%3| () (_ BitVec 8) (bvadd |*q| |%2|))
+(define-fun |%4| () (_ BitVec 8) (ite (= |*en| #b1) |%3| |*q|))
 ; v2rm-next q 8 interface
-(define-fun |X(q)| () (_ BitVec 8) (ite (= |*en| #b1) |%2| |*q|))
+(define-fun |X(q)| () (_ BitVec 8) (ite (= |clk@pos| #b1) |%4| |*q|))
 ; atom controls full
 ; v2rm-next full 1 interface
 (define-fun |X(full)| () (_ BitVec 1) (ite (= |X(q)| #b11111111) #b1 #b0))
@@ -367,33 +374,45 @@ fn round_satadd() {
     );
 }
 
-/// A composed design: path names, the variable `m1.l.d` of a connection, and
-/// `%k` numbered across atoms.
+/// A composed design: path names (also of the edge tests), the variable
+/// `m1.l.d` of a connection, and `%k` numbered across atoms.
 #[test]
 fn round_nest() {
     assert_eq!(
         example_round("nest", Phase::Update),
         "\
+; v2rm-latched clk 1
+(declare-const |*clk| (_ BitVec 1))
+; v2rm-latched m1.q 4
+(declare-const |*m1.q| (_ BitVec 4))
 ; v2rm-latched m1.l.d 4
 (declare-const |*m1.l.d| (_ BitVec 4))
+; v2rm-latched m2.q 4
+(declare-const |*m2.q| (_ BitVec 4))
 ; v2rm-latched m2.l.d 4
 (declare-const |*m2.l.d| (_ BitVec 4))
+; v2rm-input clk 1
+(declare-const |X(clk)| (_ BitVec 1))
 ; v2rm-input a 4
 (declare-const |X(a)| (_ BitVec 4))
 ; atom controls m1.q
+(define-fun |%1| () (_ BitVec 1) (bvnot |*clk|))
+(define-fun |m1.l.clk@pos| () (_ BitVec 1) (bvand |%1| |X(clk)|))
 ; v2rm-next m1.q 4 private
-(define-fun |X(m1.q)| () (_ BitVec 4) |*m1.l.d|)
+(define-fun |X(m1.q)| () (_ BitVec 4) (ite (= |m1.l.clk@pos| #b1) |*m1.l.d| |*m1.q|))
 ; atom controls m2.q
+(define-fun |%2| () (_ BitVec 1) (bvnot |*clk|))
+(define-fun |m2.l.clk@pos| () (_ BitVec 1) (bvand |%2| |X(clk)|))
 ; v2rm-next m2.q 4 private
-(define-fun |X(m2.q)| () (_ BitVec 4) |*m2.l.d|)
+(define-fun |X(m2.q)| () (_ BitVec 4) (ite (= |m2.l.clk@pos| #b1) |*m2.l.d| |*m2.q|))
 ; atom controls m1.s
-(define-fun |%1| () (_ BitVec 4) #b0010)
+(define-fun |%3| () (_ BitVec 4) #b0010)
 ; v2rm-next m1.s 4 private
-(define-fun |X(m1.s)| () (_ BitVec 4) (bvadd |X(m1.q)| |%1|))
+(define-fun |X(m1.s)| () (_ BitVec 4) (bvadd |X(m1.q)| |%3|))
 ; atom controls m2.s
-(define-fun |%2| () (_ BitVec 4) #b0111)
+(define-fun |%4| () (_ BitVec 4) #b0111)
 ; v2rm-next m2.s 4 private
-(define-fun |X(m2.s)| () (_ BitVec 4) (bvadd |X(m2.q)| |%2|))
+(define-fun |X(m2.s)| () (_ BitVec 4) (bvadd |X(m2.q)| |%4|))
 ; atom controls y
 ; v2rm-next y 4 interface
 (define-fun |X(y)| () (_ BitVec 4) (bvadd |X(m1.s)| |X(m1.q)|))

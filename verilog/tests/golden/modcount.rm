@@ -1,19 +1,23 @@
 module modcount
   external
+    clk : bv1
     en : bv1
     q@init : bv4
   interface
     q : bv4
     wrap : bv1
-  atom controls q reads en, q, wrap awaits q@init
+  atom controls q reads clk, en, q, wrap awaits clk, q@init
     init
       X(q) := ID X(q@init)
     update
-      %1 := 4'd0
-      %2 := 4'd1
-      %3 := ADD (q, %2)
-      %4 := ITE (wrap, %1, %3)
-      X(q) := ITE (en, %4, q)
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 4'd0
+      %3 := 4'd1
+      %4 := ADD (q, %3)
+      %5 := ITE (wrap, %2, %4)
+      %6 := ITE (en, %5, q)
+      X(q) := ITE (clk@pos, %6, q)
   atom controls wrap awaits q
     init = update
       %1 := 4'd9

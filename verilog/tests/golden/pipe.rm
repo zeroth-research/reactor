@@ -1,5 +1,6 @@
 module pipe
   external
+    clk : bv1
     en : bv1
     x : bv8
     s1.q@init : bv8
@@ -12,16 +13,22 @@ module pipe
     s2.en : bv1
     s2.d : bv4
     s2.changed : bv1
-  atom controls y1 reads en, x, y1 awaits s1.q@init
+  atom controls y1 reads clk, en, x, y1 awaits clk, s1.q@init
     init
       X(y1) := ID X(s1.q@init)
     update
-      X(y1) := ITE (en, x, y1)
-  atom controls y2 reads y2, s2.en, s2.d awaits s2.q@init
+      %1 := NOT clk
+      s1.clk@pos := AND (%1, X(clk))
+      %2 := ITE (en, x, y1)
+      X(y1) := ITE (s1.clk@pos, %2, y1)
+  atom controls y2 reads clk, y2, s2.en, s2.d awaits clk, s2.q@init
     init
       X(y2) := ID X(s2.q@init)
     update
-      X(y2) := ITE (s2.en, s2.d, y2)
+      %1 := NOT clk
+      s2.clk@pos := AND (%1, X(clk))
+      %2 := ITE (s2.en, s2.d, y2)
+      X(y2) := ITE (s2.clk@pos, %2, y2)
   atom controls s2.d awaits x, y1
     init = update
       %1 := EXTRACT[3:0] X(y1)

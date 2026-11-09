@@ -1,5 +1,6 @@
 module fsm
   external
+    clk : bv1
     rst : bv1
     din : bv1
     state@init : bv2
@@ -8,12 +9,15 @@ module fsm
   private
     state : bv2
     nxt : bv2
-  atom controls state reads rst, nxt awaits state@init
+  atom controls state reads clk, rst, state, nxt awaits clk, state@init
     init
       X(state) := ID X(state@init)
     update
-      %1 := 2'd0
-      X(state) := ITE (rst, %1, nxt)
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 2'd0
+      %3 := ITE (rst, %2, nxt)
+      X(state) := ITE (clk@pos, %3, state)
   atom controls nxt awaits din, state
     init = update
       %1 := 2'd0

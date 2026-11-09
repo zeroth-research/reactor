@@ -7,12 +7,14 @@ Yosys is looked up as `$YOSYS_BIN` (the binary itself), then
 gives it the script of [`script`]:
 
 ```text
-read_verilog -sv FILE; hierarchy -top TOP; proc; flatten; write_smt2 -wires -
+read_verilog -sv FILE; hierarchy -top TOP; proc; flatten; clk2fflogic; write_smt2 -wires -
 ```
 
 `flatten` makes the whole hierarchy one module, whose wires have our
 instance path names (`u.q`); without `opt`, every register stays one
-register.
+flip-flop. `clk2fflogic` makes the clocks ordinary inputs, sampled at
+every step of an implicit global clock, so that one transition is one time
+step, as one of our rounds is (see below).
 
 ## The output
 
@@ -30,8 +32,32 @@ An accessor of width 1 returns `Bool`, wider ones `(_ BitVec W)`;
 [`Smt2::value`] always gives a bit vector, as our rounds use
 (see [`smt`]).
 
-The clock is an input that nothing reads: `|T_t|` sets every register's
-next value from `s`, so one transition is one clock cycle.
+## Clocks
+
+After `clk2fflogic`, every flip-flop `q` clocked by `c` is three Yosys
+registers, sampling values of the previous step:
+
+- `$auto$clk2fflogic.cc:N:sample_control_edge$/c#sampled$K` (1 bit), the
+  clock level (`c` is the clock's name in the flip-flop's module, a path
+  after `flatten`);
+- `$auto$clk2fflogic.cc:N:sample_data$D#sampled$K`, the flip-flop's data
+  input, with `D` the name of a wire (`/s1` when `q <= s1`) or an anonymous
+  cell output (`$procmux$4_Y`);
+- `$auto$clk2fflogic.cc:N:sample_data$/q#sampled$K`, the flip-flop's
+  output;
+
+and the wire `q` becomes `ite({c#sampled, c} == 01, D#sampled,
+q#sampled)` (`10` for a falling edge): the sampled input if the edge
+happened between the previous step and this one, else the old output. So
+the wire `q` in a state is the register's value after that step, and
+`|T_t|` relates two consecutive time steps. The initial-state predicate
+`(|T_i| s)` sets the clock samples so that no edge happens in the first
+step and the data input samples to 0; it constrains an output sample only
+by `(= (bvand q #b0…) #b0…)` (always true) or not at all. A data input
+sample can carry the name of a register (`/s1#sampled` above) with its
+width, so names alone do not tell the output sample of a register; see
+[`miter::registers`](crate::miter::registers). The names contain line
+numbers of Yosys's source: the format was checked with Yosys 0.69+173.
 
 ## Limits
 
@@ -68,7 +94,8 @@ pub fn script(file: &Path, top: &str) -> Result<String, String> {
         return Err(format!("{file}: path not usable in a Yosys script"));
     }
     Ok(format!(
-        "read_verilog -sv \"{file}\"; hierarchy -top {top}; proc; flatten; write_smt2 -wires -"
+        "read_verilog -sv \"{file}\"; hierarchy -top {top}; proc; flatten; clk2fflogic; \
+         write_smt2 -wires -"
     ))
 }
 
@@ -94,6 +121,36 @@ pub fn run(bin: &Path, file: &Path, top: &str, overrides: &[Override]) -> Result
     parse(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// What a Yosys register of a design after `clk2fflogic` samples (see the
+/// module docs).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Sample<'n> {
+    /// The level of the clock with this name.
+    Edge(&'n str),
+    /// The wire with this name (the data input or the output of a
+    /// flip-flop), or an anonymous cell output (`None`).
+    Data(Option<&'n str>),
+}
+
+/// What the Yosys register `name` samples, or `None` if it is not a
+/// register made by `clk2fflogic`.
+pub fn sample(name: &str) -> Option<Sample<'_>> {
+    let rest = name.strip_prefix("$auto$clk2fflogic.cc:")?;
+    let (line, rest) = rest.split_once(':')?;
+    if line.is_empty() || !line.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let (rest, k) = rest.rsplit_once("#sampled$")?;
+    if k.is_empty() || !k.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    if let Some(c) = rest.strip_prefix("sample_control_edge$/") {
+        return Some(Sample::Edge(c));
+    }
+    let wire = rest.strip_prefix("sample_data$")?;
+    Some(Sample::Data(wire.strip_prefix('/')))
+}
+
 /// What `write_smt2` produced for a flattened design.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Smt2 {
@@ -107,6 +164,35 @@ pub struct Smt2 {
     pub registers: BTreeMap<String, usize>,
     /// Every named wire, including ports and registers.
     pub wires: BTreeMap<String, usize>,
+    /// The conjuncts of the initial-state predicate `|T_i|`, by the
+    /// register each constrains.
+    pub initial: BTreeMap<String, String>,
+}
+
+impl Smt2 {
+    /// Whether `|T_i|` leaves the register `name` free: it has no
+    /// conjunct for it, or `(= (bvand (… state) #b0…0) #b0…0)`, which
+    /// always holds.
+    pub fn free_initially(&self, name: &str) -> bool {
+        let Some(expr) = self.initial.get(name) else {
+            return true;
+        };
+        let zeros =
+            |t: &str| t.len() > 2 && t.starts_with("#b") && t[2..].bytes().all(|b| b == b'0');
+        let Some(rest) = expr.strip_prefix("(= (bvand (|") else {
+            return false;
+        };
+        let Some((_, rest)) = rest.split_once("| state) ") else {
+            return false;
+        };
+        let Some((mask, rest)) = rest.split_once(") ") else {
+            return false;
+        };
+        let Some(value) = rest.strip_suffix(')') else {
+            return false;
+        };
+        zeros(mask) && zeros(value)
+    }
 }
 
 /// Parses the output of `write_smt2`. Fails if it has no top module or
@@ -156,6 +242,7 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
         ));
     }
     let [inputs, outputs, registers, wires] = maps;
+    let initial = initial(text, &top)?;
     Ok(Smt2 {
         top,
         text: text.to_string(),
@@ -163,7 +250,36 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
         outputs,
         registers,
         wires,
+        initial,
     })
+}
+
+/// The conjuncts of `(|T_i| s)`, by the register each one names in its
+/// comment.
+fn initial(text: &str, top: &str) -> Result<BTreeMap<String, String>, String> {
+    let head = format!("(define-fun {} ((state ", smt::symbol(&format!("{top}_i")));
+    let mut lines = text.lines().skip_while(|l| !l.starts_with(&head));
+    let Some(first) = lines.next() else {
+        return Err(format!("no `{top}_i` in the Yosys output"));
+    };
+    let mut out = BTreeMap::new();
+    if first.ends_with(" Bool true)") {
+        return Ok(out);
+    }
+    if !first.ends_with(" Bool (and") {
+        return Err(format!("unexpected Yosys line: {first}"));
+    }
+    for line in lines {
+        if line == "))" {
+            return Ok(out);
+        }
+        let (expr, name) = line
+            .trim()
+            .split_once(" ; ")
+            .ok_or_else(|| format!("unexpected Yosys line: {line}"))?;
+        out.insert(name.to_string(), expr.to_string());
+    }
+    Err(format!("`{top}_i` does not end in the Yosys output"))
 }
 
 impl Smt2 {
@@ -172,7 +288,7 @@ impl Smt2 {
         smt::symbol(&format!("{}_s", self.top))
     }
 
-    /// `(|T_t| s next)`: `next` follows `s` after one clock cycle.
+    /// `(|T_t| s next)`: `next` follows `s` after one time step.
     pub fn transition(&self, s: &str, next: &str) -> String {
         format!("({} {s} {next})", smt::symbol(&format!("{}_t", self.top)))
     }
@@ -182,11 +298,16 @@ impl Smt2 {
         format!("({} {s})", smt::symbol(&format!("{}_h", self.top)))
     }
 
-    /// The value of wire `name` in state `s` as a `(_ BitVec W)`, or `None`
-    /// if there is no such wire. Width-1 accessors return `Bool` and are
-    /// converted with `ite`.
+    /// `(|T_i| s)`: `s` is an initial state.
+    pub fn initial(&self, s: &str) -> String {
+        format!("({} {s})", smt::symbol(&format!("{}_i", self.top)))
+    }
+
+    /// The value of wire or register `name` in state `s` as a
+    /// `(_ BitVec W)`, or `None` if there is no such wire or register.
+    /// Width-1 accessors return `Bool` and are converted with `ite`.
     pub fn value(&self, name: &str, s: &str) -> Option<String> {
-        let width = *self.wires.get(name)?;
+        let width = *self.wires.get(name).or_else(|| self.registers.get(name))?;
         let get = format!("({} {s})", smt::symbol(&format!("{}_n {name}", self.top)));
         Some(if width == 1 {
             format!("(ite {get} #b1 #b0)")

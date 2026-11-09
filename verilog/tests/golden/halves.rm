@@ -1,0 +1,46 @@
+module halves
+  external
+    clk : bv1
+    en : bv1
+    p@init : bv4
+    n@init : bv4
+    h@init : bv4
+  interface
+    p : bv4
+    n : bv4
+    h : bv4
+    total : bv5
+  atom controls p reads clk, en, p awaits clk, p@init
+    init
+      X(p) := ID X(p@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 4'd1
+      %3 := ADD (p, %2)
+      %4 := ITE (en, %3, p)
+      X(p) := ITE (clk@pos, %4, p)
+  atom controls n reads clk, en, n awaits clk, n@init
+    init
+      X(n) := ID X(n@init)
+    update
+      %1 := NOT X(clk)
+      clk@neg := AND (clk, %1)
+      %2 := 4'd1
+      %3 := ADD (n, %2)
+      %4 := ITE (en, %3, n)
+      X(n) := ITE (clk@neg, %4, n)
+  atom controls h reads clk, p, h awaits clk, h@init
+    init
+      X(h) := ID X(h@init)
+    update
+      %1 := NOT X(clk)
+      clk@neg#2 := AND (clk, %1)
+      X(h) := ITE (clk@neg#2, p, h)
+  atom controls total awaits p, n
+    init = update
+      %1 := 1'd0
+      %2 := CONCAT (%1, X(p))
+      %3 := 1'd0
+      %4 := CONCAT (%3, X(n))
+      X(total) := ADD (%2, %4)
