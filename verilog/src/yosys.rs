@@ -12,9 +12,10 @@ read_verilog -sv FILE; hierarchy -top TOP; proc; flatten; clk2fflogic; write_smt
 
 `flatten` makes the whole hierarchy one module, whose wires have our
 instance path names (`u.q`); without `opt`, every register stays one
-flip-flop. `clk2fflogic` makes the clocks ordinary inputs, sampled at
-every step of an implicit global clock, so that one transition is one time
-step, as one of our rounds is (see below).
+flip-flop. `clk2fflogic` makes the clocks ordinary signals (inputs, or
+wires for clocks derived from registers), sampled at every step of an
+implicit global clock, so that one transition is one time step, as one of
+our rounds is (see below).
 
 ## The output
 

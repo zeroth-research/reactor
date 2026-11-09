@@ -8,6 +8,9 @@
 //! clock). Designs with one rising-edge clock are also compared with the
 //! cycle model: iverilog pulsing the clock once per cycle against the AST
 //! semantics with a toggling clock, at the rounds where the clock is 0.
+//! Designs where a block on a derived clock reads registers changing at
+//! its edge are not compared with iverilog, which gives their new values
+//! there (see `simulator_differs`).
 //!
 //! `UPDATE_GOLDEN=1 cargo test -p verilog --test examples` rewrites the
 //! golden files in `tests/golden/`.
@@ -157,9 +160,11 @@ fn structure() {
             if !regs.contains_key(&ctrl[0]) {
                 continue;
             }
+            // the initial values and the clock (an input clock, or a
+            // register or a copy of one: a derived clock)
             let mut inits: Vec<String> = ctrl.iter().map(|q| init_name(regs[q])).collect();
             let wait = names(atom.wait());
-            let clock: Vec<&String> = wait.iter().filter(|v| t.clocks.contains(v)).collect();
+            let clock: Vec<&String> = wait.iter().filter(|v| !inits.contains(v)).collect();
             assert_eq!(clock.len(), 1, "{display}: {ctrl:?} awaits {wait:?}");
             inits.push(clock[0].clone());
             let clock = t.var(clock[0]);
@@ -476,6 +481,11 @@ fn testbench(inst: &Inst, clocks: &[String], init: &Values, rounds: &[Values]) -
         tb += "    #1;\n";
         tb += &tb_set(v, |n| !is_clock(n));
         if k == 0 {
+            // setting a register may make an edge of a clock derived from
+            // it (from x), whose block then overwrites registers: set them
+            // again once those updates are done (no edge the second time)
+            tb += "    #1;\n";
+            tb += &tb_init(init);
             tb += "    #1;\n";
             tb += &tb_init(init);
         }
@@ -495,6 +505,9 @@ fn cycle_testbench(inst: &Inst, clk: Option<&str>, init: &Values, vectors: &[Val
     if let Some(clk) = clk {
         tb += &format!("    {clk} = 1'b0;\n");
     }
+    // twice, as in `testbench`
+    tb += &tb_init(init);
+    tb += "    #1;\n";
     tb += &tb_init(init);
     for v in vectors {
         tb += &tb_set(v, |n| Some(n) != clk);
@@ -593,8 +606,14 @@ fn ast_matches_iverilog() {
         return;
     };
     let mut rand = Rand(0x9e37_79b9_7f4a_7c15);
+    let mut skipped = Vec::new();
     for (n, path) in examples().into_iter().enumerate() {
         let (inst, t) = load(&path);
+        if let Some(why) = simulator_differs(&inst) {
+            eprintln!("{}: not compared with iverilog: {why}", path.display());
+            skipped.push(stem(&path));
+            continue;
+        }
         let m = &inst.module;
         let init = rand.registers(&inst);
         let rounds = rand.trace(m, &t.clocks, Gen::nth(n), 300);
@@ -610,6 +629,7 @@ fn ast_matches_iverilog() {
             assert_eq!(g, e, "{}: round {k} = {:?}", path.display(), rounds[k]);
         }
     }
+    assert_eq!(skipped, SIMULATOR_DIFFERS);
 }
 
 /// The round semantics with a toggling clock is the cycle model: for
@@ -626,7 +646,7 @@ fn rounds_match_cycles() {
     let mut compared = 0;
     for path in examples() {
         let (inst, t) = load(&path);
-        if t.clocks.len() > 1 || negedge(&inst) {
+        if t.clocks.len() > 1 || negedge(&inst) || simulator_differs(&inst).is_some() {
             continue;
         }
         let m = &inst.module;
@@ -654,6 +674,101 @@ fn rounds_match_cycles() {
     }
     assert!(compared > 20, "{compared}");
 }
+
+/// Why iverilog may disagree with the round semantics on a design, if it
+/// may. A simulator runs the blocks of a derived clock after the updates
+/// that make its edge, so they read the new values of the registers
+/// updated in the same time step (and the new level of their clock),
+/// where the round semantics reads the values from before the edge, as
+/// hardware meeting its hold times does. Found statically: a block whose
+/// clock is not an input of the top module reads a signal that depends on
+/// a register of another clock (one of its clock's own chain included).
+fn simulator_differs(inst: &Inst) -> Option<String> {
+    let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
+    // the clock of every register, what every combinational signal reads,
+    // and every block with its clock and reads, by name
+    let mut clock: BTreeMap<String, String> = BTreeMap::new();
+    let mut comb: Vec<(String, String)> = Vec::new();
+    let mut blocks: Vec<(String, String, Vec<String>)> = Vec::new();
+    let mut walk = vec![(inst, String::new())];
+    while let Some((i, prefix)) = walk.pop() {
+        let canon = |x: &str| naming[&format!("{prefix}{x}")].clone();
+        for item in &i.module.items {
+            let reads = || item.reads().into_iter().map(|(x, _)| canon(x));
+            match item {
+                Item::AlwaysFf { clock: c, .. } => {
+                    for q in item.targets() {
+                        clock.insert(canon(q), canon(c));
+                    }
+                    let q = canon(item.targets()[0]);
+                    blocks.push((q, canon(c), reads().collect()));
+                }
+                Item::Assign { .. } | Item::AlwaysComb { .. } => {
+                    for y in item.targets() {
+                        comb.extend(reads().map(|x| (canon(y), x)));
+                    }
+                }
+                Item::Instance(u) => {
+                    for (c, _) in u.conns(Dir::Input) {
+                        let Some(e) = &c.actual else { continue };
+                        let mut reads = Vec::new();
+                        e.reads(&mut reads);
+                        let y = canon(&format!("{}.{}", u.name, c.port));
+                        comb.extend(reads.into_iter().map(|(x, _)| (y.clone(), canon(x))));
+                    }
+                }
+            }
+        }
+        for (u, child) in &i.children {
+            walk.push((child, format!("{prefix}{u}.")));
+        }
+    }
+    // the registers each signal depends on
+    let mut deps: BTreeMap<String, BTreeSet<String>> = clock
+        .keys()
+        .map(|q| (q.clone(), BTreeSet::from([q.clone()])))
+        .collect();
+    loop {
+        let mut changed = false;
+        for (y, x) in &comb {
+            let add = deps.get(x).cloned().unwrap_or_default();
+            let d = deps.entry(y.clone()).or_default();
+            let before = d.len();
+            d.extend(add);
+            changed |= d.len() != before;
+        }
+        if !changed {
+            break;
+        }
+    }
+    let inputs: BTreeSet<&String> = inst
+        .module
+        .ports
+        .iter()
+        .filter(|p| p.dir == Dir::Input)
+        .map(|p| &p.decl.name)
+        .collect();
+    for (q, c, reads) in blocks {
+        if inputs.contains(&c) {
+            continue;
+        }
+        for x in reads {
+            if let Some(r) = deps.get(&x).into_iter().flatten().find(|r| clock[*r] != c) {
+                return Some(format!(
+                    "`{q}` (clocked by the derived clock `{c}`) reads `{x}`, which depends on \
+                     `{r}` (clocked by `{}`)",
+                    clock[r]
+                ));
+            }
+        }
+    }
+    None
+}
+
+/// The examples iverilog is expected to disagree with (see
+/// [`simulator_differs`]): the round semantics on these is checked by
+/// the Yosys miter and the interpreters only.
+const SIMULATOR_DIFFERS: [&str; 1] = ["divider"];
 
 /// Whether some block of the hierarchy runs at a falling edge.
 fn negedge(inst: &Inst) -> bool {

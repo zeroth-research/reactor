@@ -45,7 +45,7 @@ mismatch (write `8'(N - 1)`, or declare a typed `localparam`).
 An instance drives the signals connected to its outputs, which must be
 whole signals of the port's width; the expression connected to an input
 must have the port's width. A clock port of an instance is connected to
-a clock of the module, which then counts as a clock of the module.
+the name of a 1-bit signal, which then counts as a clock of the module.
 
 An `always_comb` block must also be free of latches and of reads of stale
 values ([`definite`]): every signal it drives is assigned on every path
@@ -54,8 +54,8 @@ to the read.
 */
 
 use crate::ast::{
-    BinOp, Cast, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Module, Name, Select, Span,
-    Stmt, StmtKind, Ty, UnOp,
+    BinOp, Cast, Dir, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Name, Select,
+    Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use std::collections::{BTreeMap, BTreeSet};
@@ -124,13 +124,11 @@ pub fn env(m: &Module) -> Result<Env> {
 /// `y[3:0]` and `y[7:4]` from two `assign`s is rejected.
 ///
 /// Clocks: an `always_ff` block runs at the rising (`posedge`) or falling
-/// (`negedge`) edge of a 1-bit input of the module, and a clock port of an
-/// instance is connected to the name of such an input. A module may have
-/// several clocks, and clocks may also be read as data. A clock computed
-/// in the module is rejected: one computed combinationally (a gated
-/// clock) could glitch within a time step, which rounds cannot express,
-/// and clocks derived from registers (dividers) are not supported yet.
-/// Reads across clocks are checked on the whole hierarchy, by [`domains`].
+/// (`negedge`) edge of a 1-bit signal, and a clock port of an instance is
+/// connected to the name of a 1-bit signal. A module may have several
+/// clocks, and clocks may also be read as data. Where a clock comes from
+/// (an input, a register, or a copy or bit of one) and which registers may
+/// read each other are checked on the whole hierarchy, by [`domains`].
 pub fn check(m: &Module) -> Result<Env> {
     let env = env(m)?;
     // the position of the first assignment to each signal, and its item
@@ -244,72 +242,194 @@ pub fn check(m: &Module) -> Result<Env> {
         }
     }
     for (c, span) in clocks {
-        clock(m, &env, &driver, c, span)?;
+        let sig = lookup(&env, c, span)?;
+        if sig.ty.width != 1 {
+            let msg = if driver.contains_key(c) {
+                format!("the clock `{c}` must have 1 bit")
+            } else {
+                format!("the clock `{c}` must be a 1-bit input")
+            };
+            return Err(Error::new(span, msg));
+        }
     }
     Ok(env)
 }
 
-/// Checks that `c` (used at `span`) can be a clock: a 1-bit input.
-fn clock(
-    m: &Module,
-    env: &Env,
-    driver: &BTreeMap<Name, (Span, usize)>,
-    c: &Name,
-    span: Span,
-) -> Result<()> {
-    let sig = lookup(env, c, span)?;
-    let msg = match driver.get(c).map(|&(_, i)| &m.items[i]) {
-        None if sig.ty.width == 1 => return Ok(()),
-        None => format!("the clock `{c}` must be a 1-bit input"),
-        Some(Item::AlwaysFf { .. }) => {
-            format!(
-                "the clock `{c}` is a register: clocks derived from registers are not supported yet"
-            )
-        }
-        Some(Item::Assign { .. } | Item::AlwaysComb { .. }) => {
-            format!("the clock `{c}` is computed combinationally: gated clocks are not supported")
-        }
-        Some(Item::Instance(i)) => format!(
-            "the clock `{c}` is driven by instance `{}`: clocks must be inputs \
-             (passed down through clock ports)",
-            i.name
-        ),
-    };
-    Err(Error::new(span, msg))
+/// What drives a signal, as [`domains`] sees it: an item of an instance,
+/// or the expression connected to an input of an instance (in the
+/// instantiating one).
+#[derive(Clone, Copy)]
+enum Source<'m> {
+    Item(&'m Item),
+    Conn(&'m Expr, Span),
 }
 
-/// Checks that no register of an elaborated hierarchy reads a value from
-/// another clock domain.
+/// Checks where the clocks of an elaborated hierarchy come from and that no
+/// register reads a value from another clock domain. Returns the input
+/// clocks the design is clocked by, by name. Expects every instance to
+/// pass [`check`] and the hierarchy to be free of loops: a register
+/// clocked, through the chain below, by itself is a loop of awaits (its
+/// edge test awaits its clock), which lowering rejects.
 ///
-/// The domain of a signal is the set of clocks of the registers it depends
-/// on through combinational logic (`assign`, `always_comb`, instance
-/// connections): a register's own clock for a register, none for an input.
-/// A register clocked by `c` may read only signals whose domain is empty or
-/// `{c}` (registers clocked by either edge of `c` included). Different
-/// input clocks are unrelated, and a value sampled from another domain
-/// needs a rule for an edge that coincides with a change of the value,
-/// which crossings do not have yet. Signals are compared by name (see
-/// [`Inst::naming`]), so a port connected to a signal is that signal.
-pub fn domains(inst: &Inst) -> Result<()> {
+/// A clock is either an input of the top module (an *input clock*), or a
+/// register (a *derived clock*, e.g. a divider `slow <= !slow`), or a
+/// copy or a constant bit select of one of these driven by an `assign`
+/// (`assign c = cnt[3]`), also through instance ports. Its *root* is the
+/// input clock at the end of this chain. Anything else is rejected: a
+/// clock computed by an operator or in an `always_comb` (a gated clock)
+/// could glitch within a time step, which rounds cannot express, and an
+/// input clock must have 1 bit (a bit of a wider input is no clock).
+///
+/// The domain of a signal is the set of roots of the clocks of the
+/// registers it depends on through combinational logic (`assign`,
+/// `always_comb`, instance connections): the root of its own clock for a
+/// register, none for an input. A register may read only signals whose
+/// domain is empty or its own root: registers on either edge of one input
+/// clock and of the clocks derived from it are *related*, and reads among
+/// them see the value from before the edge (see the timing assumptions in
+/// [`crate::lower`]). Different input clocks are unrelated, and a value
+/// sampled from another domain needs a rule for an edge that coincides
+/// with a change of the value, which crossings do not have yet. Signals
+/// are compared by name (see [`Inst::naming`]), so a port connected to a
+/// signal is that signal.
+pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
     let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
-    // the clock of every register, and what every combinational signal
-    // reads, by name
-    let mut regs: BTreeMap<Name, Name> = BTreeMap::new();
-    let mut comb: Vec<(Name, Name)> = Vec::new();
+    // the instances with their paths, each instance before its children
+    let mut insts: Vec<(&Inst, String)> = Vec::new();
     let mut walk = vec![(inst, String::new())];
     while let Some((i, prefix)) = walk.pop() {
-        let canon = |x: &str| naming[&format!("{prefix}{x}")].clone();
+        for (u, child) in i.children.iter().rev() {
+            walk.push((child, format!("{prefix}{u}.")));
+        }
+        insts.push((i, prefix));
+    }
+    let canon = |k: usize, x: &str| naming[&format!("{}{x}", insts[k].1)].clone();
+    // the driver of every signal, by name, with its instance and its path
+    let mut drivers: BTreeMap<Name, (usize, Name, Source)> = BTreeMap::new();
+    for (k, (i, prefix)) in insts.iter().enumerate() {
+        for item in &i.module.items {
+            match item {
+                Item::Instance(u) => {
+                    for (c, _) in u.conns(Dir::Input) {
+                        if let Some(e) = &c.actual
+                            && !matches!(e.kind, ExprKind::Var(_))
+                        {
+                            let path = format!("{prefix}{}.{}", u.name, c.port);
+                            let source = Source::Conn(e, c.span);
+                            drivers.insert(naming[&path].clone(), (k, path, source));
+                        }
+                    }
+                }
+                _ => {
+                    for y in item.targets() {
+                        let path = format!("{prefix}{y}");
+                        drivers.insert(canon(k, y), (k, path, Source::Item(item)));
+                    }
+                }
+            }
+        }
+    }
+    let top: BTreeMap<&Name, usize> = inst
+        .module
+        .ports
+        .iter()
+        .filter(|p| p.dir == Dir::Input)
+        .map(|p| (&p.decl.name, p.decl.ty.width))
+        .collect();
+
+    // the root of the clock `c` of instance `k`, used at `span`
+    let root = |k: usize, c: &Name, span: Span| -> Result<Name> {
+        let err = |msg: String| elab::context(Error::new(span, msg), &insts[k].1);
+        let mut x = canon(k, c);
+        // the names on the chain so far
+        let mut chain: Vec<Name> = Vec::new();
+        loop {
+            if chain.contains(&x) {
+                return Err(err(format!("internal error: clock loop through `{x}`")));
+            }
+            let Some((d, path, source)) = drivers.get(&x) else {
+                return match top.get(&x) {
+                    Some(1) => Ok(x),
+                    Some(_) => Err(err(format!(
+                        "the clock `{c}` is a bit of the input `{x}`: input clocks must be \
+                         1-bit inputs"
+                    ))),
+                    None => Err(err(format!("internal error: `{x}` has no driver"))),
+                };
+            };
+            // the next signal on the chain, a name in instance `d`
+            let next = match source {
+                Source::Item(Item::AlwaysFf { clock, .. }) => Some(clock),
+                Source::Item(Item::Assign { lhs, rhs, .. })
+                    if matches!(lhs.kind, LvalueKind::Var(_)) =>
+                {
+                    copy(rhs)
+                }
+                Source::Conn(e, _) => copy(e),
+                _ => None,
+            };
+            let Some(y) = next else {
+                let at = match source {
+                    Source::Item(item) => item.span(),
+                    Source::Conn(_, span) => *span,
+                };
+                let msg = if chain.is_empty() && *d == k {
+                    format!("the clock `{c}` is computed combinationally")
+                } else {
+                    format!("the clock `{c}` comes from `{path}`, computed combinationally at {at}")
+                };
+                return Err(err(format!("{msg}: gated clocks are not supported")));
+            };
+            chain.push(x);
+            x = canon(*d, y);
+        }
+    };
+
+    // the root of every clock, checked at each use (clock ports first,
+    // so that a bad clock is reported where it is passed down)
+    let mut roots: BTreeMap<Name, Name> = BTreeMap::new();
+    for (k, (i, _)) in insts.iter().enumerate() {
+        for item in &i.module.items {
+            let uses: Vec<(&Name, Span)> = match item {
+                Item::AlwaysFf {
+                    clock, clock_span, ..
+                } => vec![(clock, *clock_span)],
+                Item::Instance(u) => u
+                    .conns(Dir::Input)
+                    .filter(|(_, f)| f.clock)
+                    .filter_map(
+                        |(c, _)| match c.actual.as_ref().map(|e| (&e.kind, e.span)) {
+                            Some((ExprKind::Var(x), span)) => Some((x, span)),
+                            _ => None,
+                        },
+                    )
+                    .collect(),
+                _ => Vec::new(),
+            };
+            for (c, span) in uses {
+                let r = root(k, c, span)?;
+                roots.insert(canon(k, c), r);
+            }
+        }
+    }
+
+    // the domain of every register, and what every combinational signal
+    // reads, by name
+    let mut dom: BTreeMap<Name, BTreeSet<Name>> = BTreeMap::new();
+    let mut comb: Vec<(Name, Name)> = Vec::new();
+    for (k, (i, _)) in insts.iter().enumerate() {
         for item in &i.module.items {
             match item {
                 Item::AlwaysFf { clock, .. } => {
+                    let r = &roots[&canon(k, clock)];
                     for q in item.targets() {
-                        regs.insert(canon(q), canon(clock));
+                        dom.insert(canon(k, q), BTreeSet::from([r.clone()]));
                     }
                 }
                 Item::Assign { .. } | Item::AlwaysComb { .. } => {
                     for y in item.targets() {
                         for (x, _) in item.reads() {
-                            comb.push((canon(y), canon(x)));
+                            comb.push((canon(k, y), canon(k, x)));
                         }
                     }
                 }
@@ -319,20 +439,13 @@ pub fn domains(inst: &Inst) -> Result<()> {
                         let mut reads = Vec::new();
                         e.reads(&mut reads);
                         for (x, _) in reads {
-                            comb.push((canon(&format!("{}.{}", u.name, c.port)), canon(x)));
+                            comb.push((canon(k, &format!("{}.{}", u.name, c.port)), canon(k, x)));
                         }
                     }
                 }
             }
         }
-        for (u, child) in &i.children {
-            walk.push((child, format!("{prefix}{u}.")));
-        }
     }
-    let mut dom: BTreeMap<Name, BTreeSet<Name>> = regs
-        .iter()
-        .map(|(q, c)| (q.clone(), BTreeSet::from([c.clone()])))
-        .collect();
     loop {
         let mut changed = false;
         for (y, x) in &comb {
@@ -346,32 +459,50 @@ pub fn domains(inst: &Inst) -> Result<()> {
             break;
         }
     }
-    let mut walk = vec![(inst, String::new())];
-    while let Some((i, prefix)) = walk.pop() {
-        let canon = |x: &str| naming[&format!("{prefix}{x}")].clone();
+    // how a clock is named in messages: with its root if derived
+    let clocked = |c: &Name| match &roots[c] {
+        r if r == c => format!("`{c}`"),
+        r => format!("`{c}`, derived from `{r}`"),
+    };
+    for (k, (i, prefix)) in insts.iter().enumerate() {
         for item in &i.module.items {
             let Item::AlwaysFf { clock, .. } = item else {
                 continue;
             };
-            let c = canon(clock);
+            let c = canon(k, clock);
+            let r = &roots[&c];
             for (x, span) in item.reads() {
-                let Some(other) = dom.get(&canon(x)).and_then(|d| d.iter().find(|d| **d != c))
+                let Some(other) = dom
+                    .get(&canon(k, x))
+                    .and_then(|d| d.iter().find(|d| *d != r))
                 else {
                     continue;
                 };
-                let r = item.targets()[0];
+                let derived = if roots.iter().any(|(c, r)| r == other && c != other) {
+                    " or by clocks derived from it"
+                } else {
+                    ""
+                };
+                let q = item.targets()[0];
                 let msg = format!(
-                    "`{r}` (clocked by `{c}`) reads `{x}`, which depends on registers clocked \
-                     by `{other}`: crossings between unrelated clocks are not supported yet"
+                    "`{q}` (clocked by {}) reads `{x}`, which depends on registers clocked \
+                     by `{other}`{derived}: crossings between unrelated clocks are not supported yet",
+                    clocked(&c)
                 );
-                return Err(elab::context(Error::new(span, msg), &prefix));
+                return Err(elab::context(Error::new(span, msg), prefix));
             }
         }
-        for (u, child) in &i.children {
-            walk.push((child, format!("{prefix}{u}.")));
-        }
     }
-    Ok(())
+    Ok(roots.into_values().collect())
+}
+
+/// The signal `e` copies (all of it or one bit): a name or a constant bit
+/// select of a name.
+fn copy(e: &Expr) -> Option<&Name> {
+    match &e.kind {
+        ExprKind::Var(x) | ExprKind::Select(x, Select::Bit(Index::Const(_))) => Some(x),
+        _ => None,
+    }
 }
 
 /// A hint for a width mismatch between a value of type `t` and `width`

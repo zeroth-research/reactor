@@ -81,6 +81,40 @@ fn accepted_instances() {
     assert!(printed.contains("X(u.a) := NOT X(a)"), "{printed}");
 }
 
+/// Derived clocks across instances: passed down to a clock port, made in
+/// an instance and used by the parent, read across the related domains.
+#[test]
+fn accepted_derived_clocks() {
+    // `u` runs on a divided clock, `v` on the input clock reads `u`'s
+    // register
+    let t = translate(&format!(
+        "{}{CHILD}",
+        top(
+            "  logic s;\n  logic [3:0] w;\n  always_ff @(posedge clk) s <= !s;\n  \
+             child u (.clk(s), .a, .q(w), .y);\n  child v (.clk, .a(w), .q, .y());"
+        )
+    ))
+    .unwrap();
+    assert_eq!(t.clocks, ["clk"]);
+    // the divider is an instance; its output, a bit of it and a copy are
+    // clocks of the parent
+    let src = "module top(input logic clk, input logic [3:0] a, output logic [3:0] q, y);
+  logic s, b, c;
+  logic [1:0] n;
+  div d (.c(clk), .s, .n);
+  assign b = n[1];
+  assign c = b;
+  child u (.clk(s), .a, .q, .y());
+  always_ff @(negedge c) y <= q;
+endmodule
+module div(input logic c, output logic s, output logic [1:0] n);
+  always_ff @(posedge c) begin s <= !s; n <= n + 2'd1; end
+endmodule
+";
+    let t = translate(&format!("{src}{CHILD}")).unwrap();
+    assert_eq!(t.clocks, ["clk"]);
+}
+
 #[test]
 fn overrides_from_outside() {
     let d = frontend::parse_design(CHILD, "test.sv").unwrap();
@@ -164,12 +198,7 @@ fn rejected_instances() {
             "the clock `g` is computed combinationally: gated clocks are not supported",
         ),
         (
-            "  logic s;\n  always_ff @(posedge clk) s <= !s;\n  child u (.clk(s), .a, .q, .y);",
-            "s)",
-            "the clock `s` is a register: clocks derived from registers are not supported yet",
-        ),
-        (
-            "  logic [3:0] w;\n  logic s;\n  assign s = w[0];\n  child u (.clk, .a, .q(w), .y);\n  \
+            "  logic [3:0] w;\n  logic s;\n  assign s = w[0] ^ w[1];\n  child u (.clk, .a, .q(w), .y);\n  \
              child v (.clk(s), .a, .q, .y());",
             "s)",
             "the clock `s` is computed combinationally",
@@ -214,7 +243,7 @@ fn rejected_instances() {
         let line = 2 + body.lines().position(|l| l.contains(needle)).unwrap();
         rejects(&top(body), line, needle, msg);
     }
-    // a clock driven by an instance output
+    // a clock driven by an instance output: followed into the instance
     rejects(
         "module top(input logic clk, input logic [3:0] a, output logic [3:0] q, y);
   logic g;
@@ -227,7 +256,24 @@ endmodule
 ",
         4,
         "g)",
-        "the clock `g` is driven by instance `o`: clocks must be inputs",
+        "the clock `g` comes from `o.y`, computed combinationally at 7:10: gated clocks are not \
+         supported",
+    );
+    // a clock loop through two dividers (reported without the clock)
+    rejects(
+        "module top(input logic clk, input logic [3:0] a, output logic [3:0] q, y);
+  logic s1, s2;
+  div d1 (.c(s2), .s(s1));
+  div d2 (.c(s1), .s(s2));
+  child u (.clk, .a, .q, .y);
+endmodule
+module div(input logic c, output logic s);
+  always_ff @(posedge c) s <= !s;
+endmodule
+",
+        3,
+        "d1",
+        "combinational loop through instances: s1 -> s2 -> s1",
     );
     // a register of one clock domain read in another, through instances
     rejects(

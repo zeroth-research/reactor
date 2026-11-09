@@ -1,0 +1,36 @@
+module divinst
+  external
+    clk : bv1
+    a : bv4
+    h.s@init : bv1
+    u.q@init : bv4
+    v.q@init : bv4
+  interface
+    q : bv4
+    y : bv4
+  private
+    s : bv1
+  atom controls s reads clk, s awaits clk, h.s@init
+    init
+      X(s) := ID X(h.s@init)
+    update
+      %1 := NOT clk
+      h.clk@pos := AND (%1, X(clk))
+      %2 := NOT s
+      X(s) := ITE (h.clk@pos, %2, s)
+  atom controls y reads clk, q, y awaits clk, v.q@init
+    init
+      X(y) := ID X(v.q@init)
+    update
+      %1 := NOT clk
+      v.clk@pos := AND (%1, X(clk))
+      %2 := ADD (y, q)
+      X(y) := ITE (v.clk@pos, %2, y)
+  atom controls q reads a, q, s awaits s, u.q@init
+    init
+      X(q) := ID X(u.q@init)
+    update
+      %1 := NOT s
+      u.clk@pos := AND (%1, X(s))
+      %2 := ADD (q, a)
+      X(q) := ITE (u.clk@pos, %2, q)

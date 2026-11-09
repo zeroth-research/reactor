@@ -1,0 +1,31 @@
+module divider
+  external
+    clk : bv1
+    en : bv1
+    slow@init : bv1
+    q@init : bv8
+    r@init : bv8
+  interface
+    slow : bv1
+    q : bv8
+    r : bv8
+  atom controls slow, q reads clk, en, slow, q awaits clk, slow@init, q@init
+    init
+      X(slow) := ID X(slow@init)
+      X(q) := ID X(q@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := NOT slow
+      %3 := 8'd1
+      %4 := ADD (q, %3)
+      %5 := ITE (en, %4, q)
+      X(slow) := ITE (clk@pos, %2, slow)
+      X(q) := ITE (clk@pos, %5, q)
+  atom controls r reads slow, q, r awaits slow, r@init
+    init
+      X(r) := ID X(r@init)
+    update
+      %1 := NOT slow
+      slow@pos := AND (%1, X(slow))
+      X(r) := ITE (slow@pos, q, r)

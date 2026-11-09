@@ -29,15 +29,20 @@ which has no `>`, `>=` and no logical operators:
 
 ## Time and clocks
 
-One round of the module is one time step. A clock is a 1-bit input like
-any other: an external variable, whose level the environment chooses
+One round of the module is one time step. An input clock is a 1-bit input
+like any other: an external variable, whose level the environment chooses
 freely in every round, as it chooses the other inputs. So rounds can
 contain any interleaving of the edges of several clocks, edges of
 different clocks in the same round, and rounds without any edge; a design
 clocked by one clock that toggles in every round takes two rounds per
-cycle. The edge of a clock `c` happens in a round when its latched level
-`*c` and its next level `X(c)` are 0 and 1 (`posedge`), or 1 and 0
-(`negedge`). No edge happens in the first round, the init round.
+cycle. A derived clock is a register (or a copy or bit of one, see
+[`typing::domains`]), e.g. a divider `slow <= !slow` clocked by `clk`: a
+variable like any other register, which changes in the rounds where its
+own clock has its edge. The edge of a clock `c` happens in a round when
+its latched level `*c` and its next level `X(c)` are 0 and 1 (`posedge`),
+or 1 and 0 (`negedge`). So an edge of `slow` happens in the same round as
+the edge of `clk` that changes it. No edge happens in the first round, the
+init round.
 
 Every `always_ff` block becomes a sequential atom controlling the
 registers it assigns. Its update first tests the edge of its clock,
@@ -46,8 +51,11 @@ then computes the value after the edge, and finally sets each register `q`
 to `X(q) := ITE (clk@pos, new, q)`: the new value if the edge happens,
 else the old one. The value after the edge reads the *latched* values
 `*x`, the values of the previous round, just before the edge. So the
-update awaits only the next level of the clock, and a register never
-closes a combinational loop. The statements are executed symbolically
+update awaits only the next level of the clock (for a derived clock, after
+the atom of its register), and a register closes a combinational loop
+only through its clock: a register clocked by itself, directly or through
+copies of it and other registers, is rejected as one (the edge test needs
+the new level of the clock in the same round). The statements are executed symbolically
 with a map from each register to the wire holding its value after the
 edge so far, starting with `*q` (a register keeps its value on paths that
 do not assign it). `q <= e` sets the entry of `q` to the wire of `e`, so
@@ -66,14 +74,27 @@ timing assumptions, which this semantics makes and does not check:
 - at an edge, the registers of one clock (on either edge) and the signals
   computed from them change only after the edge, as their clock-to-output
   delay makes them do; so a register clocked by `negedge clk` reading one
-  clocked by `posedge clk` sees its value from before that edge.
+  clocked by `posedge clk` sees its value from before that edge;
+- the same holds between a clock and the clocks derived from it: an edge
+  of a derived clock comes a clock-to-output delay after the edge of its
+  source that causes it, at the same time as the other registers of the
+  source change. A register on the derived clock samples their values
+  from before that edge if the design meets its hold times on these paths,
+  which timing analysis checks when the derived clock is declared as a
+  generated clock. So a register clocked by `posedge slow` reading a
+  counter clocked by `posedge clk` sees the counter's value from before
+  the edge of `clk` that makes `slow` rise. (A simulator runs the blocks
+  of `slow` after the updates of `clk`'s blocks and gives the new value
+  instead; real hardware with met hold times does not.)
 
 The two edges of one clock never happen in the same round. Registers of
-different input clocks are unrelated: an edge of one may come at any time
+one input clock and of the clocks derived from it are related; registers
+of different input clocks are unrelated: an edge of one may come at any time
 relative to the other, so a register sampling a value from another clock
 domain in a round where that value changes could store any mix of old and
 new bits (metastability). Such reads across clock domains are rejected for
-now ([`typing::domains`]); so are clocks computed in the design.
+now ([`typing::domains`]); so are clocks computed by logic (gated clocks)
+and clock loops.
 
 ## Combinational blocks, instances and loops
 
@@ -145,8 +166,9 @@ pub struct Translation {
     pub module: Module,
     /// Every source signal, and `q@init` for every register `q`, by name.
     pub vars: BTreeMap<Name, Var>,
-    /// The clocks of the `always_ff` blocks of the whole design (inputs
-    /// of the top module), by name, sorted.
+    /// The input clocks of the whole design: the inputs of the top module
+    /// that the `always_ff` blocks are clocked by, directly or through
+    /// derived clocks, by name, sorted.
     pub clocks: Vec<Name>,
     /// The signals assigned in `always_ff` blocks, in source order.
     pub registers: Vec<Name>,
@@ -231,9 +253,8 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         instances: Vec::new(),
     };
     let module = lower_rec(inst, "", &mut out)?;
-    typing::domains(inst)?;
+    let clocks = typing::domains(inst)?.into_iter().collect();
     let m = &inst.module;
-    let clocks = clocks(inst, "", &naming).into_iter().collect();
     let unread_inputs = m
         .ports
         .iter()
@@ -252,20 +273,6 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         wire_names: out.wire_names,
         instances: out.instances,
     })
-}
-
-/// The clocks of the instance at `prefix` and below, by name.
-fn clocks(inst: &Inst, prefix: &str, naming: &BTreeMap<Name, Name>) -> BTreeSet<Name> {
-    let mut out: BTreeSet<Name> = inst
-        .module
-        .clocks()
-        .into_iter()
-        .map(|c| naming[&format!("{prefix}{c}")].clone())
-        .collect();
-    for (u, child) in &inst.children {
-        out.extend(clocks(child, &format!("{prefix}{u}."), naming));
-    }
-    out
 }
 
 /// What the translation of a hierarchy collects.
@@ -674,6 +681,17 @@ fn combinational_loop(pending: &[Pending]) -> Error {
             signals.extend(path[start + 1..].iter().map(|(_, x)| x.unwrap()));
             let cycle: Vec<&str> = signals.iter().chain([&x]).map(|x| x.as_str()).collect();
             let mut msg = format!("combinational loop: {}", cycle.join(" -> "));
+            // a register atom awaits only its clock: the loop goes through
+            // the edge test
+            if let Some(&i) = items
+                .iter()
+                .find(|&&i| matches!(pending[i].item, Item::AlwaysFf { .. }))
+            {
+                msg += &format!(
+                    " (through the clock of the `always_ff` at {})",
+                    pending[i].span
+                );
+            }
             for (k, &i) in items.iter().enumerate() {
                 let (ctrl, awaited) = (signals[k], signals[(k + 1) % signals.len()]);
                 let Some(deps) = &pending[i].deps else {
