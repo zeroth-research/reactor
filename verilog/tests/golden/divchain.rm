@@ -1,0 +1,36 @@
+module divchain
+  external
+    clk : bv1
+    a : bv4
+    y@init : bv4
+    s2@init : bv1
+    s1@init : bv1
+  interface
+    y : bv4
+  private
+    s1 : bv1
+    s2 : bv1
+  atom controls s1 reads clk, s1 awaits clk, s1@init
+    init
+      X(s1) := ID X(s1@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := NOT s1
+      X(s1) := ITE (clk@pos, %2, s1)
+  atom controls s2 reads s1, s2 awaits s1, s2@init
+    init
+      X(s2) := ID X(s2@init)
+    update
+      %1 := NOT X(s1)
+      s1@neg := AND (s1, %1)
+      %2 := NOT s2
+      X(s2) := ITE (s1@neg, %2, s2)
+  atom controls y reads a, y, s2 awaits s2, y@init
+    init
+      X(y) := ID X(y@init)
+    update
+      %1 := NOT s2
+      s2@pos := AND (%1, X(s2))
+      %2 := ADD (y, a)
+      X(y) := ITE (s2@pos, %2, y)

@@ -336,6 +336,38 @@ fn accepted_clocks() {
     assert_eq!(t.clocks, ["ca"]);
 }
 
+/// Clocks derived from registers, directly and as copies or bits.
+#[test]
+fn accepted_derived_clocks() {
+    // a divider; the register on the derived clock reads one of the input
+    // clock and the derived clock itself
+    let t = translate_ff(
+        "  logic s;\n  logic [7:0] q;\n  always_ff @(posedge s) y <= q + {7'd0, s};\n  \
+         always_ff @(posedge clk) begin s <= !s; q <= a; end",
+    );
+    assert_eq!(t.clocks, ["clk"]);
+    assert_eq!(t.registers, ["y", "s", "q"]);
+    // the block on `s` comes after the one updating `s`, though written
+    // first, and awaits `s`
+    let atoms = t.module.atoms();
+    let (s, y) = (t.var("s"), t.var("y"));
+    let pos = |v| atoms.iter().position(|a| a.ctrl().contains(&v)).unwrap();
+    assert!(pos(s) < pos(y));
+    assert!(atoms[pos(y)].wait().contains(&s));
+    // a bit of a counter, a copy of a copy, a copy of the input clock
+    let t = translate_ff(
+        "  logic [3:0] n;\n  logic c, d, k;\n  assign c = n[3];\n  assign d = c;\n  \
+         assign k = clk;\n  always_ff @(negedge d) y <= a;\n  always_ff @(posedge k) n <= n + 4'd1;",
+    );
+    assert_eq!(t.clocks, ["clk"]);
+    // two stages
+    let t = translate_ff(
+        "  logic s1, s2;\n  always_ff @(posedge s2) y <= y + 8'd1;\n  \
+         always_ff @(negedge s1) s2 <= !s2;\n  always_ff @(posedge clk) s1 <= !s1;",
+    );
+    assert_eq!(t.clocks, ["clk"]);
+}
+
 #[test]
 fn rejected_always() {
     let cases = [
@@ -429,12 +461,85 @@ fn rejected_clocks() {
         "g)",
         "the clock `g` is computed combinationally",
     );
+    // a clock must have 1 bit, and a bit of a wider input is no clock
     rejects(
         Some(HEADER_FF),
-        "  logic s;\n  always_ff @(posedge clk) s <= !s;\n  always_ff @(posedge s) y <= a;",
+        "  always_ff @(posedge y) y <= a;",
+        2,
+        "y)",
+        "the clock `y` must have 1 bit",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic c;\n  assign c = a[0];\n  always_ff @(posedge c) y <= a;",
         4,
-        "s)",
-        "the clock `s` is a register: clocks derived from registers are not supported yet",
+        "c)",
+        "the clock `c` is a bit of the input `a`: input clocks must be 1-bit inputs",
+    );
+    // a copy of a register made in an `always_comb`, a gated clock behind
+    // a copy, a register clocked by a gated clock
+    rejects(
+        Some(HEADER_FF),
+        "  logic s, c;\n  always_ff @(posedge clk) s <= !s;\n  always_comb c = s;\n  \
+         always_ff @(posedge c) y <= a;",
+        5,
+        "c)",
+        "the clock `c` is computed combinationally: gated clocks are not supported",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic g, c;\n  assign g = clk & a[0];\n  assign c = g;\n  always_ff @(posedge c) y <= a;",
+        5,
+        "c)",
+        "the clock `c` comes from `g`, computed combinationally at 3:10: gated clocks are not \
+         supported",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic g, s;\n  assign g = clk & a[0];\n  always_ff @(posedge g) s <= !s;\n  \
+         always_ff @(posedge s) y <= a;",
+        4,
+        "g)",
+        "the clock `g` is computed combinationally",
+    );
+    // clock loops: a register clocked by itself, directly, through a copy,
+    // and through another register
+    rejects(
+        Some(HEADER_FF),
+        "  logic s;\n  always_ff @(posedge s) s <= !s;\n  assign y = a;",
+        3,
+        "always_ff",
+        "combinational loop: s -> s (through the clock of the `always_ff` at 3:3)",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic s, c;\n  assign c = s;\n  always_ff @(negedge c) s <= !s;\n  assign y = a;",
+        3,
+        "c =",
+        "combinational loop: c -> s -> c (through the clock of the `always_ff` at 4:3)",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic s1, s2;\n  always_ff @(posedge s2) s1 <= !s1;\n  \
+         always_ff @(posedge s1) s2 <= !s2;\n  assign y = a;",
+        3,
+        "always_ff",
+        "combinational loop: s1 -> s2 -> s1 (through the clock of the `always_ff` at 3:3)",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic [3:0] n;\n  always_ff @(posedge n[2]) n <= n + 4'd1;\n  assign y = a;",
+        3,
+        "n[2]",
+        "the clock must be a signal name",
+    );
+    rejects(
+        Some(HEADER_FF),
+        "  logic [3:0] n;\n  logic c;\n  assign c = n[2];\n  \
+         always_ff @(posedge c) n <= n + 4'd1;\n  assign y = a;",
+        4,
+        "c =",
+        "combinational loop: c -> n -> c (through the clock of the `always_ff` at 5:3)",
     );
     rejects(
         Some(HEADER_FF),
@@ -467,6 +572,25 @@ fn rejected_clocks() {
         5,
         "t[0]",
         "`z` (clocked by `cb`) reads `t`, which depends on registers clocked by `ca`",
+    );
+    // a derived clock is in the domain of its input clock, both ways
+    rejects(
+        two,
+        "  logic s;\n  always_ff @(posedge ca) s <= !s;\n  always_ff @(posedge s) y <= a;\n  \
+         always_ff @(posedge cb) z <= y;",
+        5,
+        "y;",
+        "`z` (clocked by `cb`) reads `y`, which depends on registers clocked by `ca` or by \
+         clocks derived from it: crossings between unrelated clocks are not supported yet",
+    );
+    rejects(
+        two,
+        "  logic s;\n  always_ff @(negedge ca) s <= !s;\n  always_ff @(posedge s) y <= z;\n  \
+         always_ff @(posedge cb) z <= a;",
+        4,
+        "z;",
+        "`y` (clocked by `s`, derived from `ca`) reads `z`, which depends on registers clocked \
+         by `cb`: crossings",
     );
 }
 

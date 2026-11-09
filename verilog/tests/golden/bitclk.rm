@@ -1,0 +1,31 @@
+module bitclk
+  external
+    clk : bv1
+    a : bv8
+    cnt@init : bv3
+    w@init : bv8
+  interface
+    cnt : bv3
+    w : bv8
+  private
+    c : bv1
+  atom controls cnt reads clk, cnt awaits clk, cnt@init
+    init
+      X(cnt) := ID X(cnt@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 3'd1
+      %3 := ADD (cnt, %2)
+      X(cnt) := ITE (clk@pos, %3, cnt)
+  atom controls c awaits cnt
+    init = update
+      X(c) := EXTRACT[2:2] X(cnt)
+  atom controls w reads a, w, c awaits c, w@init
+    init
+      X(w) := ID X(w@init)
+    update
+      %1 := NOT c
+      c@pos := AND (%1, X(c))
+      %2 := ADD (w, a)
+      X(w) := ITE (c@pos, %2, w)

@@ -3,16 +3,17 @@
 
 [`Interp::step`] runs one round, a time step: given the values of the
 inputs in the round, clocks included, it returns the value of every signal
-in the round. First, unless it is the first round, every `always_ff` block
-whose clock edge happens in the round runs: its clock was 0 in the
-previous round and is 1 now (`posedge`), or 1 and now 0 (`negedge`). A
-block runs on the values of the previous round, the values just before
-the edge. The assignments `q <= e` of all these blocks are collected and
-take effect together, the last one to a register winning; a register that
-no executed assignment targets keeps its value. Then the combinational
-signals are computed from the new register values and the inputs of the
-round. In the first round no edge happens: the registers have their
-initial values.
+in the round. Every signal is computed on demand from its driver. The
+value of a register in a round is decided by its `always_ff` block: the
+block runs if the edge of its clock happens in the round, that is, its
+clock was 0 in the previous round and is 1 now (`posedge`), or 1 and now
+0 (`negedge`). The level of the clock now is computed first, like any
+signal, so a derived clock (a register, or computed from one) has its new
+value. A block runs on the values of the previous round, the values just
+before the edge, and its registers take the values it assigns, the last
+assignment to a register winning; a register no executed assignment
+targets keeps its value. In the first round no edge happens: the
+registers have their initial values.
 
 A signal driven by an `always_comb` block is computed by running the whole
 block when one of its signals is first needed, with blocking assignments:
@@ -50,17 +51,17 @@ pub struct Interp<'m> {
     /// The driver of each signal driven by an `assign`, an `always_comb`
     /// or an instance connection, with the instance it is in.
     driver: BTreeMap<Name, (usize, Driver<'m>)>,
-    /// The bodies of the `always_ff` blocks, with their instances, the
-    /// names of their clocks and their edges.
-    blocks: Vec<(usize, &'m Stmt, Name, Edge)>,
+    /// The `always_ff` blocks, with their instances, the names of their
+    /// clocks and their edges.
+    blocks: Vec<(usize, &'m Item, Name, Edge)>,
     /// Every signal, by name, with its type.
     signals: BTreeMap<Name, Ty>,
     /// The inputs of the top module.
     inputs: Vec<(Name, Ty)>,
     /// The registers: path, name and type.
     registers: Vec<(Name, Name, Ty)>,
-    /// The value of every register in the current round, by name.
-    state: Values,
+    /// The initial value of every register, by name.
+    init: Values,
     /// The values of the previous round; none before the first round.
     prev: Option<Values>,
 }
@@ -78,6 +79,9 @@ enum Driver<'m> {
     /// An input of an instance connected to this expression of the
     /// instantiating module.
     Conn(&'m Expr),
+    /// A register, assigned by the `always_ff` block with this index in
+    /// [`Interp::blocks`].
+    Ff(usize),
 }
 
 impl<'m> Interp<'m> {
@@ -92,7 +96,7 @@ impl<'m> Interp<'m> {
             signals: BTreeMap::new(),
             inputs: Vec::new(),
             registers: Vec::new(),
-            state: Values::new(),
+            init: Values::new(),
             prev: None,
         };
         it.add(inst, "", &naming)?;
@@ -109,7 +113,7 @@ impl<'m> Interp<'m> {
             if v.width() != ty.width {
                 return Err(err(format!("register `{path}` given {} bits", v.width())));
             }
-            it.state.insert(name.clone(), v.clone());
+            it.init.insert(name.clone(), v.clone());
         }
         if let Some(x) = init
             .keys()
@@ -139,13 +143,13 @@ impl<'m> Interp<'m> {
         }
         for item in &m.items {
             match item {
-                Item::AlwaysFf {
-                    clock, edge, body, ..
-                } => {
-                    self.blocks.push((c, body, names[clock].clone(), *edge));
+                Item::AlwaysFf { clock, edge, .. } => {
+                    let b = self.blocks.len();
+                    self.blocks.push((c, item, names[clock].clone(), *edge));
                     for q in item.targets() {
                         let path = format!("{prefix}{q}");
                         self.registers.push((path, names[q].clone(), env[q].ty));
+                        self.driver.insert(names[q].clone(), (c, Driver::Ff(b)));
                     }
                 }
                 Item::Assign { .. } | Item::AlwaysComb { .. } => {
@@ -188,31 +192,10 @@ impl<'m> Interp<'m> {
     /// clocks included. Returns the value of every signal in this round,
     /// by name.
     pub fn step(&mut self, inputs: &Values) -> Result<Values, String> {
-        if let Some(prev) = &self.prev {
-            let mut values = prev.clone();
-            let mut active = BTreeSet::new();
-            let mut updates = Values::new();
-            for (c, body, clock, edge) in &self.blocks {
-                let before = prev[clock].is_zero();
-                let after = inputs
-                    .get(clock)
-                    .ok_or_else(|| format!("no value for input `{clock}`"))?
-                    .is_zero();
-                let fires = match edge {
-                    Edge::Pos => before && !after,
-                    Edge::Neg => !before && after,
-                };
-                if !fires {
-                    continue;
-                }
-                let mut out = Values::new();
-                self.exec(*c, body, false, &mut values, &mut active, &mut out)?;
-                let names = &self.ctxs[*c].names;
-                updates.extend(out.into_iter().map(|(q, v)| (names[&q].clone(), v)));
-            }
-            self.state.extend(updates);
-        }
-        let mut values = self.state.clone();
+        let mut values = match self.prev {
+            None => self.init.clone(),
+            Some(_) => Values::new(),
+        };
         for (name, ty) in &self.inputs {
             let v = inputs
                 .get(name)
@@ -287,7 +270,7 @@ impl<'m> Interp<'m> {
                     let old = match out.get(&p.name) {
                         Some(old) => old.clone(),
                         None if comb => BitVec::zero(env[&p.name].ty.width),
-                        None => self.state[&self.ctxs[c].names[&p.name]].clone(),
+                        None => values[&self.ctxs[c].names[&p.name]].clone(),
                     };
                     out.insert(p.name.clone(), write(&old, p.lo, &bits));
                 }
@@ -334,6 +317,31 @@ impl<'m> Interp<'m> {
                         .cloned()
                         .unwrap_or_else(|| BitVec::zero(ctx.env[&p.name].ty.width));
                     values.insert(y.clone(), write(&old, p.lo, &bits));
+                }
+            }
+            Driver::Ff(b) => {
+                let (c, item, clock, edge) = &self.blocks[b];
+                let prev = self
+                    .prev
+                    .as_ref()
+                    .expect("registers set in the first round");
+                let before = prev[clock].is_zero();
+                let after = self.signal(clock, values, active)?.is_zero();
+                let fires = match edge {
+                    Edge::Pos => before && !after,
+                    Edge::Neg => !before && after,
+                };
+                let mut out = Values::new();
+                if fires {
+                    // on the values just before the edge
+                    let mut old = prev.clone();
+                    let body = item.body().unwrap();
+                    self.exec(*c, body, false, &mut old, &mut BTreeSet::new(), &mut out)?;
+                }
+                for q in item.targets() {
+                    let y = &self.ctxs[*c].names[q];
+                    let v = out.remove(q).unwrap_or_else(|| prev[y].clone());
+                    values.insert(y.clone(), v);
                 }
             }
             Driver::Item(item) => {

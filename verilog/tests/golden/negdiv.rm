@@ -1,0 +1,34 @@
+module negdiv
+  external
+    clk : bv1
+    d : bv4
+    slow@init : bv1
+    n@init : bv4
+    p@init : bv4
+  interface
+    slow : bv1
+    p : bv4
+    n : bv4
+  atom controls slow reads clk, slow awaits clk, slow@init
+    init
+      X(slow) := ID X(slow@init)
+    update
+      %1 := NOT X(clk)
+      clk@neg := AND (clk, %1)
+      %2 := NOT slow
+      X(slow) := ITE (clk@neg, %2, slow)
+  atom controls n reads d, slow, n awaits slow, n@init
+    init
+      X(n) := ID X(n@init)
+    update
+      %1 := NOT X(slow)
+      slow@neg := AND (slow, %1)
+      X(n) := ITE (slow@neg, d, n)
+  atom controls p reads clk, d, p awaits clk, p@init
+    init
+      X(p) := ID X(p@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := XOR (p, d)
+      X(p) := ITE (clk@pos, %2, p)
