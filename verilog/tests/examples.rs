@@ -108,7 +108,7 @@ fn golden() {
 /// Inputs (clocks included) and the initial values of the registers are
 /// external, outputs interface, all other signals of the hierarchy private;
 /// an unread input is no variable at all. The update of a register atom
-/// awaits only its clock, for the edge test.
+/// awaits only its clock, for the edge test, and its asynchronous reset.
 #[test]
 fn structure() {
     for path in examples() {
@@ -155,25 +155,25 @@ fn structure() {
         let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
         let regs: BTreeMap<&String, &String> =
             t.registers.iter().map(|q| (&naming[q], q)).collect();
+        let clocking = clocking(&inst);
         for atom in t.module.atoms() {
             let ctrl = names(atom.ctrl());
             if !regs.contains_key(&ctrl[0]) {
                 continue;
             }
-            // the initial values and the clock (an input clock, or a
-            // register or a copy of one: a derived clock)
+            // the initial values, the clock (an input clock, or a register
+            // or a copy of one: a derived clock) and the reset
             let mut inits: Vec<String> = ctrl.iter().map(|q| init_name(regs[q])).collect();
             let wait = names(atom.wait());
-            let clock: Vec<&String> = wait.iter().filter(|v| !inits.contains(v)).collect();
-            assert_eq!(clock.len(), 1, "{display}: {ctrl:?} awaits {wait:?}");
-            inits.push(clock[0].clone());
-            let clock = t.var(clock[0]);
-            assert_eq!(wait, sorted(inits), "{display}");
+            let (clock, reset) = &clocking[&ctrl[0]];
+            let edges: Vec<&String> = [clock].into_iter().chain(reset).collect();
+            inits.extend(edges.iter().map(|x| x.to_string()));
+            assert_eq!(wait, sorted(inits), "{display}: {ctrl:?} awaits {wait:?}");
             for term in atom.update().iter() {
                 for w in term.read() {
                     let awaited = t.vars.values().any(|v| base::var::X(*v) == *w);
                     assert!(
-                        !awaited || *w == base::var::X(clock),
+                        !awaited || edges.iter().any(|x| *w == base::var::X(t.var(x))),
                         "{display}: update of {ctrl:?} awaits"
                     );
                 }
@@ -224,15 +224,20 @@ impl Rand {
             .collect()
     }
 
-    /// `rounds` values for every input, with the clocks `clocks` driven as
-    /// `gen` says.
+    /// `rounds` values for every input of the top of `inst`, with the
+    /// clocks `clocks` driven as `gen` says. With a generator, the inputs
+    /// that are asynchronous resets are active in the first two rounds and
+    /// then in one round of eight on average (random values would keep
+    /// them active half the time).
     fn trace(
         &mut self,
-        m: &Module,
+        inst: &Inst,
         clocks: &[String],
         clocking: Gen,
         rounds: usize,
     ) -> Vec<Values> {
+        let m = &inst.module;
+        let resets = resets(inst);
         // per clock: its period (in rounds per level) and first level
         let shapes: Vec<(usize, u64)> = clocks
             .iter()
@@ -251,6 +256,13 @@ impl Rand {
                     for (c, (period, first)) in clocks.iter().zip(&shapes) {
                         let level = (first + (k / period) as u64) % 2;
                         v.insert(c.clone(), BitVec::new(1, level as u128).unwrap());
+                    }
+                    for (r, edge) in &resets {
+                        if let Some(w) = v.get(r).map(BitVec::width) {
+                            let active = k < 2 || self.next().is_multiple_of(8);
+                            let level = active == (*edge == Edge::Pos);
+                            v.insert(r.clone(), BitVec::new(w, level as u128).unwrap());
+                        }
                     }
                 }
                 v
@@ -288,18 +300,17 @@ impl Gen {
 /// The translated module computes the same values as the AST semantics,
 /// from the same initial register values (given to `q@init` in the first
 /// round, and random values without effect in later rounds), with clocks
-/// at random levels or driven by generators.
+/// at random levels or driven by generators (resets then in pulses).
 #[test]
 fn rm_matches_ast() {
     let mut rand = Rand(0x2545_f491_4f6c_dd1d);
     for path in examples() {
         let (inst, t) = load(&path);
-        let m = &inst.module;
         for run in 0..12 {
             let init = rand.registers(&inst);
             let mut interp = Interp::new(&inst, &init).unwrap();
             let mut sim = Sim::new(&t.module);
-            let trace = rand.trace(m, &t.clocks, Gen::nth(run), 100);
+            let trace = rand.trace(&inst, &t.clocks, Gen::nth(run), 100);
             for (k, inputs) in trace.iter().enumerate() {
                 let expected = interp.step(inputs).unwrap();
                 let regs = if k == 0 {
@@ -454,6 +465,18 @@ fn tb_init(init: &Values) -> String {
     out
 }
 
+/// Sets the registers to `init` twice: setting a register may make an edge
+/// of a clock derived from it (from x), whose block then overwrites
+/// registers, so they are set again once those updates are done (no edge
+/// the second time); except the registers with an asynchronous reset,
+/// which a reset that is a register may have reset (their clocks are
+/// inputs in the examples).
+fn tb_init_twice(t: &Translation, init: &Values) -> String {
+    let mut again = init.clone();
+    again.retain(|q, _| !t.reset_registers.contains(q));
+    format!("{}    #1;\n{}", tb_init(init), tb_init(&again))
+}
+
 /// `$display` of the signals compared, in hex.
 fn tb_display(inst: &Inst) -> String {
     let shown: Vec<String> = shown(inst).iter().map(|x| format!("dut.{x}")).collect();
@@ -472,43 +495,39 @@ fn tb_display(inst: &Inst) -> String {
 /// then sets the registers to `init`, by hierarchical assignment
 /// (`dut.q = …`; iverilog accepts this although the standard forbids
 /// writing an `always_ff` variable from another process), overriding
-/// whatever an edge from the unknown starting level of a clock did.
-fn testbench(inst: &Inst, clocks: &[String], init: &Values, rounds: &[Values]) -> String {
-    let is_clock = |n: &str| clocks.iter().any(|c| c == n);
+/// whatever an edge from the unknown starting level of a clock did, and
+/// only then sets the other inputs: an asynchronous reset active in the
+/// first round then resets its registers (its change from x is an edge
+/// of the reset). `t.reset_registers` are set only once: an edge from x
+/// of a reset that is a register can have reset them already.
+fn testbench(inst: &Inst, t: &Translation, init: &Values, rounds: &[Values]) -> String {
+    let is_clock = |n: &str| t.clocks.iter().any(|c| c == n);
     let mut tb = tb_header(inst);
     for (k, v) in rounds.iter().enumerate() {
         tb += &tb_set(v, is_clock);
         tb += "    #1;\n";
-        tb += &tb_set(v, |n| !is_clock(n));
         if k == 0 {
-            // setting a register may make an edge of a clock derived from
-            // it (from x), whose block then overwrites registers: set them
-            // again once those updates are done (no edge the second time)
-            tb += "    #1;\n";
-            tb += &tb_init(init);
-            tb += "    #1;\n";
-            tb += &tb_init(init);
+            tb += &tb_init_twice(t, init);
         }
+        tb += &tb_set(v, |n| !is_clock(n));
         tb += &format!("    #1 {}", tb_display(inst));
     }
     tb += "    $finish;\n  end\nendmodule\n";
     tb
 }
 
-/// A testbench of the cycle model: it sets the registers to `init`, then
-/// for each of `vectors` (a value for every input but the clock `clk`, if
-/// any) sets the inputs, prints all signals but the inputs in hex (one
+/// A testbench of the cycle model: it sets the registers to `init` (as
+/// [`tb_init_twice`] says), then for each of `vectors` (a value for every
+/// input but the clock of `t`, if any) sets the inputs, prints all signals but the inputs in hex (one
 /// line per vector) and pulses the clock. The clock starts at 0, since a
 /// change from x to 1 would be a rising edge.
-fn cycle_testbench(inst: &Inst, clk: Option<&str>, init: &Values, vectors: &[Values]) -> String {
+fn cycle_testbench(inst: &Inst, t: &Translation, init: &Values, vectors: &[Values]) -> String {
+    let clk = t.clocks.first().map(String::as_str);
     let mut tb = tb_header(inst);
     if let Some(clk) = clk {
         tb += &format!("    {clk} = 1'b0;\n");
     }
-    // twice, as in `testbench`
-    tb += &tb_init(init);
-    tb += "    #1;\n";
-    tb += &tb_init(init);
+    tb += &tb_init_twice(t, init);
     for v in vectors {
         tb += &tb_set(v, |n| Some(n) != clk);
         tb += &format!("    #1 {}", tb_display(inst));
@@ -616,13 +635,13 @@ fn ast_matches_iverilog() {
         }
         let m = &inst.module;
         let init = rand.registers(&inst);
-        let rounds = rand.trace(m, &t.clocks, Gen::nth(n), 300);
+        let rounds = rand.trace(&inst, &t.clocks, Gen::nth(n), 300);
         let mut interp = Interp::new(&inst, &init).unwrap();
         let expected: Vec<String> = rounds
             .iter()
             .map(|v| hex_line(&inst, &interp.step(v).unwrap()))
             .collect();
-        let tb = testbench(&inst, &t.clocks, &init, &rounds);
+        let tb = testbench(&inst, &t, &init, &rounds);
         let got = run_iverilog(&bin, &path, &m.name, &tb);
         assert_eq!(got.len(), expected.len(), "{}: {got:?}", path.display());
         for (k, (g, e)) in got.iter().zip(&expected).enumerate() {
@@ -667,12 +686,60 @@ fn rounds_match_cycles() {
                 None => hex_line(&inst, &interp.step(v).unwrap()),
             })
             .collect();
-        let tb = cycle_testbench(&inst, clk, &init, &vectors);
+        let tb = cycle_testbench(&inst, &t, &init, &vectors);
         let got = run_iverilog(&bin, &path, &format!("{}_cycles", m.name), &tb);
         assert_eq!(got, expected, "{}", path.display());
         compared += 1;
     }
     assert!(compared > 20, "{compared}");
+}
+
+/// The asynchronous resets of the hierarchy, by name (see
+/// `Inst::naming`), with their edges (`posedge` for an active-high reset).
+fn resets(inst: &Inst) -> BTreeMap<String, Edge> {
+    let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
+    let mut out = BTreeMap::new();
+    let mut walk = vec![(inst, String::new())];
+    while let Some((i, prefix)) = walk.pop() {
+        for item in &i.module.items {
+            if let Item::AlwaysFf { reset: Some(r), .. } = item {
+                out.insert(naming[&format!("{prefix}{}", r.name)].clone(), r.edge);
+            }
+        }
+        for (u, child) in &i.children {
+            walk.push((child, format!("{prefix}{u}.")));
+        }
+    }
+    out
+}
+
+/// The clock and the asynchronous reset (if the block resets a register)
+/// of every register of the hierarchy, by name (see `Inst::naming`).
+fn clocking(inst: &Inst) -> BTreeMap<String, (String, Option<String>)> {
+    let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
+    let mut out = BTreeMap::new();
+    let mut walk = vec![(inst, String::new())];
+    while let Some((i, prefix)) = walk.pop() {
+        let canon = |x: &str| naming[&format!("{prefix}{x}")].clone();
+        for item in &i.module.items {
+            if let Item::AlwaysFf {
+                clock, reset, body, ..
+            } = item
+            {
+                let reset = reset
+                    .as_ref()
+                    .filter(|_| !body.reset_values().is_empty())
+                    .map(|r| canon(&r.name));
+                for q in item.targets() {
+                    out.insert(canon(q), (canon(clock), reset.clone()));
+                }
+            }
+        }
+        for (u, child) in &i.children {
+            walk.push((child, format!("{prefix}{u}.")));
+        }
+    }
+    out
 }
 
 /// Why iverilog may disagree with the round semantics on a design, if it

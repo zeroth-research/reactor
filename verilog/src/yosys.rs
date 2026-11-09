@@ -49,11 +49,18 @@ registers, sampling values of the previous step:
 
 and the wire `q` becomes `ite({c#sampled, c} == 01, D#sampled,
 q#sampled)` (`10` for a falling edge): the sampled input if the edge
-happened between the previous step and this one, else the old output. So
+happened between the previous step and this one, else the old output. A
+flip-flop with an asynchronous reset to the constant `v` has a fourth
+register `$auto$clk2fflogic.cc:N:sample_control$R#sampled$K` (1 bit), the
+reset's active level of the previous step, with `R` an anonymous cell
+(`$auto$rtlil.cc:N:ReduceOr$6`, `…:Not$36` for an active-low reset), and
+its wire `q` is `ite(r, v, ite(r#sampled, v, …))` with `r` the active
+level now: the reset value while the reset is active and in the step it
+is released, even if an edge happens then. So
 the wire `q` in a state is the register's value after that step, and
 `|T_t|` relates two consecutive time steps. The initial-state predicate
 `(|T_i| s)` sets the clock samples so that no edge happens in the first
-step and the data input samples to 0; it constrains an output sample only
+step, the reset samples to 0 (inactive) and the data input samples to 0; it constrains an output sample only
 by `(= (bvand q #b0…) #b0…)` (always true) or not at all. A data input
 sample can carry the name of a register (`/s1#sampled` above) with its
 width, so names alone do not tell the output sample of a register; see
@@ -128,6 +135,8 @@ pub fn run(bin: &Path, file: &Path, top: &str, overrides: &[Override]) -> Result
 pub enum Sample<'n> {
     /// The level of the clock with this name.
     Edge(&'n str),
+    /// The level of an asynchronous reset (an anonymous cell output).
+    Control,
     /// The wire with this name (the data input or the output of a
     /// flip-flop), or an anonymous cell output (`None`).
     Data(Option<&'n str>),
@@ -147,6 +156,9 @@ pub fn sample(name: &str) -> Option<Sample<'_>> {
     }
     if let Some(c) = rest.strip_prefix("sample_control_edge$/") {
         return Some(Sample::Edge(c));
+    }
+    if rest.starts_with("sample_control$") {
+        return Some(Sample::Control);
     }
     let wire = rest.strip_prefix("sample_data$")?;
     Some(Sample::Data(wire.strip_prefix('/')))

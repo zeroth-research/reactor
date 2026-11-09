@@ -29,8 +29,8 @@ not affected.
 
 use crate::ast::{
     BinOp, CaseItem, Cast, Conn, Const, Decl, Dir, Edge, Error, Expr, ExprKind, Index, Instance,
-    Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, Span, Stmt, StmtKind,
-    Ty, UnOp,
+    Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Reset, Select, Span, Stmt,
+    StmtKind, Ty, UnOp,
 };
 use crate::constant::{self, Failure, Literal};
 use crate::value::BitVec;
@@ -822,8 +822,10 @@ impl Cx<'_> {
     }
 
     /// `always_comb stmt`, or `always_ff @(posedge clk) stmt` (or
-    /// `negedge`): one edge of one clock signal, no other events
-    /// (asynchronous resets come later).
+    /// `negedge`): one edge of one clock signal, optionally with an
+    /// asynchronous reset `@(posedge clk or posedge rst) if (rst) … else …`
+    /// (or `negedge rst_n` and `if (!rst_n)`; events in either order,
+    /// separated by `or` or `,`). The reset is the event the `if` tests.
     fn always(&self, a: &sv::AlwaysConstruct) -> Result<Item> {
         let (kw, stmt) = &a.nodes;
         match kw {
@@ -871,12 +873,111 @@ impl Cx<'_> {
                 );
             }
         };
-        let sv::EventExpression::Expression(event) = event else {
+        let mut events = Vec::new();
+        self.events(event, &mut events)?;
+        if let Some(e) = events.get(2) {
             return self.err(
-                event,
-                "only one event `posedge <clock>` or `negedge <clock>` supported (no asynchronous reset)",
+                *e,
+                "at most two events supported: a clock and an asynchronous reset",
             );
+        }
+        let events = events
+            .into_iter()
+            .map(|e| self.event(e))
+            .collect::<Result<Vec<_>>>()?;
+        let body = self.stmt(body)?;
+        let (clock, edge, clock_span, reset) = match &events[..] {
+            [(name, edge, span)] => (name.clone(), *edge, *span, None),
+            [a, b] => {
+                if a.0 == b.0 {
+                    return Err(Error::new(
+                        b.2,
+                        format!("`{}` appears twice in the event list", b.0),
+                    ));
+                }
+                let (name, low, cond_span) = reset_test(&body).ok_or_else(|| {
+                    Error::new(
+                        body.span,
+                        "a block with two events needs an asynchronous reset: its body must \
+                         be a single `if` testing one of the events, `if (rst)` for \
+                         `posedge rst` or `if (!rst_n)` for `negedge rst_n`",
+                    )
+                })?;
+                let (r, c) = if *name == a.0 {
+                    (a, b)
+                } else if *name == b.0 {
+                    (b, a)
+                } else {
+                    return Err(Error::new(
+                        cond_span,
+                        format!(
+                            "a block with two events needs an asynchronous reset: its `if` \
+                             must test `{}` or `{}`",
+                            a.0, b.0
+                        ),
+                    ));
+                };
+                if low != (r.1 == Edge::Neg) {
+                    let test = if r.1 == Edge::Neg {
+                        format!("!{}", r.0)
+                    } else {
+                        r.0.to_string()
+                    };
+                    return Err(Error::new(
+                        cond_span,
+                        format!(
+                            "the block resets on `{} {}`, so its `if` must test `{test}`",
+                            r.1, r.0
+                        ),
+                    ));
+                }
+                let reset = Reset {
+                    name: r.0.clone(),
+                    edge: r.1,
+                    span: r.2,
+                };
+                (c.0.clone(), c.1, c.2, Some(reset))
+            }
+            _ => unreachable!("one or two events"),
         };
+        Ok(Item::AlwaysFf {
+            clock,
+            edge,
+            clock_span,
+            reset,
+            body,
+            span: self.span(kw),
+        })
+    }
+
+    /// Adds the events of an event list (`a or b`, `a, b`, parentheses) to
+    /// `out`, in source order.
+    fn events<'e>(
+        &self,
+        e: &'e sv::EventExpression,
+        out: &mut Vec<&'e sv::EventExpressionExpression>,
+    ) -> Result<()> {
+        match e {
+            sv::EventExpression::Expression(e) => out.push(e),
+            sv::EventExpression::Or(e) => {
+                self.events(&e.nodes.0, out)?;
+                self.events(&e.nodes.2, out)?;
+            }
+            sv::EventExpression::Comma(e) => {
+                self.events(&e.nodes.0, out)?;
+                self.events(&e.nodes.2, out)?;
+            }
+            sv::EventExpression::Paren(e) => self.events(&e.nodes.0.nodes.1, out)?,
+            sv::EventExpression::Sequence(e) => {
+                return self.err(e, "sequence events not supported");
+            }
+        }
+        Ok(())
+    }
+
+    /// One event `posedge x` or `negedge x` of an `always_ff` block: the
+    /// name, the edge and the position of the name.
+    fn event(&self, event: &sv::EventExpressionExpression) -> Result<(Name, Edge, Span)> {
         let (edge, clock, iff) = &event.nodes;
         let edge = match edge {
             Some(sv::EdgeIdentifier::Posedge(_)) => Edge::Pos,
@@ -898,17 +999,11 @@ impl Cx<'_> {
             }
         };
         self.absent(iff, "`iff`")?;
-        let clock_span = self.span(clock);
-        let ExprKind::Var(clock) = self.expr(clock)?.kind else {
-            return Err(Error::new(clock_span, "the clock must be a signal name"));
+        let span = self.span(clock);
+        let ExprKind::Var(name) = self.expr(clock)?.kind else {
+            return Err(Error::new(span, "an event must be on a signal name"));
         };
-        Ok(Item::AlwaysFf {
-            clock,
-            edge,
-            clock_span,
-            body: self.stmt(body)?,
-            span: self.span(kw),
-        })
+        Ok((name, edge, span))
     }
 
     // ------------------------------------------------------------------
@@ -1795,6 +1890,25 @@ enum Leaf {
         param: bool,
         span: Span,
     },
+}
+
+/// What the `if` of a block with an asynchronous reset tests: the body is a
+/// single `if` (possibly inside `begin … end`) whose condition is `x`, `!x`
+/// or `~x` for a name `x`. Gives `x`, whether it is negated, and the
+/// position of the condition.
+fn reset_test(body: &Stmt) -> Option<(&Name, bool, Span)> {
+    match &body.kind {
+        StmtKind::Block(stmts) if stmts.len() == 1 => reset_test(&stmts[0]),
+        StmtKind::If(c, _, _) => match &c.kind {
+            ExprKind::Var(x) => Some((x, false, c.span)),
+            ExprKind::Unary(UnOp::LogNot | UnOp::BitNot, e) => match &e.kind {
+                ExprKind::Var(x) => Some((x, true, c.span)),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// An operator of a flattened chain: a binary operator, `**`, or `? then :`

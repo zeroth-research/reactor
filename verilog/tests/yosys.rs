@@ -123,6 +123,14 @@ fn sample_names() {
             "$auto$clk2fflogic.cc:101:sample_data$$flatten/s2.$procmux$7_Y#sampled$17",
             Some(Sample::Data(None)),
         ),
+        (
+            "$auto$clk2fflogic.cc:75:sample_control$$auto$rtlil.cc:3238:ReduceOr$6#sampled$18",
+            Some(Sample::Control),
+        ),
+        (
+            "$auto$clk2fflogic.cc:75:sample_control$$auto$rtlil.cc:3234:Not$36#sampled$37",
+            Some(Sample::Control),
+        ),
         ("$auto$clk2fflogic.cc:101:sample_data$/s1", None),
         ("$auto$clk2fflogic.cc::sample_data$/s1#sampled$2", None),
         ("$auto$clk2fflogic.cc:101:sample_data$/s1#sampled$", None),
@@ -188,10 +196,10 @@ fn overrides_rejected() {
     assert!(e.contains("parameter overrides are not supported"), "{e}");
 }
 
-/// Yosys's registers are three samples per register path of ours, its
-/// inputs and outputs are the top ports (clocks and unread inputs
-/// included), and every variable of
-/// our module except `q@init` is a Yosys wire of the same width. With z3,
+/// Yosys's registers are three samples per register path of ours (four with
+/// an asynchronous reset), its inputs and outputs are the top ports (clocks
+/// and unread inputs included), and every variable of our module except
+/// `q@init` is a Yosys wire of the same width. With z3,
 /// every accessor of [`yosys::Smt2::value`] is a bit vector of the listed
 /// width, and the transition and hierarchy predicates are satisfiable.
 #[test]
@@ -212,9 +220,9 @@ fn names_match_examples() {
         assert_eq!(ys.top, t.name, "{}", at("top"));
         assert_eq!(
             ys.registers.len(),
-            3 * registers(&inst).len(),
+            3 * registers(&inst).len() + t.reset_registers.len(),
             "{}",
-            at("registers")
+            at("registers (three per register, one more with an asynchronous reset)")
         );
         assert_eq!(ys.inputs, ports(&inst, Dir::Input), "{}", at("inputs"));
         assert_eq!(ys.outputs, ports(&inst, Dir::Output), "{}", at("outputs"));
@@ -460,6 +468,30 @@ fn registers_mismatch() {
         ["Yosys has 1 clock samples and 2 data samples, for 0 registers there should be 0 and 0"]
     );
     assert!(miter::build(&t, &ys).is_err());
+
+    // `arcount`: a reset sample per register with an asynchronous reset;
+    // a reset we lost, or one Yosys lost
+    let (mut t, ys) = example("arcount.sv");
+    assert_eq!(t.reset_registers, ["q"]);
+    miter::registers(&t, &ys).unwrap();
+    let control: Vec<String> = ys
+        .registers
+        .keys()
+        .filter(|r| r.contains(":sample_control$"))
+        .cloned()
+        .collect();
+    assert_eq!(control.len(), 1);
+    let mut other = ys.clone();
+    other.registers.remove(&control[0]);
+    assert_eq!(
+        miter::registers(&t, &other).unwrap_err(),
+        ["Yosys has 0 reset samples, for 1 registers with an asynchronous reset there should be 1"]
+    );
+    t.reset_registers.clear();
+    assert_eq!(
+        miter::registers(&t, &ys).unwrap_err(),
+        ["Yosys has 1 reset samples, for 0 registers with an asynchronous reset there should be 0"]
+    );
 
     // register errors come first, wire errors are still reported
     let (t, mut ys) = example("counter.sv");
@@ -861,7 +893,10 @@ fn tokens(source: &str) -> Vec<(usize, usize, &str)> {
 /// [`OPERATORS`]), a sized literal one larger (wrapping), an unsized
 /// number one smaller (`0` becomes `1`), the condition of an `if`
 /// negated, or the edge of an `always_ff` block swapped (`posedge` and
-/// `negedge`).
+/// `negedge`); for a block with an asynchronous reset also the polarity of
+/// the reset flipped (`posedge rst` with `if (rst)` becomes `negedge rst`
+/// with `if (!rst)`, and back), and the reset made synchronous (its event
+/// removed).
 fn mutants(source: &str) -> Vec<Mutant> {
     let at = |offset: usize| {
         let line = source[..offset].matches('\n').count() + 1;
@@ -873,8 +908,27 @@ fn mutants(source: &str) -> Vec<Mutant> {
         source: format!("{}{to}{}", &source[..start], &source[end..]),
     };
     let tokens = tokens(source);
+    // the end of the parenthesis opened by token `k`
+    let close = |k: usize| {
+        let mut depth = 0;
+        tokens[k..]
+            .iter()
+            .find(|(_, _, t)| {
+                depth += match *t {
+                    "(" => 1,
+                    ")" => -1,
+                    _ => 0,
+                };
+                depth == 0
+            })
+            .unwrap()
+            .1
+    };
     let mut out = vec![];
     for (k, &(start, end, text)) in tokens.iter().enumerate() {
+        if text == "@" {
+            out.extend(reset_mutants(source, &tokens, k, &close, &at));
+        }
         if let Some((_, to)) = OPERATORS.iter().find(|(o, _)| *o == text) {
             out.push(mutant(start, end, to));
         } else if text == "posedge" {
@@ -884,19 +938,7 @@ fn mutants(source: &str) -> Vec<Mutant> {
         } else if text == "if" {
             // the condition: from `(` to its `)`
             let (open, _, _) = tokens[k + 1];
-            let mut depth = 0;
-            let close = tokens[k + 1..]
-                .iter()
-                .find(|(_, _, t)| {
-                    depth += match *t {
-                        "(" => 1,
-                        ")" => -1,
-                        _ => 0,
-                    };
-                    depth == 0
-                })
-                .unwrap()
-                .1;
+            let close = close(k + 1);
             let cond = &source[open..close];
             out.push(Mutant {
                 what: format!("{} `if {cond}` -> `if (!{cond})`", at(start)),
@@ -925,6 +967,63 @@ fn mutants(source: &str) -> Vec<Mutant> {
         }
     }
     out
+}
+
+/// The mutants of the asynchronous reset of the block whose event control
+/// starts at token `k` (`@`), if it has one: the event list `(e1 or e2)`
+/// and the first `if` after it, whose condition `(rst)`, `(!rst)` or
+/// `(~rst)` names the reset.
+fn reset_mutants(
+    source: &str,
+    tokens: &[(usize, usize, &str)],
+    k: usize,
+    close: &dyn Fn(usize) -> usize,
+    at: &dyn Fn(usize) -> String,
+) -> Vec<Mutant> {
+    let (open, end) = (tokens[k + 1].0, close(k + 1));
+    let list = &source[open + 1..end - 1];
+    let events: Vec<&str> = list.split([',']).flat_map(|e| e.split(" or ")).collect();
+    let [e1, e2] = events[..] else {
+        return vec![];
+    };
+    let i = k + tokens[k..].iter().position(|t| t.2 == "if").unwrap();
+    let (c0, c1) = (tokens[i + 1].0, close(i + 1));
+    let cond = source[c0 + 1..c1 - 1].trim();
+    let name = cond.trim_start_matches(['!', '~']);
+    let edge_name = |e: &str| {
+        let (edge, name) = e.trim().split_once(' ').unwrap();
+        (edge.to_string(), name.trim().to_string())
+    };
+    let (r, c) = if edge_name(e1).1 == name {
+        (e1, e2)
+    } else {
+        (e2, e1)
+    };
+    let (edge, rst) = edge_name(r);
+    let (flipped, test) = if edge == "posedge" {
+        ("negedge", format!("!{rst}"))
+    } else {
+        ("posedge", rst.clone())
+    };
+    let between = &source[end..c0];
+    vec![
+        Mutant {
+            what: format!(
+                "{} reset `{edge} {rst}`, `if ({cond})` -> `{flipped} {rst}`, `if ({test})`",
+                at(open)
+            ),
+            source: format!(
+                "{}({}){between}({test}){}",
+                &source[..open],
+                list.replacen(&format!("{edge} {rst}"), &format!("{flipped} {rst}"), 1),
+                &source[c1..]
+            ),
+        },
+        Mutant {
+            what: format!("{} `({list})` -> `({})`", at(open), c.trim()),
+            source: format!("{}({}){}", &source[..open], c.trim(), &source[end..]),
+        },
+    ]
 }
 
 #[test]
@@ -956,6 +1055,24 @@ fn mutants_of_text() {
     assert!(m[2].source.contains("if (!(en && (x))) q"));
     assert!(m[5].source.contains("q <= 4'd0;"));
     assert!(m[11].source.contains("@(posedge c) r"));
+    let source = "always_ff @(posedge clk, negedge rst_n)\n  if (~rst_n) q <= 1'b0; else q <= d;";
+    let m = mutants(source);
+    let whats: Vec<&str> = m.iter().map(|m| m.what.as_str()).collect();
+    assert_eq!(
+        whats[..2],
+        [
+            "1:12 reset `negedge rst_n`, `if (~rst_n)` -> `posedge rst_n`, `if (rst_n)`",
+            "1:12 `(posedge clk, negedge rst_n)` -> `(posedge clk)`",
+        ]
+    );
+    assert_eq!(
+        m[0].source,
+        "always_ff @(posedge clk, posedge rst_n)\n  if (rst_n) q <= 1'b0; else q <= d;"
+    );
+    assert_eq!(
+        m[1].source,
+        "always_ff @(posedge clk)\n  if (~rst_n) q <= 1'b0; else q <= d;"
+    );
 }
 
 /// A pseudo-random generator (64-bit LCG), as in `tests/examples.rs`.
@@ -1133,6 +1250,11 @@ fn plant(
 /// The mutants of the examples that change nothing the miter can see,
 /// each with the reason.
 const EQUIVALENT: &[(&str, &str, &str)] = &[
+    (
+        "arinst.sv",
+        "17:21 `4` -> `3`",
+        "every instance of `rcount` overrides this default of `W`",
+    ),
     (
         "barrel.sv",
         "18:22 `>>>` -> `>>`",

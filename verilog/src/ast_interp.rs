@@ -13,7 +13,13 @@ value. A block runs on the values of the previous round, the values just
 before the edge, and its registers take the values it assigns, the last
 assignment to a register winning; a register no executed assignment
 targets keeps its value. In the first round no edge happens: the
-registers have their initial values.
+registers have their initial values. In any round, including the first,
+in which the asynchronous reset of a block is active (its level now is 1,
+or 0 for `negedge rst_n`), the registers the reset branch assigns have
+their reset values instead, whether or not the edge happens; the reset
+branch still runs at an edge like the rest of the body, reading the reset
+from the previous round, so an edge in the round where the reset is
+released keeps the reset values.
 
 A signal driven by an `always_comb` block is computed by running the whole
 block when one of its signals is first needed, with blocking assignments:
@@ -42,6 +48,10 @@ use num_bigint::{BigInt, BigUint};
 use num_traits::{One, ToPrimitive, Zero};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// An `always_ff` block: its instance, the item, the name and edge of its
+/// clock, and the name and edge of its asynchronous reset.
+type Block<'m> = (usize, &'m Item, Name, Edge, Option<(Name, Edge)>);
+
 /// A value for each of some signals.
 pub type Values = BTreeMap<Name, BitVec>;
 
@@ -51,9 +61,8 @@ pub struct Interp<'m> {
     /// The driver of each signal driven by an `assign`, an `always_comb`
     /// or an instance connection, with the instance it is in.
     driver: BTreeMap<Name, (usize, Driver<'m>)>,
-    /// The `always_ff` blocks, with their instances, the names of their
-    /// clocks and their edges.
-    blocks: Vec<(usize, &'m Item, Name, Edge)>,
+    /// The `always_ff` blocks.
+    blocks: Vec<Block<'m>>,
     /// Every signal, by name, with its type.
     signals: BTreeMap<Name, Ty>,
     /// The inputs of the top module.
@@ -143,9 +152,13 @@ impl<'m> Interp<'m> {
         }
         for item in &m.items {
             match item {
-                Item::AlwaysFf { clock, edge, .. } => {
+                Item::AlwaysFf {
+                    clock, edge, reset, ..
+                } => {
                     let b = self.blocks.len();
-                    self.blocks.push((c, item, names[clock].clone(), *edge));
+                    let reset = reset.as_ref().map(|r| (names[&r.name].clone(), r.edge));
+                    self.blocks
+                        .push((c, item, names[clock].clone(), *edge, reset));
                     for q in item.targets() {
                         let path = format!("{prefix}{q}");
                         self.registers.push((path, names[q].clone(), env[q].ty));
@@ -192,10 +205,7 @@ impl<'m> Interp<'m> {
     /// clocks included. Returns the value of every signal in this round,
     /// by name.
     pub fn step(&mut self, inputs: &Values) -> Result<Values, String> {
-        let mut values = match self.prev {
-            None => self.init.clone(),
-            Some(_) => Values::new(),
-        };
+        let mut values = Values::new();
         for (name, ty) in &self.inputs {
             let v = inputs
                 .get(name)
@@ -320,23 +330,49 @@ impl<'m> Interp<'m> {
                 }
             }
             Driver::Ff(b) => {
-                let (c, item, clock, edge) = &self.blocks[b];
-                let prev = self
-                    .prev
-                    .as_ref()
-                    .expect("registers set in the first round");
+                let (c, item, clock, edge, reset) = &self.blocks[b];
+                // an active asynchronous reset sets the registers with a
+                // reset value, in any round
+                let reset_active = match reset {
+                    Some((r, edge)) => {
+                        let level = !self.signal(r, values, active)?.is_zero();
+                        level == (*edge == Edge::Pos)
+                    }
+                    None => false,
+                };
+                let mut out = Values::new();
+                if reset_active {
+                    for (q, e) in item.body().unwrap().reset_values() {
+                        let (v, _) = self.expr(*c, e, &Values::new(), values, active)?;
+                        out.insert(q.clone(), v);
+                    }
+                }
+                let Some(prev) = self.prev.as_ref() else {
+                    // the first round: no edge
+                    for q in item.targets() {
+                        let y = &self.ctxs[*c].names[q];
+                        let v = out.remove(q).unwrap_or_else(|| self.init[y].clone());
+                        values.insert(y.clone(), v);
+                    }
+                    active.remove(name);
+                    return Ok(values[name].clone());
+                };
                 let before = prev[clock].is_zero();
                 let after = self.signal(clock, values, active)?.is_zero();
                 let fires = match edge {
                     Edge::Pos => before && !after,
                     Edge::Neg => !before && after,
                 };
-                let mut out = Values::new();
                 if fires {
-                    // on the values just before the edge
+                    // on the values just before the edge; the reset
+                    // values win
                     let mut old = prev.clone();
                     let body = item.body().unwrap();
-                    self.exec(*c, body, false, &mut old, &mut BTreeSet::new(), &mut out)?;
+                    let mut run = Values::new();
+                    self.exec(*c, body, false, &mut old, &mut BTreeSet::new(), &mut run)?;
+                    for (q, v) in run {
+                        out.entry(q).or_insert(v);
+                    }
                 }
                 for q in item.targets() {
                     let y = &self.ctxs[*c].names[q];

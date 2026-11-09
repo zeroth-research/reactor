@@ -129,6 +129,14 @@ pub fn env(m: &Module) -> Result<Env> {
 /// clocks, and clocks may also be read as data. Where a clock comes from
 /// (an input, a register, or a copy or bit of one) and which registers may
 /// read each other are checked on the whole hierarchy, by [`domains`].
+///
+/// Asynchronous resets: the frontend accepts `@(posedge clk or posedge
+/// rst)` with a body that is one `if (rst) … else …` (`negedge rst_n` with
+/// `if (!rst_n)`). The reset has 1 bit, and the `then` branch only assigns
+/// constants to whole registers, each at most once; registers of the
+/// block it does not assign are not reset (they keep their value while the
+/// reset is active, as in simulation and synthesis). Where a reset comes
+/// from is checked by [`domains`].
 pub fn check(m: &Module) -> Result<Env> {
     let env = env(m)?;
     // the position of the first assignment to each signal, and its item
@@ -164,6 +172,7 @@ pub fn check(m: &Module) -> Result<Env> {
             Item::AlwaysFf {
                 clock: c,
                 clock_span,
+                reset,
                 body,
                 ..
             } => {
@@ -172,6 +181,17 @@ pub fn check(m: &Module) -> Result<Env> {
                     drive(&env, &mut driver, lhs, span, i)
                 })?;
                 drives_something(item)?;
+                if let Some(r) = reset {
+                    if lookup(&env, &r.name, r.span)?.ty.width != 1 {
+                        return Err(Error::new(
+                            r.span,
+                            format!("the reset `{}` must have 1 bit", r.name),
+                        ));
+                    }
+                    if let Some(branch) = body.reset_branch() {
+                        reset_branch(branch, &mut BTreeSet::new())?;
+                    }
+                }
             }
             Item::AlwaysComb { body, .. } => {
                 stmt(&env, body, Proc::Comb, &mut |lhs, span| {
@@ -280,6 +300,13 @@ enum Source<'m> {
 /// could glitch within a time step, which rounds cannot express, and an
 /// input clock must have 1 bit (a bit of a wider input is no clock).
 ///
+/// An asynchronous reset follows the same chain and must end at an input
+/// (of any width) or at a register: it acts as a level within the time
+/// step, and a reset computed by an operator could glitch and reset
+/// registers that rounds keep. Releasing the reset is no crossing of its
+/// own: the block's `if (rst)` reads the reset at the clock edge like any
+/// other value, so the rule below applies to it.
+///
 /// The domain of a signal is the set of roots of the clocks of the
 /// registers it depends on through combinational logic (`assign`,
 /// `always_comb`, instance connections): the root of its own clock for a
@@ -337,19 +364,22 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
         .map(|p| (&p.decl.name, p.decl.ty.width))
         .collect();
 
-    // the root of the clock `c` of instance `k`, used at `span`
-    let root = |k: usize, c: &Name, span: Span| -> Result<Name> {
+    // the root of the clock `c` of instance `k`, used at `span`; for a
+    // reset (`reset`), the input or register at the end of the chain
+    let root = |k: usize, c: &Name, span: Span, reset: bool| -> Result<Name> {
         let err = |msg: String| elab::context(Error::new(span, msg), &insts[k].1);
+        let what = if reset { "reset" } else { "clock" };
         let mut x = canon(k, c);
         // the names on the chain so far
         let mut chain: Vec<Name> = Vec::new();
         loop {
             if chain.contains(&x) {
-                return Err(err(format!("internal error: clock loop through `{x}`")));
+                return Err(err(format!("internal error: {what} loop through `{x}`")));
             }
             let Some((d, path, source)) = drivers.get(&x) else {
                 return match top.get(&x) {
                     Some(1) => Ok(x),
+                    Some(_) if reset => Ok(x),
                     Some(_) => Err(err(format!(
                         "the clock `{c}` is a bit of the input `{x}`: input clocks must be \
                          1-bit inputs"
@@ -359,6 +389,7 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
             };
             // the next signal on the chain, a name in instance `d`
             let next = match source {
+                Source::Item(Item::AlwaysFf { .. }) if reset => return Ok(x),
                 Source::Item(Item::AlwaysFf { clock, .. }) => Some(clock),
                 Source::Item(Item::Assign { lhs, rhs, .. })
                     if matches!(lhs.kind, LvalueKind::Var(_)) =>
@@ -374,11 +405,18 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
                     Source::Conn(_, span) => *span,
                 };
                 let msg = if chain.is_empty() && *d == k {
-                    format!("the clock `{c}` is computed combinationally")
+                    format!("the {what} `{c}` is computed combinationally")
                 } else {
-                    format!("the clock `{c}` comes from `{path}`, computed combinationally at {at}")
+                    format!(
+                        "the {what} `{c}` comes from `{path}`, computed combinationally at {at}"
+                    )
                 };
-                return Err(err(format!("{msg}: gated clocks are not supported")));
+                let why = if reset {
+                    "computed asynchronous resets are not supported (they could glitch)"
+                } else {
+                    "gated clocks are not supported"
+                };
+                return Err(err(format!("{msg}: {why}")));
             };
             chain.push(x);
             x = canon(*d, y);
@@ -407,8 +445,11 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
                 _ => Vec::new(),
             };
             for (c, span) in uses {
-                let r = root(k, c, span)?;
+                let r = root(k, c, span, false)?;
                 roots.insert(canon(k, c), r);
+            }
+            if let Item::AlwaysFf { reset: Some(r), .. } = item {
+                root(k, &r.name, r.span, true)?;
             }
         }
     }
@@ -545,6 +586,41 @@ fn drive(
 enum Proc {
     Ff,
     Comb,
+}
+
+/// Checks the reset branch of a block with an asynchronous reset: only
+/// assignments `q <= c` of constants `c` (expressions that read no signal)
+/// to whole registers, each register at most once. The reset sets these
+/// registers to these values whenever it is active, so a value must not
+/// depend on the time of the reset.
+fn reset_branch<'s>(s: &'s Stmt, seen: &mut BTreeSet<&'s Name>) -> Result<()> {
+    match &s.kind {
+        StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| reset_branch(s, seen)),
+        StmtKind::NonBlocking { lhs, rhs } => {
+            let LvalueKind::Var(q) = &lhs.kind else {
+                return Err(Error::new(
+                    lhs.span,
+                    "the reset branch may only assign whole registers (`q <= 8'd0;`)",
+                ));
+            };
+            let mut reads = Vec::new();
+            rhs.reads(&mut reads);
+            if let Some((x, span)) = reads.first() {
+                return Err(Error::new(
+                    *span,
+                    format!("the reset value of `{q}` must be a constant, it reads `{x}`"),
+                ));
+            }
+            if !seen.insert(q) {
+                return Err(Error::new(lhs.span, format!("`{q}` is reset twice")));
+            }
+            Ok(())
+        }
+        _ => Err(Error::new(
+            s.span,
+            "the reset branch may only assign constants to registers (`q <= 8'd0;`)",
+        )),
+    }
 }
 
 fn drives_something(item: &Item) -> Result<()> {

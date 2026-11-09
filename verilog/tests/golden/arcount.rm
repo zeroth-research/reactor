@@ -1,0 +1,32 @@
+module arcount
+  external
+    clk : bv1
+    rst : bv1
+    en : bv1
+    q@init : bv8
+    last@init : bv8
+  interface
+    q : bv8
+    last : bv8
+  atom controls q reads clk, rst, en, q awaits clk, rst, q@init
+    init
+      %1 := 8'd5
+      X(q) := ITE (X(rst), %1, X(q@init))
+    update
+      %2 := NOT clk
+      clk@pos := AND (%2, X(clk))
+      %3 := 8'd5
+      %4 := 8'd1
+      %5 := ADD (q, %4)
+      %6 := ITE (en, %5, q)
+      %7 := ITE (rst, %3, %6)
+      %8 := ITE (clk@pos, %7, q)
+      %9 := 8'd5
+      X(q) := ITE (X(rst), %9, %8)
+  atom controls last reads clk, q, last awaits clk, last@init
+    init
+      X(last) := ID X(last@init)
+    update
+      %1 := NOT clk
+      clk@pos#2 := AND (%1, X(clk))
+      X(last) := ITE (clk@pos#2, q, last)

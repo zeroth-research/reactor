@@ -174,8 +174,10 @@ pub enum Verdict {
 ///
 /// After `clk2fflogic`, Yosys has three registers per flip-flop (see
 /// [`yosys`]): an edge sample, a data input sample and an
-/// output sample. So there must be as many edge samples as registers of
-/// ours and twice as many data samples, and no other Yosys registers. The
+/// output sample, and a reset sample if the flip-flop has an asynchronous
+/// reset. So there must be as many edge samples as registers of ours,
+/// twice as many data samples, as many reset samples as registers with an
+/// asynchronous reset, and no other Yosys registers. The
 /// output sample of a register `p` (a path, as Yosys names it, not the
 /// name of its variable in `t`, which can be a parent's signal connected
 /// to the instance's output) is the data sample named after `p` that
@@ -186,12 +188,13 @@ pub enum Verdict {
 /// Yosys's wire `p` equals it in every initial state.
 pub fn registers(t: &Translation, ys: &Smt2) -> Result<BTreeMap<Name, String>, Vec<String>> {
     let mut errors = vec![];
-    let (mut edges, mut data) = (0, 0);
+    let (mut edges, mut data, mut controls) = (0, 0, 0);
     // the data samples, by the wire they are named after
     let mut named: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for name in ys.registers.keys() {
         match yosys::sample(name) {
             Some(Sample::Edge(_)) => edges += 1,
+            Some(Sample::Control) => controls += 1,
             Some(Sample::Data(wire)) => {
                 data += 1;
                 if let Some(wire) = wire {
@@ -209,6 +212,13 @@ pub fn registers(t: &Translation, ys: &Smt2) -> Result<BTreeMap<Name, String>, V
             "Yosys has {edges} clock samples and {data} data samples, \
              for {n} registers there should be {n} and {}",
             2 * n
+        ));
+    }
+    let r = t.reset_registers.len();
+    if controls != r {
+        errors.push(format!(
+            "Yosys has {controls} reset samples, for {r} registers with an asynchronous \
+             reset there should be {r}"
         ));
     }
     let mut out = BTreeMap::new();

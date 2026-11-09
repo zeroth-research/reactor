@@ -383,13 +383,13 @@ fn rejected_always() {
         ),
         (
             "  always_ff @(posedge clk, negedge clk) y <= a;",
-            "posedge",
-            "only one event",
+            "clk)",
+            "`clk` appears twice in the event list",
         ),
         (
             "  always_ff @(posedge clk or posedge a) y <= a;",
-            "posedge",
-            "only one event",
+            "y <=",
+            "a block with two events needs an asynchronous reset: its body must be a single `if`",
         ),
         ("  always_ff @(clk) y <= a;", "clk)", "level-sensitive"),
         ("  always_ff @(posedge clk iff a) y <= a;", "iff", "`iff`"),
@@ -531,7 +531,7 @@ fn rejected_clocks() {
         "  logic [3:0] n;\n  always_ff @(posedge n[2]) n <= n + 4'd1;\n  assign y = a;",
         3,
         "n[2]",
-        "the clock must be a signal name",
+        "an event must be on a signal name",
     );
     rejects(
         Some(HEADER_FF),
@@ -546,7 +546,7 @@ fn rejected_clocks() {
         "  always_ff @(posedge y[0]) y <= a;",
         2,
         "y[0]",
-        "the clock must be a signal name",
+        "an event must be on a signal name",
     );
     rejects(
         Some(HEADER_FF),
@@ -1072,5 +1072,189 @@ fn rejected_targets() {
         3,
         "q[",
         "`q` already driven at 2:28",
+    );
+}
+
+const HEADER_RST: &str = "module m(input logic clk, input logic rst, input logic rst_n, \
+                          input logic [7:0] a, output logic [7:0] y);";
+
+fn translate_rst(body: &str) -> Translation {
+    let src = format!("{HEADER_RST}\n{body}\nendmodule\n");
+    frontend::parse(&src, "test.sv")
+        .and_then(|m| lower::lower(&m))
+        .unwrap_or_else(|e| panic!("{src}\n{e}"))
+}
+
+/// The names of the variables the only register atom of `t` awaits,
+/// sorted.
+fn register_awaits(t: &Translation) -> Vec<&str> {
+    let atom = t
+        .module
+        .atoms()
+        .iter()
+        .find(|a| a.ctrl().contains(&t.var("y")))
+        .unwrap();
+    let mut names: Vec<&str> = atom.wait().iter().map(|v| t.name(v)).collect();
+    names.sort();
+    names
+}
+
+/// Asynchronous resets: either order of the events, `or` or `,`, both
+/// polarities, registers left out of the reset branch, constant reset
+/// values, and resets that are registers or copies.
+#[test]
+fn accepted_resets() {
+    let t =
+        translate_rst("  always_ff @(posedge rst or posedge clk) if (rst) y <= 8'd0; else y <= a;");
+    assert_eq!(t.clocks, ["clk"]);
+    assert_eq!(t.reset_registers, ["y"]);
+    assert_eq!(register_awaits(&t), ["clk", "rst", "y@init"]);
+    let printed = t.print();
+    assert!(
+        printed.contains("X(y) := ITE (X(rst), %1, X(y@init))"),
+        "{printed}"
+    );
+    // active low, `~`, parentheses, a comma, a register not reset, a
+    // reset value computed from constants
+    let t = translate_rst(
+        "  logic [7:0] z;\n  always_ff @(negedge clk, negedge rst_n)\n    \
+         if ((~rst_n)) z <= 8'd2 + 8'd3; else begin z <= a; y <= z; end",
+    );
+    assert_eq!(t.reset_registers, ["z"]);
+    let printed = t.print();
+    assert!(printed.contains("NOT X(rst_n)"), "{printed}");
+    assert!(printed.contains("X(y) := ID X(y@init)"), "{printed}");
+    // a reset branch resetting nothing: no reset in the atom
+    let t = translate_rst("  always_ff @(posedge clk or posedge rst) if (rst) ; else y <= a;");
+    assert!(t.reset_registers.is_empty());
+    assert_eq!(register_awaits(&t), ["clk", "y@init"]);
+    // a register as reset, through a copy; the atom of the register comes
+    // first though written after
+    let t = translate_rst(
+        "  logic r, c;\n  assign c = r;\n  always_ff @(posedge clk or posedge c) \
+         if (c) y <= 8'd0; else y <= y + 8'd1;\n  always_ff @(posedge clk) r <= rst;",
+    );
+    assert_eq!(register_awaits(&t), ["c", "clk", "y@init"]);
+    let atoms = t.module.atoms();
+    let pos = |v| atoms.iter().position(|a| a.ctrl().contains(&v)).unwrap();
+    assert!(pos(t.var("r")) < pos(t.var("c")));
+    assert!(pos(t.var("c")) < pos(t.var("y")));
+    // a bit of a wider input, a reset also read as data
+    let t = translate_rst(
+        "  logic r;\n  assign r = a[7];\n  always_ff @(posedge clk or posedge r) \
+         if (r) y <= 8'd1; else y <= {a[6:0], r};",
+    );
+    assert_eq!(register_awaits(&t), ["clk", "r", "y@init"]);
+}
+
+#[test]
+fn rejected_resets() {
+    let cases = [
+        (
+            "  always_ff @(posedge clk or posedge rst or negedge rst_n) y <= a;",
+            "negedge rst_n",
+            "at most two events supported: a clock and an asynchronous reset",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge rst) begin y <= a; if (rst) y <= 8'd0; end",
+            "begin",
+            "its body must be a single `if` testing one of the events",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge rst) if (rst == 1'b1) y <= 8'd0; else y <= a;",
+            "if",
+            "its body must be a single `if` testing one of the events",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge rst) if (!rst_n) y <= 8'd0; else y <= a;",
+            "!rst_n",
+            "its `if` must test `clk` or `rst`",
+        ),
+        (
+            "  always_ff @(posedge clk or negedge rst_n) if (rst_n) y <= a; else y <= 8'd0;",
+            "rst_n) y",
+            "the block resets on `negedge rst_n`, so its `if` must test `!rst_n`",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge rst) if (!rst) y <= a; else y <= 8'd0;",
+            "!rst",
+            "the block resets on `posedge rst`, so its `if` must test `rst`",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge a) if (a) y <= 8'd0; else y <= a;",
+            "a)",
+            "the reset `a` must have 1 bit",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge rst) if (rst) y[0] <= 1'b0; else y <= a;",
+            "y[0]",
+            "the reset branch may only assign whole registers",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge rst) if (rst) y <= a; else y <= 8'd0;",
+            "a;",
+            "the reset value of `y` must be a constant, it reads `a`",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge rst) if (rst) begin if (rst_n) y <= 8'd0; end \
+             else y <= a;",
+            "if (rst_n)",
+            "the reset branch may only assign constants to registers",
+        ),
+        (
+            "  always_ff @(posedge clk or posedge rst) if (rst) begin y <= 8'd0; y <= 8'd1; end \
+             else y <= a;",
+            "y <= 8'd1",
+            "`y` is reset twice",
+        ),
+    ];
+    for (body, needle, msg) in cases {
+        rejects(Some(HEADER_RST), body, 2, needle, msg);
+    }
+    // a computed reset
+    rejects(
+        Some(HEADER_RST),
+        "  logic r;\n  assign r = rst & rst_n;\n  always_ff @(posedge clk or posedge r) \
+         if (r) y <= 8'd0; else y <= a;",
+        4,
+        "r)",
+        "the reset `r` is computed combinationally: computed asynchronous resets are not supported",
+    );
+    rejects(
+        Some(HEADER_RST),
+        "  logic r, c;\n  always_comb c = r;\n  always_ff @(posedge clk) r <= rst;\n  \
+         always_ff @(posedge clk or posedge c) if (c) y <= 8'd0; else y <= a;",
+        5,
+        "c)",
+        "the reset `c` is computed combinationally",
+    );
+    // a register reset by itself, directly or through a copy
+    rejects(
+        Some(HEADER_RST),
+        "  logic r;\n  always_ff @(posedge clk or posedge r) if (r) r <= 1'b0; else r <= 1'b1;\n  \
+         assign y = a;",
+        3,
+        "always_ff",
+        "combinational loop: r -> r (through the reset of the `always_ff` at 3:3)",
+    );
+    rejects(
+        Some(HEADER_RST),
+        "  logic [7:0] n;\n  logic c;\n  assign c = n[7];\n  always_ff @(posedge clk or posedge c) \
+         if (c) n <= 8'd0; else n <= n + 8'd1;\n  assign y = a;",
+        4,
+        "c =",
+        "combinational loop: c -> n -> c (through the reset of the `always_ff` at 5:3)",
+    );
+    // a reset from another clock domain: releasing it is a crossing
+    rejects(
+        Some(
+            "module m(input logic clk, input logic clk_b, input logic rst, \
+             input logic [7:0] a, output logic [7:0] y);",
+        ),
+        "  logic r;\n  always_ff @(posedge clk_b) r <= rst;\n  \
+         always_ff @(posedge clk or posedge r) if (r) y <= 8'd0; else y <= a;",
+        4,
+        "r) y",
+        "crossings between unrelated clocks are not supported yet",
     );
 }
