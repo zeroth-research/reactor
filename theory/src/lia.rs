@@ -9,7 +9,9 @@ or `Zero(rows, cols)`, the sort of their (zero) derivatives.
 
 The operations carry their parameters (the shapes of the matrices), so that each
 operation has a fixed [`Boundary`]: e.g., the boundary of `Add(2, 3)` is
-`Int(2, 3) ⊗ Int(2, 3) -> Int(2, 3)`. The operations that apply to several kinds of
+`Int(2, 3) ⊗ Int(2, 3) -> Int(2, 3)`. The parameters that can be ill-formed are checked
+on their creation (the tensors of the literals are [`Matrix`]es, and the affine maps are
+[`Affine`]), so the boundary of every operation exists. The operations that apply to several kinds of
 values come in one variant per kind, e.g., [`LIA::IdInt`] and [`LIA::IdBool`].
 The operations in [`LIA`] are:
 
@@ -20,8 +22,8 @@ The operations in [`LIA`] are:
   — pointwise integer comparisons producing a boolean matrix.
 - [`LIA::IteInt`], [`LIA::IteBool`] — if-then-else: reads a boolean guard and
   two same-typed branches.
-- [`LIA::Linear`]`(A, B, batch)` — the affine map `x ↦ A·x + B`, with `A` and
-  `B` constant integer matrices of compatible shapes, of `x` with `batch` columns.
+- [`LIA::Linear`]`(affine, batch)` — the affine map `x ↦ A·x + B` (see [`Affine`]),
+  with `A` and `B` constant integer matrices, of `x` with `batch` columns.
 - [`LIA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
 
 `LIA` implements [`Theory`]; [`Theory::check`] checks that the sorts of the
@@ -101,8 +103,8 @@ impl Tangent for Sort {
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LIA {
     // integer and boolean matrix literals (of the shape of the tensor)
-    Int(crate::PyTensor),
-    Bool(crate::PyTensor),
+    Int(Matrix),
+    Bool(Matrix),
     // boolean operations
     And(usize, usize),
     Or(usize, usize),
@@ -117,7 +119,7 @@ pub enum LIA {
     Ne(usize, usize),
     // linear / matrix operations
     // A*x + B where `A` and `B` are constants, and `x` has `batch` columns
-    Linear(crate::PyTensor, crate::PyTensor, usize),
+    Linear(Affine, usize),
     Add(usize, usize),
     Sub(usize, usize),
     // XXX: should these be in LIA?
@@ -147,7 +149,7 @@ impl fmt::Display for LIA {
         let name: &'static str = self.into();
         match self {
             LIA::Int(t) | LIA::Bool(t) => write!(f, "{t}"),
-            LIA::Linear(a, b, _) => write!(f, "{name}({a}, {b})"),
+            LIA::Linear(m, _) => write!(f, "{name}({}, {})", m.a(), m.b()),
             LIA::UninterpretedInt(x, ..) | LIA::UninterpretedBool(x, ..) => {
                 write!(f, "{name}({x})")
             }
@@ -190,9 +192,6 @@ impl Theory for LIA {
 }
 
 impl Boundary<Sort> for LIA {
-    /// # Panics
-    ///
-    /// If `A` of [`LIA::Linear`] is not a 2D tensor.
     fn dom(&self) -> Poly<Sort> {
         let int = |r, c| Sort::Int([r, c]);
         let bool = |r, c| Sort::Bool([r, c]);
@@ -207,7 +206,7 @@ impl Boundary<Sort> for LIA {
             | LIA::Eq(r, c)
             | LIA::Ne(r, c) => vec![int(r, c), int(r, c)],
             // Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1] (or empty), Y=[out,batch]
-            LIA::Linear(ref a, _, batch) => vec![int(linear_inputs(a), batch)],
+            LIA::Linear(ref m, batch) => vec![int(m.inputs(), batch)],
             // `Min` and `Max` are pointwise, as in the evaluator
             LIA::Add(r, c) | LIA::Sub(r, c) | LIA::Min(r, c) | LIA::Max(r, c) => {
                 vec![int(r, c), int(r, c)]
@@ -226,20 +225,16 @@ impl Boundary<Sort> for LIA {
         sorts.into_iter().product::<Mono<Sort>>().into()
     }
 
-    /// # Panics
-    ///
-    /// If the tensor of a literal or `A` of [`LIA::Linear`] is not 2D, or `B` of
-    /// [`LIA::Linear`] is not a column vector.
     fn cod(&self) -> Poly<Sort> {
         let int = |r, c| Sort::Int([r, c]);
         let bool = |r, c| Sort::Bool([r, c]);
         let sort = match *self {
-            LIA::Int(ref cm) => {
-                let [r, c] = shape_2d(cm);
+            LIA::Int(ref m) => {
+                let [r, c] = m.shape();
                 int(r, c)
             }
-            LIA::Bool(ref cm) => {
-                let [r, c] = shape_2d(cm);
+            LIA::Bool(ref m) => {
+                let [r, c] = m.shape();
                 bool(r, c)
             }
             LIA::And(r, c) | LIA::Or(r, c) | LIA::Xor(r, c) | LIA::Not(r, c) => bool(r, c),
@@ -250,7 +245,7 @@ impl Boundary<Sort> for LIA {
             | LIA::Eq(r, c)
             | LIA::Ne(r, c) => bool(r, c),
             // Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1] (or empty), Y=[out,batch]
-            LIA::Linear(ref a, ref b, batch) => int(linear_outputs(a, b), batch),
+            LIA::Linear(ref m, batch) => int(m.outputs(), batch),
             // `Min` and `Max` are pointwise, as in the evaluator
             LIA::Add(r, c) | LIA::Sub(r, c) | LIA::Min(r, c) | LIA::Max(r, c) | LIA::ReLU(r, c) => {
                 int(r, c)
@@ -284,6 +279,14 @@ mod tests {
         Ok(s)
     }
 
+    fn matrix(t: crate::PyTensor) -> Matrix {
+        Matrix::new(t).unwrap()
+    }
+
+    fn affine(a: crate::PyTensor, b: crate::PyTensor) -> Affine {
+        Affine::new(a, b).unwrap()
+    }
+
     #[test]
     fn type_kind_and_shape() {
         assert!(int(2, 3).is_int() && !int(2, 3).is_bool());
@@ -294,13 +297,17 @@ mod tests {
     #[test]
     fn const_int_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
-        assert!(LIA::Int(cm).check([].map(ok), [int(2, 2)].map(ok)).is_ok());
+        assert!(
+            LIA::Int(matrix(cm))
+                .check([].map(ok), [int(2, 2)].map(ok))
+                .is_ok()
+        );
     }
 
     #[test]
     fn const_int_bool_write_fails() {
         assert!(
-            LIA::Int(tch::Tensor::from_slice2(&[[0i64]]).into())
+            LIA::Int(matrix(tch::Tensor::from_slice2(&[[0i64]]).into()))
                 .check([].map(ok), [bool_t(1, 1)].map(ok))
                 .is_err()
         );
@@ -309,7 +316,7 @@ mod tests {
     #[test]
     fn const_int_wrong_rows_fails() {
         assert!(
-            LIA::Int(tch::Tensor::from_slice2(&[[0i64]]).into())
+            LIA::Int(matrix(tch::Tensor::from_slice2(&[[0i64]]).into()))
                 .check([].map(ok), [int(2, 1)].map(ok))
                 .is_err()
         );
@@ -319,7 +326,7 @@ mod tests {
     fn const_int_with_read_fails() {
         let t = int(1, 1);
         assert!(
-            LIA::Int(tch::Tensor::from_slice2(&[[0i64]]).into())
+            LIA::Int(matrix(tch::Tensor::from_slice2(&[[0i64]]).into()))
                 .check([t].map(ok), [t].map(ok))
                 .is_err()
         );
@@ -329,7 +336,7 @@ mod tests {
     fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
-            LIA::Bool(cm)
+            LIA::Bool(matrix(cm))
                 .check([].map(ok), [bool_t(2, 2)].map(ok))
                 .is_ok()
         );
@@ -338,7 +345,7 @@ mod tests {
     #[test]
     fn const_bool_int_write_fails() {
         assert!(
-            LIA::Bool(tch::Tensor::from_slice2(&[[true]]).into())
+            LIA::Bool(matrix(tch::Tensor::from_slice2(&[[true]]).into()))
                 .check([].map(ok), [int(1, 1)].map(ok))
                 .is_err()
         );
@@ -514,7 +521,7 @@ mod tests {
         let b: crate::PyTensor =
             tch::Tensor::zeros([0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(
-            LIA::Linear(a, b, 4)
+            LIA::Linear(affine(a, b), 4)
                 .check([int(3, 4)].map(ok), [int(2, 4)].map(ok))
                 .is_ok()
         );
@@ -528,7 +535,7 @@ mod tests {
         let b: crate::PyTensor =
             tch::Tensor::zeros([2, 1], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(
-            LIA::Linear(a, b, 1)
+            LIA::Linear(affine(a, b), 1)
                 .check([int(3, 1)].map(ok), [int(2, 1)].map(ok))
                 .is_ok()
         );
@@ -542,7 +549,7 @@ mod tests {
         let b: crate::PyTensor =
             tch::Tensor::zeros([0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
         assert!(
-            LIA::Linear(a, b, 1)
+            LIA::Linear(affine(a, b), 1)
                 .check([int(4, 1)].map(ok), [int(2, 1)].map(ok))
                 .is_err()
         );
@@ -674,40 +681,38 @@ mod tests {
 
     #[test]
     fn boundary_const() {
-        assert_eq!(show(LIA::Int(int_tensor(2, 3))), "I -> Int(2, 3)");
+        assert_eq!(show(LIA::Int(matrix(int_tensor(2, 3)))), "I -> Int(2, 3)");
         let b: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false]]).into();
-        assert_eq!(show(LIA::Bool(b.clone())), "I -> Bool(1, 2)");
+        assert_eq!(show(LIA::Bool(matrix(b.clone()))), "I -> Bool(1, 2)");
         // the sort is given by the variant, not by the tensor
-        assert_eq!(show(LIA::Int(b)), "I -> Int(1, 2)");
-        assert_eq!(show(LIA::Bool(int_tensor(2, 3))), "I -> Bool(2, 3)");
+        assert_eq!(show(LIA::Int(matrix(b))), "I -> Int(1, 2)");
+        assert_eq!(show(LIA::Bool(matrix(int_tensor(2, 3)))), "I -> Bool(2, 3)");
         // the same boundaries
-        assert_eq!(show(LIA::AnyInt(2, 3)), show(LIA::Int(int_tensor(2, 3))));
+        assert_eq!(
+            show(LIA::AnyInt(2, 3)),
+            show(LIA::Int(matrix(int_tensor(2, 3))))
+        );
     }
 
     #[test]
     fn boundary_linear() {
         // A=[2,3] maps 3 features to 2
         assert_eq!(
-            show(LIA::Linear(int_tensor(2, 3), int_tensor(2, 1), 4)),
+            show(LIA::Linear(affine(int_tensor(2, 3), int_tensor(2, 1)), 4)),
             "Int(3, 4) -> Int(2, 4)"
         );
         assert_eq!(
-            show(LIA::Linear(int_tensor(2, 3), int_tensor(0, 0), 1)),
+            show(LIA::Linear(affine(int_tensor(2, 3), int_tensor(0, 0)), 1)),
             "Int(3, 1) -> Int(2, 1)"
         );
     }
 
     #[test]
-    #[should_panic(expected = "expected a 2D tensor, got 1D")]
-    fn boundary_const_not_2d() {
+    fn ill_formed_parameters() {
+        // the parameters are checked on their creation (so the boundaries always exist)
         let t: crate::PyTensor = tch::Tensor::from_slice(&[0i64, 1]).into();
-        let _ = show(LIA::Int(t));
-    }
-
-    #[test]
-    #[should_panic(expected = "`B` must be a column vector [2x1]")]
-    fn boundary_linear_bias_not_column() {
-        let _ = LIA::Linear(int_tensor(2, 3), int_tensor(2, 2), 1).cod();
+        assert!(Matrix::new(t).is_err());
+        assert!(Affine::new(int_tensor(2, 3), int_tensor(2, 2)).is_err());
     }
 
     #[test]

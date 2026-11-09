@@ -6,7 +6,7 @@ from .agent import DQNAgent
 from .train import train
 from reactor.gym import Env
 from reactor.torch import Module
-from reactor import Wire, Real, LRA, Var, X
+from reactor import Wire, Real, LRA, Var, X, Affine
 from reactor.eval import eval_itype
 
 
@@ -46,7 +46,7 @@ def test_training():
     for atom in wrapped_nn.atoms:
         for term in atom.update:
             match term.itype:
-                case LRA.Linear(weight, _bias):
+                case LRA.Linear(Affine(weight, _bias)):
                     assert any(
                         torch.equal(weight, w) for w in live_weights
                     ), "Linear op weight does not reflect the live trained tensor"

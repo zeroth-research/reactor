@@ -8,7 +8,9 @@ or `Zero(rows, cols)`, the sort of their (zero) derivatives.
 
 The operations carry their parameters (the width of the bit-vectors and the shapes
 of the matrices), so that each operation has a fixed [`Boundary`]: e.g., the boundary
-of `Add(8, 2, 3)` is `BV<8>(2, 3) ⊗ BV<8>(2, 3) -> BV<8>(2, 3)`. The operations
+of `Add(8, 2, 3)` is `BV<8>(2, 3) ⊗ BV<8>(2, 3) -> BV<8>(2, 3)`. The parameters that
+can be ill-formed are checked on their creation (the literals are [`BVConst`], and the
+selected bits are [`Bits`]), so the boundary of every operation exists. The operations
 in [`BV`] are:
 
 - [`BV::Const`] — a bit-vector matrix literal whose values must fit into its width.
@@ -53,7 +55,7 @@ use crate::*;
 use base::boundary::{Boundary, Mono, Poly};
 use base::tangent::Tangent;
 #[cfg(feature = "pyo3")]
-use pyo3::pyclass;
+use pyo3::{exceptions::PyValueError, prelude::*};
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -107,7 +109,7 @@ impl Tangent for Sort {
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum BV {
     /// Create constant BV matrix of the given width from a given 2-D tensor
-    Const(crate::PyTensor, usize),
+    Const(BVConst),
     /// Element-wise addition of two BV matrices (arithmetic modulo `2^bitwidth`)
     Add(usize, usize, usize),
     /// Element-wise subtraction of two BV matrices (arithmetic modulo `2^bitwidth`)
@@ -170,12 +172,10 @@ pub enum BV {
     /// Element-wise BV<n> to BV<1> via "non-zero comparison" (`x != 0`). Corresponds to SMV ToBool,
     /// FIXME: to be removed and replaced by `Ne x 0`
     BVToBool(usize, usize, usize),
-    /// Element-wise extract bits `[high..=low]` (inclusive) of bit-vectors of the width `width`
+    /// Element-wise extract the bits `bits` of bit-vectors
     /// TODO: rename to `extract`, matching MathSAT
     BitSelect {
-        high: usize,
-        low: usize,
-        width: usize,
+        bits: Bits,
         rows: usize,
         cols: usize,
     },
@@ -198,8 +198,8 @@ impl fmt::Display for BV {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name: &'static str = self.into();
         match self {
-            BV::Const(t, _) => write!(f, "{t}"),
-            BV::BitSelect { high, low, .. } => write!(f, "{name}[{high}:{low}]"),
+            BV::Const(k) => write!(f, "{}", k.tensor()),
+            BV::BitSelect { bits, .. } => write!(f, "{name}[{}:{}]", bits.high(), bits.low()),
             BV::Extend { extra, .. } => write!(f, "{name}(+{extra})"),
             BV::Uninterpreted(x, ..) => write!(f, "{name}({x})"),
             _ => f.write_str(name),
@@ -266,10 +266,8 @@ impl Boundary<Sort> for BV {
             | BV::Ne(w, r, c) => vec![bv(w, r, c), bv(w, r, c)],
             BV::MatMul(w, m, k, n) => vec![bv(w, m, k), bv(w, k, n)],
             BV::BVToBool(w, r, c) => vec![bv(w, r, c)],
-            BV::BitSelect {
-                width, rows, cols, ..
-            }
-            | BV::Extend {
+            BV::BitSelect { bits, rows, cols } => vec![bv(bits.width(), rows, cols)],
+            BV::Extend {
                 width, rows, cols, ..
             } => vec![bv(width, rows, cols)],
             BV::Ite(w, r, c) => vec![bv(1, 1, 1), bv(w, r, c), bv(w, r, c)],
@@ -278,17 +276,12 @@ impl Boundary<Sort> for BV {
         sorts.into_iter().product::<Mono<Sort>>().into()
     }
 
-    /// # Panics
-    ///
-    /// If the operation is ill-formed: the tensor of [`BV::Const`] is not 2D or its values
-    /// do not fit into the width, or the bits of [`BV::BitSelect`] are out of range.
     fn cod(&self) -> Poly<Sort> {
         let bv = |w, r, c| Sort::BV(w, [r, c]);
         let sort = match *self {
-            BV::Const(ref cm, w) => {
-                let [r, c] = shape_2d(cm);
-                check_fits(cm, w);
-                bv(w, r, c)
+            BV::Const(ref k) => {
+                let [r, c] = k.shape();
+                bv(k.width(), r, c)
             }
             // TODO: for `Abs`, what if input is the signed min of BV<N>? It's absolute value
             // does not fit into BV<N>
@@ -315,20 +308,7 @@ impl Boundary<Sort> for BV {
             | BV::Ne(_, r, c) => bv(1, r, c),
             BV::MatMul(w, m, _, n) => bv(w, m, n),
             BV::BVToBool(_, r, c) => bv(1, r, c),
-            BV::BitSelect {
-                high,
-                low,
-                width,
-                rows,
-                cols,
-            } => {
-                assert!(high >= low, "high ({high}) must be >= low ({low})");
-                assert!(
-                    high < width,
-                    "high ({high}) is out of range for width {width}"
-                );
-                bv(high - low + 1, rows, cols)
-            }
+            BV::BitSelect { bits, rows, cols } => bv(bits.count(), rows, cols),
             BV::Extend {
                 extra,
                 width,
@@ -341,21 +321,160 @@ impl Boundary<Sort> for BV {
     }
 }
 
+/// A constant matrix of bit-vectors of the width `width` (at most 64): a 2D tensor of the
+/// values that fit into (unsigned) bit-vectors of the width
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "pyo3", pyclass(frozen))]
+pub struct BVConst {
+    matrix: Matrix,
+    width: usize,
+}
+
+impl BVConst {
+    /// The constant `tensor` of bit-vectors of the width `width`, or an error if `tensor`
+    /// is not 2D, its values do not fit into the width, or the width is over 64
+    pub fn new(tensor: crate::PyTensor, width: usize) -> Result<Self, String> {
+        let matrix = Matrix::new(tensor)?;
+        check_fits(matrix.tensor(), width)?;
+        Ok(Self { matrix, width })
+    }
+
+    pub fn tensor(&self) -> &crate::PyTensor {
+        self.matrix.tensor()
+    }
+
+    /// The `[rows, cols]` shape of the matrix
+    pub fn shape(&self) -> [usize; 2] {
+        self.matrix.shape()
+    }
+
+    /// The width of the bit-vectors
+    pub fn width(&self) -> usize {
+        self.width
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl BVConst {
+    #[new]
+    fn py_new(tensor: crate::PyTensor, width: usize) -> PyResult<Self> {
+        Self::new(tensor, width).map_err(PyValueError::new_err)
+    }
+
+    #[getter(tensor)]
+    fn py_tensor(&self) -> crate::PyTensor {
+        self.tensor().clone()
+    }
+
+    #[getter(width)]
+    fn py_width(&self) -> usize {
+        self.width()
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("tensor", "width")
+    }
+
+    fn __repr__(&self) -> String {
+        format!("BVConst({}, {})", self.tensor(), self.width())
+    }
+}
+
 /// Check that the values of the tensor `cm` fit into (unsigned) bit-vectors of the width `bw`
-///
-/// # Panics
-///
-/// If they do not, or `bw` is over 64.
-fn check_fits(cm: &crate::PyTensor, bw: usize) {
-    assert!(bw <= 64, "Support at most 64-bit atm.");
-    if bw < 64 {
+/// (at most 64)
+fn check_fits(cm: &crate::PyTensor, bw: usize) -> Result<(), String> {
+    if bw > 64 {
+        return Err("Support at most 64-bit atm.".into());
+    }
+    // the minimum and the maximum of an empty tensor do not exist
+    if bw < 64 && cm.numel() > 0 {
         let max = (1i64 << bw) - 1;
         let min_val = cm.min().int64_value(&[]);
         let max_val = cm.max().int64_value(&[]);
-        assert!(
-            min_val >= 0 && max_val <= max,
-            "tensor values do not fit in {bw} bits"
-        );
+        if min_val < 0 || max_val > max {
+            return Err(format!("tensor values do not fit in {bw} bits"));
+        }
+    }
+    Ok(())
+}
+
+/// The bits `[high..=low]` (inclusive) of bit-vectors of the width `width`
+/// (`low <= high < width`)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "pyo3", pyclass(frozen, eq))]
+pub struct Bits {
+    high: usize,
+    low: usize,
+    width: usize,
+}
+
+impl Bits {
+    /// The bits `[high..=low]` of bit-vectors of the width `width`, or an error if
+    /// `high < low` or `high >= width`
+    pub fn new(high: usize, low: usize, width: usize) -> Result<Self, String> {
+        if high < low {
+            return Err(format!("high ({high}) must be >= low ({low})"));
+        }
+        if high >= width {
+            return Err(format!("high ({high}) is out of range for width {width}"));
+        }
+        Ok(Self { high, low, width })
+    }
+
+    pub fn high(&self) -> usize {
+        self.high
+    }
+
+    pub fn low(&self) -> usize {
+        self.low
+    }
+
+    /// The width of the bit-vectors the bits are selected from
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// The number of the bits (the width of the selection)
+    pub fn count(&self) -> usize {
+        self.high - self.low + 1
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Bits {
+    #[new]
+    fn py_new(high: usize, low: usize, width: usize) -> PyResult<Self> {
+        Self::new(high, low, width).map_err(PyValueError::new_err)
+    }
+
+    #[getter(high)]
+    fn py_high(&self) -> usize {
+        self.high()
+    }
+
+    #[getter(low)]
+    fn py_low(&self) -> usize {
+        self.low()
+    }
+
+    #[getter(width)]
+    fn py_width(&self) -> usize {
+        self.width()
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("high", "low", "width")
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Bits(high={}, low={}, width={})",
+            self.high, self.low, self.width
+        )
     }
 }
 
@@ -373,6 +492,10 @@ mod tests {
 
     fn int_tensor(rows: i64, cols: i64) -> crate::PyTensor {
         tch::Tensor::zeros([rows, cols], (tch::Kind::Int64, tch::Device::Cpu)).into()
+    }
+
+    fn bv_const(t: crate::PyTensor, width: usize) -> BV {
+        BV::Const(BVConst::new(t, width).unwrap())
     }
 
     // --- Type helpers ---
@@ -394,21 +517,21 @@ mod tests {
     fn const_ok() {
         let t = bv(8, 2, 2);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
-        assert!(BV::Const(cm, 8).check([], [t].map(ok)).is_ok());
+        assert!(bv_const(cm, 8).check([], [t].map(ok)).is_ok());
     }
 
     #[test]
     fn const_value_max_fits() {
         let t = bv(8, 1, 1);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[255i64]]).into();
-        assert!(BV::Const(cm, 8).check(vec![], [t].map(ok)).is_ok());
+        assert!(bv_const(cm, 8).check(vec![], [t].map(ok)).is_ok());
     }
 
     #[test]
     fn const_wrong_width_fails() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[1i64]]).into();
         assert!(
-            BV::Const(cm, 8)
+            bv_const(cm, 8)
                 .check(vec![], [bv(16, 1, 1)].map(ok))
                 .is_err()
         );
@@ -418,21 +541,21 @@ mod tests {
     fn const_wrong_row_count_fails() {
         let t = bv(8, 2, 2);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1]]).into();
-        assert!(BV::Const(cm, 8).check(vec![], [t].map(ok)).is_err());
+        assert!(bv_const(cm, 8).check(vec![], [t].map(ok)).is_err());
     }
 
     #[test]
     fn const_wrong_col_count_fails() {
         let t = bv(8, 1, 2);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64]]).into();
-        assert!(BV::Const(cm, 8).check(vec![], [t].map(ok)).is_err());
+        assert!(bv_const(cm, 8).check(vec![], [t].map(ok)).is_err());
     }
 
     #[test]
     fn const_with_read_fails() {
         let t = bv(8, 1, 1);
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64]]).into();
-        assert!(BV::Const(cm, 8).check([t].map(ok), [t].map(ok)).is_err());
+        assert!(bv_const(cm, 8).check([t].map(ok), [t].map(ok)).is_err());
     }
 
     // --- Not / Id ---
@@ -725,10 +848,9 @@ mod tests {
     // --- BitSelect / Extend ---
 
     fn bit_select(high: usize, low: usize, width: usize) -> BV {
+        let bits = Bits::new(high, low, width).unwrap();
         BV::BitSelect {
-            high,
-            low,
-            width,
+            bits,
             rows: 1,
             cols: 1,
         }
@@ -756,9 +878,7 @@ mod tests {
     #[test]
     fn bit_select_single_bit_ok() {
         let op = BV::BitSelect {
-            high: 3,
-            low: 3,
-            width: 8,
+            bits: Bits::new(3, 3, 8).unwrap(),
             rows: 2,
             cols: 2,
         };
@@ -881,40 +1001,39 @@ mod tests {
             format!("I -> {m}")
         );
         assert_eq!(show(BV::Havoc(8, 2, 3)), format!("I -> {m}"));
-        assert_eq!(show(BV::Const(int_tensor(2, 3), 8)), format!("I -> {m}"));
+        assert_eq!(show(bv_const(int_tensor(2, 3), 8)), format!("I -> {m}"));
         assert_ne!(show(BV::Havoc(8, 2, 3)), show(BV::Havoc(16, 2, 3)));
     }
 
     #[test]
-    #[should_panic(expected = "high (3) must be >= low (4)")]
-    fn boundary_bit_select_reversed() {
-        let _ = bit_select(3, 4, 8).cod();
-    }
-
-    #[test]
-    #[should_panic(expected = "high (8) is out of range for width 8")]
-    fn boundary_bit_select_out_of_range() {
-        let _ = bit_select(8, 0, 8).cod();
-    }
-
-    #[test]
-    #[should_panic(expected = "expected a 2D tensor, got 1D")]
-    fn boundary_const_not_2d() {
+    fn ill_formed_parameters() {
+        // the parameters are checked on their creation (so the boundaries always exist)
+        fn err<T>(r: Result<T, String>) -> String {
+            r.err().unwrap()
+        }
+        assert_eq!(err(Bits::new(3, 4, 8)), "high (3) must be >= low (4)");
+        assert_eq!(
+            err(Bits::new(8, 0, 8)),
+            "high (8) is out of range for width 8"
+        );
         let t: crate::PyTensor = tch::Tensor::from_slice(&[0i64, 1]).into();
-        let _ = BV::Const(t, 8).cod();
-    }
-
-    #[test]
-    #[should_panic(expected = "tensor values do not fit in 8 bits")]
-    fn boundary_const_overflow() {
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[256i64]]).into();
-        let _ = BV::Const(cm, 8).cod();
-    }
-
-    #[test]
-    #[should_panic(expected = "Support at most 64-bit atm.")]
-    fn boundary_const_too_wide() {
-        let _ = BV::Const(int_tensor(1, 1), 65).cod();
+        assert_eq!(err(BVConst::new(t, 8)), "expected a 2D tensor, got 1D");
+        let t: crate::PyTensor = tch::Tensor::from_slice2(&[[256i64]]).into();
+        assert_eq!(
+            err(BVConst::new(t, 8)),
+            "tensor values do not fit in 8 bits"
+        );
+        let t: crate::PyTensor = tch::Tensor::from_slice2(&[[-1i64]]).into();
+        assert_eq!(
+            err(BVConst::new(t, 8)),
+            "tensor values do not fit in 8 bits"
+        );
+        assert_eq!(
+            err(BVConst::new(int_tensor(1, 1), 65)),
+            "Support at most 64-bit atm."
+        );
+        // an empty constant fits into any width
+        assert_eq!(BVConst::new(int_tensor(0, 3), 8).unwrap().shape(), [0, 3]);
     }
 
     #[test]
@@ -980,7 +1099,7 @@ mod tests {
         assert!(BV::havoc(&z).check([].map(ok), [z].map(ok)).is_err());
         assert!(BV::skip(&z).check([z].map(ok), [z].map(ok)).is_err());
         assert!(
-            BV::Const(int_tensor(2, 3), 8)
+            bv_const(int_tensor(2, 3), 8)
                 .check([].map(ok), [z].map(ok))
                 .is_err()
         );

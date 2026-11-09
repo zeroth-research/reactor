@@ -9,7 +9,7 @@ helpers below).
 """
 
 import torch
-from .reactor import Wire, Term, LRA, LIA, BV, Var
+from .reactor import Wire, Term, LRA, LIA, BV, Var, BVConst, Bits
 from .sort import Sort, Bool, Real, Int, BitVec
 from .ops import op, linear, bv_const
 
@@ -78,7 +78,7 @@ def _bool_sort(sort: Sort) -> Sort:
 def _const_tensor(op):
     """The constant tensor carried by a const op, or None (ops expose no getters)."""
     match op:
-        case LRA.Real(t) | LRA.Bool(t) | LIA.Int(t) | LIA.Bool(t) | BV.Const(t, _):
+        case LRA.Real(t) | LRA.Bool(t) | LIA.Int(t) | LIA.Bool(t) | BV.Const(BVConst(t)):
             return t
     return None
 
@@ -514,7 +514,7 @@ class BVTermBuilder(TermBuilder):
         bw = high - low + 1
         rows, cols = _shape(a_w.dtype)
         out = Wire(BitVec(bw, [rows, cols]))
-        op_ = BV.BitSelect(high=high, low=low, width=_bv_width(a_w.dtype), rows=rows, cols=cols)
+        op_ = BV.BitSelect(bits=Bits(high, low, _bv_width(a_w.dtype)), rows=rows, cols=cols)
         return Term(op_, [out], [a_w])
 
     def extend(self, a, extra: int) -> Term:

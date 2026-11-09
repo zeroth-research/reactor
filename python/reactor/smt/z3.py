@@ -7,7 +7,7 @@ yet (BV ops fall through to a clear error).
 
 import z3 as _z3
 import torch
-from ..reactor import LRA, LIA, BV, Combinatorial
+from ..reactor import LRA, LIA, BV, Combinatorial, Affine
 from ..sort import Real, Int, Bool
 import numpy as _np
 import operator
@@ -43,7 +43,8 @@ def interpret(itype):
             return _np.frompyfunc(operator.sub, 2, 1)
         case LRA.Add() | LRA.TAdd() | LIA.Add():
             return _np.frompyfunc(operator.add, 2, 1)
-        case LRA.Linear(weight, bias) | LRA.TLinear(weight, bias) | LIA.Linear(weight, bias):
+        case (LRA.Linear(Affine(weight, bias)) | LRA.TLinear(Affine(weight, bias))
+              | LIA.Linear(Affine(weight, bias))):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
 
         # comparisons (produce Bool)

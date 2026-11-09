@@ -39,6 +39,9 @@ fn reactor(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<LRA>()?;
     m.add_class::<LIA>()?;
     m.add_class::<BV>()?;
+    m.add_class::<::theory::Affine>()?;
+    m.add_class::<::theory::bv::BVConst>()?;
+    m.add_class::<::theory::bv::Bits>()?;
 
     m.add_function(wrap_pyfunction!(var::x, m)?)?;
     m.add_function(wrap_pyfunction!(var::d, m)?)?;

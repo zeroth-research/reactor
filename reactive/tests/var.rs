@@ -2,6 +2,7 @@ use base::tangent::Tangent;
 use dataflow::diagram::{Term, Wire};
 use reactive::Var;
 use reactive::var::{X, X_ref, d, d_ref};
+use std::num::NonZeroU8;
 use theory::lra::{LRA, Sort};
 
 #[test]
@@ -92,5 +93,5 @@ fn variable_fail_into_term_constructors() {
     // dx = x: the derivative has the tangent sort, not the sort of `x`
     // (this test works because Sort::Real(., 0) != Sort::Real(., 0).tangent())
     assert!(Term::function(LRA::IdReal(1, 1), [d(x)], [x]).is_err());
-    assert!(Term::function(LRA::TId(1, 1, 1), [d(x)], [x]).is_err());
+    assert!(Term::function(LRA::TId(1, 1, NonZeroU8::MIN), [d(x)], [x]).is_err());
 }

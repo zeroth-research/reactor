@@ -11,7 +11,10 @@ and `d >= 1` for their `d`-th derivatives.
 
 The operations carry their parameters (the shapes of the matrices, and the degrees
 of the derivatives), so that each operation has a fixed [`Boundary`]: e.g., the
-boundary of `Add(2, 3)` is `Real(2, 3) ⊗ Real(2, 3) -> Real(2, 3)`. The operations
+boundary of `Add(2, 3)` is `Real(2, 3) ⊗ Real(2, 3) -> Real(2, 3)`. The parameters
+that can be ill-formed are checked on their creation (the tensors of the literals are
+[`Matrix`]es, the affine maps are [`Affine`], and the degrees of the derivatives are
+[`NonZeroU8`]), so the boundary of every operation exists. The operations
 that apply to several kinds of values come in one variant per kind, e.g.,
 [`LRA::IdReal`] and [`LRA::IdBool`]. The operations in [`LRA`] are:
 
@@ -22,8 +25,8 @@ that apply to several kinds of values come in one variant per kind, e.g.,
   — pointwise real comparisons producing a boolean matrix.
 - [`LRA::IteReal`], [`LRA::IteBool`] — if-then-else: reads a boolean guard and
   two same-typed branches.
-- [`LRA::Linear`]`(A, B, batch)` — the affine map `x ↦ A·x + B`, with `A` and
-  `B` constant real matrices of compatible shapes, of `x` with `batch` columns.
+- [`LRA::Linear`]`(affine, batch)` — the affine map `x ↦ A·x + B` (see [`Affine`]),
+  with `A` and `B` constant real matrices, of `x` with `batch` columns.
 - [`LRA::ReLU`] — the shape-preserving rectified-linear map on real matrices.
 - [`LRA::TAdd`], [`LRA::TSub`], [`LRA::TLinear`], [`LRA::TIte`], [`LRA::TId`]
   — the operations on the derivatives of reals (of the degree `>= 1`).
@@ -38,6 +41,7 @@ read and written wires are the domain and the codomain of the operation.
 use theory::Theory;
 use theory::lra::{LRA, Sort};
 use base::tangent::Tangent;
+use std::num::NonZeroU8;
 
 // Wires carry a sort (derivatives carry the tangent sorts).
 let ok = |s| Ok::<_, String>(s);
@@ -54,7 +58,7 @@ assert!(LRA::ReLU(3, 4).check([b].map(ok), [b].map(ok)).is_err());
 
 // Derivatives have their own operations.
 let dm = m.tangent();
-assert!(LRA::TAdd(3, 4, 1).check([dm, dm].map(ok), [dm].map(ok)).is_ok());
+assert!(LRA::TAdd(3, 4, NonZeroU8::MIN).check([dm, dm].map(ok), [dm].map(ok)).is_ok());
 assert!(LRA::Add(3, 4).check([dm, dm].map(ok), [dm].map(ok)).is_err());
 ```
 */
@@ -65,6 +69,7 @@ use base::tangent::Tangent;
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 use std::fmt;
+use std::num::NonZeroU8;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub enum Sort {
@@ -120,13 +125,13 @@ impl Tangent for Sort {
 
 /// The operations of linear real arithmetic. The parameters `(rows, cols)` are the shape
 /// of the matrices the operation applies to (e.g., of its operands), and `degree` is the
-/// degree of the derivatives (at least `1`).
+/// degree of the derivatives (at least `1`, hence [`NonZeroU8`]).
 #[derive(Clone, Debug, strum::IntoStaticStr)]
 #[cfg_attr(feature = "pyo3", pyclass(frozen))]
 pub enum LRA {
     // real and boolean matrix literals (of the shape of the tensor)
-    Real(crate::PyTensor),
-    Bool(crate::PyTensor),
+    Real(Matrix),
+    Bool(Matrix),
     // boolean operations
     And(usize, usize),
     Or(usize, usize),
@@ -141,7 +146,7 @@ pub enum LRA {
     Ne(usize, usize),
     // linear / matrix operations
     // A*x + B where `A` and `B` are constants, and `x` has `batch` columns
-    Linear(crate::PyTensor, crate::PyTensor, usize),
+    Linear(Affine, usize),
     Add(usize, usize),
     Sub(usize, usize),
     // XXX: should these be in RLA?
@@ -163,14 +168,14 @@ pub enum LRA {
     AnyReal(usize, usize),
     AnyBool(usize, usize),
     // operations on derivatives of reals of the degree `degree`
-    TAdd(usize, usize, u8),
-    TSub(usize, usize, u8),
-    TLinear(crate::PyTensor, crate::PyTensor, usize, u8),
-    TIte(usize, usize, u8),
-    TId(usize, usize, u8),
+    TAdd(usize, usize, NonZeroU8),
+    TSub(usize, usize, NonZeroU8),
+    TLinear(Affine, usize, NonZeroU8),
+    TIte(usize, usize, NonZeroU8),
+    TId(usize, usize, NonZeroU8),
     // the zero derivatives
-    RealZerograd(usize, usize, u8), // unstable
-    BoolZerograd(usize, usize),     // unstable
+    RealZerograd(usize, usize, NonZeroU8), // unstable
+    BoolZerograd(usize, usize),            // unstable
 }
 
 /// Prints the name of the operation, the tensors of the literals and of the affine maps,
@@ -180,7 +185,7 @@ impl fmt::Display for LRA {
         let name: &'static str = self.into();
         match self {
             LRA::Real(t) | LRA::Bool(t) => write!(f, "{t}"),
-            LRA::Linear(a, b, ..) | LRA::TLinear(a, b, ..) => write!(f, "{name}({a}, {b})"),
+            LRA::Linear(m, ..) | LRA::TLinear(m, ..) => write!(f, "{name}({}, {})", m.a(), m.b()),
             LRA::UninterpretedReal(x, ..) | LRA::UninterpretedBool(x, ..) => {
                 write!(f, "{name}({x})")
             }
@@ -192,8 +197,10 @@ impl fmt::Display for LRA {
 impl Sequential for LRA {
     fn skip(range: &Self::Sort) -> Self {
         match *range {
-            Sort::Real([r, c], 0) => LRA::IdReal(r, c),
-            Sort::Real([r, c], degree) => LRA::TId(r, c, degree),
+            Sort::Real([r, c], degree) => match NonZeroU8::new(degree) {
+                None => LRA::IdReal(r, c),
+                Some(degree) => LRA::TId(r, c, degree),
+            },
             // a zero derivative cannot be copied: the check of the term with it fails
             Sort::Bool([r, c]) | Sort::Zero([r, c]) => LRA::IdBool(r, c),
         }
@@ -213,11 +220,13 @@ impl Combinatorial for LRA {
 impl Differential for LRA {
     fn zero(range: &Self::Sort) -> Self {
         // the range is the sort of the derivative; values have no zero derivative: the
-        // check of the term with a boolean fails, and the zero of a real is ill-formed
-        // (of the degree 0)
+        // check of the term with a value fails (the zero of a real value is the zero of its
+        // first derivative)
         match *range {
             Sort::Bool([r, c]) | Sort::Zero([r, c]) => LRA::BoolZerograd(r, c),
-            Sort::Real([r, c], degree) => LRA::RealZerograd(r, c, degree),
+            Sort::Real([r, c], degree) => {
+                LRA::RealZerograd(r, c, NonZeroU8::new(degree).unwrap_or(NonZeroU8::MIN))
+            }
         }
     }
 }
@@ -236,10 +245,6 @@ impl Theory for LRA {
 }
 
 impl Boundary<Sort> for LRA {
-    /// # Panics
-    ///
-    /// If `A` of [`LRA::Linear`] or [`LRA::TLinear`] is not a 2D tensor, or the degree of a
-    /// derivative is `0`.
     fn dom(&self) -> Poly<Sort> {
         let real = |r, c| Sort::Real([r, c], 0);
         let bool = |r, c| Sort::Bool([r, c]);
@@ -254,7 +259,7 @@ impl Boundary<Sort> for LRA {
             | LRA::Eq(r, c)
             | LRA::Ne(r, c) => vec![real(r, c), real(r, c)],
             // Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1] (or empty), Y=[out,batch]
-            LRA::Linear(ref a, _, batch) => vec![real(linear_inputs(a), batch)],
+            LRA::Linear(ref m, batch) => vec![real(m.inputs(), batch)],
             // `Min` and `Max` are pointwise, as in the evaluator
             LRA::Add(r, c) | LRA::Sub(r, c) | LRA::Min(r, c) | LRA::Max(r, c) => {
                 vec![real(r, c), real(r, c)]
@@ -273,7 +278,7 @@ impl Boundary<Sort> for LRA {
                 let t = treal(r, c, degree);
                 vec![t, t]
             }
-            LRA::TLinear(ref a, _, batch, degree) => vec![treal(linear_inputs(a), batch, degree)],
+            LRA::TLinear(ref m, batch, degree) => vec![treal(m.inputs(), batch, degree)],
             LRA::TIte(r, c, degree) => {
                 let t = treal(r, c, degree);
                 vec![bool(1, 1), t, t]
@@ -284,20 +289,16 @@ impl Boundary<Sort> for LRA {
         sorts.into_iter().product::<Mono<Sort>>().into()
     }
 
-    /// # Panics
-    ///
-    /// If the tensor of a literal or `A` of [`LRA::Linear`] or [`LRA::TLinear`] is not 2D,
-    /// `B` of these is not a column vector, or the degree of a derivative is `0`.
     fn cod(&self) -> Poly<Sort> {
         let real = |r, c| Sort::Real([r, c], 0);
         let bool = |r, c| Sort::Bool([r, c]);
         let sort = match *self {
-            LRA::Real(ref cm) => {
-                let [r, c] = shape_2d(cm);
+            LRA::Real(ref m) => {
+                let [r, c] = m.shape();
                 real(r, c)
             }
-            LRA::Bool(ref cm) => {
-                let [r, c] = shape_2d(cm);
+            LRA::Bool(ref m) => {
+                let [r, c] = m.shape();
                 bool(r, c)
             }
             LRA::And(r, c) | LRA::Or(r, c) | LRA::Xor(r, c) | LRA::Not(r, c) => bool(r, c),
@@ -308,7 +309,7 @@ impl Boundary<Sort> for LRA {
             | LRA::Eq(r, c)
             | LRA::Ne(r, c) => bool(r, c),
             // Y = A·X + B  where X=[in,batch], A=[out,in], B=[out,1] (or empty), Y=[out,batch]
-            LRA::Linear(ref a, ref b, batch) => real(linear_outputs(a, b), batch),
+            LRA::Linear(ref m, batch) => real(m.outputs(), batch),
             // `Min` and `Max` are pointwise, as in the evaluator
             LRA::Add(r, c) | LRA::Sub(r, c) | LRA::Min(r, c) | LRA::Max(r, c) | LRA::ReLU(r, c) => {
                 real(r, c)
@@ -326,7 +327,7 @@ impl Boundary<Sort> for LRA {
             | LRA::TIte(r, c, degree)
             | LRA::TId(r, c, degree)
             | LRA::RealZerograd(r, c, degree) => treal(r, c, degree),
-            LRA::TLinear(ref a, ref b, batch, degree) => treal(linear_outputs(a, b), batch, degree),
+            LRA::TLinear(ref m, batch, degree) => treal(m.outputs(), batch, degree),
             LRA::BoolZerograd(r, c) => bool(r, c).tangent(),
         };
         [sort].into_iter().product::<Mono<Sort>>().into()
@@ -334,13 +335,8 @@ impl Boundary<Sort> for LRA {
 }
 
 /// The sort of the derivatives of the degree `degree` of the reals of the shape `[r, c]`
-///
-/// # Panics
-///
-/// If `degree` is `0`.
-fn treal(r: usize, c: usize, degree: u8) -> Sort {
-    assert!(degree > 0, "the degree of a derivative must be at least 1");
-    Sort::Real([r, c], degree)
+fn treal(r: usize, c: usize, degree: NonZeroU8) -> Sort {
+    Sort::Real([r, c], degree.get())
 }
 
 #[cfg(all(test, feature = "torch"))]
@@ -363,6 +359,18 @@ mod tests {
         tch::Tensor::zeros([rows, cols], (tch::Kind::Float, tch::Device::Cpu)).into()
     }
 
+    fn matrix(t: crate::PyTensor) -> Matrix {
+        Matrix::new(t).unwrap()
+    }
+
+    fn affine(a: crate::PyTensor, b: crate::PyTensor) -> Affine {
+        Affine::new(a, b).unwrap()
+    }
+
+    fn deg(degree: u8) -> NonZeroU8 {
+        NonZeroU8::new(degree).unwrap()
+    }
+
     #[test]
     fn type_kind_and_shape() {
         assert!(real(2, 3).is_real() && !real(2, 3).is_bool());
@@ -374,7 +382,7 @@ mod tests {
     fn const_real_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
         assert!(
-            LRA::Real(cm)
+            LRA::Real(matrix(cm))
                 .check([].map(ok), [real(2, 2)].map(ok))
                 .is_ok()
         );
@@ -386,7 +394,7 @@ mod tests {
         // a covector (1-form) write wire must be rejected
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64]]).into();
         assert!(
-            LRA::Real(cm)
+            LRA::Real(matrix(cm))
                 .check([].map(ok), [real(1, 1).tangent()].map(ok))
                 .is_err()
         );
@@ -395,7 +403,7 @@ mod tests {
     #[test]
     fn const_real_bool_write_fails() {
         assert!(
-            LRA::Real(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+            LRA::Real(matrix(tch::Tensor::from_slice2(&[[0.0f64]]).into()))
                 .check([].map(ok), [bool_t(1, 1)].map(ok))
                 .is_err()
         );
@@ -404,7 +412,7 @@ mod tests {
     #[test]
     fn const_real_wrong_rows_fails() {
         assert!(
-            LRA::Real(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+            LRA::Real(matrix(tch::Tensor::from_slice2(&[[0.0f64]]).into()))
                 .check([].map(ok), [real(2, 1)].map(ok))
                 .is_err()
         );
@@ -414,7 +422,7 @@ mod tests {
     fn const_real_with_read_fails() {
         let t = real(1, 1);
         assert!(
-            LRA::Real(tch::Tensor::from_slice2(&[[0.0f64]]).into())
+            LRA::Real(matrix(tch::Tensor::from_slice2(&[[0.0f64]]).into()))
                 .check([t].map(ok), [t].map(ok))
                 .is_err()
         );
@@ -424,7 +432,7 @@ mod tests {
     fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
         assert!(
-            LRA::Bool(cm)
+            LRA::Bool(matrix(cm))
                 .check([].map(ok), [bool_t(2, 2)].map(ok))
                 .is_ok()
         );
@@ -433,7 +441,7 @@ mod tests {
     #[test]
     fn const_bool_real_write_fails() {
         assert!(
-            LRA::Bool(tch::Tensor::from_slice2(&[[true]]).into())
+            LRA::Bool(matrix(tch::Tensor::from_slice2(&[[true]]).into()))
                 .check([].map(ok), [real(1, 1)].map(ok))
                 .is_err()
         );
@@ -612,7 +620,7 @@ mod tests {
         // A=[2,3] maps 3 features to 2; X=[3,4] is 3 features × 4 batch items.
         // Convention: Y = A·X  →  Y=[2,4].
         assert!(
-            LRA::Linear(real_tensor(2, 3), real_tensor(0, 0), 4)
+            LRA::Linear(affine(real_tensor(2, 3), real_tensor(0, 0)), 4)
                 .check([real(3, 4)].map(ok), [real(2, 4)].map(ok))
                 .is_ok()
         );
@@ -622,7 +630,7 @@ mod tests {
     fn linear_with_bias_ok() {
         // A=[2,3], b=[2,1] column bias, X=[3,1] single sample → Y=[2,1].
         assert!(
-            LRA::Linear(real_tensor(2, 3), real_tensor(2, 1), 1)
+            LRA::Linear(affine(real_tensor(2, 3), real_tensor(2, 1)), 1)
                 .check([real(3, 1)].map(ok), [real(2, 1)].map(ok))
                 .is_ok()
         );
@@ -631,7 +639,7 @@ mod tests {
     #[test]
     fn linear_dim_mismatch_fails() {
         // A=[2,3] but X has 4 rows — inner dimension mismatch.
-        let linear = |batch| LRA::Linear(real_tensor(2, 3), real_tensor(0, 0), batch);
+        let linear = |batch| LRA::Linear(affine(real_tensor(2, 3), real_tensor(0, 0)), batch);
         assert!(
             linear(1)
                 .check([real(4, 1)].map(ok), [real(2, 1)].map(ok))
@@ -782,7 +790,7 @@ mod tests {
         // `skip` copies a value, or a derivative, of the given sort
         let (r, dr) = (real(2, 1), real(2, 1).tangent());
         assert!(matches!(LRA::skip(&r), LRA::IdReal(2, 1)));
-        assert!(matches!(LRA::skip(&dr), LRA::TId(2, 1, 1)));
+        assert!(matches!(LRA::skip(&dr), LRA::TId(2, 1, d) if d.get() == 1));
         assert!(matches!(LRA::skip(&bool_t(2, 1)), LRA::IdBool(2, 1)));
         assert!(LRA::skip(&r).check([r].map(ok), [r].map(ok)).is_ok());
         assert!(LRA::skip(&dr).check([dr].map(ok), [dr].map(ok)).is_ok());
@@ -796,27 +804,21 @@ mod tests {
         // the zero derivative is written to the derivative (a tangent), not to a value
         let zero = |op: LRA, s: Sort| op.check([].map(ok), [s].map(ok));
         let (r, b) = (real(2, 1), bool_t(2, 1));
-        assert!(zero(LRA::RealZerograd(2, 1, 1), r.tangent()).is_ok());
-        assert!(zero(LRA::RealZerograd(2, 1, 1), r).is_err());
-        assert!(zero(LRA::RealZerograd(2, 1, 1), r.tangent().tangent()).is_err());
-        assert!(zero(LRA::RealZerograd(2, 1, 2), r.tangent().tangent()).is_ok());
+        assert!(zero(LRA::RealZerograd(2, 1, deg(1)), r.tangent()).is_ok());
+        assert!(zero(LRA::RealZerograd(2, 1, deg(1)), r).is_err());
+        assert!(zero(LRA::RealZerograd(2, 1, deg(1)), r.tangent().tangent()).is_err());
+        assert!(zero(LRA::RealZerograd(2, 1, deg(2)), r.tangent().tangent()).is_ok());
         assert!(zero(LRA::BoolZerograd(2, 1), b.tangent()).is_ok());
         assert!(zero(LRA::BoolZerograd(2, 1), b).is_err());
         // `zero` is given the sort of the derivative
         assert!(matches!(
             LRA::zero(&r.tangent()),
-            LRA::RealZerograd(2, 1, 1)
+            LRA::RealZerograd(2, 1, d) if d.get() == 1
         ));
         assert!(matches!(LRA::zero(&b.tangent()), LRA::BoolZerograd(2, 1)));
         // values have no zero derivative
+        assert!(zero(LRA::zero(&r), r).is_err());
         assert!(zero(LRA::zero(&b), b).is_err());
-    }
-
-    #[test]
-    #[should_panic(expected = "the degree of a derivative must be at least 1")]
-    fn zero_of_real_value() {
-        let r = real(2, 1);
-        let _ = LRA::zero(&r).check([].map(ok), [r].map(ok));
     }
 
     #[test]
@@ -830,40 +832,44 @@ mod tests {
         let dr = r.tangent();
         let g = bool_t(1, 1);
         assert!(
-            LRA::TAdd(2, 1, 1)
+            LRA::TAdd(2, 1, deg(1))
                 .check([dr, dr].map(ok), [dr].map(ok))
                 .is_ok()
         );
         assert!(
-            LRA::TSub(2, 1, 1)
+            LRA::TSub(2, 1, deg(1))
                 .check([dr, dr].map(ok), [dr].map(ok))
                 .is_ok()
         );
-        assert!(LRA::TId(2, 1, 1).check([dr].map(ok), [dr].map(ok)).is_ok());
         assert!(
-            LRA::TIte(2, 1, 1)
+            LRA::TId(2, 1, deg(1))
+                .check([dr].map(ok), [dr].map(ok))
+                .is_ok()
+        );
+        assert!(
+            LRA::TIte(2, 1, deg(1))
                 .check([g, dr, dr].map(ok), [dr].map(ok))
                 .is_ok()
         );
         let ddr = dr.tangent();
         assert!(
-            LRA::TAdd(2, 1, 2)
+            LRA::TAdd(2, 1, deg(2))
                 .check([ddr, ddr].map(ok), [ddr].map(ok))
                 .is_ok()
         );
         // ... do not apply to values, nor to derivatives of other degrees
         assert!(
-            LRA::TAdd(2, 1, 1)
+            LRA::TAdd(2, 1, deg(1))
                 .check([r, r].map(ok), [r].map(ok))
                 .is_err()
         );
         assert!(
-            LRA::TAdd(2, 1, 1)
+            LRA::TAdd(2, 1, deg(1))
                 .check([dr, r].map(ok), [dr].map(ok))
                 .is_err()
         );
         assert!(
-            LRA::TAdd(2, 1, 1)
+            LRA::TAdd(2, 1, deg(1))
                 .check([dr, dr].map(ok), [ddr].map(ok))
                 .is_err()
         );
@@ -878,7 +884,11 @@ mod tests {
         assert!(LRA::IdReal(2, 1).check([dr].map(ok), [dr].map(ok)).is_err());
         // `dx = x` mixes a derivative and a value
         assert!(LRA::IdReal(2, 1).check([r].map(ok), [dr].map(ok)).is_err());
-        assert!(LRA::TId(2, 1, 1).check([r].map(ok), [dr].map(ok)).is_err());
+        assert!(
+            LRA::TId(2, 1, deg(1))
+                .check([r].map(ok), [dr].map(ok))
+                .is_err()
+        );
         // boolean operations and guards are on values only
         assert!(
             LRA::Not(2, 1)
@@ -886,7 +896,7 @@ mod tests {
                 .is_err()
         );
         assert!(
-            LRA::TIte(2, 1, 1)
+            LRA::TIte(2, 1, deg(1))
                 .check([g.tangent(), dr, dr].map(ok), [dr].map(ok))
                 .is_err()
         );
@@ -896,17 +906,17 @@ mod tests {
     fn zero_arity_mismatch_fails() {
         let t = real(1, 1).tangent();
         assert!(
-            LRA::RealZerograd(1, 1, 1)
+            LRA::RealZerograd(1, 1, deg(1))
                 .check([t].map(ok), [t].map(ok))
                 .is_err()
         );
         assert!(
-            LRA::RealZerograd(1, 1, 1)
+            LRA::RealZerograd(1, 1, deg(1))
                 .check([].map(ok), [t, t].map(ok))
                 .is_err()
         );
         assert!(
-            LRA::RealZerograd(1, 1, 1)
+            LRA::RealZerograd(1, 1, deg(1))
                 .check([].map(ok), [].map(ok))
                 .is_err()
         );
@@ -925,7 +935,7 @@ mod tests {
         );
         assert_eq!(show(LRA::Lt(2, 3)), "Real(2, 3) ⊗ Real(2, 3) -> Bool(2, 3)");
         assert_eq!(
-            show(LRA::Linear(real_tensor(2, 3), real_tensor(0, 0), 4)),
+            show(LRA::Linear(affine(real_tensor(2, 3), real_tensor(0, 0)), 4)),
             "Real(3, 4) -> Real(2, 4)"
         );
         assert_eq!(show(LRA::Argmax(2, 3)), "Real(2, 3) -> Real(1, 1)");
@@ -933,7 +943,10 @@ mod tests {
             show(LRA::And(2, 3)),
             "Bool(2, 3) ⊗ Bool(2, 3) -> Bool(2, 3)"
         );
-        assert_eq!(show(LRA::Real(real_tensor(2, 3))), "I -> Real(2, 3)");
+        assert_eq!(
+            show(LRA::Real(matrix(real_tensor(2, 3)))),
+            "I -> Real(2, 3)"
+        );
         assert_eq!(show(LRA::AnyReal(2, 3)), "I -> Real(2, 3)");
         assert_eq!(show(LRA::TransposeReal(2, 3)), "Real(2, 3) -> Real(3, 2)");
         assert_eq!(show(LRA::TransposeBool(2, 3)), "Bool(2, 3) -> Bool(3, 2)");
@@ -948,18 +961,22 @@ mod tests {
         );
         // derivatives
         assert_eq!(
-            show(LRA::TAdd(2, 3, 1)),
+            show(LRA::TAdd(2, 3, deg(1))),
             "Real(2, 3; 1) ⊗ Real(2, 3; 1) -> Real(2, 3; 1)"
         );
         assert_eq!(
-            show(LRA::TLinear(real_tensor(2, 3), real_tensor(2, 1), 1, 2)),
+            show(LRA::TLinear(
+                affine(real_tensor(2, 3), real_tensor(2, 1)),
+                1,
+                deg(2)
+            )),
             "Real(3, 1; 2) -> Real(2, 1; 2)"
         );
         assert_eq!(
-            show(LRA::TIte(2, 3, 1)),
+            show(LRA::TIte(2, 3, deg(1))),
             "Bool(1, 1) ⊗ Real(2, 3; 1) ⊗ Real(2, 3; 1) -> Real(2, 3; 1)"
         );
-        assert_eq!(show(LRA::RealZerograd(2, 3, 1)), "I -> Real(2, 3; 1)");
+        assert_eq!(show(LRA::RealZerograd(2, 3, deg(1))), "I -> Real(2, 3; 1)");
         assert_eq!(show(LRA::BoolZerograd(2, 3)), "I -> Zero(2, 3)");
         // the operations with the same boundaries
         assert_eq!(show(LRA::Add(2, 3)), show(LRA::Max(2, 3)));
@@ -967,29 +984,19 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "the degree of a derivative must be at least 1")]
-    fn boundary_degree_zero() {
-        let _ = LRA::TAdd(2, 3, 0).dom();
-    }
-
-    #[test]
-    #[should_panic(expected = "expected a 2D tensor, got 1D")]
-    fn boundary_const_not_2d() {
+    fn ill_formed_parameters() {
+        // the parameters are checked on their creation (so the boundaries always exist)
         let t: crate::PyTensor = tch::Tensor::from_slice(&[0.0f64, 1.0]).into();
-        let _ = LRA::Real(t).cod();
-    }
-
-    #[test]
-    #[should_panic(expected = "`B` must be a column vector [2x1]")]
-    fn boundary_linear_bias_not_column() {
-        let _ = LRA::Linear(real_tensor(2, 3), real_tensor(2, 2), 1).cod();
+        assert!(Matrix::new(t).is_err());
+        assert!(Affine::new(real_tensor(2, 3), real_tensor(2, 2)).is_err());
+        assert!(NonZeroU8::new(0).is_none());
     }
 
     #[test]
     fn display() {
         assert_eq!(LRA::Add(2, 3).to_string(), "Add");
         assert_eq!(LRA::IdReal(2, 3).to_string(), "IdReal");
-        assert_eq!(LRA::TAdd(2, 3, 1).to_string(), "TAdd");
+        assert_eq!(LRA::TAdd(2, 3, deg(1)).to_string(), "TAdd");
         assert_eq!(
             LRA::UninterpretedReal("f".into(), 2, 3).to_string(),
             "UninterpretedReal(f)"
@@ -1009,7 +1016,7 @@ mod tests {
         // derivatives and values do not mix
         let dr = real(1, 1).tangent();
         assert_eq!(
-            LRA::TAdd(1, 1, 1).check([dr, real(1, 1)].map(ok), [dr].map(ok)),
+            LRA::TAdd(1, 1, deg(1)).check([dr, real(1, 1)].map(ok), [dr].map(ok)),
             Err(
                 "TAdd(1, 1, 1): expected `Real(1, 1; 1) ⊗ Real(1, 1; 1) -> Real(1, 1; 1)`, \
                  got `Real(1, 1; 1) ⊗ Real(1, 1) -> Real(1, 1; 1)`"
@@ -1058,7 +1065,8 @@ mod tests {
     #[test]
     fn linear_derivatives() {
         // `2 * d(t)` folds to a Linear over derivatives
-        let lin = |degree| LRA::TLinear(real_tensor(2, 3), real_tensor(2, 1), 1, degree);
+        let lin =
+            |degree| LRA::TLinear(affine(real_tensor(2, 3), real_tensor(2, 1)), 1, deg(degree));
         let (x, y) = (real(3, 1), real(2, 1));
         assert!(
             lin(1)
@@ -1077,7 +1085,7 @@ mod tests {
                 .is_ok()
         );
         // `Linear` is on values only
-        let linear = LRA::Linear(real_tensor(2, 3), real_tensor(2, 1), 1);
+        let linear = LRA::Linear(affine(real_tensor(2, 3), real_tensor(2, 1)), 1);
         assert!(
             linear
                 .check([x.tangent()].map(ok), [y.tangent()].map(ok))

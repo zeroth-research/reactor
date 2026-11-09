@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from reactor import Wire, Module, parse_smv, BV, BitVec, Var, X
+from reactor import Wire, Module, parse_smv, BV, BVConst, BitVec, Var, X
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 
@@ -45,7 +45,7 @@ def test_counter_init_terms():
     # At least one init term should be a zero-valued BV constant for x.
     def _is_const_zero(itype):
         match itype:
-            case BV.Const(data):
+            case BV.Const(BVConst(data)):
                 return int(data.item()) == 0
         return False
 

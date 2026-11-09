@@ -1,6 +1,6 @@
 import pytest
 import torch
-from reactor import LRA, LIA, BV, Bool, Int, Real, BitVec, Zero, Term, Wire
+from reactor import LRA, LIA, BV, Affine, BVConst, Bits, Bool, Int, Real, BitVec, Zero, Term, Wire
 from reactor.ops import op, linear, bv_const
 
 
@@ -50,11 +50,41 @@ def test_op_missing():
 def test_linear_and_bv_const():
     a, b = torch.zeros(2, 3), torch.zeros(2, 1)
     o = linear(LRA, a, b, Real([3, 4]))
-    assert isinstance(o, LRA.Linear) and _params(o)[2] == 4
+    assert isinstance(o, LRA.Linear) and _params(o)[1] == 4
+    # the constants are the tensors themselves
+    match o:
+        case LRA.Linear(Affine(weight, bias)):
+            assert weight.data_ptr() == a.data_ptr() and bias.data_ptr() == b.data_ptr()
     o = linear(LRA, a, b, Real([3, 1], 2))
-    assert isinstance(o, LRA.TLinear) and _params(o)[2:] == (1, 2)
+    assert isinstance(o, LRA.TLinear) and _params(o)[1:] == (1, 2)
     o = bv_const(torch.tensor([[1]]), BitVec(8, [1, 1]))
-    assert isinstance(o, BV.Const) and _params(o)[1] == 8
+    assert isinstance(o, BV.Const) and isinstance(_params(o)[0], BVConst)
+    assert _params(o)[0].width == 8
+
+
+def test_parameters_are_checked():
+    # the ill-formed parameters raise when the op is built
+    with pytest.raises(ValueError, match="expected a 2D tensor, got 1D"):
+        LRA.Real(torch.zeros(3))
+    with pytest.raises(ValueError, match="invalid zero value"):
+        LRA.TAdd(1, 1, 0)
+    with pytest.raises(ValueError, match="`A`: expected a 2D tensor, got 1D"):
+        Affine(torch.zeros(3), torch.empty(0))
+    with pytest.raises(ValueError, match=r"`B` must be empty or a column vector \[2x1\]"):
+        linear(LRA, torch.zeros(2, 3), torch.zeros(2, 2), Real([3, 1]))
+    with pytest.raises(ValueError, match="tensor values do not fit in 8 bits"):
+        bv_const(torch.tensor([[256]]), BitVec(8, [1, 1]))
+    with pytest.raises(ValueError, match=r"high \(8\) is out of range for width 8"):
+        Bits(8, 0, 8)
+    # an empty constant fits into any width
+    o = bv_const(torch.zeros((0, 3), dtype=torch.int64), BitVec(8, [0, 3]))
+    Term(o, [Wire(BitVec(8, [0, 3]))])
+    # the literals are the tensors themselves
+    t = torch.zeros(2, 3)
+    match LRA.Real(t):
+        case LRA.Real(u):
+            assert u.data_ptr() == t.data_ptr()
+    assert BV.BitSelect(bits=Bits(7, 4, 8), rows=1, cols=1).bits == Bits(7, 4, 8)
 
 
 def test_terms_check_the_boundary():

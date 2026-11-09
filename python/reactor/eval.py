@@ -7,7 +7,7 @@ needs the output Sort for its width — threaded in as `out_sort`.
 """
 
 import torch
-from .reactor import LRA, LIA, BV
+from .reactor import LRA, LIA, BV, Affine, BVConst, Bits
 from .sort import BitVec
 
 
@@ -48,7 +48,7 @@ def eval_itype(itype, read, out_sort=None):
             return [torch.where(r[0].bool(), r[1], r[2])]
 
         # --- constants (payload bound from the op) ---
-        case LRA.Bool(t) | LRA.Real(t) | LIA.Bool(t) | LIA.Int(t) | BV.Const(t):
+        case LRA.Bool(t) | LRA.Real(t) | LIA.Bool(t) | LIA.Int(t) | BV.Const(BVConst(t)):
             return [t.clone()]
 
         # --- arithmetic: LIA/LRA (exact, no wraparound) ---
@@ -80,7 +80,8 @@ def eval_itype(itype, read, out_sort=None):
             return [_wrap(r[0] @ r[1], out_sort)]
 
         # --- Linear (LIA/LRA): A, B constants carried in the op ---
-        case LRA.Linear(weight, bias) | LRA.TLinear(weight, bias) | LIA.Linear(weight, bias):
+        case (LRA.Linear(Affine(weight, bias)) | LRA.TLinear(Affine(weight, bias))
+              | LIA.Linear(Affine(weight, bias))):
             return [_linear(weight, bias, r[0])]
 
         # --- comparisons: LIA/LRA produce a boolean tensor ---
@@ -134,7 +135,7 @@ def eval_itype(itype, read, out_sort=None):
             return [_wrap(~r[0], out_sort)]
         case BV.BVToBool():
             return [(r[0] != 0).to(r[0].dtype)]
-        case BV.BitSelect(high=high, low=low):
+        case BV.BitSelect(bits=Bits(high=high, low=low)):
             return [(r[0] >> low) & ((1 << (high - low + 1)) - 1)]
         case BV.Extend(extra=_):
             return [r[0]]  # zero-extend: value unchanged, width grows

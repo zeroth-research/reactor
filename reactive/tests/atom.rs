@@ -7,6 +7,7 @@ use common::{Atom, Module, Ops, example_counter, example_peterson1, mk_op, srt};
 use dataflow::diagram::{Term, Wire};
 use reactive::Var;
 use reactive::var::{X, d};
+use std::num::NonZeroU8;
 
 #[test]
 fn can_instantiate_and_print_sequential_module() {
@@ -110,9 +111,9 @@ fn differential_drifting_clocks() {
     // delay: the derivatives, both driven by the input's derivative `d(t)`.
     let delay = [
         // dx = 2 dt, synthesised tensor-free as dt + dt
-        Term::function(LRA::TAdd(1, 1, 1), [d(x)], [d(t), d(t)]).unwrap(),
+        Term::function(LRA::TAdd(1, 1, NonZeroU8::MIN), [d(x)], [d(t), d(t)]).unwrap(),
         // dy = 1 dt
-        Term::function(LRA::TId(1, 1, 1), [d(y)], [d(t)]).unwrap(),
+        Term::function(LRA::TId(1, 1, NonZeroU8::MIN), [d(y)], [d(t)]).unwrap(),
     ];
 
     // init: the initial derivatives are left unconstrained (Havoc). Every
@@ -176,7 +177,7 @@ fn differential_module_rejects_dx_equals_x() {
     let x = Var::new(scalar);
 
     // dx = x: already ill-formed at the term level.
-    let delay = Term::function(LRA::TId(1, 1, 1), [d(x)], [x]);
+    let delay = Term::function(LRA::TId(1, 1, NonZeroU8::MIN), [d(x)], [x]);
 
     let module = delay.and_then(|delay| {
         let init = [Term::constant(LRA::AnyReal(1, 1), [X(x)]).unwrap()];

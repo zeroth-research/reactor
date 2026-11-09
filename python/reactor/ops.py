@@ -15,10 +15,12 @@ the sort ``sort``, e.g.,
     op(BV, "ULt", BitVec(8, [2, 3]))       # BV.ULt(8, 2, 3)
 
 The ops with other parameters are built directly (e.g., ``BV.MatMul(width, m, k, n)``),
-or by ``linear()`` and ``bv_const()``.
+or by ``linear()`` and ``bv_const()``. The parameters are checked when the op is built (e.g.,
+the tensor of a literal must be 2D, see ``Affine``, ``BVConst``, and ``Bits``), and an
+ill-formed parameter raises a ``ValueError``.
 """
 
-from .reactor import LRA, LIA, BV
+from .reactor import LRA, LIA, BV, Affine, BVConst
 from .sort import Bool, Int, Real, BitVec
 
 # the ops of LRA and LIA that come in one variant per kind of values (e.g., `IdReal`)
@@ -50,11 +52,11 @@ def linear(theory, weight, bias, sort):
     """The affine map ``x ↦ weight·x + bias`` of ``theory`` on ``x`` of the sort ``sort``."""
     match sort:
         case Real([_, batch], 0) if theory is LRA:
-            return LRA.Linear(weight, bias, batch)
+            return LRA.Linear(Affine(weight, bias), batch)
         case Real([_, batch], degree) if theory is LRA:
-            return LRA.TLinear(weight, bias, batch, degree)
+            return LRA.TLinear(Affine(weight, bias), batch, degree)
         case Int([_, batch]) if theory is LIA:
-            return LIA.Linear(weight, bias, batch)
+            return LIA.Linear(Affine(weight, bias), batch)
     raise TypeError(f"{theory.__name__} has no Linear on {sort}")
 
 
@@ -62,7 +64,7 @@ def bv_const(tensor, sort):
     """The bit-vector constant ``tensor`` written to a wire of the sort ``sort``."""
     match sort:
         case BitVec(width, _):
-            return BV.Const(tensor, width)
+            return BV.Const(BVConst(tensor, width))
     raise TypeError(f"BV has no Const of {sort}")
 
 

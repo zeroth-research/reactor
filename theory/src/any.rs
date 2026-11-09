@@ -436,9 +436,7 @@ mod tests {
             "UninterpretedReal(f)"
         );
         let bit_select = BV::BitSelect {
-            high: 7,
-            low: 0,
-            width: 8,
+            bits: bv::Bits::new(7, 0, 8).unwrap(),
             rows: 1,
             cols: 1,
         };

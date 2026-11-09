@@ -2,9 +2,11 @@ pub mod any;
 pub mod bv;
 pub mod lia;
 pub mod lra;
+pub mod matrix;
 pub mod tensor;
 
 use base::boundary::{Mono, Poly};
+pub use matrix::{Affine, Matrix};
 use std::fmt;
 pub use tensor::PyTensor;
 
@@ -17,10 +19,6 @@ pub trait Theory {
     /// the read and written wires (the boundary of the application) must be the domain and
     /// the codomain of the operation (its [`base::boundary::Boundary`]).
     /// Derivatives are wires of the tangent sorts (see [`base::tangent::Tangent::tangent`]).
-    ///
-    /// # Panics
-    ///
-    /// If the operation is ill-formed (see the panics of its boundary).
     fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
     where
         R: IntoIterator<Item = Result<Self::Sort, E>>,
@@ -76,41 +74,4 @@ where
         .map(|w| w.map_err(|e| e.to_string()))
         .collect::<Result<Mono<S>, _>>()
         .map(Poly::from)
-}
-
-/// The `[rows, cols]` shape of the 2D tensor `t`
-///
-/// # Panics
-///
-/// If `t` is not 2D.
-fn shape_2d(t: &PyTensor) -> [usize; 2] {
-    match t.size().as_slice() {
-        &[rows, cols] => [rows as usize, cols as usize],
-        size => panic!("expected a 2D tensor, got {}D", size.len()),
-    }
-}
-
-/// The number of inputs of the affine map `x ↦ A·x + B` with `A` of the shape
-/// `[outputs, inputs]`
-///
-/// # Panics
-///
-/// If `A` is not 2D.
-fn linear_inputs(a: &PyTensor) -> usize {
-    let [_, inp] = shape_2d(a);
-    inp
-}
-
-/// The number of outputs of the affine map `x ↦ A·x + B` with `A` of the shape
-/// `[outputs, inputs]`
-///
-/// # Panics
-///
-/// If `A` is not 2D, or `B` is neither empty nor a column vector `[outputs, 1]`.
-fn linear_outputs(a: &PyTensor, b: &PyTensor) -> usize {
-    let [out, _] = shape_2d(a);
-    if b.numel() != 0 && shape_2d(b) != [out, 1] {
-        panic!("`B` must be a column vector [{out}x1]");
-    }
-    out
 }

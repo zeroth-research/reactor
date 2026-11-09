@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..reactor import Wire, Term, Module, BV, Var, X
+from ..reactor import Wire, Term, Module, BV, Var, X, Bits
 from ..sort import Sort, BitVec, Bool
 from ..ops import op, bv_const
 
@@ -664,9 +664,7 @@ class _Lowerer:
             out_dtype = BitVec(high - low + 1, [1, 1])
             w = self._fresh(target, out_dtype)
             rows, cols = _shape(base_w.dtype)
-            itype = BV.BitSelect(
-                high=high, low=low, width=_bw(base_w.dtype), rows=rows, cols=cols
-            )
+            itype = BV.BitSelect(bits=Bits(high, low, _bw(base_w.dtype)), rows=rows, cols=cols)
             self.terms.append(Term(itype, [w], [base_w]))
             return self._enforce(w, target)
         return self._enforce(base_w, target)
