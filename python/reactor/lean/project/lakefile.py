@@ -14,10 +14,6 @@ from ..core.errors import Refused
 from .templates import render
 
 
-MATHLIB_URL = "https://github.com/leanprover-community/mathlib4"
-CSLIB_URL = "https://github.com/leanprover-community/cslib"
-PROOFS_URL = "https://github.com/zeroth/proof-prototyping"
-
 MATHLIB_REV = "v4.34.0"
 CSLIB_REV = MATHLIB_REV
 # Lean toolchain version — should match Mathlib's requirement
