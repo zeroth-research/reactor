@@ -111,7 +111,7 @@ the certificate carries one spelling whoever proved it.
 
 from __future__ import annotations
 
-from ..common.record import found, note
+from ..common.record import announce, found_certificate, note
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.claim import SynthContext, sorts_where
@@ -293,24 +293,19 @@ class HoudiniEngine:
 
     def _emit(self, inv: list[Candidate],
               rank: "Candidate | None") -> Certificate:
-        inv_src = conjunction_smt(f.src for f in inv)
-        self.log(f"[houdini] inv: {inv_src}")
-        if rank is not None:
-            self.log(f"[houdini] ranking: {rank.src}")
-        self._record(inv_src, rank)
-        return Certificate(inv_src, None if rank is None else rank.src)
-
-    def _record(self, inv_src: str, rank: "Candidate | None") -> None:
+        cert = announce(self.log, "houdini", Certificate(
+            conjunction_smt(f.src for f in inv),
+            None if rank is None else rank.src))
         by = self.spec.kind
-        what = (f"Houdini over facts read off simulated runs of the module, "
-                f"each proved by {by} -- it holds at entry and every round "
-                f"preserves it -- and cut down to the facts the proofs used.")
-        found(self.artifacts, "inv", inv_src,
-              what=f"The invariant this run found. {what}")
-        if rank is not None:
-            found(self.artifacts, "ranking", rank.src,
-                  what=f"The ranking function this run found: {by} proved "
-                       f"`hrank` for it over the invariant beside it.")
+        found_certificate(
+            self.artifacts, cert,
+            inv=(f"The invariant this run found. Houdini over facts read "
+                 f"off simulated runs of the module, each proved by {by} -- "
+                 f"it holds at entry and every round preserves it -- and cut "
+                 f"down to the facts the proofs used."),
+            ranking=(f"The ranking function this run found: {by} proved "
+                     f"`hrank` for it over the invariant beside it."))
+        return cert
 
     def _none(self, claim: Claim, n_facts, n_ranks, reached, prover):
         if claim.is_safety:

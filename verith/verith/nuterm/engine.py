@@ -56,6 +56,7 @@ from reactor import Module
 
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
+from ..common.record import announce
 from ..common.smtlib import affine_smt, conjunction_smt, smt_int
 
 
@@ -521,9 +522,4 @@ class NutermEngine:
         return z3.substitute(term, *subs) if subs else term
 
     def _emit(self, inv_src: str, rank_src: str | None) -> Certificate:
-        """The certificate, logged as the `inv:` / `ranking:` lines the bench
-        harness reads."""
-        self.log(f"[nuterm] inv: {inv_src}")
-        if rank_src is not None:
-            self.log(f"[nuterm] ranking: {rank_src}")
-        return Certificate(inv_src, rank_src)
+        return announce(self.log, "nuterm", Certificate(inv_src, rank_src))

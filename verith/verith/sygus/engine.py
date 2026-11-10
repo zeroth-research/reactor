@@ -67,6 +67,7 @@ from __future__ import annotations
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.claim import READING_KINDS, SynthContext
+from ..common.record import announce
 from reactor.lean.smt.limits import bounded_solver, call_ms
 from ..common.obligations import initial, transition
 from ..common.synth import Search, body_of, readings, moduli, program_constants, record
@@ -170,8 +171,7 @@ class SygusEngine:
                 f"--infer sygus found no invariant. {search.note}",
                 searched=True,
             )
-        self.log(f"[sygus] inv: {search.found}")
-        return Certificate(inv=search.found)
+        return announce(self.log, "sygus", Certificate(inv=search.found))
 
     # --- the search -----------------------------------------------------
 

@@ -92,6 +92,7 @@ from .solve import HOW_QUANTIFIED, Outcome, Template, decide
 from dataclasses import dataclass
 
 from ..common.claim import SynthContext
+from ..common.record import announce
 from ..common.smtlib import affine_smt, conjunction_smt, decimals
 from reactor.lean.smt.obligations import (
     Frame,
@@ -224,7 +225,7 @@ class SmtLinearEngine:
         if claim.is_safety:
             search = self._safety(ctx, cols, inv)
             if search.found is not None:
-                self.log(f"[smt-linear] inv: {search.found}")
+                announce(self.log, "smt-linear", Certificate(search.found))
             record(self.artifacts, search)
             if search.found is None:
                 raise Refused(
@@ -244,8 +245,8 @@ class SmtLinearEngine:
             )
         search, inv_src = self._buchi(ctx, cols, inv, claim)
         if search.found is not None:
-            self.log(f"[smt-linear] inv: {inv_src}")
-            self.log(f"[smt-linear] ranking: {search.found}")
+            announce(self.log, "smt-linear",
+                     Certificate(inv_src, search.found))
         record(self.artifacts, search)
         if search.found is None:
             raise Refused(
