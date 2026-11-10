@@ -1,12 +1,10 @@
 """What the run is about: the module, read from its input (`load`), and
 the claim -- the one the flags ask (`claim_from_flags`), or the one the
-input states (`stated_claim`). `show_certificate` prints an answer back
-in the input's names.
+input states (`stated_claim`).
 """
 
 from __future__ import annotations
 
-import shlex
 from collections.abc import Callable
 
 from ..cli import Settings, parse_args
@@ -62,19 +60,6 @@ def claim_from_flags(
     claim = Claim(prp=prp, kind=settings.kind, init_pre=pre, update_pre=pre)
     return claim, Certificate(internal(settings.invariant, "--invariant"),
                               internal(settings.ranking, "--ranking"))
-
-
-def show_certificate(cert: Certificate, names: "inputs.Names") -> None:
-    """A certificate in the input's names, as `--invariant` and
-    `--ranking` take it: what one run found, the next can be given."""
-    shown = [(flag, text) for flag, text in (("--invariant", cert.inv),
-                                             ("--ranking", cert.ranking))
-             if text]
-    if not shown:
-        return
-    print(".. The certificate, in the input's names:")
-    for flag, text in shown:
-        print(f"   {flag} {shlex.quote(inputs.to_surface(text, names))}")
 
 
 def stated_claim(settings: Settings, problem: "inputs.Problem",

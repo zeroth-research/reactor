@@ -8,7 +8,7 @@ from __future__ import annotations
 from fractions import Fraction
 
 from ..common.claim import SynthContext
-from reactor.lean.smt.script import smt_int, smt_real
+from ..common.smtlib import smt_int, smt_real
 from ..common.synth import Column, columns, moduli
 from .simulate import Runs
 

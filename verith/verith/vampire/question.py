@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from reactor.lean.core.errors import Refused
 from reactor.lean.smt import obligations as obl
-from ..common.obligations import Obligations
-from reactor.lean.smt.script import decimals, script
+from ..common.obligations import Obligations, ranked as ranked_query
+from reactor.lean.smt.script import script
+from ..common.smtlib import decimals
 from reactor.lean.smt.terms import free_constants, ite_conditions
 from ..common.claim import SynthContext
 from ..common.synth import (
@@ -218,7 +219,7 @@ class Question:
                     tm.mkTerm(Kind.GT, now, tm.mkInteger(0)),
                     tm.mkTerm(Kind.LT, self._rank(tpl, self._cols(br)), now),
                 ])
-                q = obl.ranked(case, inv, prp, drops, given=br.guard)
+                q = ranked_query(case, inv, prp, drops, given=br.guard)
                 obligations.append(self._forall(self.vars, self._stated(q)))
         if implies:
             q = obl.inv_imp_P(ob, inv, prp)

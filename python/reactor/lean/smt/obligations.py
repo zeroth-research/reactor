@@ -2,9 +2,9 @@
 read.
 
 A `Query` is one obligation. What `rule_buchi` and `rule_globally` ask --
-`init_inv`, `step_inv`, `inv_imp_P`, `hrank`, and `hrank` split into
-`rank_decrease` and `rank_positive` -- is stated once, here, over a *frame*:
-the constants an obligation is stated over and the round from them.
+`init_inv`, `step_inv`, `inv_imp_P` and `hrank` -- is stated once, here,
+over a *frame*: the constants an obligation is stated over and the round
+from them.
 
 A `Frame` is inline: fresh constants `{prefix}s0..`, `{prefix}el0..` and
 `{prefix}en0..`, and the successor is the encoded round substituted in.
@@ -26,22 +26,11 @@ class Query:
     `defines` states the round once -- the successor state over the latched
     state and the inputs -- so a query about twenty facts carries the
     transition once rather than twenty times.
-
-    `probes` are the goal's conjuncts under their own names.  A solver that
-    returns a counter-model reports which of them that model falsifies; one
-    that does not, ignores them.  They are deliberately outside `key`: the
-    same obligation asked with and without probes is the same question, and
-    a cached answer that already carries what the caller wants is reused.
     """
 
     hyps: tuple[tuple[str, object], ...]
     goal: object
     defines: tuple[tuple[object, object], ...] = ()
-    probes: tuple[tuple[str, object], ...] = ()
-    # Terms whose values a counter-model is read at -- the state and its
-    # successor, for an obligation whose refutation is a round to learn
-    # from. Outside `key` for the reason `probes` are.
-    witness: tuple = ()
 
     @property
     def key(self):
@@ -56,16 +45,6 @@ class Query:
         assert not self.defines, "a defined round has no negation form"
         return conjunction(tm, [t for _, t in self.hyps]
                            + [tm.mkTerm(Kind.NOT, self.goal)])
-
-    def implication(self, tm):
-        """`hyps -> goal`, every hypothesis kept as given. Inline only."""
-        from cvc5 import Kind
-
-        assert not self.defines, "a defined round has no implication form"
-        if not self.hyps:
-            return self.goal
-        return tm.mkTerm(Kind.IMPLIES,
-                         conjunction(tm, [t for _, t in self.hyps]), self.goal)
 
     def labelled(self, tm) -> dict:
         """`negation` as named parts, the goal's negation as `goal`. A
@@ -130,22 +109,13 @@ def _outside(f, hyps, prp) -> list:
     ]
 
 
-def _query(hyps, goal, *, defines=(), probes=()) -> Query:
-    """Named hypotheses, a goal, and the conjuncts of it worth naming.
-
-    A probe is named `g<i>` against the position of the fact it came from,
-    which is how a counter-model is read back: the names are positions in
-    the list the caller asked about. A goal that is one thing gets no probes
-    -- there would be nothing to learn from naming it that `REFUTED` does
-    not already say. An absent precondition is no hypothesis.
-    """
-    probes = list(probes)
+def _query(hyps, goal, *, defines=()) -> Query:
+    """Named hypotheses and a goal. An absent precondition is no
+    hypothesis."""
     return Query(
         hyps=tuple((n, h) for n, h in hyps if h is not None),
         goal=goal,
         defines=tuple(defines),
-        probes=tuple((f"g{i}", t) for i, t in enumerate(probes))
-        if len(probes) > 1 else (),
     )
 
 
@@ -156,7 +126,7 @@ def init_inv(f, goals: list, *, given=()) -> Query:
     at = [f.at(g, entry) for g in goals]
     goal = conjunction(f.tm, at)
     return _query([("pre", pre)] + _given(given), goal,
-                  defines=f.define_entry(), probes=at)
+                  defines=f.define_entry())
 
 
 def step_inv(f, hyps: list, goals: list, *, given=()) -> Query:
@@ -167,7 +137,7 @@ def step_inv(f, hyps: list, goals: list, *, given=()) -> Query:
     at = [f.at(g, succ) for g in goals]
     goal = conjunction(f.tm, at)
     return _query(named + [("pre", pre)] + _given(given), goal,
-                  defines=f.define_next(), probes=at)
+                  defines=f.define_next())
 
 
 def inv_imp_P(f, hyps: list, goal) -> Query:
@@ -191,87 +161,6 @@ def hrank(f, hyps: list, prp, rank) -> Query:
     return _query(named, goal, defines=f.define_next())
 
 
-def ranked(f, hyps: list, prp, goal, *, given=()) -> Query:
-    """`hyps s /\\ ~P s /\\ update_pre e -> goal`, for a caller that states
-    `hrank`'s conclusion in a shape of its own (read at `f.succ`)."""
-    named = _outside(f, hyps, prp)
-    return _query(named + _given(given), goal, defines=f.define_next())
-
-
-def rank_decrease(f, hyps: list, prp, rank) -> Query:
-    """`hrank`'s first half: `rank (update s e) < rank s`, unclamped.
-
-    With `rank_positive`, exactly `hrank` for an Int rank: `toNat r' <
-    toNat r` holds iff `r >= 1` and `r' < r`.
-    """
-    from cvc5 import Kind
-
-    succ = f.succ
-    named = _outside(f, hyps, prp)
-    goal = f.tm.mkTerm(Kind.LT, f.at(rank, succ), f.at(rank, f.s))
-    return _query(named, goal, defines=f.define_next())
-
-
-def rank_positive(f, hyps: list, prp, rank) -> Query:
-    """`hrank`'s second half: `rank s >= 1` wherever it has to fall."""
-    from cvc5 import Kind
-
-    named = _outside(f, hyps, prp)
-    goal = f.tm.mkTerm(Kind.GEQ, f.at(rank, f.s), f.tm.mkInteger(1))
-    return _query(named, goal)
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# The round as relations
-#
-# SyGuS-IF states `G P` over `pre(s)` and
-# `trans(s, s')`: predicates on states alone, so the inputs that make a
-# state initial, or take one state to the next, are closed existentially.
-# Existential rather than fresh constants, because the relation is about the
-# state alone; and existential rather than universal, because `init_inv`
-# asks the invariant to hold at whatever the inputs made, not at every value
-# some other input would have made. A precondition is over the parser's
-# inputs, and `None` is none.
-# ══════════════════════════════════════════════════════════════════════════
-
-
-def initial(enc, s: list, init_pre=None, *, prefix: str = "pre_"):
-    """`s` is a state tick 0 can produce: `exists el en. init_pre /\\ s =
-    init en`."""
-    el, en = enc.bound_inputs(prefix)
-    return _closing(enc, el + en, enc.with_inputs(init_pre, el, en),
-                    lambda: _same(enc.tm, s, enc.init_state(en)))
-
-
-def transition(enc, s: list, s2: list, update_pre=None, *,
-               prefix: str = "tr_"):
-    """`s -> s2`: some input, allowed by `update_pre`, takes one to the
-    other -- `exists el en. update_pre /\\ s2 = update s el en`."""
-    el, en = enc.bound_inputs(prefix)
-    return _closing(enc, el + en, enc.with_inputs(update_pre, el, en),
-                    lambda: _same(enc.tm, s2, enc.next_state(s, el, en)))
-
-
-def _closing(enc, vs: list, pre, same):
-    """`exists vs. pre /\\ same()`. `same` is built after `pre`, which is
-    the order cvc5 numbers the terms in, and so the order the relation
-    has always been built in."""
-    from cvc5 import Kind
-
-    tm = enc.tm
-    body = same() if pre is None else tm.mkTerm(Kind.AND, pre, same())
-    if not vs:
-        return body
-    return tm.mkTerm(Kind.EXISTS, tm.mkTerm(Kind.VARIABLE_LIST, *vs), body)
-
-
-def _same(tm, lhs: list, rhs: list):
-    from cvc5 import Kind
-
-    return conjunction(tm, [tm.mkTerm(Kind.EQUAL, a, b)
-                            for a, b in zip(lhs, rhs)])
-
-
 class Frame:
     """An inline frame: fresh constants, and the encoded round from them.
 
@@ -287,12 +176,6 @@ class Frame:
         self.tm = enc.tm
         self.s, self.el, self.en = consts or enc.fresh(prefix)
         self._pres = (init_pre, update_pre)
-
-    @classmethod
-    def over(cls, enc, s, el, en, *, init_pre=None, update_pre=None) -> "Frame":
-        """A frame over terms the caller made: bound variables, say."""
-        return cls(enc, "", init_pre=init_pre, update_pre=update_pre,
-                   consts=(list(s), list(el), list(en)))
 
     @cached_property
     def succ(self) -> list:

@@ -198,7 +198,7 @@ def test_a_bitvector_state_is_refused_by_name(solver, why):
 def test_a_real_literal_is_written_as_a_decimal_where_one_is_exact(value, written):
     from fractions import Fraction
 
-    from reactor.lean.smt.script import smt_real
+    from verith.common.smtlib import smt_real
 
     assert smt_real(Fraction(value)) == written
 
@@ -206,7 +206,7 @@ def test_a_real_literal_is_written_as_a_decimal_where_one_is_exact(value, writte
 def test_cvc5s_rationals_are_rewritten_on_the_way_into_a_vampire_script():
     """cvc5 prints one half as `(/ 1 2)`, whose arguments are Int-sorted;
     Vampire answers that with `invalid sort $int for interpretation /`."""
-    from reactor.lean.smt.script import decimals
+    from verith.common.smtlib import decimals
 
     assert decimals("(- v_s0 (/ 1 2))") == "(- v_s0 0.5)"
     assert decimals("(* (/ (- 1) 4) x)") == "(* (- 0.25) x)"
@@ -275,9 +275,9 @@ def test_a_false_obligation_comes_back_refuted_with_the_facts_it_breaks():
 def test_a_refuted_answer_is_kept_forever_and_an_unknown_only_per_limit():
     """`REFUTED` holds at every time limit there will ever be, so it is
     cached like a proof; an `UNKNOWN` is only ever "not at *that* limit"."""
-    from verith.common.solvers import Answer, Query, Solver, Verdict
+    from verith.common.solvers import Answer, Question, Solver, Verdict
 
-    q = Query(hyps=(), goal="g")
+    q = Question(hyps=(), goal="g")
     for verdict, limits in ((Verdict.PROVED, [2]), (Verdict.REFUTED, [2]),
                             (Verdict.UNKNOWN, [2, 10])):
         asked = []
@@ -300,7 +300,7 @@ def test_a_refuted_answer_is_kept_forever_and_an_unknown_only_per_limit():
 def test_a_cached_proof_is_asked_again_only_when_a_core_is_wanted():
     """A proof already in hand serves a question that wants no core, and is
     re-asked when one does -- the same rule the counter-model follows."""
-    from verith.common.solvers import Answer, Query, Solver, Verdict
+    from verith.common.solvers import Answer, Question, Solver, Verdict
 
     asked = []
 
@@ -309,7 +309,7 @@ def test_a_cached_proof_is_asked_again_only_when_a_core_is_wanted():
             asked.append(core)
             return Answer(Verdict.PROVED, core=frozenset({"h0"}) if core else None)
 
-    q = Query(hyps=(), goal="g")
+    q = Question(hyps=(), goal="g")
     solver = Bare(seconds=30)
     assert solver.prove(q, 2).core is None
     assert solver.prove(q, 2).core is None           # served from the cache

@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 
 from reactor.lean.cli.checks import check_row_options
-from reactor.lean.cli.settings import SEED_FLAGS
 from reactor.lean.core.options import given
 from reactor.lean.core.errors import Refused
 
@@ -27,6 +26,16 @@ from . import (
     shared_route_options,
 )
 from .common.llm import DEFAULT_MODEL
+
+# One row per predicate flag: the predicate it supplies, by its short name;
+# the `Settings` attribute that carries it; and the flag to name in a
+# refusal. The first two differ for `inv`, which is why the attribute
+# is in the table rather than patched at the one place that reads it.
+SEED_FLAGS: tuple[tuple[str, str, str], ...] = (
+    ("inv", "invariant", "--invariant"),
+    ("ranking", "ranking", "--ranking"),
+    ("pre", "pre", "--pre"),
+)
 
 
 def infer_help() -> str:

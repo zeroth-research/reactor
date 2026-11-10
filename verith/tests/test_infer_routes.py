@@ -806,7 +806,7 @@ def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
 def test_a_missing_package_is_not_filed_against_the_module(tmp_path):
     """A missing package is about how the route was asked for. Filing it as
     a decline would read as a fact about a run that never started."""
-    from reactor.lean.core.errors import require
+    from verith.common.llm import require
     from verith.run import note_refusal
 
     with pytest.raises(Refused) as missing:
@@ -880,7 +880,8 @@ def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
 
 
 def test_a_missing_package_is_refused_by_the_flag_that_needs_it():
-    from reactor.lean.core.errors import Refused, require
+    from reactor.lean.core.errors import Refused
+    from verith.common.llm import require
 
     assert require("json", "--anything").dumps(1) == "1"
     with pytest.raises(Refused, match=r"--infer x needs the `reactor_no_such` "

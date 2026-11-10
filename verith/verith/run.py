@@ -4,12 +4,14 @@
 of the project is written; `run_route` runs it against the project and
 checks what it handed back against what its row declares; `refused` says
 a refusal under the flag it is about, and `note_refusal` leaves it in
-`artifacts/` for the next run. Both commands that run a route -- `verith`
-and `certify` -- run it through these.
+`artifacts/` for the next run; `show_certificate` prints what it found in
+the input's names. Both commands that run a route -- `verith` and
+`certify` -- run it through these.
 """
 
 from __future__ import annotations
 
+import shlex
 from typing import TYPE_CHECKING
 
 from reactor.lean.core.certificate import Certificate, Claim
@@ -19,7 +21,7 @@ from .io import InferInput, InferResult, ProjectHandle
 from .route import InferRoute
 
 if TYPE_CHECKING:
-    from reactor.lean.inputs import Problem
+    from reactor.lean.inputs import Names, Problem
 
 
 def refused(route: "InferRoute | None", error: Exception) -> SystemExit:
@@ -163,3 +165,18 @@ def route_precheck(settings, module, claim: "Claim | None", smt):
         )
     except Refused as e:
         raise refused(route, e) from e
+
+
+def show_certificate(cert: Certificate, names: "Names") -> None:
+    """A certificate in the input's names, as `--invariant` and
+    `--ranking` take it: what one run found, the next can be given."""
+    from reactor.lean.inputs import to_surface
+
+    shown = [(flag, text) for flag, text in (("--invariant", cert.inv),
+                                             ("--ranking", cert.ranking))
+             if text]
+    if not shown:
+        return
+    print(".. The certificate, in the input's names:")
+    for flag, text in shown:
+        print(f"   {flag} {shlex.quote(to_surface(text, names))}")

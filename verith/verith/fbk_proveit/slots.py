@@ -13,7 +13,7 @@ def scalar_element(tm, term, shape, i: int, j: int):
     """Element `[i][j]` of a matrix-valued term, as a *scalar* term:
     `select_element`, which is what turns a wire's transition into one
     scalar expression per slot, and cvc5's own simplifier does the rest."""
-    from reactor.lean.smt.encode import select_element
+    from ..common.terms import select_element
 
     if shape.is_scalar:
         return term

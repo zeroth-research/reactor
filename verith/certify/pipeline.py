@@ -29,24 +29,19 @@ from reactor.lean.pipeline.certificate import (
     render,
     workspace,
 )
-from reactor.lean.pipeline.claim import (
-    claim_from_flags,
-    load,
-    show_certificate,
-    stated_claim,
-)
+from reactor.lean.pipeline.claim import claim_from_flags, load, stated_claim
 from reactor.lean.pipeline.outputs import (
     build_cert,
     generate,
     hammer_only,
     standalone,
 )
-from reactor.lean.artifacts.record import note
+from verith.common.record import note
 from reactor.lean.proof.render import LeanCertificate
 from reactor.lean.smt.encoding import lazy
 from reactor.lean.smt.precheck import pre_check
 from verith import InferResult, ProjectHandle
-from verith.run import refused, route_precheck, run_route
+from verith.run import refused, route_precheck, run_route, show_certificate
 
 from .cli import Settings, parse_args
 

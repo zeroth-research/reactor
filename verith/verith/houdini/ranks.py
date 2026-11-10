@@ -11,7 +11,7 @@ from itertools import product
 
 from reactor.lean.core.errors import PredicateRefused
 from ..common.claim import SynthContext
-from reactor.lean.smt.script import affine_smt, smt_int, smt_real
+from ..common.smtlib import affine_smt, smt_int, smt_real
 from ..common.synth import Column, columns
 from .candidates import reading
 from .evaluate import Evaluator, Unevaluable

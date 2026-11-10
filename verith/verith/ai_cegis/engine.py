@@ -18,14 +18,8 @@ from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..engine import Engine
 from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
-from reactor.lean.smt.obligations import (
-    Frame,
-    init_inv,
-    inv_imp_P,
-    rank_decrease,
-    rank_positive,
-    step_inv,
-)
+from reactor.lean.smt.obligations import Frame, init_inv, inv_imp_P, step_inv
+from ..common.obligations import rank_decrease, rank_positive
 from reactor.lean.smt.limits import bounded_solver, call_ms
 from reactor.lean.smt.encoding import encoding_of
 from .prompt import PromptResult, prompt_inv_ranking

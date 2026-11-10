@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reactor.lean.artifacts.record import found
+from ..common.record import found
 from ..io import InferInput, InferResult
 from ..route import InferRoute
 

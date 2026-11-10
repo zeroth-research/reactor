@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from reactor.lean.core.errors import Refused
 from ..common.claim import SynthContext
+from ..common.obligations import bound
 from reactor.lean.smt.limits import bounded_solver, call_ms
 from ..common.synth import program_constants
 
@@ -94,7 +95,7 @@ def _quantified(ctx: SynthContext, tpl: Template, budget) -> Outcome:
     tm = ctx.tm
     solver = bounded_solver(tm, call_ms(budget), produce_models="true")
     solver.setLogic("ALL")
-    st, el, en = ctx.enc.bound("q_")
+    st, el, en = bound(ctx.enc, "q_")
     body = tpl.build(st, el, en)
     quantified = st + el + en
     solver.assertFormula(

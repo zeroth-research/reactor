@@ -369,7 +369,7 @@ def column_docs():
     drop a column whenever a results file is rendered on a machine without
     the binary it names -- and take that column's measured cells with it.
     """
-    from reactor.lean.cli import SEED_FLAGS
+    from verith.flags import SEED_FLAGS
     from verith import ROUTES
 
     flag_of = {field: flag for field, _attr, flag in SEED_FLAGS}

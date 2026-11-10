@@ -165,8 +165,8 @@ from reactor.lean.core.errors import PredicateRefused, Refused
 from ..common.solvers import DEFAULT_TIMEOUT, Cvc5Solver
 from ..engine import Engine
 from ..common.obligations import Candidate, Obligations
-from reactor.lean.artifacts.record import found, note
-from reactor.lean.smt.script import affine_smt, conjunction_smt, smt_int
+from ..common.record import found, note
+from ..common.smtlib import affine_smt, conjunction_smt, smt_int
 from ..common.claim import SynthContext, sorts_where
 from ..common.synth import columns, floor_real_src
 from .answers import Answers, Derived
