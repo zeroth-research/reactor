@@ -7,12 +7,17 @@ Yosys is looked up as `$YOSYS_BIN` (the binary itself), then
 gives it the script of [`script`]:
 
 ```text
-read_verilog -sv FILE; hierarchy -top TOP; proc; flatten; clk2fflogic; write_smt2 -wires -
+read_verilog -sv -noblackbox FILE; hierarchy -top TOP; proc -norom; flatten; clk2fflogic;
+write_smt2 -wires -
 ```
 
 `flatten` makes the whole hierarchy one module, whose wires have our
 instance path names (`u.q`); without `opt`, every register stays one
-flip-flop. `clk2fflogic` makes the clocks ordinary signals (inputs, or
+flip-flop. `-noblackbox`: by default `read_verilog` marks an empty module
+as a blackbox, which `flatten` keeps as an instance and `write_smt2` then
+refers to without declaring it. `-norom`: by default `proc` turns a `case`
+that only selects constants into a ROM, which `write_smt2` writes with SMT
+arrays; without it the `case` stays multiplexers, as in our translation. `clk2fflogic` makes the clocks ordinary signals (inputs, or
 wires for clocks derived from registers), sampled at every step of an
 implicit global clock, so that one transition is one time step, as one of
 our rounds is (see below).
@@ -102,8 +107,8 @@ pub fn script(file: &Path, top: &str) -> Result<String, String> {
         return Err(format!("{file}: path not usable in a Yosys script"));
     }
     Ok(format!(
-        "read_verilog -sv \"{file}\"; hierarchy -top {top}; proc; flatten; clk2fflogic; \
-         write_smt2 -wires -"
+        "read_verilog -sv -noblackbox \"{file}\"; hierarchy -top {top}; proc -norom; flatten; \
+         clk2fflogic; write_smt2 -wires -"
     ))
 }
 
