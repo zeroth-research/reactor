@@ -14,13 +14,14 @@ connected. Outputs may be left unconnected (`.y()` or not mentioned).
 
 The signals of a hierarchy have *paths*: `x` in the top module, `u.x` in
 its instance `u`, `u.v.x` deeper down. Several paths may denote the same
-signal: a port connected to a signal name is that signal. [`Inst::naming`]
-gives every path its *name* in the translated module: the path of the
+signal: a port connected to the name of a signal of its width is that
+signal. [`Inst::naming`] gives every path its *name* in the translated
+module: the path of the
 outermost signal it is connected to. So the ports of the top module keep
 their names, and the other names are paths, which simulators accept as
-hierarchical names (`dut.u.x`). An input connected to an expression
-other than a name keeps its own path, `u.a`; the instantiating module
-drives it.
+hierarchical names (`dut.u.x`). An input connected to any other
+expression, or to a name of another width, keeps its own path, `u.a`; the
+instantiating module drives it.
 */
 
 use crate::ast::{Dir, Error, ExprKind, Formal, Item, Module, Name, Override, Span};
@@ -79,6 +80,10 @@ fn inst(
 ) -> Result<Inst> {
     let mut module = d.module(name, overrides).map_err(|e| context(e, prefix))?;
     stack.push(name.to_string());
+    let widths: BTreeMap<Name, usize> = (module.ports.iter().map(|p| &p.decl))
+        .chain(&module.decls)
+        .map(|d| (d.name.clone(), d.ty.width))
+        .collect();
     let mut children = Vec::new();
     for item in &mut module.items {
         let Item::Instance(i) = item else {
@@ -97,16 +102,22 @@ fn inst(
         let clocks = child.module.clocks();
         let mut seen = BTreeSet::new();
         for c in &mut i.conns {
+            let width = |x: &Name| widths.get(x).copied();
             let Some(p) = ports.iter().find(|p| p.decl.name == c.port) else {
                 return err(c.span, format!("`{}` has no port `{}`", i.module, c.port));
             };
             if !seen.insert(c.port.clone()) {
                 return err(c.span, format!("port `{}` connected twice", c.port));
             }
+            let shared = match c.actual.as_ref().map(|e| &e.kind) {
+                Some(ExprKind::Var(x)) => width(x) == Some(p.decl.ty.width),
+                _ => false,
+            };
             c.formal = Some(Formal {
                 dir: p.dir,
                 ty: p.decl.ty,
                 clock: clocks.contains(&p.decl.name),
+                shared,
             });
         }
         for p in ports.iter().filter(|p| p.dir == Dir::Input) {
@@ -165,7 +176,7 @@ impl Inst {
             let i = m.instances().find(|i| i.name == *u).expect("an instance");
             let mut connected = BTreeMap::new();
             for c in &i.conns {
-                if let Some(ExprKind::Var(y)) = c.actual.as_ref().map(|e| &e.kind) {
+                if let Some(y) = c.shared() {
                     let name = map[&format!("{prefix}{y}")].clone();
                     connected.insert(c.port.clone(), name);
                 }

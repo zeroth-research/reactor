@@ -1,10 +1,12 @@
-//! `v2rm [--top NAME] [-G NAME=VALUE]… [--instances | --smt | --smt-init | --yosys] FILE.sv`:
+//! `v2rm [--top NAME] [-G NAME=VALUE]… [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv`:
 //! translates the top module of a SystemVerilog file (with its instances)
 //! and prints the reactive module. `-G` sets a parameter of the top module
 //! to a constant expression. `--instances` first prints the module of every
 //! instance as it is composed into its parent, children before parents.
-//! `--smt` prints an update round of the module as an SMT-LIB script
-//! instead, `--smt-init` the init round.
+//! `--sized` prints the design instead with every implicit resize written
+//! out, as SystemVerilog in the explicit-width fragment (see the `sizing`
+//! module of the library). `--smt` prints an update round of the module as
+//! an SMT-LIB script instead, `--smt-init` the init round.
 //!
 //! `--yosys` compares the translation with Yosys's instead (see the
 //! `miter` module of the library): for every variable on which the two
@@ -21,10 +23,10 @@ use verilog::elab::Inst;
 use verilog::lower::Translation;
 use verilog::miter::{self, Verdict};
 use verilog::smt::{self, Phase};
-use verilog::{constant, elab, frontend, lower, yosys, z3};
+use verilog::{constant, elab, frontend, lower, sizing, yosys, z3};
 
 const USAGE: &str = "usage: v2rm [--top NAME] [-G NAME=VALUE]... \
-                     [--instances | --smt | --smt-init | --yosys] FILE.sv";
+                     [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -32,6 +34,7 @@ fn main() -> ExitCode {
     let mut params = Vec::new();
     let mut path = None;
     let mut instances = false;
+    let mut sized = false;
     let mut smt = None;
     let mut compare = false;
     while let Some(a) = args.next() {
@@ -39,6 +42,7 @@ fn main() -> ExitCode {
             "--top" => top = args.next(),
             "--yosys" => compare = true,
             "--instances" => instances = true,
+            "--sized" => sized = true,
             "--smt" => smt = Some(Phase::Update),
             "--smt-init" => smt = Some(Phase::Init),
             "-G" => match args.next() {
@@ -53,7 +57,7 @@ fn main() -> ExitCode {
     let Some(path) = path else {
         return usage();
     };
-    if [instances, smt.is_some(), compare]
+    if [instances, sized, smt.is_some(), compare]
         .iter()
         .filter(|b| **b)
         .count()
@@ -97,6 +101,18 @@ fn main() -> ExitCode {
                     Ok(false) => ExitCode::FAILURE,
                     Err(e) => {
                         eprintln!("{path}: {e}");
+                        ExitCode::FAILURE
+                    }
+                };
+            }
+            if sized {
+                return match sizing::print(&inst) {
+                    Ok(text) => {
+                        print!("{text}");
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{path}:{e}");
                         ExitCode::FAILURE
                     }
                 };

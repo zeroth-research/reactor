@@ -25,10 +25,16 @@ A signal driven by an `always_comb` block is computed by running the whole
 block when one of its signals is first needed, with blocking assignments:
 a read of a signal of the block sees its latest assignment (typing makes
 sure there is one). It gives meaning to the source operators directly
-on numbers (unsigned or two's complement as the operand types say; a
-size cast extends as its operand's type says),
-independently of [`SvOp`] and of the rewrites in lowering, so that tests
-can compare it with the translated module.
+on numbers (unsigned or two's complement as the types say), with the
+widths and signedness of IEEE 1800 worked out on the source expression in
+the standard's two phases: the self-determined type of every expression
+bottom up, then the type of the context passed down to the
+context-determined operands, where values are extended (§11.6 to §11.8;
+an assignment evaluates its right-hand side at the larger of both widths
+and truncates). This is independent of [`sizing`](crate::sizing) (which
+rewrites the expression by bidirectional rules), of [`SvOp`] and of the
+rewrites in lowering, so that tests can compare it with the translated
+module.
 
 A hierarchy runs as one design: every signal is known by its name (see
 [`Inst::naming`]), so a port connected to a signal is that signal, and an
@@ -39,7 +45,8 @@ Register initial values are given by path (`u.q`).
 */
 
 use crate::ast::{
-    BinOp, Dir, Edge, Error, Expr, ExprKind, Item, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, Cast, Dir, Edge, Error, Expr, ExprKind, Item, Name, Select, Span, Stmt, StmtKind, Ty,
+    UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::typing::{self, Env};
@@ -174,7 +181,7 @@ impl<'m> Interp<'m> {
                 Item::Instance(i) => {
                     for (conn, f) in i.conns(Dir::Input) {
                         if let Some(e) = &conn.actual
-                            && !matches!(e.kind, ExprKind::Var(_))
+                            && conn.shared().is_none()
                         {
                             let name = naming[&format!("{prefix}{}.{}", i.name, conn.port)].clone();
                             self.signals.insert(name.clone(), f.ty);
@@ -243,7 +250,7 @@ impl<'m> Interp<'m> {
                 .iter()
                 .try_for_each(|s| self.exec(c, s, comb, values, active, out)),
             StmtKind::If(cond, a, b) => {
-                let (v, _) = self.expr(c, cond, &scope(out), values, active)?;
+                let v = self.own(c, cond, &scope(out), values, active)?;
                 let branch = if v.is_zero() { b } else { a };
                 self.exec(c, branch, comb, values, active, out)
             }
@@ -253,10 +260,19 @@ impl<'m> Interp<'m> {
                 default,
             } => {
                 let scope = scope(out);
-                let (v, _) = self.expr(c, sel, &scope, values, active)?;
+                // the selector and the labels are evaluated at one type
+                let mut t = self.det(c, sel);
+                for l in items.iter().flat_map(|i| &i.labels) {
+                    let tl = self.det(c, l);
+                    t = Ty {
+                        width: t.width.max(tl.width),
+                        signed: t.signed && tl.signed,
+                    };
+                }
+                let v = self.value(c, sel, t, &scope, values, active)?;
                 for item in items {
                     for l in &item.labels {
-                        if self.expr(c, l, &scope, values, active)?.0 == v {
+                        if self.value(c, l, t, &scope, values, active)? == v {
                             return self.exec(c, &item.body, comb, values, active, out);
                         }
                     }
@@ -267,8 +283,9 @@ impl<'m> Interp<'m> {
                 }
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                let (v, _) = self.expr(c, rhs, &scope(out), values, active)?;
                 let env = &self.ctxs[c].env;
+                let width = typing::pieces(env, lhs).iter().map(|p| p.width()).sum();
+                let v = self.assigned(c, rhs, width, &scope(out), values, active)?;
                 // the pieces take the bits of `v` from the top down
                 let mut top = v.width();
                 for p in typing::pieces(env, lhs) {
@@ -311,11 +328,16 @@ impl<'m> Interp<'m> {
         let ctx = &self.ctxs[c];
         match driver {
             Driver::Conn(e) => {
-                let (v, _) = self.expr(c, e, &Values::new(), values, active)?;
+                let width = self.signals[name].width;
+                let v = self.assigned(c, e, width, &Values::new(), values, active)?;
                 values.insert(name.to_string(), v);
             }
             Driver::Item(Item::Assign { lhs, rhs, .. }) => {
-                let (v, _) = self.expr(c, rhs, &Values::new(), values, active)?;
+                let width = typing::pieces(&ctx.env, lhs)
+                    .iter()
+                    .map(|p| p.width())
+                    .sum();
+                let v = self.assigned(c, rhs, width, &Values::new(), values, active)?;
                 // an `assign` drives whole signals (typing)
                 let mut top = v.width();
                 for p in typing::pieces(&ctx.env, lhs) {
@@ -343,7 +365,8 @@ impl<'m> Interp<'m> {
                 let mut out = Values::new();
                 if reset_active {
                     for (q, e) in item.body().unwrap().reset_values() {
-                        let (v, _) = self.expr(*c, e, &Values::new(), values, active)?;
+                        let width = self.ctxs[*c].env[q].ty.width;
+                        let v = self.assigned(*c, e, width, &Values::new(), values, active)?;
                         out.insert(q.clone(), v);
                     }
                 }
@@ -400,72 +423,160 @@ impl<'m> Interp<'m> {
         Ok(values[name].clone())
     }
 
-    /// The value of `e`, where the signals in `scope` have their value
-    /// there and all others their value in the cycle.
-    fn expr(
+    /// The self-determined type of `e`: IEEE 1800 Table 11-21 for the
+    /// width, §11.8.1 for the signedness.
+    fn det(&self, c: usize, e: &Expr) -> Ty {
+        let env = &self.ctxs[c].env;
+        let both = |a: Ty, b: Ty| Ty {
+            width: a.width.max(b.width),
+            signed: a.signed && b.signed,
+        };
+        match &e.kind {
+            ExprKind::Lit { ty, .. } | ExprKind::Const { ty, .. } | ExprKind::Resize(ty, _) => *ty,
+            ExprKind::Var(x) => env[x].ty,
+            ExprKind::Fill(_) => Ty::BIT,
+            ExprKind::Unary(UnOp::BitNot | UnOp::Neg | UnOp::Plus, a) => self.det(c, a),
+            ExprKind::Unary(..) => Ty::BIT,
+            ExprKind::Binary(op, a, b) => match op {
+                BinOp::Shl | BinOp::Shr | BinOp::AShl | BinOp::AShr => self.det(c, a),
+                op if compare(*op) || matches!(op, BinOp::LogAnd | BinOp::LogOr) => Ty::BIT,
+                _ => both(self.det(c, a), self.det(c, b)),
+            },
+            ExprKind::Cond(_, a, b) => both(self.det(c, a), self.det(c, b)),
+            ExprKind::Concat(es) => Ty::unsigned(es.iter().map(|e| self.det(c, e).width).sum()),
+            ExprKind::Repl(n, es) => {
+                Ty::unsigned(n * es.iter().map(|e| self.det(c, e).width).sum::<usize>())
+            }
+            ExprKind::Select(_, sel) => Ty::unsigned(sel.width()),
+            ExprKind::Cast(Cast::Size(n), a) => Ty {
+                width: *n,
+                signed: self.det(c, a).signed,
+            },
+            ExprKind::Cast(Cast::Signed, a) => Ty {
+                signed: true,
+                ..self.det(c, a)
+            },
+            ExprKind::Cast(Cast::Unsigned, a) => Ty {
+                signed: false,
+                ..self.det(c, a)
+            },
+        }
+    }
+
+    /// The value of `e` assigned to a target of `width` bits: `e` is
+    /// evaluated at the larger of both widths with its own signedness
+    /// (IEEE 1800 §10.7), then truncated.
+    fn assigned(
+        &self,
+        c: usize,
+        e: &Expr,
+        width: usize,
+        scope: &Values,
+        values: &mut Values,
+        active: &mut BTreeSet<Name>,
+    ) -> Result<BitVec, String> {
+        let own = self.det(c, e);
+        let t = Ty {
+            width: own.width.max(width),
+            ..own
+        };
+        let v = self.value(c, e, t, scope, values, active)?;
+        Ok(slice(&v, width - 1, 0))
+    }
+
+    /// The value of `e` at its own type.
+    fn own(
         &self,
         c: usize,
         e: &Expr,
         scope: &Values,
         values: &mut Values,
         active: &mut BTreeSet<Name>,
-    ) -> Result<(BitVec, Ty), String> {
+    ) -> Result<BitVec, String> {
+        let t = self.det(c, e);
+        self.value(c, e, t, scope, values, active)
+    }
+
+    /// The value of `e` in a context of type `t` (at least as wide as `e`),
+    /// where the signals in `scope` have their value there and all others
+    /// their value in the round. This is the propagation of IEEE 1800
+    /// §11.8.2: `t` is passed down to the context-determined operands, and
+    /// every other expression is evaluated at its own type and then
+    /// extended to `t`, by sign if `t` is signed.
+    fn value(
+        &self,
+        c: usize,
+        e: &Expr,
+        t: Ty,
+        scope: &Values,
+        values: &mut Values,
+        active: &mut BTreeSet<Name>,
+    ) -> Result<BitVec, String> {
         let ctx = &self.ctxs[c];
-        Ok(match &e.kind {
-            ExprKind::Lit { ty, value } | ExprKind::Const { ty, value, .. } => (value.clone(), *ty),
-            ExprKind::Var(x) => {
-                let v = match scope.get(x) {
-                    Some(v) => v.clone(),
-                    None => self.signal(&ctx.names[x], values, active)?,
-                };
-                (v, ctx.env[x].ty)
+        let sig = |x: &Name, values: &mut Values, active: &mut BTreeSet<Name>| match scope.get(x) {
+            Some(v) => Ok(v.clone()),
+            None => self.signal(&ctx.names[x], values, active),
+        };
+        let v = match &e.kind {
+            ExprKind::Lit { value, .. } | ExprKind::Const { value, .. } => value.clone(),
+            ExprKind::Var(x) => sig(x, values, active)?,
+            ExprKind::Fill(b) => {
+                return Ok(if *b {
+                    BitVec::wrap(t.width, ones(t.width))
+                } else {
+                    BitVec::zero(t.width)
+                });
             }
-            ExprKind::Unary(op, a) => {
-                let (a, ta) = self.expr(c, a, scope, values, active)?;
-                (unary(*op, &a), typing::unary(*op, ta))
+            ExprKind::Unary(op @ (UnOp::BitNot | UnOp::Neg | UnOp::Plus), a) => {
+                return Ok(unary(*op, &self.value(c, a, t, scope, values, active)?));
+            }
+            ExprKind::Unary(op, a) => unary(*op, &self.own(c, a, scope, values, active)?),
+            ExprKind::Binary(op, a, b) if compare(*op) => {
+                let (ta, tb) = (self.det(c, a), self.det(c, b));
+                let both = Ty {
+                    width: ta.width.max(tb.width),
+                    signed: ta.signed && tb.signed,
+                };
+                let x = self.value(c, a, both, scope, values, active)?;
+                let y = self.value(c, b, both, scope, values, active)?;
+                binary(*op, &x, &y, both.signed)?
+            }
+            ExprKind::Binary(op @ (BinOp::LogAnd | BinOp::LogOr), a, b) => {
+                let x = self.own(c, a, scope, values, active)?;
+                let y = self.own(c, b, scope, values, active)?;
+                binary(*op, &x, &y, false)?
             }
             ExprKind::Binary(op, a, b) => {
-                let (a, ta) = self.expr(c, a, scope, values, active)?;
-                let (b, tb) = self.expr(c, b, scope, values, active)?;
-                let t = typing::binary(*op, ta, tb, e.span).map_err(|e| e.to_string())?;
-                (binary(*op, &a, &b, ta.signed)?, t)
+                let x = self.value(c, a, t, scope, values, active)?;
+                let shift = matches!(op, BinOp::Shl | BinOp::Shr | BinOp::AShl | BinOp::AShr);
+                let y = if shift {
+                    self.own(c, b, scope, values, active)?
+                } else {
+                    self.value(c, b, t, scope, values, active)?
+                };
+                return binary(*op, &x, &y, t.signed);
             }
             ExprKind::Cond(cond, a, b) => {
-                let (v, _) = self.expr(c, cond, scope, values, active)?;
-                let (a, ta) = self.expr(c, a, scope, values, active)?;
-                let (b, tb) = self.expr(c, b, scope, values, active)?;
-                let t = typing::cond(ta, tb, e.span).map_err(|e| e.to_string())?;
-                (if v.is_zero() { b } else { a }, t)
+                let v = self.own(c, cond, scope, values, active)?;
+                let arm = if v.is_zero() { b } else { a };
+                return self.value(c, arm, t, scope, values, active);
             }
-            ExprKind::Concat(es) => {
-                let (v, ts) = self.exprs(c, es, scope, values, active)?;
-                (v, typing::concat(&ts))
-            }
+            ExprKind::Concat(es) => self.exprs(c, es, scope, values, active)?,
             ExprKind::Repl(n, es) => {
-                let (v, ts) = self.exprs(c, es, scope, values, active)?;
-                let t = typing::concat(&ts);
+                let v = self.exprs(c, es, scope, values, active)?;
                 let mut acc = v.clone();
                 for _ in 1..*n {
                     acc = concat(&acc, &v);
                 }
-                (acc, typing::repl(*n, t))
+                acc
             }
             ExprKind::Select(x, sel) => {
-                let v = match scope.get(x) {
-                    Some(v) => v.clone(),
-                    None => self.signal(&ctx.names[x], values, active)?,
-                };
-                let tx = ctx.env[x].ty;
-                let index = match sel.index() {
-                    Some(i) => Some(self.expr(c, i, scope, values, active)?),
-                    None => None,
-                };
-                let t = typing::select(x, tx, sel, index.as_ref().map(|i| i.1), e.span)
-                    .map_err(|e| e.to_string())?;
-                let base = match &index {
+                let v = sig(x, values, active)?;
+                let base = match sel.index() {
                     None => sel.constant().flatten().expect("constant").1,
                     // typing guarantees the index is in range
-                    Some((i, _)) => {
+                    Some(i) => {
+                        let i = self.own(c, i, scope, values, active)?;
                         let i = i.unsigned().to_usize().expect("an index in range");
                         match sel {
                             Select::Down(_, w) => i + 1 - w,
@@ -473,23 +584,20 @@ impl<'m> Interp<'m> {
                         }
                     }
                 };
-                (slice(&v, base + t.width - 1, base), t)
+                slice(&v, base + sel.width() - 1, base)
             }
-            ExprKind::Cast(cast, a) => {
-                let (v, ta) = self.expr(c, a, scope, values, active)?;
-                let t = typing::cast(*cast, ta, typing::context_free(a), e.span)
-                    .map_err(|e| e.to_string())?;
-                let v = if ta.signed {
-                    BitVec::from_signed(t.width, v.signed())
-                } else {
-                    BitVec::wrap(t.width, v.unsigned().clone())
-                };
-                (v, t)
+            // an assignment to an `n`-bit value
+            ExprKind::Cast(Cast::Size(n), a) => self.assigned(c, a, *n, scope, values, active)?,
+            ExprKind::Cast(_, a) => self.own(c, a, scope, values, active)?,
+            ExprKind::Resize(to, a) => {
+                let v = self.own(c, a, scope, values, active)?;
+                extend(&slice(&v, to.width.min(v.width()) - 1, 0), *to)
             }
-        })
+        };
+        Ok(extend(&v, t))
     }
 
-    /// The values of `es` concatenated, and their types.
+    /// The values of `es`, each at its own type, concatenated.
     fn exprs(
         &self,
         c: usize,
@@ -497,18 +605,32 @@ impl<'m> Interp<'m> {
         scope: &Values,
         values: &mut Values,
         active: &mut BTreeSet<Name>,
-    ) -> Result<(BitVec, Vec<Ty>), String> {
+    ) -> Result<BitVec, String> {
         let mut acc: Option<BitVec> = None;
-        let mut ts = Vec::new();
         for e in es {
-            let (v, t) = self.expr(c, e, scope, values, active)?;
+            let v = self.own(c, e, scope, values, active)?;
             acc = Some(match acc {
                 None => v,
                 Some(a) => concat(&a, &v),
             });
-            ts.push(t);
         }
-        Ok((acc.expect("an item"), ts))
+        Ok(acc.expect("an item"))
+    }
+}
+
+/// Whether `op` is a comparison.
+fn compare(op: BinOp) -> bool {
+    use BinOp::*;
+    matches!(op, Eq | Ne | CaseEq | CaseNe | Lt | Le | Gt | Ge)
+}
+
+/// `v` extended to the width of `t` (at least its own): with copies of its
+/// top bit if `t` is signed, else with zeros.
+fn extend(v: &BitVec, t: Ty) -> BitVec {
+    if t.signed {
+        BitVec::from_signed(t.width, v.signed())
+    } else {
+        BitVec::wrap(t.width, v.unsigned().clone())
     }
 }
 

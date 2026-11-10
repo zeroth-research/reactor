@@ -1,0 +1,97 @@
+module signmix
+  external
+    s : bv8
+    t : bv4
+    u : bv8
+    c : bv1
+  interface
+    su : bv16
+    s0 : bv16
+    sd0 : bv16
+    sg : bv16
+    ash : bv16
+    cash : bv16
+    mash : bv16
+    div : bv16
+    cs : bv16
+    cw : bv16
+    cc : bv8
+    lt : bv1
+    neg : bv1
+    m : bv1
+  atom controls su awaits s, u
+    init = update
+      %1 := ZEXT[16] X(s)
+      %2 := ZEXT[16] X(u)
+      X(su) := ADD (%1, %2)
+  atom controls s0 awaits s
+    init = update
+      %1 := SEXT[32] X(s)
+      %2 := 32'd0
+      %3 := ADD (%1, %2)
+      X(s0) := EXTRACT[15:0] %3
+  atom controls sd0 awaits s
+    init = update
+      %1 := ZEXT[32] X(s)
+      %2 := 32'd0
+      %3 := ADD (%1, %2)
+      X(sd0) := EXTRACT[15:0] %3
+  atom controls sg awaits u
+    init = update
+      %1 := ADD (X(u), X(u))
+      X(sg) := SEXT[16] %1
+  atom controls lt awaits s, u
+    init = update
+      X(lt) := ULT (X(s), X(u))
+  atom controls neg awaits s
+    init = update
+      %1 := SEXT[32] X(s)
+      %2 := 32'd0
+      X(neg) := SLT (%1, %2)
+  atom controls ash awaits s
+    init = update
+      %1 := SEXT[16] X(s)
+      %2 := 32'd1
+      X(ash) := ASHR (%1, %2)
+  atom controls cash awaits s
+    init = update
+      %1 := ZEXT[16] X(s)
+      %2 := 32'd1
+      X(cash) := LSHR (%1, %2)
+  atom controls mash awaits s, u
+    init = update
+      %1 := ZEXT[16] X(s)
+      %2 := 32'd1
+      %3 := LSHR (%1, %2)
+      %4 := ZEXT[16] X(u)
+      X(mash) := ADD (%3, %4)
+  atom controls div awaits s
+    init = update
+      %1 := SEXT[32] X(s)
+      %2 := 32'd2
+      %3 := SDIV (%1, %2)
+      X(div) := EXTRACT[15:0] %3
+  atom controls cs awaits s, u, c
+    init = update
+      %1 := ZEXT[16] X(s)
+      %2 := ZEXT[16] X(u)
+      X(cs) := ITE (X(c), %1, %2)
+  atom controls cw awaits s, t, c
+    init = update
+      %1 := SEXT[16] X(t)
+      %2 := SEXT[16] X(s)
+      X(cw) := ITE (X(c), %1, %2)
+  atom controls cc awaits u
+    init = update
+      %1 := REDOR X(u)
+      %2 := 8'd1
+      %3 := 8'd2
+      X(cc) := ITE (%1, %2, %3)
+  atom controls m awaits t
+    init = update
+      %1 := ZEXT[8] X(t)
+      %2 := 8'd255
+      %3 := EQ (%1, %2)
+      m@1 := 1'd1
+      m@2 := 1'd0
+      X(m) := ITE (%3, m@1, m@2)

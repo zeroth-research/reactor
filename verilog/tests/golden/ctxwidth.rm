@@ -1,0 +1,60 @@
+module ctxwidth
+  external
+    a : bv8
+    b : bv8
+    c : bv1
+  interface
+    sum16 : bv16
+    half16 : bv16
+    cat : bv16
+    inv : bv16
+    half8 : bv8
+    sum4 : bv4
+    red : bv1
+    land : bv1
+    carry : bv1
+  atom controls sum16 awaits a, b
+    init = update
+      %1 := ZEXT[16] X(a)
+      %2 := ZEXT[16] X(b)
+      X(sum16) := ADD (%1, %2)
+  atom controls sum4 awaits a, b
+    init = update
+      %1 := ADD (X(a), X(b))
+      X(sum4) := EXTRACT[3:0] %1
+  atom controls half16 awaits a, b
+    init = update
+      %1 := ZEXT[16] X(a)
+      %2 := ZEXT[16] X(b)
+      %3 := ADD (%1, %2)
+      %4 := 32'd1
+      X(half16) := LSHR (%3, %4)
+  atom controls half8 awaits a, b
+    init = update
+      %1 := ADD (X(a), X(b))
+      %2 := 32'd1
+      X(half8) := LSHR (%1, %2)
+  atom controls red awaits a, b
+    init = update
+      %1 := ADD (X(a), X(b))
+      X(red) := REDAND %1
+  atom controls land awaits a, b, c
+    init = update
+      %1 := ADD (X(a), X(b))
+      %2 := REDOR %1
+      X(land) := AND (%2, X(c))
+  atom controls cat awaits a, b
+    init = update
+      %1 := ADD (X(a), X(b))
+      X(cat) := ZEXT[16] %1
+  atom controls carry awaits a, b
+    init = update
+      %1 := ZEXT[9] X(a)
+      %2 := ZEXT[9] X(b)
+      %3 := ADD (%1, %2)
+      %4 := 9'd255
+      X(carry) := ULT (%4, %3)
+  atom controls inv awaits a
+    init = update
+      %1 := ZEXT[16] X(a)
+      X(inv) := NOT %1

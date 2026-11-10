@@ -1,0 +1,54 @@
+module fsmint
+  external
+    clk : bv1
+    go : bv1
+    k : bv3
+    st@init : bv2
+  interface
+    st : bv2
+    busy : bv1
+    hit : bv1
+  atom controls st reads clk, go, st awaits clk, st@init
+    init
+      X(st) := ID X(st@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := ZEXT[32] st
+      %3 := 32'd0
+      %4 := EQ (%2, %3)
+      %5 := 32'd1
+      %6 := EQ (%2, %5)
+      %7 := 32'd2
+      %8 := EQ (%2, %7)
+      %9 := 32'd3
+      %10 := EQ (%2, %9)
+      %11 := OR (%8, %10)
+      %12 := 2'd1
+      %13 := ITE (go, %12, st)
+      %14 := 2'd2
+      %15 := 2'd0
+      %16 := ITE (%11, %15, st)
+      %17 := ITE (%6, %14, %16)
+      %18 := ITE (%4, %13, %17)
+      X(st) := ITE (clk@pos, %18, st)
+  atom controls busy awaits st
+    init = update
+      %1 := ZEXT[32] X(st)
+      %2 := 32'd1
+      X(busy) := EQ (%1, %2)
+  atom controls hit awaits k
+    init = update
+      %1 := ZEXT[32] X(k)
+      %2 := 32'd9
+      %3 := EQ (%1, %2)
+      %4 := 32'd1
+      %5 := EQ (%1, %4)
+      %6 := 32'd2
+      %7 := EQ (%1, %6)
+      %8 := OR (%5, %7)
+      hit@1 := 1'd1
+      hit@2 := 1'd1
+      hit@3 := 1'd0
+      hit@4 := ITE (%8, hit@2, hit@3)
+      X(hit) := ITE (%3, hit@1, hit@4)

@@ -741,6 +741,37 @@ endmodule
     );
 }
 
+/// A known deviation of Yosys (0.69) from IEEE 1800: it extends an
+/// unsized based literal whose top bit is 1 (`'hffffffff`) with ones in a
+/// wider context, while the standard (§5.7.1, an unsigned 32-bit value)
+/// and iverilog extend it with zeros. The miter finds it, and the replay
+/// sides with us. The examples avoid such literals.
+#[test]
+fn yosys_extends_unsized_literals_by_sign() {
+    let Some((yosys, z3)) = tools() else { return };
+    let source = "\
+module wide (
+  input  logic        c,
+  output logic [39:0] y
+);
+  assign y = 'hffffffff + c;
+endmodule
+";
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("wide.sv");
+    std::fs::write(&path, source).unwrap();
+    let inst = elab::load(source, &path).unwrap();
+    let ys = yosys::run(&yosys, &path, "wide", &[]).unwrap();
+    let t = lower_inst(&inst).unwrap();
+    let m = miter::build(&t, &ys).unwrap();
+    assert_eq!(
+        blame(&z3, &inst, &t, &m),
+        [
+            ("init:y".into(), Side::Ours, None),
+            ("y".into(), Side::Ours, None)
+        ]
+    );
+}
+
 /// Wrong on both sides: our `q` counts down, Yosys's stays, the reference
 /// counts up, so the reference agrees with neither.
 #[test]
@@ -887,9 +918,9 @@ const OPERATORS: &[(&str, &str)] = &[
 ];
 
 /// The tokens of `source` that mutants change, with their byte ranges:
-/// operators (longest match), sized literals `8'd3`, unsized decimal
-/// numbers and the keywords `if`, `posedge` and `negedge`. Comments are
-/// skipped.
+/// operators (longest match), sized literals `8'd3`, unsized literals
+/// (decimal `3`, based `'d3`, `'0`, `'1`), the keywords `if`, `posedge` and
+/// `negedge`, and `$signed`, `$unsigned`. Comments are skipped.
 fn tokens(source: &str) -> Vec<(usize, usize, &str)> {
     let b = source.as_bytes();
     let mut ops: Vec<&str> = OPERATORS.iter().map(|(o, _)| *o).collect();
@@ -926,9 +957,21 @@ fn tokens(source: &str) -> Vec<(usize, usize, &str)> {
                 i += 1;
             }
             let w = &source[start..i];
-            if ["if", "posedge", "negedge"].contains(&w) {
+            if ["if", "posedge", "negedge", "$signed", "$unsigned"].contains(&w) {
                 out.push((start, i, w));
             }
+        } else if b[i] == b'\''
+            && (source[i + 1..].starts_with(['0', '1'])
+                || source[i + 1..]
+                    .trim_start_matches(['s', 'S'])
+                    .starts_with(['b', 'o', 'd', 'h']))
+        {
+            // an unsized literal: `'0`, `'1`, `'d3`, `'shff`
+            i += 1;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                i += 1;
+            }
+            out.push((start, i, &source[start..i]));
         } else if let Some(op) = ops.iter().find(|o| source[i..].starts_with(**o)) {
             i += op.len();
             out.push((start, i, op));
@@ -940,8 +983,11 @@ fn tokens(source: &str) -> Vec<(usize, usize, &str)> {
 }
 
 /// Every mutant of `source` with one change: an operator replaced (see
-/// [`OPERATORS`]), a sized literal one larger (wrapping), an unsized
-/// number one smaller (`0` becomes `1`), the condition of an `if`
+/// [`OPERATORS`]), a sized or unsized based literal one larger (wrapping)
+/// or, if signed, unsigned (`8'sd3` becomes `8'd3`), an unsized decimal
+/// number one smaller (`0` becomes `1`) or unsigned (`'d3` instead of the
+/// `int` 3), `'0` and `'1` swapped, `$signed` or
+/// `$unsigned` dropped (its operand stays), the condition of an `if`
 /// negated, or the edge of an `always_ff` block swapped (`posedge` and
 /// `negedge`); for a block with an asynchronous reset also the polarity of
 /// the reset flipped (`posedge rst` with `if (rst)` becomes `negedge rst`
@@ -985,6 +1031,10 @@ fn mutants(source: &str) -> Vec<Mutant> {
             out.push(mutant(start, end, "negedge"));
         } else if text == "negedge" {
             out.push(mutant(start, end, "posedge"));
+        } else if text == "$signed" || text == "$unsigned" {
+            out.push(mutant(start, end, ""));
+        } else if text == "'0" || text == "'1" {
+            out.push(mutant(start, end, if text == "'0" { "'1" } else { "'0" }));
         } else if text == "if" {
             // the condition: from `(` to its `)`
             let (open, _, _) = tokens[k + 1];
@@ -994,8 +1044,13 @@ fn mutants(source: &str) -> Vec<Mutant> {
                 what: format!("{} `if {cond}` -> `if (!{cond})`", at(start)),
                 source: format!("{}(!{cond}){}", &source[..open], &source[close..]),
             });
-        } else if let Some((width, rest)) = text.split_once('\'').filter(|(w, _)| !w.is_empty()) {
-            let width: u32 = width.parse().unwrap();
+        } else if let Some((size, rest)) = text.split_once('\'').filter(|(_, r)| !r.is_empty()) {
+            // an unsized based literal has 32 bits
+            let width: u32 = if size.is_empty() {
+                32
+            } else {
+                size.parse().unwrap()
+            };
             let (signed, rest) = match rest.strip_prefix('s') {
                 Some(r) => ("s", r),
                 None => ("", rest),
@@ -1008,12 +1063,17 @@ fn mutants(source: &str) -> Vec<Mutant> {
             };
             let digits = rest[1..].replace('_', "");
             let v = u128::from_str_radix(&digits, radix).unwrap();
+            if !signed.is_empty() {
+                out.push(mutant(start, end, &format!("{size}'{rest}")));
+            }
             let v = (v + 1) & ((1u128 << width) - 1);
-            out.push(mutant(start, end, &format!("{width}'{signed}d{v}")));
+            out.push(mutant(start, end, &format!("{size}'{signed}d{v}")));
         } else if text.starts_with(|c: char| c.is_ascii_digit()) {
             let n: u64 = text.replace('_', "").parse().unwrap();
             let to = if n == 0 { 1 } else { n - 1 };
             out.push(mutant(start, end, &to.to_string()));
+            // unsigned instead of an `int`
+            out.push(mutant(start, end, &format!("'d{n}")));
         }
     }
     out
@@ -1091,9 +1151,12 @@ fn mutants_of_text() {
             "2:59 `<=` -> `<`",
             "2:62 `4'hf` -> `4'd0`",
             "3:14 `3` -> `2`",
+            "3:14 `3` -> `'d3`",
             "3:16 `+:` -> `-:`",
             "3:19 `2` -> `1`",
+            "3:19 `2` -> `'d2`",
             "3:22 `>>>` -> `>>`",
+            "3:26 `8'sd1` -> `8'd1`",
             "3:26 `8'sd1` -> `8'sd2`",
             "3:45 `negedge` -> `posedge`",
             "3:58 `<=` -> `<`",
@@ -1104,7 +1167,26 @@ fn mutants_of_text() {
     assert!(m[1].source.contains("@(negedge clk) if"));
     assert!(m[2].source.contains("if (!(en && (x))) q"));
     assert!(m[5].source.contains("q <= 4'd0;"));
-    assert!(m[11].source.contains("@(posedge c) r"));
+    assert!(m[14].source.contains("@(posedge c) r"));
+    // unsized literals and sign casts
+    let source = "assign y = $signed(a) + 'd3 + 'sh7 + '1 + $unsigned('0);";
+    let whats: Vec<String> = mutants(source).into_iter().map(|m| m.what).collect();
+    assert_eq!(
+        whats,
+        [
+            "1:12 `$signed` -> ``",
+            "1:23 `+` -> `-`",
+            "1:25 `'d3` -> `'d4`",
+            "1:29 `+` -> `-`",
+            "1:31 `'sh7` -> `'h7`",
+            "1:31 `'sh7` -> `'sd8`",
+            "1:36 `+` -> `-`",
+            "1:38 `'1` -> `'0`",
+            "1:41 `+` -> `-`",
+            "1:43 `$unsigned` -> ``",
+            "1:53 `'0` -> `'1`",
+        ]
+    );
     let source = "always_ff @(posedge clk, negedge rst_n)\n  if (~rst_n) q <= 1'b0; else q <= d;";
     let m = mutants(source);
     let whats: Vec<&str> = m.iter().map(|m| m.what.as_str()).collect();
@@ -1301,9 +1383,69 @@ fn plant(
 /// each with the reason.
 const EQUIVALENT: &[(&str, &str, &str)] = &[
     (
+        "addc.sv",
+        "9:22 `9` -> `8`",
+        "`8'(a)` keeps all of the 8-bit `a`, extended in the 9-bit sum anyway",
+    ),
+    (
+        "addc.sv",
+        "9:30 `9` -> `8`",
+        "`8'(b)` keeps all of the 8-bit `b`, extended in the 9-bit sum anyway",
+    ),
+    (
+        "addc.sv",
+        "9:38 `9` -> `8`",
+        "`8'(cin)` extends `cin` with zeros, as the 9-bit sum does anyway",
+    ),
+    (
+        "arinst.sv",
+        "12:15 `4` -> `'d4`",
+        "`W` is an `int`: the override takes the value 4 either way",
+    ),
+    (
+        "arinst.sv",
+        "13:15 `6` -> `'d6`",
+        "`W` is an `int`: the override takes the value 6 either way",
+    ),
+    (
         "arinst.sv",
         "17:21 `4` -> `3`",
         "every instance of `rcount` overrides this default of `W`",
+    ),
+    (
+        "arinst.sv",
+        "17:21 `4` -> `'d4`",
+        "every instance of `rcount` overrides this default of `W`",
+    ),
+    (
+        "arinst.sv",
+        "18:21 `-` -> `+`",
+        "a wider `INIT` holds the same value, truncated when assigned to `q`",
+    ),
+    (
+        "arinst.sv",
+        "18:22 `1` -> `0`",
+        "a wider `INIT` holds the same value, truncated when assigned to `q`",
+    ),
+    (
+        "arinst.sv",
+        "18:37 `0` -> `'d0`",
+        "the cast `W'(…)` of 0 is 0 either way",
+    ),
+    (
+        "arinst.sv",
+        "23:22 `-` -> `+`",
+        "a wider `ONE` is still 1, the sum truncated when assigned to `q`",
+    ),
+    (
+        "arinst.sv",
+        "23:23 `1` -> `0`",
+        "a wider `ONE` is still 1, the sum truncated when assigned to `q`",
+    ),
+    (
+        "arinst.sv",
+        "23:37 `1` -> `'d1`",
+        "the cast `W'(…)` of 1 is 1 either way",
     ),
     (
         "barrel.sv",
@@ -1311,9 +1453,150 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "`y` is unsigned: `>>>` shifts in zeros",
     ),
     (
+        "bcd.sv",
+        "16:38 `3` -> `2`",
+        "`h` is at most 2, so its bit 3 is 0, the zero the assignment extends with",
+    ),
+    (
+        "bytes.sv",
+        "16:18 `16` -> `15`",
+        "sign-extending to 15 bits, then to 16, is sign-extending to 16",
+    ),
+    (
+        "bytes.sv",
+        "17:17 `$signed` -> ``",
+        "`==` of two 16-bit operands does not depend on their signedness",
+    ),
+    (
+        "bytes.sv",
+        "17:35 `16` -> `15`",
+        "sign-extending to 15 bits, then to 16, is sign-extending to 16",
+    ),
+    (
+        "carry.sv",
+        "15:16 `9` -> `'d9`",
+        "the comparison with the unsigned `cnt` is unsigned either way: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "carry.sv",
+        "15:26 `0` -> `'d0`",
+        "a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "carry.sv",
+        "16:23 `1` -> `'d1`",
+        "`cnt + 1` is unsigned either way: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    ("castparam.sv", "8:14 `3` -> `2`", "`S0` is 0 at any width"),
+    (
+        "castparam.sv",
+        "8:24 `0` -> `'d0`",
+        "a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "castparam.sv",
+        "19:17 `16` -> `15`",
+        "the sum of two 8-bit values fits in 15 bits",
+    ),
+    (
+        "castparam.sv",
+        "20:27 `1` -> `'d1`",
+        "the shift amount is unsigned anyway",
+    ),
+    (
+        "ctxwidth.sv",
+        "20:30 `1` -> `'d1`",
+        "the shift amount is unsigned anyway",
+    ),
+    (
+        "ctxwidth.sv",
+        "21:29 `1` -> `'d1`",
+        "the shift amount is unsigned anyway",
+    ),
+    (
         "decode.sv",
         "16:13 `3'd0` -> `3'd1`",
         "both labels are shadowed by earlier items",
+    ),
+    (
+        "fsmint.sv",
+        "12:21 `0` -> `'d0`",
+        "the states are compared with the unsigned `st` and assigned to it: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "fsmint.sv",
+        "12:30 `1` -> `'d1`",
+        "the states are compared with the unsigned `st` and assigned to it: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "fsmint.sv",
+        "12:40 `2` -> `'d2`",
+        "the states are compared with the unsigned `st` and assigned to it: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "fsmint.sv",
+        "17:13 `3` -> `'d3`",
+        "the labels are compared with the unsigned `st`: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "fsmint.sv",
+        "22:7 `4'd9` -> `4'd10`",
+        "the 3-bit `k` matches neither label",
+    ),
+    (
+        "fsmint.sv",
+        "22:19 `1` -> `0`",
+        "the label `4'd9` never matches the 3-bit `k`",
+    ),
+    (
+        "fsmint.sv",
+        "22:19 `1` -> `'d1`",
+        "the label `4'd9` never matches the 3-bit `k`",
+    ),
+    (
+        "fsmint.sv",
+        "23:7 `1` -> `'d1`",
+        "the labels are compared with the unsigned `k`: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "fsmint.sv",
+        "23:10 `2` -> `'d2`",
+        "the labels are compared with the unsigned `k`: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "fsmint.sv",
+        "24:22 `0` -> `'d0`",
+        "a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "mac.sv",
+        "13:23 `16'sd0` -> `16'd0`",
+        "zero is zero at any signedness",
+    ),
+    (
+        "mac.sv",
+        "14:23 `16` -> `15`",
+        "sign-extending to 15 bits, then to 16, is sign-extending to 16",
+    ),
+    (
+        "mac.sv",
+        "14:32 `16` -> `15`",
+        "sign-extending to 15 bits, then to 16, is sign-extending to 16",
+    ),
+    (
+        "modcount.sv",
+        "7:21 `10` -> `'d10`",
+        "`N` is an `int`: it takes the value 10 either way",
+    ),
+    (
+        "modcount.sv",
+        "14:56 `0` -> `'d0`",
+        "the cast `W'(…)` of 0 is 0 either way",
+    ),
+    (
+        "modcount.sv",
+        "14:69 `1` -> `'d1`",
+        "the cast `W'(…)` of 1 is 1 either way",
     ),
     (
         "mux4.sv",
@@ -1322,8 +1605,108 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
     ),
     (
         "nest.sv",
+        "6:32 `3` -> `2`",
+        "the values `mid` gives `K` (2 and 7) fit in 3 bits",
+    ),
+    (
+        "nest.sv",
         "6:41 `4'd1` -> `4'd2`",
         "every instance of `leaf` overrides this default of `K`",
+    ),
+    (
+        "nest.sv",
+        "15:31 `3` -> `2`",
+        "the values of `K` (2 and 7) fit in 3 bits",
+    ),
+    (
+        "pipe.sv",
+        "5:34 `8` -> `'d8`",
+        "`W` is an `int`: it takes the value 8 either way",
+    ),
+    (
+        "pipe.sv",
+        "24:14 `4` -> `'d4`",
+        "`W` is an `int`: the override takes the value 4 either way",
+    ),
+    (
+        "portw.sv",
+        "24:15 `5` -> `'d5`",
+        "truncated to the 8 bits of the port: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "shiftw.sv",
+        "11:20 `2` -> `'d2`",
+        "the shift amount is unsigned anyway",
+    ),
+    (
+        "shiftw.sv",
+        "13:16 `1` -> `'d1`",
+        "truncated to 8 bits: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "signmix.sv",
+        "24:17 `+` -> `-`",
+        "adding 0 is subtracting 0",
+    ),
+    (
+        "signmix.sv",
+        "25:18 `+` -> `-`",
+        "adding 0 is subtracting 0",
+    ),
+    (
+        "signmix.sv",
+        "29:22 `1` -> `'d1`",
+        "the shift amount is unsigned anyway",
+    ),
+    (
+        "signmix.sv",
+        "30:21 `>>>` -> `>>`",
+        "a concatenation is unsigned: `>>>` shifts in zeros",
+    ),
+    (
+        "signmix.sv",
+        "30:25 `1` -> `'d1`",
+        "the shift amount is unsigned anyway",
+    ),
+    (
+        "signmix.sv",
+        "31:20 `>>>` -> `>>`",
+        "`(s >>> 1) + u` is unsigned, so the shift is too",
+    ),
+    (
+        "signmix.sv",
+        "31:24 `1` -> `'d1`",
+        "the shift amount is unsigned anyway",
+    ),
+    (
+        "signmix.sv",
+        "38:19 `1'b1` -> `1'd0`",
+        "the label `8'd255` never matches the zero-extended 4-bit `t`",
+    ),
+    (
+        "traffic.sv",
+        "10:21 `2` -> `1`",
+        "the timer limits 3, 0 and 2 fit in 2 bits, extended in the comparisons",
+    ),
+    (
+        "unsized.sv",
+        "16:20 `1` -> `'d1`",
+        "the sum with the unsigned `q` is unsigned either way: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "unsized.sv",
+        "17:24 `1` -> `'d1`",
+        "the sum with the unsigned `q` is unsigned either way: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "unsized.sv",
+        "17:29 `0` -> `'d0`",
+        "the comparison is unsigned either way: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "unsized.sv",
+        "24:42 `2` -> `'d2`",
+        "the sum with the unsigned `'h7fffffff` is unsigned either way: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
     ),
 ];
 

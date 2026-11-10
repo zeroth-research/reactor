@@ -1,13 +1,17 @@
 /*!
-# Well-formedness and the explicit-width typing
+# Well-formedness and the explicit-width fragment
 
-[`check`] resolves names, checks that every signal has exactly one driver
-and types every expression.
+[`check`] resolves names and checks that every signal has exactly one
+driver, that assignments fit their kind of block, and the clocks and
+resets of each module. The widths and signedness of expressions are left
+to [`sizing`](crate::sizing), which makes every implicit resize of
+IEEE 1800 explicit.
 
-The typing rules are one function per expression form ([`unary`],
-[`binary`], [`cond`]), so that lowering can call the same rules while it
-builds terms. They accept only expressions in which no implicit resizing
-happens:
+Its result is in the *explicit-width fragment*, which [`explicit`] checks
+and which lowering translates. The typing rules of the fragment are one
+function per expression form ([`unary`], [`binary`], [`cond`]), called
+again by lowering while it builds terms. They accept only expressions in
+which no implicit resizing happens:
 
 - operands of the arithmetic, bitwise and comparison operators, and the two
   arms of `?:`, have the same width and the same signedness;
@@ -16,35 +20,35 @@ happens:
   reductions are self-determined, so any width is fine, and so are the
   shift amount and the items of `{…}` and `{n{…}}`;
 - resizing is explicit only: selects `x[…]` (always unsigned, like
-  concatenations), `{…}`, `{n{…}}` and casts `N'(e)`; `$signed`,
-  `$unsigned`, `signed'` and `unsigned'` change the signedness only;
-- the divisor of `/` and `%` is a nonzero literal, so no division by zero
-  happens (2-state values have no result for it).
+  concatenations), `{…}`, `{n{…}}`, casts `N'(e)` and the resize nodes
+  sizing inserts; `$signed`, `$unsigned`, `signed'` and `unsigned'` change
+  the signedness only.
 
 On this fragment the widths of IEEE 1800 (after propagation) equal the
 self-determined widths, so the fragment has the standard's semantics. The
 one place where this needs a restriction is a widening cast: `N'(e)` is
 defined as assigning `e` to an `N`-bit variable, which evaluates `e` at `N`
-bits (`16'(a + b)` keeps the carry of 8-bit `a + b`). So the operand of a
-widening cast must have a width independent of its context ([`context_free`]),
-and `16'(a) + 16'(b)` is written instead. A narrowing cast evaluates its
-operand at the operand's own width and truncates.
+bits (`16'(a + b)` keeps the carry of 8-bit `a + b`). So in the fragment the
+operand of a widening cast must have a width independent of its context
+([`context_free`]); after sizing, the operand of a cast is never narrower
+than the cast. A narrowing cast evaluates its operand at the operand's own
+width and truncates.
 
 Selects never reach outside the signal: constant indices are checked, and
 a variable index is accepted only if every value it can take is in range
-(`a[i]` with `i` of 3 bits needs `a` of at least 8 bits).
+(`a[i]` with `i` of 3 bits needs `a` of at least 8 bits; [`select`], which
+sizing calls with the type of the index).
 
 Assignment targets are signals, constant selects of signals, and
 concatenations of targets ([`pieces`]). An `assign` drives whole signals.
 
 Parameters have been substituted by the frontend: a parameter is a
-constant of its type, an integer constant (`N - 1`) has type `int`, so
-`cnt == N - 1` with an 8-bit `cnt` is rejected like any other width
-mismatch (write `8'(N - 1)`, or declare a typed `localparam`).
+constant of its type, an unsized decimal literal an `int`.
 
 An instance drives the signals connected to its outputs, which must be
-whole signals of the port's width; the expression connected to an input
-must have the port's width. A clock port of an instance is connected to
+whole signals of the port's width (an output is no assignment, so nothing
+is resized); the expression connected to an input is assigned to the port
+(sized like any assignment). A clock port of an instance is connected to
 the name of a 1-bit signal, which then counts as a clock of the module.
 
 An `always_comb` block must also be free of latches and of reads of stale
@@ -146,9 +150,8 @@ pub fn check(m: &Module) -> Result<Env> {
     for (i, item) in m.items.iter().enumerate() {
         match item {
             Item::Assign { lhs, rhs, span } => {
-                let width = lvalue(lhs, &mut |y, span| drive(&env, &mut driver, y, span, i))?;
-                let t = expr(&env, rhs)?;
-                assign(width, t, *span)?;
+                lvalue(lhs, &mut |y, span| drive(&env, &mut driver, y, span, i))?;
+                names(&env, rhs)?;
                 for y in item.targets() {
                     let n = env[y].ty.width;
                     let bits: BTreeSet<usize> = pieces(&env, lhs)
@@ -216,21 +219,7 @@ pub fn check(m: &Module) -> Result<Env> {
                                 ));
                             }
                         },
-                        (Some(e), Dir::Input) => {
-                            let t = expr(&env, e)?;
-                            if t.width != f.ty.width {
-                                return Err(Error::new(
-                                    e.span,
-                                    format!(
-                                        "{port} has {} bits, the signal connected {} \
-                                         (resize explicitly){}",
-                                        f.ty.width,
-                                        t.width,
-                                        int_hint(t, f.ty.width)
-                                    ),
-                                ));
-                            }
-                        }
+                        (Some(e), Dir::Input) => names(&env, e)?,
                         (Some(e), Dir::Output) => {
                             let ExprKind::Var(y) = &e.kind else {
                                 return Err(Error::new(
@@ -339,7 +328,7 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
                 Item::Instance(u) => {
                     for (c, _) in u.conns(Dir::Input) {
                         if let Some(e) = &c.actual
-                            && !matches!(e.kind, ExprKind::Var(_))
+                            && c.shared().is_none()
                         {
                             let path = format!("{prefix}{}.{}", u.name, c.port);
                             let source = Source::Conn(e, c.span);
@@ -546,16 +535,6 @@ fn copy(e: &Expr) -> Option<&Name> {
     }
 }
 
-/// A hint for a width mismatch between a value of type `t` and `width`
-/// bits: an integer constant is an `int`, which needs a cast.
-fn int_hint(t: Ty, width: usize) -> String {
-    if t == Ty::INT && width != 32 {
-        format!("; an integer constant is an `int` (32 bits): cast it, e.g. `{width}'(N - 1)`")
-    } else {
-        String::new()
-    }
-}
-
 /// Records `item` as the driver of `lhs` and returns the type of `lhs`.
 fn drive(
     env: &Env,
@@ -648,7 +627,7 @@ fn stmt(
     match &s.kind {
         StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| stmt(env, s, proc, drive)),
         StmtKind::If(c, a, b) => {
-            expr(env, c)?;
+            names(env, c)?;
             stmt(env, a, proc, drive)?;
             stmt(env, b, proc, drive)
         }
@@ -657,10 +636,10 @@ fn stmt(
             items,
             default,
         } => {
-            let t = expr(env, sel)?;
+            names(env, sel)?;
             for item in items {
                 for l in &item.labels {
-                    label(t, expr(env, l)?, l.span)?;
+                    names(env, l)?;
                 }
                 stmt(env, &item.body, proc, drive)?;
             }
@@ -686,10 +665,74 @@ fn stmt(
                 }
                 _ => {}
             }
-            let width = lvalue(lhs, drive)?;
-            assign(width, expr(env, rhs)?, s.span)
+            lvalue(lhs, drive)?;
+            names(env, rhs)
         }
     }
+}
+
+/// Checks that every signal `e` reads is declared.
+fn names(env: &Env, e: &Expr) -> Result<()> {
+    let mut reads = Vec::new();
+    e.reads(&mut reads);
+    reads
+        .into_iter()
+        .try_for_each(|(x, span)| lookup(env, x, span).map(|_| ()))
+}
+
+/// Checks that a module, after [`sizing`](crate::sizing), is in the
+/// explicit-width fragment: the operands of every operator, the arms of
+/// every `?:`, the selector and labels of every `case` have equal types,
+/// every assignment (also to an input port) copies a value of the target's
+/// width, and casts only narrow or keep the width of an operator
+/// expression ([`expr`]).
+pub fn explicit(env: &Env, m: &Module) -> Result<()> {
+    fn stmt(env: &Env, s: &Stmt) -> Result<()> {
+        match &s.kind {
+            StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| stmt(env, s)),
+            StmtKind::If(c, a, b) => {
+                expr(env, c)?;
+                stmt(env, a)?;
+                stmt(env, b)
+            }
+            StmtKind::Case {
+                sel,
+                items,
+                default,
+            } => {
+                let t = expr(env, sel)?;
+                for item in items {
+                    for l in &item.labels {
+                        label(t, expr(env, l)?, l.span)?;
+                    }
+                    stmt(env, &item.body)?;
+                }
+                default.as_deref().map_or(Ok(()), |d| stmt(env, d))
+            }
+            StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
+                assign(width(env, lhs), expr(env, rhs)?, s.span)
+            }
+        }
+    }
+    for item in &m.items {
+        match item {
+            Item::Assign { lhs, rhs, span } => assign(width(env, lhs), expr(env, rhs)?, *span)?,
+            Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => stmt(env, body)?,
+            Item::Instance(i) => {
+                for (c, f) in i.conns(Dir::Input) {
+                    if let Some(e) = &c.actual {
+                        assign(f.ty.width, expr(env, e)?, e.span)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The width of a checked assignment target.
+fn width(env: &Env, l: &Lvalue) -> usize {
+    pieces(env, l).iter().map(Piece::width).sum()
 }
 
 /// Checks an assignment target, records the driver of each of its signals
@@ -1001,17 +1044,24 @@ pub fn expr(env: &Env, e: &Expr) -> Result<Ty> {
             select(x, t, sel, index, e.span)
         }
         ExprKind::Cast(c, a) => cast(*c, expr(env, a)?, context_free(a), e.span),
+        ExprKind::Resize(t, a) => {
+            expr(env, a)?;
+            Ok(*t)
+        }
+        ExprKind::Fill(_) => Err(Error::new(
+            e.span,
+            format!("`{e}` has no width outside a context"),
+        )),
     }
 }
 
-/// Checks that the divisor of `/` or `%` is a nonzero literal or
-/// constant.
+/// Checks that the divisor of `/` or `%` is a nonzero constant.
 fn divisor(b: &Expr) -> Result<()> {
     match &b.kind {
         ExprKind::Lit { value, .. } | ExprKind::Const { value, .. } if !value.is_zero() => Ok(()),
         _ => Err(Error::new(
             b.span,
-            "the divisor must be a nonzero literal (2-state values have no result \
+            "the divisor must be a nonzero constant (2-state values have no result \
              for a division by zero)",
         )),
     }
@@ -1134,7 +1184,7 @@ pub fn context_free(e: &Expr) -> bool {
 /// index may read any bit.
 fn bit_reads<'e>(env: &Env, e: &'e Expr, out: &mut Vec<(&'e Name, usize, usize, Span)>) {
     match &e.kind {
-        ExprKind::Lit { .. } | ExprKind::Const { .. } => {}
+        ExprKind::Lit { .. } | ExprKind::Const { .. } | ExprKind::Fill(_) => {}
         ExprKind::Var(x) => out.push((x, env[x].ty.width - 1, 0, e.span)),
         ExprKind::Select(x, sel) => match sel.constant() {
             Some(Some((hi, lo))) => out.push((x, hi, lo, e.span)),
@@ -1145,7 +1195,9 @@ fn bit_reads<'e>(env: &Env, e: &'e Expr, out: &mut Vec<(&'e Name, usize, usize, 
                 }
             }
         },
-        ExprKind::Unary(_, a) | ExprKind::Cast(_, a) => bit_reads(env, a, out),
+        ExprKind::Unary(_, a) | ExprKind::Cast(_, a) | ExprKind::Resize(_, a) => {
+            bit_reads(env, a, out)
+        }
         ExprKind::Binary(_, a, b) => {
             bit_reads(env, a, out);
             bit_reads(env, b, out);
@@ -1177,14 +1229,9 @@ pub fn binary(op: BinOp, a: Ty, b: Ty, span: Span) -> Result<Ty> {
         if a == b {
             Ok(())
         } else {
-            let hint = if a == Ty::INT {
-                int_hint(a, b.width)
-            } else {
-                int_hint(b, a.width)
-            };
             Err(Error::new(
                 span,
-                format!("operands of `{op}` differ: `{a}` and `{b}` (resize explicitly){hint}"),
+                format!("operands of `{op}` differ: `{a}` and `{b}`"),
             ))
         }
     };
@@ -1204,7 +1251,7 @@ pub fn cond(a: Ty, b: Ty, span: Span) -> Result<Ty> {
     } else {
         Err(Error::new(
             span,
-            format!("arms of `?:` differ: `{a}` and `{b}` (resize explicitly)"),
+            format!("arms of `?:` differ: `{a}` and `{b}`"),
         ))
     }
 }
@@ -1218,7 +1265,7 @@ pub fn label(sel: Ty, label: Ty, span: Span) -> Result<()> {
     } else {
         Err(Error::new(
             span,
-            format!("`case` label `{label}` differs from selector `{sel}` (resize explicitly)"),
+            format!("`case` label `{label}` differs from selector `{sel}`"),
         ))
     }
 }
@@ -1231,12 +1278,7 @@ pub fn assign(lhs: usize, rhs: Ty, span: Span) -> Result<()> {
     } else {
         Err(Error::new(
             span,
-            format!(
-                "assigning {} bits to {} bits (resize explicitly){}",
-                rhs.width,
-                lhs,
-                int_hint(rhs, lhs)
-            ),
+            format!("assigning {} bits to {} bits", rhs.width, lhs),
         ))
     }
 }

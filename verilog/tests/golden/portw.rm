@@ -1,0 +1,49 @@
+module portw
+  external
+    n4 : bv4
+    s4 : bv4
+    w16 : bv16
+    a : bv8
+    b : bv8
+  interface
+    y1 : bv8
+    y2 : bv8
+    y3 : bv8
+    y4 : bv8
+    y5 : bv8
+  private
+    u1.x : bv8
+    u2.x : bv8
+    u3.x : bv8
+    u4.x : bv8
+    u5.x : bv8
+  atom controls u1.x awaits n4
+    init = update
+      X(u1.x) := ZEXT[8] X(n4)
+  atom controls u2.x awaits s4
+    init = update
+      X(u2.x) := SEXT[8] X(s4)
+  atom controls u3.x awaits w16
+    init = update
+      X(u3.x) := EXTRACT[7:0] X(w16)
+  atom controls u4.x awaits a, b
+    init = update
+      X(u4.x) := ADD (X(a), X(b))
+  atom controls u5.x
+    init = update
+      X(u5.x) := 8'd5
+  atom controls y1 awaits u1.x
+    init = update
+      X(y1) := ID X(u1.x)
+  atom controls y2 awaits u2.x
+    init = update
+      X(y2) := ID X(u2.x)
+  atom controls y3 awaits u3.x
+    init = update
+      X(y3) := ID X(u3.x)
+  atom controls y4 awaits u4.x
+    init = update
+      X(y4) := ID X(u4.x)
+  atom controls y5 awaits u5.x
+    init = update
+      X(y5) := ID X(u5.x)

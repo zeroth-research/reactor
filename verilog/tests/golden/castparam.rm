@@ -1,0 +1,36 @@
+module castparam
+  external
+    u : bv8
+    a : bv8
+    b : bv8
+  interface
+    wide : bv16
+    h : bv9
+    m : bv8
+    low : bv4
+    s : bv4
+    k : bv32
+  atom controls wide awaits u
+    init = update
+      %1 := ZEXT[16] X(u)
+      %2 := ZEXT[16] X(u)
+      X(wide) := ADD (%1, %2)
+  atom controls h awaits a, b
+    init = update
+      %1 := ADD (X(a), X(b))
+      %2 := ZEXT[9] %1
+      %3 := 32'd1
+      X(h) := LSHR (%2, %3)
+  atom controls low awaits a, b
+    init = update
+      %1 := ADD (X(a), X(b))
+      X(low) := EXTRACT[3:0] %1
+  atom controls m
+    init = update
+      X(m) := 8'd255
+  atom controls s
+    init = update
+      X(s) := 4'd5
+  atom controls k
+    init = update
+      X(k) := 32'd3

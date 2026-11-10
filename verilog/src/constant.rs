@@ -7,16 +7,18 @@ module is elaborated, once for each instance, from their source text and
 the values of the parameters declared before them.
 
 An *integer constant* has type `int` (`logic signed [31:0]`; with 2-state
-values the two are the same). It is built from unsized decimal literals,
-parameters of that type, `+ - * / % **`, unary `-` and `+`, parentheses
-and `$clog2`. The arithmetic here is exact, and a result outside the
-32-bit range is an error, as are a division by zero and a negative
-exponent. So whenever the evaluation succeeds, the 32-bit arithmetic of
-IEEE 1800 gives the same value, and so does any wider arithmetic a context
-may impose.
+values the two are the same). It is built from unsized decimal literals
+(and signed unsized based ones, `'sd5`), parameters of that type,
+`+ - * / % **`, unary `-` and `+`, parentheses and `$clog2`. The
+arithmetic here is exact, and a result outside the 32-bit range is an
+error, as are a division by zero and a negative exponent. So whenever the
+evaluation succeeds, the 32-bit arithmetic of IEEE 1800 gives the same
+value. (Inside a value expression, an integer constant is evaluated at the
+type of its context instead, see [`sizing`](crate::sizing).)
 
-A *vector constant* is a sized literal, a parameter of another type, or a
-size cast `N'(e)`; there is no arithmetic on vector constants.
+A *vector constant* is a sized literal, an unsized based literal (`'hff`,
+32 bits unsigned), a parameter of another type, or a size cast `N'(e)`;
+there is no arithmetic on vector constants.
 */
 
 use crate::ast::{Const, Name, Ty};
@@ -36,18 +38,20 @@ pub enum Failure {
     Error(String),
 }
 
-/// A literal: sized (`8'hff`), or an unsized decimal (`255`), which is an
-/// integer.
+/// A literal: sized (`8'hff`), an unsized decimal (`255`), which is an
+/// integer, or unsized based (`'hff`, `'sd5`), which has 32 bits and is
+/// unsigned unless marked `s` (then it is an integer too).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Literal {
     Sized(Ty, BitVec),
     Int(i64),
+    Unsized(Ty, BitVec),
 }
 
 /// Parses a literal without whitespace and `_`: `N'[s]<b|o|d|h>digits` or
-/// decimal digits. x/z digits are rejected (values are 2-state), and so
-/// are unsized based literals (`'hff`): their width would come from the
-/// context.
+/// decimal digits, or an unsized based literal `'[s]<b|o|d|h>digits`. x/z
+/// digits are rejected (values are 2-state), and so are values that do
+/// not fit in the width (32 bits for unsized literals).
 pub fn literal(text: &str) -> Result<Literal, String> {
     let Some((size, rest)) = text.split_once('\'') else {
         let value: i64 = text
@@ -57,14 +61,12 @@ pub fn literal(text: &str) -> Result<Literal, String> {
             .ok_or_else(|| format!("integer `{text}` too large"))?;
         return Ok(Literal::Int(value));
     };
-    if size.is_empty() {
-        return Err(format!(
-            "unsized literal `{text}` not supported, write the width (e.g. `8{text}`)"
-        ));
-    }
-    let width: usize = size
-        .parse()
-        .map_err(|_| format!("literal size `{size}` too large"))?;
+    let width: usize = if size.is_empty() {
+        32
+    } else {
+        size.parse()
+            .map_err(|_| format!("literal size `{size}` too large"))?
+    };
     if width == 0 {
         return Err(format!("literal `{text}` of width 0"));
     }
@@ -90,7 +92,12 @@ pub fn literal(text: &str) -> Result<Literal, String> {
         .ok_or_else(|| format!("malformed literal `{text}`"))?;
     let value = BitVec::new(width, value)
         .ok_or_else(|| format!("literal `{text}` does not fit in {width} bits"))?;
-    Ok(Literal::Sized(Ty { width, signed }, value))
+    let ty = Ty { width, signed };
+    Ok(if size.is_empty() {
+        Literal::Unsized(ty, value)
+    } else {
+        Literal::Sized(ty, value)
+    })
 }
 
 /// The integer constant `v`.
@@ -269,9 +276,8 @@ fn lex(text: &str) -> Result<Vec<Token>, Failure> {
                     .iter()
                     .take_while(|c| c.is_ascii_alphanumeric() || **c == '\'' || **c == '_')
                     .collect();
-                return Err(Failure::Error(
-                    literal(&lit).expect_err("an unsized literal"),
-                ));
+                i += lit.chars().count();
+                tokens.push(Token::Num(lit.replace('_', "")));
             }
         } else {
             let op = match (c, chars.get(i + 1)) {
@@ -414,7 +420,7 @@ impl Parser<'_> {
         match t {
             Token::Num(text) => match literal(&text).map_err(Failure::Error)? {
                 Literal::Int(v) => Ok(int_const(v)),
-                Literal::Sized(ty, value) => Ok(Const { ty, value }),
+                Literal::Sized(ty, value) | Literal::Unsized(ty, value) => Ok(Const { ty, value }),
             },
             Token::Ident(x) => self
                 .params
@@ -476,7 +482,8 @@ mod tests {
         assert!(matches!(int("K + 1"), Err(Failure::Error(_))));
         assert!(matches!(int("x + 1"), Err(Failure::NotConstant(_))));
         assert!(matches!(int("N == 1"), Err(Failure::NotConstant(_))));
-        assert!(matches!(int("'hff"), Err(Failure::Error(_))));
+        assert_eq!(int("'sd5 + 1"), Ok(6));
+        assert!(matches!(int("'hx"), Err(Failure::Error(_))));
     }
 
     #[test]
@@ -504,5 +511,8 @@ mod tests {
         assert_eq!(c.value, BitVec::wrap(2, 3u8));
         let c = eval("8 'h 1F", &params).unwrap();
         assert_eq!(c.value, BitVec::wrap(8, 31u8));
+        // unsized based: 32 bits, unsigned
+        let c = eval("'hff", &params).unwrap();
+        assert_eq!((c.ty, c.value), (Ty::unsigned(32), BitVec::wrap(32, 255u8)));
     }
 }

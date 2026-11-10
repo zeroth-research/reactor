@@ -109,10 +109,30 @@ fn rejects(header: Option<&str>, body: &str, line: usize, needle: &str, msg: &st
 #[test]
 fn rejected_expressions() {
     let cases = [
-        ("  assign y = a + 1;", "1;", "unsized literal"),
-        ("  assign y = a + 'd1;", "'d1", "unsized literal"),
-        ("  assign y = a + '1;", "'1", "unsized literal"),
         ("  assign y = 8'bx;", "8'bx", "x/z"),
+        ("  assign y = 'x;", "'x", "x/z"),
+        ("  assign y = 'hz;", "'hz", "x/z"),
+        ("  assign y = a + 4294967296;", "4294967296", "too large"),
+        (
+            "  assign y = a + 'h1_0000_0000;",
+            "'h1",
+            "does not fit in 32 bits",
+        ),
+        (
+            "  assign y = {a, 1};",
+            "1}",
+            "unsized literal `1` in a concatenation",
+        ),
+        (
+            "  assign y = {'1};",
+            "'1",
+            "unsized literal `'1` in a concatenation",
+        ),
+        (
+            "  assign y = {2{'d1}};",
+            "'d1",
+            "unsized literal `'d1` in a concatenation",
+        ),
         ("  assign y = 8'd256;", "8'd256", "does not fit"),
         (
             "  assign y = a ** a;",
@@ -130,26 +150,10 @@ fn rejected_expressions() {
             "call `$countones(a)`",
         ),
         ("  assign y = b;", "b;", "`b` is not declared"),
-        ("  assign y = a + 4'd1;", "+", "operands of `+` differ"),
-        (
-            "  assign y = a == a ? a : 8'sd0;",
-            "?",
-            "arms of `?:` differ",
-        ),
-        ("  assign y = 4'd1;", "y", "assigning 4 bits to 8 bits"),
-        ("  assign y = a == a;", "y", "assigning 1 bits to 8 bits"),
     ];
     for (body, needle, msg) in cases {
         rejects(None, body, 2, needle, msg);
     }
-    // operands differ in signedness only
-    rejects(
-        Some("module m(input logic [7:0] a, input logic signed [7:0] s, output logic y);"),
-        "  assign y = a < s;",
-        2,
-        "<",
-        "operands of `<` differ: `logic [7:0]` and `logic signed [7:0]`",
-    );
 }
 
 #[test]
@@ -627,13 +631,6 @@ fn rejected_registers() {
     );
     rejects(
         Some(HEADER_FF),
-        "  always_ff @(posedge clk) y <= 4'd1;",
-        2,
-        "y <=",
-        "assigning 4 bits to 8 bits",
-    );
-    rejects(
-        Some(HEADER_FF),
         "  always_ff @(posedge clk) z <= a;\n  assign y = a;",
         2,
         "z",
@@ -693,7 +690,7 @@ fn accepted_always_comb() {
 
 #[test]
 fn rejected_always_comb() {
-    let cases: [(&str, usize, &str, &str); 14] = [
+    let cases: [(&str, usize, &str, &str); 13] = [
         (
             "  always_comb y <= a;",
             2,
@@ -737,12 +734,6 @@ fn rejected_always_comb() {
             2,
             "y; end",
             "`y` read before it is assigned",
-        ),
-        (
-            "  always_comb case (a) 8'd1: y = a; 4'd2: y = a; default: y = a; endcase",
-            2,
-            "4'd2",
-            "`case` label `logic [3:0]` differs from selector `logic [7:0]`",
         ),
         (
             "  always_comb case (a) default: y = a; default: y = a; endcase",
@@ -890,16 +881,20 @@ fn accepted_sizing() {
         "  assign y = $unsigned(s / 8'shff);",
         // shifts
         "  assign y = a << i | a >> j | $unsigned(s >>> a);",
+        // implicit resizing: widening casts of operator expressions, mixed
+        // signedness, truncation, constant divisors
+        "  assign w = 16'(a + a);",
+        "  assign w = 16'(-a);",
+        "  assign y = s + a[7:0];",
+        "  assign y = s + {s};",
+        "  assign y = a / -8'd1 + a / 2 + a % (3 - 1);",
+        "  assign y = {a, a};",
+        "  assign o = a[i + 3'd1];",
+        // only a literal itself is no item of a concatenation
+        "  assign w = {a, 1 + 1};",
     ];
     for body in ok {
-        // drive the outputs the case leaves alone
-        let mut src = body.to_string();
-        for (out, value) in [("y", "a"), ("w", "{a, a}"), ("o", "a[0]")] {
-            if !body.contains(&format!("assign {out} ")) {
-                src += &format!("\n  assign {out} = {value};");
-            }
-        }
-        translate_with(HEADER_SIZING, &src);
+        translate_with(HEADER_SIZING, &drive_others(body));
     }
 }
 
@@ -927,35 +922,25 @@ fn rejected_sizing() {
         ("  assign o = a[k];", "a[k", "must be unsigned"),
         ("  assign o = a[i -: 2];", "a[i", "use `+:`"),
         (
-            "  assign w = 16'(a + a);",
-            "16'",
-            "cast its operands instead",
+            "  assign o = a[i + 1];",
+            "a[",
+            "the index has 32 bits, so every one of its values must be in range (narrow the \
+             index); an unsized literal or an integer parameter makes the index 32 bits wide",
         ),
-        (
-            "  assign w = 16'(-a);",
-            "16'",
-            "would evaluate this operator expression at 16 bits",
-        ),
-        (
-            "  assign y = s + a[7:0];",
-            "+",
-            "`logic signed [7:0]` and `logic [7:0]`",
-        ),
-        ("  assign y = s + {s};", "+", "operands of `+` differ"),
         (
             "  assign y = a / a;",
             "a;",
-            "divisor must be a nonzero literal",
+            "divisor must be a nonzero constant",
         ),
         (
             "  assign y = a % 8'd0;",
             "8'd0",
-            "divisor must be a nonzero literal",
+            "divisor must be a nonzero constant",
         ),
         (
-            "  assign y = a / -8'd1;",
-            "-8",
-            "divisor must be a nonzero literal",
+            "  assign y = a / (2 - 2);",
+            "- 2",
+            "divisor must be a nonzero constant",
         ),
         ("  assign w = {0{a}};", "{0", "replication count 0"),
         ("  assign o = a[0 +: 0];", "a[", "of width 0"),
@@ -965,11 +950,22 @@ fn rejected_sizing() {
             "takes one argument",
         ),
         ("  assign y = string'(a);", "string", "cast to `string`"),
-        ("  assign y = {a, a};", "y", "assigning 16 bits to 8 bits"),
     ];
     for (body, needle, msg) in cases {
-        rejects(Some(HEADER_SIZING), body, 2, needle, msg);
+        rejects(Some(HEADER_SIZING), &drive_others(body), 2, needle, msg);
     }
+}
+
+/// `body` with the outputs of [`HEADER_SIZING`] it leaves alone driven
+/// (after it, so that its line stays the second).
+fn drive_others(body: &str) -> String {
+    let mut src = body.to_string();
+    for (out, value) in [("y", "a"), ("w", "{a, a}"), ("o", "a[0]")] {
+        if !body.contains(&format!("assign {out} ")) {
+            src += &format!("\n  assign {out} = {value};");
+        }
+    }
+    src
 }
 
 /// Targets: selects and concatenations, in every kind of block.
