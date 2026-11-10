@@ -80,7 +80,7 @@ chapter-11/11.7--unsigned_func.sv		19:1: unsupported: ModuleCommonItem [at `init
 chapter-11/11.9--tagged_union.sv		17:1: unsupported: DataDeclaration [at `typedef`]	17:1: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 chapter-11/11.9--tagged_union_member_access-sim.sv		18:1: unsupported: DataDeclaration [at `typedef`]	18:1: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 chapter-11/11.9--tagged_union_member_access.sv		17:1: unsupported: DataDeclaration [at `typedef`]	17:1: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-chapter-11/simple/11.4.11--simple_cond_op-sim.sv		18:18: unsized literal `0` not supported, write the width (e.g. `8'd0`)	18:18: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+chapter-11/simple/11.4.11--simple_cond_op-sim.sv		OK	OK	Equal	
 chapter-11/simple/11.4.12--simple_concat_op-sim.sv		OK	OK	Equal	
 chapter-11/simple/11.4.12.1--simple_repl_op-sim.sv		OK	OK	Equal	
 chapter-11/simple/11.4.13--simple_set_member-sim.sv		18:13: unsupported: Expression [at `assign`]	18:13: unsupported: Expression [at `assign`]	-	other unsupported syntax
