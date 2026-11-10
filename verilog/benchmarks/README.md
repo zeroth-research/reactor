@@ -58,7 +58,6 @@ For each case:
 - **riscv-formal** (fetched): case-study size (RISC-V cores checked against the RVFI interface
   with SVA properties). A later step, once the subset handles a whole core (arrays, functions,
   generate, assertions).
-- **RTLLM**: not chosen (an early probe accepted 1 of 50 designs: old Verilog style).
 - `hw-cbmc/regression/{smv,vhdl,hw-cbmc,vlindex,rajdeep}`: other input languages, C
   co-verification, indexer tests.
 
