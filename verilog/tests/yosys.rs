@@ -293,6 +293,56 @@ fn miter_examples() {
     }
 }
 
+/// Designs on which Yosys's defaults would give SMT the miter cannot use:
+/// a `case` selecting only constants (a ROM, written with SMT arrays) and
+/// empty modules (blackboxes, instances left undeclared). Each is compared
+/// like any other; `queries` = number of controlled variables. (Yosys
+/// 0.69 makes a ROM from 16 entries on, not from 8.)
+#[test]
+fn miter_yosys_defaults() {
+    let Some((yosys, z3)) = tools() else { return };
+    let labels: String = (0..15)
+        .map(|i| format!("      4'd{i}: y = 3'd{};\n", (5 * i + 3) % 8))
+        .collect();
+    let rom = format!(
+        "module rom (input logic [3:0] a, output logic [2:0] y);\n  always_comb\n    \
+         case (a)\n{labels}      default: y = 3'd1;\n    endcase\nendmodule\n"
+    );
+    let cases = [
+        ("rom", rom.as_str(), 1),
+        (
+            "holder",
+            "\
+module empty; endmodule
+module holder (input logic clk, input logic [3:0] d, output logic [3:0] q);
+  empty e();
+  always_ff @(posedge clk) q <= d;
+endmodule
+",
+            1,
+        ),
+        ("nothing", "module nothing (input logic a); endmodule\n", 0),
+    ];
+    for (top, source, queries) in cases {
+        let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("{top}.sv"));
+        std::fs::write(&path, source).unwrap();
+        let inst = elab::load(source, &path).unwrap();
+        let t = lower_inst(&inst).unwrap();
+        let ys = yosys::run(&yosys, &path, top, &[]).unwrap();
+        assert!(!ys.text.contains("Array"), "{top}: Yosys wrote a memory");
+        let m = miter::build(&t, &ys).unwrap();
+        let verdicts = miter::check(&z3, &m).unwrap();
+        assert_eq!(
+            verdicts.len(),
+            2 * queries,
+            "{top}: init and update queries"
+        );
+        for (phase, name, verdict) in verdicts {
+            assert_eq!(verdict, Verdict::Equal, "{top}: `{name}` in {phase:?}");
+        }
+    }
+}
+
 /// A change to our round shows up as `Differs` on the variables it
 /// affects, and only there.
 #[test]
