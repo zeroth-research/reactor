@@ -188,11 +188,11 @@ verilog/assignments/assignment-to-non-constant-index2.sv		4:3: `reg` not support
 verilog/assignments/assignment-to-non-constant-index3.sv		4:3: `reg` not supported, use `logic`	4:9: range [11:4] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
 verilog/assignments/assignment-to-part-select-of-struct1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/assignments/assignment-with-function-call1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
-verilog/assignments/assignment_statement1.sv		5:14: unsized literal `1` not supported, write the width (e.g. `8'd1`)	5:14: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/assignments/assignment_statement1.sv		7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/assignments/compound-assignment-operand-width1.sv		13:3: `reg` not supported, use `logic`	13:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 verilog/assignments/compound-assignment-operand-width2.sv		13:3: `reg` not supported, use `logic`	13:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 verilog/assignments/extension-and-truncation1.sv		37:15: positional port connections not supported, write `.port(signal)`	37:15: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
-verilog/assignments/implicit_declaration1.sv		5:22: unsized literal `'b10` not supported, write the width (e.g. `8'b10`)	5:22: unsized literal `'b10` not supported, write the width (e.g. `8'b10`)	-	width rules (explicit-width fragment)
+verilog/assignments/implicit_declaration1.sv		8:3: unsupported: ModuleCommonItem [at `initial`]	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/assignments/nonblocking-then-blocking1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/assignments/partial-assignment-before-non-constant-index1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/assignments/partial-assignment-before-non-constant-index2.sv		3:3: `reg` not supported, use `logic`	3:15: unpacked dimension not supported	-	arrays
@@ -215,7 +215,7 @@ verilog/case/case4.v#main	main	19:17: syntax error [at `assert`]	19:17: syntax e
 verilog/case/case5.sv#main	main	3:3: `reg` not supported, use `logic`	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/case/case_wildcard1.sv		3:3: `reg` not supported, use `logic`	10:7: literal `2'b0z` with x/z digits not supported (2-state)	-	x/z values (4-state)
 verilog/case/case_wildcard2.sv		3:3: `reg` not supported, use `logic`	7:5: `casex` not supported [at `casex`]	-	other unsupported construct
-verilog/case/mini-alu.sv#alu	alu	1:54: `reg` not supported, use `logic`	4:5: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+verilog/case/mini-alu.sv#alu	alu	1:54: `reg` not supported, use `logic`	13:8: unsupported: StatementItem [at `assert`]	-	assertions / properties
 verilog/case/nested_case1.v		15:17: syntax error [at `assert`]	15:17: syntax error [at `assert`]	-	assertions / properties
 verilog/case/riscv-alu.sv#alu	alu	6:10: `reg` not supported, use `logic`	10:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 verilog/case/unique_case1.sv		4:5: `unique` not supported [at `unique`]	4:5: `unique` not supported [at `unique`]	-	other unsupported construct
@@ -329,7 +329,7 @@ verilog/expressions/equality4.sv		4:3: unsupported: ModuleCommonItem [at `initia
 verilog/expressions/equality5.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/expressions/iff1.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/expressions/implies1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
-verilog/expressions/index-constant1.sv		4:17: unsized literal `'b1010` not supported, write the width (e.g. `8'b1010`)	4:17: unsized literal `'b1010` not supported, write the width (e.g. `8'b1010`)	-	width rules (explicit-width fragment)
+verilog/expressions/index-constant1.sv		5:17: expected a constant expression, got `p[3]`: `p[3]` is not a constant expression	5:17: expected a constant expression, got `p[3]`: `p[3]` is not a constant expression	-	other error
 verilog/expressions/index-constant2.sv		4:17: expected a constant expression, got `(1>0)`: `(1>0)` is not a constant expression	4:17: expected a constant expression, got `(1>0)`: `(1>0)` is not a constant expression	-	other error
 verilog/expressions/index-of-real.sv		4:3: type `real` not supported	4:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/expressions/inside1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
@@ -343,7 +343,7 @@ verilog/expressions/mod1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4
 verilog/expressions/mod2.v		4:8: declaration with initializer not supported, use `assign`	4:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 verilog/expressions/mult1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/expressions/negation1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
-verilog/expressions/part-select-constant1.sv		4:17: unsized literal `'b1010` not supported, write the width (e.g. `8'b1010`)	4:17: unsized literal `'b1010` not supported, write the width (e.g. `8'b1010`)	-	width rules (explicit-width fragment)
+verilog/expressions/part-select-constant1.sv		5:17: expected a constant expression, got `p[3:1]`: `p[3:1]` is not a constant expression	5:17: expected a constant expression, got `p[3:1]`: `p[3:1]` is not a constant expression	-	other error
 verilog/expressions/part-select-of-real.sv		4:3: type `real` not supported	4:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/expressions/plus1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/expressions/power1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
@@ -468,7 +468,7 @@ verilog/if/unique_if1.sv		4:5: `unique` not supported [at `unique`]	4:5: `unique
 verilog/initial/block_declaration_assignment1.sv		9:3: `reg` not supported, use `logic`	12:5: declarations in blocks not supported	-	other unsupported construct
 verilog/initial/declaration_assignment1.sv		6:3: type `int` not supported	6:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/initial/ignore-initial1.sv#main	main	3:3: `reg` not supported, use `logic`	3:18: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
-verilog/initial/initial-zero1.sv#main	main	3:3: `reg` not supported, use `logic`	5:32: unsized literal `5` not supported, write the width (e.g. `8'd5`)	-	width rules (explicit-width fragment)
+verilog/initial/initial-zero1.sv#main	main	3:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/initial/initial1.v#main	main	11:16: syntax error [at `assert`]	11:16: syntax error [at `assert`]	-	assertions / properties
 verilog/interface/ansi_ports1.sv		2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/interface/duplicate1.sv#foo	foo	1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
@@ -530,7 +530,7 @@ verilog/modules/input_and_reg.v		3:8: syntax error [at `input`]	3:8: syntax erro
 verilog/modules/input_and_wire.v#M1	M1	1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/instance_array1.sv#parent	parent	7:23: unpacked dimension not supported	7:23: unpacked dimension not supported	-	arrays
 verilog/modules/instance_array2.sv		8:18: instance array not supported	8:18: instance array not supported	-	arrays
-verilog/modules/instance_array3.sv		11:16: unsized literal `1` not supported, write the width (e.g. `8'd1`)	11:16: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/modules/instance_array3.sv		15:8: instance array not supported	15:8: instance array not supported	-	arrays
 verilog/modules/instance_array4.sv		9:8: instance array not supported	9:8: instance array not supported	-	arrays
 verilog/modules/instance_name_collision1.sv		11:7: `some_identifier` already declared at 8:8	11:7: `some_identifier` already declared at 8:8	-	other error
 verilog/modules/instance_vs_typedef1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
@@ -545,7 +545,7 @@ verilog/modules/module_name_space1.sv		2:1: unsupported: Description [at `parame
 verilog/modules/module_not_found1.v#main	main	3:35: no module `some_module_that_does_not_exist`	3:35: no module `some_module_that_does_not_exist`	-	top-module selection
 verilog/modules/multiple_top_level_modules1.sv		0:0: several top modules (`moduleA`, `moduleB`): choose one	0:0: several top modules (`moduleA`, `moduleB`): choose one	-	top-module selection
 verilog/modules/named_parameter_assignment1.sv#main	main	16:1: unsupported: Description [at `typedef`]	16:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-verilog/modules/named_port_connection1.sv		8:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	8:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/modules/named_port_connection1.sv		8:24: port `a` connected twice	8:24: port `a` connected twice	-	other error
 verilog/modules/named_port_connection2.sv		12:21: syntax error [at `my_module`]	12:21: syntax error [at `my_module`]	-	parse error (sv-parser)
 verilog/modules/named_port_connection3.sv		13:28: syntax error [at `my_module`]	13:28: syntax error [at `my_module`]	-	parse error (sv-parser)
 verilog/modules/named_port_connection4.sv		12:18: syntax error [at `my_module`]	12:18: syntax error [at `my_module`]	-	parse error (sv-parser)
@@ -572,10 +572,10 @@ verilog/modules/parameters7.sv		7:3: unsupported: ModuleCommonItem [at `assert`]
 verilog/modules/parameters8.v		7:15: positional parameter values not supported, write `#(.N(…))`	7:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/parameters9.v		9:15: positional parameter values not supported, write `#(.N(…))`	9:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/port_connection1.sv		10:3: unsupported: DataDeclaration [at `typedef`]	10:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-verilog/modules/port_expression1.sv		15:29: unsized literal `123` not supported, write the width (e.g. `8'd123`)	15:29: unsized literal `123` not supported, write the width (e.g. `8'd123`)	-	width rules (explicit-width fragment)
+verilog/modules/port_expression1.sv		5:10: unsupported: AnsiPortDeclaration (in instance `my_instance`)	5:10: unsupported: AnsiPortDeclaration (in instance `my_instance`)	-	other unsupported syntax
 verilog/modules/port_not_declared.v		1:18: port without direction	1:18: port without direction	-	other error
 verilog/modules/port_not_in_port_list.v		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
-verilog/modules/port_with_value1.sv		12:14: unsized literal `1234` not supported, write the width (e.g. `8'd1234`)	12:14: unsized literal `1234` not supported, write the width (e.g. `8'd1234`)	-	width rules (explicit-width fragment)
+verilog/modules/port_with_value1.sv		1:28: port default not supported (in instance `m1`)	1:28: port default not supported (in instance `m1`)	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/port_with_value2.sv		2:26: port default not supported	2:26: port default not supported	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/port_with_value3.sv		2:27: port default not supported	2:27: port default not supported	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/port_with_value4.sv		11:8: positional port connections not supported, write `.port(signal)`	11:8: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
@@ -602,7 +602,7 @@ verilog/modules/type_parameter_port6.sv		1:14: type parameters not supported (in
 verilog/modules/type_parameter_port7.sv		10:9: positional parameter values not supported, write `#(.N(…))`	10:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/type_parameters1.sv		3:3: type parameters not supported	3:3: type parameters not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/modules/type_parameters2.sv		3:3: type parameters not supported	3:3: type parameters not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-verilog/modules/unconnected_ports1.sv		7:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	7:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/modules/unconnected_ports1.sv		15:3: unsupported: ModuleCommonItem [at `initial`]	15:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/modules/variable_module_port1.sv		15:22: syntax error [at `assert`]	15:22: syntax error [at `assert`]	-	assertions / properties
 verilog/modules/wildcard_port_connection1.sv		7:8: declaration with initializer not supported, use `assign`	7:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 verilog/modules/wire_and_output.v#M1	M1	1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
@@ -676,7 +676,7 @@ verilog/parameters/four_valued_parameter2.sv		2:37: literal `4'b01xz` with x/z d
 verilog/parameters/parameter_equality1.sv		4:32: expected a constant expression, got `(1 << N_LG2) == N`: `(1 << N_LG2) == N` is not a constant expression	4:32: expected a constant expression, got `(1 << N_LG2) == N`: `(1 << N_LG2) == N` is not a constant expression	-	other error
 verilog/parameters/parameter_override_logic1.sv#main	main	8:29: literal `4'b10x1` with x/z digits not supported (2-state)	8:29: literal `4'b10x1` with x/z digits not supported (2-state)	-	x/z values (4-state)
 verilog/parameters/parameter_without_value1.sv		2:19: parameter `N` has no value: give it a default or set it in the instance	2:19: parameter `N` has no value: give it a default or set it in the instance	-	other error
-verilog/parameters/ranged_parameter1.sv		4:24: parameter `P` of type `logic [10:0]` given a value of 8 bits (resize explicitly, e.g. `11'd…` or `11'(…)`)	4:24: parameter `P` of type `logic [10:0]` given a value of 8 bits (resize explicitly, e.g. `11'd…` or `11'(…)`)	-	width rules (explicit-width fragment)
+verilog/parameters/ranged_parameter1.sv		6:3: unsupported: ModuleCommonItem [at `initial`]	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 verilog/parameters/untyped_parameter1.sv		3:22: range [10:3] not supported, only [N-1:0]	3:22: range [10:3] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
 verilog/parameters/untyped_parameter2.sv#main	main	6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	-	other error
 verilog/parameters/untyped_real_parameter1.sv		6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	-	other error
@@ -798,14 +798,14 @@ verilog/synthesis/always_comb1.sv#main	main	6:3: unsupported: ModuleCommonItem [
 verilog/synthesis/always_comb2.sv		4:3: `reg` not supported, use `logic`	7:5: declarations in blocks not supported	-	other unsupported construct
 verilog/synthesis/always_comb3.sv		2:3: `reg` not supported, use `logic`	13:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/synthesis/always_ff1.sv#main	main	2:3: `reg` not supported, use `logic`	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
-verilog/synthesis/continuous_assignment1.sv#main	main	4:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	4:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/synthesis/continuous_assignment1.sv#main	main	7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/synthesis/continuous_assignment2.sv#main	main	3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/synthesis/continuous_assignment3.sv#main	main	3:15: unpacked dimension not supported	3:15: unpacked dimension not supported	-	arrays
 verilog/synthesis/continuous_assignment_to_variable_systemverilog.sv		3:3: `reg` not supported, use `logic`	9:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/synthesis/continuous_assignment_to_variable_systemverilog2.sv		3:7: declaration with initializer not supported, use `assign`	3:7: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 verilog/synthesis/continuous_assignment_to_variable_systemverilog3.sv		5:3: unsupported: ModuleOrGenerateItemDeclaration [at `genvar`]	5:3: unsupported: ModuleOrGenerateItemDeclaration [at `genvar`]	-	generate / loops
-verilog/synthesis/part_select1.sv		3:3: `reg` not supported, use `logic`	6:9: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-verilog/synthesis/part_select2.sv		3:3: `reg` not supported, use `logic`	7:13: unsized literal `2` not supported, write the width (e.g. `8'd2`)	-	width rules (explicit-width fragment)
+verilog/synthesis/part_select1.sv		3:3: `reg` not supported, use `logic`	9:9: `-1` is negative (-1)	-	other error
+verilog/synthesis/part_select2.sv		3:3: `reg` not supported, use `logic`	10:5: unsupported: StatementItem [at `assert`]	-	assertions / properties
 verilog/synthesis/posedge_real.v#main	main	3:3: type `real` not supported	3:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/synthesis/posedge_vector.v#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: this `always_ff` drives nothing	-	design rejected by a checking rule (latch, loop, drivers)
 verilog/synthesis/procedural_assignment_to_net.v		6:3: plain `always` not supported, use `always_ff` or `always_comb`	6:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
@@ -819,7 +819,7 @@ verilog/system-functions/bits2.sv		11:3: type `int` not supported	11:3: type `in
 verilog/system-functions/bitstoreal1.sv#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
 verilog/system-functions/bitstoshortreal1.sv#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
 verilog/system-functions/clog2.v		3:17: syntax error [at `assert`]	3:17: syntax error [at `assert`]	-	assertions / properties
-verilog/system-functions/clog2_type.sv#main	main	12:29: parameter `ARSIZE` of type `logic [2:0]` given a value of 32 bits (resize explicitly, e.g. `3'd…` or `3'(…)`)	12:29: parameter `ARSIZE` of type `logic [2:0]` given a value of 32 bits (resize explicitly, e.g. `3'd…` or `3'(…)`)	-	width rules (explicit-width fragment)
+verilog/system-functions/clog2_type.sv#main	main	OK	OK	Equal	
 verilog/system-functions/countbits1.sv#main	main	7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/system-functions/countbits2.sv#main	main	7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/system-functions/countbits3.sv#main	main	7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
@@ -908,8 +908,8 @@ verilog/vl2smv-extensions/traffic/1.v		98:10: syntax error [at `assert`]	98:10: 
 verilog/vl2smv-extensions/traffic/2.v		98:10: syntax error [at `assert`]	98:10: syntax error [at `assert`]	-	assertions / properties
 verilog/vl2smv-extensions/traffic/3.v		96:10: syntax error [at `assert`]	96:10: syntax error [at `assert`]	-	assertions / properties
 ebmc/Always-Assign/main.v#main	main	17:17: syntax error [at `assert`]	17:17: syntax error [at `assert`]	-	assertions / properties
-ebmc/BDD/BDD2.sv#main	main	3:3: `reg` not supported, use `logic`	6:10: unsized literal `100` not supported, write the width (e.g. `8'd100`)	-	width rules (explicit-width fragment)
-ebmc/BDD/BDD3.sv#main	main	3:3: `reg` not supported, use `logic`	6:16: unsized literal `10` not supported, write the width (e.g. `8'd10`)	-	width rules (explicit-width fragment)
+ebmc/BDD/BDD2.sv#main	main	3:3: `reg` not supported, use `logic`	9:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/BDD/BDD3.sv#main	main	3:3: `reg` not supported, use `logic`	9:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/BDD/BDD_SVA1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/BDD/temporal_assumption1.sv		3:3: `reg` not supported, use `logic`	3:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/CLI/json-modules.v		0:0: several top modules (`foo`, `bar`): choose one	0:0: several top modules (`foo`, `bar`): choose one	-	top-module selection
@@ -917,7 +917,7 @@ ebmc/CLI/json-properties.v		3:17: syntax error [at `assert`]	3:17: syntax error 
 ebmc/CLI/multiple-properties1.sv		2:3: unsupported: ModuleCommonItem [at `assert`]	2:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/CLI/property-not-found1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/CLI/reset1.sv#top	top	12:3: `reg` not supported, use `logic`	26:1: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
-ebmc/CLI/reset2.sv#top	top	3:3: `reg` not supported, use `logic`	8:21: unsized literal `10` not supported, write the width (e.g. `8'd10`)	-	width rules (explicit-width fragment)
+ebmc/CLI/reset2.sv#top	top	3:3: `reg` not supported, use `logic`	9:7: unsupported: StatementItem [at `data`]	-	other unsupported syntax
 ebmc/CLI/reset3.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/CLI/reset4.sv		OK	OK	Equal	
 ebmc/CLI/reset5.sv#top	top	3:3: `reg` not supported, use `logic`	5:28: unsupported: StatementItem [at `always_ff`]	-	other unsupported syntax
@@ -931,7 +931,7 @@ ebmc/D-flip-flop/main.v#main	main	17:16: syntax error [at `assert`]	17:16: synta
 ebmc/FIR/main.v#main	main	26:3: syntax error [at `else`]	26:3: syntax error [at `else`]	-	parse error (sv-parser)
 ebmc/FSM/main.v#main	main	117:17: syntax error [at `assert`]	117:17: syntax error [at `assert`]	-	assertions / properties
 ebmc/Multiplexer/main.v#main	main	19:20: syntax error [at `assert`]	19:20: syntax error [at `assert`]	-	assertions / properties
-ebmc/Next-in-Property1/main.sv#top	top	3:3: `reg` not supported, use `logic`	6:16: unsized literal `5` not supported, write the width (e.g. `8'd5`)	-	width rules (explicit-width fragment)
+ebmc/Next-in-Property1/main.sv#top	top	3:3: `reg` not supported, use `logic`	9:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/Output-Register-Passing/main.v#main	main	16:24: syntax error [at `assert`]	16:24: syntax error [at `assert`]	-	assertions / properties
 ebmc/SVA-LTL/freeze.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/SVA-LTL/lasso1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
@@ -951,7 +951,7 @@ ebmc/cegar/basic1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: Mo
 ebmc/cone-of-influence/assumption1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/cone-of-influence/cycle1.sv		11:3: `reg` not supported, use `logic`	12:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/cone-of-influence/k_induction1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
-ebmc/cone-of-influence/unrelated1.sv		4:3: `reg` not supported, use `logic`	10:20: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+ebmc/cone-of-influence/unrelated1.sv		4:3: `reg` not supported, use `logic`	12:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/engine-heuristic/basic1.sv		4:3: unsupported: ModuleCommonItem [at `assume`]	4:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
 ebmc/engine-heuristic/basic2.sv		3:3: `reg` not supported, use `logic`	3:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/engine-heuristic/basic3.sv		4:3: unsupported: ModuleCommonItem [at `assume`]	4:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
@@ -965,8 +965,8 @@ ebmc/engine-heuristic/given_property1.sv		2:3: unsupported: ModuleCommonItem [at
 ebmc/engine-heuristic/initial1.sv		3:3: unsupported: ModuleCommonItem [at `assume`]	3:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
 ebmc/example1/example1.sv		12:16: positional port connections not supported, write `.port(signal)`	12:16: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
 ebmc/example3/example3.sv		5:3: `reg` not supported, use `logic`	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
-ebmc/example4_reset/example4.sv		5:3: `reg` not supported, use `logic`	12:23: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
-ebmc/example4_trace/example4.sv		5:3: `reg` not supported, use `logic`	12:23: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+ebmc/example4_reset/example4.sv		5:3: `reg` not supported, use `logic`	14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+ebmc/example4_trace/example4.sv		5:3: `reg` not supported, use `logic`	14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/example5/example5.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/ic3/bobcount.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
 ebmc/ic3/bobmiterbm1multi.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
@@ -979,7 +979,7 @@ ebmc/ic3/ringp0.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port lis
 ebmc/ic3/sm98a7multi.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
 ebmc/ic3/visbakery.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
 ebmc/ic3/viseisenberg.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
-ebmc/k-induction/disable_iff1.sv		3:3: `reg` not supported, use `logic`	8:15: unsized literal `10` not supported, write the width (e.g. `8'd10`)	-	width rules (explicit-width fragment)
+ebmc/k-induction/disable_iff1.sv		3:3: `reg` not supported, use `logic`	11:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/k-induction/k-induction-unsupported1.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/k-induction/k-induction-unsupported2.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/k-induction/k-induction1.v#main	main	16:25: syntax error [at `assert`]	16:25: syntax error [at `assert`]	-	assertions / properties
@@ -993,7 +993,7 @@ ebmc/k-induction/past1.sv		3:3: `reg` not supported, use `logic`	4:3: unsupporte
 ebmc/k-induction/ring_buffer.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/library-files/main.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/library-files/main_simple.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
-ebmc/liveness-lemma-engine/delay10-fail.sv		1:89: `reg` not supported, use `logic`	7:22: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+ebmc/liveness-lemma-engine/delay10-fail.sv		1:89: `reg` not supported, use `logic`	17:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/liveness-lemma-engine/fail1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/liveness-lemma-engine/lemma1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/liveness-lemma-engine/ranking1.sv		4:3: `reg` not supported, use `logic`	4:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
@@ -1023,7 +1023,7 @@ ebmc/p-command-line-option/p-command-line-option2.v		OK	OK	Equal
 ebmc/random-traces/boolean1.v		3:8: declaration with initializer not supported, use `assign`	3:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/random-traces/bv1.v		4:3: `reg` not supported, use `logic`	4:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/random-traces/counter_with_initial_value.v		4:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
-ebmc/random-traces/initial_state1.v		4:3: `reg` not supported, use `logic`	5:36: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+ebmc/random-traces/initial_state1.v		4:3: `reg` not supported, use `logic`	10:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/random-traces/long_trace1.v		4:3: `reg` not supported, use `logic`	4:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/random-traces/with_submodule.v		9:8: declaration with initializer not supported, use `assign`	9:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/ranking-function/clock24h.sv		3:3: `reg` not supported, use `logic`	6:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
@@ -1045,8 +1045,8 @@ ebmc/smv-netlist/nondet2.sv		3:8: declaration with initializer not supported, us
 ebmc/smv-netlist/s_until1.sv		4:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 ebmc/smv-netlist/smv_keyword1.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 ebmc/smv-netlist/verilog1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
-ebmc/smv-netlist/verilog2.sv		3:27: unsized literal `0` not supported, write the width (e.g. `8'd0`)	3:27: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-ebmc/smv-netlist/verilog3.sv		4:10: assigning 7 bits to 32 bits (resize explicitly)	4:10: assigning 7 bits to 32 bits (resize explicitly)	-	width rules (explicit-width fragment)
+ebmc/smv-netlist/verilog2.sv		OK	OK	Equal	
+ebmc/smv-netlist/verilog3.sv		2:14: `some_wire` is never driven	2:14: `some_wire` is never driven	-	design rejected by a checking rule (latch, loop, drivers)
 ebmc/smv-netlist/verilog_function1.sv		2:1: unsupported: Description [at `function`]	2:1: unsupported: Description [at `function`]	-	functions / tasks
 ebmc/smv-netlist/verilog_function2.sv		4:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	4:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
 ebmc/smv-word-level/assignment-to-part-select1.sv		9:21: syntax error [at `data`]	9:21: syntax error [at `data`]	-	parse error (sv-parser)

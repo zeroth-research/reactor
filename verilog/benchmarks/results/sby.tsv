@@ -1,7 +1,7 @@
 case	top	raw	rewritten	yosys	bucket
 abstract/abstr.sby	demo	0:0: Define not found: demo_counter_abstr_mode	0:0: Define not found: demo_counter_abstr_mode	-	preprocessor: define / include missing
 abstract/props.sby	demo	0:0: Define not found: demo_counter_abstr_mode	0:0: Define not found: demo_counter_abstr_mode	-	preprocessor: define / include missing
-autotune/divider.sby	divider	13:12: `reg` not supported, use `logic`	38:27: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+autotune/divider.sby	divider	13:12: `reg` not supported, use `logic`	OK	Equal	
 demos/fib.sby	fib	4:9: `reg` not supported, use `logic`	10:2: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 demos/picorv32_axicheck.sby	testbench	3129:11: syntax error [at `restrict`]	3129:11: syntax error [at `restrict`]	-	assertions / properties
 dft/data_diode.sby	top	256:5: syntax error [at `$overwrite_tag`]	256:5: syntax error [at `$overwrite_tag`]	-	simulation constructs (delays, system tasks)

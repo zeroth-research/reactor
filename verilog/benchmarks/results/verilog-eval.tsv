@@ -7,47 +7,47 @@ Prob005_notgate	RefModule	OK	OK	Equal
 Prob006_vectorr	RefModule	OK	OK	Equal	
 Prob007_wire	RefModule	OK	OK	Equal	
 Prob008_m2014_q4h	RefModule	OK	OK	Equal	
-Prob009_popcount3	RefModule	7:10: assigning 1 bits to 2 bits (resize explicitly)	7:10: assigning 1 bits to 2 bits (resize explicitly)	-	width rules (explicit-width fragment)
+Prob009_popcount3	RefModule	OK	OK	Equal	
 Prob010_mt2015_q4a	RefModule	OK	OK	Equal	
 Prob011_norgate	RefModule	OK	OK	Equal	
 Prob012_xnorgate	RefModule	OK	OK	Equal	
 Prob013_m2014_q4e	RefModule	OK	OK	Equal	
 Prob014_andgate	RefModule	OK	OK	Equal	
 Prob015_vector1	RefModule	OK	OK	Equal	
-Prob016_m2014_q4j	RefModule	8:10: assigning 4 bits to 5 bits (resize explicitly)	8:10: assigning 4 bits to 5 bits (resize explicitly)	-	width rules (explicit-width fragment)
+Prob016_m2014_q4j	RefModule	OK	OK	Equal	
 Prob017_mux2to1v	RefModule	OK	OK	Equal	
 Prob018_mux256to1	RefModule	OK	OK	Equal	
 Prob019_m2014_q4f	RefModule	OK	OK	Equal	
 Prob020_mt2015_eq2	RefModule	OK	OK	Equal	
-Prob021_mux256to1v	RefModule	8:24: unsized literal `4` not supported, write the width (e.g. `8'd4`)	8:24: unsized literal `4` not supported, write the width (e.g. `8'd4`)	-	width rules (explicit-width fragment)
+Prob021_mux256to1v	RefModule	8:17: `in[((sel * 4) + 3)]` may select beyond bit 1023 of `in`: the index has 32 bits, so every one of its values must be in range (narrow the index); an unsized literal or an integer parameter makes the index 32 bits wide	8:17: `in[((sel * 4) + 3)]` may select beyond bit 1023 of `in`: the index has 32 bits, so every one of its values must be in range (narrow the index); an unsized literal or an integer parameter makes the index 32 bits wide	-	width rules (explicit-width fragment)
 Prob022_mux2to1	RefModule	OK	OK	Equal	
 Prob023_vector100r	RefModule	4:10: `reg` not supported, use `logic`	8:5: unsupported: StatementItem [at `for`]	-	generate / loops
-Prob024_hadd	RefModule	9:10: assigning 1 bits to 2 bits (resize explicitly)	9:10: assigning 1 bits to 2 bits (resize explicitly)	-	width rules (explicit-width fragment)
+Prob024_hadd	RefModule	OK	OK	Equal	
 Prob025_reduction	RefModule	OK	OK	Equal	
 Prob026_alwaysblock1	RefModule	6:10: `reg` not supported, use `logic`	OK	Equal	
-Prob027_fadd	RefModule	10:10: assigning 1 bits to 2 bits (resize explicitly)	10:10: assigning 1 bits to 2 bits (resize explicitly)	-	width rules (explicit-width fragment)
+Prob027_fadd	RefModule	OK	OK	Equal	
 Prob028_m2014_q4a	RefModule	8:3: plain `always` not supported, use `always_ff` or `always_comb`	9:5: `q` is assigned on only some paths through this `if`, so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob029_m2014_q4g	RefModule	OK	OK	Equal	
-Prob030_popcount255	RefModule	4:10: `reg` not supported, use `logic`	8:11: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob030_popcount255	RefModule	4:10: `reg` not supported, use `logic`	9:5: unsupported: StatementItem [at `for`]	-	generate / loops
 Prob031_dff	RefModule	5:10: `reg` not supported, use `logic`	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 Prob032_vector0	RefModule	OK	OK	Equal	
 Prob033_ece241_2014_q1c	RefModule	9:14: declaration with initializer not supported, use `assign`	9:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 Prob034_dff8	RefModule	5:10: `reg` not supported, use `logic`	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
-Prob035_count1to10	RefModule	5:10: `reg` not supported, use `logic`	12:14: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+Prob035_count1to10	RefModule	5:10: `reg` not supported, use `logic`	OK	Equal	
 Prob036_ringer	RefModule	OK	OK	Equal	
-Prob037_review2015_count1k	RefModule	5:10: `reg` not supported, use `logic`	12:14: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
-Prob038_count15	RefModule	5:10: `reg` not supported, use `logic`	12:14: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+Prob037_review2015_count1k	RefModule	5:10: `reg` not supported, use `logic`	OK	Equal	
+Prob038_count15	RefModule	5:10: `reg` not supported, use `logic`	OK	Equal	
 Prob039_always_if	RefModule	8:10: `reg` not supported, use `logic`	OK	Equal	
-Prob040_count10	RefModule	5:10: `reg` not supported, use `logic`	12:14: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
-Prob041_dff8r	RefModule	6:10: `reg` not supported, use `logic`	11:12: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob040_count10	RefModule	5:10: `reg` not supported, use `logic`	OK	Equal	
+Prob041_dff8r	RefModule	6:10: `reg` not supported, use `logic`	OK	Equal	
 Prob042_vector4	RefModule	OK	OK	Equal	
 Prob043_vector5	RefModule	OK	OK	Equal	
 Prob044_vectorgates	RefModule	OK	OK	Equal	
 Prob045_edgedetect2	RefModule	5:10: `reg` not supported, use `logic`	OK	Equal	
 Prob046_dff8p	RefModule	6:10: `reg` not supported, use `logic`	OK	Equal	
-Prob047_dff8ar	RefModule	6:10: `reg` not supported, use `logic`	11:12: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-Prob048_m2014_q4c	RefModule	9:3: plain `always` not supported, use `always_ff` or `always_comb`	11:12: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-Prob049_m2014_q4b	RefModule	9:3: plain `always` not supported, use `always_ff` or `always_comb`	11:12: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob047_dff8ar	RefModule	6:10: `reg` not supported, use `logic`	OK	Equal	
+Prob048_m2014_q4c	RefModule	9:3: plain `always` not supported, use `always_ff` or `always_comb`	OK	Equal	
+Prob049_m2014_q4b	RefModule	9:3: plain `always` not supported, use `always_ff` or `always_comb`	OK	Equal	
 Prob050_kmap1	RefModule	OK	OK	Equal	
 Prob051_gates4	RefModule	OK	OK	Equal	
 Prob052_gates100	RefModule	OK	OK	Equal	
@@ -58,100 +58,100 @@ Prob056_ece241_2013_q7	RefModule	6:10: `reg` not supported, use `logic`	OK	Equal
 Prob057_kmap2	RefModule	OK	OK	Equal	
 Prob058_alwaysblock2	RefModule	7:10: `reg` not supported, use `logic`	OK	Equal	
 Prob059_wire4	RefModule	OK	OK	Equal	
-Prob060_m2014_q4k	RefModule	9:3: `reg` not supported, use `logic`	12:13: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
+Prob060_m2014_q4k	RefModule	9:3: `reg` not supported, use `logic`	OK	Equal	
 Prob061_2014_q4a	RefModule	8:10: `reg` not supported, use `logic`	OK	Equal	
 Prob062_bugs_mux2	RefModule	6:10: `reg` not supported, use `logic`	OK	Equal	
-Prob063_review2015_shiftcount	RefModule	7:10: `reg` not supported, use `logic`	14:14: operands of `-` differ: `logic [3:0]` and `logic` (resize explicitly)	-	width rules (explicit-width fragment)
+Prob063_review2015_shiftcount	RefModule	7:10: `reg` not supported, use `logic`	OK	Equal	
 Prob064_vector3	RefModule	OK	OK	Equal	
 Prob065_7420	RefModule	OK	OK	Equal	
-Prob066_edgecapture	RefModule	6:10: `reg` not supported, use `logic`	14:14: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
-Prob067_countslow	RefModule	6:10: `reg` not supported, use `logic`	16:16: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+Prob066_edgecapture	RefModule	6:10: `reg` not supported, use `logic`	OK	Equal	
+Prob067_countslow	RefModule	6:10: `reg` not supported, use `logic`	OK	Equal	
 Prob068_countbcd	RefModule	5:10: range [3:1] not supported, only [N-1:0]	5:10: range [3:1] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
 Prob069_truthtable1	RefModule	OK	OK	Equal	
 Prob070_ece241_2013_q2	RefModule	16:44: literal `1'bx` with x/z digits not supported (2-state)	16:44: literal `1'bx` with x/z digits not supported (2-state)	-	x/z values (4-state)
 Prob071_always_casez	RefModule	4:10: `reg` not supported, use `logic`	8:5: `casez` not supported [at `casez`]	-	other unsupported construct
 Prob072_thermostat	RefModule	OK	OK	Equal	
-Prob073_dff16e	RefModule	7:10: `reg` not supported, use `logic`	12:12: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob073_dff16e	RefModule	7:10: `reg` not supported, use `logic`	OK	Equal	
 Prob074_ece241_2014_q4	RefModule	8:3: `reg` not supported, use `logic`	8:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
-Prob075_counter_2bc	RefModule	10:3: plain `always` not supported, use `always_ff` or `always_comb`	16:23: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob075_counter_2bc	RefModule	10:3: plain `always` not supported, use `always_ff` or `always_comb`	OK	Equal	
 Prob076_always_case	RefModule	10:10: `reg` not supported, use `logic`	OK	Equal	
 Prob077_wire_decl	RefModule	OK	OK	Equal	
 Prob078_dualedge	RefModule	5:10: `reg` not supported, use `logic`	22:5: non-blocking assignment not allowed in `always_comb`, use `=`	-	other error
 Prob079_fsm3onehot	RefModule	5:10: `reg` not supported, use `logic`	11:10: this `assign` leaves `next_state[3:1]` undriven: an `assign` drives whole signals (drive `next_state` with one `assign` of a concatenation)	-	design rejected by a checking rule (latch, loop, drivers)
-Prob080_timer	RefModule	11:3: plain `always` not supported, use `always_ff` or `always_comb`	13:28: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob080_timer	RefModule	11:3: plain `always` not supported, use `always_ff` or `always_comb`	OK	Equal	
 Prob081_7458	RefModule	OK	OK	Equal	
 Prob082_lfsr32	RefModule	5:10: `reg` not supported, use `logic`	9:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
 Prob083_mt2015_q4b	RefModule	OK	OK	Equal	
 Prob084_ece241_2013_q12	RefModule	9:10: `reg` not supported, use `logic`	OK	Equal	
-Prob085_shift4	RefModule	8:10: `reg` not supported, use `logic`	13:12: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob085_shift4	RefModule	8:10: `reg` not supported, use `logic`	OK	Equal	
 Prob086_lfsr5	RefModule	5:10: `reg` not supported, use `logic`	9:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
 Prob087_gates	RefModule	OK	OK	Equal	
-Prob088_ece241_2014_q5b	RefModule	10:3: `reg` not supported, use `logic`	22:32: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
-Prob089_ece241_2014_q5a	RefModule	10:3: `reg` not supported, use `logic`	13:7: assigning 32 bits to 2 bits (resize explicitly); an integer constant is an `int` (32 bits): cast it, e.g. `2'(N - 1)`	-	width rules (explicit-width fragment)
+Prob088_ece241_2014_q5b	RefModule	10:3: `reg` not supported, use `logic`	OK	Equal	
+Prob089_ece241_2014_q5a	RefModule	10:3: `reg` not supported, use `logic`	OK	Equal	
 Prob090_circuit1	RefModule	OK	OK	Equal	
 Prob091_2012_q2b	RefModule	OK	OK	Equal	
 Prob092_gatesv100	RefModule	OK	OK	Equal	
-Prob093_ece241_2014_q3	RefModule	9:22: unsized literal `0` not supported, write the width (e.g. `8'd0`)	9:22: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob093_ece241_2014_q3	RefModule	8:10: this `assign` leaves `mux_in[3:1]` undriven: an `assign` drives whole signals (drive `mux_in` with one `assign` of a concatenation)	8:10: this `assign` leaves `mux_in[3:1]` undriven: an `assign` drives whole signals (drive `mux_in` with one `assign` of a concatenation)	-	design rejected by a checking rule (latch, loop, drivers)
 Prob094_gatesv	RefModule	14:24: literal `1'bx` with x/z digits not supported (2-state)	14:24: literal `1'bx` with x/z digits not supported (2-state)	-	x/z values (4-state)
-Prob095_review2015_fsmshift	RefModule	10:3: `reg` not supported, use `logic`	14:7: `case` label `logic signed [31:0]` differs from selector `logic [2:0]` (resize explicitly)	-	width rules (explicit-width fragment)
-Prob096_review2015_fsmseq	RefModule	11:3: `reg` not supported, use `logic`	15:7: `case` label `logic signed [31:0]` differs from selector `logic [2:0]` (resize explicitly)	-	width rules (explicit-width fragment)
-Prob097_mux9to1v	RefModule	16:3: plain `always` not supported, use `always_ff` or `always_comb`	17:11: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
+Prob095_review2015_fsmshift	RefModule	10:3: `reg` not supported, use `logic`	13:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob096_review2015_fsmseq	RefModule	11:3: `reg` not supported, use `logic`	14:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob097_mux9to1v	RefModule	16:3: plain `always` not supported, use `always_ff` or `always_comb`	OK	Equal	
 Prob098_circuit7	RefModule	5:10: `reg` not supported, use `logic`	OK	Equal	
 Prob099_m2014_q6c	RefModule	OK	OK	Equal	
-Prob100_fsm3comb	RefModule	5:10: `reg` not supported, use `logic`	13:7: `case` label `logic signed [31:0]` differs from selector `logic [1:0]` (resize explicitly)	-	width rules (explicit-width fragment)
+Prob100_fsm3comb	RefModule	5:10: `reg` not supported, use `logic`	12:5: `next_state` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob101_circuit4	RefModule	OK	OK	Equal	
 Prob102_circuit3	RefModule	OK	OK	Equal	
 Prob103_circuit2	RefModule	OK	OK	Equal	
 Prob104_mt2015_muxdff	RefModule	7:10: `reg` not supported, use `logic`	10:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
 Prob105_rotate100	RefModule	7:10: `reg` not supported, use `logic`	OK	Equal	
-Prob106_always_nolatches	RefModule	4:10: `reg` not supported, use `logic`	11:31: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-Prob107_fsm1s	RefModule	10:3: `reg` not supported, use `logic`	15:7: `case` label `logic signed [31:0]` differs from selector `logic` (resize explicitly)	-	width rules (explicit-width fragment)
+Prob106_always_nolatches	RefModule	4:10: `reg` not supported, use `logic`	OK	Equal	
+Prob107_fsm1s	RefModule	10:3: `reg` not supported, use `logic`	14:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob108_rule90	RefModule	6:10: `reg` not supported, use `logic`	13:14: expected a constant integer, got `$bits(q)-1`: `$bits` not supported in constant expressions	-	other unsupported construct
-Prob109_fsm1	RefModule	10:3: `reg` not supported, use `logic`	15:7: `case` label `logic signed [31:0]` differs from selector `logic` (resize explicitly)	-	width rules (explicit-width fragment)
-Prob110_fsm2	RefModule	11:3: `reg` not supported, use `logic`	16:7: `case` label `logic signed [31:0]` differs from selector `logic` (resize explicitly)	-	width rules (explicit-width fragment)
-Prob111_fsm2s	RefModule	11:3: `reg` not supported, use `logic`	16:7: `case` label `logic signed [31:0]` differs from selector `logic` (resize explicitly)	-	width rules (explicit-width fragment)
+Prob109_fsm1	RefModule	10:3: `reg` not supported, use `logic`	14:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob110_fsm2	RefModule	11:3: `reg` not supported, use `logic`	15:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob111_fsm2s	RefModule	11:3: `reg` not supported, use `logic`	15:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob112_always_case2	RefModule	4:10: `reg` not supported, use `logic`	OK	Equal	
-Prob113_2012_q1g	RefModule	9:17: unsized literal `1` not supported, write the width (e.g. `8'd1`)	9:17: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
-Prob114_bugs_case	RefModule	4:10: `reg` not supported, use `logic`	13:11: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob113_2012_q1g	RefModule	8:5: `f` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	8:5: `f` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob114_bugs_case	RefModule	4:10: `reg` not supported, use `logic`	OK	Equal	
 Prob115_shift18	RefModule	8:10: `reg` not supported, use `logic`	19:21: literal `64'hx` with x/z digits not supported (2-state)	-	x/z values (4-state)
 Prob116_m2014_q3	RefModule	9:17: literal `1'bx` with x/z digits not supported (2-state)	9:17: literal `1'bx` with x/z digits not supported (2-state)	-	x/z values (4-state)
-Prob117_circuit9	RefModule	5:10: `reg` not supported, use `logic`	11:19: unsized literal `6` not supported, write the width (e.g. `8'd6`)	-	width rules (explicit-width fragment)
-Prob118_history_shift	RefModule	14:3: plain `always` not supported, use `always_ff` or `always_comb`	16:25: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-Prob119_fsm3	RefModule	10:3: `reg` not supported, use `logic`	15:5: `case` label `logic signed [31:0]` differs from selector `logic [1:0]` (resize explicitly)	-	width rules (explicit-width fragment)
-Prob120_fsm3s	RefModule	10:3: `reg` not supported, use `logic`	15:7: `case` label `logic signed [31:0]` differs from selector `logic [1:0]` (resize explicitly)	-	width rules (explicit-width fragment)
-Prob121_2014_q3bfsm	RefModule	6:10: `reg` not supported, use `logic`	24:23: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
-Prob122_kmap4	RefModule	7:10: `reg` not supported, use `logic`	12:19: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-Prob123_bugs_addsubz	RefModule	6:10: `reg` not supported, use `logic`	12:7: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob117_circuit9	RefModule	5:10: `reg` not supported, use `logic`	OK	Equal	
+Prob118_history_shift	RefModule	14:3: plain `always` not supported, use `always_ff` or `always_comb`	16:7: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
+Prob119_fsm3	RefModule	10:3: `reg` not supported, use `logic`	14:3: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob120_fsm3s	RefModule	10:3: `reg` not supported, use `logic`	14:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob121_2014_q3bfsm	RefModule	6:10: `reg` not supported, use `logic`	24:23: literal `'x` with x/z digits not supported (2-state)	-	x/z values (4-state)
+Prob122_kmap4	RefModule	7:10: `reg` not supported, use `logic`	11:5: `out` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob123_bugs_addsubz	RefModule	6:10: `reg` not supported, use `logic`	15:23: `out` read before it is assigned on every path in this `always_comb` (it would read its value from the previous evaluation)	-	design rejected by a checking rule (latch, loop, drivers)
 Prob124_rule110	RefModule	6:10: `reg` not supported, use `logic`	14:12: expected a constant integer, got `$bits(q)-1`: `$bits` not supported in constant expressions	-	other unsupported construct
-Prob125_kmap3	RefModule	7:10: `reg` not supported, use `logic`	12:19: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-Prob126_circuit6	RefModule	4:10: `reg` not supported, use `logic`	9:7: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-Prob127_lemmings1	RefModule	12:3: `reg` not supported, use `logic`	17:7: `case` label `logic signed [31:0]` differs from selector `logic` (resize explicitly)	-	width rules (explicit-width fragment)
+Prob125_kmap3	RefModule	7:10: `reg` not supported, use `logic`	16:19: literal `1'bx` with x/z digits not supported (2-state)	-	x/z values (4-state)
+Prob126_circuit6	RefModule	4:10: `reg` not supported, use `logic`	8:5: `q` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob127_lemmings1	RefModule	12:3: `reg` not supported, use `logic`	16:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob128_fsm_ps2	RefModule	10:3: `reg` not supported, use `logic`	13:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
-Prob129_ece241_2013_q8	RefModule	6:10: `reg` not supported, use `logic`	23:23: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
-Prob130_circuit5	RefModule	8:10: `reg` not supported, use `logic`	13:7: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob129_ece241_2013_q8	RefModule	6:10: `reg` not supported, use `logic`	23:23: literal `'x` with x/z digits not supported (2-state)	-	x/z values (4-state)
+Prob130_circuit5	RefModule	8:10: `reg` not supported, use `logic`	OK	Equal	
 Prob131_mt2015_q4	RefModule	OK	OK	Equal	
-Prob132_always_if2	RefModule	4:10: `reg` not supported, use `logic`	14:27: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
-Prob133_2014_q3fsm	RefModule	7:10: `reg` not supported, use `logic`	28:23: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
-Prob134_2014_q3c	RefModule	6:10: `reg` not supported, use `logic`	12:18: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+Prob132_always_if2	RefModule	4:10: `reg` not supported, use `logic`	OK	Equal	
+Prob133_2014_q3fsm	RefModule	7:10: `reg` not supported, use `logic`	28:23: literal `'x` with x/z digits not supported (2-state)	-	x/z values (4-state)
+Prob134_2014_q3c	RefModule	6:10: `reg` not supported, use `logic`	22:21: literal `1'bx` with x/z digits not supported (2-state)	-	x/z values (4-state)
 Prob135_m2014_q6b	RefModule	5:10: `reg` not supported, use `logic`	22:21: literal `1'bx` with x/z digits not supported (2-state)	-	x/z values (4-state)
-Prob136_m2014_q6	RefModule	10:3: `reg` not supported, use `logic`	26:23: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
-Prob137_fsm_serial	RefModule	10:3: `reg` not supported, use `logic`	15:7: `case` label `logic signed [31:0]` differs from selector `logic [3:0]` (resize explicitly)	-	width rules (explicit-width fragment)
-Prob138_2012_q2fsm	RefModule	10:3: `reg` not supported, use `logic`	24:23: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
-Prob139_2013_q2bfsm	RefModule	12:3: `reg` not supported, use `logic`	30:23: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
-Prob140_fsm_hdlc	RefModule	11:22: parameter `S0` of type `logic [3:0]` given a value of 32 bits (resize explicitly, e.g. `4'd…` or `4'(…)`)	11:22: parameter `S0` of type `logic [3:0]` given a value of 32 bits (resize explicitly, e.g. `4'd…` or `4'(…)`)	-	width rules (explicit-width fragment)
+Prob136_m2014_q6	RefModule	10:3: `reg` not supported, use `logic`	26:23: literal `'x` with x/z digits not supported (2-state)	-	x/z values (4-state)
+Prob137_fsm_serial	RefModule	10:3: `reg` not supported, use `logic`	14:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
+Prob138_2012_q2fsm	RefModule	10:3: `reg` not supported, use `logic`	24:23: literal `'x` with x/z digits not supported (2-state)	-	x/z values (4-state)
+Prob139_2013_q2bfsm	RefModule	12:3: `reg` not supported, use `logic`	30:23: literal `'x` with x/z digits not supported (2-state)	-	x/z values (4-state)
+Prob140_fsm_hdlc	RefModule	12:3: `reg` not supported, use `logic`	30:25: literal `'x` with x/z digits not supported (2-state)	-	x/z values (4-state)
 Prob141_count_clock	RefModule	6:10: `reg` not supported, use `logic`	12:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
-Prob142_lemmings2	RefModule	14:3: `reg` not supported, use `logic`	19:7: `case` label `logic signed [31:0]` differs from selector `logic [1:0]` (resize explicitly)	-	width rules (explicit-width fragment)
+Prob142_lemmings2	RefModule	14:3: `reg` not supported, use `logic`	18:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob143_fsm_onehot	RefModule	13:10: this `assign` leaves `next_state[9:1]` undriven: an `assign` drives whole signals (drive `next_state` with one `assign` of a concatenation)	13:10: this `assign` leaves `next_state[9:1]` undriven: an `assign` drives whole signals (drive `next_state` with one `assign` of a concatenation)	-	design rejected by a checking rule (latch, loop, drivers)
 Prob144_conwaylife	RefModule	6:10: `reg` not supported, use `logic`	11:5: unsupported: StatementItem [at `for`]	-	generate / loops
 Prob145_circuit8	RefModule	5:10: `reg` not supported, use `logic`	13:5: `p` is assigned on only some paths through this `if`, so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob146_fsm_serialdata	RefModule	11:3: `reg` not supported, use `logic`	43:42: literal `8'hx` with x/z digits not supported (2-state)	-	x/z values (4-state)
 Prob147_circuit10	RefModule	10:3: `reg` not supported, use `logic`	OK	Equal	
 Prob148_2013_q2afsm	RefModule	10:3: `reg` not supported, use `logic`	17:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
-Prob149_ece241_2013_q4	RefModule	6:10: `reg` not supported, use `logic`	28:23: unsized literal not supported, write the width (e.g. `8'hff`)	-	width rules (explicit-width fragment)
+Prob149_ece241_2013_q4	RefModule	6:10: `reg` not supported, use `logic`	28:23: literal `'x` with x/z digits not supported (2-state)	-	x/z values (4-state)
 Prob150_review2015_fsmonehot	RefModule	OK	OK	Equal	
 Prob151_review2015_fsm	RefModule	6:10: `reg` not supported, use `logic`	13:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-Prob152_lemmings3	RefModule	16:3: `reg` not supported, use `logic`	21:7: `case` label `logic signed [31:0]` differs from selector `logic [2:0]` (resize explicitly)	-	width rules (explicit-width fragment)
+Prob152_lemmings3	RefModule	16:3: `reg` not supported, use `logic`	20:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob153_gshare	RefModule	19:15: unpacked dimension not supported	19:15: unpacked dimension not supported	-	arrays
 Prob154_fsm_ps2data	RefModule	11:3: `reg` not supported, use `logic`	14:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
-Prob155_lemmings4	RefModule	16:3: `reg` not supported, use `logic`	32:47: unsized literal `20` not supported, write the width (e.g. `8'd20`)	-	width rules (explicit-width fragment)
+Prob155_lemmings4	RefModule	16:3: `reg` not supported, use `logic`	22:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob156_review2015_fancytimer	RefModule	7:10: `reg` not supported, use `logic`	12:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
