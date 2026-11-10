@@ -108,7 +108,7 @@ def _has_vampire() -> bool:
     from verith.common.vampire import resolve_vampire
 
     try:
-        resolve_vampire(None)
+        resolve_vampire(None, who="--vampire")
     except Refused:
         return False
     return True
