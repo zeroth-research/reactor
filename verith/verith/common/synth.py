@@ -325,7 +325,8 @@ def _module_roots(ctx: SynthContext) -> list:
 
 
 def program_constants(ctx: SynthContext) -> tuple[int, ...]:
-    """The integer literals this module and its property mention.
+    """The integer literals this module and its property mention, read once
+    per context.
 
     Seeded rather than guessed, for the reason `python/tests/limits/README.md`
     records about Houdini: the bound that makes an invariant true is almost
@@ -333,6 +334,12 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
     `0 <= x <= 9`, whose `9` only the guard mentions -- and a grammar over
     invented numbers is both bigger and worse.
     """
+    if "constants" not in ctx.memo:
+        ctx.memo["constants"] = _program_constants(ctx)
+    return ctx.memo["constants"]
+
+
+def _program_constants(ctx: SynthContext) -> tuple[int, ...]:
     seen: set[int] = set(_BASE_CONSTANTS)
     for t in literals(_module_roots(ctx)):
         if t.getKind() == Kind.CONST_INTEGER:
@@ -360,13 +367,20 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
 
 
 def program_rationals(ctx: SynthContext) -> tuple:
-    """The Real literals this module and its property mention, as fractions.
+    """The Real literals this module and its property mention, as fractions,
+    read once per context.
 
     :func:`program_constants` reads the integer ones, and an LRA module has
     none of those to read: `m_lra_lin` writes `0.0`, `1.0` and `5.0`, so the
     bounds, the value sets and the lattice a state is drawn on all come from
     here instead.
     """
+    if "rationals" not in ctx.memo:
+        ctx.memo["rationals"] = _program_rationals(ctx)
+    return ctx.memo["rationals"]
+
+
+def _program_rationals(ctx: SynthContext) -> tuple:
     seen: set = set()
     for t in literals(_module_roots(ctx)):
         if t.getKind() == Kind.CONST_RATIONAL:
