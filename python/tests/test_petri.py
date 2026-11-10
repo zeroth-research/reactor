@@ -4,7 +4,7 @@ hand-written example, and places net their arcs."""
 
 import pytest
 
-from zrth import SPN, Clock, Event, Nat, Var
+from zrth import SPN, Clock, Event, Nat, Real, Var
 from zrth import Module as compose
 from zrth.petri import TIME, Arc, Place, Transition
 from zrth.simulate import Simulation, simulate
@@ -203,14 +203,16 @@ def test_an_enabling_arc_with_no_place_is_a_control():
     assert trace.series(served2.count)[-1] == 2 and len(trace) > 5
 
 
-def sir(beta=2.0, gamma=1.0, n=100, i0=1):
-    """S + I -> 2I at rate beta/n per pair, I -> R at rate gamma per infected."""
+def sir(beta=2.0, gamma=1.0, n=100, i0=1, u=None):
+    """S + I -> 2I at rate beta/n per pair, I -> R at rate gamma per infected; `u`, a
+    `Var(Real([1, 1]))`, scales the infection rate."""
     s_out, i_in = Arc("consumption"), Arc("production")
     i_out, r_in = Arc("consumption"), Arc("production")
     s = Place(initial=n - i0, outputs=[s_out], name="S")
     i = Place(initial=i0, inputs=[i_in], outputs=[i_out], name="I")
     r = Place(initial=0, inputs=[r_in], name="R")
-    infect = Transition(rate=beta / n, inputs=[s_out], outputs=[i_in], scale=[s, i], name="infect")
+    scale = [s, i] if u is None else [s, i, u]
+    infect = Transition(rate=beta / n, inputs=[s_out], outputs=[i_in], scale=scale, name="infect")
     recover = Transition(rate=gamma, inputs=[i_out], outputs=[r_in], scale=[i], name="recover")
     return compose(s, i, r, infect, recover), s, i, r, infect, recover
 
@@ -263,6 +265,28 @@ def test_an_epidemic_runs_its_course():
     assert not any(_fired(trace, j, s_out) for j, t in enumerate(trace.times) if t > last)
 
 
+def test_a_real_input_scales_the_rate():
+    """The infection under control: `u` is a driven input of the net, 0 stops the epidemic,
+    and the same seed with `u == 1` is the uncontrolled run."""
+    u = Var(Real([1, 1]))
+    net, s, i, r, infect, recover = sir(n=50, u=u)
+    assert infect.scale[-1] is u and u in infect.extl and set(net.extl) == {TIME, u}
+    assert _ops(infect.atoms[0].delay).count("ClkScaleReal") == 1
+
+    plain, *_ = sir(n=50)
+    free = simulate(plain, horizon=100.0, seed=5)
+    controlled = simulate(net, horizon=100.0, seed=5, policy=lambda time, state: {u: 1.0})
+    assert controlled.times == free.times and controlled.series(r.count)[-1] >= 1
+
+    trace = Simulation(net, policy=lambda time, state: {u: 0.0}).run(horizon=50.0).trace
+    assert set(trace.series(s.count)) == {49} and trace.series(r.count)[-1] == 1
+    # an infection follows the moment the control is lifted and the infected still here
+    sim = Simulation(net, policy=lambda time, state: {u: 1.0 if time >= 50.0 else 0.0})
+    trace = sim.run(horizon=200.0).trace
+    infections = [t for j, t in enumerate(trace.times) if j and _fired(trace, j, infect.inputs[0])]
+    assert all(t > 50.0 for t in infections)
+
+
 def test_a_scaled_rate_is_per_token():
     """Pure death at rate mu per token: the time to extinction of `n` tokens has mean
     H_n / mu, the sum of the rates' reciprocals, which a per-transition rate could not give."""
@@ -289,8 +313,10 @@ def test_bad_arguments_raise():
         Transition(rate=1.0, t=Var(Clock(1)), outputs=[prod])
     with pytest.raises(TypeError, match="at least one arc"):
         Transition(rate=1.0)
-    with pytest.raises(TypeError, match="scale lists places"):
+    with pytest.raises(TypeError, match="scale lists places and Var"):
         Transition(rate=1.0, outputs=[prod], scale=[Var(Nat())])
+    with pytest.raises(TypeError, match="scale lists places and Var"):
+        Transition(rate=1.0, outputs=[prod], scale=[Var(Real([2, 1]))])
     with pytest.raises(TypeError, match="cannot be a production"):
         Transition(rate=1.0, inputs=[prod])
     with pytest.raises(TypeError, match="cannot be a consumption"):

@@ -25,10 +25,11 @@ A transition owns a clock, armed with an exponential delay at its rate and run d
 the time reference `TIME` (`t=` for another) while it is non-negative; whenever it expires
 the clock is re-armed, and the transition fires if every input arc is enabled (an expiry
 otherwise is a lost attempt; for exponential rates this is the same process as a clock that
-waits). `scale=` names places whose counts multiply the rate: the clock runs that many
-times faster, the law of mass action (`scale=[s, i]` for an infection at `rate * s * i`), and
-stands still while a named place is empty. The clock is private, reachable as
-`transition.clock` to plot a trace. A place owns
+waits). `scale=` lists the factors of the rate: a place stands for its token count, the law
+of mass action (`scale=[s, i]` for an infection at `rate * s * i`), and a `Var(Real([1, 1]))`
+for a control input scaling the rate, driven by a `Simulation` step or a controller module.
+The clock runs that many times faster and stands still while a factor is zero. The clock is
+private, reachable as `transition.clock` to plot a trace. A place owns
 its token count: the tokens of each firing input come in, those of each firing consumption
 go out while there are enough, and it keeps each output arc's `enabled` current in the same
 round the count changes. Two transitions firing in one round and competing for the tokens
@@ -42,7 +43,7 @@ whenever it can.
 """
 
 from .zrth import SPN, Var
-from .sort import Bool, Clock, Event, Nat
+from .sort import Bool, Clock, Event, Nat, Real
 from .sugar import Module, d, exp, fired, ite
 
 TIME = Var(Clock())
@@ -88,6 +89,15 @@ def _arcs(arcs, to_place, what):
     return arcs
 
 
+def _factor(f) -> Var:
+    """The variable a factor of a rate stands for: a place's count, or a real variable."""
+    if isinstance(f, Place):
+        return f.count
+    if isinstance(f, Var) and f.dtype == Real([1, 1]):
+        return f
+    raise TypeError(f"a transition's scale lists places and Var(Real([1, 1])), got {f!r}")
+
+
 def _build(cls, blocks, **config):
     """The module of `blocks` (`init`/`next`/`flow`), as an instance of a subclass of `cls`."""
     return Module.__new__(type(cls.__name__, (cls,), blocks), theory=SPN, **config)
@@ -96,7 +106,8 @@ def _build(cls, blocks, **config):
 class Transition(Module):
     """A stochastic transition: `inputs` are the arcs it takes tokens through, `outputs` the
     arcs it produces through; it fires `arc.fired` on every one of them. `rate` is the
-    rate of its exponential delay, times the token count of every place in `scale`."""
+    rate of its exponential delay, times every factor in `scale`: the token count of a
+    place, or the value of a real variable."""
 
     def __new__(cls, rate, *, t=TIME, inputs=(), outputs=(), scale=(), name=None):
         if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not rate > 0:
@@ -108,17 +119,14 @@ class Transition(Module):
         if not inputs and not outputs:
             raise TypeError("a transition needs at least one arc")
         scale = tuple(scale)
-        for p in scale:
-            if not isinstance(p, Place):
-                raise TypeError(f"a transition's scale lists places, got {p!r}")
+        factors = tuple(dict.fromkeys(_factor(f) for f in scale))
         rate = float(rate)
         clock = Var(Clock())
         events = [a.fired for a in inputs + outputs]
-        counts = tuple(dict.fromkeys(p.count for p in scale))
         k = len(events)
         m = len(inputs)
 
-        # the variables bind positionally: clk, *events, t, *enabled, *counts
+        # the variables bind positionally: clk, *events, t, *enabled, *factors
         def init(self, t, *rest):
             return exp(rate), *[False] * k
 
@@ -131,17 +139,17 @@ class Transition(Module):
             return ite(expired, exp(rate), clk), *[ite(fires, ~ev, ev) for ev in events]
 
         def flow(self, clk, *rest):
-            count = dict(zip(counts, rest[k + 1 + m :]))
+            by = dict(zip(factors, rest[k + 1 + m :]))
             speed = -1 * d(rest[k])
-            for p in scale:
-                speed = count[p.count] * speed
+            for f in scale:
+                speed = by[_factor(f)] * speed
             return ite(clk >= 0, speed, None), *[0] * k
 
         self = _build(
             cls,
             {"init": init, "next": next, "flow": flow},
             ctrl=(clock, *events),
-            extl=(t, *[a.enabled for a in inputs], *counts),
+            extl=(t, *[a.enabled for a in inputs], *factors),
             hide={clock},
         )
         self.rate, self.t, self.name = rate, t, name
