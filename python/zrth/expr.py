@@ -535,18 +535,26 @@ class SExpr(Expr):
         return self._step(o, SPN.Dec())
 
     def __mul__(self, k):
+        if isinstance(k, Expr) and _rank(k.dtype) and isinstance(self.dtype, Nat):
+            return k._scaled(self)
         return self.__rmul__(k)
 
     def __rmul__(self, k):
+        if isinstance(k, Expr) and isinstance(k.dtype, Nat) and _rank(self.dtype):
+            return self._scaled(k)
         if (
             isinstance(k, Expr)
             or not isinstance(k, (int, float))
             or not _rank(self.dtype)
         ):
             raise TypeError(
-                "an SPN clock rate is a literal times a time form: write `k * d(t)`"
+                "an SPN clock rate is a literal or a token count times a time form: "
+                "write `k * d(t)` or `n * d(t)`"
             )
         return self._unop(SPN.ClkMul(float(k)))
+
+    def _scaled(self, n: "Expr") -> "Expr":
+        return self._result(Term(SPN.ClkScale(), [Wire(self.dtype)], [self._wire, n._wire]))
 
 
 def _rank(sort: Sort) -> int:

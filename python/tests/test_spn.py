@@ -110,6 +110,8 @@ def test_terms_typecheck():
     Term.constant(SPN.Zero(), [d(p)])
     # a clock's rate relative to another clock's tangent
     Term(SPN.ClkMul(COUNTDOWN), [Wire(Clock(1))], [d(c)])
+    # a clock's rate scaled by a token count
+    Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), p])
 
 
 @pytest.mark.parametrize(
@@ -128,6 +130,13 @@ def test_terms_typecheck():
         (lambda p, c: Term.constant(SPN.Exp(RATE), [X(p)]), "must be Clock"),
         # `ClkMul` scales a tangent, not a clock value
         (lambda p, c: Term(SPN.ClkMul(COUNTDOWN), [Wire(Clock(1))], [c]), "clock tangent"),
+        # `ClkScale` scales a tangent by a count: that order, and a count only
+        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [p, d(c)]), "clock tangent"),
+        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), c]), "Nat count"),
+        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), d(c)]), "Nat count"),
+        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c)]), "exactly 2"),
+        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), p, p]), "exactly 2"),
+        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock())], [d(c), p]), "clock tangent"),
     ],
 )
 def test_ill_typed_terms_raise(build, message):

@@ -163,6 +163,8 @@ def _eval(op, r, rng):
             return 0.0
         case SPN.ClkMul(k):
             return k * r[0]
+        case SPN.ClkScale():
+            return r[0] * r[1]
         case SPN.Zero():
             return 0
         case SPN.Nondet(_):

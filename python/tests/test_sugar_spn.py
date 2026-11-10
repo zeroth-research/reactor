@@ -97,6 +97,60 @@ def test_an_event_flag_takes_the_bool_sugar():
     assert "fired : Event" in shown and "(false : bool)" in shown
 
 
+def test_a_count_scales_a_clock_rate():
+    # the clock runs `n` times faster: a rate proportional to the marking
+    class M(Module):
+        def init(self, t):
+            return exp(1.0), 3
+
+        def flow(self, clk, n, t):
+            return n * (-1 * d(t)), 0
+
+    clk, n, t = Var(Clock()), Var(Nat()), Var(Clock())
+    m = M(theory=SPN, ctrl=(clk, n), extl=(t,))
+    assert _ops(m.atoms[0].delay) == ["ClkMul", "ClkScale", "Id", "Zero"]
+    [_, scaled, *_] = m.atoms[0].delay
+    assert list(scaled.read)[1] == n and scaled.write[0].dtype == Clock(1)
+    assert "ClkScale" in m.with_varnames({})
+
+
+def test_scaling_commutes_and_chains():
+    class M(Module):
+        def init(self, t):
+            return exp(1.0), 2, 5
+
+        def flow(self, clk, s, i, t):
+            return s * (d(t) * i) * -1, 0, 0
+
+    clk, s, i, t = Var(Clock()), Var(Nat()), Var(Nat()), Var(Clock())
+    m = M(theory=SPN, ctrl=(clk, s, i), extl=(t,))
+    assert _ops(m.atoms[0].delay) == ["ClkScale", "ClkScale", "ClkMul", "Id", "Zero", "Zero"]
+    [by_i, by_s, *_] = m.atoms[0].delay
+    assert list(by_i.read) == [_d(t), i] and list(by_s.read) == [by_i.write[0], s]
+
+
+@pytest.mark.parametrize(
+    "rate, message",
+    [
+        (lambda clk, n, t: clk * d(t), "token count"),  # a clock value is not a count
+        (lambda clk, n, t: d(t) * d(t), "token count"),  # nor is a rate
+        (lambda clk, n, t: n * clk, "token count"),  # a count scales a rate, not a time
+        (lambda clk, n, t: n * 2, "token count"),  # counts have no products
+    ],
+)
+def test_only_a_count_scales_a_rate(rate, message):
+    class M(Module):
+        def init(self, t):
+            return exp(1.0), 3
+
+        def flow(self, clk, n, t):
+            return rate(clk, n, t), 0
+
+    clk, n, t = Var(Clock()), Var(Nat()), Var(Clock())
+    with pytest.raises(TypeError, match=message):
+        M(theory=SPN, ctrl=(clk, n), extl=(t,))
+
+
 def test_if_then_guards_an_update():
     """The place counts a token in only on the steps where the transition fires: off
     those steps the update has no value at all, and `n` is left to the rest of the net."""

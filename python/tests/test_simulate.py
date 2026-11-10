@@ -210,6 +210,30 @@ def test_a_window_is_where_the_guard_holds_up_to_the_invariant():
     assert 2.0 < fired_at(uniform(0.5)) <= 3.0
 
 
+def test_a_count_sets_the_speed_of_a_clock():
+    # the clock runs `n` times faster and `n` drops at each expiry: the gaps are
+    # 1/4, 1/3, 1/2, 1; at `n == 0` the clock stands still
+    class M(Module):
+        def init(self, t):
+            return 1.0, 4, 0
+
+        def next(self, c, n, k, t):
+            fires = c == 0
+            return ite(fires, 1.0, c), ite(fires, n - 1, n), ite(fires, k + 1, k)
+
+        def flow(self, c, n, k, t):
+            return ite(c >= 0, n * (-1 * d(t)), None), 0, 0
+
+    c, n, k, t = Var(Clock()), Var(Nat()), Var(Nat()), Var(Clock())
+    m = M(theory=SPN, ctrl=(c, n, k), extl=(t,))
+    trace = simulate(m, t=t, horizon=3.0)
+    expiries = [1 / 4, 1 / 4 + 1 / 3, 1 / 4 + 1 / 3 + 1 / 2, 1 / 4 + 1 / 3 + 1 / 2 + 1]
+    assert len(trace.times) == 6 and trace.times[-1] == 3.0
+    assert all(math.isclose(a, b, rel_tol=1e-12) for a, b in zip(trace.times[1:-1], expiries))
+    assert trace.series(k) == [0, 1, 2, 3, 4, 4] and trace.series(n)[-1] == 0
+    assert trace.states[-1][c] == 1.0
+
+
 def test_a_scheduler_must_stay_inside_the_step():
     m, c, k, t = _ticker()
     with pytest.raises(ValueError, match="outside"):
