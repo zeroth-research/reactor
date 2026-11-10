@@ -24,7 +24,6 @@ about every column. A cell is either an emitter or one of
 `tests/test_lean_ops.py` checks it against `LIA`/`LRA`/`BV` in both
 directions, so a variant added to a theory fails the suite until it has a
 row, and a row no theory backs fails it too.
-
 """
 
 from __future__ import annotations
@@ -126,8 +125,7 @@ _NONDET = Unsupported(
 _UNINTERPRETED = Unsupported(
     "an uninterpreted symbol has no obvious translation — emit an `opaque` "
     "nothing can prove anything about, or reject it at the front end. "
-    "Which of the two is an open decision; `--fbk-proveit` already takes "
-    "the second option."
+    "Which of the two is an open decision."
 )
 
 _ZEROGRAD = Unsupported(

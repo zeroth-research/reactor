@@ -215,7 +215,8 @@ def to_lean_equiv_theorems(
         # cost is set by the module rather than by this file: a Petri net
         # with a dozen place-transition incidences exceeds the default
         # budget, and `System/Circ.lean` then fails to compile at all --
-        # BUILD-FAIL, on every route, for a module that is otherwise fine.
+        # BUILD-FAIL, whatever the certificate, for a module that is otherwise
+        # fine.
         # The same budget `scalar.py` raises for the same reason, and per
         # theorem rather than file-wide.
         lines.append("set_option maxHeartbeats 2000000 in")

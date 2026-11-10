@@ -1,13 +1,13 @@
-"""The certificate files and `verith` transcripts, pinned byte for byte.
+"""The certificate files and `reactor` transcripts, pinned byte for byte.
 
 Two layers: the codegen entry points on a fixed set of modules and
-predicates, and whole in-process `verith` runs (stdout and the two certificate
+predicates, and whole in-process `reactor` runs (stdout and the two certificate
 files). Both are compared with the snapshots under
 `tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to rewrite them, and
 only for a change to the output that is intended.
 
-No run reaches an LLM: `make_client` is replaced in both modules that build
-one, and the `ai-cegis` run has every predicate fixed, so it never asks.
+The runs that infer the certificate are `certify`'s, pinned the same way
+in `verith/tests/test_certify_golden.py`.
 """
 
 from __future__ import annotations
@@ -178,18 +178,12 @@ def test_codegen_of_a_nonlinear_lean_answer_is_unchanged():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# `verith`, in process
+# `reactor`, in process
 # ══════════════════════════════════════════════════════════════════════════
 
 COUNTER = "counter"
 COUNTDOWN = "svcomp_countdown"
 BOUNDED = "svcomp_bounded_input"
-
-_AI_REPLIES = {
-    "generate": "INVARIANT: fun s => (s 0 0) ≥ 0 ∧ (s 0 0) ≤ 9\n"
-                "RANKING: fun s => (if (s 0 0) = 0 then 0 else 10 - (s 0 0)).toNat",
-    "verify": "CORRECT",
-}
 
 # (name, fixture, arguments). `-o` and `-p` are added.
 RUNS = [
@@ -210,74 +204,12 @@ RUNS = [
         "--cert-file", "{out}/Cert.lean",
     ]),
     ("unreadable_property", COUNTER, ["--buchi", "(= (X @intf.0)"]),
-    ("smt_linear", COUNTDOWN, [
-        "--buchi", "(= (X @intf.0) 0)", "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))",
-        "--infer", "smt-linear", ]),
-    ("houdini", COUNTDOWN, [
-        "--safety", "(<= (X @intf.0) 100)", "--infer", "houdini",
-        ]),
-    ("nuterm", COUNTDOWN, [
-        "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
-        ]),
-    ("nuterm_pre", BOUNDED, [
-        "--safety", "(>= (X @intf.0) 0)", "--pre", "(>= (X @extl.0) 0)", "--infer", "nuterm",
-        ]),
-    ("ai_cegis_fixed", COUNTER, [
-        "--buchi", "(= (X @intf.0) 0)",
-        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
-        "--ranking", "(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)",
-        "--infer", "ai-cegis", ]),
-    ("ai", COUNTER, [
-        "--buchi", "(= (X @intf.0) 0)", "--infer", "ai",
-        ]),
-    ("sygus", COUNTDOWN, [
-        "--safety", "(<= (X @intf.0) 100)", "--infer", "sygus",
-        ]),
-    # A short declared limit: Vampire answers this one in about a second
-    # under 10 and in about six under the default 120.
-    ("vampire", COUNTDOWN, [
-        "--safety", "(<= (X @intf.0) 100)", "--infer", "vampire",
-        "--vampire-timeout", "10",
-        ]),
 ]
 
 
-def _has_vampire() -> bool:
-    from reactor.lean.core.errors import Refused
-
-    return True
-
-
 def _runs() -> list:
-    out = []
-    for name, fixture, args in RUNS:
-        marks = ()
-        if "vampire" in args:
-            marks = pytest.mark.skipif(
-                not _has_vampire(),
-                reason="no Vampire binary: set $VAMPIRE or put `vampire` on PATH")
-        out.append(pytest.param(name, fixture, args, id=name, marks=marks))
-    return out
-
-
-def _offline(monkeypatch) -> None:
-    """Both LLM routes answer from `_AI_REPLIES` and never open a client."""
-    from reactor.lean.infer.ai import engine as ai
-    from reactor.lean.infer.ai_cegis import engine as cegis
-
-    def client(base_url, model):
-        def chat(system: str, user: str) -> str:
-            return _AI_REPLIES[
-                "verify" if system is ai.VERIFY_SYSTEM else "generate"]
-        return chat
-
-    def no_client(base_url, model):
-        def chat(system: str, user: str) -> str:
-            raise AssertionError("ai-cegis with every predicate fixed asked")
-        return chat
-
-    monkeypatch.setattr(ai, "make_client", client)
-    monkeypatch.setattr(cegis, "make_client", no_client)
+    return [pytest.param(name, fixture, args, id=name)
+            for name, fixture, args in RUNS]
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -298,10 +230,9 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
     out = tmp_path / "out"
     argv = [a.replace("{out}", str(out)) for a in args]
     monkeypatch.setattr(sys, "argv", [
-        "verith", str(FIXTURES / f"{fixture}.py"), *argv,
+        "reactor", str(FIXTURES / f"{fixture}.py"), *argv,
         "-o", str(out), "-p", "G",
     ])
-    _offline(monkeypatch)
     try:
         main()
         status = "exit 0"
@@ -327,7 +258,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
 
 
 @pytest.mark.parametrize("name,fixture,args", _runs())
-def test_verith_run_is_unchanged(name, fixture, args, monkeypatch, capsys,
+def test_reactor_run_is_unchanged(name, fixture, args, monkeypatch, capsys,
                                  tmp_path):
-    _check(f"verith-{name}.golden",
+    _check(f"reactor-{name}.golden",
            _transcript(monkeypatch, capsys, tmp_path, fixture, args))

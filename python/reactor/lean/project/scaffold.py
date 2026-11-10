@@ -116,6 +116,20 @@ def write_files(project_dir: Path, files: Mapping[str, str]) -> None:
         print(f"Wrote {path}")
 
 
+def write_lakefile(project_dir: Path, project_name: str, *,
+                   executable: bool, parts: LakefileParts) -> Path:
+    """The project's `lakefile.toml`, with what a caller adds (`parts`).
+
+    `create_project` writes it; a caller can write it again with other
+    `parts` for a project already generated.
+    """
+    path = project_dir / "lakefile.toml"
+    path.write_text(
+        generate_lakefile(project_name, executable=executable, parts=parts))
+    print(f"Wrote {path}")
+    return path
+
+
 def create_project(
     output_dir: Path,
     module: Module,
@@ -139,18 +153,15 @@ def create_project(
                            as `proof.render.certificate_files` renders them.
         `source`:          The input the module was read from, written to
                            `dbg/system<suffix>` as a debug artifact.
-        `lakefile`:        What the inference route adds to the lakefile,
-                           from its row's `lakefile` hook. Declared as data
-                           rather than passed per route: the lakefile is
-                           written here, before any route runs, so a route
-                           cannot amend it afterwards.
+        `lakefile`:        What a caller adds to the lakefile, declared as
+                           data: the lakefile is written here and not
+                           amended afterwards.
         `remove`:          Project-relative files an earlier run in the same
                            `-o` may have left where a lean_lib globs; they
                            are deleted before anything is written there.
         `ctx`:             A `LeanContext` this run already built, so the
                            discovery pass runs once rather than once here
-                           and again for every file rewritten after
-                           inference.
+                           and again for every file rewritten later.
     """
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
@@ -171,14 +182,8 @@ def create_project(
         print(f"Wrote {copy}")
 
     # Render and write project-level files from templates
-    lakefile_path = project_dir / "lakefile.toml"
-    lakefile_path.write_text(
-        generate_lakefile(
-            project_name, executable=executable,
-            parts=lakefile or LakefileParts(),
-        )
-    )
-    print(f"Wrote {lakefile_path}")
+    write_lakefile(project_dir, project_name, executable=executable,
+                   parts=lakefile or LakefileParts())
 
     toolchain = project_dir / "lean-toolchain"
     toolchain.write_text(
@@ -194,7 +199,7 @@ def create_project(
 
     # The `Certificate` lean_lib globs its submodules, so every file in
     # `Certificate/` is built -- including one this run did not write. A file
-    # an inference route writes is written *after* this, so anything already
+    # a caller writes there is written *after* this, so anything already
     # there is a copy an earlier run left in the same `-o`: it is about a
     # different module, and lake would build it against this run's `System/`.
     # The caller names those files in `remove`.

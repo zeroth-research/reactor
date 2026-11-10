@@ -1,18 +1,11 @@
 # `reactor/lean` — Lean 4 Certificate Generation
 
-`uv run verith` takes a reactive module and a property of it, and ends with a
+`uv run reactor` takes a reactive module and a property of it, and ends with a
 Lean project in which `lake build` checks a proof of the property. The proof
 rests on a certificate: an inductive invariant, and for a Büchi property
-also a ranking function. A decision procedure finds the certificate, and
-the pipeline does not trust it. Whatever the procedure answers is written
-into the project, and Lean checks it.
-
-![The verification pipeline](figures/pipeline.png)
-
-Solid arrows are the run's control flow. Dashed ones are data: what the
-decision procedure may read, and the project that the check builds the
-certificate in. The picture's source is
-[`figures/pipeline.tex`](figures/pipeline.tex).
+also a ranking function. `reactor` takes the certificate as given
+(`--invariant`, `--ranking`). The pipeline does not trust a certificate,
+whoever wrote it. It is written into the project, and Lean checks it.
 
 ## The pipeline, stage by stage
 
@@ -26,7 +19,7 @@ file's suffix picks:
 
 | format | suffix | what it gives |
 |---|---|---|
-| `python` | `.py` | the `reactor.Module` that `module()` (or `-d NAME`) returns. Returning `inputs.Named(module, {"x": var})` instead adds names to write claims in. A Gymnasium environment comes in this way, through `reactor.gym` ([tutorial](../../../tutorials/verith_gym.md)) |
+| `python` | `.py` | the `reactor.Module` that `module()` (or `-d NAME`) returns. Returning `inputs.Named(module, {"x": var})` instead adds names to write claims in. A Gymnasium environment comes in this way, through `reactor.gym` |
 
 The adapter returns an `inputs.Problem`: the module, the source text and the
 names. A new input format is a new `InputAdapter` in `inputs/`.
@@ -45,17 +38,14 @@ The property goes under the flag of its proof rule:
 and `(X @intf.N)` is interface variable N by position. See [Writing a claim
 on the command line](#writing-a-claim-on-the-command-line) for the full
 spelling. This stage translates the names to the internal `s{i}`, `e{i}`
-and `el{i}`, and everything after it uses those. verith translates them back
-when it shows the certificate.
+and `el{i}`, and everything after it uses those. They are translated back
+when a certificate is shown.
 
 ### 3. Reactive module (`reactor.Module`)
 
 The module is the IR: `init` and `update` in SSA form over typed matrix
-wires ([Reactive Module IR](#reactive-module-ir)). Two checks run before any
-Lean is written:
-
-- the route's `precheck` refuses a module that its procedure cannot read;
-- `lean_gaps` refuses an operator with no Lean form.
+wires ([Reactive Module IR](#reactive-module-ir)). Before any Lean is
+written, `lean_gaps` refuses an operator with no Lean form.
 
 ### 4. Lean project (`project/`, `codegen/encodings/`, `templates/`)
 
@@ -88,46 +78,21 @@ directory of that repository.
 By default they are git requires at `project/lakefile.py`'s
 `REACTOR_LEAN_REV`. With `REACTOR_LEAN` set to a reactor-lean checkout they
 are path requires on it instead, which is how to change the library and the
-generator together; `verith` refuses a `REACTOR_LEAN` that is not a
+generator together; `reactor` refuses a `REACTOR_LEAN` that is not a
 checkout before it writes anything. The tests set it to the checkout beside
 this repository when there is one, and `tests/lean`'s lakefile requires
 `Relational` from there.
 
 [reactor-lean]: https://github.com/zeroth-research/reactor-lean
 
-The certificate in `Data.lean` depends on the run:
-
-- with no certificate given and no route, the predicates are `sorry`;
-- with no route, it is the certificate given by `--invariant` and
-  `--ranking`;
-- with a route, it is a placeholder that stage 6 replaces.
+The certificate in `Data.lean` is the one given by `--invariant` and
+`--ranking`; with none given, its predicates are `sorry`.
 
 `--cert-file PATH.lean` writes a self-contained certificate instead, with
 the relational and scalar encodings beside it, and the run ends there.
 [What gets generated](#what-gets-generated) has the details.
 
-### 5. Decision procedure (`infer/`), untrusted
-
-`--infer NAME` runs one route against the generated project. A route is a
-module that exports a `ROUTE` row. The row says what the route may read and
-write in the project, and what it
-returns: predicates in SMT-LIB, predicates in Lean, or whole files. The run
-holds each answer to its row and believes nothing else about it.
-
-| route | LLM | returns | how it finds the certificate |
-|---|---|---|---|
-| `ai` | yes | Lean | one call proposes the invariant and the ranking function; a second call is asked to find them wrong |
-| `nuterm` | no | SMT-LIB | a ranking function trained on rollouts and certified by Farkas/CEGAR; the invariant comes from Houdini |
-| `vampire` | no | SMT-LIB | the certificate is left as holes in the obligations, and Vampire's answer fills them |
-| `fbk-proveit` | no | files | `lean-ltl-certifying`'s ic3ia toolchain, over an NA model of the module |
-
-[Common invocations](#common-invocations) shows the LLM routes. The others
-each have a section, from [`--infer nuterm`](#inferring-without-an-llm---infer-nuterm)
-to [`--infer fbk-proveit`](#certifying-through-lean-ltl-certifying---infer-fbk-proveit).
-[Adding an Inference Route](#adding-an-inference-route-infer) says how
-to write a new one.
-
-### 7. The check (`--build-cert`)
+### 6. The check (`--build-cert`)
 
 `lake update` and `lake build Certificate` run in the project. This is the
 step the result rests on: Lean checks the certificate's obligations against
@@ -141,29 +106,18 @@ the certificate](#building-the-certificate---build-cert).
 Record each of these at the commit before the change and after it, and
 compare; every difference must be one the change means.
 
-- **Route transcripts**: `uv run python scripts/route_transcripts.py OUTDIR`
-  from `python/`, then `diff -r`. 42 cases over all eight routes, with the
-  LLM replies scripted; the docstring names the variables that find the
-  external tools. Record on a quiet machine, and re-run a `vampire_*` case
-  alone before reading a difference in it as a change: under load its
-  templates run out of their shared deadline.
-- **Encoding snapshots**: `scripts/encoding_snapshots.py OUTDIR` writes what
-  the transcripts do not cover: the `System/*.lean` encodings, the bare
-  `--cert-file` certificate, and the NA model and bridge, per fixture.
 - **Goldens**: `tests/test_pipeline_golden.py`; `REACTOR_UPDATE_GOLDEN=1`
   rewrites them.
-- **Suites**: `uv run pytest -m 'not slow' -q` from `python/` (set `VAMPIRE`
-  to the binary for the Vampire tests), and `just test-lean` for the lake
-  builds after any change to the generated Lean.
+- **Suites**: `just py-test` (`uv run pytest -m 'not slow' -q` from
+  `python/`), and `just test-lean` for the lake builds after any change to
+  the generated Lean.
 
 ## Further reading
 
 - [`TODO.md`](../../../TODO.md): what is still to do, known defects
   included.
-- [`tests/limits/`](../../tests/limits/README.md): the limit matrix the
-  routes are measured on, with its runners and baseline.
-- [`tutorials/verith.md`](../../../tutorials/verith.md): a walk through
-  every route on worked examples.
+- [`tests/limits/`](../../tests/limits/README.md): the limit matrix of
+  generated projects built with lake, with its runners and baseline.
 
 The rest of this file is the reference, starting from the IR.
 
@@ -198,12 +152,12 @@ layer.
 
 | Package | What it holds |
 |------|------|
-| `core/` | The vocabulary every layer is written in, importing nothing of `reactor.lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option a route or an input format declares) |
+| `core/` | The vocabulary every layer is written in, importing nothing of `reactor.lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares) |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `build` (`lake build`), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), the certificate's files as the text it is handed |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`), and `names`, which translates a claim's names to the internal ones and back |
-| `cli/` | The command line: `parser` (the flags), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
-| `pipeline/` | `uv run verith`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certify` (the certificate rendered, the route run, the certificate rendered again from its answer), `outputs` (the project, `--cert-file`, `--hammer-file`, `--build-cert`) |
+| `cli/` | The command line: `parser` (the flags, one `add_*` per group), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
+| `pipeline/` | `uv run reactor`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, the certificate rendered), `outputs` (the project, `--cert-file`, `--hammer-file`, `--build-cert`) |
 
 ---
 
@@ -443,7 +397,7 @@ BitVec certificate from 10 s to 977 s while closing nothing `decide` had not
 already closed.
 
 Because the plan depends on the predicates, `Certificate.lean` is not stable
-across a change of invariant: `--infer` rewrites it alongside `Data.lean`.
+across a change of invariant: it is regenerated alongside `Data.lean`.
 `tests/test_lean_tactics.py` pins these decisions in the fast suite, so a
 plan regression does not wait for a Lean build.
 
@@ -479,10 +433,11 @@ that certificate files override.
 
 ---
 
-## `uv run verith` CLI (`cli/`, `pipeline/`, `project/`)
+## `uv run reactor` CLI (`cli/`, `pipeline/`, `project/`)
 
-`verith` is the command-line tool that drives the full pipeline: Python module
-→ Lean project or standalone certificate files.
+`reactor` is the command-line tool that drives the pipeline: Python module
+→ Lean project or standalone certificate files, with the certificate as
+given.
 
 ### Module file format
 
@@ -514,39 +469,26 @@ To write claims in the module's own names (`--safety "(<= (X x) 9)"`), return
 
 ```bash
 # Bare Lean project (all certificate fields left as sorry)
-uv run verith mymodule.py -o out/ -p MyProject
+uv run reactor mymodule.py -o out/ -p MyProject
 
 # Specify the property to prove (SMT-LIB 2 Bool over the state after a round: `(X @intf.N)`). Which flag it
 # goes under is the choice of proof rule -- see "Safety or Büchi" below.
-uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" -o out/ -p MyProject
-uv run verith mymodule.py --safety "(<= (X @intf.0) 10)" -o out/ -p MyProject
+uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" -o out/ -p MyProject
+uv run reactor mymodule.py --safety "(<= (X @intf.0) 10)" -o out/ -p MyProject
 
 # Also supply invariant and ranking manually
-uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" \
+uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" \
     --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))" \
     --ranking   "(ite (= (X @intf.0) 0) 0 (X @intf.0))" \
     -o out/ -p MyProject
 
 # A safety certificate is an invariant alone -- no ranking function exists
-uv run verith mymodule.py --safety "(<= (X @intf.0) 10)" \
+uv run reactor mymodule.py --safety "(<= (X @intf.0) 10)" \
     --invariant "(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))" \
     -o out/ -p MyProject
 
-# AI inference with Claude (requires ANTHROPIC_API_KEY + pip install reactor[ai])
-uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer -o out/ -p MyProject
-
-uv run verith mymodule.py --safety "(<= (X @intf.0) 10)" --infer ai-cegis -o out/ -p MyProject
-
-# AI inference with a local LLM via Ollama (requires pip install reactor[ai-local])
-uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer \
-    --model qwen3-coder --base-url http://localhost:11434/v1 \
-    -o out/ -p MyProject
-
-# No LLM: learn a ranking function and certify it before it is offered
-uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer nuterm -o out/ -p MyProject
-
 # Standalone self-contained certificate (no project scaffold)
-uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lean
+uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lean
 # → writes out/MyCert.lean  (certificate)
 # → and out/MyCertRel.lean, out/MyCertScalar.lean, out/MyCertScalarRel.lean
 #   (the other encodings + equivalence theorems)
@@ -576,7 +518,10 @@ uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.lea
   Main.lean                   # only with --executable
 ```
 
-`--infer fbk-proveit` adds `ProveIt/` and `Certificate/Equivalence.lean`.
+A file in `Certificate/` the run does not write -- one an earlier run left
+there, say -- is deleted when the project is generated again: the
+`Certificate` library globs the directory, and the file would be built
+against this run's module.
 
 **Standalone certificate** (`--cert-file path/Name.lean`):
 
@@ -601,11 +546,9 @@ certificate consists of.
 | obligations | `init_inv`, `step_inv`, `inv_imp_P` | `init_inv`, `step_inv`, `hrank` |
 | `--ranking` | rejected — there is nowhere to put one | the other half of the certificate |
 
-Neither flag *requires* a route: with neither `--infer` nor `--fbk-proveit`,
-the project is generated from whatever predicates were supplied, and the two
-flags simply say which certificate to emit. `--safety` and `--buchi` are
-mutually exclusive, and `--fbk-proveit` takes only `--safety` — ic3ia decides
-reachability of `¬P`, which is not a question about recurrence.
+`reactor` generates the project from whatever predicates were supplied, and
+the two flags say which certificate to emit. `--safety` and `--buchi` are
+mutually exclusive.
 
 The distinction is not academic. Countdown starts at 100 and counts down, so
 `(= (X @intf.0) 0)` is reached over and over — true under `--buchi`, and false under
@@ -621,26 +564,11 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `-d` / `--module-def` | `module` | Name of the factory function in the Python file (python input only) |
 | `--safety` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold in every reachable state (`G P`) |
 | `--buchi` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold infinitely often (`G (F P)`) |
-| `--invariant` | — | SMT-LIB 2 Bool invariant (skips invariant inference) |
-| `--ranking` | — | SMT-LIB 2 Int ranking (skips ranking inference) |
-| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
-| `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
+| `--invariant` | — | SMT-LIB 2 Bool invariant |
+| `--ranking` | — | SMT-LIB 2 Int ranking (`--buchi` only) |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 | `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
-| `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
-| `--sygus-conjuncts` | `3` | `--infer sygus`: a ceiling on how many atoms the invariant may be a conjunction of, tried `1, 2, … N` — the bound is what makes each space finite, and so decidably empty |
-| `--houdini-timeout` | `120` | `--infer houdini`: seconds for all solver calls together; each call is capped at 2 s, then the rest (under `vampire`: 2 s, 10 s, 60 s, then the rest) |
-| `--vampire` | `$VAMPIRE`, then `vampire` on PATH | `--infer vampire` and `--houdini-solver vampire`: the Vampire binary, or a directory holding one |
-| `--vampire-timeout` | `120` | `--infer vampire`: seconds for all answer-literal calls together; one call per template, and a template that does not answer is not retried |
-| `--vampire-cores` | `4` | `--houdini-solver vampire`: processes each call's portfolio spreads over |
-| `--proveit-dir` | — | `--infer fbk-proveit`: path to a `lean-ltl-certifying` checkout |
-| `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
 | `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
-
-Each route is one row of `infer.ROUTES`, and a flag in the bottom half
-of the table belongs to a route rather than to verith: passed without its
-route selected it is an error, not a no-op.  `--fbk-proveit DIR` is the older
-spelling of `--infer fbk-proveit --proveit-dir DIR` and still works.
 
 ### Writing a claim on the command line
 
@@ -660,10 +588,9 @@ An interface variable's latched value cannot be named yet. A name like `x`
 comes from an input that provides one (a module file returning
 `reactor.lean.inputs.Named(module, {"x": var})`); `@intf.N` works for any
 module. `reactor.lean.inputs.to_surface(text)` turns internal text into this
-spelling. verith prints one `.. --FLAG, in internal names: ...` line per
-claim flag it was given. Everything past the command line (`Claim`,
-`Certificate`, SMT, Lean, LLM replies) still uses the internal
-names below.
+spelling. A run prints one `.. --FLAG, in internal names: ...` line
+per claim flag it was given. Everything past the command line (`Claim`,
+`Certificate`, Lean) still uses the internal names below.
 
 ### State variable naming in SMT-LIB predicates (internal)
 
@@ -672,378 +599,29 @@ names below.
 SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 `e0..eM-1` (next) and `el0..elM-1` (latched).
 
-### Inferring without an LLM (`--infer nuterm`)
-
-`--infer nuterm` searches for the certificate the way a termination prover
-does, and proves it before offering it:
-
-1. **The invariant** — Houdini over a candidate lattice of sign and pairwise
-   facts (`nuterm/_invariants.py`): seed the candidates, drop the
-   ones that do not hold at entry or are not preserved by a step, and certify
-   the survivors as one inductive `Safety` claim.  With `--safety`, the
-   property itself is seeded as a candidate, so it is an invariant exactly
-   when it survives with the rest.
-2. **The ranking function** (`--buchi` only) — a small ReLU network is trained
-   on rollouts of the module to drop on the rounds where the property does not
-   hold, its weights are rounded to integers, and the candidate is composed
-   into the module as two ordinary atoms, `V(s)` and `V(s')`.  The obligation
-   `V(s) - V(s') >= 1` on that domain goes to a decision procedure over the
-   composed module's wires: Farkas-certified linear regions, with CEGAR
-   finding the regions (`nuterm/_farkas.py`).  Only a candidate it
-   certifies is returned.
-
-| | `--infer nuterm` | `--infer ai-cegis` | `--infer fbk-proveit` |
-|---|---|---|---|
-| needs | nothing but the repo | an API key or a local LLM | an `ic3ia` build and a `lean-ltl-certifying` checkout |
-| property | `--safety` or `--buchi` | `--safety` or `--buchi` | `--safety` |
-| deterministic | yes (a fixed seed) | no | yes |
-
-The procedure refuses by name what it has no rule for — a matrix-shaped or
-real-valued component, a next value that reads an awaited input, an operation
-with no cell rule — rather than degrading quietly.  `--invariant`,
-`--ranking` and `--pre` are rejected alongside it: the route computes the
-whole certificate, and its invariant holds at entry for *every* input, which
-is stronger than any precondition would make it.
-
-### Proposing candidates and proving them (`--infer houdini`)
-
-This route does not search for a certificate. It *proposes* — candidates that
-hold on simulated runs of the module — and a solver decides what stays:
-
-* **invariant** — Houdini over facts that hold on simulated runs of the
-  module: bounds stated with the program's own constants, congruences,
-  sums and differences of two components against zero, bounds on each side
-  of a Bool flag, the values a Real component keeps to, and under
-  `--safety` the property's conjuncts.
-* **ranking function** — affine forms of one or two components, `K*x + y`,
-  and piecewise `(ite c f g)` over the conditions the property and
-  transition branch on and the order of each pair of components. Each is
-  shifted to be positive on the rounds where the property fails and offered
-  zeroed where it holds.
-* **smaller certificate** — the unsat cores name the facts a proof used;
-  the invariant handed on is their closure, then minimised one fact at a
-  time. Both solvers report one.
-
-#### Which solver (`--houdini-solver`)
-
-The obligations are quantifier-free — the inputs are free constants, so what
-an obligation quantifies over is its free variables — and what is left is
-linear integer and real arithmetic with `to_int`, `div`, `mod` and `ite`.
-Two solvers answer them, and the difference is one thing:
-
-Measured on the 399 obligations of certificates the benchmark matrix had
-verified, Vampire's portfolio refuted 369 within 2 s, nearly all in
-10–20 ms; the rest were encodings it cannot read or obligations that were
-false — that is, nothing in that corpus needed a first-order prover rather
-than a decision procedure.
-
-#### What both solvers get
-
-Because a false candidate can cost a whole time limit, nothing is put to a
-solver that a sampled round refutes: states near the reached ones — and from
-a range far wider than the program's constants, which is what exposes a
-shift fitted to small numbers — where the invariant holds, with inputs as
-`--pre` allows. On `ChenFlurMukhopadhyay-SAS2012-Ex3.01` the wide sample
-took the ranking search from 46 Vampire calls and 84 s to 3 calls and 0.1 s.
-It stays on both solvers: it is cheaper than a call either way, and it is
-what makes the *candidates* good rather than only the answers. A `--safety`
-property a run of the module violates is reported as not holding, before any
-solver is started.
-
-```bash
-uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer houdini -o out/ -p Rea
-# [houdini] Houdini kept 2 of 2: (<= 0 s0) (<= s0 100)
-# [houdini] ranking function proved: s0
-# [houdini] invariant cut to the 1 of 2 facts its proofs use
-```
-
-```bash
-uv run verith tests/limits/mods/m_lra_lin.py --buchi "(= (X @intf.0) 0.0)" \
-    --infer houdini --houdini-solver vampire --vampire ~/vampire/vampire \
-    -o out/ -p Rea
-# [houdini] solver: vampire
-# [houdini] Real state: a ranking function is floored after scaling by 1
-# [houdini] inv: (or (= s0 0.0) (= s0 1.0) ... (= s0 5.0))
-# [houdini] ranking: (to_int s0)
-```
-
-
-### Deriving the certificate outright (`--infer vampire`)
-
-Where `--infer houdini` proposes candidates and asks a solver which survive,
-this route proposes nothing. It states the obligations with the certificate
-*itself* left open — a template whose coefficients are existentially
-quantified — and asks Vampire for the coefficients:
-
-```
-(assert-not (exists ((A0 Int) (B0 Int)) (and ... )))
-% SZS answers Tuple [([1,100]|[0,100]|[0,100])|_] for cert
-```
-
-which carries `0 <= s0 <= 100`, derived rather than checked. That is
-Vampire's *answer literal* mechanism (`--question_answering plain`): it
-refutes the negation of the conjecture and reports the substitutions the
-refutation used. Those alternatives are a **disjunctive** answer — one of
-them is a witness, not each of them, because a split refutation closes each
-branch under its own hypothesis — so every one is tried against the
-obligations and the one they accept is the certificate. Here the first,
-`1 <= s0 <= 100`, is not preserved: `s0 = 1` steps to `0`.
-
-The templates are tried smallest first — `A_i <= s_i <= B_i` per component,
-then the same plus `C_ij <= s_i - s_j <= D_ij` for each pair.
-
-#### Two holes at a time
-
-Two holes is what the answer-literal search closes; three is a time limit.
-So the questions are kept to two where they can be:
-
-* `--safety` is **one** question. `inv -> prp` is what pins the interval
-  down, and with it the coefficients are two.
-* `--buchi` is **two**: an inductive invariant, then a ranking function that
-  drops on *that* invariant, with its coefficients already numbers. The
-  joint question is four holes for a one-component module and answered
-  nothing at all over `tests/limits`; the split derives `m_countdown` and
-  `m_deep` — invariant in about a second, rank in about eight. The rank
-  obligation is `rank(s) > 0` where the property fails and `rank(s') <
-  rank(s)`, which implies the clamped `Int.toNat` form `rule_buchi` asks
-  for.
-
-Splitting a search can cost what a joint one would have found — an
-inductive invariant need not admit a rank, and the second question cannot go
-back and ask for another. So every alternative of the first answer is
-carried into the second.
-
-An invariant asked for on its own is *looser* than one asked for with the
-property, and loose is harder: with nothing pinning the interval the search
-is over the whole of `Int`, and `m_countdown`'s invariant-only question does
-not come back inside 30 s. Bounded to a window around the module's own
-constants (`program_constants`, the same seed Houdini uses) it answers
-`[0,100]` in three. The same window costs the safety questions `m_max` and
-`m_toward5`, whose obligations pin the interval already — so it is asked for
-where it is needed and nowhere else.
-
-#### What the question has to look like
-
-Two restrictions, both measured on `m_countdown`, and the first decides the
-shape of the whole route.
-
-**Not the portfolio.** `--mode portfolio --schedule casc` reaches the time
-limit on this route's own question where the default mode answers at once. A
-portfolio strategy is tuned to find a refutation; what is wanted here is the
-*substitution* a refutation carries.
-
-**Both namings, and the whole budget declared to each.** Vampire introduces
-a Tseitin definition for each subformula it judges worth naming, and on a
-conjecture with holes that is decisive in *both* directions: over
-`tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
-`--naming 0` does not, `--naming 0` answers `m_relu` where naming does not,
-and they agree on `m_countdown`, `m_deep` and `m_min`. So both are asked,
-each on a share of what is left of the run.
-
-And `--time_limit` is a *scheduling* input before it is a cap — Vampire
-slices it between strategies, so a small one runs a different search rather
-than the same one cut short. `m_max`'s question reaches the limit at
-`--time_limit 20` and answers after 2.5 s at 25. So every call declares the
-run's whole budget and the wall clock is what actually bounds it.
-
-#### The reach
-
-Small, and worth knowing before reaching for it. Vampire's answer-literal
-search closes the **two-hole** question and does not close a three-hole one:
-adding a third, otherwise-free hole to the `m_countdown` question above
-turns an instant answer into a time limit. Five option settings were tried
-against that ceiling — `-qago on`, `--saturation_algorithm otter`, `--saturation_algorithm
-lrs`, `--theory_instantiation all`, `--unification_with_abstraction
-one_side_interpreted` — and none moved either.
-
-So in practice this route derives a certificate for a **one-component Int**
-module — eight of seventeen `tests/limits` safety and Büchi pairs, two of
-them Büchi — and refuses past that pointing at `--infer houdini`, which
-searches a wider module by proposing facts and proving them. It reads scalar `Int` state
-only: Vampire reads reals, but the templates here are integer intervals and
-integer coefficients.
-
-#### What comes back is checked
-
-```bash
-uv run verith tests/limits/mods/m_countdown.py --safety "(<= (X @intf.0) 100)" \
-    --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
-# [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
-# [vampire] template intervals: 2 holes, 409 chars
-# [vampire] answered with naming
-# [vampire] Vampire answered A0=0, B0=100
-# [vampire] inv: (and (<= 0 s0) (<= s0 100))
-```
-
----
-
 ## Building the certificate (`--build-cert`)
 
-`--build-cert` is route-independent: it builds whatever certificate the run
-produced, with `lake update` then `lake build Certificate` in the generated
-project. All three routes that fill a certificate qualify —
+`--build-cert` builds the certificate the run produced, with `lake update`
+then `lake build Certificate` in the generated project:
 
 ```bash
-# predicates supplied
-uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" \
+uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" \
     --ranking "(X @intf.0)" --build-cert -o out/ -p Counter
-
-# predicates inferred
-uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer --build-cert -o out/ -p Counter
-
-# predicates from ic3ia
-uv run verith mymodule.py --safety "(not (= (X @intf.0) 15))" --build-cert -o out/ -p Counter \
-    --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying
 ```
 
-— and the two that do not are refused rather than silently doing nothing:
+Two kinds of run are refused rather than silently doing nothing:
 
 | refused | because |
 |---|---|
-| no `--invariant`/`--ranking`, no `--infer`, no `--fbk-proveit` | every obligation in a bare project is `sorry`. Lake compiles that and exits 0, so "built" would mean nothing |
+| no `--invariant`/`--ranking` | every obligation in a bare project is `sorry`. Lake compiles that and exits 0, so "built" would mean nothing |
 | `--cert-file`, `--hammer-file` | they write a file and return; there is no project to build |
 
 `--invariant` without `--ranking` (or either without a property) is the
 first row: a missing predicate is a `sorry`, not a weaker proof.
 
-Two checks sit past the parse-time gate, because a flag cannot promise what
-inference returns and lake cannot be trusted to fail loudly:
-
-* **After the route, before the build.** `--infer` can come back without an
-  invariant or a ranking — an LLM that answers nothing usable — and the
-  error names which one is missing instead of building a proof of `sorry`.
-  (`--fbk-proveit` is exempt: its certificate is ic3ia's, installed by the
-  route itself, and no `Certificate` describes it.)
-
 A build that fails is a `LakeBuildError`, and the run exits non-zero with
 the Lean diagnostics restated: lake's log ends with thousands of replayed
 Mathlib jobs, so a bare "exit 1" as the last line would bury them.
-
-## Certifying through `lean-ltl-certifying` (`--infer fbk-proveit`)
-
-`--fbk-proveit=<dir>` swaps verith's own invariant machinery for the
-`proveit.py` driver of the [`lean-ltl-certifying`][ltl] repository, which
-model-checks the system with ic3ia and renders the inductive invariant it
-finds back as a Lean certificate:
-
-```bash
-uv run verith mymodule.py --safety "(not (= (X @intf.0) 15))" -o out/ -p Counter \
-    --fbk-proveit ~/zeroth/proof-prototyping/lean-ltl-certifying \
-    --ic3ia ~/ic3ia/build/ic3ia
-```
-
-Add `--build-cert` to have the certificate compiled rather than merely
-written (see [Building the certificate](#building-the-certificate---build-cert)).
-
-```
-mymodule.py ──verith──▶ out/Counter/                       (bare, as usual)
-                        out/Counter/ProveIt/CounterNA.lean (the NA encoding)
-                                  │
-                                  ▼   proveit.py
-                        lean2vmt ─▶ ic3ia ─▶ vmt2lean
-                                  │
-                                  ▼
-                        out/Counter/ProveIt/CounterCert.lean
-                                  │
-                                  ▼   two tactic patches; handed back to the pipeline
-                        out/Counter/Certificate/Certificate.lean
-```
-
-The installed file is the project's *own* certificate — the same
-`Certificate/Certificate.lean` that `Certificate.lean` root-imports and that
-`lake build Certificate` reaches, overwriting the `sorry` stub the bare
-project would have carried. The route does not write it: it hands the text
-back in `InferResult.files`, with `Certificate/Equivalence.lean`, and the
-pipeline writes both through the route's `ProjectHandle`. For the reach to
-end in a build rather than an unknown identifier, the row's `lakefile` hook
-gives the project two lakefile entries:
-
-| lakefile entry | resolves |
-|---|---|
-| `[[lean_lib]] name = "<Proj>NA", srcDir = "ProveIt"` | `import <Proj>NA`. `proveit.py` compiles an out-of-tree model into an olean and imports it under the file *stem*, so the stem is the module name the certificate carries; the lib maps it back onto `ProveIt/<Proj>NA.lean`. `fbk.proveit.na_module_name` is the single owner of that name, used to write the model and to declare the lib |
-
-Of the *invariant* the project is still **bare**: it comes from ic3ia, so
-`--infer`, `--invariant`, `--ranking` and `--pre` are rejected rather than
-silently ignored, and `--safety` is required.
-
-### Encoding 6 — NA, for the FBK toolchain (`infer/fbk_proveit/na.py`)
-
-`proveit.py`'s first step, `lake exe lean2vmt`, pattern-matches on a very
-specific Lean shape. This encoding is emitted only for that route, and is
-not one of the five above — though the project does build it, as the
-`<Proj>NA` lean_lib, because the certificate imports it:
-
-| `lean2vmt` requires | why | what it would otherwise get |
-|---|---|---|
-| binders `state` / `statenext` | `emitDefs` looks them up by name to tell current from next | `state`, `newstate`, `s` |
-| state read as `var_i state` | `exprToSMT`'s `.fvar` case returns the bare binder name and **drops the index**, collapsing every slot onto one variable | `(state i)` |
-| next state as `var_i statenext` | this is how `collectLatchesIndices` finds the latches at all | `(newstate i)` |
-| `INIT` / `TRANS` / `PROPERTY` | they become `:init`, `:trans`, `:invar-property` | `InitCond`, `TransRel`, nothing |
-| top-level `StateType`, `abbrev M : … NA …` | the certificate template imports the model and names both | everything inside a namespace |
-| self-contained imports | it is elaborated inside the `lean-ltl-certifying` package | imports `Relational.Basic`, `System.Scalar`, … |
-
-The right-hand column is what the project's own Bool-valued relational
-encoding emitted. That encoding — `System/FBK.lean`, one of six until this
-one replaced it — missed every row, which is why the two could never be the
-same file; nothing else read it, so it is gone and its name is here.
-
-### What the route refuses
-
-Everything `lean2vmt`/`vmt2lean.py` cannot represent aborts with a non-zero
-exit instead of producing a transition system that parses but does not
-describe the module:
-
-| rejected | because |
-|---|---|
-| external input wires | `lean2vmt` models only `state`/`statenext` |
-| state elements other than `Int`/`Bool` | `vmt2lean.py`'s `tp()` maps back only those two |
-| — | a state *mixing* `Int` and `Bool` is fine: `TypeMap` gets an arm per slot, and the `TypeMap.match_1` the equation compiler generates never reaches the VMT, because `emitDefs` keeps only declarations whose return type whnfs to `Prop`/`Int`/`Bool` |
-| — | a ctrl wire *wider* than 1×1 is fine too, and used to be the largest refusal here: the state is flattened to one VMT variable per **element**, so `R_k` compares two scalars where it once would have compared two tuples |
-| an op the Bool printer cannot render | same boundary from the other side: the printer raises rather than emit something `exprToSMT` would misread. `Linear`, `Argmax`, `Max`/`Min`, `Xor` and `Ne` all pass it — as an affine sum, a nested `ite` chain, `max`/`min`, `!(a == b)` and a negated equality — which is why they are no longer refused |
-| — | `Ne`, `ReLU`, `Max` and `Min` need a `lean2vmt` carrying the commit *"translate mod, max/min and a negated decidable instance"*; against an older one they go back to being printed as `instDecidableNot` / `max` / `min` |
-| `lake` missing, `mathsat` not importable, `proveit.py` failing or writing nothing | checked before and after the subprocess |
-
-**`--fbk-simplify none`** turns the rewriter off. It is a spelling, not a
-semantics: a module whose update reads `if x + 1 = 10 then 0 else x + 1`
-emits
-
-```lean
--- default
-abbrev effect_0 (state : StateType) : Int :=
-  (if ((var_0 state) == (9 : Int)) then (0 : Int) else ((1 : Int) + (var_0 state)))
--- --fbk-simplify none
-abbrev effect_0 (state : StateType) : Int :=
-  (if (((var_0 state) + (1 : Int)) == (10 : Int)) then (0 : Int) else ((var_0 state) + (1 : Int)))
-```
-
-— the same transition, and only the second one can be read against the
-source. Bool slots are never simplified either way, for a reason worth
-knowing: the rewriter turns `ite c b (¬b)` into an equality, which moves the
-slot from a branch into a *condition*, and `vmt2lean`'s `generalizeNatVar`
-then retypes it to the unreduced `TypeMap` match where the `Decidable`
-instance cannot be synthesised. What the rewriter buys on the arithmetic is
-size: a 32-wide affine layer is 97 KB of term unfolded and 1.9 KB folded, so
-`none` is for reading small models, not for running the sweep.
-
-Two limits are by design rather than by defect. First, the model's imports
-are `lake build`-ed before `proveit.py` runs: `lean2vmt` elaborates the model
-with `processHeader`, so they must already exist as oleans, and `lake exe
-lean2vmt` builds only the executable (whose own imports are just `Lean`).
-The model imports `Cslib.Computability.Automata.NA.Basic` and nothing else —
-`M`'s type is all it needs — so that pre-build is one target;
-`NA_IMPORTS` and `fbk.proveit._LAKE_TARGETS` are the same list, pinned by a
-test, because drift between them leaves `lean2vmt` unable to elaborate.
-Second, the installed certificate is by default **written but not
-compiled** — not because the project cannot compile it (it can: the lakefile
-requires the checkout and declares the NA lib) but because doing so resolves
-and builds Mathlib. That is `--build-cert`, which is not this route's flag:
-see [Building the certificate](#building-the-certificate---build-cert).
-
-### The `lean-ltl-certifying` side
-
-[ltl]: https://github.com/zeroth/proof-prototyping
-
----
 
 ## Adding a New Op (`lowering/ops.py`)
 
@@ -1051,68 +629,6 @@ see [Building the certificate](#building-the-certificate---build-cert).
 `tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
 directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.
-
----
-
-## Adding an Inference Route (`infer/`)
-
-Every way verith can be handed a certificate is one row of
-`infer.ROUTES`, and `--infer <name>` selects a row.  A route is one
-package, `infer/<name>/`: its `__init__.py` exports `ROUTE` (an
-`InferRoute`), its `engine.py` is what the row runs, and its entry in the
-`ROUTES` tuple of `infer/__init__.py` is the only line written elsewhere.
-`cli/` reads the rows, so the `--infer` choices, the help text, every
-cross-flag rule and the dispatch all follow from the row rather than from
-an edit apiece.  The row imports its engine inside `run`, so
-`verith --help` imports none of them; no route imports another, and an
-option two rows share is declared once in `infer/common/options.py`.  The
-types a row is written in are in `infer/route.py` (the row) and
-`infer/io.py` (what a route is given and hands back).
-
-A row says:
-
-* **the property** — `kinds` (`"safety"`, `"buchi"`, or both) and
-  `kinds_refusal`, the sentence printed when the property is the other one.
-  The check is generic and the reason is not: why the `ai` route cannot
-  certify `G P` is prose about `rule_globally`, and why `nuterm` discards a
-  precondition is prose about Houdini.
-* **what it seeds from** — `seeds`, the given predicates it will *use*
-  rather than discard, and `seeds_refusal`.  A predicate outside the
-  set is refused where it is passed, not dropped four steps later.
-* **the project** — `reads` (encoding suffixes; `""` is the functional one)
-  and `owns` (project-relative paths it may write).  The route is handed a
-  `ProjectHandle`, so these two are the whole of its access, and a route
-  that needs more of the project than the predicates says which more.
-* **the input** — `reads_source`: the route is handed the file the module
-  was read from (`InferInput.source`, a `SourceText`) and the names claims
-  may use (`InferInput.names`). A route that does not declare it gets
-  `None` for both.
-* **the hooks** — `resolve` at parse time (a route whose lakefile names a
-  path has to reject a bad one before any of the project exists),
-  `lakefile(config, project_name)`, the `LakefileParts` (extra `lean_lib`s
-  and `require`s) the project is generated with, `precheck` once the module
-  is loaded and before it is generated (a module shape the route cannot
-  express is met there rather than as a traceback out of an encoder it never
-  wanted; it is handed the run's encoding), and `run`.
-* **its own flags** — `options`, a tuple of `Opt`.  Passed without the route
-  selected, each is an error rather than a no-op.  `aliases` carries any
-  older spelling that selects the route and fills one of those options
-  (`--fbk-proveit DIR`), so a deprecated flag goes away with its row.
-
-A route is handed a frozen `InferInput` — the `Claim`, the `given`
-predicates it starts from, the run's encoding and budget — and answers with
-a new `InferResult`: SMT-LIB in `cert`, which the pipeline prints as Lean in
-one place (`proof.render.render_certificate`), or, for the one `returns="lean"` row
-(`ai`), Lean in `lean`.  `files` carries whole files the route produced
-(project-relative path to text); the pipeline writes them after the
-predicates, through the handle, so each has to be a path the row owns.
-`fbk-proveit` answers with its certificate and the proof that its model is
-the module this way.
-
-`tests/test_infer_routes.py` checks the table the way `test_lean_ops.py`
-checks the op matrix: a row declaring an encoding no row emits, a
-refusal with no reason, or two routes claiming one
-flag fails there rather than in generated code.
 
 ---
 
@@ -1132,10 +648,9 @@ flag fails there rather than in generated code.
 If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth
 time: build a `RelSyntax` and a `RelBlock` and call `emit_rel_block` from
-`codegen/encodings/skeleton.py`, as `Rel`, `ScalarRel` (both in
-`codegen/encodings/relational.py`) and the NA model
-(`infer/fbk_proveit/na.py`) do.  It is parameterised on the type builder,
-the projection, and the spelling
+`codegen/encodings/skeleton.py`, as `Rel` and `ScalarRel` (both in
+`codegen/encodings/relational.py`) do.  It is parameterised on the type
+builder, the projection, and the spelling
 (`def`/`abbrev`, `Prop`/`Bool`, `=`/`==`, `∧`/`&&`); the body producer stays
 yours, and the per-slot `*_eq` theorems are emitted only if you name a
 functional counterpart to prove them against.

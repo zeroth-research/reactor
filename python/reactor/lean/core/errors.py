@@ -20,7 +20,7 @@ class Refused(ValueError):
 class PredicateRefused(Refused):
     """A refusal about one of the claim's predicates, named by its `role`:
     "property" (of `kind` "safety" or "buchi"), "pre", "invariant" or
-    "ranking" -- or any other label, for a term a route made up itself.
+    "ranking" -- or any other label, for a term made up along the way.
     The layers that raise it know predicates by role; a claim's predicate
     is shown as the command-line flag it came from, which is where a user
     can act on it, and this is the one place that spelling lives."""
@@ -39,23 +39,3 @@ class PredicateRefused(Refused):
 
     def __str__(self) -> str:
         return f"{self.flag}: {self.message}"
-
-
-def require(package: str, who: str, install: str | None = None):
-    """`package`, imported -- or a refusal saying `who` needs it and how to
-    install it: `install`, or the package itself.
-
-    A missing package is about how the run was asked for, not about the
-    module, and the `ImportError` from wherever it happened to be imported
-    first says neither which flag wanted it nor what to do.
-    """
-    import importlib
-
-    try:
-        return importlib.import_module(package)
-    except ImportError as e:
-        raise Refused(
-            f"{who} needs the `{package}` package, which is not importable. "
-            f"Install with: uv pip install {install or package}",
-        ) from e
-

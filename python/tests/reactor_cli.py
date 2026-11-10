@@ -1,4 +1,4 @@
-"""`uv run verith`, run as a user runs it, for the tests that check what it
+"""`uv run reactor`, run as a user runs it, for the tests that check what it
 prints and writes."""
 
 import subprocess
@@ -8,10 +8,10 @@ from pathlib import Path
 PKG_ROOT = Path(__file__).parent.parent
 
 
-def verith(*args) -> subprocess.CompletedProcess:
-    """`uv run verith *args` from the package root, its output captured."""
+def reactor(*args) -> subprocess.CompletedProcess:
+    """`uv run reactor *args` from the package root, its output captured."""
     return subprocess.run(
-        ["uv", "run", "verith", *args],
+        ["uv", "run", "reactor", *args],
         capture_output=True,
         text=True,
         cwd=PKG_ROOT,

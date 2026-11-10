@@ -1,7 +1,7 @@
 """A command-line option that belongs to one row of a registry -- an
-inference route (`infer`) or an input format (`inputs`) -- rather
-than to verith, and the three rules both registries' options follow. A
-leaf module, so both registries can import it."""
+input format (`inputs`), say -- rather than to the command, and the three
+rules every registry's options follow. A leaf module, so any registry can
+import it."""
 
 from __future__ import annotations
 
@@ -11,11 +11,10 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Opt:
-    """One command-line option that belongs to a row, not to verith.
+    """One command-line option that belongs to a row, not to the command.
 
-    Given without its row selected it is an error rather than a no-op --
-    which is what `--ic3ia`, `--fbk-simplify` and `--fbk-equiv` each said by
-    hand, in a block that grew a line per option per route.
+    Given without its row selected it is an error rather than a no-op,
+    said once here rather than by hand for each option of each row.
     """
 
     flags: tuple[str, ...]
@@ -36,7 +35,7 @@ class Opt:
 # A row's options are parsed with `default=None`, so that "given" can be told
 # from "not given": an option passed the very value its row defaults to still
 # counts as given, which is what makes "only meaningful with its row" honest.
-# These read that convention back, for a route's options and a format's alike.
+# These read that convention back, for any row's options.
 
 
 def given(opt: Opt, args) -> bool:

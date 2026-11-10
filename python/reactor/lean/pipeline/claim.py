@@ -1,11 +1,8 @@
 """What the run is about: the module, read from its input (`load`), and
-the claim the flags ask (`claim_from_flags`). `show_certificate` prints
-an answer back in the input's names.
+the claim the flags ask (`claim_from_flags`).
 """
 
 from __future__ import annotations
-
-import shlex
 
 from ..cli import Settings
 from ..core.certificate import Certificate, Claim
@@ -60,16 +57,3 @@ def claim_from_flags(
     claim = Claim(prp=prp, kind=settings.kind, init_pre=pre, update_pre=pre)
     return claim, Certificate(internal(settings.invariant, "--invariant"),
                               internal(settings.ranking, "--ranking"))
-
-
-def show_certificate(cert: Certificate, names: "inputs.Names") -> None:
-    """The route's answer in the input's names, as `--invariant` and
-    `--ranking` take it: what one run found, the next can be given."""
-    shown = [(flag, text) for flag, text in (("--invariant", cert.inv),
-                                             ("--ranking", cert.ranking))
-             if text]
-    if not shown:
-        return
-    print(".. The certificate, in the input's names:")
-    for flag, text in shown:
-        print(f"   {flag} {shlex.quote(inputs.to_surface(text, names))}")

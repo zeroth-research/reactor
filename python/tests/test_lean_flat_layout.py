@@ -7,7 +7,8 @@ Those were independent walks over the
 same row-major order, agreeing by construction and by comment; the
 defects `d49ebdb9` and `fe8600da` fixed are what that was worth. They now
 all go through `lowering.elements.flat_layout`, and this is the test that
-says so.
+says so -- for the NA model and the bridge, which are the fbk-proveit
+route's, `verith/tests/test_fbk_layout.py` is.
 
 The shapes here are synthetic on purpose. Mutating `flat_indices` to
 column-major and running the fast suite fails exactly one existing test:
@@ -39,7 +40,6 @@ from reactor.lean.lowering.elements import (
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.codegen.terms import product_type_scalar
 from reactor.lean.codegen.encodings.common import scalar_bindings_with_recon
-from reactor.lean.infer.fbk_proveit.na import slot_accessors
 from reactor.lean.codegen.encodings.scalar import _pack_body, _unpack_body
 
 # One wire list per case. The last three are the ones no fixture has: a
@@ -193,19 +193,6 @@ def test_scalar_bindings_hand_each_wire_its_own_slots(wires):
         assert positions == list(range(offset, offset + size))
 
 
-def test_na_state_variables_are_numbered_in_slot_order(wires):
-    """The NA model's `var_k` and the flat tuple are the same numbering."""
-    layout = flat_layout(wires)
-    acc = slot_accessors(wires)
-    assert list(acc) == [f"s{i}" for i in range(len(wires))]
-    seen = []
-    for i, w in enumerate(wires):
-        reads = acc[f"s{i}"]
-        assert len(reads) == flat_size(w)
-        seen += [int(re.match(r"\(var_(\d+) state\)", r).group(1)) for r in reads]
-    assert seen == list(range(layout.total))
-
-
 def test_scalar_product_type_is_the_slot_types(wires):
     """The type of the flat tuple has one component per slot, in order."""
     layout = flat_layout(wires)
@@ -233,41 +220,11 @@ def _matrix_module() -> Module:
     return Module.sequential([x], init, update)
 
 
-def test_na_model_init_is_the_matrix_read_row_major():
-    """`Definition.init_k` for a 2x3 ctrl wire, against the source tensor.
-
-    """
-    from reactor.lean.infer.fbk_proveit.na import atom_to_lean_na
-
-    ctx = LeanContext(_matrix_module())
-    src = atom_to_lean_na(ctx, "true", module_name="matrix")
-    init = dict(re.findall(r"abbrev init_(\d+) : Int :=\n  \(?(-?\d+)", src))
-    assert [init[str(k)] for k in range(6)] == ["1", "2", "3", "4", "5", "6"]
-
-
 def test_scalar_unpack_of_a_2d_wire_reads_row_major():
     """`Scalar.unpack_ctrl` on the same wire, for the other half of the bridge."""
     ctx = LeanContext(_matrix_module())
     parts = _tuple_parts(_unpack_body("s", ctx.ctrl_next), 6)
     assert parts == [f"s {r} {c}" for r in range(2) for c in range(3)]
-
-
-def test_bridge_reads_the_state_exactly_as_unpack_does():
-    """`Bridge.toSlots` against `Scalar.unpack_ctrl`, arm by arm.
-
-    These are the two halves of the FBK equivalence: `toSlots` says which
-    model slot an element is, `unpack_ctrl` says which flat component it is.
-    They used to be two functions written to match — the bridge's own
-    docstring said "without either consulting the other" — and a
-    disagreement makes `bridge_k` an obligation about the wrong element.
-    """
-    from reactor.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
-
-    ctx = LeanContext(_matrix_module())
-    src = atom_to_lean_fbk_bridge(ctx, na_module="NA")
-    arms = re.findall(r"^  \| (?:_ \+ )?(\d+) => (.+)$", src, re.M)
-    to_slots = [body for k, body in arms[:6]]
-    assert to_slots == _tuple_parts(_unpack_body("s", ctx.ctrl_next), 6)
 
 
 def test_every_sort_is_two_dimensional_so_one_reading_suffices():

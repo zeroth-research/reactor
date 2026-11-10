@@ -383,15 +383,8 @@ def generate_lean_files() -> None:
         )
         (_CERTS_DIR / f"{name}.lean").write_text(content)
 
-    # Certs/LearnedCountdown.lean — the certificate `--infer nuterm` produces,
-    # rather than one written by hand. Its ranking function is a sum of ReLU
-    # units, `(+ (* c (ite (> <affine> 0) <affine> 0)) ...)`, which no
-    # hand-written certificate in this suite has: whether `zeroth_hammer`
-    # closes `hrank` for that shape is a question only the learner's own
-    # output asks. The route proves the obligations before emitting them, so
-    # a failure here is the Lean side, not the certificate.
     try:
-        from reactor.lean.infer.nuterm.engine import NutermEngine
+        from verith.nuterm.engine import NutermEngine
     except ImportError:
         pass
     else:
@@ -467,11 +460,18 @@ def generate_lean_files() -> None:
     # inlining all of them in the order the project has them is the same
     # elaboration problem, and it runs in this warm build instead of a cold
     # `lake update` per case.
+    #
+    # The route is `verith`'s, as above: without it there are no bridges.
     from reactor.lean.proof.render import generate_data_lean
     from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.infer.fbk_proveit.engine import property_to_bool_lean
-    from reactor.lean.infer.fbk_proveit.na import atom_to_lean_na
-    from reactor.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+    try:
+        from verith.fbk_proveit.engine import property_to_bool_lean
+        from verith.fbk_proveit.na import atom_to_lean_na
+        from verith.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+    except ImportError:
+        bridges = []
+    else:
+        bridges = _BRIDGE_SPECS
 
     def _strip(src: str) -> str:
         out, in_doc = [], False
@@ -487,7 +487,7 @@ def generate_lean_files() -> None:
             out.append(line)
         return "\n".join(out)
 
-    for name, make_module, prop in _BRIDGE_SPECS:
+    for name, make_module, prop in bridges:
         module = make_module()
         ctx = LeanContext(module)
         t = ModuleToLean4(module)

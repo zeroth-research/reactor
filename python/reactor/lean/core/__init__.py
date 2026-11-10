@@ -1,3 +1,3 @@
-"""The vocabulary every layer of verith is written in.
+"""The vocabulary every layer of `reactor.lean` is written in.
 
 """
