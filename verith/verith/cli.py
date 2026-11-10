@@ -118,8 +118,6 @@ class Settings:
     route: InferRoute | None = None
     route_opts: dict = field(default_factory=dict)
     route_config: object | None = None
-    model: str | None = None
-    base_url: str | None = None
 
     project: Path | None = None         # `--project`
     artifacts: str = "use"              # "use" | "ignore" | "reset"
@@ -229,7 +227,7 @@ def parse_args(argv: "list[str] | None" = None, *,
 
     check_project(parser, settings)
     if not settings.claim_deferred:
-        check_route(parser, args, settings)
+        check_route(parser, settings)
     resolve_route(parser, settings)
     return settings
 

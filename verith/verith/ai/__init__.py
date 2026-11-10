@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..common.options import BASE_URL, MODEL
 from ..io import InferInput, InferResult
 from ..route import InferRoute
 
@@ -10,7 +11,8 @@ def _run(inp: InferInput) -> InferResult:
     from .engine import AiEngine
 
     engine = AiEngine(
-        inp.project.encoding(""), model=inp.model, base_url=inp.base_url,
+        inp.project.encoding(""), model=inp.opts["model"],
+        base_url=inp.opts["base_url"],
         log=inp.log,
     )
     # Lean only: it is parsed out of an LLM reply and never had an SMT term
@@ -49,6 +51,6 @@ ROUTE = InferRoute(
     ),
     reads=("",),
     returns="lean",
-    uses_llm=True,
     run=_run,
+    options=(MODEL, BASE_URL),
 )

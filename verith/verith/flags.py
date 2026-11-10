@@ -25,7 +25,6 @@ from . import (
     route_names,
     shared_route_options,
 )
-from .common.llm import DEFAULT_MODEL
 
 # One row per predicate flag: the predicate it supplies, by its short name;
 # the `Settings` attribute that carries it; and the flag to name in a
@@ -53,9 +52,9 @@ def infer_help() -> str:
 
 def add_routes(parser: argparse.ArgumentParser, *,
                required: bool = False) -> None:
-    """The route that infers the certificate, the model the LLM routes
-    ask, and every route's own options, grouped by the routes that
-    declare them. `required` for a command that does nothing else."""
+    """The route that infers the certificate, and every route's own
+    options, grouped by the routes that declare them. `required` for a
+    command that does nothing else."""
     parser.add_argument(
         "--infer",
         nargs="?",
@@ -64,21 +63,6 @@ def add_routes(parser: argparse.ArgumentParser, *,
         required=required,
         choices=list(route_names()),
         help=infer_help(),
-    )
-    parser.add_argument(
-        "--model",
-        default=DEFAULT_MODEL,
-        help=f"LLM model to use for inference (default: {DEFAULT_MODEL}).",
-    )
-    parser.add_argument(
-        "--base-url",
-        default=None,
-        help=(
-            "OpenAI-compatible base URL, e.g. http://localhost:11434/v1 for Ollama "
-            "or https://openrouter.ai/api/v1 for OpenRouter. Hosted providers read "
-            "the API key from OPENROUTER_API_KEY or OPENAI_API_KEY; local servers "
-            "need no key."
-        ),
     )
 
     # One group per option, named for every route that declares it, so
@@ -154,7 +138,7 @@ def check_route_options(
     )
 
 
-def check_route(parser: argparse.ArgumentParser, args, settings) -> None:
+def check_route(parser: argparse.ArgumentParser, settings) -> None:
     """Every rule about inference, read off the route's row.
 
     `settings` is the command's own: the claim's fields, named as
@@ -192,17 +176,6 @@ def check_route(parser: argparse.ArgumentParser, args, settings) -> None:
             f"{', '.join(discarded)}{because}"
         )
 
-    # `--model` and `--base-url` are for the routes that call an LLM. Named
-    # as the pair they are even when only one was passed: which of the two
-    # was given is not the point, that this route calls no LLM is.
-    if not route.uses_llm and (
-        args.model != parser.get_default("model") or args.base_url
-    ):
-        parser.error(
-            f"--model and --base-url are for the LLM routes; --infer "
-            f"{route.name} calls none"
-        )
-
     if route.extra_check is not None:
         problem = route.extra_check(settings)
         if problem:
@@ -216,16 +189,13 @@ def selected_route(args) -> "InferRoute | None":
 
 def route_fields(args, route: "InferRoute | None") -> dict:
     """The fields a command's `Settings` carries about the route: the row,
-    its options by `dest` (defaulted by `check_route_options`), and the
-    model the LLM routes ask."""
+    and its options by `dest` (defaulted by `check_route_options`)."""
     return dict(
         route=route,
         route_opts=(
             {o.dest: getattr(args, o.dest) for o in route.options}
             if route else {}
         ),
-        model=args.model,
-        base_url=args.base_url,
     )
 
 
