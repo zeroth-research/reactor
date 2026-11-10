@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from reactor.lean.core.errors import PredicateRefused
 from ..common.claim import SynthContext
@@ -64,12 +64,24 @@ class Search:
     wide: Draws
     pins: dict[str, str]
     log: Callable = print
+    # The last state asked about, and its env: facts are asked about one
+    # state after another, so the env is built once per state rather than
+    # once per fact.
+    _last: list = field(default_factory=lambda: [None, None], init=False,
+                        repr=False, compare=False)
+
+    def env(self, state) -> dict:
+        """`state` as the evaluator reads it: a value per `s<i>`."""
+        last = self._last
+        if last[1] is None or last[0] != state:
+            last[0], last[1] = state, dict(zip(self.ctx.names, state))
+        return last[1]
 
     def holds(self, fact: Candidate, state) -> bool:
         """Whether `fact` holds at `state`. A fact with no value there is
         not refuted by it."""
         try:
-            return bool(self.ev(fact.term, dict(zip(self.ctx.names, state))))
+            return bool(self.ev(fact.term, self.env(state)))
         except Unevaluable:
             return True
 
@@ -161,8 +173,11 @@ class Search:
                 self.ctx, self.ob, self.ev,
                 self.wide if n % 2 else self.draws, self.runs.states,
                 lambda s: all(self.holds(f, s) for f in kept))
-            broken = {i for i, f in enumerate(kept)
-                      if any(not self.holds(f, sp) for _, sp in rounds)}
+            # Round by round, so each round's env is built once.
+            broken: set = set()
+            for _, sp in rounds:
+                broken.update(i for i, f in enumerate(kept)
+                              if i not in broken and not self.holds(f, sp))
             if not broken:
                 break
             kept = [f for i, f in enumerate(kept) if i not in broken]
@@ -426,8 +441,8 @@ class Search:
                 return True
             if rank is not None:
                 try:
-                    before = self.ev(rank.term, dict(zip(self.ctx.names, s)))
-                    after = self.ev(rank.term, dict(zip(self.ctx.names, sp)))
+                    before = self.ev(rank.term, self.env(s))
+                    after = self.ev(rank.term, self.env(sp))
                 except Unevaluable:
                     continue
                 if not drops(before, after):

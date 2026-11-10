@@ -9,6 +9,7 @@ obligations (`common.obligations.Obligations`) are stated over one.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 
 from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
@@ -98,7 +99,7 @@ class SynthContext:
     def extl_next(self) -> list:
         return self.env.extl_next_vars
 
-    @property
+    @cached_property
     def names(self) -> list[str]:
         return [f"s{i}" for i in range(len(self.state))]
 
