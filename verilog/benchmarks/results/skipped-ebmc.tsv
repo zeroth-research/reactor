@@ -1,0 +1,423 @@
+file	reason
+hw-cbmc/regression/verilog/SVA/case1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover1.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover1.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover1.k-induction.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover3.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover4.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover4.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover4.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover4.k-induction.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover_sequence1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover_sequence2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover_sequence3.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover_sequence4.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cover_sequence5.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay2.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay_plus4.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay_star1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay_star1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay_star2.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay_star2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay_star3.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay_star3.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay_star3.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/cycle_delay_star4.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/default_disable1.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/disable_iff1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/disable_iff1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/empty_sequence1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/empty_sequence1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/empty_sequence1.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/empty_sequence1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/eventually1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/eventually1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/eventually2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/eventually4.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/eventually4.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by1.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by2.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by2.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by2.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by2.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by4.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by4.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by4.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by4.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by5.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by5.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/followed-by5.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/goto_repetition1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/if1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/if1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/if1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/immediate1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/immediate1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/immediate2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/immediate3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/immediate4.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/SVA/initial1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/initial1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/initial2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/initial2.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/issue669.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/issue669.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/nexttime1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/nexttime1.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/nexttime1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/property_and1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/restrict1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/restrict1.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/restrict1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/s_always1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/s_always1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/s_eventually1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/s_eventually2.bdd.buechi.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/SVA/s_eventually2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/s_eventually3.buechi.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/SVA/s_eventually4.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/s_until1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence1.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence2.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence2.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence3.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence4.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence4.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence4.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence4.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence5.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence6.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence6.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_and1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_and1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_and1.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_and2.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_and2.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_and2.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_and2.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_and3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_and3.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_first_match1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_first_match2.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_implication1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_implication1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_implication2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_implication3.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_intersect1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_intersect1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_or1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_or1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_or1.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_or1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition3.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition3.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition3.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition4.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition4.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition4.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition4.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition5.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition5.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition7.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition7.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition7.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition7.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_repetition8.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_throughout1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sequence_within1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/stable1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/static_final1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/static_final1.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/strong1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_abort1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_abort1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_and1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_assume1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_assume1.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_assume1.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_assume2.bmc.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_assume2.bmc.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_assume2.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_iff1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_iff2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_iff2.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_implies1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_implies2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_implies2.k.buechi.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_not1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/sva_or1.bmc.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/SVA/sva_until1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/system_verilog_assertion1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/system_verilog_assertion2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/system_verilog_assertion3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/system_verilog_assertion4.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/unbounded1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/SVA/weak1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/arrays/array_read_variable_index_netlist1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/arrays/array_read_variable_index_netlist1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/arrays/array_read_variable_index_netlist1.new-ic3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/arrays/associative_array_property1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/arrays/dynamic_array1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/arrays/dynamic_array_property1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/assignments/assignment-context2.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/checker/checker3.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/checker/checker4.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/checker/checker6.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/data-types/chandle2_bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/data-types/event2_random_traces.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/data-types/queue_variable_property1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/data-types/real_variable2_ic3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/data-types/real_variable2_ic3_refuted.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/data-types/real_variable2_k_induction.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/data-types/real_variable3_vcd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/enums/enum1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/expressions/real_to_bool1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/for/repeat1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/for/while1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/functioncall/function_as_statement_return1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/functioncall/named_block1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/generate/genvar_scope1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/hierarchical_identifiers/generate_loop_block1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/hierarchical_identifiers/hierarchical_identifiers2.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/interface/generate_block_port_connection1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/interface/interface_array_netlist1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/interface/interface_array_netlist1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/interface/interface_array_netlist1.new-ic3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/interface/modport_import1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/interface/package_import1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/interface/virtual_interface2.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/library-dir/libext1.desc	needs include dirs / defines / library dirs
+hw-cbmc/regression/verilog/library-dir/libext3.desc	needs include dirs / defines / library dirs
+hw-cbmc/regression/verilog/library-dir/library_dir1.desc	needs include dirs / defines / library dirs
+hw-cbmc/regression/verilog/library-dir/library_dir2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/modules/inout_and_variable.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/modules/port_conflict1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/modules/upwards_reference1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/modules/upwards_reference2.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/nets/combinational_cycle1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/combinational_cycle1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/intra_vector_slices1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/intra_vector_slices1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/intra_vector_slices1.new-ic3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/nested_concatenation1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/nested_concatenation1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/net_vs_typedef1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/nets/partially_driven_net2.k-induction.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/register_alias_netlist1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/register_alias_netlist1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/register_alias_netlist1.ic3-p0.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/register_alias_netlist1.ic3-p1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/register_alias_netlist1.new-ic3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/wire_array_2d1.aig.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/nets/wire_array_elements1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/wire_array_elements1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/wire_array_elements1.new-ic3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/wire_array_elements2.bdd.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/nets/wire_array_elements2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/wire_array_elements2.new-ic3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/nets/wire_array_structs1.aig.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/packages/function_vs_import1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/packages/import6.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/packages/import8.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/packages/member_vs_import1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/packages/package_var2.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/parameters/parameter_vs_typedef.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/parameters/signed_parameter1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/parameters/struct_parameter1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/parameters/unpacked_array_param1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/parameters/unsigned_parameter1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/part-select/scalar-bit-select1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/part-select/scalar-part-select1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/preprocessor/cmdline_define2.desc	needs include dirs / defines / library dirs
+hw-cbmc/regression/verilog/preprocessor/include2.desc	needs include dirs / defines / library dirs
+hw-cbmc/regression/verilog/preprocessor/macro_name_paste1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/preprocessor/plus_define4.desc	needs include dirs / defines / library dirs
+hw-cbmc/regression/verilog/rtl/dual_write_port1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/rtl/shared-loop-variable4.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/rtl/shared-loop-variable5.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/rtl/shared-loop-variable6.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/string/string_variable_property1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/synthesis/always_comb2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/synthesis/always_comb2.no-simple-aig.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/synthesis/always_latch1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/synthesis/continuous_assignment_to_net_part_select1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/synthesis/continuous_assignment_to_variable_verilog.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/synthesis/synthesis2.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/synthesis/synthesis3.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/system-functions/isunknown_input1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/system-functions/isunknown_net1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/system-functions/isunknown_packed_array1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/system-functions/isunknown_parameter1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/system-functions/isunknown_variable1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/system-functions/past1.bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/system-functions/past1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/verilog/system-functions/past3.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/system-functions/test_plusargs2.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/system-functions/typename_associative_array1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/system-functions/typename_union1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/verilog/tasks/tasks5.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/BDD/AF1.desc	input `AF1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/AF2.desc	input `AF2.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/AFAG_deadend1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/BDD/AG1.desc	input `AG1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/AG2.desc	input `AG2.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/AU1.desc	input `AU1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/AX1.desc	input `AX1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/BDD1.desc	input `BDD1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/BDD4.desc	input `BDD4.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/BDD5.desc	input `BDD5.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/EF1.desc	input `EF1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/EF2.desc	input `EF2.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/EG1.desc	input `EG1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/EG2.desc	input `EG2.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/EX1.desc	input `EX1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/EX2.desc	input `EX2.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/EX_input1.desc	input `EX_input1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/GF1.desc	input `GF1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/deadend1.desc	input `deadend1.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/just_p.desc	input `just_p.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/show_bdds1.desc	input `just_p.smv` is not Verilog
+hw-cbmc/regression/ebmc/BDD/temporal_assumption1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/BMC/AX1.desc	input `AX1.smv` is not Verilog
+hw-cbmc/regression/ebmc/CLI/multiple-properties2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/CLI/multiple-properties3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/CLI/no-input-file.desc	input `` is not Verilog
+hw-cbmc/regression/ebmc/CLI/show-modules-smv.desc	input `show-modules-smv.smv` is not Verilog
+hw-cbmc/regression/ebmc/CLI/show-trans2.desc	input `show-trans2.smv` is not Verilog
+hw-cbmc/regression/ebmc/Include1/test.desc	needs include dirs / defines / library dirs
+hw-cbmc/regression/ebmc/Properties1/test.desc	input `main.smv` is not Verilog
+hw-cbmc/regression/ebmc/SVA-LTL/lasso1-show-formula.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/SVA-LTL/lasso1-small-bound.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/SVA-LTL/simple_counterexamples_to_Fp.p1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/SVA-LTL/simple_counterexamples_to_Fp.p2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/aiger/constraint.desc	input `constraint.aag` is not Verilog
+hw-cbmc/regression/ebmc/aiger/duplicate_names.desc	input `duplicate_names.aag` is not Verilog
+hw-cbmc/regression/ebmc/aiger/justice-fairness1.desc	input `justice-fairness1.aag` is not Verilog
+hw-cbmc/regression/ebmc/aiger/justice-multi.desc	input `justice-multi.aag` is not Verilog
+hw-cbmc/regression/ebmc/aiger/liveness-fail.desc	input `liveness-fail.aig` is not Verilog
+hw-cbmc/regression/ebmc/aiger/liveness.desc	input `liveness.aig` is not Verilog
+hw-cbmc/regression/ebmc/aiger/safe-ascii.desc	input `safe.aag` is not Verilog
+hw-cbmc/regression/ebmc/aiger/safe1.0-binary.desc	input `safe1.0-binary.aig` is not Verilog
+hw-cbmc/regression/ebmc/aiger/safe1.9-binary.desc	input `safe1.9-binary.aig` is not Verilog
+hw-cbmc/regression/ebmc/aiger/undef_reset.desc	input `undef_reset.aag` is not Verilog
+hw-cbmc/regression/ebmc/aiger/unsafe-ascii.desc	input `unsafe.aag` is not Verilog
+hw-cbmc/regression/ebmc/aiger/unsafe1.0-binary.desc	input `unsafe1.0-binary.aig` is not Verilog
+hw-cbmc/regression/ebmc/aiger/unsafe1.9-binary.desc	input `unsafe1.9-binary.aig` is not Verilog
+hw-cbmc/regression/ebmc/aiger-output/initial1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/assumptions/assume2.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/btor/arithmetic1.desc	input `arithmetic1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/array-trace1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/btor/array1.desc	input `array1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-arithmetic1.desc	input `bitvec1-arithmetic1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-constd-negative1.desc	input `bitvec1-constd-negative1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-sdivo1.desc	input `bitvec1-sdivo1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-sext1.desc	input `bitvec1-sext1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-signed-comparison1.desc	input `bitvec1-signed-comparison1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-signed-comparison2.desc	input `bitvec1-signed-comparison2.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-slice1.desc	input `bitvec1-slice1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-smulo1.desc	input `bitvec1-smulo1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-sra1.desc	input `bitvec1-sra1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitvec1-ssubo1.desc	input `bitvec1-ssubo1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/bitwise1.desc	input `bitwise1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/boolean1.desc	input `boolean1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/comparison1.desc	input `comparison1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/constants1.desc	input `constants1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/constraint1.desc	input `constraint1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/div-overflow1.desc	input `div-overflow1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/div-rem-zero.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/btor/dup-node-id1.desc	input `dup-node-id1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/dup-sort-id1.desc	input `dup-sort-id1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/fair_polarity1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/btor/justice1.desc	input `justice1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/justice_polarity1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/btor/liveness-fail1.desc	input `liveness-fail1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/liveness1.desc	input `liveness1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/liveness2.desc	input `liveness2.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/misc1.desc	input `misc1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/missing-operand1.desc	input `missing-operand1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/next-nonsymbol1.desc	input `next-nonsymbol1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/overflow1.desc	input `overflow1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/redand-array1.desc	input `redand-array1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/safe1.desc	input `safe1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/sext-array1.desc	input `sext-array1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/shift1.desc	input `shift1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/show-parse1.desc	input `unsafe1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/slice-oob1.desc	input `slice-oob1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/trace1.desc	input `unsafe1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/unary1.desc	input `unary1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/unsafe1.desc	input `unsafe1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/btor/word-level1.desc	input `word-level1.btor2` is not Verilog
+hw-cbmc/regression/ebmc/cegar/basic2.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/command-file/include.desc	input `` is not Verilog
+hw-cbmc/regression/ebmc/command-file/nested.desc	input `` is not Verilog
+hw-cbmc/regression/ebmc/command-file/test.desc	input `` is not Verilog
+hw-cbmc/regression/ebmc/cone-of-influence/conflict1.desc	input `conflict1.smv` is not Verilog
+hw-cbmc/regression/ebmc/cone-of-influence/init_cycle1.desc	input `init_cycle1.smv` is not Verilog
+hw-cbmc/regression/ebmc/cone-of-influence/next_cycle1.desc	input `next_cycle1.smv` is not Verilog
+hw-cbmc/regression/ebmc/cone-of-influence/range_cast1.desc	input `range_cast1.smv` is not Verilog
+hw-cbmc/regression/ebmc/cone-of-influence/smv1.desc	input `smv1.smv` is not Verilog
+hw-cbmc/regression/ebmc/cone-of-influence/unrelated1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/elbtunnel/test.desc	input `elbtunnel.aig.smv` is not Verilog
+hw-cbmc/regression/ebmc/engine-heuristic/tautology1.desc	input `tautology1.smv` is not Verilog
+hw-cbmc/regression/ebmc/engine-heuristic/temporal_assumption1.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/engine-heuristic/unsupported1.desc	input `unsupported1.smv` is not Verilog
+hw-cbmc/regression/ebmc/ic3/bobmiterbm1multi.1080.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/ic3/no_latches1.desc	input `no_latches1.smv` is not Verilog
+hw-cbmc/regression/ebmc/ic3/not_supported2.desc	input `not_supported2.smv` is not Verilog
+hw-cbmc/regression/ebmc/ic3/smv_ag1.desc	input `smv_ag1.smv` is not Verilog
+hw-cbmc/regression/ebmc/ic3/smv_g1.desc	input `smv_g1.smv` is not Verilog
+hw-cbmc/regression/ebmc/ic3/unconstrained_initial.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/k-induction/k-induction5.k-3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/library-files/library3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/library-files/library4.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/liveness-to-safety/failing1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/liveness-to-safety/failing1.ic3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/liveness-to-safety/failing1.k-1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/liveness-to-safety/failing2.ic3.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/liveness-to-safety/failing2.k-6.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/liveness-to-safety/fairness_failing1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/liveness-to-safety/nested_temporal1.bdd.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/liveness-to-safety/passing1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/liveness-to-safety/passing1.ic3.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/liveness-to-safety/passing1.k-10.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/liveness-to-safety/passing2.ic3.desc	test marked `KNOWNBUG` (not CORE)
+hw-cbmc/regression/ebmc/liveness-to-safety/passing2.k-10.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/neural-liveness/live_signal1.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/new-ic3/constraint1.desc	input `constraint1.smv` is not Verilog
+hw-cbmc/regression/ebmc/new-ic3/constraint_proved1.desc	input `constraint_proved1.smv` is not Verilog
+hw-cbmc/regression/ebmc/new-ic3/constraint_proved2.desc	input `constraint_proved2.smv` is not Verilog
+hw-cbmc/regression/ebmc/new-ic3/constraint_refuted1.desc	input `constraint_refuted1.smv` is not Verilog
+hw-cbmc/regression/ebmc/new-ic3/constraint_refuted2.desc	input `constraint_refuted2.smv` is not Verilog
+hw-cbmc/regression/ebmc/new-ic3/constraint_refuted3.desc	input `constraint_refuted3.smv` is not Verilog
+hw-cbmc/regression/ebmc/random-traces/long_trace1.random-waveform.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/ranking-function/clock24h.hour.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/ranking-function/clock24h.minute.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/ranking-function/counter1.pass.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/ranking-function/counter2.pass.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/ranking-function/counter_with_reset1.pass.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/show-formula/show-formula1.desc	input `show-formula1.smv` is not Verilog
+hw-cbmc/regression/ebmc/small-test1/test.desc	input `main.smv` is not Verilog
+hw-cbmc/regression/ebmc/small-test2/test.desc	input `main.smv` is not Verilog
+hw-cbmc/regression/ebmc/smv-netlist/assignment-bdd.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/smv-netlist/assignment-default.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/smv-netlist/assignment.desc	same file and top as an earlier test (other engine/bound)
+hw-cbmc/regression/ebmc/smv-netlist/invar1.desc	input `invar1.smv` is not Verilog
+hw-cbmc/regression/ebmc/smv-netlist/nondet1.desc	input `nondet1.smv` is not Verilog
+hw-cbmc/regression/ebmc/smv-netlist/smv1.desc	input `smv1.smv` is not Verilog
+hw-cbmc/regression/ebmc/smv-word-level/smv1.desc	input `smv1.smv` is not Verilog
+hw-cbmc/regression/ebmc/traces/disjunction1.desc	input `disjunction1.smv` is not Verilog
+hw-cbmc/regression/ebmc/traces/numbered1.desc	input `waveform1.smv` is not Verilog
+hw-cbmc/regression/ebmc/traces/waveform1.desc	input `waveform1.smv` is not Verilog
