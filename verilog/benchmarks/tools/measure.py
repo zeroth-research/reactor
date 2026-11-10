@@ -159,8 +159,6 @@ SETS = {"verilog-eval": verilog_eval, "sv-tests": sv_tests, "ebmc": ebmc, "sby":
 NOT_MEASURED = [
     ("riscv-formal", "case-study size (RISC-V cores checked against RVFI with SVA); "
      "future step, once the subset handles a whole core"),
-    ("RTLLM", "not chosen as a benchmark: an early probe accepted 1 of 50 designs (old Verilog "
-     "style: non-ANSI ports, `reg`)"),
     ("hw-cbmc/regression/{smv,vhdl,hw-cbmc,vlindex,rajdeep}", "not SystemVerilog designs "
      "for EBMC (other input languages, C co-verification, indexer tests)"),
 ]
