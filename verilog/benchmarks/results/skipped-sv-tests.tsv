@@ -1,0 +1,490 @@
+file	reason
+sv-tests/tests/chapter-10/10.3--proc-assignment--bad.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-11/11.3.6--assign_in_expr_inv.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-11/11.4.14.3--unpack_stream_inv.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-11/11.4.14.4--dynamic_array_stream-sim.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-11/11.4.14.4--dynamic_array_stream.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-11/11.4.14.4--dynamic_array_stream_with.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-11/11.9--tagged_union_member_access_inv.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-12/12.7.3--foreach.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-12/12.7.6--forever.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-13/13.3.1--task-static.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-13/13.4.1--function-void-return.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-13/13.4.2--function-static.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-13/13.4.4--fork-invalid.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-13/13.4.4--fork-valid.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-14/14.3--clocking-block-signals-error.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-14/14.3--clocking-block-signals.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-14/14.3--clocking-block.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-14/14.3--default-clocking-block.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-14/14.3--global-clocking-block.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-15/15.5.1--named-event-trigger-blocking.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-15/15.5.1--named-event-trigger-non-blocking.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-15/15.5.2--named-event-wait.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.10--property-local-var-fail.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-16/16.10--property-local-var-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.10--property-local-var.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.10--sequence-local-var-fail.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-16/16.10--sequence-local-var-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.10--sequence-local-var.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.11--sequence-subroutine-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.12--property-interface-prec-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.12--property-interface-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.12--property-prec-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.12--property-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.13--sequence-multiclock-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.14--assume-property-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.15--property-disable-iff-fail.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-16/16.15--property-disable-iff.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.15--property-iff-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.17--expect-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.2--assert-final-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.2--assert-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.2--assert0-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.2--assume-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.7--sequence-and-range-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.7--sequence-and-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.7--sequence-intersect-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.7--sequence-or-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.7--sequence-throughout-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.7--sequence-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.7--sequence.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.9--sequence-changed-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.9--sequence-cons-repetition.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.9--sequence-fell-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.9--sequence-goto-repetition.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.9--sequence-noncons-repetition.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.9--sequence-past-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.9--sequence-rose-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-16/16.9--sequence-stable-uvm.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.10--dynamic-constraint-modification_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.11--in-line-random-variable-control_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.11--in-line-random-variable-control_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.11.1--in-line-constraint-checker_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.11.1--in-line-constraint-checker_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.12--randomization-of-scope-variables_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.12--randomization-of-scope-variables_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.12.1--adding-constraints-to-scope-variables_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.12.1--adding-constraints-to-scope-variables_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.13.1--urandom_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.13.1--urandom_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.13.1--urandom_2.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.13.1--urandom_3.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.13.2--urandom_range_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.13.2--urandom_range_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.13.2--urandom_range_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.13.2--urandom_range_3.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.13.3--srandom_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.13.4--get_randstate_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.13.5--set_randstate_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.14--random-stability_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.14--random-stability_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.14--random-stability_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.14--random-stability_3.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.14.2--thread-stability_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.14.2--thread-stability_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.14.3--object-stability_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.14.3--object-stability_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.15--manually-seeding-randomize_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.15--manually-seeding-randomize_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17--random-sequence-generation-randsequence_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17--random-sequence-generation-randsequence_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.1--random-production-weights_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.2--if-else-production-statements_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.2--if-else-production-statements_0_fail.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.17.2--if-else-production-statements_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.2--if-else-production-statements_2_fail.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.17.3--case-production-statements_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.3--case-production-statements_0_fail.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.17.4--repeat-production-statements_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.5--interleaving-productions-rand-join_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.5--interleaving-productions-rand-join_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.6--aborting-productions-break-and-return_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.6--aborting-productions-break-and-return_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.17.6--aborting-productions-break-and-return_2_fail.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.17.7--value-passing-between-productions_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.4.1--rand-modifier.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.4.2--randc-modifier.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5--constraint-blocks_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5--constraint-blocks_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.1--explicit-external-constraint_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.1--explicit-external-constraint_1.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.5.1--explicit-external-constraint_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.1--implicit-external-constraint_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.1--implicit-external-constraint_1.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.1--implicit-external-constraint_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.10--variable-ordering_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.10--variable-ordering_1.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.5.11--static-constraint-blocks_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.11--static-constraint-blocks_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.12--functions-in-constraint_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.12--functions-in-constraint_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.13--constraint-guards_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.13--constraint-guards_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.14--soft-constraints_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.14--soft-constraints_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.14--soft-constraints_2.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.5.14.1--soft-constraint-priorities_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.14.1--soft-constraint-priorities_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.14.1--soft-constraint-priorities_2.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.14.1--soft-constraint-priorities_3.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.14.1--soft-constraint-priorities_4.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.14.2--discarding-soft-constraints_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.14.2--discarding-soft-constraints_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.14.2--discarding-soft-constraints_2.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.14.2--discarding-soft-constraints_3.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.14.2--discarding-soft-constraints_5.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.2--constraint-inheritance_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.2--constraint-inheritance_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.2--pure-constraint_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.2--pure-constraint_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.2--pure-constraint_2.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.5.2--pure-constraint_3.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.3--set-membership_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.3--set-membership_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.4--distribution_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.4--distribution_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.4--distribution_2.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.5.5--uniqueness-constraints_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.5--uniqueness-constraints_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.6--implication_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.6--implication_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.7--if-else-constraints_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.7--if-else-constraints_1.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.7--if-else-constraints_2.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.7--if-else-constraints_3.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.7--if-else-constraints_4.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.8.1--foreach-iterative-constraints_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.8.1--foreach-iterative-constraints_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.8.2--array-reduction-iterative-constraints_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.8.2--array-reduction-iterative-constraints_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.5.9--global-constraints_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.5.9--global-constraints_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.6.1--randomize-method_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.6.2--post-randomize_method_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.6.2--post-randomize_method_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.6.2--pre-randomize-method_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.6.2--pre-randomize-method_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.6.3--behavior-of-randomization-methods_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.6.3--behavior-of-randomization-methods_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.6.3--behavior-of-randomization-methods_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.6.3--behavior-of-randomization-methods_3.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.6.3--behavior-of-randomization-methods_4.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.6.3--behavior-of-randomization-methods_5.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.7--in-line-constraints--randomize_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.7--in-line-constraints--randomize_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.7--in-line-constraints--randomize_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.7--in-line-constraints--randomize_3.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.7--in-line-constraints--randomize_4.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.7--in-line-constraints--randomize_5.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.7--in-line-constraints--randomize_6.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.7.1--local-scope-resolution_0.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-18/18.7.1--local-scope-resolution_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.8--disabling-random-variables-with-rand_mode_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.8--disabling-random-variables-with-rand_mode_1.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.8--disabling-random-variables-with-rand_mode_2.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.8--disabling-random-variables-with-rand_mode_3.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.8--disabling-random-variables-with-rand_mode_4.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.8--disabling-random-variables-with-rand_mode_5.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.9--controlling-constraints-with-constraint_mode_0.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-18/18.9--controlling-constraints-with-constraint_mode_1.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-18/18.9--controlling-constraints-with-constraint_mode_2.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-20/20.10--error.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.10--fatal.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.10--info.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.10--warning.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.14--coverage.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.2--exit.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.2--finish.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.2--stop.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.3--realtime.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.3--stime.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.3--time.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.4--printtimescale-hier.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.4--printtimescale.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.4--timeformat.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-20/20.5--shortreal-bits-conv.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.2--display.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.2--monitor.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.2--strobe.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.2--write.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--fdisplay.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--fflush.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--file.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--fmonitor.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--fpos.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--fread.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--fscanf.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--fstrobe.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--fwrite.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.3--sscanf.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.7--dumpfile.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-21/21.7--dumpports.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-22/22.10--celldefine-basic-1.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.10--celldefine-basic-2.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.11--pragma-basic.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.11--pragma-complex.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.11--pragma-invalid.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.11--pragma-nested.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.11--pragma-number-multi.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.11--pragma-number.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.12--line-basic.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.12--line-complex.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.12--line-illegal-1.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.12--line-illegal-2.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.12--line-illegal-3.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.12--line-illegal-4.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.12--line-illegal-5.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.3--resetall_illegal.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_1.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_10.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_11.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_12.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_13.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_14.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_15.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_16.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_17.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_18.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_19.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_2.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_20.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_21.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_22.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_23.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_24.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_25.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_26.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_3.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_4.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_5.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_6.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_7.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_8.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.5.1--define-expansion_9.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--define.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.1--include-define-expansion.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.2--undef-basic.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.2--undef-nonexisting.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.3--undefineall-and-redefine.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.5.3--undefineall-basic.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.6--ifdef-behavioral.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.6--ifdef-chained-nested.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.6--ifdef-nested.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.7--timescale-basic-1.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.7--timescale-basic-2.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.7--timescale-basic-3.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.7--timescale-basic-4.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.7--timescale-module.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-22/22.7--timescale-reset.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.8--default_nettype-redefinition.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.8--default_nettype.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.9--unconnected_drive-basic-2.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.9--unconnected_drive-basic.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/22.9--unconnected_drive-invalid-1.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.9--unconnected_drive-invalid-2.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/22.9--unconnected_drive-invalid-3.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-22/dummy_include.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-22/include_directory/defs.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-23/23.2--macromodule-definition.sv	no `module` (package/class/interface/snippet only)
+sv-tests/tests/chapter-24/24.3--program.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-5/5.10-structure-arrays-illegal.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-5/5.6--wrong-identifiers.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-5/5.6.4--compiler-directives-preprocessor-macro_0.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-5/5.6.4--compiler-directives-preprocessor-macro_1.sv	needs preprocessor defines (`:defines:`), v2rm has no `-D`
+sv-tests/tests/chapter-5/5.6.4--compiler-directives-unconnected-drive.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/chapter-5/5.7.1--integers-signed-illegal.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-5/5.7.1--integers-unsized-illegal.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-5/5.7.2-real-constants-illegal.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-5/5.7.2-real-token.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-5/5.8-time-literals.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.12--real.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.12--real_bit_select.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.12--real_bit_select_idx.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.12--real_edge.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.12--realtime.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.12--shortreal.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.14--chandle.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.16.10--string_atoreal.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.17--event.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.19--enum_value_inv.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.19--enum_xx_inv.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.19--enum_xx_inv_order.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.19.3--enum_type_checking_inv.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.19.4--enum_numerical_expr_no_cast.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.20.3--parameter_type.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.20.5--specparam_inv.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.20.6--const.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.23--type_op.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.5--variable_mixed_assignments.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.5--variable_multiple_assignments.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.5--variable_redeclare.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-6/6.6.7--nettype_resolution_fn.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-6/6.9.2--vector_vectored_inv.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-7/arrays/associative/arguments.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/find-first-index.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/find-first.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/find-index.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/find-last-index.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/find-last.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/find.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/max.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/min.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/unique-index.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/locator-methods/unique.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/other.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/associative/wildcard.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/packed/variable-slice-zero.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-7/arrays/unpacked/index.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/arrays/unpacked/subroutines.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/basic.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/delete.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/delete_assign.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/insert.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/insert_assign.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/persistence.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/pop_back.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/pop_back_assing.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/pop_front.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/pop_front_assign.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/push_back.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/push_back_assign.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/push_front.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/push_front_assign.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/size.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/queues/slice.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-7/structures/packed/default-value.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.10--static_methods.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.11--this.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.12--assignment.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.12--shallow_copy.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.13--inheritance.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.14--override_member.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.15--super-default-new.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.15--super.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.16--cast_func.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.17--constructor_const_arg.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.19--instance_constant.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.20--virtual_method.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.21--abstract_class.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.21--abstract_class_inst.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.22--dynamic_method_lookup.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.23--scope_resolution.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.24--out_of_block_methods.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.25--parametrized_class_extend.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.25.1--parametrized_class_invalid_scope_resolution.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.25.1--parametrized_class_scope_resolution.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.26.2--implements.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.26.2--implements_extends.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.26.2--implements_multiple.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.26.3--type_access_implements.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.26.3--type_access_implements_invalid.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.26.4--illegal_forward_def_implements.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.26.4--illegal_implements_parameter.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.26.5--cast_between_interface_classes.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.26.5--implemented_class_handle.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.26.5--invalid_interface_instantiation.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.26.6.1--name_conflict_resolved.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.26.6.1--name_conflict_unresolved.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.26.6.2--parameter_type_conflict_unresolved.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.26.6.3--diamond_relationship_parametrized.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-8/8.26.7--partial_implementation.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.4--instantiation.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.5--parameters.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.5--properties.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.5--properties_enum.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.6--methods.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.7--constructor.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.7--constructor_param.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.7--constructor_super.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.8--typed_constructor.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.8--typed_constructor_param.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-8/8.9--static_properties.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.3.2--parallel_block_join.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.3.2--parallel_block_join_any.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.3.2--parallel_block_join_none.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.3.3--block_start_finish.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.3.3--event.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.3.3--fork_return.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/chapter-9/9.3.4--block_names_par.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.3.5--statement_labels_par.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.1--delay_control-sim.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.1--delay_control-two-blocks-sim.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.1--delay_control.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.2--event_control_sim.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.2--event_control_sim_minimal.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.2.4--event_sequence.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.3--event_sequence_controls.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.5--event_nonblocking_assignment_event.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.5--event_nonblocking_assignment_repeat.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.5--event_nonblocking_assignment_repeat_int.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.5--event_nonblocking_assignment_repeat_int_neg.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.4.5--event_nonblocking_assignment_repeat_neg.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.6.1--wait_fork.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.6.2--disable_other.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.6.3--disable_fork.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.7--process_cls_await.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.7--process_cls_kill.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.7--process_cls_self.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/chapter-9/9.7--process_cls_suspend_resume.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/class/class_test_30.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/class/class_test_52.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/class/class_test_54.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/class/class_test_55.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/desc/desc_test_0.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_1.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_10.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_15.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_16.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_17.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_18.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_2.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_3.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_4.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_5.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_6.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_7.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_8.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/desc/desc_test_9.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/empty/empty_test_0.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/empty/empty_test_1.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/empty/empty_test_2.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/empty/empty_test_3.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/empty/empty_test_4.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/empty/empty_test_5.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/member/class_member_test_10.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_12.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_27.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_3.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_39.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_4.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_40.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_41.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_5.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/generic/member/class_member_test_6.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_7.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_8.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/member/class_member_test_9.sv	marked `:unsynthesizable: 1`
+sv-tests/tests/generic/preproc/preproc_test_0.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/preproc/preproc_test_2.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/preproc/preproc_test_4.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/preproc/preproc_test_5.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/preproc/preproc_test_6.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/preproc/preproc_test_7.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/preproc/preproc_test_8.sv	preprocessor-only test (`:type: preprocessing`)
+sv-tests/tests/generic/typedef/typedef_test_25__bad.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/generic/typedef/typedef_test_28__bad.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/generic/typedef/typedef_test_8__bad.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/sanity.sv	should-fail test (`:should_fail_because:`)
+sv-tests/tests/testbenches/uvm_agent_active.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_agent_env.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_agent_passive.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_driver_sequencer_env.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_monitor_env.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_resource_db_read_by_name.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_scoreboard_env.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_scoreboard_monitor_agent_env.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_scoreboard_monitor_env.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_sequence.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/testbenches/uvm_test_run_test.sv	`tests/testbenches/`: UVM / testbench infrastructure
+sv-tests/tests/uvm/uvm_files.sv	`tests/uvm/`: UVM / testbench infrastructure

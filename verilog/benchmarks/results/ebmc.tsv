@@ -1,0 +1,1071 @@
+case	top	raw	rewritten	yosys	bucket
+verilog/Array1/main.sv#top	top	3:15: unpacked dimension not supported	3:15: unpacked dimension not supported	-	arrays
+verilog/Memory1/main.v#main	main	19:25: syntax error [at `assert`]	19:25: syntax error [at `assert`]	-	assertions / properties
+verilog/Memory2/main.v#main	main	15:25: syntax error [at `assert`]	15:25: syntax error [at `assert`]	-	assertions / properties
+verilog/SVA/always_with_range1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/always_with_range2.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/assert_else1.sv#main	main	3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	-	functions / tasks
+verilog/SVA/case1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/cover1.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/cover2.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/cover3.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/cover4.sv		4:3: unsupported: ModuleCommonItem [at `cover`]	4:3: unsupported: ModuleCommonItem [at `cover`]	-	assertions / properties
+verilog/SVA/cover_sequence1.sv		4:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/cover_sequence2.sv		4:3: type `int` not supported	4:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/SVA/cover_sequence3.sv		4:3: type `int` not supported	4:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/SVA/cover_sequence4.sv		4:3: type `int` not supported	4:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/SVA/cover_sequence5.sv		4:3: type `int` not supported	4:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/SVA/cycle_delay1.sv		3:3: `reg` not supported, use `logic`	6:5: unsupported: StatementItem [at `x`]	-	other unsupported syntax
+verilog/SVA/cycle_delay2.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/cycle_delay3.sv		7:5: unsupported: ModuleCommonItem [at `assume`]	7:5: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+verilog/SVA/cycle_delay4.sv		8:5: unsupported: ModuleCommonItem [at `assert`]	8:5: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/cycle_delay5.sv		6:3: `reg` not supported, use `logic`	6:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/cycle_delay6.sv#main	main	1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/SVA/cycle_delay7.sv		3:3: `reg` not supported, use `logic`	6:5: unsupported: StatementItem [at `x`]	-	other unsupported syntax
+verilog/SVA/cycle_delay_plus4.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/cycle_delay_star1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/cycle_delay_star2.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/cycle_delay_star3.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/cycle_delay_star4.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/cycle_delay_star5.sv		4:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/default_disable1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/default_disable2.sv		11:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	11:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	-	assertions / properties
+verilog/SVA/disable_iff1.sv#main	main	4:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/disable_iff2.sv		4:3: unsupported: ModuleCommonItem [at `assume`]	4:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+verilog/SVA/empty_sequence1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/eventually1.sv		4:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/eventually2.sv		3:3: `reg` not supported, use `logic`	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/eventually4.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/expect1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/followed-by1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/followed-by2.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/followed-by3.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/followed-by4.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/followed-by5.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/goto_repetition1.sv		5:11: declaration with initializer not supported, use `assign`	5:11: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/if1.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/immediate1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/immediate2.sv		3:3: plain `always` not supported, use `always_ff` or `always_comb`	3:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/SVA/immediate3.sv		6:3: plain `always` not supported, use `always_ff` or `always_comb`	7:5: unsupported: StatementItem [at `assert`]	-	assertions / properties
+verilog/SVA/immediate5.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/immediate_cover1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/initial1.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/initial1.sv#main	main	4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/initial2.sv#main	main	4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/issue669.sv#top	top	10:3: unsupported: ModuleCommonItem [at `assert`]	10:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/named_property1.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/nexttime1.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/nexttime1.sv#main	main	4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/pending_and1.sv		12:3: unsupported: ModuleCommonItem [at `assert`]	12:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/pending_cycle_delay_rhs1.sv		12:3: unsupported: ModuleCommonItem [at `assert`]	12:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/pending_first_match1.sv		14:3: unsupported: ModuleCommonItem [at `assert`]	14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/pending_intersect1.sv		13:3: unsupported: ModuleCommonItem [at `assert`]	13:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/pending_throughout1.sv		13:3: unsupported: ModuleCommonItem [at `assert`]	13:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/pending_within1.sv		14:3: unsupported: ModuleCommonItem [at `assert`]	14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/property_and1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	-	assertions / properties
+verilog/SVA/property_vs_typedef1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/SVA/range_repetition_inclusive.sv#main	main	12:3: unsupported: ModuleCommonItem [at `assert`]	12:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/restrict1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/restrict1.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/s_always1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/s_eventually1.sv		5:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/s_eventually1.sv#main	main	5:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/s_eventually2.sv#main	main	5:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/s_eventually2.sv		5:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/s_eventually3.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/s_eventually4.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/s_eventually5.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/s_eventually_assumption1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/s_until1.sv		4:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/s_until2.sv		4:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/sequence2.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/sequence3.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/sequence4.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/sequence5.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/sequence6.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/sequence_and1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_and2.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_and3.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_first_match1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_first_match2.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_implication1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_implication2.sv#main	main	4:46: syntax error [at `assert`]	4:46: syntax error [at `assert`]	-	assertions / properties
+verilog/SVA/sequence_implication3.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/sequence_implication4.sv		16:3: `reg` not supported, use `logic`	16:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_intersect1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_not1.sv		9:32: syntax error [at `assert`]	9:32: syntax error [at `assert`]	-	assertions / properties
+verilog/SVA/sequence_not2.sv		6:3: unsupported: ModuleCommonItem [at `assert`]	6:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/sequence_or1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_repetition1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_repetition2.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_repetition3.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_repetition4.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_repetition5.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_repetition6.sv		4:34: syntax error [at `assert`]	4:34: syntax error [at `assert`]	-	assertions / properties
+verilog/SVA/sequence_repetition7.sv		3:7: declaration with initializer not supported, use `assign`	3:7: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_repetition8.sv		18:3: `reg` not supported, use `logic`	18:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_throughout1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sequence_within1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/stable1.sv		3:3: `reg` not supported, use `logic`	3:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/static_final1.sv		8:3: unsupported: ModuleCommonItem [at `assert`]	8:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/strong1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/strong_R1.sv		16:3: `reg` not supported, use `logic`	16:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sva_abort1.sv#main	main	4:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sva_abort1.sv		4:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sva_abort2.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/SVA/sva_and1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/sva_assume1.sv		3:3: unsupported: ModuleCommonItem [at `assume`]	3:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+verilog/SVA/sva_assume2.sv		3:3: unsupported: ModuleCommonItem [at `assume`]	3:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+verilog/SVA/sva_iff1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/sva_iff2.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/sva_implies1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/sva_implies2.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/sva_not1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/sva_until1.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/system_verilog_assertion1.sv#main	main	3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/system_verilog_assertion2.sv#main	main	3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/system_verilog_assertion3.sv#main	main	3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/SVA/system_verilog_assertion4.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/SVA/unbounded1.sv#main	main	3:21: expected a constant expression, got `$`: `$` not supported in constant expressions	3:21: expected a constant expression, got `$`: `$` not supported in constant expressions	-	other unsupported construct
+verilog/SVA/weak1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/UDPs/multiplexer1.sv#main	main	2:1: unsupported: Description [at `primitive`]	2:1: unsupported: Description [at `primitive`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/arbiter1/arbiter_change.v		34:15: syntax error [at `assert`]	34:15: syntax error [at `assert`]	-	assertions / properties
+verilog/arrays/array1.sv#main	main	3:3: `reg` not supported, use `logic`	3:15: unpacked dimension not supported	-	arrays
+verilog/arrays/array_conversion1.sv		4:13: more than one packed dimension not supported	4:13: more than one packed dimension not supported	-	arrays
+verilog/arrays/array_conversion2.sv		3:7: range [0:3] not supported, only [N-1:0]	3:7: range [0:3] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/arrays/array_conversion3.sv		3:13: more than one packed dimension not supported	3:13: more than one packed dimension not supported	-	arrays
+verilog/arrays/array_element_part_select_lhs1.sv		3:3: `reg` not supported, use `logic`	3:16: unpacked dimension not supported	-	arrays
+verilog/arrays/array_read_variable_index_netlist1.sv		5:15: unpacked dimension not supported	5:15: unpacked dimension not supported	-	arrays
+verilog/arrays/assignment_pattern1.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/arrays/assignment_pattern2.sv		3:3: `reg` not supported, use `logic`	3:15: unpacked dimension not supported	-	arrays
+verilog/arrays/assignment_pattern3.sv		3:3: `reg` not supported, use `logic`	3:15: unpacked dimension not supported	-	arrays
+verilog/arrays/assignment_pattern4.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/assignment_pattern5.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/assignment_pattern_expr1.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/assignment_pattern_symbolic_variable.sv		6:9: unpacked dimension not supported	6:9: unpacked dimension not supported	-	arrays
+verilog/arrays/assignment_to_unpacked_array1.sv		11:3: type `int` not supported	11:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/assignment_to_unpacked_array2.sv		11:3: type `int` not supported	11:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/assignment_to_unpacked_array3.sv		11:3: type `byte` not supported	11:3: type `byte` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/assignment_to_unpacked_array4.sv		11:3: unsupported: DataDeclaration [at `typedef`]	11:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/arrays/assignment_to_unpacked_array5.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/initial_element_large1.sv		6:15: unpacked dimension not supported	6:15: unpacked dimension not supported	-	arrays
+verilog/arrays/out_of_range_index1.sv		3:13: unpacked dimension not supported	3:13: unpacked dimension not supported	-	arrays
+verilog/arrays/out_of_range_index_write1.sv		14:3: `reg` not supported, use `logic`	14:15: unpacked dimension not supported	-	arrays
+verilog/arrays/packed_array_concatenation1.sv		4:14: more than one packed dimension not supported	4:14: more than one packed dimension not supported	-	arrays
+verilog/arrays/packed_array_part_select1.sv		21:3: `reg` not supported, use `logic`	21:14: more than one packed dimension not supported	-	arrays
+verilog/arrays/packed_array_part_select2.sv		18:3: `reg` not supported, use `logic`	18:14: more than one packed dimension not supported	-	arrays
+verilog/arrays/packed_direction1.sv#main	main	3:12: more than one packed dimension not supported	3:12: more than one packed dimension not supported	-	arrays
+verilog/arrays/packed_element_assignment1.sv		5:14: more than one packed dimension not supported	5:14: more than one packed dimension not supported	-	arrays
+verilog/arrays/packed_real1.sv#main	main	5:3: unsupported: DataDeclaration [at `typedef`]	5:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/arrays/packed_typedef1.sv#main	main	3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/arrays/unpacked_array1.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/unpacked_array2.sv		3:7: unpacked dimension not supported	3:7: unpacked dimension not supported	-	arrays
+verilog/arrays/unpacked_array_concatenation1.sv		4:3: type `byte` not supported	4:3: type `byte` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/unpacked_array_part_select1.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/unpacked_array_part_select2.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/arrays/unpacked_direction1.sv#main	main	3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/asic-world-operators/arithmetic.sv#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/asic-world-operators/bit-wise.sv#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/asic-world-operators/concatenation.sv#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/asic-world-operators/conditional.sv#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/asic-world-operators/equality.sv#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/asic-world-operators/logical.sv#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/asic-world-operators/reduction.sv#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/asic-world-operators/relational.sv#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/asic-world-operators/replication.sv#main	main	7:3: unsupported: ModuleCommonItem [at `initial`]	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/asic-world-operators/shift.sv#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/assert1/main.v#main	main	10:25: syntax error [at `assert`]	10:25: syntax error [at `assert`]	-	assertions / properties
+verilog/assert2/main.v#main	main	5:17: syntax error [at `assert`]	5:17: syntax error [at `assert`]	-	assertions / properties
+verilog/assignments/assignment-context1.sv		8:22: declaration with initializer not supported, use `assign`	8:22: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/assignments/assignment-pattern-lhs1.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/assignments/assignment-to-concatenation1.v		10:25: syntax error [at `assert`]	10:25: syntax error [at `assert`]	-	assertions / properties
+verilog/assignments/assignment-to-increasing-range-bit1.sv		4:3: `reg` not supported, use `logic`	4:9: range [0:7] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/assignments/assignment-to-index1.v		18:17: syntax error [at `assert`]	18:17: syntax error [at `assert`]	-	assertions / properties
+verilog/assignments/assignment-to-indexed-part-select1.sv		10:5: unsupported: StatementItem [at `assert`]	10:5: unsupported: StatementItem [at `assert`]	-	assertions / properties
+verilog/assignments/assignment-to-non-constant-index1.sv		4:3: `reg` not supported, use `logic`	4:15: unpacked dimension not supported	-	arrays
+verilog/assignments/assignment-to-non-constant-index2.sv		4:3: `reg` not supported, use `logic`	4:15: unpacked dimension not supported	-	arrays
+verilog/assignments/assignment-to-non-constant-index3.sv		4:3: `reg` not supported, use `logic`	4:9: range [11:4] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/assignments/assignment-to-part-select-of-struct1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/assignments/assignment-with-function-call1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/assignments/assignment_statement1.sv		5:14: unsized literal `1` not supported, write the width (e.g. `8'd1`)	5:14: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/assignments/compound-assignment-operand-width1.sv		13:3: `reg` not supported, use `logic`	13:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/assignments/compound-assignment-operand-width2.sv		13:3: `reg` not supported, use `logic`	13:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/assignments/extension-and-truncation1.sv		37:15: positional port connections not supported, write `.port(signal)`	37:15: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+verilog/assignments/implicit_declaration1.sv		5:22: unsized literal `'b10` not supported, write the width (e.g. `8'b10`)	5:22: unsized literal `'b10` not supported, write the width (e.g. `8'b10`)	-	width rules (explicit-width fragment)
+verilog/assignments/nonblocking-then-blocking1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/assignments/partial-assignment-before-non-constant-index1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/assignments/partial-assignment-before-non-constant-index2.sv		3:3: `reg` not supported, use `logic`	3:15: unpacked dimension not supported	-	arrays
+verilog/assignments/partial-assignment-before-non-constant-index3.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/assignments/partial-assignment-nonblocking-old-value1.sv		3:3: `reg` not supported, use `logic`	3:15: unpacked dimension not supported	-	arrays
+verilog/assignments/procedural_assignments1.sv		3:3: `reg` not supported, use `logic`	5:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/bind/bind1.sv#main	main	13:1: unsupported: Description [at `bind`]	13:1: unsupported: Description [at `bind`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/bind/bind2.sv#main	main	18:9: positional port connections not supported, write `.port(signal)`	18:9: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+verilog/bind/bind_generate1.sv#main	main	17:3: unsupported: ModuleCommonItem [at `if`]	17:3: unsupported: ModuleCommonItem [at `if`]	-	generate / loops
+verilog/bind/bind_generate2.sv#main	main	6:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/bind/bind_instance_target1.sv#main	main	18:1: unsupported: Description [at `bind`]	18:1: unsupported: Description [at `bind`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/bind/bind_instance_target_not_found1.sv#main	main	7:1: unsupported: Description [at `bind`]	7:1: unsupported: Description [at `bind`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/bind/bind_self1.sv#main	main	5:1: unsupported: Description [at `bind`]	5:1: unsupported: Description [at `bind`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/bind/bind_target_not_found1.sv#main	main	4:1: unsupported: Description [at `bind`]	4:1: unsupported: Description [at `bind`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/bind/bind_too_late1.sv#main	main	14:13: positional port connections not supported, write `.port(signal)`	14:13: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+verilog/case/case1.v#main	main	18:17: syntax error [at `assert`]	18:17: syntax error [at `assert`]	-	assertions / properties
+verilog/case/case2.v#main	main	21:17: syntax error [at `assert`]	21:17: syntax error [at `assert`]	-	assertions / properties
+verilog/case/case3.v#main	main	22:17: syntax error [at `assert`]	22:17: syntax error [at `assert`]	-	assertions / properties
+verilog/case/case4.v#main	main	19:17: syntax error [at `assert`]	19:17: syntax error [at `assert`]	-	assertions / properties
+verilog/case/case5.sv#main	main	3:3: `reg` not supported, use `logic`	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/case/case_wildcard1.sv		3:3: `reg` not supported, use `logic`	10:7: literal `2'b0z` with x/z digits not supported (2-state)	-	x/z values (4-state)
+verilog/case/case_wildcard2.sv		3:3: `reg` not supported, use `logic`	7:5: `casex` not supported [at `casex`]	-	other unsupported construct
+verilog/case/mini-alu.sv#alu	alu	1:54: `reg` not supported, use `logic`	4:5: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+verilog/case/nested_case1.v		15:17: syntax error [at `assert`]	15:17: syntax error [at `assert`]	-	assertions / properties
+verilog/case/riscv-alu.sv#alu	alu	6:10: `reg` not supported, use `logic`	10:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/case/unique_case1.sv		4:5: `unique` not supported [at `unique`]	4:5: `unique` not supported [at `unique`]	-	other unsupported construct
+verilog/checker/checker1.sv		1:1: unsupported: Description [at `checker`]	1:1: unsupported: Description [at `checker`]	-	assertions / properties
+verilog/checker/checker2.sv		1:1: unsupported: Description [at `checker`]	1:1: unsupported: Description [at `checker`]	-	assertions / properties
+verilog/checker/checker5.sv		2:3: unsupported: PackageOrGenerateItemDeclaration [at `checker`]	2:3: unsupported: PackageOrGenerateItemDeclaration [at `checker`]	-	assertions / properties
+verilog/checker/checker7.sv		1:1: unsupported: Description [at `checker`]	1:1: unsupported: Description [at `checker`]	-	assertions / properties
+verilog/checker/checker_scope1.sv		1:1: unsupported: Description [at `checker`]	1:1: unsupported: Description [at `checker`]	-	assertions / properties
+verilog/checker/end_label1.sv		2:1: unsupported: Description [at `checker`]	2:1: unsupported: Description [at `checker`]	-	assertions / properties
+verilog/class/class1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/class_constructor1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/class_in_module1.sv		2:3: unsupported: PackageOrGenerateItemDeclaration [at `class`]	2:3: unsupported: PackageOrGenerateItemDeclaration [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/class_in_package1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/class_method1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/class_property1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/class_value_parameter1.sv		3:1: unsupported: Description [at `class`]	3:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/extends1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/interface_class1.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/interface_class2.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/nested_class1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/new1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/out_of_class_method1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/parameterized_class1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/specialized_class1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/class/virtual_class1.sv		1:1: unsupported: Description [at `virtual`]	1:1: unsupported: Description [at `virtual`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/clocking/clocking1.sv		3:3: unsupported: ModuleOrGenerateItemDeclaration [at `clocking`]	3:3: unsupported: ModuleOrGenerateItemDeclaration [at `clocking`]	-	assertions / properties
+verilog/comments/eof-in-comment1.v		0:0: no module	0:0: no module	-	top-module selection
+verilog/config/basic_config1.sv#top	top	11:24: syntax error [at `instance`]	11:24: syntax error [at `instance`]	-	parse error (sv-parser)
+verilog/const/const1.sv		4:3: `const` not supported [at `const`]	4:3: `const` not supported [at `const`]	-	other unsupported construct
+verilog/const/const2.sv		4:3: `const` not supported [at `const`]	4:3: `const` not supported [at `const`]	-	other unsupported construct
+verilog/const_function_if1/main.v		24:17: syntax error [at `assert`]	24:17: syntax error [at `assert`]	-	assertions / properties
+verilog/constraints/constraint1.sv		1:1: unsupported: Description [at `class`]	1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/covergroup/covergroup1.sv		5:3: unsupported: PackageOrGenerateItemDeclaration [at `covergroup`]	5:3: unsupported: PackageOrGenerateItemDeclaration [at `covergroup`]	-	other unsupported syntax
+verilog/data-types/associative_array1.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/chandle1.sv		4:3: type `chandle` not supported	4:3: type `chandle` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/chandle2.sv		4:3: type `chandle` not supported	4:3: type `chandle` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/event1.sv		4:3: type `event` not supported	4:3: type `event` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/event2.sv		4:3: type `event` not supported	4:3: type `event` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/integer_atom_types1.sv#main	main	3:4: unsupported: ModuleCommonItem [at `assert`]	3:4: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/data-types/non-integer-types.sv		4:4: type `shortreal` not supported	4:4: type `shortreal` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/queue1.sv		3:3: type `byte` not supported	3:3: type `byte` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/queue_method_task1.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/real_variable1.sv		4:3: type `real` not supported	4:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/real_variable2.sv		4:3: type `real` not supported	4:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/real_variable3.sv		4:3: type `real` not supported	4:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/signed1.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/data-types/signed2.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/data-types/string1.sv		4:3: type `string` not supported	4:3: type `string` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/supply.v		7:19: syntax error [at `assert`]	7:19: syntax error [at `assert`]	-	assertions / properties
+verilog/data-types/time1.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/data-types/type_operator.sv		4:8: type `type(some_wire)` not supported	4:8: type `type(some_wire)` not supported	-	other unsupported construct
+verilog/data-types/var1.sv		4:8: type `real` not supported	4:8: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/data-types/vector_types1.sv		14:3: unsupported: ModuleCommonItem [at `assert`]	14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/data-types/vector_types2.sv		4:3: `reg` not supported, use `logic`	4:10: expected a constant integer, got `1<<p`: `1<<p` is not a constant expression	-	other error
+verilog/data-types/wire_must_be_fourvalued.sv		4:12: `some_wire` is never driven	4:12: `some_wire` is never driven	-	design rejected by a checking rule (latch, loop, drivers)
+verilog/delays/delay_with_unit1.v		3:3: `reg` not supported, use `logic`	3:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/delays/time_literals1.sv		3:1: type `realtime` not supported	3:1: type `realtime` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/directives/default_nettype1.sv		OK	OK	Equal	
+verilog/elaboration/type_operator.sv		4:8: type `type(some_wire)` not supported	4:8: type `type(some_wire)` not supported	-	other unsupported construct
+verilog/elaboration/var_bits.sv		4:8: expected a constant integer, got `$bits(some_var)-1`: `$bits` not supported in constant expressions	4:8: expected a constant integer, got `$bits(some_var)-1`: `$bits` not supported in constant expressions	-	other unsupported construct
+verilog/elaboration/wire_bits.v		10:17: syntax error [at `assert`]	10:17: syntax error [at `assert`]	-	assertions / properties
+verilog/enums/compilation_unit_enum1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum1.sv		3:3: type `enum { RED, YELLOW1, GREEN, YELLOW2 }` not supported	3:3: type `enum { RED, YELLOW1, GREEN, YELLOW2 }` not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum2.sv		3:3: type `enum { A, B }` not supported	3:3: type `enum { A, B }` not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum3.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum4.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum5.sv		6:3: unsupported: DataDeclaration [at `typedef`]	6:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum_base_type1.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum_base_type2.sv		4:3: unsupported: DataDeclaration [at `typedef`]	4:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum_cast1.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum_in_assert.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum_initializers1.sv		3:3: type `enum { A = 1, B = A + 10 }` not supported	3:3: type `enum { A = 1, B = A + 10 }` not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum_initializers2.sv		3:17: expected a constant expression, got `A + 1`: `A` is not a parameter	3:17: expected a constant expression, got `A + 1`: `A` is not a parameter	-	other error
+verilog/enums/enum_initializers3.sv		4:17: expected a constant expression, got `A`: `A` is not a parameter	4:17: expected a constant expression, got `A`: `A` is not a parameter	-	other error
+verilog/enums/enum_name_collision.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum_vs_typedef1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/enums/enum_with_hierarchy1.sv		12:9: positional parameter values not supported, write `#(.N(…))`	12:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/events/guard1.sv		3:3: type `struct packed {	3:3: type `struct packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/expressions/bit-extract1.v		15:25: syntax error [at `assert`]	15:25: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/bit-extract2.v#main	main	15:25: syntax error [at `assert`]	15:25: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/bit-extract3.sv#main	main	3:13: declaration with initializer not supported, use `assign`	3:13: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/bit-extract4.sv		3:8: type `integer` not supported	3:8: type `integer` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/expressions/bit-extract5.sv#main	main	3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/bit-extract6.sv#main	main	3:8: range [1:8] not supported, only [N-1:0]	3:8: range [1:8] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/expressions/bitwise1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/bitwise_and1.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/bitwise_not1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/bitwise_or1.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/bitwise_xor1.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/cast_from_real1.sv		3:3: plain `always` not supported, use `always_ff` or `always_comb`	3:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/expressions/cast_from_real2.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/expressions/cast_to_real1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/cast_to_real2.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/cast_to_real3.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/concatenation1.v		10:25: syntax error [at `assert`]	10:25: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/concatenation2.v		4:17: syntax error [at `assert`]	4:17: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/concatenation3.sv		2:3: unsupported: ModuleCommonItem [at `assert`]	2:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/concatenation4.v		5:15: declaration with initializer not supported, use `assign`	5:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/concatenation5.v		4:8: declaration with initializer not supported, use `assign`	4:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/concatenation6.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/expressions/concatenation7.v		5:15: declaration with initializer not supported, use `assign`	5:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/conditional_operator_short_circuit1.sv		8:9: expected a constant integer, got `(0 ? 1/0 : 3)-1`: `(0 ? 1/0 : 3)-1` is not a constant expression	8:9: expected a constant integer, got `(0 ? 1/0 : 3)-1`: `(0 ? 1/0 : 3)-1` is not a constant expression	-	other error
+verilog/expressions/conditional_operator_short_circuit2.sv		6:9: expected a constant integer, got `(1 ? 3 : 1/0)-1`: `(1 ? 3 : 1/0)-1` is not a constant expression	6:9: expected a constant integer, got `(1 ? 3 : 1/0)-1`: `(1 ? 3 : 1/0)-1` is not a constant expression	-	other error
+verilog/expressions/constants1.v		8:25: syntax error [at `assert`]	8:25: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/constants2.sv		49:17: syntax error [at `parameter`]	49:17: syntax error [at `parameter`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/expressions/div1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/equality1.v		3:25: syntax error [at `assert`]	3:25: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/equality2.v		3:25: syntax error [at `assert`]	3:25: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/equality3.v		4:8: declaration with initializer not supported, use `assign`	4:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/equality4.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/equality5.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/iff1.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/implies1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/index-constant1.sv		4:17: unsized literal `'b1010` not supported, write the width (e.g. `8'b1010`)	4:17: unsized literal `'b1010` not supported, write the width (e.g. `8'b1010`)	-	width rules (explicit-width fragment)
+verilog/expressions/index-constant2.sv		4:17: expected a constant expression, got `(1>0)`: `(1>0)` is not a constant expression	4:17: expected a constant expression, got `(1>0)`: `(1>0)` is not a constant expression	-	other error
+verilog/expressions/index-of-real.sv		4:3: type `real` not supported	4:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/expressions/inside1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/integer_literals1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/integer_literals2.sv		8:3: unsupported: ModuleCommonItem [at `initial`]	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/integer_literals3.sv		7:3: unsupported: ModuleCommonItem [at `initial`]	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/integer_literals4.sv		8:3: unsupported: ModuleCommonItem [at `initial`]	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/integer_operands1.sv		7:42: expected a constant expression, got `$clog2(PORTS) - $clog2(PORTS_IN)`: `PORTSIN` is not a parameter	7:42: expected a constant expression, got `$clog2(PORTS) - $clog2(PORTS_IN)`: `PORTSIN` is not a parameter	-	other error
+verilog/expressions/minus1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/mod1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/mod2.v		4:8: declaration with initializer not supported, use `assign`	4:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/mult1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/negation1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/part-select-constant1.sv		4:17: unsized literal `'b1010` not supported, write the width (e.g. `8'b1010`)	4:17: unsized literal `'b1010` not supported, write the width (e.g. `8'b1010`)	-	width rules (explicit-width fragment)
+verilog/expressions/part-select-of-real.sv		4:3: type `real` not supported	4:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/expressions/plus1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/power1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/power2.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/power3.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/real-index.sv		4:3: `reg` not supported, use `logic`	5:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/real_arithmetic1.sv		7:13: type `real` not supported	7:13: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/expressions/real_conditional1.sv		6:13: type `real` not supported	6:13: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/expressions/reduction1.v		4:17: syntax error [at `assert`]	4:17: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/reduction2.v		4:8: declaration with initializer not supported, use `assign`	4:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/relational1.sv		6:3: unsupported: ModuleCommonItem [at `initial`]	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/replication1.v		9:25: syntax error [at `assert`]	9:25: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/replication2.v		6:15: declaration with initializer not supported, use `assign`	6:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/replication3.v		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/replication4.sv		8:24: expected a constant expression, got `{2'b10, {0{1'b1}}, 2'b01}`: `{2'b10, {0{1'b1}}, 2'b01}` is not a constant expression	8:24: expected a constant expression, got `{2'b10, {0{1'b1}}, 2'b01}`: `{2'b10, {0{1'b1}}, 2'b01}` is not a constant expression	-	other error
+verilog/expressions/replication5.sv		6:14: declaration with initializer not supported, use `assign`	6:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/replication6.sv		5:14: declaration with initializer not supported, use `assign`	5:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/shl3.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/shl4.sv		6:3: unsupported: ModuleCommonItem [at `assert`]	6:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/shr1.v		9:25: syntax error [at `assert`]	9:25: syntax error [at `assert`]	-	assertions / properties
+verilog/expressions/shr2.v		4:8: declaration with initializer not supported, use `assign`	4:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/shr3.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/shr4.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/signed-division-overflow1.sv		5:3: unsupported: ModuleCommonItem [at `initial`]	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/signed1.sv#main	main	3:22: declaration with initializer not supported, use `assign`	3:22: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/signed2.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/signing_cast1.sv#main	main	4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/signing_cast2.sv#main	main	4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/signing_cast3.sv#main	main	7:3: unsupported: ModuleCommonItem [at `initial`]	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/size_cast1.sv#main	main	5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/size_cast2.sv#main	main	4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/size_cast3.sv#main	main	7:3: unsupported: ModuleCommonItem [at `initial`]	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/static_cast1.sv#main	main	3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/expressions/static_cast3.sv#main	main	3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/expressions/static_cast4.sv#main	main	8:3: unsupported: DataDeclaration [at `typedef`]	8:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/expressions/streaming_concatenation1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/streaming_concatenation2.sv		4:8: declaration with initializer not supported, use `assign`	4:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/streaming_concatenation3.sv		8:14: declaration with initializer not supported, use `assign`	8:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/this1.sv		3:8: declaration with initializer not supported, use `assign`	3:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/unary_minus1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/unary_plus1.sv		12:3: unsupported: ModuleCommonItem [at `initial`]	12:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/expressions/wildcard_equality1.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/expressions/wildcard_equality2.sv		4:8: declaration with initializer not supported, use `assign`	4:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/expressions/x_literal_widening1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/final-procedures/final1.sv		4:3: unsupported: ModuleCommonItem [at `final`]	4:3: unsupported: ModuleCommonItem [at `final`]	-	initializers / `initial` blocks
+verilog/for/break1.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/for/break2.sv		7:5: declarations in blocks not supported	7:5: declarations in blocks not supported	-	other unsupported construct
+verilog/for/break3.sv		7:5: unsupported: StatementItem [at `for`]	7:5: unsupported: StatementItem [at `for`]	-	generate / loops
+verilog/for/break4.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/for/break_assertion_after_loop1.sv		17:3: `reg` not supported, use `logic`	17:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/for/break_assertion_in_body1.sv		18:3: `reg` not supported, use `logic`	18:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/for/break_constant_loop_guard1.sv		14:3: `reg` not supported, use `logic`	14:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/for/break_continue_path_condition1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/for/continue1.sv		6:3: unsupported: ModuleCommonItem [at `initial`]	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/for/continue2.sv		6:3: unsupported: ModuleCommonItem [at `initial`]	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/for/continue_order1.sv		18:3: `reg` not supported, use `logic`	21:5: unsupported: StatementItem [at `for`]	-	generate / loops
+verilog/for/continue_unconditional1.sv		5:3: `reg` not supported, use `logic`	5:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/for/for_variable_declaration1.sv		6:5: unsupported: StatementItem [at `for`]	6:5: unsupported: StatementItem [at `for`]	-	generate / loops
+verilog/for/for_variable_declaration2.sv		6:5: unsupported: StatementItem [at `for`]	6:5: unsupported: StatementItem [at `for`]	-	generate / loops
+verilog/for/for_with_reg.v		12:17: syntax error [at `assert`]	12:17: syntax error [at `assert`]	-	assertions / properties
+verilog/for/multiple_init.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/for/return_in_loop1.sv		4:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	4:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/force-system-verilog/main1.v		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/fork/join_any1.sv		8:3: unsupported: ModuleCommonItem [at `initial`]	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/fork/join_any_named1.sv		7:3: unsupported: ModuleCommonItem [at `initial`]	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/fork/join_none1.sv		8:3: unsupported: ModuleCommonItem [at `initial`]	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/fork/join_none_named1.sv		7:3: unsupported: ModuleCommonItem [at `initial`]	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/functioncall/compilation_unit_scope_function.sv		2:1: unsupported: Description [at `function`]	2:1: unsupported: Description [at `function`]	-	functions / tasks
+verilog/functioncall/constant_function_state1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functioncall/function_ports1.v#main	main	14:17: syntax error [at `assert`]	14:17: syntax error [at `assert`]	-	assertions / properties
+verilog/functioncall/function_ports2.sv#main	main	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functioncall/function_ports3.sv#main	main	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functioncall/function_with_assign1.sv		1:1: unsupported: Description [at `function`]	1:1: unsupported: Description [at `function`]	-	functions / tasks
+verilog/functioncall/function_with_multiple_statements.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functioncall/function_with_output1.sv		2:1: unsupported: Description [at `function`]	2:1: unsupported: Description [at `function`]	-	functions / tasks
+verilog/functioncall/functioncall1.v#main	main	27:19: syntax error [at `assert`]	27:19: syntax error [at `assert`]	-	assertions / properties
+verilog/functioncall/functioncall2.v#main	main	16:17: syntax error [at `assert`]	16:17: syntax error [at `assert`]	-	assertions / properties
+verilog/functioncall/functioncall3.v#main	main	16:17: syntax error [at `assert`]	16:17: syntax error [at `assert`]	-	assertions / properties
+verilog/functioncall/functioncall4.v#main	main	12:17: syntax error [at `assert`]	12:17: syntax error [at `assert`]	-	assertions / properties
+verilog/functioncall/functioncall5.v#main	main	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functioncall/functioncall6.v#main	main	9:17: syntax error [at `assert`]	9:17: syntax error [at `assert`]	-	assertions / properties
+verilog/functioncall/functioncall7.v#main	main	15:17: syntax error [at `assert`]	15:17: syntax error [at `assert`]	-	assertions / properties
+verilog/functioncall/functioncall_as_constant1.v#main	main	16:17: syntax error [at `assert`]	16:17: syntax error [at `assert`]	-	assertions / properties
+verilog/functioncall/functioncall_as_input1.v#main	main	14:17: syntax error [at `assert`]	14:17: syntax error [at `assert`]	-	assertions / properties
+verilog/functioncall/implicit_input1.sv		3:1: unsupported: Description [at `function`]	3:1: unsupported: Description [at `function`]	-	functions / tasks
+verilog/functioncall/named_parameter_assignment1.sv#main	main	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functioncall/return1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functioncall/return2.sv		1:1: unsupported: Description [at `function`]	1:1: unsupported: Description [at `function`]	-	functions / tasks
+verilog/functioncall/return3.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functioncall/return4.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functioncall/undeclared_function1.v		1:30: `reg` not supported, use `logic`	3:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/functioncall/void_function1.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/functions/end_label1.sv		5:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	5:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functions/nested_call1.sv		6:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	6:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/functions/redeclaration1.sv		1:1: unsupported: Description [at `function`]	1:1: unsupported: Description [at `function`]	-	functions / tasks
+verilog/functions/return_order1.sv		16:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	16:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+verilog/generate/case-generate1.sv#main	main	15:17: syntax error [at `assert`]	15:17: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/case-generate2.sv#main	main	15:17: syntax error [at `assert`]	15:17: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/end_label1.sv		5:3: unsupported: ModuleCommonItem [at `if`]	5:3: unsupported: ModuleCommonItem [at `if`]	-	generate / loops
+verilog/generate/gen_for_variable_declaration.sv		4:1: generate regions not supported	4:1: generate regions not supported	-	generate / loops
+verilog/generate/generate-for1.v#main	main	12:25: syntax error [at `assert`]	12:25: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/generate-for2.v		22:17: syntax error [at `assert`]	22:17: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/generate-for3.v#main	main	11:25: syntax error [at `assert`]	11:25: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/generate-for4.sv		12:25: syntax error [at `assert`]	12:25: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/generate-for5.sv		12:25: syntax error [at `assert`]	12:25: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/generate-function1.sv#main	main	3:3: generate regions not supported	3:3: generate regions not supported	-	generate / loops
+verilog/generate/generate-inst1.v		11:3: generate regions not supported	11:3: generate regions not supported	-	generate / loops
+verilog/generate/generate-inst2.v#main	main	9:3: generate regions not supported	9:3: generate regions not supported	-	generate / loops
+verilog/generate/generate-inst3.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+verilog/generate/generate-localparam1.v#main	main	15:25: syntax error [at `assert`]	15:25: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/generate-reg1.v#main	main	20:17: syntax error [at `assert`]	20:17: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/generate-reg2.v#main	main	18:17: syntax error [at `assert`]	18:17: syntax error [at `assert`]	-	assertions / properties
+verilog/generate/genvar-vs-typedef1.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/generate1/main.v#main	main	10:34: syntax error [at `for`]	10:34: syntax error [at `for`]	-	generate / loops
+verilog/hierarchical_identifiers/hierarchical_identifiers1.v#main	main	16:25: syntax error [at `assert`]	16:25: syntax error [at `assert`]	-	assertions / properties
+verilog/hierarchical_identifiers/hierarchical_identifiers3.v#main	main	24:25: syntax error [at `assert`]	24:25: syntax error [at `assert`]	-	assertions / properties
+verilog/hierarchical_identifiers/hierarchical_identifiers4.sv#main	main	7:3: unsupported: ModuleCommonItem [at `initial`]	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/hierarchical_identifiers/hierarchical_identifiers5.sv		8:9: positional port connections not supported, write `.port(signal)`	8:9: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+verilog/hierarchical_identifiers/hierarchical_variable_index1.sv		16:9: positional port connections not supported, write `.port(signal)`	16:9: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+verilog/hierarchy1/main.v#main	main	12:25: syntax error [at `assert`]	12:25: syntax error [at `assert`]	-	assertions / properties
+verilog/if/unique_if1.sv		4:5: `unique` not supported [at `unique`]	4:5: `unique` not supported [at `unique`]	-	other unsupported construct
+verilog/initial/block_declaration_assignment1.sv		9:3: `reg` not supported, use `logic`	12:5: declarations in blocks not supported	-	other unsupported construct
+verilog/initial/declaration_assignment1.sv		6:3: type `int` not supported	6:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/initial/ignore-initial1.sv#main	main	3:3: `reg` not supported, use `logic`	3:18: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/initial/initial-zero1.sv#main	main	3:3: `reg` not supported, use `logic`	5:32: unsized literal `5` not supported, write the width (e.g. `8'd5`)	-	width rules (explicit-width fragment)
+verilog/initial/initial1.v#main	main	11:16: syntax error [at `assert`]	11:16: syntax error [at `assert`]	-	assertions / properties
+verilog/interface/ansi_ports1.sv		2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/duplicate1.sv#foo	foo	1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/end_label1.sv		2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/import1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/instance1.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/instance2.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/instance3.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/instance4.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/instance_array1.sv		4:1: unsupported: Description [at `interface`]	4:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/instance_array2.sv		4:1: unsupported: Description [at `interface`]	4:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/interface1.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/interface2.sv		6:1: unsupported: Description [at `interface`]	6:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/interface3.sv		4:3: unsupported: NonPortModuleItem [at `interface`]	4:3: unsupported: NonPortModuleItem [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/interface_array1.sv		2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/interface_array_netlist1.sv		3:1: unsupported: Description [at `interface`]	3:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/modport1.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/parameter1.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port1.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port2.sv		2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port3.sv		2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port4B.sv		6:1: unsupported: Description [at `interface`]	6:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port5B.sv		6:1: unsupported: Description [at `interface`]	6:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port6.sv		6:1: unsupported: Description [at `interface`]	6:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port7.sv#main	main	8:1: unsupported: Description [at `interface`]	8:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port8.sv		3:1: unsupported: Description [at `interface`]	3:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port9.sv		3:1: unsupported: Description [at `interface`]	3:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array1.sv		2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array10.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array11.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array2.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array3.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array4.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array5.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array6.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array7.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array8.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/port_array9.sv#main	main	2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/two_filesB1.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/two_filesB2.sv		1:1: unsupported: Description [at `interface`]	1:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/interface/virtual_interface1.sv		2:1: unsupported: Description [at `interface`]	2:1: unsupported: Description [at `interface`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/let/let1.sv		5:3: unsupported: PackageOrGenerateItemDeclaration [at `let`]	5:3: unsupported: PackageOrGenerateItemDeclaration [at `let`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/let/let_constant1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `let`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `let`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/let/let_ports1.sv		5:3: unsupported: PackageOrGenerateItemDeclaration [at `let`]	5:3: unsupported: PackageOrGenerateItemDeclaration [at `let`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/library-dir/library_dir1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/modules/cyclic_parameter_dependencies.v		2:17: expected a constant expression, got `q`: `q` is not a parameter	2:17: expected a constant expression, got `q`: `q` is not a parameter	-	other error
+verilog/modules/decoder1.sv		22:20: positional port connections not supported, write `.port(signal)`	22:20: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/defparam1.v#top	top	13:17: syntax error [at `assert`]	13:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/defparam2.sv		11:3: `defparam` not supported, use `#(.N(…))`	11:3: `defparam` not supported, use `#(.N(…))`	-	other unsupported construct
+verilog/modules/empty_item.v		5:3: generate regions not supported	5:3: generate regions not supported	-	generate / loops
+verilog/modules/endmodule_identifier.sv		OK	OK	Equal	
+verilog/modules/error_first_line1.v		1:18: syntax error [at `module`]	1:18: syntax error [at `module`]	-	parse error (sv-parser)
+verilog/modules/fibonacci.sv		23:15: positional parameter values not supported, write `#(.N(…))`	23:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/implicit_net_port_width1.sv		14:3: unsupported: ModuleCommonItem [at `assert`]	14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/modules/inout_and_reg.v		3:8: syntax error [at `inout`]	3:8: syntax error [at `inout`]	-	parse error (sv-parser)
+verilog/modules/input_and_ansi_input.v		3:8: syntax error [at `input`]	3:8: syntax error [at `input`]	-	parse error (sv-parser)
+verilog/modules/input_and_output.v		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/input_and_reg.v		3:8: syntax error [at `input`]	3:8: syntax error [at `input`]	-	parse error (sv-parser)
+verilog/modules/input_and_wire.v#M1	M1	1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/instance_array1.sv#parent	parent	7:23: unpacked dimension not supported	7:23: unpacked dimension not supported	-	arrays
+verilog/modules/instance_array2.sv		8:18: instance array not supported	8:18: instance array not supported	-	arrays
+verilog/modules/instance_array3.sv		11:16: unsized literal `1` not supported, write the width (e.g. `8'd1`)	11:16: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/modules/instance_array4.sv		9:8: instance array not supported	9:8: instance array not supported	-	arrays
+verilog/modules/instance_name_collision1.sv		11:7: `some_identifier` already declared at 8:8	11:7: `some_identifier` already declared at 8:8	-	other error
+verilog/modules/instance_vs_typedef1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/modules/instance_vs_typedef2.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/modules/interconnect1.sv		2:3: unsupported: NetDeclaration [at `interconnect`]	2:3: unsupported: NetDeclaration [at `interconnect`]	-	other unsupported syntax
+verilog/modules/localparam1.v		5:25: syntax error [at `assert`]	5:25: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/localparam2.v		9:17: syntax error [at `assert`]	9:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/localparam3.v		9:25: syntax error [at `assert`]	9:25: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/missing_connection1.v		7:15: positional port connections not supported, write `.port(signal)`	7:15: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/module_instance_identifier1.v		11:15: positional parameter values not supported, write `#(.N(…))`	11:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/module_name_space1.sv		2:1: unsupported: Description [at `parameter`]	2:1: unsupported: Description [at `parameter`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/modules/module_not_found1.v#main	main	3:35: no module `some_module_that_does_not_exist`	3:35: no module `some_module_that_does_not_exist`	-	top-module selection
+verilog/modules/multiple_top_level_modules1.sv		0:0: several top modules (`moduleA`, `moduleB`): choose one	0:0: several top modules (`moduleA`, `moduleB`): choose one	-	top-module selection
+verilog/modules/named_parameter_assignment1.sv#main	main	16:1: unsupported: Description [at `typedef`]	16:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/modules/named_port_connection1.sv		8:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	8:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/modules/named_port_connection2.sv		12:21: syntax error [at `my_module`]	12:21: syntax error [at `my_module`]	-	parse error (sv-parser)
+verilog/modules/named_port_connection3.sv		13:28: syntax error [at `my_module`]	13:28: syntax error [at `my_module`]	-	parse error (sv-parser)
+verilog/modules/named_port_connection4.sv		12:18: syntax error [at `my_module`]	12:18: syntax error [at `my_module`]	-	parse error (sv-parser)
+verilog/modules/named_port_connection5.sv#main	main	15:1: unsupported: Description [at `typedef`]	15:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/modules/named_port_connection6.sv		18:8: declaration with initializer not supported, use `assign`	18:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/modules/nested1.sv		3:3: unsupported: NonPortModuleItem [at `module`]	3:3: unsupported: NonPortModuleItem [at `module`]	-	other unsupported syntax
+verilog/modules/parameter_name_collision.v		4:13: `p` already declared at 3:13	4:13: `p` already declared at 3:13	-	other error
+verilog/modules/parameter_ports1.v		15:17: syntax error [at `assert`]	15:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/parameter_ports2.v		7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/parameter_ports3.v		3:17: syntax error [at `assert`]	3:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/parameter_ports5.sv		10:9: positional parameter values not supported, write `#(.N(…))`	10:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/parameter_ports7.sv		8:9: positional parameter values not supported, write `#(.N(…))`	8:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/parameter_ports8.sv		10:9: positional parameter values not supported, write `#(.N(…))`	10:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/parameter_without_default1.sv		2:20: parameter `P` has no value: give it a default or set it in the instance (in instance `m1`)	2:20: parameter `P` has no value: give it a default or set it in the instance (in instance `m1`)	-	other error
+verilog/modules/parameters1.v		15:17: syntax error [at `assert`]	15:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/parameters10.v		6:17: expected a constant expression, got `x`: `x` is not a parameter	6:17: expected a constant expression, got `x`: `x` is not a parameter	-	other error
+verilog/modules/parameters11.sv		15:15: positional parameter values not supported, write `#(.N(…))`	15:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/parameters2.v#test	test	13:25: syntax error [at `assert`]	13:25: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/parameters3.v		16:25: syntax error [at `assert`]	16:25: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/parameters4.v		14:17: syntax error [at `assert`]	14:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/parameters5.v		17:17: syntax error [at `assert`]	17:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/parameters6.v		4:17: expected a constant expression, got `q`: `q` is not a parameter	4:17: expected a constant expression, got `q`: `q` is not a parameter	-	other error
+verilog/modules/parameters7.sv		7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/modules/parameters8.v		7:15: positional parameter values not supported, write `#(.N(…))`	7:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/parameters9.v		9:15: positional parameter values not supported, write `#(.N(…))`	9:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/port_connection1.sv		10:3: unsupported: DataDeclaration [at `typedef`]	10:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/modules/port_expression1.sv		15:29: unsized literal `123` not supported, write the width (e.g. `8'd123`)	15:29: unsized literal `123` not supported, write the width (e.g. `8'd123`)	-	width rules (explicit-width fragment)
+verilog/modules/port_not_declared.v		1:18: port without direction	1:18: port without direction	-	other error
+verilog/modules/port_not_in_port_list.v		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/port_with_value1.sv		12:14: unsized literal `1234` not supported, write the width (e.g. `8'd1234`)	12:14: unsized literal `1234` not supported, write the width (e.g. `8'd1234`)	-	width rules (explicit-width fragment)
+verilog/modules/port_with_value2.sv		2:26: port default not supported	2:26: port default not supported	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/port_with_value3.sv		2:27: port default not supported	2:27: port default not supported	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/port_with_value4.sv		11:8: positional port connections not supported, write `.port(signal)`	11:8: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/ports1.v#main	main	19:25: syntax error [at `assert`]	19:25: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/ports2.v#main	main	18:25: syntax error [at `assert`]	18:25: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/ports3.v		8:25: syntax error [at `assert`]	8:25: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/ports4.v		3:17: syntax error [at `assert`]	3:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/ports5.sv		4:22: syntax error [at `assert`]	4:22: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/ports6.v		5:25: syntax error [at `assert`]	5:25: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/ports7.v		4:17: syntax error [at `assert`]	4:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/ports8.v		19:17: syntax error [at `assert`]	19:17: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/ports9.sv		13:3: unsupported: ModuleCommonItem [at `cover`]	13:3: unsupported: ModuleCommonItem [at `cover`]	-	assertions / properties
+verilog/modules/ref_port1.sv		7:7: positional port connections not supported, write `.port(signal)`	7:7: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/ref_port2.sv		8:3: unsupported: ModuleCommonItem [at `initial`]	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/modules/root1.sv#the_top	the_top	8:3: unsupported: ModuleCommonItem (in instance `A.B`)	8:3: unsupported: ModuleCommonItem (in instance `A.B`)	-	other unsupported syntax
+verilog/modules/show-module-hierarchy1.v		OK	OK	Equal	
+verilog/modules/too_many_parameter_assignments.v		8:15: positional parameter values not supported, write `#(.N(…))`	8:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/type_parameter_port1.sv		9:9: positional parameter values not supported, write `#(.N(…))`	9:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/type_parameter_port2.sv		9:12: expected a constant expression, got `byte`: `byte` is not a parameter	9:12: expected a constant expression, got `byte`: `byte` is not a parameter	-	other error
+verilog/modules/type_parameter_port3.sv		9:9: positional parameter values not supported, write `#(.N(…))`	9:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/type_parameter_port4.sv		9:9: positional parameter values not supported, write `#(.N(…))`	9:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/type_parameter_port5.sv		9:9: positional parameter values not supported, write `#(.N(…))`	9:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/type_parameter_port6.sv		1:14: type parameters not supported (in instance `submodule`)	1:14: type parameters not supported (in instance `submodule`)	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/modules/type_parameter_port7.sv		10:9: positional parameter values not supported, write `#(.N(…))`	10:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/type_parameters1.sv		3:3: type parameters not supported	3:3: type parameters not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/modules/type_parameters2.sv		3:3: type parameters not supported	3:3: type parameters not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/modules/unconnected_ports1.sv		7:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	7:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/modules/variable_module_port1.sv		15:22: syntax error [at `assert`]	15:22: syntax error [at `assert`]	-	assertions / properties
+verilog/modules/wildcard_port_connection1.sv		7:8: declaration with initializer not supported, use `assign`	7:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/modules/wire_and_output.v#M1	M1	1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+verilog/modules/wire_and_reg.v		4:3: `reg` not supported, use `logic`	4:16: `some_var` already declared at 3:15	-	other error
+verilog/modules/wire_and_wire.v		4:15: `some_var` already declared at 3:15	4:15: `some_var` already declared at 3:15	-	other error
+verilog/multiple_assign1/main.v#main	main	8:25: syntax error [at `assert`]	8:25: syntax error [at `assert`]	-	assertions / properties
+verilog/named_block/end_label1.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/named_block/end_label2.sv		7:3: unsupported: ModuleCommonItem [at `initial`]	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/named_block/named_block1.v		26:17: syntax error [at `assert`]	26:17: syntax error [at `assert`]	-	assertions / properties
+verilog/named_block/named_block_vs_typedef1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/nets/combinational_cycle1.sv		7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/nets/continuous_assign_concat1.sv#main	main	13:11: `cout` is not declared	13:11: `cout` is not declared	-	other error
+verilog/nets/continuous_assign_concat2.sv#main	main	13:3: plain `always` not supported, use `always_ff` or `always_comb`	13:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/nets/continuous_assign_concat3.sv#main	main	11:3: plain `always` not supported, use `always_ff` or `always_comb`	11:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/nets/implicit1.sv		4:3: unsupported: ModuleOrGenerateItem [at `and`]	4:3: unsupported: ModuleOrGenerateItem [at `and`]	-	gate primitives (`and`, `nor`, …)
+verilog/nets/implicit2.sv		6:3: unsupported: ModuleOrGenerateItem [at `and`]	6:3: unsupported: ModuleOrGenerateItem [at `and`]	-	gate primitives (`and`, `nor`, …)
+verilog/nets/implicit3.sv		8:3: plain `always` not supported, use `always_ff` or `always_comb`	8:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/nets/implicit4.sv		8:3: plain `always` not supported, use `always_ff` or `always_comb`	8:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/nets/implicit5.sv		4:10: `O` is not declared	4:10: `O` is not declared	-	other error
+verilog/nets/implicit6.sv		8:3: unsupported: ModuleOrGenerateItem [at `and`]	8:3: unsupported: ModuleOrGenerateItem [at `and`]	-	gate primitives (`and`, `nor`, …)
+verilog/nets/implicit7.sv		6:9: positional parameter values not supported, write `#(.N(…))`	6:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/nets/intra_vector_slices1.sv		12:3: unsupported: ModuleCommonItem [at `assert`]	12:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/nets/nested_concatenation1.sv		7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/nets/partially_driven_net2.sv		13:3: `reg` not supported, use `logic`	13:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/nets/partially_driven_net3.sv		11:3: `reg` not supported, use `logic`	11:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/nets/register_alias_netlist1.sv		19:3: `reg` not supported, use `logic`	19:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/nets/undriven_bits_frozen1.sv		6:3: `reg` not supported, use `logic`	6:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/nets/undriven_read_twice1.sv		6:8: declaration with initializer not supported, use `assign`	6:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/nets/wire_array_2d1.sv		4:14: unpacked dimension not supported	4:14: unpacked dimension not supported	-	arrays
+verilog/nets/wire_array_elements1.sv		4:14: unpacked dimension not supported	4:14: unpacked dimension not supported	-	arrays
+verilog/nets/wire_array_elements2.sv		4:14: unpacked dimension not supported	4:14: unpacked dimension not supported	-	arrays
+verilog/nets/wire_array_structs1.sv		4:3: unsupported: DataDeclaration [at `typedef`]	4:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/nets/wire_with_assignment1.sv		3:8: declaration with initializer not supported, use `assign`	3:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/nettype/nettype1.sv		3:4: unsupported: DataDeclaration [at `nettype`]	3:4: unsupported: DataDeclaration [at `nettype`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/nondet1/main.v#main	main	11:25: syntax error [at `assert`]	11:25: syntax error [at `assert`]	-	assertions / properties
+verilog/packages/import1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/import2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/import3.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/import4.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/import5.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/import7.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/import9.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/member_vs_import2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/module_input_vs_import1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/module_input_vs_import2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package3.sv		11:1: unsupported: Description [at `package`]	11:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_enum1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_export1.sv#main	main	1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_function1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_function2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_net1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_parameter2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_property1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_property2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_sequence1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_sequence2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_show_parse1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_task1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_typedef1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_typedef2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_var1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/package_var3.sv#main	main	1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/task_input_vs_import1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/task_input_vs_import2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/task_var_vs_import1.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/two_filesB1.sv#top	top	2:3: unsupported: DataDeclaration [at `import`]	2:3: unsupported: DataDeclaration [at `import`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/packages/unit_scope1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/parameters/compilation_unit_parameter1.sv		1:1: unsupported: Description [at `parameter`]	1:1: unsupported: Description [at `parameter`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/parameters/four_valued_parameter1.sv		2:31: literal `4'b01xz` with x/z digits not supported (2-state)	2:31: literal `4'b01xz` with x/z digits not supported (2-state)	-	x/z values (4-state)
+verilog/parameters/four_valued_parameter2.sv		2:37: literal `4'b01xz` with x/z digits not supported (2-state)	2:37: literal `4'b01xz` with x/z digits not supported (2-state)	-	x/z values (4-state)
+verilog/parameters/parameter_equality1.sv		4:32: expected a constant expression, got `(1 << N_LG2) == N`: `(1 << N_LG2) == N` is not a constant expression	4:32: expected a constant expression, got `(1 << N_LG2) == N`: `(1 << N_LG2) == N` is not a constant expression	-	other error
+verilog/parameters/parameter_override_logic1.sv#main	main	8:29: literal `4'b10x1` with x/z digits not supported (2-state)	8:29: literal `4'b10x1` with x/z digits not supported (2-state)	-	x/z values (4-state)
+verilog/parameters/parameter_without_value1.sv		2:19: parameter `N` has no value: give it a default or set it in the instance	2:19: parameter `N` has no value: give it a default or set it in the instance	-	other error
+verilog/parameters/ranged_parameter1.sv		4:24: parameter `P` of type `logic [10:0]` given a value of 8 bits (resize explicitly, e.g. `11'd…` or `11'(…)`)	4:24: parameter `P` of type `logic [10:0]` given a value of 8 bits (resize explicitly, e.g. `11'd…` or `11'(…)`)	-	width rules (explicit-width fragment)
+verilog/parameters/untyped_parameter1.sv		3:22: range [10:3] not supported, only [N-1:0]	3:22: range [10:3] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/parameters/untyped_parameter2.sv#main	main	6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	-	other error
+verilog/parameters/untyped_real_parameter1.sv		6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	-	other error
+verilog/part-select/increasing-range-part-select1.sv#main	main	4:8: range [0:7] not supported, only [N-1:0]	4:8: range [0:7] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/part-select/increasing-range-part-select2.sv#main	main	4:3: `reg` not supported, use `logic`	4:9: range [0:7] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/part-select/indexed-part-select1.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+verilog/part-select/indexed-part-select2.v		4:14: declaration with initializer not supported, use `assign`	4:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/part-select/indexed-part-select3.sv		5:8: declaration with initializer not supported, use `assign`	5:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/part-select/indexed-part-select4.sv		3:3: `reg` not supported, use `logic`	5:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/part-select/indexed-part-select5.sv		3:3: `reg` not supported, use `logic`	5:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/part-select/indexed_part_select_packed_array1.sv		4:14: more than one packed dimension not supported	4:14: more than one packed dimension not supported	-	arrays
+verilog/part-select/negative-part-select-base1.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/part-select/negative-part-select-base2.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/part-select/negative-part-select-width1.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/part-select/negative-part-select-width2.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/part-select/negative-range-bit-select1.sv		8:12: `-8` is negative (-8)	8:12: `-8` is negative (-8)	-	other error
+verilog/part-select/negative-range-bit-select2.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/port-connections/output_port_genvar1.sv#main	main	6:3: unsupported: ModuleOrGenerateItemDeclaration [at `genvar`]	6:3: unsupported: ModuleOrGenerateItemDeclaration [at `genvar`]	-	generate / loops
+verilog/port-connections/output_port_part_select_driver1.sv		6:3: `reg` not supported, use `logic`	6:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/port-connections/unpacked_array_output_port1.sv		15:3: type `int` not supported	15:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/port-connections/unpacked_struct_array1.sv		5:1: unsupported: Description [at `typedef`]	5:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/port-connections/unpacked_struct_array2.sv		7:16: unpacked dimension not supported	7:16: unpacked dimension not supported	-	arrays
+verilog/preprocessor/define_inactive1.sv		12:3: unsupported: ModuleCommonItem [at `assert`]	12:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/preprocessor/ifdef1.v		4:14: syntax error [at `syntax`]	4:14: syntax error [at `syntax`]	-	parse error (sv-parser)
+verilog/preprocessor/ifdef2.v		4:14: syntax error [at `syntax`]	4:14: syntax error [at `syntax`]	-	parse error (sv-parser)
+verilog/preprocessor/ifdef_include1.sv		OK	OK	Equal	
+verilog/preprocessor/subdir/in_subdir.v		0:0: Include error	0:0: Include error	-	preprocessor: define / include missing
+verilog/preprocessor/incdir1.v		0:0: Include error	0:0: Include error	-	preprocessor: define / include missing
+verilog/preprocessor/include1.v		0:0: Include error	0:0: Include error	-	preprocessor: define / include missing
+verilog/preprocessor/include3.v		0:0: Include error	0:0: Include error	-	preprocessor: define / include missing
+verilog/preprocessor/macro_arg_commas1.sv		7:3: type `integer` not supported	7:3: type `integer` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/preprocessor/macro_redefine1.sv		7:14: positional parameter values not supported, write `#(.N(…))`	7:14: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
+verilog/preprocessor/multi-line-define2.v		4:14: syntax error [at `syntax`]	4:14: syntax error [at `syntax`]	-	parse error (sv-parser)
+verilog/preprocessor/multi-line-define3.v		4:14: syntax error [at `syntax`]	4:14: syntax error [at `syntax`]	-	parse error (sv-parser)
+verilog/preprocessor/not_found1.v		0:0: Include error	0:0: Include error	-	preprocessor: define / include missing
+verilog/preprocessor/not_found2.v		0:0: Include error	0:0: Include error	-	preprocessor: define / include missing
+verilog/preprocessor/cmdline_define1.v		0:0: Define not found: ELSE	0:0: Define not found: ELSE	-	preprocessor: define / include missing
+verilog/preprocessor/cmdline_define2.v		0:0: Define not found: SOME_NAME	0:0: Define not found: SOME_NAME	-	preprocessor: define / include missing
+verilog/preprocessor/plus_define3.v		0:0: no module	0:0: no module	-	top-module selection
+verilog/preprocessor/pragma1.sv		OK	OK	Error yosys failed on hw-cbmc/regression/verilog/preprocessor/pragma1.sv:	
+verilog/preprocessor/string_continuation1.sv		8:3: unsupported: ModuleCommonItem [at `initial`]	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/preprocessor/string_continuation2.sv		7:9: declaration with initializer not supported, use `assign`	7:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/preprocessor/string_continuation3.sv		0:0: Define not found: no_such_directive	0:0: Define not found: no_such_directive	-	preprocessor: define / include missing
+verilog/preprocessor/stringify1.sv		12:3: unsupported: ModuleCommonItem [at `assert`]	12:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/primitive_gates/multiple_instances1.sv		5:3: unsupported: ModuleOrGenerateItem [at `and`]	5:3: unsupported: ModuleOrGenerateItem [at `and`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/nand1.sv		6:3: unsupported: ModuleOrGenerateItem [at `nand`]	6:3: unsupported: ModuleOrGenerateItem [at `nand`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/nand2.sv#main	main	4:3: unsupported: ModuleOrGenerateItem [at `nand`]	4:3: unsupported: ModuleOrGenerateItem [at `nand`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/nand4.sv		4:3: unsupported: ModuleOrGenerateItem [at `nand`]	4:3: unsupported: ModuleOrGenerateItem [at `nand`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/nor1.sv		6:3: unsupported: ModuleOrGenerateItem [at `nor`]	6:3: unsupported: ModuleOrGenerateItem [at `nor`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/nor2.sv#main	main	4:3: unsupported: ModuleOrGenerateItem [at `nor`]	4:3: unsupported: ModuleOrGenerateItem [at `nor`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/nor4.sv		4:3: unsupported: ModuleOrGenerateItem [at `nor`]	4:3: unsupported: ModuleOrGenerateItem [at `nor`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/not1.sv		5:3: unsupported: ModuleOrGenerateItem [at `not`]	5:3: unsupported: ModuleOrGenerateItem [at `not`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/or1.sv		6:3: unsupported: ModuleOrGenerateItem [at `or`]	6:3: unsupported: ModuleOrGenerateItem [at `or`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/main.v		19:12: syntax error [at `assert`]	19:12: syntax error [at `assert`]	-	assertions / properties
+verilog/primitive_gates/xnor1.sv#main	main	5:3: unsupported: ModuleOrGenerateItem [at `xnor`]	5:3: unsupported: ModuleOrGenerateItem [at `xnor`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/xnor2.sv#main	main	4:3: unsupported: ModuleOrGenerateItem [at `xnor`]	4:3: unsupported: ModuleOrGenerateItem [at `xnor`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/xnor3.sv		4:3: unsupported: ModuleOrGenerateItem [at `xnor`]	4:3: unsupported: ModuleOrGenerateItem [at `xnor`]	-	gate primitives (`and`, `nor`, …)
+verilog/primitive_gates/xnor4.sv		4:3: unsupported: ModuleOrGenerateItem [at `xnor`]	4:3: unsupported: ModuleOrGenerateItem [at `xnor`]	-	gate primitives (`and`, `nor`, …)
+verilog/procedural-continuous/deassign1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/procedural-continuous/disable1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/procedural-continuous/release1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/programs/program1.sv		1:1: unsupported: Description [at `program`]	1:1: unsupported: Description [at `program`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/property/compilation_scope_property1.sv		1:1: unsupported: Description [at `property`]	1:1: unsupported: Description [at `property`]	-	assertions / properties
+verilog/property/member_select1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/property/named_property1.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/property/named_property2.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/property/named_property3.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/property/named_property4.sv		4:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	4:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	-	assertions / properties
+verilog/property/named_property5.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	-	assertions / properties
+verilog/property/named_property6.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	-	assertions / properties
+verilog/property/named_property7.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `property`]	-	assertions / properties
+verilog/property/property_ports1.sv		3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	-	assertions / properties
+verilog/property/property_ports2.sv		3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	-	assertions / properties
+verilog/property/property_ports3.sv		3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	-	assertions / properties
+verilog/property/property_ports4.sv		3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	-	assertions / properties
+verilog/property/property_ports5.sv		3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	-	assertions / properties
+verilog/property/property_ports6.sv		3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	3:3: unsupported: ModuleOrGenerateItemDeclaration [at `default`]	-	assertions / properties
+verilog/property/property_ports7.sv		8:16: syntax error [at `property`]	8:16: syntax error [at `property`]	-	assertions / properties
+verilog/property/property_ports8.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/property/recursive_property1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/rtl/assignment-to-indexed-part-select-of-array-element1.sv		13:3: `reg` not supported, use `logic`	13:15: unpacked dimension not supported	-	arrays
+verilog/rtl/shared-loop-variable1.sv		10:48: `reg` not supported, use `logic`	12:3: type `integer` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/rtl/shared-loop-variable2.sv		6:37: `reg` not supported, use `logic`	7:3: type `integer` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/rtl/shared-loop-variable3.sv		6:48: `reg` not supported, use `logic`	7:3: type `integer` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/sensitivity_list1/main.v		17:17: syntax error [at `assert`]	17:17: syntax error [at `assert`]	-	assertions / properties
+verilog/sequence/named_sequence1.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/sequence/sequence_vs_typedef1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/specparam/specparam1.v		1:40: `reg` not supported, use `logic`	3:3: unsupported: NonPortModuleItem [at `specparam`]	-	other unsupported syntax
+verilog/specparam/specparam2.v		1:40: `reg` not supported, use `logic`	3:3: unsupported: NonPortModuleItem [at `specify`]	-	other unsupported syntax
+verilog/string/string_continuation1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/string/string_literals1.v		5:17: syntax error [at `assert`]	5:17: syntax error [at `assert`]	-	assertions / properties
+verilog/string/string_method_task1.sv		3:3: type `string` not supported	3:3: type `string` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/structs/array_in_struct1.sv		3:3: type `struct {	3:3: type `struct {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/array_of_structs1.sv		3:3: type `struct packed {	3:3: type `struct packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/array_of_structs2.sv#main	main	10:3: unsupported: DataDeclaration [at `typedef`]	10:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/array_of_structs_loop1.sv		7:3: unsupported: DataDeclaration [at `typedef`]	7:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/assignment_pattern1.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/assignment_pattern2.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/assignment_pattern3.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/enum_in_struct1.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/member_assignment2.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/member_assignment3.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/member_assignment4.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/member_assignment5.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/member_assignment6.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/structs1.sv		4:3: type `struct packed {	4:3: type `struct packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/structs2.sv		4:3: type `struct packed {	4:3: type `struct packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/structs3.sv		3:3: type `struct packed {	3:3: type `struct packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/structs4.sv		4:3: type `struct packed {	4:3: type `struct packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/structs5.sv		3:3: type `struct packed {	3:3: type `struct packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/structs6.sv		3:3: type `struct packed {	3:3: type `struct packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/unpacked_array_of_structs1.sv		3:1: unsupported: Description [at `typedef`]	3:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/unpacked_struct1.sv		4:3: type `struct {	4:3: type `struct {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/structs/unpacked_struct2.sv		4:3: unsupported: DataDeclaration [at `typedef`]	4:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/syntax-errors/syntax1.sv		1:8: syntax error [at `module`]	1:8: syntax error [at `module`]	-	parse error (sv-parser)
+verilog/syntax-errors/syntax2.sv		3:1: syntax error [at `byte`]	3:1: syntax error [at `byte`]	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/syntax-errors/syntax3.sv		1:13: syntax error [at `module`]	1:13: syntax error [at `module`]	-	parse error (sv-parser)
+verilog/synthesis/always_comb1.sv#main	main	6:3: unsupported: ModuleCommonItem [at `assert`]	6:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/synthesis/always_comb2.sv		4:3: `reg` not supported, use `logic`	7:5: declarations in blocks not supported	-	other unsupported construct
+verilog/synthesis/always_comb3.sv		2:3: `reg` not supported, use `logic`	13:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/synthesis/always_ff1.sv#main	main	2:3: `reg` not supported, use `logic`	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/synthesis/continuous_assignment1.sv#main	main	4:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	4:19: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+verilog/synthesis/continuous_assignment2.sv#main	main	3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/synthesis/continuous_assignment3.sv#main	main	3:15: unpacked dimension not supported	3:15: unpacked dimension not supported	-	arrays
+verilog/synthesis/continuous_assignment_to_variable_systemverilog.sv		3:3: `reg` not supported, use `logic`	9:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/synthesis/continuous_assignment_to_variable_systemverilog2.sv		3:7: declaration with initializer not supported, use `assign`	3:7: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/synthesis/continuous_assignment_to_variable_systemverilog3.sv		5:3: unsupported: ModuleOrGenerateItemDeclaration [at `genvar`]	5:3: unsupported: ModuleOrGenerateItemDeclaration [at `genvar`]	-	generate / loops
+verilog/synthesis/part_select1.sv		3:3: `reg` not supported, use `logic`	6:9: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+verilog/synthesis/part_select2.sv		3:3: `reg` not supported, use `logic`	7:13: unsized literal `2` not supported, write the width (e.g. `8'd2`)	-	width rules (explicit-width fragment)
+verilog/synthesis/posedge_real.v#main	main	3:3: type `real` not supported	3:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/synthesis/posedge_vector.v#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: this `always_ff` drives nothing	-	design rejected by a checking rule (latch, loop, drivers)
+verilog/synthesis/procedural_assignment_to_net.v		6:3: plain `always` not supported, use `always_ff` or `always_comb`	6:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/synthesis/procedural_continuous_assignment_to_variable.v		11:17: syntax error [at `assert`]	11:17: syntax error [at `assert`]	-	assertions / properties
+verilog/synthesis/rf1.sv		7:3: `reg` not supported, use `logic`	7:9: range [255:8] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/synthesis/signed_part_select_lhs1.sv		15:3: `reg` not supported, use `logic`	15:23: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/synthesis/synthesis1.v#main	main	7:17: syntax error [at `assert`]	7:17: syntax error [at `assert`]	-	assertions / properties
+verilog/system-functions/array_functions1.sv#main	main	3:8: range [32:1] not supported, only [N-1:0]	3:8: range [32:1] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/system-functions/bits1.sv#main	main	4:3: unsupported: DataDeclaration [at `typedef`]	4:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/system-functions/bits2.sv		11:3: type `int` not supported	11:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/system-functions/bitstoreal1.sv#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/system-functions/bitstoshortreal1.sv#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/system-functions/clog2.v		3:17: syntax error [at `assert`]	3:17: syntax error [at `assert`]	-	assertions / properties
+verilog/system-functions/clog2_type.sv#main	main	12:29: parameter `ARSIZE` of type `logic [2:0]` given a value of 32 bits (resize explicitly, e.g. `3'd…` or `3'(…)`)	12:29: parameter `ARSIZE` of type `logic [2:0]` given a value of 32 bits (resize explicitly, e.g. `3'd…` or `3'(…)`)	-	width rules (explicit-width fragment)
+verilog/system-functions/countbits1.sv#main	main	7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/countbits2.sv#main	main	7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/countbits3.sv#main	main	7:3: unsupported: ModuleCommonItem [at `assert`]	7:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/countones1.sv#main	main	3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/system-functions/countones2.sv		3:3: `reg` not supported, use `logic`	3:17: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/system-functions/countones3.sv#main	main	3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/system-functions/error1.v#main	main	5:3: unsupported: ModuleCommonItem [at `if`]	5:3: unsupported: ModuleCommonItem [at `if`]	-	generate / loops
+verilog/system-functions/isunknown1.sv#main	main	3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/isunknown2.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/isunknown_signal1.sv		2:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/itor1.sv#main	main	3:3: plain `always` not supported, use `always_ff` or `always_comb`	3:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/system-functions/low1.sv#main	main	5:3: unsupported: ModuleOrGenerateItemDeclaration [at `genvar`]	5:3: unsupported: ModuleOrGenerateItemDeclaration [at `genvar`]	-	generate / loops
+verilog/system-functions/onehot1.sv#main	main	3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/onehot2.sv		4:3: unsupported: ModuleCommonItem [at `assume`]	4:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+verilog/system-functions/past-instrumentation1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/system-functions/past-instrumentation2.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/system-functions/past-instrumentation3.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/system-functions/past1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/system-functions/past2.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/system-functions/past4.sv		8:3: unsupported: ModuleCommonItem [at `assert`]	8:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/past5.sv		3:16: unpacked dimension not supported	3:16: unpacked dimension not supported	-	arrays
+verilog/system-functions/past6.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/system-functions/past7.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/system-functions/realtime1.sv		3:3: type `real` not supported	3:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/system-functions/realtobits1.sv#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/system-functions/rtoi1.sv#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/system-functions/shortrealtobits1.sv#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/system-functions/signed1.v		3:17: expected a constant expression, got `$signed(123)`: `$signed` not supported in constant expressions	3:17: expected a constant expression, got `$signed(123)`: `$signed` not supported in constant expressions	-	other unsupported construct
+verilog/system-functions/signed2.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/size1.sv#main	main	4:8: range [0:7] not supported, only [N-1:0]	4:8: range [0:7] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/system-functions/size2.sv		3:3: type `real` not supported	3:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/system-functions/stable-rose-fell-changed1.sv		3:3: `reg` not supported, use `logic`	3:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+verilog/system-functions/stime1.sv		6:3: unsupported: ModuleCommonItem [at `assert`]	6:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/main.sv#main	main	8:3: plain `always` not supported, use `always_ff` or `always_comb`	8:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/system-functions/test_plusargs1.sv#main	main	4:3: plain `always` not supported, use `always_ff` or `always_comb`	4:3: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
+verilog/system-functions/time1.sv		9:3: unsupported: ModuleCommonItem [at `assert`]	9:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+verilog/system-functions/typename_array1.sv		3:7: unpacked dimension not supported	3:7: unpacked dimension not supported	-	arrays
+verilog/system-functions/typename_bit1.sv		5:7: range [0:31] not supported, only [N-1:0]	5:7: range [0:31] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/system-functions/typename_enum1.sv		3:3: type `enum { FOO, BAR }` not supported	3:3: type `enum { FOO, BAR }` not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/system-functions/typename_integral1.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/system-functions/typename_logic1.sv		5:9: range [0:31] not supported, only [N-1:0]	5:9: range [0:31] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/system-functions/typename_logic2.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/system-functions/typename_real1.sv		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/system-functions/typename_reg1.sv		3:3: `reg` not supported, use `logic`	5:9: range [0:31] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/system-functions/typename_struct1.sv		3:3: type `struct { bit s, t; }` not supported	3:3: type `struct { bit s, t; }` not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/system-functions/typename_typedef1.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/system-functions/typename_wire1.sv		5:8: range [0:31] not supported, only [N-1:0]	5:8: range [0:31] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
+verilog/system-functions/value_plusargs1.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/system_verilog_types1/main.sv#main	main	4:3: type `int signed` not supported	4:3: type `int signed` not supported	-	other unsupported construct
+verilog/tasks/compilation_unit_scope_task.sv		2:1: unsupported: Description [at `task`]	2:1: unsupported: Description [at `task`]	-	functions / tasks
+verilog/tasks/hierarchical_task_call1.sv		11:3: unsupported: ModuleCommonItem [at `initial`]	11:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/tasks/return1.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/tasks/return2.sv		3:3: type `int` not supported	3:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+verilog/tasks/task_inout1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	-	functions / tasks
+verilog/tasks/task_input1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	-	functions / tasks
+verilog/tasks/task_invocation1.sv		1:19: `reg` not supported, use `logic`	3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	-	functions / tasks
+verilog/tasks/task_name_collision.v		3:3: `reg` not supported, use `logic`	5:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	-	functions / tasks
+verilog/tasks/task_output1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	-	functions / tasks
+verilog/tasks/task_ref1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	3:3: unsupported: PackageOrGenerateItemDeclaration [at `task`]	-	functions / tasks
+verilog/tasks/tasks1.v		15:17: syntax error [at `assert`]	15:17: syntax error [at `assert`]	-	assertions / properties
+verilog/tasks/tasks2.v#main	main	18:25: syntax error [at `assert`]	18:25: syntax error [at `assert`]	-	assertions / properties
+verilog/tasks/tasks3.v		21:25: syntax error [at `assert`]	21:25: syntax error [at `assert`]	-	assertions / properties
+verilog/tasks/tasks4.v#main	main	18:25: syntax error [at `assert`]	18:25: syntax error [at `assert`]	-	assertions / properties
+verilog/tasks/undeclared_task1.v		3:3: unsupported: ModuleCommonItem [at `initial`]	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+verilog/timeunits/timeunits1.sv		2:1: timeunits declaration not supported	2:1: timeunits declaration not supported	-	other unsupported construct
+verilog/timeunits/timeunits2.sv		1:1: unsupported: Description [at `package`]	1:1: unsupported: Description [at `package`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/typedef/array_typedef1.sv		3:4: unsupported: DataDeclaration [at `typedef`]	3:4: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/typedef/global_typedef.sv		4:1: unsupported: Description [at `typedef`]	4:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/typedef/typedef1.sv		3:4: unsupported: DataDeclaration [at `typedef`]	3:4: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/typedef/typedef2.sv		2:1: unsupported: Description [at `typedef`]	2:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/typedef/typedef_name_collision1.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/typedef/typedef_name_collision2.sv		6:3: unsupported: DataDeclaration [at `typedef`]	6:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/array_in_union1.sv		3:3: type `union packed {	3:3: type `union packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/assignment_pattern1.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/packed_union1.sv		1:1: unsupported: Description [at `typedef`]	1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/tagged_union1.sv		2:3: unsupported: DataDeclaration [at `typedef`]	2:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/trace1.sv		3:3: type `union packed {	3:3: type `union packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/union_struct_member1.sv		20:3: unsupported: DataDeclaration [at `typedef`]	20:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/unions1.sv		3:3: type `union packed {	3:3: type `union packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/unions2.sv		3:3: type `union {	3:3: type `union {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/unions3.sv		3:3: type `union packed {	3:3: type `union packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/unions4.sv		3:3: type `union packed {	3:3: type `union packed {	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/unions5.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/unions/unions6.sv		3:3: unsupported: DataDeclaration [at `typedef`]	3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
+verilog/vl2smv-extensions/traffic/1.v		98:10: syntax error [at `assert`]	98:10: syntax error [at `assert`]	-	assertions / properties
+verilog/vl2smv-extensions/traffic/2.v		98:10: syntax error [at `assert`]	98:10: syntax error [at `assert`]	-	assertions / properties
+verilog/vl2smv-extensions/traffic/3.v		96:10: syntax error [at `assert`]	96:10: syntax error [at `assert`]	-	assertions / properties
+ebmc/Always-Assign/main.v#main	main	17:17: syntax error [at `assert`]	17:17: syntax error [at `assert`]	-	assertions / properties
+ebmc/BDD/BDD2.sv#main	main	3:3: `reg` not supported, use `logic`	6:10: unsized literal `100` not supported, write the width (e.g. `8'd100`)	-	width rules (explicit-width fragment)
+ebmc/BDD/BDD3.sv#main	main	3:3: `reg` not supported, use `logic`	6:16: unsized literal `10` not supported, write the width (e.g. `8'd10`)	-	width rules (explicit-width fragment)
+ebmc/BDD/BDD_SVA1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/BDD/temporal_assumption1.sv		3:3: `reg` not supported, use `logic`	3:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/CLI/json-modules.v		0:0: several top modules (`foo`, `bar`): choose one	0:0: several top modules (`foo`, `bar`): choose one	-	top-module selection
+ebmc/CLI/json-properties.v		3:17: syntax error [at `assert`]	3:17: syntax error [at `assert`]	-	assertions / properties
+ebmc/CLI/multiple-properties1.sv		2:3: unsupported: ModuleCommonItem [at `assert`]	2:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+ebmc/CLI/property-not-found1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+ebmc/CLI/reset1.sv#top	top	12:3: `reg` not supported, use `logic`	26:1: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+ebmc/CLI/reset2.sv#top	top	3:3: `reg` not supported, use `logic`	8:21: unsized literal `10` not supported, write the width (e.g. `8'd10`)	-	width rules (explicit-width fragment)
+ebmc/CLI/reset3.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+ebmc/CLI/reset4.sv		OK	OK	Equal	
+ebmc/CLI/reset5.sv#top	top	3:3: `reg` not supported, use `logic`	5:28: unsupported: StatementItem [at `always_ff`]	-	other unsupported syntax
+ebmc/CLI/show-trans1.v		2:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/CLI/very_long_property1.sv		13:10: unsupported: Description [at `endmodule`]	13:10: unsupported: Description [at `endmodule`]	-	other unsupported syntax
+ebmc/Calypto-Parallel-Adder/main.v#main	main	41:20: syntax error [at `assert`]	41:20: syntax error [at `assert`]	-	assertions / properties
+ebmc/Calypto-Serial-Adder/main.v#main	main	45:18: syntax error [at `assert`]	45:18: syntax error [at `assert`]	-	assertions / properties
+ebmc/Concatenation/main.v#main	main	9:24: syntax error [at `assert`]	9:24: syntax error [at `assert`]	-	assertions / properties
+ebmc/Counter-Equivalence/main.v#main	main	14:18: syntax error [at `assert`]	14:18: syntax error [at `assert`]	-	assertions / properties
+ebmc/D-flip-flop/main.v#main	main	17:16: syntax error [at `assert`]	17:16: syntax error [at `assert`]	-	assertions / properties
+ebmc/FIR/main.v#main	main	26:3: syntax error [at `else`]	26:3: syntax error [at `else`]	-	parse error (sv-parser)
+ebmc/FSM/main.v#main	main	117:17: syntax error [at `assert`]	117:17: syntax error [at `assert`]	-	assertions / properties
+ebmc/Multiplexer/main.v#main	main	19:20: syntax error [at `assert`]	19:20: syntax error [at `assert`]	-	assertions / properties
+ebmc/Next-in-Property1/main.sv#top	top	3:3: `reg` not supported, use `logic`	6:16: unsized literal `5` not supported, write the width (e.g. `8'd5`)	-	width rules (explicit-width fragment)
+ebmc/Output-Register-Passing/main.v#main	main	16:24: syntax error [at `assert`]	16:24: syntax error [at `assert`]	-	assertions / properties
+ebmc/SVA-LTL/freeze.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+ebmc/SVA-LTL/lasso1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/SVA-LTL/s_until_with1.sv		15:3: unsupported: ModuleCommonItem [at `assert`]	15:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+ebmc/SVA-LTL/simple_counterexamples_to_Fp.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/SVA-LTL/simple_passing_LTL_properties.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/Shift-register/main.v#main	main	15:17: syntax error [at `assert`]	15:17: syntax error [at `assert`]	-	assertions / properties
+ebmc/aiger-output/counter1.sv#main	main	2:3: `reg` not supported, use `logic`	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/aiger-output/nondet1.sv#main	main	3:14: declaration with initializer not supported, use `assign`	3:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/aiger-output/output1.sv#main	main	OK	OK	Equal	
+ebmc/aiger-output/output_reg1.sv#main	main	1:40: `reg` not supported, use `logic`	2:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/aiger-output/property1.sv#main	main	2:3: `reg` not supported, use `logic`	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/aiger-output/verilog1.sv#main	main	2:3: `reg` not supported, use `logic`	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/assumptions/assume1.v#main	main	3:17: syntax error [at `assert`]	3:17: syntax error [at `assert`]	-	assertions / properties
+ebmc/assumptions/assume2.sv		3:3: unsupported: ModuleCommonItem [at `assume`]	3:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+ebmc/cegar/basic1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/cone-of-influence/assumption1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/cone-of-influence/cycle1.sv		11:3: `reg` not supported, use `logic`	12:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/cone-of-influence/k_induction1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/cone-of-influence/unrelated1.sv		4:3: `reg` not supported, use `logic`	10:20: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+ebmc/engine-heuristic/basic1.sv		4:3: unsupported: ModuleCommonItem [at `assume`]	4:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+ebmc/engine-heuristic/basic2.sv		3:3: `reg` not supported, use `logic`	3:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/engine-heuristic/basic3.sv		4:3: unsupported: ModuleCommonItem [at `assume`]	4:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+ebmc/engine-heuristic/combinational1.sv		3:3: `reg` not supported, use `logic`	6:15: unsupported: StatementItem [at `always_comb`]	-	other unsupported syntax
+ebmc/engine-heuristic/combinational2.sv		3:3: `reg` not supported, use `logic`	6:15: unsupported: StatementItem [at `always_comb`]	-	other unsupported syntax
+ebmc/engine-heuristic/counter4.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/engine-heuristic/ct1.sv		2:1: unsupported: Description [at `function`]	2:1: unsupported: Description [at `function`]	-	functions / tasks
+ebmc/engine-heuristic/ct2.sv		4:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	4:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+ebmc/engine-heuristic/ct3.sv		4:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/engine-heuristic/given_property1.sv		2:3: unsupported: ModuleCommonItem [at `initial`]	2:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/engine-heuristic/initial1.sv		3:3: unsupported: ModuleCommonItem [at `assume`]	3:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+ebmc/example1/example1.sv		12:16: positional port connections not supported, write `.port(signal)`	12:16: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+ebmc/example3/example3.sv		5:3: `reg` not supported, use `logic`	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/example4_reset/example4.sv		5:3: `reg` not supported, use `logic`	12:23: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+ebmc/example4_trace/example4.sv		5:3: `reg` not supported, use `logic`	12:23: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+ebmc/example5/example5.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/ic3/bobcount.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/ic3/bobmiterbm1multi.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/ic3/eijks208o.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/ic3/non_inductive1.sv		4:1: non-ANSI port list not supported	4:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/ic3/not_supported1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/ic3/not_supported3.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/ic3/pdtvispeterson.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/ic3/ringp0.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/ic3/sm98a7multi.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/ic3/visbakery.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/ic3/viseisenberg.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/k-induction/disable_iff1.sv		3:3: `reg` not supported, use `logic`	8:15: unsized literal `10` not supported, write the width (e.g. `8'd10`)	-	width rules (explicit-width fragment)
+ebmc/k-induction/k-induction-unsupported1.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/k-induction/k-induction-unsupported2.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/k-induction/k-induction1.v#main	main	16:25: syntax error [at `assert`]	16:25: syntax error [at `assert`]	-	assertions / properties
+ebmc/k-induction/k-induction2.v#main	main	13:10: syntax error [at `assert`]	13:10: syntax error [at `assert`]	-	assertions / properties
+ebmc/k-induction/k-induction3.v#main	main	10:10: syntax error [at `assert`]	10:10: syntax error [at `assert`]	-	assertions / properties
+ebmc/k-induction/k-induction4.sv#main	main	3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/k-induction/k-induction5.v#main	main	16:25: syntax error [at `assert`]	16:25: syntax error [at `assert`]	-	assertions / properties
+ebmc/k-induction/k-induction6.sv		3:3: unsupported: ModuleCommonItem [at `assume`]	3:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+ebmc/k-induction/k-induction7.sv		3:3: `reg` not supported, use `logic`	3:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/k-induction/past1.sv		3:3: `reg` not supported, use `logic`	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/k-induction/ring_buffer.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/library-files/main.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/library-files/main_simple.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/liveness-lemma-engine/delay10-fail.sv		1:89: `reg` not supported, use `logic`	7:22: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+ebmc/liveness-lemma-engine/fail1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/liveness-lemma-engine/lemma1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/liveness-lemma-engine/ranking1.sv		4:3: `reg` not supported, use `logic`	4:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/liveness-lemma-engine/wrong_lemma1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/liveness-to-safety/failing1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/liveness-to-safety/failing2.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/liveness-to-safety/fairness_failing1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/liveness-to-safety/fairness_passing1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/liveness-to-safety/passing1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/liveness-to-safety/passing2.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/liveness-to-safety/safety_assumption1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/netlist/netlist-conversion1.v		8:17: syntax error [at `assert`]	8:17: syntax error [at `assert`]	-	assertions / properties
+ebmc/netlist/netlist-conversion2.sv		5:3: unsupported: ModuleOrGenerateItem [at `not`]	5:3: unsupported: ModuleOrGenerateItem [at `not`]	-	gate primitives (`and`, `nor`, …)
+ebmc/netlist/netlist-output1.v		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/netlist/netlist-trace1.sv		5:3: `reg` not supported, use `logic`	8:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/netlist/netlist-trace2.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+ebmc/neural-liveness/counter1.sv		5:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/new-ic3/assume1.sv#main	main	4:3: unsupported: ModuleCommonItem [at `assume`]	4:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+ebmc/new-ic3/assume_refuted1.sv#main	main	4:3: unsupported: ModuleCommonItem [at `assume`]	4:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
+ebmc/new-ic3/cover1.sv#main	main	3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/new-ic3/not_supported1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/new-ic3/proved1.sv		3:10: declaration with initializer not supported, use `assign`	3:10: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/new-ic3/refuted1.sv#main	main	2:3: `reg` not supported, use `logic`	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/new-ic3/refuted_initial.sv#main	main	2:3: `reg` not supported, use `logic`	3:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/p-command-line-option/p-command-line-option1.v		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/p-command-line-option/p-command-line-option2.v		OK	OK	Equal	
+ebmc/random-traces/boolean1.v		3:8: declaration with initializer not supported, use `assign`	3:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/random-traces/bv1.v		4:3: `reg` not supported, use `logic`	4:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/random-traces/counter_with_initial_value.v		4:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/random-traces/initial_state1.v		4:3: `reg` not supported, use `logic`	5:36: unsized literal `1` not supported, write the width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
+ebmc/random-traces/long_trace1.v		4:3: `reg` not supported, use `logic`	4:16: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/random-traces/with_submodule.v		9:8: declaration with initializer not supported, use `assign`	9:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/ranking-function/clock24h.sv		3:3: `reg` not supported, use `logic`	6:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/ranking-function/counter1.sv		5:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/ranking-function/counter2.sv		5:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/ranking-function/counter_in_module1.sv		16:26: positional port connections not supported, write `.port(signal)`	16:26: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
+ebmc/ranking-function/counter_with_reset1.sv		5:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/ranking-function/lexicographic_ranking_function1.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/ranking-function/signed1.sv		5:3: `reg` not supported, use `logic`	7:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/ring_buffer_bdd/ring_buffer.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/small-test3/main.v		5:17: syntax error [at `assert`]	5:17: syntax error [at `assert`]	-	assertions / properties
+ebmc/smv-netlist/always_with_range1.sv		3:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/smv-netlist/array_assignment.sv		3:7: unpacked dimension not supported	3:7: unpacked dimension not supported	-	arrays
+ebmc/smv-netlist/assignment.sv		1:1: non-ANSI port list not supported	1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
+ebmc/smv-netlist/cycle_delay1.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-netlist/cycle_delay2.sv		3:3: `reg` not supported, use `logic`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-netlist/nexttime1.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/smv-netlist/nondet2.sv		3:8: declaration with initializer not supported, use `assign`	3:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-netlist/s_until1.sv		4:3: `reg` not supported, use `logic`	4:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-netlist/smv_keyword1.sv		4:3: `reg` not supported, use `logic`	6:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/smv-netlist/verilog1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/smv-netlist/verilog2.sv		3:27: unsized literal `0` not supported, write the width (e.g. `8'd0`)	3:27: unsized literal `0` not supported, write the width (e.g. `8'd0`)	-	width rules (explicit-width fragment)
+ebmc/smv-netlist/verilog3.sv		4:10: assigning 7 bits to 32 bits (resize explicitly)	4:10: assigning 7 bits to 32 bits (resize explicitly)	-	width rules (explicit-width fragment)
+ebmc/smv-netlist/verilog_function1.sv		2:1: unsupported: Description [at `function`]	2:1: unsupported: Description [at `function`]	-	functions / tasks
+ebmc/smv-netlist/verilog_function2.sv		4:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	4:3: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
+ebmc/smv-word-level/assignment-to-part-select1.sv		9:21: syntax error [at `data`]	9:21: syntax error [at `data`]	-	parse error (sv-parser)
+ebmc/smv-word-level/bitselect1.sv		3:14: declaration with initializer not supported, use `assign`	3:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-word-level/constants1.sv		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-word-level/divmod1.sv		3:14: declaration with initializer not supported, use `assign`	3:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-word-level/identifier_syntax1.sv		4:8: declaration with initializer not supported, use `assign`	4:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-word-level/keywords1.sv		4:3: type `int` not supported	4:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
+ebmc/smv-word-level/logical1.sv		3:8: declaration with initializer not supported, use `assign`	3:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-word-level/reduction1.sv		3:14: declaration with initializer not supported, use `assign`	3:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-word-level/replication1.sv		3:14: declaration with initializer not supported, use `assign`	3:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-word-level/shift1.sv		3:14: declaration with initializer not supported, use `assign`	3:14: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-word-level/verilog1.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/smv-word-level/verilog2.sv		4:22: declaration with initializer not supported, use `assign`	4:22: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/smv-word-level/verilog3.sv		4:3: `reg` not supported, use `logic`	4:15: unpacked dimension not supported	-	arrays
+ebmc/smv-word-level/verilog4.sv		3:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/smv-word-level/verilog5.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
+ebmc/smv-word-level/verilog6.sv		4:3: unsupported: ModuleCommonItem [at `initial`]	4:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+ebmc/traces/json1.v		9:17: syntax error [at `assert`]	9:17: syntax error [at `assert`]	-	assertions / properties
+ebmc/traces/vcd1.v		3:15: declaration with initializer not supported, use `assign`	3:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
+ebmc/traces/verilog1.v		12:17: syntax error [at `assert`]	12:17: syntax error [at `assert`]	-	assertions / properties
+ebmc/verbosity/result1.sv		2:3: unsupported: ModuleCommonItem [at `assert`]	2:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
