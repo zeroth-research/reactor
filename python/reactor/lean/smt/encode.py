@@ -1,4 +1,4 @@
-"""SMT encoding utilities, shared by the SMT routes and the pre-check.
+"""SMT encoding utilities: the module's terms in cvc5.
 
 Maps Python IR types (`Sort`) to cvc5 sorts, and provides element access
 helpers for matrix-shaped state components.
@@ -74,27 +74,6 @@ def tuple_select(tm: cvc5.TermManager, t: cvc5.Term, k: int) -> cvc5.Term:
     """Element `k` of a tuple-sorted `t`, as a selector applied to it."""
     ctor = t.getSort().getDatatype()[0]
     return tm.mkTerm(Kind.APPLY_SELECTOR, ctor[k].getTerm(), t)
-
-
-def select_element(tm: cvc5.TermManager, t: cvc5.Term, k: int,
-                   leaf: Callable[[cvc5.Term], cvc5.Term] = lambda s: s,
-                   ) -> cvc5.Term:
-    """Element `k` of a tuple-sorted `t`, pushed down to where the tuple is
-    built.
-
-    A select of a constructor is its `k`-th argument, and a select of an
-    `ite` between tuples is the `ite` of the two selects: the tuple axiom
-    in each case. cvc5's simplifier folds the first and not the second, and
-    the second is the shape of any round that branches. Anything else gets
-    the selector, through `leaf`.
-    """
-    kind = t.getKind()
-    if kind == Kind.APPLY_CONSTRUCTOR:
-        return t[k + 1]                 # child 0 is the constructor
-    if kind == Kind.ITE:
-        return tm.mkTerm(Kind.ITE, t[0], select_element(tm, t[1], k, leaf),
-                         select_element(tm, t[2], k, leaf))
-    return leaf(tuple_select(tm, t, k))
 
 
 def mat_pack(

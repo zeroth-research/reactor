@@ -1,6 +1,9 @@
 """The rules about which flags go together, each read off the rows it is
-about: an input format's options, a route's options, kinds and seeds,
-and the outputs a run can write.
+about: an input format's options, the claim, the SMT budget and the
+outputs a run can write.
+
+Public so that a command built on this one, which takes these flags too,
+applies the same rules.
 """
 
 from __future__ import annotations
@@ -10,18 +13,17 @@ import argparse
 from ..artifacts import ARTIFACTS_DIR
 from ..core.options import given, missing, put_defaults
 from ..inputs import ADAPTERS, InputAdapter, adapter_by_name, adapter_for
-from ..infer import InferRoute, all_route_aliases, shared_route_options
-from .settings import SEED_FLAGS, Settings
+from .settings import Settings
 
 
 def check_blanks(parser: argparse.ArgumentParser, args) -> None:
     """An option given an empty string is the error, not "not passed".
 
-    `--proveit-dir "$LTL"` with `LTL` unset -- which is how a copied
+    `--invariant "$INV"` with `INV` unset -- which is how a copied
     benchmark command reads -- reads as "not passed" to every
-    truthiness test below.  The route behind the flag would be dropped and
-    the run would *succeed*, having quietly generated an ordinary project
-    instead.  No option here has a meaningful empty value.
+    truthiness test below.  The invariant would be dropped and the run
+    would *succeed*, having quietly generated a project with no
+    certificate instead.  No option here has a meaningful empty value.
     """
     blank = [
         action.option_strings[-1]
@@ -34,34 +36,6 @@ def check_blanks(parser: argparse.ArgumentParser, args) -> None:
             f"{', '.join(blank)} {verb} given an empty value (an unset "
             "shell variable?). Pass a real one or drop the flag."
         )
-
-
-def resolve_aliases(parser: argparse.ArgumentParser, args) -> None:
-    """Rewrite each deprecated spelling into the route and option it means.
-
-    One loop over the rows, so a route's older flag goes away with the route
-    and a second one is a row entry rather than another branch here.
-    """
-    for route, alias in all_route_aliases():
-        given = getattr(args, alias.flag.lstrip("-").replace("-", "_"), None)
-        if given is None:
-            continue
-        if args.infer not in (None, route.name):
-            parser.error(
-                f"{alias.flag} selects `--infer {route.name}`, so it cannot be "
-                f"combined with --infer {args.infer}: a run takes one route"
-            )
-        explicit = getattr(args, alias.fills, None)
-        flag = next(
-            o.flags[-1] for o in route.options if o.dest == alias.fills
-        )
-        if explicit is not None and explicit != given:
-            parser.error(
-                f"{alias.flag} and {flag} name the same thing and were given "
-                f"different values"
-            )
-        args.infer = route.name
-        setattr(args, alias.fills, given)
 
 
 def input_adapter(parser: argparse.ArgumentParser,
@@ -80,7 +54,7 @@ def input_adapter(parser: argparse.ArgumentParser,
     return adapter
 
 
-def _check_row_options(parser: argparse.ArgumentParser, args, stray,
+def check_row_options(parser: argparse.ArgumentParser, args, stray,
                        meaningful, row: str, options) -> None:
     """The rules every row's options follow (`core.options`): an option of
     a row that was not selected is refused, `stray` naming each with the
@@ -103,10 +77,10 @@ def _check_row_options(parser: argparse.ArgumentParser, args, stray,
 
 def check_input_options(parser: argparse.ArgumentParser, args,
                         adapter: InputAdapter | None) -> None:
-    """A format's option is only meaningful for input in that format, as a
-    route's is only with that route; one its row requires has to be given;
-    and its row default is put back once the format is known."""
-    _check_row_options(
+    """A format's option is only meaningful for input in that format; one
+    its row requires has to be given; and its row default is put back once
+    the format is known."""
+    check_row_options(
         parser, args,
         [(o, [a.name]) for a in ADAPTERS for o in a.options
          if a is not adapter and given(o, args)],
@@ -116,94 +90,49 @@ def check_input_options(parser: argparse.ArgumentParser, args,
     )
 
 
-def check_route_options(
-    parser: argparse.ArgumentParser, args, route: "InferRoute | None"
-) -> None:
-    """A route-scoped option is only meaningful with its route.
-
-    Given without it, the flag would do nothing -- which is the failure mode
-    worth reporting: the run would succeed having ignored what was asked.
-    An option several routes declare is stray only when *none* of them was
-    selected: `--vampire` is meaningful to two routes and a no-op under the
-    other five.
-    """
-    _check_row_options(
-        parser, args,
-        [(o, [f"--infer {r.name}" for r in owners])
-         for o, owners in shared_route_options()
-         if route not in owners and given(o, args)],
-        lambda rows: f"together with {', '.join(rows)}",
-        f"--infer {route.name}" if route else "",
-        route.options if route else None,
-    )
-
-
-def check_route(parser: argparse.ArgumentParser, args, settings: Settings) -> None:
-    """Every rule about inference, read off the route's row."""
-    route = settings.route
-    if not settings.prp:
-        # Naming the kinds this route has rather than both of them: a route
-        # that only certifies `G P` asking for "--safety or --buchi" would
-        # name a flag it goes on to refuse.
-        kinds = " or ".join(f"--{k}" for k in sorted(route.kinds, reverse=True))
-        parser.error(f"--infer {route.name} requires {kinds}")
-
-    # Which proof rules this route can produce a certificate for.
-    if settings.kind not in route.kinds:
+def check_claim_flags(parser: argparse.ArgumentParser, args) -> None:
+    """The property is one flag, and a ranking function is for --buchi."""
+    # A certificate proves one property under one proof rule, and which rule
+    # decides what the certificate even consists of -- a ranking function or
+    # no ranking function. So the two flags are not a pair of properties to
+    # be combined; they are the choice.
+    if args.safety and args.buchi:
         parser.error(
-            route.kinds_refusal
-            or (
-                f"--infer {route.name} does not infer a {settings.kind} "
-                f"certificate (it infers: {', '.join(sorted(route.kinds))})"
-            )
+            "--safety and --buchi are mutually exclusive: a certificate "
+            "proves `G FORMULA` or `G (F FORMULA)`, under one proof rule"
+        )
+    # `G FORMULA` needs no ranking function -- `rule_globally` has nowhere to
+    # put one. Taking it and dropping it would look like it had been used.
+    if args.safety and args.ranking:
+        parser.error(
+            "--ranking is meaningless with --safety: `G FORMULA` is proved "
+            "by an invariant that implies FORMULA, and `rule_globally` takes "
+            "no ranking function. Ranking functions belong to --buchi."
         )
 
-    # A predicate the route will not seed from would be discarded. Saying so
-    # beats dropping it silently: the run would succeed, having proved
-    # something about a certificate the user did not describe.
-    discarded = [
-        flag
-        for field, attr, flag in SEED_FLAGS
-        if getattr(settings, attr) and field not in route.seeds
-    ]
-    if discarded:
-        because = f": {route.seeds_refusal}" if route.seeds_refusal else ""
-        parser.error(
-            f"--infer {route.name} is incompatible with "
-            f"{', '.join(discarded)}{because}"
-        )
 
-    # `--model` and `--base-url` are for the routes that call an LLM. Named
-    # as the pair they are even when only one was passed: which of the two
-    # was given is not the point, that this route calls no LLM is.
-    if not route.uses_llm and (
-        args.model != parser.get_default("model") or args.base_url
+def check_budget(parser: argparse.ArgumentParser, args) -> None:
+    """`--smt-timeout` and `--smt-budget` are positive."""
+    # `phase_left_ms` is `max(0, phase_ms - spent)` and a phase is exhausted
+    # at zero, so a non-positive budget is not "unlimited": it is a phase
+    # that never runs a query and says nothing about why.
+    for flag, value in (
+        ("--smt-timeout", args.smt_timeout),
+        ("--smt-budget", args.smt_budget),
     ):
-        parser.error(
-            f"--model and --base-url are for the LLM routes; --infer "
-            f"{route.name} calls none"
-        )
-
-    # Inference runs against the generated project, and `--cert-file` writes
-    # a standalone file and returns before any of that -- so the route would
-    # not run at all. Every route, not the ones that declare they read or
-    # write the project: a route that declares neither still never runs.
-    if settings.cert_file:
-        parser.error(
-            f"--infer {route.name} is incompatible with --cert-file: the "
-            f"standalone certificate is written from the predicates as "
-            f"supplied, before a route could infer any"
-        )
-
-    if route.extra_check is not None:
-        problem = route.extra_check(settings)
-        if problem:
-            parser.error(problem)
+        if value <= 0:
+            parser.error(
+                f"{flag} must be a positive number of milliseconds, got {value}"
+            )
 
 
-def check_outputs(parser: argparse.ArgumentParser, settings: Settings) -> None:
-    # --build-cert is route-independent, but it needs a certificate worth
-    # building. A bare project's unsupplied fields default to `True`
+def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
+                  infer: str | None = None) -> None:
+    """What the run writes, against what it was given. `infer` names what
+    a command built on this one runs to find the certificate, if anything:
+    with it, --build-cert has a certificate to build without --invariant."""
+    # --build-cert needs a certificate worth building. A bare project's
+    # unsupplied fields default to `True`
     # (`inv`, the preconditions) or to `sorry` (`P`, `ranking`), and its
     # obligations are still handed to the tactics -- which cannot close one
     # stated over a `sorry`, so `lake build` fails on it rather than
@@ -215,17 +144,16 @@ def check_outputs(parser: argparse.ArgumentParser, settings: Settings) -> None:
                 f"--build-cert is incompatible with {which}: that writes a "
                 "file and generates no project to build"
             )
-        if not (settings.route or settings.supplied_complete
+        if not (infer or settings.supplied_complete
                 or settings.claim_deferred):
             parser.error(
                 "--build-cert needs a certificate to build: pass --safety "
                 "with --invariant, or --buchi with --invariant and "
-                "--ranking, or --infer. Without them the certificate's "
-                "predicates are `True` or `sorry`, and its obligations "
-                "cannot be discharged."
+                "--ranking. Without them the certificate's predicates are "
+                "`True` or `sorry`, and its obligations cannot be discharged."
             )
 
-    # `artifacts/` lives in the project, so the routes that write a file and
+    # `artifacts/` lives in the project, so the runs that write a file and
     # return have none. Said rather than ignored: the flag asks for
     # cross-run behaviour that this invocation cannot have.
     if settings.artifacts != "use" and (settings.cert_file or settings.hammer_file):
@@ -236,13 +164,12 @@ def check_outputs(parser: argparse.ArgumentParser, settings: Settings) -> None:
             f"writes a file and generates none"
         )
 
-    # `--hammer-file` writes one tactic file and returns, so a route asked
-    # for alongside it would never run -- any route, the file routes too, for
-    # the same reason `--build-cert` is incompatible with them: there is no
-    # project.
-    if settings.hammer_file and settings.route is not None:
+    # `--hammer-file` writes one tactic file and returns, so whatever `infer`
+    # names would never run, for the same reason `--build-cert` is
+    # incompatible with it: there is no project.
+    if settings.hammer_file and infer is not None:
         parser.error(
-            f"--infer {settings.route.name} is incompatible with --hammer-file: that "
+            f"--infer {infer} is incompatible with --hammer-file: that "
             f"writes ZerothHammer.lean and returns, and generates no "
             f"certificate to infer"
         )

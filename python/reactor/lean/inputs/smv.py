@@ -20,7 +20,7 @@ def _load(source: SourceText, opts: Mapping[str, Any]) -> Problem:
     except SMVRefused as e:
         raise InputError(f"{source.path}: {e}") from e
     except LarkError as e:
-        raise InputError(f"{source.path} is not SMV verith reads: {e}") from e
+        raise InputError(f"{source.path} is not SMV reactor reads: {e}") from e
     variables_of = {*module.ctrl, *module.extl}
     # A variable the module never reads (an unused IVAR) is not one of its
     # variables, and a name a claim could not use is left positional.

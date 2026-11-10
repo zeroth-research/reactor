@@ -66,14 +66,6 @@ def state_dependent(term) -> bool:
                for node in nodes([term], order="lifo"))
 
 
-def literals(roots: Iterable) -> list:
-    """Every Int and Real literal node under `roots`."""
-    from cvc5 import Kind
-
-    kinds = (Kind.CONST_INTEGER, Kind.CONST_RATIONAL)
-    return [node for node in nodes(roots) if node.getKind() in kinds]
-
-
 def ite_conditions(roots: Iterable, *, order: str = "pre",
                    key: Callable = str,
                    where: "Callable | None" = None) -> list:

@@ -25,24 +25,14 @@ dependencies = [
     "torch==2.15.0",
     "websockets>=15.0",
     "z3-solver>=4.12",
-    # most of `reactor.lean` (the SMT encoding, every route but `ai`)
+    # `reactor.lean`'s SMT encoding, and the pre-check and tactic hints
     "cvc5>=1.3.2",
 ]
 
-[project.optional-dependencies]
-# AI-based inference of invariants and ranking functions (`--infer ai`,
-# `--infer ai-cegis`).
-# Install with: pip install reactor[ai]  or  uv pip install reactor[ai]
-# For local LLMs (Ollama, vLLM, etc.) via OpenAI-compatible API: pip install reactor[ai-local]
-ai = [
-    "anthropic>=0.52",
-]
-ai-local = [
-    "openai>=1.0",
-]
-
 [project.scripts]
-verith = "reactor.lean.pipeline:main"
+# A reactive module in, a Lean certificate project out. Inference of the
+# certificate is the `verith` project's (`../verith`): `verith` and `certify`.
+reactor = "reactor.lean.pipeline:main"
 
 [build-system]
 requires = [
@@ -73,7 +63,7 @@ tutorials = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "nuterm/tests", "../docs/examples"]
+testpaths = ["tests", "../docs/examples"]
 addopts = "--import-mode=importlib"
 markers = [
     "slow: marks tests that require lake + mathlib (deselect with '-m \"not slow\"')",

@@ -254,8 +254,8 @@ _CMPOPS = {
 def _pyeval(src: str, ns: dict):
     """`src` as a predicate-DSL expression over `ns`, read without `eval`.
 
-    The source can be an LLM reply, and no namespace makes `eval` safe on
-    one: `().__class__.__mro__` reaches every class in the process. So the
+    The source can be text nobody vetted, and no namespace makes `eval`
+    safe on it: `().__class__.__mro__` reaches every class in the process. So the
     tree is walked over a whitelist -- numeric and Bool constants, names
     bound in `ns`, the operators `_E` overloads, calls to `ns`'s own
     connectives, and `v[i][j]` / `v[i, j]` with int indices -- and anything
@@ -392,8 +392,8 @@ def parse_predicate(env: "PredicateParser", src: str) -> cvc5.Term:
     if term.isNull():
         # cvc5 parses an empty or all-blank source to a null term rather than
         # an error, and the first use of one -- `getSort()` -- raises from
-        # inside the binding: an LLM that wrote `RANKING:` and nothing after
-        # it crashed `--infer ai-cegis` instead of being told.
+        # inside the binding: an empty predicate crashed its caller instead
+        # of being refused.
         raise Unreadable("the expression is empty")
     return term
 

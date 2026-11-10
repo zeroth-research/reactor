@@ -1,5 +1,8 @@
-"""The flags: `build_parser`, with the help each route and input format
-contributes assembled from their rows.
+"""The flags: `build_parser`, with the help each input format contributes
+assembled from its rows.
+
+Each group is its own `add_*` so that a command built on this one
+assembles the same flags rather than copies of them.
 """
 
 from __future__ import annotations
@@ -8,87 +11,28 @@ import argparse
 
 from ..artifacts import ARTIFACTS_DIR
 from ..inputs import ADAPTERS
-from ..infer import (
-    DEFAULT_ROUTE,
-    ROUTES,
-    all_route_aliases,
-    route_names,
-    shared_route_options,
-)
-from ..infer.common.llm import DEFAULT_MODEL
 from ..smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS
 
 
 _EPILOG = """\
 examples:
   # bare project — no property, so `P` and `ranking` are sorry
-  uv run verith mymodule.py -o out/ -p MyProject
+  uv run reactor mymodule.py -o out/ -p MyProject
 
   # a Buchi property, `G (F (= (X @intf.0) 0))` (certificate stub with known P)
-  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" -o out/ -p MyProject
+  uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" -o out/ -p MyProject
 
   # a safety property, `G (<= (X @intf.0) 100)`: invariant only, no ranking function
-  uv run verith mymodule.py --safety "(<= (X @intf.0) 100)" -o out/ -p MyProject
-
-  # AI inference with Claude (requires ANTHROPIC_API_KEY + pip install reactor[ai])
-  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer -o out/ -p MyProject
-
-  # ... and the same loop for a safety property (cvc5-checked route only)
-  uv run verith mymodule.py --safety "(<= (X @intf.0) 100)" --infer ai-cegis -o out/ -p MyProject
-
-  # no LLM: learn a ranking function and certify it before it is offered
-  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer nuterm -o out/ -p MyProject
-
-  # no LLM: synthesise the invariant, congruences included (`x` even), and
-  # leave it in artifacts/ for the next run to take as given
-  uv run verith mymodule.py --safety "(not (= (X @intf.0) 1))" --infer sygus -o out/ -p MyProject
-
-  # no LLM: one query per shape -- and a refuted shape is a *proof* that no
-  # certificate of that shape exists, which --infer ai-cegis reads next run
-  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer smt-linear -o out/ -p MyProject
-
-  # no LLM: Houdini and a ranking search, each candidate decided by cvc5 --
-  # a candidate it cannot prove comes back with the counterexample that kills it
-  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer houdini -o out/ -p MyProject
-
-  # ... the same search, refuted by the Vampire prover instead
-  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer houdini \\
-      --houdini-solver vampire --vampire ~/vampire/vampire -o out/ -p MyProject
-
-  # no LLM, and nothing proposed: the obligations are stated with the invariant
-  # left open and Vampire's answer literals return its coefficients
-  uv run verith mymodule.py --safety "(<= (X @intf.0) 100)" --infer vampire \\
-      --vampire ~/vampire/vampire -o out/ -p MyProject
-
-  # AI inference with Ollama (requires pip install reactor[ai-local])
-  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer \\
-      --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p MyProject
+  uv run reactor mymodule.py --safety "(<= (X @intf.0) 100)" -o out/ -p MyProject
 
   # ask cvc5 whether the obligations are true before spending a lake build on them
-  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
+  uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
       --pre-check cvc5 -o out/ -p MyProject
 
-  # certify through lean-ltl-certifying's proveit.py (lean2vmt -> ic3ia -> vmt2lean)
-  uv run verith mymodule.py --safety "(not (= (X @intf.0) 15))" -o out/ -p MyProject \\
-      --infer fbk-proveit --proveit-dir ~/lean-ltl-certifying --ic3ia ~/ic3ia/build/ic3ia
-
-  # build the certificate of any route that fills it: `lake build Certificate`
-  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
+  # build the certificate: `lake build Certificate`
+  uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
       --build-cert -o out/ -p MyProject
 """
-
-
-def _infer_help() -> str:
-    """`--infer`'s help, assembled from the rows."""
-    lines = [
-        "Infer the certificate for --safety or --buchi: the invariant, plus "
-        "the ranking function --buchi needs. One of:",
-    ]
-    for r in ROUTES:
-        kinds = " and ".join(f"--{k}" for k in sorted(r.kinds))
-        lines.append(f"`{r.name}` ({kinds}) -- {r.summary}.")
-    lines.append(f"Passed without a value, `{DEFAULT_ROUTE}`.")
-    return " ".join(lines)
 
 
 def _format_help() -> str:
@@ -104,52 +48,55 @@ def _format_help() -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="verith",
+        prog="reactor",
         description=(
             "Generate a Lean4 certificate project from a reactive module, read "
             "from a Python file or another format --format names. "
             "The property goes under --safety (`G FORMULA`: every reachable "
-            "state) or --buchi (`G (F FORMULA)`: infinitely often); with --infer "
-            "the invariant is searched for -- by an LLM, by learning a ranking "
-            "function and certifying it, or by an external prover -- along with "
-            "the ranking function a Buchi certificate also needs."
+            "state) or --buchi (`G (F FORMULA)`: infinitely often), and the "
+            "certificate's predicates under --invariant and --ranking."
         ),
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    _add_input(parser)
-    _add_claim(parser)
-    _add_routes(parser)
-    _add_outputs(parser)
-    _add_smt(parser)
+    add_input(parser)
+    add_claim(parser)
+    add_outputs(parser)
+    add_budget(parser)
+    add_smt_checks(parser)
     return parser
 
 
-def _add_input(parser: argparse.ArgumentParser) -> None:
+def add_input(parser: argparse.ArgumentParser, *, project: bool = True,
+              required: bool = False) -> None:
     """The input: the module file, the format it is read in and that
-    format's own options, and where the project is written."""
+    format's own options, and, with `project`, where the project is
+    written. `required` for a command with no `--hammer-file` to run
+    without a module; a command that writes no project passes neither."""
     parser.add_argument(
         "module_file",
-        nargs="?",
+        nargs=None if required else "?",
         help=(
             "The input: a file stating the module, in the format --format "
             "names (by default the one its suffix names; a Python file must "
-            "contain a callable that returns a Module). Optional when "
-            "--hammer-file is used alone."
+            "contain a callable that returns a Module)."
+            + ("" if required else
+               " Optional when --hammer-file is used alone.")
         ),
     )
-    parser.add_argument(
-        "-o",
-        "--output-dir",
-        default=".",
-        help="Directory where the Lean project will be created (default: current directory).",
-    )
-    parser.add_argument(
-        "-p",
-        "--project-name",
-        default="Rea",
-        help="Name of the Lean package / library (default: Rea).",
-    )
+    if project:
+        parser.add_argument(
+            "-o",
+            "--output-dir",
+            default=".",
+            help="Directory where the Lean project will be created (default: current directory).",
+        )
+        parser.add_argument(
+            "-p",
+            "--project-name",
+            default="Rea",
+            help="Name of the Lean package / library (default: Rea).",
+        )
     parser.add_argument(
         "--format",
         choices=[a.name for a in ADAPTERS],
@@ -157,21 +104,22 @@ def _add_input(parser: argparse.ArgumentParser) -> None:
         help=_format_help(),
     )
     # A format's own options, one group per format, parsed `default=None`
-    # so "given" is distinguishable from "not given" -- as the routes' are.
+    # so "given" is distinguishable from "not given".
     for adapter in ADAPTERS:
         if adapter.options:
             group = parser.add_argument_group(f"--format {adapter.name}")
             for opt in adapter.options:
                 group.add_argument(*opt.flags, **{**opt.kwargs, "default": None})
-    parser.add_argument(
-        "-x",
-        "--executable",
-        action="store_true",
-        help="Generate Main.lean and add [[lean_exe]] to lakefile for a runnable binary.",
-    )
+    if project:
+        parser.add_argument(
+            "-x",
+            "--executable",
+            action="store_true",
+            help="Generate Main.lean and add [[lean_exe]] to lakefile for a runnable binary.",
+        )
 
 
-def _add_claim(parser: argparse.ArgumentParser) -> None:
+def add_claim(parser: argparse.ArgumentParser) -> None:
     """The claim, as SMT-LIB in the module's names: the property under
     the proof rule it is proved by, and the predicates the certificate
     is given."""
@@ -218,8 +166,7 @@ def _add_claim(parser: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "Invariant as an SMT-LIB 2 Bool expression over the state, "
-            "named as --safety names it. With a route that seeds from it, "
-            "only what is left of the certificate is inferred. Example: "
+            "named as --safety names it. Example: "
             "'(= (X @intf.0) (X @intf.5))'."
         ),
     )
@@ -228,66 +175,14 @@ def _add_claim(parser: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "Ranking as an SMT-LIB 2 Int expression over the state, named "
-            "as --buchi names it, for --buchi only. With a route that seeds "
-            "from it, only the invariant is inferred. Must satisfy `ranking "
+            "as --buchi names it, for --buchi only. Must satisfy `ranking "
             ">= 0` under the invariant. Example: "
             "'(ite (X @intf.5) (ite (X @intf.4) 1 2) 0)'."
         ),
     )
 
 
-def _add_routes(parser: argparse.ArgumentParser) -> None:
-    """The route that infers the certificate, the model the LLM routes
-    ask, and every route's own options, grouped by the routes that
-    declare them."""
-    parser.add_argument(
-        "--infer",
-        nargs="?",
-        const=DEFAULT_ROUTE,
-        default=None,
-        choices=list(route_names()),
-        help=_infer_help(),
-    )
-    parser.add_argument(
-        "--model",
-        default=DEFAULT_MODEL,
-        help=f"LLM model to use for inference (default: {DEFAULT_MODEL}).",
-    )
-    parser.add_argument(
-        "--base-url",
-        default=None,
-        help=(
-            "OpenAI-compatible base URL, e.g. http://localhost:11434/v1 for Ollama "
-            "or https://openrouter.ai/api/v1 for OpenRouter. Hosted providers read "
-            "the API key from OPENROUTER_API_KEY or OPENAI_API_KEY; local servers "
-            "need no key."
-        ),
-    )
-
-    # One group per option, named for every route that declares it, so
-    # `--help` shows whose flag is whose and says when a flag is two routes'.
-    groups: dict = {}
-    for opt, owners in shared_route_options():
-        title = ", ".join(f"--infer {r.name}" for r in owners)
-        if title not in groups:
-            groups[title] = parser.add_argument_group(title)
-        # `default=None` so that "given" is distinguishable from "not
-        # given" for the stray-option check; the row's own default is
-        # put back in `check_route_options` once the route is known.
-        kwargs = dict(opt.kwargs)
-        kwargs["default"] = None
-        groups[title].add_argument(*opt.flags, **kwargs)
-
-    # Deprecated spellings, from the rows that own them: each selects its
-    # route and fills one of that route's options, which is why it cannot be
-    # an `Opt` of its own.
-    for route, alias in all_route_aliases():
-        parser.add_argument(
-            alias.flag, default=None, metavar="DIR", help=alias.help
-        )
-
-
-def _add_outputs(parser: argparse.ArgumentParser) -> None:
+def add_outputs(parser: argparse.ArgumentParser) -> None:
     """What the run writes besides the project, whether it builds it,
     and what it does with `artifacts/`."""
     parser.add_argument(
@@ -312,8 +207,8 @@ def _add_outputs(parser: argparse.ArgumentParser) -> None:
         help=(
             "Build the generated certificate: `lake update` then `lake "
             "build Certificate` in the project. Needs a certificate with "
-            "predicates in it, so pass --invariant and --ranking, or "
-            "--infer; an obligation left as `sorry` is an error, as is one "
+            "predicates in it, so pass --invariant and --ranking; an "
+            "obligation left as `sorry` is an error, as is one "
             "lake cannot close. Off by default because the build resolves "
             "and compiles cslib, Mathlib, lean-smt and cvc5 -- minutes "
             "against a warm package cache, much longer against a cold one."
@@ -326,22 +221,20 @@ def _add_outputs(parser: argparse.ArgumentParser) -> None:
         help=(
             f"What to do with the project's `{ARTIFACTS_DIR}/` directory, "
             f"which is how a sequence of runs in one -o continues rather "
-            f"than restarts: a predicate a previous run found but could not "
-            f"prove enough of is left there, and a route that understands it "
-            f"starts from it. `use` (default) lets the route read it -- an "
-            f"artifact written for a different module, property or proof "
-            f"rule is skipped, and what is picked up is printed, because two "
+            f"than restarts: what a previous run found or asked is left "
+            f"there. `use` (default) lets the run read it -- an artifact "
+            f"written for a different module, property or proof rule is "
+            f"skipped, and what is picked up is printed, because two "
             f"identical command lines must not quietly mean different "
-            f"things. `ignore` searches from scratch and still records what "
+            f"things. `ignore` reads nothing back and still records what "
             f"this run finds. `reset` empties it first, which is what to "
             f"pass when a bad artifact is being inherited by every run."
         ),
     )
 
 
-def _add_smt(parser: argparse.ArgumentParser) -> None:
-    """What cvc5 is asked about the certificate, and the time it is
-    given."""
+def add_smt_checks(parser: argparse.ArgumentParser) -> None:
+    """What cvc5 is asked about the certificate."""
     parser.add_argument(
         "--pre-check",
         default="none",
@@ -350,9 +243,7 @@ def _add_smt(parser: argparse.ArgumentParser) -> None:
             "Before generating, ask cvc5 whether the certificate obligations "
             "are actually true. A refuted obligation means the invariant or "
             "ranking is wrong, which a failing `lake build` cannot tell you "
-            "apart from tactics that are merely too weak. With --infer the "
-            "check runs after inference, on the certificate that was "
-            "inferred -- before it there is no invariant to check. Bounded "
+            "apart from tactics that are merely too weak. Bounded "
             "by --smt-timeout / --smt-budget; anything cvc5 cannot answer is "
             "reported as unknown and changes nothing."
         ),
@@ -370,6 +261,10 @@ def _add_smt(parser: argparse.ArgumentParser) -> None:
             "cvc5 cannot answer leaves the plan as it would have been."
         ),
     )
+
+
+def add_budget(parser: argparse.ArgumentParser) -> None:
+    """The time cvc5 is given: per query, and per phase of queries."""
     parser.add_argument(
         "--smt-timeout",
         type=int,

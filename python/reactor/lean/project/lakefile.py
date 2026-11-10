@@ -1,6 +1,6 @@
 """The project's lakefile: the dependencies every project requires
 (Mathlib, Cslib, lean-smt, and reactor-lean's `Relational` and `LeanAI`)
-at the revisions it pins, and what an inference route adds to them
+at the revisions it pins, and what a caller adds to them
 (`LakefileParts`).
 """
 
@@ -13,10 +13,6 @@ from pathlib import Path
 from ..core.errors import Refused
 from .templates import render
 
-
-MATHLIB_URL = "https://github.com/leanprover-community/mathlib4"
-CSLIB_URL = "https://github.com/leanprover-community/cslib"
-PROOFS_URL = "https://github.com/zeroth/proof-prototyping"
 
 MATHLIB_REV = "v4.34.0"
 CSLIB_REV = MATHLIB_REV
@@ -39,7 +35,7 @@ REACTOR_LEAN_ENV = "REACTOR_LEAN"
 
 @dataclass(frozen=True)
 class LeanLib:
-    """A `[[lean_lib]]` a route adds: `name` is the module name its files are
+    """A `[[lean_lib]]` a caller adds: `name` is the module name its files are
     imported under, `src_dir` the project-relative directory they are in."""
 
     name: str
@@ -62,7 +58,7 @@ class Require:
 
 @dataclass(frozen=True)
 class LakefileParts:
-    """What an inference route adds to the lakefile: libraries after
+    """What a caller adds to the lakefile: libraries after
     `System`, requires after the fixed ones, each preceded by its `comment`."""
 
     libs: tuple[LeanLib, ...] = ()
@@ -146,9 +142,8 @@ def generate_lakefile(
 ) -> str:
     """Render the project's lakefile, with `parts` added to the fixed ones.
 
-    A route cannot amend the lakefile after the fact -- it is written while
-    the project is created, before any route runs -- so what the route needs
-    in it is given here, from its row's `lakefile` hook.
+    The lakefile is written while the project is created and not amended
+    after the fact, so what a caller needs in it is given here.
     """
     return render(
         "project/lakefile.toml.j2",

@@ -285,13 +285,13 @@ def generate_data_lean(
 
     Imports only ``Relational.Basic``.  ``Certificate.lean`` imports this
     file so that only the data file needs regeneration when the certificate
-    data changes (e.g. after --infer).
+    data changes.
 
     It sits under ``Certificate/`` rather than ``System/`` because that is what
     it is about: ``System/`` is the module, which is the same whatever is being
     proved about it, while these five definitions are the certificate's own and
-    change with every ``--infer``.  The two files a route rewrites are then the
-    two files in one directory.
+    change with every certificate.  The two files a new certificate rewrites
+    are then the two files in one directory.
     """
     return render(
         "project/Certificate/Data.lean.j2",

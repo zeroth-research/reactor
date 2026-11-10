@@ -59,7 +59,7 @@ def test_a_model_smv_would_read_otherwise_is_an_input_error(tmp_path):
         inputs.load(free, format="smv")
     garbage = tmp_path / "garbage.smv"
     garbage.write_text("this is not SMV\n")
-    with pytest.raises(inputs.InputError, match="is not SMV verith reads"):
+    with pytest.raises(inputs.InputError, match="is not SMV reactor reads"):
         inputs.load(garbage, format="smv")
 
 

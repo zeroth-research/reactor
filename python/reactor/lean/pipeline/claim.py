@@ -1,12 +1,11 @@
 """What the run is about: the module, read from its input (`load`), and
 the claim -- the one the flags ask (`claim_from_flags`), or the one the
-input states (`stated_claim`). `show_certificate` prints an answer back
-in the input's names.
+input states (`stated_claim`).
 """
 
 from __future__ import annotations
 
-import shlex
+from collections.abc import Callable
 
 from ..cli import Settings, parse_args
 from ..core.certificate import Certificate, Claim
@@ -63,21 +62,9 @@ def claim_from_flags(
                               internal(settings.ranking, "--ranking"))
 
 
-def show_certificate(cert: Certificate, names: "inputs.Names") -> None:
-    """The route's answer in the input's names, as `--invariant` and
-    `--ranking` take it: what one run found, the next can be given."""
-    shown = [(flag, text) for flag, text in (("--invariant", cert.inv),
-                                             ("--ranking", cert.ranking))
-             if text]
-    if not shown:
-        return
-    print(".. The certificate, in the input's names:")
-    for flag, text in shown:
-        print(f"   {flag} {shlex.quote(inputs.to_surface(text, names))}")
-
-
 def stated_claim(settings: Settings, problem: "inputs.Problem",
-                 argv: list[str]) -> Settings:
+                 argv: list[str], *,
+                 reparse: "Callable[..., Settings]" = parse_args) -> Settings:
     """The command line, with the property the input states when it gives
     none (an SMV INVARSPEC or LTLSPEC).
 
@@ -85,6 +72,9 @@ def stated_claim(settings: Settings, problem: "inputs.Problem",
     `--safety`/`--buchi`: the command line is parsed again with it added,
     so every rule about the flags applies to it unchanged. Given both, the
     run would prove one and ignore the other, so that is refused.
+
+    `reparse` is the command's own `parse_args`, for a command that reads
+    the claim with this one and flags of its own.
     """
     stated = problem.claims
     chosen = settings.input_opts.get("spec")
@@ -107,7 +97,7 @@ def stated_claim(settings: Settings, problem: "inputs.Problem",
     if not stated:
         if chosen is not None:
             raise SystemExit("error: --spec: the input states no property")
-        return parse_args(argv, defer_claim=False)
+        return reparse(argv, defer_claim=False)
     if chosen is None:
         if len(stated) > 1:
             raise SystemExit(
@@ -122,7 +112,7 @@ def stated_claim(settings: Settings, problem: "inputs.Problem",
         )
     claim = stated[chosen - 1]
     print(f".. the claim is the input's {claim.where} (--{claim.kind})")
-    return parse_args(
+    return reparse(
         [*argv, f"--{claim.kind}", inputs.to_surface(claim.text, problem.names)],
         defer_claim=False,
     )

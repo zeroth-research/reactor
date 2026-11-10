@@ -14,7 +14,7 @@ from .names import Names
 
 
 class InputError(Exception):
-    """The input is not a module verith can read; the message says why."""
+    """The input is not a module reactor can read; the message says why."""
 
 
 @dataclass(frozen=True)
@@ -55,11 +55,11 @@ class Problem:
 
 @dataclass(frozen=True)
 class InputAdapter:
-    """One input format verith reads.
+    """One input format reactor reads.
 
     `load` turns the input into a `Problem`, given the values of the
     row's `options` by `dest`; it imports its parser when it is called, so
-    `verith --help`, which reads every row, imports none.
+    `--help`, which reads every row, imports none.
     """
 
     name: str                       # the `--format` value

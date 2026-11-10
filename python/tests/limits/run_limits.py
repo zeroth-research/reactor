@@ -21,7 +21,7 @@ question the matrix was written for:
     VERITH_SUITE=limits|fbk    which case table (default `limits`)
     VERITH_ROUTE=supplied|nuterm   where the certificate comes from
 
-`VERITH_SUITE=fbk` reads `tests/lean/fbk/probes.py`, whose probes are
+`VERITH_SUITE=fbk` reads `verith/tests/fbk/probes.py`, whose probes are
 `--safety` properties over the same modules; `run_fbk.py` puts them through
 ic3ia, and this puts them through verith's own certificate.
 
@@ -91,7 +91,8 @@ def load_cases() -> list:
     if SUITE == "limits":
         cases = list(CASES)
     elif SUITE == "fbk":
-        sys.path.insert(0, str(PY / "tests" / "lean" / "fbk"))
+        # The fbk probe table is the route's, in the `verith/` project.
+        sys.path.insert(0, str(PY.parent / "verith" / "tests" / "fbk"))
         from probes import PROBES                        # noqa: PLC0415
         cases = [dict(name=n, group="fbk", mod=m, S=prop, expect=e)
                  for n, m, prop, e in PROBES]
@@ -124,7 +125,10 @@ def run_verith(case) -> dict:
     out = PROJECTS / case["name"]
     if out.exists():
         shutil.rmtree(out)
-    cmd = ["uv", "run", "verith", str(module_path(case["mod"]))]
+    # `reactor` generates the project from the case's own predicates; the
+    # nuterm column infers them, which is `certify`'s (the `verith/` project).
+    cmd = ["uv", "run", "certify" if ROUTE == "nuterm" else "reactor",
+           str(module_path(case["mod"]))]
     if case.get("P"):
         # A limit-matrix property is a Buchi one: `P` comes with a ranking.
         cmd += ["--buchi", to_surface(case["P"])]

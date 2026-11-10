@@ -593,7 +593,7 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
         closers.append("omega")
     if f.has_bitvec:
         # A bitvector read as the number it holds -- `BitVec.toNat`, which
-        # `--infer smt-linear` weighs a BitVec column by -- is arithmetic no
+        # a linear predicate weighs a BitVec component by -- is arithmetic no
         # other closer here can phrase: omega and linarith know nothing
         # about it, and `decide` cannot fire while the state is a free
         # variable. Worse than failing, `decide` *errors* there ("Expected
@@ -659,7 +659,7 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
         # A Bool weighed as `if b then 1 else 0` *inside a hypothesis*:
         # `split_ifs` in prep splits the goal's branches only, and omega
         # cannot read the Bool the goal still mentions until `simp_all` has
-        # substituted it. `m_boolint`'s `--infer smt-linear` invariant.
+        # substituted it. `m_boolint`'s linear invariant, for one.
         closers.append("(split_ifs at * <;> simp_all <;> omega)")
     if f.nonlinear:
         # A product with a `max` in it: omega refuses the product, and
@@ -685,8 +685,8 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
     # tracks the term count rather than the state width.
     max_rec_depth = max(4096, 1500 * f.n_terms)
     # 2000000, which is what every other generated file carries
-    # (`codegen/encodings/scalar.py`, `codegen/encodings/circuit.py`,
-    # `infer/fbk_proveit/bridge.py`). This file used to start at 400000 and
+    # (`codegen/encodings/scalar.py`, `codegen/encodings/circuit.py`).
+    # This file used to start at 400000 and
     # climb to 2M wherever the shape was known to be slow -- finite state, a
     # bitvector, more than 8 slots or 32 terms, a branchy Real predicate,
     # more than 16 branch points. The list kept growing because a low floor

@@ -1,4 +1,4 @@
-"""`python -m reactor.lean.pipeline`, which is `uv run verith`."""
+"""`python -m reactor.lean.pipeline`, which is `uv run reactor`."""
 
 from . import main
 

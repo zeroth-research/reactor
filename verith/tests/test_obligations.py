@@ -1,0 +1,96 @@
+"""The obligations each route states, held to one meaning.
+
+`hrank` is stated two ways: clamped, `toNat r' < toNat r` as `rule_buchi`
+has it (`--pre-check`, `--infer houdini`), and split, `r >= 1 /\\ r' < r`
+(`--infer ai-cegis`; `--infer vampire` writes `r > 0`). The two agree on an
+Int ranking, which is every ranking that reaches them, so a builder that
+states one in place of the other changes no verdict.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from reactor.lean.core.certificate import Certificate, Claim
+from reactor.lean.inputs.python import load_module
+
+cvc5 = pytest.importorskip("cvc5")
+from cvc5 import Kind  # noqa: E402
+
+LIMITS = Path(__file__).resolve().parents[2] / "python" / "tests" / "limits" / "mods"
+
+
+def _module(name: str):
+    return load_module(LIMITS / f"{name}.py")
+
+
+def _clamps():
+    """`(name, tm, clamp)` for each clamp `hrank` is stated with."""
+    from reactor.lean.smt.obligations import clamp
+    from reactor.lean.smt.precheck import ModuleQueries
+
+    claim = Claim(prp="(= s0 0)")
+    q = ModuleQueries(_module("m_countdown"), claim,
+                      Certificate("(>= s0 0)", "s0"))
+    return [("smt.obligations", q.tm, lambda t: clamp(q.tm, t))]
+
+
+@pytest.mark.parametrize("positive", [1, 0], ids=["r>=1", "r>0"])
+def test_the_clamped_and_the_split_hrank_agree_on_an_int_ranking(positive):
+    for name, tm, clamp in _clamps():
+        r, r_next = (tm.mkConst(tm.getIntegerSort(), n) for n in ("r", "rn"))
+        bound = tm.mkInteger(positive)
+        clamped = tm.mkTerm(Kind.LT, clamp(r_next), clamp(r))
+        split = tm.mkTerm(
+            Kind.AND,
+            tm.mkTerm(Kind.GEQ if positive else Kind.GT, r, bound),
+            tm.mkTerm(Kind.LT, r_next, r),
+        )
+        solver = cvc5.Solver(tm)
+        solver.setLogic("ALL")
+        solver.assertFormula(
+            tm.mkTerm(Kind.NOT, tm.mkTerm(Kind.EQUAL, clamped, split)))
+        assert solver.checkSat().isUnsat(), f"{name}'s clamp disagrees"
+
+
+def test_bound_is_fresh_as_variables_a_quantifier_can_close():
+    """`fresh` makes constants, which a model assigns. A quantifier needs
+    variables of the same sorts, which `--infer smt-linear` used to make on
+    its own; `bound` is them."""
+    from reactor.lean.smt.encoding import ModuleEncoding
+    from verith.common.obligations import bound as bound_vars
+
+    enc = ModuleEncoding(_module("m_relu_input"))
+    bound, fresh = bound_vars(enc, "q_"), enc.fresh("c_")
+    assert [len(vs) for vs in bound] == [1, 1, 1]
+    for vs, consts in zip(bound, fresh):
+        assert all(v.getKind() == Kind.VARIABLE for v in vs)
+        assert [v.getSort() for v in vs] == [c.getSort() for c in consts]
+
+
+def test_the_round_as_relations_closes_its_inputs():
+    """`initial` and `transition` are predicates on states alone, as SyGuS-IF
+    wants them: the inputs are closed existentially, and the precondition
+    restricts which of them may be used. `m_relu_input` is `x0 = 5`, `x' =
+    relu(x - e)`, with `e` read the round it is awaited."""
+    from reactor.lean.smt.encoding import ModuleEncoding
+    from verith.common import obligations as obl
+
+    enc = ModuleEncoding(_module("m_relu_input"))
+
+    def state(k):
+        return [enc.tm.mkInteger(k)]
+
+    def sat(t):
+        s = enc.solver(10_000, logic="ALL")
+        s.assertFormula(t)
+        return s.checkSat().isSat()
+
+    assert sat(obl.initial(enc, state(5)))
+    assert not sat(obl.initial(enc, state(4)))
+    pre = enc.parse("(>= e0 1)", "pre")
+    assert sat(obl.transition(enc, state(5), state(6)))       # some e < 0
+    assert not sat(obl.transition(enc, state(5), state(6), pre))
+    assert sat(obl.transition(enc, state(5), state(4), pre))

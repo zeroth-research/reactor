@@ -1,23 +1,23 @@
 """The shape every relational encoding has, written once.
 
-`Rel` (matrix domain), `ScalarRel` (flat scalars) and the NA model's
-`Definition` (flat scalars, Bool) all emit the same three things in the same
-order: a per-slot body def (`effect_i` / `init_i`), a per-slot relation
-(`R_i` / `Init_i`) pinning one slot of the next state to that body, and a
-conjunction over them (`TransRel` / `INIT`).
+`Rel` (matrix domain) and `ScalarRel` (flat scalars) -- and any other
+relational encoding, one over flat Bool-valued slots say -- emit the same
+three things in the same order: a per-slot body def (`effect_i` /
+`init_i`), a per-slot relation (`R_i` / `Init_i`) pinning one slot of the
+next state to that body, and a conjunction over them (`TransRel` / `INIT`).
 
 They vary on three axes, and this module is parameterised on exactly those:
 
 1. **type builder** — what a state value is: a product of `Mat`s
    (`product_type`), one component per *element* (`product_type_scalar`),
-   or the NA model's per-slot element type.  :attr:`RelSyntax.slot_ty` is the
-   half of it a slot needs.
+   or an encoding's own per-slot element type.  :attr:`RelSyntax.slot_ty`
+   is the half of it a slot needs.
 2. **body producer** — `translate_terms_lean`, `translate_terms_scalar`, or
-   `smt.encode` + `smt_to_lean_bool`.  This is not a parameter: each emitter
-   hands :func:`emit_rel_block` the body text it produced.  That is also what
-   lets the three disagree about what a *slot is* — one per wire for
-   `Rel`/`ScalarRel`, one per element for the NA model — since the skeleton
-   only ever counts the bodies it was given.
+   a body printed from `smt.encode`'s cvc5 terms.  This is not a parameter:
+   each emitter hands :func:`emit_rel_block` the body text it produced.  That
+   is also what lets them disagree about what a *slot is* — one per wire for
+   `Rel`/`ScalarRel`, one per element for an element-wise encoding —
+   since the skeleton only ever counts the bodies it was given.
 3. **projection** — how slot `i` is read out of a state value
    (:attr:`RelSyntax.project`): a product accessor, a re-tupled slice of the
    flattened element tuple, or `var_i state`.
@@ -26,9 +26,9 @@ The per-slot `*_eq` theorems are optional (:attr:`RelBlock.ref`), emitted
 only by the two encodings that can prove them *by `rfl`*: both sides come
 from the same body producer over the same reachable terms, so they are
 syntactically equal.  A cvc5-printed body is the same transition spelled
-differently — `-1 + x` for `x - 1`, an equality for an `ite` — so the NA
-model emits no theorem block here and has its slots related to the module
-semantically instead, which is what `infer/fbk_proveit/bridge.py` discharges.
+differently — `-1 + x` for `x - 1`, an equality for an `ite` — so an
+encoding printed from cvc5 terms emits no theorem block here, and has to
+relate its slots to the module semantically instead.
 """
 
 from dataclasses import dataclass
@@ -55,8 +55,8 @@ class RelSyntax:
 class RelBlock:
     """One half of a relational encoding: the transition, or the init condition.
 
-    `binders` and `args` are per slot rather than shared because the NA model
-    leaves the `state` binder off a slot whose next value is a closed term,
+    `binders` and `args` are per slot rather than shared because an encoding
+    may leave the `state` binder off a slot whose next value is a closed term,
     rather than writing one it does not use.
     """
 
@@ -69,19 +69,20 @@ class RelBlock:
     binders: "list[str]"  # per body, what its body def binds (leading space)
     args: "list[str]"  # per body, what the relation applies it to (leading space)
     # Which slot each body belongs to. Empty means the bodies *are* the
-    # slots, which is every case but one: the NA model's `INIT` omits a slot
-    # the module starts at an unconstrained input, and the slots it does
-    # pin keep their own numbers, because `Init_k` names `var_k`.
+    # slots, as in `Rel` and `ScalarRel`. An `INIT` that omits a slot the
+    # module starts at an unconstrained input names the slots it does pin,
+    # which keep their own numbers, because `Init_k` names `var_k`.
     slots: "tuple[int, ...]" = ()
     # Conjuncts that are not a slot, already applied to their arguments, and
-    # joined after the per-slot ones. The NA model's `INIT` carries `--pre`
-    # here: it constrains the state without pinning any one slot to a body,
-    # so it is a conjunct and nothing else in this shape.
+    # joined after the per-slot ones. An `INIT` can carry `--pre` here: it
+    # constrains the state without pinning any one slot to a body, so it is
+    # a conjunct and nothing else in this shape.
     extra: "tuple[str, ...]" = ()
     extl_binders: str = ""  # the external inputs, carried by every declaration
     extl_args: str = ""
     # The functional counterpart to relate each slot back to. Empty means no
-    # `*_eq` theorem block -- the NA model proves nothing about its bodies.
+    # `*_eq` theorem block, for an encoding that proves nothing about its
+    # bodies.
     ref: str = ""
     ref_binders: str = ""
     ref_args: str = ""
@@ -90,9 +91,8 @@ class RelBlock:
 def _decl(opener: str, name: str, *binders: str, ty: str) -> str:
     """`opener name binders… : ty :=`, skipping the binder groups that are empty.
 
-    The NA model has no external inputs at all (`check_na_supported` rejects
-    a module with any), so its declarations are one binder group short of the
-    other two encodings'.
+    An encoding with no external inputs has declarations one binder group
+    short of the others'.
     """
     parts = [opener, name, *[b for b in binders if b]]
     return f"{' '.join(parts)} : {ty} :="

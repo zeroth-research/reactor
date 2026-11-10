@@ -5,10 +5,11 @@ layers it may import besides itself, and a module imports nothing else of
 `reactor.lean`. An import under `if TYPE_CHECKING:` is exempt: it names a type
 for the reader and loads nothing.
 
-A route is a package of `reactor.lean.infer`: its row in `__init__.py` and its
-engine beside it. No route imports another; what two share lives in
-`infer.common` or under `reactor.lean.smt`. A route's row imports its engine
-inside the function that runs it, so `verith --help` loads no engine.
+The inference routes are not here: they are the `verith` package, in the
+`verith/` project beside this one, which is built on this package and has
+layering rules of its own (`verith/tests/test_layering.py`). Nothing in
+`reactor.lean` imports it, nor the `certify` command or the `nuterm`
+learner beside it.
 
 And a name with a leading underscore is its module's own: no module of
 `reactor.lean` imports one from another, nor reads one off an imported module.
@@ -20,15 +21,12 @@ from __future__ import annotations
 
 import ast
 import functools
-import subprocess
-import sys
 from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 
 LEAN = Path(__file__).parent.parent / "reactor" / "lean"
-INFER = LEAN / "infer"
 
 # Every module of the package: the SMT layer the routes are built from, and
 # the Lean code generators.
@@ -49,16 +47,12 @@ LAYERS: dict[str, frozenset[str]] = {
     "proof": frozenset({"core", "lowering", "codegen", "smt", "project"}),
     # The input formats; one encodes a module through `smt` as it reads it.
     "inputs": frozenset({"core", "smt"}),
-    # The routes, their engines and the registry over them.
-    "infer": frozenset({
-        "core", "lowering", "artifacts", "codegen", "smt", "project",
-        "proof"}),
-    # The command line: read off the input formats' and the routes' rows.
-    "cli": frozenset({"core", "artifacts", "smt", "inputs", "infer"}),
-    # `uv run verith`: every stage, in order.
+    # The command line: read off the input formats' rows.
+    "cli": frozenset({"core", "artifacts", "smt", "inputs"}),
+    # `uv run reactor`: every stage, in order.
     "pipeline": frozenset({
         "core", "lowering", "artifacts", "codegen", "smt", "project", "proof",
-        "inputs", "infer", "cli"}),
+        "inputs", "cli"}),
 }
 
 
@@ -69,7 +63,7 @@ def _tree(path: Path) -> ast.Module:
 
 
 def _module(path: Path) -> str:
-    """`path` as a dotted module name: `reactor.lean.infer.houdini.engine`."""
+    """`path` as a dotted module name: `reactor.lean.smt.encode`."""
     parts = path.relative_to(LEAN.parent).with_suffix("").parts
     if parts[-1] == "__init__":
         parts = parts[:-1]
@@ -80,7 +74,7 @@ MODULES = {_module(p) for p in PACKAGE}
 
 
 def _package(path: Path) -> list[str]:
-    """`path`'s package as a dotted list: `["reactor", "lean", "infer"]`."""
+    """`path`'s package as a dotted list: `["reactor", "lean", "smt"]`."""
     return ["reactor", *path.parent.relative_to(LEAN.parent).parts]
 
 
@@ -150,21 +144,6 @@ def _layer(module: str) -> str | None:
     return None
 
 
-# Every route: a package of `infer` other than `common`.
-ROUTE_DIRS = sorted(d for d in INFER.iterdir()
-                    if (d / "__init__.py").exists() and d.name != "common")
-ROUTES = {d.name for d in ROUTE_DIRS}
-
-
-def _route(module: str) -> str | None:
-    """The route `module` belongs to: `houdini` for
-    `reactor.lean.infer.houdini.engine`."""
-    parts = module.split(".")
-    if parts[:3] == ["reactor", "lean", "infer"] and len(parts) > 3:
-        return parts[3] if parts[3] in ROUTES else None
-    return None
-
-
 def _private(name: str) -> bool:
     return name.startswith("_") and not name.startswith("__")
 
@@ -199,58 +178,6 @@ def test_a_layer_imports_only_the_layers_below_it(path):
     assert not bad, "\n".join(bad)
 
 
-def test_the_routes_are_found():
-    assert ROUTES >= {
-        "ai", "ai_cegis", "fbk_proveit", "houdini", "nuterm", "smt_linear",
-        "sygus", "vampire"}
-
-
-@pytest.mark.parametrize("route", ROUTE_DIRS, ids=lambda d: d.name)
-def test_every_route_has_an_engine(route):
-    """The row is `__init__.py` and what it runs is `engine.py`, so the rule
-    below names one module."""
-    assert (route / "engine.py").exists()
-
-
-INFER_MODULES = sorted(p for p in INFER.rglob("*.py")
-                       if p != INFER / "__init__.py")
-
-
-@pytest.mark.parametrize("path", INFER_MODULES, ids=_name)
-def test_no_route_imports_another(path):
-    """A route imports its own modules and what no route owns; a module
-    that belongs to no route imports none. The registry, which lists the
-    rows, is the one module that knows them all."""
-    me = _route(_module(path))
-    bad = [f"{_name(path)}:{i.line} imports {i.target}"
-           for i in _imports(path)
-           if _route(i.target) not in (None, me)]
-    assert not bad, "\n".join(bad)
-
-
-@pytest.mark.parametrize("route", ROUTE_DIRS, ids=lambda d: d.name)
-def test_a_route_row_imports_its_engine_only_when_it_runs(route):
-    """The CLI imports every row to print `--help`; an engine imported with
-    its row would be loaded by every run, whichever route it asks for."""
-    path = route / "__init__.py"
-    engine = f"reactor.lean.infer.{route.name}.engine"
-    bad = [f"{_name(path)}:{i.line} imports {i.target} at module level"
-           for i in _imports(path)
-           if i.top and not i.typing and i.target == engine]
-    assert not bad, "\n".join(bad)
-
-
-def test_the_registry_loads_no_engine():
-    """What the rule above is for, observed: importing every row, as
-    `verith --help` does, imports no engine and no module an engine
-    imports at its top."""
-    probe = ("import sys, reactor.lean.infer; print(sorted(m for m in "
-             "sys.modules if m.endswith('.engine') or m == 'cvc5'))")
-    r = subprocess.run([sys.executable, "-c", probe], capture_output=True,
-                       text=True, check=True)
-    assert r.stdout.strip() == "[]", r.stdout
-
-
 @pytest.mark.parametrize("path", PACKAGE, ids=_name)
 def test_no_private_name_crosses_a_module(path):
     bad = []
@@ -271,13 +198,18 @@ def test_no_private_name_crosses_a_module(path):
     assert not bad, "\n".join(bad)
 
 
-def test_the_project_builder_does_not_know_the_routes():
-    """`create_project` is told what to remove and what to add to the lakefile;
-    it does not read the route table to find out."""
-    bad = [
-        f"{_name(p)}:{i.line} imports {i.module}"
-        for p in sorted((LEAN / "project").glob("*.py"))
-        for i in _imports(p)
-        if i.module.startswith("reactor.lean.infer")
-    ]
+# What is built on this package, and so never imported by it.
+ABOVE = ("verith", "certify", "nuterm")
+
+
+@pytest.mark.parametrize("path", PACKAGE, ids=_name)
+def test_nothing_imports_what_is_built_on_it(path):
+    """Not at module level and not inside a function: `reactor` runs, and
+    its project is generated, without the `verith/` project installed.
+    What an inference route needs of the project -- its lakefile entries,
+    the files it owns -- it is handed as data (`pipeline.outputs.generate`).
+    """
+    bad = [f"{_name(path)}:{i.line} imports {i.module}"
+           for i in _imports(path)
+           if i.module.split(".")[0] in ABOVE]
     assert not bad, "\n".join(bad)

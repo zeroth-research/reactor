@@ -14,8 +14,8 @@ These were six dicts and an if/elif chain — one per backend, doubled for the
 BV forms — with nothing relating them. A test can see a *dead* key (one no
 theory defines) but not a *missing* one, so a variant the SMT encoder
 handled and no Lean emitter did went unnoticed: every unsigned and signed BV
-comparison passed `--pre-check` and `--infer` and then died at project
-generation in `No Lean expression mapping for: ULt`.
+comparison passed `--pre-check` and then died at project generation in
+`No Lean expression mapping for: ULt`.
 
 A row is one variant of one or more theories, and it must say something
 about every column. A cell is either an emitter or one of
@@ -35,9 +35,8 @@ row, and a row no theory backs fails it too.
 
 This module never imports cvc5, on purpose: `codegen/terms.py` and
 `codegen/boxes.py` import *it*, and the Lean path has to keep working where
-cvc5 is absent (see `infer/ai_cegis/engine.py`'s guarded import). The SMT
-emitters reach cvc5 only through the `SmtOp` context `smt.encode` hands
-them — `op.K` is `cvc5.Kind`.
+cvc5 is absent. The SMT emitters reach cvc5 only through the `SmtOp` context
+`smt.encode` hands them — `op.K` is `cvc5.Kind`.
 """
 
 from __future__ import annotations
@@ -344,8 +343,7 @@ _NONDET = Unsupported(
 _UNINTERPRETED = Unsupported(
     "an uninterpreted symbol has no obvious translation — emit an `opaque` "
     "nothing can prove anything about, or reject it at the front end. "
-    "Which of the two is an open decision; `--fbk-proveit` already takes "
-    "the second option."
+    "Which of the two is an open decision."
 )
 
 _ZEROGRAD = Unsupported(
@@ -358,8 +356,8 @@ _ZEROGRAD = Unsupported(
 def _bv_only_in_smt(lean_form: str) -> Unsupported:
     """A BV op cvc5 encodes and no Lean backend emits.
 
-    This is the divergence that made the table necessary: `--pre-check` and
-    `--infer` run on the SMT encoding and pass, and generation then fails.
+    This is the divergence that made the table necessary: `--pre-check`
+    runs on the SMT encoding and passes, and generation then fails.
     """
     return Unsupported(
         f"encoded for SMT, never for Lean. {lean_form} A module using it "
@@ -425,9 +423,7 @@ OPS: tuple[Op, ...] = (
         "Xor",
         LIA_LRA,
         mat=Unsupported(
-            "no Lean form; nothing has asked for one. The NA route does not "
-            "need it — it prints the `smt.encode` term through "
-            "`smt_to_lean_bool` as `!(a == b)` (tests/test_lean_fbk.py)."
+            "no Lean form; nothing has asked for one."
         ),
         scalar=_SEE_MAT,
         box=_SEE_MAT,

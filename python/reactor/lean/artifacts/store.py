@@ -3,25 +3,25 @@
 A run that does not prove the property still produces something.  An
 invariant that was inductive but too weak, a ranking function that dropped
 on the right rounds but used an op the certificate cannot express, the cvc5
-model that refuted attempt four -- today all of it is lost with the process,
-and the next `uv run verith` starts from nothing.  Kept in `artifacts/`, it
-is what the next run starts from: strengthen this invariant rather than
-search for one, or take it as given and infer only the ranking function.
+model that refuted attempt four -- lost with the process, the next run
+would start from nothing.  Kept in `artifacts/`, it is what the next run
+starts from: strengthen this invariant rather than search for one, or take
+it as given and look only for the ranking function.
 
 That makes the project a *workspace* rather than an output, and the two
 things that follow from it are the whole of this module's design.
 
 **An artifact is a file, and the metadata is beside it.**  Artifacts are
-arbitrary -- `.smt2` predicates, `.md` notes, whatever a route finds worth
-writing, including files a subprocess dropped there.  So the index
+arbitrary -- `.smt2` predicates, `.md` notes, whatever a writer finds worth
+keeping, including files a subprocess dropped there.  So the index
 (`artifacts/index.json`) types what it knows and the store reconciles it
 with what is actually on disk: a file no entry describes is still listed,
-as `role="other"`, because a route that understands it should still find it.
+as `role="other"`, because a reader that understands it should still find
+it.
 
 **Metadata says what was wrong with it, machine-readably and in prose.**
-`status` is what a consumer filters on; `why` is what it puts in a prompt or
-shows a human.  The same split the route table uses: the field the code
-tests, and the sentence a person reads.
+`status` is what a consumer filters on; `why` is what it shows a reader:
+the field the code tests, and the sentence a person reads.
 
 Three fields exist only to stop a stale artifact being trusted.  An
 invariant found for `G (s0 < 10)` is not an invariant for `G (s0 < 5)`
@@ -44,7 +44,7 @@ ARTIFACTS_DIR = "artifacts"
 _INDEX = "index.json"
 _README = "README.md"
 
-# What an artifact is.  `other` is not a gap: an arbitrary file a route
+# What an artifact is.  `other` is not a gap: an arbitrary file a reader
 # understands and the table does not is exactly what it is for.
 #
 # The last three are not candidate certificates but the *questions* a run
@@ -68,14 +68,14 @@ STATUSES = (
     "unknown",          # the procedure did not finish, or nothing said
     "encoded",          # not a candidate at all: a question this run asked
     # Not a candidate either, and not a failure: a space that was *decided
-    # empty*. `--infer smt-linear` refuting its template is a proof that no
-    # certificate of that shape exists, which is a fact about the module
-    # worth as much as one that does -- and the one thing worth telling an
-    # LLM route before it proposes the same shape again. Told apart from
-    # `unknown` because the difference is proof versus running out of time,
-    # and a consumer that confused the two would put a falsehood in a prompt.
+    # empty*. A search refuting its template is a proof that no certificate
+    # of that shape exists, which is a fact about the module worth as much
+    # as one that does -- and the one thing worth telling the next run
+    # before it proposes the same shape again. Told apart from `unknown`
+    # because the difference is proof versus running out of time, and a
+    # consumer that confused the two would pass on a falsehood.
     "no_solution",
-    # Nothing was searched at all: the route declined this module's shape --
+    # Nothing was searched at all: the writer declined this module's shape --
     # a sort it cannot weigh, an operator with no encoding, a property kind
     # it does not take. Told apart from `unknown` for the same reason
     # `no_solution` is, and in the other direction: `unknown` means a search
@@ -99,14 +99,14 @@ What this run left behind: the questions it asked, and the answers it found
 that did not make it into the certificate.
 
 Every `.smt2` file here is self-contained -- declarations, assertions,
-`(check-sat)` -- so it can be run without `verith` in the loop:
+`(check-sat)` -- so it can be run without `reactor` in the loop:
 
 ```bash
 cvc5 <file>        # or: z3 <file>
 ```
 
 A `.smt` file is not a script: it is one predicate, exactly the text a flag
-was given or a route found. `system.smt2` has the same predicates encoded,
+was given or a run found. `system.smt2` has the same predicates encoded,
 where they can be run.
 
 An **obligation** is written as its *negation*, which is how it is asked:
@@ -150,7 +150,7 @@ class Artifact:
     status: str = "unknown"         # one of STATUSES
     what: str = ""                  # prose: what the file is
     why: str = ""                   # prose: what was wrong with it
-    producer: str = ""              # the `--infer` route that wrote it
+    producer: str = ""              # what wrote it
     seq: int = 0                    # monotonic; ordering across runs
     kind: str = ""                  # the proof rule it was found under
     prp: str = ""                   # the property it was found against
@@ -166,25 +166,24 @@ class Artifact:
 
 @dataclass
 class ArtifactStore:
-    """`artifacts/`, as the routes see it.
+    """`artifacts/`, as a run sees it.
 
-    Read by every route; written by every route.  Unlike `owns` on a route's
-    row this is not per-route access: the point is that one run's leftovers
-    are another run's starting point, and the run that wrote an artifact is
-    usually not the one that uses it.
+    Read and written by every run, with no per-writer access: the point is
+    that one run's leftovers are another run's starting point, and the run
+    that wrote an artifact is usually not the one that uses it.
     """
 
     dir: Path
     module_digest: str = ""
     kind: str = ""
     prp: str = ""
-    producer: str = ""              # the route writing, for `put`
+    producer: str = ""              # what is writing, for `put`
     enabled: bool = True            # `--artifacts ignore` reads nothing
     log: "object" = None
     # How many *notes* this store has written in this process, so that a
-    # caller can tell "the route said nothing" from "the route said its own
+    # caller can tell "the writer said nothing" from "the writer said its own
     # thing". Notes rather than artifacts: a run writes its property and its
-    # encodings whatever happens, and counting those would make every route
+    # encodings whatever happens, and counting those would make every writer
     # look as though it had already explained itself. The index on disk
     # cannot answer it either -- it carries earlier runs' entries too, unless
     # `--artifacts reset` cleared them.
@@ -196,8 +195,8 @@ class ArtifactStore:
         """Every file present, newest first, described where the index does.
 
         A file with no entry is listed as `other`/`unknown` rather than
-        hidden: whether a route understands an arbitrary file is the route's
-        business, and the index is not the authority on what exists.
+        hidden: whether a reader understands an arbitrary file is the
+        reader's business, and the index is not the authority on what exists.
         """
         if not self.dir.is_dir():
             return ()
@@ -286,8 +285,8 @@ class ArtifactStore:
 
         `what` is the other half, and it is for a person: a sentence saying
         what the file *is*, appended to `README.md` under the file's name.
-        Nothing here knows what a run will produce -- which routes will run,
-        what a later component will want to leave behind -- so the index is
+        Nothing here knows what a run will produce -- what a later
+        component will want to leave behind -- so the index is
         not one writer's table of contents. Each component says its own line
         as it writes, which makes the README exactly what was written, in the
         order it was written, including by code that did not exist when this
@@ -302,12 +301,11 @@ class ArtifactStore:
         seq = max((e.get("seq", 0) for e in entries), default=0) + 1
         suffix = _SUFFIX.get(language, ".txt")
         name = (f"{stem}{suffix}" if unique
-                else f"{stem or role}-{seq:04d}-{self.producer or 'verith'}{suffix}")
+                else f"{stem or role}-{seq:04d}-{self.producer or 'run'}{suffix}")
         if unique:
-            # A run records its predicates once before a route and once after,
-            # so that an inferred one is written down too. When the route
-            # changed nothing, saying so twice is noise and rewriting the file
-            # is a lie about when it was written.
+            # A run can record its predicates more than once. When nothing
+            # changed in between, saying so twice is noise and rewriting the
+            # file is a lie about when it was written.
             here = self.dir / name
             if here.is_file() and here.read_text() == text:
                 known = next((e for e in entries if e.get("name") == name), None)
@@ -372,7 +370,7 @@ class ArtifactStore:
         (self.dir / _README).write_text("".join(out))
 
     def note(self, text: str, **kw) -> Artifact:
-        """A `.md` artifact: what a route wants the next run's prompt to know."""
+        """A `.md` artifact: what a writer wants the next run to know."""
         out = self.put("note", text, language="md", **kw)
         self.notes += 1
         return out
