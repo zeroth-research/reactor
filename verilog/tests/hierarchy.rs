@@ -172,10 +172,11 @@ fn rejected_instances() {
             "y[3:0]",
             "must be connected to a signal name",
         ),
+        // an output drives a whole signal of its width: no implicit resize
         (
-            "  child u (.clk, .a(a[1:0]), .q, .y);",
-            "a[1:0]",
-            "port `a` of `u` has 4 bits, the signal connected 2",
+            "  logic [7:0] w;\n  child u (.clk, .a, .q(w), .y);\n  assign q = w[3:0];",
+            "w),",
+            "port `q` of `u` has 4 bits, `w` 8",
         ),
         (
             "  child u (.clk, .a, .q, .y);\n  assign y = a;",
@@ -212,16 +213,6 @@ fn rejected_instances() {
             "  child #(.K(4'd1), .K(4'd2)) u (.clk, .a, .q, .y);",
             "K(4'd2",
             "parameter `K` given twice",
-        ),
-        (
-            "  child #(.K(1)) u (.clk, .a, .q, .y);",
-            "K(1",
-            "parameter `K` of type `logic [3:0]` given a value of 32 bits",
-        ),
-        (
-            "  child #(.W(4'd4)) u (.clk, .a, .q, .y);",
-            "W(4'd4",
-            "parameter `W` is an `int`",
         ),
         (
             "  defparam u.W = 4;\n  child u (.clk, .a, .q, .y);",
@@ -401,26 +392,51 @@ endmodule
     translate(src).unwrap();
 }
 
+/// Typed parameters take their values as in an assignment, and integer
+/// constants are operands like any other.
+#[test]
+fn accepted_standard_parameters() {
+    let src =
+        "module m #(parameter int N = 8) (input logic [7:0] a, output logic [7:0] y, z, w, v);
+  localparam logic [3:0] K = 5, M = -1;
+  localparam int L = 4'd5;
+  localparam logic signed [7:0] S = 4'sb1000;
+  localparam logic [7:0] U = 4'sb1000;
+  assign y = a == N - 1 ? a : 8'd0;
+  assign z = a + 1;
+  assign w = a + (2 + 3);
+  assign v = N;
+endmodule
+";
+    let m = frontend::parse(src, "test.sv").unwrap();
+    let params: Vec<(String, String)> = m
+        .params
+        .iter()
+        .map(|p| (p.name.clone(), format!("{} {}", p.ty, p.value.unsigned())))
+        .collect();
+    let expected = [
+        ("N", "logic signed [31:0] 8"),
+        ("K", "logic [3:0] 5"),
+        ("M", "logic [3:0] 15"),
+        ("L", "logic signed [31:0] 5"),
+        ("S", "logic signed [7:0] 248"),
+        // extended by the value's sign, not the parameter's
+        ("U", "logic [7:0] 248"),
+    ];
+    assert_eq!(
+        params,
+        expected
+            .iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect::<Vec<_>>()
+    );
+    translate(src).unwrap();
+}
+
 #[test]
 fn rejected_parameters() {
     let h = "module m #(parameter int N = 8) (input logic [7:0] a, output logic [7:0] y);";
     let cases = [
-        (
-            "  assign y = a == N - 1 ? a : 8'd0;",
-            "==",
-            "an integer constant is an `int` (32 bits): cast it, e.g. `8'(N - 1)`",
-        ),
-        (
-            "  assign y = N;",
-            "y",
-            "assigning 32 bits to 8 bits (resize explicitly); an integer constant",
-        ),
-        ("  assign y = a + 1;", "1;", "unsized literal `1`"),
-        (
-            "  assign y = a + (2 + 3);",
-            "2 +",
-            "made of unsized literals only",
-        ),
         (
             "  localparam K = 8'd1 + 8'd2;",
             "8'd1",
@@ -435,16 +451,6 @@ fn rejected_parameters() {
             "  localparam int K = N * 1000000000;",
             "N *",
             "overflows 32 bits",
-        ),
-        (
-            "  localparam logic [3:0] K = 5;",
-            "5",
-            "given a value of 32 bits",
-        ),
-        (
-            "  localparam int K = 4'd5;",
-            "4'd5",
-            "is an `int`, but the value",
         ),
         ("  localparam K = a;", "a;", "`a` is not a parameter"),
         ("  localparam N = 3;", "N =", "`N` already declared"),

@@ -54,7 +54,7 @@ shift by `w` or more gives 0 (`AShr`: copies of the top bit) in both
 languages; plain truncation of `b` would not.
 
 Division by zero cannot occur in a translated design (the divisor is a
-nonzero literal), and [`value::eval`](crate::value::eval) leaves it
+nonzero constant), and [`value::eval`](crate::value::eval) leaves it
 undefined. SMT-LIB defines it: `bvudiv` by 0 gives all ones, `bvurem` the
 dividend, `bvsdiv` all ones for a non-negative dividend and 1 otherwise,
 `bvsrem` the dividend.

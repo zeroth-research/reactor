@@ -18,7 +18,8 @@ where the edge of its clock happens (see [`lower`]).
 - [`ast`]: the abstract syntax of the accepted subset; [`frontend`] parses
   into it (evaluating [`constant`] expressions such as parameter values),
   [`elab`] builds the tree of module instances, [`typing`] checks each
-  module, [`ast_interp`] runs a hierarchy.
+  module, [`sizing`] makes the implicit resizes of IEEE 1800 explicit,
+  [`ast_interp`] runs a hierarchy.
 - [`lower`]: the translation of a hierarchy into a [`Module`]; [`print`]
   prints modules with names.
 */
@@ -36,6 +37,7 @@ pub mod lower;
 pub mod miter;
 pub mod print;
 pub mod rm_sim;
+pub mod sizing;
 pub mod smt;
 pub mod theory;
 pub mod typing;

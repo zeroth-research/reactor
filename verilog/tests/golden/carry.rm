@@ -1,0 +1,36 @@
+module carry
+  external
+    clk : bv1
+    cin : bv1
+    a : bv8
+    b : bv8
+    cnt@init : bv4
+  interface
+    sum : bv8
+    cout : bv1
+    cnt : bv4
+  atom controls sum, cout awaits cin, a, b
+    init = update
+      %1 := ZEXT[9] X(a)
+      %2 := ZEXT[9] X(b)
+      %3 := ADD (%1, %2)
+      %4 := ZEXT[9] X(cin)
+      %5 := ADD (%3, %4)
+      X(cout) := EXTRACT[8:8] %5
+      X(sum) := EXTRACT[7:0] %5
+  atom controls cnt reads clk, cnt awaits clk, cnt@init
+    init
+      X(cnt) := ID X(cnt@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := ZEXT[32] cnt
+      %3 := 32'd9
+      %4 := EQ (%2, %3)
+      %5 := 4'd0
+      %6 := ZEXT[32] cnt
+      %7 := 32'd1
+      %8 := ADD (%6, %7)
+      %9 := EXTRACT[3:0] %8
+      %10 := ITE (%4, %5, %9)
+      X(cnt) := ITE (clk@pos, %10, cnt)

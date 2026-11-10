@@ -24,7 +24,7 @@ use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, init_name, lower_inst};
 use verilog::rm_sim::{Sim, Valuation};
 use verilog::smt::{self, Phase};
-use verilog::{BitVec, typing, z3};
+use verilog::{BitVec, sizing, typing, z3};
 
 fn examples() -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
@@ -76,11 +76,7 @@ fn atoms(inst: &Inst) -> usize {
     let conns = m
         .instances()
         .flat_map(|i| i.conns(Dir::Input))
-        .filter(|(c, _)| {
-            c.actual
-                .as_ref()
-                .is_some_and(|e| !matches!(e.kind, verilog::ast::ExprKind::Var(_)))
-        })
+        .filter(|(c, _)| c.actual.as_ref().is_some_and(|_| c.shared().is_none()))
         .count();
     own + conns + inst.children.iter().map(|(_, c)| atoms(c)).sum::<usize>()
 }
@@ -102,6 +98,59 @@ fn golden() {
             });
             assert_eq!(printed, expected, "{}", path.display());
         }
+    }
+}
+
+/// The sized source of every example (`v2rm --sized`): against golden
+/// files, in the explicit-width fragment when read back (every module of
+/// it, before any sizing), and simulated by iverilog like the original on
+/// a random trace, so that the sizing pass is checked on its own.
+#[test]
+fn sized_source() {
+    let update = std::env::var_os("UPDATE_GOLDEN").is_some();
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sized");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let bin = iverilog_bin();
+    let mut rand = Rand(0x51ed_270b_27a4_c19f);
+    for (n, path) in examples().into_iter().enumerate() {
+        let (inst, t) = load(&path);
+        let printed = sizing::print(&inst).unwrap();
+        let golden = dir.join(format!("{}.sized.sv", stem(&path)));
+        if update {
+            std::fs::write(&golden, &printed).unwrap();
+        } else {
+            let expected = std::fs::read_to_string(&golden).unwrap_or_else(|_| {
+                panic!("{} missing, run with UPDATE_GOLDEN=1", golden.display())
+            });
+            assert_eq!(printed, expected, "{}", path.display());
+        }
+        let file = tmp.join(format!("{}.sv", stem(&path)));
+        std::fs::write(&file, &printed).unwrap();
+        let back = elab::load_file(&file).unwrap_or_else(|e| panic!("{}:{e}", file.display()));
+        let mut walk = vec![&back];
+        while let Some(i) = walk.pop() {
+            let env = typing::check(&i.module).unwrap();
+            typing::explicit(&env, &i.module).unwrap_or_else(|e| panic!("{}:{e}", file.display()));
+            walk.extend(i.children.iter().map(|(_, c)| c));
+        }
+        let Some(bin) = &bin else { continue };
+        if simulator_differs(&inst).is_some() {
+            continue;
+        }
+        let init = rand.registers(&inst);
+        let rounds = rand.trace(&inst, &t.clocks, Gen::nth(n), 100);
+        let tb = testbench(&inst, &t, &init, &rounds);
+        let name = &inst.module.name;
+        // own file names: other tests run iverilog on the examples at the
+        // same time
+        let original = run_iverilog(bin, &path, &format!("{name}_original"), &tb);
+        let sized = run_iverilog(bin, &file, &format!("{name}_sized"), &tb);
+        assert_eq!(original.len(), rounds.len(), "{}", path.display());
+        assert_eq!(original, sized, "{}", path.display());
+    }
+    if bin.is_none() {
+        eprintln!("iverilog not found: sized sources not simulated");
     }
 }
 

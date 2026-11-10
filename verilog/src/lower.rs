@@ -3,6 +3,9 @@
 
 Every signal becomes a variable of the width of its type: inputs are
 external, outputs are interface variables, internal signals are private.
+Each module is first sized ([`sizing`]): afterwards the operands of every
+operator have one type and every assignment copies a value of its target's
+width, so the terms below need no width rules of their own.
 
 Every `assign` becomes a combinatorial atom that awaits the next values
 `X(·)` of the signals it reads and writes the next values of its targets,
@@ -26,6 +29,7 @@ which has no `>`, `>=` and no logical operators:
 | `x[h:l]`, `x[c]`, `x[c +: w]`, … (constant) | `Extract`, nothing for all bits |
 | `x[i]`, `x[i +: w]` (variable) | `Extract{w-1, 0}(LShr(x, i))` |
 | `N'(e)` | `SExt`/`ZExt` (as `e`'s signedness says) when widening, `Extract` when narrowing |
+| an implicit resize (from sizing) | `SExt`/`ZExt` as the type it resizes to says, `Extract` when narrowing |
 
 ## Time and clocks
 
@@ -181,8 +185,8 @@ use crate::ast::{
     Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
-use crate::typing;
 use crate::{Atom, Module, Sort, SvOp, Term, Var, Wire};
+use crate::{sizing, typing};
 use base::var::X;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -337,9 +341,18 @@ impl Out<'_> {
 /// own items become atoms, its instances modules, which are composed with
 /// the signals of the module hidden.
 fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
-    let m = &inst.module;
     let ctx = |e: Error| elab::context(e, prefix);
-    let mut env = typing::check(m).map_err(ctx)?;
+    let mut env = typing::check(&inst.module).map_err(ctx)?;
+    // every implicit resize made explicit, so that the terms below need
+    // operands of equal types only
+    let sized = sizing::module(&inst.module, &env).map_err(ctx)?;
+    typing::explicit(&env, &sized).map_err(|e| {
+        ctx(Error::new(
+            e.span,
+            format!("internal error: sizing left `{}`", e.msg),
+        ))
+    })?;
+    let m = &sized;
     let registers: Vec<Name> = m.registers().into_iter().cloned().collect();
 
     // an input connected to an expression other than a name is a signal
@@ -347,11 +360,7 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
     let mut connections = Vec::new();
     for i in m.instances() {
         for (c, f) in i.conns(Dir::Input) {
-            let Some(e) = c
-                .actual
-                .as_ref()
-                .filter(|e| !matches!(e.kind, ExprKind::Var(_)))
-            else {
+            let Some(e) = c.actual.as_ref().filter(|_| c.shared().is_none()) else {
                 continue;
             };
             let name = format!("{}.{}", i.name, c.port);
@@ -1566,6 +1575,27 @@ impl<'a> Builder<'a> {
                 };
                 Ok((w, t))
             }
+            ExprKind::Resize(t, a) => {
+                let (wa, ta) = self.expr(a)?;
+                let s = Sort(t.width);
+                let w = match t.width.cmp(&ta.width) {
+                    Ordering::Equal => wa,
+                    Ordering::Less => {
+                        let op = SvOp::Extract {
+                            hi: t.width - 1,
+                            lo: 0,
+                        };
+                        self.emit(op, &[wa], s, span)?
+                    }
+                    // extended as the type it is resized to says
+                    Ordering::Greater if t.signed => {
+                        self.emit(SvOp::SExt(t.width), &[wa], s, span)?
+                    }
+                    Ordering::Greater => self.emit(SvOp::ZExt(t.width), &[wa], s, span)?,
+                };
+                Ok((w, *t))
+            }
+            ExprKind::Fill(_) => Err(Error::new(span, "internal error: `'0`/`'1` not sized")),
             ExprKind::Cast(c, a) => {
                 let (wa, ta) = self.expr(a)?;
                 let t = typing::cast(*c, ta, typing::context_free(a), span)?;

@@ -1,0 +1,29 @@
+module shiftw
+  external
+    a : bv8
+    n : bv3
+  interface
+    sl : bv16
+    sn : bv16
+    amt : bv16
+    one : bv8
+  atom controls sl awaits a
+    init = update
+      %1 := ZEXT[16] X(a)
+      %2 := 32'd2
+      X(sl) := SHL (%1, %2)
+  atom controls sn awaits a, n
+    init = update
+      %1 := ZEXT[16] X(a)
+      X(sn) := SHL (%1, X(n))
+  atom controls one awaits n
+    init = update
+      %1 := 32'd1
+      %2 := SHL (%1, X(n))
+      X(one) := EXTRACT[7:0] %2
+  atom controls amt awaits n
+    init = update
+      %1 := 16'd1
+      %2 := 3'd7
+      %3 := ADD (X(n), %2)
+      X(amt) := SHL (%1, %3)

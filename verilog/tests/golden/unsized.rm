@@ -1,0 +1,57 @@
+module unsized
+  external
+    q : bv4
+    x : bv8
+    c : bv1
+  interface
+    inc : bv4
+    wrapped : bv1
+    wrapped4 : bv1
+    full : bv1
+    ones : bv8
+    zeros : bv8
+    pick : bv8
+    based : bv8
+    big : bv40
+  atom controls inc awaits q
+    init = update
+      %1 := ZEXT[32] X(q)
+      %2 := 32'd1
+      %3 := ADD (%1, %2)
+      X(inc) := EXTRACT[3:0] %3
+  atom controls wrapped awaits q
+    init = update
+      %1 := ZEXT[32] X(q)
+      %2 := 32'd1
+      %3 := ADD (%1, %2)
+      %4 := 32'd0
+      X(wrapped) := EQ (%3, %4)
+  atom controls wrapped4 awaits q
+    init = update
+      %1 := 4'd1
+      %2 := ADD (X(q), %1)
+      %3 := 4'd0
+      X(wrapped4) := EQ (%2, %3)
+  atom controls ones
+    init = update
+      X(ones) := 8'd255
+  atom controls zeros
+    init = update
+      X(zeros) := 8'd0
+  atom controls pick awaits x, c
+    init = update
+      %1 := 8'd255
+      X(pick) := ITE (X(c), X(x), %1)
+  atom controls full awaits x
+    init = update
+      %1 := 8'd255
+      X(full) := EQ (X(x), %1)
+  atom controls based awaits x
+    init = update
+      %1 := ZEXT[32] X(x)
+      %2 := 32'd3
+      %3 := ADD (%1, %2)
+      X(based) := EXTRACT[7:0] %3
+  atom controls big
+    init = update
+      X(big) := 40'd4294967296

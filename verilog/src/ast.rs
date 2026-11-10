@@ -217,6 +217,22 @@ pub struct Formal {
     pub ty: Ty,
     /// Whether it is a clock of the module (see [`Module::clocks`]).
     pub clock: bool,
+    /// Whether the actual is the name of a signal of the port's width, so
+    /// that the port is that signal. An actual of another width (or any
+    /// other expression) is assigned to the port, which is then a signal
+    /// of its own.
+    pub shared: bool,
+}
+
+impl Conn {
+    /// The signal of the instantiating module that the port is (see
+    /// [`Formal::shared`]).
+    pub fn shared(&self) -> Option<&Name> {
+        match (&self.formal, self.actual.as_ref().map(|e| &e.kind)) {
+            (Some(f), Some(ExprKind::Var(x))) if f.shared => Some(x),
+            _ => None,
+        }
+    }
 }
 
 impl Instance {
@@ -225,10 +241,7 @@ impl Instance {
         self.conns
             .iter()
             .filter_map(|c| match (&c.formal, &c.actual) {
-                (Some(f), Some(e)) if f.clock => match &e.kind {
-                    ExprKind::Var(x) => Some(x),
-                    _ => None,
-                },
+                (Some(f), Some(_)) if f.clock => c.shared(),
                 _ => None,
             })
     }
@@ -543,12 +556,16 @@ pub struct Expr {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ExprKind {
     /// A sized literal (`8'd3`, `4'sb1010`); `ty.width` is the size.
+    /// Sizing also makes one for `'0` and `'1` at the width of their
+    /// context.
     Lit {
         ty: Ty,
         value: BitVec,
     },
-    /// A parameter, or an integer constant expression over parameters
-    /// (`N - 1`), with its value; `text` is the expression as written.
+    /// A parameter or an unsized literal (`5` is an `int`, `'hff` 32 bits
+    /// unsigned), with its value; `text` is the source text. Sizing folds
+    /// an operator expression on constants (`N - 1`) into one constant at
+    /// the type of its context, with the expression as its text.
     Const {
         text: String,
         ty: Ty,
@@ -567,6 +584,15 @@ pub enum ExprKind {
     Select(Name, Select),
     /// `N'(e)`, `signed'(e)`, `unsigned'(e)`, `$signed(e)`, `$unsigned(e)`.
     Cast(Cast, Box<Expr>),
+    /// `'0` (false) or `'1` (true): every bit 0 or 1, at the width of the
+    /// context (1 bit where the width is self-determined). Sizing replaces
+    /// it by a literal.
+    Fill(bool),
+    /// An implicit resize, made by [`sizing`](crate::sizing): the value of
+    /// the expression, truncated to the width of the type, or extended to
+    /// it with copies of its top bit if the type is signed and with zeros
+    /// if not, taking the signedness of the type.
+    Resize(Ty, Box<Expr>),
 }
 
 /// The bits picked by `x[…]`, as written.
@@ -675,9 +701,9 @@ pub enum BinOp {
     Add,
     Sub,
     Mul,
-    /// `/`: typing requires a nonzero literal divisor.
+    /// `/`: sizing requires a nonzero constant divisor.
     Div,
-    /// `%`: typing requires a nonzero literal divisor.
+    /// `%`: sizing requires a nonzero constant divisor.
     Mod,
     Eq,
     Ne,
@@ -773,7 +799,8 @@ impl Expr {
                 out.push((x, self.span));
                 sel.reads(out);
             }
-            ExprKind::Cast(_, e) => e.reads(out),
+            ExprKind::Cast(_, e) | ExprKind::Resize(_, e) => e.reads(out),
+            ExprKind::Fill(_) => {}
         }
     }
 }
@@ -797,6 +824,9 @@ impl fmt::Display for Expr {
             ExprKind::Cast(Cast::Size(n), e) => write!(f, "{n}'({e})"),
             ExprKind::Cast(Cast::Signed, e) => write!(f, "signed'({e})"),
             ExprKind::Cast(Cast::Unsigned, e) => write!(f, "unsigned'({e})"),
+            ExprKind::Fill(b) => write!(f, "'{}", u8::from(*b)),
+            // the expression as written: messages show source text
+            ExprKind::Resize(_, e) => write!(f, "{e}"),
         }
     }
 }

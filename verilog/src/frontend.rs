@@ -8,13 +8,16 @@ the accepted subset with a located error.
 A module is lowered once for each set of parameter values: the values are
 substituted while lowering, so the result has no parameters left. Ranges,
 replication counts, select bounds and cast sizes are [`constant`]
-expressions. In other expressions, a parameter of a vector type becomes a
-constant of that type, and an *integer constant* (built from unsized
-literals and `int` parameters with `+ - * / % **` and `$clog2`) is folded
-into one constant of type `int`, so that `N - 1` is one 32-bit operand.
-An integer constant without any parameter is rejected outside casts
-(`a + 1`: write the width, `8'd1`). Instances keep their parameter values
-and connections; [`elab`](crate::elab) elaborates the modules they name.
+expressions. In other expressions, a parameter becomes a constant of its
+type and an unsized literal a constant of type `int` (`5`) or of 32
+unsigned bits (`'hff`); `'0` and `'1` take the width of their context. An
+integer constant (built from unsized literals and `int` parameters with
+`+ - * / % **` and `$clog2`) keeps its operators, so that
+[`sizing`](crate::sizing) evaluates it at the type of its context; only
+`**` and `$clog2` are folded here. An unsized literal is no item of a
+concatenation (IEEE 1800 forbids it). Instances keep their parameter
+values and connections; [`elab`](crate::elab) elaborates the modules they
+name.
 
 `sv-parser` ignores operator precedence: a chain of binary operators comes
 out nested to the right in source order (`a * b + c` as `a * (b + c)`), and
@@ -448,12 +451,12 @@ impl Cx<'_> {
                 return self.err(id, format!("`{name}` already declared at {}", prev.span));
             }
             let given = self.overrides.iter().find(|o| o.name == name);
-            let (value, vspan) = match (given, default) {
+            let value = match (given, default) {
                 (Some(o), _) if overridable => {
                     self.used.borrow_mut().insert(name.clone());
-                    (o.value.clone(), o.span)
+                    o.value.clone()
                 }
-                (_, Some((_, e))) => (self.const_expr(e)?, self.span(e)),
+                (_, Some((_, e))) => self.const_expr(e)?,
                 (_, None) => {
                     return self.err(
                         id,
@@ -464,36 +467,14 @@ impl Cx<'_> {
                     );
                 }
             };
-            let ty = match ty {
-                None => value.ty,
-                Some(t) if t == Ty::INT && value.ty != Ty::INT => {
-                    return Err(Error::new(
-                        vspan,
-                        format!(
-                            "parameter `{name}` is an `int`, but the value has type `{}`",
-                            value.ty
-                        ),
-                    ));
-                }
-                Some(t) if t.width != value.ty.width => {
-                    return Err(Error::new(
-                        vspan,
-                        format!(
-                            "parameter `{name}` of type `{t}` given a value of {} bits \
-                             (resize explicitly, e.g. `{}'d…` or `{}'(…)`)",
-                            value.ty.width, t.width, t.width
-                        ),
-                    ));
-                }
-                Some(t) => t,
+            // a typed parameter takes its value as in an assignment: extended
+            // as the value's signedness says, or truncated
+            let ty = ty.unwrap_or(value.ty);
+            let value = Const {
+                ty,
+                value: constant::resize(ty.width, &value).value,
             };
-            self.params.borrow_mut().insert(
-                name.clone(),
-                Const {
-                    ty,
-                    value: value.value.clone(),
-                },
-            );
+            self.params.borrow_mut().insert(name.clone(), value.clone());
             m.params.push(Param {
                 name,
                 ty,
@@ -1413,42 +1394,10 @@ impl Cx<'_> {
         self.reassociate(operands, ops)
     }
 
-    /// The expression of a leaf. An integer constant becomes a constant of
-    /// type `int` if it mentions a parameter (or is the operand of a cast);
-    /// without one, it is made of unsized literals only, which are
-    /// rejected: write the width.
+    /// The expression of a leaf.
     fn leaf_to_expr(&self, l: Leaf) -> Result<Expr> {
         match l {
-            Leaf::Expr(e) => Ok(e),
-            Leaf::Int {
-                value,
-                text,
-                param: true,
-                span,
-            } => Ok(Expr {
-                kind: ExprKind::Const {
-                    text,
-                    ty: Ty::INT,
-                    value: BitVec::from_signed(32, value),
-                },
-                span,
-            }),
-            Leaf::Int { text, span, .. } if text.bytes().all(|b| b.is_ascii_digit()) => {
-                Err(Error::new(
-                    span,
-                    format!(
-                        "unsized literal `{text}` not supported, write the width (e.g. `8'd{text}`)"
-                    ),
-                ))
-            }
-            Leaf::Int {
-                value, text, span, ..
-            } => Err(Error::new(
-                span,
-                format!(
-                    "`{text}` is made of unsized literals only, write the width (e.g. `8'd{value}`)"
-                ),
-            )),
+            Leaf::Expr(e) | Leaf::Int { expr: e, .. } => Ok(e),
         }
     }
 
@@ -1496,18 +1445,20 @@ impl Cx<'_> {
                 let span = self.span(op);
                 let op = self.unop(op)?;
                 match (op, self.primary(p)?) {
-                    (UnOp::Plus, l @ Leaf::Int { .. }) => Ok(l),
-                    (
-                        UnOp::Neg,
-                        Leaf::Int {
-                            value, text, param, ..
-                        },
-                    ) => Ok(Leaf::Int {
-                        value: constant::int_neg(value).map_err(|m| Error::new(span, m))?,
-                        text: format!("(-{text})"),
-                        param,
-                        span,
-                    }),
+                    (UnOp::Plus | UnOp::Neg, Leaf::Int { value, expr, .. }) => {
+                        let value = match op {
+                            UnOp::Neg => {
+                                constant::int_neg(value).map_err(|m| Error::new(span, m))?
+                            }
+                            _ => value,
+                        };
+                        let kind = ExprKind::Unary(op, Box::new(expr));
+                        Ok(Leaf::Int {
+                            value,
+                            expr: Expr { kind, span },
+                            span,
+                        })
+                    }
                     (op, l) => {
                         let kind = ExprKind::Unary(op, Box::new(self.leaf_to_expr(l)?));
                         Ok(Leaf::Expr(Expr { kind, span }))
@@ -1532,11 +1483,18 @@ impl Cx<'_> {
                     sv::Number::IntegralNumber(n) => return self.literal(n),
                     n => return self.err(n, "real numbers not supported"),
                 },
-                sv::PrimaryLiteral::UnbasedUnsizedLiteral(_) => {
-                    return self.err(
-                        p,
-                        "unsized literal not supported, write the width (e.g. `8'hff`)",
-                    );
+                sv::PrimaryLiteral::UnbasedUnsizedLiteral(l) => {
+                    let kind = match self.text(l.as_ref()).trim() {
+                        "'0" => ExprKind::Fill(false),
+                        "'1" => ExprKind::Fill(true),
+                        t => {
+                            return self.err(
+                                p,
+                                format!("literal `{t}` with x/z digits not supported (2-state)"),
+                            );
+                        }
+                    };
+                    return Ok(Leaf::Expr(Expr { kind, span }));
                 }
                 l => return self.unsupported(l),
             },
@@ -1548,12 +1506,7 @@ impl Cx<'_> {
                 match (self.select(select)?, param) {
                     (None, Some(c)) => {
                         return Ok(match constant::as_int(&c) {
-                            Some(value) => Leaf::Int {
-                                value,
-                                text: id,
-                                param: true,
-                                span,
-                            },
+                            Some(value) => Leaf::int(value, id, Ty::INT, span),
                             None => Leaf::Expr(Expr {
                                 kind: ExprKind::Const {
                                     text: id,
@@ -1618,19 +1571,7 @@ impl Cx<'_> {
                         return self.err(t, format!("cast to `{}` not supported", self.text(t)));
                     }
                 };
-                // the operand may be any integer constant: `W'(0)`
-                let e = match self.leaf_expr(&e.nodes.1)? {
-                    Leaf::Int {
-                        value, text, span, ..
-                    } => self.leaf_to_expr(Leaf::Int {
-                        value,
-                        text,
-                        param: true,
-                        span,
-                    })?,
-                    l => self.leaf_to_expr(l)?,
-                };
-                ExprKind::Cast(cast, Box::new(e))
+                ExprKind::Cast(cast, Box::new(self.expr(&e.nodes.1)?))
             }
             sv::Primary::FunctionSubroutineCall(c) => return self.call(&c.nodes.0, span),
             p => return self.unsupported(p),
@@ -1638,16 +1579,29 @@ impl Cx<'_> {
         Ok(Leaf::Expr(Expr { kind, span }))
     }
 
-    /// The items of `{a, b, …}`.
+    /// The items of `{a, b, …}`. An unsized literal is no item: IEEE 1800
+    /// forbids it (simulators give it 32 bits, or 1 for `'1`).
     fn concatenation(&self, c: &sv::Concatenation) -> Result<Vec<Expr>> {
-        c.nodes
-            .0
-            .nodes
-            .1
-            .contents()
-            .into_iter()
-            .map(|e| self.expr(e))
-            .collect()
+        let item = |e: &sv::Expression| {
+            let e = self.expr(e)?;
+            let literal = match &e.kind {
+                ExprKind::Const { text, .. } => {
+                    text.starts_with(|c: char| c.is_ascii_digit() || c == '\'')
+                }
+                ExprKind::Fill(_) => true,
+                _ => false,
+            };
+            if literal {
+                return Err(Error::new(
+                    e.span,
+                    format!(
+                        "unsized literal `{e}` in a concatenation: write its width (e.g. `8'd1`)"
+                    ),
+                ));
+            }
+            Ok(e)
+        };
+        c.nodes.0.nodes.1.contents().into_iter().map(item).collect()
     }
 
     /// A call; only `$signed(e)` and `$unsigned(e)`, which are casts, and
@@ -1687,14 +1641,10 @@ impl Cx<'_> {
             "$unsigned" => Cast::Unsigned,
             "$clog2" => {
                 return match self.leaf_expr(e)? {
-                    Leaf::Int {
-                        value, text, param, ..
-                    } => Ok(Leaf::Int {
-                        value: constant::clog2(value).map_err(|m| Error::new(span, m))?,
-                        text: format!("$clog2({text})"),
-                        param,
-                        span,
-                    }),
+                    Leaf::Int { value, expr, .. } => {
+                        let value = constant::clog2(value).map_err(|m| Error::new(span, m))?;
+                        Ok(Leaf::int(value, format!("$clog2({expr})"), Ty::INT, span))
+                    }
                     Leaf::Expr(_) => self.err(
                         c,
                         "`$clog2` of an integer constant only (unsized literals and `int` \
@@ -1723,12 +1673,16 @@ impl Cx<'_> {
                 kind: ExprKind::Lit { ty, value },
                 span,
             })),
-            Literal::Int(value) => Ok(Leaf::Int {
-                value,
-                text,
-                param: false,
+            Literal::Int(value) => Ok(Leaf::int(value, text, Ty::INT, span)),
+            // `'sd5` is an integer, `'d5` a 32-bit unsigned vector
+            Literal::Unsized(ty, value) if ty.signed => {
+                let v = num_traits::ToPrimitive::to_i64(&value.signed()).expect("32 bits");
+                Ok(Leaf::int(v, text, ty, span))
+            }
+            Literal::Unsized(ty, value) => Ok(Leaf::Expr(Expr {
+                kind: ExprKind::Const { text, ty, value },
                 span,
-            }),
+            })),
         }
     }
 
@@ -1771,28 +1725,26 @@ impl Cx<'_> {
             Op::Pow(_) => Some("**"),
             _ => None,
         };
-        if let (
-            Some(symbol),
-            Leaf::Int {
-                value: x,
-                text: tx,
-                param: px,
-                span,
-            },
-            Leaf::Int {
-                value: y,
-                text: ty,
-                param: py,
-                ..
-            },
-        ) = (symbol, &a, &b)
+        if let (Some(symbol), Leaf::Int { value: x, .. }, Leaf::Int { value: y, .. }) =
+            (symbol, &a, &b)
         {
             let at = op.span();
-            out.push(Leaf::Int {
-                value: constant::int_op(symbol, *x, *y).map_err(|m| Error::new(at, m))?,
-                text: format!("({tx} {symbol} {ty})"),
-                param: *px || *py,
-                span: *span,
+            let value = constant::int_op(symbol, *x, *y).map_err(|m| Error::new(at, m))?;
+            let (Leaf::Int { expr: ea, span, .. }, Leaf::Int { expr: eb, .. }) = (a, b) else {
+                unreachable!("integer constants");
+            };
+            out.push(match op {
+                // `**` is folded: there is no operator for it
+                Op::Pow(_) => Leaf::int(value, format!("({ea} ** {eb})"), Ty::INT, span),
+                Op::Bin(bin, at) => Leaf::Int {
+                    value,
+                    expr: Expr {
+                        kind: ExprKind::Binary(bin, Box::new(ea), Box::new(eb)),
+                        span: at,
+                    },
+                    span,
+                },
+                Op::Cond(..) => unreachable!("not an arithmetic operator"),
             });
             return Ok(());
         }
@@ -1878,18 +1830,37 @@ impl Cx<'_> {
 }
 
 /// An operand while an expression is built: an integer constant (unsized
-/// literals and `int` parameters, see [`constant`]) stays a number until it
-/// meets anything else, so that `N - 1` folds into one constant.
+/// literals and `int` parameters, see [`constant`]) keeps its exact value
+/// beside its expression until it meets anything else, so that `N - 1`
+/// can be an integer (a range bound, a replication count) where one is
+/// needed.
 enum Leaf {
     Expr(Expr),
     Int {
         value: i64,
-        /// The expression as written, fully parenthesized.
-        text: String,
-        /// Whether it mentions a parameter (it may then stand for itself).
-        param: bool,
+        /// The expression as written, with parameters and unsized
+        /// literals as [`ExprKind::Const`] leaves (`**` and `$clog2`
+        /// folded into one): in a value expression it is sized like any
+        /// other, so that its width and signedness come from the context.
+        expr: Expr,
         span: Span,
     },
+}
+
+impl Leaf {
+    /// The expression of an integer constant: a constant leaf.
+    fn int(value: i64, text: String, ty: Ty, span: Span) -> Leaf {
+        let kind = ExprKind::Const {
+            text,
+            ty,
+            value: BitVec::from_signed(ty.width, value),
+        };
+        Leaf::Int {
+            value,
+            expr: Expr { kind, span },
+            span,
+        }
+    }
 }
 
 /// What the `if` of a block with an asynchronous reset tests: the body is a
