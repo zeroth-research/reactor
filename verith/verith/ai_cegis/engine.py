@@ -16,7 +16,6 @@ from reactor import Module
 
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
-from ..engine import Engine
 from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
 from reactor.lean.smt.obligations import Frame, init_inv, inv_imp_P, step_inv
 from ..common.obligations import rank_decrease, rank_positive
@@ -32,7 +31,7 @@ class ObligationResult:
     counterexample: str | None  # formatted CE if not ok, else None
 
 
-class AiCegisEngine(Engine):
+class AiCegisEngine:
     """Infer invariant and ranking via LLM + cvc5 CEGIS loop.
 
     Each attempt:

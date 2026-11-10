@@ -66,7 +66,6 @@ from __future__ import annotations
 
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
-from ..engine import Engine
 from ..common.claim import READING_KINDS, SynthContext
 from reactor.lean.smt.limits import bounded_solver, call_ms
 from ..common.obligations import initial, transition
@@ -104,7 +103,7 @@ READS = READING_KINDS
 DEFAULT_CONJUNCTS = 3
 
 
-class SygusEngine(Engine):
+class SygusEngine:
     """Infer a safety invariant with cvc5's SyGuS invariant track.
 
     ``grammar`` chooses what an atom may be: `linear` gives comparisons of

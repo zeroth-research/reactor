@@ -46,13 +46,6 @@ class InferRoute:
     reads: tuple[str, ...] = ()     # ENCODINGS suffixes; "" is the functional one
     owns: tuple[str, ...] = ()      # project-relative paths it may write
 
-    # --- the input ------------------------------------------------------
-    # Whether the route is handed the input the module was read from and
-    # the names claims may use (`InferInput.source` / `.names`). Declared
-    # like `reads`: a route that did not ask is handed neither, so what a
-    # route reads of the run is what its row says.
-    reads_source: bool = False
-
     # --- `artifacts/`, the workspace across runs ------------------------
     # Roles (`artifacts.ROLES`) this route can start from, so that a second
     # `uv run certify` in the same `-o` continues rather than restarts: take
