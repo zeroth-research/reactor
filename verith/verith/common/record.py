@@ -1,11 +1,33 @@
-"""What a run leaves in `artifacts/`: a predicate it found, or a note.
+"""What a run leaves in `artifacts/`: a predicate it found, or a note --
+and the lines a found certificate is announced in.
 
-Both take the store the writer was handed, and write nothing when it is
-`None`: a run with no project to keep `artifacts/` in. Under `--artifacts
-ignore` there is a store, and both write to it.
+The writers take the store the route was handed, and write nothing when it
+is `None`: a run with no project to keep `artifacts/` in. Under
+`--artifacts ignore` there is a store, and they write to it.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
+
+from reactor.lean.core.certificate import Certificate
+
+
+def announce(log: Callable, tag: str, cert: Certificate) -> Certificate:
+    """`cert`, logged as the `[tag] inv:` and `[tag] ranking:` lines the
+    bench harness reads back (`tests/bench_matrix/run_matrix.py`)."""
+    log(f"[{tag}] inv: {cert.inv}")
+    if cert.ranking is not None:
+        log(f"[{tag}] ranking: {cert.ranking}")
+    return cert
+
+
+def found_certificate(store, cert: Certificate, *, inv: str,
+                      ranking: str) -> None:
+    """Both halves of `cert` as `found`, each with what it is."""
+    found(store, "inv", cert.inv, what=inv)
+    if cert.ranking is not None:
+        found(store, "ranking", cert.ranking, what=ranking)
 
 
 def found(store, role: str, src: str, *, what: str) -> None:

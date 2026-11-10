@@ -164,7 +164,7 @@ from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import PredicateRefused, Refused
 from ..common.solvers import DEFAULT_TIMEOUT, Cvc5Solver
 from ..common.obligations import Candidate, Obligations
-from ..common.record import found, note
+from ..common.record import announce, found_certificate, note
 from ..common.smtlib import affine_smt, conjunction_smt, smt_int
 from ..common.claim import SynthContext, sorts_where
 from ..common.synth import columns, floor_real_src
@@ -433,24 +433,17 @@ class VampireEngine:
 
     def _emit(self, inv_src: str, rank_src: "str | None",
               tpl: Template) -> Certificate:
-        self.log(f"[vampire] inv: {inv_src}")
-        if rank_src is not None:
-            self.log(f"[vampire] ranking: {rank_src}")
-        self._record(inv_src, rank_src, tpl)
-        return Certificate(inv_src, rank_src)
-
-    def _record(self, inv_src: str, rank_src: "str | None",
-                tpl: Template) -> None:
+        cert = announce(self.log, "vampire", Certificate(inv_src, rank_src))
         what = (f"Derived by Vampire's answer literals from a `{tpl.name}` "
                 f"template with {len(tpl.all_holes)} holes -- the "
                 f"obligations were stated with the certificate open and "
                 f"Vampire returned the coefficients -- then checked against "
                 f"the module's encoding with cvc5.")
-        found(self.artifacts, "inv", inv_src,
-              what=f"The invariant this run found. {what}")
-        if rank_src is not None:
-            found(self.artifacts, "ranking", rank_src,
-                  what=f"The ranking function this run found. {what}")
+        found_certificate(
+            self.artifacts, cert,
+            inv=f"The invariant this run found. {what}",
+            ranking=f"The ranking function this run found. {what}")
+        return cert
 
     def _none(self, claim: Claim, tried, asker, width: int):
         what = ("inductive invariant implying the property" if claim.is_safety
