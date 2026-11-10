@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 
+from .common.record import GaveUp
 from .io import InferInput, InferResult, ProjectHandle
 from .route import InferRoute
 
@@ -25,21 +26,18 @@ if TYPE_CHECKING:
 
 
 def refused(route: "InferRoute | None", error: Exception) -> SystemExit:
-    """A refusal, under the flag it is about.
-
-    Most routes are asked for with `--infer`, so that is what a failure of
-    one is reported under. The proveit route's own errors already name
-    `--fbk-proveit`, `--ic3ia` or `--safety`, and prefixing those again
-    would name two flags for one problem. With no route there is no flag to
-    name: the refusal is about the module.
+    """A refusal, under the flag it is about: its own `flag` when it names
+    one -- `--infer sygus`, `--ic3ia`, `--pre` -- and else the route's.
+    With no route there is no flag to name: the refusal is about the
+    module.
     """
-    if route is None or route.errors_self_named:
+    if route is None or getattr(error, "flag", None):
         return SystemExit(f"error: {error}")
-    return SystemExit(f"error: --infer: {error}")
+    return SystemExit(f"error: --infer {route.name}: {error}")
 
 
 def note_refusal(handle: ProjectHandle, route, e: Refused) -> None:
-    """Leave *why* a route gave up in `artifacts/`, if it did not say so itself.
+    """Leave *why* a route gave up in `artifacts/`.
 
     `NO-CERT` is three measurements wearing one name -- a space proved
     empty, a budget that ran out, a shape the route never looked at -- and
@@ -48,16 +46,19 @@ def note_refusal(handle: ProjectHandle, route, e: Refused) -> None:
     searched a bounded shape and refuted it writes `no_solution`, one whose
     budget ran out writes `unknown`, and everything else is a decline.
 
-    Only when the route wrote nothing. `smt-linear`, `sygus`, `houdini` and
-    `vampire` each leave a note of their own with more in it than this, and
-    a second one saying less would be worse than none.
+    A route that searched and has more to say than this raises `GaveUp`,
+    which carries its note -- `smt-linear`, `sygus`, `houdini` and
+    `vampire` do -- and that note is written instead.
 
     A `setup` refusal is not about the module at all -- a package or a key
     is missing -- so it is left unrecorded rather than filed against a run
     that never started.
     """
     store = handle.artifacts
-    if store is None or store.notes or e.setup:
+    if store is None or e.setup:
+        return
+    if isinstance(e, GaveUp):
+        store.note(e.text, status=e.status, what=e.what, why=e.why)
         return
     searched = e.searched
     store.note(

@@ -56,6 +56,7 @@ from reactor import Module
 
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
+from ..common.record import announce
 from ..common.smtlib import affine_smt, conjunction_smt, smt_int
 
 
@@ -75,9 +76,10 @@ def _engine():
         from nuterm._train import learn_ranking
     except ImportError as e:      # pragma: no cover - a broken checkout
         raise Refused(
-            f"--infer nuterm needs the `nuterm` package, which is not "
+            f"needs the `nuterm` package, which is not "
             f"importable: {e}",
             setup=True,
+            flag="--infer nuterm",
         ) from e
     return SimpleNamespace(
         Bench=Bench, certify=certify, check_supported=check_supported,
@@ -172,9 +174,10 @@ def _parse_property(src: str, declared: tuple, columns: tuple) -> object:
         asserted = z3.parse_smt2_string(f"{decls}\n(assert {src})")
     except z3.Z3Exception as e:
         raise Refused(
-            f"--infer nuterm reads the property as an SMT-LIB expression over "
+            f"reads the property as an SMT-LIB expression over "
             f"{', '.join(declared) or 'the state components'}; z3 could not "
-            f"parse {src!r}: {e}"
+            f"parse {src!r}: {e}",
+            flag="--infer nuterm"
         ) from e
     if len(asserted) != 1:
         raise Refused(f"the property must be one expression; {src!r} is {len(asserted)}")
@@ -203,11 +206,13 @@ def _parse_precondition(src: str, n_inputs: int):
         over = (f"e0..e{n_inputs - 1}" if n_inputs > 1
                 else "e0" if n_inputs == 1 else "nothing: this module has no inputs")
         raise Refused(
-            f"--infer nuterm reads --pre as an SMT-LIB expression over "
-            f"{over}; z3 could not parse {src!r}: {e}"
+            f"reads --pre as an SMT-LIB expression over "
+            f"{over}; z3 could not parse {src!r}: {e}",
+            flag="--infer nuterm"
         ) from e
     if len(asserted) != 1:
-        raise Refused(f"--pre must be one expression; {src!r} is {len(asserted)}")
+        raise Refused(f"must be one expression; {src!r} is {len(asserted)}",
+                      flag="--pre")
     return asserted[0]
 
 
@@ -254,7 +259,8 @@ class NutermEngine:
             system = eng.read_system(self.module, names)
             eng.check_supported(system)
         except eng.Unsupported as e:
-            raise Refused(f"--infer nuterm cannot read this module: {e}") from e
+            raise Refused(f"cannot read this module: {e}",
+                          flag="--infer nuterm") from e
         return system
 
     def _assuming(self, system, pre_smt: str):
@@ -305,16 +311,18 @@ class NutermEngine:
         latched = [v for v in used if v.startswith("el")]
         if latched:
             raise Refused(
-                f"--pre constrains the latched input {latched[0]}, which the "
+                f"constrains the latched input {latched[0]}, which the "
                 f"init block does not read -- at entry there is no previous "
-                f"round for it to have come from"
+                f"round for it to have come from",
+                flag="--pre"
             )
         loose = [v for v in used if int(v[1:]) not in col_of]
         if loose:
             raise Refused(
-                f"--pre constrains the input {loose[0]}, which starts no column "
+                f"constrains the input {loose[0]}, which starts no column "
                 f"of this module -- nothing carries its value into the state, "
-                f"so there is no state predicate that says the same thing"
+                f"so there is no state predicate that says the same thing",
+                flag="--pre"
             )
 
         conjuncts = _conjuncts(term)
@@ -354,7 +362,8 @@ class NutermEngine:
         row seeds from nothing but `--pre`, which is in the claim."""
         eng = _engine()
         if claim.prp is None:
-            raise Refused("--infer nuterm needs a property: pass --safety or --buchi")
+            raise Refused("needs a property: pass --safety or --buchi",
+                          flag="--infer nuterm")
         system = self._system(eng)
         if claim.init_pre is not None:
             system = self._assuming(system, claim.init_pre)
@@ -374,7 +383,8 @@ class NutermEngine:
                 inv_src, rank_src = self._buchi_certificate(eng, system, prp,
                                                             claim.prp)
         except eng.Unsupported as e:
-            raise Refused(f"--infer nuterm cannot certify this property: {e}") from e
+            raise Refused(f"cannot certify this property: {e}",
+                          flag="--infer nuterm") from e
 
         return self._emit(inv_src, rank_src)
 
@@ -521,9 +531,4 @@ class NutermEngine:
         return z3.substitute(term, *subs) if subs else term
 
     def _emit(self, inv_src: str, rank_src: str | None) -> Certificate:
-        """The certificate, logged as the `inv:` / `ranking:` lines the bench
-        harness reads."""
-        self.log(f"[nuterm] inv: {inv_src}")
-        if rank_src is not None:
-            self.log(f"[nuterm] ranking: {rank_src}")
-        return Certificate(inv_src, rank_src)
+        return announce(self.log, "nuterm", Certificate(inv_src, rank_src))

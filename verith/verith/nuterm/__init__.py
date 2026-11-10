@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..common.record import found
+from ..common.record import found_certificate
 from ..io import InferInput, InferResult
 from ..route import InferRoute
 
@@ -15,14 +15,12 @@ def _run(inp: InferInput) -> InferResult:
     # The learner certified both halves before returning them, so they are
     # `proved`, which is what a later `--infer ai-cegis` resumes from; the
     # pipeline's own `inv.smt` record is `encoded` and resumes nothing.
-    store = inp.project.artifacts
-    found(store, "inv", cert.inv,
-          what="The invariant this run found: Houdini kept it, and the "
-               "Farkas procedure certified the claim over it.")
-    if cert.ranking is not None:
-        found(store, "ranking", cert.ranking,
-              what="The ranking function this run learned, certified by the "
-                   "Farkas procedure over the invariant beside it.")
+    found_certificate(
+        inp.project.artifacts, cert,
+        inv=("The invariant this run found: Houdini kept it, and the "
+             "Farkas procedure certified the claim over it."),
+        ranking=("The ranking function this run learned, certified by the "
+                 "Farkas procedure over the invariant beside it."))
     return InferResult(cert)
 
 

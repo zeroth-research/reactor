@@ -68,7 +68,7 @@ from .flags import (
 )
 from .io import InferResult, ProjectHandle
 from .route import InferRoute
-from .run import refused, route_precheck, run_route, show_certificate
+from .run import route_precheck, run_route, show_certificate
 
 
 _EPILOG = """\
@@ -289,8 +289,8 @@ def project_handle(settings: Settings, module,
         )
     try:
         ctx = lean_context(module)
-    except Refused as e:
-        raise refused(route, e) from e
+    except Refused as e:                # about the module, not the route
+        raise SystemExit(f"error: {e}") from e
     store = workspace(project, module, claim, kind=settings.kind,
                       mode=settings.artifacts, producer=route.name)
     # The lakefile a project is generated with carries no route's

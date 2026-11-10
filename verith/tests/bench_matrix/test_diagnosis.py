@@ -30,7 +30,7 @@ RuntimeError: CEGAR failed after 5 attempts. Last feedback:
 inv_imp_P: obligation violated. Counterexample:
   s[0] = 51'''
 
-REFUSAL = """error: --infer: --infer sygus found no invariant. No inductive
+REFUSAL = """error: --infer sygus: found no invariant. No inductive
 invariant implying the property is a conjunction of at most 3 atoms.
 `--infer ai-cegis` searches no fixed space and is what to try next."""
 
@@ -77,13 +77,13 @@ def _gen(err, gave_up=""):
 
 def test_a_declined_module_is_unsupported_not_no_cert():
     """Nothing was searched, so it belongs in no route's denominator."""
-    err = "error: --infer: --infer nuterm cannot read this module: wire 0 has sort Real([1,1])"
+    err = "error: --infer nuterm: cannot read this module: wire 0 has sort Real([1,1])"
     assert verdict(_gen(err, "declined"), NOT_BUILT) == "UNSUPPORTED"
     assert verdict(_gen(err, "unknown"), NOT_BUILT) == "NO-CERT"
 
 
 def test_a_space_proved_empty_stays_no_cert():
-    err = "error: --infer: --infer smt-linear found no ranking function."
+    err = "error: --infer smt-linear: found no ranking function."
     assert verdict(_gen(err, "no_solution"), NOT_BUILT) == "NO-CERT"
 
 
@@ -104,4 +104,4 @@ def test_a_project_that_exists_is_read_for_its_own_note(tmp_path):
     """Once there is a project, the route's note is the answer, not the
     absence of one."""
     (tmp_path / "cell" / "Rea").mkdir(parents=True)
-    assert gave_up(tmp_path / "cell", "error: --infer: no luck") == ""
+    assert gave_up(tmp_path / "cell", "error: --infer x: no luck") == ""

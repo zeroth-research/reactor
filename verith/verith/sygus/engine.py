@@ -67,9 +67,10 @@ from __future__ import annotations
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.claim import READING_KINDS, SynthContext
+from ..common.record import announce
 from reactor.lean.smt.limits import bounded_solver, call_ms
 from ..common.obligations import initial, transition
-from ..common.synth import Search, body_of, readings, moduli, program_constants, record
+from ..common.synth import Search, body_of, readings, moduli, program_constants, settle
 
 from cvc5 import Kind
 
@@ -148,8 +149,9 @@ class SygusEngine:
             # The row refuses `--buchi` at parse time; this is the same rule
             # where the search is, so the class is not usable another way.
             raise Refused(
-                "--infer sygus certifies `G P`: the invariant is the whole "
-                "certificate and there is no ranking function to synthesise"
+                "certifies `G P`: the invariant is the whole "
+                "certificate and there is no ranking function to synthesise",
+                flag="--infer sygus"
             )
         ctx = SynthContext.build(self.encoding or self.module, claim,
                                  route="sygus", takes=READS)
@@ -164,14 +166,8 @@ class SygusEngine:
         self.log(f"[sygus] grammar: {self.grammar}, constants {list(consts)}")
 
         search = self._synthesise(ctx, cols, consts)
-        record(self.artifacts, search)
-        if search.found is None:
-            raise Refused(
-                f"--infer sygus found no invariant. {search.note}",
-                searched=True,
-            )
-        self.log(f"[sygus] inv: {search.found}")
-        return Certificate(inv=search.found)
+        inv = settle(self.artifacts, search, flag="--infer sygus")
+        return announce(self.log, "sygus", Certificate(inv=inv))
 
     # --- the search -----------------------------------------------------
 

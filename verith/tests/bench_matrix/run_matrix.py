@@ -402,9 +402,9 @@ def build(row, route, out: Path) -> dict:
 
 
 # A route that produced no project did so for one of three reasons, and they
-# are not the same measurement. `main` wraps most refusals under `error:
-# --infer:`, but a route whose row sets `errors_self_named` names its own
-# flag instead (`--fbk-proveit:`), so the prefix alone is not enough.
+# are not the same measurement. `main` puts a refusal under the flag it is
+# about -- `error: --infer <route>:` for most, `--fbk-proveit:` or `--ic3ia:`
+# for some -- so the prefix alone is not enough.
 _REFUTED = re.compile(r"found a counterexample|\bUNSAFE\b|property does not hold")
 # The CLI's refusal of a property kind the route does not take -- each route's
 # `kinds_refusal`, or the generic `--infer X is incompatible with --buchi`.

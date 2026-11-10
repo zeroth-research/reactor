@@ -46,10 +46,11 @@ def refuse_ites(term) -> None:
     """
     if ite_conditions([term]):
         raise Refused(
-            "--infer vampire cannot state an obligation that still holds "
+            "cannot state an obligation that still holds "
             "an `ite` after the transition was branch-split: Vampire's "
             "answer-literal search does not see through a conditional. "
-            "`--infer houdini` proves the same obligation with one."
+            "`--infer houdini` proves the same obligation with one.",
+            flag="--infer vampire"
         )
 
 
@@ -296,10 +297,11 @@ class Question:
         stray = list(free_constants([body]).values())
         if stray:
             raise Refused(
-                f"--infer vampire states an obligation over "
+                f"states an obligation over "
                 f"{', '.join(sorted(str(v) for v in vs)) or 'nothing'}, and "
                 f"it mentions {', '.join(str(c) for c in stray)}, which "
-                f"nothing there binds"
+                f"nothing there binds",
+                flag="--infer vampire"
             )
         if not vs:
             return body

@@ -76,12 +76,11 @@ def na_module_name(project_name: str) -> str:
 class ProveItError(Refused):
     """A step of the proveit route could not be carried out.
 
-    A `Refused`, so it reaches `main` as every route's refusal does. Its
-    message names `--fbk-proveit` itself, which is what the row's
-    `errors_self_named` is about. `searched` is set by the one step that
-    searches: `proveit.py` failing is ic3ia running and not deciding, which
-    says something about the module, where every other failure here is
-    about what the encoding or the checkout can take.
+    A `Refused`, so it reaches `main` as every route's refusal does, under
+    the flag it names (`--fbk-proveit`, `--ic3ia`). `searched` is set by
+    the one step that searches: `proveit.py` failing is ic3ia running and
+    not deciding, which says something about the module, where every other
+    failure here is about what the encoding or the checkout can take.
     """
 
 
@@ -119,12 +118,13 @@ def resolve_project(path: str | Path) -> Path:
     """Validate that `path` is a `lean-ltl-certifying` checkout."""
     root = Path(path).expanduser().resolve()
     if not root.is_dir():
-        raise ProveItError(f"--fbk-proveit: not a directory: {root}")
+        raise ProveItError(f"not a directory: {root}", flag="--fbk-proveit")
     missing = [str(p) for p in _REQUIRED if not (root / p).exists()]
     if missing:
         raise ProveItError(
-            f"--fbk-proveit: {root} does not look like a lean-ltl-certifying "
-            f"checkout (missing: {', '.join(missing)})"
+            f"{root} does not look like a lean-ltl-certifying "
+            f"checkout (missing: {', '.join(missing)})",
+            flag="--fbk-proveit"
         )
     return root
 
@@ -139,8 +139,9 @@ def check_toolchain(python: str) -> None:
     """
     if shutil.which("lake") is None:
         raise ProveItError(
-            "--fbk-proveit: `lake` not found on PATH; it is needed to build "
-            "lean-ltl-certifying and to run its lean2vmt executable"
+            "`lake` not found on PATH; it is needed to build "
+            "lean-ltl-certifying and to run its lean2vmt executable",
+            flag="--fbk-proveit"
         )
     probe = subprocess.run(
         [python, "-c", "import mathsat"],
@@ -149,11 +150,12 @@ def check_toolchain(python: str) -> None:
     )
     if probe.returncode != 0:
         raise ProveItError(
-            f"--fbk-proveit: `{python}` cannot import `mathsat`, which "
+            f"`{python}` cannot import `mathsat`, which "
             "lean-ltl-certifying's vmt2lean.py needs to read the ic3ia "
             "witness.\nPoint PYTHONPATH at the MathSAT Python bindings "
             "built for this interpreter, e.g.\n"
-            "  PYTHONPATH=/path/to/mathsat/python uv run certify ..."
+            "  PYTHONPATH=/path/to/mathsat/python uv run certify ...",
+            flag="--fbk-proveit"
         )
 
 
@@ -179,22 +181,24 @@ def resolve_ic3ia(spec: str | None) -> str | None:
             print(f".. --ic3ia is a directory; using {candidate}")
             return str(candidate)
         raise ProveItError(
-            f"--ic3ia: {path} is a directory and holds no executable "
+            f"{path} is a directory and holds no executable "
             "`ic3ia`. Pass the binary itself, e.g. "
-            f"{path / 'ic3ia'}"
+            f"{path / 'ic3ia'}",
+            flag="--ic3ia"
         )
 
     if path.is_file():
         if not os.access(path, os.X_OK):
-            raise ProveItError(f"--ic3ia: {path} is not executable")
+            raise ProveItError(f"{path} is not executable", flag="--ic3ia")
         return str(path)
 
     found = shutil.which(spec)
     if found:
         return found
     raise ProveItError(
-        f"--ic3ia: no such file: {path}. Pass the ic3ia binary, a "
-        "directory containing it, or a name on PATH."
+        f"no such file: {path}. Pass the ic3ia binary, a "
+        "directory containing it, or a name on PATH.",
+        flag="--ic3ia"
     )
 
 
@@ -242,7 +246,7 @@ def check_module(
             pre_over_slots(ctx, encoding.parse(pre_smt, "pre"), bodies),
         )
     except NAUnsupported as e:
-        raise ProveItError(f"--fbk-proveit: {e}") from e
+        raise ProveItError(f"{e}", flag="--fbk-proveit") from e
 
 
 # The step between `proveit.py`'s certificate and the project's own, which
@@ -376,7 +380,8 @@ def property_to_bool_lean(module, property_smt: str, encoding=None,
         return smt_to_lean_bool(
             term, slot_accessors((ctx or LeanContext(module)).ctrl_next))
     except Refused as e:
-        raise ProveItError(f"--fbk-proveit: cannot encode --safety: {e}") from e
+        raise ProveItError(f"cannot encode --safety: {e}",
+                           flag="--fbk-proveit") from e
 
 
 def write_na_model(
@@ -431,11 +436,12 @@ def _run(
     try:
         rc, out = stream(cmd, cwd=cwd)
     except FileNotFoundError as e:
-        raise ProveItError(f"--fbk-proveit: cannot run {cmd[0]}: {e}") from e
+        raise ProveItError(f"cannot run {cmd[0]}: {e}",
+                           flag="--fbk-proveit") from e
     if rc != 0:
         reason = why(out) if why else "  (see the output above)"
-        raise ProveItError(f"--fbk-proveit: {what} failed (exit {rc})\n{reason}",
-                           searched=searched)
+        raise ProveItError(f"{what} failed (exit {rc})\n{reason}",
+                           searched=searched, flag="--fbk-proveit")
     return out
 
 
@@ -536,8 +542,9 @@ def run(
 
     if not raw_cert.is_file() or raw_cert.stat().st_size == 0:
         raise ProveItError(
-            f"--fbk-proveit: proveit.py reported success but wrote no "
-            f"certificate to {raw_cert}"
+            f"proveit.py reported success but wrote no "
+            f"certificate to {raw_cert}",
+            flag="--fbk-proveit"
         )
 
     raw = raw_cert.read_text()

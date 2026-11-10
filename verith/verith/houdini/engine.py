@@ -111,7 +111,7 @@ the certificate carries one spelling whoever proved it.
 
 from __future__ import annotations
 
-from ..common.record import found, note
+from ..common.record import GaveUp, announce, found_certificate
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.claim import SynthContext, sorts_where
@@ -188,10 +188,11 @@ class HoudiniEngine:
         if runs.violation is not None:
             state = ", ".join(f"s{i} = {v}" for i, v in enumerate(runs.violation))
             raise Refused(
-                f"--infer houdini: the property does not hold -- a run of "
+                f"the property does not hold -- a run of "
                 f"{runs.depth} round(s), with inputs drawn as `--pre` allows, "
                 f"reaches {state}. No invariant implies a property the module "
-                f"violates, so there is nothing to put to a solver."
+                f"violates, so there is nothing to put to a solver.",
+                flag="--infer houdini"
             )
         search = Search(
             ctx, ob, ev, cols, runs,
@@ -273,9 +274,10 @@ class HoudiniEngine:
                 "to propose about one"
             )
             raise Refused(
-                f"--infer houdini reads Int, Bool and Real state and inputs, "
+                f"reads Int, Bool and Real state and inputs, "
                 f"and this module has {', '.join(bad)}. {why}. `--infer "
-                f"smt-linear` weighs a bitvector as its unsigned value."
+                f"smt-linear` weighs a bitvector as its unsigned value.",
+                flag="--infer houdini"
             )
 
     def _conjuncts(self, ctx: SynthContext, claim: Claim) -> list[str]:
@@ -293,24 +295,19 @@ class HoudiniEngine:
 
     def _emit(self, inv: list[Candidate],
               rank: "Candidate | None") -> Certificate:
-        inv_src = conjunction_smt(f.src for f in inv)
-        self.log(f"[houdini] inv: {inv_src}")
-        if rank is not None:
-            self.log(f"[houdini] ranking: {rank.src}")
-        self._record(inv_src, rank)
-        return Certificate(inv_src, None if rank is None else rank.src)
-
-    def _record(self, inv_src: str, rank: "Candidate | None") -> None:
+        cert = announce(self.log, "houdini", Certificate(
+            conjunction_smt(f.src for f in inv),
+            None if rank is None else rank.src))
         by = self.spec.kind
-        what = (f"Houdini over facts read off simulated runs of the module, "
-                f"each proved by {by} -- it holds at entry and every round "
-                f"preserves it -- and cut down to the facts the proofs used.")
-        found(self.artifacts, "inv", inv_src,
-              what=f"The invariant this run found. {what}")
-        if rank is not None:
-            found(self.artifacts, "ranking", rank.src,
-                  what=f"The ranking function this run found: {by} proved "
-                       f"`hrank` for it over the invariant beside it.")
+        found_certificate(
+            self.artifacts, cert,
+            inv=(f"The invariant this run found. Houdini over facts read "
+                 f"off simulated runs of the module, each proved by {by} -- "
+                 f"it holds at entry and every round preserves it -- and cut "
+                 f"down to the facts the proofs used."),
+            ranking=(f"The ranking function this run found: {by} proved "
+                     f"`hrank` for it over the invariant beside it."))
+        return cert
 
     def _none(self, claim: Claim, n_facts, n_ranks, reached, prover):
         if claim.is_safety:
@@ -334,9 +331,9 @@ class HoudiniEngine:
             f"{prover.spent:.1f} s, the last under a {reached:g} s limit"
             f"{refuted}. {prover.inconclusive}"
         )
-        note(
-            self.artifacts,
-            f"--infer houdini found no {what}. {detail}\n",
+        raise GaveUp(
+            f"found no {what}. {detail}",
+            flag="--infer houdini",
             status="unknown",
             what=f"A search for {article} {what} that did not succeed.",
             why=(f"{prover.name} decided every candidate it was asked "
@@ -345,5 +342,3 @@ class HoudiniEngine:
                  f"{prover.name} proves or times out; nothing here was "
                  f"refuted."),
         )
-        raise Refused(f"--infer houdini found no {what}. {detail}",
-                      searched=True)

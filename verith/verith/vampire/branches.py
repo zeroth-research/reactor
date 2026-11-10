@@ -54,10 +54,11 @@ def split(ctx: SynthContext, terms, what: str) -> list[Branch]:
     conds = ite_conditions(terms)
     if len(conds) > _MAX_CONDITIONS:
         raise Refused(
-            f"--infer vampire splits {what} on the {len(conds)} conditions "
+            f"splits {what} on the {len(conds)} conditions "
             f"its `ite`s test, which is {2 ** len(conds)} cases and past the "
             f"{_MAX_BRANCHES} this route will print. `--infer houdini` "
-            f"states the round once, conditionals and all."
+            f"states the round once, conditionals and all.",
+            flag="--infer vampire"
         )
     out = []
     for bits in product((True, False), repeat=len(conds)):
