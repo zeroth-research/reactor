@@ -240,7 +240,8 @@ def test_nuterm_takes_a_precondition():
 )
 def test_the_llm_flags_belong_to_the_llm_routes(extra):
     message = err(["m.py", "--buchi", "(= s0 0)", "--infer", "nuterm", *extra])
-    assert "for the LLM routes" in message
+    assert f"{extra[0]} is only meaningful together with --infer ai, " \
+        "--infer ai-cegis" in message
 
 
 def test_fbk_proveit_is_a_safety_question():

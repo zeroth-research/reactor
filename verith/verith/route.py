@@ -93,7 +93,6 @@ class InferRoute:
     #                are no predicates, so `--pre-check` cannot restate the
     #                obligations
     returns: str = "smt"
-    uses_llm: bool = False          # `--model` / `--base-url` are meaningful
     # Whether this route's own refusals already name the flag they are about.
     # `--infer nuterm` failing is reported as `error: --infer: ...`; the
     # proveit route's errors say `--fbk-proveit:`, `--ic3ia:` or `--safety:`

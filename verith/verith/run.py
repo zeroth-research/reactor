@@ -86,7 +86,7 @@ def run_route(
     Everything route-specific is a field of the row: what of the project it
     may read and write, which artifact roles it resumes from, and which
     languages its answer comes back in. `settings` is the command's:
-    `route`, `route_opts`, `route_config`, `budget`, `model`, `base_url`.
+    `route`, `route_opts`, `route_config`, `budget`.
     """
     route = settings.route
     try:
@@ -100,8 +100,6 @@ def run_route(
                 config=settings.route_config,
                 prechecked=prechecked,
                 budget=settings.budget,
-                model=settings.model,
-                base_url=settings.base_url,
                 log=print,
                 smt=smt,
             )

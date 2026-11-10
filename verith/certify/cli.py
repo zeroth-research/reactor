@@ -102,14 +102,12 @@ examples:
 @dataclass
 class Settings(ReactorSettings):
     """`reactor`'s settings, and the inference route: which one (`route`),
-    its options (`route_opts`), what it resolved at parse time
-    (`route_config`), and the model the LLM routes ask."""
+    its options (`route_opts`) and what it resolved at parse time
+    (`route_config`)."""
 
     route: InferRoute | None = None
     route_opts: dict = field(default_factory=dict)
     route_config: object | None = None
-    model: str | None = None
-    base_url: str | None = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -160,7 +158,7 @@ def parse_args(argv: "list[str] | None" = None, *,
                         **route_fields(args, route))
     settings.claim_deferred = claim_deferred(settings, adapter, defer_claim)
     if route is not None and not settings.claim_deferred:
-        check_route(parser, args, settings)
+        check_route(parser, settings)
         check_cert_file(parser, settings)
 
     check_outputs(parser, settings, infer=route.name if route else None)

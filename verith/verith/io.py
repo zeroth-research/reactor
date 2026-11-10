@@ -188,8 +188,6 @@ class InferInput:
     # same reason and more so -- a synthesis with no limit hangs generation,
     # and `tlimit-per` is the option that actually stops one.
     budget: "SmtBudget | None" = None
-    model: str | None = None            # meaningful iff the row uses an LLM
-    base_url: str | None = None
     log: Callable = print
     # The run's one cvc5 encoding of `module`, built on first call.
     smt: "Callable[[], ModuleEncoding] | None" = None

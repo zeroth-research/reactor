@@ -470,8 +470,8 @@ def test_without_the_precondition_the_same_run_finds_nothing(tmp_path):
 @pytest.mark.parametrize("extra, expected", [
     (["--invariant", "(<= (X @intf.0) 100)"], "--invariant"),
     (["--ranking", "(X @intf.0)"], "--ranking"),
-    (["--model", "claude-sonnet-4-6-x"], "--model and --base-url"),
-    (["--base-url", "http://localhost:11434/v1"], "--model and --base-url"),
+    (["--model", "claude-sonnet-4-6-x"], "--model is only meaningful"),
+    (["--base-url", "http://localhost:11434/v1"], "--base-url is only meaningful"),
 ])
 def test_learn_rejects_what_it_would_have_to_ignore(extra, expected, tmp_path):
     """The learner computes the whole certificate, so a predicate passed
