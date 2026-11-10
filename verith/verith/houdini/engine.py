@@ -111,12 +111,12 @@ the certificate carries one spelling whoever proved it.
 
 from __future__ import annotations
 
-from reactor.lean.artifacts.record import found, note
+from ..common.record import found, note
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.claim import SynthContext, sorts_where
 from ..common.obligations import Candidate, Obligations
-from reactor.lean.smt.script import conjunction_smt
+from ..common.smtlib import conjunction_smt
 from ..common.solvers import DEFAULT_TIMEOUT
 from ..common.synth import (
     columns,

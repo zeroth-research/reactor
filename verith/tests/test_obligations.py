@@ -19,7 +19,7 @@ from reactor.lean.inputs.python import load_module
 cvc5 = pytest.importorskip("cvc5")
 from cvc5 import Kind  # noqa: E402
 
-LIMITS = Path(__file__).parent / "limits" / "mods"
+LIMITS = Path(__file__).resolve().parents[2] / "python" / "tests" / "limits" / "mods"
 
 
 def _module(name: str):
@@ -60,9 +60,10 @@ def test_bound_is_fresh_as_variables_a_quantifier_can_close():
     variables of the same sorts, which `--infer smt-linear` used to make on
     its own; `bound` is them."""
     from reactor.lean.smt.encoding import ModuleEncoding
+    from verith.common.obligations import bound as bound_vars
 
     enc = ModuleEncoding(_module("m_relu_input"))
-    bound, fresh = enc.bound("q_"), enc.fresh("c_")
+    bound, fresh = bound_vars(enc, "q_"), enc.fresh("c_")
     assert [len(vs) for vs in bound] == [1, 1, 1]
     for vs, consts in zip(bound, fresh):
         assert all(v.getKind() == Kind.VARIABLE for v in vs)
@@ -74,8 +75,8 @@ def test_the_round_as_relations_closes_its_inputs():
     wants them: the inputs are closed existentially, and the precondition
     restricts which of them may be used. `m_relu_input` is `x0 = 5`, `x' =
     relu(x - e)`, with `e` read the round it is awaited."""
-    from reactor.lean.smt import obligations as obl
     from reactor.lean.smt.encoding import ModuleEncoding
+    from verith.common import obligations as obl
 
     enc = ModuleEncoding(_module("m_relu_input"))
 

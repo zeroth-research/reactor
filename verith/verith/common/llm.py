@@ -11,7 +11,7 @@ Neither package is imported until a client is made: `cli` imports
 import os
 
 from reactor.lean.core.certificate import Claim
-from reactor.lean.core.errors import Refused, require
+from reactor.lean.core.errors import Refused
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 
@@ -22,6 +22,26 @@ DEFAULT_MODEL = "claude-sonnet-4-6"
 # `INVARIANT: fun s => s`, and failed to parse. Kept below the size at which
 # the Anthropic SDK insists on streaming.
 MAX_TOKENS = 8192
+
+
+def require(package: str, who: str, install: str | None = None):
+    """`package`, imported -- or a refusal saying `who` needs it and how to
+    install it: `install`, or the package itself.
+
+    A missing package is about how the run was asked for, not about the
+    module, and the `ImportError` from wherever it happened to be imported
+    first says neither which flag wanted it nor what to do.
+    """
+    import importlib
+
+    try:
+        return importlib.import_module(package)
+    except ImportError as e:
+        raise Refused(
+            f"{who} needs the `{package}` package, which is not importable. "
+            f"Install with: uv pip install {install or package}",
+            setup=True,
+        ) from e
 
 
 def reply_fields(text: str, *fields: str) -> dict[str, str]:

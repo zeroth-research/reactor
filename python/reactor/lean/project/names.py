@@ -102,7 +102,3 @@ def cert_file(stem: str) -> str:
     """The certificate library's file `stem`, relative to the project."""
     return f"{CERT_LIB}/{stem}.lean"
 
-
-def cert_module(stem: str) -> str:
-    """The Lean module of the certificate library's file `stem`."""
-    return f"{CERT_LIB}.{stem}"

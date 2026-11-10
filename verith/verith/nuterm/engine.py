@@ -57,7 +57,7 @@ from reactor import Module
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..engine import Engine
-from reactor.lean.smt.script import affine_smt, conjunction_smt, smt_int
+from ..common.smtlib import affine_smt, conjunction_smt, smt_int
 
 
 def _engine():

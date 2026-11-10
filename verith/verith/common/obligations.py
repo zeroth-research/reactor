@@ -7,16 +7,24 @@ over: constants `v_*`, and a successor that is constants `v_sp*` each query
 defines, so a query about twenty facts carries the round once. Its queries
 take `Candidate`s -- a fact or a ranking function, its source and its term
 -- and name each hypothesis by its position, which is how an unsat core is
-read back.
+read back. What they return is a `Question`: a `Query` that also says what
+a counter-model is to be read at.
+
+The statements after it are what the routes ask beyond `rule_buchi`'s four:
+`hrank` in shapes of the route's own (`ranked`, `rank_decrease`,
+`rank_positive`), an obligation as one formula (`implication`), and the
+round as relations on states alone (`initial`, `transition`), over bound
+variables (`bound`) a quantifier can close.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from reactor.lean.smt.obligations import (
     Query,
+    conjunction,
     hrank,
     init_inv,
     inv_imp_P,
@@ -33,6 +41,39 @@ class Candidate:
 
     src: str                # SMT-LIB over `s0..`, what the certificate carries
     term: object            # the same, parsed, over `ctx.state`
+
+
+@dataclass(frozen=True)
+class Question(Query):
+    """A `Query` as a search asks it: with what a counter-model is read at.
+
+    `probes` are the goal's conjuncts under their own names.  A solver that
+    returns a counter-model reports which of them that model falsifies; one
+    that does not, ignores them.  They are deliberately outside `key`: the
+    same obligation asked with and without probes is the same question, and
+    a cached answer that already carries what the caller wants is reused.
+    """
+
+    probes: tuple[tuple[str, object], ...] = ()
+    # Terms whose values a counter-model is read at -- the state and its
+    # successor, for an obligation whose refutation is a round to learn
+    # from. Outside `key` for the reason `probes` are.
+    witness: tuple = ()
+
+
+def _asked(q: Query, goals: int = 0, *, witness=()) -> Question:
+    """`q`, stated about `goals` facts at once, as a `Question`.
+
+    Its goal is then their conjunction, and each conjunct is a probe named
+    `g<i>` against the position of the fact it came from, which is how a
+    counter-model is read back: the names are positions in the list the
+    caller asked about. A goal that is one thing gets no probes -- there
+    would be nothing to learn from naming it that `REFUTED` does not
+    already say.
+    """
+    probes = (tuple((f"g{i}", t) for i, t in enumerate(q.goal))
+              if goals > 1 else ())
+    return Question(q.hyps, q.goal, q.defines, probes, tuple(witness))
 
 
 class Obligations:
@@ -159,7 +200,7 @@ class Obligations:
         (`select_element`): a round that branches, as `m_mixed` does when
         it resets its vector instead of decrementing it, is an `ite`
         between tuples, which `simplify` does not fold."""
-        from reactor.lean.smt.encode import select_element
+        from .terms import select_element
 
         return select_element(self.tm, t, k, leaf=self._readable)
 
@@ -217,19 +258,21 @@ class Obligations:
 
     # --- the queries ------------------------------------------------------
 
-    def holds_at_entry(self, facts: list[Candidate]) -> Query:
+    def holds_at_entry(self, facts: list[Candidate]) -> Question:
         """`init_pre e -> fact (init e)`, for all of `facts` at once."""
-        return init_inv(self, [f.term for f in facts])
+        return _asked(init_inv(self, [f.term for f in facts]), len(facts))
 
-    def preserved(self, hyps: list[Candidate], goals: list[Candidate]) -> Query:
+    def preserved(self, hyps: list[Candidate],
+                  goals: list[Candidate]) -> Question:
         """`hyps s /\\ update_pre e -> goals (update s e)`."""
-        return step_inv(self, _facts(hyps), [g.term for g in goals])
+        return _asked(step_inv(self, _facts(hyps), [g.term for g in goals]),
+                      len(goals))
 
-    def implies(self, hyps: list[Candidate], goal) -> Query:
+    def implies(self, hyps: list[Candidate], goal) -> Question:
         """`hyps s -> goal s`: the invariant is a proof of the property."""
-        return inv_imp_P(self, _facts(hyps), goal)
+        return _asked(inv_imp_P(self, _facts(hyps), goal))
 
-    def drops(self, hyps: list[Candidate], rank: Candidate) -> Query:
+    def drops(self, hyps: list[Candidate], rank: Candidate) -> Question:
         """`hrank` over the facts `hyps`."""
         from cvc5 import Kind
 
@@ -238,8 +281,8 @@ class Obligations:
         # is what the fit learns from -- read back only for a state of
         # scalars, which is the shape a simulated round has.
         if all(h.getKind() != Kind.APPLY_CONSTRUCTOR for h in self.s):
-            q = replace(q, witness=tuple(self.s) + tuple(self.sp))
-        return q
+            return _asked(q, witness=tuple(self.s) + tuple(self.sp))
+        return _asked(q)
 
 
 class _Case:
@@ -261,3 +304,141 @@ class _Case:
 def _facts(hyps: list[Candidate]) -> list:
     """`hyps` named `h<i>`, by position: how an unsat core is read back."""
     return [(f"h{i}", h.term) for i, h in enumerate(hyps)]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# More than `rule_buchi` states
+#
+# Over any frame `reactor.lean.smt.obligations` states its four over. Each
+# statement builds its terms in the order written, which is the order cvc5
+# numbers them in.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def implication(q: Query, tm):
+    """`hyps -> goal`, every hypothesis kept as given. Inline only."""
+    from cvc5 import Kind
+
+    assert not q.defines, "a defined round has no implication form"
+    if not q.hyps:
+        return q.goal
+    return tm.mkTerm(Kind.IMPLIES,
+                     conjunction(tm, [t for _, t in q.hyps]), q.goal)
+
+
+def _outside(f, hyps, prp) -> list:
+    """What a ranking obligation assumes, as `hrank` does: `hyps` and `~P`
+    at `s`, and the update precondition."""
+    from cvc5 import Kind
+
+    return [(name, f.at(term, f.s)) for name, term in hyps] + [
+        ("notP", f.tm.mkTerm(Kind.NOT, f.at(prp, f.s))),
+        ("pre", f.update_pre),
+    ]
+
+
+def _query(hyps, goal, *, defines=()) -> Query:
+    """Named hypotheses and a goal; an absent precondition is none."""
+    return Query(hyps=tuple((n, h) for n, h in hyps if h is not None),
+                 goal=goal, defines=tuple(defines))
+
+
+def ranked(f, hyps: list, prp, goal, *, given=()) -> Query:
+    """`hyps s /\\ ~P s /\\ update_pre e -> goal`, for a caller that states
+    `hrank`'s conclusion in a shape of its own (read at `f.succ`). `given`
+    are hypotheses about nothing the frame reads, such as the guard of one
+    case of a round."""
+    named = _outside(f, hyps, prp)
+    return _query(named + [(f"case{i}", g) for i, g in enumerate(given)],
+                  goal, defines=f.define_next())
+
+
+def rank_decrease(f, hyps: list, prp, rank) -> Query:
+    """`hrank`'s first half: `rank (update s e) < rank s`, unclamped.
+
+    With `rank_positive`, exactly `hrank` for an Int rank: `toNat r' <
+    toNat r` holds iff `r >= 1` and `r' < r`.
+    """
+    from cvc5 import Kind
+
+    succ = f.succ
+    named = _outside(f, hyps, prp)
+    goal = f.tm.mkTerm(Kind.LT, f.at(rank, succ), f.at(rank, f.s))
+    return _query(named, goal, defines=f.define_next())
+
+
+def rank_positive(f, hyps: list, prp, rank) -> Query:
+    """`hrank`'s second half: `rank s >= 1` wherever it has to fall."""
+    from cvc5 import Kind
+
+    named = _outside(f, hyps, prp)
+    goal = f.tm.mkTerm(Kind.GEQ, f.at(rank, f.s), f.tm.mkInteger(1))
+    return _query(named, goal)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The round as relations
+#
+# SyGuS-IF states `G P` over `pre(s)` and `trans(s, s')`: predicates on
+# states alone, so the inputs that make a state initial, or take one state
+# to the next, are closed existentially. Existential rather than fresh
+# constants, because the relation is about the state alone; and existential
+# rather than universal, because `init_inv` asks the invariant to hold at
+# whatever the inputs made, not at every value some other input would have
+# made. A precondition is over the parser's inputs, and `None` is none.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def bound(enc, prefix: str = "") -> tuple[list, list, list]:
+    """Bound variables for a state and the inputs latched and awaited, for
+    a quantifier to close: `enc.fresh`'s sibling, named the same way."""
+    return (_vars(enc, enc.state, f"{prefix}s"), *bound_inputs(enc, prefix))
+
+
+def bound_inputs(enc, prefix: str = "") -> tuple[list, list]:
+    """`bound`'s inputs alone, for a relation that closes them over a state
+    it is given."""
+    return (_vars(enc, enc.extl_latched, f"{prefix}el"),
+            _vars(enc, enc.extl_next, f"{prefix}en"))
+
+
+def _vars(enc, terms: list, prefix: str) -> list:
+    return [enc.tm.mkVar(t.getSort(), f"{prefix}{i}")
+            for i, t in enumerate(terms)]
+
+
+def initial(enc, s: list, init_pre=None, *, prefix: str = "pre_"):
+    """`s` is a state tick 0 can produce: `exists el en. init_pre /\\ s =
+    init en`."""
+    el, en = bound_inputs(enc, prefix)
+    return _closing(enc, el + en, enc.with_inputs(init_pre, el, en),
+                    lambda: _same(enc.tm, s, enc.init_state(en)))
+
+
+def transition(enc, s: list, s2: list, update_pre=None, *,
+               prefix: str = "tr_"):
+    """`s -> s2`: some input, allowed by `update_pre`, takes one to the
+    other -- `exists el en. update_pre /\\ s2 = update s el en`."""
+    el, en = bound_inputs(enc, prefix)
+    return _closing(enc, el + en, enc.with_inputs(update_pre, el, en),
+                    lambda: _same(enc.tm, s2, enc.next_state(s, el, en)))
+
+
+def _closing(enc, vs: list, pre, same):
+    """`exists vs. pre /\\ same()`. `same` is built after `pre`, which is
+    the order cvc5 numbers the terms in, and so the order the relation
+    has always been built in."""
+    from cvc5 import Kind
+
+    tm = enc.tm
+    body = same() if pre is None else tm.mkTerm(Kind.AND, pre, same())
+    if not vs:
+        return body
+    return tm.mkTerm(Kind.EXISTS, tm.mkTerm(Kind.VARIABLE_LIST, *vs), body)
+
+
+def _same(tm, lhs: list, rhs: list):
+    from cvc5 import Kind
+
+    return conjunction(tm, [tm.mkTerm(Kind.EQUAL, a, b)
+                            for a, b in zip(lhs, rhs)])

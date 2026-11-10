@@ -1,6 +1,4 @@
-"""A validated command line (`Settings`), and the predicate flags
-(`SEED_FLAGS`).
-"""
+"""A validated command line (`Settings`)."""
 
 from __future__ import annotations
 
@@ -8,17 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
-
-
-# One row per predicate flag: the predicate it supplies, by its short name;
-# the `Settings` attribute that carries it; and the flag to name in a
-# refusal. The first two differ for `inv`, which is why the attribute
-# is in the table rather than patched at the one place that reads it.
-SEED_FLAGS: tuple[tuple[str, str, str], ...] = (
-    ("inv", "invariant", "--invariant"),
-    ("ranking", "ranking", "--ranking"),
-    ("pre", "pre", "--pre"),
-)
 
 
 @dataclass

@@ -51,10 +51,11 @@ from fractions import Fraction
 from typing import TYPE_CHECKING
 
 from .claim import SynthContext, reading_kind
-from reactor.lean.artifacts.record import found, note
+from .record import found, note
 from reactor.lean.smt.encode import tuple_select
-from reactor.lean.smt.script import decimals, smt_lit
-from reactor.lean.smt.terms import free_constants, literals, nodes
+from .smtlib import decimals, smt_lit
+from .terms import literals
+from reactor.lean.smt.terms import free_constants, nodes
 
 from cvc5 import Kind
 

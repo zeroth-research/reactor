@@ -93,16 +93,15 @@ from .solve import HOW_QUANTIFIED, Outcome, Template, decide
 from dataclasses import dataclass
 
 from ..common.claim import SynthContext
-from reactor.lean.smt.script import affine_smt, conjunction_smt, decimals
+from ..common.smtlib import affine_smt, conjunction_smt, decimals
 from reactor.lean.smt.obligations import (
     Frame,
     conjunction,
     init_inv,
     inv_imp_P,
-    ranked,
     step_inv,
 )
-from ..common.obligations import Obligations
+from ..common.obligations import Obligations, implication, ranked
 from ..common.synth import (
     Search,
     denominator_scale,
@@ -150,8 +149,9 @@ def _frame(ctx: SynthContext, st, el, en) -> Frame:
     """The obligations' frame over `st`, `el` and `en`: bound variables for
     the quantified query, a sample's values or a counterexample's constants
     for the loop."""
-    return Frame.over(ctx.enc, st, el, en, init_pre=ctx.init_pre,
-                      update_pre=ctx.update_pre)
+    return Frame(ctx.enc, "", init_pre=ctx.init_pre,
+                 update_pre=ctx.update_pre,
+                 consts=(list(st), list(el), list(en)))
 
 
 def _shape(names, prefix: str = "c") -> str:
@@ -363,12 +363,12 @@ class SmtLinearEngine(Engine):
                 # `r >= 1` the round starts from: only a round that stays
                 # outside `P` has to fall.
                 drops = tm.mkTerm(Kind.OR, f.at(ctx.prp, nxt), drops)
-            falls = ranked(
+            falls = implication(ranked(
                 f, [("inv", inv)], ctx.prp,
                 tm.mkTerm(Kind.AND,
                           tm.mkTerm(Kind.GEQ, rank(st), tm.mkInteger(1)),
                           drops),
-            ).implication(tm)
+            ), tm)
             if not k:
                 # Nothing to make inductive: the invariant is whatever was
                 # supplied, which the caller has not been asked to prove.
@@ -579,8 +579,8 @@ class SmtLinearEngine(Engine):
         the property is `_safety_at`'s third; ranking under it is
         `_buchi_at`'s.
         """
-        return (init_inv(f, [inv]).implication(ctx.tm),
-                step_inv(f, [("inv", inv)], [inv]).implication(ctx.tm))
+        return (implication(init_inv(f, [inv]), ctx.tm),
+                implication(step_inv(f, [("inv", inv)], [inv]), ctx.tm))
 
     def _rows_smt(self, cols: list, given: "str | None", values, k: int) -> str:
         """The solved rows as SMT-LIB, conjoined to `given`."""
@@ -610,7 +610,7 @@ class SmtLinearEngine(Engine):
             return tm.mkTerm(
                 Kind.AND,
                 *self._inductive(ctx, inv, f),
-                inv_imp_P(f, [("inv", inv)], ctx.prp).implication(tm),
+                implication(inv_imp_P(f, [("inv", inv)], ctx.prp), tm),
             )
 
         verdict = decide(ctx, Template(unknowns=flat, build=build),

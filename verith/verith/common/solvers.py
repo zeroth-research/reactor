@@ -8,7 +8,7 @@ This module is the seam between the two: an obligation as a *question*
 rather than as a file, and the solvers that answer one.
 
 **A query names more than it asks.**  Besides its hypotheses and its goal a
-:class:`Query` names two things, so that a solver able to report them can:
+:class:`Question` names two things, so that a solver able to report them can:
 
 * the hypotheses are *named*, so that a refutation's unsat core says which
   of them the proof used and the certificate can be cut down to those.
@@ -54,9 +54,10 @@ from enum import Enum
 from fractions import Fraction
 
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.obligations import Query
 from reactor.lean.smt.limits import bounded_solver
-from reactor.lean.smt.script import decimals, script
+from reactor.lean.smt.script import script
+from .smtlib import decimals
+from .obligations import Question
 from .vampire import run_vampire
 
 DEFAULT_TIMEOUT = 120
@@ -171,7 +172,7 @@ class Solver:
     def left(self) -> float:
         return self.deadline - time.monotonic()
 
-    def prove(self, q: Query, limit: float, *,
+    def prove(self, q: Question, limit: float, *,
               core: bool = False, model: bool = False) -> Answer:
         hit = self._answered.get(q.key)
         if hit is not None and hit.serves(core=core, model=model):
@@ -189,7 +190,7 @@ class Solver:
             self.refuted += answer.refuted
         return answer
 
-    def prove_all(self, queries: list[Query], limit: float) -> list[Answer]:
+    def prove_all(self, queries: list[Question], limit: float) -> list[Answer]:
         """Several queries, `jobs` at a time.
 
         No `model` here on purpose: the callers that batch are asking about
@@ -201,7 +202,7 @@ class Solver:
         with ThreadPoolExecutor(self.jobs) as pool:
             return list(pool.map(lambda q: self.prove(q, limit), queries))
 
-    def first(self, queries: list[Query], limit: float) -> "int | None":
+    def first(self, queries: list[Question], limit: float) -> "int | None":
         """The index of the first query proved, trying `jobs` at a time."""
         for at in range(0, len(queries), self.jobs):
             if self.left() < 0.5:
@@ -214,7 +215,7 @@ class Solver:
 
     # --- what a subclass answers ------------------------------------------
 
-    def _run(self, q: Query, budget: float, core: bool, model: bool) -> Answer:
+    def _run(self, q: Question, budget: float, core: bool, model: bool) -> Answer:
         raise NotImplementedError
 
 
@@ -263,7 +264,7 @@ class Cvc5Solver(Solver):
         self.kind = Kind
         self.tm = tm
 
-    def _run(self, q: Query, budget: float, core: bool, model: bool) -> Answer:
+    def _run(self, q: Question, budget: float, core: bool, model: bool) -> Answer:
         tm, Kind = self.tm, self.kind
         t0 = time.perf_counter()
         options = {}
@@ -305,7 +306,7 @@ class Cvc5Solver(Solver):
                       answer.values)
 
     @staticmethod
-    def _core(solver, q: Query) -> "frozenset[str] | None":
+    def _core(solver, q: Question) -> "frozenset[str] | None":
         """The named hypotheses in the refutation, matched back by term."""
         try:
             used = list(solver.getUnsatCore())
@@ -314,7 +315,7 @@ class Cvc5Solver(Solver):
         return frozenset(n for n, t in q.hyps if any(t == c for c in used))
 
     @staticmethod
-    def _values(solver, q: Query) -> "tuple | None":
+    def _values(solver, q: Question) -> "tuple | None":
         """The `witness` terms at this counter-model, as Python values: a
         Fraction for a Real, an int, a bool. None if any cannot be read."""
         if not q.witness:
@@ -336,7 +337,7 @@ class Cvc5Solver(Solver):
             return None
         return tuple(out)
 
-    def _broken(self, solver, q: Query) -> "frozenset[str] | None":
+    def _broken(self, solver, q: Question) -> "frozenset[str] | None":
         """The named probes this counter-model falsifies.
 
         A probe that cannot be read back is left *unbroken* -- the caller
@@ -393,7 +394,7 @@ class VampireSolver(Solver):
         # only make every limit mean less time.
         self.jobs = max(1, min(4, (os.cpu_count() or 4) // self.cores))
 
-    def _run(self, q: Query, budget: float, core: bool, model: bool) -> Answer:
+    def _run(self, q: Question, budget: float, core: bool, model: bool) -> Answer:
         run = run_vampire(self.exe, self._script(q), [
             "--mode", "portfolio", "--schedule", "smtcomp",
             "--cores", str(self.cores),
@@ -427,7 +428,7 @@ class VampireSolver(Solver):
         return Answer(Verdict.UNKNOWN, dt)
 
     @staticmethod
-    def _script(q: Query) -> str:
+    def _script(q: Question) -> str:
         """The query as a script whose `unsat` is a proof.
 
         The goal is asserted negated. Hypotheses are named so that an unsat

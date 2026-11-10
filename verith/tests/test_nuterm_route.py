@@ -26,7 +26,7 @@ from verith.nuterm.engine import (
     _smt_ranking,
     _smt_term,
 )
-from reactor.lean.smt.script import smt_int
+from verith.common.smtlib import smt_int
 from reactor.lean.smt.limits import SmtBudget
 from reactor.lean.smt.precheck import Status, pre_check
 

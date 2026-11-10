@@ -52,12 +52,7 @@ from reactor.lean.pipeline.certificate import (
     record_predicates,
     workspace,
 )
-from reactor.lean.pipeline.claim import (
-    claim_from_flags,
-    load,
-    show_certificate,
-    stated_claim,
-)
+from reactor.lean.pipeline.claim import claim_from_flags, load, stated_claim
 from reactor.lean.project.scaffold import write_lakefile
 from reactor.lean.smt.encoding import lazy
 from reactor.lean.smt.limits import SmtBudget
@@ -73,7 +68,7 @@ from .flags import (
 )
 from .io import InferResult, ProjectHandle
 from .route import InferRoute
-from .run import refused, route_precheck, run_route
+from .run import refused, route_precheck, run_route, show_certificate
 
 
 _EPILOG = """\
