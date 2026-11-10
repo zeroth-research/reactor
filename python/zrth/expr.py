@@ -154,6 +154,8 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
     match wire.dtype:
         case Bool(_) | Event():
             return BExpr(wire, theory, next=next, value=value, tag=tag)
+        case Real(_) if theory is SPN:
+            return SExpr(wire, theory, next=next, value=value, tag=tag)
         case Int(_) | Real(_):
             return AExpr(wire, theory, next=next, value=value, tag=tag)
         case BitVec(_, _):
@@ -455,15 +457,18 @@ class WExpr(AExpr):
 # ---------------------------------------------------------------------------
 # expr() — single construction / coercion entry point
 class SExpr(Expr):
-    """The scalar SPN sorts, Nat and Clock. The theory has only zero tests, the ordering
-    of two counts, the bound on a clock, single-token steps and clock rates relative to a
-    time form, so those are the only operators that map: ``x == 0`` / ``x != 0``,
-    ``n >= m`` and its three siblings on counts, ``clk >= b`` and ``clk < b`` against a
-    number, ``n + 1`` / ``n - 1``, and ``k * d(t)`` for a rate."""
+    """The scalar SPN sorts, Nat, Clock and Real. The theory has only zero tests, the
+    ordering of two counts, the bound on a clock, single-token steps and clock rates
+    relative to a time form, so those are the only operators that map: ``x == 0`` /
+    ``x != 0``, ``n >= m`` and its three siblings on counts, ``clk >= b`` and ``clk < b``
+    against a number, ``n + 1`` / ``n - 1``, and ``k * d(t)``, ``n * d(t)``, ``u * d(t)``
+    for a rate. A Real is a parameter: it scales a rate and is never tested."""
 
     def __eq__(self, other):
         if isinstance(other, Expr) or other != 0:
             raise TypeError("SPN only tests against zero: write `x == 0`")
+        if isinstance(self.dtype, Real):
+            raise TypeError("SPN never tests a real parameter: it only scales a rate")
         op = SPN.ClkIsZero() if isinstance(self.dtype, Clock) else SPN.IsZero()
         return self._unop(op, out=Bool([1, 1]))
 
@@ -535,12 +540,12 @@ class SExpr(Expr):
         return self._step(o, SPN.Dec())
 
     def __mul__(self, k):
-        if isinstance(k, Expr) and _rank(k.dtype) and isinstance(self.dtype, Nat):
+        if isinstance(k, Expr) and _rank(k.dtype) and _factor(self.dtype) is not None:
             return k._scaled(self)
         return self.__rmul__(k)
 
     def __rmul__(self, k):
-        if isinstance(k, Expr) and isinstance(k.dtype, Nat) and _rank(self.dtype):
+        if isinstance(k, Expr) and _factor(k.dtype) is not None and _rank(self.dtype):
             return self._scaled(k)
         if (
             isinstance(k, Expr)
@@ -548,13 +553,14 @@ class SExpr(Expr):
             or not _rank(self.dtype)
         ):
             raise TypeError(
-                "an SPN clock rate is a literal or a token count times a time form: "
-                "write `k * d(t)` or `n * d(t)`"
+                "an SPN clock rate is a literal, a token count or a real parameter times a "
+                "time form: write `k * d(t)`, `n * d(t)` or `u * d(t)`"
             )
         return self._unop(SPN.ClkMul(float(k)))
 
-    def _scaled(self, n: "Expr") -> "Expr":
-        return self._result(Term(SPN.ClkScale(), [Wire(self.dtype)], [self._wire, n._wire]))
+    def _scaled(self, by: "Expr") -> "Expr":
+        op = _factor(by.dtype)
+        return self._result(Term(op, [Wire(self.dtype)], [self._wire, by._wire]))
 
 
 def _rank(sort: Sort) -> int:
@@ -562,6 +568,16 @@ def _rank(sort: Sort) -> int:
         case Clock(rank):
             return rank
     return 0
+
+
+def _factor(sort: Sort):
+    """The op scaling a clock rate by a value of this sort, if the theory has one."""
+    match sort:
+        case Nat():
+            return SPN.ClkScale()
+        case Real(_, 0):
+            return SPN.ClkScaleReal()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -692,8 +708,8 @@ def _const(value, theory, sort, *, signed, bw=None, tag=None) -> Expr:
 
 
 def _spn_const(value, sort, *, tag=None) -> Expr:
-    """SPN literals are plain numbers, not tensors: ``Nat(v)``, ``Bool(b)``/``Event(b)``,
-    ``Clock(x)``."""
+    """SPN literals are plain numbers, not tensors: ``Nat(v)``, ``Real(x)``,
+    ``Bool(b)``/``Event(b)``, ``Clock(x)``."""
     if not isinstance(value, (bool, int, float)):
         raise TypeError(f"expr(): SPN literals are scalars, got {type(value).__name__}")
     if sort is Nat or isinstance(sort, Nat):
@@ -702,6 +718,10 @@ def _spn_const(value, sort, *, tag=None) -> Expr:
                 f"expr(): a Nat literal is a non-negative integer, got {value}"
             )
         op, wire = SPN.Nat(int(value)), Wire(Nat())
+    elif sort is Real or isinstance(sort, Real):
+        if isinstance(sort, Real) and (list(sort.shape) != [1, 1] or sort.rank):
+            raise TypeError(f"expr(): an SPN real is a scalar parameter, got {sort}")
+        op, wire = SPN.Real(float(value)), Wire(Real([1, 1]))
     elif sort is Clock or isinstance(sort, Clock):
         if _rank(sort) if isinstance(sort, Clock) else 0:
             raise TypeError("expr(): a clock rate is not a literal: write `k * d(t)`")

@@ -6,10 +6,13 @@ places holding tokens, transitions moving tokens around, and Poisson clocks
 deciding when a transition fires.
 
 Unlike [`crate::lia`], the theory this one is derived from, the sorts are not
-matrix sorts. A [`Sort`] value is one of four scalars, plus the trivial
+matrix sorts. A [`Sort`] value is one of five scalars, plus the trivial
 tangent:
 
 - `Nat` — a token count (the marking of a single place),
+- `Real` — a parameter: a number held between rounds, such as a control
+  input scaling a rate. It is never compared, never added to and never flows;
+  a real that moves is a colour, and belongs to a theory beyond this one,
 - `Bool` — a truth value (e.g. whether a transition is enabled),
 - `Event` — a truth value again, under another name: the momentary signal that
   something has happened (a transition has fired). It is an alias of `Bool` in
@@ -22,15 +25,15 @@ tangent:
   whose only writer is the `zero` generator.
 
 The clock is the only sort that can move: a marking changes by firing a
-transition, not by flowing, so `Nat`, `Bool` and `Event` are constant sorts and
-their tangent is `Zero`. The clock tangent is a sort of its own, inhabited by
+transition, not by flowing, so `Nat`, `Real`, `Bool` and `Event` are constant
+sorts and their tangent is `Zero`. The clock tangent is a sort of its own, inhabited by
 the constant rates a clock can run at.
 
 The operations in [`SPN`] are:
 
-- [`SPN::Nat`], [`SPN::Bool`], [`SPN::Clock`] — literals; each reads nothing and
-  writes a single wire of the corresponding value sort — the truth-value literal
-  writes a `Bool` and an `Event` wire alike.
+- [`SPN::Nat`], [`SPN::Real`], [`SPN::Bool`], [`SPN::Clock`] — literals; each
+  reads nothing and writes a single wire of the corresponding value sort — the
+  truth-value literal writes a `Bool` and an `Event` wire alike.
 - [`SPN::And`], [`SPN::Or`], [`SPN::Not`] — boolean operations on `Bool`, and so
   on `Event`.
 - [`SPN::IsZero`], [`SPN::ClkIsZero`] — tests for an empty place (`Nat`) and for
@@ -72,12 +75,15 @@ The operations in [`SPN`] are:
   tangent and a `Nat` and writes a clock tangent of the same rank, the count
   times the tangent. A transition whose rate is proportional to a marking runs
   its clock that many times faster; a count of zero stops it.
+- [`SPN::ClkScaleReal`] — the same with a `Real` factor: reads one clock
+  tangent and a `Real` and writes a clock tangent of the same rank. A rate
+  scaled by a control input.
 - [`SPN::Zero`] — the unique inhabitant of `Zero`, the trivial tangent of the
   constant sorts.
 
 Beyond [`SPN::ClkGe`] and [`SPN::NatGe`] there are no ordering comparisons,
-and there is no arithmetic beyond `Inc`/`Dec` on tokens and `ClkMul`/`ClkScale`
-on rates:
+and there is no arithmetic beyond `Inc`/`Dec` on tokens and the scaling of
+rates:
 the guards of a Petri net ask whether a place holds enough tokens and whether a
 clock has expired, or still has at least so much time left.
 
@@ -154,6 +160,9 @@ pub enum Sort {
     Clock { rank: u8 },
     /// Natural number -- for representing a token count (the marking of a place)
     Nat(),
+    /// A real parameter: a number held between rounds, never compared and
+    /// never flowing -- a factor on a rate.
+    Real(),
     /// A truth value -- for predicates.
     Bool(),
     /// A truth value again, under another name: the momentary signal that
@@ -201,6 +210,10 @@ impl Sort {
         matches!(self, Sort::Nat())
     }
 
+    pub fn is_real(&self) -> bool {
+        matches!(self, Sort::Real())
+    }
+
     /// True of a clock of any grade, value or tangent.
     pub fn is_clock(&self) -> bool {
         matches!(self, Sort::Clock { .. })
@@ -210,20 +223,22 @@ impl Sort {
     pub fn rank(&self) -> Option<u8> {
         match self {
             Sort::Clock { rank } => Some(*rank),
-            Sort::Nat() | Sort::Bool() | Sort::Event() | Sort::Zero() => None,
+            Sort::Nat() | Sort::Real() | Sort::Bool() | Sort::Event() | Sort::Zero() => None,
         }
     }
 }
 
 /// The tangent former: a clock grades up (`rank + 1`); the constant sorts
-/// `Nat`, `Bool` and `Event` collapse to the trivial tangent `Zero`, which is a
-/// fixed point.
+/// `Nat`, `Real`, `Bool` and `Event` collapse to the trivial tangent `Zero`,
+/// which is a fixed point.
 impl Tangent for Sort {
     #[allow(non_snake_case)]
     fn T(&self) -> Self {
         match *self {
             Sort::Clock { rank } => Sort::Clock { rank: rank + 1 },
-            Sort::Nat() | Sort::Bool() | Sort::Event() | Sort::Zero() => Sort::Zero(),
+            Sort::Nat() | Sort::Real() | Sort::Bool() | Sort::Event() | Sort::Zero() => {
+                Sort::Zero()
+            }
         }
     }
 }
@@ -234,6 +249,7 @@ impl fmt::Display for Sort {
             Sort::Clock { rank: 0 } => write!(f, "Clock"),
             Sort::Clock { rank } => write!(f, "T{rank} Clock"),
             Sort::Nat() => write!(f, "Nat"),
+            Sort::Real() => write!(f, "Real"),
             Sort::Bool() => write!(f, "Bool"),
             Sort::Event() => write!(f, "Event"),
             Sort::Zero() => write!(f, "Zero"),
@@ -250,6 +266,9 @@ pub enum SPN {
     /// A token-count literal
     #[strum(to_string = "({0} : nat)")]
     Nat(u64),
+    /// A real-parameter literal
+    #[strum(to_string = "({0} : real)")]
+    Real(f64),
     /// A truth-value literal; it writes a `Bool` wire and an `Event` one alike
     #[strum(to_string = "({0} : bool)")]
     Bool(bool),
@@ -311,6 +330,10 @@ pub enum SPN {
     /// A clock's flow scaled by a token count: reads one clock tangent and a `Nat`
     /// and writes a clock tangent of the same rank, the count times the tangent.
     ClkScale(),
+    /// A clock's flow scaled by a real parameter: reads one clock tangent and a
+    /// `Real` and writes a clock tangent of the same rank, the parameter times
+    /// the tangent.
+    ClkScaleReal(),
     /// The unique inhabitant of the [`Sort::Zero`] sort: the only generator
     /// writing a `Zero` wire (the trivial tangent of the constant sorts).
     Zero(),
@@ -339,7 +362,7 @@ impl Differential for SPN {
         // `range` is the tangent sort the generator writes
         match range {
             Sort::Clock { .. } => SPN::ClkZero(),
-            Sort::Nat() | Sort::Bool() | Sort::Event() | Sort::Zero() => SPN::Zero(),
+            Sort::Nat() | Sort::Real() | Sort::Bool() | Sort::Event() | Sort::Zero() => SPN::Zero(),
         }
     }
 }
@@ -354,7 +377,9 @@ impl Signature for SPN {
         W: IntoIterator<Item = Result<Sort, E>>,
     {
         match self {
-            SPN::Nat(_) | SPN::Bool(_) | SPN::Clock(_) => check_const(self, read, write),
+            SPN::Nat(_) | SPN::Real(_) | SPN::Bool(_) | SPN::Clock(_) => {
+                check_const(self, read, write)
+            }
             SPN::And() | SPN::Or() | SPN::Not() => check_bool(self, read, write),
             SPN::IsZero() | SPN::ClkIsZero() | SPN::ClkGe(_) => check_test(self, read, write),
             SPN::NatGe() => check_ge(self, read, write),
@@ -363,7 +388,9 @@ impl Signature for SPN {
             SPN::Nondet(sort) => check_nondet(sort, read, write),
             SPN::Exp(_) => check_sample(self, read, write),
             SPN::ClkRate(_) | SPN::ClkZero() => check_clk_rate(self, read, write),
-            SPN::ClkMul(_) | SPN::ClkScale() => check_clk_mul(self, read, write),
+            SPN::ClkMul(_) | SPN::ClkScale() | SPN::ClkScaleReal() => {
+                check_clk_mul(self, read, write)
+            }
             SPN::Zero() => check_zero(&Sort::Zero(), read, write),
         }
     }
@@ -373,6 +400,7 @@ impl Signature for SPN {
 fn const_sort(op: &SPN) -> Sort {
     match op {
         SPN::Nat(_) => Sort::Nat(),
+        SPN::Real(_) => Sort::Real(),
         SPN::Bool(_) => Sort::Bool(),
         SPN::Clock(_) => Sort::clock(),
         _ => unreachable!(),
@@ -638,7 +666,7 @@ where
                 "Nondet: the tangent sort {sort} is inhabited by zero alone; use ZERO"
             ));
         }
-        Sort::Clock { .. } | Sort::Nat() | Sort::Bool() | Sort::Event() => {}
+        Sort::Clock { .. } | Sort::Nat() | Sort::Real() | Sort::Bool() | Sort::Event() => {}
     }
     if read.into_iter().next().is_some() {
         return Err(format!("Nondet({sort}): cannot read values"));
@@ -699,15 +727,20 @@ where
     Ok(())
 }
 
-// ClkMul and ClkScale scale a tangent: they read one clock tangent (a clock
-// value, rank 0, has no rate to scale), ClkScale also a Nat, and write one
-// tangent of the same rank.
+// ClkMul, ClkScale and ClkScaleReal scale a tangent: they read one clock
+// tangent (a clock value, rank 0, has no rate to scale), the latter two also a
+// factor of their sort, and write one tangent of the same rank.
 fn check_clk_mul<R, W, E: fmt::Display>(op: &SPN, read: R, write: W) -> Result<(), String>
 where
     R: IntoIterator<Item = Result<Sort, E>>,
     W: IntoIterator<Item = Result<Sort, E>>,
 {
-    let arity = if matches!(op, SPN::ClkScale()) { 2 } else { 1 };
+    let factor = match op {
+        SPN::ClkScale() => Some(Sort::Nat()),
+        SPN::ClkScaleReal() => Some(Sort::Real()),
+        _ => None,
+    };
+    let arity = if factor.is_some() { 2 } else { 1 };
     let mut read = read.into_iter();
     let rank = match read.next() {
         Some(Ok(Sort::Clock { rank })) if rank >= 1 => rank,
@@ -719,10 +752,12 @@ where
             ));
         }
     };
-    if arity == 2 {
+    if let Some(factor) = factor {
         match read.next() {
-            Some(Ok(Sort::Nat())) => {}
-            Some(Ok(sort)) => return Err(format!("{op:?}: must read a Nat count, got {sort}")),
+            Some(Ok(sort)) if sort == factor => {}
+            Some(Ok(sort)) => {
+                return Err(format!("{op:?}: must read a {factor} factor, got {sort}"));
+            }
             Some(Err(e)) => return Err(e.to_string()),
             None => {
                 return Err(format!(
@@ -758,6 +793,7 @@ mod tests {
     use super::*;
 
     const NAT: Sort = Sort::Nat();
+    const REAL: Sort = Sort::Real();
     const BOOL: Sort = Sort::Bool();
     /// `Bool` under its other name: the theory's operations cannot tell the two
     /// apart, everything else can.
@@ -773,7 +809,9 @@ mod tests {
 
     #[test]
     fn sort_predicates() {
-        assert!(NAT.is_nat() && !NAT.is_bool() && !NAT.is_clock());
+        assert!(NAT.is_nat() && !NAT.is_bool() && !NAT.is_clock() && !NAT.is_real());
+        assert!(REAL.is_real() && !REAL.is_nat() && !REAL.is_bool() && !REAL.is_clock());
+        assert_eq!(REAL.rank(), None);
         assert!(BOOL.is_bool() && !BOOL.is_nat() && !BOOL.is_clock());
         // an event is a boolean, and is the only sort that is also an event
         assert!(EVENT.is_bool() && !EVENT.is_nat() && !EVENT.is_clock());
@@ -794,6 +832,7 @@ mod tests {
         assert_eq!(DCLOCK.T(), Sort::Clock { rank: 2 });
         // the constant sorts have the trivial tangent, which is a fixed point
         assert_eq!(NAT.T(), ZERO);
+        assert_eq!(REAL.T(), ZERO);
         assert_eq!(BOOL.T(), ZERO);
         assert_eq!(EVENT.T(), ZERO);
         assert_eq!(ZERO.T(), ZERO);
@@ -823,11 +862,13 @@ mod tests {
         );
         // the alias is a name of its own, and prints as one
         assert_eq!(EVENT.to_string(), "Event".to_string());
+        assert_eq!(REAL.to_string(), "Real".to_string());
     }
 
     #[test]
     fn op_display() {
         assert_eq!(SPN::Nat(3).to_string(), "(3 : nat)");
+        assert_eq!(SPN::Real(0.5).to_string(), "(0.5 : real)");
         assert_eq!(SPN::Bool(true).to_string(), "(true : bool)");
         assert_eq!(SPN::Clock(1.5).to_string(), "(1.5 : clk)");
         assert_eq!(SPN::Nondet(NAT).to_string(), "(* : Nat)");
@@ -1552,6 +1593,82 @@ mod tests {
         assert!(
             SPN::ClkScale()
                 .check([DCLOCK, NAT].map(ok), [].map(ok))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn real_is_a_parameter() {
+        // a literal, a choice, a copy and a factor on a rate: nothing else
+        assert!(SPN::Real(0.5).check([].map(ok), [REAL].map(ok)).is_ok());
+        assert!(SPN::Real(0.5).check([].map(ok), [NAT].map(ok)).is_err());
+        assert!(SPN::Real(0.5).check([].map(ok), [CLOCK].map(ok)).is_err());
+        assert!(SPN::Nat(1).check([].map(ok), [REAL].map(ok)).is_err());
+        assert!(SPN::Nondet(REAL).check([].map(ok), [REAL].map(ok)).is_ok());
+        assert!(SPN::Id().check([REAL].map(ok), [REAL].map(ok)).is_ok());
+        assert!(
+            SPN::Ite()
+                .check([BOOL, REAL, REAL].map(ok), [REAL].map(ok))
+                .is_ok()
+        );
+        assert!(SPN::Zero().check([].map(ok), [REAL.T()].map(ok)).is_ok());
+        assert!(matches!(SPN::zero(&REAL.T()), SPN::Zero()));
+        assert!(matches!(SPN::havoc(&REAL), SPN::Nondet(REAL)));
+        assert!(SPN::IsZero().check([REAL].map(ok), [BOOL].map(ok)).is_err());
+        assert!(
+            SPN::NatGe()
+                .check([REAL, REAL].map(ok), [BOOL].map(ok))
+                .is_err()
+        );
+        assert!(SPN::Inc().check([REAL].map(ok), [REAL].map(ok)).is_err());
+        assert!(SPN::Exp(1.0).check([].map(ok), [REAL].map(ok)).is_err());
+    }
+
+    #[test]
+    fn clk_scale_real_scales_a_tangent_by_a_parameter() {
+        assert_eq!(SPN::ClkScaleReal().to_string(), "ClkScaleReal");
+        assert!(
+            SPN::ClkScaleReal()
+                .check([DCLOCK, REAL].map(ok), [DCLOCK].map(ok))
+                .is_ok()
+        );
+        assert!(
+            SPN::ClkScaleReal()
+                .check(
+                    [Sort::Clock { rank: 2 }, REAL].map(ok),
+                    [Sort::Clock { rank: 2 }].map(ok)
+                )
+                .is_ok()
+        );
+        // the factor is a real, not a count: the two ops do not swap
+        assert!(
+            SPN::ClkScaleReal()
+                .check([DCLOCK, NAT].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkScale()
+                .check([DCLOCK, REAL].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkScaleReal()
+                .check([REAL, DCLOCK].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkScaleReal()
+                .check([DCLOCK, CLOCK].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkScaleReal()
+                .check([DCLOCK].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::ClkScaleReal()
+                .check([DCLOCK, REAL].map(ok), [CLOCK].map(ok))
                 .is_err()
         );
     }

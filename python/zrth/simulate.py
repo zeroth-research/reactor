@@ -29,7 +29,7 @@ import random
 from dataclasses import dataclass, field
 
 from .zrth import SPN, Combinatorial, Differential, Sequential, X, d
-from .sort import Bool, Clock, Event, Nat
+from .sort import Bool, Clock, Event, Nat, Real
 
 
 class FlowNotSolvable(Exception):
@@ -165,6 +165,12 @@ def _eval(op, r, rng):
             return k * r[0]
         case SPN.ClkScale():
             return r[0] * r[1]
+        case SPN.ClkScaleReal():
+            if r[1] < 0:
+                raise FlowNotSolvable(f"a rate is scaled by a non-negative factor, got {r[1]}")
+            return r[0] * r[1]
+        case SPN.Real(x):
+            return x
         case SPN.Zero():
             return 0
         case SPN.Nondet(_):
@@ -462,7 +468,7 @@ def uniform(gap):
     return lambda hi, rng: hi if gap >= hi else rng.uniform(gap, hi)
 
 
-_DRIVEN = (Bool([1, 1]), Event(), Nat())
+_DRIVEN = (Bool([1, 1]), Event(), Nat(), Real([1, 1]))
 
 
 class Simulation:
@@ -470,7 +476,8 @@ class Simulation:
 
     `t` is the module's time reference, an external that reads the current time and runs
     at rate 1; left out, it is the module's one Clock external. Any other external must be a
-    Bool, an Event or a Nat: a *driven input*, whose value every `step` receives and holds
+    Bool, an Event, a Nat or a Real: a *driven input*, whose value every `step` receives and
+    holds
     from then through the round the step ends with. `seed` feeds the exponential clocks and
     the `uniform` scheduler. `scheduler` is `last()` (the default), `first(gap)`,
     `uniform(gap)`, or a function `(hi, rng) -> delta` choosing how long the step flows,
@@ -504,7 +511,7 @@ class Simulation:
             if v.dtype not in _DRIVEN:
                 raise TypeError(
                     f"an external other than the time reference is a driven input, a Bool, an "
-                    f"Event or a Nat, got {v.dtype} ({v})"
+                    f"Event, a Nat or a Real, got {v.dtype} ({v})"
                 )
         self.module, self.t = module, t
         self.pick = last() if scheduler is None else scheduler

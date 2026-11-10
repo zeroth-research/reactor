@@ -171,12 +171,15 @@ impl From<lra::Sort> for Sort {
     }
 }
 
-/// The `spn` sorts are scalar: its `Bool` is the 1x1 boolean matrix, and
-/// `Nat`, `Event` and `Clock` are sorts of their own.
+/// The `spn` sorts are scalar: its `Bool` and `Real` are the 1x1 matrices,
+/// and `Nat`, `Event` and `Clock` are sorts of their own. An `spn` real is a
+/// parameter and does not move, so the tangent `any` gives a real is, to
+/// `spn`, the trivial one.
 impl From<spn::Sort> for Sort {
     fn from(value: spn::Sort) -> Self {
         match value {
             spn::Sort::Nat() => Sort::Nat(),
+            spn::Sort::Real() => Sort::real([1, 1]),
             spn::Sort::Bool() => Sort::Bool([1, 1]),
             spn::Sort::Event() => Sort::Event(),
             spn::Sort::Clock { rank } => Sort::Clock { rank },
@@ -191,6 +194,11 @@ impl TryFrom<Sort> for spn::Sort {
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
             Sort::Nat() => Ok(spn::Sort::Nat()),
+            Sort::Real {
+                shape: [1, 1],
+                rank: 0,
+            } => Ok(spn::Sort::Real()),
+            Sort::Real { shape: [1, 1], .. } => Ok(spn::Sort::Zero()),
             Sort::Bool([1, 1]) => Ok(spn::Sort::Bool()),
             Sort::Event() => Ok(spn::Sort::Event()),
             Sort::Clock { rank } => Ok(spn::Sort::Clock { rank }),
@@ -503,6 +511,7 @@ mod tests {
     fn spn_sorts_round_trip() {
         for s in [
             spn::Sort::Nat(),
+            spn::Sort::Real(),
             spn::Sort::Bool(),
             spn::Sort::Event(),
             spn::Sort::clock(),
@@ -526,6 +535,14 @@ mod tests {
         // a matrix sort is not an `spn` sort
         assert!(spn::Sort::try_from(Sort::Bool([2, 2])).is_err());
         assert!(spn::Sort::try_from(Sort::Int([1, 1])).is_err());
+        assert!(spn::Sort::try_from(Sort::real([2, 1])).is_err());
+        // a parameter does not move: the real tangent of `any` is `spn`'s `Zero`
+        assert_eq!(Sort::from(spn::Sort::Real()), Sort::real([1, 1]));
+        assert_eq!(
+            spn::Sort::try_from(Sort::real([1, 1]).T()),
+            Ok(spn::Sort::Zero())
+        );
+        assert!(spn::Sort::try_from(Sort::real([2, 1]).T()).is_err());
     }
 
     #[test]

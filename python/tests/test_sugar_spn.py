@@ -3,7 +3,7 @@
 
 import pytest
 
-from zrth import SPN, LIA, Bool, Clock, Event, Nat, Var, X as _X, d as _d
+from zrth import SPN, LIA, Bool, Clock, Event, Nat, Real, Var, X as _X, d as _d
 from zrth import Module as compose
 from zrth.expr import collecting, expr
 from zrth.sugar import Module, X, d, ite, if_then, fired, exp, clkrate
@@ -127,6 +127,48 @@ def test_scaling_commutes_and_chains():
     assert _ops(m.atoms[0].delay) == ["ClkScale", "ClkScale", "ClkMul", "Id", "Zero", "Zero"]
     [by_i, by_s, *_] = m.atoms[0].delay
     assert list(by_i.read) == [_d(t), i] and list(by_s.read) == [by_i.write[0], s]
+
+
+def test_a_real_parameter_scales_a_clock_rate():
+    # a control input: held between rounds, never tested, a factor on the rate
+    class M(Module):
+        def init(self, t, u):
+            return exp(1.0), 3
+
+        def flow(self, clk, n, t, u):
+            return u * (n * (-1 * d(t))), 0
+
+    clk, n, t, u = Var(Clock()), Var(Nat()), Var(Clock()), Var(Real([1, 1]))
+    m = M(theory=SPN, ctrl=(clk, n), extl=(t, u))
+    assert _ops(m.atoms[0].delay) == ["ClkMul", "ClkScale", "ClkScaleReal", "Id", "Zero"]
+    [_, _, by_u, *_] = m.atoms[0].delay
+    assert list(by_u.read)[1] == u and by_u.write[0].dtype == Clock(1)
+    assert set(m.extl) == {t, u}
+
+
+def test_a_real_variable_is_a_parameter():
+    # a controller's own real: a literal, a choice at a round, the zero flow
+    class M(Module):
+        def init(self, t):
+            return 0.5, 0
+
+        def next(self, u, n, t):
+            return ite(n >= 3, 0.25, u), n + 1
+
+        def flow(self, u, n, t):
+            return 0, 0
+
+    u, n, t = Var(Real([1, 1])), Var(Nat()), Var(Clock())
+    m = M(theory=SPN, ctrl=(u, n), extl=(t,))
+    shown = m.with_varnames({u: "u"})
+    assert "(0.5 : real)" in shown and "(0.25 : real)" in shown and "u : Real([1,1])" in shown
+    assert _ops(m.atoms[0].delay) == ["Zero", "Zero"]
+    with collecting(), pytest.raises(TypeError, match="never tests a real"):
+        expr(u, theory=SPN) == 0
+    with collecting(), pytest.raises(TypeError, match="token counts and bounds clock values"):
+        expr(u, theory=SPN) >= 0.5
+    with collecting(), pytest.raises(TypeError, match="one token at a time"):
+        expr(u, theory=SPN) + 1
 
 
 @pytest.mark.parametrize(

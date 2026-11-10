@@ -5,7 +5,7 @@ import math
 
 import pytest
 
-from zrth import SPN, Bool, Clock, Event, Nat, Var
+from zrth import SPN, Bool, Clock, Event, Nat, Real, Var
 from zrth import Module as compose
 from zrth.simulate import FlowNotSolvable, GuardSkipped, NoFlow, Simulation, first, last, simulate, uniform
 from zrth.sugar import Module, d, ite, fired, exp
@@ -234,6 +234,31 @@ def test_a_count_sets_the_speed_of_a_clock():
     assert trace.states[-1][c] == 1.0
 
 
+def test_a_real_input_sets_the_speed_of_a_clock():
+    # a control input scales the rate: the clock takes 1/u to expire, stands still at 0,
+    # and a negative factor is not a rate
+    class M(Module):
+        def init(self, t, u):
+            return 1.0, 0
+
+        def next(self, c, k, t, u):
+            fires = c == 0
+            return ite(fires, 1.0, c), ite(fires, k + 1, k)
+
+        def flow(self, c, k, t, u):
+            return ite(c >= 0, u * (-1 * d(t)), None), 0
+
+    c, k, t, u = Var(Clock()), Var(Nat()), Var(Clock()), Var(Real([1, 1]))
+    sim = Simulation(M(theory=SPN, ctrl=(c, k), extl=(t, u)), t=t)
+    assert sim.inputs == [u]
+    assert sim.step({u: 0.5})[0] == 2.0
+    assert sim.step({u: 4.0})[0] == 2.25
+    time, seen, after = sim.step({u: 0.0}, until=10.0)
+    assert time == 10.0 and after[k] == 2 and after[c] == 1.0
+    with pytest.raises(FlowNotSolvable, match="non-negative"):
+        sim.step({u: -1.0})
+
+
 def test_a_scheduler_must_stay_inside_the_step():
     m, c, k, t = _ticker()
     with pytest.raises(ValueError, match="outside"):
@@ -389,6 +414,16 @@ def test_driven_inputs_are_bools_events_or_counts():
     with pytest.raises(TypeError, match="driven input"):
         Simulation(Reads(theory=SPN, ctrl=(c,), extl=(t, clock)), t=t)
     assert Simulation(Reads(theory=SPN, ctrl=(c,), extl=(t, count)), t=t).inputs == [count]
+
+    class Scales(Module):
+        def init(self, t, u):
+            return 1.0
+
+        def flow(self, c, t, u):
+            return u * d(t)
+
+    real = Var(Real([1, 1]))
+    assert Simulation(Scales(theory=SPN, ctrl=(c,), extl=(t, real)), t=t).inputs == [real]
 
 
 def test_a_quiescent_step_needs_an_until():

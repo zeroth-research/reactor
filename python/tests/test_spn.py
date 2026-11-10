@@ -6,7 +6,7 @@ Poisson clock expires.
 """
 
 import pytest
-from zrth import SPN, Atom, Bool, Clock, Event, Module, Nat, Term, Var, Wire, X, Zero, d
+from zrth import SPN, Atom, Bool, Clock, Event, Module, Nat, Real, Term, Var, Wire, X, Zero, d
 
 # the firing rate of the transition, and the speed of its countdown clock
 RATE = 2.5
@@ -112,6 +112,12 @@ def test_terms_typecheck():
     Term(SPN.ClkMul(COUNTDOWN), [Wire(Clock(1))], [d(c)])
     # a clock's rate scaled by a token count
     Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), p])
+    # a real parameter: a literal, a copy, no flow, and a factor on a rate
+    u = Var(Real([1, 1]))
+    Term.constant(SPN.Real(0.5), [X(u)])
+    Term(SPN.Id(), [X(u)], [u])
+    Term.constant(SPN.Zero(), [d(u)])
+    Term(SPN.ClkScaleReal(), [Wire(Clock(1))], [d(c), u])
 
 
 @pytest.mark.parametrize(
@@ -132,11 +138,23 @@ def test_terms_typecheck():
         (lambda p, c: Term(SPN.ClkMul(COUNTDOWN), [Wire(Clock(1))], [c]), "clock tangent"),
         # `ClkScale` scales a tangent by a count: that order, and a count only
         (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [p, d(c)]), "clock tangent"),
-        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), c]), "Nat count"),
-        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), d(c)]), "Nat count"),
+        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), c]), "Nat factor"),
+        (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), d(c)]), "Nat factor"),
         (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c)]), "exactly 2"),
         (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), p, p]), "exactly 2"),
         (lambda p, c: Term(SPN.ClkScale(), [Wire(Clock())], [d(c), p]), "clock tangent"),
+        # a real is a factor on a rate and nothing else; the two scalings do not swap
+        (lambda p, c: Term(SPN.ClkScaleReal(), [Wire(Clock(1))], [d(c), p]), "Real factor"),
+        (
+            lambda p, c: Term(SPN.ClkScale(), [Wire(Clock(1))], [d(c), Var(Real([1, 1]))]),
+            "Nat factor",
+        ),
+        (lambda p, c: Term(SPN.IsZero(), [Wire(BOOL)], [Var(Real([1, 1]))]), "must be Nat"),
+        (lambda p, c: Term(SPN.Inc(), [Wire(Real([1, 1]))], [Var(Real([1, 1]))]), "must be Nat"),
+        (lambda p, c: Term.constant(SPN.Real(0.5), [X(p)]), "cannot be written"),
+        (lambda p, c: Term.constant(SPN.Real(0.5), [X(c)]), "cannot be written"),
+        # an SPN real is a scalar parameter
+        (lambda p, c: Term.constant(SPN.Real(0.5), [Wire(Real([2, 1]))]), "invalid cast"),
     ],
 )
 def test_ill_typed_terms_raise(build, message):

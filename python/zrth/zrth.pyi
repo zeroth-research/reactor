@@ -400,6 +400,11 @@ class SPN:
 
         def __init__(self, value: int) -> None: ...
 
+    class Real(SPN):
+        """A real-parameter literal: a number held between rounds, a factor on a rate."""
+
+        def __init__(self, value: float) -> None: ...
+
     class Bool(SPN):
         def __init__(self, value: bool) -> None: ...
 
@@ -497,6 +502,12 @@ class SPN:
     class ClkScale(SPN):
         """A clock's flow scaled by a token count: reads a clock tangent and a `Nat` and
         writes a tangent of the same rank, the count times the tangent."""
+
+        def __init__(self) -> None: ...
+
+    class ClkScaleReal(SPN):
+        """A clock's flow scaled by a real parameter: reads a clock tangent and a
+        `Real([1, 1])` and writes a tangent of the same rank."""
 
         def __init__(self) -> None: ...
 
