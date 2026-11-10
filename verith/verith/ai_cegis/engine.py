@@ -273,8 +273,11 @@ class AiCegisEngine:
         tm,
         extra_vars: list[tuple[str, list]],
     ) -> ObligationResult:
-        """Check `neg_query` for SAT. UNSAT ⇒ obligation holds."""
-        self.log(f"[smt] check query: {neg_query}")
+        """Check `neg_query` for SAT. UNSAT ⇒ obligation holds.
+
+        Logged by name: printed, the query is the whole transition
+        substituted in, once per obligation per attempt."""
+        self.log(f"[smt] check query: {name}")
         solver = bounded_solver(tm, call_ms(self.budget), logic="ALL",
                                 produce_models="true")
         solver.assertFormula(neg_query)
