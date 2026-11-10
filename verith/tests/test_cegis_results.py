@@ -10,6 +10,7 @@ real obligations, no network.
 """
 
 import cvc5
+import pytest
 
 from reactor import Module, Int, LIA, Var, X
 from reactor.analyzer import convert_method
@@ -240,19 +241,32 @@ def test_a_given_invariant_is_kept_and_only_the_ranking_is_asked_for(monkeypatch
     assert cert == Certificate(inv, "(ite (= s0 0) 0 (- 10 s0))")
 
 
-def test_a_certificate_given_whole_builds_no_client(monkeypatch):
-    """Both predicates fixed: the loop verifies them once and asks nothing,
-    so it builds no client either, and the run needs neither the LLM
-    package nor a key."""
+def test_a_certificate_given_whole_asks_nothing(monkeypatch):
+    """Both predicates fixed: the loop verifies them once and asks the
+    model nothing."""
 
     def no_client(base_url, model):
-        raise AssertionError("a client was built for a run that asks nothing")
+        def chat(system: str, user: str) -> str:
+            raise AssertionError("a run with every predicate fixed asked")
+        return chat
 
     monkeypatch.setattr(cegis, "make_client", no_client)
     given = Certificate("(and (>= s0 0) (<= s0 9))", "(ite (= s0 0) 0 (- 10 s0))")
     cert = AiCegisEngine("", _counter(), log=lambda *_: None).infer(
         Claim(prp="(= s0 0)"), given)
     assert cert == given
+
+
+def test_a_client_reaches_the_model_only_when_asked(monkeypatch):
+    """`make_client` makes nothing until the first question, so a run that
+    asks none needs neither the LLM package nor a key."""
+    from reactor.lean.core.errors import Refused
+    from verith.common.llm import make_client
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    chat = make_client(None, "any")
+    with pytest.raises(Refused):
+        chat("system", "user")
 
 
 # ── how long the loop keeps asking ───────────────────────────────────────

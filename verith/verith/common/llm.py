@@ -79,7 +79,23 @@ def describe_preconditions(claim: Claim) -> str:
 
 
 def make_client(base_url: str | None, model: str):
-    """Return a chat callable: (system, user) -> str."""
+    """A chat callable, `(system, user) -> str`, that reaches the model on
+    its first question rather than up front: a run that asks nothing -- a
+    certificate supplied whole is verified once -- needs neither the LLM
+    package nor a key."""
+    made = None
+
+    def chat(system: str, user: str) -> str:
+        nonlocal made
+        if made is None:
+            made = _connect(base_url, model)
+        return made(system, user)
+
+    return chat
+
+
+def _connect(base_url: str | None, model: str):
+    """`make_client`'s chat callable, with its client made now."""
     if base_url is not None:
         openai = require("openai", "--base-url", install="verith[ai-local]")
         # Hosted OpenAI-compatible providers (e.g. OpenRouter) need a real
@@ -107,8 +123,7 @@ def make_client(base_url: str | None, model: str):
         anthropic = require("anthropic", "An LLM route", install="verith[ai]")
         # Without a key the request itself fails with a TypeError about
         # header resolution, which says nothing about the flag that needs
-        # one. A run that never asks the model never gets here: the routes
-        # build their client on the first question.
+        # one. A run that never asks the model never gets here.
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise Refused(
                 "ANTHROPIC_API_KEY is not set, and the default model is "
