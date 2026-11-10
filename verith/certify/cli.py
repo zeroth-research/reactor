@@ -159,22 +159,36 @@ def parse_args(argv: "list[str] | None" = None, *,
     settings.claim_deferred = claim_deferred(settings, adapter, defer_claim)
     if route is not None and not settings.claim_deferred:
         check_route(parser, settings)
-        check_cert_file(parser, settings)
+    check_no_project(parser, settings)
 
-    check_outputs(parser, settings, infer=route.name if route else None)
+    check_outputs(parser, settings, finds_certificate=route is not None)
     resolve_route(parser, settings)
     return settings
 
 
-def check_cert_file(parser: argparse.ArgumentParser, settings: Settings) -> None:
-    """A route and `--cert-file` do not go together."""
-    # Inference runs against the generated project, and `--cert-file` writes
-    # a standalone file and returns before any of that -- so the route would
-    # not run at all. Every route, not the ones that declare they read or
-    # write the project: a route that declares neither still never runs.
+def check_no_project(parser: argparse.ArgumentParser,
+                     settings: Settings) -> None:
+    """A route and an output that generates no project do not go together.
+
+    Inference runs against the generated project, and `--cert-file` and
+    `--hammer-file` each write one file and return before any of that -- so
+    the route would not run at all. Every route, not the ones that declare
+    they read or write the project: a route that declares neither still
+    never runs. Not deferred with the claim, because a `--hammer-file` run
+    returns before the claim is read again.
+    """
+    route = settings.route
+    if route is None:
+        return
     if settings.cert_file:
         parser.error(
-            f"--infer {settings.route.name} is incompatible with --cert-file: "
+            f"--infer {route.name} is incompatible with --cert-file: "
             f"the standalone certificate is written from the predicates as "
             f"supplied, before a route could infer any"
+        )
+    if settings.hammer_file:
+        parser.error(
+            f"--infer {route.name} is incompatible with --hammer-file: that "
+            f"writes ZerothHammer.lean and returns, and generates no "
+            f"certificate to infer"
         )

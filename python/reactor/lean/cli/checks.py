@@ -127,10 +127,10 @@ def check_budget(parser: argparse.ArgumentParser, args) -> None:
 
 
 def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
-                  infer: str | None = None) -> None:
-    """What the run writes, against what it was given. `infer` names what
-    a command built on this one runs to find the certificate, if anything:
-    with it, --build-cert has a certificate to build without --invariant."""
+                  finds_certificate: bool = False) -> None:
+    """What the run writes, against what it was given. `finds_certificate`
+    is whether a command built on this one finds the certificate itself:
+    then --build-cert has one to build without --invariant."""
     # --build-cert needs a certificate worth building. A bare project's
     # unsupplied fields default to `True`
     # (`inv`, the preconditions) or to `sorry` (`P`, `ranking`), and its
@@ -144,7 +144,7 @@ def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
                 f"--build-cert is incompatible with {which}: that writes a "
                 "file and generates no project to build"
             )
-        if not (infer or settings.supplied_complete
+        if not (finds_certificate or settings.supplied_complete
                 or settings.claim_deferred):
             parser.error(
                 "--build-cert needs a certificate to build: pass --safety "
@@ -162,16 +162,6 @@ def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
             f"--artifacts {settings.artifacts} is incompatible with {which}: "
             f"`{ARTIFACTS_DIR}/` belongs to a generated project, and that "
             f"writes a file and generates none"
-        )
-
-    # `--hammer-file` writes one tactic file and returns, so whatever `infer`
-    # names would never run, for the same reason `--build-cert` is
-    # incompatible with it: there is no project.
-    if settings.hammer_file and infer is not None:
-        parser.error(
-            f"--infer {infer} is incompatible with --hammer-file: that "
-            f"writes ZerothHammer.lean and returns, and generates no "
-            f"certificate to infer"
         )
 
     # `--hammer-file` alone writes one tactic file and needs no module.
