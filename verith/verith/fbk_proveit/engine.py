@@ -468,15 +468,13 @@ def _why(out: str) -> str:
 @dataclass(frozen=True)
 class ProveIt:
     """How `proveit.py` is run: the `lean-ltl-certifying` checkout it is
-    part of, the ic3ia it calls (`None`: the checkout's own) and the Python
-    it runs under (`None`: this one); and the two choices about what is
-    handed to it -- the NA model simplified through cvc5 or not
-    (`--fbk-simplify`), and the proof that the model is the module written
-    or not (`--fbk-equiv`)."""
+    part of and the ic3ia it calls (`None`: the checkout's own); and the
+    two choices about what is handed to it -- the NA model simplified
+    through cvc5 or not (`--fbk-simplify`), and the proof that the model is
+    the module written or not (`--fbk-equiv`). It runs under this Python."""
 
     checkout: str | Path
     ic3ia: str | None = None
-    python: str | None = None
     simplify: bool = True
     equivalence: bool = True
 
@@ -488,9 +486,9 @@ def run(
     *,
     path: Callable[[str], Path],
     project_name: str,
-    prechecked: NAEncoding | None = None,
-    encoding=None,
-    ctx: LeanContext | None = None,
+    prechecked: NAEncoding,
+    encoding,
+    ctx: LeanContext,
     log: Callable = print,
 ) -> dict[str, str]:
     """Run the whole route on `claim`, a `--safety` one, and return the
@@ -501,19 +499,12 @@ def run(
     because `proveit.py` works on files; the two Lean files that are the
     route's answer are handed back for the pipeline to install.
 
-    `prechecked` is what `check_module` returned to a caller that has
-    already made the check -- the pipeline does, before it generates the
-    project.  The check is repeated here when it is left out, because `run`
-    is also called on its own; the claim's `--pre` is what it is repeated
-    over, so a direct caller gets the same refusals the pipeline gets early.
-
-    `encoding` is the run's `ModuleEncoding` (`InferInput.smt()`): the check
-    and the `--safety` property are both read on it.  A direct caller that
-    passes none gets one `run` makes, so the two still share it.  `ctx` is
-    the run's `LeanContext` (`ProjectHandle.ctx`), built likewise when it
-    is left out.
+    `prechecked` is what `check_module` returned to the row's precheck,
+    before the project was generated. `encoding` is the run's
+    `ModuleEncoding` (`InferInput.smt()`), which the `--safety` property is
+    read on, and `ctx` the run's `LeanContext` (`ProjectHandle.ctx`).
     """
-    python = proveit.python or sys.executable
+    python = sys.executable
     simplify = proveit.simplify
     root = resolve_project(proveit.checkout)
     # Resolve before anything expensive: a bad --ic3ia would otherwise
@@ -521,13 +512,6 @@ def run(
     ic3ia = resolve_ic3ia(proveit.ic3ia)
     check_toolchain(python)
 
-    if encoding is None:
-        from reactor.lean.smt.encoding import ModuleEncoding
-
-        encoding = ModuleEncoding(module)
-    ctx = ctx or LeanContext(module)
-    if prechecked is None:
-        prechecked = check_module(module, simplify, claim.init_pre, encoding)
     bodies, pre_lean = prechecked
 
     property_lean = property_to_bool_lean(module, str(claim.prp),

@@ -385,7 +385,7 @@ def column_docs():
                 infer=col.infer,
                 summary=r.summary,
                 kinds=sorted(r.kinds),
-                llm=r.uses_llm,
+                llm=any(o.dest == "model" for o in r.options),
                 returns=r.returns,
                 seeds=sorted(flag_of[s] for s in r.seeds),
                 opts=[f for o in r.options for f in o.flags],

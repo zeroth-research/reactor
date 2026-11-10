@@ -46,7 +46,7 @@ def vampire_or_skip() -> str:
     from verith.common.vampire import resolve_vampire
 
     try:
-        return resolve_vampire(None)
+        return resolve_vampire(None, who="--vampire")
     except Refused:
         pytest.skip("no Vampire binary: set $VAMPIRE or put `vampire` on PATH")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from reactor.lean.core.options import Opt
+from ..common.options import BASE_URL, MODEL
 from ..io import InferInput, InferResult
 from ..resume import resumable_inv, ruled_out, taking_inv
 from ..route import InferRoute
@@ -25,8 +26,8 @@ def _run(inp: InferInput) -> InferResult:
     engine = AiCegisEngine(
         inp.project.encoding(""),
         inp.module,
-        model=inp.model,
-        base_url=inp.base_url,
+        model=inp.opts["model"],
+        base_url=inp.opts["base_url"],
         known=ruled_out(inp),
         budget_s=inp.opts["cegis_budget"],
         encoding=inp.smt,
@@ -56,7 +57,6 @@ ROUTE = InferRoute(
     # rediscover that a shape is empty one API call at a time.
     reads_artifacts=frozenset({"inv", "note"}),
     returns="smt",
-    uses_llm=True,
     run=_run,
     options=(
         Opt(
@@ -75,5 +75,7 @@ ROUTE = InferRoute(
                 ),
             ),
         ),
+        MODEL,
+        BASE_URL,
     ),
 )

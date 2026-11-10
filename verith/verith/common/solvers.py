@@ -1,11 +1,14 @@
-"""The judge a Houdini search puts its candidates to.
+"""The judges a search puts its candidates to.
 
 ``--infer houdini`` proposes and a solver decides.  *What* it proposes --
 the invariant facts read off simulated runs of the module, the ranking
 shapes tried smallest first -- is :mod:`verith.houdini`
 (``candidates``, ``ranks``), and is the same whichever solver answers.
 This module is the seam between the two: an obligation as a *question*
-rather than as a file, and the solvers that answer one.
+rather than as a file, the scheduling every solver shares (`Solver`), and
+cvc5 answering one (`Cvc5Solver`), which `--infer vampire` also checks its
+answers with. Vampire answering one is Houdini's alone
+(`verith.houdini.solvers`).
 
 **A query names more than it asks.**  Besides its hypotheses and its goal a
 :class:`Question` names two things, so that a solver able to report them can:
@@ -46,22 +49,16 @@ the cache re-asks only what is unsettled.
 
 from __future__ import annotations
 
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 
-from reactor.lean.core.errors import Refused
 from reactor.lean.smt.limits import bounded_solver
-from reactor.lean.smt.script import script
-from .smtlib import decimals
 from .obligations import Question
-from .vampire import run_vampire
 
 DEFAULT_TIMEOUT = 120
-DEFAULT_CORES = 4
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -297,7 +294,7 @@ class Cvc5Solver(Solver):
             # Total, the way `smt.precheck` is total: the terms came out of
             # cvc5's own encoder, so anything raised here is a resource the
             # run does not have rather than a question it asked wrongly.
-            self.log(f"[houdini] cvc5 could not answer a query: {e}")
+            self.log(f"[cvc5] could not answer a query: {e}")
             answer = Answer(Verdict.UNKNOWN)
         dt = time.perf_counter() - t0
         self.calls += 1
@@ -355,90 +352,3 @@ class Cvc5Solver(Solver):
             except (RuntimeError, AttributeError):   # pragma: no cover
                 continue
         return frozenset(out)
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# Vampire: a printed script, and one-sided answers
-# ══════════════════════════════════════════════════════════════════════════
-
-
-class VampireSolver(Solver):
-    """Vampire on a printed script, in its own process session.
-
-    Everything here is downstream of the one-sidedness. A candidate that is
-    false costs a whole time limit, because nothing comes back early to say
-    so; `sat` is never reported and a model never exists, so a query's
-    probes are ignored and the engine falls back to asking fact by fact.
-    """
-
-    name = "vampire"
-    refutes = False
-    inconclusive = (
-        "Vampire cannot refute a candidate, so this is not a proof that "
-        "none exists: a fact or a shape outside the candidates -- a "
-        "disjunction, a relation of three components, a constant the "
-        "program never mentions -- or a longer time limit may be what is "
-        "missing. `--houdini-solver cvc5` decides these obligations, and "
-        "would say which."
-    )
-
-    LADDER = (2, 10, 60)
-
-    def __init__(self, exe: str, *, seconds: float = DEFAULT_TIMEOUT,
-                 cores: int = DEFAULT_CORES, log=print):
-        super().__init__(seconds=seconds, log=log)
-        self.exe = exe
-        self.cores = max(1, int(cores))
-        # Portfolio calls side by side. Each spreads its strategies over
-        # `cores` processes; more calls than the machine has cores for would
-        # only make every limit mean less time.
-        self.jobs = max(1, min(4, (os.cpu_count() or 4) // self.cores))
-
-    def _run(self, q: Question, budget: float, core: bool, model: bool) -> Answer:
-        run = run_vampire(self.exe, self._script(q), [
-            "--mode", "portfolio", "--schedule", "smtcomp",
-            "--cores", str(self.cores),
-            "--output_mode", "ucore" if core else "smtcomp",
-            # Deciseconds: a limit below a second is a real limit.
-            "--time_limit", f"{max(1, int(budget * 10))}d",
-        ], timeout=budget + 10)
-        dt = run.secs
-        self.calls += 1
-        self.spent += dt
-        lines = run.lines
-        if "unsat" in lines:
-            names = None
-            if core:
-                at = lines.index("unsat") + 1
-                reported = frozenset(
-                    ln for ln in lines[at:] if ln and ln not in "()"
-                    and not ln.startswith("%")
-                )
-                names = frozenset(n for n, _t in q.hyps if n in reported)
-            return Answer(Verdict.PROVED, dt, names)
-        error = run.error
-        if error is not None:
-            detail = run.out[run.out.find(error):].strip().splitlines()
-            raise Refused(
-                f"Vampire cannot read this module's encoding: "
-                f"{' '.join(detail[:2])[:300]}. `--houdini-solver cvc5` reads "
-                f"what this module writes, because it is what wrote it."
-            )
-        # Not `REFUTED`: out of time and false are the same output here.
-        return Answer(Verdict.UNKNOWN, dt)
-
-    @staticmethod
-    def _script(q: Question) -> str:
-        """The query as a script whose `unsat` is a proof.
-
-        The goal is asserted negated. Hypotheses are named so that an unsat
-        core can say which of them the proof used; the goal is named too, so
-        a core is never empty for a reason other than the goal being false.
-        """
-        defines = [(str(v), (), v.getSort(), body) for v, body in q.defines]
-        asserts = [f"(! {t} :named {n})" for n, t in q.hyps]
-        asserts.append(f"(! (not {q.goal}) :named goal)")
-        mentions = ([body for _v, body in q.defines]
-                    + [t for _n, t in q.hyps] + [q.goal])
-        return decimals(script(asserts, defines=defines, mentions=mentions,
-                               spaced=False))

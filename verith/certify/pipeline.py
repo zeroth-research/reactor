@@ -132,7 +132,7 @@ def main(argv: "list[str] | None" = None) -> None:
             artifacts=store,
         )
         result = run_route(settings, module, handle, claim, given, prechecked,
-                           smt=smt, problem=problem)
+                           smt=smt)
         # `files`: the certificate is the route's own, so there is nothing
         # of ours to be complete about and nothing to regenerate from.
         lean_cert = (

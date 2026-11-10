@@ -16,7 +16,6 @@ from reactor import Module
 
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
-from ..engine import Engine
 from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
 from reactor.lean.smt.obligations import Frame, init_inv, inv_imp_P, step_inv
 from ..common.obligations import rank_decrease, rank_positive
@@ -32,7 +31,7 @@ class ObligationResult:
     counterexample: str | None  # formatted CE if not ok, else None
 
 
-class AiCegisEngine(Engine):
+class AiCegisEngine:
     """Infer invariant and ranking via LLM + cvc5 CEGIS loop.
 
     Each attempt:
@@ -92,18 +91,7 @@ class AiCegisEngine(Engine):
         # already refute a bad candidate in milliseconds, and what this saves
         # is the attempt being spent on a shape a solver has ruled out.
         self.known = tuple(known)
-        self._client = (base_url, model)
-        self._made = None
-
-    def _chat(self, system: str, user: str) -> str:
-        """The model, reached on the first question rather than up front.
-
-        A certificate supplied whole is verified once and asks nothing, so
-        that run needs neither the LLM package nor a key.
-        """
-        if self._made is None:
-            self._made = make_client(*self._client)
-        return self._made(system, user)
+        self._chat = make_client(base_url, model)
 
     # --- driver ---------------------------------------------------------
 

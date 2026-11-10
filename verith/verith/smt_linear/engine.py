@@ -88,7 +88,6 @@ from __future__ import annotations
 
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
-from ..engine import Engine
 from .solve import HOW_QUANTIFIED, Outcome, Template, decide
 from dataclasses import dataclass
 
@@ -184,7 +183,7 @@ def _normalise(values: list[int]) -> list[int]:
     return list(values) if g in (0, 1) else [int(v) // g for v in values]
 
 
-class SmtLinearEngine(Engine):
+class SmtLinearEngine:
     """Infer a certificate of fixed linear shape, or prove there is none."""
 
     def __init__(

@@ -22,12 +22,15 @@ from reactor.lean.core.errors import Refused
 ENV = "VAMPIRE"
 
 
-def resolve_vampire(spec: "str | None") -> str:
+def resolve_vampire(spec: "str | None", *, who: str,
+                    instead: str = "") -> str:
     """`--vampire` as an executable, else `$VAMPIRE`, else `vampire` on PATH.
 
     Resolved at parse time, so a run that cannot start the prover says so
     before a project is generated rather than after. A directory is accepted
-    when it holds a `vampire` -- the release zip unpacks to one.
+    when it holds a `vampire` -- the release zip unpacks to one. `who` is
+    the flag that wants the prover, named when there is none, and `instead`
+    what the user can do without one.
     """
     for source, value in (("--vampire", spec), (f"${ENV}", os.environ.get(ENV))):
         if not value:
@@ -50,10 +53,10 @@ def resolve_vampire(spec: "str | None") -> str:
     if found:
         return found
     raise Refused(
-        "--houdini-solver vampire needs the Vampire prover: pass --vampire "
-        f"PATH, set ${ENV}, or put `vampire` on PATH. Builds for Linux and "
-        "macOS are at https://github.com/vprover/vampire/releases\n"
-        "`--houdini-solver cvc5` needs no binary."
+        f"{who} needs the Vampire prover: pass --vampire PATH, set ${ENV}, "
+        f"or put `vampire` on PATH. Builds for Linux and macOS are at "
+        f"https://github.com/vprover/vampire/releases"
+        + (f"\n{instead}" if instead else "")
     )
 
 

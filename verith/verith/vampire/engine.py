@@ -163,7 +163,6 @@ from __future__ import annotations
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import PredicateRefused, Refused
 from ..common.solvers import DEFAULT_TIMEOUT, Cvc5Solver
-from ..engine import Engine
 from ..common.obligations import Candidate, Obligations
 from ..common.record import found, note
 from ..common.smtlib import affine_smt, conjunction_smt, smt_int
@@ -175,7 +174,7 @@ from .question import Question
 from .template import Template, templates, weighable
 
 
-class VampireEngine(Engine):
+class VampireEngine:
     """The certificate Vampire derives, checked before it is handed on."""
 
     def __init__(self, module, *, vampire: str, timeout: float = DEFAULT_TIMEOUT,

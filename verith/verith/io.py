@@ -23,7 +23,6 @@ from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor.lean.core.errors import Refused
 
 if TYPE_CHECKING:
-    from reactor.lean.inputs import Names, SourceText
     from reactor import Module
 
     from reactor.lean.proof.render import LeanCertificate
@@ -189,15 +188,9 @@ class InferInput:
     # same reason and more so -- a synthesis with no limit hangs generation,
     # and `tlimit-per` is the option that actually stops one.
     budget: "SmtBudget | None" = None
-    model: str | None = None            # meaningful iff the row uses an LLM
-    base_url: str | None = None
     log: Callable = print
     # The run's one cvc5 encoding of `module`, built on first call.
     smt: "Callable[[], ModuleEncoding] | None" = None
-    # The input verith read and the names a claim may use, for a row that
-    # declares `reads_source`; `None` for every other row.
-    source: "SourceText | None" = None
-    names: "Names | None" = None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -219,7 +212,3 @@ class InferResult:
     cert: Certificate = Certificate()
     lean: LeanAnswer | None = None
     files: Mapping[str, str] = field(default_factory=dict)
-
-    @property
-    def empty(self) -> bool:
-        return self.cert.empty and self.lean is None and not self.files

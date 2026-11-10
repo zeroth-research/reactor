@@ -81,7 +81,7 @@ def _cases(out: Path) -> list[list[str]]:
         (counter, ["--buchi", "(= (X @intf.0) 0)", "--infer", "ai", *PRE]),
     ]
     try:
-        resolve_vampire(None)
+        resolve_vampire(None, who="--vampire")
         runs += [
             (countdown, [*safe, "--infer", "vampire", "--vampire-timeout", "10",
                          *PRE]),

@@ -240,7 +240,8 @@ def test_nuterm_takes_a_precondition():
 )
 def test_the_llm_flags_belong_to_the_llm_routes(extra):
     message = err(["m.py", "--buchi", "(= s0 0)", "--infer", "nuterm", *extra])
-    assert "for the LLM routes" in message
+    assert f"{extra[0]} is only meaningful together with --infer ai, " \
+        "--infer ai-cegis" in message
 
 
 def test_fbk_proveit_is_a_safety_question():
@@ -488,16 +489,6 @@ def test_the_declared_prefix_is_a_directory_not_a_string(tmp_path):
 # ══════════════════════════════════════════════════════════════════════════
 # The result
 # ══════════════════════════════════════════════════════════════════════════
-
-
-def test_an_empty_result_is_one_with_no_predicates_and_no_files():
-    """`empty` is true only when the route handed back nothing at all."""
-    from reactor.lean.core.certificate import Certificate, LeanAnswer
-
-    assert InferResult().empty
-    assert not InferResult(Certificate(inv="(= s0 0)")).empty
-    assert not InferResult(lean=LeanAnswer("fun s => s.1 = 0")).empty
-    assert not InferResult(files={"Out/Cert.lean": ""}).empty
 
 
 def _row(returns="smt", kind="buchi", result=None):
@@ -843,40 +834,6 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     notes = [a for a in store.list() if a.role == "note"]
     assert [a.status for a in notes] == ["unsupported"]
     assert "INTS_MODULUS" in (store.dir / notes[0].name).read_text()
-
-
-def test_only_a_row_that_reads_the_source_is_handed_it(tmp_path):
-    """`reads_source` gates the input as `reads` gates the encodings: what
-    a route is handed of the run is what its row declares."""
-    import dataclasses
-
-    from reactor.lean import inputs
-    from verith.run import run_route
-    from reactor.lean.core.certificate import Certificate, Claim
-
-    from pathlib import Path
-
-    fixture = (Path(__file__).resolve().parents[2] / "python" / "tests"
-               / "fixtures" / "counter.py")
-    problem = inputs.load(fixture)
-    for reads_source in (False, True):
-        seen = []
-        row = dataclasses.replace(
-            _row(result=InferResult(Certificate("(= s0 0)", "s0"))),
-            reads_source=reads_source,
-            run=lambda inp: seen.append(inp) or InferResult(
-                Certificate("(= s0 0)", "s0")),
-        )
-        settings = parse_args([str(fixture), "--buchi", "(= (X @intf.0) 0)"])
-        settings.route = row
-        run_route(settings, problem.module, _handle(tmp_path),
-                          Claim(prp="(= s0 0)", kind="buchi"), Certificate(), None,
-                 problem=problem)
-        (inp,) = seen
-        if reads_source:
-            assert inp.source == problem.source and inp.names == problem.names
-        else:
-            assert inp.source is None and inp.names is None
 
 
 def test_a_missing_package_is_refused_by_the_flag_that_needs_it():

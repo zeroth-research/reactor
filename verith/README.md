@@ -123,8 +123,8 @@ those they take:
 | `--project` | — | `verith` only: the generated project a route reads or writes |
 | `--json` | off | `verith` only: the answer as JSON on stdout |
 | `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `houdini`, `vampire`, or `fbk-proveit`. `verith` requires it |
-| `--model` | `claude-sonnet-4-6` | LLM model for inference; rejected by a route that calls none |
-| `--base-url` | — | OpenAI-compatible endpoint for local LLMs |
+| `--model` | `claude-sonnet-4-6` | `--infer ai` and `--infer ai-cegis`: the LLM model to ask |
+| `--base-url` | — | `--infer ai` and `--infer ai-cegis`: an OpenAI-compatible endpoint, for local LLMs |
 | `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
 | `--sygus-conjuncts` | `3` | `--infer sygus`: a ceiling on how many atoms the invariant may be a conjunction of, tried `1, 2, … N` — the bound is what makes each space finite, and so decidably empty |
 | `--linear-rows` | `2` | `--infer smt-linear --safety`: how many linear inequalities the invariant may be a conjunction of |
@@ -137,7 +137,7 @@ those they take:
 | `--ic3ia` | — | `--infer fbk-proveit`: path to the `ic3ia` binary, forwarded to `proveit.py` |
 | `--fbk-simplify` | `cvc5` | `--infer fbk-proveit`: `none` leaves the NA model's transition the shape the module's own terms give it |
 
-Each route is one row of `verith.ROUTES`, and a flag below `--base-url`
+Each route is one row of `verith.ROUTES`, and a flag below `--infer`
 belongs to a route: passed without its route selected it is an error, not
 a no-op. `--fbk-proveit DIR` is the older spelling of `--infer fbk-proveit
 --proveit-dir DIR` and still works.
@@ -747,8 +747,8 @@ A row says:
   file the route produced, with no predicates behind it).  The row
   *declares* it and the `InferResult` carries it, and `main` checks the two
   agree once rather than each reader trusting whichever is nearer to hand.
-  Plus `uses_llm`, and `errors_self_named` for a route whose refusals
-  already name their own flag.
+  Plus `errors_self_named` for a route whose refusals already name their
+  own flag.
 * **its own flags** — `options`, a tuple of `Opt`.  Passed without the route
   selected, each is an error rather than a no-op.  `aliases` carries any
   older spelling that selects the route and fills one of those options

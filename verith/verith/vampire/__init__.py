@@ -22,7 +22,7 @@ from ..route import InferRoute
 def _resolve(opts: dict):
     from ..common.vampire import resolve_vampire
 
-    return resolve_vampire(opts["vampire"])
+    return resolve_vampire(opts["vampire"], who="--infer vampire")
 
 
 def _run(inp: InferInput) -> InferResult:

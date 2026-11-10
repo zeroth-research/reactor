@@ -125,7 +125,6 @@ from ..common.synth import (
     program_rationals,
     split_conditions,
 )
-from ..engine import Engine
 from .candidates import invariant_candidates, pinned_values, reading
 from .evaluate import Evaluator
 from .modes import mode_bounds
@@ -137,7 +136,7 @@ from .solvers import DEFAULT_SOLVER, SolverSpec
 from cvc5 import Kind
 
 
-class HoudiniEngine(Engine):
+class HoudiniEngine:
     """Houdini and a ranking search, put to whichever solver was chosen.
 
     `solver` is a `SolverSpec` -- what `--houdini-solver` and the flags
