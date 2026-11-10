@@ -8,7 +8,7 @@ from zrth import SPN, Clock, Event, Nat, Var
 from zrth import Module as compose
 from zrth.petri import TIME, Arc, Place, Transition
 from zrth.simulate import Simulation, simulate
-from zrth.sugar import Module, X, d, ite
+from zrth.sugar import Module, X, d, exp, ite
 
 
 def birth_death(lam=2.0, mu=1.0, t=TIME):
@@ -203,6 +203,82 @@ def test_an_enabling_arc_with_no_place_is_a_control():
     assert trace.series(served2.count)[-1] == 2 and len(trace) > 5
 
 
+def sir(beta=2.0, gamma=1.0, n=100, i0=1):
+    """S + I -> 2I at rate beta/n per pair, I -> R at rate gamma per infected."""
+    s_out, i_in = Arc("consumption"), Arc("production")
+    i_out, r_in = Arc("consumption"), Arc("production")
+    s = Place(initial=n - i0, outputs=[s_out], name="S")
+    i = Place(initial=i0, inputs=[i_in], outputs=[i_out], name="I")
+    r = Place(initial=0, inputs=[r_in], name="R")
+    infect = Transition(rate=beta / n, inputs=[s_out], outputs=[i_in], scale=[s, i], name="infect")
+    recover = Transition(rate=gamma, inputs=[i_out], outputs=[r_in], scale=[i], name="recover")
+    return compose(s, i, r, infect, recover), s, i, r, infect, recover
+
+
+def test_scale_reads_the_counts_into_the_flow():
+    net, s, i, r, infect, recover = sir()
+    assert set(infect.extl) == {TIME, infect.inputs[0].enabled, s.count, i.count}
+    assert set(recover.extl) == {TIME, recover.inputs[0].enabled, i.count}
+    assert infect.scale == (s, i) and recover.scale == (i,)
+    assert _ops(infect.atoms[0].delay).count("ClkScale") == 2
+    assert _ops(recover.atoms[0].delay).count("ClkScale") == 1
+    assert net.open() and set(net.extl) == {TIME}
+
+
+def test_scale_is_the_hand_written_transition():
+    """The infection as a module written out: the same ops, the same seeded epidemic."""
+    net, s, i, r, infect, recover = sir()
+    s_out, i_in = infect.inputs[0], infect.outputs[0]
+
+    class Infect(Module):
+        def init(self, t, en, ns, ni):
+            return exp(0.02), False, False
+
+        def next(self, clk, f_s, f_i, t, en, ns, ni):
+            expired = clk == 0
+            fires = expired & en
+            return ite(expired, exp(0.02), clk), ite(fires, ~f_s, f_s), ite(fires, ~f_i, f_i)
+
+        def flow(self, clk, f_s, f_i, t, en, ns, ni):
+            return ite(clk >= 0, ni * (ns * (-1 * d(t))), None), 0, 0
+
+    hand = Infect(
+        theory=SPN,
+        ctrl=(Var(Clock()), s_out.fired, i_in.fired),
+        extl=(TIME, s_out.enabled, s.count, i.count),
+    )
+    assert _ops(hand.atoms[0].delay) == _ops(infect.atoms[0].delay)
+    assert _ops(hand.atoms[0].update) == _ops(infect.atoms[0].update)
+
+
+def test_an_epidemic_runs_its_course():
+    net, s, i, r, infect, recover = sir(n=50)
+    s_out = infect.inputs[0]
+    trace = simulate(net, horizon=100.0, seed=5)
+    assert trace.quiescent and trace.series(i.count)[-1] == 0
+    assert all(a + b + c == 50 for a, b, c in zip(*(trace.series(p.count) for p in (s, i, r))))
+    assert trace.series(r.count)[-1] >= 1 and trace.series(s.count)[-1] < 49
+    # nothing fires once the infected are gone: the scaled clocks stand still
+    last = trace.times[-2]
+    assert not any(_fired(trace, j, s_out) for j, t in enumerate(trace.times) if t > last)
+
+
+def test_a_scaled_rate_is_per_token():
+    """Pure death at rate mu per token: the time to extinction of `n` tokens has mean
+    H_n / mu, the sum of the rates' reciprocals, which a per-transition rate could not give."""
+    n, mu, seeds = 50, 1.0, 30
+    deaths = []
+    for seed in range(seeds):
+        dth = Arc("consumption")
+        pop = Place(initial=n, outputs=[dth])
+        death = Transition(rate=mu, inputs=[dth], scale=[pop])
+        trace = simulate(compose(pop, death), horizon=50.0, seed=seed)
+        assert trace.quiescent and trace.series(pop.count)[-1] == 0
+        deaths.append(trace.times[-2])
+    harmonic = sum(1 / k for k in range(1, n + 1)) / mu
+    assert abs(sum(deaths) / seeds - harmonic) < 0.8  # ~3.5 standard errors
+
+
 def test_bad_arguments_raise():
     prod, cons = Arc("production"), Arc("consumption")
     with pytest.raises(TypeError, match="rate"):
@@ -213,6 +289,8 @@ def test_bad_arguments_raise():
         Transition(rate=1.0, t=Var(Clock(1)), outputs=[prod])
     with pytest.raises(TypeError, match="at least one arc"):
         Transition(rate=1.0)
+    with pytest.raises(TypeError, match="scale lists places"):
+        Transition(rate=1.0, outputs=[prod], scale=[Var(Nat())])
     with pytest.raises(TypeError, match="cannot be a production"):
         Transition(rate=1.0, inputs=[prod])
     with pytest.raises(TypeError, match="cannot be a consumption"):

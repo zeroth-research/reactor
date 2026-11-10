@@ -25,7 +25,10 @@ A transition owns a clock, armed with an exponential delay at its rate and run d
 the time reference `TIME` (`t=` for another) while it is non-negative; whenever it expires
 the clock is re-armed, and the transition fires if every input arc is enabled (an expiry
 otherwise is a lost attempt; for exponential rates this is the same process as a clock that
-waits). The clock is private, reachable as `transition.clock` to plot a trace. A place owns
+waits). `scale=` names places whose counts multiply the rate: the clock runs that many
+times faster, the law of mass action (`scale=[s, i]` for an infection at `rate * s * i`), and
+stands still while a named place is empty. The clock is private, reachable as
+`transition.clock` to plot a trace. A place owns
 its token count: the tokens of each firing input come in, those of each firing consumption
 go out while there are enough, and it keeps each output arc's `enabled` current in the same
 round the count changes. Two transitions firing in one round and competing for the tokens
@@ -93,9 +96,9 @@ def _build(cls, blocks, **config):
 class Transition(Module):
     """A stochastic transition: `inputs` are the arcs it takes tokens through, `outputs` the
     arcs it produces through; it fires `arc.fired` on every one of them. `rate` is the
-    rate of its exponential delay."""
+    rate of its exponential delay, times the token count of every place in `scale`."""
 
-    def __new__(cls, rate, *, t=TIME, inputs=(), outputs=(), name=None):
+    def __new__(cls, rate, *, t=TIME, inputs=(), outputs=(), scale=(), name=None):
         if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not rate > 0:
             raise TypeError(f"a transition's rate is a positive number, got {rate!r}")
         if not isinstance(t, Var) or t.dtype != Clock():
@@ -104,13 +107,18 @@ class Transition(Module):
         outputs = _arcs(outputs, True, "a transition's outputs")
         if not inputs and not outputs:
             raise TypeError("a transition needs at least one arc")
+        scale = tuple(scale)
+        for p in scale:
+            if not isinstance(p, Place):
+                raise TypeError(f"a transition's scale lists places, got {p!r}")
         rate = float(rate)
         clock = Var(Clock())
         events = [a.fired for a in inputs + outputs]
+        counts = tuple(dict.fromkeys(p.count for p in scale))
         k = len(events)
         m = len(inputs)
 
-        # the variables bind positionally: clk, *events, t, *enabled
+        # the variables bind positionally: clk, *events, t, *enabled, *counts
         def init(self, t, *rest):
             return exp(rate), *[False] * k
 
@@ -123,17 +131,21 @@ class Transition(Module):
             return ite(expired, exp(rate), clk), *[ite(fires, ~ev, ev) for ev in events]
 
         def flow(self, clk, *rest):
-            return ite(clk >= 0, -1 * d(rest[k]), None), *[0] * k
+            count = dict(zip(counts, rest[k + 1 + m :]))
+            speed = -1 * d(rest[k])
+            for p in scale:
+                speed = count[p.count] * speed
+            return ite(clk >= 0, speed, None), *[0] * k
 
         self = _build(
             cls,
             {"init": init, "next": next, "flow": flow},
             ctrl=(clock, *events),
-            extl=(t, *[a.enabled for a in inputs]),
+            extl=(t, *[a.enabled for a in inputs], *counts),
             hide={clock},
         )
         self.rate, self.t, self.name = rate, t, name
-        self.inputs, self.outputs, self.clock = inputs, outputs, clock
+        self.inputs, self.outputs, self.scale, self.clock = inputs, outputs, scale, clock
         return self
 
     def __repr__(self):
