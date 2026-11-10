@@ -137,6 +137,9 @@ def _cegis(ctx: SynthContext, tpl: Template, bound: int,
     """
     tm = ctx.tm
     samples: list = []
+    # Each sample's constraint, built the first time it is asserted rather
+    # than again at every step after.
+    built: list = []
     for step in range(DEFAULT_SAMPLES):
         if budget is not None and budget.exhausted:
             return Outcome("unknown")
@@ -148,8 +151,9 @@ def _cegis(ctx: SynthContext, tpl: Template, bound: int,
                 tm.mkTerm(Kind.LEQ, x, tm.mkInteger(bound)))
             propose.assertFormula(
                 tm.mkTerm(Kind.GEQ, x, tm.mkInteger(-bound)))
-        for sample in samples:
-            propose.assertFormula(tpl.build(*sample))
+        built += [tpl.build(*sample) for sample in samples[len(built):]]
+        for constraint in built:
+            propose.assertFormula(constraint)
         answer = propose.checkSat()
         if answer.isUnsat():
             return Outcome(

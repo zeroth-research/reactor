@@ -9,6 +9,7 @@ terms read by the run's `smt.predicates.PredicateParser`.
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass
 
 import cvc5
@@ -109,6 +110,22 @@ def state_description(env: PredicateParser) -> str:
         for i, sort in enumerate(env.extl_latched_sorts):
             lines.append(f"  el{i} : {sort}   # latched")
     return "\n".join(lines)
+
+
+def module_description(env: PredicateParser) -> str:
+    """`state_description` and `transition_description`: the part of every
+    attempt's prompt that is the module, the same each time. Made once per
+    parser, because the transition is encoded again to print it."""
+    text = _DESCRIBED.get(env)
+    if text is None:
+        text = _DESCRIBED[env] = (f"{state_description(env)}\n\n"
+                                  f"{transition_description(env)}\n")
+    return text
+
+
+# Keyed weakly, so a run's parser -- and its term manager -- is not kept
+# alive by the prompt it was described in.
+_DESCRIBED: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 def transition_description(env: PredicateParser) -> str:
@@ -244,8 +261,7 @@ def _request(env: PredicateParser, source: str, prp: str | None,
         f"{source_block(source)}"
         f"{goal}: {prp}\n\n"
         f"{preconds}\n\n"
-        f"{state_description(env)}\n\n"
-        f"{transition_description(env)}\n"
+        f"{module_description(env)}"
     )
     if known:
         # Numbered and quoted as established, not as advice: each line was

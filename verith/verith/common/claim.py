@@ -8,7 +8,8 @@ obligations (`common.obligations.Obligations`) are stated over one.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import cached_property
 
 from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
@@ -69,6 +70,10 @@ class SynthContext:
     prp: object
     init_pre: object
     update_pre: object
+    # What is read off the module once and asked for by every template a
+    # search tries: `synth.program_constants`, `synth.program_rationals`.
+    memo: dict = field(default_factory=dict, init=False, repr=False,
+                       compare=False)
 
     @property
     def module(self):
@@ -98,7 +103,7 @@ class SynthContext:
     def extl_next(self) -> list:
         return self.env.extl_next_vars
 
-    @property
+    @cached_property
     def names(self) -> list[str]:
         return [f"s{i}" for i in range(len(self.state))]
 
