@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 import random
 from fractions import Fraction
-from itertools import product
+from itertools import islice, product
 
 from reactor.lean.core.errors import PredicateRefused
 from ..common.claim import SynthContext
@@ -97,6 +97,11 @@ class Ranks:
             except PredicateRefused:
                 continue
         self._truth: dict = {}
+        # Each state's column values, and each form's nonzero coefficients:
+        # a fit reads every form at every round, and both are the same
+        # every time.
+        self._vecs: dict = {}
+        self._terms: dict = {}
 
     def _reading(self, col: Column) -> str:
         """`col` in the arithmetic this rank's forms are summed in.
@@ -150,14 +155,26 @@ class Ranks:
             # asking: it proves the property holds wherever the invariant does.
             return ["0"]
         forms = list(self.forms) + self._lex(outside)
+        # Read once per fit rather than once per shift tried: where the
+        # property holds after each round, and each form at both ends.
+        zeroed = [self.holds(sp) for _, sp in outside]
         out: list[str] = []
         for form in dict.fromkeys(forms):
-            shift = 1 - min(self._at(form, s) for s, _ in outside)
+            before = [self._at(form, s) for s, _ in outside]
+            after = [self._at(form, sp) for _, sp in outside]
+            shift = 1 - min(before)
             above = [c for c in self.shift_pool if c > shift][:_MAX_SHIFTS]
             for sh in dict.fromkeys((0, shift, *above)):
-                src = self._src(sh, form)
-                out += self._accept(src, lambda st, f=form, sh=sh: self._at(f, st) + sh,
-                                    outside)
+                plain = all(drops(b + sh, a + sh)
+                            for b, a in zip(before, after))
+                zero = all(drops(b + sh, 0 if z else a + sh)
+                           for b, a, z in zip(before, after, zeroed))
+                if plain or zero:
+                    src = self._src(sh, form)
+                    if plain:
+                        out.append(src)
+                    if zero:
+                        out.append(f"(ite {self.prp_src} 0 {src})")
         for c_src, c_term in self.splits:
             out += self._piecewise(c_src, c_term, outside)
         out = list(dict.fromkeys(out))
@@ -169,14 +186,17 @@ class Ranks:
     def _lex(self, outside) -> list:
         """`K*x + y`, with `K` wider than the range `y` takes on these rounds."""
         n = len(self.cols)
+        widths = []
+        for j in range(n):
+            unit = tuple(1 if k == j else 0 for k in range(n))
+            ys = [self._at(unit, s) for s, _ in outside]
+            widths.append(max(ys) - min(ys) + 1)
         out = []
         for i in range(n):
             for j in range(n):
                 if i == j:
                     continue
-                unit = tuple(1 if k == j else 0 for k in range(n))
-                ys = [self._at(unit, s) for s, _ in outside]
-                width = max(ys) - min(ys) + 1
+                width = widths[j]
                 if width > 1000:
                     continue
                 K = max(2, width + 1)
@@ -194,9 +214,10 @@ class Ranks:
         fits = {}
         for b in (True, False):
             stays = [(s, sp) for s, sp in side[b] if self.holds(sp, c_term) == b]
-            fits[b] = [f for f in [zero] + self.forms
-                       if all(self._at(f, sp) < self._at(f, s) for s, sp in stays)
-                       ][:_MAX_BRANCH_FORMS]
+            fits[b] = list(islice(
+                (f for f in [zero] + self.forms
+                 if all(self._at(f, sp) < self._at(f, s) for s, sp in stays)),
+                _MAX_BRANCH_FORMS))
         out = []
         for f in fits[True]:
             for g in fits[False]:
@@ -248,11 +269,18 @@ class Ranks:
 
     def _at(self, form, state) -> int:
         """What `_src(0, form)` evaluates to at `state` -- floored, if real."""
+        vec = self._vecs.get(state)
+        if vec is None:
+            vec = self._vecs[state] = tuple(
+                int(v) if isinstance(v, bool) else v
+                for v in (col.at(state) for col in self.cols))
+        terms = self._terms.get(form)
+        if terms is None:
+            terms = self._terms[form] = tuple(
+                (k, c) for k, c in enumerate(form) if c)
         total = 0
-        for c, col in zip(form, self.cols):
-            if c:
-                v = col.at(state)
-                total += c * (int(v) if isinstance(v, bool) else v)
+        for k, c in terms:
+            total += c * vec[k]
         return math.floor(self.scale * total) if self.real else int(total)
 
 
