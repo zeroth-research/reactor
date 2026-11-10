@@ -460,10 +460,6 @@ class Search:
     how: str = "cvc5 decided the whole space at once"
 
     @property
-    def decided(self) -> bool:
-        return self.found is not None or self.exhausted
-
-    @property
     def note(self) -> str:
         """The note an empty space leaves, written to be read by an LLM.
 

@@ -56,7 +56,6 @@ from reactor import Module
 
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
-from ..engine import Engine
 from ..common.smtlib import affine_smt, conjunction_smt, smt_int
 
 
@@ -225,26 +224,20 @@ def _conjuncts(term) -> list:
 # The route
 # ---------------------------------------------------------------------------
 
-class NutermEngine(Engine):
-    """Infer the certificate by learning a ranking function and certifying it.
+# How much the rank must drop on a counting round: one, for an integer rank,
+# is as weak as the obligation gets.
+DELTA = 1
+# The width of the network a rank is learned as.
+HIDDEN_DIM = 7
+# Fixed, so a run is reproducible: the same module learns the same rank.
+SEED = 0
 
-    ``delta`` is how much the rank must drop on a counting round (one, for an
-    integer rank, is as weak as the obligation gets). ``seed`` makes the run
-    reproducible: the same module and the same seed learn the same rank."""
 
-    def __init__(
-        self,
-        module: Module,
-        *,
-        delta: int = 1,
-        hidden_dim: int = 7,
-        seed: int = 0,
-        log=print,
-    ):
+class NutermEngine:
+    """Infer the certificate by learning a ranking function and certifying it."""
+
+    def __init__(self, module: Module, *, log=print):
         self.module = module
-        self.delta = delta
-        self.hidden_dim = hidden_dim
-        self.seed = seed
         self.log = log
 
     # --- the system the procedure reads --------------------------------
@@ -459,7 +452,7 @@ class NutermEngine(Engine):
         """A certified rank for ``domain``, or ``None`` with the reason logged."""
         self.log(f"[nuterm] training a ranking function that {why}")
         result = eng.learn_ranking(
-            bench, delta=self.delta, hidden_dim=self.hidden_dim, seed=self.seed,
+            bench, delta=DELTA, hidden_dim=HIDDEN_DIM, seed=SEED,
             claim=eng.Liveness(domain),
         )
         self.log(f"[nuterm] {result.n_pairs} sampled rounds, "
@@ -506,7 +499,7 @@ class NutermEngine(Engine):
         self.log("[nuterm] zeroing the rank where the property holds")
         rank = _smt_ranking(result.layers, result.system.names)
         return (self._invariant_of(result),
-                f"(ite {prp_src} 0 (+ {smt_int(self.delta)} {rank}))")
+                f"(ite {prp_src} 0 (+ {smt_int(DELTA)} {rank}))")
 
     def _invariant_of(self, result) -> str:
         """The invariant ``result`` was certified against, as SMT-LIB.

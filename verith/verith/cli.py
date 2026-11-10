@@ -402,7 +402,7 @@ def infer(settings: Settings, argv: list[str]):
 
     print(f".. Inferring the certificate with --infer {route.name}")
     result = run_route(settings, module, handle, claim, given, prechecked,
-                       smt=smt, problem=problem)
+                       smt=smt)
     handle.write_files(result.files)
     record_predicates(handle.artifacts, claim, result.cert, inferred=True)
     if not settings.json:

@@ -21,7 +21,7 @@ from .io import InferInput, InferResult, ProjectHandle
 from .route import InferRoute
 
 if TYPE_CHECKING:
-    from reactor.lean.inputs import Names, Problem
+    from reactor.lean.inputs import Names
 
 
 def refused(route: "InferRoute | None", error: Exception) -> SystemExit:
@@ -76,7 +76,6 @@ def note_refusal(handle: ProjectHandle, route, e: Refused) -> None:
 def run_route(
     settings, module, handle: ProjectHandle, claim: Claim,
     given: Certificate, prechecked, smt=None,
-    problem: "Problem | None" = None,
 ) -> "InferResult":
     """Run the selected route against the generated project.
 
@@ -105,10 +104,6 @@ def run_route(
                 base_url=settings.base_url,
                 log=print,
                 smt=smt,
-                source=(problem.source
-                        if route.reads_source and problem else None),
-                names=(problem.names
-                       if route.reads_source and problem else None),
             )
         )
     except Refused as e:
