@@ -51,7 +51,7 @@ from fractions import Fraction
 from typing import TYPE_CHECKING
 
 from .claim import SynthContext, reading_kind
-from .record import found, note
+from .record import GaveUp, found
 from reactor.lean.smt.encode import tuple_select
 from .smtlib import decimals, smt_lit
 from .terms import literals
@@ -481,13 +481,14 @@ class Search:
         )
 
 
-def record(store, search: Search) -> None:
-    """Leave `search` in `artifacts/` for the next run.
+def settle(store, search: Search, *, flag: str) -> str:
+    """What `search` found, left in `artifacts/` for the next run -- or,
+    when it found nothing, the refusal that leaves its note there.
 
     A found predicate is written as its own role (`artifacts.found`). An
-    empty space is written as a note, because what it is worth is what it
-    *says*, and `no_solution` is the status that tells a consumer the
-    saying was proved.
+    empty space is a note, because what it is worth is what it *says*, and
+    `no_solution` is the status that tells a consumer the saying was
+    proved.
     """
     if search.found is not None:
         found(
@@ -501,10 +502,12 @@ def record(store, search: Search) -> None:
                 f"`--pre-check cvc5` restates the obligations against it."
             ),
         )
-        return
-    note(
-        store,
-        search.note + "\n",
+        return search.found
+    wanted = "invariant" if search.field == "inv" else "ranking function"
+    raise GaveUp(
+        f"found no {wanted}. {search.note}",
+        flag=flag,
+        text=search.note,
         status="no_solution" if search.exhausted else "unknown",
         what=(
             f"What this run ruled out while looking for a {search.field}: "

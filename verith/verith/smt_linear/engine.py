@@ -107,7 +107,7 @@ from ..common.synth import (
     denominator_scale,
     program_rationals,
     readings,
-    record,
+    settle,
     split_conditions,
 )
 
@@ -226,12 +226,8 @@ class SmtLinearEngine:
             search = self._safety(ctx, cols, inv)
             if search.found is not None:
                 announce(self.log, "smt-linear", Certificate(search.found))
-            record(self.artifacts, search)
-            if search.found is None:
-                raise Refused(
-                    f"--infer smt-linear found no invariant. {search.note}",
-                    searched=True)
-            return Certificate(inv=search.found)
+            return Certificate(
+                settle(self.artifacts, search, flag="--infer smt-linear"))
 
         if inv is None:
             # Said rather than assumed: a rank that has to hold in *every*
@@ -245,15 +241,9 @@ class SmtLinearEngine:
             )
         search, inv_src = self._buchi(ctx, cols, inv, claim)
         if search.found is not None:
-            announce(self.log, "smt-linear",
-                     Certificate(inv_src, search.found))
-        record(self.artifacts, search)
-        if search.found is None:
-            raise Refused(
-                f"--infer smt-linear found no ranking function. {search.note}",
-                searched=True,
-            )
-        return Certificate(inv_src, search.found)
+            announce(self.log, "smt-linear", Certificate(inv_src, search.found))
+        return Certificate(
+            inv_src, settle(self.artifacts, search, flag="--infer smt-linear"))
 
     # --- the ranking function, and the invariant it ranks under ---------
 

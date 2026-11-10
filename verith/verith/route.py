@@ -93,11 +93,6 @@ class InferRoute:
     #                are no predicates, so `--pre-check` cannot restate the
     #                obligations
     returns: str = "smt"
-    # Whether this route's own refusals already name the flag they are about.
-    # `--infer nuterm` failing is reported as `error: --infer: ...`; the
-    # proveit route's errors say `--fbk-proveit:`, `--ic3ia:` or `--safety:`
-    # for themselves, and prefixing those again would name two flags.
-    errors_self_named: bool = False
 
     options: tuple[Opt, ...] = ()
     aliases: tuple[Alias, ...] = ()

@@ -167,8 +167,9 @@ class Answers:
         self.spent += run.secs
         if run.error is not None:
             raise Refused(
-                f"--infer vampire wrote a question Vampire cannot read: "
-                f"{run.error[:300]}"
+                f"wrote a question Vampire cannot read: "
+                f"{run.error[:300]}",
+                flag="--infer vampire"
             )
         return self._read(run.out, holes, run.secs)
 

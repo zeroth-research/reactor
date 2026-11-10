@@ -747,8 +747,6 @@ A row says:
   file the route produced, with no predicates behind it).  The row
   *declares* it and the `InferResult` carries it, and `main` checks the two
   agree once rather than each reader trusting whichever is nearer to hand.
-  Plus `errors_self_named` for a route whose refusals already name their
-  own flag.
 * **its own flags** — `options`, a tuple of `Opt`.  Passed without the route
   selected, each is an error rather than a no-op.  `aliases` carries any
   older spelling that selects the route and fills one of those options

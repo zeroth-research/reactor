@@ -782,16 +782,21 @@ def test_a_search_that_ran_out_records_unknown(tmp_path):
     assert [a.status for a in store.list() if a.role == "note"] == ["unknown"]
 
 
-def test_a_route_that_said_its_own_thing_is_not_talked_over(tmp_path):
-    """`smt-linear`, `sygus`, `houdini` and `vampire` each leave a note with
-    more in it than this one, and a second saying less is worse than none."""
+def test_a_route_that_gave_up_has_its_own_note_written(tmp_path):
+    """`smt-linear`, `sygus`, `houdini` and `vampire` say more about a
+    search than the generic note does. The refusal carries it, and it is
+    written in place of the generic one: one note, from one writer."""
+    from verith.common.record import GaveUp
     from verith.run import note_refusal
 
     store = _note_store(tmp_path)
-    store.note("the space is empty\n", status="no_solution", what="x", why="y")
-    note_refusal(_NoteHandle(store), _NoteRoute(), Refused("...", searched=True))
-    assert [a.status for a in store.list()
-            if a.role == "note"] == ["no_solution"]
+    note_refusal(_NoteHandle(store), _NoteRoute(), GaveUp(
+        "found no invariant. the space is empty", flag="--infer x",
+        status="no_solution", what="x", why="y", text="the space is empty"))
+    kept = [a for a in store.list() if a.role == "note"]
+    assert [a.status for a in kept] == ["no_solution"]
+    text = (store.dir / kept[0].name).read_text()
+    assert "the space is empty" in text and "found no" not in text
 
 
 def test_a_missing_package_is_not_filed_against_the_module(tmp_path):
@@ -825,9 +830,9 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     store = _note_store(tmp_path)
     settings = SimpleNamespace(
         pre_check=None, smt_tactics="none",
-        route=SimpleNamespace(name="test-route", errors_self_named=False),
+        route=SimpleNamespace(name="test-route"),
     )
-    with pytest.raises(SystemExit, match="--infer: .*INTS_MODULUS"):
+    with pytest.raises(SystemExit, match="--infer test-route: .*INTS_MODULUS"):
         certify.regenerate(settings, None, _NoteHandle(store),
                            Claim(prp="(= s0 0)", kind="safety"),
                            InferResult(cert=Certificate(inv="(= (mod s0 2) 0)")))

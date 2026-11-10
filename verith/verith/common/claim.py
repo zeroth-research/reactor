@@ -120,7 +120,8 @@ class SynthContext:
         """
         if claim.prp is None:
             raise Refused(
-                f"--infer {route} needs a property: pass --safety or --buchi"
+                f"needs a property: pass --safety or --buchi",
+                flag=f"--infer {route}"
             )
         enc = encoding_of(source)
         env = enc.env
@@ -141,9 +142,10 @@ class SynthContext:
                 "A matrix-shaped component would be a column per element. "
             )
             raise Refused(
-                f"--infer {route} {reads}, and this module has one it "
+                f"{reads}, and this module has one it "
                 f"cannot: {', '.join(bad)}. {why}{shaped}"
-                f"Use --infer ai-cegis."
+                f"Use --infer ai-cegis.",
+                flag=f"--infer {route}"
             )
         # The transition, asked for here rather than by whichever route
         # first builds an obligation out of it. A module with an operator
@@ -157,8 +159,9 @@ class SynthContext:
             enc.next_state(enc.state, enc.extl_latched, enc.extl_next)
         except ValueError as e:
             raise Refused(
-                f"--infer {route} encodes this module's transition for cvc5, "
-                f"and an operator in it has no encoding. {e}"
+                f"encodes this module's transition for cvc5, "
+                f"and an operator in it has no encoding. {e}",
+                flag=f"--infer {route}"
             ) from e
         true = enc.tm.mkBoolean(True)
         return cls(
