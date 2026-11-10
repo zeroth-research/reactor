@@ -111,7 +111,7 @@ the certificate carries one spelling whoever proved it.
 
 from __future__ import annotations
 
-from ..common.record import announce, found_certificate, note
+from ..common.record import GaveUp, announce, found_certificate
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.claim import SynthContext, sorts_where
@@ -188,10 +188,11 @@ class HoudiniEngine:
         if runs.violation is not None:
             state = ", ".join(f"s{i} = {v}" for i, v in enumerate(runs.violation))
             raise Refused(
-                f"--infer houdini: the property does not hold -- a run of "
+                f"the property does not hold -- a run of "
                 f"{runs.depth} round(s), with inputs drawn as `--pre` allows, "
                 f"reaches {state}. No invariant implies a property the module "
-                f"violates, so there is nothing to put to a solver."
+                f"violates, so there is nothing to put to a solver.",
+                flag="--infer houdini"
             )
         search = Search(
             ctx, ob, ev, cols, runs,
@@ -273,9 +274,10 @@ class HoudiniEngine:
                 "to propose about one"
             )
             raise Refused(
-                f"--infer houdini reads Int, Bool and Real state and inputs, "
+                f"reads Int, Bool and Real state and inputs, "
                 f"and this module has {', '.join(bad)}. {why}. `--infer "
-                f"smt-linear` weighs a bitvector as its unsigned value."
+                f"smt-linear` weighs a bitvector as its unsigned value.",
+                flag="--infer houdini"
             )
 
     def _conjuncts(self, ctx: SynthContext, claim: Claim) -> list[str]:
@@ -329,9 +331,9 @@ class HoudiniEngine:
             f"{prover.spent:.1f} s, the last under a {reached:g} s limit"
             f"{refuted}. {prover.inconclusive}"
         )
-        note(
-            self.artifacts,
-            f"--infer houdini found no {what}. {detail}\n",
+        raise GaveUp(
+            f"found no {what}. {detail}",
+            flag="--infer houdini",
             status="unknown",
             what=f"A search for {article} {what} that did not succeed.",
             why=(f"{prover.name} decided every candidate it was asked "
@@ -340,5 +342,3 @@ class HoudiniEngine:
                  f"{prover.name} proves or times out; nothing here was "
                  f"refuted."),
         )
-        raise Refused(f"--infer houdini found no {what}. {detail}",
-                      searched=True)

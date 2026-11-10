@@ -164,7 +164,7 @@ from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import PredicateRefused, Refused
 from ..common.solvers import DEFAULT_TIMEOUT, Cvc5Solver
 from ..common.obligations import Candidate, Obligations
-from ..common.record import announce, found_certificate, note
+from ..common.record import GaveUp, announce, found_certificate
 from ..common.smtlib import affine_smt, conjunction_smt, smt_int
 from ..common.claim import SynthContext, sorts_where
 from ..common.synth import columns, floor_real_src
@@ -409,24 +409,26 @@ class VampireEngine:
         bad = sorts_where(ctx, lambda s: s.isBitVector())
         if bad:
             raise Refused(
-                f"--infer vampire states its obligations as SMT-LIB for "
+                f"states its obligations as SMT-LIB for "
                 f"Vampire, whose front end has no bitvectors, and this "
                 f"module has {', '.join(bad)}. Nothing here can state the "
                 f"question, so this is not a matter of which certificate is "
                 f"asked for. `--infer smt-linear` weighs a bitvector as its "
-                f"unsigned value; `--infer houdini` on cvc5 reads one too."
+                f"unsigned value; `--infer houdini` on cvc5 reads one too.",
+                flag="--infer vampire"
             )
         if not weighable(ctx):
             sorts = ", ".join(f"s{i} is {c.sort}"
                               for i, c in enumerate(columns(ctx)))
             raise Refused(
-                f"--infer vampire bounds each state column between two "
+                f"bounds each state column between two "
                 f"integers, and this module has no column it can bound: "
                 f"{sorts}. A Bool column is carried unbounded where there "
                 f"is something else to bound, but here the invariant would "
                 f"be `true`, which is inductive and proves nothing. "
                 f"`--infer houdini` states the bounds a component keeps on "
-                f"each side of a Bool flag, which is what this shape wants."
+                f"each side of a Bool flag, which is what this shape wants.",
+                flag="--infer vampire"
             )
 
     # --- out ---------------------------------------------------------------
@@ -459,12 +461,10 @@ class VampireEngine:
             f"what is missing. `--infer houdini` searches the same module by "
             f"proposing facts and proving them, which is a different reach."
         )
-        note(
-            self.artifacts,
-            f"--infer vampire derived no {what}. {detail}\n",
+        raise GaveUp(
+            f"derived no {what}. {detail}",
+            flag="--infer vampire",
             status="unknown",
             what=f"A derivation of {what} that did not succeed.",
             why="Vampire answers or times out; nothing was refuted.",
         )
-        raise Refused(f"--infer vampire derived no {what}. {detail}",
-                      searched=True)

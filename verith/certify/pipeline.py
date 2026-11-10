@@ -41,7 +41,7 @@ from reactor.lean.proof.render import LeanCertificate
 from reactor.lean.smt.encoding import lazy
 from reactor.lean.smt.precheck import pre_check
 from verith import InferResult, ProjectHandle
-from verith.run import refused, route_precheck, run_route, show_certificate
+from verith.run import route_precheck, run_route, show_certificate
 
 from .cli import Settings, parse_args
 
@@ -72,8 +72,8 @@ def main(argv: "list[str] | None" = None) -> None:
     prechecked = route_precheck(settings, module, claim, smt)
     try:
         ctx = lean_context(module)
-    except Refused as e:
-        raise refused(settings.route, e) from e
+    except Refused as e:                # about the module, not the route
+        raise SystemExit(f"error: {e}") from e
 
     # The workspace belongs to the project, not to the route: `--artifacts
     # reset` is what to pass when a bad artifact is being inherited by every
@@ -188,6 +188,8 @@ def regenerate(settings: Settings, smt, handle: ProjectHandle,
                            restated=True, verbatim=lean)
     except Refused as e:
         note_unrenderable(store, settings.route, e)
-        raise refused(settings.route, e) from e
+        # Under the route, whatever flag the refusal names: the predicate
+        # it is about is the route's answer, not one the user passed.
+        raise SystemExit(f"error: --infer {settings.route.name}: {e}") from e
     handle.write_predicates(lean_cert)
     return lean_cert

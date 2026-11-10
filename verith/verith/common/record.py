@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from reactor.lean.core.certificate import Certificate
+from reactor.lean.core.errors import Refused
 
 
 def announce(log: Callable, tag: str, cert: Certificate) -> Certificate:
@@ -47,3 +48,25 @@ def note(store, text: str, *, status: str, what: str, why: str) -> None:
     if store is None:
         return
     store.note(text, status=status, what=what, why=why)
+
+
+class GaveUp(Refused):
+    """A route's refusal after it searched and found nothing, carrying the
+    note it leaves in `artifacts/` for the next run.
+
+    `status`, `what` and `why` are as `note` takes them; the note's text is
+    the refusal itself, or `text` when the route has something else to say
+    there -- a search's own account of the space, which goes on into a later
+    prompt verbatim. The route only raises it: `verith.run.note_refusal`
+    writes every give-up note, so there is one writer of them.
+    """
+
+    def __init__(self, message: str, *, flag: str, status: str, what: str,
+                 why: str, text: "str | None" = None):
+        super().__init__(message, searched=True, flag=flag)
+        self.status, self.what, self.why = status, what, why
+        self._text = text
+
+    @property
+    def text(self) -> str:
+        return f"{self if self._text is None else self._text}\n"

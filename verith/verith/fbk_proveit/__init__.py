@@ -173,7 +173,6 @@ ROUTE = InferRoute(
         ),
     ),
     returns="files",
-    errors_self_named=True,
     options=(
         Opt(
             ("--proveit-dir",),

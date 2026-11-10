@@ -198,8 +198,13 @@ def test_a_refusal_names_only_the_flag_that_was_given():
         return refused(route, Refused("why")).code
 
     assert said(None) == "error: why"
-    assert said(SimpleNamespace(errors_self_named=False)) == "error: --infer: why"
-    assert said(SimpleNamespace(errors_self_named=True)) == "error: why"
+    assert said(SimpleNamespace(name="sygus")) == "error: --infer sygus: why"
+    # One that names its own flag is shown under that one alone.
+    named = refused(SimpleNamespace(name="sygus"),
+                    Refused("why", flag="--infer sygus"))
+    assert named.code == "error: --infer sygus: why"
+    assert refused(SimpleNamespace(name="fbk-proveit"),
+                   Refused("why", flag="--ic3ia")).code == "error: --ic3ia: why"
 
 
 def test_a_stale_bridge_is_not_left_for_lake_to_build():

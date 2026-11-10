@@ -236,8 +236,8 @@ would score perfectly on it.
 
 `NO-CERT`, `REFUTED` and `GEN-FAIL` are kept apart because they are
 different measurements, and telling them apart is not a prefix match: `main`
-wraps most refusals under `error: --infer:`, but a route whose row sets
-`errors_self_named` names its own flag instead.
+puts a refusal under the flag it is about, which is `error: --infer <route>:`
+for most and `--fbk-proveit:` or `--ic3ia:` for some.
 
 ---
 

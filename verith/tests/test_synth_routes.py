@@ -63,6 +63,18 @@ def store_for(tmp_path: Path, name: str, *, kind: str, prp: str,
 # ══════════════════════════════════════════════════════════════════════════
 
 
+def noted(store, refusal) -> None:
+    """What `run_route` leaves in `artifacts/` for `refusal`: a route raises
+    its note and the run writes it, so a test that drives an engine itself
+    writes it the same way."""
+    from types import SimpleNamespace
+
+    from verith.run import note_refusal
+
+    note_refusal(SimpleNamespace(artifacts=store), SimpleNamespace(name="test"),
+                 refusal)
+
+
 def test_sygus_finds_the_congruence_no_lattice_can_state():
     """`m_step2` steps by two: the invariant is that `x` is even.
 
@@ -432,10 +444,11 @@ def test_smt_linear_writes_what_it_ruled_out(tmp_path):
     store = store_for(tmp_path, "m_twovars", kind="buchi", prp=prp,
                       producer="smt-linear")
     claim = Claim(prp=prp, kind="buchi")
-    with pytest.raises(Refused):
+    with pytest.raises(Refused) as e:
         SmtLinearEngine(
             module_of("m_twovars"), artifacts=store, log=lambda *_: None
         ).infer(claim)
+    noted(store, e.value)
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     assert len(notes) == 1
     text = store.read(notes[0])
@@ -465,6 +478,7 @@ def test_smt_linear_proves_an_empty_space_and_writes_it_down(tmp_path):
         SmtLinearEngine(
             module_of("m_step2"), artifacts=store, log=lambda *_: None
         ).infer(Claim(prp=prp, kind="buchi"))
+    noted(store, e.value)
     assert "proof that the space is empty" in str(e.value)
     assert "under any invariant of up to 2 linear inequalities" in str(e.value)
 
@@ -491,7 +505,7 @@ def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
     store = store_for(tmp_path, "m_lex", kind="safety", prp="(<= s0 3)",
                       producer="smt-linear")
     claim = Claim(prp="(<= s0 3)", kind="safety")
-    with pytest.raises(Refused):
+    with pytest.raises(Refused) as e:
         SmtLinearEngine(
             module_of("m_lex"),
             rows=3,
@@ -499,6 +513,7 @@ def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
             artifacts=store,
             log=lambda *_: None,
         ).infer(claim)
+    noted(store, e.value)
     assert not store.usable("note", statuses=("no_solution",))
     undecided = store.usable("note", statuses=("unknown",))
     assert len(undecided) == 1
@@ -703,11 +718,12 @@ def test_sygus_writes_a_proof_of_absence_when_its_space_is_finite_and_empty(tmp_
     store = store_for(tmp_path, "m_step2", kind="safety", prp="(not (= s0 1))",
                       producer="sygus")
     claim = Claim(prp="(not (= s0 1))", kind="safety")
-    with pytest.raises(Refused):
+    with pytest.raises(Refused) as e:
         SygusEngine(
             module_of("m_step2"), grammar="linear", artifacts=store,
             log=lambda *_: None,
         ).infer(claim)
+    noted(store, e.value)
     notes = store.usable("note", languages=("md",), statuses=("no_solution",))
     assert len(notes) == 1
     text = store.read(notes[0])
