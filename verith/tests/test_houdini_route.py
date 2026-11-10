@@ -103,7 +103,7 @@ def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
 def test_vampires_time_limit_climbs_and_ends_at_the_budget():
     """Four rungs, because its portfolio schedules a short limit differently
     rather than cutting a long one short."""
-    from verith.common.solvers import VampireSolver
+    from verith.houdini.solvers import VampireSolver
 
     v = VampireSolver("/nowhere", seconds=1)
     assert v.ladder(120) == (2, 10, 60, 120)
@@ -130,7 +130,7 @@ def test_a_vampire_path_that_is_not_there_is_refused(tmp_path):
     from verith.common.vampire import resolve_vampire
 
     with pytest.raises(Refused, match="--vampire: no such file"):
-        resolve_vampire(str(tmp_path / "vampire"))
+        resolve_vampire(str(tmp_path / "vampire"), who="--vampire")
 
 
 def test_a_directory_holding_vampire_is_accepted(tmp_path):
@@ -140,7 +140,7 @@ def test_a_directory_holding_vampire_is_accepted(tmp_path):
     exe = tmp_path / "vampire"
     exe.write_text("#!/bin/sh\n")
     exe.chmod(0o755)
-    assert resolve_vampire(str(tmp_path)) == str(exe)
+    assert resolve_vampire(str(tmp_path), who="--vampire") == str(exe)
 
 
 @pytest.mark.parametrize("a", [-7, -6, 0, 5, 7])
@@ -505,7 +505,7 @@ def test_the_vampire_script_states_the_round_once_and_names_the_goal():
     """The printed half, checked without a binary: a `define-fun` per
     component, `:named` on every hypothesis, and the goal asserted negated
     under a name of its own so a core is never empty by accident."""
-    from verith.common.solvers import VampireSolver
+    from verith.houdini.solvers import VampireSolver
 
     search, ob = a_search("m_lra_lin", "buchi", "(= s0 0.0)")
     kept = search.parse(["(<= 0.0 s0)", "(<= s0 5.0)"])
@@ -529,7 +529,8 @@ def test_vampires_answer_is_read_off_its_output(tmp_path):
     proof plus a core; anything else is `UNKNOWN` and never `REFUTED`, which
     is the whole of what this solver cannot tell you.
     """
-    from verith.common.solvers import VampireSolver, Verdict
+    from verith.common.solvers import Verdict
+    from verith.houdini.solvers import VampireSolver
 
     def stub(output: str):
         exe = tmp_path / f"vampire{abs(hash(output))}"
@@ -651,7 +652,7 @@ def test_no_obligation_names_anything_of_tuple_sort():
     certificate still says `((_ tuple.select 0) s0)`, because that is the
     module's own namespace; it is the *obligation* that is scalar.
     """
-    from verith.common.solvers import VampireSolver
+    from verith.houdini.solvers import VampireSolver
 
     search, ob = a_search("m_relu_vec", "buchi",
                           "(= ((_ tuple.select 0) s0) 0)")
