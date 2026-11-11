@@ -20,11 +20,12 @@ class ModuleEncoding:
     The transition is translated on first use over the parser's `s*`, `el*`
     and `e*`, and every other state or input is substituted into it; a
     module with no encoding raises the same error on every use. Retained
-    until exit (`smt.module.keep_alive`), and nothing it owns refers back
-    to it: a cycle through a `TermManager`'s owner is finalised in
-    arbitrary order, and cvc5 crashes freeing a term after its manager.
-    So no exception that was raised is kept here: its traceback reaches
-    the frame that raised it, and that frame's `self`.
+    until exit (`smt.module.keep_alive`), its `TermManager` past it, and
+    nothing it owns refers back to it: a cycle through a `TermManager`'s
+    owner is finalised in arbitrary order, which the pinned manager makes
+    safe and nothing makes cheap. So no exception that was raised is kept
+    here: its traceback reaches the frame that raised it, and that
+    frame's `self`.
     """
 
     def __init__(self, module):
@@ -42,7 +43,7 @@ class ModuleEncoding:
         self._queries: dict = {}
         self._solvers: list = []
         self._rewriter = None
-        keep_alive(self)
+        keep_alive(self, self.tm)
 
     @property
     def state(self) -> list:
