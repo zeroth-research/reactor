@@ -342,7 +342,13 @@ class TacticPlan:
 
     @property
     def close_tactic(self) -> str:
-        return "first | " + " | ".join(self.closers)
+        """The closers, cheapest first, then an arm that only says none of
+        them proved the goal. `first` reports the error of the arm it tried
+        last, so without it a goal no closer proved read as that closer's
+        complaint -- "`split_ifs` failed: no if-then-else conditions to
+        split" -- about a tactic that was never the problem."""
+        why = f"cert_close: none of its {len(self.closers)} closers proved this goal"
+        return "first | " + " | ".join(self.closers) + f' | fail "{why}"'
 
     @property
     def close_binds_state(self) -> bool:
