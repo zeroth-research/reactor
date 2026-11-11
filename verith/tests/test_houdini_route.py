@@ -1,0 +1,744 @@
+"""`--infer houdini`: Houdini and a ranking search, put to either solver.
+
+Three layers, and they are tested apart.
+
+The half that needs no solver runs everywhere: the time-limit ladders, where
+the Vampire binary is looked for, the evaluator the simulation runs on
+(SMT-LIB's division is Euclidean, and Python's `//` is not), and the
+simulation refuting a property the module violates before any solver is
+started.
+
+The *seam* -- :mod:`verith.common.solvers` -- is tested against cvc5
+alone, because what it is for is the thing only cvc5 does: answer a failed
+proof with a counterexample, name the facts that counterexample breaks, and
+settle a candidate for good rather than until the next rung.
+
+The searches themselves run on every solver that is there. cvc5 always is;
+Vampire is skipped when no binary can be found -- pass it as `$VAMPIRE`, or
+put `vampire` on PATH. What they pin is what the route is for, and it does
+not depend on who proved it: the certificate that comes back is the small
+one the proofs used, not every fact Houdini kept.
+"""
+
+from __future__ import annotations
+
+from fractions import Fraction
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from reactor.lean.core.certificate import Claim
+from reactor.lean.core.errors import Refused
+from reactor.lean.inputs.python import load_module
+from verith.houdini.solvers import SolverSpec
+
+# The fixtures are `reactor`'s, in the `python/` project beside this one.
+PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
+LIMITS = PYTHON_TESTS / "limits" / "mods"
+FIXTURES = PYTHON_TESTS / "fixtures"
+HYBRID = Path(__file__).parent / "bench_matrix" / "hybrid"
+
+
+def module_at(path: Path):
+    return load_module(path)
+
+
+def solver_or_skip(kind: str):
+    """The solver `kind` names, or a skip when its binary is not here.
+
+    `--houdini-solver cvc5` resolves to nothing to look for, so the cvc5 half
+    of every parametrised case below always runs.
+    """
+    from verith.houdini.solvers import resolve_solver
+
+    try:
+        return resolve_solver(kind)
+    except Refused:
+        pytest.skip(f"no {kind}: set $VAMPIRE or put `vampire` on PATH")
+
+
+# Every search below is run once per solver. Naming them here rather than in
+# each `parametrize` keeps "both solvers agree" the default a case has to opt
+# out of, which is the property the seam exists to hold.
+BOTH = pytest.mark.parametrize("solver", ["cvc5", "vampire"])
+
+
+def infer(name: str, kind: str, prp: str, *, solver="cvc5",
+          timeout: float = 60, fixture: Path = LIMITS, log=None):
+    from verith.houdini.engine import HoudiniEngine
+
+    engine = HoudiniEngine(module_at(fixture / f"{name}.py"), solver=solver,
+                           timeout=timeout, log=log or (lambda *_: None))
+    return engine.infer(Claim(prp=prp, kind=kind))
+
+
+def a_search(name: str, kind: str, prp: str, fixture: Path = LIMITS):
+    """A search over no simulated runs: its context, obligations and
+    candidate parser, and the steps the seam's cases ask about."""
+    from verith.common.synth import columns
+    from verith.houdini.evaluate import Evaluator
+    from verith.houdini.search import Search
+    from verith.houdini.simulate import Draws, Runs
+    from verith.common.claim import SynthContext
+    from verith.common.obligations import Obligations
+
+    ctx = SynthContext.build(module_at(fixture / f"{name}.py"),
+                             Claim(prp=prp, kind=kind), route="houdini",
+                             takes=("int", "bool", "bv", "real", "tuple"))
+    ob = Obligations(ctx)
+    search = Search(ctx, ob, Evaluator(ctx.tm), columns(ctx),
+                    runs=Runs(states=[], rounds=[]),
+                    draws=Draws(ctx, (), seed=1),
+                    wide=Draws(ctx, (), seed=2, wide=True),
+                    pins={}, log=lambda *_: None)
+    return search, ob
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Without the prover
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_vampires_time_limit_climbs_and_ends_at_the_budget():
+    """Four rungs, because its portfolio schedules a short limit differently
+    rather than cutting a long one short."""
+    from verith.houdini.solvers import VampireSolver
+
+    v = VampireSolver("/nowhere", seconds=1)
+    assert v.ladder(120) == (2, 10, 60, 120)
+    assert v.ladder(60) == (2, 10, 60)
+    assert v.ladder(5) == (2, 5)
+    assert v.ladder(1) == (1,)
+
+
+def test_cvc5s_ladder_is_a_cap_rather_than_a_schedule():
+    """Its search at a longer limit contains the shorter one, so there is
+    nothing to be had from re-running one at a bigger limit -- the rungs are
+    there only so a single query cannot eat the whole budget."""
+    import cvc5
+
+    from verith.common.solvers import Cvc5Solver
+
+    c = Cvc5Solver(cvc5.TermManager(), seconds=1)
+    assert c.ladder(120) == (2, 120)
+    assert c.ladder(1) == (1,)
+    assert c.short == 2
+
+
+def test_a_vampire_path_that_is_not_there_is_refused(tmp_path):
+    from verith.common.vampire import resolve_vampire
+
+    with pytest.raises(Refused, match="--vampire: no such file"):
+        resolve_vampire(str(tmp_path / "vampire"), who="--vampire")
+
+
+def test_a_directory_holding_vampire_is_accepted(tmp_path):
+    """The release zip unpacks to a directory with the binary in it."""
+    from verith.common.vampire import resolve_vampire
+
+    exe = tmp_path / "vampire"
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(0o755)
+    assert resolve_vampire(str(tmp_path), who="--vampire") == str(exe)
+
+
+@pytest.mark.parametrize("a", [-7, -6, 0, 5, 7])
+@pytest.mark.parametrize("b", [-3, 2, 3])
+def test_the_evaluator_divides_the_way_smt_lib_does(a, b):
+    """Euclidean: the remainder is never negative, whatever the signs --
+    checked against cvc5's own rewriter, which is the semantics every
+    obligation is stated in."""
+    import cvc5
+    from cvc5 import Kind
+
+    from verith.houdini.evaluate import Evaluator
+
+    tm = cvc5.TermManager()
+    solver = cvc5.Solver(tm)
+    x = tm.mkConst(tm.getIntegerSort(), "x")
+    ev = Evaluator(tm)
+    for kind in (Kind.INTS_DIVISION, Kind.INTS_MODULUS):
+        term = tm.mkTerm(kind, x, tm.mkInteger(b))
+        want = solver.simplify(term.substitute([x], [tm.mkInteger(a)]))
+        assert ev(term, {"x": a}) == want.getIntegerValue()
+
+
+def test_a_property_the_module_violates_is_refuted_by_running_it():
+    """`m_countdown` starts at 100: `s0 <= 50` fails on round zero, and no
+    solver is needed -- the Vampire binary named here does not exist, and
+    the refusal comes before anything would have started it."""
+    with pytest.raises(Refused, match="does not hold.*s0 = 100"):
+        infer("m_countdown", "safety", "(<= s0 50)",
+              solver=SolverSpec("vampire", "/nowhere"))
+
+
+@pytest.mark.parametrize(("solver", "why"), [
+    ("vampire", "no bitvector theory"),
+    # cvc5 has one; what it has no candidate shapes for is the point.
+    ("cvc5", "the candidate shapes here do not"),
+])
+def test_a_bitvector_state_is_refused_by_name(solver, why):
+    with pytest.raises(Refused, match=why):
+        infer("twobit", "buchi", "(and (= s0 (_ bv0 1)) (= s1 (_ bv0 1)))",
+              solver=solver, fixture=FIXTURES)
+
+
+@pytest.mark.parametrize(("value", "written"), [
+    ("1/2", "0.5"),
+    ("-1/4", "(- 0.25)"),
+    ("3", "3.0"),
+    ("-2", "(- 2.0)"),
+    ("5/8", "0.625"),
+    # No decimal says a third, and one that rounded it would state a
+    # different obligation than the module's.
+    ("1/3", "(/ 1.0 3.0)"),
+    ("-1/3", "(- (/ 1.0 3.0))"),
+])
+def test_a_real_literal_is_written_as_a_decimal_where_one_is_exact(value, written):
+    from fractions import Fraction
+
+    from verith.common.smtlib import smt_real
+
+    assert smt_real(Fraction(value)) == written
+
+
+def test_cvc5s_rationals_are_rewritten_on_the_way_into_a_vampire_script():
+    """cvc5 prints one half as `(/ 1 2)`, whose arguments are Int-sorted;
+    Vampire answers that with `invalid sort $int for interpretation /`."""
+    from verith.common.smtlib import decimals
+
+    assert decimals("(- v_s0 (/ 1 2))") == "(- v_s0 0.5)"
+    assert decimals("(* (/ (- 1) 4) x)") == "(* (- 0.25) x)"
+    assert decimals("(div a 2)") == "(div a 2)"
+
+
+def test_the_evaluator_floors_a_real_the_way_to_int_does():
+    """The scale a real ranking function is read at exists because of this:
+    a quantity that falls by a half need not floor to a smaller number."""
+    import cvc5
+    from cvc5 import Kind
+
+    from verith.houdini.evaluate import Evaluator
+
+    tm = cvc5.TermManager()
+    x = tm.mkConst(tm.getRealSort(), "x")
+    ev = Evaluator(tm)
+    floor = tm.mkTerm(Kind.TO_INTEGER, x)
+    assert [ev(floor, {"x": Fraction(k, 2)}) for k in range(5)] == [0, 0, 1, 1, 2]
+    scaled = tm.mkTerm(Kind.TO_INTEGER, tm.mkTerm(Kind.MULT, tm.mkReal(2), x))
+    assert [ev(scaled, {"x": Fraction(k, 2)}) for k in range(5)] == [0, 1, 2, 3, 4]
+
+
+def test_a_real_module_is_no_longer_refused_for_its_sort():
+    """It is the shapes that have to answer for a Real component now, not a
+    sort check: `SynthContext.build` still refuses one for every other route."""
+    from verith.common.claim import SynthContext
+
+    claim = Claim(prp="(= s0 0.0)", kind="buchi")
+    module = module_at(LIMITS / "m_lra_lin.py")
+    with pytest.raises(Refused, match="no integer reading"):
+        SynthContext.build(module, claim, route="smt-linear")
+    ctx = SynthContext.build(module, claim, route="houdini",
+                             takes=("int", "bool", "bv", "real"))
+    assert [str(s) for s in ctx.env.state_sorts] == ["Real"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The seam: what only a deciding solver gives back
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_a_false_obligation_comes_back_refuted_with_the_facts_it_breaks():
+    """The one thing Vampire cannot do, and the whole reason cvc5 is here.
+
+    `m_countdown` counts down from 100. `s0 >= 50` holds at entry and is
+    false a round later; `s0 >= 0` and `s0 <= 100` are preserved. One query
+    about all three comes back refuted, and its model names the one that
+    broke -- which is Houdini's next step, taken from one call rather than
+    from one call per fact.
+    """
+    import cvc5
+
+    from verith.common.solvers import Cvc5Solver, Verdict
+
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    kept = search.parse(["(<= 0 s0)", "(<= s0 100)", "(<= 50 s0)"])
+    assert len(kept) == 3
+    solver = Cvc5Solver(search.ctx.tm, seconds=30)
+    answer = solver.prove(ob.preserved(kept, kept), 5, model=True)
+    assert answer.verdict is Verdict.REFUTED
+    assert answer.broken == frozenset({"g2"})       # only `50 <= s0`
+    assert isinstance(search.ctx.tm, cvc5.TermManager)
+
+
+def test_a_refuted_answer_is_kept_forever_and_an_unknown_only_per_limit():
+    """`REFUTED` holds at every time limit there will ever be, so it is
+    cached like a proof; an `UNKNOWN` is only ever "not at *that* limit"."""
+    from verith.common.solvers import Answer, Question, Solver, Verdict
+
+    q = Question(hyps=(), goal="g")
+    for verdict, limits in ((Verdict.PROVED, [2]), (Verdict.REFUTED, [2]),
+                            (Verdict.UNKNOWN, [2, 10])):
+        asked = []
+
+        class Once(Solver):
+            def _run(self, query, budget, core, model):
+                asked.append(budget)
+                return Answer(verdict)
+
+        solver = Once(seconds=30)
+        solver.prove(q, 2)
+        solver.prove(q, 2)
+        solver.prove(q, 10)
+        # A settled answer is asked once and never again. An unknown is
+        # re-asked at a higher limit and not at one it already gave up on,
+        # which is what makes repeating a whole pass nearly free.
+        assert asked == limits
+
+
+def test_a_cached_proof_is_asked_again_only_when_a_core_is_wanted():
+    """A proof already in hand serves a question that wants no core, and is
+    re-asked when one does -- the same rule the counter-model follows."""
+    from verith.common.solvers import Answer, Question, Solver, Verdict
+
+    asked = []
+
+    class Bare(Solver):
+        def _run(self, query, budget, core, model):
+            asked.append(core)
+            return Answer(Verdict.PROVED, core=frozenset({"h0"}) if core else None)
+
+    q = Question(hyps=(), goal="g")
+    solver = Bare(seconds=30)
+    assert solver.prove(q, 2).core is None
+    assert solver.prove(q, 2).core is None           # served from the cache
+    assert solver.prove(q, 2, core=True).core == frozenset({"h0"})
+    assert solver.prove(q, 2, core=True).core == frozenset({"h0"})
+    assert asked == [False, True]
+
+
+def test_a_refuted_rank_comes_back_with_the_round_that_refutes_it():
+    """A ranking function's refutation is a state and its successor, and
+    cvc5 hands both back: the round the fit learns from next time."""
+    from verith.common.solvers import Cvc5Solver, Verdict
+
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    inv = search.parse(["(<= 0 s0)", "(<= s0 100)"])
+    rising = search.parse(["(- 100 s0)"], "ranking", want="Int")[0]
+    answer = Cvc5Solver(search.ctx.tm, seconds=30).prove(
+        ob.drops(inv, rising), 5, model=True)
+    assert answer.verdict is Verdict.REFUTED
+    (s,), (sp,) = answer.values[:1], answer.values[1:]
+    assert s > 0 and sp == s - 1                    # a round of the countdown
+
+
+def test_entry_is_narrowed_until_it_is_proved_not_once_per_model():
+    """One counter-model names the facts *that* initial state breaks, and a
+    different one may break others -- so the entry check is a fixpoint, not
+    a single drop.
+
+    Driven by a solver scripted to witness one fact at a time, which is what
+    a module whose `init` reads an input genuinely does. Nothing downstream
+    asks `init_inv` again, so a fact left in here is a Lean failure later,
+    and this loop is the only thing between the two.
+    """
+    from verith.common.solvers import Answer, Solver, Verdict
+
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    facts = search.parse(["(<= 0 s0)", "(= s0 0)", "(<= s0 50)", "(<= s0 100)"])
+    assert len(facts) == 4
+    asked = []
+
+    class Scripted(Solver):
+        """Answers down a list, and records how many facts it was asked
+        about -- the probes are positional, so `g1` is the second one of
+        whatever list the caller currently holds."""
+
+        def __init__(self, answers, **kw):
+            super().__init__(**kw)
+            self.answers = list(answers)
+
+        def _run(self, query, budget, core, model):
+            asked.append(len(query.probes))
+            return self.answers.pop(0)
+
+    one = frozenset({"g1"})
+    solver = Scripted([Answer(Verdict.REFUTED, broken=one),
+                       Answer(Verdict.REFUTED, broken=one),
+                       Answer(Verdict.PROVED)], seconds=30)
+    kept = search.at_entry(solver, facts, 5)
+
+    assert [f.src for f in kept] == ["(<= 0 s0)", "(<= s0 100)"]
+    # Four facts, then three, then two: it asked again after each model
+    # rather than taking the first one's word for the whole set.
+    assert asked == [4, 3, 2]
+    assert not solver.answers
+
+
+def test_entry_stops_when_a_model_names_nothing_to_drop():
+    """An unreadable model is not evidence that every fact is fine, so the
+    loop ends rather than spinning on an answer it cannot act on."""
+    from verith.common.solvers import Answer, Solver, Verdict
+
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    facts = search.parse(["(<= 0 s0)", "(<= s0 100)"])
+    calls = []
+
+    class Mute(Solver):
+        def _run(self, query, budget, core, model):
+            calls.append(len(query.probes) or 1)
+            # Refuted, no model, and each fact on its own proves: exactly
+            # what Vampire's silence looks like on a conjunction it timed
+            # out on.
+            return (Answer(Verdict.PROVED) if not query.probes
+                    else Answer(Verdict.UNKNOWN))
+
+    kept = search.at_entry(Mute(seconds=30), facts, 5)
+    assert [f.src for f in kept] == ["(<= 0 s0)", "(<= s0 100)"]
+    assert calls == [2, 1, 1]           # the batch, then fact by fact
+
+
+def test_a_solver_with_no_model_falls_back_to_asking_fact_by_fact():
+    """`_survivors` is the fork. Handed an answer carrying no `broken` it
+    asks about each fact on its own, which is the only thing a refutation
+    prover leaves to do -- and it must reach the same set."""
+    from verith.common.solvers import Cvc5Solver
+
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    kept = search.parse(["(<= 0 s0)", "(<= s0 100)", "(<= 50 s0)"])
+    solver = Cvc5Solver(search.ctx.tm, seconds=30)
+
+    with_model = solver.prove(ob.preserved(kept, kept), 5, model=True)
+    assert with_model.broken                        # cvc5 gave one
+    from_model = search.survivors(solver, with_model, kept, None, 5)
+
+    blind = replace(with_model, broken=None)        # as Vampire would answer
+    one_at_a_time = search.survivors(
+        solver, blind, kept,
+        lambda fs: [ob.preserved(fs, [f]) for f in fs], 5)
+
+    assert [f.src for f in from_model] == [f.src for f in one_at_a_time]
+    assert [f.src for f in from_model] == ["(<= 0 s0)", "(<= s0 100)"]
+
+
+def test_the_cut_is_taken_again_over_what_it_returned():
+    """A core is what the refutation touched, so a wide pool gives it more
+    to touch -- and one cut is therefore not a fixed point.
+
+    Scripted with the shape Vampire's cores were measured to have: the
+    proof goes through whatever it is asked from, and names half of what it
+    was offered. Asking the same question of the half is a *different*
+    refutation, and it names half again. Four facts have to reach one, and
+    a single pass reaches two.
+    """
+    from verith.common.solvers import Answer, Solver, Verdict
+
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    facts = search.parse(["(<= 0 s0)", "(<= s0 100)",
+                          "(<= s0 200)", "(<= s0 300)"])
+    pools = []
+
+    class Half(Solver):
+        def _run(self, query, budget, core, model):
+            named = [n for n, _t in query.hyps if n != "pre"]
+            pools.append(len(named))
+            return Answer(Verdict.PROVED,
+                          core=frozenset(named[:(len(named) + 1) // 2]))
+
+    kept = search.shrink(Half(seconds=30), facts, facts[1:2], 5)
+
+    assert [f.src for f in kept] == ["(<= s0 100)"]
+    # 4, 4 (the closure, asked until it adds nothing), then 2, then 1. The
+    # check that what came out is inductive on its own costs no fifth call:
+    # the last round asked that very question -- a pool whose closure is
+    # the whole of it -- and the cache is keyed on the question.
+    assert pools == [4, 4, 2, 1]
+
+
+def test_a_cut_that_stops_answering_keeps_the_round_before_it():
+    """A later round's time limit is not evidence against an earlier
+    round's proofs, so what the first cut reached still stands."""
+    from verith.common.solvers import Answer, Solver, Verdict
+
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    facts = search.parse(["(<= 0 s0)", "(<= s0 100)",
+                          "(<= s0 200)", "(<= s0 300)"])
+
+    class Once(Solver):
+        """Answers the first pool it is shown and gives up on every
+        narrower one -- a portfolio that found a proof at four hypotheses
+        and no longer finds it at two."""
+
+        def _run(self, query, budget, core, model):
+            named = [n for n, _t in query.hyps if n != "pre"]
+            if len(named) < len(facts):
+                return Answer(Verdict.UNKNOWN)
+            return Answer(Verdict.PROVED, core=frozenset(named[:2]))
+
+    kept = search.shrink(Once(seconds=30), facts, facts[1:2], 5)
+
+    # The first cut is two facts and the second round cannot be had. The
+    # two are kept -- but only because they were proved inductive on their
+    # own, which `Once` refuses, so the invariant stays whole.
+    assert [f.src for f in kept] == [f.src for f in facts]
+
+
+def test_a_query_carries_its_transition_once_and_names_every_fact():
+    """What the seam promises a solver: the round stated once as `defines`,
+    the hypotheses named for a core, the goal's conjuncts named for a model.
+    A goal that is one thing gets no probes -- `REFUTED` already says it."""
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    kept = search.parse(["(<= 0 s0)", "(<= s0 100)"])
+
+    q = ob.preserved(kept, kept)
+    assert len(q.defines) == len(search.ctx.state)
+    assert [n for n, _t in q.hyps] == ["h0", "h1", "pre"]
+    assert [n for n, _t in q.probes] == ["g0", "g1"]
+
+    assert ob.preserved(kept, kept[:1]).probes == ()
+    rank = search.parse(["s0"], "ranking", want="Int")[0]
+    assert ob.drops(kept, rank).probes == ()
+
+
+def test_the_vampire_script_states_the_round_once_and_names_the_goal():
+    """The printed half, checked without a binary: a `define-fun` per
+    component, `:named` on every hypothesis, and the goal asserted negated
+    under a name of its own so a core is never empty by accident."""
+    from verith.houdini.solvers import VampireSolver
+
+    search, ob = a_search("m_lra_lin", "buchi", "(= s0 0.0)")
+    kept = search.parse(["(<= 0.0 s0)", "(<= s0 5.0)"])
+    script = VampireSolver._script(ob.preserved(kept, kept))
+
+    assert script.startswith("(set-logic ALL)")
+    assert script.count("(define-fun v_sp0") == 1
+    assert ":named h0" in script and ":named h1" in script
+    assert ":named pre" in script
+    assert "(assert (! (not " in script and ":named goal)" in script
+    assert script.rstrip().endswith("(check-sat)")
+    # Every literal a decimal: Vampire reads no `(/ 1 2)` and no bare `3`
+    # where a Real belongs.
+    assert "(/ 1 2)" not in script
+
+
+def test_vampires_answer_is_read_off_its_output(tmp_path):
+    """The subprocess half, against a stub that prints what Vampire prints.
+
+    `unsat` followed by the names of the assertions a refutation used is a
+    proof plus a core; anything else is `UNKNOWN` and never `REFUTED`, which
+    is the whole of what this solver cannot tell you.
+    """
+    from verith.common.solvers import Verdict
+    from verith.houdini.solvers import VampireSolver
+
+    def stub(output: str):
+        exe = tmp_path / f"vampire{abs(hash(output))}"
+        exe.write_text(f"#!/bin/sh\ncat <<'OUT'\n{output}\nOUT\n")
+        exe.chmod(0o755)
+        return VampireSolver(str(exe), seconds=30, cores=1)
+
+    search, ob = a_search("m_countdown", "buchi", "(= s0 0)")
+    kept = search.parse(["(<= 0 s0)", "(<= s0 100)"])
+    q = ob.preserved(kept, kept)
+
+    proof = stub("unsat\n(\nh1\ngoal\n)").prove(q, 5, core=True)
+    assert proof.verdict is Verdict.PROVED
+    assert proof.core == frozenset({"h1"})          # `goal` is not a hypothesis
+
+    # No model, ever: a query's probes are ignored and `broken` stays `None`,
+    # which is what sends `_survivors` down the fact-by-fact path.
+    assert proof.broken is None
+    assert stub("% Time limit reached\n").prove(q, 5, model=True).verdict is (
+        Verdict.UNKNOWN)
+
+    # An encoding it cannot read is a refusal naming the other solver, not a
+    # silent failure to prove.
+    with pytest.raises(Refused, match="cannot read this module's encoding"):
+        stub("User error: invalid sort $int for interpretation /").prove(q, 5)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The searches, on every solver that is here
+#
+# One body per case, run once per solver. The certificates are the route's
+# contract and they do not depend on who proved them -- which is the claim
+# these cases are here to keep true as the seam changes.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+@BOTH
+def test_a_countdown_is_ranked(solver):
+    cert = infer("m_countdown", "buchi", "(= s0 0)", solver=solver_or_skip(solver))
+    assert cert.ranking == "s0"
+    assert "(<= 0 s0)" in cert.inv
+
+
+@BOTH
+def test_a_safety_invariant_is_cut_to_what_its_proofs_use(solver):
+    """Houdini keeps `0 <= s0` and `s0 <= 100`; the property is the second,
+    and it is inductive on its own, so the core leaves the first out."""
+    cert = infer("m_countdown", "safety", "(<= s0 100)",
+               solver=solver_or_skip(solver))
+    assert cert.inv == "(<= s0 100)"
+
+
+@BOTH
+def test_the_congruence_a_parity_property_needs_is_kept(solver):
+    """`m_step2` counts 0, 2, ..., 10: `s0 != 5` is not inductive (3 steps
+    to 5), and `s0` being even is the fact that makes it so."""
+    cert = infer("m_step2", "safety", "(not (= s0 5))",
+               solver=solver_or_skip(solver))
+    assert "(= (mod s0 2) 0)" in cert.inv
+
+
+@BOTH
+def test_a_real_invariant_is_the_values_a_run_takes(solver):
+    """`m_lra_lin` steps `x' = x - 1` while `x > 0`, so `0 <= x <= 5` admits
+    `x = 1/2` and steps it out: over the reals it is the value set, not the
+    interval, that is inductive. The pair `tests/limits` carries by hand."""
+    cert = infer("m_lra_lin", "buchi", "(= s0 0.0)", solver=solver_or_skip(solver))
+    assert cert.inv == ("(or (= s0 0.0) (= s0 1.0) (= s0 2.0) (= s0 3.0) "
+                          "(= s0 4.0) (= s0 5.0))")
+    assert cert.ranking == "(to_int s0)"
+
+
+@BOTH
+def test_a_real_ranking_function_is_scaled_before_it_is_floored(solver):
+    """`m_lra_half` steps by a half, where `to_int s0` repeats -- 3.0 and 2.5
+    both floor to 3 -- so the scale is the denominator the program writes.
+    Either solver proves the floored obligation directly."""
+    cert = infer("m_lra_half", "buchi", "(= s0 0.0)", solver=solver_or_skip(solver))
+    assert cert.ranking == "(to_int (* 2.0 s0))"
+    assert "(= s0 0.5)" in cert.inv
+
+
+@BOTH
+def test_a_matrix_component_is_ranked_by_one_of_its_elements(solver):
+    """`m_relu_vec` is a 3-vector stepping `v' = relu(v - 1)` from `(3,2,1)`.
+
+    The route refused the module outright for its sort. Its elements are
+    columns now, so `0 <= v[0]` is a candidate and `v[0]` is a rank, which
+    is the whole certificate -- and neither is sayable about the tuple
+    itself, which has no order to bound and no arithmetic to fall.
+
+    Both solvers, like the cases around it: the obligations name a constant
+    per element, so what Vampire is shown has no tuple in it even though
+    the certificate is written with selectors.
+    """
+    cert = infer("m_relu_vec", "buchi", "(= ((_ tuple.select 0) s0) 0)",
+               solver=solver_or_skip(solver))
+    assert cert.ranking == "((_ tuple.select 0) s0)"
+    assert cert.inv == "(<= 0 ((_ tuple.select 0) s0))"
+
+
+@BOTH
+def test_an_element_of_one_component_is_told_from_an_element_of_another(solver):
+    """`m_mixed`'s state is `x : 1x1` and `v : 3x1`, so the second
+    component's elements are columns 1, 2 and 3 while its own slots are 0,
+    1 and 2. The property is about `v[0]`, and a certificate that confused
+    the two indices would rank `x`."""
+    cert = infer("m_mixed", "buchi", "(= ((_ tuple.select 0) s1) 0)",
+               solver=solver_or_skip(solver))
+    assert cert.ranking == "((_ tuple.select 0) s1)"
+
+
+def test_no_obligation_names_anything_of_tuple_sort():
+    """What lets Vampire read a matrix-shaped module at all.
+
+    The holders are constructors over a constant per element, so a
+    `declare-fun` or `define-fun` for `(Tuple Int Int Int)` -- which
+    Vampire's front end rejects outright -- is never written. The
+    certificate still says `((_ tuple.select 0) s0)`, because that is the
+    module's own namespace; it is the *obligation* that is scalar.
+    """
+    from verith.houdini.solvers import VampireSolver
+
+    search, ob = a_search("m_relu_vec", "buchi",
+                          "(= ((_ tuple.select 0) s0) 0)")
+    fact = search.parse(["(<= 0 ((_ tuple.select 0) s0))"])
+    script = VampireSolver._script(ob.preserved(fact, fact))
+    assert "Tuple" not in script and "tuple" not in script
+    assert "v_s0_0" in script and "v_sp0_0" in script
+
+
+@BOTH
+def test_two_real_components_are_ranked_by_the_one_that_falls(solver):
+    """`m_lra_conv`: `x` converges to 0 and `y` to 2, two rounds apart. The
+    relation between them is a fact, so `y`'s range carries `x`'s rank."""
+    cert = infer("m_lra_conv", "buchi", "(and (= s0 0.0) (= s1 2.0))",
+               solver=solver_or_skip(solver))
+    assert cert.ranking == "(to_int s0)"
+    assert "(= (- s0 s1) (- 2.0))" in cert.inv
+
+
+def test_each_mode_is_bounded_by_what_its_round_reaches():
+    """The thermostat heats as `T' = 0.875 T + 3.75` while `T < 22`, so with
+    the heater on it never passes 23, and with it off never passes the
+    23.875 one more tick of heating gives -- constants no program text
+    names, computed rather than read."""
+    from verith.houdini.modes import mode_bounds
+
+    search, ob = a_search("m_thermostat", "buchi", "(>= s0 21.0)", fixture=HYBRID)
+    facts = mode_bounds(search.ctx, ob, log=lambda *_: None)
+    assert "(=> s1 (<= s0 23.0))" in facts
+    assert "(=> (not s1) (<= 17.0 s0))" in facts
+    assert "(<= s0 23.875)" in facts
+
+
+@BOTH
+def test_a_hysteresis_band_is_proved_by_the_bounds_each_mode_keeps(solver):
+    """No interval is inductive for `15 <= T <= 25` -- from 25 with the
+    heater on the room reaches 25.5 -- and the bounds per mode are."""
+    cert = infer("m_thermostat", "safety", "(and (>= s0 15.0) (<= s0 25.0))",
+               solver=solver_or_skip(solver), fixture=HYBRID)
+    assert "(=> s1 (<= s0 23.0))" in cert.inv
+
+
+def test_a_rank_is_fitted_again_to_the_round_the_solver_refutes_it_with():
+    """The tank fills by 1.5 to 12, and `24 - 2h` floors to 0 at h = 11.9:
+    a state off the half-unit lattice the draws live on. cvc5's refutation
+    is that state, and fitted to it the shift is 25."""
+    cert = infer("m_watertank", "buchi", "(>= s0 12.0)", fixture=HYBRID)
+    assert cert.ranking.startswith("(ite s1 (to_int (+ 25.0 (* (- 2.0) s0)))")
+
+
+@pytest.mark.parametrize("prp", ["(= s0 0)", "s[0][0] == 0", "(s[0][0] == 0)"])
+def test_a_property_in_python_syntax_is_zeroed_on_as_its_smtlib(prp):
+    """A counter that wraps to 0 ranks only as `(ite P 0 r)`. `P` went
+    into that source as written, so a property in the DSL's syntax made
+    every such rank text cvc5 could not read: houdini found none, and each
+    refusal the encoding kept crashed the run at exit."""
+    cert = infer("counter", "buchi", prp, fixture=FIXTURES)
+    assert cert.ranking.startswith("(ite (= s0 0) 0 ")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The flags
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_cvc5_is_the_default_and_resolves_without_a_binary():
+    """The reason it is the default: nothing to look for, and nothing to
+    fail at parse time on a machine with no prover installed."""
+    from verith.houdini.solvers import DEFAULT_SOLVER, resolve_solver
+
+    assert DEFAULT_SOLVER == "cvc5"
+    assert resolve_solver("cvc5") == SolverSpec("cvc5", None, 4)
+
+
+def test_a_vampire_flag_without_the_vampire_solver_is_refused():
+    """A flag that quietly did nothing would be worse than one that is an
+    error, which is what the route's `extra_check` is for."""
+    from types import SimpleNamespace
+
+    from verith import route_by_name
+
+    def check(opts):
+        return route_by_name("houdini").extra_check(
+            SimpleNamespace(route_opts=opts))
+
+    opts = {"houdini_solver": "cvc5", "vampire": "/x", "vampire_cores": None}
+    assert "starts no binary" in check(opts)
+    assert check({**opts, "vampire": None}) is None
+    assert check({**opts, "houdini_solver": "vampire"}) is None

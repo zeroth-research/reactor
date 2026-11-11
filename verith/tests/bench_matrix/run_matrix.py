@@ -1,0 +1,681 @@
+#!/usr/bin/env python3
+"""Run every `--infer` route over every (benchmark, property) and record it.
+
+    uv run python tests/bench_matrix/run_matrix.py                  # everything
+    uv run python tests/bench_matrix/run_matrix.py --suites limits tests
+    uv run python tests/bench_matrix/run_matrix.py --routes nuterm sygus
+    uv run python tests/bench_matrix/run_matrix.py --only Countdown
+
+One `(row, route)` pair is one `uv run certify` followed by one `lake build`,
+and both are timed -- the two numbers the table reports. Results land in
+`$VERITH_BENCH_WORK/results.json` as they are produced, and a pair already
+in that file is skipped, so an interrupted pass resumes and a single route
+can be re-measured without disturbing its neighbours (`--redo` forces one).
+
+**This runs strictly serially and must.** Every generated project symlinks
+its `.lake` to one shared build dir so Mathlib is never rebuilt, and module
+names (`Certificate.Data`, ...) are identical across projects: two
+concurrent runs overwrite each other's oleans and the symptom is
+`unknown constant 'hrank'`, which reads exactly like a codegen bug. See
+`../limits/README.md`, which lost an hour to it.
+
+Timings are wall clock and so are only as quiet as the machine. Another Lean
+build anywhere -- or Spotlight indexing the tens of thousands of `.olean`
+files a pass writes -- inflates them wildly and unevenly. Hence `.noindex`
+on the work directory, which is the documented way to make Spotlight skip
+one; keep the suffix on anything passed through `VERITH_BENCH_WORK`.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SP = Path(__file__).resolve().parent
+VR = SP.parent.parent                       # verith/: verith, certify, nuterm
+PY = VR.parent / "python"                   # python/: reactor and its tests
+REPO = PY.parent
+WARM = PY / "tests" / "lean"                       # the already-built Mathlib
+MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
+
+sys.path.insert(0, str(PY))
+sys.path.insert(0, str(VR))
+sys.path.insert(0, str(SP))
+from suites import all_rows, column_of, pairs, routes  # noqa: E402
+from reactor.lean.project.build import without_cascades
+from reactor.lean.project.lakefile import (  # noqa: E402
+    REACTOR_LEAN_ENV, reactor_lean_checkout, with_reactor_lean,
+)
+from reactor.lean.inputs import to_surface  # noqa: E402
+
+# The reactor-lean checkout every project requires by path, so a pass
+# measures the libraries on disk; the `verith` runs below inherit it.
+os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "reactor-lean"))
+REACTOR_LEAN = reactor_lean_checkout()
+
+WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
+PROJECTS = WORK / "projects"
+SHARED = WORK / "shared_lake"
+RESULTS = WORK / "results.json"
+
+GEN_TIMEOUT = 300
+BUILD_TIMEOUT = 420
+# What of GEN_TIMEOUT `--infer ai-cegis` does not spend asking: verith's
+# start-up and the project it writes either side of the loop.
+CEGIS_MARGIN = 20
+
+# The two paths `--infer fbk-proveit` needs, and the MathSAT bindings its
+# `vmt2lean.py` imports. Overridable, but defaulted so a plain run measures
+# all seven routes rather than silently six.
+PROVEIT_DIR = os.environ.get("VERITH_PROVEIT_DIR",
+                             str(Path.home() / "zeroth/proof-prototyping/lean-ltl-certifying"))
+IC3IA = os.environ.get("VERITH_IC3IA", str(Path.home() / "zeroth/fbk/ic3ia/build"))
+MATHSAT_PY = os.environ.get("VERITH_MATHSAT_PY", str(Path.home() / "zeroth/fbk/mathsat/python"))
+# The prover `--infer houdini --houdini-solver vampire` runs: the
+# macOS/Linux release binary, unzipped. Without it that column is dropped
+# and only the cvc5 one is measured.
+VAMPIRE = os.environ.get("VERITH_VAMPIRE", str(Path.home() / "zeroth/vampire/vampire"))
+KEY_FILE = REPO / "CLAUDE_KEY.txt"
+MODEL = os.environ.get("VERITH_MODEL", "")     # "" = verith's own default
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The shared build dir
+# ══════════════════════════════════════════════════════════════════════════
+
+def ensure_shared_lake() -> None:
+    """Point the shared build dir's `packages` at the already-built ones.
+
+    Without this every project resolves Mathlib for itself, which shows up
+    as `external command 'git' exited with code 128` on every row at once.
+    `packages` is only ever read, so several build dirs may point at it --
+    unlike the build dir itself, which takes one writer."""
+    warm = WARM / ".lake" / "packages"
+    if not warm.is_dir():
+        raise SystemExit(f"error: {warm} does not exist. Build it first:\n"
+                         f"    (cd {WARM} && lake build)")
+    SHARED.mkdir(parents=True, exist_ok=True)
+    link = SHARED / "packages"
+    if link.is_symlink():
+        if link.readlink() == warm:
+            return
+        link.unlink()
+    elif link.exists():
+        raise SystemExit(f"error: {link} exists and is not a symlink")
+    link.symlink_to(warm)
+
+
+def write_manifest(proj: Path, route_name: str) -> None:
+    """The manifest the project builds against.
+
+    `--infer fbk-proveit` writes a lakefile with a *path* require on the
+    `lean-ltl-certifying` checkout, and lake refuses a dependency the
+    manifest does not list. It needs no fetch -- it is a local directory --
+    so the entry is added here rather than by a `lake update`, which would
+    re-resolve the other thirteen packages. reactor-lean's packages are
+    path requires too, for the same reason."""
+    manifest = with_reactor_lean(json.loads(MANIFEST.read_text()), REACTOR_LEAN)
+    if route_name == "fbk-proveit":
+        manifest["packages"].append({
+            "type": "path", "scope": "", "name": "LTL_Certifying",
+            "manifestFile": "lake-manifest.json", "inherited": False,
+            "dir": PROVEIT_DIR, "configFile": "lakefile.toml",
+        })
+    (proj / "lake-manifest.json").write_text(json.dumps(manifest, indent=2))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# One pair
+# ══════════════════════════════════════════════════════════════════════════
+
+def command(row, route, out: Path) -> list[str]:
+    """The `uv run certify` this pair is, as a list. Also what the page shows."""
+    cmd = ["uv", "run", "certify", rel(row.module),
+           f"--{row.kind}", to_surface(row.prop),
+           *(["--pre", to_surface(row.pre)] if row.pre else []), *route.args,
+           "--artifacts", "reset", "-o", str(out), "-p", "Rea"]
+    if route.needs_llm and MODEL:
+        cmd += ["--model", MODEL]
+    if route.name == "ai-cegis":
+        # Asked by time rather than by count, so the column uses the budget
+        # the cell has: five attempts used to end at 75-107 s of a 180 s cap.
+        # The margin is the project written before the loop and after it.
+        cmd += ["--cegis-budget", str(GEN_TIMEOUT - CEGIS_MARGIN)]
+    return cmd
+
+
+def rel(p: Path) -> str:
+    """A module path as it is written from `python/`, which is where a run
+    is: `tests/limits/...` for reactor's fixtures, `../verith/tests/...` for
+    the adapters beside this file."""
+    return os.path.relpath(Path(p).resolve(), PY)
+
+
+def shown(row, route, out: Path) -> str:
+    """The command as a person would paste it: env prefixes, quoted property."""
+    import shlex
+    pre = [f"{k}={v}" for k, v in sorted(row.env.items())]
+    if route.needs_llm:
+        pre.append("ANTHROPIC_API_KEY=$(cat CLAUDE_KEY.txt)")
+    if "PYTHONPATH" in route.needs_env:
+        pre.append(f"PYTHONPATH={MATHSAT_PY}")
+    return " ".join(pre + [shlex.quote(c) for c in command(row, route, out)])
+
+
+def child_env(row, route) -> dict:
+    env = dict(os.environ, **row.env)
+    env["PYTHONWARNINGS"] = "ignore"
+    if route.needs_llm:
+        if not env.get("ANTHROPIC_API_KEY") and KEY_FILE.exists():
+            env["ANTHROPIC_API_KEY"] = KEY_FILE.read_text().strip()
+    if "PYTHONPATH" in route.needs_env:
+        env["PYTHONPATH"] = MATHSAT_PY + (
+            os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    return env
+
+
+# The cell running now, so stopping the harness can stop it too. Leading its
+# own process group is what lets a timeout take the whole cell down, and it is
+# also what keeps a signal to the harness from reaching it: SIGTERM to `uv run
+# python run_matrix.py` ended the harness and left `verith` running under init.
+_CURRENT: "subprocess.Popen | None" = None
+
+
+def _stop(signum, _frame) -> None:
+    """Take the running cell down with the harness, then exit."""
+    if _CURRENT is not None and _CURRENT.poll() is None:
+        _kill_group(_CURRENT)
+    raise SystemExit(128 + signum)
+
+
+def run_capped(cmd, *, cwd, env=None, timeout: int):
+    """`cmd` under a wall-clock cap that takes its whole subtree with it.
+
+    `subprocess.run(timeout=)` signals only the process it started, and here
+    that process is a wrapper: `uv run` for generation, `lake` for the build.
+    On a timeout the wrapper died and the real worker -- verith itself, or
+    the `lean` processes under lake -- was reparented to init and kept
+    running. One orphaned `--infer ai-cegis` cell held a core for 2h38m
+    beside the pass that had already written it off as TIMEOUT, so every
+    timing taken next to it is a timing of a busier machine than the page
+    claims. The child therefore leads its own process group and the cap
+    kills the group.
+
+    Returns `(completed, timed_out)`; on a timeout the partial output is
+    still returned, since a refusal is often printed before the hang.
+    """
+    global _CURRENT
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            start_new_session=True)
+    _CURRENT = proc
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, err), False
+    except subprocess.TimeoutExpired:
+        out, err = _kill_group(proc)
+        return subprocess.CompletedProcess(cmd, proc.returncode or -9, out, err), True
+
+
+def _kill_group(proc):
+    """SIGTERM `proc`'s group, SIGKILL whatever ignored that, and drain."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            break
+        try:
+            proc.wait(timeout=10)
+            break
+        except subprocess.TimeoutExpired:
+            continue
+    try:
+        # A survivor holding the pipe open would hang this, so it is capped
+        # too; losing the tail of a killed cell's output costs nothing.
+        return proc.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        return "", ""
+
+
+def diagnosis(blob: str) -> str:
+    """The part of a failed run's output that says what went wrong.
+
+    Two shapes reach here. A refusal is prose `verith` wrote: the first line
+    is the diagnosis and the lines under it are the hint, so a tail of it is
+    the answer -- which is why this is a tail and not a head.
+
+    A traceback is Python's, and there the answer is the exception at the
+    bottom; the frames above it are the path there. Taking the last lines of
+    one gave `cd = magic.infer(...) | File "...", line 177, in infer | raise
+    RuntimeError(` -- the call that raised, not what it said. `err_full`
+    keeps the whole thing for the page's detail panel either way.
+    """
+    lines = blob.splitlines()
+    frames = [i for i, ln in enumerate(lines) if ln.startswith('  File "')]
+    if not frames:
+        tail = [ln.strip() for ln in lines if ln.strip()]
+        return " | ".join(tail[-8:])
+    # The exception is the first unindented line after the last frame -- its
+    # own message may run on over indented lines, so those come with it.
+    for j in range(frames[-1] + 1, len(lines)):
+        if lines[j].strip() and not lines[j][0].isspace():
+            return "\n".join(lines[j:]).strip()
+    return lines[-1].strip()
+
+
+def generate(row, route, out: Path) -> dict:
+    if out.exists():
+        shutil.rmtree(out)
+    t0 = time.time()
+    r, timed_out = run_capped(command(row, route, out), cwd=PY,
+                              env=child_env(row, route), timeout=GEN_TIMEOUT)
+    if timed_out:
+        return dict(ok=False, secs=time.time() - t0,
+                    err=f"verith timed out ({GEN_TIMEOUT}s)",
+                    err_full=((r.stderr or r.stdout) or "").strip()[-4000:])
+    if r.returncode != 0:
+        blob = (r.stderr or r.stdout).strip()
+        return dict(ok=False, secs=time.time() - t0,
+                    err=diagnosis(blob), err_full=blob[-4000:],
+                    gave_up=gave_up(out, blob))
+    return dict(ok=True, secs=time.time() - t0, err="",
+                inferred=inferred_from(r.stdout), inferred_rule="last")
+
+
+def gave_up(out: Path, blob: str = "") -> str:
+    """Which kind of giving up this was, as the route itself recorded it.
+
+    `NO-CERT` is three measurements in one name -- `no_solution` is a space
+    proved empty, `unknown` a search that ran out, `declined` a shape no
+    search was run on -- and reading them back off the prose was guesswork:
+    a dozen wordings per route, ~160 of 312 unmatched, 7 matching two
+    buckets at once. The status is what the route wrote down, so it is what
+    this reads.
+
+    The *last* note, because a run that resumed may carry an earlier one,
+    and `""` when there is none -- a pass taken before routes recorded this
+    has no note at all.
+
+    A refusal `verith` wrote before any project existed has nowhere to leave
+    a note, and is `declined` all the same: what refuses that early is the
+    CLI's check of the property kind or a route's own `precheck`, and both
+    are a shape check by contract -- nothing is searched before the project
+    is written. `--infer fbk-proveit` refuses a Real state or an input read
+    while stepping there, and those were 49 `NO-CERT` cells with no status
+    at all. A usage error is argparse's, not a refusal, and is left alone.
+    """
+    if (blob and not (out / "Rea").exists()
+            and re.search(r"^error: ", blob, re.M) and "usage:" not in blob):
+        return "declined"
+    index = out / "Rea" / "artifacts" / "index.json"
+    try:
+        entries = json.loads(index.read_text())
+    except (OSError, ValueError):
+        return ""
+    notes = [e for e in entries if e.get("role") == "note"]
+    return notes[-1].get("status", "") if notes else ""
+
+
+_PRED = re.compile(r"^\s*(?:\[[\w-]+\]\s*)?(inv|ranking)\s*:\s*(.+?)\s*$")
+
+
+def inferred_from(stdout: str) -> dict:
+    """What the route said it found -- the invariant and ranking it printed.
+
+    Worth keeping beside the timing: two routes that both certify a row did
+    not necessarily find the same certificate, and the table's `VERIFIED`
+    cannot show that.
+
+    Kept exactly as printed. It used to be stripped of backticks for
+    display, which hid the one thing wrong with `--infer ai`'s answers: they
+    reached `Data.lean` quoted, and the record showed them clean.
+
+    The *last* one printed. `ai` and `ai-cegis` print a candidate per attempt
+    and stop at the one that is accepted, so the first line is attempt 0 --
+    which, on any run that needed a second attempt, is a candidate that was
+    rejected, and not the certificate that was built."""
+    found: dict = {}
+    for line in stdout.splitlines():
+        m = _PRED.match(line)
+        if m:
+            found[m.group(1)] = m.group(2)
+    return found
+
+
+# lake prints `declaration uses \`sorry\`` -- backticks, not the straight
+# quotes an older harness looked for. And the shared `.lake` carries one
+# upstream sorry of its own (lean-smt's `Smt/Reconstruct/BitVec/Bitblast`),
+# so a sorry only counts when it is in a file this project owns.
+_ERR = re.compile(r"^(?:error|warning): (?P<file>[^:]+\.lean):(\d+):(\d+):\s*(?P<msg>.*)$")
+# A target that fails is reported as `✖ [n/m] Building X`; a finished one as
+# `Built X`. Matching only the second recorded no failed target, ever, so
+# `BUILD-FAIL` could not be told from `PROOF-FAIL`.
+_FAILED = re.compile(r"^✖ \[[\d/]+\] Buil(?:t|ding) (?P<t>\S+)")
+_SORRY = re.compile(r"declaration uses [`']sorry[`']")
+OURS = ("Certificate/", "System/", "Relational/", "LeanAI/", "ZerothHammer/", "ProveIt/")
+
+
+def build(row, route, out: Path) -> dict:
+    proj = out / "Rea"
+    lake = proj / ".lake"
+    if lake.exists() or lake.is_symlink():
+        lake.unlink()
+    lake.symlink_to(SHARED)
+    write_manifest(proj, route.name)
+
+    t0 = time.time()
+    r, timed_out = run_capped(["lake", "build"], cwd=proj, timeout=BUILD_TIMEOUT)
+    if timed_out:
+        return dict(ok=False, raw_ok=False, secs=time.time() - t0,
+                    targets=["<timeout>"], sorries=[],
+                    errors=[f"lake build timed out ({BUILD_TIMEOUT}s)"])
+    lines = (r.stdout + "\n" + r.stderr).splitlines()
+    failed = [m.group("t") for ln in lines if (m := _FAILED.match(ln))]
+    errors, sorries = [], []
+    for i, ln in enumerate(lines):
+        m = _ERR.match(ln)
+        if _SORRY.search(ln):
+            if m and any(s in m.group("file") for s in OURS):
+                sorries.append(f"{Path(m.group('file')).name}:{m.group(2)}")
+            continue
+        if ln.startswith("error: "):
+            if m:
+                msg = m.group("msg").strip() or (lines[i + 1].strip()
+                                                 if i + 1 < len(lines) else "")
+                errors.append(f"{m.group('file')}: {msg}")
+            elif "Lean exited" not in ln:
+                errors.append(ln[7:])
+    # A kernel `unknown constant` after an earlier error is that error's
+    # shadow -- the declaration it names is the one that just failed to
+    # elaborate -- and it is the line that reads like a codegen bug.
+    return dict(ok=r.returncode == 0 and not sorries, raw_ok=r.returncode == 0,
+                secs=time.time() - t0, targets=failed,
+                errors=without_cascades(errors)[:6], sorries=sorries[:8])
+
+
+# A route that produced no project did so for one of three reasons, and they
+# are not the same measurement. `main` puts a refusal under the flag it is
+# about -- `error: --infer <route>:` for most, `--fbk-proveit:` or `--ic3ia:`
+# for some -- so the prefix alone is not enough.
+_REFUTED = re.compile(r"found a counterexample|\bUNSAFE\b|property does not hold")
+# The CLI's refusal of a property kind the route does not take -- each route's
+# `kinds_refusal`, or the generic `--infer X is incompatible with --buchi`.
+_UNSUPPORTED = re.compile(
+    r"is incompatible with --(?:buchi|safety|pre)\b|--(?:safety|buchi) needs --infer")
+# `ai` checks its own candidates with a second model call and gives up after
+# `max_attempts` rejections -- the same outcome as `ai-cegis` running out of
+# attempts, reported in its own words.
+_NO_CERT = re.compile(
+    r"error: --infer|CEG(?:AR|IS) failed after|obligation violated|found no ranking"
+    r"|found no invariant|could not decide|cannot decide|--fbk-proveit:|--ic3ia:"
+    r"|Failed to find valid invariant/ranking after")
+# A module shape no Lean column can write. `verith` refuses it before
+# generating and the message is prefixed like every other `--infer` refusal,
+# so it has to be told from one: nothing was searched, and `GEN-FAIL` is what
+# the page promises for a module shape refused up front.
+_NO_LEAN = re.compile(r"has no Lean form")
+
+
+# What a certificate is made of. Everything else a project builds -- the five
+# encodings under `System/`, `Relational`, the hammer -- is the module, and a failure
+# there is not the certificate's.
+_CERT_FILES = {"Certificate.lean", "Data.lean", "Equivalence.lean"}
+
+
+def failed_outside_certificate(bld) -> bool:
+    """Whether something other than the certificate failed to build.
+
+    A failed encoding takes the certificate down with it -- `Certificate`
+    imports `System` -- so a failed `Certificate.*` target says nothing on its
+    own; any failed target *outside* it does. Runs recorded before the target
+    list was captured fall back on the file each error names."""
+    targets = [t for t in bld.get("targets", []) if t != "<timeout>"]
+    if targets:
+        return any(not t.startswith("Certificate") for t in targets)
+    files = [e.split(":", 1)[0] for e in bld.get("errors", [])]
+    return any(Path(f).name not in _CERT_FILES for f in files if f.endswith(".lean"))
+
+
+def verdict(gen, bld) -> str:
+    """What this pair showed.
+
+    A route that searched a shape and found it empty is the measurement, not
+    a defect, so `NO-CERT` is kept apart from `GEN-FAIL`; and a route that
+    *disproved* the property is a third thing again, which the deliberately
+    false controls are there to produce. `SORRY` is a route that built with
+    an obligation left open."""
+    if not gen["ok"]:
+        err = gen["err"] + " " + gen.get("err_full", "")
+        if "timed out" in gen["err"]:
+            return "TIMEOUT"
+        if _UNSUPPORTED.search(err):
+            return "UNSUPPORTED"
+        if _REFUTED.search(err):
+            return "REFUTED"
+        if _NO_LEAN.search(err):
+            return "GEN-FAIL"
+        # A route that looked at this module and did not take it searched
+        # nothing, so its cell says what the route reads, not how hard the
+        # module is -- and counted as `NO-CERT` it was in every success
+        # rate's denominator: some 165 of the 750 in one pass.
+        if gen.get("gave_up") == "declined":
+            return "UNSUPPORTED"
+        return "NO-CERT" if _NO_CERT.search(err) else "GEN-FAIL"
+    if "<timeout>" in bld.get("targets", []):
+        return "TIMEOUT"
+    # Before the sorries: a module that does not build is the headline, and
+    # a `sorry` in the certificate beside it is not what stopped the build.
+    if not bld.get("raw_ok") and failed_outside_certificate(bld):
+        return "BUILD-FAIL"
+    if bld.get("sorries"):
+        return "SORRY" if bld.get("raw_ok") else "SORRY+FAIL"
+    if not bld["ok"]:
+        return "PROOF-FAIL"
+    return "VERIFIED"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The pass
+# ══════════════════════════════════════════════════════════════════════════
+
+def machine() -> dict:
+    """What ran this, so a timing can be read against it."""
+    def sysctl(k):
+        try:
+            return subprocess.run(["sysctl", "-n", k], capture_output=True,
+                                  text=True, timeout=5).stdout.strip()
+        except Exception:
+            return ""
+
+    def out(cmd):
+        try:
+            return subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=30).stdout.strip()
+        except Exception:
+            return ""
+
+    mem = sysctl("hw.memsize")
+    return dict(
+        cpu=sysctl("machdep.cpu.brand_string") or platform.processor(),
+        cores=sysctl("hw.ncpu") or str(os.cpu_count()),
+        perf_cores=sysctl("hw.perflevel0.physicalcpu"),
+        eff_cores=sysctl("hw.perflevel1.physicalcpu"),
+        memory_gb=round(int(mem) / 1024**3) if mem.isdigit() else None,
+        os=f"{platform.system()} {platform.release()}",
+        os_product=out(["sw_vers", "-productVersion"]),
+        os_build=out(["sw_vers", "-buildVersion"]),
+        python=platform.python_version(),
+        lake=out(["lake", "--version"]),
+        toolchain=(WARM / "lean-toolchain").read_text().strip(),
+        lake_packages_gb=round(int(out(["du", "-sk", str(WARM / ".lake")]).split()[0])
+                               / 1024**2, 1) if out(["du", "-sk", str(WARM / ".lake")]) else None,
+        packages={p["name"]: (p.get("inputRev") or p.get("rev", ""))[:40]
+                  for p in json.loads(MANIFEST.read_text())["packages"]},
+    )
+
+
+def main() -> None:
+    global RESULTS, GEN_TIMEOUT
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, _stop)
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--suites", nargs="*", default=[],
+                    help="limits fbk tests svcomp hybrid petri")
+    ap.add_argument("--routes", nargs="*", default=[], help="route names to measure")
+    ap.add_argument("--only", nargs="*", default=[], help="substring match on benchmark")
+    ap.add_argument("--redo", action="store_true", help="re-measure pairs already recorded")
+    ap.add_argument("--pairs", metavar="FILE",
+                    help="re-measure exactly the pairs named in FILE, one "
+                         "`suite/bench/prop::route` per line (implies --redo)")
+    ap.add_argument("--no-build", action="store_true", help="generate only, skip lake")
+    ap.add_argument("--gen-timeout", type=int, default=GEN_TIMEOUT, metavar="SECONDS",
+                    help=f"wall-clock cap on one `verith` run (default: {GEN_TIMEOUT})")
+    # A repeat measurement is a *new sample*, not an amendment to the old
+    # one: it goes in its own file and `render.py` averages the files it is
+    # given. Resuming an interrupted pass means pointing `--results` back at
+    # that pass's file, which is what the default does for the first one.
+    ap.add_argument("--results", default=str(RESULTS), metavar="PATH",
+                    help="results file to write (and resume from)")
+    ap.add_argument("--label", default="", metavar="NAME",
+                    help="what to call this sample on the page (default: filename stem)")
+    ap.add_argument("--reverdict", action="store_true",
+                    help="recompute every recorded verdict from its stored gen/build "
+                         "data and exit -- what to run after correcting `verdict()`, "
+                         "so a rule change does not cost a re-measurement")
+    ap.add_argument("--prune", action="store_true",
+                    help="drop recorded rows and runs the suites and routes no longer "
+                         "produce, and exit -- what to run after `suites.py` stops "
+                         "emitting a row or a route")
+    args = ap.parse_args()
+    RESULTS = Path(args.results)
+    GEN_TIMEOUT = args.gen_timeout
+
+    if args.prune:
+        data = json.loads(RESULTS.read_text())
+        keep = {r.key for r in all_rows()}
+        names = {rt.name for rt in routes(proveit_dir=PROVEIT_DIR, ic3ia=IC3IA, vampire=VAMPIRE)}
+        gone = sorted(k for k in data["rows"] if k not in keep)
+        # By the key, not by the `route` field beside it: the key is what a
+        # cell is looked up by, and the field names the route rather than
+        # the column, so two columns record the same one.
+        runs = [p for p in data["runs"]
+                if p.split("::")[0] not in keep or column_of(p) not in names]
+        for k in gone:
+            del data["rows"][k]
+        for p in runs:
+            del data["runs"][p]
+        RESULTS.write_text(json.dumps(data, indent=1))
+        for k in gone:
+            print(f"  dropped {k}")
+        print(f"{len(gone)} rows and {len(runs)} runs dropped; "
+              f"{len(data['rows'])} rows and {len(data['runs'])} runs kept")
+        return
+
+    if args.reverdict:
+        data = json.loads(RESULTS.read_text())
+        changed = 0
+        for pair, run in data["runs"].items():
+            was, now = run["verdict"], verdict(run["gen"], run["build"])
+            if was != now:
+                run["verdict"] = now
+                changed += 1
+                print(f"  {was:<11} -> {now:<11} {pair}")
+        RESULTS.write_text(json.dumps(data, indent=1))
+        print(f"{changed} of {len(data['runs'])} verdicts changed")
+        return
+
+    PROJECTS.mkdir(parents=True, exist_ok=True)
+    ensure_shared_lake()
+    results = json.loads(RESULTS.read_text()) if RESULTS.exists() else {}
+    results.setdefault("meta", {})
+    results.setdefault("rows", {})
+    results.setdefault("runs", {})
+    results["meta"]["label"] = args.label or RESULTS.stem
+    results["meta"]["machine"] = machine()
+    results["meta"]["model"] = MODEL or "claude-sonnet-4-6"
+    results["meta"]["gen_timeout"] = GEN_TIMEOUT
+    results["meta"]["build_timeout"] = BUILD_TIMEOUT
+    results["meta"]["proveit_dir"] = PROVEIT_DIR
+    results["meta"]["ic3ia"] = IC3IA
+    results["meta"]["vampire"] = VAMPIRE
+
+    rows = all_rows(args.suites)
+    if args.only:
+        rows = [r for r in rows if any(o.lower() in r.bench.lower() for o in args.only)]
+    rts = routes(proveit_dir=PROVEIT_DIR, ic3ia=IC3IA, vampire=VAMPIRE)
+    if args.routes:
+        rts = [r for r in rts if r.name in args.routes]
+    todo = pairs(rows, rts)
+    if args.pairs:
+        # After a fix, what needs measuring again is the cells it touched,
+        # which cut across suites, routes and benchmarks alike, so no
+        # combination of the filters above names them.
+        wanted = {ln.strip() for ln in Path(args.pairs).read_text().splitlines()
+                  if ln.strip() and not ln.startswith("#")}
+        known = {f"{r.key}::{rt.name}" for r, rt in todo}
+        if wanted - known:
+            raise SystemExit("error: --pairs names pairs the suites do not produce:\n  "
+                             + "\n  ".join(sorted(wanted - known)))
+        todo = [(r, rt) for r, rt in todo if f"{r.key}::{rt.name}" in wanted]
+        args.redo = True
+
+    for row in rows:
+        results["rows"][row.key] = dict(
+            suite=row.suite, bench=row.bench, kind=row.kind, prop=row.prop,
+            prop_label=row.prop_label, module=rel(row.module), note=row.note,
+            env=row.env, shared=list(row.shared), truth=row.truth, pre=row.pre)
+
+    pending = [(r, rt) for r, rt in todo
+               if args.redo or f"{r.key}::{rt.name}" not in results["runs"]]
+    print(f"{len(todo)} pairs, {len(pending)} to run "
+          f"({len(todo) - len(pending)} already recorded)\n")
+
+    t_start = time.time()
+    for n, (row, route) in enumerate(pending, 1):
+        pair = f"{row.key}::{route.name}"
+        out = PROJECTS / re.sub(r"[^A-Za-z0-9_.-]", "_", pair)
+        label = f"{row.suite}/{row.bench}"
+        print(f"[{n}/{len(pending)}] {label[:44]:<44} {row.prop_label[:18]:<18} "
+              f"{route.name:<11} ", end="", flush=True)
+        gen = generate(row, route, out)
+        if not gen["ok"] or args.no_build:
+            bld = dict(ok=False, raw_ok=False, secs=0.0, targets=[], sorries=[],
+                       errors=["(not built: generation failed)"] if not gen["ok"]
+                       else ["(not built: --no-build)"])
+        else:
+            bld = build(row, route, out)
+        v = verdict(gen, bld) if not args.no_build or not gen["ok"] else "GEN-OK"
+        # When, not just how long: a timing is only as good as what else
+        # the machine was doing, and without this the only way to place a
+        # cell in time is to count lines in the log.
+        # `route` is the column, the same string the key is suffixed with;
+        # the key is what anything reading this file should go by, because a
+        # file written before a column was renamed still carries the old one
+        # here (`column_of`).
+        results["runs"][pair] = dict(route=route.name, verdict=v, gen=gen, build=bld,
+                                     when=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                     command=shown(row, route,
+                                                   Path("/tmp/verith-out.noindex") / out.name))
+        RESULTS.write_text(json.dumps(results, indent=1))
+        print(f"{v:<11} gen {gen['secs']:6.1f}s  build {bld['secs']:6.1f}s")
+        if v in ("GEN-FAIL", "NO-CERT"):
+            print(f"      {gen['err'][:160]}")
+        for e in (bld["errors"] or [])[:1]:
+            if not e.startswith("(not built"):
+                print(f"      {e[:160]}")
+        shutil.rmtree(out, ignore_errors=True)     # the .olean cache is shared
+
+    print(f"\nwrote {RESULTS}  ({time.time() - t_start:.0f}s)")
+
+
+if __name__ == "__main__":
+    main()

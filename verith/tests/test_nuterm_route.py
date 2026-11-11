@@ -1,0 +1,518 @@
+"""The `--infer nuterm` route (`verith.nuterm.engine`).
+
+What the route promises is that the certificate it returns has already been
+proved, so the tests that matter put its output to verith's *own* obligations
+(`smt.precheck.pre_check`, which is cvc5 restating `rule_buchi` / `rule_globally`
+from scratch). A certificate the Farkas procedure certified and cvc5 refutes
+would be the route lying about what it did.
+
+The rest pin the two seams that are this module's own: the SMT-LIB it prints,
+and what it refuses.
+"""
+
+import numpy as np
+import pytest
+import torch
+
+from reactor import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
+from reactor.analyzer import convert_method
+from reactor.sugar import ite
+from reactor.lean.core.certificate import Claim
+from reactor.lean.core.errors import Refused
+from verith.nuterm.engine import (
+    NutermEngine,
+    _parse_property,
+    _prune,
+    _smt_ranking,
+    _smt_term,
+)
+from verith.common.smtlib import smt_int
+from reactor.lean.smt.limits import SmtBudget
+from reactor.lean.smt.precheck import Status, pre_check
+
+pytest.importorskip("cvc5")
+
+
+# ---------------------------------------------------------------------------
+# Modules under test
+# ---------------------------------------------------------------------------
+
+def _countdown() -> Module:
+    """`x = 100; loop { if x == 0 then x = 100 else x = x - 1 }`.
+
+    `x == 0` recurs, under the invariant `0 <= x <= 100` and a rank that drops
+    on every round where it does not hold."""
+    def init():
+        return 100
+
+    def update(old_x):
+        if old_x == 0:
+            return 100
+        return old_x - 1
+
+    state = Var(Int([1, 1]))
+    return Module.sequential(
+        [state],
+        convert_method(init, {}, [X(state)], theory=LIA),
+        convert_method(update, {"old_x": state}, [X(state)], theory=LIA),
+    )
+
+
+def _real_counter() -> Module:
+    """The same shape over a real-valued component: outside the procedure."""
+    def init():
+        return 0.0
+
+    def update(old_x):
+        return old_x + 1.0
+
+    state = Var(Real([1, 1]))
+    from reactor import LRA
+    return Module.sequential(
+        [state],
+        convert_method(init, {}, [X(state)], theory=LRA),
+        convert_method(update, {"old_x": state}, [X(state)], theory=LRA),
+    )
+
+
+def _write_only_second() -> Module:
+    """The countdown beside a component nothing reads latched.
+
+    `y` is driven every round and read by no term, so it is not a column of the
+    system the proof quantifies over -- while still being `s1` to verith, which
+    numbers the state by the module's ctrl variables."""
+    class Prog(sugar.Module):
+        def init(self):
+            return 100, 0
+
+        def update(self, x, y):
+            return ite(x == 0, 100, x - 1), 0
+
+    return Prog(ctrl=(Var(Int([1, 1])), Var(Int([1, 1]))), theory=LIA)
+
+
+def _learn(module, prp, kind, pre=None):
+    """The claim asked about and the route's answer to it. `--pre` fills both
+    preconditions."""
+    claim = Claim(prp=prp, kind=kind, init_pre=pre, update_pre=pre)
+    return claim, NutermEngine(module, log=lambda *a: None).infer(claim)
+
+
+def _verdicts(module, claim, cert):
+    return {v.name: v.status
+            for v in pre_check(module, claim, cert, SmtBudget(),
+                               log=lambda *a: None)}
+
+
+# ---------------------------------------------------------------------------
+# What the route returns is a certificate verith's own checker accepts
+# ---------------------------------------------------------------------------
+
+def test_a_learned_buchi_certificate_holds_under_cvc5():
+    """The rank the Farkas procedure certified discharges `rule_buchi`'s
+    obligations as cvc5 states them: the invariant holds at entry and is
+    preserved, and the rank drops wherever the property does not hold."""
+    module = _countdown()
+    claim, cert = _learn(module, "(= s0 0)", "buchi")
+    assert cert.inv and cert.ranking, "a Buchi certificate is both"
+    v = _verdicts(module, claim, cert)
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "hrank": Status.HOLDS}, v
+
+
+def test_the_route_leaves_its_answer_where_the_next_run_resumes_from(tmp_path):
+    """Found, and then *resumable*: both halves `proved` and SMT-LIB, which
+    is what `infer.FIXABLE` and `infer.resume.resumable_inv` ask for, so
+    a following `--infer ai-cegis` starts from them instead of asking the
+    model again."""
+    from types import SimpleNamespace
+
+    from reactor.lean.artifacts import ArtifactStore
+    from reactor.lean.core.certificate import Certificate
+    from verith import FIXABLE
+    from verith.nuterm import ROUTE
+
+    store = ArtifactStore(dir=tmp_path / "artifacts", producer="nuterm")
+    inp = SimpleNamespace(
+        module=_countdown(), claim=Claim(prp="(= s0 0)", kind="buchi"),
+        given=Certificate(), log=lambda *a: None, smt=None,
+        project=SimpleNamespace(artifacts=store),
+    )
+    cert = ROUTE.run(inp).cert
+    inv = store.usable("inv", languages=("smt",), statuses=FIXABLE)
+    rank = store.usable("ranking", languages=("smt",), statuses=("proved",))
+    assert [store.read(a) for a in inv] == [cert.inv]
+    assert [store.read(a) for a in rank] == [cert.ranking]
+
+
+def test_a_learned_safety_invariant_implies_the_property():
+    """`rule_globally` takes no rank, so the certificate is the invariant --
+    and what makes it a safety proof is that it implies the property."""
+    module = _countdown()
+    claim, cert = _learn(module, "(<= s0 100)", "safety")
+    assert cert.inv and cert.ranking is None, "a safety certificate has no rank"
+    v = _verdicts(module, claim, cert)
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "inv_imp_P": Status.HOLDS}, v
+
+
+def test_the_invariant_is_the_one_the_program_has():
+    """Houdini's lattice covers this program's bound, so the route finds it
+    rather than something vacuous that happens to be inductive."""
+    _, cert = _learn(_countdown(), "(= s0 0)", "buchi")
+    assert "(<= s0 100)" in cert.inv and "(>= s0 0)" in cert.inv, cert.inv
+
+
+def test_a_property_the_route_cannot_establish_is_refused():
+    """A property the route cannot prove -- false here, but a true one outside
+    Houdini's lattice of signs and pairwise facts reads the same way -- is a
+    refusal naming the routes that are not so limited, not a certificate that
+    fails four steps later in cvc5 or in lake."""
+    with pytest.raises(Refused, match="--fbk-proveit.*--infer ai-cegis"):
+        _learn(_countdown(), "(<= s0 3)", "safety")
+
+
+# ---------------------------------------------------------------------------
+# What the route refuses
+# ---------------------------------------------------------------------------
+
+def test_a_module_the_procedure_cannot_read_is_refused():
+    """The procedure reads scalar integer wires; a real component is refused
+    by name at the door rather than approximated."""
+    with pytest.raises(Refused, match="scalar"):
+        _learn(_real_counter(), "(<= s0 100)", "safety")
+
+
+def test_a_property_naming_something_that_is_not_a_column_is_refused():
+    """`s1` is a state component verith numbers and the procedure has no column
+    for. The refusal says which it is, rather than reading as an undeclared
+    name -- so every `s_i` the module has is declared for the parse."""
+    with pytest.raises(Refused, match=r"names \['s1'\].*not columns"):
+        _learn(_write_only_second(), "(= s1 0)", "buchi")
+
+
+def test_a_property_over_the_columns_of_such_a_module_is_certified():
+    """The component that is not a column is no obstacle to a property that
+    does not name one: the certificate is over the columns and verith's
+    obligations are over the whole state."""
+    module = _write_only_second()
+    v = _verdicts(module, *_learn(module, "(= s0 0)", "buchi"))
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "hrank": Status.HOLDS}, v
+
+
+def test_a_property_that_is_no_predicate_is_refused():
+    """`x == 0` is the DSL's Python syntax, which this route reads as every
+    other one does, and `x` is no name of this module in it."""
+    with pytest.raises(Refused, match="--buchi: cannot read `x == 0`"):
+        _learn(_countdown(), "x == 0", "buchi")
+
+
+def test_a_rule_shape_the_procedure_cannot_read_is_a_refusal_not_a_traceback():
+    """The procedure refuses by raising, and not all of it happens at the door:
+    a rule the LP cannot read as linear rows is met when the obligation is cut
+    up. That is still a reason this route cannot answer, so it reaches the user
+    as an error line."""
+    with pytest.raises(Refused, match="cannot certify this property"):
+        _learn(_countdown(), "(= (mod s0 2) 0)", "safety")
+
+
+def test_a_run_with_no_property_is_refused():
+    with pytest.raises(Refused, match="--safety or --buchi"):
+        NutermEngine(_countdown()).infer(Claim())
+
+
+# ---------------------------------------------------------------------------
+# `--pre`, as the entry assumption
+# ---------------------------------------------------------------------------
+
+def _starts_at_an_input() -> Module:
+    """`x := n; loop { x = if x > 0 then x - 1 else x }`.
+
+    `n` is never written, so it is an external input, and `x` starts at it
+    *bare* -- which is what lets a constraint on the input be read back as one
+    on the column. `0 <= x` is an invariant exactly when `0 <= n`."""
+    x = Var(Int([1, 1]))
+    n = Var(Int([1, 1]))
+
+    def update(old_x):
+        if old_x > 0:
+            return old_x - 1
+        return old_x
+
+    return Module.sequential(
+        [x, n],
+        [Term(LIA.Id(), [X(x)], [X(n)])],
+        convert_method(update, {"old_x": x}, [X(x)], theory=LIA),
+    )
+
+
+def test_without_the_precondition_there_is_no_invariant_to_find():
+    """The control. `x` starts at an unconstrained input, so `0 <= x` fails
+    initiation and Houdini drops it -- the property is not false, it is one
+    the route cannot establish from every state the init block can produce."""
+    with pytest.raises(Refused, match="no inductive invariant"):
+        _learn(_starts_at_an_input(), "(>= s0 0)", "safety")
+
+
+def test_the_precondition_is_what_makes_the_invariant_inductive():
+    """And with it the same question is answerable, by the same search."""
+    module = _starts_at_an_input()
+    _, cert = _learn(module, "(>= s0 0)", "safety", "(>= e0 0)")
+    assert "(>= s0 0)" in cert.inv, cert.inv
+
+
+def test_the_certificate_holds_under_verith_own_obligations():
+    """What the route returns has to survive `--pre-check`, which states the
+    obligations with `init_pre` in them -- so the assumption the search made
+    and the assumption the check grants are the same one."""
+    module = _starts_at_an_input()
+    v = _verdicts(module, *_learn(module, "(>= s0 0)", "safety", "(>= e0 0)"))
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "inv_imp_P": Status.HOLDS}, v
+
+
+def test_a_precondition_over_an_input_that_starts_no_column_is_refused():
+    """`x := n + 1` reads the input and keeps no column equal to it, so no
+    state predicate says what `--pre` says. Refused rather than dropped:
+    dropping it would search under an assumption the user did not make and
+    report the failure as the module's."""
+    x = Var(Int([1, 1]))
+    n = Var(Int([1, 1]))
+    one = Wire(Int([1, 1]))
+    module = Module.sequential(
+        [x, n],
+        [Term(LIA.Int(torch.tensor([[1]])), [one]),
+         Term(LIA.Add(), [X(x)], [X(n), one])],
+        [Term(LIA.Id(), [X(x)], [x])],
+    )
+    with pytest.raises(Refused, match="e0, which starts no column"):
+        _learn(module, "(>= s0 0)", "safety", "(>= e0 0)")
+
+
+def test_a_precondition_over_a_latched_input_is_refused():
+    """`el0` is the input as the *previous* round left it, and at entry there
+    is no previous round."""
+    with pytest.raises(Refused, match="latched input el0"):
+        _learn(_starts_at_an_input(), "(>= s0 0)", "safety", "(>= el0 0)")
+
+
+def test_a_precondition_that_is_no_predicate_is_refused():
+    """`n` is no name of this module in either dialect."""
+    with pytest.raises(Refused, match="--pre: cannot read `n >= 0`"):
+        _learn(_starts_at_an_input(), "(>= s0 0)", "safety", "n >= 0")
+
+
+def test_predicates_in_python_syntax_are_read_as_their_smtlib():
+    """z3 reads SMT-LIB only, so a property or `--pre` in the DSL's Python
+    syntax -- which every other route reads -- was refused as text z3
+    could not parse. It is read through the run's encoding and handed on as
+    cvc5 prints it."""
+    module = _starts_at_an_input()
+    _, cert = _learn(module, "s[0][0] >= 0", "safety", "e0[0][0] >= 0")
+    assert "(>= s0 0)" in cert.inv, cert.inv
+    module = _countdown()
+    v = _verdicts(module, *_learn(module, "s[0][0] == 0", "buchi"))
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "hrank": Status.HOLDS}, v
+
+
+def test_the_conjuncts_are_seeded_one_by_one():
+    """A conjunction seeded whole survives only if all of it is inductive.
+    Split, the half that is keeps working -- here `0 <= x` survives while the
+    precondition's other half, about an input nothing preserves, does not."""
+    from verith.nuterm.engine import _conjuncts
+    import z3
+    a, b = z3.Int("a"), z3.Int("b")
+    assert _conjuncts(z3.And(a >= 0, b >= 0)) == [a >= 0, b >= 0]
+    assert _conjuncts(a >= 0) == [a >= 0]
+
+
+# ---------------------------------------------------------------------------
+# The SMT-LIB the route prints
+# ---------------------------------------------------------------------------
+
+def test_a_negative_literal_is_a_negation():
+    """SMT-LIB has no negative numerals; `-3` is `(- 3)`."""
+    assert smt_int(3) == "3" and smt_int(-3) == "(- 3)" and smt_int(0) == "0"
+
+
+def test_a_relu_unit_prints_without_a_let():
+    """A ReLU names its pre-activation twice. z3's own printer would bind it
+    with a `let`, which cannot be the body of the Lean definition this string
+    becomes -- so the term is written out in full."""
+    layers = [(np.array([[1, -1]]), np.array([2])), (np.array([[3]]), np.array([0]))]
+    src = _smt_ranking(layers, ["s0", "s1"])
+    assert src == "(* 3 (ite (> (+ 2 s0 (- s1)) 0) (+ 2 s0 (- s1)) 0))"
+    assert "let" not in src
+
+
+def test_a_unit_the_output_layer_drops_is_not_printed():
+    """A zero output weight contributes nothing, so it says nothing."""
+    layers = [(np.array([[1], [1]]), np.array([0, 9])),
+              (np.array([[1, 0]]), np.array([0]))]
+    src = _smt_ranking(layers, ["s0"])
+    assert "9" not in src, src
+
+
+def test_a_conjunct_z3_cannot_print_flat_is_refused():
+    """z3 `let`-binds a repeated subterm, and the body of a Lean definition
+    cannot carry one -- so a conjunct that prints that way is named rather than
+    pasted. Houdini's own candidates never do; the property, which can, is
+    printed from its own source instead."""
+    import z3
+    s0 = z3.Int("s0")
+    big = z3.If(s0 > 0, s0, 0) + z3.If(s0 > 0, s0, 0)
+    for _ in range(4):
+        big = big + big
+    with pytest.raises(Refused, match="let"):
+        _smt_term(big >= 0)
+    assert _smt_term(s0 >= 0) == "(>= s0 0)"
+
+
+def test_a_net_shaped_property_gets_a_flat_certificate():
+    """`relu(x) + relu(100 - x) = 100` is `0 <= x <= 100` written as a net. The
+    route proves it, and what it hands over is a certificate a Lean definition
+    can carry: no `let`, whether the property survives pruning (and is printed
+    from its own source) or is dropped for the simpler facts that imply it."""
+    module = _countdown()
+    net = ("(and (>= (+ (ite (>= s0 0) s0 0) (ite (>= (- 100 s0) 0) (- 100 s0) 0)) 100)"
+           " (<= (+ (ite (>= s0 0) s0 0) (ite (>= (- 100 s0) 0) (- 100 s0) 0)) 100))")
+    claim, cert = _learn(module, net, "safety")
+    assert "let" not in cert.inv, cert.inv
+    v = _verdicts(module, claim, cert)
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "inv_imp_P": Status.HOLDS}, v
+
+
+# ---------------------------------------------------------------------------
+# What the invariant carries
+# ---------------------------------------------------------------------------
+
+def test_a_conjunct_the_others_imply_is_dropped():
+    """Houdini's lattice is redundant: `s1 == 10` arrives beside five weaker
+    facts about `s1`. Dropping what the rest imply leaves the same predicate,
+    and the conjunct count is what the obligation's disjuncts are exponential
+    in."""
+    import z3
+    s0, s1 = z3.Int("s0"), z3.Int("s1")
+    facts = [("s1>0", s1 > 0), ("s1>=1", s1 >= 1), ("s1==10", s1 == 10),
+             ("s0>=0", s0 >= 0)]
+    kept = _prune(facts)
+    assert [lbl for lbl, _ in kept] == ["s1==10", "s0>=0"], kept
+    # ... and the conjunction is the one it started as
+    solver = z3.Solver()
+    solver.add(z3.And(*[t for _, t in facts]) != z3.And(*[t for _, t in kept]))
+    assert solver.check() == z3.unsat
+
+
+def test_nothing_is_dropped_when_nothing_is_implied():
+    import z3
+    facts = [("s0>=0", z3.Int("s0") >= 0), ("s1<=3", z3.Int("s1") <= 3)]
+    assert [lbl for lbl, _ in _prune(facts)] == ["s0>=0", "s1<=3"]
+
+
+def test_the_witness_carries_the_pruned_invariant(monkeypatch):
+    """Pruning has to happen before the witness is built, not before it is
+    printed.
+
+    The conjunct count is what the obligation\'s disjuncts are exponential in:
+    the fbk sweep\'s `NetTwoInput` does not finish in ten minutes carrying
+    Houdini\'s ten conjuncts, and takes half a second carrying the four the
+    rest do not imply. So what matters is which set reaches `certify`, and
+    that is what this reads off rather than the clock."""
+    import nuterm._farkas as farkas
+    import nuterm._invariants as invariants
+
+    found, carried = [], []
+    real_infer, real_certify = invariants.infer_invariants, farkas.certify
+
+    def spy_infer(system, *a, **kw):
+        out = real_infer(system, *a, **kw)
+        found.append(len(out))
+        return out
+
+    def spy_certify(system, claim, witness, *a, **kw):
+        carried.append(len(getattr(witness, "inv", ())))
+        return real_certify(system, claim, witness, *a, **kw)
+
+    monkeypatch.setattr(invariants, "infer_invariants", spy_infer)
+    monkeypatch.setattr(farkas, "certify", spy_certify)
+    _, cert = _learn(_countdown(), "(<= s0 100)", "safety")
+
+    assert found and carried, "the route did not reach Houdini and the procedure"
+    assert carried[0] < found[0], "the witness carried every candidate Houdini kept"
+    # ... and the certificate states exactly what the witness carried
+    assert cert.inv.count("(<=") + cert.inv.count("(>=") == carried[0]
+
+
+def test_the_invariant_carries_no_redundant_conjunct():
+    """End to end: the certificate states each fact once, and the property it
+    has to imply need not appear in it -- being implied is the obligation."""
+    _, cert = _learn(_countdown(), "(<= s0 100)", "safety")
+    assert cert.inv.count("(<= s0 100)") == 1, cert.inv
+
+
+def test_a_property_is_parsed_over_the_columns():
+    import z3
+    term = _parse_property("(and (= s0 0) (> s1 s0))", ("s0", "s1"), ("s0", "s1"))
+    assert z3.is_bool(term)
+    assert {str(v) for v in z3.z3util.get_vars(term)} == {"s0", "s1"}
+
+
+def test_a_property_that_is_two_expressions_is_refused():
+    with pytest.raises(Refused, match="one expression"):
+        _parse_property("(= s0 0)) (assert (> s0 1)", ("s0",), ("s0",))
+
+
+# ---------------------------------------------------------------------------
+# The rank shape a wrap-around needs
+# ---------------------------------------------------------------------------
+
+def _counter(bound: int):
+    """`x = 0; loop { x = (x + 1) % (bound + 1) }` -- a run that wraps around.
+
+    `x == 0` recurs, but no rank of the learner's class drops on every round it
+    fails on: a non-negative sum of ReLUs is convex in the state, and this needs
+    one that falls along 1..bound and falls again from bound back to 0."""
+    class Counter(sugar.Module):
+        def init(self):
+            return 0
+
+        def update(self, x):
+            return ite(x == bound, 0, x + 1)
+
+    return Counter(ctrl=(Var(Int([1, 1])),), theory=LIA)
+
+
+def test_a_wrap_around_gets_a_rank_zeroed_where_the_property_holds():
+    """No rank in the class drops on the round that wraps, so the route falls
+    back to ranking the rounds *before* the property is reached and zeroing the
+    rank where it holds. That is still verith's obligation: the round that
+    reaches `P` drops from `delta + V` to `0`, and `V >= 0` structurally."""
+    module = _counter(9)
+    claim, cert = _learn(module, "(= s0 0)", "buchi")
+    assert cert.ranking.startswith("(ite (= s0 0) 0 (+ 1 "), cert.ranking
+    v = _verdicts(module, claim, cert)
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "hrank": Status.HOLDS}, v
+
+
+def test_a_rank_that_needs_no_zeroing_is_left_alone():
+    """Counting *down* to the property needs no wrap, so the first shape works
+    and the certificate carries the net itself."""
+    _, cert = _learn(_countdown(), "(= s0 0)", "buchi")
+    assert not cert.ranking.startswith("(ite"), cert.ranking
+
+
+def test_the_bound_in_the_guard_is_offered_to_houdini():
+    """`0 <= x <= 9` is what makes the wrap-around's rank certify, and `9` is a
+    constant only the guard mentions -- and only after `x + 1 == 10` has been
+    normalised onto `x`. Neither the sign candidates nor the constant-coordinate
+    ones carry it."""
+    import nuterm._farkas as farkas
+    from nuterm._invariants import infer_invariants
+
+    module = _counter(9)
+    system = farkas.read_system(module, {v: f"s{i}" for i, v in enumerate(module.ctrl)})
+    assert "s0<=9" in [lbl for lbl, _ in infer_invariants(system)]

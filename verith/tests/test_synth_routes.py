@@ -1,0 +1,957 @@
+"""The two searching routes (`--infer sygus`, `--infer smt-linear`).
+
+These run cvc5, which is what makes them worth testing without an API key:
+every case here is a real search over a real fixture, and the answers are
+the ones the design was measured against -- `m_step2`'s invariant is a
+congruence and only the grammar with `mod` in it can say so; `m_toward5` has
+no linear ranking function and the point of the route is that cvc5 *proves*
+that rather than failing to find one.
+
+The other half is the handoff. A run leaves what it found and what it ruled
+out in `artifacts/`, and the next run picks both up -- an invariant as a
+fixed starting point, an empty space as a line in the LLM prompt. That is
+checked here end to end, because it is the part no single route owns.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from reactor.lean.artifacts import ArtifactStore, module_digest
+from reactor.lean.core.certificate import Certificate, Claim
+from reactor.lean.core.errors import Refused
+from reactor.lean.inputs.python import load_module
+from verith.resume import resumable_inv, ruled_out, taking_inv
+
+# The fixtures are `reactor`'s, in the `python/` project beside this one.
+PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
+MODS = PYTHON_TESTS / "limits" / "mods"
+
+
+def module_of(name: str):
+    """One `tests/limits` fixture module, loaded by path."""
+    return load_module(MODS / f"{name}.py")
+
+
+def _int_cols(n: int):
+    """`n` scalar integer columns, for the note-shaping tests.
+
+    The prose only reads a column's name and kind, so the terms are not
+    worth a cvc5 context here -- what is being checked is which widths the
+    note claims, not what was searched.
+    """
+    from verith.common.synth import Reading
+
+    return [Reading(f"s{i}", None, "int", i) for i in range(n)]
+
+
+def store_for(tmp_path: Path, name: str, *, kind: str, prp: str,
+              producer: str = "test") -> ArtifactStore:
+    return ArtifactStore(
+        dir=tmp_path / "artifacts",
+        module_digest=module_digest(module_of(name)),
+        kind=kind,
+        prp=prp,
+        producer=producer,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# --infer sygus
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def noted(store, refusal) -> None:
+    """What `run_route` leaves in `artifacts/` for `refusal`: a route raises
+    its note and the run writes it, so a test that drives an engine itself
+    writes it the same way."""
+    from types import SimpleNamespace
+
+    from verith.run import note_refusal
+
+    note_refusal(SimpleNamespace(artifacts=store), SimpleNamespace(name="test"),
+                 refusal)
+
+
+def test_sygus_finds_the_congruence_no_lattice_can_state():
+    """`m_step2` steps by two: the invariant is that `x` is even.
+
+    The limit matrix records this as the one Buchi case `--infer nuterm`
+    misses on the certificate rather than on reach, and the reason is that
+    Houdini's candidates are signs and pairwise relations. A grammar with
+    `mod` in it says it in milliseconds.
+    """
+    from verith.sygus.engine import SygusEngine
+
+    claim = Claim(prp="(not (= s0 1))", kind="safety")
+    out = SygusEngine(module_of("m_step2"), log=lambda *_: None).infer(claim)
+    assert "mod" in out.inv
+
+
+def test_a_synthesised_invariant_that_prints_with_let_is_kept():
+    """cvc5 `let`-binds a repeated subterm when it prints a solution.
+
+    The route used to refuse such an invariant as one "the certificate's
+    definition cannot carry". It can: the source is parsed back before it is
+    rendered, and `smt_to_lean` binds what is shared in Lean. This one --
+    `(let ((_let_1 (* (- 1) s1))) ...)` -- was found and thrown away."""
+    from nuterm.tests.benchmarks.svcomp import discover
+    from verith.sygus.engine import SygusEngine
+
+    bench = next(b for b in discover() if b.name == "AliasDarteFeautrierGonnord-SAS2010-easy2-2")
+    prp = ("(and (>= s0 0) (<= s1 0) (>= (+ s0 (* (- 1) s1)) 0) (>= (+ s0 s1) 0) "
+           "(<= (+ s0 s1) 0) (= (+ s0 s1) 0) (>= s0 (- 1)) (<= s1 1))")
+    out = SygusEngine(bench.build()[0], log=lambda *_: None).infer(
+        Claim(prp=prp, kind="safety"))
+    assert out.inv
+
+def test_sygus_without_congruences_cannot_state_it():
+    """The same module under `--sygus-grammar linear`.
+
+    The option is not a knob for its own sake: it is what shows that the
+    congruence is doing the work rather than the search.
+    """
+    from verith.sygus.engine import SygusEngine
+
+    claim = Claim(prp="(not (= s0 1))", kind="safety")
+    magic = SygusEngine(
+        module_of("m_step2"), grammar="linear", log=lambda *_: None
+    )
+    with pytest.raises(Refused, match="no invariant"):
+        magic.infer(claim)
+
+
+def test_sygus_leaves_the_invariant_where_the_next_run_resumes_from(tmp_path):
+    """Found, and then *resumable*: `proved` and SMT-LIB, which is what
+    `infer.FIXABLE` and `infer.resume.resumable_inv`'s filter ask for."""
+    from verith.sygus.engine import SygusEngine
+
+    store = store_for(tmp_path, "m_step2", kind="safety", prp="(not (= s0 1))",
+                      producer="sygus")
+    out = SygusEngine(
+        module_of("m_step2"), artifacts=store, log=lambda *_: None
+    ).infer(Claim(prp="(not (= s0 1))", kind="safety"))
+    kept = store.usable("inv", languages=("smt",), statuses=("proved",))
+    assert len(kept) == 1
+    assert store.read(kept[0]) == out.inv
+
+
+def test_a_real_state_keeps_its_rationals_in_the_grammar_route():
+    """A Real component is a Real column, not a floored one.
+
+    This route only ever states an invariant, and a predicate has no reason
+    to land in `Nat`. Flooring one is not conservative in either direction
+    -- `to_int s0 + to_int s1 <= 1` holds at `s0 = s1 = 0.6` where
+    `s0 + s1 <= 1.0` fails -- so the floor `--infer smt-linear` weighs a
+    Real by would search a space that cannot state the property.
+    """
+    from verith.sygus.engine import SygusEngine
+
+    lines: list[str] = []
+    claim = Claim(prp="(>= s0 0.0)", kind="safety")
+    try:
+        SygusEngine(module_of("m_lra_lin"), log=lines.append).infer(claim)
+    except Refused:
+        pass                                 # the search may come back empty
+    assert "[sygus] columns: s0" in lines
+    assert not any("to_int" in ln for ln in lines)
+
+
+def test_sygus_weighs_a_bool_column_as_zero_or_one():
+    """A Bool component has an arithmetic reading, so an atom can hold it.
+
+    The `synthFun` still takes the component itself -- `pre` and `trans` are
+    the module's own transition -- and it is the *grammar* that reads it.
+    """
+    from verith.sygus.engine import SygusEngine
+
+    lines: list[str] = []
+    claim = Claim(prp="(>= s1 0)", kind="safety")
+    try:
+        SygusEngine(module_of("m_boolint"), log=lines.append).infer(claim)
+    except Refused:
+        pass
+    assert any("(ite s0 1 0)" in ln for ln in lines if ln.startswith("[sygus] columns"))
+
+
+def test_sygus_asks_the_narrow_grammars_before_the_wide_one():
+    """`m_countdown |- G (0 <= s0 <= 100)` has no one-atom invariant.
+
+    The widths are separate queries because the search is not monotone in
+    the width -- measured over the 59 matrix cells that reach the grammar,
+    two of them find a *one-atom* invariant in under a second and time out
+    at three. Asked only at the ceiling, as this route used to be, those
+    came back as "did not finish".
+    """
+    from verith.sygus.engine import SygusEngine
+
+    lines: list[str] = []
+    claim = Claim(prp="(and (>= s0 0) (<= s0 100))", kind="safety")
+    out = SygusEngine(module_of("m_countdown"), log=lines.append).infer(claim)
+    assert "[sygus] no invariant of 1 atom(s); widening" in lines
+    assert "[sygus] found at 2 atom(s)" in lines
+    assert out.inv
+
+
+def test_the_note_claims_the_widths_that_finished_and_no_more():
+    """A width that ran out of budget is not evidence of anything.
+
+    The narrower widths still count -- the start rule at width `w` is
+    `A | A /\\ A | ...`, so the widths nest and an empty one subsumes every
+    one below it -- but nothing above the width that stopped does.
+    """
+    from verith.sygus.engine import SygusEngine
+
+    magic = SygusEngine(module_of("m_step2"), log=lambda *_: None)
+    note = magic._empty(_int_cols(1), (-2, -1, 0, 1, 2),
+                        decided=2, undecided_at=3).note
+    assert "at most 2 atoms" in note
+    assert "proof that the space is empty" in note
+    assert "It stopped at 3 atoms, above the 2 proved empty" in note
+
+
+def test_a_ladder_that_decided_nothing_claims_nothing():
+    """`exhausted` is what carries a note into the `ai-cegis` prompt, so a
+    ladder whose first width already timed out must not set it."""
+    from verith.sygus.engine import SygusEngine
+
+    magic = SygusEngine(module_of("m_step2"), log=lambda *_: None)
+    search = magic._empty(_int_cols(1), (-2, -1, 0, 1, 2),
+                          decided=0, undecided_at=1)
+    assert not search.exhausted
+    assert "Nothing was proved" in search.note
+    assert "proof that the space is empty" not in search.note
+
+
+def test_sygus_is_a_safety_route_in_the_class_as_well_as_the_row():
+    from verith.sygus.engine import SygusEngine
+
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    with pytest.raises(Refused, match="ranking function"):
+        SygusEngine(module_of("m_countdown"), log=lambda *_: None).infer(claim)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# --infer smt-linear
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_a_real_component_is_read_through_a_floor():
+    """`rule_buchi` ranks by a `Nat`, so a Real rank is read through `to_int`.
+
+    The scale is the least common denominator of the literals the program
+    writes, because flooring a quantity that falls by less than one need not
+    fall at all -- `m_lra_half` steps by `1/2`, where `to_int x` stalls on
+    every other round.
+    """
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    module = module_of("m_lra_lin")
+    claim = Claim(prp="(<= s0 0.0)", kind="buchi")
+    out = SmtLinearEngine(module, log=lambda *_: None).infer(claim)
+    assert "to_int s0" in out.ranking
+    assert obligations_of(module, claim, out) == []
+
+
+def test_a_real_rank_is_scaled_before_it_is_floored():
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    module = module_of("m_lra_half")
+    said: list[str] = []
+    claim = Claim(prp="(<= s0 0.0)", kind="buchi")
+    out = SmtLinearEngine(module, log=said.append).infer(claim)
+    assert "(to_int (* 2.0 s0))" in out.ranking
+    assert obligations_of(module, claim, out) == []
+    assert any("scaling by 2" in line for line in said)
+
+
+def test_a_matrix_component_is_a_column_per_element():
+    """`m_relu_vec`'s state is one 3x1 wire, which cvc5 encodes as a tuple.
+
+    The route refused the module outright for it. Its elements are columns
+    now, reached through the selectors `smt_to_lean` already renders, so
+    `v[0] >= 0` and a rank over `v[0]` are both sayable -- which is the
+    whole certificate for `v' = relu(v - 1)`.
+
+    The invariant is supplied because finding it *and* the rank in one
+    query over tuple columns does not finish inside the budget: cvc5 will
+    not state the quantified form once a tuple is in it, and the
+    counterexample loop is slower than the phase allows. What this pins is
+    the reading, which is what the route could not do at all before.
+    """
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    module = module_of("m_relu_vec")
+    said: list[str] = []
+    claim = Claim(prp="(= ((_ tuple.select 0) s0) 0)", kind="buchi")
+    given = Certificate(inv="(>= ((_ tuple.select 0) s0) 0)")
+    out = SmtLinearEngine(module, log=said.append).infer(claim, given)
+    assert out.ranking is not None
+    assert obligations_of(module, claim, out) == []
+    assert any("tuple.select 2" in line for line in said), (
+        "every element is a column, not just the one the property reads"
+    )
+
+
+def test_an_operator_cvc5_cannot_encode_is_refused_before_the_search():
+    """`m_transpose` is a 1x3 vector -- a column per element -- with a
+    `Transpose` in its round, which has no cvc5 term at all.
+
+    The sort gate passes it, so until the transition is encoded nothing has
+    noticed, and the failure used to arrive as a `ValueError` traceback out
+    of whichever obligation a route built first. `build` forces the
+    encoding and names the operator, which is what `codegen.terms.lean_gaps` does
+    for the Lean side.
+    """
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    module = module_of("m_transpose")
+    claim = Claim(prp="(= ((_ tuple.select 0) s0) 1)", kind="buchi")
+    with pytest.raises(Refused, match="operator in it has no encoding"):
+        SmtLinearEngine(module, log=lambda _: None).infer(claim)
+
+
+def test_an_element_is_read_by_its_own_sort_not_the_component_s():
+    """A matrix of `Bool` has an integer reading; the selector alone does not.
+
+    `component_slots` says what a component is made of and
+    `component_readings` reads each piece by *its* sort, so a `Bool`
+    element becomes `0`/`1` the same way a scalar `Bool` component does.
+    Reading it by the component's sort instead -- `tuple` -- hands a
+    template a Bool where it multiplies by a coefficient, which is a sort
+    error several steps after the mistake.
+    """
+    import torch
+
+    from reactor import LIA, Bool, Module, Term, Var, Wire, X
+    from verith.common.claim import SynthContext
+    from verith.common.synth import component_readings, component_slots
+
+    b, n = Var(Bool([2, 1])), Wire(Bool([2, 1]))
+    module = Module.sequential(
+        [b],
+        [Term(LIA.Bool(torch.tensor([[True], [False]])), [X(b)])],
+        [Term(LIA.Not(), [n], [b]), Term(LIA.Id(), [X(b)], [n])],
+    )
+    ctx = SynthContext.build(module, Claim(prp="true", kind="safety"),
+                             route="test", takes=("bool", "tuple"))
+    assert [slot for slot, _ in component_slots(ctx, 0)] == [0, 1]
+    assert [(r.name, r.kind, r.slot) for r in component_readings(ctx, 0)] == [
+        ("(ite ((_ tuple.select 0) s0) 1 0)", "bool", 0),
+        ("(ite ((_ tuple.select 1) s0) 1 0)", "bool", 1),
+    ]
+
+
+def test_smt_linear_finds_a_rank_when_the_shape_has_one():
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    given = Certificate(inv="(and (>= s0 0) (<= s0 100))")
+    out = SmtLinearEngine(module_of("m_countdown"), log=lambda *_: None).infer(
+        claim, given)
+    assert out.ranking == "s0"
+
+
+def test_smt_linear_ranks_a_loop_whose_exit_states_are_unbounded():
+    """`while (y >= 0) y = y - 1`: `rule_buchi` asks the rank to fall only
+    where the property fails, and `1 + y` does, over the invariant `true`.
+
+    The route used to demand `rank >= 0` over every state as well. Where the
+    property holds `y` runs to minus infinity, so no linear rank survived that,
+    and the empty space was reported as a *proof* that none exists."""
+    from nuterm.tests.benchmarks.svcomp import discover
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
+    claim = Claim(prp="(not (<= 0 s0))", kind="buchi")
+    out = SmtLinearEngine(bench.build()[0], log=lambda *_: None).infer(claim)
+    assert out.ranking is not None
+
+# `m_twovars` takes about 135 s to search and needs every query decided
+# inside the 5 s call budget, so it fails on a loaded machine.
+# `test_smt_linear_proves_an_empty_space_and_writes_it_down` covers the
+# same refusal and note in a few seconds.
+@pytest.mark.slow
+def test_smt_linear_proves_a_shape_empty_rather_than_failing_to_search_it():
+    """`m_twovars` has no linear rank under any invariant this route states.
+
+    The refusal says so as a *proof*, which is the difference between this
+    route and an LLM that tried linear candidates until its attempts ran
+    out -- and the note names the invariant width it got to, since an empty
+    space at two rows is not an empty space at three.
+    """
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    claim = Claim(prp="(and (= s0 0) (= s1 0))", kind="buchi")
+    with pytest.raises(Refused) as e:
+        SmtLinearEngine(module_of("m_twovars"), log=lambda *_: None).infer(claim)
+    assert "proof that the space is empty" in str(e.value)
+    assert "under any invariant of up to 2 linear inequalities" in str(e.value)
+
+
+def test_smt_linear_finds_the_invariant_it_needs_to_rank_over():
+    """`m_toward5` has no rank under `true` and one under `s0 >= 5`.
+
+    The rank and the invariant are one query, because an invariant searched
+    on its own has nothing to be strong enough *for*: `true` is inductive,
+    so a search for one alone returns it and the rank is no better off.
+    Asking for both at once is what makes the solver find the bound.
+    """
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    module = module_of("m_toward5")
+    said: list[str] = []
+    claim = Claim(prp="(= s0 5)", kind="buchi")
+    out = SmtLinearEngine(module, log=said.append).infer(claim)
+    assert out.ranking is not None
+    assert out.inv != "true", "it had to find an invariant to rank under"
+    assert obligations_of(module, claim, out) == []
+    assert any("widening the invariant" in line for line in said), (
+        "width 0 is tried first, so the rank under `true` still costs one query"
+    )
+
+
+def test_smt_linear_finds_a_one_row_safety_invariant():
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    claim = Claim(prp="(<= s0 100)", kind="safety")
+    out = SmtLinearEngine(module_of("m_countdown"), log=lambda *_: None).infer(claim)
+    # Divided through by the gcd: the same predicate, and the one the
+    # certificate should carry.
+    assert out.inv == "(>= (+ 100 (- s0)) 0)"
+
+
+def test_smt_linear_strengthens_a_supplied_invariant_rather_than_replacing_it():
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    claim = Claim(prp="(<= s0 100)", kind="safety")
+    out = SmtLinearEngine(module_of("m_countdown"), log=lambda *_: None).infer(
+        claim, Certificate(inv="(>= s0 0)"))
+    assert out.inv.startswith("(and (>= s0 0)")
+
+
+# `m_twovars` takes about 135 s to search and needs every query decided
+# inside the 5 s call budget, so it fails on a loaded machine.
+# `test_smt_linear_proves_an_empty_space_and_writes_it_down` covers the
+# same refusal and note in a few seconds.
+@pytest.mark.slow
+def test_smt_linear_writes_what_it_ruled_out(tmp_path):
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    prp = "(and (= s0 0) (= s1 0))"
+    store = store_for(tmp_path, "m_twovars", kind="buchi", prp=prp,
+                      producer="smt-linear")
+    claim = Claim(prp=prp, kind="buchi")
+    with pytest.raises(Refused) as e:
+        SmtLinearEngine(
+            module_of("m_twovars"), artifacts=store, log=lambda *_: None
+        ).infer(claim)
+    noted(store, e.value)
+    notes = store.usable("note", languages=("md",), statuses=("no_solution",))
+    assert len(notes) == 1
+    text = store.read(notes[0])
+    assert "No ranking function of these shapes" in text
+    assert "linear in the state" in text
+    assert "up to 2 linear inequalities" in text, "the invariants it ranked under"
+    # Every shape it searched is named, branching ones included: the note is
+    # read as a list of shapes a later prompt need not propose.
+    assert "zero where the property holds" in text
+    assert "linear on each side of" in text
+
+
+def test_smt_linear_proves_an_empty_space_and_writes_it_down(tmp_path):
+    """The two `m_twovars` tests above, on a module that answers in seconds.
+
+    `m_step2` steps 0, 2, ..., 10 and back to 0, so `G F (s0 = 1)` is false
+    and no ranking function of any shape exists. The refusal and the note
+    both have to say so as a proof, and the note has to name every shape
+    searched.
+    """
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    prp = "(= s0 1)"
+    store = store_for(tmp_path, "m_step2", kind="buchi", prp=prp,
+                      producer="smt-linear")
+    with pytest.raises(Refused) as e:
+        SmtLinearEngine(
+            module_of("m_step2"), artifacts=store, log=lambda *_: None
+        ).infer(Claim(prp=prp, kind="buchi"))
+    noted(store, e.value)
+    assert "proof that the space is empty" in str(e.value)
+    assert "under any invariant of up to 2 linear inequalities" in str(e.value)
+
+    assert not store.usable("note", statuses=("unknown",))
+    notes = store.usable("note", languages=("md",), statuses=("no_solution",))
+    assert len(notes) == 1
+    text = store.read(notes[0])
+    assert "No ranking function of these shapes" in text
+    assert "linear in the state" in text
+    assert "zero where the property holds" in text
+    assert "linear on each side of" in text
+
+
+def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
+    """The distinction the whole design rests on.
+
+    A budget of one millisecond decides nothing, and what it writes has to
+    say so: `unknown`, not `no_solution`. A consumer that confused the two
+    would state a falsehood in an LLM prompt.
+    """
+    from verith.smt_linear.engine import SmtLinearEngine
+    from reactor.lean.smt.limits import SmtBudget
+
+    store = store_for(tmp_path, "m_lex", kind="safety", prp="(<= s0 3)",
+                      producer="smt-linear")
+    claim = Claim(prp="(<= s0 3)", kind="safety")
+    with pytest.raises(Refused) as e:
+        SmtLinearEngine(
+            module_of("m_lex"),
+            rows=3,
+            budget=SmtBudget(per_call_ms=1, phase_ms=1),
+            artifacts=store,
+            log=lambda *_: None,
+        ).infer(claim)
+    noted(store, e.value)
+    assert not store.usable("note", statuses=("no_solution",))
+    undecided = store.usable("note", statuses=("unknown",))
+    assert len(undecided) == 1
+    assert "did not finish" in store.read(undecided[0])
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The handoff
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
+    """`--infer smt-linear` refutes a shape; `--infer ai-cegis` is told.
+
+    The note is written to be read by a model, so what is checked is that it
+    arrives in the message verbatim and is framed as established rather than
+    as feedback about an attempt.
+    """
+    from reactor.lean.smt.module import ModuleSMT
+    from reactor.lean.smt.predicates import PredicateParser
+    from verith.ai_cegis.prompt import prompt_inv_ranking
+    import cvc5
+
+    tm = cvc5.TermManager()
+    env = PredicateParser(ModuleSMT(tm=tm, module=module_of("m_countdown")))
+    seen: list[str] = []
+
+    def chat(system: str, user: str) -> str:
+        seen.append(user)
+        return "INVARIANT: (and (>= s0 0) (<= s0 100))\nRANKING: s0"
+
+    ruled_out = "No ranking function linear in the state satisfies the obligations."
+    prompt_inv_ranking(
+        env, chat, "source", "(= s0 0)", "", None, known=(ruled_out,)
+    )
+    assert ruled_out in seen[0]
+    assert "decision procedure" in seen[0]
+    assert "do not propose anything of a shape ruled out" in seen[0]
+
+
+def test_the_cegis_prompt_fences_the_source_as_lean():
+    """`ai-cegis` is handed the project's Lean encoding, as `ai` is."""
+    from reactor.lean.smt.module import ModuleSMT
+    from reactor.lean.smt.predicates import PredicateParser
+    from verith.ai_cegis.prompt import prompt_inv_ranking
+    import cvc5
+
+    tm = cvc5.TermManager()
+    env = PredicateParser(ModuleSMT(tm=tm, module=module_of("m_countdown")))
+    seen: list[str] = []
+
+    def chat(system: str, user: str) -> str:
+        seen.append(user)
+        return "INVARIANT: (and (>= s0 0) (<= s0 100))\nRANKING: s0"
+
+    prompt_inv_ranking(env, chat, "def system := 0", "(= s0 0)", "", None)
+    assert "```lean\ndef system := 0\n```" in seen[0]
+
+
+def test_an_empty_ranking_is_a_parse_error_the_loop_can_answer():
+    """`RANKING:` with nothing after it is feedback, not a cvc5 crash.
+
+    cvc5 parses an empty source to a null term, and `getSort()` on one raises
+    a `RuntimeError` from inside the binding -- which `AiCegisEngine`'s loop does
+    not catch, so the whole route died on one bad reply."""
+    from reactor.lean.smt.module import ModuleSMT
+    from reactor.lean.smt.predicates import PredicateParser
+    from verith.ai_cegis.prompt import (
+        PromptParseError,
+        prompt_inv_ranking,
+    )
+    import cvc5
+
+    tm = cvc5.TermManager()
+    env = PredicateParser(ModuleSMT(tm=tm, module=module_of("m_countdown")))
+
+    def chat(system: str, user: str) -> str:
+        return "INVARIANT: (and (>= s0 0) (<= s0 100))\nRANKING:"
+
+    with pytest.raises(PromptParseError, match="RANKING"):
+        prompt_inv_ranking(env, chat, "source", "(= s0 0)", "", None)
+
+def test_only_a_proof_of_absence_reaches_the_prompt(tmp_path):
+    """`infer.resume.ruled_out` filters on `no_solution`, so a timed-out search stays out."""
+    from verith import InferInput, ProjectHandle
+
+    store = store_for(tmp_path, "m_countdown", kind="buchi", prp="(= s0 0)")
+    store.note("proved empty\n", status="no_solution", what="x")
+    store.note("ran out of budget\n", status="unknown", what="x")
+    handle = ProjectHandle(
+        dir=tmp_path,
+        name="Rea",
+        ctx=None,
+        reads=frozenset(),
+        owns=(),
+        resumes=frozenset({"note"}),
+        artifacts=store,
+    )
+    known = ruled_out(InferInput(
+        project=handle,
+        module=None,
+        claim=Claim(prp="(= s0 0)", kind="buchi"),
+        given=Certificate(),
+        opts={},
+        log=lambda *_: None,
+    ))
+    assert known == ("proved empty\n",)
+
+
+def test_a_note_about_another_property_is_not_carried_over(tmp_path):
+    """The store's staleness rule is what stops the handoff being a trap: a
+    shape refuted for one property says nothing about another."""
+    from verith import InferInput, ProjectHandle
+
+    store = store_for(tmp_path, "m_countdown", kind="buchi", prp="(= s0 0)")
+    store.note("proved empty\n", status="no_solution", what="x")
+    later = store_for(tmp_path, "m_countdown", kind="buchi", prp="(= s0 7)")
+    handle = ProjectHandle(
+        dir=tmp_path,
+        name="Rea",
+        ctx=None,
+        reads=frozenset(),
+        owns=(),
+        resumes=frozenset({"note"}),
+        artifacts=later,
+    )
+    assert ruled_out(InferInput(
+        project=handle,
+        module=None,
+        claim=Claim(prp="(= s0 7)", kind="buchi"),
+        given=Certificate(),
+        opts={},
+        log=lambda *_: None,
+    )) == ()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# What the searches return, put back to the obligations
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def obligations_hold(name: str, claim: Claim, cert: Certificate) -> list[str]:
+    """The obligation names `smt.precheck` does not certify for `cert`.
+
+    A second opinion, and deliberately not the query that produced the
+    answer: `check_obligations` states `init_inv`, `step_inv` and
+    `inv_imp_P` the way `--pre-check cvc5` does, from the predicates alone.
+    """
+    from reactor.lean.smt.limits import SmtBudget
+    from reactor.lean.smt.precheck import Status, predicate_terms
+
+    q = predicate_terms(module_of(name), claim, cert)
+    return [
+        v.name
+        for v in q.check_obligations(SmtBudget())
+        if v.status is not Status.HOLDS
+    ]
+
+
+def test_a_synthesised_invariant_passes_the_obligations_cvc5_states():
+    from verith.sygus.engine import SygusEngine
+
+    claim = Claim(prp="(not (= s0 1))", kind="safety")
+    out = SygusEngine(module_of("m_step2"), log=lambda *_: None).infer(claim)
+    assert obligations_hold("m_step2", claim, out) == []
+
+
+def test_sygus_reads_a_module_with_an_external_input():
+    """`pre` and `trans` are predicates on the state alone, so an input is
+    existentially quantified inside them -- `s` is initial when *some* input
+    makes `init` produce it. If that were the wrong quantifier the invariant
+    would come back and `step_inv` would then refute it, which is what this
+    checks rather than merely that something was returned."""
+    from verith.sygus.engine import SygusEngine
+
+    claim = Claim(prp="(>= s0 0)", kind="safety")
+    out = SygusEngine(module_of("m_relu_input"), log=lambda *_: None).infer(claim)
+    assert out.inv
+    assert obligations_hold("m_relu_input", claim, out) == []
+
+
+def test_a_linear_certificate_passes_the_obligations_too():
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    given = Certificate(inv="(and (>= s0 0) (<= s0 100))")
+    out = SmtLinearEngine(module_of("m_countdown"), log=lambda *_: None).infer(
+        claim, given)
+    assert obligations_hold("m_countdown", claim, out) == []
+
+
+def test_sygus_writes_a_proof_of_absence_when_its_space_is_finite_and_empty(tmp_path):
+    """The bound is what makes the failure worth writing down.
+
+    `--sygus-conjuncts` makes the grammar a finite space, so cvc5 answers
+    `hasNoSolution` rather than `unknown` -- and only then may the note say
+    the space is empty. Without congruences `m_step2` has no invariant in
+    it, which is the case that shows both halves at once.
+    """
+    from verith.sygus.engine import SygusEngine
+
+    store = store_for(tmp_path, "m_step2", kind="safety", prp="(not (= s0 1))",
+                      producer="sygus")
+    claim = Claim(prp="(not (= s0 1))", kind="safety")
+    with pytest.raises(Refused) as e:
+        SygusEngine(
+            module_of("m_step2"), grammar="linear", artifacts=store,
+            log=lambda *_: None,
+        ).infer(claim)
+    noted(store, e.value)
+    notes = store.usable("note", languages=("md",), statuses=("no_solution",))
+    assert len(notes) == 1
+    text = store.read(notes[0])
+    assert "proof that the space is empty" in text
+    assert "the grammar is finite" in text
+
+
+def test_a_bound_the_program_mentions_is_seeded_the_other_way_round():
+    """`m_countdown` counts down from 100 and its invariant is `s0 <= 100`.
+
+    The grammar's atoms are `c0 + c1*s0 + ... <= 0`, so that invariant is
+    spelled `-100 + s0 <= 0` -- and a constant set carrying `100` without
+    `-100` cannot say it. Before the negations were seeded this came back as
+    a *proof* that the space was empty, which is the worst way for a seeding
+    gap to show up: not a missing answer but a confident wrong one.
+    """
+    from verith.sygus.engine import SygusEngine
+
+    claim = Claim(prp="(<= s0 100)", kind="safety")
+    out = SygusEngine(module_of("m_countdown"), log=lambda *_: None).infer(claim)
+    assert obligations_hold("m_countdown", claim, out) == []
+
+
+def test_smt_linear_adds_to_an_invariant_another_run_left(tmp_path):
+    """The workspace in the other direction: `--infer sygus` writes an `inv`,
+    and a later `--infer smt-linear --safety` starts from it.
+
+    `too_weak` is the case that matters -- inductive and not yet implying
+    the property is exactly what "find the missing conjuncts" wants, and it
+    is what `resumable_inv()` (which takes an invariant as *given*) refuses.
+    """
+    from verith import InferInput, ProjectHandle
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    store = store_for(tmp_path, "m_countdown", kind="safety", prp="(<= s0 100)")
+    store.put("inv", "(>= s0 0)", status="too_weak", language="smt",
+              what="x", why="does not imply the property")
+    handle = ProjectHandle(
+        dir=tmp_path,
+        name="Rea",
+        ctx=None,
+        reads=frozenset(),
+        owns=(),
+        resumes=frozenset({"inv"}),
+        artifacts=store,
+    )
+    inp = InferInput(
+        project=handle,
+        module=None,
+        claim=Claim(prp="(<= s0 100)", kind="safety"),
+        given=Certificate(),
+        opts={},
+        log=lambda *_: None,
+    )
+    inp = taking_inv(inp, resumable_inv(inp, strengthen=True), "adding to it")
+    assert inp.given.inv == "(>= s0 0)"
+
+    out = SmtLinearEngine(module_of("m_countdown"), log=lambda *_: None).infer(
+        inp.claim, inp.given)
+    assert out.inv.startswith("(and (>= s0 0)"), "kept, and added to"
+    assert obligations_hold("m_countdown", inp.claim, out) == []
+
+
+def test_an_explicit_invariant_is_not_overridden_by_a_resumed_one(tmp_path):
+    """The rule `resumable_inv` already states, on the other resume path: what
+    the user passed wins, or two identical command lines mean two things."""
+    from verith import InferInput, ProjectHandle
+
+    store = store_for(tmp_path, "m_countdown", kind="safety", prp="(<= s0 100)")
+    store.put("inv", "(>= s0 0)", status="proved", language="smt", what="x")
+    handle = ProjectHandle(
+        dir=tmp_path, name="Rea", ctx=None,
+        reads=frozenset(), owns=(), resumes=frozenset({"inv"}), artifacts=store,
+    )
+    inp = InferInput(
+        project=handle,
+        module=None,
+        claim=Claim(prp="(<= s0 100)", kind="safety"),
+        given=Certificate(inv="(<= s0 50)"),
+        opts={},
+        log=lambda *_: None,
+    )
+    assert resumable_inv(inp, strengthen=True) is None
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The sorts a template can weigh
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def bv_counter(width: int, top: int):
+    """A BitVec counter: 0, 1, … top, then back to 0.
+
+    Built here rather than in `tests/limits/mods` because it is this file's
+    fixture and the limit matrix's cases carry a baseline.
+    """
+    import torch
+    from reactor import BV, BitVec, Module, Term, Var, Wire, X
+
+    s = Var(BitVec(width, [1, 1]))
+    one, cap, zero = (Wire(BitVec(width, [1, 1])) for _ in range(3))
+    at_top = Wire(BitVec(1, [1, 1]))     # BV has no Bool wires: one bit
+    bumped = Wire(BitVec(width, [1, 1]))
+    return Module.sequential(
+        [s],
+        [Term(BV.Const(torch.tensor([[0]])), [X(s)])],
+        [
+            Term(BV.Const(torch.tensor([[1]])), [one]),
+            Term(BV.Const(torch.tensor([[top]])), [cap]),
+            Term(BV.Const(torch.tensor([[0]])), [zero]),
+            Term(BV.Eq(), [at_top], [s, cap]),
+            Term(BV.Add(), [bumped], [s, one]),
+            Term(BV.Ite(), [X(s)], [at_top, zero, bumped]),
+        ],
+    )
+
+
+def obligations_of(module, claim: Claim, cert: Certificate) -> list[str]:
+    from reactor.lean.smt.limits import SmtBudget
+    from reactor.lean.smt.precheck import Status, predicate_terms
+
+    q = predicate_terms(module, claim, cert)
+    return [v.name for v in q.check_obligations(SmtBudget())
+            if v.status is not Status.HOLDS]
+
+
+def test_a_bool_component_is_weighed_as_zero_or_one():
+    """`m_boolint` has a Bool beside its Int, which `--infer nuterm` refuses.
+
+    The Bool column enters the template as `(ite s0 1 0)`, so a row can say
+    `b`, `¬b`, or a bound that mixes the flag with the counter -- and the
+    invariant that comes back is put to the obligations like any other.
+    Whether that invariant gives the flag a nonzero coefficient is cvc5's
+    choice, and it varies with what the process asked cvc5 before.
+    """
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    module = module_of("m_boolint")
+    said: list[str] = []
+    claim = Claim(prp="(and (>= s1 0) (<= s1 5))", kind="safety")
+    out = SmtLinearEngine(module, log=said.append).infer(claim)
+    assert "[smt-linear] columns: (ite s0 1 0), s1" in said
+    assert obligations_of(module, claim, out) == []
+
+
+def test_a_bitvector_component_is_weighed_as_its_unsigned_value():
+    """And the quantified query cannot be used for it, so the loop is.
+
+    cvc5 answers the `exists c. forall s.` form `unknown (INCOMPLETE)` in a
+    millisecond once a bitvector is in it -- not a timeout, a refusal to
+    state it. The counterexample loop asks the same question with both
+    halves quantifier-free, and this checks that the route reaches the same
+    place by that road: a certificate the obligations accept.
+    """
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    module = bv_counter(8, 10)
+    said: list[str] = []
+    claim = Claim(prp="(<= (ubv_to_int s0) 10)", kind="safety")
+    out = SmtLinearEngine(module, log=said.append).infer(claim)
+    assert "ubv_to_int s0" in out.inv
+    assert obligations_of(module, claim, out) == []
+    assert any("counterexample" in line for line in said), (
+        "a bitvector column should fall back to the loop"
+    )
+
+
+def test_an_integer_state_does_not_pay_for_the_fallback():
+    """The loop is a fallback, not the engine: an integer column is decided
+    by the one quantified query, which is the stronger answer as well as the
+    faster one -- it is about every integer coefficient, not a bounded box."""
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    said: list[str] = []
+    claim = Claim(prp="(<= s0 100)", kind="safety")
+    SmtLinearEngine(module_of("m_countdown"), log=said.append).infer(claim)
+    assert not any("counterexample" in line for line in said)
+
+
+def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
+    """What the loop proves is narrower than what the query proves, and the
+    note has to carry the difference: its `unsat` is about the coefficients
+    it was allowed to try, not about every integer."""
+    from reactor.lean.artifacts import ArtifactStore, module_digest
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    module = bv_counter(4, 10)
+    store = ArtifactStore(dir=tmp_path / "artifacts",
+                          module_digest=module_digest(module),
+                          kind="safety", prp="(<= (ubv_to_int s0) 5)",
+                          producer="smt-linear")
+    # False: the counter reaches 10, so no invariant implies `s0 <= 5`.
+    claim = Claim(prp="(<= (ubv_to_int s0) 5)", kind="safety")
+    with pytest.raises(Refused):
+        SmtLinearEngine(module, rows=1, artifacts=store,
+                        log=lambda *_: None).infer(claim)
+    notes = store.usable("note", languages=("md",), statuses=("no_solution",))
+    if notes:                       # the loop decided it: then say how
+        text = store.read(notes[0])
+        assert "coefficients were searched in" in text
+        assert "counterexample" in text
+
+
+def _fixture(name: str):
+    """One `tests/fixtures` module, loaded by path."""
+    return load_module(PYTHON_TESTS / "fixtures" / f"{name}.py")
+
+
+@pytest.mark.parametrize("prp", ["(= s0 0)", "s[0][0] == 0", "(s[0][0] == 0)"])
+def test_smt_linear_zeroes_the_rank_where_the_property_holds(prp):
+    """A counter that wraps to 0 has no linear rank -- the round from 9 back
+    to 0 rises -- and `(ite P 0 r)` needs only the rounds outside `P` to
+    fall, which is every round but that one. `P` is SMT-LIB whatever the
+    property was written in: a DSL property in parentheses went into the
+    rank as written."""
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    module = _fixture("counter")
+    claim = Claim(prp=prp, kind="buchi")
+    out = SmtLinearEngine(module, log=lambda *_: None).infer(claim)
+    assert out.ranking.startswith("(ite (= s0 0) 0 ")
+    assert obligations_of(module, claim, out) == []
+
+
+def test_smt_linear_keeps_a_linear_rank_where_one_exists():
+    """Linear is tried at every width before anything with a branch."""
+    from verith.smt_linear.engine import SmtLinearEngine
+
+    claim = Claim(prp="(= s0 0)", kind="buchi")
+    out = SmtLinearEngine(module_of("m_countdown"), log=lambda *_: None).infer(claim)
+    assert "ite" not in out.ranking

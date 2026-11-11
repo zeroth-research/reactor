@@ -1,0 +1,340 @@
+"""`_run_query` must survive every answer cvc5 can give.
+
+The driver read model values whenever the result was not UNSAT, but
+`unknown` carries no model, so `getValue` raised and took the whole CEGIS
+run down. Reproduced here with a stub solver rather than by provoking a real
+timeout, so the test is fast and deterministic.
+
+The second half drives the whole loop against a scripted LLM: real cvc5,
+real obligations, no network.
+"""
+
+from pathlib import Path
+
+import cvc5
+import pytest
+
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
+from verith.ai_cegis import engine as cegis
+from reactor.lean.core.certificate import Certificate, Claim
+from verith.ai_cegis.engine import AiCegisEngine
+from verith.ai_cegis.prompt import (
+    CEGIS_GENERATE_SYSTEM,
+    CEGIS_SAFETY_SYSTEM,
+)
+
+
+class _Result:
+    def __init__(self, kind):
+        self._kind = kind
+
+    def isUnsat(self):
+        return self._kind == "unsat"
+
+    def isSat(self):
+        return self._kind == "sat"
+
+    def isUnknown(self):
+        return self._kind == "unknown"
+
+    def getUnknownExplanation(self):
+        assert self._kind == "unknown", "only an unknown result has an explanation"
+        return "INCOMPLETE"
+
+
+class _Solver:
+    """Enough of cvc5.Solver for `_run_query`, with a scripted answer."""
+
+    def __init__(self, kind):
+        self._kind = kind
+        self.get_value_calls = 0
+
+    def setLogic(self, _):
+        pass
+
+    def setOption(self, *_):
+        pass
+
+    def assertFormula(self, _):
+        pass
+
+    def checkSat(self):
+        return _Result(self._kind)
+
+    def getValue(self, term):
+        self.get_value_calls += 1
+        if self._kind != "sat":
+            # what cvc5 actually raises when there is no model (verified
+            # against a real solver: a plain RuntimeError)
+            raise RuntimeError("cannot get value unless satisfiable")
+        return term
+
+
+class _Env:
+    def __init__(self):
+        self.tm = cvc5.TermManager()
+
+
+def _run(monkeypatch, kind):
+    """Call `_run_query` against a solver scripted to answer `kind`."""
+    env = _Env()
+    solver = _Solver(kind)
+    monkeypatch.setattr(cegis, "make_client", lambda base_url, model: None)
+    magic = AiCegisEngine("", _counter(), log=lambda *_: None)
+    monkeypatch.setattr(cvc5, "Solver", lambda _tm: solver)
+    var = env.tm.mkConst(env.tm.getIntegerSort(), "s0")
+    query = env.tm.mkTerm(cvc5.Kind.EQUAL, var, env.tm.mkInteger(0))
+    result = magic._run_query("inv-step", query, env.tm, [("s", [var])])
+    return result, solver
+
+
+def test_unsat_means_the_obligation_holds(monkeypatch):
+    result, solver = _run(monkeypatch, "unsat")
+    assert result.ok is True
+    assert result.counterexample is None
+    assert solver.get_value_calls == 0
+
+
+def test_sat_reports_a_counterexample(monkeypatch):
+    result, solver = _run(monkeypatch, "sat")
+    assert result.ok is False
+    assert "Counterexample" in result.counterexample
+    assert solver.get_value_calls == 1, "the model should be read exactly once"
+
+
+def test_unknown_reports_instead_of_crashing(monkeypatch):
+    """The regression: `unknown` fell into the model-reading path."""
+    result, solver = _run(monkeypatch, "unknown")
+    assert result.ok is False, "unknown must not be reported as proved"
+    assert "unknown" in result.counterexample
+    assert "INCOMPLETE" in result.counterexample, "the solver's reason is dropped"
+    assert solver.get_value_calls == 0, "no model exists; getValue must not be called"
+
+
+def test_unknown_is_distinguishable_from_a_real_counterexample(monkeypatch):
+    """CEGIS feedback must not present 'unknown' as a refutation."""
+    unknown, _ = _run(monkeypatch, "unknown")
+    sat, _ = _run(monkeypatch, "sat")
+    assert "Counterexample" not in unknown.counterexample
+    assert "unknown" not in sat.counterexample
+
+
+# ══════════════════════════════════════════════════════════════════════
+# The loop, against a scripted LLM
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _counter() -> Module:
+    """`x = 0`, `+1` each step, back to 0 at 10 -- so `x` stays in [0, 9]."""
+
+    def init():
+        return 0
+
+    def update(old_x):
+        x = old_x + 1
+        if x == 10:
+            return 0
+        return x
+
+    s = Var(Int([1, 1]))
+    return Module.sequential(
+        [s],
+        convert_method(init, {}, [X(s)], theory=LIA),
+        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
+    )
+
+
+def _infer(monkeypatch, claim, replies, given=Certificate()):
+    """Run the real CEGIS loop, answering each prompt from `replies`.
+
+    Returns `(certificate, prompts)` -- the prompts being `(system, user)`
+    pairs, so a test can say which prompt the route actually sent.
+    """
+    prompts: list[tuple[str, str]] = []
+    pending = list(replies)
+
+    def chat(system, user):
+        prompts.append((system, user))
+        return pending.pop(0)
+
+    monkeypatch.setattr(cegis, "make_client", lambda base_url, model: chat)
+    magic = AiCegisEngine("", _counter())
+    return magic.infer(claim, given), prompts
+
+
+def test_safety_inference_asks_for_an_invariant_alone(monkeypatch):
+    """`rule_globally` takes no ranking function, so none is requested, none
+    is parsed, and none ends up on the certificate."""
+    cert, prompts = _infer(
+        monkeypatch,
+        Claim(kind="safety", prp="(<= s0 9)"),
+        ["INVARIANT: (and (>= s0 0) (<= s0 9))"],
+    )
+    assert prompts[0][0] is CEGIS_SAFETY_SYSTEM
+    assert "RANKING" not in prompts[0][1]
+    assert cert.inv == "(and (>= s0 0) (<= s0 9))"
+    assert cert.ranking is None
+
+
+def test_an_invariant_too_weak_for_the_property_comes_back_as_feedback(monkeypatch):
+    """`(>= s0 0)` is inductive and true at init, and a Buchi certificate
+    would accept it. It does not imply `s0 <= 9`, which is the obligation
+    that only exists on the safety route."""
+    cert, prompts = _infer(
+        monkeypatch,
+        Claim(kind="safety", prp="(<= s0 9)"),
+        [
+            "INVARIANT: (>= s0 0)",
+            "INVARIANT: (and (>= s0 0) (<= s0 9))",
+        ],
+    )
+    assert len(prompts) == 2, "the first invariant should have been rejected"
+    assert "inv_imp_P" in prompts[1][1]
+    assert cert.inv == "(and (>= s0 0) (<= s0 9))"
+
+
+def test_a_rank_is_bounded_only_where_the_property_fails(monkeypatch):
+    """`while (y >= 0) y = y - 1` ranks by `1 + y` under the invariant `true`.
+
+    `rule_buchi` bounds the rank only on the states where the property fails.
+    The check used to demand `ranking >= 0` wherever the invariant holds,
+    which `1 + y` breaks at `y = -5` -- a state where the property already
+    holds -- so a certificate Lean accepts came back as a counterexample."""
+    from nuterm.tests.benchmarks.svcomp import discover
+
+    prompts = []
+    pending = ["INVARIANT: true\nRANKING: (+ 1 s0)"]
+
+    def chat(system, user):
+        prompts.append(user)
+        return pending.pop(0)
+
+    monkeypatch.setattr(cegis, "make_client", lambda base_url, model: chat)
+    bench = next(b for b in discover() if b.name == "PodelskiRybalchenko-TACAS2011-Fig1")
+    cert = AiCegisEngine("", bench.build()[0]).infer(Claim(prp="(not (<= 0 s0))"))
+    assert len(prompts) == 1, "the candidate should have been accepted as proposed"
+    assert cert.ranking == "(+ 1 s0)"
+
+def test_a_buchi_property_still_asks_for_both(monkeypatch):
+    cert, prompts = _infer(
+        monkeypatch,
+        Claim(prp="(= s0 0)"),
+        ["INVARIANT: (and (>= s0 0) (<= s0 9))\nRANKING: (ite (= s0 0) 0 (- 10 s0))"],
+    )
+    assert prompts[0][0] is CEGIS_GENERATE_SYSTEM
+    assert cert.inv == "(and (>= s0 0) (<= s0 9))"
+    assert cert.ranking == "(ite (= s0 0) 0 (- 10 s0))"
+
+
+def test_a_given_invariant_is_kept_and_only_the_ranking_is_asked_for(monkeypatch):
+    """`--invariant`, or one resumed from `artifacts/`, arrives as `given`:
+    the model is shown it, asked for the ranking alone, and the answer
+    carries it unchanged."""
+    inv = "(and (>= s0 0) (<= s0 9))"
+    cert, prompts = _infer(
+        monkeypatch,
+        Claim(prp="(= s0 0)"),
+        ["RANKING: (ite (= s0 0) 0 (- 10 s0))"],
+        given=Certificate(inv=inv),
+    )
+    assert f"The invariant is GIVEN (do not propose a new one):\nINVARIANT: {inv}" \
+        in prompts[0][1]
+    assert cert == Certificate(inv, "(ite (= s0 0) 0 (- 10 s0))")
+
+
+def test_a_certificate_given_whole_asks_nothing(monkeypatch):
+    """Both predicates fixed: the loop verifies them once and asks the
+    model nothing."""
+
+    def no_client(base_url, model):
+        def chat(system: str, user: str) -> str:
+            raise AssertionError("a run with every predicate fixed asked")
+        return chat
+
+    monkeypatch.setattr(cegis, "make_client", no_client)
+    given = Certificate("(and (>= s0 0) (<= s0 9))", "(ite (= s0 0) 0 (- 10 s0))")
+    cert = AiCegisEngine("", _counter(), log=lambda *_: None).infer(
+        Claim(prp="(= s0 0)"), given)
+    assert cert == given
+
+
+def test_a_client_reaches_the_model_only_when_asked(monkeypatch):
+    """`make_client` makes nothing until the first question, so a run that
+    asks none needs neither the LLM package nor a key."""
+    from reactor.lean.core.errors import Refused
+    from verith.common.llm import make_client
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    chat = make_client(None, "any")
+    with pytest.raises(Refused):
+        chat("system", "user")
+
+
+# ── how long the loop keeps asking ───────────────────────────────────────
+
+
+def _always_wrong(monkeypatch, clock, step):
+    """A model that only ever proposes a refuted invariant, each reply taking
+    `step` seconds on a fake clock."""
+    prompts = []
+
+    def chat(system, user):
+        prompts.append(user)
+        clock[0] += step
+        return "INVARIANT: (>= s0 0)"
+
+    monkeypatch.setattr(cegis, "make_client", lambda base_url, model: chat)
+    monkeypatch.setattr(cegis.time, "monotonic", lambda: clock[0])
+    return prompts
+
+
+def test_without_a_budget_the_count_is_the_leash(monkeypatch):
+    import pytest
+    from reactor.lean.core.errors import Refused
+    prompts = _always_wrong(monkeypatch, [0.0], 1.0)
+    with pytest.raises(Refused, match="after 5 attempts"):
+        AiCegisEngine("", _counter()).infer(Claim(kind="safety", prp="(<= s0 9)"))
+    assert len(prompts) == 5
+
+
+def test_a_budget_keeps_asking_past_five_while_an_attempt_still_fits(monkeypatch):
+    """10 s attempts in a 95 s budget: the ninth ends at 90 s, and a tenth
+    would end at 100 s, past the budget, so it is never started."""
+    import pytest
+    from reactor.lean.core.errors import Refused
+    prompts = _always_wrong(monkeypatch, [0.0], 10.0)
+    with pytest.raises(Refused, match="after 9 attempts in 90 s of a 95 s budget"):
+        AiCegisEngine("", _counter(), budget_s=95).infer(
+            Claim(kind="safety", prp="(<= s0 9)"))
+    assert len(prompts) == 9
+
+
+def test_a_budget_always_allows_the_first_attempt(monkeypatch):
+    import pytest
+    from reactor.lean.core.errors import Refused
+    prompts = _always_wrong(monkeypatch, [0.0], 10.0)
+    with pytest.raises(Refused, match="after 1 attempt in "):
+        AiCegisEngine("", _counter(), budget_s=1).infer(
+            Claim(kind="safety", prp="(<= s0 9)"))
+    assert len(prompts) == 1
+
+
+def test_a_module_cvc5_cannot_encode_is_refused_before_anything_is_asked(monkeypatch):
+    """`m_transpose` has no cvc5 term for its round, and the prompt states
+    the round in cvc5's terms: each attempt failed before the model was
+    asked, read as a reply that "could not be parsed", and the bench's
+    280 s budget went on 7204984 of them."""
+    import pytest
+    from reactor.lean.core.errors import Refused
+    from reactor.lean.inputs.python import load_module
+
+    prompts = []
+    monkeypatch.setattr(cegis, "make_client",
+                        lambda base_url, model: lambda s, u: prompts.append(u))
+    module = load_module(Path(__file__).resolve().parents[2] / "python"
+                         / "tests" / "limits" / "mods" / "m_transpose.py")
+    with pytest.raises(Refused, match="operator in it has no encoding"):
+        AiCegisEngine("", module, budget_s=1).infer(
+            Claim(prp="(= ((_ tuple.select 0) s0) 1)", kind="buchi"))
+    assert prompts == []

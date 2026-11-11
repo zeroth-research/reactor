@@ -1,5 +1,5 @@
 === Certificate/Data.lean
-import Core.Basic
+import Relational.Basic
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -21,7 +21,7 @@ def ranking : (Mat Int 1 1) → Nat := fun s => ((((s 0 0) * (s 0 0)) : Int)).to
 
 === Certificate/Certificate.lean
 import Mathlib.Algebra.BigOperators.Fin
-import Core.Basic
+import Relational.Basic
 import System.System
 import Certificate.Data
 import ZerothHammer
@@ -33,7 +33,7 @@ set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/proof/tactics.py`.
+-- its certificate; see `reactor/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, nonlinear
 -- cvc5: cvc5 needed 2 product hint(s)
@@ -159,8 +159,8 @@ end TS
 
 === standalone
 import Mathlib.Algebra.BigOperators.Fin
-import Core.Basic
-import Core.Box
+import Relational.Basic
+import Relational.Box
 import ZerothHammer
 
 set_option linter.unusedVariables false
@@ -170,7 +170,7 @@ set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/proof/tactics.py`.
+-- its certificate; see `reactor/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, nonlinear
 -- cvc5: cvc5 needed 2 product hint(s)

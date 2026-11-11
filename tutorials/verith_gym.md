@@ -1,6 +1,6 @@
-# Generating a Lean certificate for a gymnasium module with `verith`
+# Generating a Lean certificate for a gymnasium module with `reactor`
 
-`verith` turns a Python reactive module into a Lean 4 project that encodes the
+`reactor` turns a Python reactive module into a Lean 4 project that encodes the
 module's transition system and carries a machine-checkable *certificate* — an
 invariant, a property, and a ranking function, together with the proof
 obligations that connect them. This tutorial walks through the pipeline for a
@@ -8,17 +8,19 @@ module extracted from a plain [gymnasium](https://gymnasium.farama.org/)
 environment:
 
 ```
-gym.Env  ──zrth.gym.Env──▶  symbolic Module (SSA term IR)  ──verith──▶  Lean 4 project + certificate
+gym.Env  ──reactor.gym.Env──▶  symbolic Module (SSA term IR)  ──reactor──▶  Lean 4 project + certificate
 ```
 
 ## Prerequisites
 
-Run everything from the repository checkout (`uv run verith` works from the
-repo root or from `python/`; it is not installed globally):
+Run everything from the repository checkout (`uv run reactor` works from the
+repo root or from `python/`; it is not installed globally). Step 7, which has
+the certificate searched for, runs `certify`: `reactor`'s flags and
+`--infer`, from the [`verith/`](../verith/README.md) project.
 
 ```bash
-uv sync          # builds zrth via maturin and installs dependencies
-uv run verith --help
+uv sync          # builds reactor via maturin and installs dependencies
+uv run reactor --help
 ```
 
 To actually *check* the generated certificate you also need a Lean 4
@@ -28,8 +30,8 @@ and depends on Mathlib, so the first `lake build` downloads a large cache).
 ## Step 1 — Wrap a gymnasium environment as a module
 
 A *module file* is any Python file exposing a callable named `module`
-(override the name with `-d`) that returns a `zrth.Module`. For a gymnasium
-environment you don't hand-write the module — `zrth.gym.Env` extracts it by
+(override the name with `-d`) that returns a `reactor.Module`. For a gymnasium
+environment you don't hand-write the module — `reactor.gym.Env` extracts it by
 symbolically analyzing the environment's `reset` and `step` methods.
 
 Save this as `chain_env.py`:
@@ -39,8 +41,8 @@ Save this as `chain_env.py`:
 import gymnasium as gym
 from gymnasium import spaces
 
-from zrth import Module
-from zrth.gym import Env
+from reactor import Module
+from reactor.gym import Env
 
 
 class ChainEnv(gym.Env):
@@ -98,7 +100,7 @@ IR instead of delegating to the backing env:
 ```python
 import torch
 from chain_env import ChainEnv
-from zrth.gym import Env
+from reactor.gym import Env
 
 real = Env(ChainEnv())
 sim = Env(ChainEnv(), interpret=True)   # runs the symbolic IR only
@@ -112,7 +114,7 @@ for _ in range(3):
 ## Step 2 — Generate a bare Lean project
 
 ```bash
-uv run verith chain_env.py -o out/ -p ChainCert
+uv run reactor chain_env.py -o out/ -p ChainCert
 ```
 
 This prints the extracted module (wires and SSA terms) and creates
@@ -183,7 +185,7 @@ If you only know the property, Step 7 shows how to have an LLM infer the rest.
 invariant is the whole certificate:
 
 ```bash
-uv run verith chain_env.py \
+uv run reactor chain_env.py \
     --safety    "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
     --invariant "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
     -o out/ -p ChainCert
@@ -225,7 +227,7 @@ binary cache download. For this example the generated tactic
 cascades close all five obligations — the certificate checks with no `sorry`.
 If a goal survives the cascade for a harder module, the build reports it as
 an unsolved goal — open the file in a Lean editor and finish the proof by
-hand, or refine the invariant and re-run `verith`.
+hand, or refine the invariant and re-run `reactor`.
 
 `lake build` (no target) additionally builds the auxiliary encodings
 (`System/Circ.lean`, `System/ScalarRel.lean`, …). These are not needed for the
@@ -261,8 +263,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from zrth import Module, LIA
-from zrth.gym import Env
+from reactor import Module, LIA
+from reactor.gym import Env
 
 
 class CycleEnv(gym.Env):
@@ -315,7 +317,7 @@ a precondition, since a zero action freezes the state forever:
   to `s4 = 0`, where `P` holds and no further decrease is required).
 
 ```bash
-uv run verith cycle_env.py \
+uv run reactor cycle_env.py \
     --buchi          "(= (X @intf.4) 0)" \
     --pre       "(>= @extl.0 1)" \
     --invariant "(and (>= (X @intf.4) 0) (<= (X @intf.4) 3))" \
@@ -344,8 +346,8 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from zrth import Module, LIA
-from zrth.gym import Env
+from reactor import Module, LIA
+from reactor.gym import Env
 
 
 class MatCycleEnv(gym.Env):
@@ -393,7 +395,7 @@ one-hot*, and the ranking is a linear functional over the components —
 weights 3, 2, 1 count the steps remaining until the wrap:
 
 ```bash
-uv run verith matcycle_env.py \
+uv run reactor matcycle_env.py \
     --buchi   '(= ((_ tuple.select 0) (X @intf.4)) 1)' \
     --pre '(>= @extl.0 1)' \
     --invariant '(and (>= ((_ tuple.select 0) (X @intf.4)) 0) (<= ((_ tuple.select 0) (X @intf.4)) 1)
@@ -420,12 +422,12 @@ pins their sum to 1 (so after a rotation exactly one component is hot).
 
 In Steps 4 and 6 we wrote the invariant and ranking function by hand. For
 anything beyond toy modules that is the hard part of the certificate — and
-it is the part `verith` can search for automatically. With `--infer`, you
+it is the part `certify` can search for automatically. With `--infer`, you
 supply only the property (and precondition) and an LLM proposes the rest.
 Dropping `--invariant` and `--ranking` from the Step 6 liveness example:
 
 ```bash
-uv run verith cycle_env.py \
+uv run certify cycle_env.py \
     --buchi    "(= (X @intf.4) 0)" \
     --pre "(>= @extl.0 1)" \
     --infer -o out/ -p CycleCert
@@ -449,7 +451,7 @@ counterexample until a proposal passes (or the attempt budget runs out).
 
 Requirements: `--infer` needs `-P` and, for the default Claude backend
 (model `claude-sonnet-4-6`), an `ANTHROPIC_API_KEY` in the environment plus
-the `ai` extra (`uv sync --extra ai`, or `pip install zrth[ai]`). Any other
+verith's `ai` extra (`uv sync --extra ai`, or `pip install verith[ai]`). Any other
 backend — a local model or a hosted OpenAI-compatible provider — goes
 through `--base-url`; see [Using a local LLM or another
 provider](#using-a-local-llm-or-another-provider-ollama-vllm-openrouter-)
@@ -483,7 +485,7 @@ OpenAI-compatible endpoint; `--model` is the model name as that endpoint
 knows it. The only extra dependency is the `openai` client package:
 
 ```bash
-uv sync --extra ai-local        # or: pip install zrth[ai-local]
+uv sync --extra ai-local        # or: pip install verith[ai-local]
 ```
 
 For **local servers** no API key is needed (the client is created with a
@@ -495,7 +497,7 @@ vendors under one key:
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 
-uv run verith cycle_env.py --buchi "(= (X @intf.4) 0)" --pre "(>= @extl.0 1)" --infer \
+uv run certify cycle_env.py --buchi "(= (X @intf.4) 0)" --pre "(>= @extl.0 1)" --infer \
     --model anthropic/claude-haiku-4.5 \
     --base-url https://openrouter.ai/api/v1 -o out/ -p CycleCert
 ```
@@ -506,7 +508,7 @@ once the daemon is running):
 ```bash
 ollama pull qwen3-coder         # once
 
-uv run verith cycle_env.py --buchi "(= (X @intf.4) 0)" --pre "(>= @extl.0 1)" --infer \
+uv run certify cycle_env.py --buchi "(= (X @intf.4) 0)" --pre "(>= @extl.0 1)" --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 -o out/ -p CycleCert
 ```
 
@@ -516,7 +518,7 @@ default):
 ```bash
 vllm serve Qwen/Qwen2.5-Coder-32B-Instruct   # in another terminal
 
-uv run verith cycle_env.py --buchi "(= (X @intf.4) 0)" --pre "(>= @extl.0 1)" --infer \
+uv run certify cycle_env.py --buchi "(= (X @intf.4) 0)" --pre "(>= @extl.0 1)" --infer \
     --model Qwen/Qwen2.5-Coder-32B-Instruct \
     --base-url http://localhost:8000/v1 -o out/ -p CycleCert
 ```
@@ -541,7 +543,7 @@ certificate). For the chain env, restrict runs to those where the one-hot
 action always prefers "right":
 
 ```bash
-uv run verith chain_env.py \
+uv run reactor chain_env.py \
     --safety "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
     --pre "(> ((_ tuple.select 1) (X @extl.0)) ((_ tuple.select 0) (X @extl.0)))" \
     --invariant "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
@@ -554,7 +556,7 @@ Instead of a full project scaffold, emit self-contained `.lean` files
 (useful when you already have a Lean project with the `Core` library):
 
 ```bash
-uv run verith chain_env.py \
+uv run reactor chain_env.py \
     --safety    "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
     --invariant "(and (>= (X @intf.4) 0.0) (<= (X @intf.4) 2.0))" \
     --cert-file out/ChainCert.lean
@@ -566,7 +568,7 @@ with equivalence theorems). Pass the invariant too — and, under `--buchi`, the
 ranking — without them those certificate fields are emitted as `sorry`
 placeholders and the proof obligations cannot close. To check the files, add them as `lean_lib`
 entries in a lake project that also contains the `Core` library and
-`ZerothHammer.lean` (copy both from any `verith`-generated project).
+`ZerothHammer.lean` (copy both from any `reactor`-generated project).
 
 ### Key flags
 
@@ -580,8 +582,8 @@ entries in a lake project that also contains the `Core` library and
 | `--pre` | — | SMT-LIB 2 Bool over `(X @extl.N)` / `@extl.N` input vars |
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking function |
-| `--infer [ai\|ai-cegis\|nuterm\|fbk-proveit]` | `ai-cegis` | Which route finds the certificate — an LLM, (`nuterm`) a ranking function trained and then certified, or (`fbk-proveit`) ic3ia through `lean-ltl-certifying` |
-| `--model`, `--base-url` | `claude-sonnet-4-6`, — | LLM selection for `--infer`; rejected by a route that calls none |
+| `--infer [ai\|ai-cegis\|nuterm\|fbk-proveit]` | `ai-cegis` | `certify` only: which route finds the certificate — an LLM, (`nuterm`) a ranking function trained and then certified, or (`fbk-proveit`) ic3ia through `lean-ltl-certifying` |
+| `--model`, `--base-url` | `claude-sonnet-4-6`, — | `certify` only: LLM selection for `--infer`; rejected by a route that calls none |
 | `--artifacts` | `use` | The project's `artifacts/` across runs: `use` resumes from what an earlier run left, `ignore` searches afresh, `reset` empties it |
 | `--cert-file` | — | Standalone certificate files instead of a project |
 | `-x` / `--executable` | off | Also generate a runnable `Main.lean` |

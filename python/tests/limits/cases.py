@@ -1,7 +1,7 @@
-"""Case matrix for the `uv run verith` limit probe.
+"""Case matrix for the `uv run reactor` limit probe.
 
-Each case is one full Lean project: `verith ... -o projects/<name> -p Rea`,
-then `lake build` against a shared `.lake` (Mathlib + Core + ZerothHammer
+Each case is one full Lean project: `reactor ... -o projects/<name> -p Rea`,
+then `lake build` against a shared `.lake` (Mathlib + Relational + ZerothHammer
 already built), so only System/* and Certificate/* recompile.
 
 `expect` records what the case is *meant* to show, so a surprise is visible:

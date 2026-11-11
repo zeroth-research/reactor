@@ -1,6 +1,6 @@
 import Mathlib.Algebra.BigOperators.Fin
-import Core.Basic
-import Core.Box
+import Relational.Basic
+import Relational.Box
 import ZerothHammer
 
 /-!

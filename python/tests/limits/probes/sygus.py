@@ -4,7 +4,7 @@ What came of it is `--infer sygus` (an invariant, not a ranking function) and
 `--infer smt-linear`; these are the numbers that steered them there.
 
 No LLM, no API key, deterministic. The constraints are the two
-`infer.ai_cegis.engine` already builds -- `inv s → rank s ≥ 0` and
+`verith.ai_cegis.engine` already builds -- `inv s → rank s ≥ 0` and
 `inv s ∧ ¬P s → rank (update s) < rank s` -- with `rank` a `synthFun`
 instead of a parsed term.
 
@@ -24,8 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cvc5
 from cvc5 import Kind
 
-from zrth.lean.smt.module import ModuleSMT
-from zrth.lean.smt.predicates import PredicateParser, parse_predicate
+from reactor.lean.smt.module import ModuleSMT
+from reactor.lean.smt.predicates import PredicateParser, parse_predicate
 
 CASES = [
     ("m_countdown", "(= s0 0)", "(and (>= s0 0) (<= s0 100))"),

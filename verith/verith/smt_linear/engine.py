@@ -1,0 +1,648 @@
+"""Inference by template: the certificate cvc5 finds in one quantified query.
+
+``--infer smt-linear``.  No LLM, no learner, no grammar -- the *shape* is
+fixed and its coefficients are ordinary constants, so the whole search is one
+`checkSat`::
+
+    exists c. forall s, inputs. obligations(c . s)
+
+``--buchi`` asks it for a ranking function ``c0 + c1*s0 + ... + cn*sn`` over
+a fixed invariant.  ``--safety`` asks it for the invariant itself, as a
+conjunction of ``a0 + a1*s0 + ... >= 0`` rows.
+
+**Every component is a column, whatever its sort -- and a matrix-shaped one
+is a column per element.**  An ``Int`` is itself, a ``Bool`` is ``0``/``1``
+(``(ite s0 1 0)``, which is how a row says ``b`` or ``¬b`` and how a rank
+falls when a flag flips), a bitvector is its unsigned value
+(``(ubv_to_int s0)``), and a ``Real`` is read through a floor
+(``(to_int s0)``).  A matrix-shaped component is the tuple cvc5 encodes it
+as, reached through the selectors ``smt_to_lean`` already renders
+(``((_ tuple.select 0) s0)``) -- so ``m_relu_vec``'s ``v[0] >= 0`` and a rank
+over ``v[0]`` are both sayable, which is the whole certificate for
+``v' = relu(v - 1)``.  One integer template then covers a mixed state instead
+of a template per sort -- and the lifting is only the search space: the
+obligations are stated against the module's own transition in its own sorts,
+wraparound and all, so what survives is right about the bitvector rather than
+about a story told over it.
+
+**A Real column is scaled before it is floored.**  ``rule_buchi`` ranks by
+a ``Nat``, and flooring a quantity that falls by less than one need not fall
+at all -- ``m_lra_half`` steps by ``1/2``, where ``to_int x`` stalls on every
+other round.  The scale is the least common denominator of the literals the
+program writes (:func:`verith.common.synth.denominator_scale`, which
+``--infer houdini`` reads the same way), so the column is
+``(to_int (* 2.0 s0))`` there and ``(to_int s0)`` where the program is
+integral.  What this costs on the Lean side is a bridge rather than a
+lemma: ``linarith`` reads ``⌊x⌋`` as an opaque ``Int`` atom and cannot reach
+a hypothesis about the ``Real`` under it, so ``tactics.cert_floors`` states
+the sign of each floored quantity in ``Int``, where ``omega`` can use it.
+
+**The refutation is the point.**  A `sat` answer is a certificate, and there
+is a cheaper route to most of those; an `unsat` answer is a *proof that no
+certificate of that shape exists*, which nothing else in this package can
+produce.  Measured: `m_twovars` has no linear ranking function under any
+invariant this route can state, and cvc5 says so, where an LLM asked for one
+spends an API call per attempt discovering the same thing.  That answer is
+written to `artifacts/` as a note, and `--infer ai-cegis` reads it into its
+prompt on the next run -- which is the whole reason this route is worth
+running before the expensive one.
+
+**A Büchi rank is searched with the invariant it ranks under, not after
+it.**  Under `true` most loops have no linear rank, because the property's
+own states are unconstrained: `m_toward5` and `m_lex` were both reported as
+proofs that none exists, and both have one -- `2*s0 - 11` under `5 <= s0
+<= 10`, and `s0 + 16*s1` under `s0 >= 0 /\\ 3 - s0 + 4*s1 >= 0`, a
+lexicographic argument as one linear rank.  Searching the invariant first
+does not find these: `true` is inductive, so an invariant asked for on its
+own is answered with something like it and the rank is no better off.  Both
+unknowns in one query is what makes the solver find a bound, since the rank
+obligation is unsatisfiable under an invariant too weak to carry it.
+
+Two things follow from how the cost behaves, both measured:
+
+* **The rows are tried one at a time.**  A one-row invariant for
+  `m_countdown |- G (s0 <= 100)` is 11 ms; asking for two rows at once does
+  not finish in 30 s, because each row multiplies the nonlinear search. So
+  `--linear-rows` is a ceiling, the queries run `1, 2, ... n`, and the first
+  that answers wins.  A Büchi search starts at *zero* rows, which is the
+  rank under whatever was supplied and the whole of what this route used to
+  ask, so a module that ranks without an invariant still pays one query.
+* **"Empty" means the widest shape actually decided.**  If one row came back
+  unsat and two rows timed out, what was proved is about one row, and the
+  note says one row. A note that overstated this would be worse than no
+  note: the next run's prompt would be told something false.
+
+And one thing follows from a sort: **a bitvector column takes the query out
+of what cvc5 will state.**  Measured, the `exists c. forall s.` form comes
+back ``unknown (INCOMPLETE)`` in *one millisecond* for any width -- not a
+timeout, a refusal.  So there is a second engine, and it asks the same
+question with both halves quantifier-free (:mod:`.solve`).
+It is a fallback rather than the engine, because what the direct query
+proves is stronger: its ``unsat`` is about every integer coefficient, where
+the loop needs a bounded candidate space to terminate and its ``unsat`` is
+about that box -- which is why the note carries the bound when the loop is
+what answered.
+"""
+
+from __future__ import annotations
+
+from reactor.lean.core.certificate import Certificate, Claim
+from reactor.lean.core.errors import Refused
+from .solve import HOW_QUANTIFIED, Outcome, Template, decide
+from dataclasses import dataclass
+
+from ..common.claim import SynthContext
+from ..common.record import announce
+from ..common.smtlib import affine_smt, conjunction_smt
+from reactor.lean.smt.obligations import (
+    Frame,
+    conjunction,
+    init_inv,
+    inv_imp_P,
+    step_inv,
+)
+from ..common.obligations import Obligations, implication, ranked
+from ..common.synth import (
+    Search,
+    denominator_scale,
+    program_rationals,
+    readings,
+    settle,
+    split_conditions,
+)
+
+from cvc5 import Kind
+
+# What this route reads: every kind with an integer reading. The context
+# refuses any other component before a solver starts, and `readings` turns
+# the rest into columns.
+READS = ("int", "bool", "bv", "real", "tuple")
+
+DEFAULT_ROWS = 2
+
+# How many branch conditions a two-piece rank is tried on. Each one is a
+# query per invariant width, and they come property's and transition's own
+# comparisons first, which is where a rank changes what falls.
+MAX_SPLITS = 8
+
+
+@dataclass(frozen=True)
+class _RankShape:
+    """What a ranking function is made of: see `SmtLinearEngine._shapes`."""
+
+    kind: str                       # "linear" | "zeroed" | "split"
+    cond_src: str = ""              # the branch, as SMT-LIB over `s0..`
+    cond: object = None             # ... and as a term (`split` only)
+
+    def prose(self, names) -> str:
+        lin = f"`{_shape(names)}`"
+        if self.kind == "zeroed":
+            return (f"zero where the property holds and linear elsewhere -- "
+                    f"`(ite P 0 r)`, `r` = {lin}")
+        if self.kind == "split":
+            return (f"linear on each side of `{self.cond_src}` -- "
+                    f"`(ite c r1 r2)`, each `r` = {lin}")
+        return f"linear in the state -- {lin}, integer coefficients, no branching"
+
+
+def _frame(ctx: SynthContext, st, el, en) -> Frame:
+    """The obligations' frame over `st`, `el` and `en`: bound variables for
+    the quantified query, a sample's values or a counterexample's constants
+    for the loop."""
+    return Frame(ctx.enc, "", init_pre=ctx.init_pre,
+                 update_pre=ctx.update_pre,
+                 consts=(list(st), list(el), list(en)))
+
+
+def _shape(names, prefix: str = "c") -> str:
+    """The template as a person would write it: `c0 + c1*s0 + c2*s1`.
+
+    Elided in the middle only when there is a middle to elide -- a
+    one-column module printing `c0 + c1*s0 + ... + c1*s0` would name the
+    same coefficient twice and read as a wider shape than was searched.
+    """
+    terms = [f"{prefix}{i + 1}*{n}" for i, n in enumerate(names)]
+    if len(terms) > 3:
+        terms = terms[:2] + ["..."] + terms[-1:]
+    return " + ".join([f"{prefix}0"] + terms)
+
+
+def _normalise(values: list[int]) -> list[int]:
+    """`values` divided by their gcd, which is the same predicate.
+
+    `(>= (+ 200 (* (- 2) s0)) 0)` and `(>= (+ 100 (- s0)) 0)` hold of exactly
+    the same states -- dividing through by a positive common factor is an
+    equivalence over the integers for both `>= 0` and a strict decrease --
+    and the second is the one the certificate should carry: every digit of
+    it is restated in Lean and re-elaborated on every obligation.
+    """
+    from math import gcd
+
+    g = 0
+    for v in values:
+        g = gcd(g, abs(int(v)))
+    return list(values) if g in (0, 1) else [int(v) // g for v in values]
+
+
+class SmtLinearEngine:
+    """Infer a certificate of fixed linear shape, or prove there is none."""
+
+    def __init__(
+        self,
+        module,
+        *,
+        rows: int = DEFAULT_ROWS,
+        budget=None,
+        artifacts=None,
+        log=print,
+        encoding=None,
+    ):
+        self.module = module
+        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
+        # its own.
+        self.encoding = encoding
+        self.rows = max(1, int(rows))
+        self.budget = budget
+        self.artifacts = artifacts
+        self.log = log
+
+    # --- driver ---------------------------------------------------------
+
+    def infer(self, claim: Claim,
+              given: Certificate = Certificate()) -> Certificate:
+        """The certificate of `claim`, as SMT-LIB. `given.inv` is kept: the
+        rows strengthen it for `--safety` and the rank is searched under it
+        for `--buchi`."""
+        ctx = SynthContext.build(self.encoding or self.module, claim,
+                                 route="smt-linear", takes=READS)
+        scale = denominator_scale(program_rationals(ctx))
+        cols = readings(ctx, scale=scale)
+        self.log(f"[smt-linear] columns: {', '.join(c.name for c in cols)}")
+        if scale != 1:
+            self.log(f"[smt-linear] Real state: read through a floor after "
+                     f"scaling by {scale}")
+        inv = given.inv if given.inv and given.inv.strip() else None
+        if claim.is_safety:
+            search = self._safety(ctx, cols, inv)
+            if search.found is not None:
+                announce(self.log, "smt-linear", Certificate(search.found))
+            return Certificate(
+                settle(self.artifacts, search, flag="--infer smt-linear"))
+
+        if inv is None:
+            # Said rather than assumed: a rank that has to hold in *every*
+            # state is a much harder ask than one over a real invariant, so
+            # the rank is searched under `true` first and the invariant
+            # widened only when that comes back empty.
+            self.log(
+                "[smt-linear] no invariant to rank over (none supplied and "
+                "none resumed): searching under `true` first, then for an "
+                "invariant to rank under"
+            )
+        search, inv_src = self._buchi(ctx, cols, inv)
+        if search.found is not None:
+            announce(self.log, "smt-linear", Certificate(inv_src, search.found))
+        return Certificate(
+            inv_src, settle(self.artifacts, search, flag="--infer smt-linear"))
+
+    # --- the ranking function, and the invariant it ranks under ---------
+
+    def _shapes(self, ctx: SynthContext) -> list:
+        """The rank shapes to try, simplest first: linear, then two with a branch.
+
+        Linear comes first and at every invariant width before anything with
+        a branch, so a module that ranks linearly gets the rank it always got.
+        The two branching shapes are where the other routes' ranks were when
+        this one came back empty -- in the bench matrix, 42 of the 56 ranks
+        found on rows it could not rank had an `ite`:
+
+        * **zeroed where the property holds**, `(ite P 0 r)`. `hrank` never
+          constrains a state where `P` holds, so a rank only has to fall on
+          the rounds that stay outside it. A counter that wraps around to the
+          property's state has no linear rank and has this one:
+          `(ite (= s0 0) 0 (- 11 s0))` on `m_step2`.
+        * **two pieces**, `(ite c r1 r2)`, `c` one of the conditions the
+          property and the transition branch on
+          (`verith.common.synth.split_conditions`), for a rank that falls
+          through a different quantity on each side --
+          `(ite (<= 0 s1) s0 (- s1))`.
+        """
+        shapes = [_RankShape("linear")]
+        shapes.append(_RankShape("zeroed", cond_src=ctx.prp_src))
+        try:
+            conds = split_conditions(ctx, Obligations(ctx))
+        except Exception as e:                      # pragma: no cover
+            self.log(f"[smt-linear] no branch conditions: {e}")
+            conds = []
+        for src in conds[:MAX_SPLITS]:
+            try:
+                term = ctx.enc.parse(src, "branch condition")
+            except Refused:                         # pragma: no cover
+                continue
+            shapes.append(_RankShape("split", cond_src=src, cond=term))
+        return shapes
+
+    def _buchi_at(self, ctx: SynthContext, cols: list, given: "str | None",
+                  k: int, shape: "_RankShape") -> tuple["tuple[str, str] | None", "Outcome"]:
+        """One query for `k` invariant rows *and* the rank together.
+
+        `rule_buchi`'s ranking obligation, `hrank`, over the Lean ranking
+        `Int.toNat rank`: `toNat r' < toNat r` holds exactly when `r >= 1`
+        and `r' < r`. Only the states where `P` fails are constrained --
+        where it holds, the rank may be anything, negative included.
+
+        The invariant is searched *with* the rank rather than before it
+        because on its own it has nothing to be strong enough for: `true` is
+        inductive, so a search for an invariant alone returns it and the
+        rank is no better off. Asking for both at once is what makes the
+        solver find a bound -- the third conjunct is unsatisfiable under an
+        invariant too weak to rank under, so a vacuous one is not an answer.
+
+        This used to ask `inv -> rank >= 0` over *every* state as well, which
+        `rule_buchi` never states. On an unbounded integer state that rules out
+        every linear rank, since the property's own states run to minus
+        infinity, and the route reported the empty space as a proof: `while (y
+        >= 0) y := y - 1` was "proved" to have no linear rank, and Lean accepts
+        `(1 + y).toNat` for it under the invariant `true`.
+
+        `shape` is what the rank is made of (`_shapes`). Each branching shape
+        keeps the coefficients linear unknowns -- the branch is on the state,
+        never on them -- so the query is the same kind of question.
+        """
+        tm, n = ctx.tm, len(cols)
+        rows, inv = self._inv_rows(ctx, cols, given, k)
+        Int = tm.getIntegerSort()
+        pieces = 2 if shape.kind == "split" else 1
+        cs = [[tm.mkConst(Int, f"{'cd'[p]}{i}") for i in range(n + 1)]
+              for p in range(pieces)]
+
+        def affine(c, vs):
+            """`c0 + Σ ci·(column i read at `vs`)`.
+
+            The columns are terms over `ctx.state`, so reading them at the
+            successor is the same substitution the obligations already make
+            -- and a Bool or bitvector column is read there too, which is
+            the whole of what those sorts cost here.
+            """
+            t = c[0]
+            for coeff, col in zip(c[1:], cols):
+                t = tm.mkTerm(
+                    Kind.ADD, t,
+                    tm.mkTerm(Kind.MULT, coeff,
+                              col.term.substitute(ctx.state, vs)),
+                )
+            return t
+
+        def rank(vs):
+            if shape.kind == "split":
+                return tm.mkTerm(Kind.ITE, ctx.enc.at(shape.cond, vs),
+                                 affine(cs[0], vs), affine(cs[1], vs))
+            return affine(cs[0], vs)
+
+        def build(st, el, en):
+            f = _frame(ctx, st, el, en)
+            nxt = f.succ
+            drops = tm.mkTerm(Kind.LT, rank(nxt), rank(st))
+            if shape.kind == "zeroed":
+                # `(ite P 0 r)` at a successor where `P` holds is 0, below the
+                # `r >= 1` the round starts from: only a round that stays
+                # outside `P` has to fall.
+                drops = tm.mkTerm(Kind.OR, f.at(ctx.prp, nxt), drops)
+            falls = implication(ranked(
+                f, [("inv", inv)], ctx.prp,
+                tm.mkTerm(Kind.AND,
+                          tm.mkTerm(Kind.GEQ, rank(st), tm.mkInteger(1)),
+                          drops),
+            ), tm)
+            if not k:
+                # Nothing to make inductive: the invariant is whatever was
+                # supplied, which the caller has not been asked to prove.
+                return falls
+            return tm.mkTerm(Kind.AND, *self._inductive(ctx, inv, f), falls)
+
+        verdict = decide(
+            ctx, Template(unknowns=rows + [x for c in cs for x in c], build=build),
+            budget=self.budget, log=self.log)
+        if verdict.answer != "sat":
+            return None, verdict
+        values = list(verdict.values)
+        inv_src = self._rows_smt(cols, given, values, k)
+        # Divided through jointly: one common factor keeps `r >= 1` and every
+        # comparison between the pieces exactly as they were.
+        coeffs = _normalise(values[len(rows):])
+        names = [col.name for col in cols]
+        lins = [affine_smt(coeffs[p * (n + 1)], coeffs[p * (n + 1) + 1:(p + 1) * (n + 1)],
+                           names) for p in range(pieces)]
+        if shape.kind == "zeroed":
+            rank_src = f"(ite {shape.cond_src} 0 {lins[0]})"
+        elif shape.kind == "split":
+            rank_src = f"(ite {shape.cond_src} {lins[0]} {lins[1]})"
+        else:
+            rank_src = lins[0]
+        return (inv_src, rank_src), verdict
+
+    def _buchi(self, ctx: SynthContext, cols: list,
+               given: "str | None") -> tuple[Search, str]:
+        """The rank, and the invariant it ranks under, widening the invariant.
+
+        Width 0 is the rank under `given` alone, which is the whole of what
+        this route used to ask and still the answer where there is one --
+        `m_countdown` ranks in milliseconds. Only when that comes back
+        `unsat` is a row added, and then the empty space at width 0 is a
+        fact about *that* invariant rather than about the module.
+
+        Each shape is widened in turn (`_shapes`), and the note an empty
+        search leaves names exactly the shapes that were decided empty and
+        at what width: one that ran out of budget is named as not decided,
+        since `--infer ai-cegis` reads the note as a list of shapes not to
+        propose.
+        """
+        names = [col.name for col in cols]
+        inv_src = given or "true"
+        shapes = self._shapes(ctx)
+        # Per shape: the widest invariant it was decided empty under (-1 for
+        # none yet), and whether a query about it went unanswered.
+        decided = {i: -1 for i in range(len(shapes))}
+        unanswered: set[int] = set()
+        last = None
+
+        def attempt(i, k):
+            nonlocal last
+            found, verdict = self._buchi_at(ctx, cols, given, k, shapes[i])
+            if found is not None:
+                return found
+            if verdict.answer == "unsat":
+                decided[i], last = k, verdict
+            else:
+                unanswered.add(i)
+            return None
+
+        # Linear first, at every width, before anything with a branch: what
+        # ranked linearly before ranks the same way now. Each family is a
+        # phase of its own -- a fresh `--smt-budget` -- because linear alone
+        # can spend all of one on a module cvc5 will not state the quantified
+        # query for, and then nothing with a branch would be asked at all.
+        # Inside a family the shapes go width by width -- all of them under
+        # the invariant given, then all under one more row -- because a wider
+        # invariant is what makes a query dear.
+        families = [[0]] + [[i for i in range(1, len(shapes))
+                             if (shapes[i].kind == "zeroed") == z]
+                            for z in (True, False)]
+        order = [(f, i, k) for f, fam in enumerate(families)
+                 for k in range(self.rows + 1) for i in fam]
+        phase = 0
+        for f, i, k in order:
+            if f != phase:
+                phase = f
+                if self.budget is not None:
+                    self.budget.start_phase()
+            if i in unanswered or decided[i] != k - 1:
+                continue                # gave up on it, or a narrower width failed open
+            if self.budget is not None and self.budget.exhausted:
+                unanswered.add(i)
+                continue
+            found = attempt(i, k)
+            if found is not None:
+                inv_src, rank_src = found
+                over = (f"the invariant `{inv_src}`" if k == 0 else
+                        f"an invariant found with it -- `{inv_src}`")
+                return Search(
+                    "ranking",
+                    f"It is {shapes[i].prose(names)}, and ranks under {over}.",
+                    found=rank_src,
+                ), inv_src
+            if decided[i] == k and k < self.rows:
+                self.log(f"[smt-linear] no {shapes[i].kind} rank under an "
+                         f"invariant of {k} row(s); widening the invariant")
+
+        def under(k):
+            return (f"under the invariant `{inv_src}`" if k <= 0 else
+                    f"under any invariant of up to {k} linear "
+                    f"{'inequality' if k == 1 else 'inequalities'} "
+                    f"`{_shape(names, prefix='a')} >= 0`")
+
+        proved = [f"{shapes[i].prose(names)}, {under(k)}"
+                  for i, k in decided.items() if k >= 0]
+        open_ = [shapes[i].prose(names) for i in sorted(unanswered)]
+        exhausted = bool(proved) and not open_
+        caveat = last.caveat if last is not None else ""
+        if exhausted:
+            space = ("No ranking function of these shapes drops by at least "
+                     "one and stays positive wherever the property fails: "
+                     + "; ".join(proved) + "." + caveat)
+            detail = (
+                "A ranking function for this module needs something outside "
+                "those shapes: more than one branch, a product of components, "
+                "or an invariant wider than `--linear-rows` to rank over. "
+                "`--infer ai-cegis` and `--infer nuterm` search shapes with them."
+            )
+        else:
+            # Not a proof, so the note is `unknown` and says nothing is ruled
+            # out -- what *was* decided goes in the detail, as a fact about
+            # this run rather than as a shape a later prompt should avoid.
+            space = ("A ranking function was searched for in these shapes: "
+                     + "; ".join(open_) + ".")
+            detail = (
+                (f"Decided empty before the budget ran out: "
+                 f"{'; '.join(proved)}.{caveat} " if proved else "")
+                + "Raise `--smt-timeout`, or try `--infer nuterm` / "
+                "`--infer ai-cegis`."
+            )
+        return Search(
+            "ranking", space,
+            how=last.how if last is not None else HOW_QUANTIFIED,
+            exhausted=exhausted, detail=detail,
+        ), inv_src
+
+    # --- the invariant, one row at a time -------------------------------
+
+    def _safety(self, ctx: SynthContext, cols: list,
+                given: "str | None") -> Search:
+        """`init -> inv`, `inv -> inv'`, `inv -> P`, over conjunctions of rows.
+
+        A supplied invariant is not replaced but *strengthened*: it is the
+        first conjunct and the rows are what is added to it, so
+        `--invariant` here means "this much is known, find the rest" -- the
+        same thing a resumed `inv` artifact means to `--infer ai-cegis`.
+
+        The widths are separate queries, smallest first, because the cost is
+        in the width: one row is 11 ms on `m_countdown` and two do not finish
+        in 30 s. Each `unsat` on the way is a fact worth keeping, and the
+        widest one reached is what the note is allowed to claim.
+        """
+        if given:
+            self.log(f"[smt-linear] strengthening the given invariant: {given}")
+        decided, how, caveat = 0, HOW_QUANTIFIED, ""
+        for k in range(0 if given else 1, self.rows + 1):
+            found, verdict = self._safety_at(ctx, cols, given, k)
+            if found is not None:
+                return Search("inv", self._found_rows(cols, given, k),
+                              found=found)
+            if verdict.answer != "unsat":
+                return self._empty_rows(cols, given, decided, undecided_at=k,
+                                        how=how, caveat=caveat)
+            decided, how, caveat = k, verdict.how, verdict.caveat
+            self.log(f"[smt-linear] no invariant with {k} row(s); widening")
+        return self._empty_rows(cols, given, decided, how=how, caveat=caveat)
+
+    def _inv_rows(self, ctx: SynthContext, cols: list, given: "str | None",
+                  k: int):
+        """`k` unknown rows over `cols`, as unknowns and an `inv(vs)` term.
+
+        Shared by the two searches because it is the same invariant either
+        way: `_safety_at` holds it to the property, `_buchi_at` ranks under
+        it, and both conjoin it to whatever `--invariant` or a resumed
+        artifact already supplied.
+        """
+        tm, n = ctx.tm, len(cols)
+        Int = tm.getIntegerSort()
+        rows = [[tm.mkConst(Int, f"a{j}_{i}") for i in range(n + 1)]
+                for j in range(k)]
+        given_term = ctx.enc.parse(given, "invariant") if given else None
+
+        def inv(vs):
+            parts = []
+            if given_term is not None:
+                parts.append(given_term.substitute(ctx.state, vs))
+            for row in rows:
+                t = row[0]
+                for a, col in zip(row[1:], cols):
+                    t = tm.mkTerm(
+                        Kind.ADD, t,
+                        tm.mkTerm(Kind.MULT, a,
+                                  col.term.substitute(ctx.state, vs)),
+                    )
+                parts.append(tm.mkTerm(Kind.GEQ, t, tm.mkInteger(0)))
+            return conjunction(tm, parts)
+
+        return [x for row in rows for x in row], inv
+
+    def _inductive(self, ctx: SynthContext, inv, f: Frame) -> tuple:
+        """`init -> inv` and `inv /\\ pre -> inv'`.
+
+        The two obligations an invariant owes whatever it is *for*. Implying
+        the property is `_safety_at`'s third; ranking under it is
+        `_buchi_at`'s.
+        """
+        return (implication(init_inv(f, [inv]), ctx.tm),
+                implication(step_inv(f, [("inv", inv)], [inv]), ctx.tm))
+
+    def _rows_smt(self, cols: list, given: "str | None", values, k: int) -> str:
+        """The solved rows as SMT-LIB, conjoined to `given`."""
+        n = len(cols)
+        parts = [given] if given else []
+        for j in range(k):
+            row = _normalise(values[j * (n + 1):(j + 1) * (n + 1)])
+            if not any(row[1:]) and row[0] >= 0:
+                # `2 >= 0`: a row the solver was free to leave vacuous, and a
+                # conjunct that says nothing is one more thing for every
+                # obligation downstream to carry.
+                continue
+            parts.append(
+                f"(>= {affine_smt(row[0], row[1:], [c.name for c in cols])} 0)"
+            )
+        return conjunction_smt(parts)
+
+    def _safety_at(
+        self, ctx: SynthContext, cols: list, given: "str | None", k: int
+    ) -> tuple["str | None", "Outcome"]:
+        """The invariant with `k` added rows, or why there is none."""
+        tm = ctx.tm
+        flat, inv = self._inv_rows(ctx, cols, given, k)
+
+        def build(st, el, en):
+            f = _frame(ctx, st, el, en)
+            return tm.mkTerm(
+                Kind.AND,
+                *self._inductive(ctx, inv, f),
+                implication(inv_imp_P(f, [("inv", inv)], ctx.prp), tm),
+            )
+
+        verdict = decide(ctx, Template(unknowns=flat, build=build),
+                         budget=self.budget, log=self.log)
+        if verdict.answer != "sat":
+            return None, verdict
+        return self._rows_smt(cols, given, list(verdict.values), k), verdict
+
+    # --- what the widths add up to, as prose for the artifact -----------
+
+    def _found_rows(self, cols: list, given: "str | None", k: int) -> str:
+        over = f", strengthening the given `{given}`" if given else ""
+        if k == 0:
+            return f"The given invariant `{given}` needed no strengthening."
+        return (
+            f"It is a conjunction of {k} linear "
+            f"{'inequality' if k == 1 else 'inequalities'} "
+            f"`{_shape([c.name for c in cols], prefix='a')} >= 0`{over}."
+        )
+
+    def _empty_rows(self, cols: list, given: "str | None", decided: int,
+                    undecided_at: int = 0, how: str = HOW_QUANTIFIED,
+                    caveat: str = "") -> Search:
+        over = f" beyond the given `{given}`" if given else ""
+        exhausted = decided > 0
+        if not exhausted:
+            space = (
+                f"Nothing was proved about invariants that are conjunctions "
+                f"of linear inequalities{over} for this module and property."
+            )
+        else:
+            space = (
+                f"No inductive invariant implying the property is a "
+                f"conjunction of {decided} linear "
+                f"{'inequality' if decided == 1 else 'inequalities'} "
+                f"`{_shape([c.name for c in cols], prefix='a')} >= 0`{over}."
+            )
+        detail = (
+            f"Wider conjunctions were not tried: `--linear-rows` stopped at "
+            f"{self.rows}. An invariant may exist with more rows, or outside "
+            f"linear arithmetic altogether -- `--infer sygus` adds "
+            f"congruences (`x` even), which no conjunction of inequalities "
+            f"can state."
+            if not undecided_at else
+            f"The query at {undecided_at} row(s) did not finish inside the "
+            f"budget, so nothing is known at that width or beyond it. Raise "
+            f"`--smt-timeout`, or try `--infer sygus`."
+        )
+        return Search("inv", space + (caveat if exhausted else ""),
+                      exhausted=exhausted, detail=detail, how=how)

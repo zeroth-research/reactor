@@ -1,12 +1,12 @@
-# Verifying a reactive module with `uv run verith`
+# Verifying a reactive module with `reactor` and `certify`
 
-`verith` is the command-line front end of the Lean pipeline. It takes a
+`reactor` is the command-line front end of the Lean pipeline. It takes a
 **module file** — a Python file exposing a callable that returns a
-`zrth.Module` — and writes a Lean 4 project holding the module's transition
+`reactor.Module` — and writes a Lean 4 project holding the module's transition
 system *and* a machine-checkable **certificate** for one temporal property:
 
 ```
-module.py ──verith──▶ <OUT>/Rea/                   a Lean 4 package
+module.py ──reactor─▶ <OUT>/Rea/                   a Lean 4 package
                         ├── System/                the module: init / update, in five encodings
                         ├── Certificate/Data.lean  the certificate data: init_pre, update_pre, inv, P, ranking
                         └── Certificate/           the proof obligations, with generated tactic scripts
@@ -29,7 +29,7 @@ Properties, invariants, ranking functions and preconditions are all written as
 * `(X @intf.0)`, `(X @intf.1)`, … — the controlled (state) wires after the round, in the order the module declares them
 * `(X @extl.0)`, … — the external inputs read in the round; `@extl.0`, … — the ones read in the round before
 * components of a vector wire take a tuple selector: `((_ tuple.select 1) (X @extl.0))`
-* a module file that names its variables (`zrth.lean.inputs.Named`) can be written in those names: `(X x)` is `x` after the round, a bare `x` is an input of the round before
+* a module file that names its variables (`reactor.lean.inputs.Named`) can be written in those names: `(X x)` is `x` after the round, a bare `x` is an input of the round before
 
 Inside certificates, SMT queries, Lean and the artifacts the same wires are
 called `s0, s1, …`, `e0, …` and `el0, …`; the outputs below show that
@@ -49,6 +49,12 @@ shell, in order, and every output is what it printed here.
 9. Letting **ic3ia** find the invariant (`--fbk-proveit`)
 10. A flag reference
 
+Where the certificate is not given but searched for (sections 6–9), the
+command is `certify`: `reactor`'s flags and `--infer`, one project, one run.
+The search itself is the [`verith/`](../verith/README.md) project's, whose
+`verith` command runs it alone and prints what it found, in the form
+`--invariant` and `--ranking` take.
+
 Every module used below is a fixture that already lives in `python/tests/`, so
 nothing has to be written first.
 
@@ -56,40 +62,49 @@ nothing has to be written first.
 
 ## 1. Setup
 
-`uv run verith` is not installed globally; it runs out of the checkout. All
-commands below are run from `python/`:
+`uv run reactor` and `uv run certify` are not installed globally; they run
+out of the checkout. All commands below are run from `python/`:
 
 ```bash
 cd <checkout>/python
-uv sync                    # builds zrth via maturin and installs dependencies
-uv run verith --help
+uv sync                    # builds reactor via maturin and installs dependencies
+uv run reactor --help
+uv run certify --help      # reactor's flags, and --infer with every route's
 ```
 
-**One output directory for every command.** `verith` regenerates
+**One output directory for every command.** `reactor` regenerates
 `<OUT>/<PROJ>` in place — it never wipes the directory — so the project's
 `.lake` survives from one example to the next, and with it every `.olean` of
-Mathlib, cslib, lean-smt, `Core` and `ZerothHammer`. Only `System/*` and
-`Certificate/*` recompile per example: the first `lake build` below costs
-about 15 s and each later one about 10 s, against an hour from cold.
+Mathlib, cslib, lean-smt and `ZerothHammer`; reactor-lean's `Relational` is
+built once, in the checkout itself. Only `System/*` and `Certificate/*`
+recompile per example: the first `lake build` below costs about 15 s and each
+later one about 10 s, against an hour from cold.
 
 ```bash
 export REPO=$(cd .. && pwd)
 export OUT=/tmp/verith-tutorial.noindex       # keep the .noindex suffix on macOS
 export PROJ=Rea
+export REACTOR_LEAN=$(cd "$REPO/../reactor-lean" && pwd)   # a reactor-lean checkout
 
 mkdir -p "$OUT/shared_lake"
 ln -sfn "$REPO/python/tests/lean/.lake/packages" "$OUT/shared_lake/packages"
 ```
 
-Two things make that work:
+Three things make that work:
 
 * `<OUT>/<PROJ>/.lake` is a symlink to one shared build directory whose
   `packages` points at the already-built packages of `python/tests/lean`.
   Build those once with `cd python/tests/lean && lake build`.
+* The Lean library the project is stated in, `Relational`, is not one of
+  those packages. It is a package of [reactor-lean], which the lakefile
+  requires from git; with `REACTOR_LEAN` set to a checkout of it, `reactor`
+  writes the lakefile to require the checkout by path instead.
 * Keep the `.noindex` suffix on `OUT` if you are on macOS. A build writes tens
   of thousands of `.olean` files; Spotlight indexing them has turned a 9 s
   build into a 928 s one, and a directory whose name ends in `.noindex` is
   skipped.
+
+[reactor-lean]: https://github.com/zeroth-research/reactor-lean
 
 One shared build directory takes **one writer** — don't run two of these
 sessions, or `tests/limits/run_limits.py`, against the same `OUT` at the same
@@ -98,25 +113,32 @@ builds serve each other's oleans, and the symptom is
 `unknown constant 'hrank'`, which reads exactly like a codegen bug.
 
 Building the certificate is `lake build Certificate` in the generated project.
-`verith --build-cert` does it in one flag, which is what you would type at a
+`reactor --build-cert` does it in one flag, which is what you would type at a
 terminal — but it runs `lake update` first, and that re-queries every
-dependency's git remote. Copying the warm manifest instead keeps every example
+dependency's git remote. Writing the warm manifest instead, with reactor-lean's
+packages entered as path dependencies on the checkout, keeps every example
 below off the network:
 
 ```bash
 lake_cert() {                                  # build the certificate of $OUT/$PROJ
   ln -sfn "$OUT/shared_lake" "$OUT/$PROJ/.lake"
-  cp "$REPO/python/tests/lean/lake-manifest.json" "$OUT/$PROJ/lake-manifest.json"
+  uv run python -c '
+import json, sys, torch
+from pathlib import Path
+from reactor.lean.project.lakefile import reactor_lean_checkout, with_reactor_lean
+warm = json.loads(Path(sys.argv[1]).read_text())
+Path(sys.argv[2]).write_text(json.dumps(with_reactor_lean(warm, reactor_lean_checkout())))
+' "$REPO/python/tests/lean/lake-manifest.json" "$OUT/$PROJ/lake-manifest.json"
   (cd "$OUT/$PROJ" && lake build Certificate)
 }
 ```
 
-`verith` prints the whole module and every file it writes. That is worth
+`reactor` prints the whole module and every file it writes. That is worth
 reading once (section 2 below) and in the way afterwards, so the rest of this
 tutorial pipes it through one filter — the lines about the *certificate*:
 
 ```bash
-says() {                                       # what verith says about the certificate
+says() {                                       # what the run says about the certificate
   sed $'s/\x1b\\[[0-9;]*m//g' |                # drop the colour codes
   grep -E 'pre-check|holds|REFUTED|refuted|\[CEGIS\]|\[nuterm\]|\[sygus\]|\[smt-linear\]|inv:|ranking:|resuming|artifacts:|error:|Project ready|property is|invariant witness|certificate:|Installed|Wrote the'
 }
@@ -151,8 +173,8 @@ cat tests/limits/mods/m_countdown.py
 
 ```python
 """LIA 1x1: x = 100, then x-1 each step, reset to 100 at 0. Baseline control."""
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():
@@ -174,11 +196,11 @@ def module() -> Module:
     )
 ```
 
-Generated with no property at all, `verith` prints the module it read and the
+Generated with no property at all, `reactor` prints the module it read and the
 files it wrote. This is the one run shown in full:
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py -o "$OUT" -p "$PROJ"
+uv run reactor tests/limits/mods/m_countdown.py -o "$OUT" -p "$PROJ"
 ```
 
 ```
@@ -207,12 +229,6 @@ Wrote system.py
 Wrote /tmp/verith-tutorial.noindex/Rea/lakefile.toml
 Wrote /tmp/verith-tutorial.noindex/Rea/lean-toolchain
 Wrote /tmp/verith-tutorial.noindex/Rea/ZerothHammer.lean
-Copied Basic.lean -> Core/
-Copied Box.lean -> Core/
-Copied LTL.lean -> Core/
-Copied Mat.lean -> Core/
-Copied template file LeanAI.lean -> /
-Copied template directory LeanAI -> /
 Wrote root module /tmp/verith-tutorial.noindex/Rea/System.lean
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/System.lean ++
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/Circ.lean ++
@@ -232,8 +248,7 @@ writes `100` into its next value, and `update` computes
 `ite (#0 = 0, 100, #0 - 1)`. Everything under `Wrote` is the Lean package:
 
 ```bash
-find "$OUT/$PROJ" -maxdepth 2 -not -path '*/.lake*' -not -path '*/artifacts*' \
-     -not -path '*/LeanAI*' -not -path '*/Core*' | sort      # minus the vendored libraries
+find "$OUT/$PROJ" -maxdepth 2 -not -path '*/.lake*' -not -path '*/artifacts*' | sort
 ```
 
 ```
@@ -276,7 +291,7 @@ seconds and still cannot tell a wrong certificate from tactics that are merely
 too weak.
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py \
+uv run reactor tests/limits/mods/m_countdown.py \
     --safety    '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -306,7 +321,7 @@ cat "$OUT/$PROJ"/*/Data.lean
 ```
 
 ```lean
-import Core.Basic
+import Relational.Basic
 
 def init_pre (e : (Unit) × (Unit)) : Prop := True
 
@@ -330,7 +345,7 @@ grep -E '^-- |^def RM|^theorem |^def lts' "$OUT/$PROJ/Certificate/Certificate.le
 
 ```lean
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/proof/tactics.py`.
+-- its certificate; see `reactor/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, linear
 def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
@@ -386,7 +401,7 @@ decreases on every step taken from a state where the property is false. Here
 where the property already holds.
 
 ```bash
-uv run verith tests/fixtures/counter.py \
+uv run reactor tests/fixtures/counter.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))' \
     --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \
@@ -418,7 +433,7 @@ def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 9
 def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
 def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = 0) then 0 else (10 - (s 0 0))) : Int)).toNat
 -- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `zrth/lean/proof/tactics.py`.
+-- its certificate; see `reactor/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, linear, 1 branch point(s)
 -- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
@@ -457,7 +472,7 @@ Build completed successfully (3466 jobs).
 
 ## 4. A module read out of a gymnasium environment
 
-Nothing above is specific to hand-written modules. `zrth.gym.Env` extracts a
+Nothing above is specific to hand-written modules. `reactor.gym.Env` extracts a
 module from a plain `gymnasium.Env` by symbolically analyzing its `reset` and
 `step` methods, and the result is a module file like any other.
 `tests/fixtures/simple_env.py` wraps `SimpleEnv` — a three-cell chain where
@@ -474,8 +489,8 @@ sed -n '/class SimpleEnv/,/class TwoBitCounterEnv/p' tests/gym/environments.py
 Chain environment: state ∈ {0,1,2}, action moves left/right.
 Property: state reaches 2 infinitely often.
 """
-from zrth.gym import Env
-from zrth import Module, Real
+from reactor.gym import Env
+from reactor import Module, Real
 from tests.gym.environments import SimpleEnv
 
 
@@ -491,13 +506,13 @@ wires; the action becomes an **external** input.
 
 ### Which wire is `(X @intf.0)`?
 
-`(X @intf.0) … (X @intf.N-1)` (`s0 … sN-1` internally) are the module's controlled wires in order, and `verith` prints
+`(X @intf.0) … (X @intf.N-1)` (`s0 … sN-1` internally) are the module's controlled wires in order, and `reactor` prints
 that order — the `controls` line of the module dump. Generate the project
 bare, with no property, and read it (the same dump is written to
 `dbg/system.txt`, so a later run need not reprint it):
 
 ```bash
-uv run verith tests/fixtures/simple_env.py -o "$OUT" -p "$PROJ" | head -24
+uv run reactor tests/fixtures/simple_env.py -o "$OUT" -p "$PROJ" | head -24
 ```
 
 ```
@@ -550,7 +565,7 @@ than `0` and `2`.
 since `step` clamps with `min` and `max`:
 
 ```bash
-uv run verith tests/fixtures/simple_env.py \
+uv run reactor tests/fixtures/simple_env.py \
     --safety    '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
     --invariant '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -602,7 +617,7 @@ still true and the ranking function is still fine; the invariant is not
 inductive, because the counter runs to 9:
 
 ```bash
-uv run verith tests/fixtures/counter.py \
+uv run reactor tests/fixtures/counter.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \
@@ -620,7 +635,7 @@ Project ready at: /tmp/verith-tutorial.noindex/Rea
 
 `step_inv REFUTED … counterexample: s0 = 5` is the whole diagnosis: from
 `s0 = 5`, which the invariant allows, `update` steps to 6, which it does not.
-The project is still generated — `verith` does not refuse to write a
+The project is still generated — `reactor` does not refuse to write a
 certificate it believes is false — but `lake build` would spend tens of
 seconds failing to prove it.
 
@@ -632,7 +647,7 @@ module alone makes the counter go down — an environment that offers `0` every
 round leaves it where it is:
 
 ```bash
-uv run verith tests/limits/mods/m_relu_input.py \
+uv run reactor tests/limits/mods/m_relu_input.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(X @intf.0)' \
@@ -653,7 +668,7 @@ wires. It is added to `init_pre` and `update_pre` alike, and every obligation
 may then assume it:
 
 ```bash
-uv run verith tests/limits/mods/m_relu_input.py \
+uv run reactor tests/limits/mods/m_relu_input.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(X @intf.0)' \
@@ -693,7 +708,7 @@ trip and never reaches Lean.
 It needs `ANTHROPIC_API_KEY` and `uv sync --extra ai` for the default backend.
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py \
+uv run certify tests/limits/mods/m_countdown.py \
     --buchi '(= (X @intf.0) 0)' \
     --infer -o "$OUT" -p "$PROJ" | says            # no --invariant, no --ranking
 
@@ -734,7 +749,7 @@ For a local model or another provider, add `--base-url` (and `--model`); the
 only extra dependency is the `openai` client, `uv sync --extra ai-local`:
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py --buchi '(= (X @intf.0) 0)' --infer \
+uv run certify tests/limits/mods/m_countdown.py --buchi '(= (X @intf.0) 0)' --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 \
     -o "$OUT" -p "$PROJ"
 ```
@@ -757,7 +772,7 @@ a Farkas/CEGAR decision procedure over its own wires, which certifies the drop
 or rejects the candidate and sends the trainer round again.
 
 Only a candidate the procedure certifies comes back. So unlike the LLM routes,
-what `verith` is handed here has *already* been proved, and `--pre-check` is an
+what `certify` is handed here has *already* been proved, and `--pre-check` is an
 independent confirmation rather than the first check of it. It needs no key, no
 network and no ic3ia build, and it is deterministic: the same module and the
 same seed learn the same rank. What it does need is a state of scalar integers
@@ -765,7 +780,7 @@ and a transition that reads no nondeterministic input — anything else it
 refuses by name rather than approximating.
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py \
+uv run certify tests/limits/mods/m_countdown.py \
     --buchi '(= (X @intf.0) 0)' \
     --infer nuterm \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -816,7 +831,7 @@ relations and program constants cannot say so. The route says that rather than
 guessing:
 
 ```bash
-uv run verith tests/limits/mods/m_step2.py \
+uv run certify tests/limits/mods/m_step2.py \
     --buchi '(= (X @intf.0) 0)' --infer nuterm -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -832,7 +847,7 @@ error: --infer: no ranking function was certified. The rank is a non-negative su
 The LLM has no lattice, so a congruence costs it nothing to propose:
 
 ```bash
-uv run verith tests/limits/mods/m_step2.py \
+uv run certify tests/limits/mods/m_step2.py \
     --buchi '(= (X @intf.0) 0)' --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -887,7 +902,7 @@ say when they **fail**, which is 8a, and what the next route does with that,
 which is 8b.
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py \
+uv run certify tests/limits/mods/m_countdown.py \
     --safety '(<= (X @intf.0) 100)' \
     --infer smt-linear \
     --artifacts reset \
@@ -933,7 +948,7 @@ Ask for something that is not there. `m_toward5` walks toward 5 from both
 sides, so a rank has to *branch* — and no linear function branches:
 
 ```bash
-uv run verith tests/limits/mods/m_toward5.py \
+uv run certify tests/limits/mods/m_toward5.py \
     --buchi     '(= (X @intf.0) 5)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))' \
     --infer smt-linear -o "$OUT" -p "$PROJ" | says
@@ -971,7 +986,7 @@ even, and no conjunction of linear inequalities can say that either.
 none, at every width up to `--linear-rows`:
 
 ```bash
-uv run verith tests/limits/mods/m_step2.py \
+uv run certify tests/limits/mods/m_step2.py \
     --safety '(not (= (X @intf.0) 1))' \
     --infer smt-linear --artifacts reset -o "$OUT" -p "$PROJ" | says
 ```
@@ -990,7 +1005,7 @@ the `k` the program itself mentions — which is exactly the atom the first
 route proved it did not have:
 
 ```bash
-uv run verith tests/limits/mods/m_step2.py \
+uv run certify tests/limits/mods/m_step2.py \
     --safety '(not (= (X @intf.0) 1))' \
     --infer sygus --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 
@@ -1035,12 +1050,12 @@ inv      encoded      sygus       inv.smt
 ```
 
 The `inv` row is not only a record. It is written in SMT-LIB with the status a
-later run filters on, so the next `verith` in this project **takes it as
+later run filters on, so the next `certify` in this project **takes it as
 given** — and for a safety property that is the whole certificate, so the run
 below closes it without an LLM call even though `ai-cegis` is an LLM route:
 
 ```bash
-uv run verith tests/limits/mods/m_step2.py \
+uv run certify tests/limits/mods/m_step2.py \
     --safety '(not (= (X @intf.0) 1))' \
     --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
@@ -1073,12 +1088,12 @@ prompt as established facts — so the attempt that would have gone on a linear
 ranking function goes somewhere else instead:
 
 ```bash
-uv run verith tests/limits/mods/m_toward5.py \
+uv run certify tests/limits/mods/m_toward5.py \
     --buchi     '(= (X @intf.0) 5)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))' \
     --infer smt-linear --artifacts reset -o "$OUT" -p "$PROJ" | says
 
-uv run verith tests/limits/mods/m_toward5.py \
+uv run certify tests/limits/mods/m_toward5.py \
     --buchi     '(= (X @intf.0) 5)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))' \
     --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -1122,7 +1137,7 @@ integer template then covers a mixed state instead of one template per sort.
 walks up or down:
 
 ```bash
-uv run verith tests/limits/mods/m_boolint.py \
+uv run certify tests/limits/mods/m_boolint.py \
     --safety '(and (>= (X @intf.1) 0) (<= (X @intf.1) 5))' \
     --infer smt-linear --artifacts reset \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -1152,7 +1167,7 @@ counterexample the next sample. An 8-bit counter to try it on:
 cat > "$OUT/m_bvcount.py" <<'PY'
 # BV 8-bit counter: 0, 1, ... 10, then back to 0.
 import torch
-from zrth import Module, Term, Wire, BitVec, BV, Var, X
+from reactor import Module, Term, Wire, BitVec, BV, Var, X
 
 
 def module() -> Module:
@@ -1172,7 +1187,7 @@ def module() -> Module:
     )
 PY
 
-uv run verith "$OUT/m_bvcount.py" \
+uv run certify "$OUT/m_bvcount.py" \
     --safety '(<= (ubv_to_int (X @intf.0)) 10)' \
     --infer smt-linear --artifacts reset \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -1223,17 +1238,17 @@ route no longer has to try.
 ## 9. Letting ic3ia find the invariant (`--fbk-proveit`)
 
 The last route hands the whole safety question to an external model checker.
-`proveit.py`, from a [`lean-ltl-certifying`](../python/tests/lean/fbk/README.md)
+`proveit.py`, from a [`lean-ltl-certifying`](../verith/tests/fbk/README.md)
 checkout, runs `lean2vmt → ic3ia → vmt2lean`: the module is re-encoded as a VMT
 transition system, ic3ia proves `G P` and emits an *invariant witness*, and the
-witness comes back as a Lean certificate that `verith` installs into the
+witness comes back as a Lean certificate that `certify` installs into the
 project. Nothing about the invariant is supplied or guessed — `--invariant` is
 refused on this route.
 
 It needs `ic3ia`, MathSAT's Python bindings and the checkout (section 1):
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py \
+uv run certify tests/limits/mods/m_countdown.py \
     --safety '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --fbk-proveit "$PROVEIT" --ic3ia "$IC3IA" -o "$OUT" -p "$PROJ" | says
 
@@ -1288,6 +1303,9 @@ Build completed successfully (3473 jobs).
 
 ## 10. Flag reference
 
+`reactor` takes every flag below but `--infer` and the flags of a route
+(from `--infer` to `--fbk-simplify`); `certify` takes them all.
+
 | flag | default | meaning |
 |---|---|---|
 | `-o` / `--output-dir` | `.` | where the project is created |
@@ -1315,5 +1333,6 @@ Build completed successfully (3473 jobs).
 | `--hammer-file PATH` | — | regenerate `ZerothHammer.lean` alone |
 
 Related reading: [`verith_gym.md`](verith_gym.md) for a gymnasium environment
-worked through in integer arithmetic, and `python/zrth/lean/README.md` for
-the pipeline's own documentation.
+worked through in integer arithmetic, `python/reactor/lean/README.md` for
+the pipeline's own documentation, and `verith/README.md` for the routes and
+the `verith` command.

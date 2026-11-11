@@ -1,4 +1,4 @@
-"""Tests for the bounded cvc5 query layer (`zrth.lean.smt.precheck`).
+"""Tests for the bounded cvc5 query layer (`reactor.lean.smt.precheck`).
 
 The contract this file pins down is not "cvc5 gets the right answer" so much
 as "nothing here can break generation": every query is bounded, and every
@@ -12,13 +12,13 @@ import cvc5
 import pytest
 import torch
 
-from zrth import Module, Term, Var, Wire, X, LIA, Int
-from zrth.analyzer import convert_method
-from zrth.lean.core.certificate import Certificate, Claim, LeanAnswer
-from zrth.lean.core.errors import Refused
-from zrth.lean.smt.limits import SmtBudget
-from zrth.lean.smt.precheck import Status, pre_check, predicate_terms
-from zrth.lean.proof.facts import predicate_facts, solver_hints
+from reactor import Module, Term, Var, Wire, X, LIA, Int
+from reactor.analyzer import convert_method
+from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor.lean.core.errors import Refused
+from reactor.lean.smt.limits import SmtBudget
+from reactor.lean.smt.precheck import Status, pre_check, predicate_terms
+from reactor.lean.proof.facts import predicate_facts, solver_hints
 
 
 def countdown() -> Module:
@@ -279,7 +279,7 @@ def test_branch_points_do_not_move_when_the_printer_shares():
     the printer bound the repeats to names -- and the heartbeat budget is
     calibrated against that goal.
     """
-    from zrth.lean.proof.from_smt import smt_to_lean_nat
+    from reactor.lean.proof.from_smt import smt_to_lean_nat
 
     q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(5)))
     unshared = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
@@ -321,7 +321,7 @@ def test_floors_are_read_off_a_shared_term_once():
     """What a floor applies to is collected over the term's DAG: walked as
     a tree, sixty doublings of one `to_int` are 2^60 visits of it."""
     from cvc5 import Kind
-    from zrth.lean.proof.facts import _floor_args
+    from reactor.lean.proof.facts import _floor_args
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getRealSort(), "x")
@@ -376,7 +376,7 @@ def test_the_hint_layer_shapes_the_obligation_the_kind_states():
     """The plan is read off the obligations the certificate actually has,
     so a safety certificate contributes `inv_imp_P` where a Buchi one
     contributes `hrank`."""
-    from zrth.lean.proof.facts import _obligation_labels
+    from reactor.lean.proof.facts import _obligation_labels
 
     buchi = predicate_terms(countdown(), CLAIM, GOOD)
     assert [name for name, _ in _obligation_labels(buchi, buchi.frame("h_"))
@@ -403,7 +403,7 @@ def test_an_undetermined_condition_is_left_to_split_ifs():
 
 def test_conditions_are_rendered_against_the_macro_binder():
     """They are spliced into a tactic, so they read the obligation's state."""
-    from zrth.lean.proof.render import print_hints
+    from reactor.lean.proof.render import print_hints
 
     q = predicate_terms(countdown(), CLAIM,
                             replace(GOOD, ranking="(ite (>= s0 0) s0 1)"))
@@ -451,8 +451,8 @@ def test_translation_can_be_asked_not_to_share():
     """`share=False` prints every subterm in full -- for reading; the
     certificate itself is printed shared, hints or not (`proof.render.prepare`).
     """
-    from zrth.lean.proof.render import render_certificate
-    from zrth.lean.smt.precheck import predicate_terms
+    from reactor.lean.proof.render import render_certificate
+    from reactor.lean.smt.precheck import predicate_terms
 
     q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(4)))
     shared = render_certificate(q, share=True).ranking
@@ -463,8 +463,8 @@ def test_translation_can_be_asked_not_to_share():
 
 def test_a_lean_answer_is_printed_as_it_was_given():
     """`--infer ai`'s reply is Lean already; the property beside it is not."""
-    from zrth.lean.proof.render import render_certificate
-    from zrth.lean.smt.precheck import predicate_terms
+    from reactor.lean.proof.render import render_certificate
+    from reactor.lean.smt.precheck import predicate_terms
 
     defs = render_certificate(predicate_terms(countdown(), CLAIM), verbatim=LEAN)
     assert (defs.inv, defs.ranking) == (LEAN.inv, LEAN.ranking)
@@ -472,7 +472,7 @@ def test_a_lean_answer_is_printed_as_it_was_given():
 
 
 def test_a_predicate_that_does_not_parse_is_refused_by_its_flag():
-    from zrth.lean.smt.precheck import predicate_terms
+    from reactor.lean.smt.precheck import predicate_terms
 
     with pytest.raises(Refused, match="--ranking"):
         predicate_terms(countdown(), CLAIM, Certificate(ranking="(+ s0"))

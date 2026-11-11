@@ -1,4 +1,4 @@
-"""Tests for shape-directed certificate tactic generation (`zrth.lean.proof.tactics`).
+"""Tests for shape-directed certificate tactic generation (`reactor.lean.proof.tactics`).
 
 The plan decides what the three proof obligations are allowed to try. Getting
 it wrong is expensive in both directions — a missing prover loses a proof that
@@ -10,9 +10,9 @@ Lean tests.
 import torch
 import pytest
 
-from zrth import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.proof.tactics import features_for, is_nonlinear, plan_for
+from reactor import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.proof.tactics import features_for, is_nonlinear, plan_for
 
 
 # ── the nonlinearity detector ────────────────────────────────────────────
@@ -174,7 +174,7 @@ def test_unbounded_state_is_not_enumerated():
 
 def test_wide_finite_state_is_not_enumerated():
     """Each element doubles the fan-out, so a wide state opts out."""
-    from zrth.lean.proof.tactics import MAX_ENUMERABLE_SLOTS
+    from reactor.lean.proof.tactics import MAX_ENUMERABLE_SLOTS
 
     b = Var(BitVec(1, [MAX_ENUMERABLE_SLOTS + 1, 1]))
     wide = Module.sequential(
@@ -282,7 +282,7 @@ def test_only_recursion_depth_scales_with_the_module():
 
 def test_facts_override_the_text_scan_for_nonlinearity():
     """The regex over-reports by design; the term does not."""
-    from zrth.lean.proof.facts import PredicateFacts
+    from reactor.lean.proof.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     linear = features_for(ctx, "fun s => ((s 0 0) * (s 0 0))")
@@ -294,7 +294,7 @@ def test_facts_override_the_text_scan_for_nonlinearity():
 def test_a_lean_answers_branches_add_to_the_terms():
     """Terms cover only the SMT-derived fields; a Lean answer's text is
     counted on top of them, never in place of them."""
-    from zrth.lean.proof.facts import PredicateFacts
+    from reactor.lean.proof.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     text = "fun s => (max (s 0 0) 0) + (max (s 0 0) 1) + (max (s 0 0) 2)"
@@ -305,7 +305,7 @@ def test_a_lean_answers_branches_add_to_the_terms():
 def test_with_facts_the_printed_text_is_not_reread():
     """The facts speak for what was printed from terms; reading the text
     as well would count a shared subterm by how the printer laid it out."""
-    from zrth.lean.proof.facts import PredicateFacts
+    from reactor.lean.proof.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     text = "fun s => ((s 0 0) * (s 0 0)) + (max (s 0 0) 0)"
@@ -315,7 +315,7 @@ def test_with_facts_the_printed_text_is_not_reread():
 
 def test_facts_raise_the_branch_count_above_what_the_printer_shows():
     """Sharing shrinks the output; the goal the closers see is unchanged."""
-    from zrth.lean.proof.facts import PredicateFacts
+    from reactor.lean.proof.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     f = features_for(ctx, "fun s => (max (s 0 0) 0)", PredicateFacts(n_branch=62))
@@ -339,7 +339,7 @@ def test_without_facts_everything_falls_back_to_the_text():
 
 
 def _hinted(**fields):
-    from zrth.lean.proof.render import LeanHints
+    from reactor.lean.proof.render import LeanHints
 
     return plan_for(
         LeanContext(_int_module()),
@@ -421,7 +421,7 @@ def test_the_reasons_are_recorded_in_the_generated_comment():
 
 
 def _solver_hints(**fields):
-    from zrth.lean.proof.render import LeanHints
+    from reactor.lean.proof.render import LeanHints
 
     return LeanHints(**fields)
 
@@ -464,7 +464,7 @@ def test_a_real_state_keeps_norm_num_in_prep():
 
 
 def _countdown():
-    from zrth.analyzer import convert_method
+    from reactor.analyzer import convert_method
 
     s = Var(Int([1, 1]))
 
@@ -485,10 +485,10 @@ def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
     """The certificate as the pipeline renders it before a route runs, and
     after the route has answered."""
     pytest.importorskip("cvc5")
-    from zrth.lean.core.certificate import Certificate, Claim
-    from zrth.lean.pipeline.certify import render
+    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor.lean.pipeline.certificate import render
 
-    from zrth.lean.smt.limits import SmtBudget
+    from reactor.lean.smt.limits import SmtBudget
 
     module = _countdown()
     claim = Claim(prp="(= s0 0)")
@@ -559,7 +559,7 @@ def test_an_answer_in_lean_is_planned_from_the_property_alone():
     """Nothing parses printed Lean back into a term, so a route that
     answers in Lean leaves the facts those of the property and asks cvc5
     nothing."""
-    from zrth.lean.core.certificate import LeanAnswer
+    from reactor.lean.core.certificate import LeanAnswer
 
     answer = LeanAnswer(inv="fun s => (s 0 0) ≥ 0", ranking="fun s => 1")
     _module, before, after = _before_and_after(None, None, verbatim=answer)
@@ -653,7 +653,7 @@ def test_a_nonlinear_predicate_gets_its_max_split_into_cases():
 def test_the_hammer_defines_every_closer_the_plan_can_name():
     """A closer the plan names and the project does not define is a parse
     error in every certificate that carries it, not a failed alternative."""
-    from zrth.lean.project.scaffold import generate_zeroth_hammer_lean
+    from reactor.lean.project.scaffold import generate_zeroth_hammer_lean
     hammer = generate_zeroth_hammer_lean()
     for name in ("lra_close", "lra_leaf", "lra_atoms", "floor_bounds"):
         assert f'"{name}"' in hammer

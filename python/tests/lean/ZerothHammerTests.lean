@@ -1,6 +1,6 @@
 import Mathlib.Algebra.BigOperators.Fin
 import Mathlib.Tactic
-import Core.Mat
+import Relational.Mat
 
 /-!
 # ZerothHammerTests
@@ -14,18 +14,21 @@ arithmetic the remaining obligations are plain integer arithmetic.
 
 ## How to run
 
-**Via pytest (recommended)** — syncs `Core/` from templates automatically:
+**Via pytest (recommended)** — generates `ZerothHammer.lean` and `Certs/`:
 
 ```
-just pytest tests/lean/                   # fast: only checks Core/ sync
+just pytest tests/lean/                   # fast: only generates the files
 just pytest tests/lean/ -m slow           # slow: also runs lake build
 ```
 
-**Directly with lake** — first sync Core/ from templates, then build:
+**Directly with lake** — generate the files first, then build:
 
 ```
 just pytest tests/lean/ && lake build ZerothHammerTests
 ```
+
+`Relational.*` comes from the reactor-lean checkout beside this repository,
+which the lakefile requires by path.
 
 The first `lake build` downloads Mathlib and may take several minutes.
 Subsequent runs use the cache.
@@ -111,25 +114,25 @@ example (a b c : Int) (h1 : 2 * a ≤ b + 3) (h2 : b ≤ a + c) (h3 : c ≤ 1) :
     a ≤ 4 := by linarith
 
 -- ============================================================
--- Phase 2 — `push_neg; simp_mat <;> omega`  (NEW)
+-- Phase 2 — `push Not; simp_mat <;> omega`  (NEW)
 --
 -- Arises when `inv` or `P` contains negated comparisons, e.g.
 -- `inv s = ¬(s 0 0 > 10)`.  After `intro` the hypothesis is
--- `hinv : ¬(s > 10)`.  `push_neg` rewrites it to `s ≤ 10`
+-- `hinv : ¬(s > 10)`.  `push Not` rewrites it to `s ≤ 10`
 -- so that `omega` can use it.
 -- ============================================================
 
 -- negated upper bound in invariant
 example (x : Int) (h : ¬(x > 10)) : x ≤ 10 := by
-  push_neg at h; exact h
+  push Not at h; exact h
 
 -- property as negated equality: ¬P means s ≠ target
 example (s : Int) (hP : ¬(s = 0)) : s ≠ 0 := by
-  push_neg at hP; exact hP
+  push Not at hP; exact hP
 
 -- compound negation across two variables
 example (x y : Int) (h : ¬(x > 5 ∧ y > 5)) (hx : x > 5) : y ≤ 5 := by
-  push_neg at h
+  push Not at h
   have := h hx
   omega
 
@@ -256,11 +259,11 @@ example (x : Mat Int 2 1)
   norm_cast
   omega
 
--- Phase 2 — Mat: push_neg on a negated matrix predicate
+-- Phase 2 — Mat: push Not on a negated matrix predicate
 -- inv has shape ¬(s 0 0 > upper_bound)
--- After intro, hypothesis is ¬(x 0 0 > 10); push_neg rewrites it
+-- After intro, hypothesis is ¬(x 0 0 > 10); push Not rewrites it
 example (x : Mat Int 1 1) (h : ¬(x 0 0 > 10)) : x 0 0 ≤ 10 := by
-  push_neg at h; exact h
+  push Not at h; exact h
 
 -- Phase 3 — Mat: conditional update with matrix state
 -- update = if x 0 0 > 0 then x 0 0 - 1 else x 0 0
