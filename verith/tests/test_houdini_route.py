@@ -703,6 +703,16 @@ def test_a_rank_is_fitted_again_to_the_round_the_solver_refutes_it_with():
     assert cert.ranking.startswith("(ite s1 (to_int (+ 25.0 (* (- 2.0) s0)))")
 
 
+@pytest.mark.parametrize("prp", ["(= s0 0)", "s[0][0] == 0", "(s[0][0] == 0)"])
+def test_a_property_in_python_syntax_is_zeroed_on_as_its_smtlib(prp):
+    """A counter that wraps to 0 ranks only as `(ite P 0 r)`. `P` went
+    into that source as written, so a property in the DSL's syntax made
+    every such rank text cvc5 could not read: houdini found none, and each
+    refusal the encoding kept crashed the run at exit."""
+    cert = infer("counter", "buchi", prp, fixture=FIXTURES)
+    assert cert.ranking.startswith("(ite (= s0 0) 0 ")
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # The flags
 # ══════════════════════════════════════════════════════════════════════════
