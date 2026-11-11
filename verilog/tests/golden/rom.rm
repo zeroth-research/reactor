@@ -1,0 +1,93 @@
+module rom
+  external
+    clk : bv1
+    i : bv3
+    j : bv2
+    h@init : bv8
+  interface
+    t : bv5
+    t2 : bv5
+    tb : bv2
+    h : bv8
+  atom controls t awaits i
+    init = update
+      %1 := 5'd22
+      %2 := 5'd1
+      %3 := 5'd31
+      %4 := 5'd10
+      %5 := 5'd0
+      %6 := 5'd16
+      %7 := 5'd7
+      %8 := 5'd24
+      %9 := EXTRACT[0:0] X(i)
+      %10 := ITE (%9, %2, %1)
+      %11 := ITE (%9, %4, %3)
+      %12 := ITE (%9, %6, %5)
+      %13 := ITE (%9, %8, %7)
+      %14 := EXTRACT[1:1] X(i)
+      %15 := ITE (%14, %11, %10)
+      %16 := ITE (%14, %13, %12)
+      %17 := EXTRACT[2:2] X(i)
+      X(t) := ITE (%17, %16, %15)
+  atom controls t2
+    init = update
+      X(t2) := 5'd31
+  atom controls tb awaits i
+    init = update
+      %1 := 5'd22
+      %2 := 5'd1
+      %3 := 5'd31
+      %4 := 5'd10
+      %5 := 5'd0
+      %6 := 5'd16
+      %7 := 5'd7
+      %8 := 5'd24
+      %9 := EXTRACT[0:0] X(i)
+      %10 := ITE (%9, %2, %1)
+      %11 := ITE (%9, %4, %3)
+      %12 := ITE (%9, %6, %5)
+      %13 := ITE (%9, %8, %7)
+      %14 := EXTRACT[1:1] X(i)
+      %15 := ITE (%14, %11, %10)
+      %16 := ITE (%14, %13, %12)
+      %17 := EXTRACT[2:2] X(i)
+      %18 := ITE (%17, %16, %15)
+      X(tb) := EXTRACT[4:3] %18
+  atom controls h reads clk, j, h awaits clk, h@init
+    init
+      X(h) := ID X(h@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 8'd222
+      %3 := 8'd173
+      %4 := 8'd190
+      %5 := 8'd239
+      %6 := EXTRACT[0:0] j
+      %7 := ITE (%6, %3, %2)
+      %8 := ITE (%6, %5, %4)
+      %9 := EXTRACT[1:1] j
+      %10 := ITE (%9, %8, %7)
+      %11 := 1'd1
+      %12 := CONCAT (%11, j)
+      %13 := 5'd22
+      %14 := 5'd1
+      %15 := 5'd31
+      %16 := 5'd10
+      %17 := 5'd0
+      %18 := 5'd16
+      %19 := 5'd7
+      %20 := 5'd24
+      %21 := EXTRACT[0:0] %12
+      %22 := ITE (%21, %14, %13)
+      %23 := ITE (%21, %16, %15)
+      %24 := ITE (%21, %18, %17)
+      %25 := ITE (%21, %20, %19)
+      %26 := EXTRACT[1:1] %12
+      %27 := ITE (%26, %23, %22)
+      %28 := ITE (%26, %25, %24)
+      %29 := EXTRACT[2:2] %12
+      %30 := ITE (%29, %28, %27)
+      %31 := ZEXT[8] %30
+      %32 := ADD (%10, %31)
+      X(h) := ITE (clk@pos, %32, h)

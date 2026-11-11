@@ -30,7 +30,9 @@ of its own. The rules are those of IEEE 1800-2023, §11.6 to §11.8:
   zero-extended. The other operands are *self-determined*: each is sized
   at its own type (the condition of `?:`, the shift amount, the operands
   of `! && ||` and of the reductions, the items of concatenations and
-  replications, select indices, the argument of `$signed`/`$unsigned`).
+  replications, select indices and element indices of arrays, the
+  argument of `$signed`/`$unsigned`). An element of an array has the
+  type of the array's elements.
   The operands of a comparison are sized together, at the larger width,
   and are signed only if both are.
 - An assignment (`assign`, `=`, `<=`, an input port connection) evaluates
@@ -57,8 +59,8 @@ divisor of `/` and `%` is a nonzero constant.
 */
 
 use crate::ast::{
-    BinOp, Cast, Dir, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Name, Select,
-    Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, Cast, Dir, Elem, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Name,
+    Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::theory::SvOp;
@@ -180,21 +182,37 @@ impl Sizer<'_> {
         match &mut l.kind {
             LvalueKind::Var(_) => Ok(()),
             LvalueKind::Concat(ls) => ls.iter_mut().try_for_each(|l| self.target(l)),
-            LvalueKind::Select(x, sel) => {
-                let Some(i) = sel.index() else {
-                    return Ok(());
-                };
-                typing::target_index(x, sel, self.det(i)?, span)?;
-                let sized = self.synth(i)?;
-                if let Select::Bit(Index::Expr(i))
-                | Select::Up(Index::Expr(i), _)
-                | Select::Down(Index::Expr(i), _) = sel
-                {
-                    **i = sized;
+            LvalueKind::Select(x, sel) => self.target_select(x, sel, span),
+            LvalueKind::Elem(e) => {
+                if let Some(i) = e.index() {
+                    typing::target_element(e, self.det(i)?, span)?;
                 }
-                Ok(())
+                let name = e.name();
+                if let Index::Expr(i) = &mut e.index {
+                    **i = self.synth(i)?;
+                }
+                match &mut e.sel {
+                    Some(sel) => self.target_select(&name, sel, span),
+                    None => Ok(()),
+                }
             }
         }
+    }
+
+    /// Sizes the variable index of the select `x[…]` in a target.
+    fn target_select(&self, x: &str, sel: &mut Select, span: Span) -> Result<()> {
+        let Some(i) = sel.index() else {
+            return Ok(());
+        };
+        typing::target_index(x, sel, self.det(i)?, span)?;
+        let sized = self.synth(i)?;
+        if let Select::Bit(Index::Expr(i))
+        | Select::Up(Index::Expr(i), _)
+        | Select::Down(Index::Expr(i), _) = sel
+        {
+            **i = sized;
+        }
+        Ok(())
     }
 
     /// `rhs` as assigned to a target of `width` bits: evaluated at the
@@ -250,6 +268,24 @@ impl Sizer<'_> {
                     ),
                     _ => err,
                 })?
+            }
+            ExprKind::Elem(el) => {
+                let t = typing::elem_type(self.env, el);
+                let index = match el.index() {
+                    Some(i) => Some(self.det(i)?),
+                    None => None,
+                };
+                typing::element(el, index, e.span)?;
+                match &el.sel {
+                    None => t,
+                    Some(sel) => {
+                        let index = match sel.index() {
+                            Some(i) => Some(self.det(i)?),
+                            None => None,
+                        };
+                        typing::select(&el.name(), t, sel, index, e.span)?
+                    }
+                }
             }
             ExprKind::Cast(Cast::Size(n), a) => Ty {
                 width: *n,
@@ -345,20 +381,12 @@ impl Sizer<'_> {
             },
             ExprKind::Concat(es) => node(ExprKind::Concat(self.synth_all(es)?)),
             ExprKind::Repl(n, es) => node(ExprKind::Repl(*n, self.synth_all(es)?)),
-            ExprKind::Select(x, sel) => {
-                let index = |i: &Index| -> Result<Index> {
-                    Ok(match i {
-                        Index::Const(k) => Index::Const(*k),
-                        Index::Expr(e) => Index::Expr(boxed(self.synth(e))?),
-                    })
-                };
-                let sel = match sel {
-                    Select::Bit(i) => Select::Bit(index(i)?),
-                    Select::Part { hi, lo } => Select::Part { hi: *hi, lo: *lo },
-                    Select::Up(i, w) => Select::Up(index(i)?, *w),
-                    Select::Down(i, w) => Select::Down(index(i)?, *w),
-                };
-                node(ExprKind::Select(x.clone(), sel))
+            ExprKind::Select(x, sel) => node(ExprKind::Select(x.clone(), self.select(sel)?)),
+            ExprKind::Elem(el) => {
+                let mut el = el.clone();
+                el.index = self.index(&el.index)?;
+                el.sel = el.sel.as_ref().map(|s| self.select(s)).transpose()?;
+                node(ExprKind::Elem(el))
             }
             // assigning `a` to an `n`-bit value
             ExprKind::Cast(c @ Cast::Size(n), a) => {
@@ -383,6 +411,24 @@ impl Sizer<'_> {
 
     fn synth_all(&self, es: &[Expr]) -> Result<Vec<Expr>> {
         es.iter().map(|e| self.synth(e)).collect()
+    }
+
+    /// An index, sized at its own type.
+    fn index(&self, i: &Index) -> Result<Index> {
+        Ok(match i {
+            Index::Const(k) => Index::Const(*k),
+            Index::Expr(e) => Index::Expr(Box::new(self.synth(e)?)),
+        })
+    }
+
+    /// A select with its index sized at its own type.
+    fn select(&self, sel: &Select) -> Result<Select> {
+        Ok(match sel {
+            Select::Bit(i) => Select::Bit(self.index(i)?),
+            Select::Part { hi, lo } => Select::Part { hi: *hi, lo: *lo },
+            Select::Up(i, w) => Select::Up(self.index(i)?, *w),
+            Select::Down(i, w) => Select::Down(self.index(i)?, *w),
+        })
     }
 }
 
@@ -624,8 +670,15 @@ fn body(env: &Env, m: &Module, names: &BTreeMap<Name, Name>) -> String {
         .collect();
     out += &ports.join(",\n");
     out += "\n);\n";
-    for d in &m.decls {
+    for d in m.decls.iter().filter(|d| !d.name.contains('[')) {
         out += &format!("  {} {};\n", d.ty, d.name);
+    }
+    for a in &m.arrays {
+        out += &format!("  {} {} [0:{}];\n", a.ty, a.name, a.size - 1);
+        if let Some(r) = &a.rom {
+            let task = if r.binary { "$readmemb" } else { "$readmemh" };
+            out += &format!("  initial {task}(\"{}\", {});\n", r.file, a.name);
+        }
     }
     for item in &m.items {
         out += "  ";
@@ -702,10 +755,24 @@ fn target(env: &Env, l: &Lvalue) -> String {
     match &l.kind {
         LvalueKind::Var(y) => y.clone(),
         LvalueKind::Select(y, sel) => select(env, y, sel),
+        LvalueKind::Elem(e) => element(env, e),
         LvalueKind::Concat(ls) => {
             let ls: Vec<String> = ls.iter().map(|l| target(env, l)).collect();
             format!("{{{}}}", ls.join(", "))
         }
+    }
+}
+
+/// A sized element `m[i]` or `m[i][…]` as source.
+fn element(env: &Env, e: &Elem) -> String {
+    let index = match &e.index {
+        Index::Const(k) => k.to_string(),
+        Index::Expr(i) => expr(env, i),
+    };
+    let name = format!("{}[{index}]", e.array);
+    match &e.sel {
+        None => name,
+        Some(sel) => select(env, &name, sel),
     }
 }
 
@@ -746,6 +813,7 @@ fn expr(env: &Env, e: &Expr) -> String {
         ExprKind::Concat(es) => format!("{{{}}}", list(es)),
         ExprKind::Repl(n, es) => format!("{{{n}{{{}}}}}", list(es)),
         ExprKind::Select(x, sel) => select(env, x, sel),
+        ExprKind::Elem(el) => element(env, el),
         ExprKind::Cast(Cast::Size(n), a) => format!("{n}'({})", expr(env, a)),
         ExprKind::Cast(Cast::Signed, a) => format!("signed'({})", expr(env, a)),
         ExprKind::Cast(Cast::Unsigned, a) => format!("unsigned'({})", expr(env, a)),

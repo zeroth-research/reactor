@@ -1,0 +1,128 @@
+module meminst
+  external
+    clk : bv1
+    we : bv1
+    wa : bv3
+    ra : bv3
+    d : bv6
+    deep.m[0]@init : bv6
+    deep.m[1]@init : bv6
+    deep.m[2]@init : bv6
+    deep.m[3]@init : bv6
+    deep.m[4]@init : bv6
+    deep.m[5]@init : bv6
+    deep.m[6]@init : bv6
+    deep.m[7]@init : bv6
+    shallow.m[0]@init : bv4
+    shallow.m[1]@init : bv4
+  interface
+    q8 : bv6
+    q2 : bv4
+  private
+    shallow.wa : bv1
+    shallow.ra : bv1
+    shallow.d : bv4
+    deep.m[0] : bv6
+    deep.m[1] : bv6
+    deep.m[2] : bv6
+    deep.m[3] : bv6
+    deep.m[4] : bv6
+    deep.m[5] : bv6
+    deep.m[6] : bv6
+    deep.m[7] : bv6
+    shallow.m[0] : bv4
+    shallow.m[1] : bv4
+  atom controls shallow.wa awaits wa
+    init = update
+      X(shallow.wa) := EXTRACT[0:0] X(wa)
+  atom controls shallow.ra awaits ra
+    init = update
+      X(shallow.ra) := EXTRACT[0:0] X(ra)
+  atom controls shallow.d awaits d
+    init = update
+      X(shallow.d) := EXTRACT[3:0] X(d)
+  atom controls deep.m[0], deep.m[1], deep.m[2], deep.m[3], deep.m[4], deep.m[5], deep.m[6], deep.m[7] reads clk, we, wa, d, deep.m[0], deep.m[1], deep.m[2], deep.m[3], deep.m[4], deep.m[5], deep.m[6], deep.m[7] awaits clk, deep.m[0]@init, deep.m[1]@init, deep.m[2]@init, deep.m[3]@init, deep.m[4]@init, deep.m[5]@init, deep.m[6]@init, deep.m[7]@init
+    init
+      X(deep.m[0]) := ID X(deep.m[0]@init)
+      X(deep.m[1]) := ID X(deep.m[1]@init)
+      X(deep.m[2]) := ID X(deep.m[2]@init)
+      X(deep.m[3]) := ID X(deep.m[3]@init)
+      X(deep.m[4]) := ID X(deep.m[4]@init)
+      X(deep.m[5]) := ID X(deep.m[5]@init)
+      X(deep.m[6]) := ID X(deep.m[6]@init)
+      X(deep.m[7]) := ID X(deep.m[7]@init)
+    update
+      %1 := NOT clk
+      deep.clk@pos := AND (%1, X(clk))
+      %2 := 3'd0
+      %3 := EQ (wa, %2)
+      %4 := ITE (%3, d, deep.m[0])
+      %5 := 3'd1
+      %6 := EQ (wa, %5)
+      %7 := ITE (%6, d, deep.m[1])
+      %8 := 3'd2
+      %9 := EQ (wa, %8)
+      %10 := ITE (%9, d, deep.m[2])
+      %11 := 3'd3
+      %12 := EQ (wa, %11)
+      %13 := ITE (%12, d, deep.m[3])
+      %14 := 3'd4
+      %15 := EQ (wa, %14)
+      %16 := ITE (%15, d, deep.m[4])
+      %17 := 3'd5
+      %18 := EQ (wa, %17)
+      %19 := ITE (%18, d, deep.m[5])
+      %20 := 3'd6
+      %21 := EQ (wa, %20)
+      %22 := ITE (%21, d, deep.m[6])
+      %23 := 3'd7
+      %24 := EQ (wa, %23)
+      %25 := ITE (%24, d, deep.m[7])
+      %26 := ITE (we, %4, deep.m[0])
+      %27 := ITE (we, %7, deep.m[1])
+      %28 := ITE (we, %10, deep.m[2])
+      %29 := ITE (we, %13, deep.m[3])
+      %30 := ITE (we, %16, deep.m[4])
+      %31 := ITE (we, %19, deep.m[5])
+      %32 := ITE (we, %22, deep.m[6])
+      %33 := ITE (we, %25, deep.m[7])
+      X(deep.m[0]) := ITE (deep.clk@pos, %26, deep.m[0])
+      X(deep.m[1]) := ITE (deep.clk@pos, %27, deep.m[1])
+      X(deep.m[2]) := ITE (deep.clk@pos, %28, deep.m[2])
+      X(deep.m[3]) := ITE (deep.clk@pos, %29, deep.m[3])
+      X(deep.m[4]) := ITE (deep.clk@pos, %30, deep.m[4])
+      X(deep.m[5]) := ITE (deep.clk@pos, %31, deep.m[5])
+      X(deep.m[6]) := ITE (deep.clk@pos, %32, deep.m[6])
+      X(deep.m[7]) := ITE (deep.clk@pos, %33, deep.m[7])
+  atom controls shallow.m[0], shallow.m[1] reads clk, we, shallow.wa, shallow.d, shallow.m[0], shallow.m[1] awaits clk, shallow.m[0]@init, shallow.m[1]@init
+    init
+      X(shallow.m[0]) := ID X(shallow.m[0]@init)
+      X(shallow.m[1]) := ID X(shallow.m[1]@init)
+    update
+      %1 := NOT clk
+      shallow.clk@pos := AND (%1, X(clk))
+      %2 := 1'd0
+      %3 := EQ (shallow.wa, %2)
+      %4 := ITE (%3, shallow.d, shallow.m[0])
+      %5 := 1'd1
+      %6 := EQ (shallow.wa, %5)
+      %7 := ITE (%6, shallow.d, shallow.m[1])
+      %8 := ITE (we, %4, shallow.m[0])
+      %9 := ITE (we, %7, shallow.m[1])
+      X(shallow.m[0]) := ITE (shallow.clk@pos, %8, shallow.m[0])
+      X(shallow.m[1]) := ITE (shallow.clk@pos, %9, shallow.m[1])
+  atom controls q8 awaits ra, deep.m[0], deep.m[1], deep.m[2], deep.m[3], deep.m[4], deep.m[5], deep.m[6], deep.m[7]
+    init = update
+      %1 := EXTRACT[0:0] X(ra)
+      %2 := ITE (%1, X(deep.m[1]), X(deep.m[0]))
+      %3 := ITE (%1, X(deep.m[3]), X(deep.m[2]))
+      %4 := ITE (%1, X(deep.m[5]), X(deep.m[4]))
+      %5 := ITE (%1, X(deep.m[7]), X(deep.m[6]))
+      %6 := EXTRACT[1:1] X(ra)
+      %7 := ITE (%6, %3, %2)
+      %8 := ITE (%6, %5, %4)
+      %9 := EXTRACT[2:2] X(ra)
+      X(q8) := ITE (%9, %8, %7)
+  atom controls q2 awaits shallow.ra, shallow.m[0], shallow.m[1]
+    init = update
+      X(q2) := ITE (X(shallow.ra), X(shallow.m[1]), X(shallow.m[0]))

@@ -1451,7 +1451,7 @@ fn plant(
     let Ok(ours) = lower_inst(&edited) else {
         return Ok(Outcome::Rejected);
     };
-    let file = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+    let file = mutant_dir().join(format!(
         "mutant-{}",
         path.file_name().unwrap().to_string_lossy()
     ));
@@ -1469,6 +1469,11 @@ fn plant(
             "the directions disagree: in ours {a:?}, in Yosys's {b:?}"
         )),
     }
+}
+
+/// The directory the mutants of the examples are written to.
+fn mutant_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_TARGET_TMPDIR")).join("mutants")
 }
 
 /// The mutants of the examples that change nothing the miter can see,
@@ -1676,6 +1681,16 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "sign-extending to 15 bits, then to 16, is sign-extending to 16",
     ),
     (
+        "meminst.sv",
+        "4:23 `4` -> `3`",
+        "every instance of `mem` overrides this default of `DEPTH`",
+    ),
+    (
+        "meminst.sv",
+        "4:23 `4` -> `'d4`",
+        "every instance of `mem` overrides this default of `DEPTH`",
+    ),
+    (
         "modcount.sv",
         "7:21 `10` -> `'d10`",
         "`N` is an `int`: it takes the value 10 either way",
@@ -1729,6 +1744,17 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "portw.sv",
         "24:15 `5` -> `'d5`",
         "truncated to the 8 bits of the port: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "regfile.sv",
+        "23:7 `0` -> `'d0`",
+        "the address 0 either way",
+    ),
+    ("regfile.sv", "23:13 `8'sd0` -> `8'd0`", "zero either way"),
+    (
+        "rom.sv",
+        "21:42 `8` -> `7`",
+        "the 5-bit element is zero-extended to 7 bits, then to 8, or to 8 at once",
     ),
     (
         "shiftw.sv",
@@ -1839,6 +1865,15 @@ fn plant_all((yosys, z3): (&Path, &Path), path: &Path, seed: u64) -> Outcomes {
 fn planted_bugs() {
     let Some((yosys, z3)) = tools() else { return };
     let paths = examples();
+    // the files of `$readmemb`/`$readmemh`, next to the mutants
+    std::fs::create_dir_all(mutant_dir()).unwrap();
+    let dir = paths[0].parent().unwrap();
+    for data in std::fs::read_dir(dir).unwrap() {
+        let data = data.unwrap().path();
+        if data.extension().is_some_and(|e| e != "sv") {
+            std::fs::copy(&data, mutant_dir().join(data.file_name().unwrap())).unwrap();
+        }
+    }
     let results: Vec<Outcomes> = std::thread::scope(|scope| {
         let handles: Vec<_> = paths
             .iter()

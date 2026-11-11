@@ -237,13 +237,25 @@ fn rejected_declarations() {
     );
     rejects(None, "  wire [7:0] t = a;", 2, "t", "initializer");
     rejects(None, "  tri [7:0] t;", 2, "tri", "net type `tri`");
-    rejects(None, "  logic [7:0] t [4];", 2, "t", "unpacked dimension");
+    rejects(
+        None,
+        "  logic [7:0] t [4][2];",
+        2,
+        "[2]",
+        "arrays with several unpacked dimensions not supported",
+    );
 }
 
 #[test]
 fn rejected_items() {
     rejects(None, "  assign #1 y = a;", 2, "#1", "delay");
-    rejects(None, "  initial y = a;", 2, "initial", "unsupported");
+    rejects(
+        None,
+        "  initial y = a;",
+        2,
+        "y",
+        "`initial` may only load arrays from files",
+    );
     rejects(None, "  assign y = ;", 2, ";", "syntax error");
 }
 
@@ -1125,8 +1137,8 @@ fn rejected_targets() {
             "  always_ff @(posedge clk) {y[i], y[0]} <= 2'd0;\n  assign q = a;",
             2,
             "y[0]",
-            "`y` assigned twice in one target: a select of `y` with a variable index may \
-             overlap its other pieces",
+            "`y` assigned twice in one target: a select or element of `y` with a variable \
+             index may overlap its other pieces",
         ),
         (
             "  always_ff @(posedge clk) {y[7:4], y[i]} <= 5'd0;\n  assign q = a;",
@@ -1359,5 +1371,255 @@ fn rejected_resets() {
         4,
         "r) y",
         "crossings between unrelated clocks are not supported yet",
+    );
+}
+
+const HEADER_ARRAY: &str = "module m(input logic clk, input logic [7:0] a, input logic [2:0] i, \
+                            input logic [1:0] j, input logic signed [1:0] s, output logic [7:0] y);";
+
+/// A file with `text` for `$readmemb`/`$readmemh`, by absolute path.
+fn mem_file(name: &str, text: &str) -> String {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("readmem");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, text).unwrap();
+    path.to_string_lossy().into_owned()
+}
+
+#[test]
+fn accepted_arrays() {
+    // the three forms of the range, parameters in it and in indices,
+    // selects of elements, reads of the block's own elements
+    let t = translate_with(
+        "module m #(parameter N = 4) (input logic clk, input logic [1:0] j, \
+         input logic [7:0] a, output logic [7:0] y, output logic [3:0] z);",
+        "  logic [7:0] p [0:N-1];\n  logic [7:0] q [N-1:0];\n  logic [7:0] r [N];\n\
+         \x20 always_ff @(posedge clk) begin p[j] <= a; p[N-1][j] <= a[0]; end\n\
+         \x20 always_comb begin q[0] = a; q[1] = p[j]; q[2] = q[1]; q[3] = '0; q[j][3:0] = a[3:0]; end\n\
+         \x20 assign {r[3], r[2], r[1], r[0]} = {4{q[j]}};\n\
+         \x20 assign y = r[j] ^ p[N-2] ^ r[2'd1];\n  assign z = q[j][j +: 4];",
+    );
+    let names: Vec<&str> = t.vars.keys().map(|k| k.as_str()).collect();
+    for x in ["p[0]", "p[3]", "p[3]@init", "q[2]", "r[0]"] {
+        assert!(names.contains(&x), "{names:?}");
+    }
+    // a ROM: no variables for its elements; addresses are hexadecimal
+    let file = mem_file(
+        "accepted.mem",
+        "// header\n@1 0f /* skip */ 1_0\n@3\n3 4 5 6 7 8 9 a b c d e f\n@10 aa @0\nff\n",
+    );
+    let t = translate_with(
+        HEADER_ARRAY,
+        &format!(
+            "  logic [7:0] t [17];\n  initial begin\n    $readmemh(\"{file}\", t);\n  end\n\
+             \x20 assign y = t[j[0]] + t[16];"
+        ),
+    );
+    assert!(!t.vars.keys().any(|k| k.starts_with("t[")));
+}
+
+#[test]
+fn rejected_arrays() {
+    let ok = mem_file("ok.mem", "1\n10\n11\n100\n");
+    let cases: Vec<(String, usize, &str, &str)> = vec![
+        (
+            "  logic [7:0] t [4];\n  assign y = t;".into(),
+            3,
+            "t;",
+            "`t` is an array: only its elements can be used",
+        ),
+        (
+            "  logic [7:0] t [4];\n  assign y = t[1:0];".into(),
+            3,
+            "t[",
+            "`t` is an array: only its elements can be used",
+        ),
+        (
+            "  logic [7:0] t [1:4];\n  assign y = a;".into(),
+            2,
+            "[1:4]",
+            "array range `[1:4]` not supported: addresses must start at 0",
+        ),
+        (
+            "  logic [7:0] t [4];\n  logic t;\n  assign y = a;".into(),
+            3,
+            "t;",
+            "`t` already declared at 2:15",
+        ),
+        (
+            "  logic [7:0] t [4];\n  always_ff @(posedge clk) t[j] <= a;\n  assign y = t[i];"
+                .into(),
+            4,
+            "t[i]",
+            "`t[i]` may address beyond the last element of `t` (3): the index has 3 bits",
+        ),
+        (
+            "  logic [7:0] t [4];\n  always_ff @(posedge clk) t[j] <= a;\n  assign y = t[s];"
+                .into(),
+            4,
+            "t[s]",
+            "the index of `t[s]` must be unsigned",
+        ),
+        (
+            "  logic [7:0] t [4];\n  always_ff @(posedge clk) t[s] <= a;\n  assign y = t[0];"
+                .into(),
+            3,
+            "t[s]",
+            "the index of `t[s]` must be unsigned",
+        ),
+        (
+            "  logic [7:0] t [4];\n  always_ff @(posedge clk) t[j] <= a;\n  assign y = t[4];"
+                .into(),
+            4,
+            "t[4]",
+            "`t[4]` out of range: `t` has addresses 0 to 3",
+        ),
+        (
+            "  logic [7:0] t [4];\n  always_ff @(posedge clk) t[j] <= a;\n  assign y = t[j][8:1];"
+                .into(),
+            4,
+            "t[j]",
+            "`t[j][8:1]` out of range: `t[j]` has bits 7:0",
+        ),
+        (
+            "  logic [7:0] t [4];\n  always_ff @(posedge clk) t[j] <= a;\n  assign t[0] = a;\n  \
+             assign y = t[1];"
+                .into(),
+            4,
+            "t[0]",
+            "`t[0]`: the array `t` is already driven at 3:28 (an array has one driver)",
+        ),
+        (
+            "  logic [7:0] t [4];\n  always_ff @(posedge clk) t[0] <= a;\n  assign y = t[1];"
+                .into(),
+            2,
+            "t ",
+            "`t[1]` is never driven",
+        ),
+        (
+            "  logic [7:0] t [4];\n  assign t[j] = a;\n  assign y = t[1];".into(),
+            3,
+            "j]",
+            "a continuous assignment needs a constant select",
+        ),
+        (
+            "  logic [7:0] t [4];\n  always_ff @(posedge clk) {t[j], t[0]} <= {a, a};\n  \
+             assign y = t[1];"
+                .into(),
+            3,
+            "t[0]",
+            "`t` assigned twice in one target: a select or element of `t` with a variable index",
+        ),
+        (
+            "  logic [7:0] t [4];\n  always_comb begin t[0] = a; t[j] = a; end\n  assign y = t[1];"
+                .into(),
+            3,
+            "t[j]",
+            "`t[j]` has a variable index, so it assigns no element for sure and keeps the \
+             others, but `t[1]`, `t[2]`, `t[3]` may not be assigned yet (a latch): assign \
+             every element of `t` before it on every path",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial $readmemb(\"{ok}\", t);\n  \
+                 always_ff @(posedge clk) t[j] <= a;\n  assign y = t[1];"
+            ),
+            4,
+            "t[j]",
+            "`t` is loaded by `$readmemb` at 3:11 and assigned here: a loaded array must not \
+             be written",
+        ),
+        (
+            "  logic [7:0] t [4];\n  initial $readmemb(\"missing.mem\", t);\n  assign y = t[1];"
+                .into(),
+            3,
+            "\"missing",
+            "cannot read `missing.mem`",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial $readmemb(\"{}\", t);\n  assign y = t[1];",
+                mem_file("xz.mem", "0\n1\n1x\n0\n")
+            ),
+            3,
+            "$readmemb",
+            "line 3: `1x` has x/z digits (not supported: values are 2-state)",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial $readmemb(\"{}\", t);\n  assign y = t[1];",
+                mem_file("few.mem", "0\n1\n\n10\n")
+            ),
+            3,
+            "$readmemb",
+            "no value for `t[3]` (every element of a loaded array needs one)",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial $readmemh(\"{}\", t);\n  assign y = t[1];",
+                mem_file("many.mem", "0 1 2\n3 4\n")
+            ),
+            3,
+            "$readmemh",
+            "line 2: `4` would go to address 4, but `t` has addresses 0 to 3",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial $readmemh(\"{}\", t);\n  assign y = t[1];",
+                mem_file("wide.mem", "0 1 2 1ff\n")
+            ),
+            3,
+            "$readmemh",
+            "line 1: `1ff` does not fit the 8 bits of an element of `t`",
+        ),
+        (
+            format!("  initial $readmemb(\"{ok}\", y);\n  assign y = a;"),
+            2,
+            "y)",
+            "`y` is not an array declared before",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial $readmemb(\"{ok}\", t, 0, 3);\n  assign y = t[1];"
+            ),
+            3,
+            "$readmemb",
+            "`$readmemb` with start and end addresses not supported",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial begin $readmemb(\"{ok}\", t); \
+                 $readmemh(\"{ok}\", t); end\n  assign y = t[1];"
+            ),
+            3,
+            "$readmemh",
+            "`t` is already loaded at 3:17",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial begin $readmemb(\"{ok}\", t); y = a; end\n  \
+                 assign y = t[1];"
+            ),
+            3,
+            "y =",
+            "`initial` may only load arrays from files",
+        ),
+        (
+            "  initial begin logic x; end\n  assign y = a;".into(),
+            2,
+            "logic x",
+            "`initial` may only load arrays from files",
+        ),
+    ];
+    for (body, line, needle, msg) in &cases {
+        rejects(Some(HEADER_ARRAY), body, *line, needle, msg);
+    }
+    // arrays as ports
+    rejects(
+        Some("module m(input logic [7:0] a [2], output logic [7:0] y);"),
+        "  assign y = a[0];",
+        1,
+        "[2]",
+        "unpacked dimension not supported",
     );
 }

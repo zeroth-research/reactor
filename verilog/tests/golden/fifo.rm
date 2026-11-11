@@ -1,0 +1,78 @@
+module fifo
+  external
+    clk : bv1
+    push : bv1
+    pop : bv1
+    d : bv8
+    ram[0]@init : bv8
+    ram[1]@init : bv8
+    ram[2]@init : bv8
+    ram[3]@init : bv8
+    wp@init : bv2
+    rp@init : bv2
+    q@init : bv8
+  interface
+    q : bv8
+    wp : bv2
+    rp : bv2
+  private
+    ram[0] : bv8
+    ram[1] : bv8
+    ram[2] : bv8
+    ram[3] : bv8
+  atom controls ram[0], ram[1], ram[2], ram[3] reads clk, push, d, wp, ram[0], ram[1], ram[2], ram[3] awaits clk, ram[0]@init, ram[1]@init, ram[2]@init, ram[3]@init
+    init
+      X(ram[0]) := ID X(ram[0]@init)
+      X(ram[1]) := ID X(ram[1]@init)
+      X(ram[2]) := ID X(ram[2]@init)
+      X(ram[3]) := ID X(ram[3]@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 2'd0
+      %3 := EQ (wp, %2)
+      %4 := ITE (%3, d, ram[0])
+      %5 := 2'd1
+      %6 := EQ (wp, %5)
+      %7 := ITE (%6, d, ram[1])
+      %8 := 2'd2
+      %9 := EQ (wp, %8)
+      %10 := ITE (%9, d, ram[2])
+      %11 := 2'd3
+      %12 := EQ (wp, %11)
+      %13 := ITE (%12, d, ram[3])
+      %14 := ITE (push, %4, ram[0])
+      %15 := ITE (push, %7, ram[1])
+      %16 := ITE (push, %10, ram[2])
+      %17 := ITE (push, %13, ram[3])
+      X(ram[0]) := ITE (clk@pos, %14, ram[0])
+      X(ram[1]) := ITE (clk@pos, %15, ram[1])
+      X(ram[2]) := ITE (clk@pos, %16, ram[2])
+      X(ram[3]) := ITE (clk@pos, %17, ram[3])
+  atom controls wp, rp reads clk, push, pop, wp, rp awaits clk, wp@init, rp@init
+    init
+      X(wp) := ID X(wp@init)
+      X(rp) := ID X(rp@init)
+    update
+      %1 := NOT clk
+      clk@pos#2 := AND (%1, X(clk))
+      %2 := 2'd1
+      %3 := ADD (wp, %2)
+      %4 := ITE (push, %3, wp)
+      %5 := 2'd1
+      %6 := ADD (rp, %5)
+      %7 := ITE (pop, %6, rp)
+      X(wp) := ITE (clk@pos#2, %4, wp)
+      X(rp) := ITE (clk@pos#2, %7, rp)
+  atom controls q reads clk, q, rp, ram[0], ram[1], ram[2], ram[3] awaits clk, q@init
+    init
+      X(q) := ID X(q@init)
+    update
+      %1 := NOT clk
+      clk@pos#3 := AND (%1, X(clk))
+      %2 := EXTRACT[0:0] rp
+      %3 := ITE (%2, ram[1], ram[0])
+      %4 := ITE (%2, ram[3], ram[2])
+      %5 := EXTRACT[1:1] rp
+      %6 := ITE (%5, %4, %3)
+      X(q) := ITE (clk@pos#3, %6, q)
