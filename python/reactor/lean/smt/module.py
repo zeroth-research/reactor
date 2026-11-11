@@ -12,6 +12,7 @@ the left-nested tuple layout used elsewhere in the codegen.
 
 from __future__ import annotations
 
+import ctypes
 from dataclasses import dataclass
 
 import cvc5
@@ -20,20 +21,43 @@ from reactor import Wire, Var, Module, X
 from .encode import translate_terms, wire_sort
 
 
-# Everything cvc5 mints, kept alive for the process's lifetime: the bindings
-# segfault at shutdown when a `TermManager` is collected out of order with
-# the solvers and terms made from it, and a GC cycle collects the two
-# together in arbitrary order. One list, here, because the ordering it
-# defends against is global -- a per-module list only orders the objects
-# inside it, so two of them (`smt.precheck`'s queries and another caller's
-# encodings) could still be finalised in the wrong order relative to each
-# other. A run keeps a handful of entries and then exits.
+# Everything cvc5 mints, kept alive for the run: the bindings segfault when
+# a `TermManager` is freed before the solvers and terms made from it, and a
+# GC cycle frees the two together in arbitrary order. One list, here,
+# because the ordering it defends against is global -- a per-module list
+# only orders the objects inside it, so two of them (`smt.precheck`'s
+# queries and another caller's encodings) could still be finalised in the
+# wrong order relative to each other. A run keeps a handful of entries and
+# then exits.
+#
+# The list does not hold through the exit itself. At interpreter shutdown
+# every module is garbage, this list with it, and one collection frees all
+# of it in arbitrary order: a term the collector clears before freeing it
+# releases its manager, and when that was the last reference the term is
+# then freed after its manager, which crashes in
+# `NodeValue::markForDeletion` (exit -11, after the run printed everything).
+# A cycle that holds terms -- a kept exception's traceback did -- is enough.
+# So a `TermManager` handed in is also pinned: never freed, whatever the order.
 _LIVE: list = []
 
 
 def keep_alive(*objs: object) -> None:
-    """Retain cvc5 objects until the process exits. See `_LIVE`."""
+    """Retain cvc5 objects until the process exits, and every `TermManager`
+    among them past it. See `_LIVE`."""
     _LIVE.extend(objs)
+    for obj in objs:
+        if isinstance(obj, cvc5.TermManager):
+            _pin(obj)
+
+
+_incref = ctypes.pythonapi.Py_IncRef
+_incref.argtypes = [ctypes.py_object]
+_incref.restype = None
+
+
+def _pin(obj: object) -> None:
+    """A reference to `obj` that is never released."""
+    _incref(obj)
 
 
 @dataclass

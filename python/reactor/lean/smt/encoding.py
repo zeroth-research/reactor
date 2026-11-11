@@ -20,9 +20,12 @@ class ModuleEncoding:
     The transition is translated on first use over the parser's `s*`, `el*`
     and `e*`, and every other state or input is substituted into it; a
     module with no encoding raises the same error on every use. Retained
-    until exit (`smt.module.keep_alive`), and nothing it owns refers back
-    to it: a cycle through a `TermManager`'s owner is finalised in
-    arbitrary order.
+    until exit (`smt.module.keep_alive`), its `TermManager` past it, and
+    nothing it owns refers back to it: a cycle through a `TermManager`'s
+    owner is finalised in arbitrary order, which the pinned manager makes
+    safe and nothing makes cheap. So no exception that was raised is kept
+    here: its traceback reaches the frame that raised it, and that
+    frame's `self`.
     """
 
     def __init__(self, module):
@@ -40,7 +43,7 @@ class ModuleEncoding:
         self._queries: dict = {}
         self._solvers: list = []
         self._rewriter = None
-        keep_alive(self)
+        keep_alive(self, self.tm)
 
     @property
     def state(self) -> list:
@@ -78,7 +81,10 @@ class ModuleEncoding:
             try:
                 hit = parse_predicate(self.env, src)
             except Unreadable as e:
-                hit = e
+                # Its reason, in one that was never raised: a raised one's
+                # traceback holds the frames it passed through, and this
+                # one's `self`, which keeps it, would make a cycle.
+                hit = Unreadable(str(e))
             self._parsed[src] = hit
         if isinstance(hit, Unreadable):
             raise PredicateRefused(
@@ -104,19 +110,19 @@ class ModuleEncoding:
     # --- the transition ---------------------------------------------------
 
     def _block(self, name: str) -> list:
+        # A translation that fails is not kept, and fails again on the next
+        # use: kept, its exception's traceback would hold this frame, and
+        # through `self` the encoding would keep its own error alive in a
+        # cycle. Translating has no side effects, so the retry raises the
+        # same error.
         hit = self._blocks.get(name)
         if hit is None:
-            try:
-                if name == "init":
-                    hit = self.msmt.init_state(self.extl_next)
-                else:
-                    hit = self.msmt.update_state(
-                        self.state, self.extl_latched, self.extl_next)
-            except Exception as e:
-                hit = e
+            if name == "init":
+                hit = self.msmt.init_state(self.extl_next)
+            else:
+                hit = self.msmt.update_state(
+                    self.state, self.extl_latched, self.extl_next)
             self._blocks[name] = hit
-        if isinstance(hit, Exception):
-            raise hit
         return hit
 
     def init_state(self, en: list) -> list:
