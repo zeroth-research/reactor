@@ -413,7 +413,7 @@ pub struct Lvalue {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum LvalueKind {
     Var(Name),
-    /// `y[…]`; typing accepts constant indices only.
+    /// `y[…]`; a variable index only in a block (not in `assign`).
     Select(Name, Select),
     /// `{l1, l2, …}`: `l1` takes the high bits of the value.
     Concat(Vec<Lvalue>),
@@ -433,7 +433,7 @@ impl Lvalue {
     }
 
     /// Adds the signals read by the indices of selects to `out`.
-    fn reads<'l>(&'l self, out: &mut Vec<(&'l Name, Span)>) {
+    pub fn reads<'l>(&'l self, out: &mut Vec<(&'l Name, Span)>) {
         match &self.kind {
             LvalueKind::Var(_) => {}
             LvalueKind::Select(_, sel) => sel.reads(out),

@@ -39,8 +39,13 @@ a variable index is accepted only if every value it can take is in range
 (`a[i]` with `i` of 3 bits needs `a` of at least 8 bits; [`select`], which
 sizing calls with the type of the index).
 
-Assignment targets are signals, constant selects of signals, and
-concatenations of targets ([`pieces`]). An `assign` drives whole signals.
+Assignment targets are signals, selects of signals, and concatenations of
+targets ([`pieces`]). An `assign` drives whole signals, so its selects are
+constant. In a block, a select may have a variable (unsigned) index; then
+any index value is fine: the bits of the select outside the signal are not
+written, as the standard says, so `a[i] <= d` with `i` beyond the top bit
+of `a` changes nothing. Since the bits it writes are not known statically,
+such a select must be the only piece of its signal in a concatenation.
 
 Parameters have been substituted by the frontend: a parameter is a
 constant of its type, an unsized decimal literal an `int`.
@@ -151,6 +156,7 @@ pub fn check(m: &Module) -> Result<Env> {
         match item {
             Item::Assign { lhs, rhs, span } => {
                 lvalue(lhs, &mut |y, span| drive(&env, &mut driver, y, span, i))?;
+                target_names(&env, lhs)?;
                 names(&env, rhs)?;
                 for y in item.targets() {
                     let n = env[y].ty.width;
@@ -666,9 +672,19 @@ fn stmt(
                 _ => {}
             }
             lvalue(lhs, drive)?;
+            target_names(env, lhs)?;
             names(env, rhs)
         }
     }
+}
+
+/// Checks that every signal the indices of a target read is declared.
+fn target_names(env: &Env, l: &Lvalue) -> Result<()> {
+    let mut reads = Vec::new();
+    l.reads(&mut reads);
+    reads
+        .into_iter()
+        .try_for_each(|(x, span)| lookup(env, x, span).map(|_| ()))
 }
 
 /// Checks that every signal `e` reads is declared.
@@ -710,6 +726,11 @@ pub fn explicit(env: &Env, m: &Module) -> Result<()> {
                 default.as_deref().map_or(Ok(()), |d| stmt(env, d))
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
+                for p in pieces(env, lhs) {
+                    if let Some(v) = p.variable {
+                        expr(env, v.index)?;
+                    }
+                }
                 assign(width(env, lhs), expr(env, rhs)?, s.span)
             }
         }
@@ -737,31 +758,43 @@ fn width(env: &Env, l: &Lvalue) -> usize {
 
 /// Checks an assignment target, records the driver of each of its signals
 /// with `drive`, and returns its width. A bit may be assigned only once in
-/// one target, and selects must be constant.
+/// one target, so a select with a variable index must be the only piece of
+/// its signal (the frontend accepts variable indices in blocks only).
 fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Result<usize> {
     fn walk(
         l: &Lvalue,
         drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>,
         seen: &mut BTreeSet<(Name, usize)>,
+        variable: &mut BTreeSet<Name>,
     ) -> Result<usize> {
         let (y, hi, lo) = match &l.kind {
             LvalueKind::Concat(ls) => {
-                return ls.iter().map(|l| walk(l, drive, seen)).sum();
+                return ls.iter().map(|l| walk(l, drive, seen, variable)).sum();
             }
             LvalueKind::Var(y) => (y, drive(y, l.span)?.width - 1, 0),
-            LvalueKind::Select(y, sel) => {
+            LvalueKind::Select(y, sel) if sel.index().is_some() => {
                 let t = drive(y, l.span)?;
-                if let Some(i) = sel.index() {
+                let w = sel.width();
+                if w == 0 || w > t.width {
                     return Err(Error::new(
-                        i.span,
-                        "variable index in an assignment target not supported \
-                         (assign under a `case` instead)",
+                        l.span,
+                        format!("`{l}` selects {w} bits of `{y}`, which has {}", t.width),
                     ));
                 }
+                if !variable.insert(y.clone()) || seen.iter().any(|(x, _)| x == y) {
+                    return Err(overlap(l, y));
+                }
+                return Ok(w);
+            }
+            LvalueKind::Select(y, sel) => {
+                let t = drive(y, l.span)?;
                 let (hi, lo) = constant_select(y, t, sel, l.span)?;
                 (y, hi, lo)
             }
         };
+        if variable.contains(y) {
+            return Err(overlap(l, y));
+        }
         for b in lo..=hi {
             if !seen.insert((y.clone(), b)) {
                 return Err(Error::new(
@@ -772,19 +805,40 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
         }
         Ok(hi + 1 - lo)
     }
-    walk(l, drive, &mut BTreeSet::new())
+    fn overlap(l: &Lvalue, y: &Name) -> Error {
+        Error::new(
+            l.span,
+            format!(
+                "`{y}` assigned twice in one target: a select of `{y}` with a variable \
+                 index may overlap its other pieces"
+            ),
+        )
+    }
+    walk(l, drive, &mut BTreeSet::new(), &mut BTreeSet::new())
 }
 
 /// A part of a checked assignment target: the bits `hi` down to `lo` of a
-/// signal.
+/// signal, or for a select with a variable index, `hi` down to `lo` counted
+/// from the bit the index gives ([`Variable`]).
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Piece {
+pub struct Piece<'l> {
     pub name: Name,
     pub hi: usize,
     pub lo: usize,
+    pub variable: Option<Variable<'l>>,
 }
 
-impl Piece {
+/// The variable index `index` of a piece: with `i` its value (unsigned),
+/// the piece is the bits `i - below + hi` down to `i - below + lo` (where
+/// `lo` is 0), those of them inside the signal.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Variable<'l> {
+    pub index: &'l Expr,
+    /// `w - 1` for `x[i -: w]`, else 0.
+    pub below: usize,
+}
+
+impl Piece<'_> {
     pub fn width(&self) -> usize {
         self.hi + 1 - self.lo
     }
@@ -792,23 +846,48 @@ impl Piece {
 
 /// The parts of a checked assignment target, the one receiving the high
 /// bits of the value first.
-pub fn pieces(env: &Env, l: &Lvalue) -> Vec<Piece> {
+pub fn pieces<'l>(env: &Env, l: &'l Lvalue) -> Vec<Piece<'l>> {
     match &l.kind {
         LvalueKind::Var(y) => vec![Piece {
             name: y.clone(),
             hi: env[y].ty.width - 1,
             lo: 0,
+            variable: None,
         }],
         LvalueKind::Select(y, sel) => {
-            let (hi, lo) = sel.constant().flatten().expect("a checked constant select");
+            let variable = sel.index().map(|index| Variable {
+                index,
+                below: match sel {
+                    Select::Down(_, w) => w - 1,
+                    _ => 0,
+                },
+            });
+            let (hi, lo) = match variable {
+                Some(_) => (sel.width() - 1, 0),
+                None => sel.constant().flatten().expect("a checked constant select"),
+            };
             vec![Piece {
                 name: y.clone(),
                 hi,
                 lo,
+                variable,
             }]
         }
         LvalueKind::Concat(ls) => ls.iter().flat_map(|l| pieces(env, l)).collect(),
     }
+}
+
+/// Checks the type `index` of the variable index of a select in an
+/// assignment target `x[…]`: it must be unsigned (a negative index would
+/// write nothing; not supported).
+pub fn target_index(x: &Name, sel: &Select, index: Ty, span: Span) -> Result<()> {
+    if index.signed {
+        return Err(Error::new(
+            span,
+            format!("the index of `{x}{sel}` must be unsigned"),
+        ));
+    }
+    Ok(())
 }
 
 /// The bits `bits` (descending or not) of the signal `y` of width `width`,
@@ -851,7 +930,9 @@ fn bits_text(y: &str, bits: &[usize], width: usize) -> String {
 /// even if its labels cover every value.
 ///
 /// The analysis is per bit: `y[3:0] = a; y[7:4] = b;` assigns all of `y`.
-/// A read with a variable index reads every bit of its signal.
+/// A read with a variable index reads every bit of its signal; an
+/// assignment with a variable index assigns no bit for sure and keeps the
+/// others, so the whole signal must be assigned before it.
 pub fn definite(env: &Env, item: &Item) -> Result<()> {
     let targets = item.targets();
     let body = item.body().expect("a block");
@@ -961,8 +1042,37 @@ impl Definite<'_> {
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
                 self.reads(rhs, done)?;
-                for p in pieces(self.env, lhs) {
-                    done.extend((p.lo..=p.hi).map(|b| (p.name.clone(), b)));
+                let pieces = pieces(self.env, lhs);
+                for p in &pieces {
+                    if let Some(v) = p.variable {
+                        self.reads(v.index, done)?;
+                    }
+                }
+                for p in pieces {
+                    let n = self.env[&p.name].ty.width;
+                    if p.variable.is_none() {
+                        done.extend((p.lo..=p.hi).map(|b| (p.name.clone(), b)));
+                        continue;
+                    }
+                    // a variable index assigns no bit for sure and keeps
+                    // the other bits
+                    let missing: Vec<usize> = (0..n)
+                        .filter(|b| !done.contains(&(p.name.clone(), *b)))
+                        .collect();
+                    if !missing.is_empty() {
+                        return Err(Error::new(
+                            lhs.span,
+                            format!(
+                                "`{lhs}` has a variable index, so it assigns no bit for sure \
+                                 and keeps the others, but {} may not be assigned yet \
+                                 (a latch): assign all of `{}` before it on every path, \
+                                 e.g. `{} = '0;`",
+                                bits_text(&p.name, &missing, n),
+                                p.name,
+                                p.name
+                            ),
+                        ));
+                    }
                 }
                 Ok(())
             }

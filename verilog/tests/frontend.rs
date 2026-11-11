@@ -814,6 +814,14 @@ fn comb_loops() {
         .unwrap();
     assert!(err.msg.starts_with("combinational loop"), "{err}");
     assert!(!err.msg.contains("split"), "{err}");
+    // and the index of a target: which bits of `x` are written depends on `z`
+    let src = "module m(input logic [7:0] a, output logic [7:0] x, y);\n  logic [7:0] z;\n  always_comb begin y = a; x = a; x[z[2:0]] = 1'b0; end\n  always_comb z = x;\nendmodule\n";
+    let err = frontend::parse(src, "t.sv")
+        .and_then(|m| lower::lower(&m))
+        .err()
+        .unwrap();
+    assert!(err.msg.starts_with("combinational loop"), "{err}");
+    assert!(!err.msg.contains("split"), "{err}");
 }
 
 /// Concatenation, replication, selects and casts as parsed (`$signed` is
@@ -998,11 +1006,41 @@ fn accepted_targets() {
     );
 }
 
+/// Targets with a variable index: in blocks, any unsigned index (bits
+/// outside the signal are not written), alone in their signal in a
+/// concatenation; in `always_comb` after the whole signal is assigned.
+#[test]
+fn accepted_variable_targets() {
+    let header = "module m(input logic clk, input logic [7:0] a, input logic [2:0] i, \
+                  input logic [5:0] k, input logic e, output logic [7:0] y, q, \
+                  output logic c, output logic [6:0] d);";
+    let others = "\n  assign {c, d} = a;";
+    translate_with(
+        header,
+        &format!(
+            "  always_ff @(posedge clk) begin q[i] <= e; q[k +: 3] <= a[2:0]; \
+             q[k -: 5] <= a[4:0]; q[i + 1] <= e; end\n\
+             \x20 always_comb begin y = a; y[i] = e; y[y[2:0]] = 1'b0; end{others}"
+        ),
+    );
+    // a select of another signal in a concatenation, and a whole-width one
+    translate_with(
+        header,
+        "  always_ff @(posedge clk) {c, q[i +: 2], d[k]} <= {e, a[1:0], e};\n\
+         \x20 always_comb begin y = 8'd0; if (e) y[k[0] +: 8] = a; end",
+    );
+    // after a full assignment on every path
+    translate_with(
+        header,
+        &format!("  always_comb begin if (e) y = a; else y = '1; y[i] = e; q = y; end{others}"),
+    );
+}
+
 #[test]
 fn rejected_targets() {
     let header = "module m(input logic clk, input logic [7:0] a, input logic [2:0] i, \
-                  input logic e, output logic [7:0] y, q);";
-    let cases: [(&str, usize, &str, &str); 9] = [
+                  input logic signed [2:0] s, input logic e, output logic [7:0] y, q);";
+    let cases: &[(&str, usize, &str, &str)] = &[
         (
             "  assign y[3:0] = a[3:0];\n  assign y[7:4] = a[7:4];\n  assign q = a;",
             2,
@@ -1022,16 +1060,85 @@ fn rejected_targets() {
             "`y[0]` assigned twice in one target",
         ),
         (
-            "  always_comb begin y = a; y[i] = 1'b0; end\n  assign q = a;",
+            "  always_comb begin y[i] = 1'b0; end\n  assign q = a;",
             2,
-            "i]",
-            "variable index in an assignment target",
+            "y[i]",
+            "`y[i]` has a variable index, so it assigns no bit for sure and keeps the \
+             others, but `y` may not be assigned yet (a latch): assign all of `y` before it \
+             on every path, e.g. `y = '0;`",
+        ),
+        (
+            "  always_comb begin y[3:0] = a[3:0]; y[i] = 1'b0; end\n  assign q = a;",
+            2,
+            "y[i]",
+            "but `y[7:4]` may not be assigned yet",
+        ),
+        (
+            "  always_comb begin if (e) y = a; y[i] = 1'b0; end\n  assign q = a;",
+            2,
+            "y[i]",
+            "but `y` may not be assigned yet",
+        ),
+        (
+            "  always_comb begin y = a; q[y[2:0]] = 1'b0; q = a; end",
+            2,
+            "q[y",
+            "`q` may not be assigned yet",
+        ),
+        (
+            "  always_comb begin q = a; y[q[2:0]] = 1'b0; y = a; end",
+            2,
+            "y[q",
+            "`y` may not be assigned yet",
+        ),
+        (
+            "  always_comb begin q = a; q[y[2:0]] = 1'b0; y = a; end",
+            2,
+            "y[2:0]",
+            "`y[2:0]` read before it is assigned on every path",
         ),
         (
             "  assign y[i] = 1'b0;\n  assign q = a;",
             2,
             "i]",
-            "variable index in an assignment target",
+            "a continuous assignment needs a constant select",
+        ),
+        (
+            "  always_ff @(posedge clk) y[s] <= e;\n  assign q = a;",
+            2,
+            "y[s]",
+            "the index of `y[s]` must be unsigned",
+        ),
+        (
+            "  always_ff @(posedge clk) y[z] <= e;\n  assign q = a;",
+            2,
+            "z]",
+            "`z` is not declared",
+        ),
+        (
+            "  always_ff @(posedge clk) y[i +: 9] <= a;\n  assign q = a;",
+            2,
+            "y[i",
+            "`y[i +: 9]` selects 9 bits of `y`, which has 8",
+        ),
+        (
+            "  always_ff @(posedge clk) {y[i], y[0]} <= 2'd0;\n  assign q = a;",
+            2,
+            "y[0]",
+            "`y` assigned twice in one target: a select of `y` with a variable index may \
+             overlap its other pieces",
+        ),
+        (
+            "  always_ff @(posedge clk) {y[7:4], y[i]} <= 5'd0;\n  assign q = a;",
+            2,
+            "y[i]",
+            "`y` assigned twice in one target",
+        ),
+        (
+            "  always_ff @(posedge clk) {y[i], y[i]} <= 2'd0;\n  assign q = a;",
+            2,
+            "y[i]}",
+            "`y` assigned twice in one target",
         ),
         (
             "  always_ff @(posedge clk) q[8] <= 1'b0;\n  assign y = a;",
@@ -1058,7 +1165,7 @@ fn rejected_targets() {
             "`y[7]`, `y[1:0]` is never assigned in this `always_comb`",
         ),
     ];
-    for (body, line, needle, msg) in cases {
+    for &(body, line, needle, msg) in cases {
         rejects(Some(header), body, line, needle, msg);
     }
     // per whole signal, as for whole assignments: one driver

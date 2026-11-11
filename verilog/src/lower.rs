@@ -28,6 +28,8 @@ which has no `>`, `>=` and no logical operators:
 | `{n{e}}` | `n` copies of `e`'s wire, nested as above |
 | `x[h:l]`, `x[c]`, `x[c +: w]`, … (constant) | `Extract`, nothing for all bits |
 | `x[i]`, `x[i +: w]` (variable) | `Extract{w-1, 0}(LShr(x, i))` |
+| target `x[i] = e`, `x[i +: w] = e` (variable) | `x := Or(And(x, Not(Shl(ones, i))), Shl(ZExt(e), i))`, `ones` = `w` one bits |
+| target `x[i -: w] = e` (variable) | the same on `{x, (w-1)'0}`, then `Extract` of the top bits |
 | `N'(e)` | `SExt`/`ZExt` (as `e`'s signedness says) when widening, `Extract` when narrowing |
 | an implicit resize (from sizing) | `SExt`/`ZExt` as the type it resizes to says, `Extract` when narrowing |
 
@@ -185,9 +187,12 @@ use crate::ast::{
     Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
+use crate::value::BitVec;
 use crate::{Atom, Module, Sort, SvOp, Term, Var, Wire};
 use crate::{sizing, typing};
 use base::var::X;
+use num_bigint::BigUint;
+use num_traits::One;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -475,7 +480,7 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
                 let mut b = Builder::new(&env, &vars, false);
                 b.start(&item.targets(), |_| None);
                 let (w, _) = b.expr(rhs)?;
-                b.assign(lhs, w);
+                b.assign(lhs, w, span)?;
                 b.finish_all(span)?;
                 out.add_names(prefix, b.names);
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
@@ -867,6 +872,17 @@ fn depend(s: &Stmt, ctrl: &BTreeSet<Name>, deps: &mut BTreeMap<Name, BTreeSet<Na
         StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
             let mut d = resolve(rhs, deps);
             d.extend(ctrl.iter().cloned());
+            // the bits a variable index writes depend on the index
+            let mut index = Vec::new();
+            lhs.reads(&mut index);
+            for (x, _) in index {
+                match deps.get(x) {
+                    Some(dx) => d.extend(dx.iter().cloned()),
+                    None => {
+                        d.insert(x.clone());
+                    }
+                }
+            }
             // a select keeps the dependencies of the other bits
             let mut whole = Vec::new();
             let mut targets = Vec::new();
@@ -1103,20 +1119,91 @@ impl<'a> Builder<'a> {
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
                 let (w, _) = self.expr(rhs)?;
-                self.assign(lhs, w);
-                Ok(())
+                self.assign(lhs, w, s.span)
             }
         }
     }
 
     /// Assigns the value of `w` to the target `lhs`, the first piece taking
-    /// the high bits.
-    fn assign(&mut self, lhs: &Lvalue, w: Wire) {
-        let mut top = w.dtype().width();
-        for p in typing::pieces(self.env, lhs) {
-            top -= p.width();
-            self.write(&p.name, p.hi, p.lo, w, top);
+    /// the high bits. Variable indices are evaluated before any piece is
+    /// written.
+    fn assign(&mut self, lhs: &Lvalue, w: Wire, span: Span) -> Result<()> {
+        let pieces = typing::pieces(self.env, lhs);
+        let mut indices = Vec::new();
+        for p in &pieces {
+            indices.push(match p.variable {
+                Some(v) => Some((self.expr(v.index)?.0, v.below)),
+                None => None,
+            });
         }
+        let mut top = w.dtype().width();
+        for (p, index) in pieces.iter().zip(indices) {
+            top -= p.width();
+            match index {
+                None => self.write(&p.name, p.hi, p.lo, w, top),
+                Some((i, below)) => self.write_at(&p.name, i, below, p.width(), w, top, span)?,
+            }
+        }
+        Ok(())
+    }
+
+    /// Makes the `width` bits of the signal `y` from bit `i - below` upwards
+    /// (`i` the value of the wire `i`) hold the bits of `w` from `wlo`
+    /// upwards, as far as they are inside `y`: with a mask of `width` ones
+    /// shifted to bit `i`, on `y` extended by `below` zero bits at the
+    /// bottom (so no shift is negative), `y := (y & ~mask) | (bits << i)`.
+    /// A shift by the width or more gives 0, so bits outside `y` are not
+    /// written.
+    #[allow(clippy::too_many_arguments)]
+    fn write_at(
+        &mut self,
+        y: &Name,
+        i: Wire,
+        below: usize,
+        width: usize,
+        w: Wire,
+        wlo: usize,
+        span: Span,
+    ) -> Result<()> {
+        let n = self.env[y].ty.width;
+        let m = n + below;
+        let old = self.read_own(y, n - 1, 0, span)?;
+        let bits = if wlo == 0 && width == w.dtype().width() {
+            w
+        } else {
+            let op = SvOp::Extract {
+                hi: wlo + width - 1,
+                lo: wlo,
+            };
+            self.emit(op, &[w], Sort(width), span)?
+        };
+        let ones = BitVec::wrap(m, (BigUint::one() << width) - BigUint::one());
+        let ones = self.emit(SvOp::Lit(ones), &[], Sort(m), span)?;
+        let mask = self.emit(SvOp::Shl, &[ones, i], Sort(m), span)?;
+        let bits = if width < m {
+            self.emit(SvOp::ZExt(m), &[bits], Sort(m), span)?
+        } else {
+            bits
+        };
+        let bits = self.emit(SvOp::Shl, &[bits, i], Sort(m), span)?;
+        let padded = if below > 0 {
+            let zero = self.emit(SvOp::Lit(BitVec::zero(below)), &[], Sort(below), span)?;
+            self.emit(SvOp::Concat, &[old, zero], Sort(m), span)?
+        } else {
+            old
+        };
+        let keep = self.emit(SvOp::Not, &[mask], Sort(m), span)?;
+        let kept = self.emit(SvOp::And, &[padded, keep], Sort(m), span)?;
+        let mut new = self.emit(SvOp::Or, &[kept, bits], Sort(m), span)?;
+        if below > 0 {
+            let op = SvOp::Extract {
+                hi: m - 1,
+                lo: below,
+            };
+            new = self.emit(op, &[new], Sort(n), span)?;
+        }
+        self.write(y, n - 1, 0, new, 0);
+        Ok(())
     }
 
     /// Makes the bits `hi` down to `lo` of the signal `y` hold the bits of

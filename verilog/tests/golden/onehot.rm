@@ -1,0 +1,47 @@
+module onehot
+  external
+    sel : bv3
+    n : bv4
+    a : bv16
+  interface
+    y : bv8
+    z : bv16
+  atom controls y awaits sel
+    init = update
+      y@1 := 8'd0
+      %1 := 1'd1
+      %2 := 8'd1
+      %3 := SHL (%2, X(sel))
+      %4 := ZEXT[8] %1
+      %5 := SHL (%4, X(sel))
+      %6 := NOT %3
+      %7 := AND (y@1, %6)
+      X(y) := OR (%7, %5)
+  atom controls z awaits sel, n, a
+    init = update
+      %1 := EXTRACT[0:0] X(sel)
+      %2 := 4'd10
+      %3 := 1'd0
+      %4 := CONCAT (%3, X(n))
+      %5 := 5'd3
+      %6 := ADD (%4, %5)
+      %7 := 19'd15
+      %8 := SHL (%7, %6)
+      %9 := ZEXT[19] %2
+      %10 := SHL (%9, %6)
+      %11 := 3'd0
+      %12 := CONCAT (X(a), %11)
+      %13 := NOT %8
+      %14 := AND (%12, %13)
+      %15 := OR (%14, %10)
+      z@1 := EXTRACT[18:3] %15
+      z@2 := ITE (%1, z@1, X(a))
+      %16 := 1'd0
+      %17 := EXTRACT[3:0] z@2
+      %18 := 16'd1
+      %19 := SHL (%18, %17)
+      %20 := ZEXT[16] %16
+      %21 := SHL (%20, %17)
+      %22 := NOT %19
+      %23 := AND (z@2, %22)
+      X(z) := OR (%23, %21)

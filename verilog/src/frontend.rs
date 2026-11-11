@@ -45,8 +45,8 @@ use sv_parser::{Iter, RefNode, RefNodes, SyntaxTree};
 
 type Result<T> = std::result::Result<T, Error>;
 
-const VARIABLE_TARGET: &str =
-    "variable index in an assignment target not supported (assign under a `case` instead)";
+const VARIABLE_TARGET: &str = "a continuous assignment needs a constant select: an `assign` \
+     drives fixed bits (assign the bit in an `always_comb` instead)";
 
 /// Parses a file and elaborates its top module with the default parameter
 /// values.
