@@ -2,20 +2,20 @@ case	top	raw	rewritten	yosys	bucket
 abstract/abstr.sby	demo	0:0: Define not found: demo_counter_abstr_mode	0:0: Define not found: demo_counter_abstr_mode	-	preprocessor: define / include missing
 abstract/props.sby	demo	0:0: Define not found: demo_counter_abstr_mode	0:0: Define not found: demo_counter_abstr_mode	-	preprocessor: define / include missing
 autotune/divider.sby	divider	13:12: `reg` not supported, use `logic`	OK	Equal	
-demos/fib.sby	fib	4:9: `reg` not supported, use `logic`	10:2: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+demos/fib.sby	fib	4:9: `reg` not supported, use `logic`	11:3: `initial` may only load arrays from files (`$readmemb("file", m);`): initial values are not supported yet	-	initializers / `initial` blocks
 demos/picorv32_axicheck.sby	testbench	3129:11: syntax error [at `restrict`]	3129:11: syntax error [at `restrict`]	-	assertions / properties
 dft/data_diode.sby	top	256:5: syntax error [at `$overwrite_tag`]	256:5: syntax error [at `$overwrite_tag`]	-	simulation constructs (delays, system tasks)
-fifo/fifo.sby	fifo	32:5: `reg` not supported, use `logic`	37:17: unpacked dimension not supported	-	arrays
+fifo/fifo.sby	fifo	32:5: `reg` not supported, use `logic`	37:23: expected a constant integer, got `MAX_DATA-1`: `MAXDATA` is not a parameter	-	other error
 fifo/golden/fifo.sby	fifo	30:13: expected a constant integer, got `ADDR_BITS`: `ADDRBITS` is not a parameter	30:13: expected a constant integer, got `ADDR_BITS`: `ADDRBITS` is not a parameter	-	other error
 indinv/prove_p0.sby	example	3:27: syntax error [at `output`]	3:27: syntax error [at `output`]	-	parse error (sv-parser)
 indinv/prove_p23.sby	example	3:27: syntax error [at `output`]	3:27: syntax error [at `output`]	-	parse error (sv-parser)
 multiclk/dpmem.sby	top	42:2: `reg` not supported, use `logic`	42:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 puzzles/djb2hash.sby	djb2hash	3:17: syntax error	3:17: syntax error	-	parse error (sv-parser)
-puzzles/pour_853_to_4.sby	pour_853_to_4	13:2: `reg` not supported, use `logic`	13:14: unpacked dimension not supported	-	arrays
+puzzles/pour_853_to_4.sby	pour_853_to_4	13:2: `reg` not supported, use `logic`	18:3: `initial` may only load arrays from files (`$readmemb("file", m);`): initial values are not supported yet	-	initializers / `initial` blocks
 puzzles/primegen.sby	primegen	2:2: attribute not supported	2:2: attribute not supported	-	other unsupported construct
 puzzles/wolf_goat_cabbage.sby	wolf_goat_cabbage	10:2: `reg` not supported, use `logic`	10:8: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 quickstart/cover.sby	top	5:2: `reg` not supported, use `logic`	5:15: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
-quickstart/demo.sby	demo	3:10: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `initial`]	-	initializers / `initial` blocks
+quickstart/demo.sby	demo	3:10: `reg` not supported, use `logic`	5:11: `initial` may only load arrays from files (`$readmemb("file", m);`): initial values are not supported yet	-	initializers / `initial` blocks
 quickstart/memory.sby	testbench	15:3: attribute not supported	15:3: attribute not supported	-	other unsupported construct
 quickstart/prove.sby	testbench	5:10: `reg` not supported, use `logic`	14:9: declaration with initializer not supported, use `assign`	-	initializers / `initial` blocks
 tristate/tristate.sby	top_pass	3:38: literal `1'bz` with x/z digits not supported (2-state) (in instance `module1`)	3:38: literal `1'bz` with x/z digits not supported (2-state) (in instance `module1`)	-	x/z values (4-state)
