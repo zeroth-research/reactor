@@ -135,7 +135,7 @@ def test_the_route_leaves_its_answer_where_the_next_run_resumes_from(tmp_path):
     store = ArtifactStore(dir=tmp_path / "artifacts", producer="nuterm")
     inp = SimpleNamespace(
         module=_countdown(), claim=Claim(prp="(= s0 0)", kind="buchi"),
-        given=Certificate(), log=lambda *a: None,
+        given=Certificate(), log=lambda *a: None, smt=None,
         project=SimpleNamespace(artifacts=store),
     )
     cert = ROUTE.run(inp).cert
@@ -201,10 +201,10 @@ def test_a_property_over_the_columns_of_such_a_module_is_certified():
                  "hrank": Status.HOLDS}, v
 
 
-def test_a_property_that_is_not_smt_lib_is_refused():
-    """The route reads the property as SMT-LIB, and says so of one that is not
-    -- `x == 0` is the Python spelling the prompt routes also accept."""
-    with pytest.raises(Refused, match="SMT-LIB"):
+def test_a_property_that_is_no_predicate_is_refused():
+    """`x == 0` is the DSL's Python syntax, which this route reads as every
+    other one does, and `x` is no name of this module in it."""
+    with pytest.raises(Refused, match="--buchi: cannot read `x == 0`"):
         _learn(_countdown(), "x == 0", "buchi")
 
 
@@ -297,9 +297,24 @@ def test_a_precondition_over_a_latched_input_is_refused():
         _learn(_starts_at_an_input(), "(>= s0 0)", "safety", "(>= el0 0)")
 
 
-def test_a_precondition_that_is_not_smt_lib_is_refused():
-    with pytest.raises(Refused, match="could not parse"):
+def test_a_precondition_that_is_no_predicate_is_refused():
+    """`n` is no name of this module in either dialect."""
+    with pytest.raises(Refused, match="--pre: cannot read `n >= 0`"):
         _learn(_starts_at_an_input(), "(>= s0 0)", "safety", "n >= 0")
+
+
+def test_predicates_in_python_syntax_are_read_as_their_smtlib():
+    """z3 reads SMT-LIB only, so a property or `--pre` in the DSL's Python
+    syntax -- which every other route reads -- was refused as text z3
+    could not parse. It is read through the run's encoding and handed on as
+    cvc5 prints it."""
+    module = _starts_at_an_input()
+    _, cert = _learn(module, "s[0][0] >= 0", "safety", "e0[0][0] >= 0")
+    assert "(>= s0 0)" in cert.inv, cert.inv
+    module = _countdown()
+    v = _verdicts(module, *_learn(module, "s[0][0] == 0", "buchi"))
+    assert v == {"init_inv": Status.HOLDS, "step_inv": Status.HOLDS,
+                 "hrank": Status.HOLDS}, v
 
 
 def test_the_conjuncts_are_seeded_one_by_one():
