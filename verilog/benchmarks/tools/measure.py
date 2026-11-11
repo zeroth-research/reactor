@@ -271,10 +271,12 @@ BUCKETS = [  # first match wins; pattern on the first error without its location
      "width rules (explicit-width fragment)"),
     (r"Define not found|Include not found|Include error", "preprocessor: define / include missing"),
     (r"x/z digits", "x/z values (4-state)"),
-    (r"initializer|" + AT.format("initial|final"), "initializers / `initial` blocks"),
+    (r"initializer|may only load arrays from files|" + AT.format("initial|final"),
+     "initializers / `initial` blocks"),
     (AT.format(r"assert|assume|cover|restrict|property|sequence|expect|default|\$past|"
                r"\$rose|\$fell|\$stable|clocking|always_ff_assert|checker"), "assertions / properties"),
-    (r"unpacked dimension|instance array|more than one packed dimension", "arrays"),
+    (r"unpacked dimension|instance array|more than one packed dimension|array range|is an array|"
+     r"address beyond the last element|associative and queue|\$readmem|loaded array", "arrays"),
     (r"non-ANSI|positional (port|parameter)|port default", "port / parameter syntax (non-ANSI, positional)"),
     (r"variable index in an assignment target", "variable-index assignment targets"),
     (r"crossings between unrelated clocks", "clock-domain crossings"),

@@ -36,6 +36,10 @@ rewrites the expression by bidirectional rules), of [`SvOp`] and of the
 rewrites in lowering, so that tests can compare it with the translated
 module.
 
+The element `m[i]` of an array is the signal `m[k]` with `k` the value of
+`i` (typing makes sure it is an address when read); an assignment to an
+element at an index that is no address writes nothing.
+
 A hierarchy runs as one design: every signal is known by its name (see
 [`Inst::naming`]), so a port connected to a signal is that signal, and an
 input connected to another expression is computed from it on demand.
@@ -45,8 +49,8 @@ Register initial values are given by path (`u.q`).
 */
 
 use crate::ast::{
-    BinOp, Cast, Dir, Edge, Error, Expr, ExprKind, Item, Name, Select, Span, Stmt, StmtKind, Ty,
-    UnOp,
+    BinOp, Cast, Dir, Edge, Elems, Error, Expr, ExprKind, Index, Item, Name, Select, Span, Stmt,
+    StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::typing::{self, Env};
@@ -290,26 +294,41 @@ impl<'m> Interp<'m> {
                 let pieces = typing::pieces(env, lhs);
                 let mut indices = Vec::new();
                 for p in &pieces {
-                    indices.push(match p.variable {
+                    let index = match p.variable {
                         Some(var) => {
                             let i = self.own(c, var.index, &scope(out), values, active)?;
                             Some(BigInt::from(i.unsigned().clone()) - var.below)
                         }
                         None => None,
-                    });
+                    };
+                    // the element the index picks, if it is an address
+                    let target = match p.elem {
+                        Some(e) => {
+                            let k = self.own(c, e.index, &scope(out), values, active)?;
+                            k.unsigned()
+                                .to_usize()
+                                .and_then(|k| e.elems.get(k))
+                                .cloned()
+                        }
+                        None => Some(p.name.clone()),
+                    };
+                    indices.push((index, target));
                 }
                 // the pieces take the bits of `v` from the top down
                 let mut top = v.width();
-                for (p, index) in pieces.iter().zip(indices) {
+                for (p, (index, target)) in pieces.iter().zip(indices) {
                     let bits = slice(&v, top - 1, top - p.width());
                     top -= p.width();
+                    let Some(name) = target else {
+                        continue;
+                    };
                     // the other bits of a register keep their value; those
                     // of an `always_comb` signal are assigned before they
                     // are read (typing), so any value does
-                    let old = match out.get(&p.name) {
+                    let old = match out.get(&name) {
                         Some(old) => old.clone(),
-                        None if comb => BitVec::zero(env[&p.name].ty.width),
-                        None => values[&self.ctxs[c].names[&p.name]].clone(),
+                        None if comb => BitVec::zero(env[&name].ty.width),
+                        None => values[&self.ctxs[c].names[&name]].clone(),
                     };
                     let new = match index {
                         None => write(&old, p.lo, &bits),
@@ -326,7 +345,7 @@ impl<'m> Interp<'m> {
                             new
                         }
                     };
-                    out.insert(p.name.clone(), new);
+                    out.insert(name, new);
                 }
                 Ok(())
             }
@@ -475,6 +494,11 @@ impl<'m> Interp<'m> {
                 Ty::unsigned(n * es.iter().map(|e| self.det(c, e).width).sum::<usize>())
             }
             ExprKind::Select(_, sel) => Ty::unsigned(sel.width()),
+            ExprKind::Elem(el) => match (&el.sel, &el.elems) {
+                (Some(sel), _) => Ty::unsigned(sel.width()),
+                (None, Elems::Signals(ys)) => env[&ys[0]].ty,
+                (None, Elems::Consts(ty, _)) => *ty,
+            },
             ExprKind::Cast(Cast::Size(n), a) => Ty {
                 width: *n,
                 signed: self.det(c, a).signed,
@@ -597,21 +621,27 @@ impl<'m> Interp<'m> {
                 }
                 acc
             }
-            ExprKind::Select(x, sel) => {
-                let v = sig(x, values, active)?;
-                let base = match sel.index() {
-                    None => sel.constant().flatten().expect("constant").1,
-                    // typing guarantees the index is in range
-                    Some(i) => {
+            ExprKind::Elem(el) => {
+                // typing guarantees the index is an address
+                let k = match &el.index {
+                    Index::Const(k) => *k,
+                    Index::Expr(i) => {
                         let i = self.own(c, i, scope, values, active)?;
-                        let i = i.unsigned().to_usize().expect("an index in range");
-                        match sel {
-                            Select::Down(_, w) => i + 1 - w,
-                            _ => i,
-                        }
+                        i.unsigned().to_usize().expect("an address")
                     }
                 };
-                slice(&v, base + sel.width() - 1, base)
+                let v = match &el.elems {
+                    Elems::Signals(ys) => sig(&ys[k], values, active)?,
+                    Elems::Consts(_, vs) => vs[k].clone(),
+                };
+                match &el.sel {
+                    None => v,
+                    Some(sel) => self.bits(c, &v, sel, scope, values, active)?,
+                }
+            }
+            ExprKind::Select(x, sel) => {
+                let v = sig(x, values, active)?;
+                self.bits(c, &v, sel, scope, values, active)?
             }
             // an assignment to an `n`-bit value
             ExprKind::Cast(Cast::Size(n), a) => self.assigned(c, a, *n, scope, values, active)?,
@@ -622,6 +652,31 @@ impl<'m> Interp<'m> {
             }
         };
         Ok(extend(&v, t))
+    }
+
+    /// The bits of the value `v` that `sel` selects.
+    fn bits(
+        &self,
+        c: usize,
+        v: &BitVec,
+        sel: &Select,
+        scope: &Values,
+        values: &mut Values,
+        active: &mut BTreeSet<Name>,
+    ) -> Result<BitVec, String> {
+        let base = match sel.index() {
+            None => sel.constant().flatten().expect("constant").1,
+            // typing guarantees the index is in range
+            Some(i) => {
+                let i = self.own(c, i, scope, values, active)?;
+                let i = i.unsigned().to_usize().expect("an index in range");
+                match sel {
+                    Select::Down(_, w) => i + 1 - w,
+                    _ => i,
+                }
+            }
+        };
+        Ok(slice(v, base + sel.width() - 1, base))
     }
 
     /// The values of `es`, each at its own type, concatenated.

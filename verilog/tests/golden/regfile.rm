@@ -1,0 +1,201 @@
+module regfile
+  external
+    clk : bv1
+    we : bv1
+    wa : bv3
+    ra : bv2
+    rb : bv2
+    d : bv8
+    r[0]@init : bv8
+    r[1]@init : bv8
+    r[2]@init : bv8
+    r[3]@init : bv8
+    r[4]@init : bv8
+    r[5]@init : bv8
+    r[6]@init : bv8
+    r[7]@init : bv8
+    s[0]@init : bv8
+    s[1]@init : bv8
+    s[2]@init : bv8
+    s[3]@init : bv8
+  interface
+    a : bv8
+    sum : bv9
+    lo : bv4
+    b : bv1
+  private
+    r[0] : bv8
+    r[1] : bv8
+    r[2] : bv8
+    r[3] : bv8
+    r[4] : bv8
+    r[5] : bv8
+    r[6] : bv8
+    r[7] : bv8
+    s[0] : bv8
+    s[1] : bv8
+    s[2] : bv8
+    s[3] : bv8
+  atom controls r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7] reads clk, we, wa, rb, d, r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7] awaits clk, r[0]@init, r[1]@init, r[2]@init, r[3]@init, r[4]@init, r[5]@init, r[6]@init, r[7]@init
+    init
+      X(r[0]) := ID X(r[0]@init)
+      X(r[1]) := ID X(r[1]@init)
+      X(r[2]) := ID X(r[2]@init)
+      X(r[3]) := ID X(r[3]@init)
+      X(r[4]) := ID X(r[4]@init)
+      X(r[5]) := ID X(r[5]@init)
+      X(r[6]) := ID X(r[6]@init)
+      X(r[7]) := ID X(r[7]@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 3'd0
+      %3 := EQ (wa, %2)
+      %4 := ITE (%3, d, r[0])
+      %5 := 3'd1
+      %6 := EQ (wa, %5)
+      %7 := ITE (%6, d, r[1])
+      %8 := 3'd2
+      %9 := EQ (wa, %8)
+      %10 := ITE (%9, d, r[2])
+      %11 := 3'd3
+      %12 := EQ (wa, %11)
+      %13 := ITE (%12, d, r[3])
+      %14 := 3'd4
+      %15 := EQ (wa, %14)
+      %16 := ITE (%15, d, r[4])
+      %17 := 3'd5
+      %18 := EQ (wa, %17)
+      %19 := ITE (%18, d, r[5])
+      %20 := 3'd6
+      %21 := EQ (wa, %20)
+      %22 := ITE (%21, d, r[6])
+      %23 := 3'd7
+      %24 := EQ (wa, %23)
+      %25 := ITE (%24, d, r[7])
+      %26 := NEG d
+      %27 := 2'd0
+      %28 := EQ (rb, %27)
+      %29 := ITE (%28, %26, r[0])
+      %30 := 2'd1
+      %31 := EQ (rb, %30)
+      %32 := ITE (%31, %26, r[1])
+      %33 := 2'd2
+      %34 := EQ (rb, %33)
+      %35 := ITE (%34, %26, r[2])
+      %36 := 2'd3
+      %37 := EQ (rb, %36)
+      %38 := ITE (%37, %26, r[3])
+      %39 := ITE (we, %4, %29)
+      %40 := ITE (we, %7, %32)
+      %41 := ITE (we, %10, %35)
+      %42 := ITE (we, %13, %38)
+      %43 := ITE (we, %16, r[4])
+      %44 := ITE (we, %19, r[5])
+      %45 := ITE (we, %22, r[6])
+      %46 := ITE (we, %25, r[7])
+      %47 := 8'd0
+      X(r[0]) := ITE (clk@pos, %47, r[0])
+      X(r[1]) := ITE (clk@pos, %40, r[1])
+      X(r[2]) := ITE (clk@pos, %41, r[2])
+      X(r[3]) := ITE (clk@pos, %42, r[3])
+      X(r[4]) := ITE (clk@pos, %43, r[4])
+      X(r[5]) := ITE (clk@pos, %44, r[5])
+      X(r[6]) := ITE (clk@pos, %45, r[6])
+      X(r[7]) := ITE (clk@pos, %46, r[7])
+  atom controls s[0], s[1], s[2], s[3] reads clk, we, ra, rb, d, s[0], s[1], s[2], s[3] awaits clk, s[0]@init, s[1]@init, s[2]@init, s[3]@init
+    init
+      X(s[0]) := ID X(s[0]@init)
+      X(s[1]) := ID X(s[1]@init)
+      X(s[2]) := ID X(s[2]@init)
+      X(s[3]) := ID X(s[3]@init)
+    update
+      %1 := NOT X(clk)
+      clk@neg := AND (clk, %1)
+      %2 := 2'd0
+      %3 := EQ (ra, %2)
+      %4 := ITE (%3, d, s[0])
+      %5 := 2'd1
+      %6 := EQ (ra, %5)
+      %7 := ITE (%6, d, s[1])
+      %8 := 2'd2
+      %9 := EQ (ra, %8)
+      %10 := ITE (%9, d, s[2])
+      %11 := 2'd3
+      %12 := EQ (ra, %11)
+      %13 := ITE (%12, d, s[3])
+      %14 := 4'd10
+      %15 := EXTRACT[3:0] %4
+      %16 := CONCAT (%14, %15)
+      %17 := 2'd0
+      %18 := EQ (rb, %17)
+      %19 := ITE (%18, %16, %4)
+      %20 := EXTRACT[3:0] %7
+      %21 := CONCAT (%14, %20)
+      %22 := 2'd1
+      %23 := EQ (rb, %22)
+      %24 := ITE (%23, %21, %7)
+      %25 := EXTRACT[3:0] %10
+      %26 := CONCAT (%14, %25)
+      %27 := 2'd2
+      %28 := EQ (rb, %27)
+      %29 := ITE (%28, %26, %10)
+      %30 := EXTRACT[3:0] %13
+      %31 := CONCAT (%14, %30)
+      %32 := 2'd3
+      %33 := EQ (rb, %32)
+      %34 := ITE (%33, %31, %13)
+      %35 := ITE (we, %19, %4)
+      %36 := ITE (we, %24, %7)
+      %37 := ITE (we, %29, %10)
+      %38 := ITE (we, %34, %13)
+      X(s[0]) := ITE (clk@neg, %35, s[0])
+      X(s[1]) := ITE (clk@neg, %36, s[1])
+      X(s[2]) := ITE (clk@neg, %37, s[2])
+      X(s[3]) := ITE (clk@neg, %38, s[3])
+  atom controls a awaits ra, r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
+    init = update
+      %1 := 1'd0
+      %2 := CONCAT (%1, X(ra))
+      %3 := EXTRACT[0:0] %2
+      %4 := ITE (%3, X(r[1]), X(r[0]))
+      %5 := ITE (%3, X(r[3]), X(r[2]))
+      %6 := ITE (%3, X(r[5]), X(r[4]))
+      %7 := ITE (%3, X(r[7]), X(r[6]))
+      %8 := EXTRACT[1:1] %2
+      %9 := ITE (%8, %5, %4)
+      %10 := ITE (%8, %7, %6)
+      %11 := EXTRACT[2:2] %2
+      X(a) := ITE (%11, %10, %9)
+  atom controls sum awaits wa, r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
+    init = update
+      %1 := EXTRACT[0:0] X(wa)
+      %2 := ITE (%1, X(r[1]), X(r[0]))
+      %3 := ITE (%1, X(r[3]), X(r[2]))
+      %4 := ITE (%1, X(r[5]), X(r[4]))
+      %5 := ITE (%1, X(r[7]), X(r[6]))
+      %6 := EXTRACT[1:1] X(wa)
+      %7 := ITE (%6, %3, %2)
+      %8 := ITE (%6, %5, %4)
+      %9 := EXTRACT[2:2] X(wa)
+      %10 := ITE (%9, %8, %7)
+      %11 := SEXT[9] %10
+      %12 := SEXT[9] X(r[3])
+      X(sum) := ADD (%11, %12)
+  atom controls lo awaits ra, s[0], s[1], s[2], s[3]
+    init = update
+      %1 := EXTRACT[0:0] X(ra)
+      %2 := ITE (%1, X(s[1]), X(s[0]))
+      %3 := ITE (%1, X(s[3]), X(s[2]))
+      %4 := EXTRACT[1:1] X(ra)
+      %5 := ITE (%4, %3, %2)
+      X(lo) := EXTRACT[3:0] %5
+  atom controls b awaits ra, rb, s[0], s[1], s[2], s[3]
+    init = update
+      %1 := EXTRACT[0:0] X(rb)
+      %2 := ITE (%1, X(s[1]), X(s[0]))
+      %3 := ITE (%1, X(s[3]), X(s[2]))
+      %4 := EXTRACT[1:1] X(rb)
+      %5 := ITE (%4, %3, %2)
+      %6 := LSHR (%5, X(ra))
+      X(b) := EXTRACT[0:0] %6

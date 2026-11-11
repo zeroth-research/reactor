@@ -127,6 +127,13 @@ fn sized_source() {
         }
         let file = tmp.join(format!("{}.sv", stem(&path)));
         std::fs::write(&file, &printed).unwrap();
+        // the files of `$readmemb`/`$readmemh`, next to the printed source
+        for data in std::fs::read_dir(path.parent().unwrap()).unwrap() {
+            let data = data.unwrap().path();
+            if data.extension().is_some_and(|e| e != "sv") {
+                std::fs::copy(&data, tmp.join(data.file_name().unwrap())).unwrap();
+            }
+        }
         let back = elab::load_file(&file).unwrap_or_else(|e| panic!("{}:{e}", file.display()));
         let mut walk = vec![&back];
         while let Some(i) = walk.pop() {
@@ -651,9 +658,11 @@ fn run_iverilog(bin: &Path, path: &Path, name: &str, tb: &str) -> Vec<String> {
         "{}",
         String::from_utf8_lossy(&compile.stderr)
     );
+    // `$readmemb`/`$readmemh` files are found next to the design
     let run = Command::new(bin.join("vvp"))
         .args(["-n"])
         .arg(&out)
+        .current_dir(path.parent().unwrap())
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&run.stdout);

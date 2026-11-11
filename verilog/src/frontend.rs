@@ -19,6 +19,16 @@ concatenation (IEEE 1800 forbids it). Instances keep their parameter
 values and connections; [`elab`](crate::elab) elaborates the modules they
 name.
 
+An unpacked array `logic [7:0] m [0:N-1]` (or `[N-1:0]`, `[N]`; one
+dimension, addresses from 0, not as a port) becomes one signal per element,
+`m[0]`, …, `m[N-1]` (see [`ast::Array`]). An element with a constant index
+is that signal; one with a variable index is an [`ast::Elem`]. The only
+`initial` blocks accepted load arrays from files: `$readmemb("f", m);` or
+`$readmemh`, with `f` relative to the directory of the source file and read
+here. A loaded array must never be written: it is a ROM, whose elements are
+constants rather than signals. Arrays are resolved after the whole module
+is read, since the `initial` may come after the uses.
+
 `sv-parser` ignores operator precedence: a chain of binary operators comes
 out nested to the right in source order (`a * b + c` as `a * (b + c)`), and
 `?:` is nested the same way (`a + b ? c : d` as `a + (b ? c : d)`). The
@@ -31,12 +41,13 @@ not affected.
 */
 
 use crate::ast::{
-    BinOp, CaseItem, Cast, Conn, Const, Decl, Dir, Edge, Error, Expr, ExprKind, Index, Instance,
-    Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Reset, Select, Span, Stmt,
-    StmtKind, Ty, UnOp,
+    self, Array, BinOp, CaseItem, Cast, Conn, Const, Decl, Dir, Edge, Elem, Elems, Error, Expr,
+    ExprKind, Index, Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port,
+    Reset, Rom, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::constant::{self, Failure, Literal};
 use crate::value::BitVec;
+use num_bigint::BigUint;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -56,7 +67,9 @@ pub fn parse_file(path: impl AsRef<Path>) -> Result<Module> {
 }
 
 /// Parses `source` and elaborates its top module with the default
-/// parameter values; `path` is used for messages of the preprocessor only.
+/// parameter values; `path` is used for messages of the preprocessor and
+/// to find the files of `$readmemb`/`$readmemh` (relative to its
+/// directory).
 pub fn parse(source: &str, path: impl AsRef<Path>) -> Result<Module> {
     let d = parse_design(source, path)?;
     d.module(&d.top()?, &[])
@@ -70,8 +83,14 @@ pub fn parse_design_file(path: impl AsRef<Path>) -> Result<Design> {
     parse_design(&source, path)
 }
 
-/// Parses `source`; `path` is used for messages of the preprocessor only.
+/// Parses `source`; `path` is used for messages of the preprocessor and to
+/// find the files of `$readmemb`/`$readmemh` (relative to its directory).
 pub fn parse_design(source: &str, path: impl AsRef<Path>) -> Result<Design> {
+    let dir = path
+        .as_ref()
+        .parent()
+        .unwrap_or(Path::new(""))
+        .to_path_buf();
     let defines: HashMap<String, Option<sv::Define>> = HashMap::new();
     let includes: [PathBuf; 0] = [];
     let mut lines = vec![0];
@@ -81,7 +100,7 @@ pub fn parse_design(source: &str, path: impl AsRef<Path>) -> Result<Design> {
             sv::Error::Parse(Some((_, offset))) => Error::new(at(&lines, offset), "syntax error"),
             e => Error::new(Span::default(), e.to_string()),
         })?;
-    let d = Design { tree, lines };
+    let d = Design { tree, lines, dir };
     let mut seen: BTreeMap<Name, Span> = BTreeMap::new();
     let cx = d.cx(&[]);
     for m in d.decls()? {
@@ -109,6 +128,8 @@ fn at(lines: &[usize], offset: usize) -> Span {
 pub struct Design {
     tree: SyntaxTree,
     lines: Vec<usize>,
+    /// The directory of the source file.
+    dir: PathBuf,
 }
 
 impl Design {
@@ -119,6 +140,8 @@ impl Design {
             params: RefCell::new(BTreeMap::new()),
             overrides,
             used: RefCell::new(BTreeSet::new()),
+            dir: &self.dir,
+            arrays: RefCell::new(Vec::new()),
         }
     }
 
@@ -232,6 +255,10 @@ struct Cx<'t> {
     overrides: &'t [Override],
     /// The overrides used so far.
     used: RefCell<BTreeSet<Name>>,
+    /// The directory of the source file.
+    dir: &'t Path,
+    /// The arrays declared so far.
+    arrays: RefCell<Vec<Array>>,
 }
 
 /// Whether the node contains any token; optional syntax that is absent or
@@ -302,6 +329,7 @@ impl Cx<'_> {
             params: Vec::new(),
             ports: Vec::new(),
             decls: Vec::new(),
+            arrays: Vec::new(),
             items: Vec::new(),
         };
         if let Some(params) = params {
@@ -323,6 +351,8 @@ impl Cx<'_> {
         for item in items {
             self.module_item(item, &mut module, body_overridable)?;
         }
+        module.arrays = self.arrays.take();
+        resolve(&mut module)?;
         for o in self.overrides {
             if !self.used.borrow().contains(&o.name) {
                 let msg = if module.params.iter().any(|p| p.name == o.name) {
@@ -702,6 +732,7 @@ impl Cx<'_> {
                 m.items.push(self.always(a)?);
                 Ok(())
             }
+            sv::ModuleCommonItem::InitialConstruct(i) => self.initial(i),
             i => self.unsupported(i),
         }
     }
@@ -1156,9 +1187,13 @@ impl Cx<'_> {
                 let (scope, id, select) = &lv.nodes;
                 self.absent(scope, "package or class scope")?;
                 let id = self.identifier(self.simple_hierarchical(&id.nodes.0)?)?;
-                match self.select(select)? {
-                    None => LvalueKind::Var(id),
-                    Some(sel) => LvalueKind::Select(id, sel),
+                if self.is_array(&id) {
+                    LvalueKind::Elem(Box::new(self.element(id, select, span)?))
+                } else {
+                    match self.select(select)? {
+                        None => LvalueKind::Var(id),
+                        Some(sel) => LvalueKind::Select(id, sel),
+                    }
                 }
             }
             sv::VariableLvalue::Lvalue(c) => LvalueKind::Concat(
@@ -1199,20 +1234,36 @@ impl Cx<'_> {
             _ => {}
         }
         // (name, unpacked dimensions, initializer)
-        let mut add = |id: &sv::Identifier, ty: Ty, dims: bool, init: bool| -> Result<()> {
-            if dims {
-                return self.err(id, "unpacked dimension not supported");
-            }
+        let mut add = |id: &sv::Identifier,
+                       ty: Ty,
+                       dims: Vec<&sv::UnpackedDimension>,
+                       init: bool|
+         -> Result<()> {
             if init {
                 return self.err(
                     id,
                     "declaration with initializer not supported, use `assign`",
                 );
             }
-            m.decls.push(Decl {
-                name: self.identifier(id)?,
+            let name = self.identifier(id)?;
+            let span = self.span(id);
+            let Some(size) = self.array_size(id, &dims)? else {
+                m.decls.push(Decl { name, ty, span });
+                return Ok(());
+            };
+            for k in 0..size {
+                m.decls.push(Decl {
+                    name: ast::element(&name, k),
+                    ty,
+                    span,
+                });
+            }
+            self.arrays.borrow_mut().push(Array {
+                name,
                 ty,
-                span: self.span(id),
+                size,
+                span,
+                rom: None,
             });
             Ok(())
         };
@@ -1227,7 +1278,7 @@ impl Cx<'_> {
                     let ty = self.data_type_or_implicit(ty)?;
                     for a in list.nodes.0.contents() {
                         let (id, dims, init) = &a.nodes;
-                        add(&id.nodes.0, ty, has_tokens(dims), init.is_some())?;
+                        add(&id.nodes.0, ty, dims.iter().collect(), init.is_some())?;
                     }
                     Ok(())
                 }
@@ -1243,7 +1294,22 @@ impl Cx<'_> {
                         match a {
                             sv::VariableDeclAssignment::Variable(a) => {
                                 let (id, dims, init) = &a.nodes;
-                                add(&id.nodes.0, ty, has_tokens(dims), init.is_some())?;
+                                let mut unpacked = Vec::new();
+                                for d in dims {
+                                    match d {
+                                        sv::VariableDimension::UnpackedDimension(d) => {
+                                            unpacked.push(d.as_ref())
+                                        }
+                                        d => {
+                                            return self.err(
+                                                d,
+                                                "dynamic, associative and queue arrays not \
+                                                 supported",
+                                            );
+                                        }
+                                    }
+                                }
+                                add(&id.nodes.0, ty, unpacked, init.is_some())?;
                             }
                             a => return self.unsupported(a),
                         }
@@ -1294,10 +1360,8 @@ impl Cx<'_> {
             }
         };
         let bits = &bits.nodes.0;
-        let sel = match (bits.as_slice(), part) {
-            ([], None) => None,
-            ([b], None) => Some(Select::Bit(index(&b.nodes.1)?)),
-            ([], Some(p)) => Some(match &p.nodes.1 {
+        let range = |p: &sv::ConstantPartSelectRange| -> Result<Select> {
+            Ok(match p {
                 sv::ConstantPartSelectRange::ConstantRange(r) => {
                     let (hi, _, lo) = &r.nodes;
                     Select::Part {
@@ -1309,7 +1373,28 @@ impl Cx<'_> {
                     let (base, op, width) = &r.nodes;
                     self.indexed(index(base)?, op, self.const_int(width)?)
                 }
-            }),
+            })
+        };
+        if self.is_array(&id) {
+            let (i, sel) = match (bits.as_slice(), part) {
+                ([b], None) => (index(&b.nodes.1)?, None),
+                ([b, c], None) => (index(&b.nodes.1)?, Some(Select::Bit(index(&c.nodes.1)?))),
+                ([b], Some(p)) => (index(&b.nodes.1)?, Some(range(&p.nodes.1)?)),
+                _ => return self.err(select, self.whole_array(&id)),
+            };
+            let elem = Elem {
+                array: id,
+                index: i,
+                sel,
+                elems: Elems::Signals(Vec::new()),
+            };
+            let kind = LvalueKind::Elem(Box::new(elem));
+            return Ok(Lvalue { kind, span });
+        }
+        let sel = match (bits.as_slice(), part) {
+            ([], None) => None,
+            ([b], None) => Some(Select::Bit(index(&b.nodes.1)?)),
+            ([], Some(p)) => Some(range(&p.nodes.1)?),
             _ => return self.err(select, "multi-dimensional selects not supported"),
         };
         let kind = match sel {
@@ -1328,21 +1413,220 @@ impl Cx<'_> {
         Ok(match (bits.as_slice(), part) {
             ([], None) => None,
             ([b], None) => Some(Select::Bit(self.index(&b.nodes.1)?)),
-            ([], Some(p)) => Some(match &p.nodes.1 {
-                sv::PartSelectRange::ConstantRange(r) => {
-                    let (hi, _, lo) = &r.nodes;
-                    Select::Part {
-                        hi: self.const_int(hi)?,
-                        lo: self.const_int(lo)?,
-                    }
-                }
-                sv::PartSelectRange::IndexedRange(r) => {
-                    let (base, op, width) = &r.nodes;
-                    self.indexed(self.index(base)?, op, self.const_int(width)?)
-                }
-            }),
+            ([], Some(p)) => Some(self.part(&p.nodes.1)?),
             _ => return self.err(select, "multi-dimensional selects not supported"),
         })
+    }
+
+    /// `x[hi:lo]`, `x[b +: w]` or `x[b -: w]`.
+    fn part(&self, p: &sv::PartSelectRange) -> Result<Select> {
+        Ok(match p {
+            sv::PartSelectRange::ConstantRange(r) => {
+                let (hi, _, lo) = &r.nodes;
+                Select::Part {
+                    hi: self.const_int(hi)?,
+                    lo: self.const_int(lo)?,
+                }
+            }
+            sv::PartSelectRange::IndexedRange(r) => {
+                let (base, op, width) = &r.nodes;
+                self.indexed(self.index(base)?, op, self.const_int(width)?)
+            }
+        })
+    }
+
+    /// Whether `x` is an array declared so far.
+    fn is_array(&self, x: &str) -> bool {
+        self.arrays.borrow().iter().any(|a| a.name == x)
+    }
+
+    /// The message for an array `m` used other than by one element.
+    fn whole_array(&self, m: &str) -> String {
+        format!(
+            "`{m}` is an array: only its elements can be used (`{m}[i]`, `{m}[i][3:0]`); \
+             slices and whole arrays are not supported"
+        )
+    }
+
+    /// The select `[i]`, `[i][j]` or `[i][…]` after the name of an array
+    /// `m`: an element (resolved after the module, see [`resolve`]).
+    fn element(&self, m: Name, select: &sv::Select, span: Span) -> Result<Elem> {
+        let (member, bits, part) = &select.nodes;
+        self.absent(member, "member select")?;
+        let (i, sel) = match (bits.nodes.0.as_slice(), part) {
+            ([b], None) => (self.index(&b.nodes.1)?, None),
+            ([b, c], None) => (
+                self.index(&b.nodes.1)?,
+                Some(Select::Bit(self.index(&c.nodes.1)?)),
+            ),
+            ([b], Some(p)) => (self.index(&b.nodes.1)?, Some(self.part(&p.nodes.1)?)),
+            _ => return Err(Error::new(span, self.whole_array(&m))),
+        };
+        Ok(Elem {
+            array: m,
+            index: i,
+            sel,
+            elems: Elems::Signals(Vec::new()),
+        })
+    }
+
+    /// The number of elements of a declaration with unpacked dimensions
+    /// `dims` (`None` if there are none): one dimension `[0:N-1]`,
+    /// `[N-1:0]` or `[N]`.
+    fn array_size(
+        &self,
+        id: &sv::Identifier,
+        dims: &[&sv::UnpackedDimension],
+    ) -> Result<Option<usize>> {
+        let d = match dims {
+            [] => return Ok(None),
+            [d] => *d,
+            [_, d, ..] => {
+                return self.err(*d, "arrays with several unpacked dimensions not supported");
+            }
+        };
+        let size = match d {
+            sv::UnpackedDimension::Range(r) => {
+                let (a, _, b) = &r.nodes.0.nodes.1.nodes;
+                let (a, b) = (self.const_int(a)?, self.const_int(b)?);
+                if a.min(b) != 0 {
+                    return self.err(
+                        d,
+                        format!(
+                            "array range `[{a}:{b}]` not supported: addresses must start at 0 \
+                             (`[0:N-1]`, `[N-1:0]` or `[N]`)"
+                        ),
+                    );
+                }
+                a.max(b) + 1
+            }
+            sv::UnpackedDimension::Expression(e) => self.const_int(&e.nodes.0.nodes.1)?,
+        };
+        if size == 0 {
+            return self.err(id, "an array needs at least one element");
+        }
+        Ok(Some(size))
+    }
+
+    /// `initial` with `$readmemb("file", m);` or `$readmemh(…)` calls only
+    /// (one, or several in `begin … end`): the contents of ROMs.
+    fn initial(&self, i: &sv::InitialConstruct) -> Result<()> {
+        let only = "`initial` may only load arrays from files (`$readmemb(\"file\", m);`): \
+                    initial values are not supported yet";
+        let (_, s) = &i.nodes;
+        let stmts: Vec<&sv::Statement> = match s {
+            sv::StatementOrNull::Statement(s) => match &s.nodes.2 {
+                sv::StatementItem::SeqBlock(b) => {
+                    let (_, label, decls, stmts, _, end_label) = &b.nodes;
+                    self.absent(label, "block name")?;
+                    self.absent(end_label, "block name")?;
+                    if let Some(d) = decls.first() {
+                        return self.err(d, only);
+                    }
+                    let mut out = Vec::new();
+                    for s in stmts {
+                        match s {
+                            sv::StatementOrNull::Statement(s) => out.push(s.as_ref()),
+                            sv::StatementOrNull::Attribute(a) => self.absent(a, "attribute")?,
+                        }
+                    }
+                    out
+                }
+                _ => vec![s],
+            },
+            sv::StatementOrNull::Attribute(a) => {
+                self.absent(a, "attribute")?;
+                Vec::new()
+            }
+        };
+        for s in stmts {
+            let (label, attrs, item) = &s.nodes;
+            self.absent(label, "statement label")?;
+            self.absent(attrs, "attribute")?;
+            let sv::StatementItem::SubroutineCallStatement(c) = item else {
+                return self.err(s, only);
+            };
+            let sv::SubroutineCallStatement::SubroutineCall(c) = c.as_ref() else {
+                return self.err(c.as_ref(), only);
+            };
+            let sv::SubroutineCall::SystemTfCall(call) = &c.0 else {
+                return self.err(&c.0, only);
+            };
+            let (name, args) = match call.as_ref() {
+                sv::SystemTfCall::ArgOptionl(a) => {
+                    let (name, args) = &a.nodes;
+                    match args.as_ref().map(|a| &a.nodes.1) {
+                        Some(sv::ListOfArguments::Ordered(a)) if a.nodes.1.is_empty() => {
+                            (name, a.nodes.0.contents())
+                        }
+                        _ => return self.err(&c.0, only),
+                    }
+                }
+                sv::SystemTfCall::ArgExpression(a) => {
+                    let (name, args) = &a.nodes;
+                    let (args, clocking) = &args.nodes.1;
+                    if clocking.is_some() {
+                        return self.err(&c.0, only);
+                    }
+                    (name, args.contents())
+                }
+                sv::SystemTfCall::ArgDataType(_) => return self.err(&c.0, only),
+            };
+            let task = self.text(name);
+            let binary = match task.as_str() {
+                "$readmemb" => true,
+                "$readmemh" => false,
+                _ => return self.err(&c.0, only),
+            };
+            let span = self.span(&c.0);
+            let (file, m) = match args.as_slice() {
+                [Some(f), Some(m)] => (f, m),
+                [_, _, _, ..] => {
+                    return self.err(
+                        &c.0,
+                        format!("`{task}` with start and end addresses not supported"),
+                    );
+                }
+                _ => return self.err(&c.0, format!("`{task}` takes a file name and an array")),
+            };
+            let file_text = self.text(file);
+            let file_name = match file {
+                sv::Expression::Primary(p)
+                    if matches!(
+                        p.as_ref(),
+                        sv::Primary::PrimaryLiteral(l)
+                            if matches!(l.as_ref(), sv::PrimaryLiteral::StringLiteral(_))
+                    ) && !file_text.contains('\\') =>
+                {
+                    file_text.trim_matches('"').to_string()
+                }
+                f => return self.err(f, format!("the file of `{task}` must be a string literal")),
+            };
+            let m_text = self.text(m);
+            let mut arrays = self.arrays.borrow_mut();
+            let Some(array) = arrays.iter_mut().find(|a| a.name == m_text) else {
+                return self.err(m, format!("`{m_text}` is not an array declared before"));
+            };
+            if let Some(r) = &array.rom {
+                return self.err(&c.0, format!("`{m_text}` is already loaded at {}", r.span));
+            }
+            let path = self.dir.join(&file_name);
+            let text = std::fs::read_to_string(&path).map_err(|e| {
+                Error::new(
+                    self.span(file),
+                    format!("cannot read `{}`: {e}", path.display()),
+                )
+            })?;
+            let values = readmem(&text, binary, array)
+                .map_err(|msg| Error::new(span, format!("{}: {msg}", path.display())))?;
+            array.rom = Some(Rom {
+                binary,
+                file: file_name,
+                values,
+                span,
+            });
+        }
+        Ok(())
     }
 
     /// `[base +: width]` or `[base -: width]`.
@@ -1502,6 +1786,13 @@ impl Cx<'_> {
                 let (scope, id, select) = &h.nodes;
                 self.absent(scope, "package or class scope")?;
                 let id = self.identifier(self.simple_hierarchical(id)?)?;
+                if self.is_array(&id) {
+                    let elem = self.element(id, select, span)?;
+                    return Ok(Leaf::Expr(Expr {
+                        kind: ExprKind::Elem(Box::new(elem)),
+                        span,
+                    }));
+                }
                 let param = self.params.borrow().get(&id).cloned();
                 match (self.select(select)?, param) {
                     (None, Some(c)) => {
@@ -1922,6 +2213,254 @@ impl Op {
     fn span(&self) -> Span {
         match self {
             Op::Bin(_, s) | Op::Pow(s) | Op::Cond(_, s) => *s,
+        }
+    }
+}
+
+/// The contents of the array `m` from the text of a `$readmemb` (`binary`)
+/// or `$readmemh` file: words separated by white space, `//` and `/* */`
+/// comments, `_` in words ignored, `@a` (hexadecimal) setting the address
+/// of the next word. Every element must get a value, which must fit the
+/// element; x and z digits are not supported (2-state).
+fn readmem(text: &str, binary: bool, m: &Array) -> std::result::Result<Vec<BitVec>, String> {
+    let mut values: Vec<Option<BitVec>> = vec![None; m.size];
+    let mut address = 0usize;
+    let mut rest = text;
+    let mut line = 1;
+    loop {
+        // skip white space and comments
+        let trimmed = rest.trim_start();
+        line += rest[..rest.len() - trimmed.len()].matches('\n').count();
+        rest = trimmed;
+        if let Some(r) = rest.strip_prefix("//") {
+            rest = r.find('\n').map_or("", |k| &r[k..]);
+            continue;
+        }
+        if let Some(r) = rest.strip_prefix("/*") {
+            let k = r
+                .find("*/")
+                .ok_or(format!("line {line}: comment not closed"))?;
+            line += r[..k].matches('\n').count();
+            rest = &r[k + 2..];
+            continue;
+        }
+        if rest.is_empty() {
+            break;
+        }
+        let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let word = &rest[..end];
+        rest = &rest[end..];
+        let digits: String = word.chars().filter(|c| *c != '_').collect();
+        if let Some(a) = digits.strip_prefix('@') {
+            address = usize::from_str_radix(a, 16)
+                .map_err(|_| format!("line {line}: bad address `{word}`"))?;
+            continue;
+        }
+        if digits.chars().any(|c| "xXzZ?".contains(c)) {
+            return Err(format!(
+                "line {line}: `{word}` has x/z digits (not supported: values are 2-state)"
+            ));
+        }
+        let value =
+            BigUint::parse_bytes(digits.as_bytes(), if binary { 2 } else { 16 }).ok_or(format!(
+                "line {line}: `{word}` is no {} number",
+                if binary { "binary" } else { "hexadecimal" }
+            ))?;
+        if value.bits() as usize > m.ty.width {
+            return Err(format!(
+                "line {line}: `{word}` does not fit the {} bits of an element of `{}`",
+                m.ty.width, m.name
+            ));
+        }
+        let slot = values.get_mut(address).ok_or(format!(
+            "line {line}: `{word}` would go to address {address}, but `{}` has addresses 0 to {}",
+            m.name,
+            m.size - 1
+        ))?;
+        *slot = Some(BitVec::wrap(m.ty.width, value));
+        address += 1;
+    }
+    match values.iter().position(Option::is_none) {
+        Some(k) => Err(format!(
+            "no value for `{}` (every element of a loaded array needs one)",
+            ast::element(&m.name, k)
+        )),
+        None => Ok(values.into_iter().flatten().collect()),
+    }
+}
+
+/// Resolves the elements of arrays in `m` once all of its items are known
+/// (an array is a ROM if `initial` loads it, possibly after its uses): a
+/// ROM's elements are its contents, and it must not be written; the
+/// element `m[3]` of any other array is the signal `m[3]`, and `m[i]` with
+/// a variable index any of its element signals.
+fn resolve(m: &mut Module) -> Result<()> {
+    let arrays: BTreeMap<Name, Array> = m
+        .arrays
+        .iter()
+        .map(|a| (a.name.clone(), a.clone()))
+        .collect();
+    m.decls
+        .retain(|d| match arrays.get(ast::array_of(&d.name)) {
+            Some(a) => a.rom.is_none(),
+            None => true,
+        });
+    let r = Resolver { arrays: &arrays };
+    for item in &mut m.items {
+        match item {
+            Item::Assign { lhs, rhs, .. } => {
+                r.lvalue(lhs)?;
+                r.expr(rhs)?;
+            }
+            Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => r.stmt(body)?,
+            Item::Instance(i) => {
+                for c in &mut i.conns {
+                    if let Some(e) = &mut c.actual {
+                        r.expr(e)?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+struct Resolver<'a> {
+    arrays: &'a BTreeMap<Name, Array>,
+}
+
+impl Resolver<'_> {
+    fn stmt(&self, s: &mut Stmt) -> Result<()> {
+        match &mut s.kind {
+            StmtKind::Block(stmts) => stmts.iter_mut().try_for_each(|s| self.stmt(s)),
+            StmtKind::If(c, a, b) => {
+                self.expr(c)?;
+                self.stmt(a)?;
+                self.stmt(b)
+            }
+            StmtKind::Case {
+                sel,
+                items,
+                default,
+            } => {
+                self.expr(sel)?;
+                for item in items {
+                    item.labels.iter_mut().try_for_each(|l| self.expr(l))?;
+                    self.stmt(&mut item.body)?;
+                }
+                match default {
+                    Some(d) => self.stmt(d),
+                    None => Ok(()),
+                }
+            }
+            StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
+                self.lvalue(lhs)?;
+                self.expr(rhs)
+            }
+        }
+    }
+
+    fn select(&self, sel: &mut Select) -> Result<()> {
+        match sel {
+            Select::Bit(Index::Expr(e))
+            | Select::Up(Index::Expr(e), _)
+            | Select::Down(Index::Expr(e), _) => self.expr(e),
+            _ => Ok(()),
+        }
+    }
+
+    /// Resolves the element `e` at `span`: the signal of a constant
+    /// index of an array that is no ROM, else `None` with the elements
+    /// filled in.
+    fn elem(&self, e: &mut Elem, span: Span, written: bool) -> Result<Option<Name>> {
+        let a = &self.arrays[&e.array];
+        if let Index::Expr(i) = &mut e.index {
+            self.expr(i)?;
+        }
+        if let Some(sel) = &mut e.sel {
+            self.select(sel)?;
+        }
+        if let Index::Const(k) = e.index
+            && k >= a.size
+        {
+            return Err(Error::new(
+                span,
+                format!(
+                    "`{e}` out of range: `{}` has addresses 0 to {}",
+                    a.name,
+                    a.size - 1
+                ),
+            ));
+        }
+        match (&a.rom, &e.index) {
+            (Some(r), _) if written => Err(Error::new(
+                span,
+                format!(
+                    "`{}` is loaded by `{}` at {} and assigned here: a loaded array must not \
+                     be written (initial contents of written arrays are not supported yet)",
+                    a.name,
+                    if r.binary { "$readmemb" } else { "$readmemh" },
+                    r.span
+                ),
+            )),
+            (Some(r), _) => {
+                e.elems = Elems::Consts(a.ty, r.values.clone());
+                Ok(None)
+            }
+            (None, Index::Const(k)) => Ok(Some(ast::element(&a.name, *k))),
+            (None, Index::Expr(_)) => {
+                e.elems = Elems::Signals((0..a.size).map(|k| ast::element(&a.name, k)).collect());
+                Ok(None)
+            }
+        }
+    }
+
+    fn lvalue(&self, l: &mut Lvalue) -> Result<()> {
+        match &mut l.kind {
+            LvalueKind::Var(_) => Ok(()),
+            LvalueKind::Select(_, sel) => self.select(sel),
+            LvalueKind::Concat(ls) => ls.iter_mut().try_for_each(|l| self.lvalue(l)),
+            LvalueKind::Elem(e) => {
+                if let Some(y) = self.elem(e, l.span, true)? {
+                    l.kind = match e.sel.take() {
+                        None => LvalueKind::Var(y),
+                        Some(sel) => LvalueKind::Select(y, sel),
+                    };
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn expr(&self, e: &mut Expr) -> Result<()> {
+        match &mut e.kind {
+            ExprKind::Lit { .. }
+            | ExprKind::Const { .. }
+            | ExprKind::Var(_)
+            | ExprKind::Fill(_) => Ok(()),
+            ExprKind::Unary(_, a) | ExprKind::Cast(_, a) | ExprKind::Resize(_, a) => self.expr(a),
+            ExprKind::Binary(_, a, b) => {
+                self.expr(a)?;
+                self.expr(b)
+            }
+            ExprKind::Cond(c, a, b) => {
+                self.expr(c)?;
+                self.expr(a)?;
+                self.expr(b)
+            }
+            ExprKind::Concat(es) | ExprKind::Repl(_, es) => {
+                es.iter_mut().try_for_each(|e| self.expr(e))
+            }
+            ExprKind::Select(_, sel) => self.select(sel),
+            ExprKind::Elem(el) => {
+                if let Some(y) = self.elem(el, e.span, false)? {
+                    e.kind = match el.sel.take() {
+                        None => ExprKind::Var(y),
+                        Some(sel) => ExprKind::Select(y, sel),
+                    };
+                }
+                Ok(())
+            }
         }
     }
 }

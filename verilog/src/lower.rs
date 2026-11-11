@@ -28,6 +28,8 @@ which has no `>`, `>=` and no logical operators:
 | `{n{e}}` | `n` copies of `e`'s wire, nested as above |
 | `x[h:l]`, `x[c]`, `x[c +: w]`, … (constant) | `Extract`, nothing for all bits |
 | `x[i]`, `x[i +: w]` (variable) | `Extract{w-1, 0}(LShr(x, i))` |
+| `m[i]` (element of an array, variable index) | a tree of `Ite`s on the bits of `i`, from bit 0, over the elements `m[0]`, `m[1]`, … |
+| target `m[i] = e` (element, variable index) | for each element `m[k]`: `m[k] := Ite(Eq(i, k), new, m[k])`, with `new` the element after the assignment |
 | target `x[i] = e`, `x[i +: w] = e` (variable) | `x := Or(And(x, Not(Shl(ones, i))), Shl(ZExt(e), i))`, `ones` = `w` one bits |
 | target `x[i -: w] = e` (variable) | the same on `{x, (w-1)'0}`, then `Extract` of the top bits |
 | `N'(e)` | `SExt`/`ZExt` (as `e`'s signedness says) when widening, `Extract` when narrowing |
@@ -152,6 +154,15 @@ value). A read of bits of a signal of the block, and the final value,
 concatenate the segments; a merge puts an `Ite` on each run of bits that
 differs between the branches.
 
+The elements of an array are signals like any other, so an array with
+`N` elements is `N` variables `m[0]`, … (none for a ROM, whose elements are
+constants). An element read with a variable index picks among them with a
+tree of `Ite`s on the bits of the index, and an assignment to one updates
+each element the index can pick, with `Ite` on whether the index is its
+address (an index that is no address writes nothing). The block owning the
+array therefore controls all its elements, and a block reading `m[i]`
+reads or awaits all of them.
+
 `case (s) l1, l2: a … default: d endcase` becomes a chain of `Ite`s on
 `s == l1 | s == l2`, …, so the first matching item wins; without `default`,
 no item matching leaves the map as it was.
@@ -183,8 +194,8 @@ atoms of the composed modules and reported with the signals on it.
 */
 
 use crate::ast::{
-    self, BinOp, Dir, Edge, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Name, Reset, Span,
-    Stmt, StmtKind, Ty, UnOp,
+    self, BinOp, Dir, Edge, Elems, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Name,
+    Reset, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::value::BitVec;
@@ -1003,6 +1014,7 @@ fn lvalue_targets<'l>(l: &'l Lvalue, whole: &mut Vec<&'l Name>, targets: &mut Ve
             targets.push(y);
         }
         LvalueKind::Select(y, _) => targets.push(y),
+        LvalueKind::Elem(e) => targets.extend(e.signals()),
         LvalueKind::Concat(ls) => ls.iter().for_each(|l| lvalue_targets(l, whole, targets)),
     }
 }
@@ -1131,20 +1143,62 @@ impl<'a> Builder<'a> {
         let pieces = typing::pieces(self.env, lhs);
         let mut indices = Vec::new();
         for p in &pieces {
-            indices.push(match p.variable {
+            let inner = match p.variable {
                 Some(v) => Some((self.expr(v.index)?.0, v.below)),
                 None => None,
-            });
+            };
+            let elem = match p.elem {
+                Some(e) => Some((self.expr(e.index)?.0, e.elems)),
+                None => None,
+            };
+            indices.push((inner, elem));
         }
         let mut top = w.dtype().width();
-        for (p, index) in pieces.iter().zip(indices) {
+        for (p, (inner, elem)) in pieces.iter().zip(indices) {
             top -= p.width();
-            match index {
-                None => self.write(&p.name, p.hi, p.lo, w, top),
-                Some((i, below)) => self.write_at(&p.name, i, below, p.width(), w, top, span)?,
+            let Some((i, elems)) = elem else {
+                self.write_piece(&p.name, p, inner, w, top, span)?;
+                continue;
+            };
+            // every element the index can pick: its value after the
+            // assignment if the index is its address, else its old value
+            let iw = i.dtype().width();
+            for (k, y) in elems.iter().enumerate() {
+                if iw < usize::BITS as usize && k >> iw != 0 {
+                    break;
+                }
+                let n = self.env[y].ty.width;
+                let old = self.read_own(y, n - 1, 0, span)?;
+                self.write_piece(y, p, inner, w, top, span)?;
+                let new = self.read_own(y, n - 1, 0, span)?;
+                let address = self.emit(SvOp::Lit(BitVec::wrap(iw, k)), &[], Sort(iw), span)?;
+                let hit = self.emit(SvOp::Eq, &[i, address], Sort(1), span)?;
+                let value = self.emit(SvOp::Ite, &[hit, new, old], Sort(n), span)?;
+                self.write(y, n - 1, 0, value, 0);
             }
         }
         Ok(())
+    }
+
+    /// Writes the bits of `w` from `wlo` upwards to the bits of the signal
+    /// `y` that the piece `p` gives, with the variable index `inner` (and
+    /// its offset) of a select if there is one.
+    fn write_piece(
+        &mut self,
+        y: &Name,
+        p: &typing::Piece,
+        inner: Option<(Wire, usize)>,
+        w: Wire,
+        wlo: usize,
+        span: Span,
+    ) -> Result<()> {
+        match inner {
+            None => {
+                self.write(y, p.hi, p.lo, w, wlo);
+                Ok(())
+            }
+            Some((i, below)) => self.write_at(y, i, below, p.width(), w, wlo, span),
+        }
     }
 
     /// Makes the `width` bits of the signal `y` from bit `i - below` upwards
@@ -1631,6 +1685,41 @@ impl<'a> Builder<'a> {
                 }
                 Ok((acc, t))
             }
+            ExprKind::Elem(el) => {
+                let t = typing::elem_type(self.env, el);
+                let w = match &el.index {
+                    Index::Const(k) => self.element(&el.elems, *k, span)?,
+                    Index::Expr(i) => {
+                        let (wi, ti) = self.expr(i)?;
+                        typing::element(el, Some(ti), span)?;
+                        // pairs of neighbours picked by bit 0, pairs of
+                        // these by bit 1, …
+                        let mut level = Vec::new();
+                        for k in 0..1usize << ti.width {
+                            level.push(self.element(&el.elems, k, span)?);
+                        }
+                        for b in 0..ti.width {
+                            let bit = if ti.width == 1 {
+                                wi
+                            } else {
+                                let op = SvOp::Extract { hi: b, lo: b };
+                                self.emit(op, &[wi], Sort(1), span)?
+                            };
+                            let mut next = Vec::new();
+                            for pair in level.chunks(2) {
+                                let reads = [bit, pair[1], pair[0]];
+                                next.push(self.emit(SvOp::Ite, &reads, Sort(t.width), span)?);
+                            }
+                            level = next;
+                        }
+                        level[0]
+                    }
+                };
+                match &el.sel {
+                    None => Ok((w, t)),
+                    Some(sel) => self.pick(w, t, &el.name(), sel, span),
+                }
+            }
             ExprKind::Select(x, sel) => {
                 let tx = typing::lookup(self.env, x, span)?.ty;
                 let index = match sel.index() {
@@ -1704,6 +1793,55 @@ impl<'a> Builder<'a> {
                 Ok((w, t))
             }
         }
+    }
+
+    /// The wire holding the element at `address` of an array with the
+    /// elements `elems`.
+    fn element(&mut self, elems: &Elems, address: usize, span: Span) -> Result<Wire> {
+        match elems {
+            Elems::Signals(ys) => Ok(self.read(&ys[address], None, span)?.0),
+            Elems::Consts(ty, values) => {
+                let op = SvOp::Lit(values[address].clone());
+                self.emit(op, &[], Sort(ty.width), span)
+            }
+        }
+    }
+
+    /// The wire holding the bits that `sel` selects from `wx`, the value
+    /// `name` of type `tx`, and their type.
+    fn pick(
+        &mut self,
+        wx: Wire,
+        tx: Ty,
+        name: &str,
+        sel: &Select,
+        span: Span,
+    ) -> Result<(Wire, Ty)> {
+        let index = match sel.index() {
+            Some(i) => Some(self.expr(i)?),
+            None => None,
+        };
+        let t = typing::select(name, tx, sel, index.map(|i| i.1), span)?;
+        let w = match index {
+            None => {
+                let (hi, lo) = sel.constant().flatten().expect("constant");
+                if lo > 0 || hi + 1 < tx.width {
+                    self.emit(SvOp::Extract { hi, lo }, &[wx], Sort(t.width), span)?
+                } else {
+                    wx
+                }
+            }
+            // the lowest selected bit is the index: `-:` has width 1
+            Some((wi, _)) => {
+                let shifted = self.emit(SvOp::LShr, &[wx, wi], Sort(tx.width), span)?;
+                let op = SvOp::Extract {
+                    hi: t.width - 1,
+                    lo: 0,
+                };
+                self.emit(op, &[shifted], Sort(t.width), span)?
+            }
+        };
+        Ok((w, t))
     }
 
     /// The wire holding `{e1, e2, …}`, as nested binary `Concat`s

@@ -111,8 +111,11 @@ pub struct Module {
     pub params: Vec<Param>,
     /// The ports of the ANSI header, in order.
     pub ports: Vec<Port>,
-    /// The internal signals.
+    /// The internal signals; the elements of an array are signals `m[0]`,
+    /// `m[1]`, … of their own (see [`Array`]).
     pub decls: Vec<Decl>,
+    /// The unpacked arrays, in source order.
+    pub arrays: Vec<Array>,
     pub items: Vec<Item>,
 }
 
@@ -165,6 +168,44 @@ pub struct Decl {
     pub name: Name,
     pub ty: Ty,
     pub span: Span,
+}
+
+/// An unpacked array `logic [7:0] m [0:N-1]` (also `[N-1:0]` or `[N]`):
+/// `size` elements of type `ty`, at the addresses 0 to `size - 1`. Each
+/// element is a signal of its own, named by its address: `m[0]`, … (`[`
+/// cannot occur in a SystemVerilog identifier, so these names are new),
+/// declared among the internal signals, unless the array is a ROM.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Array {
+    pub name: Name,
+    pub ty: Ty,
+    pub size: usize,
+    pub span: Span,
+    /// The contents, if an `initial $readmemb`/`$readmemh` loads it; such
+    /// an array is never written, so its elements are constants and no
+    /// signals.
+    pub rom: Option<Rom>,
+}
+
+/// The contents of a ROM, loaded by `initial $readmemb(file, m)` (`binary`)
+/// or `$readmemh`; `file` as written, `span` the position of the task.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Rom {
+    pub binary: bool,
+    pub file: String,
+    pub values: Vec<BitVec>,
+    pub span: Span,
+}
+
+/// The array an element signal `m[3]` belongs to (`m`), or the name itself
+/// for any other signal.
+pub fn array_of(name: &str) -> &str {
+    name.split('[').next().unwrap_or(name)
+}
+
+/// The name of the element at `address` of the array `m`: `m[3]`.
+pub fn element(m: &str, address: usize) -> Name {
+    format!("{m}[{address}]")
 }
 
 /// `parameter` or `localparam`, with its value.
@@ -417,6 +458,10 @@ pub enum LvalueKind {
     Select(Name, Select),
     /// `{l1, l2, …}`: `l1` takes the high bits of the value.
     Concat(Vec<Lvalue>),
+    /// `m[i]` or `m[i][…]`, an element of an array with a variable index;
+    /// only in a block. (With a constant index, the element is a signal:
+    /// [`Var`](Self::Var) or [`Select`](Self::Select) of `m[3]`.)
+    Elem(Box<Elem>),
 }
 
 impl Lvalue {
@@ -429,6 +474,14 @@ impl Lvalue {
                 }
             }
             LvalueKind::Concat(ls) => ls.iter().for_each(|l| l.targets(out)),
+            // any element may be written
+            LvalueKind::Elem(e) => {
+                for y in e.signals() {
+                    if !out.contains(&y) {
+                        out.push(y);
+                    }
+                }
+            }
         }
     }
 
@@ -438,6 +491,7 @@ impl Lvalue {
             LvalueKind::Var(_) => {}
             LvalueKind::Select(_, sel) => sel.reads(out),
             LvalueKind::Concat(ls) => ls.iter().for_each(|l| l.reads(out)),
+            LvalueKind::Elem(e) => e.index_reads(out),
         }
     }
 }
@@ -582,6 +636,11 @@ pub enum ExprKind {
     Repl(usize, Vec<Expr>),
     /// `x[…]`: selects apply to signals only.
     Select(Name, Select),
+    /// `m[i]` or `m[i][…]`: an element of an array with a variable index,
+    /// or any element of a ROM. (With a constant index, an element of
+    /// another array is a signal: [`Var`](Self::Var) or
+    /// [`Select`](Self::Select) of `m[3]`.)
+    Elem(Box<Elem>),
     /// `N'(e)`, `signed'(e)`, `unsigned'(e)`, `$signed(e)`, `$unsigned(e)`.
     Cast(Cast, Box<Expr>),
     /// `'0` (false) or `'1` (true): every bit 0 or 1, at the width of the
@@ -593,6 +652,69 @@ pub enum ExprKind {
     /// it with copies of its top bit if the type is signed and with zeros
     /// if not, taking the signedness of the type.
     Resize(Ty, Box<Expr>),
+}
+
+/// `m[i]` or `m[i][…]`: the element at address `i` of the array `m`, or
+/// some of its bits.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Elem {
+    pub array: Name,
+    /// The address: a constant only for a ROM.
+    pub index: Index,
+    /// A select of bits of the element.
+    pub sel: Option<Select>,
+    pub elems: Elems,
+}
+
+/// The elements of an array, by address from 0.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Elems {
+    /// The element signals `m[0]`, `m[1]`, …
+    Signals(Vec<Name>),
+    /// The contents of a ROM, all of the type `Ty`.
+    Consts(Ty, Vec<BitVec>),
+}
+
+impl Elem {
+    /// The number of elements.
+    pub fn size(&self) -> usize {
+        match &self.elems {
+            Elems::Signals(ys) => ys.len(),
+            Elems::Consts(_, vs) => vs.len(),
+        }
+    }
+
+    /// The element signals (none for a ROM).
+    pub fn signals(&self) -> Vec<&Name> {
+        match &self.elems {
+            Elems::Signals(ys) => ys.iter().collect(),
+            Elems::Consts(..) => Vec::new(),
+        }
+    }
+
+    /// The element without the select, as written: `m[i]`.
+    pub fn name(&self) -> String {
+        format!("{}[{}]", self.array, self.index)
+    }
+
+    /// The variable index expression, if any.
+    pub fn index(&self) -> Option<&Expr> {
+        match &self.index {
+            Index::Expr(e) => Some(e),
+            Index::Const(_) => None,
+        }
+    }
+
+    /// Adds the signals read by the index and by a variable index of the
+    /// select to `out`.
+    fn index_reads<'s>(&'s self, out: &mut Vec<(&'s Name, Span)>) {
+        if let Some(i) = self.index() {
+            i.reads(out);
+        }
+        if let Some(sel) = &self.sel {
+            sel.reads(out);
+        }
+    }
 }
 
 /// The bits picked by `x[…]`, as written.
@@ -799,6 +921,11 @@ impl Expr {
                 out.push((x, self.span));
                 sel.reads(out);
             }
+            // any element may be read
+            ExprKind::Elem(e) => {
+                out.extend(e.signals().into_iter().map(|y| (y, self.span)));
+                e.index_reads(out);
+            }
             ExprKind::Cast(_, e) | ExprKind::Resize(_, e) => e.reads(out),
             ExprKind::Fill(_) => {}
         }
@@ -821,6 +948,7 @@ impl fmt::Display for Expr {
             ExprKind::Concat(es) => write!(f, "{{{}}}", list(es)),
             ExprKind::Repl(n, es) => write!(f, "{{{n}{{{}}}}}", list(es)),
             ExprKind::Select(x, sel) => write!(f, "{x}{sel}"),
+            ExprKind::Elem(e) => write!(f, "{e}"),
             ExprKind::Cast(Cast::Size(n), e) => write!(f, "{n}'({e})"),
             ExprKind::Cast(Cast::Signed, e) => write!(f, "signed'({e})"),
             ExprKind::Cast(Cast::Unsigned, e) => write!(f, "unsigned'({e})"),
@@ -848,6 +976,17 @@ impl fmt::Display for Index {
     }
 }
 
+/// `m[i]`, `m[i][3:0]`
+impl fmt::Display for Elem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}[{}]", self.array, self.index)?;
+        match &self.sel {
+            Some(sel) => write!(f, "{sel}"),
+            None => Ok(()),
+        }
+    }
+}
+
 impl fmt::Display for Select {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -865,6 +1004,7 @@ impl fmt::Display for Lvalue {
             LvalueKind::Var(y) => write!(f, "{y}"),
             LvalueKind::Select(y, sel) => write!(f, "{y}{sel}"),
             LvalueKind::Concat(ls) => write!(f, "{{{}}}", list(ls)),
+            LvalueKind::Elem(e) => write!(f, "{e}"),
         }
     }
 }

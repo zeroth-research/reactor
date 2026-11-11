@@ -39,13 +39,20 @@ a variable index is accepted only if every value it can take is in range
 (`a[i]` with `i` of 3 bits needs `a` of at least 8 bits; [`select`], which
 sizing calls with the type of the index).
 
-Assignment targets are signals, selects of signals, and concatenations of
-targets ([`pieces`]). An `assign` drives whole signals, so its selects are
+The elements of an unpacked array are signals of their own (`m[3]`); an
+element read with a variable index, `m[i]`, is accepted only if every value
+of the index is an address of the array ([`element`]), like a select. An
+array has one driver as a whole, like a vector.
+
+Assignment targets are signals, selects of signals, elements of arrays
+with a variable index, and concatenations of targets ([`pieces`]). An `assign` drives whole signals, so its selects are
 constant. In a block, a select may have a variable (unsigned) index; then
 any index value is fine: the bits of the select outside the signal are not
 written, as the standard says, so `a[i] <= d` with `i` beyond the top bit
 of `a` changes nothing. Since the bits it writes are not known statically,
-such a select must be the only piece of its signal in a concatenation.
+such a select must be the only piece of its signal in a concatenation. The
+same holds for an element with a variable index: an index that is no
+address writes nothing.
 
 Parameters have been substituted by the frontend: a parameter is a
 constant of its type, an unsized decimal literal an `int`.
@@ -63,8 +70,8 @@ to the read.
 */
 
 use crate::ast::{
-    BinOp, Cast, Dir, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Name, Select,
-    Span, Stmt, StmtKind, Ty, UnOp,
+    self, BinOp, Cast, Dir, Elem, Elems, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind,
+    Module, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use std::collections::{BTreeMap, BTreeSet};
@@ -88,6 +95,7 @@ pub fn env(m: &Module) -> Result<Env> {
     // all declared names, in source order, with the signal if it is one
     let params = m.params.iter().map(|p| (&p.name, p.span, None));
     let insts = m.instances().map(|i| (&i.name, i.span, None));
+    let arrays = m.arrays.iter().map(|a| (&a.name, a.span, None));
     let ports = m.ports.iter().map(|p| (&p.decl, Some(p.dir)));
     let decls = m.decls.iter().map(|d| (d, None));
     let sigs = ports.chain(decls).map(|(d, dir)| {
@@ -98,7 +106,23 @@ pub fn env(m: &Module) -> Result<Env> {
         };
         (&d.name, d.span, Some(sig))
     });
-    let mut names: Vec<_> = params.chain(insts).chain(sigs).collect();
+    // the elements of an array are named after it, so only its name counts
+    let sigs = sigs.filter(|(name, ..)| !name.contains('['));
+    let elements = m
+        .ports
+        .iter()
+        .map(|p| &p.decl)
+        .chain(&m.decls)
+        .filter(|d| d.name.contains('['))
+        .map(|d| {
+            let sig = Sig {
+                ty: d.ty,
+                dir: None,
+                span: d.span,
+            };
+            (d.name.clone(), sig)
+        });
+    let mut names: Vec<_> = params.chain(insts).chain(arrays).chain(sigs).collect();
     names.sort_by_key(|(_, span, _)| *span);
     let mut seen: BTreeMap<&Name, Span> = BTreeMap::new();
     let mut env = Env::new();
@@ -113,6 +137,7 @@ pub fn env(m: &Module) -> Result<Env> {
             env.insert(name.clone(), sig);
         }
     }
+    env.extend(elements);
     Ok(env)
 }
 
@@ -130,7 +155,8 @@ pub fn env(m: &Module) -> Result<Env> {
 /// be mixed (§6.5). The standard applies both rules per longest static
 /// prefix, so different bits of a vector may be driven from different
 /// places; we apply them per whole signal, which is stricter: assigning
-/// `y[3:0]` and `y[7:4]` from two `assign`s is rejected.
+/// `y[3:0]` and `y[7:4]` from two `assign`s is rejected. Likewise, all
+/// elements of an array have one driver.
 ///
 /// Clocks: an `always_ff` block runs at the rising (`posedge`) or falling
 /// (`negedge`) edge of a 1-bit signal, and a clock port of an instance is
@@ -553,14 +579,27 @@ fn drive(
     if sig.dir == Some(Dir::Input) {
         return Err(Error::new(span, format!("input `{lhs}` is assigned")));
     }
-    match driver.get(lhs) {
+    // all elements of an array have one driver
+    let array = ast::array_of(lhs);
+    let key = driver
+        .keys()
+        .find(|y| ast::array_of(y) == array)
+        .cloned()
+        .unwrap_or_else(|| lhs.clone());
+    match driver.get(&key) {
+        Some((prev, i)) if *i != item && array != lhs => Err(Error::new(
+            span,
+            format!(
+                "`{lhs}`: the array `{array}` is already driven at {prev} (an array has one \
+                 driver)"
+            ),
+        )),
         Some((prev, i)) if *i != item => Err(Error::new(
             span,
             format!("`{lhs}` already driven at {prev}"),
         )),
-        Some(_) => Ok(sig.ty),
-        None => {
-            driver.insert(lhs.clone(), (span, item));
+        _ => {
+            driver.entry(lhs.clone()).or_insert((span, item));
             Ok(sig.ty)
         }
     }
@@ -730,6 +769,9 @@ pub fn explicit(env: &Env, m: &Module) -> Result<()> {
                     if let Some(v) = p.variable {
                         expr(env, v.index)?;
                     }
+                    if let Some(e) = p.elem {
+                        expr(env, e.index)?;
+                    }
                 }
                 assign(width(env, lhs), expr(env, rhs)?, s.span)
             }
@@ -771,6 +813,41 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
             LvalueKind::Concat(ls) => {
                 return ls.iter().map(|l| walk(l, drive, seen, variable)).sum();
             }
+            LvalueKind::Elem(e) => {
+                let mut ty = None;
+                for y in e.signals() {
+                    ty = Some(drive(y, l.span)?);
+                }
+                let t = ty.expect("an array with elements");
+                let name = e.name();
+                let w = match &e.sel {
+                    None => t.width,
+                    Some(sel) if sel.index().is_some() => {
+                        let w = sel.width();
+                        if w == 0 || w > t.width {
+                            return Err(Error::new(
+                                l.span,
+                                format!(
+                                    "`{l}` selects {w} bits of `{name}`, which has {}",
+                                    t.width
+                                ),
+                            ));
+                        }
+                        w
+                    }
+                    Some(sel) => {
+                        let (hi, lo) = constant_select(&name, t, sel, l.span)?;
+                        hi + 1 - lo
+                    }
+                };
+                let array = &e.array;
+                if !variable.insert(array.clone())
+                    || seen.iter().any(|(x, _)| ast::array_of(x) == array)
+                {
+                    return Err(overlap(l, array));
+                }
+                return Ok(w);
+            }
             LvalueKind::Var(y) => (y, drive(y, l.span)?.width - 1, 0),
             LvalueKind::Select(y, sel) if sel.index().is_some() => {
                 let t = drive(y, l.span)?;
@@ -792,8 +869,8 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
                 (y, hi, lo)
             }
         };
-        if variable.contains(y) {
-            return Err(overlap(l, y));
+        if variable.contains(ast::array_of(y)) {
+            return Err(overlap(l, ast::array_of(y)));
         }
         for b in lo..=hi {
             if !seen.insert((y.clone(), b)) {
@@ -805,12 +882,12 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
         }
         Ok(hi + 1 - lo)
     }
-    fn overlap(l: &Lvalue, y: &Name) -> Error {
+    fn overlap(l: &Lvalue, y: &str) -> Error {
         Error::new(
             l.span,
             format!(
-                "`{y}` assigned twice in one target: a select of `{y}` with a variable \
-                 index may overlap its other pieces"
+                "`{y}` assigned twice in one target: a select or element of `{y}` with a \
+                 variable index may overlap its other pieces"
             ),
         )
     }
@@ -822,10 +899,22 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
 /// from the bit the index gives ([`Variable`]).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Piece<'l> {
+    /// The signal, or the array for an element with a variable index.
     pub name: Name,
     pub hi: usize,
     pub lo: usize,
     pub variable: Option<Variable<'l>>,
+    /// For an element of an array with a variable index: the bits are
+    /// those of the element the index picks, if it is an address.
+    pub elem: Option<ElemIndex<'l>>,
+}
+
+/// The variable index of an element of an array in an assignment target,
+/// and the element signals by address.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ElemIndex<'l> {
+    pub index: &'l Expr,
+    pub elems: &'l [Name],
 }
 
 /// The variable index `index` of a piece: with `i` its value (unsigned),
@@ -847,40 +936,120 @@ impl Piece<'_> {
 /// The parts of a checked assignment target, the one receiving the high
 /// bits of the value first.
 pub fn pieces<'l>(env: &Env, l: &'l Lvalue) -> Vec<Piece<'l>> {
+    // the bits of a select of a signal of width `n`
+    fn bits(sel: Option<&Select>, n: usize) -> (usize, usize, Option<Variable<'_>>) {
+        let Some(sel) = sel else {
+            return (n - 1, 0, None);
+        };
+        let variable = sel.index().map(|index| Variable {
+            index,
+            below: match sel {
+                Select::Down(_, w) => w - 1,
+                _ => 0,
+            },
+        });
+        let (hi, lo) = match variable {
+            Some(_) => (sel.width() - 1, 0),
+            None => sel.constant().flatten().expect("a checked constant select"),
+        };
+        (hi, lo, variable)
+    }
     match &l.kind {
         LvalueKind::Var(y) => vec![Piece {
             name: y.clone(),
             hi: env[y].ty.width - 1,
             lo: 0,
             variable: None,
+            elem: None,
         }],
         LvalueKind::Select(y, sel) => {
-            let variable = sel.index().map(|index| Variable {
-                index,
-                below: match sel {
-                    Select::Down(_, w) => w - 1,
-                    _ => 0,
-                },
-            });
-            let (hi, lo) = match variable {
-                Some(_) => (sel.width() - 1, 0),
-                None => sel.constant().flatten().expect("a checked constant select"),
-            };
+            let (hi, lo, variable) = bits(Some(sel), env[y].ty.width);
             vec![Piece {
                 name: y.clone(),
                 hi,
                 lo,
                 variable,
+                elem: None,
+            }]
+        }
+        LvalueKind::Elem(e) => {
+            let Elems::Signals(elems) = &e.elems else {
+                unreachable!("a ROM is not written")
+            };
+            let (hi, lo, variable) = bits(e.sel.as_ref(), env[&elems[0]].ty.width);
+            let index = e.index().expect("a variable element index");
+            vec![Piece {
+                name: e.array.clone(),
+                hi,
+                lo,
+                variable,
+                elem: Some(ElemIndex { index, elems }),
             }]
         }
         LvalueKind::Concat(ls) => ls.iter().flat_map(|l| pieces(env, l)).collect(),
     }
 }
 
+/// The type of an element of the array of `e`.
+pub fn elem_type(env: &Env, e: &Elem) -> Ty {
+    match &e.elems {
+        Elems::Signals(ys) => env[&ys[0]].ty,
+        Elems::Consts(ty, _) => *ty,
+    }
+}
+
+/// Checks the type `index` of the variable index of the element `e` that
+/// is read: unsigned, and every value of it is an address (`m[i]` with a
+/// 3-bit `i` needs at least 8 elements). A constant index has been checked
+/// by the frontend.
+pub fn element(e: &Elem, index: Option<Ty>, span: Span) -> Result<()> {
+    let Some(i) = index else {
+        return Ok(());
+    };
+    let name = e.name();
+    if i.signed {
+        return Err(Error::new(
+            span,
+            format!("the index of `{name}` must be unsigned"),
+        ));
+    }
+    let fits = u32::try_from(i.width)
+        .ok()
+        .and_then(|w| 1usize.checked_shl(w))
+        .is_some_and(|n| n <= e.size());
+    if fits {
+        Ok(())
+    } else {
+        Err(Error::new(
+            span,
+            format!(
+                "`{name}` may address beyond the last element of `{}` ({}): the index has \
+                 {} bits, so every one of its values must be an address (narrow the index)",
+                e.array,
+                e.size() - 1,
+                i.width
+            ),
+        ))
+    }
+}
+
+/// Checks the type `index` of the variable index of an element `e` in an
+/// assignment target: it must be unsigned; any value is fine (an index that
+/// is no address writes nothing).
+pub fn target_element(e: &Elem, index: Ty, span: Span) -> Result<()> {
+    if index.signed {
+        return Err(Error::new(
+            span,
+            format!("the index of `{}` must be unsigned", e.name()),
+        ));
+    }
+    Ok(())
+}
+
 /// Checks the type `index` of the variable index of a select in an
 /// assignment target `x[…]`: it must be unsigned (a negative index would
 /// write nothing; not supported).
-pub fn target_index(x: &Name, sel: &Select, index: Ty, span: Span) -> Result<()> {
+pub fn target_index(x: &str, sel: &Select, index: Ty, span: Span) -> Result<()> {
     if index.signed {
         return Err(Error::new(
             span,
@@ -1047,8 +1216,44 @@ impl Definite<'_> {
                     if let Some(v) = p.variable {
                         self.reads(v.index, done)?;
                     }
+                    if let Some(e) = p.elem {
+                        self.reads(e.index, done)?;
+                    }
                 }
                 for p in pieces {
+                    if let Some(e) = p.elem {
+                        // a variable element index assigns no element for
+                        // sure and keeps the others
+                        let missing: Vec<String> = e
+                            .elems
+                            .iter()
+                            .filter_map(|y| {
+                                let n = self.env[y].ty.width;
+                                let bits: Vec<usize> = (0..n)
+                                    .filter(|b| !done.contains(&(y.clone(), *b)))
+                                    .collect();
+                                (!bits.is_empty()).then(|| bits_text(y, &bits, n))
+                            })
+                            .collect();
+                        if !missing.is_empty() {
+                            let some = if missing.len() > 3 {
+                                format!("{}, …", missing[..3].join(", "))
+                            } else {
+                                missing.join(", ")
+                            };
+                            return Err(Error::new(
+                                lhs.span,
+                                format!(
+                                    "`{lhs}` has a variable index, so it assigns no element for \
+                                     sure and keeps the others, but {some} may not be assigned \
+                                     yet (a latch): assign every element of `{}` before it on \
+                                     every path",
+                                    p.name
+                                ),
+                            ));
+                        }
+                        continue;
+                    }
                     let n = self.env[&p.name].ty.width;
                     if p.variable.is_none() {
                         done.extend((p.lo..=p.hi).map(|b| (p.name.clone(), b)));
@@ -1153,6 +1358,18 @@ pub fn expr(env: &Env, e: &Expr) -> Result<Ty> {
             let index = sel.index().map(|i| expr(env, i)).transpose()?;
             select(x, t, sel, index, e.span)
         }
+        ExprKind::Elem(el) => {
+            let t = elem_type(env, el);
+            let index = el.index().map(|i| expr(env, i)).transpose()?;
+            element(el, index, e.span)?;
+            match &el.sel {
+                None => Ok(t),
+                Some(sel) => {
+                    let index = sel.index().map(|i| expr(env, i)).transpose()?;
+                    select(&el.name(), t, sel, index, e.span)
+                }
+            }
+        }
         ExprKind::Cast(c, a) => cast(*c, expr(env, a)?, context_free(a), e.span),
         ExprKind::Resize(t, a) => {
             expr(env, a)?;
@@ -1191,7 +1408,7 @@ pub fn repl(n: usize, t: Ty) -> Ty {
 /// type of a variable index: always unsigned. The selected bits must be
 /// inside `x` whatever the value of the index is; a variable index must be
 /// unsigned.
-pub fn select(x: &Name, t: Ty, sel: &Select, index: Option<Ty>, span: Span) -> Result<Ty> {
+pub fn select(x: &str, t: Ty, sel: &Select, index: Option<Ty>, span: Span) -> Result<Ty> {
     let width = sel.width();
     if let Select::Up(_, 0) | Select::Down(_, 0) = sel {
         return Err(Error::new(span, format!("select `{x}{sel}` of width 0")));
@@ -1238,7 +1455,7 @@ pub fn select(x: &Name, t: Ty, sel: &Select, index: Option<Ty>, span: Span) -> R
 
 /// The bits `(hi, lo)` of a constant select `x[…]` of a signal of type `t`,
 /// checked to be inside `x`.
-fn constant_select(x: &Name, t: Ty, sel: &Select, span: Span) -> Result<(usize, usize)> {
+fn constant_select(x: &str, t: Ty, sel: &Select, span: Span) -> Result<(usize, usize)> {
     match sel.constant().expect("a constant select") {
         Some((hi, lo)) if lo <= hi && hi < t.width => Ok((hi, lo)),
         Some((hi, lo)) if lo > hi => Err(Error::new(
@@ -1284,6 +1501,7 @@ pub fn context_free(e: &Expr) -> bool {
             | ExprKind::Const { .. }
             | ExprKind::Var(_)
             | ExprKind::Select(..)
+            | ExprKind::Elem(_)
             | ExprKind::Concat(_)
             | ExprKind::Repl(..)
             | ExprKind::Cast(..)
@@ -1305,6 +1523,18 @@ fn bit_reads<'e>(env: &Env, e: &'e Expr, out: &mut Vec<(&'e Name, usize, usize, 
                 }
             }
         },
+        // any bit of any element
+        ExprKind::Elem(el) => {
+            for y in el.signals() {
+                out.push((y, env[y].ty.width - 1, 0, e.span));
+            }
+            if let Some(i) = el.index() {
+                bit_reads(env, i, out);
+            }
+            if let Some(i) = el.sel.as_ref().and_then(Select::index) {
+                bit_reads(env, i, out);
+            }
+        }
         ExprKind::Unary(_, a) | ExprKind::Cast(_, a) | ExprKind::Resize(_, a) => {
             bit_reads(env, a, out)
         }

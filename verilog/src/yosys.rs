@@ -8,7 +8,8 @@ gives it the script of [`script`]:
 
 ```text
 read_verilog -sv -noblackbox FILE; hierarchy -top TOP; proc -norom;
-setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; clk2fflogic; write_smt2 -wires -
+setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; memory_collect; memory_map;
+clk2fflogic; write_smt2 -wires -
 ```
 
 `flatten` makes the whole hierarchy one module, whose wires have our
@@ -37,7 +38,11 @@ The other problems `check` reports do not hide differences: a used wire
 without a driver is free in every step (Yosys's side only gets more
 behaviors; a register bit that is never written, which for us keeps its
 initial value, is one), and `write_smt2` itself fails on a combinational
-loop. `clk2fflogic` makes the clocks ordinary signals (inputs, or
+loop. `memory_collect; memory_map` turns every unpacked array into one
+flip-flop per element, named by its address (`m[3]`) as our element
+signals are, and the read ports into multiplexers (a ROM loaded by
+`$readmemb` into constants); `write_smt2` would otherwise write memories
+with SMT arrays. `clk2fflogic` makes the clocks ordinary signals (inputs, or
 wires for clocks derived from registers), sampled at every step of an
 implicit global clock, so that one transition is one time step, as one of
 our rounds is (see below).
@@ -128,8 +133,8 @@ pub fn script(file: &Path, top: &str) -> Result<String, String> {
     }
     Ok(format!(
         "read_verilog -sv -noblackbox \"{file}\"; hierarchy -top {top}; proc -norom; \
-         setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; clk2fflogic; \
-         write_smt2 -wires -"
+         setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; memory_collect; memory_map; \
+         clk2fflogic; write_smt2 -wires -"
     ))
 }
 
