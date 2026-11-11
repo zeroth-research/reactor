@@ -554,6 +554,27 @@ def test_a_precondition_makes_start_maps_read_its_hypothesis():
     assert "obtain ⟨l, _, rfl⟩ := hs" in plain
 
 
+def test_start_maps_last_takes_the_models_decides_apart_before_unfolding():
+    """Unfolded together with `toSlots`, a decided proposition is rewritten
+    and its `Decidable` instance is not, which Lean v4.34's `simp_all`
+    refuses: three speedpldi certificates under `--pre` failed on it. The
+    arm that unfolds the model's `Bool`s into propositions first is last,
+    so no proof that closed before takes a different path."""
+    from verith.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+
+    module = _input_start()
+    enc = _encoding(module, "(>= e0 5)")
+    src = atom_to_lean_fbk_bridge(
+        LeanContext(module), na_module="TNA",
+        bodies=enc.bodies, pre_lean=enc.pre_lean,
+    )
+    start = src[src.index("theorem start_maps"):src.index("theorem step_maps")]
+    arms = [ln for ln in start.splitlines() if ln.startswith("    | ")]
+    assert arms[-1].startswith(
+        "    | (simp only [Definition.INIT, Definition.PRE")
+    assert "decide_eq_true_eq" in arms[-1] and arms[-1].endswith("<;> omega)")
+
+
 def test_real_state_aborts():
     with pytest.raises(NAUnsupported, match="Real"):
         check_na_supported(LeanContext(_real_state()))
