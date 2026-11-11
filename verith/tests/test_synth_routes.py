@@ -932,14 +932,17 @@ def _fixture(name: str):
     return load_module(PYTHON_TESTS / "fixtures" / f"{name}.py")
 
 
-def test_smt_linear_zeroes_the_rank_where_the_property_holds():
+@pytest.mark.parametrize("prp", ["(= s0 0)", "s[0][0] == 0", "(s[0][0] == 0)"])
+def test_smt_linear_zeroes_the_rank_where_the_property_holds(prp):
     """A counter that wraps to 0 has no linear rank -- the round from 9 back
     to 0 rises -- and `(ite P 0 r)` needs only the rounds outside `P` to
-    fall, which is every round but that one."""
+    fall, which is every round but that one. `P` is SMT-LIB whatever the
+    property was written in: a DSL property in parentheses went into the
+    rank as written."""
     from verith.smt_linear.engine import SmtLinearEngine
 
     module = _fixture("counter")
-    claim = Claim(prp="(= s0 0)", kind="buchi")
+    claim = Claim(prp=prp, kind="buchi")
     out = SmtLinearEngine(module, log=lambda *_: None).infer(claim)
     assert out.ranking.startswith("(ite (= s0 0) 0 ")
     assert obligations_of(module, claim, out) == []

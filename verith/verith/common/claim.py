@@ -15,6 +15,8 @@ from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
 from reactor.lean.smt.encoding import encoding_of
 
+from .smtlib import smtlib_source
+
 
 # Every kind of state component there is a reading for. A sort absent from
 # here has none at all, which is a different refusal from a route declining
@@ -61,13 +63,16 @@ class SynthContext:
 
     Stated over the run's `smt.encoding.ModuleEncoding`, the front end the
     pre-check and the prompt routes read predicates through: the property
-    arrives as SMT-LIB over ``s0..sN-1`` and that is the namespace every
-    predicate this package reads or writes is in, so a certificate found
-    here is in it too.
+    arrives over ``s0..sN-1``, in SMT-LIB or the DSL's Python syntax, and
+    that is the namespace every predicate this package reads or writes is
+    in, so a certificate found here is in it too.
     """
 
     enc: object
     prp: object
+    # The property as SMT-LIB text (`common.smtlib.smtlib_source`), for a
+    # route that writes it into a candidate's source.
+    prp_src: str
     init_pre: object
     update_pre: object
     # What is read off the module once and asked for by every template a
@@ -169,9 +174,11 @@ class SynthContext:
                 flag=f"--infer {route}"
             ) from e
         true = enc.tm.mkBoolean(True)
+        prp = enc.parse(claim.prp, "property", kind=claim.kind)
         return cls(
             enc=enc,
-            prp=enc.parse(claim.prp, "property", kind=claim.kind),
+            prp=prp,
+            prp_src=smtlib_source(claim.prp, prp),
             init_pre=(enc.parse(claim.init_pre, "pre")
                       if claim.init_pre is not None else true),
             update_pre=(enc.parse(claim.update_pre, "pre")
