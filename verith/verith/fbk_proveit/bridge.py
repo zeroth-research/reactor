@@ -99,18 +99,22 @@ def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False,
     plain = f"{defs}{extra}"
     mat = f"{defs}, {', '.join(MAT_SIMP)}{extra}"
     s = "simp_all" if from_hyps else "simp"
-    return [
-        "  first",
-        "    | rfl",
-        f"    | ({s} [{plain}]; done)",
-        f"    | ({s} [{plain}]; omega)",
-        f"    | ({s} [{mat}]; done)",
-        f"    | ({s} [{mat}]; omega)",
-        f"    | ({s} [{mat}]; split_ifs <;> omega)",
-        f"    | (simp [{mat}]; simp_all)",
-        *([f"    | (simp only [{model}, {_DECIDED}] at *; {s} [{plain}] <;> omega)"]
+    arms = [
+        "rfl",
+        f"({s} [{plain}]; done)",
+        f"({s} [{plain}]; omega)",
+        f"({s} [{mat}]; done)",
+        f"({s} [{mat}]; omega)",
+        f"({s} [{mat}]; split_ifs <;> omega)",
+        f"(simp [{mat}]; simp_all)",
+        *([f"(simp only [{model}, {_DECIDED}] at *; {s} [{plain}] <;> omega)"]
           if model else []),
     ]
+    # Last, an arm that only says none of them closed the goal: `first`
+    # reports the error of the arm it tried last, which read as that arm's
+    # own complaint ("simp_all made no progress") about a goal none closed.
+    why = f"none of the {len(arms)} arms of this proof closed its goal"
+    return ["  first", *(f"    | {a}" for a in arms), f'    | fail "{why}"']
 
 
 def atom_to_lean_fbk_bridge(
