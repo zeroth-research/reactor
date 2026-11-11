@@ -15,6 +15,8 @@ from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
 from reactor.lean.smt.encoding import encoding_of
 
+from .smtlib import smtlib_source
+
 
 # Every kind of state component there is a reading for. A sort absent from
 # here has none at all, which is a different refusal from a route declining
@@ -55,19 +57,45 @@ def sorts_where(ctx: "SynthContext", bad) -> list[str]:
                if hit(c.getSort())])
 
 
+def require_transition(enc, route: str) -> None:
+    """Refuse, for `--infer route`, a module whose transition cvc5 has no
+    term for, naming the operator.
+
+    Asked for up front rather than by whichever step first needs the
+    transition. A module with an operator cvc5 has no term for --
+    `Transpose`, say -- is a refusal either way, but met in the middle of
+    a search it is a `ValueError` several steps past the fact: a traceback,
+    or, where the step reads a model's reply, a reply that "could not be
+    parsed", asked again until the budget is gone. Named up front instead,
+    which is what `codegen.terms.lean_gaps` does for the Lean side.
+    """
+    try:
+        enc.init_state(enc.extl_next)
+        enc.next_state(enc.state, enc.extl_latched, enc.extl_next)
+    except ValueError as e:
+        raise Refused(
+            f"encodes this module's transition for cvc5, "
+            f"and an operator in it has no encoding. {e}",
+            flag=f"--infer {route}"
+        ) from e
+
+
 @dataclass
 class SynthContext:
     """One module and its property in cvc5, for a search over shapes.
 
     Stated over the run's `smt.encoding.ModuleEncoding`, the front end the
     pre-check and the prompt routes read predicates through: the property
-    arrives as SMT-LIB over ``s0..sN-1`` and that is the namespace every
-    predicate this package reads or writes is in, so a certificate found
-    here is in it too.
+    arrives over ``s0..sN-1``, in SMT-LIB or the DSL's Python syntax, and
+    that is the namespace every predicate this package reads or writes is
+    in, so a certificate found here is in it too.
     """
 
     enc: object
     prp: object
+    # The property as SMT-LIB text (`common.smtlib.smtlib_source`), for a
+    # route that writes it into a candidate's source.
+    prp_src: str
     init_pre: object
     update_pre: object
     # What is read off the module once and asked for by every template a
@@ -152,26 +180,13 @@ class SynthContext:
                 f"Use --infer ai-cegis.",
                 flag=f"--infer {route}"
             )
-        # The transition, asked for here rather than by whichever route
-        # first builds an obligation out of it. A module with an operator
-        # cvc5 has no term for -- `Transpose`, say -- is a refusal either way,
-        # but raised from the middle of a search it is a `ValueError`
-        # traceback several steps past the fact, for a user who asked about
-        # a module. Named up front instead, which is what `codegen.terms.lean_gaps`
-        # does for the Lean side.
-        try:
-            enc.init_state(enc.extl_next)
-            enc.next_state(enc.state, enc.extl_latched, enc.extl_next)
-        except ValueError as e:
-            raise Refused(
-                f"encodes this module's transition for cvc5, "
-                f"and an operator in it has no encoding. {e}",
-                flag=f"--infer {route}"
-            ) from e
+        require_transition(enc, route)
         true = enc.tm.mkBoolean(True)
+        prp = enc.parse(claim.prp, "property", kind=claim.kind)
         return cls(
             enc=enc,
-            prp=enc.parse(claim.prp, "property", kind=claim.kind),
+            prp=prp,
+            prp_src=smtlib_source(claim.prp, lambda: prp),
             init_pre=(enc.parse(claim.init_pre, "pre")
                       if claim.init_pre is not None else true),
             update_pre=(enc.parse(claim.update_pre, "pre")

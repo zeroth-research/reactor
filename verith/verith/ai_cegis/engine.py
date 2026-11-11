@@ -16,6 +16,7 @@ from reactor import Module
 
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
+from ..common.claim import require_transition
 from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
 from reactor.lean.smt.obligations import Frame, init_inv, inv_imp_P, step_inv
 from ..common.obligations import rank_decrease, rank_positive
@@ -100,6 +101,7 @@ class AiCegisEngine:
         """The certificate of `claim`, as SMT-LIB. What `given` holds is
         fixed: it is shown to the model and only the rest is asked for."""
         enc = encoding_of(self.encoding or self.module)
+        require_transition(enc, "ai-cegis")
         env = enc.env
 
         # An absent predicate is `true`, and every obligation states it.

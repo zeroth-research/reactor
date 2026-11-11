@@ -10,7 +10,7 @@ from ..route import InferRoute
 def _run(inp: InferInput) -> InferResult:
     from .engine import NutermEngine
 
-    engine = NutermEngine(inp.module, log=inp.log)
+    engine = NutermEngine(inp.module, log=inp.log, encoding=inp.smt)
     cert = engine.infer(inp.claim, inp.given)
     # The learner certified both halves before returning them, so they are
     # `proved`, which is what a later `--infer ai-cegis` resumes from; the

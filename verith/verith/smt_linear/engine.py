@@ -93,7 +93,7 @@ from dataclasses import dataclass
 
 from ..common.claim import SynthContext
 from ..common.record import announce
-from ..common.smtlib import affine_smt, conjunction_smt, decimals
+from ..common.smtlib import affine_smt, conjunction_smt
 from reactor.lean.smt.obligations import (
     Frame,
     conjunction,
@@ -239,7 +239,7 @@ class SmtLinearEngine:
                 "none resumed): searching under `true` first, then for an "
                 "invariant to rank under"
             )
-        search, inv_src = self._buchi(ctx, cols, inv, claim)
+        search, inv_src = self._buchi(ctx, cols, inv)
         if search.found is not None:
             announce(self.log, "smt-linear", Certificate(inv_src, search.found))
         return Certificate(
@@ -247,7 +247,7 @@ class SmtLinearEngine:
 
     # --- the ranking function, and the invariant it ranks under ---------
 
-    def _shapes(self, ctx: SynthContext, claim: Claim) -> list:
+    def _shapes(self, ctx: SynthContext) -> list:
         """The rank shapes to try, simplest first: linear, then two with a branch.
 
         Linear comes first and at every invariant width before anything with
@@ -268,12 +268,7 @@ class SmtLinearEngine:
           `(ite (<= 0 s1) s0 (- s1))`.
         """
         shapes = [_RankShape("linear")]
-        prp_src = claim.prp.strip() if isinstance(claim.prp, str) else ""
-        if not prp_src.startswith("("):
-            # A property written in Python syntax: the rank is SMT-LIB, so the
-            # branch is the property as cvc5 prints it.
-            prp_src = decimals(str(ctx.prp))
-        shapes.append(_RankShape("zeroed", cond_src=prp_src))
+        shapes.append(_RankShape("zeroed", cond_src=ctx.prp_src))
         try:
             conds = split_conditions(ctx, Obligations(ctx))
         except Exception as e:                      # pragma: no cover
@@ -386,8 +381,8 @@ class SmtLinearEngine:
             rank_src = lins[0]
         return (inv_src, rank_src), verdict
 
-    def _buchi(self, ctx: SynthContext, cols: list, given: "str | None",
-               claim: Claim) -> tuple[Search, str]:
+    def _buchi(self, ctx: SynthContext, cols: list,
+               given: "str | None") -> tuple[Search, str]:
         """The rank, and the invariant it ranks under, widening the invariant.
 
         Width 0 is the rank under `given` alone, which is the whole of what
@@ -404,7 +399,7 @@ class SmtLinearEngine:
         """
         names = [col.name for col in cols]
         inv_src = given or "true"
-        shapes = self._shapes(ctx, claim)
+        shapes = self._shapes(ctx)
         # Per shape: the widest invariant it was decided empty under (-1 for
         # none yet), and whether a query about it went unanswered.
         decided = {i: -1 for i in range(len(shapes))}

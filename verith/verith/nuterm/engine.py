@@ -57,7 +57,8 @@ from reactor import Module
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.record import announce
-from ..common.smtlib import affine_smt, conjunction_smt, smt_int
+from reactor.lean.smt.encoding import encoding_of
+from ..common.smtlib import affine_smt, conjunction_smt, smt_int, smtlib_source
 
 
 def _engine():
@@ -241,9 +242,20 @@ SEED = 0
 class NutermEngine:
     """Infer the certificate by learning a ranking function and certifying it."""
 
-    def __init__(self, module: Module, *, log=print):
+    def __init__(self, module: Module, *, log=print, encoding=None):
         self.module = module
         self.log = log
+        # The run's `smt.encoding.lazy` encoding, read only for a predicate
+        # written in the DSL's Python syntax; a library caller's module gets
+        # one of its own then.
+        self.encoding = encoding
+
+    def _smtlib(self, src: str, role: str, kind: str = "buchi") -> str:
+        """`src` as the SMT-LIB z3 parses: as written, or read through the
+        run's encoding and printed when it is in the DSL's Python syntax,
+        which every other route reads and z3 does not."""
+        return smtlib_source(src, lambda: encoding_of(
+            self.encoding or self.module).parse(src, role, kind=kind))
 
     # --- the system the procedure reads --------------------------------
 
@@ -364,10 +376,11 @@ class NutermEngine:
         if claim.prp is None:
             raise Refused("needs a property: pass --safety or --buchi",
                           flag="--infer nuterm")
+        prp_src = self._smtlib(claim.prp, "property", claim.kind)
         system = self._system(eng)
         if claim.init_pre is not None:
-            system = self._assuming(system, claim.init_pre)
-        prp = _parse_property(claim.prp, self._declared(), system.names)
+            system = self._assuming(system, self._smtlib(claim.init_pre, "pre"))
+        prp = _parse_property(prp_src, self._declared(), system.names)
         self.log(f"[nuterm] columns: {', '.join(system.names)}")
 
         # The procedure refuses what it has no rule for by raising, and that
@@ -377,11 +390,11 @@ class NutermEngine:
         # traceback.
         try:
             if claim.is_safety:
-                inv_src = self._safety_invariant(eng, system, prp, claim.prp)
+                inv_src = self._safety_invariant(eng, system, prp, prp_src)
                 rank_src = None
             else:
                 inv_src, rank_src = self._buchi_certificate(eng, system, prp,
-                                                            claim.prp)
+                                                            prp_src)
         except eng.Unsupported as e:
             raise Refused(f"cannot certify this property: {e}",
                           flag="--infer nuterm") from e

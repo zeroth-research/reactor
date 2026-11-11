@@ -9,6 +9,8 @@ The second half drives the whole loop against a scripted LLM: real cvc5,
 real obligations, no network.
 """
 
+from pathlib import Path
+
 import cvc5
 import pytest
 
@@ -316,3 +318,23 @@ def test_a_budget_always_allows_the_first_attempt(monkeypatch):
         AiCegisEngine("", _counter(), budget_s=1).infer(
             Claim(kind="safety", prp="(<= s0 9)"))
     assert len(prompts) == 1
+
+
+def test_a_module_cvc5_cannot_encode_is_refused_before_anything_is_asked(monkeypatch):
+    """`m_transpose` has no cvc5 term for its round, and the prompt states
+    the round in cvc5's terms: each attempt failed before the model was
+    asked, read as a reply that "could not be parsed", and the bench's
+    280 s budget went on 7204984 of them."""
+    import pytest
+    from reactor.lean.core.errors import Refused
+    from reactor.lean.inputs.python import load_module
+
+    prompts = []
+    monkeypatch.setattr(cegis, "make_client",
+                        lambda base_url, model: lambda s, u: prompts.append(u))
+    module = load_module(Path(__file__).resolve().parents[2] / "python"
+                         / "tests" / "limits" / "mods" / "m_transpose.py")
+    with pytest.raises(Refused, match="operator in it has no encoding"):
+        AiCegisEngine("", module, budget_s=1).infer(
+            Claim(prp="(= ((_ tuple.select 0) s0) 1)", kind="buchi"))
+    assert prompts == []

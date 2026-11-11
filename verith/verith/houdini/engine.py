@@ -204,14 +204,14 @@ class HoudiniEngine:
             log=self.log,
         )
 
-        conjuncts = self._conjuncts(ctx, claim) if claim.is_safety else []
+        conjuncts = self._conjuncts(ctx) if claim.is_safety else []
         # The computed bounds go last: the minimiser drops from the end, so
         # a certificate the read ones carry keeps the program's constants.
         facts = search.parse(invariant_candidates(ctx, runs, constants,
                                                   conjuncts, rationals)
                              + mode_bounds(ctx, ob, log=self.log))
         self.log(f"[houdini] {len(facts)} candidate facts hold on the runs")
-        ranks = None if claim.is_safety else Ranks(ctx, ev, claim.prp,
+        ranks = None if claim.is_safety else Ranks(ctx, ev, ctx.prp_src,
                                                    split_conditions(ctx, ob),
                                                    constants, rationals, scale)
 
@@ -280,7 +280,7 @@ class HoudiniEngine:
                 flag="--infer houdini"
             )
 
-    def _conjuncts(self, ctx: SynthContext, claim: Claim) -> list[str]:
+    def _conjuncts(self, ctx: SynthContext) -> list[str]:
         """The property's top-level conjuncts, seeded as facts of their own.
 
         Split because Houdini keeps facts, not formulas: `(and a b)` is kept
@@ -289,7 +289,7 @@ class HoudiniEngine:
         """
         p = ctx.prp
         parts = list(p) if p.getKind() == Kind.AND else [p]
-        return [str(t) if len(parts) > 1 else claim.prp.strip() for t in parts]
+        return [str(t) for t in parts] if len(parts) > 1 else [ctx.prp_src]
 
     # --- out --------------------------------------------------------------
 

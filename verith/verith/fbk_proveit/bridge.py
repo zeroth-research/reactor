@@ -59,7 +59,14 @@ def _lemmas(*names: str) -> str:
     return "".join(f", {n}" for n in names)
 
 
-def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False) -> list[str]:
+# A Bool the NA model wrote as `decide p && ...`, as the propositions it
+# decides.
+_DECIDED = ("Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', "
+            "decide_eq_true_eq, decide_eq_false_iff_not")
+
+
+def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False,
+             model: str = "") -> list[str]:
     """The closer chain, cheapest first.
 
     Measured over every module shape the route accepts: `rfl` closes the
@@ -81,6 +88,13 @@ def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False) -> list[str
     into this file, stops being a definitional equality.  The measurements
     say the arm never fired anyway: it was insurance, and the insurance is
     what broke the `rfl`.
+
+    `model` is the NA model's definitions the goal is a `Bool` of, for a last
+    arm that takes its `decide`s apart before anything else is unfolded.
+    Unfolded together, `simp` rewrites `toSlots (init l.2)` in a decided
+    proposition and leaves its `Decidable` instance stating the old one, a
+    term Lean v4.34's `simp_all` refuses as not type-correct ("made no
+    progress"): `start_maps` under `--pre` on the speedpldi benchmarks.
     """
     plain = f"{defs}{extra}"
     mat = f"{defs}, {', '.join(MAT_SIMP)}{extra}"
@@ -94,6 +108,8 @@ def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False) -> list[str
         f"    | ({s} [{mat}]; omega)",
         f"    | ({s} [{mat}]; split_ifs <;> omega)",
         f"    | (simp [{mat}]; simp_all)",
+        *([f"    | (simp only [{model}, {_DECIDED}] at *; {s} [{plain}] <;> omega)"]
+          if model else []),
     ]
 
 
@@ -274,6 +290,8 @@ def atom_to_lean_fbk_bridge(
             _lemmas(*(f"Definition.Init_{k}" for k in pinned),
                     *(f"Definition.var_{k}" for k in range(n))),
             from_hyps=has_pre,
+            model="Definition.INIT" + (", Definition.PRE" if has_pre else "")
+                  + _lemmas(*(f"Definition.Init_{k}" for k in pinned)),
         ),
         "",
         "theorem step_maps (s : CtrlNative) (l : " + extl_native + ") (s' : CtrlNative) :",
