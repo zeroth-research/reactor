@@ -7,7 +7,7 @@ What a script is, and how one is printed, is `reactor.lean.smt.script`.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from fractions import Fraction
 from re import Match, compile as _compile
 
@@ -73,21 +73,23 @@ def decimals(text: str) -> str:
     return _RATIONAL.sub(fix, text)
 
 
-def smtlib_source(src: str, term) -> str:
-    """The predicate `src`, which was read as `term`, as SMT-LIB text.
+def smtlib_source(src: str, read: Callable[[], object]) -> str:
+    """The predicate `src` as SMT-LIB text.
 
-    That is `src` as written if it is SMT-LIB, and cvc5's printing of
-    `term` if it is the DSL's Python syntax (`s0[0][0] == 0`). No SMT-LIB
-    text a predicate is spliced into, `(ite P 0 r)` say, can read the DSL.
-    SMT-LIB that is also a Python expression (`s0`, `(not s0)`) prints as
-    it was written.
+    That is `src` as written if it is SMT-LIB, and cvc5's printing of the
+    term `read()` returns for it if it is the DSL's Python syntax
+    (`s0[0][0] == 0`); `read` is called for nothing else, so SMT-LIB text
+    needs no cvc5. No SMT-LIB text a predicate is spliced into,
+    `(ite P 0 r)` say, can read the DSL, and neither can z3. SMT-LIB that
+    is also a Python expression (`s0`, `(not s0)`) prints as it was
+    written.
     """
     src = src.strip()
     try:
         ast.parse(src, mode="eval")
     except SyntaxError:
         return src
-    return decimals(str(term))
+    return decimals(str(read()))
 
 
 # ══════════════════════════════════════════════════════════════════════════

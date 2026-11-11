@@ -186,7 +186,7 @@ class SynthContext:
         return cls(
             enc=enc,
             prp=prp,
-            prp_src=smtlib_source(claim.prp, prp),
+            prp_src=smtlib_source(claim.prp, lambda: prp),
             init_pre=(enc.parse(claim.init_pre, "pre")
                       if claim.init_pre is not None else true),
             update_pre=(enc.parse(claim.update_pre, "pre")
