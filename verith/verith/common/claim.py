@@ -57,6 +57,29 @@ def sorts_where(ctx: "SynthContext", bad) -> list[str]:
                if hit(c.getSort())])
 
 
+def require_transition(enc, route: str) -> None:
+    """Refuse, for `--infer route`, a module whose transition cvc5 has no
+    term for, naming the operator.
+
+    Asked for up front rather than by whichever step first needs the
+    transition. A module with an operator cvc5 has no term for --
+    `Transpose`, say -- is a refusal either way, but met in the middle of
+    a search it is a `ValueError` several steps past the fact: a traceback,
+    or, where the step reads a model's reply, a reply that "could not be
+    parsed", asked again until the budget is gone. Named up front instead,
+    which is what `codegen.terms.lean_gaps` does for the Lean side.
+    """
+    try:
+        enc.init_state(enc.extl_next)
+        enc.next_state(enc.state, enc.extl_latched, enc.extl_next)
+    except ValueError as e:
+        raise Refused(
+            f"encodes this module's transition for cvc5, "
+            f"and an operator in it has no encoding. {e}",
+            flag=f"--infer {route}"
+        ) from e
+
+
 @dataclass
 class SynthContext:
     """One module and its property in cvc5, for a search over shapes.
@@ -157,22 +180,7 @@ class SynthContext:
                 f"Use --infer ai-cegis.",
                 flag=f"--infer {route}"
             )
-        # The transition, asked for here rather than by whichever route
-        # first builds an obligation out of it. A module with an operator
-        # cvc5 has no term for -- `Transpose`, say -- is a refusal either way,
-        # but raised from the middle of a search it is a `ValueError`
-        # traceback several steps past the fact, for a user who asked about
-        # a module. Named up front instead, which is what `codegen.terms.lean_gaps`
-        # does for the Lean side.
-        try:
-            enc.init_state(enc.extl_next)
-            enc.next_state(enc.state, enc.extl_latched, enc.extl_next)
-        except ValueError as e:
-            raise Refused(
-                f"encodes this module's transition for cvc5, "
-                f"and an operator in it has no encoding. {e}",
-                flag=f"--infer {route}"
-            ) from e
+        require_transition(enc, route)
         true = enc.tm.mkBoolean(True)
         prp = enc.parse(claim.prp, "property", kind=claim.kind)
         return cls(
