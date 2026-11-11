@@ -5,7 +5,7 @@ import math
 
 import pytest
 
-from zrth import SPN, Bool, Clock, Event, Nat, Real, Var
+from zrth import SPN, Bool, Clock, Enum, Event, Nat, Real, Var
 from zrth import Module as compose
 from zrth.simulate import FlowNotSolvable, GuardSkipped, NoFlow, Simulation, first, last, simulate, uniform
 from zrth.sugar import Module, d, ite, fired, exp
@@ -257,6 +257,31 @@ def test_a_real_input_sets_the_speed_of_a_clock():
     assert time == 10.0 and after[k] == 2 and after[c] == 1.0
     with pytest.raises(FlowNotSolvable, match="non-negative"):
         sim.step({u: -1.0})
+
+
+def test_a_label_input_picks_the_move():
+    # a discrete action: at each expiry the count goes up, down or stays, as the driven
+    # label says; a label of the module's own tracks the last move
+    class M(Module):
+        def init(self, t, a):
+            return 1.0, 2, 0
+
+        def next(self, c, k, last, t, a):
+            fires = c == 0
+            up, down = fires & (a == 1), fires & (a == 2) & (k >= 1)
+            return ite(fires, 1.0, c), ite(up, k + 1, ite(down, k - 1, k)), ite(fires, a, last)
+
+        def flow(self, c, k, last, t, a):
+            return ite(c >= 0, -1 * d(t), None), 0, 0
+
+    c, k, last, t, a = Var(Clock()), Var(Nat()), Var(Enum(3)), Var(Clock()), Var(Enum(3))
+    sim = Simulation(M(theory=SPN, ctrl=(c, k, last), extl=(t, a)), t=t)
+    assert sim.inputs == [a]
+    moves = [1, 1, 2, 0, 2, 2, 2]
+    counts = [sim.step({a: move})[2][k] for move in moves]
+    assert counts == [3, 4, 3, 3, 2, 1, 0]
+    assert sim.trace.series(last) == [0] + moves
+    assert [s[a] for s in sim.trace.states[1:]] == moves  # the input is in the trace
 
 
 def test_a_scheduler_must_stay_inside_the_step():

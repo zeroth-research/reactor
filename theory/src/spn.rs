@@ -6,13 +6,16 @@ places holding tokens, transitions moving tokens around, and Poisson clocks
 deciding when a transition fires.
 
 Unlike [`crate::lia`], the theory this one is derived from, the sorts are not
-matrix sorts. A [`Sort`] value is one of five scalars, plus the trivial
+matrix sorts. A [`Sort`] value is one of six scalars, plus the trivial
 tangent:
 
 - `Nat` — a token count (the marking of a single place),
 - `Real` — a parameter: a number held between rounds, such as a control
   input scaling a rate. It is never compared, never added to and never flows;
   a real that moves is a colour, and belongs to a theory beyond this one,
+- `Enum(n)` — one of `n` labels, held as the numbers `0` to `n - 1`: the state
+  of an automaton, the colour of a token. It is set at a round and tested
+  against a label; there is no order and no arithmetic on it,
 - `Bool` — a truth value (e.g. whether a transition is enabled),
 - `Event` — a truth value again, under another name: the momentary signal that
   something has happened (a transition has fired). It is an alias of `Bool` in
@@ -25,8 +28,8 @@ tangent:
   whose only writer is the `zero` generator.
 
 The clock is the only sort that can move: a marking changes by firing a
-transition, not by flowing, so `Nat`, `Real`, `Bool` and `Event` are constant
-sorts and their tangent is `Zero`. The clock tangent is a sort of its own, inhabited by
+transition, not by flowing, so `Nat`, `Real`, `Enum`, `Bool` and `Event` are
+constant sorts and their tangent is `Zero`. The clock tangent is a sort of its own, inhabited by
 the constant rates a clock can run at.
 
 The operations in [`SPN`] are:
@@ -34,6 +37,10 @@ The operations in [`SPN`] are:
 - [`SPN::Nat`], [`SPN::Real`], [`SPN::Bool`], [`SPN::Clock`] — literals; each
   reads nothing and writes a single wire of the corresponding value sort — the
   truth-value literal writes a `Bool` and an `Event` wire alike.
+- [`SPN::Enum`]`(i)` — the label literal: reads nothing and writes any
+  `Enum(n)` wire with `i < n`, so the literal need not repeat the size.
+- [`SPN::EnumIs`]`(i)` — is the value label `i`? `Enum(n) -> Bool`, with
+  `i < n`; the one test on labels, as [`SPN::ClkGe`] is on clocks.
 - [`SPN::And`], [`SPN::Or`], [`SPN::Not`] — boolean operations on `Bool`, and so
   on `Event`.
 - [`SPN::IsZero`], [`SPN::ClkIsZero`] — tests for an empty place (`Nat`) and for
@@ -163,6 +170,9 @@ pub enum Sort {
     /// A real parameter: a number held between rounds, never compared and
     /// never flowing -- a factor on a rate.
     Real(),
+    /// One of `n` labels, held as the numbers `0` to `n - 1`: the state of an
+    /// automaton, the colour of a token. `Enum(0)` is empty.
+    Enum(usize),
     /// A truth value -- for predicates.
     Bool(),
     /// A truth value again, under another name: the momentary signal that
@@ -214,6 +224,10 @@ impl Sort {
         matches!(self, Sort::Real())
     }
 
+    pub fn is_enum(&self) -> bool {
+        matches!(self, Sort::Enum(_))
+    }
+
     /// True of a clock of any grade, value or tangent.
     pub fn is_clock(&self) -> bool {
         matches!(self, Sort::Clock { .. })
@@ -223,22 +237,30 @@ impl Sort {
     pub fn rank(&self) -> Option<u8> {
         match self {
             Sort::Clock { rank } => Some(*rank),
-            Sort::Nat() | Sort::Real() | Sort::Bool() | Sort::Event() | Sort::Zero() => None,
+            Sort::Nat()
+            | Sort::Real()
+            | Sort::Enum(_)
+            | Sort::Bool()
+            | Sort::Event()
+            | Sort::Zero() => None,
         }
     }
 }
 
 /// The tangent former: a clock grades up (`rank + 1`); the constant sorts
-/// `Nat`, `Real`, `Bool` and `Event` collapse to the trivial tangent `Zero`,
-/// which is a fixed point.
+/// `Nat`, `Real`, `Enum`, `Bool` and `Event` collapse to the trivial tangent
+/// `Zero`, which is a fixed point.
 impl Tangent for Sort {
     #[allow(non_snake_case)]
     fn T(&self) -> Self {
         match *self {
             Sort::Clock { rank } => Sort::Clock { rank: rank + 1 },
-            Sort::Nat() | Sort::Real() | Sort::Bool() | Sort::Event() | Sort::Zero() => {
-                Sort::Zero()
-            }
+            Sort::Nat()
+            | Sort::Real()
+            | Sort::Enum(_)
+            | Sort::Bool()
+            | Sort::Event()
+            | Sort::Zero() => Sort::Zero(),
         }
     }
 }
@@ -250,6 +272,7 @@ impl fmt::Display for Sort {
             Sort::Clock { rank } => write!(f, "T{rank} Clock"),
             Sort::Nat() => write!(f, "Nat"),
             Sort::Real() => write!(f, "Real"),
+            Sort::Enum(n) => write!(f, "Enum({n})"),
             Sort::Bool() => write!(f, "Bool"),
             Sort::Event() => write!(f, "Event"),
             Sort::Zero() => write!(f, "Zero"),
@@ -269,6 +292,9 @@ pub enum SPN {
     /// A real-parameter literal
     #[strum(to_string = "({0} : real)")]
     Real(f64),
+    /// A label literal: writes any `Enum(n)` wire with the label below `n`
+    #[strum(to_string = "({0} : enum)")]
+    Enum(u64),
     /// A truth-value literal; it writes a `Bool` wire and an `Event` one alike
     #[strum(to_string = "({0} : bool)")]
     Bool(bool),
@@ -289,6 +315,9 @@ pub enum SPN {
     ClkGe(f64),
     /// Is the place empty? `Nat -> Bool`
     IsZero(),
+    /// Is the value this label? `Enum(n) -> Bool`, the label below `n`
+    #[strum(to_string = "EnumIs({0})")]
+    EnumIs(u64),
     /// Does the first place hold at least as many tokens as the second?
     /// `Nat, Nat -> Bool`; with a [`SPN::Nat`] literal on one side it is the
     /// guard of a weighted arc.
@@ -362,7 +391,12 @@ impl Differential for SPN {
         // `range` is the tangent sort the generator writes
         match range {
             Sort::Clock { .. } => SPN::ClkZero(),
-            Sort::Nat() | Sort::Real() | Sort::Bool() | Sort::Event() | Sort::Zero() => SPN::Zero(),
+            Sort::Nat()
+            | Sort::Real()
+            | Sort::Enum(_)
+            | Sort::Bool()
+            | Sort::Event()
+            | Sort::Zero() => SPN::Zero(),
         }
     }
 }
@@ -382,6 +416,7 @@ impl Signature for SPN {
             }
             SPN::And() | SPN::Or() | SPN::Not() => check_bool(self, read, write),
             SPN::IsZero() | SPN::ClkIsZero() | SPN::ClkGe(_) => check_test(self, read, write),
+            SPN::Enum(_) | SPN::EnumIs(_) => check_enum(self, read, write),
             SPN::NatGe() => check_ge(self, read, write),
             SPN::Inc() | SPN::Dec() => check_nat_ops(self, read, write),
             SPN::Id() | SPN::Ite() | SPN::IfThen() => check_flow(self, read, write),
@@ -666,7 +701,13 @@ where
                 "Nondet: the tangent sort {sort} is inhabited by zero alone; use ZERO"
             ));
         }
-        Sort::Clock { .. } | Sort::Nat() | Sort::Real() | Sort::Bool() | Sort::Event() => {}
+        Sort::Enum(0) => return Err("Nondet: Enum(0) is empty; nothing to choose".to_string()),
+        Sort::Clock { .. }
+        | Sort::Nat()
+        | Sort::Real()
+        | Sort::Enum(_)
+        | Sort::Bool()
+        | Sort::Event() => {}
     }
     if read.into_iter().next().is_some() {
         return Err(format!("Nondet({sort}): cannot read values"));
@@ -723,6 +764,46 @@ where
     }
     if write.next().is_some() {
         return Err(format!("{op:?}: must write exactly one value, got more"));
+    }
+    Ok(())
+}
+
+// The label literal writes any `Enum(n)` wide enough for its label; `EnumIs`
+// reads one `Enum(n)` value, its label within range, and writes a Bool.
+fn check_enum<R, W, E: fmt::Display>(op: &SPN, read: R, write: W) -> Result<(), String>
+where
+    R: IntoIterator<Item = Result<Sort, E>>,
+    W: IntoIterator<Item = Result<Sort, E>>,
+{
+    let (label, test) = match op {
+        SPN::Enum(i) => (*i, false),
+        SPN::EnumIs(i) => (*i, true),
+        _ => unreachable!(),
+    };
+    let fits = |sort: Sort, what: &str| match sort {
+        Sort::Enum(n) if label < n as u64 => Ok(()),
+        Sort::Enum(_) => Err(format!("{op:?}: label {label} is out of range for {sort}")),
+        _ => Err(format!("{op:?}: {what} must be an Enum, got {sort}")),
+    };
+    let mut read = read.into_iter();
+    let mut write = write.into_iter();
+    if test {
+        let (r1, None) = (next_sort(&mut read, 0)?, read.next()) else {
+            return Err(format!("{op:?}: must read exactly one value"));
+        };
+        fits(r1, "input")?;
+    } else if read.next().is_some() {
+        return Err(format!("{op:?}: a constant cannot read values"));
+    }
+    let (w1, None) = (next_sort(&mut write, 0)?, write.next()) else {
+        return Err(format!("{op:?}: must write exactly one value"));
+    };
+    if test {
+        if !w1.is_bool() {
+            return Err(format!("{op:?}: output must be Bool, got {w1}"));
+        }
+    } else {
+        fits(w1, "output")?;
     }
     Ok(())
 }
@@ -794,6 +875,7 @@ mod tests {
 
     const NAT: Sort = Sort::Nat();
     const REAL: Sort = Sort::Real();
+    const ENUM: Sort = Sort::Enum(3);
     const BOOL: Sort = Sort::Bool();
     /// `Bool` under its other name: the theory's operations cannot tell the two
     /// apart, everything else can.
@@ -812,6 +894,8 @@ mod tests {
         assert!(NAT.is_nat() && !NAT.is_bool() && !NAT.is_clock() && !NAT.is_real());
         assert!(REAL.is_real() && !REAL.is_nat() && !REAL.is_bool() && !REAL.is_clock());
         assert_eq!(REAL.rank(), None);
+        assert!(ENUM.is_enum() && !ENUM.is_nat() && !ENUM.is_bool() && !NAT.is_enum());
+        assert_eq!(ENUM.rank(), None);
         assert!(BOOL.is_bool() && !BOOL.is_nat() && !BOOL.is_clock());
         // an event is a boolean, and is the only sort that is also an event
         assert!(EVENT.is_bool() && !EVENT.is_nat() && !EVENT.is_clock());
@@ -833,6 +917,7 @@ mod tests {
         // the constant sorts have the trivial tangent, which is a fixed point
         assert_eq!(NAT.T(), ZERO);
         assert_eq!(REAL.T(), ZERO);
+        assert_eq!(ENUM.T(), ZERO);
         assert_eq!(BOOL.T(), ZERO);
         assert_eq!(EVENT.T(), ZERO);
         assert_eq!(ZERO.T(), ZERO);
@@ -863,12 +948,15 @@ mod tests {
         // the alias is a name of its own, and prints as one
         assert_eq!(EVENT.to_string(), "Event".to_string());
         assert_eq!(REAL.to_string(), "Real".to_string());
+        assert_eq!(ENUM.to_string(), "Enum(3)".to_string());
     }
 
     #[test]
     fn op_display() {
         assert_eq!(SPN::Nat(3).to_string(), "(3 : nat)");
         assert_eq!(SPN::Real(0.5).to_string(), "(0.5 : real)");
+        assert_eq!(SPN::Enum(2).to_string(), "(2 : enum)");
+        assert_eq!(SPN::EnumIs(2).to_string(), "EnumIs(2)");
         assert_eq!(SPN::Bool(true).to_string(), "(true : bool)");
         assert_eq!(SPN::Clock(1.5).to_string(), "(1.5 : clk)");
         assert_eq!(SPN::Nondet(NAT).to_string(), "(* : Nat)");
@@ -1622,6 +1710,84 @@ mod tests {
         );
         assert!(SPN::Inc().check([REAL].map(ok), [REAL].map(ok)).is_err());
         assert!(SPN::Exp(1.0).check([].map(ok), [REAL].map(ok)).is_err());
+    }
+
+    #[test]
+    fn enum_is_one_of_n_labels() {
+        // the literal writes any wide enough Enum, the test reads one
+        assert!(SPN::Enum(2).check([].map(ok), [ENUM].map(ok)).is_ok());
+        assert!(
+            SPN::Enum(2)
+                .check([].map(ok), [Sort::Enum(100)].map(ok))
+                .is_ok()
+        );
+        assert!(SPN::Enum(3).check([].map(ok), [ENUM].map(ok)).is_err());
+        assert!(
+            SPN::Enum(0)
+                .check([].map(ok), [Sort::Enum(0)].map(ok))
+                .is_err()
+        );
+        assert!(SPN::Enum(0).check([].map(ok), [NAT].map(ok)).is_err());
+        assert!(SPN::Enum(0).check([ENUM].map(ok), [ENUM].map(ok)).is_err());
+        assert!(SPN::Enum(0).check([].map(ok), [].map(ok)).is_err());
+        assert!(SPN::EnumIs(2).check([ENUM].map(ok), [BOOL].map(ok)).is_ok());
+        assert!(
+            SPN::EnumIs(2)
+                .check([ENUM].map(ok), [EVENT].map(ok))
+                .is_ok()
+        );
+        assert!(
+            SPN::EnumIs(3)
+                .check([ENUM].map(ok), [BOOL].map(ok))
+                .is_err()
+        );
+        assert!(SPN::EnumIs(0).check([NAT].map(ok), [BOOL].map(ok)).is_err());
+        assert!(
+            SPN::EnumIs(0)
+                .check([ENUM].map(ok), [ENUM].map(ok))
+                .is_err()
+        );
+        assert!(
+            SPN::EnumIs(0)
+                .check([ENUM, ENUM].map(ok), [BOOL].map(ok))
+                .is_err()
+        );
+        assert!(SPN::EnumIs(0).check([].map(ok), [BOOL].map(ok)).is_err());
+        assert!(SPN::EnumIs(0).check([ENUM].map(ok), [].map(ok)).is_err());
+        // a choice, a copy, a branch, no flow: and nothing a count has
+        assert!(SPN::Nondet(ENUM).check([].map(ok), [ENUM].map(ok)).is_ok());
+        assert!(
+            SPN::Nondet(Sort::Enum(0))
+                .check([].map(ok), [Sort::Enum(0)].map(ok))
+                .is_err()
+        );
+        assert!(matches!(SPN::havoc(&ENUM), SPN::Nondet(ENUM)));
+        assert!(SPN::Id().check([ENUM].map(ok), [ENUM].map(ok)).is_ok());
+        assert!(
+            SPN::Ite()
+                .check([BOOL, ENUM, ENUM].map(ok), [ENUM].map(ok))
+                .is_ok()
+        );
+        assert!(
+            SPN::Ite()
+                .check([BOOL, ENUM, Sort::Enum(4)].map(ok), [ENUM].map(ok))
+                .is_err()
+        );
+        assert!(SPN::Zero().check([].map(ok), [ENUM.T()].map(ok)).is_ok());
+        assert!(matches!(SPN::zero(&ENUM.T()), SPN::Zero()));
+        assert!(SPN::IsZero().check([ENUM].map(ok), [BOOL].map(ok)).is_err());
+        assert!(
+            SPN::NatGe()
+                .check([ENUM, ENUM].map(ok), [BOOL].map(ok))
+                .is_err()
+        );
+        assert!(SPN::Inc().check([ENUM].map(ok), [ENUM].map(ok)).is_err());
+        assert!(SPN::Nat(1).check([].map(ok), [ENUM].map(ok)).is_err());
+        assert!(
+            SPN::ClkScale()
+                .check([DCLOCK, ENUM].map(ok), [DCLOCK].map(ok))
+                .is_err()
+        );
     }
 
     #[test]

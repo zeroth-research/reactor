@@ -42,7 +42,7 @@ from typing import override
 import torch
 
 from .zrth import Term, Wire, LRA, LIA, BV, SPN, Var, X as _X, d as _d
-from .sort import Sort, Event, Bool, Int, Real, BitVec, Nat, Clock, tensor_for
+from .sort import Sort, Event, Bool, Int, Real, BitVec, Nat, Clock, Enum, tensor_for
 from .builder import NonLinearError
 
 
@@ -70,7 +70,7 @@ def _with_shape(sort: Sort, shape: list) -> Sort:
             return Real(shape)
         case BitVec(bw, _):
             return BitVec(bw, shape)
-        case Nat() | Clock(_) | Event():
+        case Nat() | Clock(_) | Event() | Enum(_):
             return sort
     raise TypeError(f"unknown sort: {sort}")
 
@@ -96,6 +96,8 @@ def _family(sort: Sort) -> str:
             return f"BitVec{bw}"
         case Nat():
             return "Nat"
+        case Enum(n):
+            return f"Enum{n}"
         case Clock(rank):
             return f"Clock{rank}"
     raise TypeError(f"unknown sort: {sort}")
@@ -160,7 +162,7 @@ def _wrap(wire, theory, *, next=None, value=None, signed=False, tag=None) -> "Ex
             return AExpr(wire, theory, next=next, value=value, tag=tag)
         case BitVec(_, _):
             return WExpr(wire, theory, next=next, value=value, signed=signed, tag=tag)
-        case Nat() | Clock(_):
+        case Nat() | Clock(_) | Enum(_):
             return SExpr(wire, theory, next=next, value=value, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
 
@@ -457,14 +459,17 @@ class WExpr(AExpr):
 # ---------------------------------------------------------------------------
 # expr() — single construction / coercion entry point
 class SExpr(Expr):
-    """The scalar SPN sorts, Nat, Clock and Real. The theory has only zero tests, the
-    ordering of two counts, the bound on a clock, single-token steps and clock rates
-    relative to a time form, so those are the only operators that map: ``x == 0`` /
-    ``x != 0``, ``n >= m`` and its three siblings on counts, ``clk >= b`` and ``clk < b``
-    against a number, ``n + 1`` / ``n - 1``, and ``k * d(t)``, ``n * d(t)``, ``u * d(t)``
-    for a rate. A Real is a parameter: it scales a rate and is never tested."""
+    """The scalar SPN sorts, Nat, Clock, Real and Enum. The theory has only zero tests,
+    the test of a label, the ordering of two counts, the bound on a clock, single-token
+    steps and clock rates relative to a time form, so those are the only operators that
+    map: ``x == 0`` / ``x != 0``, ``q == i`` / ``q != i`` against a label, ``n >= m`` and
+    its three siblings on counts, ``clk >= b`` and ``clk < b`` against a number, ``n + 1``
+    / ``n - 1``, and ``k * d(t)``, ``n * d(t)``, ``u * d(t)`` for a rate. A Real is a
+    parameter: it scales a rate and is never tested."""
 
     def __eq__(self, other):
+        if isinstance(self.dtype, Enum):
+            return self._unop(SPN.EnumIs(_label(other, self.dtype)), out=Bool([1, 1]))
         if isinstance(other, Expr) or other != 0:
             raise TypeError("SPN only tests against zero: write `x == 0`")
         if isinstance(self.dtype, Real):
@@ -568,6 +573,18 @@ def _rank(sort: Sort) -> int:
         case Clock(rank):
             return rank
     return 0
+
+
+def _label(value, sort: Enum) -> int:
+    """A label of the sort: an integer below its size."""
+    if isinstance(value, Expr):
+        raise TypeError("SPN tests a label against a literal, never two labels")
+    match sort:
+        case Enum(n):
+            pass
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < n:
+        raise TypeError(f"a label of {sort} is an integer from 0 to {n - 1}, got {value!r}")
+    return value
 
 
 def _factor(sort: Sort):
@@ -708,7 +725,7 @@ def _const(value, theory, sort, *, signed, bw=None, tag=None) -> Expr:
 
 
 def _spn_const(value, sort, *, tag=None) -> Expr:
-    """SPN literals are plain numbers, not tensors: ``Nat(v)``, ``Real(x)``,
+    """SPN literals are plain numbers, not tensors: ``Nat(v)``, ``Real(x)``, ``Enum(i)``,
     ``Bool(b)``/``Event(b)``, ``Clock(x)``."""
     if not isinstance(value, (bool, int, float)):
         raise TypeError(f"expr(): SPN literals are scalars, got {type(value).__name__}")
@@ -722,6 +739,10 @@ def _spn_const(value, sort, *, tag=None) -> Expr:
         if isinstance(sort, Real) and (list(sort.shape) != [1, 1] or sort.rank):
             raise TypeError(f"expr(): an SPN real is a scalar parameter, got {sort}")
         op, wire = SPN.Real(float(value)), Wire(Real([1, 1]))
+    elif sort is Enum:
+        raise TypeError("expr(): a label literal needs its sort's size: Enum(n)")
+    elif isinstance(sort, Enum):
+        op, wire = SPN.Enum(_label(value, sort)), Wire(sort)
     elif sort is Clock or isinstance(sort, Clock):
         if _rank(sort) if isinstance(sort, Clock) else 0:
             raise TypeError("expr(): a clock rate is not a literal: write `k * d(t)`")

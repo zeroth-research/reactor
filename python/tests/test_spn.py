@@ -6,7 +6,7 @@ Poisson clock expires.
 """
 
 import pytest
-from zrth import SPN, Atom, Bool, Clock, Event, Module, Nat, Real, Term, Var, Wire, X, Zero, d
+from zrth import SPN, Atom, Bool, Clock, Enum, Event, Module, Nat, Real, Term, Var, Wire, X, Zero, d
 
 # the firing rate of the transition, and the speed of its countdown clock
 RATE = 2.5
@@ -118,6 +118,13 @@ def test_terms_typecheck():
     Term(SPN.Id(), [X(u)], [u])
     Term.constant(SPN.Zero(), [d(u)])
     Term(SPN.ClkScaleReal(), [Wire(Clock(1))], [d(c), u])
+    # a label: a literal below the size, a test, a copy, no flow
+    q = Var(Enum(3))
+    Term.constant(SPN.Enum(2), [X(q)])
+    Term(SPN.EnumIs(2), [Wire(BOOL)], [q])
+    Term(SPN.EnumIs(0), [Wire(Event())], [q])
+    Term(SPN.Id(), [X(q)], [q])
+    Term.constant(SPN.Zero(), [d(q)])
 
 
 @pytest.mark.parametrize(
@@ -155,6 +162,15 @@ def test_terms_typecheck():
         (lambda p, c: Term.constant(SPN.Real(0.5), [X(c)]), "cannot be written"),
         # an SPN real is a scalar parameter
         (lambda p, c: Term.constant(SPN.Real(0.5), [Wire(Real([2, 1]))]), "invalid cast"),
+        # a label is below the size, and is tested, never counted
+        (lambda p, c: Term.constant(SPN.Enum(3), [Wire(Enum(3))]), "out of range"),
+        (lambda p, c: Term(SPN.EnumIs(3), [Wire(BOOL)], [Var(Enum(3))]), "out of range"),
+        (lambda p, c: Term.constant(SPN.Enum(0), [X(p)]), "must be an Enum"),
+        (lambda p, c: Term(SPN.EnumIs(0), [Wire(BOOL)], [p]), "must be an Enum"),
+        (lambda p, c: Term(SPN.EnumIs(0), [Wire(Enum(3))], [Var(Enum(3))]), "must be Bool"),
+        (lambda p, c: Term(SPN.IsZero(), [Wire(BOOL)], [Var(Enum(3))]), "must be Nat"),
+        (lambda p, c: Term(SPN.Inc(), [Wire(Enum(3))], [Var(Enum(3))]), "must be Nat"),
+        (lambda p, c: Term.constant(SPN.Nat(1), [X(Var(Enum(3)))]), "cannot be written"),
     ],
 )
 def test_ill_typed_terms_raise(build, message):

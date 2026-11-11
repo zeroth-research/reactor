@@ -4,7 +4,7 @@ They support type checking (mypy) and editor hints only, with no runtime effect,
 are maintained by hand: PyO3 does not generate stubs, so adding a theory or an op means
 updating this file too (see https://pyo3.rs/v0.29.0/python-typing-hints).
 
-The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/Nat/Event/Clock/BitVec), the
+The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/Nat/Enum/Event/Clock/BitVec), the
 per-theory op enums `LRA` / `LIA` / `BV` / `SPN` (complex enums: each variant is its own subclass,
 payloads are read via `match`/unpacking), and the structural layer `Wire` / `Var` /
 `Term` / `Atom` / `Module`. A `Var` bundles the latched, next (`X(v)`), and
@@ -65,6 +65,14 @@ class Nat(Sort):
     def __init__(self) -> None: ...
 
 
+class Enum(Sort):
+    """One of `size` labels, held as the integers `0` to `size - 1` (`SPN`): the state of
+    an automaton, the colour of a token. Set at a round and tested against a label; no
+    order and no arithmetic."""
+
+    def __init__(self, size: int) -> None: ...
+
+
 class Event(Sort):
     """A truth value under another name (`SPN`): the momentary signal that
     something has happened. An alias of the scalar `Bool([1, 1])` in behaviour --
@@ -89,8 +97,8 @@ class BitVec(Sort):
 
 
 class Zero(Sort):
-    """The trivial tangent of the constant sorts (Bool, Int, Nat, Event, BitVec): a
-    singleton, inhabited by exactly the zero value. Terminal, not empty."""
+    """The trivial tangent of the constant sorts (Bool, Int, Nat, Enum, Event, BitVec, and
+    `SPN`'s Real): a singleton, inhabited by exactly the zero value. Terminal, not empty."""
 
     def __init__(self) -> None: ...
 
@@ -404,6 +412,16 @@ class SPN:
         """A real-parameter literal: a number held between rounds, a factor on a rate."""
 
         def __init__(self, value: float) -> None: ...
+
+    class Enum(SPN):
+        """A label literal: writes any `Enum(n)` wire with `label < n`."""
+
+        def __init__(self, label: int) -> None: ...
+
+    class EnumIs(SPN):
+        """Is the value this label? `Enum(n) -> Bool`, with `label < n`."""
+
+        def __init__(self, label: int) -> None: ...
 
     class Bool(SPN):
         def __init__(self, value: bool) -> None: ...

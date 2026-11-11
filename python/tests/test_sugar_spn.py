@@ -3,7 +3,7 @@
 
 import pytest
 
-from zrth import SPN, LIA, Bool, Clock, Event, Nat, Real, Var, X as _X, d as _d
+from zrth import SPN, LIA, Bool, Clock, Enum, Event, Nat, Real, Var, X as _X, d as _d
 from zrth import Module as compose
 from zrth.expr import collecting, expr
 from zrth.sugar import Module, X, d, ite, if_then, fired, exp, clkrate
@@ -169,6 +169,51 @@ def test_a_real_variable_is_a_parameter():
         expr(u, theory=SPN) >= 0.5
     with collecting(), pytest.raises(TypeError, match="one token at a time"):
         expr(u, theory=SPN) + 1
+
+
+def test_a_label_is_set_and_tested():
+    # an automaton over the count: idle -> busy once two tokens are in, busy -> done at none
+    class M(Module):
+        def init(self, t):
+            return 0, 0
+
+        def next(self, q, n, t):
+            busy = (q == 0) & (n >= 2)
+            done = (q == 1) & (n == 0)
+            return ite(busy, 1, ite(done, 2, q)), n + 1
+
+        def flow(self, q, n, t):
+            return 0, 0
+
+    q, n, t = Var(Enum(3)), Var(Nat()), Var(Clock())
+    m = M(theory=SPN, ctrl=(q, n), extl=(t,))
+    shown = m.with_varnames({q: "q"})
+    assert "q : Enum(3)" in shown and "(0 : enum)" in shown and "(2 : enum)" in shown
+    assert "EnumIs(0)" in shown and "EnumIs(1)" in shown
+    assert _ops(m.atoms[0].delay) == ["Zero", "Zero"]
+    with collecting() as terms:
+        expr(q, theory=SPN) != 2
+    assert _ops(terms) == ["EnumIs", "Not"]
+
+
+@pytest.mark.parametrize(
+    "use, message",
+    [
+        (lambda q, n: q == 3, "from 0 to 2"),
+        (lambda q, n: q == -1, "from 0 to 2"),
+        (lambda q, n: q == 1.0, "from 0 to 2"),
+        (lambda q, n: q == bool(1), "from 0 to 2"),  # a truth value is not a label
+        (lambda q, n: q == n, "never two labels"),
+        (lambda q, n: n == q, "only tests against zero"),
+        (lambda q, n: q >= 1, "token counts and bounds clock values"),
+        (lambda q, n: q + 1, "one token at a time"),
+        (lambda q, n: ite(n == 0, 3, q), "from 0 to 2"),
+    ],
+)
+def test_a_label_is_nothing_but_a_label(use, message):
+    q, n = Var(Enum(3)), Var(Nat())
+    with collecting(), pytest.raises(TypeError, match=message):
+        use(expr(q, theory=SPN), expr(n, theory=SPN))
 
 
 @pytest.mark.parametrize(

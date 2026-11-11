@@ -29,6 +29,8 @@ pub enum Sort {
     Int([usize; 2]),
     /// A token count: the marking of a place (`spn`).
     Nat(),
+    /// One of `n` labels, `0` to `n - 1` (`spn`): an automaton state, a colour.
+    Enum(usize),
     /// A truth value under another name (`spn`): the momentary signal that
     /// something has happened. An alias of the scalar `Bool([1, 1])` in
     /// behaviour, a sort of its own only in being recognisable as one.
@@ -58,6 +60,8 @@ pub enum Sort {
     Int([usize; 2]),
     /// A token count: the marking of a place (`spn`).
     Nat(),
+    /// One of `n` labels, `0` to `n - 1` (`spn`): an automaton state, a colour.
+    Enum(usize),
     /// A truth value under another name (`spn`): the momentary signal that
     /// something has happened. An alias of the scalar `Bool([1, 1])` in
     /// behaviour, a sort of its own only in being recognisable as one.
@@ -97,9 +101,12 @@ impl Tangent for Sort {
                 rank: rank + 1,
             },
             Sort::Clock { rank } => Sort::Clock { rank: rank + 1 },
-            Sort::Bool(_) | Sort::Int(_) | Sort::Nat() | Sort::Event() | Sort::BitVec(..) => {
-                Sort::Zero()
-            }
+            Sort::Bool(_)
+            | Sort::Int(_)
+            | Sort::Nat()
+            | Sort::Enum(_)
+            | Sort::Event()
+            | Sort::BitVec(..) => Sort::Zero(),
             Sort::Zero() => Sort::Zero(),
         }
     }
@@ -122,6 +129,9 @@ impl fmt::Display for Sort {
             }
             Sort::Nat() => {
                 write!(f, "Nat")
+            }
+            Sort::Enum(n) => {
+                write!(f, "Enum({n})")
             }
             Sort::Event() => {
                 write!(f, "Event")
@@ -180,6 +190,7 @@ impl From<spn::Sort> for Sort {
         match value {
             spn::Sort::Nat() => Sort::Nat(),
             spn::Sort::Real() => Sort::real([1, 1]),
+            spn::Sort::Enum(n) => Sort::Enum(n),
             spn::Sort::Bool() => Sort::Bool([1, 1]),
             spn::Sort::Event() => Sort::Event(),
             spn::Sort::Clock { rank } => Sort::Clock { rank },
@@ -194,6 +205,7 @@ impl TryFrom<Sort> for spn::Sort {
     fn try_from(value: Sort) -> Result<Self, Self::Error> {
         match value {
             Sort::Nat() => Ok(spn::Sort::Nat()),
+            Sort::Enum(n) => Ok(spn::Sort::Enum(n)),
             Sort::Real {
                 shape: [1, 1],
                 rank: 0,
@@ -512,6 +524,7 @@ mod tests {
         for s in [
             spn::Sort::Nat(),
             spn::Sort::Real(),
+            spn::Sort::Enum(3),
             spn::Sort::Bool(),
             spn::Sort::Event(),
             spn::Sort::clock(),
@@ -532,6 +545,11 @@ mod tests {
         // the tangent is taken in `any` and in `spn` alike
         assert_eq!(Sort::from(spn::Sort::clock()).T(), Sort::clock().T());
         assert_eq!(Sort::from(spn::Sort::Nat()).T(), Sort::Zero());
+        assert_eq!(Sort::Enum(3).T(), Sort::Zero());
+        assert_eq!(Sort::Enum(3).to_string(), "Enum(3)");
+        assert!(lia::Sort::try_from(Sort::Enum(3)).is_err());
+        assert!(lra::Sort::try_from(Sort::Enum(3)).is_err());
+        assert!(bv::Sort::try_from(Sort::Enum(3)).is_err());
         // a matrix sort is not an `spn` sort
         assert!(spn::Sort::try_from(Sort::Bool([2, 2])).is_err());
         assert!(spn::Sort::try_from(Sort::Int([1, 1])).is_err());

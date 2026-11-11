@@ -29,7 +29,7 @@ import random
 from dataclasses import dataclass, field
 
 from .zrth import SPN, Combinatorial, Differential, Sequential, X, d
-from .sort import Bool, Clock, Event, Nat, Real
+from .sort import Bool, Clock, Enum, Event, Nat, Real
 
 
 class FlowNotSolvable(Exception):
@@ -171,6 +171,10 @@ def _eval(op, r, rng):
             return r[0] * r[1]
         case SPN.Real(x):
             return x
+        case SPN.Enum(i):
+            return i
+        case SPN.EnumIs(i):
+            return r[0] == i
         case SPN.Zero():
             return 0
         case SPN.Nondet(_):
@@ -468,7 +472,8 @@ def uniform(gap):
     return lambda hi, rng: hi if gap >= hi else rng.uniform(gap, hi)
 
 
-_DRIVEN = (Bool([1, 1]), Event(), Nat(), Real([1, 1]))
+def _driven(sort) -> bool:
+    return sort in (Bool([1, 1]), Event(), Nat(), Real([1, 1])) or isinstance(sort, Enum)
 
 
 class Simulation:
@@ -476,8 +481,8 @@ class Simulation:
 
     `t` is the module's time reference, an external that reads the current time and runs
     at rate 1; left out, it is the module's one Clock external. Any other external must be a
-    Bool, an Event, a Nat or a Real: a *driven input*, whose value every `step` receives and
-    holds
+    Bool, an Event, a Nat, a Real or an Enum: a *driven input*, whose value every `step`
+    receives and holds
     from then through the round the step ends with. `seed` feeds the exponential clocks and
     the `uniform` scheduler. `scheduler` is `last()` (the default), `first(gap)`,
     `uniform(gap)`, or a function `(hi, rng) -> delta` choosing how long the step flows,
@@ -508,10 +513,10 @@ class Simulation:
             raise TypeError("the time reference is not an external of the module")
         self.inputs = [v for v in extl if v != t]
         for v in self.inputs:
-            if v.dtype not in _DRIVEN:
+            if not _driven(v.dtype):
                 raise TypeError(
                     f"an external other than the time reference is a driven input, a Bool, an "
-                    f"Event, a Nat or a Real, got {v.dtype} ({v})"
+                    f"Event, a Nat, a Real or an Enum, got {v.dtype} ({v})"
                 )
         self.module, self.t = module, t
         self.pick = last() if scheduler is None else scheduler
