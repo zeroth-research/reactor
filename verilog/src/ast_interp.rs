@@ -286,9 +286,21 @@ impl<'m> Interp<'m> {
                 let env = &self.ctxs[c].env;
                 let width = typing::pieces(env, lhs).iter().map(|p| p.width()).sum();
                 let v = self.assigned(c, rhs, width, &scope(out), values, active)?;
+                // the variable indices, evaluated before anything is written
+                let pieces = typing::pieces(env, lhs);
+                let mut indices = Vec::new();
+                for p in &pieces {
+                    indices.push(match p.variable {
+                        Some(var) => {
+                            let i = self.own(c, var.index, &scope(out), values, active)?;
+                            Some(BigInt::from(i.unsigned().clone()) - var.below)
+                        }
+                        None => None,
+                    });
+                }
                 // the pieces take the bits of `v` from the top down
                 let mut top = v.width();
-                for p in typing::pieces(env, lhs) {
+                for (p, index) in pieces.iter().zip(indices) {
                     let bits = slice(&v, top - 1, top - p.width());
                     top -= p.width();
                     // the other bits of a register keep their value; those
@@ -299,7 +311,22 @@ impl<'m> Interp<'m> {
                         None if comb => BitVec::zero(env[&p.name].ty.width),
                         None => values[&self.ctxs[c].names[&p.name]].clone(),
                     };
-                    out.insert(p.name.clone(), write(&old, p.lo, &bits));
+                    let new = match index {
+                        None => write(&old, p.lo, &bits),
+                        // bit by bit from the lowest one at `lo`, skipping
+                        // those outside the signal
+                        Some(lo) => {
+                            let mut new = old;
+                            for k in 0..p.width() {
+                                let at = &lo + k;
+                                if let Some(at) = at.to_usize().filter(|at| *at < new.width()) {
+                                    new = write(&new, at, &slice(&bits, k, k));
+                                }
+                            }
+                            new
+                        }
+                    };
+                    out.insert(p.name.clone(), new);
                 }
                 Ok(())
             }

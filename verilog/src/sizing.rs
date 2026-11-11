@@ -57,8 +57,8 @@ divisor of `/` and `%` is a nonzero constant.
 */
 
 use crate::ast::{
-    BinOp, Cast, Dir, Error, Expr, ExprKind, Index, Item, Module, Name, Select, Span, Stmt,
-    StmtKind, Ty, UnOp,
+    BinOp, Cast, Dir, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Name, Select,
+    Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::theory::SvOp;
@@ -169,6 +169,29 @@ impl Sizer<'_> {
                     .map(|p| p.width())
                     .sum();
                 *rhs = self.assign(width, rhs)?;
+                self.target(lhs)
+            }
+        }
+    }
+
+    /// Sizes the variable indices of a target, which are self-determined.
+    fn target(&self, l: &mut Lvalue) -> Result<()> {
+        let span = l.span;
+        match &mut l.kind {
+            LvalueKind::Var(_) => Ok(()),
+            LvalueKind::Concat(ls) => ls.iter_mut().try_for_each(|l| self.target(l)),
+            LvalueKind::Select(x, sel) => {
+                let Some(i) = sel.index() else {
+                    return Ok(());
+                };
+                typing::target_index(x, sel, self.det(i)?, span)?;
+                let sized = self.synth(i)?;
+                if let Select::Bit(Index::Expr(i))
+                | Select::Up(Index::Expr(i), _)
+                | Select::Down(Index::Expr(i), _) = sel
+                {
+                    **i = sized;
+                }
                 Ok(())
             }
         }
@@ -667,8 +690,36 @@ fn stmt(env: &Env, s: &Stmt) -> String {
             }
             out + " endcase"
         }
-        StmtKind::NonBlocking { lhs, rhs } => format!("{lhs} <= {};", expr(env, rhs)),
-        StmtKind::Blocking { lhs, rhs } => format!("{lhs} = {};", expr(env, rhs)),
+        StmtKind::NonBlocking { lhs, rhs } => {
+            format!("{} <= {};", target(env, lhs), expr(env, rhs))
+        }
+        StmtKind::Blocking { lhs, rhs } => format!("{} = {};", target(env, lhs), expr(env, rhs)),
+    }
+}
+
+/// A sized assignment target as source.
+fn target(env: &Env, l: &Lvalue) -> String {
+    match &l.kind {
+        LvalueKind::Var(y) => y.clone(),
+        LvalueKind::Select(y, sel) => select(env, y, sel),
+        LvalueKind::Concat(ls) => {
+            let ls: Vec<String> = ls.iter().map(|l| target(env, l)).collect();
+            format!("{{{}}}", ls.join(", "))
+        }
+    }
+}
+
+/// A sized select `x[…]` as source.
+fn select(env: &Env, x: &str, sel: &Select) -> String {
+    let index = |i: &Index| match i {
+        Index::Const(k) => k.to_string(),
+        Index::Expr(e) => expr(env, e),
+    };
+    match sel {
+        Select::Bit(i) => format!("{x}[{}]", index(i)),
+        Select::Part { hi, lo } => format!("{x}[{hi}:{lo}]"),
+        Select::Up(i, w) => format!("{x}[{} +: {w}]", index(i)),
+        Select::Down(i, w) => format!("{x}[{} -: {w}]", index(i)),
     }
 }
 
@@ -694,18 +745,7 @@ fn expr(env: &Env, e: &Expr) -> String {
         }
         ExprKind::Concat(es) => format!("{{{}}}", list(es)),
         ExprKind::Repl(n, es) => format!("{{{n}{{{}}}}}", list(es)),
-        ExprKind::Select(x, sel) => {
-            let index = |i: &Index| match i {
-                Index::Const(k) => k.to_string(),
-                Index::Expr(e) => expr(env, e),
-            };
-            match sel {
-                Select::Bit(i) => format!("{x}[{}]", index(i)),
-                Select::Part { hi, lo } => format!("{x}[{hi}:{lo}]"),
-                Select::Up(i, w) => format!("{x}[{} +: {w}]", index(i)),
-                Select::Down(i, w) => format!("{x}[{} -: {w}]", index(i)),
-            }
-        }
+        ExprKind::Select(x, sel) => select(env, x, sel),
         ExprKind::Cast(Cast::Size(n), a) => format!("{n}'({})", expr(env, a)),
         ExprKind::Cast(Cast::Signed, a) => format!("signed'({})", expr(env, a)),
         ExprKind::Cast(Cast::Unsigned, a) => format!("unsigned'({})", expr(env, a)),

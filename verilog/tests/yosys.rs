@@ -772,6 +772,52 @@ endmodule
     );
 }
 
+/// Yosys (0.69) deviates from the standard on two assignments to selects
+/// with a variable index (`tests/varwrites.sv`; `tests/targets.rs` checks
+/// our values against hand-computed ones). It drops a `-:` select reaching
+/// below bit 0 completely, instead of writing the bits from bit 0 up. And it
+/// reads the concatenation target `{f, r[n]} = {e[2], e[0]}` backwards: it
+/// drives the input bit `e[0]` with `a[n]` and leaves `r = a`. In SMT-LIB
+/// that constrains Yosys's inputs to `e[0] = a[n]`, under which our `r`
+/// equals `a` too, so a comparison would find no difference in `r`. So the
+/// Yosys comparison refuses a netlist with conflicting drivers; without the
+/// concatenation, only the `-:` deviation is left, where the reference
+/// semantics sides with us.
+#[test]
+fn yosys_deviates_on_variable_index_writes() {
+    let Some((yosys, z3)) = tools() else { return };
+    let design = include_str!("varwrites.sv");
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("dev.sv");
+    std::fs::write(&path, design).unwrap();
+    let err = yosys::run(&yosys, &path, "dev", &[]).unwrap_err();
+    assert!(
+        err.starts_with(&format!(
+            "Yosys's netlist of {} has conflicting drivers, so a comparison with it would not \
+             be meaningful:\nWarning: multiple conflicting drivers for dev.\\e [0]:",
+            path.display()
+        )),
+        "{err}"
+    );
+    // the `-:` part alone
+    let design = design.replace(
+        "  always_comb begin r = a; {f, r[n]} = {e[2], e[0]}; end\n",
+        "  assign {f, r} = {e[2], a};\n",
+    );
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("down.sv");
+    std::fs::write(&path, &design).unwrap();
+    let inst = elab::load(&design, &path).unwrap();
+    let ys = yosys::run(&yosys, &path, "dev", &[]).unwrap();
+    let t = lower_inst(&inst).unwrap();
+    let m = miter::build(&t, &ys).unwrap();
+    assert_eq!(
+        blame(&z3, &inst, &t, &m),
+        [
+            ("init:z".into(), Side::Ours, None),
+            ("z".into(), Side::Ours, None)
+        ]
+    );
+}
+
 /// Wrong on both sides: our `q` counts down, Yosys's stays, the reference
 /// counts up, so the reference agrees with neither.
 #[test]
@@ -987,7 +1033,8 @@ fn tokens(source: &str) -> Vec<(usize, usize, &str)> {
 /// or, if signed, unsigned (`8'sd3` becomes `8'd3`), an unsized decimal
 /// number one smaller (`0` becomes `1`) or unsigned (`'d3` instead of the
 /// `int` 3), `'0` and `'1` swapped, `$signed` or
-/// `$unsigned` dropped (its operand stays), the condition of an `if`
+/// `$unsigned` dropped (its operand stays), a name as select index
+/// inverted (`x[i]` becomes `x[~i]`), the condition of an `if`
 /// negated, or the edge of an `always_ff` block swapped (`posedge` and
 /// `negedge`); for a block with an asynchronous reset also the polarity of
 /// the reset flipped (`posedge rst` with `if (rst)` becomes `negedge rst`
@@ -1035,6 +1082,22 @@ fn mutants(source: &str) -> Vec<Mutant> {
             out.push(mutant(start, end, ""));
         } else if text == "'0" || text == "'1" {
             out.push(mutant(start, end, if text == "'0" { "'1" } else { "'0" }));
+        } else if text == "[" {
+            // a select whose index is a name: every index value changes
+            let rest = &source[end..];
+            let len = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(rest.len());
+            let after = rest[len..].trim_start();
+            if rest.starts_with(|c: char| c.is_ascii_alphabetic())
+                && (after.starts_with(']') || after.starts_with("+:") || after.starts_with("-:"))
+            {
+                let name = &rest[..len];
+                out.push(Mutant {
+                    what: format!("{} `[{name}` -> `[~{name}`", at(start)),
+                    source: format!("{}~{}", &source[..end], &source[end..]),
+                });
+            }
         } else if text == "if" {
             // the condition: from `(` to its `)`
             let (open, _, _) = tokens[k + 1];
@@ -1168,6 +1231,35 @@ fn mutants_of_text() {
     assert!(m[2].source.contains("if (!(en && (x))) q"));
     assert!(m[5].source.contains("q <= 4'd0;"));
     assert!(m[14].source.contains("@(posedge c) r"));
+    // names as select indices, not in declarations or nested selects
+    let source =
+        "logic [W-1:0] v; assign y = a[i] ^ b[j +: 2] ^ c[k[1:0]]; always_comb z[n] = 1'b0;";
+    let m = mutants(source);
+    let whats: Vec<&str> = m.iter().map(|m| m.what.as_str()).collect();
+    assert_eq!(
+        whats,
+        [
+            "1:9 `-` -> `+`",
+            "1:10 `1` -> `0`",
+            "1:10 `1` -> `'d1`",
+            "1:12 `0` -> `1`",
+            "1:12 `0` -> `'d0`",
+            "1:30 `[i` -> `[~i`",
+            "1:34 `^` -> `&`",
+            "1:37 `[j` -> `[~j`",
+            "1:40 `+:` -> `-:`",
+            "1:43 `2` -> `1`",
+            "1:43 `2` -> `'d2`",
+            "1:46 `^` -> `&`",
+            "1:52 `1` -> `0`",
+            "1:52 `1` -> `'d1`",
+            "1:54 `0` -> `1`",
+            "1:54 `0` -> `'d0`",
+            "1:72 `[n` -> `[~n`",
+            "1:78 `1'b0` -> `1'd1`",
+        ]
+    );
+    assert!(m[5].source.contains("a[~i] ^"));
     // unsized literals and sign casts
     let source = "assign y = $signed(a) + 'd3 + 'sh7 + '1 + $unsigned('0);";
     let whats: Vec<String> = mutants(source).into_iter().map(|m| m.what).collect();
@@ -1617,6 +1709,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "nest.sv",
         "15:31 `3` -> `2`",
         "the values of `K` (2 and 7) fit in 3 bits",
+    ),
+    (
+        "oorwr.sv",
+        "18:11 `1` -> `'d1`",
+        "`i` is unsigned, so `i - 1` is an unsigned 32-bit subtraction either way",
     ),
     (
         "pipe.sv",

@@ -1,0 +1,30 @@
+module deser
+  external
+    clk : bv1
+    en : bv1
+    d : bv1
+    q@init : bv8
+    cnt@init : bv3
+  interface
+    q : bv8
+    cnt : bv3
+  atom controls q, cnt reads clk, en, d, q, cnt awaits clk, q@init, cnt@init
+    init
+      X(q) := ID X(q@init)
+      X(cnt) := ID X(cnt@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 8'd1
+      %3 := SHL (%2, cnt)
+      %4 := ZEXT[8] d
+      %5 := SHL (%4, cnt)
+      %6 := NOT %3
+      %7 := AND (q, %6)
+      %8 := OR (%7, %5)
+      %9 := 3'd1
+      %10 := ADD (cnt, %9)
+      %11 := ITE (en, %8, q)
+      %12 := ITE (en, %10, cnt)
+      X(q) := ITE (clk@pos, %11, q)
+      X(cnt) := ITE (clk@pos, %12, cnt)

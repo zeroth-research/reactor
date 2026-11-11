@@ -7,8 +7,8 @@ Yosys is looked up as `$YOSYS_BIN` (the binary itself), then
 gives it the script of [`script`]:
 
 ```text
-read_verilog -sv -noblackbox FILE; hierarchy -top TOP; proc -norom; flatten; clk2fflogic;
-write_smt2 -wires -
+read_verilog -sv -noblackbox FILE; hierarchy -top TOP; proc -norom;
+setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; clk2fflogic; write_smt2 -wires -
 ```
 
 `flatten` makes the whole hierarchy one module, whose wires have our
@@ -17,7 +17,27 @@ flip-flop. `-noblackbox`: by default `read_verilog` marks an empty module
 as a blackbox, which `flatten` keeps as an instance and `write_smt2` then
 refers to without declaring it. `-norom`: by default `proc` turns a `case`
 that only selects constants into a ROM, which `write_smt2` writes with SMT
-arrays; without it the `case` stays multiplexers, as in our translation. `clk2fflogic` makes the clocks ordinary signals (inputs, or
+arrays; without it the `case` stays multiplexers, as in our translation.
+`opt_clean` removes cells whose outputs nothing uses: `read_verilog` lowers
+an assignment to a select with a variable index in a clocked block through
+helper variables (`$bitselwrite$pos…`, `$lookahead…`), for which `proc`
+makes flip-flops that nothing reads. Every wire with a source name is
+marked `keep` first (the pattern `[!$]*` leaves out Yosys's own names,
+which start with `$`): `opt_clean` would otherwise also remove unused
+source names that it considers internal (`_zz_1_`, as SpinalHDL generates
+them). It runs before `flatten`, while every port of a child is still a
+port: afterwards it would also remove a child's output that the parent
+leaves unconnected. `check` reports problems of the netlist; [`run`] fails
+on conflicting drivers. The comparison relies on Yosys's transition
+accepting every input value, and a wire with two drivers breaks that: Yosys
+0.69 reads the target `{f, r[n]} = {e[2], e[0]}` backwards and drives the
+input bit `e[0]`, which in SMT-LIB defines the input as a function of other
+signals, so the comparison could find no difference where Yosys is wrong.
+The other problems `check` reports do not hide differences: a used wire
+without a driver is free in every step (Yosys's side only gets more
+behaviors; a register bit that is never written, which for us keeps its
+initial value, is one), and `write_smt2` itself fails on a combinational
+loop. `clk2fflogic` makes the clocks ordinary signals (inputs, or
 wires for clocks derived from registers), sampled at every step of an
 implicit global clock, so that one transition is one time step, as one of
 our rounds is (see below).
@@ -107,14 +127,16 @@ pub fn script(file: &Path, top: &str) -> Result<String, String> {
         return Err(format!("{file}: path not usable in a Yosys script"));
     }
     Ok(format!(
-        "read_verilog -sv -noblackbox \"{file}\"; hierarchy -top {top}; proc -norom; flatten; \
-         clk2fflogic; write_smt2 -wires -"
+        "read_verilog -sv -noblackbox \"{file}\"; hierarchy -top {top}; proc -norom; \
+         setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; clk2fflogic; \
+         write_smt2 -wires -"
     ))
 }
 
 /// Runs the Yosys binary `bin` on the module `top` of `file` and parses
-/// its output. Fails if Yosys cannot be started, reports an error, or
-/// `overrides` is not empty (not supported yet, see the module docs).
+/// its output. Fails if Yosys cannot be started, reports an error or a
+/// wire with conflicting drivers (see the module docs), or `overrides` is
+/// not empty (not supported yet).
 pub fn run(bin: &Path, file: &Path, top: &str, overrides: &[Override]) -> Result<Smt2, String> {
     if let Some(o) = overrides.first() {
         return Err(format!(
@@ -130,6 +152,14 @@ pub fn run(bin: &Path, file: &Path, top: &str, overrides: &[Override]) -> Result
         let err = String::from_utf8_lossy(&out.stderr);
         let log = String::from_utf8_lossy(&out.stdout);
         return Err(format!("yosys failed on {}:\n{err}{log}", file.display()));
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    if err.contains("Warning: multiple conflicting drivers") {
+        return Err(format!(
+            "Yosys's netlist of {} has conflicting drivers, so a comparison with it would \
+             not be meaningful:\n{err}",
+            file.display()
+        ));
     }
     parse(&String::from_utf8_lossy(&out.stdout))
 }

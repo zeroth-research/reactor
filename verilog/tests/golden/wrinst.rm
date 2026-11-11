@@ -1,0 +1,47 @@
+module wrinst
+  external
+    clk : bv1
+    k : bv3
+    d : bv1
+    a.q@init : bv8
+    b.q@init : bv4
+  interface
+    q8 : bv8
+    q4 : bv4
+  private
+    b.k : bv2
+    b.d : bv1
+  atom controls b.k awaits k
+    init = update
+      X(b.k) := EXTRACT[1:0] X(k)
+  atom controls b.d awaits d
+    init = update
+      X(b.d) := NOT X(d)
+  atom controls q8 reads clk, k, d, q8 awaits clk, a.q@init
+    init
+      X(q8) := ID X(a.q@init)
+    update
+      %1 := NOT X(clk)
+      a.clk@neg := AND (clk, %1)
+      %2 := 8'd1
+      %3 := SHL (%2, k)
+      %4 := ZEXT[8] d
+      %5 := SHL (%4, k)
+      %6 := NOT %3
+      %7 := AND (q8, %6)
+      %8 := OR (%7, %5)
+      X(q8) := ITE (a.clk@neg, %8, q8)
+  atom controls q4 reads clk, q4, b.k, b.d awaits clk, b.q@init
+    init
+      X(q4) := ID X(b.q@init)
+    update
+      %1 := NOT X(clk)
+      b.clk@neg := AND (clk, %1)
+      %2 := 4'd1
+      %3 := SHL (%2, b.k)
+      %4 := ZEXT[4] b.d
+      %5 := SHL (%4, b.k)
+      %6 := NOT %3
+      %7 := AND (q4, %6)
+      %8 := OR (%7, %5)
+      X(q4) := ITE (b.clk@neg, %8, q4)

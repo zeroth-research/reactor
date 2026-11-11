@@ -1,0 +1,26 @@
+module bytewr
+  external
+    clk : bv1
+    we : bv1
+    lane : bv2
+    d : bv8
+    w@init : bv32
+  interface
+    w : bv32
+  atom controls w reads clk, we, lane, d, w awaits clk, w@init
+    init
+      X(w) := ID X(w@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 3'd0
+      %3 := CONCAT (lane, %2)
+      %4 := 32'd255
+      %5 := SHL (%4, %3)
+      %6 := ZEXT[32] d
+      %7 := SHL (%6, %3)
+      %8 := NOT %5
+      %9 := AND (w, %8)
+      %10 := OR (%9, %7)
+      %11 := ITE (we, %10, w)
+      X(w) := ITE (clk@pos, %11, w)

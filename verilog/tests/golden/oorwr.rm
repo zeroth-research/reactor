@@ -1,0 +1,78 @@
+module oorwr
+  external
+    clk : bv1
+    i : bv4
+    e : bv3
+    d : bv1
+    q@init : bv8
+    p@init : bv8
+    r@init : bv8
+    f@init : bv1
+  interface
+    p : bv8
+    q : bv8
+    r : bv8
+    f : bv1
+  atom controls p, q, r, f reads clk, i, e, d, p, q, r, f awaits clk, q@init, p@init, r@init, f@init
+    init
+      X(q) := ID X(q@init)
+      X(p) := ID X(p@init)
+      X(r) := ID X(r@init)
+      X(f) := ID X(f@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 8'd1
+      %3 := SHL (%2, i)
+      %4 := ZEXT[8] d
+      %5 := SHL (%4, i)
+      %6 := NOT %3
+      %7 := AND (q, %6)
+      %8 := OR (%7, %5)
+      %9 := 8'd7
+      %10 := SHL (%9, i)
+      %11 := ZEXT[8] e
+      %12 := SHL (%11, i)
+      %13 := NOT %10
+      %14 := AND (p, %13)
+      %15 := OR (%14, %12)
+      %16 := 1'd0
+      %17 := CONCAT (%16, i)
+      %18 := 5'd2
+      %19 := ADD (%17, %18)
+      %20 := 10'd7
+      %21 := SHL (%20, %19)
+      %22 := ZEXT[10] e
+      %23 := SHL (%22, %19)
+      %24 := 2'd0
+      %25 := CONCAT (r, %24)
+      %26 := NOT %21
+      %27 := AND (%25, %26)
+      %28 := OR (%27, %23)
+      %29 := EXTRACT[9:2] %28
+      %30 := NOT d
+      %31 := ZEXT[32] i
+      %32 := 32'd1
+      %33 := SUB (%31, %32)
+      %34 := 8'd1
+      %35 := SHL (%34, %33)
+      %36 := ZEXT[8] %30
+      %37 := SHL (%36, %33)
+      %38 := NOT %35
+      %39 := AND (%8, %38)
+      %40 := OR (%39, %37)
+      %41 := EXTRACT[0:0] e
+      %42 := EXTRACT[1:1] e
+      %43 := EXTRACT[2:0] i
+      %44 := 8'd1
+      %45 := SHL (%44, %43)
+      %46 := ZEXT[8] %42
+      %47 := SHL (%46, %43)
+      %48 := NOT %45
+      %49 := AND (%40, %48)
+      %50 := OR (%49, %47)
+      %51 := ITE (%41, %50, %40)
+      X(q) := ITE (clk@pos, %51, q)
+      X(p) := ITE (clk@pos, %15, p)
+      X(r) := ITE (clk@pos, %29, r)
+      X(f) := ITE (clk@pos, d, f)
