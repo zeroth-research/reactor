@@ -52,20 +52,31 @@ macro "lra_atoms" : tactic =>
                              Bool.not_eq_true, Bool.not_eq_false] at *))
 
 -- One branch: a Bool contradiction, plain linear arithmetic, or the same
--- with every floor bounded and the goal moved to `ℝ`.
+-- with every floor bounded and the context and goal moved to `ℝ` -- the
+-- context too, since a refuted goal is `False` and what is left to move is
+-- the negation `by_contra` put among the hypotheses. Last, the same once
+-- every strict `Int` inequality is stated as the non-strict one it is
+-- (`⌊a⌋ < 0` as `⌊a⌋ + 1 ≤ 0`): in `ℝ` the floor is no longer an integer,
+-- and `0 ≤ ⌊x - 1⌋` from `0 ≤ x - 1` needs it to be.
 macro "lra_leaf" : tactic =>
   `(tactic| first
      | (simp_all; done)
      | linarith
-     | (floor_bounds; rify; linarith))
+     | (floor_bounds; (try rify at *); linarith)
+     | (floor_bounds; simp only [Int.lt_iff_add_one_le] at *; (try rify at *); linarith))
 
--- Case-split the context, split the goal's conjunction, and refute a
--- disjunctive goal rather than choosing a side of it.
+-- Take `max`/`min` and every `if` -- in the context as well as the goal --
+-- apart into cases, case-split the context, split the goal's conjunction,
+-- and refute a disjunctive goal rather than choosing a side of it. A ReLU
+-- reaches the goal as `max 0 x`, which `linarith` reads as an opaque atom,
+-- and a mode-split invariant as `if b then .. else ..` in a hypothesis that
+-- `split_ifs` in the plan's prep, which splits the goal, never reached.
 macro "lra_close" : tactic =>
-  `(tactic| (intros; lra_atoms; (try casesm* _ ∧ _, _ ∨ _); (repeat' apply And.intro);
+  `(tactic| (intros; (try simp only [max_def, min_def] at *); (try split_ifs at *) <;>
+             (lra_atoms; (try casesm* _ ∧ _, _ ∨ _); (repeat' apply And.intro);
               all_goals first
                 | lra_leaf
-                | (by_contra hneg; lra_atoms; (try casesm* _ ∧ _, _ ∨ _); all_goals lra_leaf)))
+                | (by_contra hneg; lra_atoms; (try casesm* _ ∧ _, _ ∨ _); all_goals lra_leaf))))
 
 syntax "zeroth_hammer" : tactic
 
