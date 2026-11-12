@@ -1,49 +1,53 @@
 """`uv run certify`: `reactor` and `verith` in one run.
 
 A reactive module in, a Lean 4 certificate project out, with the
-certificate inferred by the route `--infer` selects: the command `uv run
-verith` was before `reactor` and `verith` were split apart, and the same
-command line. It runs `reactor`'s stages (`reactor.lean.pipeline`) and
-`verith`'s route (`verith.run`) in one process, so the route is handed the
-project as it is generated, and the certificate is rewritten from its
-answer (`regenerate`).
+certificate inferred by the route `--infer` selects and proved: the command
+`uv run verith` was before `reactor` and `verith` were split apart, and the
+same command line. It runs `reactor`'s stages (`reactor.lean.pipeline`),
+`verith`'s route (`verith.run`) and `verith`'s proofs (`verith.proofs`) in
+one process, so the route is handed the project as it is generated, and
+the certificate is rewritten from its answer, with its proofs
+(`regenerate`).
 
 The stages, in order: the module and the claim are read; the route checks
 the module's shape (`route_precheck`); the project is generated with the
-route's lakefile entries; the route runs against it (`run_route`); the
-certificate is rendered again from the answer; and `--build-cert` builds
-it.
+route's lakefile entries and the proofs'; the route runs against it
+(`run_route`); the certificate is rendered again from the answer, cvc5
+asked about it (`--pre-check`) and its proofs written; and `--build-cert`
+builds it. Without a route, the certificate is the one supplied and is
+proved as the project is generated.
 """
 
 from __future__ import annotations
 
 import sys
 
-from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
-from reactor.lean.project.lakefile import reactor_lean_checkout
+from reactor.lean.project.lakefile import LakefileParts, reactor_lean_checkout
+from reactor.lean.project.scaffold import write_files
 from reactor.lean.pipeline.certificate import (
-    hint_budget,
     lean_context,
     record_predicates,
     render,
     workspace,
 )
 from reactor.lean.pipeline.claim import claim_from_flags, load, stated_claim
-from reactor.lean.pipeline.outputs import (
-    build_cert,
-    generate,
-    hammer_only,
-    standalone,
-)
-from verith.common.record import note
-from reactor.lean.proof.render import LeanCertificate
+from reactor.lean.pipeline.outputs import generate, standalone
+from reactor.lean.proof.render import SORRY
 from reactor.lean.smt.encoding import lazy
-from reactor.lean.smt.precheck import pre_check
-from verith import InferResult, ProjectHandle
-from verith.run import route_precheck, run_route, show_certificate
+from verith import ProjectHandle
+from verith.proofs import (
+    LAKEFILE,
+    build_cert,
+    hammer_files,
+    hammer_only,
+    hint_budget,
+    pre_check,
+    prove,
+)
+from verith.run import regenerate, route_precheck, run_route, show_certificate
 
-from .cli import Settings, parse_args
+from .cli import parse_args
 
 
 def main(argv: "list[str] | None" = None) -> None:
@@ -98,27 +102,34 @@ def main(argv: "list[str] | None" = None) -> None:
             pre_check(smt, claim, given, settings.budget, artifacts=store)
 
     # With a route this rendering is a placeholder the answer replaces, and
-    # no route reads `Certificate/`, so cvc5 is asked for hints only about
-    # the certificate the project ends up with.
+    # no route reads `Certificate/`, so it is proved only once there is an
+    # answer: cvc5 is asked for hints only about the certificate the project
+    # ends up with.
     try:
-        lean_cert = render(
-            smt, claim, given,
-            hints=hint_budget(settings) if settings.route is None else None)
+        lean_cert = render(smt, claim, given)
+        proofs = SORRY if settings.route is not None else prove(
+            smt, ctx, claim, given, lean_cert, budget=hint_budget(settings))
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 
     if settings.cert_file:
-        standalone(settings.cert_file, ctx, lean_cert)
+        standalone(settings.cert_file, ctx, lean_cert, proofs)
         return
 
+    route = settings.route
     project_dir = generate(
         settings, module, ctx, lean_cert, problem.source,
         lakefile=(
-            settings.route.lakefile(settings.route_config, settings.project_name)
-            if settings.route is not None and settings.route.lakefile
-            else None
+            (route.lakefile(settings.route_config, settings.project_name)
+             if route is not None and route.lakefile else LakefileParts())
+            # A route that answers with files proves its certificate itself.
+            + (LAKEFILE if route is None or route.returns != "files"
+               else LakefileParts())
         ),
+        proofs=proofs,
     )
+    if route is None:
+        write_files(project_dir, hammer_files())
 
     if settings.route is not None:
         print(f".. Inferring the certificate with --infer {settings.route.name}")
@@ -146,50 +157,3 @@ def main(argv: "list[str] | None" = None) -> None:
         build_cert(project_dir, lean_cert)
 
     print(f"\nProject ready at: {project_dir}")
-
-
-def note_unrenderable(store, route, e: Refused) -> None:
-    """Leave in `artifacts/` that a route's answer has no Lean form.
-
-    Not a refusal by the route: it answered, and what failed was printing
-    the answer as Lean, after the route had returned. So no note of the
-    route's own can say this, and without one the next run reads a found
-    predicate in `artifacts/` and nothing about why no certificate came of
-    it -- and an LLM route resuming from it proposes the same shape again.
-    """
-    note(
-        store, f"{e}\n",
-        status="unsupported",
-        what=f"An answer by `--infer {route.name}` that has no Lean form.",
-        why=("The route answered; what failed is writing that answer as "
-             "Lean, so the same shape proposed again fails the same way."),
-    )
-
-
-def regenerate(settings: Settings, smt, handle: ProjectHandle,
-               claim: Claim, result: InferResult) -> LeanCertificate:
-    """The project's certificate, rewritten from the route's answer.
-
-    The certificate is that answer alone, under the claim the run was given,
-    and its tactic plan is restated over it. Both files are rewritten --
-    `Data.lean` holds the definitions and `Certificate.lean`'s tactics are
-    generated from their shape -- through the handle, so a route that
-    writes more of the project and this pipeline go through one writer.
-    """
-    cert, lean = result.cert, result.lean
-    store = handle.artifacts
-    if settings.pre_check == "cvc5":
-        pre_check(smt, claim, lean or cert, settings.budget,
-                  artifacts=store)
-    record_predicates(store, claim, cert, inferred=True)
-    try:
-        lean_cert = render(smt, claim, cert,
-                           hints=hint_budget(settings) if lean is None else None,
-                           restated=True, verbatim=lean)
-    except Refused as e:
-        note_unrenderable(store, settings.route, e)
-        # Under the route, whatever flag the refusal names: the predicate
-        # it is about is the route's answer, not one the user passed.
-        raise SystemExit(f"error: --infer {settings.route.name}: {e}") from e
-    handle.write_predicates(lean_cert)
-    return lean_cert

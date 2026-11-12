@@ -1,12 +1,15 @@
-{#- The proofs of the obligations, all of it generated: see
-    `_proofs.lean.j2`. -#}
-import Mathlib.Algebra.BigOperators.Fin
+{#- The proofs of the obligations: see `_proofs.lean.j2`. What the prover's
+    scripts need is imported after what the statements need. -#}
 import Relational.Basic
 import Certificate.Module
-import ZerothHammer
+{% for module in proofs.imports %}
+import {{ module }}
+{% endfor %}
 
 {{ linters_off }}
+{% if proofs.options %}
 
-{% include "project/Certificate/_budgets.lean.j2" %}
+{{ proofs.options }}
+{% endif %}
 
 {% include "project/Certificate/_proofs.lean.j2" %}

@@ -25,7 +25,7 @@ from reactor.lean.core.errors import Refused
 if TYPE_CHECKING:
     from reactor import Module
 
-    from reactor.lean.proof.render import LeanCertificate
+    from reactor.lean.proof.render import LeanCertificate, ProofScripts
     from reactor.lean.codegen.context import LeanContext
     from reactor.lean.smt.encoding import ModuleEncoding
     from reactor.lean.smt.limits import SmtBudget
@@ -107,20 +107,25 @@ class ProjectHandle:
 
     # --- the ordinary write --------------------------------------------
     #
-    # Available to every route, and the only write most of them want: after
-    # inference the predicates are new, so the definitions (`Data.lean`) and
-    # the proofs generated from their shape (`Proofs.lean`) are both
-    # restated, as `proof.render.certificate_files` renders them -- with
-    # `Module.lean`, which is the same text whatever the predicates, and the
-    # certificate (`Certificate.lean`), which is the same text unless the
-    # kind of the property changed.
+    # The only write most runs want: after inference the predicates are new,
+    # so the definitions (`Data.lean`) and the proofs written from their
+    # shape (`Proofs.lean`) are both restated, as
+    # `proof.render.certificate_files` renders them -- with `Module.lean`,
+    # which is the same text whatever the predicates, and the certificate
+    # (`Certificate.lean`), which is the same text unless the kind of the
+    # property changed -- and the hammer the proofs call goes in beside them.
 
-    def write_predicates(self, lean_cert: "LeanCertificate") -> None:
-        """The certificate's four files, rewritten from `lean_cert`."""
+    def write_certificate(self, lean_cert: "LeanCertificate",
+                          proofs: "ProofScripts") -> None:
+        """The certificate's four files, rewritten from `lean_cert` and
+        proved by `proofs`, and the hammer."""
         from reactor.lean.project.scaffold import write_files
         from reactor.lean.proof.render import certificate_files
 
-        write_files(self.dir, certificate_files(self.ctx, lean_cert))
+        from .proofs import hammer_files
+
+        write_files(self.dir, {**certificate_files(self.ctx, lean_cert, proofs),
+                               **hammer_files()})
 
     # --- writing more than that -----------------------------------------
 

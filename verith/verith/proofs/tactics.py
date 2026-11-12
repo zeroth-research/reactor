@@ -38,7 +38,7 @@ So the plan is read off the obligations instead:
   to discharge a branch that is contradictory purely because the state has
   finitely many inhabitants.
 
-`plan_for` returns a `TacticPlan`; `_proofs.lean.j2` writes it out as the
+`plan_for` returns a `TacticPlan`; `scripts.lean.j2` writes it out as the
 proof of each obligation in `Certificate/Proofs.lean`. Each step is Lean text
 over the state `s`, which every one of those proofs binds; a step the shape
 does not call for is empty, and the proof leaves it out.
@@ -51,8 +51,24 @@ from dataclasses import dataclass, field
 
 from reactor import Bool, Int, Real, BitVec
 
-from ..lowering.sorts import itype_name, wire_shape
-from ..lowering.elements import flat_layout
+from reactor.lean.lowering.sorts import itype_name, wire_shape
+from reactor.lean.lowering.elements import flat_layout
+
+
+# The lemmas `simp_mat` reduces matrix arithmetic with, after the
+# certificate's own definitions. The bridge's cascade uses the same set:
+# without it a `Linear` arrives as `matVecAffine 2 [[1, 0], [0, 1]] [0, 1]
+# (fun i j => match i, j with ...)` and no arithmetic prover can touch it.
+MAT_SIMP: tuple[str, ...] = (
+    "MatAdd_apply", "MatMul_apply", "MatZero_apply", "Pi.add_apply",
+    "mul_Mat_apply", "add_Mat_apply", "Bool.or_eq_true", "decide_eq_true_eq",
+    "Fin.sum_univ_succ", "Fin.sum_univ_zero", "Fin.isValue", "Fin.sum_univ_one",
+    "Fin.sum_univ_two", "Fin.sum_univ_three", "matVecAffine", "dotL",
+    "List.ofFn_succ", "List.ofFn_zero",
+    # The three reductions unfold to a `List.ofFn` fold that the two lemmas
+    # above then compute; without the defs here the fold never opens.
+    "matMin", "matMax", "argmax_1d", "argmax",
+)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -73,7 +89,7 @@ class Features:
     # empty if any element does not. See `_two_valued_slots`.
     two_valued: list[tuple[str, str]] = field(default_factory=list)
 
-    # The invariant lists the states it allows (`proof.facts._pins`).
+    # The invariant lists the states it allows (`facts._pins`).
     pins: bool = False
 
     # `min`/`max`/`ite` occurrences in the predicates. Each is a case: omega
@@ -265,7 +281,7 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
                  floors: tuple = ()) -> Features:
     """Read the shape of `ctx`'s module and its certificate predicates.
 
-    `facts` is `proof.facts.PredicateFacts` when the predicates came from
+    `facts` is `facts.PredicateFacts` when the predicates came from
     SMT-LIB and cvc5 could parse them: the same questions answered against
     the terms rather than against the printed Lean. It is `None` for
     predicates compiled from Python IR, and then everything below falls back
@@ -334,7 +350,7 @@ class TacticPlan:
     max_rec_depth: int
     max_heartbeats: int
     features: Features
-    # `proof.facts.SolverHints` when `--smt-tactics=cvc5` ran and cvc5 had
+    # `facts.SolverHints` when `--smt-tactics=cvc5` ran and cvc5 had
     # something to add; `None` otherwise, and every property below degrades
     # to the tactic the plan would have emitted without it.
     hints: object | None = None

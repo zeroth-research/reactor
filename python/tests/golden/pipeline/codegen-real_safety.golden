@@ -43,10 +43,8 @@ def lts := RM.toTS
 end
 
 === Certificate/Proofs.lean
-import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 import Certificate.Module
-import ZerothHammer
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -54,72 +52,14 @@ set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
-set_option maxRecDepth 4500
-set_option maxHeartbeats 2000000
-
--- state: Real, 1 slot(s), 3 term(s)
--- predicates: flat, linear
-
--- Unfold the definitions and reduce the matrix arithmetic, on the goal
--- only: on the hypotheses too it blows up exponentially.
-macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, c0, c1, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
-
--- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
--- closers see the invariant's conditions.
-macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, c0, c1] at *; try dsimp at *))
-
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
-  intro s hpre
-  try simp_mat
-  try simp_defs
-  all_goals (((try norm_num at *)) <;> (first
-      | contradiction
-      | linarith
-      | (norm_cast; linarith)
-      | (norm_num; done)
-      | (constructor <;> first | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; linarith)
-      | (simp_all; norm_num; done)
-      | lra_close
-      | fail "none of the 10 closers proved this goal"))
+  sorry
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-  intro s e ⟨hpre, hinv⟩
-  try simp_defs
-  try simp_mat
-  all_goals (((try norm_num at *)) <;> (first
-      | contradiction
-      | linarith
-      | (norm_cast; linarith)
-      | (norm_num; done)
-      | (constructor <;> first | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; linarith)
-      | (simp_all; norm_num; done)
-      | lra_close
-      | fail "none of the 10 closers proved this goal"))
+  sorry
 
 theorem inv_imp_P_proof : ∀ s, inv s → P s := by
-  intro s hi
-  try simp_defs
-  try simp_mat
-  all_goals (((try norm_num at *)) <;> (first
-      | contradiction
-      | linarith
-      | (norm_cast; linarith)
-      | (norm_num; done)
-      | (constructor <;> first | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; linarith)
-      | (simp_all; norm_num; done)
-      | lra_close
-      | fail "none of the 10 closers proved this goal"))
+  sorry
 
 === Certificate/Certificate.lean
 import Relational.Basic
@@ -175,19 +115,14 @@ def safety := rule_globally
 end
 
 === standalone
-import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 import Relational.Box
-import ZerothHammer
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
-
-set_option maxRecDepth 4500
-set_option maxHeartbeats 2000000
 
 /- Concrete constants -/
 
@@ -229,69 +164,14 @@ def lts := RM.toTS
 
 end
 
--- state: Real, 1 slot(s), 3 term(s)
--- predicates: flat, linear
-
--- Unfold the definitions and reduce the matrix arithmetic, on the goal
--- only: on the hypotheses too it blows up exponentially.
-macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, c0, c1, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
-
--- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
--- closers see the invariant's conditions.
-macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, c0, c1] at *; try dsimp at *))
-
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
-  intro s hpre
-  try simp_mat
-  try simp_defs
-  all_goals (((try norm_num at *)) <;> (first
-      | contradiction
-      | linarith
-      | (norm_cast; linarith)
-      | (norm_num; done)
-      | (constructor <;> first | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; linarith)
-      | (simp_all; norm_num; done)
-      | lra_close
-      | fail "none of the 10 closers proved this goal"))
+  sorry
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-  intro s e ⟨hpre, hinv⟩
-  try simp_defs
-  try simp_mat
-  all_goals (((try norm_num at *)) <;> (first
-      | contradiction
-      | linarith
-      | (norm_cast; linarith)
-      | (norm_num; done)
-      | (constructor <;> first | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; linarith)
-      | (simp_all; norm_num; done)
-      | lra_close
-      | fail "none of the 10 closers proved this goal"))
+  sorry
 
 theorem inv_imp_P_proof : ∀ s, inv s → P s := by
-  intro s hi
-  try simp_defs
-  try simp_mat
-  all_goals (((try norm_num at *)) <;> (first
-      | contradiction
-      | linarith
-      | (norm_cast; linarith)
-      | (norm_num; done)
-      | (constructor <;> first | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; linarith)
-      | (simp_all; norm_num; done)
-      | lra_close
-      | fail "none of the 10 closers proved this goal"))
+  sorry
 
 noncomputable section
 

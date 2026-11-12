@@ -6,12 +6,13 @@
     another tool -- without touching it. What changes with the module and
     the certificate is `Data.lean` (the definitions) and `Proofs.lean`. A
     `--cert-file` certificate inlines all of them, the module too, under the
-    proofs' budgets. -#}
+    proofs' options. -#}
 {% if module_inline %}
-import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 import Relational.Box
-import ZerothHammer
+{% for module in proofs.imports %}
+import {{ module }}
+{% endfor %}
 {% else %}
 import Relational.Basic
 import Certificate.Module
@@ -21,8 +22,10 @@ import Certificate.Proofs
 {{ linters_off }}
 
 {% if module_inline %}
-{{ inline_budgets }}
+{% if proofs.options %}
+{{ proofs.options }}
 
+{% endif %}
 {{ module_inline }}
 
 {{ inline_defs }}

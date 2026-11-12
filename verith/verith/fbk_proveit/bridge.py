@@ -42,9 +42,10 @@ from reactor.lean.lowering.elements import flat_layout
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.codegen.terms import extl_native_type, product_type, product_type_scalar
 from reactor.lean.project.names import (
-    CERT_LIB, DATA, LINTERS_OFF, MAT_SIMP, SYSTEM_LAYOUT, rm_def,
+    CERT_LIB, DATA, LINTERS_OFF, SYSTEM_LAYOUT, rm_def,
 )
 from reactor.lean.codegen.encodings.common import scalar_eq_name
+from ..proofs.tactics import MAT_SIMP
 from .na import SlotBodies, check_na_shape, check_na_supported
 
 

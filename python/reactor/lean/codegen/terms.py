@@ -232,8 +232,9 @@ def translate_terms_lean(
 def _output_expr(wire_expr: dict[int, str], w: Wire) -> str:
     """The expression a block output is bound to, by a term or as an input.
 
-    Raises rather than emitting a placeholder: a `sorry` in `System/` is not
-    one `build_certificate` reports, so it would pass for a proof.
+    Raises rather than emitting a placeholder: a build counts only the
+    `sorry`s under `Certificate/` as unproved, so one in `System/` would pass
+    for a proof.
     """
     if w.id not in wire_expr:
         raise ValueError(

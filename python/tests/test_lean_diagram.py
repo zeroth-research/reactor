@@ -255,18 +255,6 @@ def test_certificate_bool_has_theorems():
     assert "theorem hinv" in cert
 
 
-def test_certificate_bool_has_simp_mod():
-    cert = _cert_for(_make_twobitcounter)
-    assert 'macro "simp_mat"' in cert
-    assert "init, update, inv" in cert
-
-
-def test_certificate_bool_has_no_scalar_constants_in_simp():
-    cert = _cert_for(_make_twobitcounter)
-    # Bool module has no matrix constants, so no c0/c1 in simp
-    assert "c0, c1" not in cert
-
-
 def test_data_lean_has_sorry_when_no_property():
     from reactor.lean.proof.render import generate_data_lean
     m = _make_twobitcounter()
@@ -304,14 +292,6 @@ def test_certificate_has_buchi():
                 "buchi should not be commented out"
             )
             break
-
-
-def test_certificate_matrix_simp_reduces_matmul():
-    cert = _cert_for(_make_matrix_module)
-    # A/B are baked into the Linear op (no interned c0/c1 constants). affineLinear
-    # unfolds to MatMul + b, so the proof simp set must carry MatMul_apply to
-    # reduce the matrix obligations.
-    assert "MatMul_apply" in cert
 
 
 # ──────────────────────────────────────────────────────────────
@@ -538,8 +518,8 @@ def test_stateless_module_defines_init_and_update_as_unit():
     """No controlled variable means empty blocks, whose only value is `()`.
 
     The certificate's `RM` is built from `init` and `update`, so both must
-    be defined -- and not as `sorry`: `build_certificate` only looks for
-    one under `Certificate/`, so a `sorry` in `System/` would pass.
+    be defined -- and not as `sorry`: a build counts only the `sorry`s under
+    `Certificate/` as unproved, so one in `System/` would pass.
     """
     m2l = ModuleToLean4(Module.sequential([], [], []))
     func = m2l.to_lean_functional()

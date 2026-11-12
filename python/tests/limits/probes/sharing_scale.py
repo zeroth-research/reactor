@@ -13,8 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.smt.precheck import predicate_terms
-from reactor.lean.proof.facts import predicate_facts
+from reactor.lean.smt.queries import predicate_terms
+from verith.proofs.facts import predicate_facts
 from reactor.lean.proof.from_smt import smt_to_lean_nat
 
 

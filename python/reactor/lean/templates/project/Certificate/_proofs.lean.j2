@@ -1,76 +1,25 @@
-{#- `Proofs.lean` after its budgets; a `--cert-file` certificate inlines it.
+{#- `Proofs.lean` after its options; a `--cert-file` certificate inlines it.
 
     Each obligation of `Certificate.lean`, stated again with `_proof` after
-    its name, and proved by the steps the plan reads off the shape of the
-    module and of the certificate (`reactor/lean/proof/tactics.py`): only
-    the steps it calls for, and only the closers this state can use,
-    cheapest first. Every proof binds the state as `s`, which the plan's
-    hints and floors are printed over. The plan's `clear_tactic` drops the
-    precondition where no refutation needed it: in `step_inv` and `hrank`,
-    whose `hpre` is `update_pre`, which is what cvc5 was asked about. -#}
-{% macro steps() %}
-  try simp_defs
-{% if plan.facts_tactic %}
-  {{ plan.facts_tactic | indent(2) }}
-{% endif %}
-{% if plan.floor_tactic %}
-  try ({{ plan.floor_tactic }})
-{% endif %}
-  try simp_mat
-{% if plan.state_case_tactic %}
-  try ({{ plan.state_case_tactic }})
-{% endif %}
-{% endmacro %}
-{% macro close() %}
-  all_goals ({% if plan.prep %}({{ plan.prep_tactic }}) <;> {% endif %}(first
-{% for closer in plan.closers %}
-      | {{ closer }}
-{% endfor %}
-      | fail "{{ plan.close_failure }}"))
-{% endmacro %}
-{{ plan.why() }}
+    its name, and proved by `proofs` (`proof.render.ProofScripts`): the
+    tactic script a prover handed over, after what the scripts share, or
+    `sorry`. -#}
+{% if proofs.preamble %}
+{{ proofs.preamble }}
 
--- Unfold the definitions and reduce the matrix arithmetic, on the goal
--- only: on the hypotheses too it blows up exponentially.
-macro "simp_mat" : tactic =>
-  `(tactic| simp [{{ all_defs }}, {{ mat_simp }}])
-
--- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
--- closers see the invariant's conditions.
-macro "simp_defs" : tactic =>
-  `(tactic| (simp only [{{ all_defs }}] at *; try dsimp at *))
-
+{% endif %}
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
-  intro s hpre
-  try simp_mat
-  try simp_defs
-  {{ close() | trim }}
+  {{ proofs.script("init_inv") | indent(2) }}
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-  intro s e ⟨hpre, hinv⟩
-{% if plan.clear_tactic %}
-  {{ plan.clear_tactic }}
-{% endif %}
-  {{ steps() | trim }}
-  {{ close() | trim }}
+  {{ proofs.script("step_inv") | indent(2) }}
 {% if is_safety %}
 
 theorem inv_imp_P_proof : ∀ s, inv s → P s := by
-  intro s hi
-  {{ steps() | trim }}
-  {{ close() | trim }}
+  {{ proofs.script("inv_imp_P") | indent(2) }}
 {% else %}
 
 theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
-  intro s s' ⟨hi, hP, htr⟩
-  unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
-  obtain ⟨l, hpre, heq⟩ := htr
-  rw [← heq]
-  clear heq
-{% if plan.clear_tactic %}
-  {{ plan.clear_tactic }}
-{% endif %}
-  {{ steps() | trim }}
-  {{ close() | trim }}
+  {{ proofs.script("hrank") | indent(2) }}
 {% endif %}

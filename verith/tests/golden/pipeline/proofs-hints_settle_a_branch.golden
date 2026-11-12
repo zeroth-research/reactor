@@ -1,52 +1,7 @@
-=== Certificate/Data.lean
-import Relational.Basic
-
-set_option linter.unusedVariables false
-set_option linter.unusedSimpArgs false
-set_option linter.unusedTactic false
-set_option linter.unreachableTactic false
-set_option linter.unnecessarySeqFocus false
-
-def init_pre (e : (Unit) × (Unit)) : Prop := True
-
-def update_pre (e : (Unit) × (Unit)) : Prop := True
-
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
-
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
-
-instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
-
-def ranking : (Mat Int 1 1) → Nat := fun s => ((((s 0 0) * (s 0 0)) : Int)).toNat
-
-=== Certificate/Module.lean
-import Relational.Basic
-import System.System
-import Certificate.Data
-
-set_option linter.unusedVariables false
-set_option linter.unusedSimpArgs false
-set_option linter.unusedTactic false
-set_option linter.unreachableTactic false
-set_option linter.unnecessarySeqFocus false
-
-noncomputable section
-
-def RM := ({
-    init := fun e => init e.2
-    update := fun x e => update x e.1 e.2
-    init_pre := init_pre
-    update_pre := update_pre
-} : ReactiveModule _ _)
-
-def lts := RM.toTS
-
-end
-
 === Certificate/Proofs.lean
-import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 import Certificate.Module
+import Mathlib.Algebra.BigOperators.Fin
 import ZerothHammer
 
 set_option linter.unusedVariables false
@@ -59,8 +14,8 @@ set_option maxRecDepth 13500
 set_option maxHeartbeats 2000000
 
 -- state: Bool+Int, 1 slot(s), 9 term(s)
--- predicates: branching, conjunctive, nonlinear
--- cvc5: cvc5 needed 2 product hint(s)
+-- predicates: branching, conjunctive, linear, 1 branch point(s)
+-- cvc5: inv forces `((s 0 0) ≤ (200 : Int))` to be true
 
 -- Unfold the definitions and reduce the matrix arithmetic, on the goal
 -- only: on the hypotheses too it blows up exponentially.
@@ -82,22 +37,22 @@ theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
       | linarith
       | (norm_cast; omega)
       | (norm_num; done)
-      | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))]
-      | nlinarith
-      | positivity
-      | (constructor <;> first | omega | linarith | nlinarith)
+      | (constructor <;> first | omega | linarith)
       | tauto
       | (simp_all; done)
       | (simp_all; omega)
       | (simp_all; linarith)
-      | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
-      | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 16 closers proved this goal"))
+      | fail "none of the 11 closers proved this goal"))
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
   intro s e ⟨hpre, hinv⟩
   try simp_defs
+  try
+    have hf0 : ((s 0 0) ≤ (200 : Int)) := ?_
+    swap
+    · first | omega | linarith | norm_num
+    try simp only [ite_eq_left hf0]
   try simp_mat
   all_goals (((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
       | omega
@@ -105,18 +60,13 @@ theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update
       | linarith
       | (norm_cast; omega)
       | (norm_num; done)
-      | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))]
-      | nlinarith
-      | positivity
-      | (constructor <;> first | omega | linarith | nlinarith)
+      | (constructor <;> first | omega | linarith)
       | tauto
       | (simp_all; done)
       | (simp_all; omega)
       | (simp_all; linarith)
-      | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
-      | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 16 closers proved this goal"))
+      | fail "none of the 11 closers proved this goal"))
 
 theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
@@ -126,6 +76,11 @@ theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) �
   rw [← heq]
   clear heq
   try simp_defs
+  try
+    have hf0 : ((s 0 0) ≤ (200 : Int)) := ?_
+    swap
+    · first | omega | linarith | norm_num
+    try simp only [ite_eq_left hf0]
   try simp_mat
   all_goals (((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
       | omega
@@ -133,72 +88,18 @@ theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) �
       | linarith
       | (norm_cast; omega)
       | (norm_num; done)
-      | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))]
-      | nlinarith
-      | positivity
-      | (constructor <;> first | omega | linarith | nlinarith)
+      | (constructor <;> first | omega | linarith)
       | tauto
       | (simp_all; done)
       | (simp_all; omega)
       | (simp_all; linarith)
-      | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
-      | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 16 closers proved this goal"))
-
-=== Certificate/Certificate.lean
-import Relational.Basic
-import Certificate.Module
-import Certificate.Proofs
-
-set_option linter.unusedVariables false
-set_option linter.unusedSimpArgs false
-set_option linter.unusedTactic false
-set_option linter.unreachableTactic false
-set_option linter.unnecessarySeqFocus false
-
-noncomputable section
-
-theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
-  exact init_inv_proof
-
-theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-  exact step_inv_proof
-
-theorem hinv' : lts.StateSet_isInductiveInitial inv := by
-  constructor
-  · intro s hs
-    unfold lts at hs; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs
-    obtain ⟨l, hpre, hl⟩ := hs
-    rw [← hl]
-    exact init_inv l hpre
-  · intro s s' ⟨hs, l, hstep⟩
-    unfold lts at hstep; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
-    rw [← hstep.2]
-    exact step_inv s l ⟨hstep.1, hs⟩
-
-theorem hinv : lts.StateSet_isInvariant inv := by
-  apply TS.StateSet_ind_init_is_inv lts
-  exact hinv'
-
-theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
-    ranking s' < ranking s := by
-  exact hrank_proof
-
-def buchi := rule_buchi
-  lts
-  P
-  inv
-  hinv
-  ranking
-  hrank
-
-end
+      | fail "none of the 11 closers proved this goal"))
 
 === standalone
-import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 import Relational.Box
+import Mathlib.Algebra.BigOperators.Fin
 import ZerothHammer
 
 set_option linter.unusedVariables false
@@ -238,7 +139,7 @@ def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 1 1) → Nat := fun s => ((((s 0 0) * (s 0 0)) : Int)).toNat
+def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) ≤ (200 : Int)) then (s 0 0) else (999 : Int)) : Int)).toNat
 
 noncomputable section
 
@@ -254,8 +155,8 @@ def lts := RM.toTS
 end
 
 -- state: Bool+Int, 1 slot(s), 9 term(s)
--- predicates: branching, conjunctive, nonlinear
--- cvc5: cvc5 needed 2 product hint(s)
+-- predicates: branching, conjunctive, linear, 1 branch point(s)
+-- cvc5: inv forces `((s 0 0) ≤ (200 : Int))` to be true
 
 -- Unfold the definitions and reduce the matrix arithmetic, on the goal
 -- only: on the hypotheses too it blows up exponentially.
@@ -277,22 +178,22 @@ theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
       | linarith
       | (norm_cast; omega)
       | (norm_num; done)
-      | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))]
-      | nlinarith
-      | positivity
-      | (constructor <;> first | omega | linarith | nlinarith)
+      | (constructor <;> first | omega | linarith)
       | tauto
       | (simp_all; done)
       | (simp_all; omega)
       | (simp_all; linarith)
-      | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
-      | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 16 closers proved this goal"))
+      | fail "none of the 11 closers proved this goal"))
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
   intro s e ⟨hpre, hinv⟩
   try simp_defs
+  try
+    have hf0 : ((s 0 0) ≤ (200 : Int)) := ?_
+    swap
+    · first | omega | linarith | norm_num
+    try simp only [ite_eq_left hf0]
   try simp_mat
   all_goals (((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
       | omega
@@ -300,18 +201,13 @@ theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update
       | linarith
       | (norm_cast; omega)
       | (norm_num; done)
-      | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))]
-      | nlinarith
-      | positivity
-      | (constructor <;> first | omega | linarith | nlinarith)
+      | (constructor <;> first | omega | linarith)
       | tauto
       | (simp_all; done)
       | (simp_all; omega)
       | (simp_all; linarith)
-      | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
-      | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 16 closers proved this goal"))
+      | fail "none of the 11 closers proved this goal"))
 
 theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
@@ -321,6 +217,11 @@ theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) �
   rw [← heq]
   clear heq
   try simp_defs
+  try
+    have hf0 : ((s 0 0) ≤ (200 : Int)) := ?_
+    swap
+    · first | omega | linarith | norm_num
+    try simp only [ite_eq_left hf0]
   try simp_mat
   all_goals (((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
       | omega
@@ -328,18 +229,13 @@ theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) �
       | linarith
       | (norm_cast; omega)
       | (norm_num; done)
-      | nlinarith [mul_self_nonneg ((s 0 0) - (s 0 0)), mul_self_nonneg ((s 0 0) + (s 0 0))]
-      | nlinarith
-      | positivity
-      | (constructor <;> first | omega | linarith | nlinarith)
+      | (constructor <;> first | omega | linarith)
       | tauto
       | (simp_all; done)
       | (simp_all; omega)
       | (simp_all; linarith)
-      | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
-      | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 16 closers proved this goal"))
+      | fail "none of the 11 closers proved this goal"))
 
 noncomputable section
 

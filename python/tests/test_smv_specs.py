@@ -59,7 +59,7 @@ def test_a_stated_claim_is_in_internal_names():
 def test_the_chosen_spec_is_the_claim(tmp_path):
     r = reactor(str(SMV / "mod10_specs.smv"), "--spec", "1",
                 "--invariant", "(and (<= 0 (X x)) (<= (X x) 9))",
-                "--pre-check", "cvc5", "-o", str(tmp_path))
+                "-o", str(tmp_path))
     assert r.returncode == 0, r.stderr
     assert ".. the claim is the input's line 14: INVARSPEC (--safety)" in r.stdout
     assert ".. --safety, in internal names: (and (<= 0 s0) (<= s0 9))" in r.stdout

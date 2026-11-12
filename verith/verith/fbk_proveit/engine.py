@@ -51,7 +51,7 @@ from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
 from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
 from . import EQUIVALENCE, PROVEIT_DIR
-from reactor.lean.project.build import stream
+from ..proofs.build import stream
 from .na import (
     NA_IMPORTS,
     NAUnsupported,
