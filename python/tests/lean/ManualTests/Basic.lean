@@ -91,3 +91,16 @@ example (x : Int) (b₁ b₂ : Bool) (h : x ≥ 2) :
 
 example (p q : Prop) (hp : p) (hpq : p → q) : q := by zeroth_hammer
 example (p q r : Prop) (h : p ∧ q) (hqr : q → r) : p ∧ r := by zeroth_hammer
+
+-- ──────────────────────────────────────────────────────────────
+-- lra_close: what a Real plan's last closer has to take apart
+-- ──────────────────────────────────────────────────────────────
+
+-- A ReLU reaches the goal as `max 0 x`, which `linarith` reads as an atom.
+example (s : ℝ) (h : 1 < s) : ⌊max 0 (s - 1)⌋ < ⌊s⌋ := by lra_close
+example (s : ℝ) : 0 ≤ ⌊max 0 (s - 1)⌋ := by lra_close
+-- A floor is an integer, which it stops being once the goal is in `ℝ`.
+example (s : ℝ) (h : 0 ≤ s - 1) : 0 ≤ ⌊s - 1⌋ := by lra_close
+-- A mode-split invariant: an `if` in a hypothesis, not in the goal.
+example (x : ℝ) (b : Bool) (hb : b = true)
+    (h : if b = true then x ≤ 27 / 2 else 11 / 2 ≤ x) : x + 3 / 2 ≤ 15 := by lra_close

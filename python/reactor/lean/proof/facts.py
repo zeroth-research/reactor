@@ -64,6 +64,9 @@ class PredicateFacts:
     # in the order the predicates are printed: what the plan bridges from
     # the floor's `Int` to the `Real` it was taken of.
     floors: tuple = ()
+    # The invariant lists the states it allows (`_pins`): split on it and
+    # every obligation over one of them is arithmetic on constants.
+    pins: bool = False
 
     def why(self) -> str:
         bits = [f"{self.n_branch} branch point(s)"]
@@ -125,6 +128,22 @@ def _floor_args(t, out: list) -> None:
                 out.append(node[0])
             continue
         stack.extend(reversed(list(node)))
+
+
+def _pins(inv) -> bool:
+    """Whether `inv` lists the states it allows: a disjunction each of whose
+    disjuncts equates state-dependent terms with ground ones, alone or in a
+    conjunction -- `(or (= s0 1) (= s0 2) (= s0 7))`."""
+    from cvc5 import Kind
+
+    def pinning(t) -> bool:
+        if t.getKind() == Kind.AND:
+            return all(pinning(c) for c in t)
+        return (t.getKind() == Kind.EQUAL and t.getNumChildren() == 2
+                and state_dependent(t[0]) != state_dependent(t[1]))
+
+    return (inv is not None and inv.getKind() == Kind.OR
+            and all(pinning(d) for d in inv))
 
 
 def _tree_branch_points(t) -> int:
@@ -190,6 +209,7 @@ def predicate_facts(q: "ModuleQueries | None") -> PredicateFacts | None:
         for t in (q.init_pre, q.update_pre, q.inv, q.prp, q.ranking):
             if t is not None:
                 _floor_args(t, floors)
+        pins = _pins(q.inv)
     except Exception:
         return None
     return PredicateFacts(
@@ -202,6 +222,7 @@ def predicate_facts(q: "ModuleQueries | None") -> PredicateFacts | None:
         has_ite=acc["ite"],
         mentioned=frozenset(acc["mentioned"]),
         floors=tuple(floors),
+        pins=pins,
     )
 
 

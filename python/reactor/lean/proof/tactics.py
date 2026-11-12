@@ -71,6 +71,9 @@ class Features:
     # empty if any element does not. See `_two_valued_slots`.
     two_valued: list[tuple[str, str]] = field(default_factory=list)
 
+    # The invariant lists the states it allows (`proof.facts._pins`).
+    pins: bool = False
+
     # `min`/`max`/`ite` occurrences in the predicates. Each is a case: omega
     # splits `min`/`max` internally, `split_ifs` fans an `ite` out, and
     # `hrank` mentions the ranking twice. This, not the module's size, is
@@ -311,6 +314,7 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
         f.has_ite = f.has_ite or facts.has_ite
         f.n_branch = text_branch + facts.n_branch
         f.n_conditions = text_branch + facts.n_conditions
+        f.pins = facts.pins
     if f.finite_state:
         f.two_valued = _two_valued_slots(ctx)
     return f
@@ -342,7 +346,13 @@ class TacticPlan:
 
     @property
     def close_tactic(self) -> str:
-        return "first | " + " | ".join(self.closers)
+        """The closers, cheapest first, then an arm that only says none of
+        them proved the goal. `first` reports the error of the arm it tried
+        last, so without it a goal no closer proved read as that closer's
+        complaint -- "`split_ifs` failed: no if-then-else conditions to
+        split" -- about a tactic that was never the problem."""
+        why = f"cert_close: none of its {len(self.closers)} closers proved this goal"
+        return "first | " + " | ".join(self.closers) + f' | fail "{why}"'
 
     @property
     def close_binds_state(self) -> bool:
@@ -375,9 +385,23 @@ class TacticPlan:
 
         Splitting each element into its two values first makes every later
         goal closed, which is what the rest of the plan was already built
-        for. `skip` when the state is not finite, or is too wide to fan out.
+        for.
+
+        An invariant that lists the states it allows makes an `Int` state
+        as finite: split on it and `simp_all` puts each listed value in for
+        the state, and every `if` the transition and the rank branch on is
+        decided. Split by `cert_prep` instead -- after `split_ifs` has fanned
+        the conditions out over a state it does not know -- the closers ran
+        over every branch, and `svcomp_collatz_bounded`'s `hrank` (a rank
+        that compares the step's own `if` with four values) spent its
+        2000000 heartbeats doing it. All or nothing: a case `simp_all` does
+        not close leaves the goal as it was, for the plan to take.
+
+        `skip` otherwise.
         """
         if not self.features.two_valued:
+            if self.features.pins:
+                return "((casesm* _ ∨ _) <;> simp_all) <;> done"
             return "skip"
         steps = [
             f"rcases {lemma} (($v){acc}) with h{k} | h{k}"
@@ -488,6 +512,9 @@ class TacticPlan:
                 f"state is finite and narrow: enumerating "
                 f"{len(f.two_valued)} two-valued element(s) before the closers"
             )
+        elif f.pins:
+            bits.append("the invariant lists its states: trying each before "
+                        "the closers")
         out = "\n".join(f"-- {b}" for b in bits)
         if self.hints is not None and self.hints.any:
             out += "\n" + self.hints.why()
@@ -586,11 +613,19 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
     # — an integer goal that omega cannot phrase (a `Mat`-valued comparison
     # simp left behind, say) is still ordinary linear arithmetic.
     closers: list[str] = []
-    # Nearly free, and a branch whose hypotheses are already contradictory is
-    # common once `split_ifs` has fanned the transition out.
-    closers.append("contradiction")
+    # `omega` first where it is in play, then `contradiction`. A branch whose
+    # hypotheses are already contradictory is common once `split_ifs` has
+    # fanned the transition out, and `omega` refutes an arithmetic one as
+    # well; `contradiction` is for the rest (`b = true` beside `b = false`).
+    # It is not free the other way round: it reduces every hypothesis with
+    # `whnf` looking for an empty type or a decidably false proposition, and
+    # an `Int` comparison over the unfolded transition reduces a long way.
+    # Measured on a 6-slot Petri net's `step_inv`: `split_ifs` leaves 7680
+    # goals, and with `contradiction` first they spent the 2000000
+    # heartbeats; with `omega` first the certificate builds in 40 s.
     if f.has_int:
         closers.append("omega")
+    closers.append("contradiction")
     if f.has_bitvec:
         # A bitvector read as the number it holds -- `BitVec.toNat`, which
         # a linear predicate weighs a BitVec component by -- is arithmetic no

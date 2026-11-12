@@ -570,9 +570,22 @@ def test_start_maps_last_takes_the_models_decides_apart_before_unfolding():
     )
     start = src[src.index("theorem start_maps"):src.index("theorem step_maps")]
     arms = [ln for ln in start.splitlines() if ln.startswith("    | ")]
-    assert arms[-1].startswith(
+    assert arms[-2].startswith(
         "    | (simp only [Definition.INIT, Definition.PRE")
-    assert "decide_eq_true_eq" in arms[-1] and arms[-1].endswith("<;> omega)")
+    assert "decide_eq_true_eq" in arms[-2] and arms[-2].endswith("<;> omega)")
+
+
+def test_a_proof_none_of_whose_arms_closed_says_so():
+    """`first` reports the arm it tried last, whose complaint ("simp_all
+    made no progress") read as the reason; the last arm is a `fail` that
+    gives the real one."""
+    from verith.fbk_proveit.bridge import _cascade
+
+    lines = _cascade("Definition.INIT", model="Definition.INIT")
+    assert lines[0] == "  first"
+    assert lines[-1] == ('    | fail "none of the 8 arms of this proof closed '
+                         'its goal"')
+    assert len(lines) == 1 + 8 + 1
 
 
 def test_real_state_aborts():

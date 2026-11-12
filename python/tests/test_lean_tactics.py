@@ -172,6 +172,55 @@ def test_unbounded_state_is_not_enumerated():
     assert _plan(_real_module(), "fun s => True").state_case_tactic == "skip"
 
 
+def test_an_invariant_that_lists_its_states_is_enumerated():
+    """An `Int` state the invariant pins to `1, 2, 3, 4, 7` is as finite as
+    a Bool one: split on it before `split_ifs` fans the step's conditions
+    out over a state it does not know. `svcomp_collatz_bounded`'s `hrank`
+    spent 2000000 heartbeats in the closers otherwise. All or nothing, so
+    a case `simp_all` cannot close leaves the plan as it was."""
+    from reactor.lean.proof.facts import PredicateFacts
+
+    plan = plan_for(LeanContext(_int_module()), "fun s => True",
+                    PredicateFacts(pins=True))
+    assert plan.state_case_tactic == "((casesm* _ ∨ _) <;> simp_all) <;> done"
+    assert _plan(_int_module(), "fun s => True").state_case_tactic == "skip"
+
+
+@pytest.mark.parametrize("inv, pins", [
+    ("(or (= s0 1) (= s0 2) (= s0 7))", True),
+    ("(or (and (= s0 1) (= s1 2)) (= 3 s0))", True),
+    ("(or (= s0 1) (<= s0 2))", False),
+    ("(or (= s0 s1) (= s0 2))", False),
+    ("(and (= s0 1) (= s1 2))", False),
+    ("(= s0 1)", False),
+])
+def test_an_invariant_lists_its_states_when_every_disjunct_is_equalities(inv, pins):
+    import cvc5
+
+    from reactor.lean.proof.facts import _pins
+
+    tm = cvc5.TermManager()
+    solver = cvc5.Solver(tm)
+    solver.setLogic("ALL")
+    sm = cvc5.SymbolManager(tm)
+    parser = cvc5.InputParser(solver, sm)
+    parser.setStringInput(cvc5.InputLanguage.SMT_LIB_2_6,
+                          "(declare-const s0 Int)(declare-const s1 Int)", "decls")
+    while not (cmd := parser.nextCommand()).isNull():
+        cmd.invoke(solver, sm)
+    parser.setStringInput(cvc5.InputLanguage.SMT_LIB_2_6, inv, "inv")
+    assert _pins(parser.nextTerm()) is pins
+
+
+def test_omega_comes_before_contradiction_where_it_is_in_play():
+    """`contradiction` reduces every hypothesis with `whnf`; ahead of
+    `omega` on a Petri net's 7680 `step_inv` branches it spent the whole
+    heartbeat budget, where `omega` closes them all."""
+    closers = _plan(_int_module(), "fun s => ((s 0 0) ≥ 0)").closers
+    assert closers[:2] == ["omega", "contradiction"]
+    assert _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)").closers[0] == "contradiction"
+
+
 def test_wide_finite_state_is_not_enumerated():
     """Each element doubles the fan-out, so a wide state opts out."""
     from reactor.lean.proof.tactics import MAX_ENUMERABLE_SLOTS
