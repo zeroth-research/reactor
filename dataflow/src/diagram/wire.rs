@@ -14,9 +14,8 @@ use std::{cmp, fmt};
 ///
 /// The `degree` says which differential form the wire carries: a `0`-form
 /// is a value, a `1`-form is a derivative (the rate of change of a value
-/// with respect to time, as written by delay blocks). The degree is checked
-/// by the theories — an op reads and writes wires of the forms it expects —
-/// but, like the sort, it does not take part in identity.
+/// with respect to time, as written by delay blocks). Like the sort, it
+/// does not take part in identity.
 #[derive(Debug, Clone, Copy)]
 pub struct Wire<S> {
     id: usize,
@@ -152,12 +151,6 @@ impl<S> Wire<S> {
             wire: self,
             typed: false,
         }
-    }
-}
-
-impl<S: Clone> From<Wire<S>> for (S, u8) {
-    fn from(wire: Wire<S>) -> Self {
-        (wire.dtype, wire.degree)
     }
 }
 

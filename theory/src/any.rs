@@ -1,8 +1,7 @@
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
-use crate::{Theory, bv, lia, lra};
-use crate::{check_havoc, check_skip, check_zero};
+use crate::{bv, lia, lra};
 use derive_more::From;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
@@ -189,119 +188,27 @@ impl<'py> IntoPyObject<'py> for Any {
     }
 }
 
-impl crate::Sequential for Sequential {
+impl crate::Sequential<Sort> for Sequential {
     fn skip(range: &Sort) -> Self {
         Sequential::SKIP(*range)
     }
 }
 
-impl crate::Combinatorial for Sequential {
+impl crate::Combinatorial<Sort> for Sequential {
     fn havoc(range: &Sort) -> Self {
         Sequential::HAVOC(*range)
     }
 }
 
-impl crate::Combinatorial for Combinatorial {
+impl crate::Combinatorial<Sort> for Combinatorial {
     fn havoc(range: &Sort) -> Self {
         Combinatorial::HAVOC(*range)
     }
 }
 
-impl crate::Differential for Differential {
+impl crate::Differential<Sort> for Differential {
     fn zero(range: &Sort) -> Self {
         Differential::ZERO(*range)
-    }
-}
-
-impl Theory for Any {
-    type Sort = Sort;
-    const NAME: &'static str = "Any";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
-    {
-        // let read = read.into_iter().map(TryInto::try_into);
-        // let write = write.into_iter().map(TryInto::try_into);
-        match self {
-            Any::HAVOC(range) => check_havoc(range, read, write),
-            Any::SKIP(range) => check_skip(range, read, write),
-            Any::ZERO(range) => check_zero(range, read, write),
-            Any::LRA(itype) => itype.check(try_into(read), try_into(write)),
-            Any::LIA(itype) => itype.check(try_into(read), try_into(write)),
-            Any::BV(itype) => itype.check(try_into(read), try_into(write)),
-        }
-    }
-}
-
-fn try_into<R, S, T, E: fmt::Display, F: fmt::Display>(
-    iter: R,
-) -> impl Iterator<Item = Result<(T, u8), String>>
-where
-    S: TryInto<T, Error = F>,
-    R: IntoIterator<Item = Result<(S, u8), E>>,
-{
-    iter.into_iter().map(|r| {
-        r.map_err(|e| e.to_string())
-            .and_then(|(s, d)| Ok((s.try_into().map_err(|f| f.to_string())?, d)))
-    })
-}
-
-impl Theory for Sequential {
-    type Sort = Sort;
-    const NAME: &'static str = "Sequential";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
-    {
-        match self {
-            Sequential::HAVOC(range) => check_havoc(range, read, write),
-            Sequential::SKIP(range) => check_skip(range, read, write),
-            Sequential::LRA(itype) => itype.check(try_into(read), try_into(write)),
-            Sequential::LIA(itype) => itype.check(try_into(read), try_into(write)),
-            Sequential::BV(itype) => itype.check(try_into(read), try_into(write)),
-        }
-    }
-}
-
-impl Theory for Combinatorial {
-    type Sort = Sort;
-    const NAME: &'static str = "Combinatorial";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
-    {
-        // let read = read.into_iter().map(TryInto::try_into);
-        // let write = write.into_iter().map(TryInto::try_into);
-        match self {
-            Combinatorial::HAVOC(range) => check_havoc(range, read, write),
-            Combinatorial::LRA(itype) => itype.check(try_into(read), try_into(write)),
-            Combinatorial::LIA(itype) => itype.check(try_into(read), try_into(write)),
-            Combinatorial::BV(itype) => itype.check(try_into(read), try_into(write)),
-        }
-    }
-}
-
-impl Theory for Differential {
-    type Sort = Sort;
-    const NAME: &'static str = "Differential";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<(Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Sort, u8), E>>,
-    {
-        // let read = read.into_iter().map(TryInto::try_into);
-        // let write = write.into_iter().map(TryInto::try_into);
-        match self {
-            Differential::ZERO(range) => check_zero(range, read, write),
-            Differential::LRA(itype) => itype.check(try_into(read), try_into(write)),
-        }
     }
 }
 
@@ -322,10 +229,6 @@ impl From<Combinatorial> for Sequential {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn deg0(s: Sort) -> Result<(Sort, u8), String> {
-        Ok((s, 0))
-    }
 
     // Casts up the hierarchy (Into) wrap the op in the right variant.
 
@@ -390,96 +293,5 @@ mod tests {
         assert!(Sequential::try_from(Any::ZERO(t)).is_err());
         assert!(Combinatorial::try_from(Any::SKIP(t)).is_err());
         assert!(Differential::try_from(Any::SKIP(t)).is_err());
-    }
-
-    // The distinguished elements are unary at every level of the hierarchy,
-    // matching the base theories' `Id`/`Havoc`/`Zero`.
-
-    #[test]
-    fn skip_is_unary() {
-        let t = || Sort::Real([1, 1]);
-        let u = || Sort::Real([2, 1]);
-        for skip in [
-            Any::SKIP(t()).check([t()].map(deg0), [t()].map(deg0)),
-            Sequential::SKIP(t()).check([t()].map(deg0), [t()].map(deg0)),
-        ] {
-            assert!(skip.is_ok());
-        }
-        // arity and sort mismatches
-        assert!(
-            Any::SKIP(t())
-                .check([t(), u()].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
-        assert!(
-            Any::SKIP(t())
-                .check([t()].map(deg0), [u()].map(deg0))
-                .is_err()
-        );
-        assert!(Any::SKIP(t()).check([].map(deg0), [].map(deg0)).is_err());
-        assert!(
-            Sequential::SKIP(t())
-                .check([t(), u()].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn havoc_is_unary() {
-        let t = || Sort::Real([1, 1]);
-        let u = || Sort::Real([2, 1]);
-        for havoc in [
-            Any::HAVOC(t()).check([].map(deg0), [t()].map(deg0)),
-            Sequential::HAVOC(t()).check([].map(deg0), [t()].map(deg0)),
-            Combinatorial::HAVOC(t()).check([].map(deg0), [t()].map(deg0)),
-        ] {
-            assert!(havoc.is_ok());
-        }
-        // no reads, exactly one write
-        assert!(
-            Any::HAVOC(t())
-                .check([t()].map(deg0), [t()].map(deg0))
-                .is_err()
-        );
-        assert!(
-            Any::HAVOC(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
-        assert!(Any::HAVOC(t()).check([].map(deg0), [].map(deg0)).is_err());
-        assert!(
-            Combinatorial::HAVOC(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn zero_is_unary() {
-        let t = || Sort::Real([1, 1]);
-        let u = || Sort::Real([2, 1]);
-        for zero in [
-            Any::ZERO(t()).check([].map(deg0), [t()].map(deg0)),
-            Differential::ZERO(t()).check([].map(deg0), [t()].map(deg0)),
-        ] {
-            assert!(zero.is_ok());
-        }
-        // no reads, exactly one write
-        assert!(
-            Any::ZERO(t())
-                .check([t()].map(deg0), [t()].map(deg0))
-                .is_err()
-        );
-        assert!(
-            Any::ZERO(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
-        assert!(Any::ZERO(t()).check([].map(deg0), [].map(deg0)).is_err());
-        assert!(
-            Differential::ZERO(t())
-                .check([].map(deg0), [t(), u()].map(deg0))
-                .is_err()
-        );
     }
 }

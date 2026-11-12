@@ -2,7 +2,6 @@ use dataflow::diagram::Term;
 use dataflow::diagram::Wire;
 use reactive::Var;
 use reactive::var::{X, X_ref, d, d_ref};
-use theory::lra::{LRA, Sort};
 
 #[test]
 fn variables_are_globally_ordered_by_creation() {
@@ -82,11 +81,4 @@ fn variables_pass_into_term_constructors() {
     let t = Term::function(LRA::Id(), [X(x)], [x]).unwrap();
     assert_eq!(t.write().iter().next().map(Wire::id), Some(X(x).id()));
     assert_eq!(t.read().iter().next().map(Wire::id), Some(x.id()));
-}
-
-#[test]
-fn variable_fail_into_term_constructors() {
-    let x = Var::new(Sort::Real([1, 1]));
-    // dx = x: the derivative is degree 1, ordinary operands must be degree 0
-    assert!(Term::function(LRA::Id(), [d(x)], [x]).is_err());
 }

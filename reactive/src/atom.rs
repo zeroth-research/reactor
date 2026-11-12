@@ -4,7 +4,7 @@ use dataflow::diagram::{Block, Term};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential};
 
 use crate::var::{Interface, Var};
 #[cfg(debug_assertions)]
@@ -17,11 +17,11 @@ use std::fmt::Debug;
 
 /// This data structure corresponds to the atom of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Atom<I, J, F, S = <I as Theory>::Sort>
+pub struct Atom<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
 {
     /// Corresponds to ctr wires.
     ctrl: Interface<S>,
@@ -30,11 +30,11 @@ where
     /// Corresponds to read wires.
     read: Interface<S>,
     /// Corresponds to the initial condition.
-    init: Block<I>,
+    init: Block<I, S>,
     /// Corresponds to the update action.
-    update: Block<J>,
+    update: Block<J, S>,
     /// Corresponds to the delay activity.
-    delay: Block<F>,
+    delay: Block<F, S>,
 
     /// cache of all wires local to blocks
     local: Vec<Wire<S>>,
@@ -44,21 +44,21 @@ where
 
 impl<I, J, F, S> Atom<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
 {
     /// Returns a reference to the initial action.
-    pub fn init(&self) -> &Block<I> {
+    pub fn init(&self) -> &Block<I, S> {
         &self.init
     }
     /// Returns a reference to the update action.
-    pub fn update(&self) -> &Block<J> {
+    pub fn update(&self) -> &Block<J, S> {
         &self.update
     }
 
     /// Returns a reference to the delay activity.
-    pub fn delay(&self) -> &Block<F> {
+    pub fn delay(&self) -> &Block<F, S> {
         &self.delay
     }
 
@@ -103,9 +103,9 @@ where
 
 impl<I, J, F, S> Default for Atom<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
 {
     fn default() -> Self {
         Self::empty()
@@ -118,9 +118,9 @@ where
 
 impl<I, J, F, S> Atom<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
 {
     /// Returns true if this atom awaits the other atom.
     pub fn awaits(&self, other: &Atom<I, J, F, S>) -> bool {
@@ -161,9 +161,9 @@ where
         ctrl: Interface<S>,
         wait: Interface<S>,
         read: Interface<S>,
-        init: Block<I>,
-        update: Block<J>,
-        delay: Block<F>,
+        init: Block<I, S>,
+        update: Block<J, S>,
+        delay: Block<F, S>,
         used: Vec<Wire<S>>,
         local: Vec<Wire<S>>,
     ) -> Self {
@@ -280,10 +280,10 @@ impl<'a, S> WireMap<'a, S> {
     }
 }
 
-fn infer_ctrl<T, S: Clone>(block: &Block<T>, pool: &HashMap<&Wire<S>, &Var<S>>) -> BTreeSet<Var<S>>
-where
-    T: Theory<Sort = S>,
-{
+fn infer_ctrl<T, S: Clone>(
+    block: &Block<T, S>,
+    pool: &HashMap<&Wire<S>, &Var<S>>,
+) -> BTreeSet<Var<S>> {
     // tree map on id is used to guarantee consistent order
     let mut ctrl: BTreeSet<Var<S>> = BTreeSet::new();
 
@@ -300,17 +300,17 @@ where
 
 impl<I, J, F, S> Atom<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
     S: Clone + Debug,
 {
     fn with_ctrl(
         wmap: WireMap<S>,
         ctrl: BTreeSet<Var<S>>,
-        init: Block<I>,
-        update: Block<J>,
-        delay: Block<F>,
+        init: Block<I, S>,
+        update: Block<J, S>,
+        delay: Block<F, S>,
     ) -> Result<Self, String> {
         let mut read: BTreeSet<Var<S>> = BTreeSet::new();
         let mut wait: BTreeSet<Var<S>> = BTreeSet::new();
@@ -456,9 +456,9 @@ where
 
 impl<I, J, F, S> Atom<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
     S: Clone + Debug,
 {
     /// Constructs a **sequential atom**: behaviour that evolves over discrete
@@ -489,8 +489,8 @@ where
     pub fn sequential<'b, V, W, U>(vars: V, init: W, update: U) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'b Var<S>>,
-        W: IntoIterator<Item = Term<I>>,
-        U: IntoIterator<Item = Term<J>>,
+        W: IntoIterator<Item = Term<I, S>>,
+        U: IntoIterator<Item = Term<J, S>>,
         S: 'b,
     {
         let wires = WireMap::unpack(vars);
@@ -532,8 +532,8 @@ where
     pub fn differential<'b, V, W, Z>(vars: V, init: W, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'b Var<S>>,
-        W: IntoIterator<Item = Term<I>>,
-        Z: IntoIterator<Item = Term<F>>,
+        W: IntoIterator<Item = Term<I, S>>,
+        Z: IntoIterator<Item = Term<F, S>>,
         S: 'b,
     {
         let wires = WireMap::unpack(vars);
@@ -578,9 +578,9 @@ where
     pub fn hybrid<'a, V, W, U, Z>(vars: V, init: W, update: U, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        W: IntoIterator<Item = Term<I>>,
-        U: IntoIterator<Item = Term<J>>,
-        Z: IntoIterator<Item = Term<F>>,
+        W: IntoIterator<Item = Term<I, S>>,
+        U: IntoIterator<Item = Term<J, S>>,
+        Z: IntoIterator<Item = Term<F, S>>,
         S: 'a,
     {
         let wires = WireMap::unpack(vars);
@@ -617,7 +617,7 @@ where
     pub fn jump<'a, V, U>(vars: V, update: U) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        U: IntoIterator<Item = Term<J>>,
+        U: IntoIterator<Item = Term<J, S>>,
         S: 'a,
     {
         let wires = WireMap::unpack(vars);
@@ -657,8 +657,8 @@ where
     pub fn uninitialized<'a, V, U, Z>(vars: V, update: U, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        U: IntoIterator<Item = Term<J>>,
-        Z: IntoIterator<Item = Term<F>>,
+        U: IntoIterator<Item = Term<J, S>>,
+        Z: IntoIterator<Item = Term<F, S>>,
         S: 'a,
     {
         let wires = WireMap::unpack(vars);
@@ -696,7 +696,7 @@ where
     pub fn constant<'a, V, W>(vars: V, init: W) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        W: IntoIterator<Item = Term<I>>,
+        W: IntoIterator<Item = Term<I, S>>,
         S: 'a,
     {
         let wires = WireMap::unpack(vars);
@@ -776,7 +776,7 @@ where
     pub fn flow<'a, V, Z>(vars: V, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        Z: IntoIterator<Item = Term<F>>,
+        Z: IntoIterator<Item = Term<F, S>>,
         S: 'a,
     {
         let wires = WireMap::unpack(vars);
@@ -817,19 +817,19 @@ where
     /// - [`Module::combinatorial`], for combinatorial modules.
     pub fn combinatorial<'a, T, V, W>(vars: V, assign: W) -> Result<Self, String>
     where
-        T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
+        T: Into<I> + Into<J> + Clone,
         V: IntoIterator<Item = &'a Var<S>>,
-        W: IntoIterator<Item = Term<T>>,
+        W: IntoIterator<Item = Term<T, S>>,
         S: 'a,
     {
         let wires = WireMap::unpack(vars);
 
-        let assign: Block<T> = Block::try_from_iter(assign.into_iter().map(Ok))?;
+        let assign: Block<T, S> = Block::try_from_iter(assign.into_iter().map(Ok))?;
         let ctrl = infer_ctrl(&assign, &wires.nxt);
 
-        let init: Block<I> = Block::convert(assign.clone());
-        let update: Block<J> = Block::convert(assign);
-        let delay: Block<F> = Block::zero(ctrl.iter().map(Var::der).cloned())?;
+        let init: Block<I, S> = Block::convert(assign.clone());
+        let update: Block<J, S> = Block::convert(assign);
+        let delay: Block<F, S> = Block::zero(ctrl.iter().map(Var::der).cloned())?;
 
         Self::with_ctrl(wires, ctrl, init, update, delay)
     }
@@ -841,9 +841,9 @@ where
 
 pub struct Display<'a, I, J, F, S, N>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
     atom: &'a Atom<I, J, F, S>,
@@ -853,9 +853,9 @@ where
 
 impl<'a, I, J, F, S, N> Display<'a, I, J, F, S, N>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    F: Differential<Sort = S> + fmt::Display,
+    I: Combinatorial<S> + fmt::Display,
+    J: Sequential<S> + fmt::Display,
+    F: Differential<S> + fmt::Display,
     S: fmt::Display,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
@@ -893,7 +893,7 @@ where
         }
     }
 
-    fn fmt_terms<T: 'a + Theory<Sort = S> + fmt::Display, U: Iterator<Item = &'a Term<T>>>(
+    fn fmt_terms<T: 'a + fmt::Display, U: Iterator<Item = &'a Term<T, S>>>(
         &self,
         f: &mut fmt::Formatter<'_>,
         iter: U,
@@ -941,9 +941,9 @@ where
 
 impl<'a, I, J, F, S, N> fmt::Display for Display<'a, I, J, F, S, N>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    F: Differential<Sort = S> + fmt::Display,
+    I: Combinatorial<S> + fmt::Display,
+    J: Sequential<S> + fmt::Display,
+    F: Differential<S> + fmt::Display,
     S: fmt::Display,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
@@ -954,9 +954,9 @@ where
 
 impl<I, J, D, S> Atom<I, J, D, S>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    D: Differential<Sort = S> + fmt::Display,
+    I: Combinatorial<S> + fmt::Display,
+    J: Sequential<S> + fmt::Display,
+    D: Differential<S> + fmt::Display,
     S: fmt::Display,
 {
     pub fn with_varnames<'a, N, R>(
@@ -996,9 +996,9 @@ where
 
 impl<I, J, F, S> Module<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
     S: Clone + Debug,
 {
     /// Constructs a **sequential module**: behaviour that evolves over
@@ -1026,8 +1026,8 @@ where
     pub fn sequential<'a, V, W, U>(vars: V, init: W, update: U) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        W: IntoIterator<Item = Term<I>>,
-        U: IntoIterator<Item = Term<J>>,
+        W: IntoIterator<Item = Term<I, S>>,
+        U: IntoIterator<Item = Term<J, S>>,
         S: 'a,
     {
         let atom = Atom::sequential(vars, init, update)?;
@@ -1058,8 +1058,8 @@ where
     pub fn differential<'a, V, W, Z>(vars: V, init: W, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        W: IntoIterator<Item = Term<I>>,
-        Z: IntoIterator<Item = Term<F>>,
+        W: IntoIterator<Item = Term<I, S>>,
+        Z: IntoIterator<Item = Term<F, S>>,
         S: 'a,
     {
         let atom = Atom::differential(vars, init, delay)?;
@@ -1091,9 +1091,9 @@ where
     pub fn hybrid<'a, V, W, U, Z>(vars: V, init: W, update: U, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        W: IntoIterator<Item = Term<I>>,
-        U: IntoIterator<Item = Term<J>>,
-        Z: IntoIterator<Item = Term<F>>,
+        W: IntoIterator<Item = Term<I, S>>,
+        U: IntoIterator<Item = Term<J, S>>,
+        Z: IntoIterator<Item = Term<F, S>>,
         S: 'a,
     {
         let atom = Atom::hybrid(vars, init, update, delay)?;
@@ -1121,7 +1121,7 @@ where
     /// - [`Module::constant`], the dual: only the initial state, no update.
     pub fn jump<'a, V, U>(vars: V, update: U) -> Result<Self, String>
     where
-        U: IntoIterator<Item = Term<J>>,
+        U: IntoIterator<Item = Term<J, S>>,
         V: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
@@ -1152,8 +1152,8 @@ where
     ///   purely continuous special cases.
     pub fn uninitialized<'a, V, U, Z>(vars: V, update: U, delay: Z) -> Result<Self, String>
     where
-        U: IntoIterator<Item = Term<J>>,
-        Z: IntoIterator<Item = Term<F>>,
+        U: IntoIterator<Item = Term<J, S>>,
+        Z: IntoIterator<Item = Term<F, S>>,
         V: IntoIterator<Item = &'a Var<S>>,
         S: 'a,
     {
@@ -1211,7 +1211,7 @@ where
     pub fn flow<'a, V, Z>(vars: V, delay: Z) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        Z: IntoIterator<Item = Term<F>>,
+        Z: IntoIterator<Item = Term<F, S>>,
         S: 'a,
     {
         let atom = Atom::flow(vars, delay)?;
@@ -1240,7 +1240,7 @@ where
     pub fn constant<'a, V, W>(vars: V, init: W) -> Result<Self, String>
     where
         V: IntoIterator<Item = &'a Var<S>>,
-        W: IntoIterator<Item = Term<I>>,
+        W: IntoIterator<Item = Term<I, S>>,
         S: 'a,
     {
         let atom = Atom::constant(vars, init)?;
@@ -1269,9 +1269,9 @@ where
     /// - [`Atom::combinatorial`], for creating individual combinatorial atoms.
     pub fn combinatorial<'a, T, V, W>(vars: V, assign: W) -> Result<Self, String>
     where
-        T: Theory<Sort = S> + Into<I> + Into<J> + Clone,
+        T: Into<I> + Into<J> + Clone,
         V: IntoIterator<Item = &'a Var<S>>,
-        W: IntoIterator<Item = Term<T>>,
+        W: IntoIterator<Item = Term<T, S>>,
         S: 'a,
     {
         let atom = Atom::combinatorial(vars, assign)?;

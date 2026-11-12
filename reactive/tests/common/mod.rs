@@ -8,39 +8,26 @@ use reactive::var::{Var, X};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential};
 
 #[derive(Clone, Debug)]
 #[allow(unused)]
 pub struct Ops(pub &'static str);
 
-impl Theory for Ops {
-    type Sort = &'static str;
-    const NAME: &'static str = "Ops";
-
-    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-    {
-        Ok(())
-    }
-}
-
-impl Combinatorial for Ops {
-    fn havoc(_range: &Self::Sort) -> Self {
+impl Combinatorial<&'static str> for Ops {
+    fn havoc(_range: &&'static str) -> Self {
         Ops("HAVOC")
     }
 }
 
-impl Sequential for Ops {
-    fn skip(_range: &Self::Sort) -> Self {
+impl Sequential<&'static str> for Ops {
+    fn skip(_range: &&'static str) -> Self {
         Ops("SKIP")
     }
 }
 
-impl Differential for Ops {
-    fn zero(_range: &Self::Sort) -> Self {
+impl Differential<&'static str> for Ops {
+    fn zero(_range: &&'static str) -> Self {
         Ops("ZERO")
     }
 }
@@ -51,8 +38,8 @@ impl Display for Ops {
     }
 }
 
-pub type Module = reactive::Module<Ops, Ops, Ops>;
-pub type Atom = reactive::Atom<Ops, Ops, Ops>;
+pub type Module = reactive::Module<Ops, Ops, Ops, &'static str>;
+pub type Atom = reactive::Atom<Ops, Ops, Ops, &'static str>;
 
 pub fn mk_op(name: &'static str) -> Ops {
     Ops(name)
@@ -77,7 +64,7 @@ pub fn example_counter() -> Result<(Module, HashMap<Var<&'static str>, String>),
     let y0 = Var::new("real");
     let z0 = Var::new("real");
 
-    let mut init: Vec<Term<Ops>> = Vec::new();
+    let mut init: Vec<Term<Ops, &'static str>> = Vec::new();
 
     let tmp1 = Wire::scalar("real");
     init.push(term!(mk_op("ZERO"), [tmp1])?);
@@ -90,7 +77,7 @@ pub fn example_counter() -> Result<(Module, HashMap<Var<&'static str>, String>),
     init.push(term!(mk_op("ABS"), [tmp3], [X(z0)])?);
     init.push(term!(mk_op("ID"), [X(z)], [tmp3])?);
 
-    let mut update: Vec<Term<Ops>> = Vec::new();
+    let mut update: Vec<Term<Ops, &'static str>> = Vec::new();
 
     let tmp4 = Wire::scalar("bool");
     let tmp5 = Wire::scalar("bool");
@@ -129,11 +116,11 @@ pub fn example_peterson1() -> Result<Module, String> {
     let pc2 = Var::new(stype);
     let x2 = Var::new("bool");
 
-    let mut init: Vec<Term<Ops>> = Vec::new();
+    let mut init: Vec<Term<Ops, &'static str>> = Vec::new();
     init.push(term!(mk_op("CONST(outCS)"), [X(pc1)]).unwrap());
     init.push(term!(mk_op("CONST(true)"), [X(x1)]).unwrap());
 
-    let mut update: Vec<Term<Ops>> = Vec::new();
+    let mut update: Vec<Term<Ops, &'static str>> = Vec::new();
     let out_cs = Wire::scalar(stype);
     let cond1 = Wire::scalar("bool");
     update.push(term!(mk_op("CONST(outCS)"), [out_cs]).unwrap());
