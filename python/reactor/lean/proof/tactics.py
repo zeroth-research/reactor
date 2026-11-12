@@ -71,6 +71,9 @@ class Features:
     # empty if any element does not. See `_two_valued_slots`.
     two_valued: list[tuple[str, str]] = field(default_factory=list)
 
+    # The invariant lists the states it allows (`proof.facts._pins`).
+    pins: bool = False
+
     # `min`/`max`/`ite` occurrences in the predicates. Each is a case: omega
     # splits `min`/`max` internally, `split_ifs` fans an `ite` out, and
     # `hrank` mentions the ranking twice. This, not the module's size, is
@@ -311,6 +314,7 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
         f.has_ite = f.has_ite or facts.has_ite
         f.n_branch = text_branch + facts.n_branch
         f.n_conditions = text_branch + facts.n_conditions
+        f.pins = facts.pins
     if f.finite_state:
         f.two_valued = _two_valued_slots(ctx)
     return f
@@ -381,9 +385,23 @@ class TacticPlan:
 
         Splitting each element into its two values first makes every later
         goal closed, which is what the rest of the plan was already built
-        for. `skip` when the state is not finite, or is too wide to fan out.
+        for.
+
+        An invariant that lists the states it allows makes an `Int` state
+        as finite: split on it and `simp_all` puts each listed value in for
+        the state, and every `if` the transition and the rank branch on is
+        decided. Split by `cert_prep` instead -- after `split_ifs` has fanned
+        the conditions out over a state it does not know -- the closers ran
+        over every branch, and `svcomp_collatz_bounded`'s `hrank` (a rank
+        that compares the step's own `if` with four values) spent its
+        2000000 heartbeats doing it. All or nothing: a case `simp_all` does
+        not close leaves the goal as it was, for the plan to take.
+
+        `skip` otherwise.
         """
         if not self.features.two_valued:
+            if self.features.pins:
+                return "((casesm* _ ∨ _) <;> simp_all) <;> done"
             return "skip"
         steps = [
             f"rcases {lemma} (($v){acc}) with h{k} | h{k}"
@@ -494,6 +512,9 @@ class TacticPlan:
                 f"state is finite and narrow: enumerating "
                 f"{len(f.two_valued)} two-valued element(s) before the closers"
             )
+        elif f.pins:
+            bits.append("the invariant lists its states: trying each before "
+                        "the closers")
         out = "\n".join(f"-- {b}" for b in bits)
         if self.hints is not None and self.hints.any:
             out += "\n" + self.hints.why()
