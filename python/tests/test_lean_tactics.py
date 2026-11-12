@@ -212,6 +212,14 @@ def test_an_invariant_lists_its_states_when_every_disjunct_is_equalities(inv, pi
     assert _pins(parser.nextTerm()) is pins
 
 
+def test_omega_comes_before_contradiction_where_it_is_in_play():
+    """`contradiction` reduces every hypothesis with `whnf`; ahead of
+    `omega` on a Petri net's 7680 `step_inv` branches it spent the whole
+    heartbeat budget, where `omega` closes them all."""
+    closers = _plan(_int_module(), "fun s => ((s 0 0) ≥ 0)").closers
+    assert closers[:2] == ["omega", "contradiction"]
+    assert _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)").closers[0] == "contradiction"
+
 
 def test_wide_finite_state_is_not_enumerated():
     """Each element doubles the fan-out, so a wide state opts out."""
