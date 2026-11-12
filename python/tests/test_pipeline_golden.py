@@ -24,6 +24,7 @@ import torch
 from reactor import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
 from reactor.lean.proof.render import (
     generate_certificate_lean,
+    generate_tactics_lean,
     generate_data_lean,
     generate_standalone_cert_lean,
 )
@@ -150,7 +151,8 @@ CODEGEN = [
 
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
-    """Data.lean, Certificate.lean and the standalone certificate, as one text."""
+    """Data.lean, Tactics.lean, Certificate.lean and the standalone
+    certificate, as one text."""
     from reactor.lean.proof.render import prepare
     from reactor.lean.smt.limits import SmtBudget
     from reactor.lean.proof.facts import solver_hints
@@ -164,6 +166,8 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
     return "\n".join([
         "=== Certificate/Data.lean",
         generate_data_lean(ctx, lean),
+        "=== Certificate/Tactics.lean",
+        generate_tactics_lean(ctx, lean),
         "=== Certificate/Certificate.lean",
         generate_certificate_lean(ctx, lean),
         "=== standalone",
@@ -280,6 +284,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
         "=== stdout", captured.out,
         "=== stderr", captured.err,
         "=== Certificate/Data.lean", read("Certificate/Data.lean"),
+        "=== Certificate/Tactics.lean", read("Certificate/Tactics.lean"),
         "=== Certificate/Certificate.lean", read("Certificate/Certificate.lean"),
         "=== artifacts/index.json", _index(project / "artifacts" / "index.json"),
     ]

@@ -61,8 +61,10 @@ NAME/
                                 functional one by equivalence theorems
   Certificate/Data.lean         the certificate: init_pre, update_pre, P,
                                 inv, ranking
-  Certificate/Certificate.lean  the proof rule's obligations, and the
-                                tactics that close them
+  Certificate/Tactics.lean      the budgets and tactics read off the module
+                                and the certificate
+  Certificate/Certificate.lean  the proof rule's obligations, closed by those
+                                tactics: fixed text, one per kind of property
   ZerothHammer.lean             the zeroth_hammer tactic
   artifacts/                    what earlier runs found, for the next run
   dbg/                          the module as printed, and a copy of the input
@@ -106,7 +108,9 @@ These steps turn the given predicates into the certificate, before stage 4:
 - Under `--smt-tactics cvc5`, it is also put to cvc5 for hints
   (`solver_hints`).
 - `proof.render.prepare` joins these into a `LeanCertificate`: the definitions in
-  `Data.lean`, and the tactic plan in `Certificate.lean`.
+  `Data.lean`, and the tactic plan in `Tactics.lean`. The proof in
+  `Certificate.lean` is the same text for every certificate of a safety
+  property, and for every certificate of a Büchi one.
 
 `--pre-check cvc5` first asks cvc5 whether the obligations hold, so that a
 wrong certificate fails in seconds rather than in the build.
@@ -395,13 +399,34 @@ that is `None` becomes a `True` / `sorry` placeholder.
 `e.1` (latched) and `e.2` (next).
 
 **Where Lean text comes from.** Jinja templates (`templates/project/`) render
-the files and their fixed structure: the project skeleton, `Data.lean`, the
-certificate's proof skeleton. Python renders expressions and the parts whose
-shape follows the module: the encodings (`codegen/encodings/`), the predicates
-(`render_certificate`), the tactic plan (`proof/tactics.py`). A piece both a project
-and a `--cert-file` certificate need is one template partial, rendered by both
-(`Certificate/_defs.lean.j2`, the five definitions), and a name or a text more
-than one file uses is one constant in `project/names.py`.
+the files and their fixed structure: the project skeleton, `Data.lean`,
+`Tactics.lean`, the certificate's proof. Python renders expressions and the
+parts whose shape follows the module: the encodings (`codegen/encodings/`), the
+predicates (`render_certificate`), the tactic plan (`proof/tactics.py`). A piece
+both a project and a `--cert-file` certificate need is one template partial,
+rendered by both (`Certificate/_defs.lean.j2`, the five definitions;
+`Certificate/_tactics.lean.j2`, the budgets and tactics), and a name or a text
+more than one file uses is one constant in `project/names.py`.
+
+**What a certificate rewrites.** Everything that changes with the module or
+its certificate is in `Certificate/Data.lean` and `Certificate/Tactics.lean`,
+and nothing else is in them but their imports; `Certificate/Certificate.lean`
+is fixed text, one per kind of property, so the two can be rewritten -- by
+`reactor` or by anything else -- without it. Three things make that hold:
+
+- The budgets are a command macro, `cert_budgets`, which the proof calls
+  where it used to `set_option` them: a `set_option` does not cross an
+  import, a macro that expands to one does.
+- `RM` leaves its types to Lean (`({ ... } : ReactiveModule _ _)`), which
+  reads them off `init_pre` and `update`.
+- `simp_mat` and `simp_defs` name the definitions in `Data.lean`, which
+  `Tactics.lean` does not import, and `RM`, which the proof defines after
+  it, so they are unhygienic (`set_option hygiene false in`): a hygienic
+  macro resolves a global name where it is defined, and fails on one that
+  is not in scope there. The plan's own macros name no definition of the
+  project's and stay hygienic. `Tactics.lean` therefore imports the
+  libraries alone, and lake builds it alongside the module and `Data.lean`
+  rather than after them.
 
 ### `predicate_terms` / `render_certificate`
 
@@ -413,8 +438,9 @@ zeta-reduced the `let`s. `verbatim` takes the invariant and ranking of a
 `LeanAnswer` as they are. Every certificate is printed through `prepare`,
 the pipeline's (`pipeline.certificate.render`) and the tests'
 (`lean_certificate(module, claim, cert)`, which is `prepare` with no solver
-hints) alike; `certificate_files` renders the project's `Data.lean` and
-`Certificate.lean` from it, and `create_project` writes that text as it is.
+hints) alike; `certificate_files` renders the project's `Data.lean`,
+`Tactics.lean` and `Certificate.lean` from it, and `create_project` writes
+that text as it is.
 
 ---
 
@@ -425,9 +451,10 @@ identical in every certificate — wasteful in both directions: an integer
 module with a linear ranking paid for `decide` and `bv_decide` on every goal,
 and a shape nobody had anticipated had no way to ask for the step it needed.
 
-`plan_for` reads the module and its predicates and emits two macros,
-`cert_prep` (canonicalise) and `cert_close` (decide), which the three proofs
-share; each certificate carries a comment saying what was detected.
+`plan_for` reads the module and its predicates and emits the macros in
+`Tactics.lean` -- chiefly `cert_prep` (canonicalise) and `cert_close`
+(decide) -- which the three proofs share; the file starts with a comment
+saying what was detected.
 
 | detected | consequence |
 |---|---|
@@ -452,7 +479,7 @@ prover has already failed on, and there it bit-blasts: including it took a
 BitVec certificate from 10 s to 977 s while closing nothing `decide` had not
 already closed.
 
-Because the plan depends on the predicates, `Certificate.lean` is not stable
+Because the plan depends on the predicates, `Tactics.lean` is not stable
 across a change of invariant: it is regenerated alongside `Data.lean`.
 `tests/test_lean_tactics.py` pins these decisions in the fast suite, so a
 plan regression does not wait for a Lean build.
@@ -590,7 +617,8 @@ uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.le
   Certificate.lean            # re-export shim
   Certificate/
     Data.lean                 # certificate predicates
-    Certificate.lean          # obligations + proofs
+    Tactics.lean              # budgets and tactics read off their shape
+    Certificate.lean          # obligations + proofs (fixed text)
   ZerothHammer.lean           # standalone zeroth_hammer tactic
   artifacts/                  # what runs found, for the next run (see below)
   dbg/                        # system.txt (the module) and a copy of the input

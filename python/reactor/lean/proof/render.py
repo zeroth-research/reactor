@@ -1,7 +1,7 @@
 """The certificate as Lean: its predicates parsed once and printed
 (`render_certificate`), with what the tactic plan reads of them (`prepare`,
 which every certificate goes through), and the files that come of it --
-the project's two (`certificate_files`) and the one `--cert-file` writes
+the project's three (`certificate_files`) and the one `--cert-file` writes
 (`generate_standalone_cert_lean`).
 """
 
@@ -15,7 +15,7 @@ from reactor.lean.codegen.terms import extl_native_type, product_type
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor.lean.core.errors import PredicateRefused, Refused
 from reactor.lean.codegen.context import LeanContext
-from reactor.lean.project.names import DATA, MAT_SIMP, PROOF, cert_file, rm_def
+from reactor.lean.project.names import DATA, MAT_SIMP, PROOF, TACTICS, cert_file
 from reactor.lean.proof.tactics import plan_for
 from reactor.lean.project.templates import render
 
@@ -283,15 +283,15 @@ def generate_data_lean(
 ) -> str:
     """Generate Certificate/Data.lean: init_pre, update_pre, inv, P, ranking.
 
-    Imports only ``Relational.Basic``.  ``Certificate.lean`` imports this
-    file so that only the data file needs regeneration when the certificate
-    data changes.
+    Imports only ``Relational.Basic``.  ``Tactics.lean`` and
+    ``Certificate.lean`` import this file, so the proof is not rewritten
+    when the certificate's data changes.
 
     It sits under ``Certificate/`` rather than ``System/`` because that is what
     it is about: ``System/`` is the module, which is the same whatever is being
     proved about it, while these five definitions are the certificate's own and
-    change with every certificate.  The two files a new certificate rewrites
-    are then the two files in one directory.
+    change with every certificate.  The two files a new certificate rewrites,
+    this one and ``Tactics.lean``, are then in one directory with the proof.
     """
     return render(
         "project/Certificate/Data.lean.j2",
@@ -299,46 +299,18 @@ def generate_data_lean(
     )
 
 
-def generate_certificate_lean(
-    ctx: LeanContext,
-    lean_cert: LeanCertificate | None = None,
-    *,
-    module_inline: str | None = None,
-) -> str:
-    """Generate Certificate.lean.
-
-    Args:
-        module_inline: When set, inline this Lean source (the ``init`` /
-            ``update`` functions) for standalone certs instead of importing
-            ``System.System``.  Should be the output of
-            ``ModuleToLean4.to_lean_functional()``.
-    """
-    lean_cert = lean_cert or LeanCertificate()
-    defs = lean_cert.defs
-
-    extl_native = extl_native_type(ctx)
-    ctrl_native = product_type(ctx.ctrl_next)
-
-    const_names = ctx.constants.names()
-    const_list = ", ".join(const_names) if const_names else ""
-
-
-    # Inline definitions when used standalone (no separate Certificate/Data.lean).
-    inline_defs = (
-        render("project/Certificate/_defs.lean.j2",
-               **_cert_def_context(ctx, lean_cert)).strip("\n")
-        if module_inline is not None else None
-    )
+def _tactics_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
+    """What `_tactics.lean.j2` renders: the tactic plan read off the module
+    and the predicates, and the definitions the two simp sets unfold."""
     # A Buchi certificate always defines `ranking` (as `sorry` when nothing
     # supplied one); a safety certificate defines none, and naming it in a
     # simp set would be an unknown identifier rather than an unused one.
-    has_ranking = not defs.is_safety
-
     all_defs = "RM, init, update, inv, init_pre, update_pre, P"
-    if has_ranking:
+    if not lean_cert.defs.is_safety:
         all_defs += ", ranking"
-    if const_list:
-        all_defs += f", {const_list}"
+    const_names = ctx.constants.names()
+    if const_names:
+        all_defs += ", " + ", ".join(const_names)
 
     plan = plan_for(
         ctx,
@@ -348,34 +320,74 @@ def generate_certificate_lean(
         verbatim=lean_cert.plan.verbatim,
         floors=lean_cert.plan.floors,
     )
+    return dict(plan=plan, all_defs=all_defs, mat_simp=", ".join(MAT_SIMP))
 
+
+def generate_tactics_lean(
+    ctx: LeanContext,
+    lean_cert: LeanCertificate | None = None,
+) -> str:
+    """Generate Certificate/Tactics.lean: the budgets and the tactics the
+    proof calls, read off the shape of the module and of `lean_cert`."""
+    return render(
+        "project/Certificate/Tactics.lean.j2",
+        **_tactics_context(ctx, lean_cert or LeanCertificate()),
+    )
+
+
+def generate_certificate_lean(
+    ctx: LeanContext,
+    lean_cert: LeanCertificate | None = None,
+    *,
+    module_inline: str | None = None,
+) -> str:
+    """Generate Certificate.lean: the proof.
+
+    In a project it is the same text for every certificate of a property of
+    one kind (safety or Büchi, `lean_cert`'s): what changes with the module
+    and the certificate is `Data.lean` and `Tactics.lean`, which it imports.
+
+    Args:
+        module_inline: When set, inline this Lean source (the ``init`` /
+            ``update`` functions) for standalone certs instead of importing
+            ``System.System``, and the definitions and the tactics with it.
+            Should be the output of ``ModuleToLean4.to_lean_functional()``.
+    """
+    lean_cert = lean_cert or LeanCertificate()
+    inline = {}
+    if module_inline is not None:
+        inline = dict(
+            inline_defs=render(
+                "project/Certificate/_defs.lean.j2",
+                **_cert_def_context(ctx, lean_cert)).strip("\n"),
+            inline_tactics=render(
+                "project/Certificate/_tactics.lean.j2",
+                **_tactics_context(ctx, lean_cert)).strip("\n"),
+        )
     return render(
         "project/Certificate/Certificate.lean.j2",
+        is_safety=lean_cert.defs.is_safety,
         module_inline=module_inline,
-        inline_defs=inline_defs,
-        noncomp="noncomputable " if ctx.uses_real else "",
-        rm_def=rm_def(extl_native, ctrl_native, noncomputable=ctx.uses_real),
-        all_defs=all_defs,
-        mat_simp=", ".join(MAT_SIMP),
-        is_safety=defs.is_safety,
-        plan=plan,
+        **inline,
     )
 
 
 def certificate_files(
     ctx: LeanContext, lean_cert: LeanCertificate | None = None,
 ) -> dict[str, str]:
-    """The project's two certificate files by project-relative path: the
-    definitions (`Data.lean`) and the proof whose tactics are read off
-    their shape (`Certificate.lean`). Placeholders where `lean_cert` has no
+    """The project's three certificate files by project-relative path: the
+    definitions (`Data.lean`), the budgets and tactics read off their shape
+    (`Tactics.lean`), and the proof, which is fixed text for the property's
+    kind (`Certificate.lean`). Placeholders where `lean_cert` has no
     predicate, or is `None`.
 
-    Rendered together because they are rewritten together: a file of
-    either kind left over from other predicates no longer matches the
-    other.
+    Rendered together because they are rewritten together: a definitions
+    file left over from other predicates no longer matches the tactics, and
+    the proof follows the kind of the property they are for.
     """
     return {
         cert_file(DATA): generate_data_lean(ctx, lean_cert),
+        cert_file(TACTICS): generate_tactics_lean(ctx, lean_cert),
         cert_file(PROOF): generate_certificate_lean(ctx, lean_cert),
     }
 

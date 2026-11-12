@@ -1,3 +1,11 @@
+{#- The proof: the same text for every certificate of a safety property, and
+    for every certificate of a Büchi one. What changes with the module and
+    the certificate is in `Data.lean.j2` (the definitions) and
+    `_tactics.lean.j2` (the budgets and tactics read off their shape), so a
+    certificate can be rewritten without this file. A `--cert-file`
+    certificate inlines all three, the module too: the tactics first, so
+    that its budgets are in force for the module, as they are for the
+    proof. -#}
 import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 {% if module_inline %}
@@ -5,67 +13,51 @@ import Relational.Box
 {% else %}
 import System.System
 import Certificate.Data
+import Certificate.Tactics
 {% endif %}
 import ZerothHammer
 
 {{ linters_off }}
 
--- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `reactor/lean/proof/tactics.py`.
-{{ plan.why() }}
-set_option maxRecDepth {{ plan.max_rec_depth }}
-set_option maxHeartbeats {{ plan.max_heartbeats }}
+{% if module_inline %}
+{{ inline_tactics }}
+
+{% endif %}
+-- The obligations below are the same for every certificate. What changes
+-- with the module and its certificate is the definitions they unfold and
+-- these macros, read off their shape (see `reactor/lean/proof/tactics.py`):
+--
+--   cert_budgets   the heartbeat and recursion budgets, for the rest of the file
+--   simp_mat       unfold the definitions and reduce matrix arithmetic, on the
+--                  goal only (avoids exponential blowup on hypotheses)
+--   simp_defs      unfold the definitions everywhere (cheap: no matrix
+--                  arithmetic), so the closers see the invariant's conditions
+--   cert_thin      drop hypotheses no refutation needed; `skip` otherwise
+--   cert_facts s   branch conditions cvc5 decided under the invariant, so
+--                  `split_ifs` does not have to; `skip` unless it found some
+--   cert_floors s  bound each floored quantity by the Real under it, so the
+--                  closers see the `Int` atom with a sign; `skip` unless floored
+--   cert_states s  enumerate the state, when it is finite and narrow enough
+--   cert_prep      canonicalise the goal: only the steps its shapes call for
+--   cert_close s   close it: only the provers this state can use, cheapest first
+--
+-- `s` is the obligation's own state binder.
+cert_budgets
 
 {% if module_inline %}
 {{ module_inline }}
 
-{% endif %}
-{% if inline_defs %}
 {{ inline_defs }}
 
 {% endif %}
-{{ rm_def }}
+noncomputable section
 
--- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
-macro "simp_mat" : tactic =>
-  `(tactic| simp [{{ all_defs }}, {{ mat_simp }}])
-
--- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
--- Gives omega/decide access to invariant and property conditions in hypotheses
-macro "simp_defs" : tactic =>
-  `(tactic| (simp only [{{ all_defs }}] at *; try dsimp at *))
-
--- Canonicalise the goal: only the steps this module's shapes call for.
-macro "cert_prep" : tactic =>
-  `(tactic| ({{ plan.prep_tactic }}))
-
--- Close it: only the provers this state can use, cheapest first.
-{% if plan.close_binds_state -%}
--- Takes the obligation's own state binder, which cvc5's product hints name.
-{% endif -%}
-macro "cert_close"{% if plan.close_binds_state %} v:ident{% endif %} : tactic =>
-  `(tactic| {{ plan.close_tactic }})
-
--- Enumerate the state, when it is finite and narrow enough to be worth it.
--- `skip` otherwise. Takes the obligation's own state binder.
-macro "cert_states" v:ident : tactic =>
-  `(tactic| ({{ plan.state_case_tactic }}))
-
--- Branch conditions cvc5 decided under the invariant, so `split_ifs` does
--- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
--- obligation's own state binder; every step is `try`.
-macro "cert_facts" v:ident : tactic =>
-  `(tactic| ({{ plan.facts_tactic }}))
-
--- Bridge each floored quantity to a bound on the Real under it, so the
--- closers see the `Int` atom with a sign. `skip` when nothing is floored.
--- Takes the obligation's own state binder; every step is `try`.
-macro "cert_floors" v:ident : tactic =>
-  `(tactic| ({{ plan.floor_tactic }}))
-
--- Hypotheses no refutation needed. `skip` otherwise.
-macro "cert_thin" : tactic =>
-  `(tactic| ({{ plan.clear_tactic }}))
+def RM := ({
+    init := fun e => init e.2
+    update := fun x e => update x e.1 e.2
+    init_pre := init_pre
+    update_pre := update_pre
+} : ReactiveModule _ _)
 
 -- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
 -- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
@@ -80,7 +72,7 @@ theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
    intro s hpre
    try simp_mat
    try simp_defs
-   all_goals (cert_prep <;> {{ plan.close_call }})
+   all_goals (cert_prep <;> cert_close s)
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
    intro s e ⟨hpre, hinv⟩
@@ -90,11 +82,11 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
    try cert_floors s
    try simp_mat
    try cert_states s
-   all_goals (cert_prep <;> {{ plan.close_call }})
+   all_goals (cert_prep <;> cert_close s)
 
 section TS
 
-{{ noncomp }}def lts := RM.toTS
+def lts := RM.toTS
 
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
@@ -125,13 +117,13 @@ theorem inv_imp_P : ∀ s, inv s → P s := by
     try cert_floors s
     try simp_mat
     try cert_states s
-    all_goals (cert_prep <;> {{ plan.close_call }})
+    all_goals (cert_prep <;> cert_close s)
 
 theorem hP : lts.StateSet_isInvariant P := by
     intro s hs
     exact inv_imp_P s (hinv s hs)
 
-{{ noncomp }}def safety := rule_globally
+def safety := rule_globally
   lts
   P
   hP
@@ -149,9 +141,9 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     try cert_floors s
     try simp_mat
     try cert_states s
-    all_goals (cert_prep <;> {{ plan.close_call }})
+    all_goals (cert_prep <;> cert_close s)
 
-{{ noncomp }}def buchi := rule_buchi
+def buchi := rule_buchi
   lts
   P
   inv
@@ -162,3 +154,5 @@ theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
 
 
 end TS
+
+end

@@ -427,7 +427,7 @@ _NO_LEAN = re.compile(r"has no Lean form")
 # What a certificate is made of. Everything else a project builds -- the five
 # encodings under `System/`, `Relational`, the hammer -- is the module, and a failure
 # there is not the certificate's.
-_CERT_FILES = {"Certificate.lean", "Data.lean", "Equivalence.lean"}
+_CERT_FILES = {"Certificate.lean", "Data.lean", "Tactics.lean", "Equivalence.lean"}
 
 
 def failed_outside_certificate(bld) -> bool:

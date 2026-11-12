@@ -1,0 +1,14 @@
+{#- The macros `_tactics.lean.j2` renders, and only the imports and the
+    linter block every generated file carries besides. The imports are the
+    libraries alone: no macro names a definition of the project's (the two
+    simp sets that do are unhygienic, so they look their names up where the
+    proof uses them), and a file that imports neither the module nor `Data`
+    is built alongside them rather than after them. The linters are off for
+    the `v` a macro takes whether or not its body names it. -#}
+import Mathlib.Algebra.BigOperators.Fin
+import Relational.Basic
+import ZerothHammer
+
+{{ linters_off }}
+
+{% include "project/Certificate/_tactics.lean.j2" %}

@@ -162,11 +162,41 @@ def _counter_ctx():
 
 def test_the_certificate_simp_set_unfolds_them():
     """Computing the fold is no use if the definition never opens."""
-    from reactor.lean.proof.render import generate_certificate_lean
+    from reactor.lean.proof.render import generate_tactics_lean
 
-    cert = generate_certificate_lean(_counter_ctx())
+    cert = generate_tactics_lean(_counter_ctx())
     simp_mat = [ln for ln in cert.splitlines()
                 if "simp [" in ln and "MatAdd_apply" in ln]
     assert simp_mat, "the simp_mat macro moved"
     for name in REDUCTIONS:
         assert name in simp_mat[0], f"{name} is not in simp_mat"
+
+
+def test_the_proof_is_one_text_for_each_kind_of_property():
+    """What changes with the module and its certificate is in `Data.lean`
+    and `Tactics.lean`, so either can be rewritten -- by `reactor` or by
+    anything else -- without the proof."""
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor.lean.inputs.python import load_module
+    from reactor.lean.project.names import PROOF, TACTICS, cert_file
+    from reactor.lean.proof.render import certificate_files, lean_certificate
+
+    counter = load_module(FIXTURES / "counter.py")
+    twobit = load_module(FIXTURES / "twobit.py")
+    variants = {kind: [] for kind in ("buchi", "safety")}
+    for m in (counter, twobit):
+        for kind in variants:
+            variants[kind].append(certificate_files(
+                LeanContext(m), lean_certificate(m, Claim(kind=kind))))
+    variants["buchi"].append(certificate_files(
+        LeanContext(counter), lean_certificate(
+            counter, Claim(prp="(= s0 0)"),
+            Certificate(inv="(>= s0 0)", ranking="(ite (= s0 0) 0 s0)"))))
+
+    for kind, files in variants.items():
+        proofs = {f[cert_file(PROOF)] for f in files}
+        assert len(proofs) == 1, f"the {kind} proof changes with the certificate"
+        tactics = {f[cert_file(TACTICS)] for f in files}
+        assert len(tactics) > 1, "the test's certificates are all alike"
+    assert variants["buchi"][0][cert_file(PROOF)] != variants["safety"][0][cert_file(PROOF)]
