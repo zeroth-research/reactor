@@ -32,7 +32,7 @@ module
    step_inv  holds N ms
    inv_imp_P holds N ms
 .. SMT-informed tactics (cvc5): <=5000 ms per query, <=20000 ms total
-   no refutation needed the precondition
+   no refutation needed the precondition: clearing it
    step_inv: the core needs only goal, inv of 3
 .. Generating lean code
 Created project directory: `<OUT>/G`
@@ -119,7 +119,7 @@ set_option maxHeartbeats 2000000
 
 -- state: Bool+Int, 2 slot(s), 7 term(s)
 -- predicates: branching, linear
--- cvc5: no refutation needed the precondition
+-- cvc5: no refutation needed the precondition: clearing it
 -- cvc5: step_inv: the core needs only goal, inv of 3
 
 -- Unfold the definitions and reduce the matrix arithmetic, on the goal
@@ -152,6 +152,7 @@ theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
   intro s e ⟨hpre, hinv⟩
+  clear hpre
   try simp_defs
   try simp_mat
   all_goals (((try split_ifs)) <;> (first

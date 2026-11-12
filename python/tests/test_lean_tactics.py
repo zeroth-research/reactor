@@ -405,28 +405,72 @@ def test_without_hints_the_hint_steps_are_empty():
     assert plan.clear_tactic == ""
 
 
-def test_a_settled_condition_becomes_a_guarded_have_and_a_rewrite():
+def test_a_settled_condition_is_proved_as_a_goal_and_then_rewritten():
+    """Proved under a nested `by`, a condition the closers cannot prove
+    fails the build instead of the `try`; and the rewrite, written after
+    that `by`, was parsed into it."""
     plan = _hinted(determined=[("(s 0 0) ≥ 0", True)])
-    tac = plan.facts_tactic
-    assert tac.startswith("try (have hf0 : (s 0 0) ≥ 0 := by ")
-    assert "simp only [if_pos hf0]" in tac
+    assert plan.facts_tactic.splitlines() == [
+        "try",
+        "  have hf0 : (s 0 0) ≥ 0 := ?_",
+        "  swap",
+        "  · first | omega | linarith | norm_num",
+        "  try simp only [ite_eq_left hf0]",
+    ]
 
 
-def test_a_refuted_condition_is_negated_and_uses_if_neg():
+def test_a_refuted_condition_is_negated_and_rewrites_to_the_else_branch():
     plan = _hinted(determined=[("(s 0 0) ≥ 0", False)])
     tac = plan.facts_tactic
-    assert "have hf0 : ¬ ((s 0 0) ≥ 0)" in tac
-    assert "if_neg hf0" in tac
+    assert "have hf0 : ¬ ((s 0 0) ≥ 0) := ?_" in tac
+    assert "ite_eq_right hf0" in tac
 
 
 def test_every_settled_condition_gets_its_own_guarded_step():
     """A `have` the tactics cannot reproduce must cost nothing."""
     plan = _hinted(determined=[("a", True), ("b", False), ("c", True)])
-    assert plan.facts_tactic.count("try (have") == 3
+    lines = plan.facts_tactic.splitlines()
+    assert lines.count("try") == 3
+    assert [ln for ln in lines if ln.startswith("  have")] == [
+        "  have hf0 : a := ?_", "  have hf1 : ¬ (b) := ?_", "  have hf2 : c := ?_"]
 
 
 def test_an_unused_precondition_is_cleared():
-    assert _hinted(pre_unused=True).clear_tactic == "try clear hpre"
+    assert _hinted(pre_unused=True).clear_tactic == "clear hpre"
+
+
+def test_the_proofs_that_bind_the_precondition_clear_it():
+    """`step_inv` and `hrank` bind `update_pre`, which the cores were taken
+    over; `init_inv`'s `hpre` is `init_pre`, which nothing asked about."""
+    from reactor.lean.proof.render import (
+        LeanCertificate, PlanInputs, generate_proofs_lean,
+    )
+
+    proofs = generate_proofs_lean(
+        LeanContext(_int_module()),
+        LeanCertificate(plan=PlanInputs(hints=_solver_hints(pre_unused=True))))
+    cleared = re.findall(r"^theorem (\w+)_proof(?:(?!^theorem).)*?^  clear hpre$",
+                         proofs, re.M | re.S)
+    assert cleared == ["step_inv", "hrank"], cleared
+
+
+def test_the_settled_conditions_are_steps_of_each_proof():
+    """Written into a proof at its own indentation, after `simp_defs`."""
+    from reactor.lean.proof.render import (
+        LeanCertificate, PlanInputs, generate_proofs_lean,
+    )
+
+    proofs = generate_proofs_lean(
+        LeanContext(_int_module()),
+        LeanCertificate(plan=PlanInputs(hints=_solver_hints(
+            determined=[("(s 0 0) ≥ 0", True)]))))
+    step = ("  try simp_defs\n"
+            "  try\n"
+            "    have hf0 : (s 0 0) ≥ 0 := ?_\n"
+            "    swap\n"
+            "    · first | omega | linarith | norm_num\n"
+            "    try simp only [ite_eq_left hf0]\n")
+    assert proofs.count(step) == 2       # step_inv and hrank
 
 
 def test_product_hints_are_added_before_the_bare_nlinarith():
@@ -473,25 +517,13 @@ def test_the_reasons_are_recorded_in_the_generated_comment():
     plan = _hinted(determined=[("(s 0 0) ≥ 0", True)], pre_unused=True)
     why = plan.why()
     assert "cvc5: inv forces" in why
-    assert "no refutation needed the precondition" in why
+    assert "no refutation needed the precondition: clearing it" in why
 
 
 def _solver_hints(**fields):
     from reactor.lean.proof.render import LeanHints
 
     return LeanHints(**fields)
-
-
-def test_several_settled_conditions_stay_on_one_line():
-    """A `;`-separated tactic sequence in a quotation cannot be wrapped.
-
-    Broken across lines, Lean rejects the second step with
-    `unexpected token 'try'; expected ')'` -- and only from two conditions
-    on, so a single-condition case builds happily and hides it.
-    """
-    tac = _hinted(determined=[("a", True), ("b", True), ("c", False)]).facts_tactic
-    assert "\n" not in tac
-    assert tac.count("try (have") == 3
 
 
 def test_norm_num_is_only_for_real_states():

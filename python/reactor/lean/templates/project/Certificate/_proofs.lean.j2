@@ -5,15 +5,13 @@
     module and of the certificate (`reactor/lean/proof/tactics.py`): only
     the steps it calls for, and only the closers this state can use,
     cheapest first. Every proof binds the state as `s`, which the plan's
-    hints and floors are printed over.
-
-    The plan's `clear_tactic` is not among the steps. Under the macro it
-    used to be spliced into, hygiene hid `hpre` from it, so it never
-    cleared anything; written here it would, and the proofs would change. -#}
+    hints and floors are printed over. The plan's `clear_tactic` drops the
+    precondition where no refutation needed it: in `step_inv` and `hrank`,
+    whose `hpre` is `update_pre`, which is what cvc5 was asked about. -#}
 {% macro steps() %}
   try simp_defs
 {% if plan.facts_tactic %}
-  try ({{ plan.facts_tactic }})
+  {{ plan.facts_tactic | indent(2) }}
 {% endif %}
 {% if plan.floor_tactic %}
   try ({{ plan.floor_tactic }})
@@ -50,6 +48,9 @@ theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
   intro s e ⟨hpre, hinv⟩
+{% if plan.clear_tactic %}
+  {{ plan.clear_tactic }}
+{% endif %}
   {{ steps() | trim }}
   {{ close() | trim }}
 {% if is_safety %}
@@ -67,6 +68,9 @@ theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) �
   obtain ⟨l, hpre, heq⟩ := htr
   rw [← heq]
   clear heq
+{% if plan.clear_tactic %}
+  {{ plan.clear_tactic }}
+{% endif %}
   {{ steps() | trim }}
   {{ close() | trim }}
 {% endif %}

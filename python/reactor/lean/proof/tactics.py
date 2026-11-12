@@ -434,12 +434,19 @@ class TacticPlan:
         `split_ifs` fans a goal out into 2^k over k conditions and each
         branch then pays for the whole prep chain. A condition cvc5 decided
         under `inv` need not be split at all: prove it once and rewrite the
-        `if` away. Every step is wrapped in `try`, so a `have` the tactics
-        cannot reproduce -- cvc5 is the stronger prover -- costs nothing
-        and leaves the `split_ifs` route intact.
+        `if` away. Each condition is a `try` of its own, so a `have` the
+        tactics cannot reproduce -- cvc5 is the stronger prover -- costs
+        nothing and leaves the `split_ifs` route intact.
+
+        That needs the condition proved as a goal of the proof's own:
+        `have` with a `?_` leaves it second, behind the goal, hence `swap`.
+        Proved under a nested `by` instead, a failure was logged rather
+        than raised, so `try` never saw it and the build failed. And the
+        rewrite is a line of its own: written after that `by` on one line,
+        it was parsed into it, where it rewrote nothing.
 
         The condition is rendered by the same walker that printed the
-        definition, so `if_pos` matches on the nose -- but only until
+        definition, so `ite_eq_left` matches on the nose -- but only until
         something rewrites the goal. Hence the call site: after `simp_defs`,
         which unfolds `inv` so the `have` is provable at all, and before
         `simp_mat`, which is where the arithmetic starts moving.
@@ -450,18 +457,15 @@ class TacticPlan:
         steps = []
         for k, (text, value) in enumerate(determined):
             prop = text if value else f"¬ ({text})"
-            lemma = "if_pos" if value else "if_neg"
+            lemma = "ite_eq_left" if value else "ite_eq_right"
             steps.append(
-                f"try (have hf{k} : {prop} := by "
-                f"(first | omega | linarith | norm_num); "
-                f"try simp only [{lemma} hf{k}])"
+                f"try\n"
+                f"  have hf{k} : {prop} := ?_\n"
+                f"  swap\n"
+                f"  · first | omega | linarith | norm_num\n"
+                f"  try simp only [{lemma} hf{k}]"
             )
-        # One line, whatever the length. A `;`-separated tactic sequence
-        # did not survive being broken across lines inside the
-        # `(tactic| ...)` quotation this used to be spliced into: Lean
-        # reported `unexpected token 'try'; expected ')'` at the end of the
-        # first one, from two conditions on.
-        return "; ".join(steps)
+        return "\n".join(steps)
 
     @property
     def clear_tactic(self) -> str:
@@ -474,13 +478,13 @@ class TacticPlan:
         the cores were taken over. `init_inv`'s `hpre` is `init_pre`, a
         different predicate that nothing here has looked at.
 
-        Not written into the proofs (see `_proofs.lean.j2`): spliced into a
-        hygienic macro, as it used to be, it could not see the proof's
-        `hpre` and never cleared anything, so writing it out changes proofs
-        that build today. Empty when nothing is to be cleared.
+        Not under `try`: both proofs bind `hpre` and nothing depends on it,
+        so it cannot fail. It was a `try` inside a hygienic macro once,
+        which could not see the proof's `hpre`, and the `try` hid that it
+        cleared nothing. Empty when nothing is to be cleared.
         """
         if getattr(self.hints, "pre_unused", False):
-            return "try clear hpre"
+            return "clear hpre"
         return ""
 
     def why(self) -> str:
