@@ -94,7 +94,7 @@ class LeanHints:
         if self.linear_proof is False:
             bits.append(f"cvc5 needed {len(self.nlinarith_hints)} product hint(s)")
         if self.pre_unused:
-            bits.append("no refutation needed the precondition")
+            bits.append("no refutation needed the precondition: clearing it")
         bits += self.notes
         return "\n".join(f"-- cvc5: {b}" for b in bits)
 

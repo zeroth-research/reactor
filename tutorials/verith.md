@@ -6,10 +6,13 @@
 system *and* a machine-checkable **certificate** for one temporal property:
 
 ```
-module.py ──reactor─▶ <OUT>/Rea/                   a Lean 4 package
-                        ├── System/                the module: init / update, in five encodings
-                        ├── Certificate/Data.lean  the certificate data: init_pre, update_pre, inv, P, ranking
-                        └── Certificate/           the proof obligations, with generated tactic scripts
+module.py ──reactor─▶ <OUT>/Rea/                 a Lean 4 package
+                        ├── System/              the module: init / update, in five encodings
+                        └── Certificate/
+                            ├── Data.lean        the certificate data: init_pre, update_pre, inv, P, ranking
+                            ├── Module.lean      the module as a transition system
+                            ├── Proofs.lean      the proof obligations, proved by generated tactic scripts
+                            └── Certificate.lean the property, from the obligations
                                     │
                                     ▼   lake build Certificate
                               proved, or not
@@ -236,6 +239,8 @@ Wrote root module /tmp/verith-tutorial.noindex/Rea/System.lean
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/Scalar.lean ++
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/ScalarRel.lean ++
 Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Data.lean
+Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Module.lean
+Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Proofs.lean
 Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Certificate.lean
 
 DONE: Project created at: /tmp/verith-tutorial.noindex/Rea
@@ -257,6 +262,8 @@ find "$OUT/$PROJ" -maxdepth 2 -not -path '*/.lake*' -not -path '*/artifacts*' | 
 ./Certificate.lean
 ./Certificate/Certificate.lean
 ./Certificate/Data.lean
+./Certificate/Module.lean
+./Certificate/Proofs.lean
 ./dbg
 ./dbg/system.py
 ./dbg/system.txt
@@ -323,56 +330,58 @@ cat "$OUT/$PROJ"/*/Data.lean
 ```lean
 import Relational.Basic
 
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
 def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 100))
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 100))
+def P : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 ```
 
-`Certificate/Certificate.lean` is what Lean checks: the module as a
-`ReactiveModule`, the three obligations as theorems, and the `rule_globally`
-application that turns them into the property. The header comment records the
-shape the tactic plan was generated from.
+`Certificate/Certificate.lean` is what Lean checks: the three obligations
+as theorems, and the `rule_globally` application that turns them into the
+property. It is the same text for every safety certificate, and
+`Module.lean`, the module as a `ReactiveModule` and its transition system
+`lts`, for every certificate. The proofs are in `Proofs.lean`, which states
+each obligation again with `_proof` after its name and proves it with tactics
+generated from the shape of the module and the certificate; the header
+comment records that shape. `Certificate.lean` takes each proof by `exact`,
+which checks that the two statements agree.
 
 ```bash
-grep -E '^-- |^def RM|^theorem |^def lts' "$OUT/$PROJ/Certificate/Certificate.lean"
+grep -E '^-- |^theorem ' "$OUT/$PROJ/Certificate/Proofs.lean"
+grep -E '^theorem |exact .*_proof|^def ' "$OUT/$PROJ/Certificate/Certificate.lean"
 ```
 
 ```lean
--- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `reactor/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, linear
-def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
--- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
--- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
--- Gives omega/decide access to invariant and property conditions in hypotheses
--- Canonicalise the goal: only the steps this module's shapes call for.
--- Close it: only the provers this state can use, cheapest first.
--- Enumerate the state, when it is finite and narrow enough to be worth it.
--- `skip` otherwise. Takes the obligation's own state binder.
--- Branch conditions cvc5 decided under the invariant, so `split_ifs` does
--- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
--- obligation's own state binder; every step is `try`.
--- Hypotheses no refutation needed. `skip` otherwise.
--- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
--- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
+-- Unfold the definitions and reduce the matrix arithmetic, on the goal
+-- only: on the hypotheses too it blows up exponentially.
+-- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
+-- closers see the invariant's conditions.
+theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
+theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+theorem inv_imp_P_proof : ∀ s, inv s → P s := by
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  exact init_inv_proof
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-def lts := RM.toTS
+  exact step_inv_proof
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
 theorem hinv : lts.StateSet_isInvariant inv := by
--- `G P`. The invariant does the work; all that is left is that it is a
--- *strengthening* of the property. `StateSet_isInvariant` is
--- `reachableSet ⊆ ·`, so a superset of an invariant is invariant too, and
--- `rule_globally` turns that into `G (AP P)` on every trace.
 theorem inv_imp_P : ∀ s, inv s → P s := by
+  exact inv_imp_P_proof
 theorem hP : lts.StateSet_isInvariant P := by
+def safety := rule_globally
 ```
 
 ```bash
@@ -380,9 +389,9 @@ lake_cert
 ```
 
 ```
-Note: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`
-✔ [3465/3466] Built Certificate (2.6s)
-Build completed successfully (3466 jobs).
+Note: This linter can be disabled with `set_option linter.defProp false`
+✔ [3485/3486] Built Certificate (7.0s)
+Build completed successfully (3486 jobs).
 ```
 
 ---
@@ -420,41 +429,27 @@ The obligations are now `init_inv`, `step_inv` and **`hrank`**, the decrease.
 `inv_imp_P` is gone: a Büchi property is not implied by the invariant, it is
 *reached*.
 
-`Data.lean` gains a `ranking` definition, and the certificate ends in
-`rule_buchi` rather than `rule_globally`:
+`Data.lean` gains a `ranking` definition, `Proofs.lean` proves `hrank`
+where it proved `inv_imp_P`, and the certificate ends in `rule_buchi` rather
+than `rule_globally`:
 
 ```bash
 grep -E 'def (inv|P|ranking)' "$OUT/$PROJ"/*/Data.lean
-grep -E '^theorem |^def lts|^def buchi' "$OUT/$PROJ/Certificate/Certificate.lean"
+grep -E '^theorem |exact .*_proof|^def ' "$OUT/$PROJ/Certificate/Certificate.lean"
 ```
 
 ```lean
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 9))
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
-def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = 0) then 0 else (10 - (s 0 0))) : Int)).toNat
--- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `reactor/lean/proof/tactics.py`.
--- state: Bool+Int, 1 slot(s), 9 term(s)
--- predicates: branching, conjunctive, linear, 1 branch point(s)
--- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
--- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
--- Gives omega/decide access to invariant and property conditions in hypotheses
--- Canonicalise the goal: only the steps this module's shapes call for.
--- Close it: only the provers this state can use, cheapest first.
--- Enumerate the state, when it is finite and narrow enough to be worth it.
--- `skip` otherwise. Takes the obligation's own state binder.
--- Branch conditions cvc5 decided under the invariant, so `split_ifs` does
--- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
--- obligation's own state binder; every step is `try`.
--- Hypotheses no refutation needed. `skip` otherwise.
--- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
--- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (9 : Int)))
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
+def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = (0 : Int)) then (0 : Int) else ((10 : Int) - (s 0 0))) : Int)).toNat
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  exact init_inv_proof
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-def lts := RM.toTS
+  exact step_inv_proof
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
 theorem hinv : lts.StateSet_isInvariant inv := by
 theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+  exact hrank_proof
 def buchi := rule_buchi
 ```
 
@@ -463,9 +458,9 @@ lake_cert
 ```
 
 ```
-Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
-✔ [3465/3466] Built Certificate (2.7s)
-Build completed successfully (3466 jobs).
+Note: This linter can be disabled with `set_option linter.defProp false`
+✔ [3485/3486] Built Certificate (7.1s)
+Build completed successfully (3486 jobs).
 ```
 
 ---
@@ -1257,10 +1252,9 @@ ls "$OUT/$PROJ/Certificate" "$OUT/$PROJ/ProveIt"
 
 ```
     ✔ property is SAFE
-    ✔ invariant witness: /var/folders/p2/6pl6scg57lb35sp3r_ncs69h0000gn/T/certify-ReaNA-wnhikl1i/ReaNA_witness.smt2
+    ✔ invariant witness: /var/folders/p2/6pl6scg57lb35sp3r_ncs69h0000gn/T/certify-ReaNA-_15wx6sa/ReaNA_witness.smt2
     ✔ certificate: /tmp/verith-tutorial.noindex/Rea/ProveIt/ReaCert.lean (3936 bytes)
-Installed certificate: /tmp/verith-tutorial.noindex/Rea/Certificate/Certificate.lean
-Wrote the model-is-the-module proof: /tmp/verith-tutorial.noindex/Rea/Certificate/Equivalence.lean
+.. proveit.py's certificate: 1 normalised out of Bool, 2 offered omega before smt
 Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
@@ -1269,18 +1263,22 @@ Project ready at: /tmp/verith-tutorial.noindex/Rea
 Certificate.lean
 Data.lean
 Equivalence.lean
+Module.lean
+Proofs.lean
 
 /tmp/verith-tutorial.noindex/Rea/ProveIt:
 ReaCert.lean
 ReaNA.lean
 ```
 
-Two files rather than one. `Certificate/Certificate.lean` is ic3ia's proof,
+Two proofs rather than one. `Certificate/Certificate.lean` is ic3ia's proof,
 about the *NA-encoded model*; `Certificate/Equivalence.lean` is the proof that
 the model **is** the module, which is what carries the result back to the
 system you wrote. Without it a mistranslation anywhere in the SMT path would
 be a machine-checked certificate about something else. `--fbk-equiv none`
-skips it, and on a wide state that is the expensive half.
+skips it, and on a wide state that is the expensive half. ic3ia's
+certificate proves its obligations itself, so `Proofs.lean` is left with
+nothing to prove.
 
 This project's lakefile requires the `lean-ltl-certifying` checkout, which the
 warm manifest has never heard of, so the build has to resolve it with
@@ -1318,7 +1316,7 @@ Build completed successfully (3473 jobs).
 | `--ranking` | — | SMT-LIB 2 Int over `(X @intf.N)` …; `--buchi` only |
 | `--pre` | — | SMT-LIB 2 Bool over `(X @extl.N)` / `@extl.N`, added to `init_pre` and `update_pre` |
 | `--pre-check cvc5` | `none` | ask cvc5 whether the obligations hold, before generating |
-| `--smt-tactics cvc5` | `none` | let cvc5 settle branch conditions and hint `nlinarith` |
+| `--smt-tactics cvc5` | `none` | let cvc5 settle branch conditions, hint `nlinarith` and drop an unused precondition |
 | `--smt-timeout`, `--smt-budget` | 5000, 20000 ms | per-query and per-phase limits for both of the above |
 | `--infer [ai\|ai-cegis\|nuterm\|sygus\|smt-linear\|fbk-proveit]` | `ai-cegis` | which route finds the certificate: an LLM, (`nuterm`) a learned and certified ranking function, (`sygus`) an invariant synthesised over a grammar, (`smt-linear`) the coefficients of a fixed linear shape, or (`fbk-proveit`) ic3ia |
 | `--model`, `--base-url` | `claude-sonnet-4-6`, — | which LLM, and which endpoint; rejected by a route that calls none |
