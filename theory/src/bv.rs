@@ -171,6 +171,17 @@ impl Sequential for BV {
     }
 }
 
+/// Booleans are single bits: `BV`'s `Ite` takes a one-bit condition.
+impl Conditional for BV {
+    fn boolean() -> Sort {
+        Sort::BV(1, [1, 1])
+    }
+
+    fn ite(_range: &Sort) -> Self {
+        BV::Ite()
+    }
+}
+
 impl Combinatorial for BV {
     fn havoc(range: &Self::Sort) -> Self {
         Havoc(range.bw(), *range.shape())

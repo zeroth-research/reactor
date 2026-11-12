@@ -1,10 +1,26 @@
 use super::Term;
 use super::Wire;
-use std::collections::BTreeSet;
+use base::boundary::{Boundary, Mono, Poly};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::vec;
 use theory::{Combinatorial, Differential, Sequential, Theory};
 
+/// A string diagram: a list of terms, in a topological order, with an
+/// interface of read and write wires.
+///
+/// The interface is ordered, and the sorts of its wires, in order, are the
+/// type of the block (see [`read_type`](Self::read_type),
+/// [`write_type`](Self::write_type) and the [`Boundary`] impl). Blocks built by
+/// [`try_from_iter`](Self::try_from_iter) infer their interface and order it
+/// by wire id; blocks built by [`new`](Self::new) take it from the caller, in
+/// which case:
+///
+/// - a read wire may also be a write wire: the value passes through
+///   unchanged, so identities need no terms;
+/// - a read wire need not be read by any term: the value is discarded;
+/// - a wire may occur several times among the write wires: the value is
+///   copied.
 #[derive(Debug, Clone)]
 pub struct Block<T: Theory> {
     terms: Vec<Term<T>>,
@@ -130,6 +146,149 @@ where
             read: block.read,
             write: block.write,
         }
+    }
+}
+
+impl<T: Theory> Block<T>
+where
+    T::Sort: Clone,
+{
+    /// The type of the inputs: the sorts of the read wires, in order.
+    pub fn read_type(&self) -> Mono<T::Sort> {
+        self.read.iter().map(|w| w.dtype().clone()).collect()
+    }
+
+    /// The type of the outputs: the sorts of the write wires, in order.
+    pub fn write_type(&self) -> Mono<T::Sort> {
+        self.write.iter().map(|w| w.dtype().clone()).collect()
+    }
+}
+
+/// A block is typed by the sorts of its interface wires, in order, as a
+/// single product type on each side. The degree of the wires is not part of
+/// the type.
+impl<T: Theory> Boundary<T::Sort> for Block<T>
+where
+    T::Sort: Clone,
+{
+    fn dom(&self) -> Poly<T::Sort> {
+        self.read_type().into()
+    }
+
+    fn cod(&self) -> Poly<T::Sort> {
+        self.write_type().into()
+    }
+}
+
+impl<T: Theory> Block<T>
+where
+    T::Sort: Clone + Debug,
+{
+    /// Builds a block with the given ordered interface.
+    ///
+    /// The terms must be in a topological order: every wire a term reads is
+    /// either a `read` wire or written by an earlier term. No wire is written
+    /// twice, and no term writes a `read` wire. Every `write` wire is either
+    /// a `read` wire (passed through) or written by a term; it may occur more
+    /// than once (copied). The `read` wires are distinct; they need not be
+    /// read by any term (discarded).
+    pub fn new<R, W, I>(read: R, write: W, terms: I) -> Result<Self, String>
+    where
+        R: IntoIterator<Item = Wire<T::Sort>>,
+        W: IntoIterator<Item = Wire<T::Sort>>,
+        I: IntoIterator<Item = Term<T>>,
+    {
+        let read: Vec<_> = read.into_iter().collect();
+        let write: Vec<_> = write.into_iter().collect();
+        let terms: Vec<_> = terms.into_iter().collect();
+
+        let mut defined: HashSet<&Wire<T::Sort>> = HashSet::new();
+        for rd in read.iter() {
+            if !defined.insert(rd) {
+                return Err(format!("Wire {:?} is read more than once", rd));
+            }
+        }
+        for term in terms.iter() {
+            for rd in term.read() {
+                if !defined.contains(rd) {
+                    return Err(format!("Wire {:?} is read before being written", rd));
+                }
+            }
+            for wt in term.write() {
+                if !defined.insert(wt) {
+                    return Err(format!("Wire {:?} is written more than once", wt));
+                }
+            }
+        }
+        for wt in write.iter() {
+            if !defined.contains(wt) {
+                return Err(format!("Wire {:?} is never written", wt));
+            }
+        }
+
+        Ok(Block { terms, read, write })
+    }
+
+    /// Whether `wire` occurs in the block: as a read wire or as a wire
+    /// written by a term. (Write wires are among these, by construction.)
+    pub(crate) fn mentions(&self, wire: &Wire<T::Sort>) -> bool {
+        self.read.contains(wire) || self.terms.iter().any(|t| t.write().contains(wire))
+    }
+
+    /// The identity on `sig`: a block of fresh `0`-form wires, one per
+    /// factor, each passed through from the read to the write interface.
+    pub fn id(sig: &Mono<T::Sort>) -> Self {
+        let wires: Vec<_> = sig.iter().cloned().map(Wire::scalar).collect();
+        Block {
+            terms: Vec::new(),
+            read: wires.clone(),
+            write: wires,
+        }
+    }
+
+    /// Sequential composition `f ; g`: the outputs of `f` feed the inputs of
+    /// `g`, by position.
+    ///
+    /// The result reads what `f` reads and writes what `g` writes. The wires
+    /// of `g` are renamed: its read wires to the matching write wires of
+    /// `f`, all others to fresh wires, so the result is well-formed even
+    /// when `f` and `g` share wires (e.g., when they are the same block).
+    ///
+    /// Fails if the type of the outputs of `f` is not the type of the inputs
+    /// of `g`.
+    pub fn compose(f: &Self, g: &Self) -> Result<Self, String>
+    where
+        T: Clone,
+        T::Sort: PartialEq,
+    {
+        if f.write_type() != g.read_type() {
+            return Err(format!(
+                "Cannot compose a block writing {:?} with a block reading {:?}",
+                f.write_type(),
+                g.read_type()
+            ));
+        }
+        let mut rename: HashMap<Wire<T::Sort>, Wire<T::Sort>> = g
+            .read
+            .iter()
+            .cloned()
+            .zip(f.write.iter().cloned())
+            .collect();
+        let mut rename = |w: &Wire<T::Sort>| {
+            rename
+                .entry(w.clone())
+                .or_insert_with(|| Wire::new(w.dtype().clone(), w.degree()))
+                .clone()
+        };
+        let g_terms: Vec<_> = g.terms.iter().map(|t| t.rename(&mut rename)).collect();
+        let write = g.write.iter().map(&mut rename).collect();
+        let mut terms = f.terms.clone();
+        terms.extend(g_terms);
+        Ok(Block {
+            terms,
+            read: f.read.clone(),
+            write,
+        })
     }
 }
 

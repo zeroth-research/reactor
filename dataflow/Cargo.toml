@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 theory = { path = "../theory" }
+base = { path = "../base" }

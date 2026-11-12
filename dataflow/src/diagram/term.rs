@@ -1,4 +1,5 @@
 use super::Wire;
+use base::boundary::{Boundary, Mono, Poly};
 use std::borrow::Cow;
 use std::fmt;
 use theory::{Theory, any};
@@ -22,7 +23,11 @@ pub struct Term<T: Theory> {
 }
 
 impl<T: Theory> Term<T> {
-    fn new_unchecked(itype: T, write: Vec<Wire<T::Sort>>, read: Vec<Wire<T::Sort>>) -> Self {
+    pub(super) fn new_unchecked(
+        itype: T,
+        write: Vec<Wire<T::Sort>>,
+        read: Vec<Wire<T::Sort>>,
+    ) -> Self {
         Self { itype, write, read }
     }
 
@@ -36,6 +41,40 @@ impl<T: Theory> Term<T> {
 
     pub fn read(&self) -> &[Wire<T::Sort>] {
         self.read.as_slice()
+    }
+}
+
+//============================================================
+// Boundary
+//============================================================
+
+impl<T: Theory> Term<T>
+where
+    T::Sort: Clone,
+{
+    /// The type of the inputs: the sorts of the read wires, in order.
+    pub fn read_type(&self) -> Mono<T::Sort> {
+        self.read.iter().map(|w| w.dtype().clone()).collect()
+    }
+
+    /// The type of the outputs: the sorts of the write wires, in order.
+    pub fn write_type(&self) -> Mono<T::Sort> {
+        self.write.iter().map(|w| w.dtype().clone()).collect()
+    }
+}
+
+/// A term is typed by the sorts of its wires, in order, as a single product
+/// type on each side. The degree of the wires is not part of the type.
+impl<T: Theory> Boundary<T::Sort> for Term<T>
+where
+    T::Sort: Clone,
+{
+    fn dom(&self) -> Poly<T::Sort> {
+        self.read_type().into()
+    }
+
+    fn cod(&self) -> Poly<T::Sort> {
+        self.write_type().into()
     }
 }
 
@@ -94,6 +133,19 @@ where
 //============================================================
 
 impl<T: Theory> Term<T> {
+    /// Replaces every wire of the term by its image under `rename`. The
+    /// instruction is untouched; the renaming must preserve sorts and
+    /// degrees for the result to stay well-typed.
+    pub(super) fn rename<F>(&self, mut rename: F) -> Self
+    where
+        T: Clone,
+        F: FnMut(&Wire<T::Sort>) -> Wire<T::Sort>,
+    {
+        let write = self.write.iter().map(&mut rename).collect();
+        let read = self.read.iter().map(&mut rename).collect();
+        Self::new_unchecked(self.itype.clone(), write, read)
+    }
+
     /// Re-types a term along an infallible theory embedding (`U: Into<T>`).
     ///
     /// Only the instruction is converted; the wires are untouched, so a term

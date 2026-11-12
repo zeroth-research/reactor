@@ -139,6 +139,16 @@ impl Combinatorial for LRA {
     }
 }
 
+impl Conditional for LRA {
+    fn boolean() -> Sort {
+        Sort::Bool([1, 1])
+    }
+
+    fn ite(_range: &Sort) -> Self {
+        LRA::Ite()
+    }
+}
+
 impl Differential for LRA {
     fn zero(range: &Self::Sort) -> Self {
         match range {

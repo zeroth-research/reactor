@@ -136,6 +136,16 @@ impl Combinatorial for LIA {
     }
 }
 
+impl Conditional for LIA {
+    fn boolean() -> Sort {
+        Sort::Bool([1, 1])
+    }
+
+    fn ite(_range: &Sort) -> Self {
+        LIA::Ite()
+    }
+}
+
 impl Theory for LIA {
     type Sort = Sort;
     const NAME: &'static str = "LIA";

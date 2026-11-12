@@ -33,6 +33,18 @@ pub trait Differential: Theory {
     fn zero(range: &Self::Sort) -> Self;
 }
 
+/// Theories with booleans and conditional expressions.
+pub trait Conditional: Theory {
+    /// The scalar boolean sort: the sort of guards and of the condition of
+    /// [`ite`](Self::ite).
+    fn boolean() -> Self::Sort;
+
+    /// Returns the ternary itype `if-then-else` over `range`: it reads a
+    /// condition of sort [`boolean`](Self::boolean) and two branches of sort
+    /// `range`, and writes one value of sort `range`.
+    fn ite(range: &Self::Sort) -> Self;
+}
+
 // Helpers for type-checking procedures
 
 // SKIP is unary: it copies exactly one read wire to one write wire of the
