@@ -14,7 +14,7 @@ the checkout beside this repository.
      • Certs/ArgmaxScalar.lean  (the scalar Argmax variants)
 
 The generated files import ZerothHammer for the tactic and define their own
-module-specific ``simp_mat`` / ``simp_defs`` / ``mat_collapse`` macros.
+module-specific ``simp_mat`` / ``simp_defs`` macros.
 """
 from pathlib import Path
 

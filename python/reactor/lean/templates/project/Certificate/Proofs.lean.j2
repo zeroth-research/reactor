@@ -1,0 +1,12 @@
+{#- The proofs of the obligations, all of it generated: see
+    `_proofs.lean.j2`. -#}
+import Mathlib.Algebra.BigOperators.Fin
+import Relational.Basic
+import Certificate.Module
+import ZerothHammer
+
+{{ linters_off }}
+
+{% include "project/Certificate/_budgets.lean.j2" %}
+
+{% include "project/Certificate/_proofs.lean.j2" %}

@@ -49,7 +49,7 @@ from typing import NamedTuple
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
-from reactor.lean.project.names import PROOF, cert_file
+from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
 from . import EQUIVALENCE, PROVEIT_DIR
 from reactor.lean.project.build import stream
 from .na import (
@@ -485,6 +485,12 @@ class ProveIt:
     equivalence: bool = True
 
 
+NO_PROOFS = (
+    "-- `Certificate.lean` is proveit.py's certificate, which proves its\n"
+    "-- obligations itself: none is proved here.\n"
+)
+
+
 def run(
     proveit: ProveIt,
     module,
@@ -561,7 +567,13 @@ def run(
         log(f"warning: --fbk-proveit: proveit.py's certificate has {what}; "
             f"its template may have changed under this patch")
 
-    files = {cert_file(PROOF): text}
+    # The certificate is proved in itself, over the NA model: it takes no
+    # proof from `Proofs.lean`. The project's own is still there, proving
+    # the obligations of a certificate this one replaced -- and the
+    # `Certificate` lean_lib's glob builds it, over definitions whose `inv`
+    # is the placeholder `True`. So it is replaced too, by a module with
+    # nothing in it.
+    files = {cert_file(CERTIFICATE): text, cert_file(PROOFS): NO_PROOFS}
     if proveit.equivalence:
         files[cert_file(EQUIVALENCE)] = equivalence_lean(
             project_name, ctx,

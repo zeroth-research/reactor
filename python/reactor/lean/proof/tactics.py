@@ -38,9 +38,10 @@ So the plan is read off the obligations instead:
   to discharge a branch that is contradictory purely because the state has
   finitely many inhabitants.
 
-`plan_for` returns a `TacticPlan`; `_tactics.lean.j2` renders it as the
-macros `Certificate/Tactics.lean` holds -- `cert_prep` and `cert_close` among
-them -- which the three proofs then share.
+`plan_for` returns a `TacticPlan`; `_proofs.lean.j2` writes it out as the
+proof of each obligation in `Certificate/Proofs.lean`. Each step is Lean text
+over the state `s`, which every one of those proofs binds; a step the shape
+does not call for is empty, and the proof leaves it out.
 """
 
 from __future__ import annotations
@@ -289,10 +290,10 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
     # text is read only where no term stands behind it -- a Lean answer
     # (`verbatim`), or every predicate when there are no facts at all.
     scanned = verbatim if facts is not None else pred_text
-    # Floors come printed from the terms (`floors`, over `($v)` already).
+    # Floors come printed from the terms (`floors`), over `s` as the text is.
     f.floor_args = tuple(dict.fromkeys(
         (*(floors if facts is not None else ()),
-         *(_rebind(a) for a in floor_arguments(scanned)))
+         *floor_arguments(scanned))
     ))
     f.has_floor = bool(f.floor_args)
     # The transition branches if it has an `Ite`, and a ReLU/Min/Max reduces
@@ -346,18 +347,17 @@ class TacticPlan:
         return " <;> ".join(f"(try {p})" for p in self.prep)
 
     @property
-    def close_tactic(self) -> str:
-        """The closers, cheapest first, then an arm that only says none of
-        them proved the goal. `first` reports the error of the arm it tried
-        last, so without it a goal no closer proved read as that closer's
+    def close_failure(self) -> str:
+        """What the last arm after the closers fails with: that none of them
+        proved the goal. `first` reports the error of the arm it tried last,
+        so without that arm a goal no closer proved read as that closer's
         complaint -- "`split_ifs` failed: no if-then-else conditions to
         split" -- about a tactic that was never the problem."""
-        why = f"cert_close: none of its {len(self.closers)} closers proved this goal"
-        return "first | " + " | ".join(self.closers) + f' | fail "{why}"'
+        return f"none of the {len(self.closers)} closers proved this goal"
 
     @property
     def state_case_tactic(self) -> str:
-        """Enumerate the state, as the body of a macro over its binder `$v`.
+        """Enumerate the state `s`.
 
         `decide` is in the closer list for a finite state but can never fire
         while the state is a free variable -- it evaluates closed
@@ -382,14 +382,14 @@ class TacticPlan:
         2000000 heartbeats doing it. All or nothing: a case `simp_all` does
         not close leaves the goal as it was, for the plan to take.
 
-        `skip` otherwise.
+        Empty otherwise.
         """
         if not self.features.two_valued:
             if self.features.pins:
                 return "((casesm* _ ∨ _) <;> simp_all) <;> done"
-            return "skip"
+            return ""
         steps = [
-            f"rcases {lemma} (($v){acc}) with h{k} | h{k}"
+            f"rcases {lemma} (s{acc}) with h{k} | h{k}"
             for k, (acc, lemma) in enumerate(self.features.two_valued)
         ]
         names = ", ".join(f"h{k}" for k in range(len(self.features.two_valued)))
@@ -398,7 +398,7 @@ class TacticPlan:
 
     @property
     def floor_tactic(self) -> str:
-        """Bridge each `⌊x⌋` to a bound on `x`, as the body of a macro over `$v`.
+        """Bridge each `⌊x⌋` to a bound on `x`.
 
         `linarith` reads `⌊x⌋` as an opaque `Int` atom, and the hypotheses
         that would pin it are about the `Real` `x`, so it cannot cross:
@@ -414,10 +414,10 @@ class TacticPlan:
         the failure lands in the build rather than falling through to the
         next step. `rcases` has no side condition to get wrong.
 
-        `skip` when nothing is floored, which is every integer module.
+        Empty when nothing is floored, which is every integer module.
         """
         if not self.features.floor_args:
-            return "skip"
+            return ""
         steps = []
         for k, a in enumerate(self.features.floor_args):
             steps.append(
@@ -446,7 +446,7 @@ class TacticPlan:
         """
         determined = getattr(self.hints, "determined", None)
         if not determined:
-            return "skip"
+            return ""
         steps = []
         for k, (text, value) in enumerate(determined):
             prop = text if value else f"¬ ({text})"
@@ -457,10 +457,10 @@ class TacticPlan:
                 f"try simp only [{lemma} hf{k}])"
             )
         # One line, whatever the length. A `;`-separated tactic sequence
-        # inside a `(tactic| ...)` quotation does not survive being broken
-        # across lines: Lean reports `unexpected token 'try'; expected ')'`
-        # at the end of the first one. Only shows up from two conditions on,
-        # which is why a single-condition case built happily.
+        # did not survive being broken across lines inside the
+        # `(tactic| ...)` quotation this used to be spliced into: Lean
+        # reported `unexpected token 'try'; expected ')'` at the end of the
+        # first one, from two conditions on.
         return "; ".join(steps)
 
     @property
@@ -473,13 +473,18 @@ class TacticPlan:
         `step_inv` and `hrank` only: both bind `update_pre`, which is what
         the cores were taken over. `init_inv`'s `hpre` is `init_pre`, a
         different predicate that nothing here has looked at.
+
+        Not written into the proofs (see `_proofs.lean.j2`): spliced into a
+        hygienic macro, as it used to be, it could not see the proof's
+        `hpre` and never cleared anything, so writing it out changes proofs
+        that build today. Empty when nothing is to be cleared.
         """
         if getattr(self.hints, "pre_unused", False):
             return "try clear hpre"
-        return "skip"
+        return ""
 
     def why(self) -> str:
-        """One line per decision, emitted as a comment above the macros."""
+        """One line per decision, emitted as a comment above the proofs."""
         f = self.features
         bits = [
             f"state: {'+'.join(sorted(f.theories)) or 'none'}"
@@ -504,16 +509,6 @@ class TacticPlan:
         if self.hints is not None and self.hints.any:
             out += "\n" + self.hints.why()
         return out
-
-
-def _rebind(arg: str) -> str:
-    """`arg`'s state binder rewritten to a macro's own `$v`.
-
-    The printer names the certificate's parameter `s` (`smt_to_lean`'s
-    `param_name`), and the obligation's binder is whatever the proof calls
-    it, so the text cannot reference `s` directly from inside a macro.
-    """
-    return re.sub(r"\bs\b", "($v)", arg)
 
 
 def floor_arguments(pred_text: str) -> tuple[str, ...]:

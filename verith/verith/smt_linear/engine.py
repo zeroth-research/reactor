@@ -34,7 +34,7 @@ program writes (:func:`verith.common.synth.denominator_scale`, which
 ``(to_int (* 2.0 s0))`` there and ``(to_int s0)`` where the program is
 integral.  What this costs on the Lean side is a bridge rather than a
 lemma: ``linarith`` reads ``⌊x⌋`` as an opaque ``Int`` atom and cannot reach
-a hypothesis about the ``Real`` under it, so ``tactics.cert_floors`` states
+a hypothesis about the ``Real`` under it, so the plan's ``floor_tactic`` states
 the sign of each floored quantity in ``Int``, where ``omega`` can use it.
 
 **The refutation is the point.**  A `sat` answer is a certificate, and there

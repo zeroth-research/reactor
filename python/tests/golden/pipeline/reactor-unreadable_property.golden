@@ -26,7 +26,10 @@ module
 === Certificate/Data.lean
 (none)
 
-=== Certificate/Tactics.lean
+=== Certificate/Module.lean
+(none)
+
+=== Certificate/Proofs.lean
 (none)
 
 === Certificate/Certificate.lean

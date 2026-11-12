@@ -1,7 +1,7 @@
 """The certificate as Lean: its predicates parsed once and printed
 (`render_certificate`), with what the tactic plan reads of them (`prepare`,
 which every certificate goes through), and the files that come of it --
-the project's three (`certificate_files`) and the one `--cert-file` writes
+the project's four (`certificate_files`) and the one `--cert-file` writes
 (`generate_standalone_cert_lean`).
 """
 
@@ -15,7 +15,9 @@ from reactor.lean.codegen.terms import extl_native_type, product_type
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor.lean.core.errors import PredicateRefused, Refused
 from reactor.lean.codegen.context import LeanContext
-from reactor.lean.project.names import DATA, MAT_SIMP, PROOF, TACTICS, cert_file
+from reactor.lean.project.names import (
+    CERTIFICATE, DATA, MAT_SIMP, MODULE, PROOFS, cert_file,
+)
 from reactor.lean.proof.tactics import plan_for
 from reactor.lean.project.templates import render
 
@@ -59,14 +61,15 @@ class PlanInputs:
     # no term stands behind them, so the facts cannot speak for them and
     # the plan reads their text instead.
     verbatim: str = ""
-    # `facts.floors` printed over a macro's binder `($v)`.
+    # `facts.floors` printed over the proofs' state binder `s`.
     floors: tuple = ()
 
 
 @dataclass
 class LeanHints:
     """`SolverHints` printed for the tactic plan: a settled condition as
-    Lean over a macro's binder `($v)`, a product as `nlinarith` hint terms."""
+    Lean over the proofs' state binder `s`, a product as `nlinarith` hint
+    terms."""
 
     # (Lean text of the condition, the value `inv` forces it to).
     determined: list = field(default_factory=list)
@@ -91,7 +94,7 @@ class LeanHints:
         if self.linear_proof is False:
             bits.append(f"cvc5 needed {len(self.nlinarith_hints)} product hint(s)")
         if self.pre_unused:
-            bits.append("no refutation needed the precondition: clearing it")
+            bits.append("no refutation needed the precondition")
         bits += self.notes
         return "\n".join(f"-- cvc5: {b}" for b in bits)
 
@@ -104,10 +107,8 @@ def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
     determined = []
     for cond, value in hints.determined:
         try:
-            # `($v)` is the macro's own binder: the condition is spliced into
-            # a tactic, so it has to read whichever state the obligation
-            # bound rather than a fixed name.
-            text = smt_to_lean_body(cond, ctrl_next, param_name="($v)")
+            # Every proof binds the state as `s` (`_proofs.lean.j2`).
+            text = smt_to_lean_body(cond, ctrl_next, param_name="s")
         except Refused:
             continue
         determined.append((text, value))
@@ -117,15 +118,12 @@ def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
     # into a check. `mul_self_nonneg (a - b)` and `(a + b)` between them
     # span the products of two atoms, which is what the arithmetic rules
     # produce.
-    # Over `($v)` too: the hints are spliced into `cert_close`, a macro, and
-    # a hygienic macro reads a bare `s` as a fresh `s✝` rather than as the
-    # obligation's state.
     seen: set[str] = set()
     nlinarith: list[str] = []
     for a_term, b_term in hints.products:
         try:
-            a = smt_to_lean_body(a_term, ctrl_next, param_name="($v)")
-            b = smt_to_lean_body(b_term, ctrl_next, param_name="($v)")
+            a = smt_to_lean_body(a_term, ctrl_next, param_name="s")
+            b = smt_to_lean_body(b_term, ctrl_next, param_name="s")
         except Refused:
             continue
         for hint in (f"mul_self_nonneg ({a} - {b})",
@@ -228,7 +226,7 @@ def prepare(
     facts = predicate_facts(q)
     floors: list[str] = []
     for arg in facts.floors if facts is not None else ():
-        text = smt_to_lean_body(arg, q.msmt.ctrl_next, param_name="($v)")
+        text = smt_to_lean_body(arg, q.msmt.ctrl_next, param_name="s")
         if text not in floors:
             floors.append(text)
     return LeanCertificate(
@@ -283,15 +281,15 @@ def generate_data_lean(
 ) -> str:
     """Generate Certificate/Data.lean: init_pre, update_pre, inv, P, ranking.
 
-    Imports only ``Relational.Basic``.  ``Tactics.lean`` and
-    ``Certificate.lean`` import this file, so the proof is not rewritten
-    when the certificate's data changes.
+    Imports only ``Relational.Basic``.  ``Module.lean`` imports it, and
+    the proofs and the certificate through that.
 
     It sits under ``Certificate/`` rather than ``System/`` because that is what
     it is about: ``System/`` is the module, which is the same whatever is being
     proved about it, while these five definitions are the certificate's own and
     change with every certificate.  The two files a new certificate rewrites,
-    this one and ``Tactics.lean``, are then in one directory with the proof.
+    this one and ``Proofs.lean``, are then in one directory with the
+    certificate.
     """
     return render(
         "project/Certificate/Data.lean.j2",
@@ -299,9 +297,11 @@ def generate_data_lean(
     )
 
 
-def _tactics_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
-    """What `_tactics.lean.j2` renders: the tactic plan read off the module
-    and the predicates, and the definitions the two simp sets unfold."""
+def _proofs_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
+    """What `_proofs.lean.j2` and `_budgets.lean.j2` render: the tactic
+    plan read off the module and the predicates, the definitions the two
+    simp sets unfold, and the kind of the property, which decides the
+    obligations."""
     # A Buchi certificate always defines `ranking` (as `sorry` when nothing
     # supplied one); a safety certificate defines none, and naming it in a
     # simp set would be an unknown identifier rather than an unused one.
@@ -320,18 +320,26 @@ def _tactics_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
         verbatim=lean_cert.plan.verbatim,
         floors=lean_cert.plan.floors,
     )
-    return dict(plan=plan, all_defs=all_defs, mat_simp=", ".join(MAT_SIMP))
+    return dict(plan=plan, all_defs=all_defs, mat_simp=", ".join(MAT_SIMP),
+                is_safety=lean_cert.defs.is_safety)
 
 
-def generate_tactics_lean(
+def generate_module_lean() -> str:
+    """Generate Certificate/Module.lean: `RM` and `lts`, the same text for
+    every module and certificate."""
+    return render("project/Certificate/Module.lean.j2")
+
+
+def generate_proofs_lean(
     ctx: LeanContext,
     lean_cert: LeanCertificate | None = None,
 ) -> str:
-    """Generate Certificate/Tactics.lean: the budgets and the tactics the
-    proof calls, read off the shape of the module and of `lean_cert`."""
+    """Generate Certificate/Proofs.lean: each obligation stated again and
+    proved, by the steps read off the shape of the module and of
+    `lean_cert`, under the budgets read off the same."""
     return render(
-        "project/Certificate/Tactics.lean.j2",
-        **_tactics_context(ctx, lean_cert or LeanCertificate()),
+        "project/Certificate/Proofs.lean.j2",
+        **_proofs_context(ctx, lean_cert or LeanCertificate()),
     )
 
 
@@ -341,28 +349,34 @@ def generate_certificate_lean(
     *,
     module_inline: str | None = None,
 ) -> str:
-    """Generate Certificate.lean: the proof.
+    """Generate Certificate.lean: the certificate.
 
     In a project it is the same text for every certificate of a property of
-    one kind (safety or Büchi, `lean_cert`'s): what changes with the module
-    and the certificate is `Data.lean` and `Tactics.lean`, which it imports.
+    one kind (safety or Büchi, `lean_cert`'s): it states the obligations and
+    takes their proofs from `Proofs.lean`, which with `Data.lean` is what
+    changes with the module and the certificate.
 
     Args:
         module_inline: When set, inline this Lean source (the ``init`` /
             ``update`` functions) for standalone certs instead of importing
-            ``System.System``, and the definitions and the tactics with it.
-            Should be the output of ``ModuleToLean4.to_lean_functional()``.
+            ``System.System``, and the definitions, ``Module.lean`` and the
+            proofs with it. Should be the output of
+            ``ModuleToLean4.to_lean_functional()``.
     """
     lean_cert = lean_cert or LeanCertificate()
     inline = {}
     if module_inline is not None:
+        proofs = _proofs_context(ctx, lean_cert)
         inline = dict(
+            inline_budgets=render(
+                "project/Certificate/_budgets.lean.j2", **proofs).strip("\n"),
             inline_defs=render(
                 "project/Certificate/_defs.lean.j2",
                 **_cert_def_context(ctx, lean_cert)).strip("\n"),
-            inline_tactics=render(
-                "project/Certificate/_tactics.lean.j2",
-                **_tactics_context(ctx, lean_cert)).strip("\n"),
+            inline_module=render(
+                "project/Certificate/_module.lean.j2").strip("\n"),
+            inline_proofs=render(
+                "project/Certificate/_proofs.lean.j2", **proofs).strip("\n"),
         )
     return render(
         "project/Certificate/Certificate.lean.j2",
@@ -375,20 +389,23 @@ def generate_certificate_lean(
 def certificate_files(
     ctx: LeanContext, lean_cert: LeanCertificate | None = None,
 ) -> dict[str, str]:
-    """The project's three certificate files by project-relative path: the
-    definitions (`Data.lean`), the budgets and tactics read off their shape
-    (`Tactics.lean`), and the proof, which is fixed text for the property's
-    kind (`Certificate.lean`). Placeholders where `lean_cert` has no
-    predicate, or is `None`.
+    """The project's four certificate files by project-relative path: the
+    definitions (`Data.lean`); `RM` and `lts` over them (`Module.lean`), the
+    same text for every certificate; the obligations' proofs, read off
+    their shape (`Proofs.lean`); and the certificate, which is fixed text
+    for the property's kind and takes its proofs from `Proofs.lean`
+    (`Certificate.lean`). Placeholders where `lean_cert` has no predicate,
+    or is `None`.
 
     Rendered together because they are rewritten together: a definitions
-    file left over from other predicates no longer matches the tactics, and
-    the proof follows the kind of the property they are for.
+    file left over from other predicates no longer matches the proofs, and
+    the certificate follows the kind of the property they are for.
     """
     return {
         cert_file(DATA): generate_data_lean(ctx, lean_cert),
-        cert_file(TACTICS): generate_tactics_lean(ctx, lean_cert),
-        cert_file(PROOF): generate_certificate_lean(ctx, lean_cert),
+        cert_file(MODULE): generate_module_lean(),
+        cert_file(PROOFS): generate_proofs_lean(ctx, lean_cert),
+        cert_file(CERTIFICATE): generate_certificate_lean(ctx, lean_cert),
     }
 
 

@@ -20,7 +20,7 @@ import re
 from typing import TYPE_CHECKING
 
 from reactor.lean.core.options import Opt
-from reactor.lean.project.names import PROOF, cert_file
+from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
 from ..io import InferInput, InferResult
 from ..route import Alias, InferRoute
 
@@ -158,7 +158,8 @@ ROUTE = InferRoute(
         "carries it as an `INIT` conjunct over the slots those inputs "
         "start"
     ),
-    owns=(f"{PROVEIT_DIR}/", cert_file(PROOF), cert_file(EQUIVALENCE)),
+    owns=(f"{PROVEIT_DIR}/", cert_file(CERTIFICATE), cert_file(PROOFS),
+          cert_file(EQUIVALENCE)),
     lakefile=_lakefile,
     resolve=_resolve,
     extra_check=_check_project_name,

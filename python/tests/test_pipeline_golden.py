@@ -24,8 +24,9 @@ import torch
 from reactor import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
 from reactor.lean.proof.render import (
     generate_certificate_lean,
-    generate_tactics_lean,
     generate_data_lean,
+    generate_module_lean,
+    generate_proofs_lean,
     generate_standalone_cert_lean,
 )
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
@@ -151,8 +152,8 @@ CODEGEN = [
 
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
-    """Data.lean, Tactics.lean, Certificate.lean and the standalone
-    certificate, as one text."""
+    """Data.lean, Module.lean, Proofs.lean, Certificate.lean and the
+    standalone certificate, as one text."""
     from reactor.lean.proof.render import prepare
     from reactor.lean.smt.limits import SmtBudget
     from reactor.lean.proof.facts import solver_hints
@@ -166,8 +167,10 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
     return "\n".join([
         "=== Certificate/Data.lean",
         generate_data_lean(ctx, lean),
-        "=== Certificate/Tactics.lean",
-        generate_tactics_lean(ctx, lean),
+        "=== Certificate/Module.lean",
+        generate_module_lean(),
+        "=== Certificate/Proofs.lean",
+        generate_proofs_lean(ctx, lean),
         "=== Certificate/Certificate.lean",
         generate_certificate_lean(ctx, lean),
         "=== standalone",
@@ -284,7 +287,8 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
         "=== stdout", captured.out,
         "=== stderr", captured.err,
         "=== Certificate/Data.lean", read("Certificate/Data.lean"),
-        "=== Certificate/Tactics.lean", read("Certificate/Tactics.lean"),
+        "=== Certificate/Module.lean", read("Certificate/Module.lean"),
+        "=== Certificate/Proofs.lean", read("Certificate/Proofs.lean"),
         "=== Certificate/Certificate.lean", read("Certificate/Certificate.lean"),
         "=== artifacts/index.json", _index(project / "artifacts" / "index.json"),
     ]
