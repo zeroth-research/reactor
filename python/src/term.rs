@@ -1,11 +1,11 @@
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
-use theory::any::Any;
+use theory::any::{Any, Sort};
 
 #[pyclass(frozen)]
 pub(crate) struct Term {
-    base: dataflow::diagram::Term<Any>,
+    base: dataflow::diagram::Term<Any, Sort>,
 }
 
 #[pymethods]
@@ -71,7 +71,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Any> {
+    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Any, Sort> {
         &self.base
     }
 
@@ -84,8 +84,8 @@ impl Term {
     }
 }
 
-impl From<dataflow::diagram::Term<Any>> for Term {
-    fn from(base: dataflow::diagram::Term<Any>) -> Self {
+impl From<dataflow::diagram::Term<Any, Sort>> for Term {
+    fn from(base: dataflow::diagram::Term<Any, Sort>) -> Self {
         Self { base }
     }
 }

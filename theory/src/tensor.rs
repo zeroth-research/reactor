@@ -229,38 +229,8 @@ mod torch {
 mod stub {
     use std::fmt::{self, Display};
 
-    // The implementation panics with this message if an attempt to use it is made
-    const MSG: &str = "PyTensor operations require the `torch` feature";
-
     #[derive(Clone, Debug)]
     pub struct PyTensor;
-
-    // The subset of the `tch::Tensor` API touched by the constant-op checks.
-    impl PyTensor {
-        pub fn size(&self) -> Vec<i64> {
-            unreachable!("{MSG}")
-        }
-
-        pub fn numel(&self) -> i64 {
-            unreachable!("{MSG}")
-        }
-
-        pub fn min(&self) -> Self {
-            unreachable!("{MSG}")
-        }
-
-        pub fn max(&self) -> Self {
-            unreachable!("{MSG}")
-        }
-
-        pub fn int64_value(&self, _index: &[i64]) -> i64 {
-            unreachable!("{MSG}")
-        }
-
-        pub fn is_bool(&self) -> bool {
-            unreachable!("{MSG}")
-        }
-    }
 
     impl Display for PyTensor {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -273,8 +243,11 @@ mod stub {
     // called — that path only runs from Python, which needs `torch`.
     #[cfg(feature = "pyo3")]
     mod py {
-        use super::{MSG, PyTensor};
+        use super::PyTensor;
         use pyo3::prelude::*;
+
+        // The conversions panic with this message if an attempt to use them is made
+        const MSG: &str = "PyTensor operations require the `torch` feature";
 
         impl<'py> IntoPyObject<'py> for PyTensor {
             type Target = PyAny;

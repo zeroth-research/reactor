@@ -8,7 +8,7 @@ use dataflow::diagram::Term;
 use dataflow::diagram::Wire;
 use reactive::var::{Var, X, d};
 use std::fmt;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential};
 
 #[test]
 fn can_instantiate_partially_observable_module() {
@@ -134,10 +134,12 @@ fn compose_seq() {
     let y = Var::new("real");
     let z = Var::new("real");
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, &'static str>> =
+        [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
     let m1 = Module::combinatorial(&[x, y], assign).unwrap();
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, &'static str>> =
+        [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
     let m2 = Module::combinatorial(&[x, z], assign).unwrap();
 
     Module::compose([m1, m2]).unwrap();
@@ -161,10 +163,12 @@ fn compose_hiding() {
     let y = &Var::new("real");
     let z = &Var::new("real");
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, &'static str>> =
+        [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
     let m1 = Module::combinatorial([x, y], assign).unwrap();
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, &'static str>> =
+        [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
     let m2 = Module::combinatorial([x, z], assign).unwrap();
 
     // hiding the shared variable privatises it in the composite
@@ -310,7 +314,7 @@ fn compose_seq_2() {
     //
     //         return xn, y, z
     //
-    let init: Vec<Term<Ops>> = [
+    let init: Vec<Term<Ops, &'static str>> = [
         term!(mk_op("Const(0)"), [X(x)]).unwrap(),
         term!(mk_op("Id"), [X(y)], [X(y0)]).unwrap(),
         term!(mk_op("Id"), [X(z)], [X(z0)]).unwrap(),
@@ -325,7 +329,7 @@ fn compose_seq_2() {
         Wire::scalar("real"),
         Wire::scalar("real"),
     ];
-    let update: Vec<Term<Ops>> = [
+    let update: Vec<Term<Ops, &'static str>> = [
         term!(mk_op("Lt"), [tmps[0]], [x, y]).unwrap(),
         term!(mk_op("Lt"), [tmps[1]], [x, z]).unwrap(),
         term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
@@ -354,7 +358,7 @@ fn compose_seq_2() {
         Wire::scalar("real"),
         Wire::scalar("real"),
     ];
-    let assign: Vec<Term<Ops>> = [
+    let assign: Vec<Term<Ops, &'static str>> = [
         term!(mk_op("Le"), [tmps[0]], [X(x), X(y)]).unwrap(),
         term!(mk_op("Le"), [tmps[1]], [X(x), X(z)]).unwrap(),
         term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
@@ -395,43 +399,19 @@ struct SeqOps(&'static str);
 #[derive(Clone, Copy)]
 struct DifOps(&'static str);
 
-impl Theory for SeqOps {
-    type Sort = &'static str;
-    const NAME: &'static str = "SeqOps";
-    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-    {
-        Ok(())
-    }
-}
-
-impl Theory for DifOps {
-    type Sort = &'static str;
-    const NAME: &'static str = "DifOps";
-    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-    {
-        Ok(())
-    }
-}
-
-impl Differential for DifOps {
-    fn zero(_range: &Self::Sort) -> Self {
+impl Differential<&'static str> for DifOps {
+    fn zero(_range: &&'static str) -> Self {
         Self("ZERO")
     }
 }
-impl Sequential for SeqOps {
-    fn skip(_range: &Self::Sort) -> Self {
+impl Sequential<&'static str> for SeqOps {
+    fn skip(_range: &&'static str) -> Self {
         Self("SKIP")
     }
 }
 
-impl Combinatorial for SeqOps {
-    fn havoc(_range: &Self::Sort) -> Self {
+impl Combinatorial<&'static str> for SeqOps {
+    fn havoc(_range: &&'static str) -> Self {
         Self("HAVOC")
     }
 }
