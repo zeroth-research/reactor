@@ -26,25 +26,16 @@ def test_every_project_module_imported_is_a_file_the_project_has(tmp_path):
     project = create_project(tmp_path, module, "Rea",
                              certificate=certificate_files(LeanContext(module)))
     texts = {
-        "certificate": (project / CERT_LIB / "Certificate.lean").read_text(),
-        "root": (project / f"{CERT_LIB}.lean").read_text(),
+        stem: (project / CERT_LIB / f"{stem}.lean").read_text()
+        for stem in ("Module", "Proofs", "Certificate")
     }
+    texts["root"] = (project / f"{CERT_LIB}.lean").read_text()
     for who, text in texts.items():
         mods = _own_imports(text)
         assert mods or who == "root", f"{who} imports nothing of the project"
         for mod in mods:
             path = project / (mod.replace(".", "/") + ".lean")
             assert path.exists(), f"{who} imports {mod}, which is not written"
-
-
-def test_the_tactics_import_nothing_of_the_project(tmp_path):
-    """Its macros name no definition of the project's, so `Tactics.lean`
-    imports the libraries alone, and lake builds it alongside the module and
-    `Data.lean` rather than after them."""
-    module = load_module(FIXTURES / "counter.py")
-    project = create_project(tmp_path, module, "Rea",
-                             certificate=certificate_files(LeanContext(module)))
-    assert _own_imports((project / CERT_LIB / "Tactics.lean").read_text()) == []
 
 
 def test_the_lakefile_builds_the_certificate_library(tmp_path):

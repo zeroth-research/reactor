@@ -225,7 +225,7 @@ def test_main_lean_matrix_signatures():
 
 
 def _cert_for(make_module, module_name="ReactiveModule"):
-    """The project's three certificate files, as one text."""
+    """The project's four certificate files, as one text."""
     m = make_module()
     ctx = LeanContext(m)
     return "\n".join(certificate_files(ctx).values())

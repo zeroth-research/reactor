@@ -109,13 +109,14 @@ class ProjectHandle:
     #
     # Available to every route, and the only write most of them want: after
     # inference the predicates are new, so the definitions (`Data.lean`) and
-    # the tactics generated from their shape (`Tactics.lean`) are both
-    # restated, as `proof.render.certificate_files` renders them -- with the
-    # proof (`Certificate.lean`), which is the same text unless the kind of
-    # the property changed.
+    # the proofs generated from their shape (`Proofs.lean`) are both
+    # restated, as `proof.render.certificate_files` renders them -- with
+    # `Module.lean`, which is the same text whatever the predicates, and the
+    # certificate (`Certificate.lean`), which is the same text unless the
+    # kind of the property changed.
 
     def write_predicates(self, lean_cert: "LeanCertificate") -> None:
-        """The certificate's three files, rewritten from `lean_cert`."""
+        """The certificate's four files, rewritten from `lean_cert`."""
         from reactor.lean.project.scaffold import write_files
         from reactor.lean.proof.render import certificate_files
 

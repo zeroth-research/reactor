@@ -1,92 +1,44 @@
-{#- The proof: the same text for every certificate of a safety property, and
-    for every certificate of a Büchi one. What changes with the module and
-    the certificate is in `Data.lean.j2` (the definitions) and
-    `_tactics.lean.j2` (the budgets and tactics read off their shape), so a
-    certificate can be rewritten without this file. A `--cert-file`
-    certificate inlines all three, the module too: the tactics first, so
-    that its budgets are in force for the module, as they are for the
-    proof. -#}
+{#- The certificate: the same text for every certificate of a safety
+    property, and for every certificate of a Büchi one. It states the
+    obligations and takes each one's proof from `Proofs.lean`, where it is
+    stated again; `exact` checks that the two statements agree, so this file
+    does not trust `Proofs.lean`, which can be rewritten -- by hand, or by
+    another tool -- without touching it. What changes with the module and
+    the certificate is `Data.lean` (the definitions) and `Proofs.lean`. A
+    `--cert-file` certificate inlines all of them, the module too, under the
+    proofs' budgets. -#}
+{% if module_inline %}
 import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
-{% if module_inline %}
 import Relational.Box
-{% else %}
-import System.System
-import Certificate.Data
-import Certificate.Tactics
-{% endif %}
 import ZerothHammer
+{% else %}
+import Relational.Basic
+import Certificate.Module
+import Certificate.Proofs
+{% endif %}
 
 {{ linters_off }}
 
 {% if module_inline %}
-{{ inline_tactics }}
+{{ inline_budgets }}
 
-{% endif %}
--- The obligations below are the same for every certificate. What changes
--- with the module and its certificate is the definitions they unfold and
--- these macros, read off their shape (see `reactor/lean/proof/tactics.py`):
---
---   cert_budgets   the heartbeat and recursion budgets, for the rest of the file
---   simp_mat       unfold the definitions and reduce matrix arithmetic, on the
---                  goal only (avoids exponential blowup on hypotheses)
---   simp_defs      unfold the definitions everywhere (cheap: no matrix
---                  arithmetic), so the closers see the invariant's conditions
---   cert_thin      drop hypotheses no refutation needed; `skip` otherwise
---   cert_facts s   branch conditions cvc5 decided under the invariant, so
---                  `split_ifs` does not have to; `skip` unless it found some
---   cert_floors s  bound each floored quantity by the Real under it, so the
---                  closers see the `Int` atom with a sign; `skip` unless floored
---   cert_states s  enumerate the state, when it is finite and narrow enough
---   cert_prep      canonicalise the goal: only the steps its shapes call for
---   cert_close s   close it: only the provers this state can use, cheapest first
---
--- `s` is the obligation's own state binder.
-cert_budgets
-
-{% if module_inline %}
 {{ module_inline }}
 
 {{ inline_defs }}
 
+{{ inline_module }}
+
+{{ inline_proofs }}
+
 {% endif %}
 noncomputable section
 
-def RM := ({
-    init := fun e => init e.2
-    update := fun x e => update x e.1 e.2
-    init_pre := init_pre
-    update_pre := update_pre
-} : ReactiveModule _ _)
-
--- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
--- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
-macro "mat_collapse" : tactic =>
-  `(tactic| simp only [Mat_1_1_lt_iff, Mat_1_1_le_iff, Mat_1_1_eq_iff, Mat_1_1_ne_iff,
-                        ite_fun_apply,
-                        decide_eq_true_eq, Bool.or_eq_true, Bool.and_eq_true,
-                        Bool.not_eq_true'] at *)
-
-
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
-   intro s hpre
-   try simp_mat
-   try simp_defs
-   all_goals (cert_prep <;> cert_close s)
+  exact init_inv_proof
 
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-   intro s e ⟨hpre, hinv⟩
-   try cert_thin
-   try simp_defs
-   try cert_facts s
-   try cert_floors s
-   try simp_mat
-   try cert_states s
-   all_goals (cert_prep <;> cert_close s)
-
-section TS
-
-def lts := RM.toTS
+  exact step_inv_proof
 
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
@@ -110,18 +62,11 @@ theorem hinv : lts.StateSet_isInvariant inv := by
 -- `reachableSet ⊆ ·`, so a superset of an invariant is invariant too, and
 -- `rule_globally` turns that into `G (AP P)` on every trace.
 theorem inv_imp_P : ∀ s, inv s → P s := by
-    intro s hi
-    try cert_thin
-    try simp_defs
-    try cert_facts s
-    try cert_floors s
-    try simp_mat
-    try cert_states s
-    all_goals (cert_prep <;> cert_close s)
+  exact inv_imp_P_proof
 
 theorem hP : lts.StateSet_isInvariant P := by
-    intro s hs
-    exact inv_imp_P s (hinv s hs)
+  intro s hs
+  exact inv_imp_P s (hinv s hs)
 
 def safety := rule_globally
   lts
@@ -130,18 +75,7 @@ def safety := rule_globally
 {% else %}
 theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
-    intro s s' ⟨hi, hP, htr⟩
-    unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
-    obtain ⟨l, hpre, heq⟩ := htr
-    rw [← heq]
-    clear heq
-    try cert_thin
-    try simp_defs
-    try cert_facts s
-    try cert_floors s
-    try simp_mat
-    try cert_states s
-    all_goals (cert_prep <;> cert_close s)
+  exact hrank_proof
 
 def buchi := rule_buchi
   lts
@@ -151,8 +85,5 @@ def buchi := rule_buchi
   ranking
   hrank
 {% endif %}
-
-
-end TS
 
 end

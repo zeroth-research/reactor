@@ -7,6 +7,8 @@ decisions are pinned here rather than only observed end to end in the slow
 Lean tests.
 """
 
+import re
+
 import torch
 import pytest
 
@@ -162,14 +164,14 @@ def test_finite_narrow_state_is_enumerated():
     plan = _plan(_bv_module(), "fun s => ((s 0 0) = 1#1)")
     tac = plan.state_case_tactic
     assert "BitVec.eq_zero_or_eq_one" in tac
-    assert "($v)" in tac, "the enumeration must take the obligation's binder"
+    assert "(s 0 0)" in tac, "the enumeration must take the proof's state binder"
     assert "simp only [h0" in tac, "the two values have to reach the hypotheses"
 
 
 def test_unbounded_state_is_not_enumerated():
     """Nothing to enumerate over Int or Real, so the step is a no-op."""
-    assert _plan(_int_module(), "fun s => True").state_case_tactic == "skip"
-    assert _plan(_real_module(), "fun s => True").state_case_tactic == "skip"
+    assert _plan(_int_module(), "fun s => True").state_case_tactic == ""
+    assert _plan(_real_module(), "fun s => True").state_case_tactic == ""
 
 
 def test_an_invariant_that_lists_its_states_is_enumerated():
@@ -183,7 +185,7 @@ def test_an_invariant_that_lists_its_states_is_enumerated():
     plan = plan_for(LeanContext(_int_module()), "fun s => True",
                     PredicateFacts(pins=True))
     assert plan.state_case_tactic == "((casesm* _ ∨ _) <;> simp_all) <;> done"
-    assert _plan(_int_module(), "fun s => True").state_case_tactic == "skip"
+    assert _plan(_int_module(), "fun s => True").state_case_tactic == ""
 
 
 @pytest.mark.parametrize("inv, pins", [
@@ -232,7 +234,7 @@ def test_wide_finite_state_is_not_enumerated():
               [X(b)])],
         [Term(BV.Id(), [X(b)], [b])],
     )
-    assert _plan(wide, "fun s => True").state_case_tactic == "skip"
+    assert _plan(wide, "fun s => True").state_case_tactic == ""
 
 
 def test_wide_bitvec_is_not_enumerated():
@@ -243,7 +245,7 @@ def test_wide_bitvec_is_not_enumerated():
         [Term(BV.Const(torch.tensor([[0]])), [X(b)])],
         [Term(BV.Id(), [X(b)], [b])],
     )
-    assert _plan(m, "fun s => True").state_case_tactic == "skip"
+    assert _plan(m, "fun s => True").state_case_tactic == ""
 
 
 def test_flat_predicates_skip_the_splitting_steps():
@@ -397,23 +399,23 @@ def _hinted(**fields):
     )
 
 
-def test_without_hints_the_new_macros_are_inert():
+def test_without_hints_the_hint_steps_are_empty():
     plan = plan_for(LeanContext(_int_module()), "fun s => (s 0 0)")
-    assert plan.facts_tactic == "skip"
-    assert plan.clear_tactic == "skip"
+    assert plan.facts_tactic == ""
+    assert plan.clear_tactic == ""
 
 
 def test_a_settled_condition_becomes_a_guarded_have_and_a_rewrite():
-    plan = _hinted(determined=[("(($v) 0 0) ≥ 0", True)])
+    plan = _hinted(determined=[("(s 0 0) ≥ 0", True)])
     tac = plan.facts_tactic
-    assert tac.startswith("try (have hf0 : (($v) 0 0) ≥ 0 := by ")
+    assert tac.startswith("try (have hf0 : (s 0 0) ≥ 0 := by ")
     assert "simp only [if_pos hf0]" in tac
 
 
 def test_a_refuted_condition_is_negated_and_uses_if_neg():
-    plan = _hinted(determined=[("(($v) 0 0) ≥ 0", False)])
+    plan = _hinted(determined=[("(s 0 0) ≥ 0", False)])
     tac = plan.facts_tactic
-    assert "have hf0 : ¬ ((($v) 0 0) ≥ 0)" in tac
+    assert "have hf0 : ¬ ((s 0 0) ≥ 0)" in tac
     assert "if_neg hf0" in tac
 
 
@@ -432,27 +434,30 @@ def test_product_hints_are_added_before_the_bare_nlinarith():
     plan = plan_for(
         LeanContext(_int_module()),
         "fun s => ((s 0 0) * (s 0 0))",       # nonlinear, so nlinarith is in
-        hints=_solver_hints(nlinarith_hints=["mul_self_nonneg ((($v) 0 0) - 1)"]),
+        hints=_solver_hints(nlinarith_hints=["mul_self_nonneg ((s 0 0) - 1)"]),
     )
     closers = plan.closers
-    assert "nlinarith [mul_self_nonneg ((($v) 0 0) - 1)]" in closers
-    assert closers.index("nlinarith [mul_self_nonneg ((($v) 0 0) - 1)]") < closers.index(
+    assert "nlinarith [mul_self_nonneg ((s 0 0) - 1)]" in closers
+    assert closers.index("nlinarith [mul_self_nonneg ((s 0 0) - 1)]") < closers.index(
         "nlinarith"
     )
 
 
 def test_a_product_hint_reads_the_obligations_own_state():
-    """The hints are spliced into `cert_close`, a macro, and a hygienic macro
-    reads a bare `s` as a fresh `s✝`. So a hint names the state by the
-    binder `$v` the macro takes from every obligation (`cert_close s`), and
-    a plan without one does not name it at all."""
-    ctx = LeanContext(_int_module())
-    text = "fun s => ((s 0 0) * (s 0 0))"
-    assert "$v" not in plan_for(ctx, text).close_tactic
-    hinted = plan_for(ctx, text, hints=_solver_hints(
-        nlinarith_hints=["mul_self_nonneg ((($v) 0 0) - 1)"]))
-    assert "mul_self_nonneg ((($v) 0 0) - 1)" in hinted.close_tactic
-    assert " s)" not in hinted.close_tactic and "(s " not in hinted.close_tactic
+    """The hints are printed over `s`, so every proof binds the state by
+    that name, and a hint reaches the closers of each as it was printed."""
+    from reactor.lean.proof.render import (
+        LeanCertificate, PlanInputs, generate_proofs_lean,
+    )
+
+    hint = "mul_self_nonneg ((s 0 0) - 1)"
+    proofs = generate_proofs_lean(
+        LeanContext(_int_module()),
+        LeanCertificate(plan=PlanInputs(hints=_solver_hints(nlinarith_hints=[hint]))))
+    binders = re.findall(r"^theorem (\w+)_proof .*?:= by\n  intro (\w+)",
+                         proofs, re.M | re.S)
+    assert [b for _, b in binders] == ["s"] * 3, binders
+    assert proofs.count(f"      | nlinarith [{hint}]\n") == 3
 
 
 def test_hints_never_remove_a_closer():
@@ -465,10 +470,10 @@ def test_hints_never_remove_a_closer():
 
 
 def test_the_reasons_are_recorded_in_the_generated_comment():
-    plan = _hinted(determined=[("(($v) 0 0) ≥ 0", True)], pre_unused=True)
+    plan = _hinted(determined=[("(s 0 0) ≥ 0", True)], pre_unused=True)
     why = plan.why()
     assert "cvc5: inv forces" in why
-    assert "clearing it" in why
+    assert "no refutation needed the precondition" in why
 
 
 def _solver_hints(**fields):
@@ -628,14 +633,14 @@ def test_a_floored_rank_gets_the_bridge_to_the_real_under_it():
     The hypotheses that would pin it are about the `Real` `x`, so nothing in
     the closer chain can cross: `0 < s 0 0 ⊢ 0 < 2 + ⌊s 0 0⌋` fails with the
     bracketing lemmas passed in, because half the facts are in the wrong
-    sort. `cert_floors` states the bridge in `Int`, where `omega` can use it.
+    sort. The floor step states the bridge in `Int`, where `omega` can use it.
     """
     plan = _plan(_real_module(), "fun s => ((2 + ⌊(s 0 0)⌋ : Int)).toNat")
     assert plan.features.has_floor
-    assert plan.features.floor_args == ("(($v) 0 0)",)
+    assert plan.features.floor_args == ("(s 0 0)",)
     body = plan.floor_tactic
     assert "Int.floor_nonneg" in body
-    assert "($v)" in body, "the macro's own binder, not the printer's `s`"
+    assert "(s 0 0)" in body, "over the proofs' state binder"
 
 
 def test_the_floor_sign_is_split_rather_than_assumed():
@@ -659,13 +664,13 @@ def test_a_scaled_floor_distributes_before_the_closers():
     """
     plan = _plan(_real_module(), "fun s => ((2 + ⌊((2 : Real) * (s 0 0))⌋ : Int)).toNat")
     assert "simp only [mul_sub]" in plan.prep
-    assert plan.features.floor_args == ("((2 : Real) * (($v) 0 0))",)
+    assert plan.features.floor_args == ("((2 : Real) * (s 0 0))",)
 
 
 def test_an_integer_module_pays_nothing_for_floors():
     plan = _plan(_int_module(), "fun s => ((s 0 0) = 2)")
     assert not plan.features.has_floor
-    assert plan.floor_tactic == "skip"
+    assert plan.floor_tactic == ""
     assert "simp only [mul_sub]" not in plan.prep
 
 

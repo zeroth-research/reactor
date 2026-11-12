@@ -401,14 +401,15 @@ def test_an_undetermined_condition_is_left_to_split_ifs():
     assert h.determined == []
 
 
-def test_conditions_are_rendered_against_the_macro_binder():
-    """They are spliced into a tactic, so they read the obligation's state."""
+def test_conditions_are_rendered_against_the_proofs_state_binder():
+    """They are spliced into a proof, so they read the obligation's state,
+    which every proof in `Proofs.lean` binds as `s`."""
     from reactor.lean.proof.render import print_hints
 
     q = predicate_terms(countdown(), CLAIM,
                             replace(GOOD, ranking="(ite (>= s0 0) s0 1)"))
     printed = print_hints(solver_hints(q, SmtBudget()), q.msmt.ctrl_next)
-    assert "($v)" in printed.determined[0][0]
+    assert "s 0 0" in printed.determined[0][0]
     assert "≥" in printed.determined[0][0]
 
 

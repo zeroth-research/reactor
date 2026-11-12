@@ -1,0 +1,13 @@
+{#- `Module.lean` after its imports; a `--cert-file` certificate inlines it. -#}
+noncomputable section
+
+def RM := ({
+    init := fun e => init e.2
+    update := fun x e => update x e.1 e.2
+    init_pre := init_pre
+    update_pre := update_pre
+} : ReactiveModule _ _)
+
+def lts := RM.toTS
+
+end
