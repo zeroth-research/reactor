@@ -26,7 +26,6 @@ Wrote system.txt
 Wrote system.py
 Wrote <OUT>/G/lakefile.toml
 Wrote <OUT>/G/lean-toolchain
-Wrote <OUT>/G/ZerothHammer.lean
 Wrote root module <OUT>/G/System.lean
 ++ Generated <OUT>/G/System/System.lean ++
 ++ Generated <OUT>/G/System/Circ.lean ++
@@ -51,6 +50,7 @@ Wrote <OUT>/G/Certificate/Data.lean
 Wrote <OUT>/G/Certificate/Module.lean
 Wrote <OUT>/G/Certificate/Proofs.lean
 Wrote <OUT>/G/Certificate/Certificate.lean
+Wrote <OUT>/G/ZerothHammer.lean
 
 Project ready at: <OUT>/G
 
@@ -102,9 +102,9 @@ def lts := RM.toTS
 end
 
 === Certificate/Proofs.lean
-import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 import Certificate.Module
+import Mathlib.Algebra.BigOperators.Fin
 import ZerothHammer
 
 set_option linter.unusedVariables false
@@ -254,6 +254,14 @@ end
     "why": ""
   }
 ]
+
+=== lean_libs
+Certificate
+System
+ZerothHammer
+
+=== ZerothHammer.lean
+present
 
 === artifacts/property.smt
 (= s0 0)

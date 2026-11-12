@@ -1,9 +1,11 @@
-"""The `uv run certify` command line: `reactor`'s flags and `--infer`.
+"""The `uv run certify` command line: `reactor`'s flags, `--infer` and
+the proofs' flags.
 
 `reactor`'s groups, checks and fields (`reactor.lean.cli`), with the
-routes' flags and rules (`verith.flags`) in the places today's command
-line has them. What the pipeline gets back is :class:`Settings`:
-`reactor`'s, and the route the run selected.
+routes' and the proofs' flags and rules (`verith.flags`) in the places
+today's command line has them. What the pipeline gets back is
+:class:`Settings`: `reactor`'s, the route the run selected, and what is
+asked of the proofs.
 """
 
 from __future__ import annotations
@@ -11,26 +13,26 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 
+from reactor.lean.artifacts import ARTIFACTS_DIR
 from reactor.lean.cli import Settings as ReactorSettings
 from reactor.lean.cli import claim_deferred, settings_fields
 from reactor.lean.cli.checks import (
     check_blanks,
-    check_budget,
     check_claim_flags,
     check_input_options,
     check_outputs,
     input_adapter,
 )
-from reactor.lean.cli.parser import (
-    add_budget,
-    add_claim,
-    add_input,
-    add_outputs,
-    add_smt_checks,
-)
+from reactor.lean.cli.parser import add_claim, add_input, add_outputs
+from reactor.lean.smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 from verith import InferRoute
 from verith.flags import (
+    add_budget,
+    add_build,
     add_routes,
+    add_smt_checks,
+    check_budget,
+    check_build,
     check_route,
     check_route_options,
     resolve_aliases,
@@ -101,13 +103,24 @@ examples:
 
 @dataclass
 class Settings(ReactorSettings):
-    """`reactor`'s settings, and the inference route: which one (`route`),
-    its options (`route_opts`) and what it resolved at parse time
-    (`route_config`)."""
+    """`reactor`'s settings; the inference route: which one (`route`), its
+    options (`route_opts`) and what it resolved at parse time
+    (`route_config`); and what cvc5 is asked about the certificate, under
+    what budget, and whether it is built."""
 
     route: InferRoute | None = None
     route_opts: dict = field(default_factory=dict)
     route_config: object | None = None
+
+    hammer_file: str | None = None
+    build_cert: bool = False
+    pre_check: str = "none"
+    smt_tactics: str = "none"
+    budget: SmtBudget = field(
+        default_factory=lambda: SmtBudget(
+            per_call_ms=DEFAULT_CALL_MS, phase_ms=DEFAULT_PHASE_MS
+        )
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -131,6 +144,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_claim(parser)
     add_routes(parser)
     add_outputs(parser)
+    parser.add_argument(
+        "--hammer-file",
+        default=None,
+        help="Write a standalone ZerothHammer.lean to this path.",
+    )
+    add_build(parser)
     add_smt_checks(parser)
     add_budget(parser)
     return parser
@@ -154,16 +173,50 @@ def parse_args(argv: "list[str] | None" = None, *,
     route = selected_route(args)
     check_route_options(parser, args, route)
 
-    settings = Settings(**settings_fields(args, adapter),
-                        **route_fields(args, route))
+    settings = Settings(
+        **settings_fields(args, adapter),
+        **route_fields(args, route),
+        hammer_file=args.hammer_file,
+        build_cert=args.build_cert,
+        pre_check=args.pre_check,
+        smt_tactics=args.smt_tactics,
+        budget=SmtBudget(per_call_ms=args.smt_timeout,
+                         phase_ms=args.smt_budget),
+    )
     settings.claim_deferred = claim_deferred(settings, adapter, defer_claim)
     if route is not None and not settings.claim_deferred:
         check_route(parser, settings)
     check_no_project(parser, settings)
 
-    check_outputs(parser, settings, finds_certificate=route is not None)
+    check_outputs(parser, settings)
+    check_hammer_file(parser, settings)
+    check_build(parser, settings, finds_certificate=route is not None)
     resolve_route(parser, settings)
     return settings
+
+
+def check_hammer_file(parser: argparse.ArgumentParser,
+                      settings: Settings) -> None:
+    """`--hammer-file` and `--cert-file` each write one file and return:
+    neither goes with what is about a project, and `--hammer-file` alone
+    needs no module."""
+    which = ("--cert-file" if settings.cert_file
+             else "--hammer-file" if settings.hammer_file else None)
+    if settings.build_cert and which:
+        parser.error(
+            f"--build-cert is incompatible with {which}: that writes a "
+            "file and generates no project to build"
+        )
+    # As `check_outputs` says it of --cert-file: `artifacts/` lives in the
+    # project.
+    if settings.artifacts != "use" and settings.hammer_file:
+        parser.error(
+            f"--artifacts {settings.artifacts} is incompatible with "
+            f"--hammer-file: `{ARTIFACTS_DIR}/` belongs to a generated "
+            f"project, and that writes a file and generates none"
+        )
+    if not settings.module_file and not settings.hammer_file:
+        parser.error("module_file is required (unless --hammer-file is used alone)")
 
 
 def check_no_project(parser: argparse.ArgumentParser,

@@ -102,11 +102,6 @@ def generate_root() -> str:
     )
 
 
-def generate_zeroth_hammer_lean() -> str:
-    """Generate a standalone ZerothHammer.lean with only the zeroth_hammer tactic."""
-    return render("project/ZerothHammer.lean.j2")
-
-
 def write_files(project_dir: Path, files: Mapping[str, str]) -> None:
     """Write whole files by project-relative path, each directory made."""
     for rel, text in files.items():
@@ -191,10 +186,6 @@ def create_project(
     )
     print(f"Wrote {toolchain}")
 
-    hammer_file = project_dir / "ZerothHammer.lean"
-    hammer_file.write_text(generate_zeroth_hammer_lean())
-    print(f"Wrote {hammer_file}")
-
     (project_dir / "Certificate.lean").write_text(render("project/Certificate.lean.j2"))
 
     # The `Certificate` lean_lib globs its submodules, so every file in
@@ -222,7 +213,7 @@ def create_project(
     for enc in ENCODINGS:
         print(f"++ Generated {write_encoding(enc, m2l, layout, module_name)} ++")
 
-    # The certificate: its definitions and the proof read off their shape.
+    # The certificate: its definitions, and the proofs it was handed.
     write_files(project_dir, certificate)
 
     # ----------------------------------------------------------

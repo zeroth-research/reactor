@@ -25,7 +25,7 @@ from .encode import translate_terms, wire_sort
 # a `TermManager` is freed before the solvers and terms made from it, and a
 # GC cycle frees the two together in arbitrary order. One list, here,
 # because the ordering it defends against is global -- a per-module list
-# only orders the objects inside it, so two of them (`smt.precheck`'s
+# only orders the objects inside it, so two of them (`smt.queries`'s
 # queries and another caller's encodings) could still be finalised in the
 # wrong order relative to each other. A run keeps a handful of entries and
 # then exits.

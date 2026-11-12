@@ -36,10 +36,11 @@ REACTOR_LEAN_ENV = "REACTOR_LEAN"
 @dataclass(frozen=True)
 class LeanLib:
     """A `[[lean_lib]]` a caller adds: `name` is the module name its files are
-    imported under, `src_dir` the project-relative directory they are in."""
+    imported under, `src_dir` the project-relative directory they are in,
+    the project's own when empty."""
 
     name: str
-    src_dir: str
+    src_dir: str = ""
     comment: str = ""
 
 
@@ -63,6 +64,11 @@ class LakefileParts:
 
     libs: tuple[LeanLib, ...] = ()
     requires: tuple[Require, ...] = ()
+
+    def __add__(self, other: "LakefileParts") -> "LakefileParts":
+        """Both callers' additions, `self`'s first."""
+        return LakefileParts(self.libs + other.libs,
+                             self.requires + other.requires)
 
 
 def reactor_lean_checkout() -> Path | None:

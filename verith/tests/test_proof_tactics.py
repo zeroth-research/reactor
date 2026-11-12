@@ -1,4 +1,4 @@
-"""Tests for shape-directed certificate tactic generation (`reactor.lean.proof.tactics`).
+"""Tests for shape-directed certificate tactic generation (`verith.proofs.tactics`).
 
 The plan decides what the three proof obligations are allowed to try. Getting
 it wrong is expensive in both directions — a missing prover loses a proof that
@@ -14,7 +14,7 @@ import pytest
 
 from reactor import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
 from reactor.lean.codegen.context import LeanContext
-from reactor.lean.proof.tactics import features_for, is_nonlinear, plan_for
+from verith.proofs.tactics import features_for, is_nonlinear, plan_for
 
 
 # ── the nonlinearity detector ────────────────────────────────────────────
@@ -180,7 +180,7 @@ def test_an_invariant_that_lists_its_states_is_enumerated():
     out over a state it does not know. `svcomp_collatz_bounded`'s `hrank`
     spent 2000000 heartbeats in the closers otherwise. All or nothing, so
     a case `simp_all` cannot close leaves the plan as it was."""
-    from reactor.lean.proof.facts import PredicateFacts
+    from verith.proofs.facts import PredicateFacts
 
     plan = plan_for(LeanContext(_int_module()), "fun s => True",
                     PredicateFacts(pins=True))
@@ -199,7 +199,7 @@ def test_an_invariant_that_lists_its_states_is_enumerated():
 def test_an_invariant_lists_its_states_when_every_disjunct_is_equalities(inv, pins):
     import cvc5
 
-    from reactor.lean.proof.facts import _pins
+    from verith.proofs.facts import _pins
 
     tm = cvc5.TermManager()
     solver = cvc5.Solver(tm)
@@ -225,7 +225,7 @@ def test_omega_comes_before_contradiction_where_it_is_in_play():
 
 def test_wide_finite_state_is_not_enumerated():
     """Each element doubles the fan-out, so a wide state opts out."""
-    from reactor.lean.proof.tactics import MAX_ENUMERABLE_SLOTS
+    from verith.proofs.tactics import MAX_ENUMERABLE_SLOTS
 
     b = Var(BitVec(1, [MAX_ENUMERABLE_SLOTS + 1, 1]))
     wide = Module.sequential(
@@ -333,7 +333,7 @@ def test_only_recursion_depth_scales_with_the_module():
 
 def test_facts_override_the_text_scan_for_nonlinearity():
     """The regex over-reports by design; the term does not."""
-    from reactor.lean.proof.facts import PredicateFacts
+    from verith.proofs.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     linear = features_for(ctx, "fun s => ((s 0 0) * (s 0 0))")
@@ -345,7 +345,7 @@ def test_facts_override_the_text_scan_for_nonlinearity():
 def test_a_lean_answers_branches_add_to_the_terms():
     """Terms cover only the SMT-derived fields; a Lean answer's text is
     counted on top of them, never in place of them."""
-    from reactor.lean.proof.facts import PredicateFacts
+    from verith.proofs.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     text = "fun s => (max (s 0 0) 0) + (max (s 0 0) 1) + (max (s 0 0) 2)"
@@ -356,7 +356,7 @@ def test_a_lean_answers_branches_add_to_the_terms():
 def test_with_facts_the_printed_text_is_not_reread():
     """The facts speak for what was printed from terms; reading the text
     as well would count a shared subterm by how the printer laid it out."""
-    from reactor.lean.proof.facts import PredicateFacts
+    from verith.proofs.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     text = "fun s => ((s 0 0) * (s 0 0)) + (max (s 0 0) 0)"
@@ -366,7 +366,7 @@ def test_with_facts_the_printed_text_is_not_reread():
 
 def test_facts_raise_the_branch_count_above_what_the_printer_shows():
     """Sharing shrinks the output; the goal the closers see is unchanged."""
-    from reactor.lean.proof.facts import PredicateFacts
+    from verith.proofs.facts import PredicateFacts
 
     ctx = LeanContext(_int_module())
     f = features_for(ctx, "fun s => (max (s 0 0) 0)", PredicateFacts(n_branch=62))
@@ -390,7 +390,7 @@ def test_without_facts_everything_falls_back_to_the_text():
 
 
 def _hinted(**fields):
-    from reactor.lean.proof.render import LeanHints
+    from verith.proofs.scripts import LeanHints
 
     return plan_for(
         LeanContext(_int_module()),
@@ -442,13 +442,7 @@ def test_an_unused_precondition_is_cleared():
 def test_the_proofs_that_bind_the_precondition_clear_it():
     """`step_inv` and `hrank` bind `update_pre`, which the cores were taken
     over; `init_inv`'s `hpre` is `init_pre`, which nothing asked about."""
-    from reactor.lean.proof.render import (
-        LeanCertificate, PlanInputs, generate_proofs_lean,
-    )
-
-    proofs = generate_proofs_lean(
-        LeanContext(_int_module()),
-        LeanCertificate(plan=PlanInputs(hints=_solver_hints(pre_unused=True))))
+    proofs = _proofs_text(_solver_hints(pre_unused=True))
     cleared = re.findall(r"^theorem (\w+)_proof(?:(?!^theorem).)*?^  clear hpre$",
                          proofs, re.M | re.S)
     assert cleared == ["step_inv", "hrank"], cleared
@@ -456,14 +450,7 @@ def test_the_proofs_that_bind_the_precondition_clear_it():
 
 def test_the_settled_conditions_are_steps_of_each_proof():
     """Written into a proof at its own indentation, after `simp_defs`."""
-    from reactor.lean.proof.render import (
-        LeanCertificate, PlanInputs, generate_proofs_lean,
-    )
-
-    proofs = generate_proofs_lean(
-        LeanContext(_int_module()),
-        LeanCertificate(plan=PlanInputs(hints=_solver_hints(
-            determined=[("(s 0 0) ≥ 0", True)]))))
+    proofs = _proofs_text(_solver_hints(determined=[("(s 0 0) ≥ 0", True)]))
     step = ("  try simp_defs\n"
             "  try\n"
             "    have hf0 : (s 0 0) ≥ 0 := ?_\n"
@@ -490,14 +477,8 @@ def test_product_hints_are_added_before_the_bare_nlinarith():
 def test_a_product_hint_reads_the_obligations_own_state():
     """The hints are printed over `s`, so every proof binds the state by
     that name, and a hint reaches the closers of each as it was printed."""
-    from reactor.lean.proof.render import (
-        LeanCertificate, PlanInputs, generate_proofs_lean,
-    )
-
     hint = "mul_self_nonneg ((s 0 0) - 1)"
-    proofs = generate_proofs_lean(
-        LeanContext(_int_module()),
-        LeanCertificate(plan=PlanInputs(hints=_solver_hints(nlinarith_hints=[hint]))))
+    proofs = _proofs_text(_solver_hints(nlinarith_hints=[hint]))
     binders = re.findall(r"^theorem (\w+)_proof .*?:= by\n  intro (\w+)",
                          proofs, re.M | re.S)
     assert [b for _, b in binders] == ["s"] * 3, binders
@@ -521,9 +502,19 @@ def test_the_reasons_are_recorded_in_the_generated_comment():
 
 
 def _solver_hints(**fields):
-    from reactor.lean.proof.render import LeanHints
+    from verith.proofs.scripts import LeanHints
 
     return LeanHints(**fields)
+
+
+def _proofs_text(hints) -> str:
+    """`Proofs.lean` for `_int_module`'s Buchi certificate, proved by the
+    plan `hints` inform."""
+    from reactor.lean.proof.render import generate_proofs_lean
+    from verith.proofs.scripts import proof_scripts
+
+    return generate_proofs_lean(
+        None, proof_scripts(LeanContext(_int_module()), hints=hints))
 
 
 def test_norm_num_is_only_for_real_states():
@@ -545,7 +536,7 @@ def test_a_real_state_keeps_norm_num_in_prep():
 # The plan is about the predicates the certificate carries
 #
 # A route answers after the project is first generated, when there was no
-# invariant to plan from. `pipeline.certify.render` plans again from the
+# invariant to plan from. `verith.run.regenerate` plans again from the
 # answer; without it an inferred certificate is planned for predicates it
 # does not have.
 # ══════════════════════════════════════════════════════════════════════
@@ -571,20 +562,34 @@ def _countdown():
 
 def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
     """The certificate as the pipeline renders it before a route runs, and
-    after the route has answered."""
+    after the route has answered: its definitions (`defs`), and what the
+    plan reads of its terms (`facts`) and of cvc5 (`hints`)."""
     pytest.importorskip("cvc5")
+    from types import SimpleNamespace
+
     from reactor.lean.core.certificate import Certificate, Claim
     from reactor.lean.pipeline.certificate import render
-
     from reactor.lean.smt.limits import SmtBudget
+    from reactor.lean.smt.queries import predicate_terms
+    from verith.proofs.facts import predicate_facts, solver_hints
+    from verith.proofs.scripts import print_hints
 
     module = _countdown()
     claim = Claim(prp="(= s0 0)")
-    hints = SmtBudget() if smt_tactics == "cvc5" and verbatim is None else None
+
+    def rendered(cert, hinted, verbatim=None):
+        q = predicate_terms(module, claim, cert)
+        return SimpleNamespace(
+            defs=render(module, claim, cert, verbatim=verbatim),
+            facts=predicate_facts(q),
+            hints=(print_hints(solver_hints(q, SmtBudget()), q.msmt.ctrl_next)
+                   if hinted else None),
+        )
+
     # Before: the property is all there is to read the shape of.
-    before = render(module, claim, Certificate(), hints=None)
-    after = render(module, claim, Certificate(inv, ranking), hints=hints,
-                   restated=True, verbatim=verbatim)
+    before = rendered(Certificate(), False)
+    after = rendered(Certificate(inv, ranking),
+                     smt_tactics == "cvc5" and verbatim is None, verbatim)
     return module, before, after
 
 
@@ -596,14 +601,14 @@ def test_the_inferred_certificate_brings_its_nonlinearity_to_the_plan():
     module, before, after = _before_and_after(
         "(and (>= s0 0) (<= s0 100))", "(* s0 s0)"
     )
-    assert before.plan.facts.nonlinear is False, "the property alone is linear"
-    assert after.plan.facts.nonlinear is True, "the inferred ranking is not"
+    assert before.facts.nonlinear is False, "the property alone is linear"
+    assert after.facts.nonlinear is True, "the inferred ranking is not"
 
     ctx = LeanContext(module)
     d = after.defs
     text = f"{d.prp}\n{d.inv}\n{d.ranking}"
-    stale = plan_for(ctx, text, facts=before.plan.facts)
-    fresh = plan_for(ctx, text, facts=after.plan.facts)
+    stale = plan_for(ctx, text, facts=before.facts)
+    fresh = plan_for(ctx, text, facts=after.facts)
     assert not any("nlinarith" in c for c in stale.closers)
     assert any("nlinarith" in c for c in fresh.closers)
     assert "positivity" in fresh.closers
@@ -616,7 +621,7 @@ def test_cvc5_is_asked_about_the_invariant_that_now_exists():
     _module, _before, after = _before_and_after(
         "(and (>= s0 0) (<= s0 100))", "(ite (<= s0 200) s0 999)"
     )
-    hints = after.plan.hints
+    hints = after.hints
     assert hints is not None
     assert [value for _text, value in hints.determined] == [True]
     assert "≤ (200 : Int)" in hints.determined[0][0]
@@ -629,7 +634,7 @@ def test_a_settled_condition_is_printed_unshared():
     _module, _before, after = _before_and_after(
         "(and (>= s0 0) (<= s0 100))", "(ite (<= s0 200) s0 999)"
     )
-    assert after.plan.hints.determined
+    assert after.hints.determined
     assert "let " not in (after.defs.ranking or "")
 
 
@@ -639,8 +644,8 @@ def test_the_facts_do_not_wait_for_smt_tactics():
     _module, _before, after = _before_and_after(
         "(and (>= s0 0) (<= s0 100))", "(* s0 s0)", smt_tactics="none"
     )
-    assert after.plan.facts.nonlinear is True
-    assert after.plan.hints is None, "the queries are what the flag gates"
+    assert after.facts.nonlinear is True
+    assert after.hints is None, "the queries are what the flag gates"
 
 
 def test_an_answer_in_lean_is_planned_from_the_property_alone():
@@ -651,8 +656,8 @@ def test_an_answer_in_lean_is_planned_from_the_property_alone():
 
     answer = LeanAnswer(inv="fun s => (s 0 0) ≥ 0", ranking="fun s => 1")
     _module, before, after = _before_and_after(None, None, verbatim=answer)
-    assert after.plan.facts == before.plan.facts
-    assert after.plan.hints is None
+    assert after.facts == before.facts
+    assert after.hints is None
     assert (after.defs.inv, after.defs.ranking) == (answer.inv, answer.ranking)
 
 
@@ -741,7 +746,7 @@ def test_a_nonlinear_predicate_gets_its_max_split_into_cases():
 def test_the_hammer_defines_every_closer_the_plan_can_name():
     """A closer the plan names and the project does not define is a parse
     error in every certificate that carries it, not a failed alternative."""
-    from reactor.lean.project.scaffold import generate_zeroth_hammer_lean
+    from verith.proofs import generate_zeroth_hammer_lean
     hammer = generate_zeroth_hammer_lean()
     for name in ("lra_close", "lra_leaf", "lra_atoms", "floor_bounds"):
         assert f'"{name}"' in hammer
@@ -773,3 +778,76 @@ def test_a_branchy_transition_gets_the_higher_budget():
     wide = _plan(_branchy_transition(16), "fun s => ((s 0 0) ≥ 0)")
     assert wide.features.n_trans_branch == 16
     assert wide.max_heartbeats == 8000000
+
+
+def test_the_simp_set_unfolds_the_reductions():
+    """`matMin`, `matMax` and the argmaxes unfold to a `List.ofFn` fold that
+    `simp_mat` computes (`python/tests/test_lean_templates.py` holds the
+    library to that); computing the fold is no use if the definition never
+    opens."""
+    from reactor.lean.proof.render import generate_proofs_lean
+    from verith.proofs.scripts import proof_scripts
+
+    proofs = generate_proofs_lean(
+        None, proof_scripts(LeanContext(_int_module())))
+    simp_mat = [ln for ln in proofs.splitlines()
+                if "simp [" in ln and "MatAdd_apply" in ln]
+    assert simp_mat, "the simp_mat macro moved"
+    for name in ("matMin", "matMax", "argmax_1d", "argmax"):
+        assert name in simp_mat[0], f"{name} is not in simp_mat"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# The simp sets, per module
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _twobitcounter():
+    """Bool-only module: two-bit counter with enable."""
+    b0, b1, enable = Var(Bool([1, 1])), Var(Bool([1, 1])), Var(Bool([1, 1]))
+    not_b0, not_b1 = Wire(Bool([1, 1])), Wire(Bool([1, 1]))
+    b0_and_enable = Wire(Bool([1, 1]))
+    init = [
+        Term(LIA.Bool(torch.tensor([[False]])), [X(b0)]),
+        Term(LIA.Bool(torch.tensor([[False]])), [X(b1)]),
+    ]
+    update = [
+        Term(LIA.Not(), [not_b0], [b0]),
+        Term(LIA.Ite(), [X(b0)], [X(enable), not_b0, b0]),
+        Term(LIA.And(), [b0_and_enable], [b0, X(enable)]),
+        Term(LIA.Not(), [not_b1], [b1]),
+        Term(LIA.Ite(), [X(b1)], [b0_and_enable, not_b1, b1]),
+    ]
+    return Module.sequential([b0, b1, enable], init, update)
+
+
+def _affine_module():
+    """`x' = A·u` at init and `x' = x + e1` after: both `LIA.Linear`, with
+    the matrices baked into the op rather than interned as constants."""
+    x, u = Var(Int([3, 1])), Var(Int([2, 1]))
+    a = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
+    init = [Term(LIA.Linear(a, torch.zeros((3, 1), dtype=torch.int64)),
+                 [X(x)], [X(u)])]
+    e1 = torch.tensor([[1], [0], [0]], dtype=torch.int64)
+    update = [Term(LIA.Linear(torch.eye(3, dtype=torch.int64), e1), [X(x)], [x])]
+    return Module.sequential([x, u], init, update)
+
+
+def _simp_macros(module) -> str:
+    from verith.proofs.scripts import proof_scripts
+
+    return proof_scripts(LeanContext(module)).preamble
+
+
+def test_a_bool_module_unfolds_its_definitions_and_no_constants():
+    macros = _simp_macros(_twobitcounter())
+    assert 'macro "simp_mat"' in macros
+    assert "init, update, inv" in macros
+    # A Bool module has no matrix constants, so no c0/c1 in simp.
+    assert "c0, c1" not in macros
+
+
+def test_an_affine_module_reduces_its_matrix_products():
+    """`affineLinear` unfolds to `MatMul + b`, so the simp set carries
+    `MatMul_apply` to reduce the matrix obligations."""
+    assert "MatMul_apply" in _simp_macros(_affine_module())

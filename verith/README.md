@@ -1,15 +1,17 @@
-# `verith` — inferring the certificate
+# `verith` — inferring the certificate, and proving it
 
 `reactor` (the [`python/`](../python/reactor/lean/README.md) project) turns a reactive module and a
 property into a Lean project whose `lake build` checks a proof of the
 property, given the proof's certificate: an inductive invariant, and for a
-Büchi property a ranking function. This project finds the certificate.
+Büchi property a ranking function. `reactor` states the obligations and
+leaves each proved by `sorry`. This project finds the certificate, and
+proves it.
 
 It holds three packages:
 
 | package | what it is |
 |---|---|
-| `verith` | the inference routes -- one package per route (`verith/<name>/`), the table over them (`verith/__init__.py`) -- and the `verith` command |
+| `verith` | the inference routes -- one package per route (`verith/<name>/`), the table over them (`verith/__init__.py`) --, the proofs (`verith/proofs/`) and the `verith` command |
 | `certify` | the `certify` command: `reactor` and `verith` in one run, in one process |
 | `nuterm` | the learner `--infer nuterm` trains, with its own command (`python -m nuterm`) and Lean library |
 
@@ -31,9 +33,9 @@ in. Its source is [`figures/pipeline.tex`](figures/pipeline.tex).
 
 | command | project | what it does |
 |---|---|---|
-| `reactor` | `python/` | the module and the claim in, the Lean project out, with the certificate given by `--invariant` / `--ranking` (or `sorry`) |
-| `verith` | `verith/` | the module and the claim in, the certificate out: printed in the input's names, as `--invariant` and `--ranking` take it (`--json` for a program) |
-| `certify` | `verith/` | both: `reactor`'s flags and `--infer`; the project is generated, the route runs against it, and the certificate is rewritten from its answer |
+| `reactor` | `python/` | the module and the claim in, the Lean project out, with the certificate given by `--invariant` / `--ranking` (or `sorry`) and every obligation `sorry` |
+| `verith` | `verith/` | the module and the claim in, the certificate out: printed in the input's names, as `--invariant` and `--ranking` take it (`--json` for a program); with `--project`, written into it and proved |
+| `certify` | `verith/` | both: `reactor`'s flags, `--infer` and the proofs'; the project is generated, the route runs against it, and the certificate is rewritten from its answer and proved |
 
 ```bash
 cd verith
@@ -45,25 +47,34 @@ uv run verith ../python/tests/fixtures/svcomp_countdown.py \
 #    --invariant '(<= 0 (X @intf.0))'
 #    --ranking '(X @intf.0)'
 
-# ... and hand it to reactor, which writes and builds the project
+# ... hand it to reactor, which writes the project with every obligation
+# `sorry`, and to verith again, which proves them and builds the project
 uv run reactor ../python/tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" \
     --invariant '(<= 0 (X @intf.0))' --ranking '(X @intf.0)' \
-    --build-cert -o out/ -p Countdown
+    -o out/ -p Countdown
+uv run verith ../python/tests/fixtures/svcomp_countdown.py \
+    --buchi "(= (X @intf.0) 0)" \
+    --invariant '(<= 0 (X @intf.0))' --ranking '(X @intf.0)' \
+    --project out/Countdown --build-cert
 
-# or both in one run
+# or all of it in one run
 uv run certify ../python/tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" --infer houdini --build-cert -o out/ -p Countdown
 ```
 
 `certify` is the command that was `verith` before the routes moved here,
-with the same flags and the same output; `reactor` is it without `--infer`.
+with the same flags and the same output; `reactor` is it without `--infer`
+and without the proofs.
 
 ### `verith`
 
-`verith` reads the module, the claim and the SMT budget with the flags
-`reactor` reads them with, and the route with the flags `certify` takes:
-a command line moves between the three by adding or dropping flags.
+`verith` reads the module and the claim with the flags `reactor` reads them
+with, and the route, the SMT budget and the proofs' flags with the flags
+`certify` takes: a command line moves between the three by adding or
+dropping flags. Without `--infer` the certificate is the one `--invariant`
+and `--ranking` give, and `verith` proves it, or with only `--pre-check
+cvc5` asks cvc5 about it.
 
 A route whose row reads or writes the generated project needs one: the LLM
 routes prompt on its Lean, and `fbk-proveit` installs a certificate in it.
@@ -74,16 +85,136 @@ differs). Without `--project` such a route is refused before it runs.
 
 With a project, every route also reads and writes its `artifacts/`, so a
 `verith` run continues where the last run in that project left off, as a
-`certify` run does; `--artifacts use|ignore|reset` is as for `reactor`. A
-route that answers with files (`fbk-proveit`) writes them into the project,
-and adds what its row declares to the project's lakefile; nothing else of
-the project is rewritten. `certify` is what rewrites the certificate from
-an answer.
+`certify` run does; `--artifacts use|ignore|reset` is as for `reactor`. The
+certificate -- the route's answer, or the one given -- is written into the
+project with its proofs ([The proofs](#the-proofs-verithproofs)), as
+`certify` writes it, and `--build-cert` builds it. A route that answers
+with files (`fbk-proveit`) writes them into the project instead, and adds
+what its row declares to the project's lakefile.
 
 `--json` prints one object on stdout -- `route`, `kind`, `returns`,
 `invariant` and `ranking` in the input's names, `smt` in the internal ones,
 `lean` for a route that answers in Lean, `files` for one that answers with
 files -- and everything the route logs on stderr.
+
+## The proofs (`verith/proofs/`)
+
+`reactor` states the certificate's obligations in `Certificate/Proofs.lean`
+and proves each by `sorry`. The proofs are this project's: `proofs.prove`
+reads a plan off the module and the certificate and hands `reactor` one
+tactic script per obligation (`ProofScripts`), which `reactor` puts under
+its statement -- with the options they run under, the `simp` macros they
+share, and the hammer they call. `verith --project` and `certify` both write
+them, and both check and build the certificate:
+
+| flag | what it does |
+|---|---|
+| `--pre-check cvc5` | before the proofs are written, ask cvc5 whether each obligation holds (`proofs/precheck.py`): a refuted one means the certificate is wrong, which a failing build cannot tell apart from tactics that are too weak. Each question and its answer is left in `artifacts/` |
+| `--smt-tactics cvc5` | let cvc5 inform the plan (`proofs/facts.py`): a branch condition the invariant settles is proved once and rewritten away instead of split on, the products cvc5's own refutation needed are handed to `nlinarith`, and a precondition no refutation used is cleared |
+| `--smt-timeout`, `--smt-budget` | what cvc5 is given for those, per query and per phase |
+| `--build-cert` | `lake update` + `lake build Certificate` once the proofs are written, failing on a surviving `sorry` |
+
+### Tactic plans (`proofs/tactics.py`)
+
+The three obligations used to be closed by one hardcoded chain, textually
+identical in every certificate — wasteful in both directions: an integer
+module with a linear ranking paid for `decide` and `bv_decide` on every goal,
+and a shape nobody had anticipated had no way to ask for the step it needed.
+
+`plan_for` reads the module and its predicates and returns the steps each
+proof in `Proofs.lean` is written from -- chiefly the prep steps
+(canonicalise) and the closers (decide), which every obligation ends with;
+the file starts with a comment saying what was detected.
+
+| detected | consequence |
+|---|---|
+| Int / Bool in the state | `omega` is available |
+| Real | `omega` is dropped; `linarith`, `norm_num` and `norm_cast; linarith` take over |
+| Real *and* equalities in the predicates | `simp_all` moves into **prep**, so the closers see numerals, not an opaque `⌊4 - x⌋` |
+| a product of two state-dependent terms | `nlinarith`, `positivity` |
+| finite state (Bool/BitVec only) | `decide`, last, because it is the most expensive step |
+| an `Ite`/`ReLU`/`Min`/`Max` anywhere | `split_ifs` in prep |
+| `∧` / `∨` in the predicates | `casesm*` and `simp only [not_and_or]` in prep |
+| an `=` in the predicates | the `ne_iff_lt_or_gt` split, *after* `norm_num at *` |
+| term count | `maxRecDepth` scales with it |
+| branch points in the predicates | scales the heartbeat budget — this, not module size, is what a net costs |
+| nothing known to be slow | heartbeat budget stays at 400 000 for economy (it does *not* bound failures — see "Nets over ℝ") |
+
+Two decisions are worth recording because measurement contradicted the
+obvious guess. **`linarith` belongs in every plan** — gating it on `Real`
+looked right and cost two integer certificates that were closing on it; an
+integer goal `omega` cannot phrase is still ordinary linear arithmetic.
+**`bv_decide` belongs in none** — it only ever reaches goals every cheaper
+prover has already failed on, and there it bit-blasts: including it took a
+BitVec certificate from 10 s to 977 s while closing nothing `decide` had not
+already closed.
+
+Because the plan depends on the predicates, `Proofs.lean` is not stable
+across a change of invariant: it is written again alongside `Data.lean`.
+`tests/test_proof_tactics.py` pins these decisions in the fast suite, so a
+plan regression does not wait for a Lean build.
+
+### ZerothHammer (`proofs/templates/ZerothHammer.lean.j2`)
+
+A Lean 4 elaborator tactic that cascades proof strategies:
+
+| Phase | Tactic |
+|-------|--------|
+| 0 | `simp_mat` alone (trivial / True goals) |
+| 1 | `omega`, `norm_cast; omega`, `simp_mat; omega`, `simp_mat; linarith` |
+| 2 | `push Not; simp_mat; omega` |
+| 3 | `simp_mat` + nested `split` (up to 4 levels) + `omega`/`linarith` |
+| 4 | `simp_defs` + nested `split` + `omega` |
+| 5 | `simp_defs` → `simp_mat` → `mat_collapse` → `split_ifs` → `omega` |
+| 6 | `aesop` |
+| 7 | `smt` (cvc5) |
+| 8 | `sorry` (give-up) |
+
+The three macro names (`simp_mat`, `simp_defs`, `mat_collapse`) are expected to
+be defined in the importing file; `ZerothHammer.lean` ships stub definitions,
+and a certificate's `Proofs.lean` overrides the first two. It goes into the
+project at its root, with a `lean_lib` of its own in the lakefile
+(`proofs.LAKEFILE`), whenever the proofs are written; `certify
+--hammer-file PATH` writes it alone.
+
+### Building the certificate (`--build-cert`)
+
+`--build-cert` builds the certificate the run proved, with `lake update`
+then `lake build Certificate` in the project:
+
+```bash
+uv run certify mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" \
+    --ranking "(X @intf.0)" --build-cert -o out/ -p Counter
+```
+
+Two kinds of run are refused rather than silently doing nothing:
+
+| refused | because |
+|---|---|
+| no `--invariant`/`--ranking`, and no `--infer` | every obligation in a bare project is `sorry`. Lake compiles that and exits 0, so "built" would mean nothing |
+| `--cert-file`, `--hammer-file` (`certify`); no `--project` (`verith`) | there is no project to build |
+
+`--invariant` without `--ranking` (or either without a property) is the
+first row: a missing predicate is a `sorry`, not a weaker proof.
+
+Past the parse-time gate, the certificate is checked again before the build
+(a predicate it lacks is named rather than built as a proof of `sorry`),
+and once more after it, because lake cannot be trusted to fail loudly:
+`zeroth_hammer` leaves a `sorry` where it cannot close an obligation, and
+lake reports that as a *warning* and exits 0. So `build_certificate` also
+scans the log for `sorry` under `Certificate/` — a dependency's own `sorry`
+(lean-smt ships one) is not ours — and raises if it finds any.
+
+A build that fails is a `LakeBuildError`, and the run exits non-zero with
+the Lean diagnostics restated: lake's log ends with thousands of replayed
+Mathlib jobs, so a bare "exit 1" as the last line would bury them.
+
+Off by default because the build resolves and compiles `cslib`, Mathlib,
+`lean-smt` and cvc5 — minutes against a warm `.lake/packages`, far longer
+against a cold one. Because the require set is pinned to the checkout's, one
+already-built `.lake/packages` serves both: copying (or cloning, on APFS)
+the checkout's into the generated project makes the first `lake update` a
+no-op fetch.
 
 ## The routes
 
@@ -114,15 +245,16 @@ new one.
 ### Flags
 
 `certify` takes every flag of `reactor`'s ([Key flags](../python/reactor/lean/README.md#key-flags));
-`verith` takes its input, claim, `--artifacts` and `--smt-timeout`/`--smt-budget`
-flags, and neither the project's (`-o`, `-p`, `-x`) nor the outputs'. Besides
-those they take:
+`verith` takes its input, claim and `--artifacts` flags, and neither the
+project's (`-o`, `-p`, `-x`) nor `--cert-file`. Besides those they take the
+proofs' flags ([The proofs](#the-proofs-verithproofs)), and:
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--project` | — | `verith` only: the generated project a route reads or writes |
 | `--json` | off | `verith` only: the answer as JSON on stdout |
-| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `houdini`, `vampire`, or `fbk-proveit`. `verith` requires it |
+| `--infer` | — | Which route finds the certificate: `ai`, `ai-cegis` (default when the flag is given without a value), `nuterm`, `sygus`, `smt-linear`, `houdini`, `vampire`, or `fbk-proveit`. Without it the certificate is the one given |
+| `--hammer-file` | — | `certify` only: write `ZerothHammer.lean` to this path, and nothing else |
 | `--model` | `claude-sonnet-4-6` | `--infer ai` and `--infer ai-cegis`: the LLM model to ask |
 | `--base-url` | — | `--infer ai` and `--infer ai-cegis`: an OpenAI-compatible endpoint, for local LLMs |
 | `--sygus-grammar` | `congruence` | `--infer sygus`: what an atom of the synthesised invariant may be; `linear` drops the `(= (mod … k) 0)` atoms |
@@ -542,7 +674,7 @@ uv run certify mymodule.py --safety "(not (= (X @intf.0) 15))" -o out/ -p Counte
 ```
 
 Add `--build-cert` to have the certificate compiled rather than merely
-written (see [Building the certificate](../python/reactor/lean/README.md#building-the-certificate---build-cert)).
+written (see [Building the certificate](#building-the-certificate---build-cert)).
 
 ```
 mymodule.py ──certify─▶ out/Counter/                       (bare, as usual)
@@ -668,7 +800,7 @@ Second, the installed certificate is by default **written but not
 compiled** — not because the project cannot compile it (it can: the lakefile
 requires the checkout and declares the NA lib) but because doing so resolves
 and builds Mathlib. That is `--build-cert`, which is not this route's flag:
-see [Building the certificate](../python/reactor/lean/README.md#building-the-certificate---build-cert).
+see [Building the certificate](#building-the-certificate---build-cert).
 
 ### The `lean-ltl-certifying` side
 

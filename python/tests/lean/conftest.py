@@ -13,8 +13,11 @@ the checkout beside this repository.
      • Certs/RelEnc*/     (those two + ScalarRel, one module each)
      • Certs/ArgmaxScalar.lean  (the scalar Argmax variants)
 
-The generated files import ZerothHammer for the tactic and define their own
-module-specific ``simp_mat`` / ``simp_defs`` macros.
+The certificates' proofs, and ZerothHammer, are `verith`'s
+(``verith.proofs``, in the `verith/` project beside this one): they import
+ZerothHammer for the tactic and define their own module-specific
+``simp_mat`` / ``simp_defs`` macros. Without `verith` installed there is
+nothing to prove them with, and the tests that build them are skipped.
 """
 from pathlib import Path
 
@@ -23,7 +26,7 @@ import torch
 
 from reactor import Module, Wire, Term, LIA, LRA, Int, Real, Bool, Var, X
 from reactor.analyzer import convert_method
-from reactor.lean.project.scaffold import generate_zeroth_hammer_lean
+from reactor.lean.codegen.context import LeanContext
 from reactor.lean.proof.render import (
     generate_standalone_cert_lean,
     lean_certificate,
@@ -367,21 +370,35 @@ _CERT_SPECS = [
 # ──────────────────────────────────────────────────────────────
 
 
+def proved_cert_lean(module: Module, claim: Claim,
+                     cert: Certificate = Certificate()) -> str:
+    """The standalone certificate of `claim` and `cert`, with the proofs
+    `verith` writes for it."""
+    from verith.proofs import prove
+
+    ctx = LeanContext(module)
+    lean = lean_certificate(module, claim, cert)
+    return generate_standalone_cert_lean(
+        ctx, lean, prove(module, ctx, claim, cert, lean))
+
+
 @pytest.fixture(scope="session", autouse=True)
 def generate_lean_files() -> None:
     """Generate ZerothHammer.lean and Certs/*.lean for the lake project."""
-    # ZerothHammer.lean — standalone tactic
-    hammer_file = _LEAN_DIR / "ZerothHammer.lean"
-    hammer_file.write_text(generate_zeroth_hammer_lean())
-
-    # Certs/ — one self-contained certificate per module + scalar encoding file
     _CERTS_DIR.mkdir(exist_ok=True)
-    for name, make_module, (claim, cert) in _CERT_SPECS:
-        module = make_module()
-        content = generate_standalone_cert_lean(
-            module, lean_certificate(module, claim, cert)
-        )
-        (_CERTS_DIR / f"{name}.lean").write_text(content)
+    try:
+        from verith.proofs import generate_zeroth_hammer_lean
+    except ImportError:
+        pass
+    else:
+        # ZerothHammer.lean — standalone tactic
+        hammer_file = _LEAN_DIR / "ZerothHammer.lean"
+        hammer_file.write_text(generate_zeroth_hammer_lean())
+
+        # Certs/ — one self-contained certificate per module
+        for name, make_module, (claim, cert) in _CERT_SPECS:
+            (_CERTS_DIR / f"{name}.lean").write_text(
+                proved_cert_lean(make_module(), claim, cert))
 
     # Certs/LearnedCountdown.lean — the certificate `--infer nuterm` produces,
     # rather than one written by hand. Its ranking function is a sum of ReLU
@@ -404,10 +421,7 @@ def generate_lean_files() -> None:
         # Generated from the SMT-LIB the route answered with, as `verith`
         # does it.
         (_CERTS_DIR / "LearnedCountdown.lean").write_text(
-            generate_standalone_cert_lean(
-                module, lean_certificate(module, claim, learned)
-            )
-        )
+            proved_cert_lean(module, claim, learned))
 
     # Certs/ArgmaxScalar.lean — the scalar Argmax variants exactly as the
     # generator emits them. Each carries an `argmax1d_scalar_n_eq` theorem
@@ -473,7 +487,6 @@ def generate_lean_files() -> None:
     #
     # The route is `verith`'s, as above: without it there are no bridges.
     from reactor.lean.proof.render import generate_data_lean
-    from reactor.lean.codegen.context import LeanContext
     try:
         from verith.fbk_proveit.engine import property_to_bool_lean
         from verith.fbk_proveit.na import atom_to_lean_na

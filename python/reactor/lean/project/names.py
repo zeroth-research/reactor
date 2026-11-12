@@ -53,22 +53,6 @@ PROOFS = "Proofs"               # the obligations' proofs (`Proofs.lean.j2`)
 CERTIFICATE = "Certificate"     # the certificate, fixed text (`Certificate.lean.j2`)
 
 
-# The lemmas `simp_mat` reduces matrix arithmetic with, after the
-# certificate's own definitions. The bridge's cascade uses the same set:
-# without it a `Linear` arrives as `matVecAffine 2 [[1, 0], [0, 1]] [0, 1]
-# (fun i j => match i, j with ...)` and no arithmetic prover can touch it.
-MAT_SIMP: tuple[str, ...] = (
-    "MatAdd_apply", "MatMul_apply", "MatZero_apply", "Pi.add_apply",
-    "mul_Mat_apply", "add_Mat_apply", "Bool.or_eq_true", "decide_eq_true_eq",
-    "Fin.sum_univ_succ", "Fin.sum_univ_zero", "Fin.isValue", "Fin.sum_univ_one",
-    "Fin.sum_univ_two", "Fin.sum_univ_three", "matVecAffine", "dotL",
-    "List.ofFn_succ", "List.ofFn_zero",
-    # The three reductions unfold to a `List.ofFn` fold that the two lemmas
-    # above then compute; without the defs here the fold never opens.
-    "matMin", "matMax", "argmax_1d", "argmax",
-)
-
-
 # The linters every generated Lean file turns off, after its imports. Each
 # proof is one tactic cascade for every goal shape, so on any one goal some
 # of its steps do nothing and some of its simp lemmas go unused; and the

@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cvc5
 
 from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.smt.precheck import predicate_terms
+from reactor.lean.smt.queries import predicate_terms
 
 CASES = [
     ("m_countdown", "(>= s0 1)"),

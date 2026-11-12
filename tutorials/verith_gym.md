@@ -124,7 +124,6 @@ This prints the extracted module (wires and SSA terms) and creates
 out/ChainCert/
 ├── lakefile.toml, lean-toolchain    # Lean package pinned to a toolchain
 ├── Core/                            # library: Mat, Box, LTL, ReactiveModule
-├── ZerothHammer.lean                # the zeroth_hammer proof-search tactic
 ├── System.lean                      # root import
 ├── System/
 │   ├── System.lean                  # functional encoding of init/update
@@ -204,8 +203,11 @@ def P : ... → Prop := fun s => (((s.2.2.2.2 0 0) ≥ 0.0) ∧ ((s.2.2.2.2 0 0)
 (a `--buchi` certificate would also carry a `def ranking : ... → Nat`; a
 safety one defines none.)
 
-`Certificate/Certificate.lean` states the obligations and tries to discharge
-them with generated tactic scripts:
+`Certificate/Certificate.lean` states the obligations, and takes each one's
+proof from `Certificate/Proofs.lean`. `reactor` proves them there by
+`sorry`; `verith --project out/ChainCert` (or `certify` in place of
+`reactor`) writes generated tactic scripts instead, with the
+`ZerothHammer.lean` tactics they call:
 
 - `init_inv` — every initial state satisfies `inv`,
 - `step_inv` — `inv` is preserved by `update` (inductiveness),
@@ -317,7 +319,7 @@ a precondition, since a zero action freezes the state forever:
   to `s4 = 0`, where `P` holds and no further decrease is required).
 
 ```bash
-uv run reactor cycle_env.py \
+uv run certify cycle_env.py \
     --buchi          "(= (X @intf.4) 0)" \
     --pre       "(>= @extl.0 1)" \
     --invariant "(and (>= (X @intf.4) 0) (<= (X @intf.4) 3))" \
@@ -395,7 +397,7 @@ one-hot*, and the ranking is a linear functional over the components —
 weights 3, 2, 1 count the steps remaining until the wrap:
 
 ```bash
-uv run reactor matcycle_env.py \
+uv run certify matcycle_env.py \
     --buchi   '(= ((_ tuple.select 0) (X @intf.4)) 1)' \
     --pre '(>= @extl.0 1)' \
     --invariant '(and (>= ((_ tuple.select 0) (X @intf.4)) 0) (<= ((_ tuple.select 0) (X @intf.4)) 1)
@@ -566,9 +568,11 @@ writes `ChainCert.lean` (init/update + certificate) plus `ChainCertRel.lean`,
 `ChainCertScalar.lean`, and `ChainCertScalarRel.lean` (alternative encodings
 with equivalence theorems). Pass the invariant too — and, under `--buchi`, the
 ranking — without them those certificate fields are emitted as `sorry`
-placeholders and the proof obligations cannot close. To check the files, add them as `lean_lib`
-entries in a lake project that also contains the `Core` library and
-`ZerothHammer.lean` (copy both from any `reactor`-generated project).
+placeholders and the proof obligations cannot close. `reactor` proves each
+obligation by `sorry`; `certify` in its place writes the proofs too, and
+`certify --hammer-file PATH` writes the `ZerothHammer.lean` they call. To
+check the files, add them as `lean_lib` entries in a lake project that also
+contains the `Core` library and that `ZerothHammer.lean`.
 
 ### Key flags
 

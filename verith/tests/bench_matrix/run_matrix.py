@@ -50,7 +50,7 @@ sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
-from reactor.lean.project.build import without_cascades
+from verith.proofs.build import without_cascades
 from reactor.lean.project.lakefile import (  # noqa: E402
     REACTOR_LEAN_ENV, reactor_lean_checkout, with_reactor_lean,
 )

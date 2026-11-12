@@ -29,7 +29,7 @@ def _module(name: str):
 def _clamps():
     """`(name, tm, clamp)` for each clamp `hrank` is stated with."""
     from reactor.lean.smt.obligations import clamp
-    from reactor.lean.smt.precheck import ModuleQueries
+    from reactor.lean.smt.queries import ModuleQueries
 
     claim = Claim(prp="(= s0 0)")
     q = ModuleQueries(_module("m_countdown"), claim,

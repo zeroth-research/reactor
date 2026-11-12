@@ -44,10 +44,8 @@ def lts := RM.toTS
 end
 
 === Certificate/Proofs.lean
-import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 import Certificate.Module
-import ZerothHammer
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -55,80 +53,15 @@ set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
-set_option maxRecDepth 13500
-set_option maxHeartbeats 2000000
-
--- state: Bool+Int, 1 slot(s), 9 term(s)
--- predicates: branching, linear
-
--- Unfold the definitions and reduce the matrix arithmetic, on the goal
--- only: on the hypotheses too it blows up exponentially.
-macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
-
--- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
--- closers see the invariant's conditions.
-macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp at *))
-
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
-  intro s hpre
-  try simp_mat
-  try simp_defs
-  all_goals (((try split_ifs) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
-      | omega
-      | contradiction
-      | linarith
-      | (norm_cast; omega)
-      | (norm_num; done)
-      | (constructor <;> first | omega | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; omega)
-      | (simp_all; linarith)
-      | (split_ifs at * <;> simp_all <;> omega)
-      | fail "none of the 11 closers proved this goal"))
+  sorry
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-  intro s e ⟨hpre, hinv⟩
-  try simp_defs
-  try simp_mat
-  all_goals (((try split_ifs) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
-      | omega
-      | contradiction
-      | linarith
-      | (norm_cast; omega)
-      | (norm_num; done)
-      | (constructor <;> first | omega | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; omega)
-      | (simp_all; linarith)
-      | (split_ifs at * <;> simp_all <;> omega)
-      | fail "none of the 11 closers proved this goal"))
+  sorry
 
 theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
-  intro s s' ⟨hi, hP, htr⟩
-  unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
-  obtain ⟨l, hpre, heq⟩ := htr
-  rw [← heq]
-  clear heq
-  try simp_defs
-  try simp_mat
-  all_goals (((try split_ifs) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
-      | omega
-      | contradiction
-      | linarith
-      | (norm_cast; omega)
-      | (norm_num; done)
-      | (constructor <;> first | omega | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; omega)
-      | (simp_all; linarith)
-      | (split_ifs at * <;> simp_all <;> omega)
-      | fail "none of the 11 closers proved this goal"))
+  sorry
 
 === Certificate/Certificate.lean
 import Relational.Basic
@@ -180,19 +113,14 @@ def buchi := rule_buchi
 end
 
 === standalone
-import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 import Relational.Box
-import ZerothHammer
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
-
-set_option maxRecDepth 13500
-set_option maxHeartbeats 2000000
 
 
 
@@ -237,77 +165,15 @@ def lts := RM.toTS
 
 end
 
--- state: Bool+Int, 1 slot(s), 9 term(s)
--- predicates: branching, linear
-
--- Unfold the definitions and reduce the matrix arithmetic, on the goal
--- only: on the hypotheses too it blows up exponentially.
-macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
-
--- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
--- closers see the invariant's conditions.
-macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp at *))
-
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
-  intro s hpre
-  try simp_mat
-  try simp_defs
-  all_goals (((try split_ifs) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
-      | omega
-      | contradiction
-      | linarith
-      | (norm_cast; omega)
-      | (norm_num; done)
-      | (constructor <;> first | omega | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; omega)
-      | (simp_all; linarith)
-      | (split_ifs at * <;> simp_all <;> omega)
-      | fail "none of the 11 closers proved this goal"))
+  sorry
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-  intro s e ⟨hpre, hinv⟩
-  try simp_defs
-  try simp_mat
-  all_goals (((try split_ifs) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
-      | omega
-      | contradiction
-      | linarith
-      | (norm_cast; omega)
-      | (norm_num; done)
-      | (constructor <;> first | omega | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; omega)
-      | (simp_all; linarith)
-      | (split_ifs at * <;> simp_all <;> omega)
-      | fail "none of the 11 closers proved this goal"))
+  sorry
 
 theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
-  intro s s' ⟨hi, hP, htr⟩
-  unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
-  obtain ⟨l, hpre, heq⟩ := htr
-  rw [← heq]
-  clear heq
-  try simp_defs
-  try simp_mat
-  all_goals (((try split_ifs) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
-      | omega
-      | contradiction
-      | linarith
-      | (norm_cast; omega)
-      | (norm_num; done)
-      | (constructor <;> first | omega | linarith)
-      | tauto
-      | (simp_all; done)
-      | (simp_all; omega)
-      | (simp_all; linarith)
-      | (split_ifs at * <;> simp_all <;> omega)
-      | fail "none of the 11 closers proved this goal"))
+  sorry
 
 noncomputable section
 

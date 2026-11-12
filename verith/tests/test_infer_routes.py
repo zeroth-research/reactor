@@ -746,6 +746,7 @@ def _note_store(tmp_path):
 class _NoteHandle:
     def __init__(self, store):
         self.artifacts = store
+        self.dir = store.dir.parent
 
 
 class _NoteRoute:
@@ -819,21 +820,21 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     about why no certificate came of it."""
     from types import SimpleNamespace
 
-    from certify import pipeline as certify
     from reactor.lean.core.certificate import Certificate, Claim
     from verith import InferResult
+    from verith import run
 
     def refuse(*a, **k):
         raise Refused("SMT→Lean: unsupported kind INTS_MODULUS")
 
-    monkeypatch.setattr(certify, "render", refuse)
+    monkeypatch.setattr(run, "render", refuse)
     store = _note_store(tmp_path)
     settings = SimpleNamespace(
         pre_check=None, smt_tactics="none",
         route=SimpleNamespace(name="test-route"),
     )
     with pytest.raises(SystemExit, match="--infer test-route: .*INTS_MODULUS"):
-        certify.regenerate(settings, None, _NoteHandle(store),
+        run.regenerate(settings, None, _NoteHandle(store),
                            Claim(prp="(= s0 0)", kind="safety"),
                            InferResult(cert=Certificate(inv="(= (mod s0 2) 0)")))
     notes = [a for a in store.list() if a.role == "note"]
