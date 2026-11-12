@@ -60,7 +60,7 @@ macro "cert_prep" : tactic =>
 
 -- Close it: only the provers this state can use, cheapest first.
 macro "cert_close" : tactic =>
-  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | (constructor <;> first | omega | linarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (split_ifs at * <;> simp_all <;> omega))
+  `(tactic| first | omega | contradiction | linarith | (norm_cast; omega) | (norm_num; done) | (constructor <;> first | omega | linarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (split_ifs at * <;> simp_all <;> omega) | fail "cert_close: none of its 11 closers proved this goal")
 
 -- Enumerate the state, when it is finite and narrow enough to be worth it.
 -- `skip` otherwise. Takes the obligation's own state binder.
@@ -221,7 +221,7 @@ macro "cert_prep" : tactic =>
 
 -- Close it: only the provers this state can use, cheapest first.
 macro "cert_close" : tactic =>
-  `(tactic| first | contradiction | omega | linarith | (norm_cast; omega) | (norm_num; done) | (constructor <;> first | omega | linarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (split_ifs at * <;> simp_all <;> omega))
+  `(tactic| first | omega | contradiction | linarith | (norm_cast; omega) | (norm_num; done) | (constructor <;> first | omega | linarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (split_ifs at * <;> simp_all <;> omega) | fail "cert_close: none of its 11 closers proved this goal")
 
 -- Enumerate the state, when it is finite and narrow enough to be worth it.
 -- `skip` otherwise. Takes the obligation's own state binder.
