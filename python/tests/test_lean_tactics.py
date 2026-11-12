@@ -443,14 +443,16 @@ def test_product_hints_are_added_before_the_bare_nlinarith():
 
 def test_a_product_hint_reads_the_obligations_own_state():
     """The hints are spliced into `cert_close`, a macro, and a hygienic macro
-    reads a bare `s` as a fresh `s✝`. So `cert_close` takes the obligation's
-    state binder exactly when a hint names it, and is unchanged otherwise."""
+    reads a bare `s` as a fresh `s✝`. So a hint names the state by the
+    binder `$v` the macro takes from every obligation (`cert_close s`), and
+    a plan without one does not name it at all."""
     ctx = LeanContext(_int_module())
     text = "fun s => ((s 0 0) * (s 0 0))"
-    assert not plan_for(ctx, text).close_binds_state
+    assert "$v" not in plan_for(ctx, text).close_tactic
     hinted = plan_for(ctx, text, hints=_solver_hints(
         nlinarith_hints=["mul_self_nonneg ((($v) 0 0) - 1)"]))
-    assert hinted.close_binds_state
+    assert "mul_self_nonneg ((($v) 0 0) - 1)" in hinted.close_tactic
+    assert " s)" not in hinted.close_tactic and "(s " not in hinted.close_tactic
 
 
 def test_hints_never_remove_a_closer():

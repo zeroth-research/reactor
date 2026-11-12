@@ -6,7 +6,7 @@ from reactor import Wire, Term, Module, Bool, Int, LIA, Var, X
 from reactor.lean import ModuleToLean4
 from reactor.lean.lowering.sorts import itype_name
 from reactor.lean.codegen.context import LeanContext
-from reactor.lean.proof.render import generate_certificate_lean
+from reactor.lean.proof.render import certificate_files
 from reactor.lean.project.main_lean import generate_main_lean
 
 
@@ -225,14 +225,17 @@ def test_main_lean_matrix_signatures():
 
 
 def _cert_for(make_module, module_name="ReactiveModule"):
+    """The project's three certificate files, as one text."""
     m = make_module()
     ctx = LeanContext(m)
-    return generate_certificate_lean(ctx)
+    return "\n".join(certificate_files(ctx).values())
 
 
 def test_certificate_bool_has_rm():
+    """`RM` names no type: Lean reads them off the definitions it is built
+    from, which carry the module's."""
     cert = _cert_for(_make_twobitcounter)
-    assert "def RM : ReactiveModule" in cert
+    assert "} : ReactiveModule _ _)" in cert
     assert "(Mat Bool 1 1)" in cert
     assert "(Mat Bool 1 1) × (Mat Bool 1 1)" in cert
 
@@ -274,7 +277,7 @@ def test_data_lean_has_sorry_when_no_property():
 
 def test_certificate_matrix_has_rm():
     cert = _cert_for(_make_matrix_module)
-    assert "def RM : ReactiveModule" in cert
+    assert "} : ReactiveModule _ _)" in cert
     assert "Mat Int 2 1" in cert
     assert "Mat Int 3 1" in cert
 

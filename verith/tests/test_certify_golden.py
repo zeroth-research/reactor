@@ -195,6 +195,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
         "=== stdout", captured.out,
         "=== stderr", captured.err,
         "=== Certificate/Data.lean", read("Certificate/Data.lean"),
+        "=== Certificate/Tactics.lean", read("Certificate/Tactics.lean"),
         "=== Certificate/Certificate.lean", read("Certificate/Certificate.lean"),
         "=== artifacts/index.json", _index(project / "artifacts" / "index.json"),
     ]

@@ -38,8 +38,9 @@ So the plan is read off the obligations instead:
   to discharge a branch that is contradictory purely because the state has
   finitely many inhabitants.
 
-`plan_for` returns a `TacticPlan`; `Certificate.lean.j2` renders it as two
-macros, `cert_prep` and `cert_close`, which the three proofs then share.
+`plan_for` returns a `TacticPlan`; `_tactics.lean.j2` renders it as the
+macros `Certificate/Tactics.lean` holds -- `cert_prep` and `cert_close` among
+them -- which the three proofs then share.
 """
 
 from __future__ import annotations
@@ -353,22 +354,6 @@ class TacticPlan:
         split" -- about a tactic that was never the problem."""
         why = f"cert_close: none of its {len(self.closers)} closers proved this goal"
         return "first | " + " | ".join(self.closers) + f' | fail "{why}"'
-
-    @property
-    def close_binds_state(self) -> bool:
-        """Whether `cert_close` takes the obligation's state binder, as
-        `cert_facts` does: when a closer names the state, as a product hint
-        does (`nlinarith [mul_self_nonneg (($v) 0 0 - 1)]`). Read off the
-        closers themselves, so a closer that comes to name the state takes
-        the binder with it rather than reading a hygienic `s✝`. Every other
-        plan's `cert_close` stays the macro it always was."""
-        return "$v" in self.close_tactic
-
-    @property
-    def close_call(self) -> str:
-        """`cert_close` as an obligation calls it: with its state `s` when
-        the macro binds one."""
-        return "cert_close s" if self.close_binds_state else "cert_close"
 
     @property
     def state_case_tactic(self) -> str:

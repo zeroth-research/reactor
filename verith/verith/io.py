@@ -42,7 +42,7 @@ class ProjectHandle:
 
     A route is given this instead of a directory: ``reads`` and ``owns`` on
     its row are its whole access to the project, so "modifications are
-    confined to ``Data.lean`` and ``Certificate.lean``" is enforced for the
+    confined to the certificate's files" is enforced for the
     routes that say so, and a route that needs more of the project says
     which more -- by name, in its row, where the project builder can also
     read it.
@@ -109,11 +109,13 @@ class ProjectHandle:
     #
     # Available to every route, and the only write most of them want: after
     # inference the predicates are new, so the definitions (`Data.lean`) and
-    # the tactics generated from their shape (`Certificate.lean`) are both
-    # restated, as `proof.render.certificate_files` renders the pair.
+    # the tactics generated from their shape (`Tactics.lean`) are both
+    # restated, as `proof.render.certificate_files` renders them -- with the
+    # proof (`Certificate.lean`), which is the same text unless the kind of
+    # the property changed.
 
     def write_predicates(self, lean_cert: "LeanCertificate") -> None:
-        """The certificate's two files, rewritten from `lean_cert`."""
+        """The certificate's three files, rewritten from `lean_cert`."""
         from reactor.lean.project.scaffold import write_files
         from reactor.lean.proof.render import certificate_files
 

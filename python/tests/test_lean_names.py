@@ -37,6 +37,16 @@ def test_every_project_module_imported_is_a_file_the_project_has(tmp_path):
             assert path.exists(), f"{who} imports {mod}, which is not written"
 
 
+def test_the_tactics_import_nothing_of_the_project(tmp_path):
+    """Its macros name no definition of the project's, so `Tactics.lean`
+    imports the libraries alone, and lake builds it alongside the module and
+    `Data.lean` rather than after them."""
+    module = load_module(FIXTURES / "counter.py")
+    project = create_project(tmp_path, module, "Rea",
+                             certificate=certificate_files(LeanContext(module)))
+    assert _own_imports((project / CERT_LIB / "Tactics.lean").read_text()) == []
+
+
 def test_the_lakefile_builds_the_certificate_library(tmp_path):
     module = load_module(FIXTURES / "counter.py")
     project = create_project(tmp_path, module, "Rea",
