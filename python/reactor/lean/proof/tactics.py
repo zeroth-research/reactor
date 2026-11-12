@@ -613,11 +613,19 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
     # — an integer goal that omega cannot phrase (a `Mat`-valued comparison
     # simp left behind, say) is still ordinary linear arithmetic.
     closers: list[str] = []
-    # Nearly free, and a branch whose hypotheses are already contradictory is
-    # common once `split_ifs` has fanned the transition out.
-    closers.append("contradiction")
+    # `omega` first where it is in play, then `contradiction`. A branch whose
+    # hypotheses are already contradictory is common once `split_ifs` has
+    # fanned the transition out, and `omega` refutes an arithmetic one as
+    # well; `contradiction` is for the rest (`b = true` beside `b = false`).
+    # It is not free the other way round: it reduces every hypothesis with
+    # `whnf` looking for an empty type or a decidably false proposition, and
+    # an `Int` comparison over the unfolded transition reduces a long way.
+    # Measured on a 6-slot Petri net's `step_inv`: `split_ifs` leaves 7680
+    # goals, and with `contradiction` first they spent the 2000000
+    # heartbeats; with `omega` first the certificate builds in 40 s.
     if f.has_int:
         closers.append("omega")
+    closers.append("contradiction")
     if f.has_bitvec:
         # A bitvector read as the number it holds -- `BitVec.toNat`, which
         # a linear predicate weighs a BitVec component by -- is arithmetic no
