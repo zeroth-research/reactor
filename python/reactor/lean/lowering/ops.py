@@ -564,16 +564,14 @@ OPS: tuple[Op, ...] = (
         smt=_smt_mul,
     ),
     # `*` on two `Mat`s is their matrix product (`Relational.Mat`), so the
-    # elementwise product is spelled out element by element.
+    # elementwise product is spelled out element by element, and its Box is
+    # `Box.hadamard` rather than `Box.mul`.
     Op(
         "Mul",
         LIA_LRA,
         mat=lambda a: f"(fun i j => {a[0]} i j * {a[1]} i j)",
         scalar=lambda a: f"({a[0]} * {a[1]})",
-        box=Unsupported(
-            "`Box.mul` is the matrix product; the elementwise one would be a "
-            "new Box in `Relational.Box`."
-        ),
+        box="Box.hadamard",
         smt=_smt_mul,
     ),
     # Lean's `/` and `%` on `Int` are Euclidean, as SMT-LIB's `div` and
@@ -584,12 +582,10 @@ OPS: tuple[Op, ...] = (
             ("LIA",),
             mat=lambda a, sym=sym: f"(fun i j => {a[0]} i j {sym} {a[1]} i j)",
             scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
-            box=Unsupported(
-                f"no `Box` for `{sym}` on `Int` in `Relational.Box`."
-            ),
+            box=box,
             smt=_smt_int_divmod,
         )
-        for name, sym in (("Div", "/"), ("Mod", "%"))
+        for name, sym, box in (("Div", "/", "Box.div"), ("Mod", "%", "Box.mod"))
     ),
     Op(
         "Neg",
