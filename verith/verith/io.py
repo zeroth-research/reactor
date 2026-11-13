@@ -51,9 +51,10 @@ class ProjectHandle:
     dir: Path | None            # `None`: `verith` run without `--project`
     name: str
     ctx: "LeanContext"          # built by `create_project`; not built again
-    reads: frozenset[str]       # ENCODINGS suffixes this route declared
-    owns: tuple[str, ...]       # project-relative paths this route declared
-    resumes: frozenset[str]     # artifact roles this route declared
+    # What the route declared (`declared`); nothing without a route.
+    reads: frozenset[str] = frozenset()    # ENCODINGS suffixes
+    owns: tuple[str, ...] = ()             # project-relative paths
+    resumes: frozenset[str] = frozenset()  # artifact roles
     # `artifacts/` belongs to no route and to every route -- one run's
     # leftovers are the next run's starting point, and the run that wrote one
     # is usually not the run that uses it. So it is not an `owns` entry, it is
@@ -167,6 +168,15 @@ class ProjectHandle:
             out = self.path(rel)
             out.write_text(text)
             print(f"Wrote {out}")
+
+
+def declared(route) -> dict:
+    """What `route`'s row declares of the project, as `ProjectHandle`'s
+    fields: nothing without a route."""
+    if route is None:
+        return {}
+    return dict(reads=frozenset(route.reads), owns=route.owns,
+                resumes=frozenset(route.reads_artifacts))
 
 
 @dataclass(frozen=True)

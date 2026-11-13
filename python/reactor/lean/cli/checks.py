@@ -111,15 +111,19 @@ def check_claim_flags(parser: argparse.ArgumentParser, args) -> None:
         )
 
 
-def check_outputs(parser: argparse.ArgumentParser, settings: Settings) -> None:
-    """What the run writes, against what it was given."""
+def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
+                  one_file: "tuple[tuple[str, object], ...]" = ()) -> None:
+    """What the run writes, against what it was given. `one_file` is a
+    command's own flags that, as --cert-file does, write one file and
+    return, each with its value."""
     # `artifacts/` lives in the project, so a run that writes a file and
     # returns has none. Said rather than ignored: the flag asks for
     # cross-run behaviour that this invocation cannot have.
-    if settings.artifacts != "use" and settings.cert_file:
-        parser.error(
-            f"--artifacts {settings.artifacts} is incompatible with "
-            f"--cert-file: `{ARTIFACTS_DIR}/` belongs to a generated project, "
-            f"and that writes a file and generates none"
-        )
+    for flag, value in (("--cert-file", settings.cert_file), *one_file):
+        if settings.artifacts != "use" and value:
+            parser.error(
+                f"--artifacts {settings.artifacts} is incompatible with "
+                f"{flag}: `{ARTIFACTS_DIR}/` belongs to a generated project, "
+                f"and that writes a file and generates none"
+            )
 

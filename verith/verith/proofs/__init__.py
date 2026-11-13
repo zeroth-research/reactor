@@ -28,7 +28,7 @@ from reactor.lean.smt.queries import predicate_terms
 from .build import LakeBuildError, build_certificate
 from .facts import solver_hints
 from .precheck import pre_check
-from .scripts import print_hints, proof_scripts, render
+from .scripts import HAMMER_LIB, print_hints, proof_scripts, render
 
 if TYPE_CHECKING:
     from reactor.lean.codegen.context import LeanContext
@@ -43,11 +43,11 @@ __all__ = [
 
 
 # The tactics the proofs call, at the project's root.
-HAMMER = "ZerothHammer.lean"
+HAMMER = f"{HAMMER_LIB}.lean"
 
 # What the lakefile needs for the proofs: the hammer, as a lean_lib.
 LAKEFILE = LakefileParts(libs=(
-    LeanLib("ZerothHammer", comment=(
+    LeanLib(HAMMER_LIB, comment=(
         "The tactics the certificate's proofs call: `zeroth_hammer`, "
         "`lra_close`."
     )),
@@ -74,8 +74,8 @@ def hint_budget(settings) -> "SmtBudget | None":
 def prove(smt, ctx: "LeanContext", claim: "Claim | None",
           cert: "Certificate", lean_cert: "LeanCertificate | None", *,
           budget: "SmtBudget | None" = None,
-          verbatim: "LeanAnswer | None" = None, restated: bool = False,
-          log=print) -> ProofScripts:
+          verbatim: "LeanAnswer | None" = None,
+          restated: bool = False) -> ProofScripts:
     """The proofs of the certificate `lean_cert` prints, read off the module
     (`ctx`) and the certificate's terms: `claim` and `cert` as `reactor`
     parsed them, against `smt`, the run's encoding. Without a claim there
@@ -84,15 +84,15 @@ def prove(smt, ctx: "LeanContext", claim: "Claim | None",
     With a `budget` (`--smt-tactics cvc5`) cvc5 is asked under it what it
     can settle in advance, and each thing it settled is said; `restated`
     says the predicates are the inferred ones. `verbatim` is an answer that
-    is Lean already, which no term stands behind.
+    is Lean already, which no term stands behind, so cvc5 is asked nothing.
     """
     if claim is None:
         return proof_scripts(ctx, lean_cert)
     q = predicate_terms(smt, claim, cert)
     printed = None
-    if budget is not None:
+    if budget is not None and verbatim is None:
         restating = ", restated over the inferred predicates" if restated else ""
-        log(
+        print(
             f".. SMT-informed tactics (cvc5){restating}: "
             f"<={budget.per_call_ms} ms per query, "
             f"<={budget.phase_ms} ms total"
@@ -101,7 +101,7 @@ def prove(smt, ctx: "LeanContext", claim: "Claim | None",
         reasons = [ln.removeprefix("-- cvc5: ")
                    for ln in printed.why().splitlines()]
         for reason in reasons or ["nothing cvc5 can add to the plan"]:
-            log(f"   {reason}")
+            print(f"   {reason}")
     return proof_scripts(ctx, lean_cert, q, printed, verbatim)
 
 

@@ -42,12 +42,3 @@ class Settings:
     @property
     def is_safety(self) -> bool:
         return self.kind == "safety"
-
-    @property
-    def supplied_complete(self) -> bool:
-        """Whether the flags alone carry a certificate worth building.
-
-        A safety certificate is complete without a ranking function, so what
-        counts follows the kind.
-        """
-        return bool(self.prp and self.invariant and (self.is_safety or self.ranking))

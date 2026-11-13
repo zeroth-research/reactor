@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 
-from reactor.lean.artifacts import ARTIFACTS_DIR
 from reactor.lean.cli import Settings as ReactorSettings
 from reactor.lean.cli import claim_deferred, settings_fields
 from reactor.lean.cli.checks import (
@@ -24,17 +23,16 @@ from reactor.lean.cli.checks import (
     input_adapter,
 )
 from reactor.lean.cli.parser import add_claim, add_input, add_outputs
-from reactor.lean.smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
+from reactor.lean.smt.limits import SmtBudget
 from verith import InferRoute
 from verith.flags import (
-    add_budget,
-    add_build,
+    add_proofs,
     add_routes,
-    add_smt_checks,
     check_budget,
     check_build,
     check_route,
     check_route_options,
+    proof_fields,
     resolve_aliases,
     resolve_route,
     route_fields,
@@ -116,11 +114,7 @@ class Settings(ReactorSettings):
     build_cert: bool = False
     pre_check: str = "none"
     smt_tactics: str = "none"
-    budget: SmtBudget = field(
-        default_factory=lambda: SmtBudget(
-            per_call_ms=DEFAULT_CALL_MS, phase_ms=DEFAULT_PHASE_MS
-        )
-    )
+    budget: SmtBudget = field(default_factory=SmtBudget)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -140,7 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    add_input(parser)
+    add_input(parser, optional="Optional when --hammer-file is used alone.")
     add_claim(parser)
     add_routes(parser)
     add_outputs(parser)
@@ -149,9 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Write a standalone ZerothHammer.lean to this path.",
     )
-    add_build(parser)
-    add_smt_checks(parser)
-    add_budget(parser)
+    add_proofs(parser)
     return parser
 
 
@@ -176,21 +168,18 @@ def parse_args(argv: "list[str] | None" = None, *,
     settings = Settings(
         **settings_fields(args, adapter),
         **route_fields(args, route),
+        **proof_fields(args),
         hammer_file=args.hammer_file,
-        build_cert=args.build_cert,
-        pre_check=args.pre_check,
-        smt_tactics=args.smt_tactics,
-        budget=SmtBudget(per_call_ms=args.smt_timeout,
-                         phase_ms=args.smt_budget),
     )
     settings.claim_deferred = claim_deferred(settings, adapter, defer_claim)
     if route is not None and not settings.claim_deferred:
         check_route(parser, settings)
     check_no_project(parser, settings)
 
-    check_outputs(parser, settings)
+    check_outputs(parser, settings,
+                  one_file=(("--hammer-file", settings.hammer_file),))
     check_hammer_file(parser, settings)
-    check_build(parser, settings, finds_certificate=route is not None)
+    check_build(parser, settings)
     resolve_route(parser, settings)
     return settings
 
@@ -198,22 +187,14 @@ def parse_args(argv: "list[str] | None" = None, *,
 def check_hammer_file(parser: argparse.ArgumentParser,
                       settings: Settings) -> None:
     """`--hammer-file` and `--cert-file` each write one file and return:
-    neither goes with what is about a project, and `--hammer-file` alone
-    needs no module."""
+    neither builds a project, and `--hammer-file` alone needs no module.
+    (That neither has an `artifacts/` is `check_outputs`'s to say.)"""
     which = ("--cert-file" if settings.cert_file
              else "--hammer-file" if settings.hammer_file else None)
     if settings.build_cert and which:
         parser.error(
             f"--build-cert is incompatible with {which}: that writes a "
             "file and generates no project to build"
-        )
-    # As `check_outputs` says it of --cert-file: `artifacts/` lives in the
-    # project.
-    if settings.artifacts != "use" and settings.hammer_file:
-        parser.error(
-            f"--artifacts {settings.artifacts} is incompatible with "
-            f"--hammer-file: `{ARTIFACTS_DIR}/` belongs to a generated "
-            f"project, and that writes a file and generates none"
         )
     if not settings.module_file and not settings.hammer_file:
         parser.error("module_file is required (unless --hammer-file is used alone)")

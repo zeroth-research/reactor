@@ -56,27 +56,26 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    add_input(parser, required=True)
+    add_input(parser)
     add_claim(parser)
     add_outputs(parser)
     return parser
 
 
 def add_input(parser: argparse.ArgumentParser, *, project: bool = True,
-              required: bool = False) -> None:
+              optional: str = "") -> None:
     """The input: the module file, the format it is read in and that
     format's own options, and, with `project`, where the project is
-    written. `required` for a command with no `--hammer-file` to run
-    without a module; a command that writes no project passes neither."""
+    written. The module file is required, unless `optional` says when a
+    command runs without one."""
     parser.add_argument(
         "module_file",
-        nargs=None if required else "?",
+        nargs="?" if optional else None,
         help=(
             "The input: a file stating the module, in the format --format "
             "names (by default the one its suffix names; a Python file must "
             "contain a callable that returns a Module)."
-            + ("" if required else
-               " Optional when --hammer-file is used alone.")
+            + (f" {optional}" if optional else "")
         ),
     )
     if project:

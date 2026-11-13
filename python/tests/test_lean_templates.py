@@ -173,7 +173,8 @@ def test_the_certificate_is_one_text_for_each_kind_of_property():
     from reactor.lean.project.names import (
         CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
     )
-    from reactor.lean.proof.render import certificate_files, lean_certificate
+    from reactor.lean.pipeline.certificate import render
+    from reactor.lean.proof.render import certificate_files
 
     counter = load_module(FIXTURES / "counter.py")
     twobit = load_module(FIXTURES / "twobit.py")
@@ -181,9 +182,9 @@ def test_the_certificate_is_one_text_for_each_kind_of_property():
     for m in (counter, twobit):
         for kind in variants:
             variants[kind].append(certificate_files(
-                LeanContext(m), lean_certificate(m, Claim(kind=kind))))
+                LeanContext(m), render(m, Claim(kind=kind))))
     variants["buchi"].append(certificate_files(
-        LeanContext(counter), lean_certificate(
+        LeanContext(counter), render(
             counter, Claim(prp="(= s0 0)"),
             Certificate(inv="(>= s0 0)", ranking="(ite (= s0 0) 0 s0)"))))
 
@@ -207,12 +208,13 @@ def test_each_obligation_is_stated_alike_in_both_files():
     so that the check is a formality rather than a unification."""
     from reactor.lean.core.certificate import Claim
     from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
-    from reactor.lean.proof.render import certificate_files, lean_certificate
+    from reactor.lean.pipeline.certificate import render
+    from reactor.lean.proof.render import certificate_files
 
     ctx = _counter_ctx()
     for kind, names in (("buchi", ("init_inv", "step_inv", "hrank")),
                         ("safety", ("init_inv", "step_inv", "inv_imp_P"))):
-        files = certificate_files(ctx, lean_certificate(ctx.module, Claim(kind=kind)))
+        files = certificate_files(ctx, render(ctx.module, Claim(kind=kind)))
         cert, proofs = files[cert_file(CERTIFICATE)], files[cert_file(PROOFS)]
         for name in names:
             stated = re.search(rf"^theorem {name} (.*?) := by\n  exact {name}_proof$",

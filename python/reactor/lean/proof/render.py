@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from reactor.lean.codegen.encodings import ModuleToLean4
 from reactor.lean.codegen.terms import extl_native_type, product_type
-from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor.lean.core.certificate import LeanAnswer
 from reactor.lean.core.errors import PredicateRefused, Refused
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.project.names import (
@@ -32,6 +32,12 @@ if TYPE_CHECKING:
 # ══════════════════════════════════════════════════════════════════════════
 # The certificate as Lean
 # ══════════════════════════════════════════════════════════════════════════
+
+
+# Every obligation a certificate states, by the name of its `_proof`
+# theorem without the suffix: the first three of a safety certificate, or
+# the first two and `hrank` of a Buchi one (`LeanCertificate.obligations`).
+OBLIGATIONS = ("init_inv", "step_inv", "inv_imp_P", "hrank")
 
 
 @dataclass(frozen=True)
@@ -50,6 +56,13 @@ class LeanCertificate:
     @property
     def is_safety(self) -> bool:
         return self.kind == "safety"
+
+    @property
+    def obligations(self) -> tuple[str, ...]:
+        """The obligations this certificate states, by the names
+        `ProofScripts.scripts` is keyed by."""
+        return ("init_inv", "step_inv",
+                "inv_imp_P" if self.is_safety else "hrank")
 
 
 def render_certificate(
@@ -112,15 +125,6 @@ def render_certificate(
         kind=q.kind, prp=prp, inv=inv, ranking=ranking,
         init_pre=init_pre, update_pre=update_pre,
     )
-
-
-def lean_certificate(
-    module: "Module", claim: Claim, cert: Certificate = Certificate(),
-) -> LeanCertificate:
-    """`claim` and `cert` parsed against `module` and printed for codegen."""
-    from ..smt.queries import predicate_terms
-
-    return render_certificate(predicate_terms(module, claim, cert))
 
 
 def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
@@ -187,6 +191,16 @@ class ProofScripts:
     options: str = ""
     preamble: str = ""
     scripts: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # A misspelt name would otherwise leave its obligation `sorry`,
+        # found only when `lake build` warns about it.
+        unknown = sorted(set(self.scripts) - set(OBLIGATIONS))
+        if unknown:
+            raise ValueError(
+                f"no obligation is named {', '.join(unknown)}: the "
+                f"obligations are {', '.join(OBLIGATIONS)}"
+            )
 
     def script(self, name: str) -> str:
         """The proof of obligation `name`: its script, or `sorry`."""

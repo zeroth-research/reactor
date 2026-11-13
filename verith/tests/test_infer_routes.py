@@ -350,7 +350,9 @@ def test_build_cert_is_satisfied_by_supplied_predicates():
             "--build-cert",
         ]
     )
-    assert settings.supplied_complete and settings.route is None
+    from verith.flags import supplied_complete
+
+    assert supplied_complete(settings) and settings.route is None
 
 
 def test_build_cert_with_a_file_route():
@@ -831,7 +833,7 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     store = _note_store(tmp_path)
     settings = SimpleNamespace(
         pre_check=None, smt_tactics="none",
-        route=SimpleNamespace(name="test-route"),
+        route=SimpleNamespace(name="test-route", returns="smt"),
     )
     with pytest.raises(SystemExit, match="--infer test-route: .*INTS_MODULUS"):
         run.regenerate(settings, None, _NoteHandle(store),
