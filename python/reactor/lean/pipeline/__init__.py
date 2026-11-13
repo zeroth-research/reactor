@@ -2,8 +2,11 @@
 
 `main` runs the stages in order. `claim` reads the module and what is to
 be proved of it; `certificate` checks the module and renders the
-certificate; `outputs` writes the project, or the one file asked for, and
-builds it.
+certificate; `outputs` writes the project, or the one file asked for.
+
+The certificate states its obligations and proves each by `sorry`: the
+proofs are a prover's to write, into `Certificate/Proofs.lean`, which
+nothing else in the project depends on but the certificate's `exact`s.
 
 Quick start
 -----------
@@ -30,12 +33,11 @@ after the round.  Names like ``x`` come from a module file that returns
 ``reactor.lean.inputs.Named(module, {"x": var})``, and ``(X @intf.0)`` names
 interface variable 0 by position, which works for any module.
 
-Supply the certificate's predicates, and ask cvc5 about its obligations
-before building it::
+Supply the certificate's predicates::
 
     uv run reactor mymodule.py --buchi "(= (X x) 0)" \\
         --invariant "(<= (X x) 10)" --ranking "(- 10 (X x))" \\
-        --pre-check cvc5 --build-cert -o out/ -p MyProject
+        -o out/ -p MyProject
 
 Module file format
 ------------------
@@ -69,26 +71,14 @@ import sys
 from ..cli import parse_args
 from ..core.errors import Refused
 from ..project.lakefile import reactor_lean_checkout
-from ..smt.encoding import lazy
-from ..smt.precheck import pre_check
-from .certificate import (
-    hint_budget,
-    lean_context,
-    record_predicates,
-    render,
-    workspace,
-)
+from .certificate import lean_context, record_predicates, render, workspace
 from .claim import claim_from_flags, load, stated_claim
-from .outputs import build_cert, generate, hammer_only, standalone
+from .outputs import generate, standalone
 
 
 def main():
     argv = sys.argv[1:]
     settings = parse_args(argv)
-
-    if settings.hammer_file:
-        hammer_only(settings.hammer_file)
-        return
 
     # `$REACTOR_LEAN` is a checkout the project's lakefile will require, so
     # a bad one is refused here, before any of the project is written.
@@ -102,16 +92,12 @@ def main():
     settings = stated_claim(settings, problem, argv)
     module = problem.module
     print(module)
-    # The run's one cvc5 encoding, built by whichever stage asks first.
-    smt = lazy(module)
     claim, given = claim_from_flags(settings, problem.names)
     try:
         ctx = lean_context(module)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 
-    # Built before the pre-check, the run's first encoding, so what that
-    # encodes is kept.
     store = (
         None if settings.cert_file
         else workspace(settings.output_dir / settings.project_name, module,
@@ -119,14 +105,8 @@ def main():
     )
     record_predicates(store, claim, given)
 
-    if settings.pre_check == "cvc5":
-        if claim is None:
-            print(".. SMT pre-check: nothing to check (no certificate data)")
-        else:
-            pre_check(smt, claim, given, settings.budget, artifacts=store)
-
     try:
-        lean_cert = render(smt, claim, given, hints=hint_budget(settings))
+        lean_cert = render(module, claim, given)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 
@@ -135,8 +115,4 @@ def main():
         return
 
     project_dir = generate(settings, module, ctx, lean_cert, problem.source)
-
-    if settings.build_cert:
-        build_cert(project_dir, lean_cert)
-
     print(f"\nProject ready at: {project_dir}")

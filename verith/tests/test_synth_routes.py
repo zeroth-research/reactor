@@ -500,7 +500,7 @@ def test_a_search_that_times_out_is_not_a_proof_of_absence(tmp_path):
     would state a falsehood in an LLM prompt.
     """
     from verith.smt_linear.engine import SmtLinearEngine
-    from reactor.lean.smt.limits import SmtBudget
+    from verith.common.limits import SmtBudget
 
     store = store_for(tmp_path, "m_lex", kind="safety", prp="(<= s0 3)",
                       producer="smt-linear")
@@ -656,19 +656,20 @@ def test_a_note_about_another_property_is_not_carried_over(tmp_path):
 
 
 def obligations_hold(name: str, claim: Claim, cert: Certificate) -> list[str]:
-    """The obligation names `smt.precheck` does not certify for `cert`.
+    """The obligation names `proofs.precheck` does not certify for `cert`.
 
     A second opinion, and deliberately not the query that produced the
     answer: `check_obligations` states `init_inv`, `step_inv` and
     `inv_imp_P` the way `--pre-check cvc5` does, from the predicates alone.
     """
-    from reactor.lean.smt.limits import SmtBudget
-    from reactor.lean.smt.precheck import Status, predicate_terms
+    from verith.common.encoding import predicate_terms
+    from verith.common.limits import SmtBudget
+    from verith.proofs.precheck import Status, check_obligations
 
     q = predicate_terms(module_of(name), claim, cert)
     return [
         v.name
-        for v in q.check_obligations(SmtBudget())
+        for v in check_obligations(q, SmtBudget())
         if v.status is not Status.HOLDS
     ]
 
@@ -842,11 +843,12 @@ def bv_counter(width: int, top: int):
 
 
 def obligations_of(module, claim: Claim, cert: Certificate) -> list[str]:
-    from reactor.lean.smt.limits import SmtBudget
-    from reactor.lean.smt.precheck import Status, predicate_terms
+    from verith.common.encoding import predicate_terms
+    from verith.common.limits import SmtBudget
+    from verith.proofs.precheck import Status, check_obligations
 
     q = predicate_terms(module, claim, cert)
-    return [v.name for v in q.check_obligations(SmtBudget())
+    return [v.name for v in check_obligations(q, SmtBudget())
             if v.status is not Status.HOLDS]
 
 

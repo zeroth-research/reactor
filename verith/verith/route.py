@@ -74,7 +74,7 @@ class InferRoute:
     # express is met here rather than as a traceback out of an encoder it
     # never wanted.  What it computed reaches `run` as `prechecked`, so the
     # module is not encoded twice to answer one question.  `smt` is the run's
-    # lazy `ModuleEncoding` (`InferInput.smt`), so a precheck that has to
+    # lazy `Encoding` (`InferInput.smt`), so a precheck that has to
     # encode does it on the encoding the rest of the run uses.
     #
     # It is handed the claim because whether a route can take a `--pre` is

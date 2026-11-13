@@ -11,7 +11,6 @@ import argparse
 
 from ..artifacts import ARTIFACTS_DIR
 from ..inputs import ADAPTERS
-from ..smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS
 
 
 _EPILOG = """\
@@ -25,13 +24,9 @@ examples:
   # a safety property, `G (<= (X @intf.0) 100)`: invariant only, no ranking function
   uv run reactor mymodule.py --safety "(<= (X @intf.0) 100)" -o out/ -p MyProject
 
-  # ask cvc5 whether the obligations are true before spending a lake build on them
+  # the certificate's predicates: its obligations are stated, and proved by `sorry`
   uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
-      --pre-check cvc5 -o out/ -p MyProject
-
-  # build the certificate: `lake build Certificate`
-  uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
-      --build-cert -o out/ -p MyProject
+      -o out/ -p MyProject
 """
 
 
@@ -54,7 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
             "from a Python file or another format --format names. "
             "The property goes under --safety (`G FORMULA`: every reachable "
             "state) or --buchi (`G (F FORMULA)`: infinitely often), and the "
-            "certificate's predicates under --invariant and --ranking."
+            "certificate's predicates under --invariant and --ranking. The "
+            "certificate states its obligations and proves each by `sorry`, "
+            "for a prover to replace in Certificate/Proofs.lean."
         ),
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -62,26 +59,23 @@ def build_parser() -> argparse.ArgumentParser:
     add_input(parser)
     add_claim(parser)
     add_outputs(parser)
-    add_budget(parser)
-    add_smt_checks(parser)
     return parser
 
 
 def add_input(parser: argparse.ArgumentParser, *, project: bool = True,
-              required: bool = False) -> None:
+              optional: str = "") -> None:
     """The input: the module file, the format it is read in and that
     format's own options, and, with `project`, where the project is
-    written. `required` for a command with no `--hammer-file` to run
-    without a module; a command that writes no project passes neither."""
+    written. The module file is required, unless `optional` says when a
+    command runs without one."""
     parser.add_argument(
         "module_file",
-        nargs=None if required else "?",
+        nargs="?" if optional else None,
         help=(
             "The input: a file stating the module, in the format --format "
             "names (by default the one its suffix names; a Python file must "
             "contain a callable that returns a Module)."
-            + ("" if required else
-               " Optional when --hammer-file is used alone.")
+            + (f" {optional}" if optional else "")
         ),
     )
     if project:
@@ -183,35 +177,17 @@ def add_claim(parser: argparse.ArgumentParser) -> None:
 
 
 def add_outputs(parser: argparse.ArgumentParser) -> None:
-    """What the run writes besides the project, whether it builds it,
-    and what it does with `artifacts/`."""
+    """What the run writes besides the project, and what it does with
+    `artifacts/`."""
     parser.add_argument(
         "--cert-file",
         default=None,
         help=(
             "Write a standalone, self-contained certificate .lean file to this path "
-            "instead of creating a full project.  The file inlines init/update and "
-            "imports zeroth_hammer from ZerothHammer.  The other encodings of the "
+            "instead of creating a full project.  The file inlines init/update, "
+            "the definitions and the obligations' proofs.  The other encodings of the "
             "same module are written beside it under the same stem (Rel, Scalar, "
             "ScalarRel), as they are in a project."
-        ),
-    )
-    parser.add_argument(
-        "--hammer-file",
-        default=None,
-        help="Write a standalone ZerothHammer.lean to this path.",
-    )
-    parser.add_argument(
-        "--build-cert",
-        action="store_true",
-        help=(
-            "Build the generated certificate: `lake update` then `lake "
-            "build Certificate` in the project. Needs a certificate with "
-            "predicates in it, so pass --invariant and --ranking; an "
-            "obligation left as `sorry` is an error, as is one "
-            "lake cannot close. Off by default because the build resolves "
-            "and compiles cslib, Mathlib, lean-smt and cvc5 -- minutes "
-            "against a warm package cache, much longer against a cold one."
         ),
     )
     parser.add_argument(
@@ -229,60 +205,5 @@ def add_outputs(parser: argparse.ArgumentParser) -> None:
             f"things. `ignore` reads nothing back and still records what "
             f"this run finds. `reset` empties it first, which is what to "
             f"pass when a bad artifact is being inherited by every run."
-        ),
-    )
-
-
-def add_smt_checks(parser: argparse.ArgumentParser) -> None:
-    """What cvc5 is asked about the certificate."""
-    parser.add_argument(
-        "--pre-check",
-        default="none",
-        choices=["none", "cvc5"],
-        help=(
-            "Before generating, ask cvc5 whether the certificate obligations "
-            "are actually true. A refuted obligation means the invariant or "
-            "ranking is wrong, which a failing `lake build` cannot tell you "
-            "apart from tactics that are merely too weak. Bounded "
-            "by --smt-timeout / --smt-budget; anything cvc5 cannot answer is "
-            "reported as unknown and changes nothing."
-        ),
-    )
-    parser.add_argument(
-        "--smt-tactics",
-        default="none",
-        choices=["none", "cvc5"],
-        help=(
-            "Let cvc5 inform the generated tactics: discharge the branch "
-            "conditions the invariant already settles instead of splitting "
-            "on them, hand `nlinarith` the products cvc5's own refutation "
-            "needed, and drop a precondition no refutation used. Bounded by "
-            "--smt-timeout / --smt-budget; strictly additive, so anything "
-            "cvc5 cannot answer leaves the plan as it would have been."
-        ),
-    )
-
-
-def add_budget(parser: argparse.ArgumentParser) -> None:
-    """The time cvc5 is given: per query, and per phase of queries."""
-    parser.add_argument(
-        "--smt-timeout",
-        type=int,
-        default=DEFAULT_CALL_MS,
-        metavar="MS",
-        help=(
-            f"Wall-clock limit for a single SMT query, in ms "
-            f"(default: {DEFAULT_CALL_MS})."
-        ),
-    )
-    parser.add_argument(
-        "--smt-budget",
-        type=int,
-        default=DEFAULT_PHASE_MS,
-        metavar="MS",
-        help=(
-            f"Wall-clock limit for one phase of SMT queries, in ms "
-            f"(default: {DEFAULT_PHASE_MS}). A phase that fans out over many "
-            f"small queries still cannot exceed this."
         ),
     )

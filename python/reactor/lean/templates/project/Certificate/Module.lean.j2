@@ -1,0 +1,11 @@
+{#- `RM`, the module as a `ReactiveModule` over the functional encoding and
+    the certificate's preconditions, and `lts`, its transition system. The
+    same text for every certificate, in a file of its own because both
+    `Proofs.lean` and `Certificate.lean` state the obligations over them. -#}
+import Relational.Basic
+import System.System
+import Certificate.Data
+
+{{ linters_off }}
+
+{% include "project/Certificate/_module.lean.j2" %}

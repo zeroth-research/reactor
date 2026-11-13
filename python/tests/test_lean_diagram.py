@@ -6,7 +6,7 @@ from reactor import Wire, Term, Module, Bool, Int, LIA, Var, X
 from reactor.lean import ModuleToLean4
 from reactor.lean.lowering.sorts import itype_name
 from reactor.lean.codegen.context import LeanContext
-from reactor.lean.proof.render import generate_certificate_lean
+from reactor.lean.proof.render import certificate_files
 from reactor.lean.project.main_lean import generate_main_lean
 
 
@@ -225,14 +225,17 @@ def test_main_lean_matrix_signatures():
 
 
 def _cert_for(make_module, module_name="ReactiveModule"):
+    """The project's four certificate files, as one text."""
     m = make_module()
     ctx = LeanContext(m)
-    return generate_certificate_lean(ctx)
+    return "\n".join(certificate_files(ctx).values())
 
 
 def test_certificate_bool_has_rm():
+    """`RM` names no type: Lean reads them off the definitions it is built
+    from, which carry the module's."""
     cert = _cert_for(_make_twobitcounter)
-    assert "def RM : ReactiveModule" in cert
+    assert "} : ReactiveModule _ _)" in cert
     assert "(Mat Bool 1 1)" in cert
     assert "(Mat Bool 1 1) × (Mat Bool 1 1)" in cert
 
@@ -252,18 +255,6 @@ def test_certificate_bool_has_theorems():
     assert "theorem hinv" in cert
 
 
-def test_certificate_bool_has_simp_mod():
-    cert = _cert_for(_make_twobitcounter)
-    assert 'macro "simp_mat"' in cert
-    assert "init, update, inv" in cert
-
-
-def test_certificate_bool_has_no_scalar_constants_in_simp():
-    cert = _cert_for(_make_twobitcounter)
-    # Bool module has no matrix constants, so no c0/c1 in simp
-    assert "c0, c1" not in cert
-
-
 def test_data_lean_has_sorry_when_no_property():
     from reactor.lean.proof.render import generate_data_lean
     m = _make_twobitcounter()
@@ -274,7 +265,7 @@ def test_data_lean_has_sorry_when_no_property():
 
 def test_certificate_matrix_has_rm():
     cert = _cert_for(_make_matrix_module)
-    assert "def RM : ReactiveModule" in cert
+    assert "} : ReactiveModule _ _)" in cert
     assert "Mat Int 2 1" in cert
     assert "Mat Int 3 1" in cert
 
@@ -301,14 +292,6 @@ def test_certificate_has_buchi():
                 "buchi should not be commented out"
             )
             break
-
-
-def test_certificate_matrix_simp_reduces_matmul():
-    cert = _cert_for(_make_matrix_module)
-    # A/B are baked into the Linear op (no interned c0/c1 constants). affineLinear
-    # unfolds to MatMul + b, so the proof simp set must carry MatMul_apply to
-    # reduce the matrix obligations.
-    assert "MatMul_apply" in cert
 
 
 # ──────────────────────────────────────────────────────────────
@@ -535,8 +518,8 @@ def test_stateless_module_defines_init_and_update_as_unit():
     """No controlled variable means empty blocks, whose only value is `()`.
 
     The certificate's `RM` is built from `init` and `update`, so both must
-    be defined -- and not as `sorry`: `build_certificate` only looks for
-    one under `Certificate/`, so a `sorry` in `System/` would pass.
+    be defined -- and not as `sorry`: a build counts only the `sorry`s under
+    `Certificate/` as unproved, so one in `System/` would pass.
     """
     m2l = ModuleToLean4(Module.sequential([], [], []))
     func = m2l.to_lean_functional()

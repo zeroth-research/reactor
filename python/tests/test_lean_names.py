@@ -26,9 +26,10 @@ def test_every_project_module_imported_is_a_file_the_project_has(tmp_path):
     project = create_project(tmp_path, module, "Rea",
                              certificate=certificate_files(LeanContext(module)))
     texts = {
-        "certificate": (project / CERT_LIB / "Certificate.lean").read_text(),
-        "root": (project / f"{CERT_LIB}.lean").read_text(),
+        stem: (project / CERT_LIB / f"{stem}.lean").read_text()
+        for stem in ("Module", "Proofs", "Certificate")
     }
+    texts["root"] = (project / f"{CERT_LIB}.lean").read_text()
     for who, text in texts.items():
         mods = _own_imports(text)
         assert mods or who == "root", f"{who} imports nothing of the project"

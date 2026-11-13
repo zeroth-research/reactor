@@ -12,6 +12,9 @@ Targets verified by the slow tests:
   ZerothHammer       — standalone zeroth_hammer tactic (generated)
   Certs              — self-contained module certificates (generated)
   ManualTests        — zeroth_hammer on standalone goal shapes (manually written)
+
+The hammer and the certificates' proofs are `verith`'s: the tests about
+them are skipped without it.
 """
 import subprocess
 from pathlib import Path
@@ -21,6 +24,12 @@ import pytest
 _LEAN_DIR = Path(__file__).parent
 
 
+def _needs_verith() -> None:
+    """ZerothHammer.lean and the certificates' proofs are `verith`'s, in the
+    `verith/` project beside this one: without it there are none."""
+    pytest.importorskip("verith")
+
+
 # ──────────────────────────────────────────────────────────────
 # Fast tests — just verify file presence after fixture generation
 # ──────────────────────────────────────────────────────────────
@@ -28,6 +37,7 @@ _LEAN_DIR = Path(__file__).parent
 
 def test_generated_files_present(generate_lean_files):
     """ZerothHammer.lean and Certs/*.lean exist after generation fixture runs."""
+    _needs_verith()
     assert (_LEAN_DIR / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
     for name in ("Countdown", "CountdownSafe", "TwoVars", "Collatz",
                  "ArgmaxScalar"):
@@ -91,6 +101,7 @@ def _lake_build(*targets: str) -> subprocess.CompletedProcess:
 @pytest.mark.slow
 def test_zeroth_hammer_proofs(generate_lean_files):
     """ZerothHammerTests.lean compiles — every example in the file type-checks."""
+    _needs_verith()
     r = _lake_build("ZerothHammerTests")
     assert r.returncode == 0, (
         f"lake build ZerothHammerTests failed.\n"
@@ -104,6 +115,7 @@ def test_zeroth_hammer_proofs(generate_lean_files):
 @pytest.mark.slow
 def test_manual_tests_build(generate_lean_files):
     """ManualTests/Basic.lean compiles — zeroth_hammer closes each standalone example."""
+    _needs_verith()
     r = _lake_build("ManualTests")
     assert r.returncode == 0, (
         f"lake build ManualTests failed.\n"
@@ -149,6 +161,7 @@ def test_the_learned_certificate_closes_in_lean(generate_lean_files):
 @pytest.mark.slow
 def test_playground_build(generate_lean_files):
     """Playground.lean compiles — proof-pattern experiments and regression tests."""
+    _needs_verith()
     r = _lake_build("Playground")
     assert r.returncode == 0, (
         f"lake build Playground failed.\n"
@@ -163,6 +176,7 @@ def test_cert_hugecounter_build(generate_lean_files):
     """Certs/HugeCounter.lean: a 32-wide state whose transitions are 32-wide
     contractions. Pre-contraction keeps this tractable where a dense matrix
     literal + symbolic sum-expansion blows the heartbeat budget."""
+    _needs_verith()
     r = _lake_build("Certs.HugeCounter")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
@@ -176,6 +190,7 @@ def test_cert_hugecounter_build(generate_lean_files):
 def test_cert_bigcounter_build(generate_lean_files):
     """Certs/BigCounter.lean: a 6-vector state whose every transition is a 6-wide
     MatMul contraction — exercises Fin.sum_univ_succ expansion at scale."""
+    _needs_verith()
     r = _lake_build("Certs.BigCounter")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
@@ -189,6 +204,7 @@ def test_cert_bigcounter_build(generate_lean_files):
 def test_cert_counter_build(generate_lean_files):
     """Certs/Counter.lean: a 3×1 vector-state module with LIA.Linear transitions
     and tuple-select (s[i][j]) predicates — zeroth_hammer closes all obligations."""
+    _needs_verith()
     r = _lake_build("Certs.Counter")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
@@ -201,6 +217,7 @@ def test_cert_counter_build(generate_lean_files):
 @pytest.mark.slow
 def test_cert_countdown_build(generate_lean_files):
     """Certs/Countdown.lean: zeroth_hammer closes all proof obligations."""
+    _needs_verith()
     r = _lake_build("Certs.Countdown")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
@@ -215,6 +232,7 @@ def test_generated_safety_cert_has_no_ranking(generate_lean_files):
     over an invariant that implies `P`, with no ranking function defined or
     named anywhere -- a `def ranking := sorry` would be a `sorry` in a file
     whose point is that it has none."""
+    _needs_verith()
     src = (_LEAN_DIR / "Certs" / "CountdownSafe.lean").read_text()
     assert "rule_globally" in src and "theorem inv_imp_P" in src
     assert "rule_buchi" not in src
@@ -248,6 +266,7 @@ def test_cert_countdownsafe_build(generate_lean_files):
     """Certs/CountdownSafe.lean: the safety certificate elaborates, which is
     what says `rule_globally lts P hP` is applied to the right things --
     `hP` transfers the invariant to `P` through `inv_imp_P`."""
+    _needs_verith()
     r = _lake_build("Certs.CountdownSafe")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
@@ -260,6 +279,7 @@ def test_cert_countdownsafe_build(generate_lean_files):
 @pytest.mark.slow
 def test_cert_twovars_build(generate_lean_files):
     """Certs/TwoVars.lean: zeroth_hammer closes all proof obligations."""
+    _needs_verith()
     r = _lake_build("Certs.TwoVars")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
@@ -272,6 +292,7 @@ def test_cert_twovars_build(generate_lean_files):
 @pytest.mark.slow
 def test_cert_collatz_build(generate_lean_files):
     """Certs/Collatz.lean: zeroth_hammer closes all proof obligations."""
+    _needs_verith()
     r = _lake_build("Certs.Collatz")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (

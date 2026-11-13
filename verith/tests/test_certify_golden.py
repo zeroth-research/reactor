@@ -1,11 +1,11 @@
 """`certify` transcripts, pinned byte for byte.
 
-Whole in-process `certify` runs that infer the certificate -- stdout, the
-two certificate files, `artifacts/` -- compared with the snapshots under
-`tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to rewrite them, and
-only for a change to the output that is intended. The runs that do not
-infer are `reactor`'s, pinned the same way in `python/tests/
-test_pipeline_golden.py`, as is the codegen they share.
+Whole in-process `certify` runs that prove the certificate given or
+inferred -- stdout, the certificate files, `artifacts/` -- compared with the
+snapshots under `tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to
+rewrite them, and only for a change to the output that is intended. The
+same runs without the proofs are `reactor`'s, pinned the same way in
+`python/tests/test_pipeline_golden.py`, as is the codegen they share.
 
 No run reaches an LLM: `make_client` is replaced in both modules that build
 one, and the `ai-cegis` run has every predicate fixed, so it never asks.
@@ -56,6 +56,24 @@ _AI_REPLIES = {
 
 # (name, fixture, arguments). `-o` and `-p` are added.
 RUNS = [
+    # No route: the certificate given, checked and proved.
+    ("supplied", COUNTER, [
+        "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+        "--ranking", "(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)",
+        "--pre-check", "cvc5", "--smt-tactics", "cvc5",
+    ]),
+    ("supplied_pre", BOUNDED, [
+        "--safety", "(>= (X @intf.0) 0)", "--pre", "(>= (X @extl.0) 0)",
+        "--invariant", "(>= (X @intf.0) 0)",
+        "--pre-check", "cvc5", "--smt-tactics", "cvc5",
+    ]),
+    ("cert_file", COUNTER, [
+        "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+        "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
+        "--cert-file", "{out}/Cert.lean",
+    ]),
     ("smt_linear", COUNTDOWN, [
         "--buchi", "(= (X @intf.0) 0)", "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))",
         "--infer", "smt-linear", "--pre-check", "cvc5", "--smt-tactics", "cvc5",
@@ -96,8 +114,9 @@ RUNS = [
 ]
 
 # `ModuleSMT`s built per run. The pre-check, both renderings and a route on
-# `InferInput.smt` share the run's `smt.encoding.lazy` encoding.
+# `InferInput.smt` share the run's `common.encoding.lazy` encoding.
 ENCODINGS = {
+    "supplied": 1, "supplied_pre": 1, "cert_file": 1,
     "smt_linear": 1, "houdini": 1, "nuterm": 1, "nuterm_pre": 1,
     "ai_cegis_fixed": 1, "ai": 1, "sygus": 1, "vampire": 1,
 }
@@ -168,6 +187,14 @@ def _index(path: Path) -> str:
     return json.dumps(entries, indent=2, sort_keys=True) + "\n"
 
 
+def _lean_libs(lakefile: Path) -> str:
+    """The `[[lean_lib]]`s a lakefile declares, by name, one per line."""
+    if not lakefile.exists():
+        return "(none)\n"
+    return "".join(f"{m}\n" for m in re.findall(
+        r'^\[\[lean_lib\]\]\nname = "([^"]+)"', lakefile.read_text(), re.M))
+
+
 def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
     from certify.pipeline import main
 
@@ -195,8 +222,14 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
         "=== stdout", captured.out,
         "=== stderr", captured.err,
         "=== Certificate/Data.lean", read("Certificate/Data.lean"),
+        "=== Certificate/Module.lean", read("Certificate/Module.lean"),
+        "=== Certificate/Proofs.lean", read("Certificate/Proofs.lean"),
         "=== Certificate/Certificate.lean", read("Certificate/Certificate.lean"),
         "=== artifacts/index.json", _index(project / "artifacts" / "index.json"),
+        # The hammer the proofs call, and the lean_lib it is built as.
+        "=== lean_libs", _lean_libs(project / "lakefile.toml"),
+        "=== ZerothHammer.lean", ("present\n" if (project / "ZerothHammer.lean").exists()
+                                 else "(none)\n"),
     ]
     if (out / "Cert.lean").exists():
         parts += ["=== Cert.lean", (out / "Cert.lean").read_text()]

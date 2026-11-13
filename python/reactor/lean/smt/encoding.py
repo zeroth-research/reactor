@@ -1,31 +1,26 @@
 """One module in cvc5 for a whole run.
 
-`ModuleEncoding` owns the run's `TermManager`: the module's transition, the
-predicates read against it and every solver built on it. `lazy(module)` is
-how a run holds one, so a run that asks cvc5 nothing never imports it.
+`ModuleEncoding` owns the run's `TermManager`: the module's state and
+inputs as cvc5 constants, and the predicates read against them. It is
+built when the first predicate is read, so a run that reads none never
+imports cvc5.
 """
 
 from __future__ import annotations
 
-import functools
-from collections.abc import Callable
-
 from ..core.errors import PredicateRefused
-from .limits import bounded_solver
 
 
 class ModuleEncoding:
-    """`module` in cvc5, encoded once.
+    """`module` in cvc5: its state and inputs as the parser declares them
+    (`s*`, `el*`, `e*`), and each predicate read against them, once.
 
-    The transition is translated on first use over the parser's `s*`, `el*`
-    and `e*`, and every other state or input is substituted into it; a
-    module with no encoding raises the same error on every use. Retained
-    until exit (`smt.module.keep_alive`), its `TermManager` past it, and
-    nothing it owns refers back to it: a cycle through a `TermManager`'s
-    owner is finalised in arbitrary order, which the pinned manager makes
-    safe and nothing makes cheap. So no exception that was raised is kept
-    here: its traceback reaches the frame that raised it, and that
-    frame's `self`.
+    Retained until exit (`smt.module.keep_alive`), its `TermManager` past
+    it, and nothing it owns refers back to it: a cycle through a
+    `TermManager`'s owner is finalised in arbitrary order, which the pinned
+    manager makes safe and nothing makes cheap. So no exception that was
+    raised is kept here: its traceback reaches the frame that raised it,
+    and that frame's `self`.
     """
 
     def __init__(self, module):
@@ -39,10 +34,7 @@ class ModuleEncoding:
         self.msmt = ModuleSMT(tm=self.tm, module=module)
         self.env = PredicateParser(self.msmt)
         self._parsed: dict = {}
-        self._blocks: dict = {}
         self._queries: dict = {}
-        self._solvers: list = []
-        self._rewriter = None
         keep_alive(self, self.tm)
 
     @property
@@ -96,10 +88,10 @@ class ModuleEncoding:
         return hit
 
     def queries(self, claim, cert=None):
-        """`smt.precheck.ModuleQueries` for `claim` and `cert`, built once per
+        """`smt.queries.ModuleQueries` for `claim` and `cert`, built once per
         pair. Raises as its constructor does."""
         from ..core.certificate import Certificate
-        from .precheck import ModuleQueries
+        from .queries import ModuleQueries
 
         key = (claim, cert or Certificate())
         q = self._queries.get(key)
@@ -107,83 +99,9 @@ class ModuleEncoding:
             q = self._queries[key] = ModuleQueries(self, *key)
         return q
 
-    # --- the transition ---------------------------------------------------
-
-    def _block(self, name: str) -> list:
-        # A translation that fails is not kept, and fails again on the next
-        # use: kept, its exception's traceback would hold this frame, and
-        # through `self` the encoding would keep its own error alive in a
-        # cycle. Translating has no side effects, so the retry raises the
-        # same error.
-        hit = self._blocks.get(name)
-        if hit is None:
-            if name == "init":
-                hit = self.msmt.init_state(self.extl_next)
-            else:
-                hit = self.msmt.update_state(
-                    self.state, self.extl_latched, self.extl_next)
-            self._blocks[name] = hit
-        return hit
-
-    def init_state(self, en: list) -> list:
-        """The state after tick 0, given the inputs `en` awaited then."""
-        old = list(self.extl_next)
-        terms = self._block("init")
-        return [t.substitute(old, list(en)) for t in terms] if old else list(terms)
-
-    def next_state(self, s: list, el: list, en: list) -> list:
-        """The state after one round from `s`, given the inputs latched
-        (`el`) and awaited (`en`)."""
-        old = list(self.state) + list(self.extl_latched) + list(self.extl_next)
-        new = list(s) + list(el) + list(en)
-        terms = self._block("next")
-        return [t.substitute(old, new) for t in terms] if old else list(terms)
-
-    # --- terms ------------------------------------------------------------
-
-    def fresh(self, prefix: str = "") -> tuple[list, list, list]:
-        """New constants for a state and the inputs latched and awaited:
-        `{prefix}s0..`, `{prefix}el0..`, `{prefix}en0..`."""
-        return (self.msmt.fresh_ctrl(f"{prefix}s"),
-                self.msmt.fresh_extl_l(f"{prefix}el"),
-                self.msmt.fresh_extl_n(f"{prefix}en"))
-
-    def at(self, term, vs: list):
-        """`term` with the state replaced by `vs`."""
-        return None if term is None else term.substitute(self.state, vs)
-
-    def with_inputs(self, term, el: list, en: list):
-        """`term` with the parser's inputs replaced by `el` / `en`."""
-        if term is None:
-            return None
-        old = list(self.extl_next) + list(self.extl_latched)
-        new = list(en) + list(el)
-        return term.substitute(old, new) if old else term
-
-    def simplify(self, term):
-        """`term` through cvc5's rewriter, on a solver this encoding keeps
-        for that alone."""
-        if self._rewriter is None:
-            import cvc5
-
-            self._rewriter = cvc5.Solver(self.tm)
-            self._rewriter.setLogic("ALL")
-        return self._rewriter.simplify(term)
-
-    def solver(self, ms: int, *, logic: str | None = None, **options):
-        """`smt.limits.bounded_solver` on this encoding's terms."""
-        s = bounded_solver(self.tm, ms, logic=logic, **options)
-        self._solvers.append(s)
-        return s
-
-
-def lazy(module) -> Callable[[], ModuleEncoding]:
-    """`module`'s encoding, built on the first call and the same after."""
-    return functools.cache(lambda: ModuleEncoding(module))
-
 
 def encoding_of(source) -> ModuleEncoding:
-    """`source` as an encoding: itself, what a `lazy` factory builds, or a
+    """`source` as an encoding: itself, what a factory for one builds, or a
     new one for a bare module."""
     if isinstance(source, ModuleEncoding):
         return source

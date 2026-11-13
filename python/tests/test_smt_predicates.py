@@ -144,7 +144,7 @@ def test_nor_is_it_refused_as_the_claim(monkeypatch):
     lost its traceback."""
     import reactor.lean.smt.predicates as predicates
     from reactor.lean.core.certificate import Claim
-    from reactor.lean.smt.precheck import predicate_terms
+    from reactor.lean.smt.queries import predicate_terms
 
     def broken(src, ns):
         raise AttributeError("a bug")

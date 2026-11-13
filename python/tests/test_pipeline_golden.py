@@ -6,8 +6,9 @@ files, `artifacts/index.json`). Both are compared with the snapshots under
 `tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to rewrite them, and
 only for a change to the output that is intended.
 
-The runs that infer the certificate are `certify`'s, pinned the same way
-in `verith/tests/test_certify_golden.py`.
+The certificate's obligations are proved by `sorry` here. The proofs, and
+the runs that infer the certificate, are `certify`'s, pinned the same way
+in `verith/tests/test_certify_golden.py` and `test_proofs_golden.py`.
 """
 
 from __future__ import annotations
@@ -25,10 +26,13 @@ from reactor import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
 from reactor.lean.proof.render import (
     generate_certificate_lean,
     generate_data_lean,
+    generate_module_lean,
+    generate_proofs_lean,
     generate_standalone_cert_lean,
+    render_certificate,
 )
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-from reactor.lean.smt.precheck import predicate_terms
+from reactor.lean.smt.queries import predicate_terms
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.inputs.python import load_module
 
@@ -113,19 +117,19 @@ def _dense(layers: int) -> str:
 
 COUNTDOWN_INV = "(and (>= s0 0) (<= s0 100))"
 
-# (name, module, claim, certificate, ask cvc5 for hints)
+# (name, module, claim, certificate). `verith/tests/test_proofs_golden.py`
+# proves the same certificates.
 CODEGEN = [
-    ("bare", lambda: _fixture("counter"), None, None, False),
+    ("bare", lambda: _fixture("counter"), None, None),
     ("countdown", lambda: _fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
-     Certificate(COUNTDOWN_INV, "(ite (= s0 0) 0 s0)"), False),
+     Certificate(COUNTDOWN_INV, "(ite (= s0 0) 0 s0)")),
     ("countdown_safe", lambda: _fixture("svcomp_countdown"),
-     Claim(prp="(<= s0 100)", kind="safety"), Certificate(COUNTDOWN_INV),
-     False),
+     Claim(prp="(<= s0 100)", kind="safety"), Certificate(COUNTDOWN_INV)),
     ("property_only", lambda: _fixture("svcomp_countdown"),
-     Claim(prp="(= s0 0)"), Certificate(), False),
+     Claim(prp="(= s0 0)"), Certificate()),
     ("twovars", lambda: _fixture("svcomp_twovars"), Claim(prp="(= s0 s1)"),
      Certificate("(and (>= s0 0) (<= s0 s1) (= s1 10))",
-                 "(ite (= s0 s1) 0 (- s1 s0))"), False),
+                 "(ite (= s0 s1) 0 (- s1 s0))")),
     ("vector_counter_pre", _vector_counter,
      Claim(prp="s[0][0] == 0",
            init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
@@ -133,37 +137,32 @@ CODEGEN = [
      Certificate(
          "And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
          "Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], "
-         "s[2][0]) - s[0][0]) + 1)"), False),
+         "s[2][0]) - s[0][0]) + 1)")),
     ("shared_let", lambda: _fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
-     Certificate(COUNTDOWN_INV, _dense(3)), False),
-    ("hints_settle_a_branch", lambda: _fixture("svcomp_countdown"),
-     Claim(prp="(= s0 0)"),
-     Certificate(COUNTDOWN_INV, "(ite (<= s0 200) s0 999)"), True),
-    ("nonlinear_hints", lambda: _fixture("svcomp_countdown"),
-     Claim(prp="(= s0 0)"), Certificate(COUNTDOWN_INV, "(* s0 s0)"), True),
+     Certificate(COUNTDOWN_INV, _dense(3))),
     ("real", _real_countdown, Claim(prp="(<= s0 0.0)"),
-     Certificate("(<= s0 5.0)", "(to_int s0)"), False),
+     Certificate("(<= s0 5.0)", "(to_int s0)")),
     ("real_safety", _real_countdown, Claim(prp="(<= s0 5.0)", kind="safety"),
-     Certificate("(<= s0 5.0)"), False),
+     Certificate("(<= s0 5.0)")),
 ]
 
 
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
-             hints: bool, verbatim: "LeanAnswer | None" = None) -> str:
-    """Data.lean, Certificate.lean and the standalone certificate, as one text."""
-    from reactor.lean.proof.render import prepare
-    from reactor.lean.smt.limits import SmtBudget
-    from reactor.lean.proof.facts import solver_hints
-
+             verbatim: "LeanAnswer | None" = None) -> str:
+    """Data.lean, Module.lean, Proofs.lean, Certificate.lean and the
+    standalone certificate, as one text."""
     lean = None
     if claim is not None:
-        q = predicate_terms(module, claim, cert)
-        h = solver_hints(q, SmtBudget()) if hints else None
-        lean = prepare(q, h, verbatim)
+        lean = render_certificate(predicate_terms(module, claim, cert),
+                                  verbatim=verbatim)
     ctx = LeanContext(module)
     return "\n".join([
         "=== Certificate/Data.lean",
         generate_data_lean(ctx, lean),
+        "=== Certificate/Module.lean",
+        generate_module_lean(),
+        "=== Certificate/Proofs.lean",
+        generate_proofs_lean(lean),
         "=== Certificate/Certificate.lean",
         generate_certificate_lean(ctx, lean),
         "=== standalone",
@@ -171,21 +170,19 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
     ])
 
 
-@pytest.mark.parametrize("name,make,claim,cert,hints", CODEGEN,
+@pytest.mark.parametrize("name,make,claim,cert", CODEGEN,
                          ids=[c[0] for c in CODEGEN])
-def test_codegen_is_unchanged(name, make, claim, cert, hints):
-    _check(f"codegen-{name}.golden", _codegen(make(), claim, cert, hints))
+def test_codegen_is_unchanged(name, make, claim, cert):
+    _check(f"codegen-{name}.golden", _codegen(make(), claim, cert))
 
 
-def test_codegen_of_a_nonlinear_lean_answer_is_unchanged():
-    """`--infer ai` hands back Lean with no term behind it, so the facts
-    cannot speak for its ranking; a product in it still brings `nlinarith`
-    into the plan."""
+def test_codegen_of_a_lean_answer_is_unchanged():
+    """An answer that is Lean already is printed as it was given."""
     answer = LeanAnswer("fun s => (s 0 0) ≥ 0",
                         "fun s => ((s 0 0) * (s 0 0)).toNat")
     _check("codegen-lean_answer_nonlinear.golden",
            _codegen(_fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
-                    None, False, verbatim=answer))
+                    None, verbatim=answer))
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -203,12 +200,10 @@ RUNS = [
         "--buchi", "(= (X @intf.0) 0)",
         "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
         "--ranking", "(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)",
-        "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("supplied_pre", BOUNDED, [
         "--safety", "(>= (X @intf.0) 0)", "--pre", "(>= (X @extl.0) 0)",
         "--invariant", "(>= (X @intf.0) 0)",
-        "--pre-check", "cvc5", "--smt-tactics", "cvc5",
     ]),
     ("cert_file", COUNTER, [
         "--buchi", "(= (X @intf.0) 0)",
@@ -219,8 +214,8 @@ RUNS = [
     ("unreadable_property", COUNTER, ["--buchi", "(= (X @intf.0)"]),
 ]
 
-# `ModuleSMT`s built per run. The pre-check, both renderings and a route on
-# `InferInput.smt` share the run's `smt.encoding.lazy` encoding.
+# `ModuleSMT`s built per run: the predicates are read against one encoding
+# of the module, built once.
 ENCODINGS = {
     "bare": 0, "supplied": 1, "supplied_pre": 1, "cert_file": 1,
     "unreadable_property": 1,
@@ -280,6 +275,8 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
         "=== stdout", captured.out,
         "=== stderr", captured.err,
         "=== Certificate/Data.lean", read("Certificate/Data.lean"),
+        "=== Certificate/Module.lean", read("Certificate/Module.lean"),
+        "=== Certificate/Proofs.lean", read("Certificate/Proofs.lean"),
         "=== Certificate/Certificate.lean", read("Certificate/Certificate.lean"),
         "=== artifacts/index.json", _index(project / "artifacts" / "index.json"),
     ]

@@ -1,6 +1,6 @@
 """The rules about which flags go together, each read off the rows it is
-about: an input format's options, the claim, the SMT budget and the
-outputs a run can write.
+about: an input format's options, the claim and the outputs a run can
+write.
 
 Public so that a command built on this one, which takes these flags too,
 applies the same rules.
@@ -111,59 +111,19 @@ def check_claim_flags(parser: argparse.ArgumentParser, args) -> None:
         )
 
 
-def check_budget(parser: argparse.ArgumentParser, args) -> None:
-    """`--smt-timeout` and `--smt-budget` are positive."""
-    # `phase_left_ms` is `max(0, phase_ms - spent)` and a phase is exhausted
-    # at zero, so a non-positive budget is not "unlimited": it is a phase
-    # that never runs a query and says nothing about why.
-    for flag, value in (
-        ("--smt-timeout", args.smt_timeout),
-        ("--smt-budget", args.smt_budget),
-    ):
-        if value <= 0:
-            parser.error(
-                f"{flag} must be a positive number of milliseconds, got {value}"
-            )
-
-
 def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
-                  finds_certificate: bool = False) -> None:
-    """What the run writes, against what it was given. `finds_certificate`
-    is whether a command built on this one finds the certificate itself:
-    then --build-cert has one to build without --invariant."""
-    # --build-cert needs a certificate worth building. A bare project's
-    # unsupplied fields default to `True`
-    # (`inv`, the preconditions) or to `sorry` (`P`, `ranking`), and its
-    # obligations are still handed to the tactics -- which cannot close one
-    # stated over a `sorry`, so `lake build` fails on it rather than
-    # compiling to a proof of nothing. Asking for that is a mistake.
-    if settings.build_cert:
-        if settings.cert_file or settings.hammer_file:
-            which = "--cert-file" if settings.cert_file else "--hammer-file"
-            parser.error(
-                f"--build-cert is incompatible with {which}: that writes a "
-                "file and generates no project to build"
-            )
-        if not (finds_certificate or settings.supplied_complete
-                or settings.claim_deferred):
-            parser.error(
-                "--build-cert needs a certificate to build: pass --safety "
-                "with --invariant, or --buchi with --invariant and "
-                "--ranking. Without them the certificate's predicates are "
-                "`True` or `sorry`, and its obligations cannot be discharged."
-            )
-
-    # `artifacts/` lives in the project, so the runs that write a file and
-    # return have none. Said rather than ignored: the flag asks for
+                  one_file: "tuple[tuple[str, object], ...]" = ()) -> None:
+    """What the run writes, against what it was given. `one_file` is a
+    command's own flags that, as --cert-file does, write one file and
+    return, each with its value."""
+    # `artifacts/` lives in the project, so a run that writes a file and
+    # returns has none. Said rather than ignored: the flag asks for
     # cross-run behaviour that this invocation cannot have.
-    if settings.artifacts != "use" and (settings.cert_file or settings.hammer_file):
-        which = "--cert-file" if settings.cert_file else "--hammer-file"
-        parser.error(
-            f"--artifacts {settings.artifacts} is incompatible with {which}: "
-            f"`{ARTIFACTS_DIR}/` belongs to a generated project, and that "
-            f"writes a file and generates none"
-        )
+    for flag, value in (("--cert-file", settings.cert_file), *one_file):
+        if settings.artifacts != "use" and value:
+            parser.error(
+                f"--artifacts {settings.artifacts} is incompatible with "
+                f"{flag}: `{ARTIFACTS_DIR}/` belongs to a generated project, "
+                f"and that writes a file and generates none"
+            )
 
-    # `--hammer-file` alone writes one tactic file and needs no module.
-    if not settings.module_file and not settings.hammer_file:
-        parser.error("module_file is required (unless --hammer-file is used alone)")

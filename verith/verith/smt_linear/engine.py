@@ -34,7 +34,7 @@ program writes (:func:`verith.common.synth.denominator_scale`, which
 ``(to_int (* 2.0 s0))`` there and ``(to_int s0)`` where the program is
 integral.  What this costs on the Lean side is a bridge rather than a
 lemma: ``linarith`` reads ``⌊x⌋`` as an opaque ``Int`` atom and cannot reach
-a hypothesis about the ``Real`` under it, so ``tactics.cert_floors`` states
+a hypothesis about the ``Real`` under it, so the plan's ``floor_tactic`` states
 the sign of each floored quantity in ``Int``, where ``omega`` can use it.
 
 **The refutation is the point.**  A `sat` answer is a certificate, and there
@@ -94,14 +94,16 @@ from dataclasses import dataclass
 from ..common.claim import SynthContext
 from ..common.record import announce
 from ..common.smtlib import affine_smt, conjunction_smt
-from reactor.lean.smt.obligations import (
+from ..common.obligations import (
     Frame,
+    Obligations,
     conjunction,
+    implication,
     init_inv,
     inv_imp_P,
+    ranked,
     step_inv,
 )
-from ..common.obligations import Obligations, implication, ranked
 from ..common.synth import (
     Search,
     denominator_scale,
@@ -198,7 +200,7 @@ class SmtLinearEngine:
         encoding=None,
     ):
         self.module = module
-        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
+        # The run's `common.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.rows = max(1, int(rows))

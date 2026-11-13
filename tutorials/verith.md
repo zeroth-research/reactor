@@ -1,15 +1,23 @@
-# Verifying a reactive module with `reactor` and `certify`
+# Verifying a reactive module with `reactor`, `verith` and `certify`
 
 `reactor` is the command-line front end of the Lean pipeline. It takes a
 **module file** — a Python file exposing a callable that returns a
 `reactor.Module` — and writes a Lean 4 project holding the module's transition
-system *and* a machine-checkable **certificate** for one temporal property:
+system *and* a machine-checkable **certificate** for one temporal property,
+whose obligations it states and leaves for `verith` to prove:
 
 ```
-module.py ──reactor─▶ <OUT>/Rea/                   a Lean 4 package
-                        ├── System/                the module: init / update, in five encodings
-                        ├── Certificate/Data.lean  the certificate data: init_pre, update_pre, inv, P, ranking
-                        └── Certificate/           the proof obligations, with generated tactic scripts
+module.py ──reactor─▶ <OUT>/Rea/                 a Lean 4 package
+                        ├── System/              the module: init / update, in five encodings
+                        └── Certificate/
+                            ├── Data.lean        the certificate data: init_pre, update_pre, inv, P, ranking
+                            ├── Module.lean      the module as a transition system
+                            ├── Proofs.lean      the proof obligations, proved by `sorry`
+                            └── Certificate.lean the property, from the obligations
+                                    │
+                                    ▼   verith --project <OUT>/Rea
+                        Proofs.lean proved by generated tactic scripts,
+                        ZerothHammer.lean the tactics they call
                                     │
                                     ▼   lake build Certificate
                               proved, or not
@@ -49,11 +57,12 @@ shell, in order, and every output is what it printed here.
 9. Letting **ic3ia** find the invariant (`--fbk-proveit`)
 10. A flag reference
 
-Where the certificate is not given but searched for (sections 6–9), the
-command is `certify`: `reactor`'s flags and `--infer`, one project, one run.
-The search itself is the [`verith/`](../verith/README.md) project's, whose
-`verith` command runs it alone and prints what it found, in the form
-`--invariant` and `--ranking` take.
+The proofs, and the search for a certificate that is not given, are the
+[`verith/`](../verith/README.md) project's. `verith` proves the certificate
+of a project `reactor` generated (section 2), or searches for one with
+`--infer` and prints what it found, in the form `--invariant` and
+`--ranking` take. `certify` is both in one run: `reactor`'s flags,
+`verith`'s, one project. From section 3 on, every command is `certify`.
 
 Every module used below is a fixture that already lives in `python/tests/`, so
 nothing has to be written first.
@@ -62,14 +71,15 @@ nothing has to be written first.
 
 ## 1. Setup
 
-`uv run reactor` and `uv run certify` are not installed globally; they run
-out of the checkout. All commands below are run from `python/`:
+`uv run reactor`, `uv run verith` and `uv run certify` are not installed
+globally; they run out of the checkout. All commands below are run from `python/`:
 
 ```bash
 cd <checkout>/python
 uv sync                    # builds reactor via maturin and installs dependencies
 uv run reactor --help
-uv run certify --help      # reactor's flags, and --infer with every route's
+uv run verith --help       # --infer with every route's flags, and the proofs'
+uv run certify --help      # both
 ```
 
 **One output directory for every command.** `reactor` regenerates
@@ -113,9 +123,9 @@ builds serve each other's oleans, and the symptom is
 `unknown constant 'hrank'`, which reads exactly like a codegen bug.
 
 Building the certificate is `lake build Certificate` in the generated project.
-`reactor --build-cert` does it in one flag, which is what you would type at a
-terminal — but it runs `lake update` first, and that re-queries every
-dependency's git remote. Writing the warm manifest instead, with reactor-lean's
+`certify --build-cert` (or `verith --build-cert`) does it in one flag, which
+is what you would type at a terminal — but it runs `lake update` first, and
+that re-queries every dependency's git remote. Writing the warm manifest instead, with reactor-lean's
 packages entered as path dependencies on the checkout, keeps every example
 below off the network:
 
@@ -228,7 +238,6 @@ Wrote system.txt
 Wrote system.py
 Wrote /tmp/verith-tutorial.noindex/Rea/lakefile.toml
 Wrote /tmp/verith-tutorial.noindex/Rea/lean-toolchain
-Wrote /tmp/verith-tutorial.noindex/Rea/ZerothHammer.lean
 Wrote root module /tmp/verith-tutorial.noindex/Rea/System.lean
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/System.lean ++
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/Circ.lean ++
@@ -236,6 +245,8 @@ Wrote root module /tmp/verith-tutorial.noindex/Rea/System.lean
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/Scalar.lean ++
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/ScalarRel.lean ++
 Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Data.lean
+Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Module.lean
+Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Proofs.lean
 Wrote /tmp/verith-tutorial.noindex/Rea/Certificate/Certificate.lean
 
 DONE: Project created at: /tmp/verith-tutorial.noindex/Rea
@@ -257,6 +268,8 @@ find "$OUT/$PROJ" -maxdepth 2 -not -path '*/.lake*' -not -path '*/artifacts*' | 
 ./Certificate.lean
 ./Certificate/Certificate.lean
 ./Certificate/Data.lean
+./Certificate/Module.lean
+./Certificate/Proofs.lean
 ./dbg
 ./dbg/system.py
 ./dbg/system.txt
@@ -269,7 +282,6 @@ find "$OUT/$PROJ" -maxdepth 2 -not -path '*/.lake*' -not -path '*/artifacts*' | 
 ./System/Scalar.lean
 ./System/ScalarRel.lean
 ./System/System.lean
-./ZerothHammer.lean
 ```
 
 With no property the certificate is a skeleton. The safety property is that
@@ -284,25 +296,48 @@ certificate is an **invariant** that holds initially, is preserved by `update`,
 and is strong enough to imply the property — here the property is itself
 inductive, so the same formula serves as both.
 
-`--pre-check cvc5` asks cvc5 whether the obligations are actually true
-*before* spending a Lean build on them. It answers in milliseconds and a
-refutation comes with a counterexample; a failing `lake build` takes tens of
-seconds and still cannot tell a wrong certificate from tactics that are merely
-too weak.
+Given the property and the invariant, `reactor` writes the certificate's
+definitions and states its obligations — and proves none of them:
 
 ```bash
 uv run reactor tests/limits/mods/m_countdown.py \
     --safety    '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
-    --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
+    -o "$OUT" -p "$PROJ" | says
+grep -A1 '^theorem' "$OUT/$PROJ/Certificate/Proofs.lean"
+```
+
+```
+Project ready at: /tmp/verith-tutorial.noindex/Rea
+theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  sorry
+--
+theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+  sorry
+--
+theorem inv_imp_P_proof : ∀ s, inv s → P s := by
+  sorry
+```
+
+The proofs are `verith`'s. Given the same module, claim and certificate, and
+the project, it writes them into `Proofs.lean`. With `--pre-check cvc5` it
+first asks cvc5 whether the obligations are actually true. cvc5 answers in
+milliseconds and a refutation comes with a counterexample; a failing `lake
+build` takes tens of seconds and still cannot tell a wrong certificate from
+tactics that are merely too weak.
+
+```bash
+uv run verith tests/limits/mods/m_countdown.py \
+    --safety    '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
+    --project "$OUT/$PROJ" --pre-check cvc5 | says
 ```
 
 ```
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
-   init_inv  holds         1 ms
-   step_inv  holds        19 ms
-   inv_imp_P holds         1 ms
-Project ready at: /tmp/verith-tutorial.noindex/Rea
+   init_inv  holds         2 ms
+   step_inv  holds         2 ms
+   inv_imp_P holds         2 ms
 ```
 
 Three obligations, all discharged by cvc5:
@@ -323,56 +358,59 @@ cat "$OUT/$PROJ"/*/Data.lean
 ```lean
 import Relational.Basic
 
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
 def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 100))
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 100))
+def P : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 ```
 
-`Certificate/Certificate.lean` is what Lean checks: the module as a
-`ReactiveModule`, the three obligations as theorems, and the `rule_globally`
-application that turns them into the property. The header comment records the
-shape the tactic plan was generated from.
+`Certificate/Certificate.lean` is what Lean checks: the three obligations
+as theorems, and the `rule_globally` application that turns them into the
+property. It is the same text for every safety certificate, and
+`Module.lean`, the module as a `ReactiveModule` and its transition system
+`lts`, for every certificate. The proofs are in `Proofs.lean`, which states
+each obligation again with `_proof` after its name. `reactor` proved each by
+`sorry`; `verith` wrote it again, proving each with tactics generated from
+the shape of the module and the certificate, and its header comment records
+that shape. `Certificate.lean` takes each proof by `exact`, which checks
+that the two statements agree.
 
 ```bash
-grep -E '^-- |^def RM|^theorem |^def lts' "$OUT/$PROJ/Certificate/Certificate.lean"
+grep -E '^-- |^theorem ' "$OUT/$PROJ/Certificate/Proofs.lean"
+grep -E '^theorem |exact .*_proof|^def ' "$OUT/$PROJ/Certificate/Certificate.lean"
 ```
 
 ```lean
--- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `reactor/lean/proof/tactics.py`.
 -- state: Bool+Int, 1 slot(s), 9 term(s)
 -- predicates: branching, conjunctive, linear
-def RM : ReactiveModule ((Unit) × (Unit)) ((Mat Int 1 1)) := {
--- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
--- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
--- Gives omega/decide access to invariant and property conditions in hypotheses
--- Canonicalise the goal: only the steps this module's shapes call for.
--- Close it: only the provers this state can use, cheapest first.
--- Enumerate the state, when it is finite and narrow enough to be worth it.
--- `skip` otherwise. Takes the obligation's own state binder.
--- Branch conditions cvc5 decided under the invariant, so `split_ifs` does
--- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
--- obligation's own state binder; every step is `try`.
--- Hypotheses no refutation needed. `skip` otherwise.
--- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
--- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
+-- Unfold the definitions and reduce the matrix arithmetic, on the goal
+-- only: on the hypotheses too it blows up exponentially.
+-- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
+-- closers see the invariant's conditions.
+theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
+theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+theorem inv_imp_P_proof : ∀ s, inv s → P s := by
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  exact init_inv_proof
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-def lts := RM.toTS
+  exact step_inv_proof
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
 theorem hinv : lts.StateSet_isInvariant inv := by
--- `G P`. The invariant does the work; all that is left is that it is a
--- *strengthening* of the property. `StateSet_isInvariant` is
--- `reachableSet ⊆ ·`, so a superset of an invariant is invariant too, and
--- `rule_globally` turns that into `G (AP P)` on every trace.
 theorem inv_imp_P : ∀ s, inv s → P s := by
+  exact inv_imp_P_proof
 theorem hP : lts.StateSet_isInvariant P := by
+def safety := rule_globally
 ```
 
 ```bash
@@ -380,9 +418,9 @@ lake_cert
 ```
 
 ```
-Note: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`
-✔ [3465/3466] Built Certificate (2.6s)
-Build completed successfully (3466 jobs).
+Note: This linter can be disabled with `set_option linter.defProp false`
+✔ [3485/3486] Built Certificate (6.0s)
+Build completed successfully (3486 jobs).
 ```
 
 ---
@@ -400,8 +438,11 @@ decreases on every step taken from a state where the property is false. Here
 `10 - s0` counts the steps left until the wrap, and the `ite` pins it to `0`
 where the property already holds.
 
+From here on one command does both steps: `certify` generates the project as
+`reactor` does and proves it as `verith` does, in one run.
+
 ```bash
-uv run reactor tests/fixtures/counter.py \
+uv run certify tests/fixtures/counter.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))' \
     --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \
@@ -410,9 +451,9 @@ uv run reactor tests/fixtures/counter.py \
 
 ```
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
-   init_inv  holds         1 ms
-   step_inv  holds        22 ms
-   hrank     holds         2 ms
+   init_inv  holds         2 ms
+   step_inv  holds         2 ms
+   hrank     holds         3 ms
 Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
@@ -420,41 +461,27 @@ The obligations are now `init_inv`, `step_inv` and **`hrank`**, the decrease.
 `inv_imp_P` is gone: a Büchi property is not implied by the invariant, it is
 *reached*.
 
-`Data.lean` gains a `ranking` definition, and the certificate ends in
-`rule_buchi` rather than `rule_globally`:
+`Data.lean` gains a `ranking` definition, `Proofs.lean` proves `hrank`
+where it proved `inv_imp_P`, and the certificate ends in `rule_buchi` rather
+than `rule_globally`:
 
 ```bash
 grep -E 'def (inv|P|ranking)' "$OUT/$PROJ"/*/Data.lean
-grep -E '^theorem |^def lts|^def buchi' "$OUT/$PROJ/Certificate/Certificate.lean"
+grep -E '^theorem |exact .*_proof|^def ' "$OUT/$PROJ/Certificate/Certificate.lean"
 ```
 
 ```lean
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ 0) ∧ ((s 0 0) ≤ 9))
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = 0)
-def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = 0) then 0 else (10 - (s 0 0))) : Int)).toNat
--- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `reactor/lean/proof/tactics.py`.
--- state: Bool+Int, 1 slot(s), 9 term(s)
--- predicates: branching, conjunctive, linear, 1 branch point(s)
--- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
--- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
--- Gives omega/decide access to invariant and property conditions in hypotheses
--- Canonicalise the goal: only the steps this module's shapes call for.
--- Close it: only the provers this state can use, cheapest first.
--- Enumerate the state, when it is finite and narrow enough to be worth it.
--- `skip` otherwise. Takes the obligation's own state binder.
--- Branch conditions cvc5 decided under the invariant, so `split_ifs` does
--- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
--- obligation's own state binder; every step is `try`.
--- Hypotheses no refutation needed. `skip` otherwise.
--- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
--- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
+def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (9 : Int)))
+def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
+def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = (0 : Int)) then (0 : Int) else ((10 : Int) - (s 0 0))) : Int)).toNat
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  exact init_inv_proof
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-def lts := RM.toTS
+  exact step_inv_proof
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
 theorem hinv : lts.StateSet_isInvariant inv := by
 theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+  exact hrank_proof
 def buchi := rule_buchi
 ```
 
@@ -463,9 +490,9 @@ lake_cert
 ```
 
 ```
-Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
-✔ [3465/3466] Built Certificate (2.7s)
-Build completed successfully (3466 jobs).
+Note: This linter can be disabled with `set_option linter.defProp false`
+✔ [3485/3486] Built Certificate (6.0s)
+Build completed successfully (3486 jobs).
 ```
 
 ---
@@ -565,7 +592,7 @@ than `0` and `2`.
 since `step` clamps with `min` and `max`:
 
 ```bash
-uv run reactor tests/fixtures/simple_env.py \
+uv run certify tests/fixtures/simple_env.py \
     --safety    '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
     --invariant '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -576,8 +603,8 @@ grep -E 'def (inv|P)' "$OUT/$PROJ"/*/Data.lean
 ```
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    init_inv  holds         2 ms
-   step_inv  holds         2 ms
-   inv_imp_P holds         1 ms
+   step_inv  holds         3 ms
+   inv_imp_P holds         2 ms
 Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
@@ -617,7 +644,7 @@ still true and the ranking function is still fine; the invariant is not
 inductive, because the counter runs to 9:
 
 ```bash
-uv run reactor tests/fixtures/counter.py \
+uv run certify tests/fixtures/counter.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \
@@ -626,16 +653,16 @@ uv run reactor tests/fixtures/counter.py \
 
 ```
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
-   init_inv  holds         1 ms
-   step_inv  REFUTED      21 ms   counterexample: s0 = 5
-   hrank     holds         2 ms
+   init_inv  holds         2 ms
+   step_inv  REFUTED       2 ms   counterexample: s0 = 5
+   hrank     holds         3 ms
    1 obligation(s) refuted (step_inv): the certificate is wrong, not merely hard -- Lean cannot close it
 Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
 `step_inv REFUTED … counterexample: s0 = 5` is the whole diagnosis: from
 `s0 = 5`, which the invariant allows, `update` steps to 6, which it does not.
-The project is still generated — `reactor` does not refuse to write a
+The project is still generated — `certify` does not refuse to write a
 certificate it believes is false — but `lake build` would spend tens of
 seconds failing to prove it.
 
@@ -647,7 +674,7 @@ module alone makes the counter go down — an environment that offers `0` every
 round leaves it where it is:
 
 ```bash
-uv run reactor tests/limits/mods/m_relu_input.py \
+uv run certify tests/limits/mods/m_relu_input.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(X @intf.0)' \
@@ -657,8 +684,8 @@ uv run reactor tests/limits/mods/m_relu_input.py \
 ```
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
    init_inv  holds         2 ms
-   step_inv  REFUTED       2 ms   counterexample: s0 = 0
-   hrank     REFUTED       2 ms   counterexample: s0 = 1
+   step_inv  REFUTED       3 ms   counterexample: s0 = 0
+   hrank     REFUTED       3 ms   counterexample: s0 = 1
    2 obligation(s) refuted (step_inv, hrank): the certificate is wrong, not merely hard -- Lean cannot close it
 Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
@@ -668,7 +695,7 @@ wires. It is added to `init_pre` and `update_pre` alike, and every obligation
 may then assume it:
 
 ```bash
-uv run reactor tests/limits/mods/m_relu_input.py \
+uv run certify tests/limits/mods/m_relu_input.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(X @intf.0)' \
@@ -680,15 +707,15 @@ grep -E 'def (init_pre|update_pre)' "$OUT/$PROJ"/*/Data.lean
 
 ```
 .. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
-   init_inv  holds         2 ms
-   step_inv  holds         2 ms
-   hrank     holds         2 ms
+   init_inv  holds         3 ms
+   step_inv  holds         3 ms
+   hrank     holds         3 ms
 Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
 ```lean
-def init_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ 1)
-def update_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ 1)
+def init_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (1 : Int))
+def update_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (1 : Int))
 ```
 
 A precondition is a promise about the environment, and the certificate is only
@@ -1257,10 +1284,9 @@ ls "$OUT/$PROJ/Certificate" "$OUT/$PROJ/ProveIt"
 
 ```
     ✔ property is SAFE
-    ✔ invariant witness: /var/folders/p2/6pl6scg57lb35sp3r_ncs69h0000gn/T/certify-ReaNA-wnhikl1i/ReaNA_witness.smt2
+    ✔ invariant witness: /var/folders/p2/6pl6scg57lb35sp3r_ncs69h0000gn/T/certify-ReaNA-_15wx6sa/ReaNA_witness.smt2
     ✔ certificate: /tmp/verith-tutorial.noindex/Rea/ProveIt/ReaCert.lean (3936 bytes)
-Installed certificate: /tmp/verith-tutorial.noindex/Rea/Certificate/Certificate.lean
-Wrote the model-is-the-module proof: /tmp/verith-tutorial.noindex/Rea/Certificate/Equivalence.lean
+.. proveit.py's certificate: 1 normalised out of Bool, 2 offered omega before smt
 Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
@@ -1269,18 +1295,22 @@ Project ready at: /tmp/verith-tutorial.noindex/Rea
 Certificate.lean
 Data.lean
 Equivalence.lean
+Module.lean
+Proofs.lean
 
 /tmp/verith-tutorial.noindex/Rea/ProveIt:
 ReaCert.lean
 ReaNA.lean
 ```
 
-Two files rather than one. `Certificate/Certificate.lean` is ic3ia's proof,
+Two proofs rather than one. `Certificate/Certificate.lean` is ic3ia's proof,
 about the *NA-encoded model*; `Certificate/Equivalence.lean` is the proof that
 the model **is** the module, which is what carries the result back to the
 system you wrote. Without it a mistranslation anywhere in the SMT path would
 be a machine-checked certificate about something else. `--fbk-equiv none`
-skips it, and on a wide state that is the expensive half.
+skips it, and on a wide state that is the expensive half. ic3ia's
+certificate proves its obligations itself, so `Proofs.lean` is left with
+nothing to prove.
 
 This project's lakefile requires the `lean-ltl-certifying` checkout, which the
 warm manifest has never heard of, so the build has to resolve it with
@@ -1303,8 +1333,11 @@ Build completed successfully (3473 jobs).
 
 ## 10. Flag reference
 
-`reactor` takes every flag below but `--infer` and the flags of a route
-(from `--infer` to `--fbk-simplify`); `certify` takes them all.
+`reactor` takes the module's and the claim's flags (`-o` to `--pre`),
+`--artifacts` and `--cert-file`. `verith` takes the module's and the claim's
+but `-o`, `-p` and `-x`, and everything from `--pre-check` on but
+`--cert-file` and `--hammer-file`, with `--project` and `--json` of its own.
+`certify` takes them all but those two.
 
 | flag | default | meaning |
 |---|---|---|
@@ -1317,22 +1350,23 @@ Build completed successfully (3473 jobs).
 | `--invariant` | — | SMT-LIB 2 Bool over `(X @intf.N)` … |
 | `--ranking` | — | SMT-LIB 2 Int over `(X @intf.N)` …; `--buchi` only |
 | `--pre` | — | SMT-LIB 2 Bool over `(X @extl.N)` / `@extl.N`, added to `init_pre` and `update_pre` |
-| `--pre-check cvc5` | `none` | ask cvc5 whether the obligations hold, before generating |
-| `--smt-tactics cvc5` | `none` | let cvc5 settle branch conditions and hint `nlinarith` |
+| `--project DIR` | — | `verith`: the project `reactor` generated, which the certificate is written into, proved |
+| `--pre-check cvc5` | `none` | ask cvc5 whether the obligations hold, before the proofs are written |
+| `--smt-tactics cvc5` | `none` | let cvc5 settle branch conditions, hint `nlinarith` and drop an unused precondition |
 | `--smt-timeout`, `--smt-budget` | 5000, 20000 ms | per-query and per-phase limits for both of the above |
 | `--infer [ai\|ai-cegis\|nuterm\|sygus\|smt-linear\|fbk-proveit]` | `ai-cegis` | which route finds the certificate: an LLM, (`nuterm`) a learned and certified ranking function, (`sygus`) an invariant synthesised over a grammar, (`smt-linear`) the coefficients of a fixed linear shape, or (`fbk-proveit`) ic3ia |
 | `--model`, `--base-url` | `claude-sonnet-4-6`, — | which LLM, and which endpoint; rejected by a route that calls none |
 | `--sygus-grammar`, `--sygus-conjuncts` | `congruence`, 3 | `--infer sygus`: what an atom may be, and how many of them — the bound is what makes the space finite, and so decidably empty |
 | `--linear-rows N` | 2 | `--infer smt-linear --safety`: how many linear inequalities the invariant may conjoin; tried one width at a time |
 | `--artifacts [use\|ignore\|reset]` | `use` | the project's `artifacts/` workspace: resume from what earlier runs left, ignore it, or empty it first |
-| `--build-cert` | off | `lake update` + `lake build Certificate`, failing on a surviving `sorry` |
+| `--build-cert` | off | `lake update` + `lake build Certificate` once the proofs are written, failing on a surviving `sorry` |
 | `--proveit-dir DIR` | — | `--infer fbk-proveit`: the `lean-ltl-certifying` checkout; `--safety` only. `--fbk-proveit DIR` is the older spelling of both flags at once |
 | `--ic3ia PATH` | `$IC3IA`, then `PATH` | the ic3ia executable |
 | `--fbk-simplify`, `--fbk-equiv` | `cvc5`, `lean` | run cvc5's rewriter on the NA model; emit the model-is-the-module proof |
 | `--cert-file PATH` | — | write one standalone `.lean` file instead of a project |
-| `--hammer-file PATH` | — | regenerate `ZerothHammer.lean` alone |
+| `--hammer-file PATH` | — | write `ZerothHammer.lean`, the tactics the proofs call, alone |
 
 Related reading: [`verith_gym.md`](verith_gym.md) for a gymnasium environment
 worked through in integer arithmetic, `python/reactor/lean/README.md` for
-the pipeline's own documentation, and `verith/README.md` for the routes and
-the `verith` command.
+the pipeline's own documentation, and `verith/README.md` for the routes,
+the proofs and the `verith` command.

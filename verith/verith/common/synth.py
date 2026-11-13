@@ -39,7 +39,7 @@ shapes below are chosen from:
 holds it.**  Measured: `tlimit` alone does *not* stop `checkSynth` (a 1000 ms
 limit ran 13.9 s and returned a solution) and does not stop a quantified
 `checkSat` either (a 20 s limit ran past 400 s); `tlimit-per` stops both
-(1001 ms and 5007 ms, `unknown`).  `smt.limits.bounded_solver` sets the
+(1001 ms and 5007 ms, `unknown`).  `limits.bounded_solver` sets the
 pair, for these searches and for the obligation queries alike.
 """
 
@@ -54,8 +54,8 @@ from .claim import SynthContext, reading_kind
 from .record import GaveUp, found
 from reactor.lean.smt.encode import tuple_select
 from .smtlib import decimals, smt_lit
-from .terms import literals
-from reactor.lean.smt.terms import free_constants, nodes
+from .terms import free_constants, literals
+from reactor.lean.smt.terms import nodes
 
 from cvc5 import Kind
 

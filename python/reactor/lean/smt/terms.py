@@ -10,7 +10,7 @@ as its tree, a deep term is exponential.
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 
 ORDERS = ("pre", "lifo")
 
@@ -42,47 +42,12 @@ def nodes(roots: Iterable, *, order: str = "pre") -> Iterator:
         stack.extend(kids)
 
 
-def free_constants(roots: Iterable, *, order: str = "pre") -> dict:
-    """Every free constant under `roots`, by symbol, first occurrence kept.
-
-    cvc5 has no "the declarations this term needs", so the term is walked. A
-    constant is `Kind.CONSTANT`; an operator, a bound variable and a literal
-    are none of them declared.
-    """
-    from cvc5 import Kind
-
-    out: dict = {}
-    for node in nodes(roots, order=order):
-        if node.getKind() == Kind.CONSTANT:
-            out.setdefault(node.getSymbol(), node)
-    return out
-
-
 def state_dependent(term) -> bool:
     """Whether `term` reads a free constant at all, or is ground."""
     from cvc5 import Kind
 
     return any(node.getKind() == Kind.CONSTANT
                for node in nodes([term], order="lifo"))
-
-
-def ite_conditions(roots: Iterable, *, order: str = "pre",
-                   key: Callable = str,
-                   where: "Callable | None" = None) -> list:
-    """The condition of every `ite` under `roots`, one per `key`, in `order`.
-
-    `key` is what makes two conditions one: the printed form by default, so
-    a transition testing `s0 = 0` in three components is one condition.
-    `where`, given an `ite`, says whether its condition is wanted.
-    """
-    from cvc5 import Kind
-
-    out: dict = {}
-    for node in nodes(roots, order=order):
-        if node.getKind() == Kind.ITE and (where is None or where(node)):
-            cond = node[0]
-            out.setdefault(key(cond), cond)
-    return list(out.values())
 
 
 @functools.cache
@@ -105,7 +70,7 @@ def min_max_of(t) -> str | None:
     """`"min"` / `"max"` if this `ite` is really one, else None.
 
     The printer (`proof.from_smt`) folds such an `ite` into `min`/`max`, and
-    feature detection (`proof.facts`) asks the same question here rather
+    whatever detects a predicate's shape asks the same question here rather
     than counting `max` in the printer's output and thereby depending on it.
     """
     from cvc5 import Kind

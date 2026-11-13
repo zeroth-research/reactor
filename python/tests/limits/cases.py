@@ -1,6 +1,7 @@
-"""Case matrix for the `uv run reactor` limit probe.
+"""Case matrix for the limit probe.
 
-Each case is one full Lean project: `reactor ... -o projects/<name> -p Rea`,
+Each case is one full Lean project, generated and proved: `certify ... -o
+projects/<name> -p Rea`,
 then `lake build` against a shared `.lake` (Mathlib + Relational + ZerothHammer
 already built), so only System/* and Certificate/* recompile.
 

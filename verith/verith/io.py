@@ -25,10 +25,11 @@ from reactor.lean.core.errors import Refused
 if TYPE_CHECKING:
     from reactor import Module
 
-    from reactor.lean.proof.render import LeanCertificate
+    from reactor.lean.proof.render import LeanCertificate, ProofScripts
     from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.smt.encoding import ModuleEncoding
-    from reactor.lean.smt.limits import SmtBudget
+
+    from .common.encoding import Encoding
+    from .common.limits import SmtBudget
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -42,7 +43,7 @@ class ProjectHandle:
 
     A route is given this instead of a directory: ``reads`` and ``owns`` on
     its row are its whole access to the project, so "modifications are
-    confined to ``Data.lean`` and ``Certificate.lean``" is enforced for the
+    confined to the certificate's files" is enforced for the
     routes that say so, and a route that needs more of the project says
     which more -- by name, in its row, where the project builder can also
     read it.
@@ -51,9 +52,10 @@ class ProjectHandle:
     dir: Path | None            # `None`: `verith` run without `--project`
     name: str
     ctx: "LeanContext"          # built by `create_project`; not built again
-    reads: frozenset[str]       # ENCODINGS suffixes this route declared
-    owns: tuple[str, ...]       # project-relative paths this route declared
-    resumes: frozenset[str]     # artifact roles this route declared
+    # What the route declared (`declared`); nothing without a route.
+    reads: frozenset[str] = frozenset()    # ENCODINGS suffixes
+    owns: tuple[str, ...] = ()             # project-relative paths
+    resumes: frozenset[str] = frozenset()  # artifact roles
     # `artifacts/` belongs to no route and to every route -- one run's
     # leftovers are the next run's starting point, and the run that wrote one
     # is usually not the run that uses it. So it is not an `owns` entry, it is
@@ -107,17 +109,25 @@ class ProjectHandle:
 
     # --- the ordinary write --------------------------------------------
     #
-    # Available to every route, and the only write most of them want: after
-    # inference the predicates are new, so the definitions (`Data.lean`) and
-    # the tactics generated from their shape (`Certificate.lean`) are both
-    # restated, as `proof.render.certificate_files` renders the pair.
+    # The only write most runs want: after inference the predicates are new,
+    # so the definitions (`Data.lean`) and the proofs written from their
+    # shape (`Proofs.lean`) are both restated, as
+    # `proof.render.certificate_files` renders them -- with `Module.lean`,
+    # which is the same text whatever the predicates, and the certificate
+    # (`Certificate.lean`), which is the same text unless the kind of the
+    # property changed -- and the hammer the proofs call goes in beside them.
 
-    def write_predicates(self, lean_cert: "LeanCertificate") -> None:
-        """The certificate's two files, rewritten from `lean_cert`."""
+    def write_certificate(self, lean_cert: "LeanCertificate",
+                          proofs: "ProofScripts") -> None:
+        """The certificate's four files, rewritten from `lean_cert` and
+        proved by `proofs`, and the hammer."""
         from reactor.lean.project.scaffold import write_files
         from reactor.lean.proof.render import certificate_files
 
-        write_files(self.dir, certificate_files(self.ctx, lean_cert))
+        from .proofs import hammer_files
+
+        write_files(self.dir, {**certificate_files(self.ctx, lean_cert, proofs),
+                               **hammer_files()})
 
     # --- writing more than that -----------------------------------------
 
@@ -161,6 +171,15 @@ class ProjectHandle:
             print(f"Wrote {out}")
 
 
+def declared(route) -> dict:
+    """What `route`'s row declares of the project, as `ProjectHandle`'s
+    fields: nothing without a route."""
+    if route is None:
+        return {}
+    return dict(reads=frozenset(route.reads), owns=route.owns,
+                resumes=frozenset(route.reads_artifacts))
+
+
 @dataclass(frozen=True)
 class InferInput:
     """Everything a route is run with.
@@ -184,13 +203,13 @@ class InferInput:
     prechecked: object | None = None
     # This run's `--smt-timeout` / `--smt-budget`, for a route that asks cvc5
     # a question of its own. The obligation queries have always been on it
-    # (`smt.limits.SmtBudget`); a route that *searches* has to be, for the
+    # (`common.limits.SmtBudget`); a route that *searches* has to be, for the
     # same reason and more so -- a synthesis with no limit hangs generation,
     # and `tlimit-per` is the option that actually stops one.
     budget: "SmtBudget | None" = None
     log: Callable = print
     # The run's one cvc5 encoding of `module`, built on first call.
-    smt: "Callable[[], ModuleEncoding] | None" = None
+    smt: "Callable[[], Encoding] | None" = None
 
 
 # ══════════════════════════════════════════════════════════════════════════

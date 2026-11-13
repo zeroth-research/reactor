@@ -49,9 +49,9 @@ from typing import NamedTuple
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
-from reactor.lean.project.names import PROOF, cert_file
+from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
 from . import EQUIVALENCE, PROVEIT_DIR
-from reactor.lean.project.build import stream
+from ..proofs.build import stream
 from .na import (
     NA_IMPORTS,
     NAUnsupported,
@@ -227,14 +227,14 @@ def check_module(
     before the project is generated, is then the only encoding a whole run
     makes.
 
-    `encoding` is the run's `ModuleEncoding`: the slot bodies and the
+    `encoding` is the run's `Encoding`: the slot bodies and the
     `--pre` are read on its term manager.  A caller with none gets an
     encoding of `module` of its own.
     """
-    from reactor.lean.smt.encoding import ModuleEncoding
+    from ..common.encoding import Encoding
 
     if encoding is None:
-        encoding = ModuleEncoding(module)
+        encoding = Encoding(module)
     ctx = LeanContext(module)
     try:
         # The bodies first: the `--pre` is parsed on the same encoding.
@@ -367,14 +367,14 @@ def property_to_bool_lean(module, property_smt: str, encoding=None,
 
     The layout comes from the module's own wires, read off `ctx` (the run's
     `LeanContext`, or one built here). `encoding` is the run's
-    `ModuleEncoding`, which the property is read on.
+    `Encoding`, which the property is read on.
     """
     from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.smt.encoding import ModuleEncoding
+    from ..common.encoding import Encoding
     from .to_bool import smt_to_lean_bool
     from .na import slot_accessors
 
-    term = (encoding or ModuleEncoding(module)).parse(
+    term = (encoding or Encoding(module)).parse(
         property_smt, "property", kind="safety")
     try:
         return smt_to_lean_bool(
@@ -485,6 +485,12 @@ class ProveIt:
     equivalence: bool = True
 
 
+NO_PROOFS = (
+    "-- `Certificate.lean` is proveit.py's certificate, which proves its\n"
+    "-- obligations itself: none is proved here.\n"
+)
+
+
 def run(
     proveit: ProveIt,
     module,
@@ -507,7 +513,7 @@ def run(
 
     `prechecked` is what `check_module` returned to the row's precheck,
     before the project was generated. `encoding` is the run's
-    `ModuleEncoding` (`InferInput.smt()`), which the `--safety` property is
+    `Encoding` (`InferInput.smt()`), which the `--safety` property is
     read on, and `ctx` the run's `LeanContext` (`ProjectHandle.ctx`).
     """
     python = sys.executable
@@ -561,7 +567,13 @@ def run(
         log(f"warning: --fbk-proveit: proveit.py's certificate has {what}; "
             f"its template may have changed under this patch")
 
-    files = {cert_file(PROOF): text}
+    # The certificate is proved in itself, over the NA model: it takes no
+    # proof from `Proofs.lean`. The project's own is still there, proving
+    # the obligations of a certificate this one replaced -- and the
+    # `Certificate` lean_lib's glob builds it, over definitions whose `inv`
+    # is the placeholder `True`. So it is replaced too, by a module with
+    # nothing in it.
+    files = {cert_file(CERTIFICATE): text, cert_file(PROOFS): NO_PROOFS}
     if proveit.equivalence:
         files[cert_file(EQUIVALENCE)] = equivalence_lean(
             project_name, ctx,

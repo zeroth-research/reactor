@@ -61,9 +61,13 @@ NAME/
                                 functional one by equivalence theorems
   Certificate/Data.lean         the certificate: init_pre, update_pre, P,
                                 inv, ranking
-  Certificate/Certificate.lean  the proof rule's obligations, and the
-                                tactics that close them
-  ZerothHammer.lean             the zeroth_hammer tactic
+  Certificate/Module.lean       RM and lts, the module as a ReactiveModule and
+                                its transition system: fixed text
+  Certificate/Proofs.lean       the obligations, each stated again and proved
+                                by `sorry`, for a prover to replace
+  Certificate/Certificate.lean  the proof rule's obligations, each taken from
+                                Proofs.lean: fixed text, one per kind of
+                                property
   artifacts/                    what earlier runs found, for the next run
   dbg/                          the module as printed, and a copy of the input
   lakefile.toml, lean-toolchain
@@ -95,30 +99,27 @@ The certificate in `Data.lean` is the one given by `--invariant` and
 the relational and scalar encodings beside it, and the run ends there.
 [What gets generated](#what-gets-generated) has the details.
 
-### 5. Lean certificate (`proof/render.py`, `smt/precheck.py`, `proof/tactics.py`, `proof/from_smt.py`)
+### 5. Lean certificate (`proof/render.py`, `smt/queries.py`, `proof/from_smt.py`)
 
 These steps turn the given predicates into the certificate, before stage 4:
 
 - `predicate_terms` parses the predicates once, into cvc5 terms over the
   module's encoding.
-- That parse is printed as Lean by `render_certificate`, and read for its
-  shape by `predicate_facts`.
-- Under `--smt-tactics cvc5`, it is also put to cvc5 for hints
-  (`solver_hints`).
-- `proof.render.prepare` joins these into a `LeanCertificate`: the definitions in
-  `Data.lean`, and the tactic plan in `Certificate.lean`.
+- That parse is printed as Lean by `render_certificate`, into a
+  `LeanCertificate`: the definitions in `Data.lean`. `Certificate.lean` is
+  the same text for every certificate of a safety property, and for every
+  certificate of a Büchi one.
 
-`--pre-check cvc5` first asks cvc5 whether the obligations hold, so that a
-wrong certificate fails in seconds rather than in the build.
+### 6. The proofs
 
-### 6. The check (`--build-cert`)
-
-`lake update` and `lake build Certificate` run in the project. This is the
-step the result rests on: Lean checks the certificate's obligations against
-the module's encoding. Lake reports a `sorry` as a warning and exits 0, so
-a `sorry` left in `Certificate/` also fails the run. Without `--build-cert`
-the run stops at the project, which can then be built by hand. See [Building
-the certificate](#building-the-certificate---build-cert).
+`reactor` states the obligations and proves none of them: each is `sorry`
+in `Proofs.lean`, and lake reports a `sorry` as a warning and builds. The
+run stops at the project. Proving the obligations -- and `lake build
+Certificate`, which is what the result rests on, Lean checking them against
+the module's encoding -- is a prover's: it writes `Proofs.lean`, either as a
+whole file or as `ProofScripts` handed to `certificate_files`, which puts
+each script under its statement. See [What a certificate
+rewrites](#certificate-generation-proofrenderpy).
 
 ## Checking a change to the pipeline
 
@@ -181,12 +182,12 @@ layer.
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) |
 | `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
-| `smt/` | The module in cvc5, which the certificate's predicates are read against and the pre-check asks: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `obligations` (stated once over a frame), `precheck` (`--pre-check`: `ModuleQueries`, `pre_check`, `predicate_terms`), `limits` (time limits), `terms` (walks over terms), `script` (the SMT-LIB printer) |
-| `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `build` (`lake build`), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table, ZerothHammer), the certificate's files as the text it is handed |
-| `proof/` | The certificate as Lean: `render` (`prepare`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean), `facts` (what the terms and cvc5 say about the proof the tactics attempt: `predicate_facts`, and `solver_hints` under `--smt-tactics`), `tactics` (the plan read off them) |
+| `smt/` | The module in cvc5, which the certificate's predicates are read against: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `queries` (`ModuleQueries`, the claim and certificate parsed, and `predicate_terms`), `terms` (walks over terms) |
+| `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
+| `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, `ProofScripts`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`, `smv`), and `names`, which translates a claim's names to the internal ones and back |
 | `cli/` | The command line: `parser` (the flags, one `add_*` per group), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
-| `pipeline/` | `uv run reactor`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, `artifacts/`, the certificate rendered), `outputs` (the project, `--cert-file`, `--hammer-file`, `--build-cert`) |
+| `pipeline/` | `uv run reactor`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, `artifacts/`, the certificate rendered), `outputs` (the project, `--cert-file`) |
 
 ---
 
@@ -376,106 +377,66 @@ module encoding.  The predicates are SMT-LIB over `s0..`, `e0..`, `el0..`
 line" below)
 (`core.certificate.Claim` and `core.certificate.Certificate`). `predicate_terms`
 parses them against the module, and `render_certificate` prints them as
-Lean `fun` expressions into a `LeanPredicates`; it is the only place they
-are printed. Codegen takes a `LeanCertificate`: those definitions and
-`PlanInputs`, the facts and solver hints the tactic plan reads. A predicate
-that is `None` becomes a `True` / `sorry` placeholder.
+Lean `fun` expressions into a `LeanCertificate`; it is the only place they
+are printed. A predicate that is `None` becomes a `True` / `sorry`
+placeholder.
 
-`generate_certificate_lean(ctx, lean_cert, *, module_inline=None)`:
+`certificate_files(ctx, lean_cert, proofs)` renders the project's four
+files:
 
-1. Emits imports (`Mathlib`, `Relational.Basic`, module import or inline, hammer).
-2. Emits `init_pre`, `update_pre`, `inv`, `P`, `DecidablePred P`, `ranking`.
-3. Emits `def RM : ReactiveModule Extl State` wiring `init`/`update` in.
-4. Emits module-specific macros `simp_mat`, `simp_defs`, `mat_collapse` that
-   include all local definition names and matrix reduction lemmas.
-5. Emits the ZerothHammer tactic (inlined or via import).
-6. Emits proof skeletons: `init_inv`, `step_inv`, `hinv`, `hrank`, `buchi`.
+1. `Data.lean`: `init_pre`, `update_pre`, `inv`, `P`, `DecidablePred P`,
+   `ranking`.
+2. `Module.lean`: `def RM`, wiring `init`/`update` and the preconditions into
+   a `ReactiveModule`, and `def lts`, its transition system.
+3. `Proofs.lean`: `init_inv_proof`, `step_inv_proof` and `hrank_proof` (or
+   `inv_imp_P_proof`), each obligation stated again and proved by
+   `proofs.script(name)` -- `sorry`, unless a prover handed its scripts
+   over as `ProofScripts`, with the modules they import, the options they
+   run under and what they share.
+4. `Certificate.lean`: `init_inv`, `step_inv` and `hrank` (or `inv_imp_P`),
+   each `exact` its `_proof`; `hinv`; and `buchi` (or `safety`).
+
+`generate_certificate_lean(ctx, lean_cert, module_inline=..., proofs=...)`
+is the `--cert-file` certificate: all four in one file, the module inlined,
+under the proofs' options.
 
 **Wire bindings in certificates:**  State is accessed as `s`, externals as
 `e.1` (latched) and `e.2` (next).
 
 **Where Lean text comes from.** Jinja templates (`templates/project/`) render
-the files and their fixed structure: the project skeleton, `Data.lean`, the
-certificate's proof skeleton. Python renders expressions and the parts whose
-shape follows the module: the encodings (`codegen/encodings/`), the predicates
-(`render_certificate`), the tactic plan (`proof/tactics.py`). A piece both a project
-and a `--cert-file` certificate need is one template partial, rendered by both
-(`Certificate/_defs.lean.j2`, the five definitions), and a name or a text more
-than one file uses is one constant in `project/names.py`.
+the files and their fixed structure: the project skeleton, `Data.lean`,
+`Module.lean`, `Proofs.lean`, the certificate. Python renders expressions and
+the parts whose shape follows the module: the encodings (`codegen/encodings/`)
+and the predicates (`render_certificate`). A piece both a project and a
+`--cert-file` certificate need is one template partial, rendered by both
+(`Certificate/_defs.lean.j2`, the five definitions;
+`Certificate/_module.lean.j2`, `RM` and `lts`; `Certificate/_proofs.lean.j2`,
+the obligations stated again and proved), and a name or a text more than one
+file uses is one constant in `project/names.py`.
+
+**What a certificate rewrites.** Everything that changes with the module or
+its certificate is in `Certificate/Data.lean` and `Certificate/Proofs.lean`;
+`Certificate/Module.lean` is fixed text, and `Certificate/Certificate.lean` is
+fixed text, one per kind of property, so the two can be rewritten -- by
+`reactor`, by a prover or by hand -- without them. `RM` leaves its types to Lean
+(`({ ... } : ReactiveModule _ _)`), which reads them off `init_pre` and
+`update`, so `Module.lean` names none of the module's. `Proofs.lean` states
+each obligation again, so a proof of it is complete in one file, and
+`Certificate.lean` takes it with `exact`, which checks the two statements
+agree: a `Proofs.lean` that proves something else does not build, and the
+certificate trusts nothing in it.
 
 ### `predicate_terms` / `render_certificate`
 
 `predicate_terms` parses with cvc5 and refuses a predicate by the flag it
 came from; `render_certificate(q, share=..., verbatim=...)` translates the
-terms. `share=False` prints repeated subterms in full; `proof.render.prepare`
-always shares, because a hint's `if_pos` matches once `simp` has
+terms. `share=False` prints repeated subterms in full, for reading; a
+certificate is printed shared, which Lean reads the same once `simp` has
 zeta-reduced the `let`s. `verbatim` takes the invariant and ranking of a
-`LeanAnswer` as they are. Every certificate is printed through `prepare`,
-the pipeline's (`pipeline.certificate.render`) and the tests'
-(`lean_certificate(module, claim, cert)`, which is `prepare` with no solver
-hints) alike; `certificate_files` renders the project's `Data.lean` and
+`LeanAnswer` as they are. Every certificate is printed through it, by
+`pipeline.certificate.render(smt, claim, cert)`; `certificate_files` renders
+the project's `Data.lean`, `Module.lean`, `Proofs.lean` and
 `Certificate.lean` from it, and `create_project` writes that text as it is.
-
----
-
-## Tactic plans (`proof/tactics.py`)
-
-The three obligations used to be closed by one hardcoded chain, textually
-identical in every certificate — wasteful in both directions: an integer
-module with a linear ranking paid for `decide` and `bv_decide` on every goal,
-and a shape nobody had anticipated had no way to ask for the step it needed.
-
-`plan_for` reads the module and its predicates and emits two macros,
-`cert_prep` (canonicalise) and `cert_close` (decide), which the three proofs
-share; each certificate carries a comment saying what was detected.
-
-| detected | consequence |
-|---|---|
-| Int / Bool in the state | `omega` is available |
-| Real | `omega` is dropped; `linarith`, `norm_num` and `norm_cast; linarith` take over |
-| Real *and* equalities in the predicates | `simp_all` moves into **prep**, so the closers see numerals, not an opaque `⌊4 - x⌋` |
-| a product of two state-dependent terms | `nlinarith`, `positivity` |
-| finite state (Bool/BitVec only) | `decide`, last, because it is the most expensive step |
-| an `Ite`/`ReLU`/`Min`/`Max` anywhere | `split_ifs` in prep |
-| `∧` / `∨` in the predicates | `casesm*` and `simp only [not_and_or]` in prep |
-| an `=` in the predicates | the `ne_iff_lt_or_gt` split, *after* `norm_num at *` |
-| term count | `maxRecDepth` scales with it |
-| branch points in the predicates | scales the heartbeat budget — this, not module size, is what a net costs |
-| nothing known to be slow | heartbeat budget stays at 400 000 for economy (it does *not* bound failures — see "Nets over ℝ") |
-
-Two decisions are worth recording because measurement contradicted the
-obvious guess. **`linarith` belongs in every plan** — gating it on `Real`
-looked right and cost two integer certificates that were closing on it; an
-integer goal `omega` cannot phrase is still ordinary linear arithmetic.
-**`bv_decide` belongs in none** — it only ever reaches goals every cheaper
-prover has already failed on, and there it bit-blasts: including it took a
-BitVec certificate from 10 s to 977 s while closing nothing `decide` had not
-already closed.
-
-Because the plan depends on the predicates, `Certificate.lean` is not stable
-across a change of invariant: it is regenerated alongside `Data.lean`.
-`tests/test_lean_tactics.py` pins these decisions in the fast suite, so a
-plan regression does not wait for a Lean build.
-
-## ZerothHammer (`project/scaffold.py`)
-
-A Lean 4 elaborator tactic that cascades proof strategies:
-
-| Phase | Tactic |
-|-------|--------|
-| 0 | `simp_mat` alone (trivial / True goals) |
-| 1 | `omega`, `norm_cast; omega`, `simp_mat; omega`, `simp_mat; linarith` |
-| 2 | `push Not; simp_mat; omega` |
-| 3 | `simp_mat` + nested `split` (up to 4 levels) + `omega`/`linarith` |
-| 4 | `simp_defs` + nested `split` + `omega` |
-| 5 | `simp_defs` → `simp_mat` → `mat_collapse` → `split_ifs` → `omega` |
-| 6 | `aesop` |
-| 7 | `smt` (cvc5) |
-| 8 | `sorry` (give-up) |
-
-The three macro names (`simp_mat`, `simp_defs`, `mat_collapse`) are expected to
-be defined in the importing file; `ZerothHammer.lean` ships stub definitions
-that certificate files override.
 
 ---
 
@@ -590,8 +551,9 @@ uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.le
   Certificate.lean            # re-export shim
   Certificate/
     Data.lean                 # certificate predicates
-    Certificate.lean          # obligations + proofs
-  ZerothHammer.lean           # standalone zeroth_hammer tactic
+    Module.lean               # RM and lts (fixed text)
+    Proofs.lean               # the obligations, stated again, proved by `sorry`
+    Certificate.lean          # obligations, each from Proofs.lean (fixed text)
   artifacts/                  # what runs found, for the next run (see below)
   dbg/                        # system.txt (the module) and a copy of the input
   Main.lean                   # only with --executable
@@ -646,9 +608,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking (`--buchi` only) |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
-| `--hammer-file` | — | Regenerate `ZerothHammer.lean` only |
 | `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets the run read what an earlier run left, `ignore` reads nothing back but still records, `reset` empties it first |
-| `--build-cert` | off | `lake update` + `lake build Certificate` in the generated project |
 
 ### Writing a claim on the command line
 
@@ -678,45 +638,6 @@ per claim flag it was given. Everything past the command line (`Claim`,
 `vars` list passed to `Module.sequential`).  For tuple/matrix wires, use
 SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 `e0..eM-1` (next) and `el0..elM-1` (latched).
-
-## Building the certificate (`--build-cert`)
-
-`--build-cert` builds the certificate the run produced, with `lake update`
-then `lake build Certificate` in the generated project:
-
-```bash
-uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" \
-    --ranking "(X @intf.0)" --build-cert -o out/ -p Counter
-```
-
-Two kinds of run are refused rather than silently doing nothing:
-
-| refused | because |
-|---|---|
-| no `--invariant`/`--ranking` | every obligation in a bare project is `sorry`. Lake compiles that and exits 0, so "built" would mean nothing |
-| `--cert-file`, `--hammer-file` | they write a file and return; there is no project to build |
-
-`--invariant` without `--ranking` (or either without a property) is the
-first row: a missing predicate is a `sorry`, not a weaker proof.
-
-Past the parse-time gate, the certificate is checked again before the build
-(a predicate it lacks is named rather than built as a proof of `sorry`),
-and once more after it, because lake cannot be trusted to fail loudly:
-`zeroth_hammer` leaves a `sorry` where it cannot close an obligation, and
-lake reports that as a *warning* and exits 0. So `build_certificate` also
-scans the log for `sorry` under `Certificate/` — a dependency's own `sorry`
-(lean-smt ships one) is not ours — and raises if it finds any.
-
-A build that fails is a `LakeBuildError`, and the run exits non-zero with
-the Lean diagnostics restated: lake's log ends with thousands of replayed
-Mathlib jobs, so a bare "exit 1" as the last line would bury them.
-
-Off by default because the build resolves and compiles `cslib`, Mathlib,
-`lean-smt` and cvc5 — minutes against a warm `.lake/packages`, far longer
-against a cold one. Because the require set is pinned to the checkout's, one
-already-built `.lake/packages` serves both: copying (or cloning, on APFS)
-the checkout's into the generated project makes the first `lake update` a
-no-op fetch.
 
 ## Adding a New Op (`lowering/ops.py`)
 
@@ -773,15 +694,15 @@ inside the process.  What reached the user was a project and a line saying
 
 `.smt2` is a script — declarations, definitions, `(check-sat)` — so
 `cvc5 artifacts/obligation-step_inv.smt2` answers without `reactor` in the
-loop, and `unsat` there is the `holds` the pre-check printed.  That is what
+loop, and `unsat` there is the `holds` a pre-check printed.  That is what
 makes it worth having when the answer surprises: a refuted obligation becomes
 a file to bisect rather than a message to trust.  `.smt` is one predicate and
 not a script; the encoded form of the same thing is in `system.smt2`.
 
-These are written by `smt.precheck` as it builds each query, so they appear when
-something was encoded — `--pre-check cvc5` is what asks for the obligations.
-`--artifacts ignore` still records them: it is about where a run *starts*, not
-about what it leaves.
+`reactor` itself writes the predicates' source; the encoded files are written
+by whatever asks cvc5 about the obligations, as it builds each query, so
+they appear when something was encoded. `--artifacts ignore` still records
+them: it is about where a run *starts*, not about what it leaves.
 
 ### `README.md` — the index components write
 

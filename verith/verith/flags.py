@@ -1,11 +1,15 @@
-"""The inference routes' flags, and the rules about them.
+"""The inference routes' flags, the proofs' flags, and the rules about them.
 
-Shared by the two commands that run a route: `verith` (:mod:`verith.cli`)
-and `certify`. Each builds its command line from `reactor.lean.cli`'s
-groups and adds these: `add_routes` for the flags, then, once parsed,
-`resolve_aliases`, `check_route_options`, `route_fields`, `check_route`
-and `resolve_route`, in that order. Every rule reads a field of the
-route's row, so none of them knows a route by name.
+Shared by the two commands that run a route and write the proofs: `verith`
+(:mod:`verith.cli`) and `certify`. Each builds its command line from
+`reactor.lean.cli`'s groups and adds these: `add_routes` for the flags,
+then, once parsed, `resolve_aliases`, `check_route_options`, `route_fields`,
+`check_route` and `resolve_route`, in that order. Every rule reads a field
+of the route's row, so none of them knows a route by name.
+
+The proofs' flags are added by `add_proofs` -- whether the certificate is
+built, what cvc5 is asked about it and under what budget -- and read by
+`check_budget`, `proof_fields`, `supplied_complete` and `check_build`.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import argparse
 from reactor.lean.cli.checks import check_row_options
 from reactor.lean.core.options import given
 from reactor.lean.core.errors import Refused
+from .common.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 from . import (
     DEFAULT_ROUTE,
@@ -50,17 +55,14 @@ def infer_help() -> str:
     return " ".join(lines)
 
 
-def add_routes(parser: argparse.ArgumentParser, *,
-               required: bool = False) -> None:
+def add_routes(parser: argparse.ArgumentParser) -> None:
     """The route that infers the certificate, and every route's own
-    options, grouped by the routes that declare them. `required` for a
-    command that does nothing else."""
+    options, grouped by the routes that declare them."""
     parser.add_argument(
         "--infer",
         nargs="?",
         const=DEFAULT_ROUTE,
         default=None,
-        required=required,
         choices=list(route_names()),
         help=infer_help(),
     )
@@ -212,3 +214,145 @@ def resolve_route(parser: argparse.ArgumentParser, settings) -> None:
             settings.route_config = route.resolve(settings.route_opts)
         except Refused as e:
             parser.error(str(e))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The proofs
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def add_proofs(parser: argparse.ArgumentParser) -> None:
+    """The proofs' flags: whether the certificate is built, what cvc5 is
+    asked about it, and under what budget."""
+    add_build(parser)
+    add_smt_checks(parser)
+    add_budget(parser)
+
+
+def proof_fields(args) -> dict:
+    """The fields a command's `Settings` carries about the proofs."""
+    return dict(
+        pre_check=args.pre_check,
+        smt_tactics=args.smt_tactics,
+        build_cert=args.build_cert,
+        budget=SmtBudget(per_call_ms=args.smt_timeout,
+                         phase_ms=args.smt_budget),
+    )
+
+
+def add_smt_checks(parser: argparse.ArgumentParser) -> None:
+    """What cvc5 is asked about the certificate."""
+    parser.add_argument(
+        "--pre-check",
+        default="none",
+        choices=["none", "cvc5"],
+        help=(
+            "Before writing the proofs, ask cvc5 whether the certificate's "
+            "obligations are actually true. A refuted obligation means the invariant or "
+            "ranking is wrong, which a failing `lake build` cannot tell you "
+            "apart from tactics that are merely too weak. Bounded "
+            "by --smt-timeout / --smt-budget; anything cvc5 cannot answer is "
+            "reported as unknown and changes nothing."
+        ),
+    )
+    parser.add_argument(
+        "--smt-tactics",
+        default="none",
+        choices=["none", "cvc5"],
+        help=(
+            "Let cvc5 inform the proofs' tactics: discharge the branch "
+            "conditions the invariant already settles instead of splitting "
+            "on them, hand `nlinarith` the products cvc5's own refutation "
+            "needed, and drop a precondition no refutation used. Bounded by "
+            "--smt-timeout / --smt-budget; strictly additive, so anything "
+            "cvc5 cannot answer leaves the plan as it would have been."
+        ),
+    )
+
+
+def add_budget(parser: argparse.ArgumentParser) -> None:
+    """The time cvc5 is given: per query, and per phase of queries."""
+    parser.add_argument(
+        "--smt-timeout",
+        type=int,
+        default=DEFAULT_CALL_MS,
+        metavar="MS",
+        help=(
+            f"Wall-clock limit for a single SMT query, in ms "
+            f"(default: {DEFAULT_CALL_MS})."
+        ),
+    )
+    parser.add_argument(
+        "--smt-budget",
+        type=int,
+        default=DEFAULT_PHASE_MS,
+        metavar="MS",
+        help=(
+            f"Wall-clock limit for one phase of SMT queries, in ms "
+            f"(default: {DEFAULT_PHASE_MS}). A phase that fans out over many "
+            f"small queries still cannot exceed this."
+        ),
+    )
+
+
+def add_build(parser: argparse.ArgumentParser) -> None:
+    """Whether the certificate, once proved, is built."""
+    parser.add_argument(
+        "--build-cert",
+        action="store_true",
+        help=(
+            "Build the certificate once its proofs are written: `lake "
+            "update` then `lake build Certificate` in the project. Needs a "
+            "certificate with predicates in it, so pass --invariant and "
+            "--ranking or --infer; an obligation left as `sorry` is an "
+            "error, as is one lake cannot close. Off by default because the "
+            "build resolves and compiles cslib, Mathlib, lean-smt and cvc5 "
+            "-- minutes against a warm package cache, much longer against a "
+            "cold one."
+        ),
+    )
+
+
+def check_budget(parser: argparse.ArgumentParser, args) -> None:
+    """`--smt-timeout` and `--smt-budget` are positive."""
+    # `phase_left_ms` is `max(0, phase_ms - spent)` and a phase is exhausted
+    # at zero, so a non-positive budget is not "unlimited": it is a phase
+    # that never runs a query and says nothing about why.
+    for flag, value in (
+        ("--smt-timeout", args.smt_timeout),
+        ("--smt-budget", args.smt_budget),
+    ):
+        if value <= 0:
+            parser.error(
+                f"{flag} must be a positive number of milliseconds, got {value}"
+            )
+
+
+def supplied_complete(settings) -> bool:
+    """Whether the flags alone carry a certificate: the property and the
+    invariant, and the ranking function unless the property is a safety
+    one."""
+    return bool(settings.prp and settings.invariant
+                and (settings.is_safety or settings.ranking))
+
+
+def check_build(parser: argparse.ArgumentParser, settings) -> None:
+    """--build-cert needs a certificate worth building: one the run's route
+    finds, or one the flags supply. Whether there is a project to build it
+    in is each command's own rule.
+
+    A bare project's unsupplied fields default to `True` (`inv`, the
+    preconditions) or to `sorry` (`P`, `ranking`), and its obligations are
+    still handed to the tactics -- which cannot close one stated over a
+    `sorry`, so `lake build` fails on it rather than compiling to a proof
+    of nothing. Asking for that is a mistake."""
+    if not settings.build_cert:
+        return
+    if not (settings.route is not None or supplied_complete(settings)
+            or settings.claim_deferred):
+        parser.error(
+            "--build-cert needs a certificate to build: pass --safety "
+            "with --invariant, or --buchi with --invariant and "
+            "--ranking. Without them the certificate's predicates are "
+            "`True` or `sorry`, and its obligations cannot be discharged."
+        )

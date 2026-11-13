@@ -152,7 +152,7 @@ class HoudiniEngine:
                  encoding=None):
         self.spec = solver if isinstance(solver, SolverSpec) else SolverSpec(solver)
         self.module = module
-        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
+        # The run's `common.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.timeout = float(timeout)

@@ -3,9 +3,6 @@ name = "{{ project_name }}"
 version = "0.1.0"
 defaultTargets = ["System", "Certificate"]
 
-[[lean_lib]]
-name = "ZerothHammer"
-
 # The root `Certificate.lean` imports the certificate alone. The directory
 # can also hold modules that cannot be imported beside it -- stated over a
 # library that declares the same top-level name as one the certificate
@@ -24,7 +21,9 @@ name = "System"
 {% endfor %}
 [[lean_lib]]
 name = "{{ lib.name }}"
+{% if lib.src_dir %}
 srcDir = "{{ lib.src_dir }}"
+{% endif %}
 {% endfor %}
 
 [[require]]

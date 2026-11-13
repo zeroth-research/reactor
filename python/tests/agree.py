@@ -204,36 +204,48 @@ def _value(term) -> object:
 def disagreements_smt(module, *, seed: int = 0) -> list[str]:
     """Each round of `runs(module)` where the encoded round, evaluated by
     cvc5's rewriter at the same state and inputs, lands somewhere else."""
-    from reactor.lean.smt.encoding import ModuleEncoding
+    import cvc5
+
     from reactor.lean.smt.encode import tensor_const
+    from reactor.lean.smt.module import ModuleSMT, keep_alive
 
     rounds = runs(module, seed=seed)
+    tm = cvc5.TermManager()
+    keep_alive(tm)
     try:
-        enc = ModuleEncoding(module)
-        enc.init_state(enc.extl_next)
-        enc.next_state(enc.state, enc.extl_latched, enc.extl_next)
+        msmt = ModuleSMT(tm=tm, module=module)
+        s0, el0, en0 = (msmt.fresh_ctrl(), msmt.fresh_extl_l(),
+                        msmt.fresh_extl_n())
+        init = msmt.init_state(en0)
+        update = msmt.update_state(s0, el0, en0)
     except (ValueError, RuntimeError) as e:
         raise Skip(f"no SMT encoding: {e}") from e
-    tm = enc.tm
+    rewriter = cvc5.Solver(tm)
+    rewriter.setLogic("ALL")
+    keep_alive(rewriter)
 
     def lits(wires, values):
         return [tensor_const(tm, w, v) for w, v in zip(wires, values)]
+
+    def at(terms, old, new):
+        """The round translated once, at the constants `new`."""
+        return [t.substitute(old, new) for t in terms] if old else list(terms)
 
     bad = []
     for r, run in enumerate(rounds):
         for k, ((inputs, state), before) in enumerate(zip(run, [None, *run])):
             en = lits([X(e) for e in module.extl], [inputs[e] for e in module.extl])
             if before is None:
-                terms = enc.init_state(en)
+                terms = at(init, en0, en)
             else:
                 prev_inputs, prev_state = before
                 s = lits(module.ctrl, prev_state)
                 el = lits(module.extl, [prev_inputs[e] for e in module.extl])
-                terms = enc.next_state(s, el, en)
+                terms = at(update, s0 + el0 + en0, s + el + en)
             for c, want_t, term in zip(module.ctrl, state, terms):
                 want = flat(c, want_t)
                 try:
-                    got = _value(enc.simplify(term))
+                    got = _value(rewriter.simplify(term))
                 except ValueError as e:
                     bad.append(f"run {r} round {k}: {c.id} does not evaluate: {e}")
                     continue

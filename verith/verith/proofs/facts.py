@@ -4,7 +4,7 @@
 they branch, whether a product is nonlinear, where they floor -- and
 `solver_hints` asks cvc5 what it can settle in advance: a branch condition
 the invariant decides, and the products a refutation multiplied. The tactic
-plan (`proof.tactics.plan_for`) reads both. Neither changes what is proved, only
+plan (`tactics.plan_for`) reads both. Neither changes what is proved, only
 how the proof is attempted, and either may come back empty.
 """
 
@@ -13,12 +13,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ..smt import obligations as ob
-from ..smt.terms import ite_conditions, min_max_of, nodes, state_dependent
+from reactor.lean.smt.terms import min_max_of, nodes, state_dependent
+
+from ..common import obligations as ob
+from ..common.encoding import solver_for
+from ..common.terms import ite_conditions
 
 if TYPE_CHECKING:
-    from ..smt.limits import SmtBudget
-    from ..smt.precheck import ModuleQueries
+    from reactor.lean.smt.queries import ModuleQueries
+
+    from ..common.limits import SmtBudget
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -30,7 +34,7 @@ if TYPE_CHECKING:
 class PredicateFacts:
     """What the certificate predicates contain, from the cvc5 terms.
 
-    `proof.tactics.features_for` reads the same things off the *rendered Lean*
+    `tactics.features_for` reads the same things off the *rendered Lean*
     with a regex. For anything the printer emits verbatim -- how many `max`
     applications end up in the file -- that is the right measurement and
     stays. These are the ones text cannot get right:
@@ -270,7 +274,7 @@ _NONLINEAR_RULES = {
 @dataclass
 class SolverHints:
     """What cvc5 established about the obligations, as terms over the state
-    variables; `proof.render.print_hints` prints them for the tactic plan."""
+    variables; `scripts.print_hints` prints them for the tactic plan."""
 
     # (a branch condition, the value `inv` forces it to), in the order the
     # printer meets the conditions.
@@ -331,7 +335,7 @@ def _proof_facts(solver) -> tuple[bool, list]:
 
 def _factor_pairs(products) -> list:
     """`(a, b)` for each product with two state-dependent factors: what
-    `nlinarith` is handed squares of (`proof.render.print_hints`)."""
+    `nlinarith` is handed squares of (`scripts.print_hints`)."""
     out = []
     for prod in products:
         args = [c for c in prod if state_dependent(c)]
@@ -425,12 +429,12 @@ def _refutation_shape(
     proved_any = False
     pre_offered = False
     pre_used = False
-    f = q.frame("h_")
+    f = ob.frame(q, "h_")
     for name, labels in _obligation_labels(q, f):
         if budget.exhausted:
             break
         try:
-            solver = q.solver(budget)
+            solver = solver_for(q, budget)
             solver.setOption("produce-proofs", "true")
             solver.setOption("produce-unsat-cores", "true")
             for term in labels.values():
@@ -488,7 +492,7 @@ def _unsat(q: "ModuleQueries", formula, budget: SmtBudget) -> bool:
     if budget.exhausted:
         return False
     try:
-        solver = q.solver(budget)
+        solver = solver_for(q, budget)
         solver.assertFormula(formula)
         return solver.checkSat().isUnsat()
     except Exception:

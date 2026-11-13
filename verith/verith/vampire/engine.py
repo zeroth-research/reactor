@@ -180,7 +180,7 @@ class VampireEngine:
     def __init__(self, module, *, vampire: str, timeout: float = DEFAULT_TIMEOUT,
                  artifacts=None, log=print, encoding=None):
         self.module = module
-        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
+        # The run's `common.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.exe = vampire

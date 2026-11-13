@@ -10,15 +10,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
-from ..cli import Settings
 from ..codegen.context import LeanContext
 from ..codegen.terms import lean_gaps
 from ..core.certificate import Certificate, Claim, LeanAnswer
 from ..core.errors import Refused
-from ..proof.facts import solver_hints
-from ..proof.render import LeanCertificate, prepare
-from ..smt.limits import SmtBudget
-from ..smt.precheck import predicate_terms
+from ..proof.render import LeanCertificate, render_certificate
+from ..smt.queries import predicate_terms
 
 
 # Each predicate recorded: its role, the `Certificate` field it is read from
@@ -85,42 +82,16 @@ def workspace(project_dir: Path, module, claim: "Claim | None", *,
     return store
 
 
-def hint_budget(settings: Settings) -> "SmtBudget | None":
-    """What cvc5's solver hints are asked under: the run's budget with
-    `--smt-tactics cvc5`, and `None`, no hints, without it."""
-    return settings.budget if settings.smt_tactics == "cvc5" else None
-
-
-def render(smt, claim: "Claim | None", cert: Certificate, *,
-           hints: "SmtBudget | None", restated: bool = False,
+def render(smt, claim: "Claim | None", cert: Certificate = Certificate(), *,
            verbatim: "LeanAnswer | None" = None) -> "LeanCertificate | None":
-    """The certificate as codegen takes it. `None` without a claim: a bare
-    run asks cvc5 nothing. `smt` is the run's `smt.encoding.lazy` encoding.
-
-    The predicates are parsed once, and that one parse is printed as Lean,
-    read for its shape (`predicate_facts`) and, given a `hints` budget, put
-    to `solver_hints` under it (`proof.render.prepare` says how the two
-    meet). `verbatim` is an answer that is Lean already.
-    """
+    """The certificate as codegen takes it: the predicates parsed once and
+    printed as Lean. `None` without a claim: a bare run asks cvc5 nothing.
+    `smt` is the module, its encoding or a factory for one; `verbatim` is
+    an answer that is Lean already."""
     if claim is None:
         return None
-    q = predicate_terms(smt, claim, cert)
-    h = None
-    if hints is not None:
-        restating = ", restated over the inferred predicates" if restated else ""
-        print(
-            f".. SMT-informed tactics (cvc5){restating}: "
-            f"<={hints.per_call_ms} ms per query, "
-            f"<={hints.phase_ms} ms total"
-        )
-        h = solver_hints(q, hints)
-    lean = prepare(q, h, verbatim)
-    if h is not None:
-        reasons = [ln.removeprefix("-- cvc5: ")
-                   for ln in lean.plan.hints.why().splitlines()]
-        for reason in reasons or ["nothing cvc5 can add to the plan"]:
-            print(f"   {reason}")
-    return lean
+    return render_certificate(predicate_terms(smt, claim, cert),
+                              verbatim=verbatim)
 
 
 def lean_context(module) -> LeanContext:

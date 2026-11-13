@@ -23,9 +23,10 @@ from reactor.lean.inputs.python import load_module
 from reactor.lean.lowering.elements import flat_layout, flat_size
 from reactor.lean.project.names import CERT_LIB, SYSTEM_LAYOUT
 from reactor.lean.project.scaffold import create_project
-from reactor.lean.proof.render import certificate_files, generate_certificate_lean
+from reactor.lean.proof.render import certificate_files, generate_proofs_lean
 from verith.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 from verith.fbk_proveit.na import atom_to_lean_na, check_na_supported, slot_accessors
+from verith.proofs.scripts import proof_scripts
 
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
 FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
@@ -166,7 +167,7 @@ def test_the_fbk_bridge_simp_set_agrees_with_the_certificate_s():
     """The bridge proves the NA model is the module, over the same terms the
     certificate does: its matrix simp set unfolds the same reductions."""
     ctx = LeanContext(load_module(FIXTURES / "counter.py"))
-    cert = generate_certificate_lean(ctx)
+    cert = generate_proofs_lean(None, proof_scripts(ctx))
     simp_mat = [ln for ln in cert.splitlines()
                 if "simp [" in ln and "MatAdd_apply" in ln]
     assert simp_mat, "the certificate's simp_mat macro moved"

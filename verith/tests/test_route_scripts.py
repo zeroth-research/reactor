@@ -5,8 +5,8 @@ each print a script from cvc5 terms. A change to how one is printed is a
 change to the question the prover answers, so the text is compared with the
 snapshots under `tests/golden/scripts/`; set `REACTOR_UPDATE_GOLDEN=1` to
 rewrite them, and only for a change that is intended. Nothing here runs a
-prover. The obligation files `--pre-check` leaves are pinned by `reactor`'s
-`test_pipeline_golden.py`.
+prover. The obligation files `--pre-check` leaves are pinned by
+`test_certify_golden.py`.
 """
 
 from __future__ import annotations

@@ -19,12 +19,10 @@ instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsi
 
 def ranking : (Mat Int 3 1) → Nat := fun s => (((if (((s) 0 0) = (0 : Int)) then (0 : Int) else (((max ((s) 1 0) ((s) 2 0)) - ((s) 0 0)) + (1 : Int))) : Int)).toNat
 
-=== Certificate/Certificate.lean
-import Mathlib.Algebra.BigOperators.Fin
+=== Certificate/Module.lean
 import Relational.Basic
 import System.System
 import Certificate.Data
-import ZerothHammer
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -32,86 +30,57 @@ set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
--- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `reactor/lean/proof/tactics.py`.
--- state: Bool+Int, 5 slot(s), 10 term(s)
--- predicates: branching, conjunctive, disjunctive, linear, 2 branch point(s) (1 distinct)
-set_option maxRecDepth 15000
-set_option maxHeartbeats 2000000
+noncomputable section
 
-def RM : ReactiveModule (((Mat Int 2 1)) × ((Mat Int 2 1))) ((Mat Int 3 1)) := {
+def RM := ({
     init := fun e => init e.2
     update := fun x e => update x e.1 e.2
     init_pre := init_pre
     update_pre := update_pre
-}
-
--- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
-macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
-
--- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
--- Gives omega/decide access to invariant and property conditions in hypotheses
-macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp at *))
-
--- Canonicalise the goal: only the steps this module's shapes call for.
-macro "cert_prep" : tactic =>
-  `(tactic| ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)))
-
--- Close it: only the provers this state can use, cheapest first.
-macro "cert_close" : tactic =>
-  `(tactic| first | omega | contradiction | linarith | (norm_cast; omega) | (norm_num; done) | (constructor <;> first | omega | linarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (split_ifs at * <;> simp_all <;> omega) | fail "cert_close: none of its 11 closers proved this goal")
-
--- Enumerate the state, when it is finite and narrow enough to be worth it.
--- `skip` otherwise. Takes the obligation's own state binder.
-macro "cert_states" v:ident : tactic =>
-  `(tactic| (skip))
-
--- Branch conditions cvc5 decided under the invariant, so `split_ifs` does
--- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
--- obligation's own state binder; every step is `try`.
-macro "cert_facts" v:ident : tactic =>
-  `(tactic| (skip))
-
--- Bridge each floored quantity to a bound on the Real under it, so the
--- closers see the `Int` atom with a sign. `skip` when nothing is floored.
--- Takes the obligation's own state binder; every step is `try`.
-macro "cert_floors" v:ident : tactic =>
-  `(tactic| (skip))
-
--- Hypotheses no refutation needed. `skip` otherwise.
-macro "cert_thin" : tactic =>
-  `(tactic| (skip))
-
--- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
--- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
-macro "mat_collapse" : tactic =>
-  `(tactic| simp only [Mat_1_1_lt_iff, Mat_1_1_le_iff, Mat_1_1_eq_iff, Mat_1_1_ne_iff,
-                        ite_fun_apply,
-                        decide_eq_true_eq, Bool.or_eq_true, Bool.and_eq_true,
-                        Bool.not_eq_true'] at *)
-
-
-theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
-   intro s hpre
-   try simp_mat
-   try simp_defs
-   all_goals (cert_prep <;> cert_close)
-
-theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-   intro s e ⟨hpre, hinv⟩
-   try cert_thin
-   try simp_defs
-   try cert_facts s
-   try cert_floors s
-   try simp_mat
-   try cert_states s
-   all_goals (cert_prep <;> cert_close)
-
-section TS
+} : ReactiveModule _ _)
 
 def lts := RM.toTS
+
+end
+
+=== Certificate/Proofs.lean
+import Relational.Basic
+import Certificate.Module
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  sorry
+
+theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+  sorry
+
+theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+    ranking s' < ranking s := by
+  sorry
+
+=== Certificate/Certificate.lean
+import Relational.Basic
+import Certificate.Module
+import Certificate.Proofs
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+noncomputable section
+
+theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  exact init_inv_proof
+
+theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+  exact step_inv_proof
 
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
@@ -131,18 +100,7 @@ theorem hinv : lts.StateSet_isInvariant inv := by
 
 theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
-    intro s s' ⟨hi, hP, htr⟩
-    unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
-    obtain ⟨l, hpre, heq⟩ := htr
-    rw [← heq]
-    clear heq
-    try cert_thin
-    try simp_defs
-    try cert_facts s
-    try cert_floors s
-    try simp_mat
-    try cert_states s
-    all_goals (cert_prep <;> cert_close)
+  exact hrank_proof
 
 def buchi := rule_buchi
   lts
@@ -152,27 +110,17 @@ def buchi := rule_buchi
   ranking
   hrank
 
-
-end TS
+end
 
 === standalone
-import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
 import Relational.Box
-import ZerothHammer
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
-
--- Budgets and tactics below are generated from the shape of this module and
--- its certificate; see `reactor/lean/proof/tactics.py`.
--- state: Bool+Int, 5 slot(s), 10 term(s)
--- predicates: branching, conjunctive, disjunctive, linear, 2 branch point(s) (1 distinct)
-set_option maxRecDepth 15000
-set_option maxHeartbeats 2000000
 
 
 
@@ -205,79 +153,36 @@ instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsi
 
 def ranking : (Mat Int 3 1) → Nat := fun s => (((if (((s) 0 0) = (0 : Int)) then (0 : Int) else (((max ((s) 1 0) ((s) 2 0)) - ((s) 0 0)) + (1 : Int))) : Int)).toNat
 
-def RM : ReactiveModule (((Mat Int 2 1)) × ((Mat Int 2 1))) ((Mat Int 3 1)) := {
+noncomputable section
+
+def RM := ({
     init := fun e => init e.2
     update := fun x e => update x e.1 e.2
     init_pre := init_pre
     update_pre := update_pre
-}
-
--- Reduce matrix arithmetic on the goal only (avoids exponential blowup on hypotheses)
-macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply, mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
-
--- Unfold definitions everywhere (cheap: no matrix arithmetic reduction)
--- Gives omega/decide access to invariant and property conditions in hypotheses
-macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp at *))
-
--- Canonicalise the goal: only the steps this module's shapes call for.
-macro "cert_prep" : tactic =>
-  `(tactic| ((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)))
-
--- Close it: only the provers this state can use, cheapest first.
-macro "cert_close" : tactic =>
-  `(tactic| first | omega | contradiction | linarith | (norm_cast; omega) | (norm_num; done) | (constructor <;> first | omega | linarith) | tauto | (simp_all; done) | (simp_all; omega) | (simp_all; linarith) | (split_ifs at * <;> simp_all <;> omega) | fail "cert_close: none of its 11 closers proved this goal")
-
--- Enumerate the state, when it is finite and narrow enough to be worth it.
--- `skip` otherwise. Takes the obligation's own state binder.
-macro "cert_states" v:ident : tactic =>
-  `(tactic| (skip))
-
--- Branch conditions cvc5 decided under the invariant, so `split_ifs` does
--- not have to. `skip` unless --smt-tactics=cvc5 found some. Takes the
--- obligation's own state binder; every step is `try`.
-macro "cert_facts" v:ident : tactic =>
-  `(tactic| (skip))
-
--- Bridge each floored quantity to a bound on the Real under it, so the
--- closers see the `Int` atom with a sign. `skip` when nothing is floored.
--- Takes the obligation's own state binder; every step is `try`.
-macro "cert_floors" v:ident : tactic =>
-  `(tactic| (skip))
-
--- Hypotheses no refutation needed. `skip` otherwise.
-macro "cert_thin" : tactic =>
-  `(tactic| (skip))
-
--- Collapse Mat 1 1 types to scalars everywhere (cheap: no Fin.sum_univ)
--- Rewrites Mat 1 1 comparisons, ite through functions, Bool/decide normalization
-macro "mat_collapse" : tactic =>
-  `(tactic| simp only [Mat_1_1_lt_iff, Mat_1_1_le_iff, Mat_1_1_eq_iff, Mat_1_1_ne_iff,
-                        ite_fun_apply,
-                        decide_eq_true_eq, Bool.or_eq_true, Bool.and_eq_true,
-                        Bool.not_eq_true'] at *)
-
-
-theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
-   intro s hpre
-   try simp_mat
-   try simp_defs
-   all_goals (cert_prep <;> cert_close)
-
-theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-   intro s e ⟨hpre, hinv⟩
-   try cert_thin
-   try simp_defs
-   try cert_facts s
-   try cert_floors s
-   try simp_mat
-   try cert_states s
-   all_goals (cert_prep <;> cert_close)
-
-section TS
+} : ReactiveModule _ _)
 
 def lts := RM.toTS
+
+end
+
+theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  sorry
+
+theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+  sorry
+
+theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+    ranking s' < ranking s := by
+  sorry
+
+noncomputable section
+
+theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  exact init_inv_proof
+
+theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+  exact step_inv_proof
 
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
@@ -297,18 +202,7 @@ theorem hinv : lts.StateSet_isInvariant inv := by
 
 theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
-    intro s s' ⟨hi, hP, htr⟩
-    unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
-    obtain ⟨l, hpre, heq⟩ := htr
-    rw [← heq]
-    clear heq
-    try cert_thin
-    try simp_defs
-    try cert_facts s
-    try cert_floors s
-    try simp_mat
-    try cert_states s
-    all_goals (cert_prep <;> cert_close)
+  exact hrank_proof
 
 def buchi := rule_buchi
   lts
@@ -318,5 +212,4 @@ def buchi := rule_buchi
   ranking
   hrank
 
-
-end TS
+end

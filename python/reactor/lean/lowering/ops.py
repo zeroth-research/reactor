@@ -14,8 +14,8 @@ These were six dicts and an if/elif chain — one per backend, doubled for the
 BV forms — with nothing relating them. A test can see a *dead* key (one no
 theory defines) but not a *missing* one, so a variant the SMT encoder
 handled and no Lean emitter did went unnoticed: every unsigned and signed BV
-comparison passed `--pre-check` and then died at project generation in
-`No Lean expression mapping for: ULt`.
+comparison passed cvc5's check of the obligations and then died at project
+generation in `No Lean expression mapping for: ULt`.
 
 A row is one variant of one or more theories, and it must say something
 about every column. A cell is either an emitter or one of
@@ -356,12 +356,14 @@ _ZEROGRAD = Unsupported(
 def _bv_only_in_smt(lean_form: str) -> Unsupported:
     """A BV op cvc5 encodes and no Lean backend emits.
 
-    This is the divergence that made the table necessary: `--pre-check`
-    runs on the SMT encoding and passes, and generation then fails.
+    This is the divergence that made the table necessary: cvc5's check of
+    the obligations runs on the SMT encoding and passes, and generation then
+    fails.
     """
     return Unsupported(
         f"encoded for SMT, never for Lean. {lean_form} A module using it "
-        "passes --pre-check and fails at project generation."
+        "passes cvc5's check of the obligations and fails at project "
+        "generation."
     )
 
 

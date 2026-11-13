@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from itertools import product
 
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.terms import ite_conditions
+from ..common.terms import ite_conditions
 from ..common.claim import SynthContext
 
 from cvc5 import Kind
