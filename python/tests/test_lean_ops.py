@@ -20,7 +20,7 @@ backends do with it — an emitter, or the reason there is none.
 
 import torch
 import pytest
-from reactor import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
+from reactor import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Cast, Var, X
 from reactor.lean import ModuleToLean4
 from reactor.lean.lowering.sorts import itype_name
 from reactor.lean.codegen.context import LeanContext
@@ -40,7 +40,7 @@ from reactor.lean.lowering.ops import (
     scalar_emitter,
 )
 
-_THEORIES = {"LIA": LIA, "LRA": LRA, "BV": BV}
+_THEORIES = {"LIA": LIA, "LRA": LRA, "BV": BV, "Cast": Cast}
 
 
 def _variant_names(theory) -> set[str]:
@@ -205,6 +205,8 @@ _KNOWN_GAPS = {
     ("LRA", "Implies", "box"),
     ("LIA", "Mul", "box"),
     ("LRA", "Mul", "box"),
+    *(("Cast", name, "box") for name in
+      ("IntToReal", "RealToInt", "BVToInt", "BitToBool", "BoolToBit")),
     ("LIA", "Get", "box"),
     ("LRA", "Get", "box"),
     ("BV", "Get", "box"),
