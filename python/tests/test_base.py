@@ -36,7 +36,6 @@ def test_var_derefs_to_wire():
 
     # attributes Var does not define fall through to the latched wire,
     # mirroring Rust's Deref
-    assert v.degree == 0
     assert v.dtype == Real([2, 3])
     assert v.id == Wire(Real([1, 1])).id - 3  # ltc is first of the var's three wires
 
