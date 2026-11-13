@@ -77,6 +77,12 @@ def _linear_box(term: Term) -> str:
     return f"(Box.linear {out_m} {a_lit} {b_lit})"
 
 
+def _get_box(term: Term) -> str:
+    """Box for `Get`: element `[row][col]` of the read matrix, as a 1x1 one.
+    The element is baked into the op, as `Linear`'s matrices are."""
+    return f"(Box.get {term.itype.row} {term.itype.col})"
+
+
 def _argmax_box(
     input_shape: list[int], output_shape: "list[int] | None" = None
 ) -> str:
@@ -343,6 +349,8 @@ def translate_terms_circ(
                         )
                     elif name == "Linear":
                         boxes.append(_linear_box(term))
+                    elif name == "Get":
+                        boxes.append(_get_box(term))
                     else:
                         boxes.append(box_for(term.itype))
                     in_ty.extend([dtype_to_lean_type(u) for u in term.read])
