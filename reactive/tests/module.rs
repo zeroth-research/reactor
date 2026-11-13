@@ -3,15 +3,14 @@
 
 mod common;
 
+use base::boundary::{Boundary, Poly};
 use base::tangent::Tangent;
-use common::{
-    Atom, Module, Ops, Srt, example_counter, example_peterson1, example_tiny1, mk_op, srt,
-};
+use common::{Atom, Module, Ops, Srt, example_counter, example_peterson1, example_tiny1, srt};
 use dataflow::diagram::Term;
 use dataflow::diagram::Wire;
 use reactive::var::{Var, X, d};
 use std::fmt;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential};
 
 #[test]
 fn can_instantiate_partially_observable_module() {
@@ -137,10 +136,10 @@ fn compose_seq() {
     let y = Var::new(srt("real"));
     let z = Var::new(srt("real"));
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, Srt>> = [term!("ID", [X(x)], [X(y)]).unwrap()].to_vec();
     let m1 = Module::combinatorial(&[x, y], assign).unwrap();
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, Srt>> = [term!("ID", [X(z)], [X(x)]).unwrap()].to_vec();
     let m2 = Module::combinatorial(&[x, z], assign).unwrap();
 
     Module::compose([m1, m2]).unwrap();
@@ -164,10 +163,10 @@ fn compose_hiding() {
     let y = &Var::new(srt("real"));
     let z = &Var::new(srt("real"));
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, Srt>> = [term!("ID", [X(x)], [X(y)]).unwrap()].to_vec();
     let m1 = Module::combinatorial([x, y], assign).unwrap();
 
-    let assign: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, Srt>> = [term!("ID", [X(z)], [X(x)]).unwrap()].to_vec();
     let m2 = Module::combinatorial([x, z], assign).unwrap();
 
     // hiding the shared variable privatises it in the composite
@@ -203,8 +202,8 @@ fn constructor_then_hiding() {
     let p = &Var::new(srt("real"));
     let e = &Var::new(srt("real"));
 
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let init = term!("INIT", [X(x), X(p)]).unwrap();
+    let update = term!("STEP", [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e], [init], [update]).unwrap();
 
     let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
@@ -223,8 +222,8 @@ fn constructor_then_hiding() {
     assert_eq!(ids(m.intf()), vec![x.id()]);
 
     // an external variable cannot be hidden
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let init = term!("INIT", [X(x), X(p)]).unwrap();
+    let update = term!("STEP", [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e], [init], [update]).and_then(|m| m.hide(|v| v == e));
     assert!(m.is_err());
 }
@@ -243,11 +242,11 @@ fn local_coupling_is_order_independent() {
     let v = Var::new(srt("real"));
     let w = Var::new(srt("real"));
 
-    let a_upd = term!(mk_op("A"), [X(v)]).unwrap();
+    let a_upd = term!("A", [X(v)]).unwrap();
     let a = Atom::jump([&v], [a_upd]).unwrap();
 
     // b declares only w; its write to X(v) becomes a local temporary
-    let b_upd = term!(mk_op("B"), [X(v), X(w)], [*w]).unwrap();
+    let b_upd = term!("B", [X(v), X(w)], [*w]).unwrap();
     let b = Atom::jump([&w], [b_upd]).unwrap();
 
     let ab = Module::observable([a.clone(), b.clone()]);
@@ -267,17 +266,17 @@ fn cannot_share_local_wires() {
     // the shared temporary: both atoms compute through it
     let tmp = Wire::new(srt("real"));
 
-    let init = [term!(mk_op("CONST"), [X(x)]).unwrap()];
+    let init = [term!("CONST", [X(x)]).unwrap()];
     let update = [
-        term!(mk_op("CONST"), [tmp]).unwrap(),
-        term!(mk_op("ID"), [X(x)], [tmp]).unwrap(),
+        term!("CONST", [tmp]).unwrap(),
+        term!("ID", [X(x)], [tmp]).unwrap(),
     ];
     let a1 = Atom::sequential(&[x], init, update).unwrap();
 
-    let init = [term!(mk_op("CONST"), [X(y)]).unwrap()];
+    let init = [term!("CONST", [X(y)]).unwrap()];
     let update = [
-        term!(mk_op("CONST"), [tmp]).unwrap(),
-        term!(mk_op("ID"), [X(y)], [tmp]).unwrap(),
+        term!("CONST", [tmp]).unwrap(),
+        term!("ID", [X(y)], [tmp]).unwrap(),
     ];
     let a2 = Atom::sequential(&[y], init, update).unwrap();
 
@@ -313,10 +312,10 @@ fn compose_seq_2() {
     //
     //         return xn, y, z
     //
-    let init: Vec<Term<Ops>> = [
-        term!(mk_op("Const(0)"), [X(x)]).unwrap(),
-        term!(mk_op("Id"), [X(y)], [X(y0)]).unwrap(),
-        term!(mk_op("Id"), [X(z)], [X(z0)]).unwrap(),
+    let init: Vec<Term<Ops, Srt>> = [
+        term!("Const(0)", [X(x)]).unwrap(),
+        term!("Id", [X(y)], [X(y0)]).unwrap(),
+        term!("Id", [X(z)], [X(z0)]).unwrap(),
     ]
     .to_vec();
 
@@ -328,16 +327,16 @@ fn compose_seq_2() {
         Wire::new(srt("real")),
         Wire::new(srt("real")),
     ];
-    let update: Vec<Term<Ops>> = [
-        term!(mk_op("Lt"), [tmps[0]], [x, y]).unwrap(),
-        term!(mk_op("Lt"), [tmps[1]], [x, z]).unwrap(),
-        term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
-        term!(mk_op("Const(0)"), [tmps[3]]).unwrap(),
-        term!(mk_op("Const(1)"), [tmps[4]]).unwrap(),
-        term!(mk_op("Add"), [tmps[5]], [*x, tmps[4]]).unwrap(),
-        term!(mk_op("Ite"), [X(x)], [tmps[2], tmps[5], tmps[3]]).unwrap(),
-        term!(mk_op("Id"), [X(y)], [y]).unwrap(),
-        term!(mk_op("Id"), [X(z)], [z]).unwrap(),
+    let update: Vec<Term<Ops, Srt>> = [
+        term!("Lt", [tmps[0]], [x, y]).unwrap(),
+        term!("Lt", [tmps[1]], [x, z]).unwrap(),
+        term!("Or", [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
+        term!("Const(0)", [tmps[3]]).unwrap(),
+        term!("Const(1)", [tmps[4]]).unwrap(),
+        term!("Add", [tmps[5]], [*x, tmps[4]]).unwrap(),
+        term!("Ite", [X(x)], [tmps[2], tmps[5], tmps[3]]).unwrap(),
+        term!("Id", [X(y)], [y]).unwrap(),
+        term!("Id", [X(z)], [z]).unwrap(),
     ]
     .to_vec();
     let obs = &[x, y, z, y0, z0];
@@ -357,11 +356,11 @@ fn compose_seq_2() {
         Wire::new(srt("real")),
         Wire::new(srt("real")),
     ];
-    let assign: Vec<Term<Ops>> = [
-        term!(mk_op("Le"), [tmps[0]], [X(x), X(y)]).unwrap(),
-        term!(mk_op("Le"), [tmps[1]], [X(x), X(z)]).unwrap(),
-        term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
-        term!(mk_op("Id"), [X(inv)], [tmps[2]]).unwrap(),
+    let assign: Vec<Term<Ops, Srt>> = [
+        term!("Le", [tmps[0]], [X(x), X(y)]).unwrap(),
+        term!("Le", [tmps[1]], [X(x), X(z)]).unwrap(),
+        term!("Or", [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
+        term!("Id", [X(inv)], [tmps[2]]).unwrap(),
     ]
     .to_vec();
 
@@ -382,8 +381,8 @@ fn more_controlled_than_external() {
     let y = &Var::new(srt("B"));
     let z = &Var::new(srt("C"));
 
-    let init = Term::constant(mk_op("A"), [X(y), X(z)]).unwrap();
-    let update = Term::function(mk_op("A"), [X(y), X(z)], [*y, *z]).unwrap();
+    let init = term!("A", [X(y), X(z)]).unwrap();
+    let update = term!("A", [X(y), X(z)], [*y, *z]).unwrap();
 
     let a = Atom::sequential([x, y, z], [init], [update]);
     assert!(a.is_ok());
@@ -391,51 +390,47 @@ fn more_controlled_than_external() {
     assert!(m.is_ok());
 }
 
-#[allow(unused)]
-#[derive(Clone, Copy)]
-struct SeqOps(&'static str);
-#[allow(unused)]
-#[derive(Clone, Copy)]
-struct DifOps(&'static str);
+/// The uninterpreted operations of the sequential and the combinatorial parts
+#[derive(Clone, Debug)]
+struct SeqOps(Ops);
+/// The uninterpreted operations of the differential part
+#[derive(Clone, Debug)]
+struct DifOps(Ops);
 
-impl Theory for SeqOps {
-    type Sort = Srt;
-    const NAME: &'static str = "SeqOps";
-    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Self::Sort, E>>,
-        W: IntoIterator<Item = Result<Self::Sort, E>>,
-    {
-        Ok(())
+impl Boundary<Srt> for SeqOps {
+    fn dom(&self) -> Poly<Srt> {
+        self.0.dom()
+    }
+
+    fn cod(&self) -> Poly<Srt> {
+        self.0.cod()
     }
 }
 
-impl Theory for DifOps {
-    type Sort = Srt;
-    const NAME: &'static str = "DifOps";
-    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Self::Sort, E>>,
-        W: IntoIterator<Item = Result<Self::Sort, E>>,
-    {
-        Ok(())
+impl Boundary<Srt> for DifOps {
+    fn dom(&self) -> Poly<Srt> {
+        self.0.dom()
+    }
+
+    fn cod(&self) -> Poly<Srt> {
+        self.0.cod()
     }
 }
 
-impl Differential for DifOps {
-    fn zero(_range: &Self::Sort) -> Self {
-        Self("ZERO")
+impl Differential<Srt> for DifOps {
+    fn zero(range: &Srt) -> Self {
+        Self(Ops::zero(range))
     }
 }
-impl Sequential for SeqOps {
-    fn skip(_range: &Self::Sort) -> Self {
-        Self("SKIP")
+impl Sequential<Srt> for SeqOps {
+    fn skip(range: &Srt) -> Self {
+        Self(Ops::skip(range))
     }
 }
 
-impl Combinatorial for SeqOps {
-    fn havoc(_range: &Self::Sort) -> Self {
-        Self("HAVOC")
+impl Combinatorial<Srt> for SeqOps {
+    fn havoc(range: &Srt) -> Self {
+        Self(Ops::havoc(range))
     }
 }
 
@@ -468,8 +463,8 @@ fn constructor_interfaces_are_exact() {
     let p = &Var::new(srt("real"));
     let e = &Var::new(srt("real"));
 
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let init = term!("INIT", [X(x), X(p)]).unwrap();
+    let update = term!("STEP", [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e], [init], [update]).unwrap();
 
     let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
@@ -488,8 +483,8 @@ fn hiding_interfaces_are_exact() {
     let p = &Var::new(srt("real"));
     let e = &Var::new(srt("real"));
 
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let init = term!("INIT", [X(x), X(p)]).unwrap();
+    let update = term!("STEP", [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e], [init], [update])
         .unwrap()
         .hide(|v| v == p)
@@ -511,8 +506,8 @@ fn duplicate_scope_variable_is_collapsed() {
     let p = &Var::new(srt("real"));
     let e = &Var::new(srt("real"));
 
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let init = term!("INIT", [X(x), X(p)]).unwrap();
+    let update = term!("STEP", [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e, x, e], [init], [update]).unwrap();
 
     let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
@@ -532,8 +527,8 @@ fn unused_scope_variable_does_not_leak() {
     let e = &Var::new(srt("real"));
     let unused = &Var::new(srt("real"));
 
-    let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
-    let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
+    let init = term!("INIT", [X(x), X(p)]).unwrap();
+    let update = term!("STEP", [X(x), X(p)], [*p, *e]).unwrap();
     let m = Module::sequential([x, p, e, unused], [init], [update]).unwrap();
 
     let ids = |i: &reactive::var::Interface<_>| i.iter().map(|v| v.id()).collect::<Vec<_>>();
@@ -559,7 +554,8 @@ fn heterogeneous_composition() {
     let flow = Term::constant(DifOps::zero(&srt("B").tangent()), [d(y)]).unwrap();
     let Q = reactive::Module::differential(&[y], [init], [flow]).unwrap();
 
-    let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();
+    let (write, read) = ([X(z)], [X(x), X(y)]);
+    let comb = Term::function(SeqOps(Ops::at("+", &write, &read)), write, read).unwrap();
     let R = reactive::Module::combinatorial(&[x, y, z], [comb]).unwrap();
 
     let S = reactive::Module::compose([P, Q, R]);

@@ -90,5 +90,5 @@ def test_parameters_are_checked():
 def test_terms_check_the_boundary():
     r, b = Real([1, 1]), Bool([1, 1])
     Term(op(LRA, "Add", r), [Wire(r)], [Wire(r), Wire(r)])
-    with pytest.raises(Exception, match="expected `Real\\(1, 1\\) ⊗ Real\\(1, 1\\) -> Real\\(1, 1\\)`"):
+    with pytest.raises(Exception, match="expected `Real\\(\\[1,1\\]\\) ⊗ Real\\(\\[1,1\\]\\) -> Real\\(\\[1,1\\]\\)`"):
         Term(op(LRA, "Add", r), [Wire(b)], [Wire(r), Wire(r)])

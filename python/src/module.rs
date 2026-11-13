@@ -8,13 +8,13 @@ use theory::any::{Combinatorial, Differential, Sequential};
 
 #[pyclass(subclass, frozen)]
 pub(crate) struct Module {
-    pub(crate) base: reactive::Module<Combinatorial, Sequential, Differential>,
+    pub(crate) base: reactive::Module<Combinatorial, Sequential, Differential, Sort>,
 }
 
 impl Module {
     fn partially_observable<A>(atoms: A, hide: &Bound<'_, PyAny>) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential>>,
+        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential, Sort>>,
     {
         let hide = Hide::try_from(hide)?;
         let module = reactive::Module::partially_observable(atoms, hide.as_fn());
@@ -24,7 +24,7 @@ impl Module {
 
     fn observable<A>(atoms: A) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential>>,
+        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential, Sort>>,
     {
         let module = reactive::Module::observable(atoms);
         module.map(Into::into).map_err(PyException::new_err)
@@ -373,8 +373,8 @@ impl Module {
     }
 }
 
-impl From<reactive::Module<Combinatorial, Sequential, Differential>> for Module {
-    fn from(base: reactive::Module<Combinatorial, Sequential, Differential>) -> Self {
+impl From<reactive::Module<Combinatorial, Sequential, Differential, Sort>> for Module {
+    fn from(base: reactive::Module<Combinatorial, Sequential, Differential, Sort>) -> Self {
         Self { base }
     }
 }

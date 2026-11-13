@@ -9,7 +9,6 @@ use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fmt::Write;
-use theory::Theory;
 use theory::any::{Any, Combinatorial, Differential, Sequential, Sort};
 
 mod atom;
@@ -73,11 +72,10 @@ fn try_var_iter_cloned(
 
 fn try_term_iter_cloned<T>(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<T>>>
+) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<T, Sort>>>
 where
-    T: Theory,
-    dataflow::diagram::Term<Any>: TryInto<dataflow::diagram::Term<T>>,
-    <dataflow::diagram::Term<Any> as TryInto<dataflow::diagram::Term<T>>>::Error: Debug,
+    dataflow::diagram::Term<Any, Sort>: TryInto<dataflow::diagram::Term<T, Sort>>,
+    <dataflow::diagram::Term<Any, Sort> as TryInto<dataflow::diagram::Term<T, Sort>>>::Error: Debug,
 {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;

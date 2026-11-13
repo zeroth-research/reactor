@@ -32,34 +32,29 @@ that apply to several kinds of values come in one variant per kind, e.g.,
   — the operations on the derivatives of reals (of the degree `>= 1`).
 - [`LRA::RealZerograd`], [`LRA::BoolZerograd`] — the zero derivatives.
 
-`LRA` implements [`Theory`]; [`Theory::check`] checks that the sorts of the
-read and written wires are the domain and the codomain of the operation.
+An operation applies to the wires whose sorts are its boundary: the read wires
+have the sorts of its domain, and the written wires the sorts of its codomain.
 
 ## Examples
 
 ```
-use theory::Theory;
-use theory::lra::{LRA, Sort};
-use base::tangent::Tangent;
+use base::boundary::Boundary;
+use theory::lra::LRA;
 use std::num::NonZeroU8;
 
-// Wires carry a sort (derivatives carry the tangent sorts).
-let ok = |s| Ok::<_, String>(s);
+let boundary = |op: LRA| format!("{} -> {}", op.dom(), op.cod());
 
-// Pointwise less-than on scalars: Real(1,1), Real(1,1) -> Bool(1,1).
-let i = Sort::Real([1, 1], 0);
-let b = Sort::Bool([1, 1]);
-assert!(LRA::Lt(1, 1).check([i, i].map(ok), [b].map(ok)).is_ok());
+// Pointwise less-than on scalars.
+assert_eq!(boundary(LRA::Lt(1, 1)), "Real(1, 1) ⊗ Real(1, 1) -> Bool(1, 1)");
 
 // ReLU preserves shape and stays in the real fragment.
-let m = Sort::Real([3, 4], 0);
-assert!(LRA::ReLU(3, 4).check([m].map(ok), [m].map(ok)).is_ok());
-assert!(LRA::ReLU(3, 4).check([b].map(ok), [b].map(ok)).is_err());
+assert_eq!(boundary(LRA::ReLU(3, 4)), "Real(3, 4) -> Real(3, 4)");
 
 // Derivatives have their own operations.
-let dm = m.tangent();
-assert!(LRA::TAdd(3, 4, NonZeroU8::MIN).check([dm, dm].map(ok), [dm].map(ok)).is_ok());
-assert!(LRA::Add(3, 4).check([dm, dm].map(ok), [dm].map(ok)).is_err());
+assert_eq!(
+    boundary(LRA::TAdd(3, 4, NonZeroU8::MIN)),
+    "Real(3, 4; 1) ⊗ Real(3, 4; 1) -> Real(3, 4; 1)"
+);
 ```
 */
 
@@ -194,8 +189,8 @@ impl fmt::Display for LRA {
     }
 }
 
-impl Sequential for LRA {
-    fn skip(range: &Self::Sort) -> Self {
+impl Sequential<Sort> for LRA {
+    fn skip(range: &Sort) -> Self {
         match *range {
             Sort::Real([r, c], degree) => match NonZeroU8::new(degree) {
                 None => LRA::IdReal(r, c),
@@ -207,8 +202,8 @@ impl Sequential for LRA {
     }
 }
 
-impl Combinatorial for LRA {
-    fn havoc(range: &Self::Sort) -> Self {
+impl Combinatorial<Sort> for LRA {
+    fn havoc(range: &Sort) -> Self {
         // a derivative cannot be havoced: the check of the term with a tangent fails
         match *range {
             Sort::Bool([r, c]) | Sort::Zero([r, c]) => LRA::AnyBool(r, c),
@@ -217,8 +212,8 @@ impl Combinatorial for LRA {
     }
 }
 
-impl Differential for LRA {
-    fn zero(range: &Self::Sort) -> Self {
+impl Differential<Sort> for LRA {
+    fn zero(range: &Sort) -> Self {
         // the range is the sort of the derivative; values have no zero derivative: the
         // check of the term with a value fails (the zero of a real value is the zero of its
         // first derivative)
@@ -228,19 +223,6 @@ impl Differential for LRA {
                 LRA::RealZerograd(r, c, NonZeroU8::new(degree).unwrap_or(NonZeroU8::MIN))
             }
         }
-    }
-}
-
-impl Theory for LRA {
-    type Sort = Sort;
-    const NAME: &'static str = "LRA";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Sort, E>>,
-        W: IntoIterator<Item = Result<Sort, E>>,
-    {
-        check_wires(self.dom(), self.cod(), read, write).map_err(|e| format!("{self:?}: {e}"))
     }
 }
 
@@ -351,10 +333,6 @@ mod tests {
         Sort::Bool([r, c])
     }
 
-    fn ok(s: Sort) -> Result<Sort, String> {
-        Ok(s)
-    }
-
     fn real_tensor(rows: i64, cols: i64) -> crate::PyTensor {
         tch::Tensor::zeros([rows, cols], (tch::Kind::Float, tch::Device::Cpu)).into()
     }
@@ -371,6 +349,11 @@ mod tests {
         NonZeroU8::new(degree).unwrap()
     }
 
+    // Formats the boundary of `op` as `dom -> cod`
+    fn show(op: LRA) -> String {
+        format!("{} -> {}", op.dom(), op.cod())
+    }
+
     #[test]
     fn type_kind_and_shape() {
         assert!(real(2, 3).is_real() && !real(2, 3).is_bool());
@@ -379,446 +362,158 @@ mod tests {
     }
 
     #[test]
-    fn const_real_ok() {
+    fn literals() {
+        // a literal writes a matrix of the shape of its tensor; a real literal writes a
+        // value, never a derivative
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64, 1.0], [2.0, 3.0]]).into();
-        assert!(
-            LRA::Real(matrix(cm))
-                .check([].map(ok), [real(2, 2)].map(ok))
-                .is_ok()
+        assert_eq!(show(LRA::Real(matrix(cm))), "I -> Real(2, 2)");
+        assert_eq!(
+            show(LRA::Real(matrix(real_tensor(2, 3)))),
+            "I -> Real(2, 3)"
         );
-    }
-
-    #[test]
-    fn const_real_covector_write_fails() {
-        // a real constant writes a value (0-form), never a derivative:
-        // a covector (1-form) write wire must be rejected
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0.0f64]]).into();
-        assert!(
-            LRA::Real(matrix(cm))
-                .check([].map(ok), [real(1, 1).tangent()].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn const_real_bool_write_fails() {
-        assert!(
-            LRA::Real(matrix(tch::Tensor::from_slice2(&[[0.0f64]]).into()))
-                .check([].map(ok), [bool_t(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn const_real_wrong_rows_fails() {
-        assert!(
-            LRA::Real(matrix(tch::Tensor::from_slice2(&[[0.0f64]]).into()))
-                .check([].map(ok), [real(2, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn const_real_with_read_fails() {
-        let t = real(1, 1);
-        assert!(
-            LRA::Real(matrix(tch::Tensor::from_slice2(&[[0.0f64]]).into()))
-                .check([t].map(ok), [t].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn const_bool_ok() {
         let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
-        assert!(
-            LRA::Bool(matrix(cm))
-                .check([].map(ok), [bool_t(2, 2)].map(ok))
-                .is_ok()
-        );
+        assert_eq!(show(LRA::Bool(matrix(cm))), "I -> Bool(2, 2)");
     }
 
     #[test]
-    fn const_bool_real_write_fails() {
-        assert!(
-            LRA::Bool(matrix(tch::Tensor::from_slice2(&[[true]]).into()))
-                .check([].map(ok), [real(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn not_ok() {
-        let b = bool_t(2, 3);
-        assert!(LRA::Not(2, 3).check([b].map(ok), [b].map(ok)).is_ok());
+    fn boolean_ops() {
+        let bin = |s| format!("{s} ⊗ {s} -> {s}");
+        for op in [LRA::And(2, 3), LRA::Or(2, 3), LRA::Xor(2, 3)] {
+            assert_eq!(show(op), bin("Bool(2, 3)"));
+        }
+        assert_eq!(show(LRA::Not(2, 3)), "Bool(2, 3) -> Bool(2, 3)");
         // the shape is given by the operation
-        assert!(LRA::Not(3, 2).check([b].map(ok), [b].map(ok)).is_err());
+        assert_eq!(show(LRA::Not(3, 2)), "Bool(3, 2) -> Bool(3, 2)");
     }
 
     #[test]
-    fn not_real_input_fails() {
-        let t = real(1, 1);
-        assert!(LRA::Not(1, 1).check([t].map(ok), [t].map(ok)).is_err());
+    fn comparisons() {
+        for op in [
+            LRA::Le(2, 3),
+            LRA::Lt(2, 3),
+            LRA::Ge(2, 3),
+            LRA::Gt(2, 3),
+            LRA::Eq(2, 3),
+            LRA::Ne(2, 3),
+        ] {
+            assert_eq!(show(op), "Real(2, 3) ⊗ Real(2, 3) -> Bool(2, 3)");
+        }
     }
 
     #[test]
-    fn and_ok() {
-        let b = bool_t(2, 2);
-        assert!(LRA::And(2, 2).check([b, b].map(ok), [b].map(ok)).is_ok());
+    fn arithmetic() {
+        // `Min` and `Max` are pointwise
+        for op in [
+            LRA::Add(2, 3),
+            LRA::Sub(2, 3),
+            LRA::Min(2, 3),
+            LRA::Max(2, 3),
+        ] {
+            assert_eq!(show(op), "Real(2, 3) ⊗ Real(2, 3) -> Real(2, 3)");
+        }
+        assert_eq!(show(LRA::ReLU(3, 4)), "Real(3, 4) -> Real(3, 4)");
+        // the index into the flattened matrix
+        assert_eq!(show(LRA::Argmax(3, 4)), "Real(3, 4) -> Real(1, 1)");
     }
 
     #[test]
-    fn or_ok() {
-        let b = bool_t(1, 1);
-        assert!(LRA::Or(1, 1).check([b, b].map(ok), [b].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn xor_ok() {
-        let b = bool_t(3, 1);
-        assert!(LRA::Xor(3, 1).check([b, b].map(ok), [b].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn and_real_output_fails() {
-        let b = bool_t(1, 1);
-        assert!(
-            LRA::And(1, 1)
-                .check([b, b].map(ok), [real(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn and_type_mismatch_fails() {
-        assert!(
-            LRA::And(1, 1)
-                .check([bool_t(1, 1), bool_t(1, 2)].map(ok), [bool_t(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn lt_ok() {
-        assert!(
-            LRA::Lt(1, 1)
-                .check([real(1, 1), real(1, 1)].map(ok), [bool_t(1, 1)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn le_ok() {
-        assert!(
-            LRA::Le(2, 3)
-                .check([real(2, 3), real(2, 3)].map(ok), [bool_t(2, 3)].map(ok))
-                .is_ok()
-        );
-
-        assert!(
-            LRA::Le(2, 3)
-                .check([real(3, 3), real(2, 3)].map(ok), [bool_t(2, 3)].map(ok))
-                .is_err()
-        );
-
-        assert!(
-            LRA::Le(2, 3)
-                .check([real(2, 3), real(2, 3)].map(ok), [bool_t(3, 3)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn eq_ok() {
-        assert!(
-            LRA::Eq(2, 2)
-                .check([real(2, 2), real(2, 2)].map(ok), [bool_t(2, 2)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn cmp_non_bool_output_fails() {
-        let t = real(1, 1);
-        assert!(LRA::Lt(1, 1).check([t, t].map(ok), [t].map(ok)).is_err());
-    }
-
-    #[test]
-    fn cmp_input_mismatch_fails() {
-        assert!(
-            LRA::Eq(1, 1)
-                .check([real(1, 1), real(1, 2)].map(ok), [bool_t(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn add_ok() {
-        let t = real(3, 4);
-        assert!(LRA::Add(3, 4).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn add_shape_mismatch_fails() {
-        assert!(
-            LRA::Add(1, 2)
-                .check([real(1, 2), real(2, 1)].map(ok), [real(1, 2)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn add_bool_fails() {
-        let b = bool_t(1, 1);
-        assert!(LRA::Add(1, 1).check([b, b].map(ok), [b].map(ok)).is_err());
-    }
-
-    #[test]
-    fn relu_ok() {
-        let t = real(3, 4);
-        assert!(LRA::ReLU(3, 4).check([t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn relu_bool_fails() {
-        let b = bool_t(1, 1);
-        assert!(LRA::ReLU(1, 1).check([b].map(ok), [b].map(ok)).is_err());
-    }
-
-    #[test]
-    fn argmax_ok() {
-        assert!(
-            LRA::Argmax(3, 4)
-                .check([real(3, 4)].map(ok), [real(1, 1)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn argmax_matrix_output_fails() {
-        assert!(
-            LRA::Argmax(3, 4)
-                .check([real(3, 4)].map(ok), [real(3, 4)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn min_ok() {
-        // pointwise
-        let t = real(4, 1);
-        assert!(LRA::Min(4, 1).check([t, t].map(ok), [t].map(ok)).is_ok());
-        assert!(
-            LRA::Max(4, 1)
-                .check([t].map(ok), [real(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn linear_ok() {
+    fn linear() {
         // A=[2,3] maps 3 features to 2; X=[3,4] is 3 features × 4 batch items.
         // Convention: Y = A·X  →  Y=[2,4].
-        assert!(
-            LRA::Linear(affine(real_tensor(2, 3), real_tensor(0, 0)), 4)
-                .check([real(3, 4)].map(ok), [real(2, 4)].map(ok))
-                .is_ok()
+        let linear = |b, batch| LRA::Linear(affine(real_tensor(2, 3), b), batch);
+        assert_eq!(
+            show(linear(real_tensor(0, 0), 4)),
+            "Real(3, 4) -> Real(2, 4)"
         );
-    }
-
-    #[test]
-    fn linear_with_bias_ok() {
         // A=[2,3], b=[2,1] column bias, X=[3,1] single sample → Y=[2,1].
-        assert!(
-            LRA::Linear(affine(real_tensor(2, 3), real_tensor(2, 1)), 1)
-                .check([real(3, 1)].map(ok), [real(2, 1)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn linear_dim_mismatch_fails() {
-        // A=[2,3] but X has 4 rows — inner dimension mismatch.
-        let linear = |batch| LRA::Linear(affine(real_tensor(2, 3), real_tensor(0, 0)), batch);
-        assert!(
-            linear(1)
-                .check([real(4, 1)].map(ok), [real(2, 1)].map(ok))
-                .is_err()
+        assert_eq!(
+            show(linear(real_tensor(2, 1), 1)),
+            "Real(3, 1) -> Real(2, 1)"
         );
         // the batch is given by the operation
-        assert!(
-            linear(2)
-                .check([real(3, 1)].map(ok), [real(2, 1)].map(ok))
-                .is_err()
+        assert_eq!(
+            show(linear(real_tensor(0, 0), 2)),
+            "Real(3, 2) -> Real(2, 2)"
         );
     }
 
     #[test]
-    fn transpose_ok() {
-        assert!(
-            LRA::TransposeReal(3, 4)
-                .check([real(3, 4)].map(ok), [real(4, 3)].map(ok))
-                .is_ok()
+    fn transpose() {
+        assert_eq!(show(LRA::TransposeReal(3, 4)), "Real(3, 4) -> Real(4, 3)");
+        assert_eq!(show(LRA::TransposeBool(3, 4)), "Bool(3, 4) -> Bool(4, 3)");
+    }
+
+    #[test]
+    fn ite() {
+        // a single boolean guard and two branches of the sort of the result
+        assert_eq!(
+            show(LRA::IteReal(3, 4)),
+            "Bool(1, 1) ⊗ Real(3, 4) ⊗ Real(3, 4) -> Real(3, 4)"
         );
-        assert!(
-            LRA::TransposeBool(3, 4)
-                .check([bool_t(3, 4)].map(ok), [bool_t(4, 3)].map(ok))
-                .is_ok()
-        );
-        assert!(
-            LRA::TransposeReal(3, 4)
-                .check([bool_t(3, 4)].map(ok), [bool_t(4, 3)].map(ok))
-                .is_err()
+        assert_eq!(
+            show(LRA::IteBool(3, 4)),
+            "Bool(1, 1) ⊗ Bool(3, 4) ⊗ Bool(3, 4) -> Bool(3, 4)"
         );
     }
 
     #[test]
-    fn transpose_wrong_shape_fails() {
-        assert!(
-            LRA::TransposeReal(3, 4)
-                .check([real(3, 4)].map(ok), [real(3, 4)].map(ok))
-                .is_err()
+    fn id() {
+        assert_eq!(show(LRA::IdReal(4, 4)), "Real(4, 4) -> Real(4, 4)");
+        assert_eq!(show(LRA::IdBool(4, 4)), "Bool(4, 4) -> Bool(4, 4)");
+    }
+
+    #[test]
+    fn uninterpreted() {
+        // a single write of the given sort
+        assert_eq!(
+            show(LRA::UninterpretedReal("f".into(), 2, 3)),
+            "I -> Real(2, 3)"
+        );
+        assert_eq!(
+            show(LRA::UninterpretedBool("g".into(), 2, 3)),
+            "I -> Bool(2, 3)"
         );
     }
 
     #[test]
-    fn ite_ok() {
-        let t = real(3, 4);
-        assert!(
-            LRA::IteReal(3, 4)
-                .check([bool_t(1, 1), t, t].map(ok), [t].map(ok))
-                .is_ok()
-        );
-        let b = bool_t(3, 4);
-        assert!(
-            LRA::IteBool(3, 4)
-                .check([bool_t(1, 1), b, b].map(ok), [b].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn ite_non_bool_guard_fails() {
-        let t = real(1, 1);
-        assert!(
-            LRA::IteReal(1, 1)
-                .check([t, t, t].map(ok), [t].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn ite_arm_mismatch_fails() {
-        assert!(
-            LRA::IteReal(1, 1)
-                .check(
-                    [bool_t(1, 1), real(1, 1), real(1, 2)].map(ok),
-                    [real(1, 1)].map(ok)
-                )
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn id_ok() {
-        let t = real(4, 4);
-        assert!(LRA::IdReal(4, 4).check([t].map(ok), [t].map(ok)).is_ok());
-        let b = bool_t(4, 4);
-        assert!(LRA::IdBool(4, 4).check([b].map(ok), [b].map(ok)).is_ok());
-        assert!(LRA::IdReal(4, 4).check([b].map(ok), [b].map(ok)).is_err());
-    }
-
-    #[test]
-    fn id_type_mismatch_fails() {
-        assert!(
-            LRA::IdReal(1, 1)
-                .check([real(1, 1)].map(ok), [real(2, 2)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn id_arity_mismatch_fails() {
-        let t = real(1, 1);
-        let id = || LRA::IdReal(1, 1);
-        assert!(id().check([t, t].map(ok), [t, t].map(ok)).is_err());
-        assert!(id().check([t, t].map(ok), [t].map(ok)).is_err());
-        assert!(id().check([t].map(ok), [t, t].map(ok)).is_err());
-    }
-
-    #[test]
-    fn havoc_ok() {
-        assert!(
-            LRA::AnyReal(2, 1)
-                .check([].map(ok), [real(2, 1)].map(ok))
-                .is_ok()
-        );
-        assert!(
-            LRA::AnyBool(1, 1)
-                .check([].map(ok), [bool_t(1, 1)].map(ok))
-                .is_ok()
-        );
+    fn havoc() {
+        assert_eq!(show(LRA::AnyReal(2, 1)), "I -> Real(2, 1)");
+        assert_eq!(show(LRA::AnyBool(2, 1)), "I -> Bool(2, 1)");
         // `havoc` is given the sort of the written wire
         assert!(matches!(LRA::havoc(&real(2, 1)), LRA::AnyReal(2, 1)));
         assert!(matches!(LRA::havoc(&bool_t(2, 1)), LRA::AnyBool(2, 1)));
     }
 
     #[test]
-    fn havoc_read_fails() {
-        let t = real(1, 1);
-        assert!(LRA::AnyReal(1, 1).check([t].map(ok), [t].map(ok)).is_err());
-    }
-
-    #[test]
-    fn havoc_arity_mismatch_fails() {
-        assert!(
-            LRA::AnyReal(2, 1)
-                .check([].map(ok), [real(2, 1), bool_t(1, 1)].map(ok))
-                .is_err()
-        );
-        assert!(LRA::AnyReal(1, 1).check([].map(ok), [].map(ok)).is_err());
-        // the write sort must match the op's declared range
-        assert!(
-            LRA::AnyReal(2, 1)
-                .check([].map(ok), [real(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn skip_ok() {
+    fn skip() {
         // `skip` copies a value, or a derivative, of the given sort
         let (r, dr) = (real(2, 1), real(2, 1).tangent());
         assert!(matches!(LRA::skip(&r), LRA::IdReal(2, 1)));
         assert!(matches!(LRA::skip(&dr), LRA::TId(2, 1, d) if d.get() == 1));
         assert!(matches!(LRA::skip(&bool_t(2, 1)), LRA::IdBool(2, 1)));
-        assert!(LRA::skip(&r).check([r].map(ok), [r].map(ok)).is_ok());
-        assert!(LRA::skip(&dr).check([dr].map(ok), [dr].map(ok)).is_ok());
-        // a zero derivative cannot be copied
+        assert_eq!(show(LRA::skip(&dr)), "Real(2, 1; 1) -> Real(2, 1; 1)");
+        // a zero derivative cannot be copied: `skip` of it copies a boolean
         let z = bool_t(2, 1).tangent();
-        assert!(LRA::skip(&z).check([z].map(ok), [z].map(ok)).is_err());
+        assert_eq!(show(LRA::skip(&z)), "Bool(2, 1) -> Bool(2, 1)");
     }
 
     #[test]
-    fn zero_ok() {
+    fn zero() {
         // the zero derivative is written to the derivative (a tangent), not to a value
-        let zero = |op: LRA, s: Sort| op.check([].map(ok), [s].map(ok));
-        let (r, b) = (real(2, 1), bool_t(2, 1));
-        assert!(zero(LRA::RealZerograd(2, 1, deg(1)), r.tangent()).is_ok());
-        assert!(zero(LRA::RealZerograd(2, 1, deg(1)), r).is_err());
-        assert!(zero(LRA::RealZerograd(2, 1, deg(1)), r.tangent().tangent()).is_err());
-        assert!(zero(LRA::RealZerograd(2, 1, deg(2)), r.tangent().tangent()).is_ok());
-        assert!(zero(LRA::BoolZerograd(2, 1), b.tangent()).is_ok());
-        assert!(zero(LRA::BoolZerograd(2, 1), b).is_err());
+        assert_eq!(show(LRA::RealZerograd(2, 1, deg(1))), "I -> Real(2, 1; 1)");
+        assert_eq!(show(LRA::RealZerograd(2, 1, deg(2))), "I -> Real(2, 1; 2)");
+        assert_eq!(show(LRA::BoolZerograd(2, 1)), "I -> Zero(2, 1)");
         // `zero` is given the sort of the derivative
+        let (r, b) = (real(2, 1), bool_t(2, 1));
         assert!(matches!(
             LRA::zero(&r.tangent()),
             LRA::RealZerograd(2, 1, d) if d.get() == 1
         ));
         assert!(matches!(LRA::zero(&b.tangent()), LRA::BoolZerograd(2, 1)));
-        // values have no zero derivative
-        assert!(zero(LRA::zero(&r), r).is_err());
-        assert!(zero(LRA::zero(&b), b).is_err());
+        // values have no zero derivative: the zero of a value is the zero of its first
+        // derivative
+        assert_eq!(show(LRA::zero(&r)), "I -> Real(2, 1; 1)");
+        assert_eq!(show(LRA::zero(&b)), "I -> Zero(2, 1)");
     }
 
     #[test]
@@ -828,159 +523,26 @@ mod tests {
         assert_eq!(r.tangent().tangent(), Sort::Real([2, 1], 2));
         assert_eq!(b.tangent(), Sort::Zero([2, 1]));
         assert_eq!(b.tangent().tangent(), Sort::Zero([2, 1]));
-        // the operations on derivatives (of the same degree)
-        let dr = r.tangent();
-        let g = bool_t(1, 1);
-        assert!(
-            LRA::TAdd(2, 1, deg(1))
-                .check([dr, dr].map(ok), [dr].map(ok))
-                .is_ok()
-        );
-        assert!(
-            LRA::TSub(2, 1, deg(1))
-                .check([dr, dr].map(ok), [dr].map(ok))
-                .is_ok()
-        );
-        assert!(
-            LRA::TId(2, 1, deg(1))
-                .check([dr].map(ok), [dr].map(ok))
-                .is_ok()
-        );
-        assert!(
-            LRA::TIte(2, 1, deg(1))
-                .check([g, dr, dr].map(ok), [dr].map(ok))
-                .is_ok()
-        );
-        let ddr = dr.tangent();
-        assert!(
-            LRA::TAdd(2, 1, deg(2))
-                .check([ddr, ddr].map(ok), [ddr].map(ok))
-                .is_ok()
-        );
-        // ... do not apply to values, nor to derivatives of other degrees
-        assert!(
-            LRA::TAdd(2, 1, deg(1))
-                .check([r, r].map(ok), [r].map(ok))
-                .is_err()
-        );
-        assert!(
-            LRA::TAdd(2, 1, deg(1))
-                .check([dr, r].map(ok), [dr].map(ok))
-                .is_err()
-        );
-        assert!(
-            LRA::TAdd(2, 1, deg(1))
-                .check([dr, dr].map(ok), [ddr].map(ok))
-                .is_err()
-        );
-        // the operations on values do not apply to derivatives
-        assert!(
-            LRA::Add(2, 1)
-                .check([dr, dr].map(ok), [dr].map(ok))
-                .is_err()
-        );
-        assert!(LRA::ReLU(2, 1).check([dr].map(ok), [dr].map(ok)).is_err());
-        assert!(LRA::Lt(2, 1).check([dr, dr].map(ok), [b].map(ok)).is_err());
-        assert!(LRA::IdReal(2, 1).check([dr].map(ok), [dr].map(ok)).is_err());
-        // `dx = x` mixes a derivative and a value
-        assert!(LRA::IdReal(2, 1).check([r].map(ok), [dr].map(ok)).is_err());
-        assert!(
-            LRA::TId(2, 1, deg(1))
-                .check([r].map(ok), [dr].map(ok))
-                .is_err()
-        );
-        // boolean operations and guards are on values only
-        assert!(
-            LRA::Not(2, 1)
-                .check([b.tangent()].map(ok), [b.tangent()].map(ok))
-                .is_err()
-        );
-        assert!(
-            LRA::TIte(2, 1, deg(1))
-                .check([g.tangent(), dr, dr].map(ok), [dr].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn zero_arity_mismatch_fails() {
-        let t = real(1, 1).tangent();
-        assert!(
-            LRA::RealZerograd(1, 1, deg(1))
-                .check([t].map(ok), [t].map(ok))
-                .is_err()
-        );
-        assert!(
-            LRA::RealZerograd(1, 1, deg(1))
-                .check([].map(ok), [t, t].map(ok))
-                .is_err()
-        );
-        assert!(
-            LRA::RealZerograd(1, 1, deg(1))
-                .check([].map(ok), [].map(ok))
-                .is_err()
-        );
-    }
-
-    // Formats the boundary of `op` as `dom -> cod`
-    fn show(op: LRA) -> String {
-        format!("{} -> {}", op.dom(), op.cod())
-    }
-
-    #[test]
-    fn boundaries() {
+        // the operations on derivatives read and write derivatives of their degree (the
+        // operations on values read and write values only, see above)
+        let bin = |s| format!("{s} ⊗ {s} -> {s}");
+        assert_eq!(show(LRA::TAdd(2, 1, deg(1))), bin("Real(2, 1; 1)"));
+        assert_eq!(show(LRA::TSub(2, 1, deg(1))), bin("Real(2, 1; 1)"));
+        assert_eq!(show(LRA::TAdd(2, 1, deg(2))), bin("Real(2, 1; 2)"));
         assert_eq!(
-            show(LRA::Add(2, 3)),
-            "Real(2, 3) ⊗ Real(2, 3) -> Real(2, 3)"
+            show(LRA::TId(2, 1, deg(1))),
+            "Real(2, 1; 1) -> Real(2, 1; 1)"
         );
-        assert_eq!(show(LRA::Lt(2, 3)), "Real(2, 3) ⊗ Real(2, 3) -> Bool(2, 3)");
+        // the guard is a value
         assert_eq!(
-            show(LRA::Linear(affine(real_tensor(2, 3), real_tensor(0, 0)), 4)),
-            "Real(3, 4) -> Real(2, 4)"
+            show(LRA::TIte(2, 1, deg(1))),
+            "Bool(1, 1) ⊗ Real(2, 1; 1) ⊗ Real(2, 1; 1) -> Real(2, 1; 1)"
         );
-        assert_eq!(show(LRA::Argmax(2, 3)), "Real(2, 3) -> Real(1, 1)");
-        assert_eq!(
-            show(LRA::And(2, 3)),
-            "Bool(2, 3) ⊗ Bool(2, 3) -> Bool(2, 3)"
-        );
-        assert_eq!(
-            show(LRA::Real(matrix(real_tensor(2, 3)))),
-            "I -> Real(2, 3)"
-        );
-        assert_eq!(show(LRA::AnyReal(2, 3)), "I -> Real(2, 3)");
-        assert_eq!(show(LRA::TransposeReal(2, 3)), "Real(2, 3) -> Real(3, 2)");
-        assert_eq!(show(LRA::TransposeBool(2, 3)), "Bool(2, 3) -> Bool(3, 2)");
-        assert_eq!(
-            show(LRA::IteReal(2, 3)),
-            "Bool(1, 1) ⊗ Real(2, 3) ⊗ Real(2, 3) -> Real(2, 3)"
-        );
-        assert_eq!(show(LRA::IdBool(2, 3)), "Bool(2, 3) -> Bool(2, 3)");
-        assert_eq!(
-            show(LRA::UninterpretedBool("f".into(), 2, 3)),
-            "I -> Bool(2, 3)"
-        );
-        // derivatives
-        assert_eq!(
-            show(LRA::TAdd(2, 3, deg(1))),
-            "Real(2, 3; 1) ⊗ Real(2, 3; 1) -> Real(2, 3; 1)"
-        );
-        assert_eq!(
-            show(LRA::TLinear(
-                affine(real_tensor(2, 3), real_tensor(2, 1)),
-                1,
-                deg(2)
-            )),
-            "Real(3, 1; 2) -> Real(2, 1; 2)"
-        );
-        assert_eq!(
-            show(LRA::TIte(2, 3, deg(1))),
-            "Bool(1, 1) ⊗ Real(2, 3; 1) ⊗ Real(2, 3; 1) -> Real(2, 3; 1)"
-        );
-        assert_eq!(show(LRA::RealZerograd(2, 3, deg(1))), "I -> Real(2, 3; 1)");
-        assert_eq!(show(LRA::BoolZerograd(2, 3)), "I -> Zero(2, 3)");
-        // the operations with the same boundaries
-        assert_eq!(show(LRA::Add(2, 3)), show(LRA::Max(2, 3)));
-        assert_ne!(show(LRA::AnyReal(2, 3)), show(LRA::AnyBool(2, 3)));
+        // `2 * d(t)` folds to a Linear over derivatives
+        let lin =
+            |degree| LRA::TLinear(affine(real_tensor(2, 3), real_tensor(2, 1)), 1, deg(degree));
+        assert_eq!(show(lin(1)), "Real(3, 1; 1) -> Real(2, 1; 1)");
+        assert_eq!(show(lin(2)), "Real(3, 1; 2) -> Real(2, 1; 2)");
     }
 
     #[test]
@@ -1000,96 +562,6 @@ mod tests {
         assert_eq!(
             LRA::UninterpretedReal("f".into(), 2, 3).to_string(),
             "UninterpretedReal(f)"
-        );
-    }
-
-    #[test]
-    fn check_errors() {
-        assert_eq!(
-            LRA::Add(1, 1).check([real(1, 1), real(1, 2)].map(ok), [real(1, 1)].map(ok)),
-            Err(
-                "Add(1, 1): expected `Real(1, 1) ⊗ Real(1, 1) -> Real(1, 1)`, \
-                 got `Real(1, 1) ⊗ Real(1, 2) -> Real(1, 1)`"
-                    .to_string()
-            )
-        );
-        // derivatives and values do not mix
-        let dr = real(1, 1).tangent();
-        assert_eq!(
-            LRA::TAdd(1, 1, deg(1)).check([dr, real(1, 1)].map(ok), [dr].map(ok)),
-            Err(
-                "TAdd(1, 1, 1): expected `Real(1, 1; 1) ⊗ Real(1, 1; 1) -> Real(1, 1; 1)`, \
-                 got `Real(1, 1; 1) ⊗ Real(1, 1) -> Real(1, 1; 1)`"
-                    .to_string()
-            )
-        );
-        let b = bool_t(1, 1);
-        assert_eq!(
-            LRA::Add(1, 1).check([b, b].map(ok), [b].map(ok)),
-            Err(
-                "Add(1, 1): expected `Real(1, 1) ⊗ Real(1, 1) -> Real(1, 1)`, \
-                 got `Bool(1, 1) ⊗ Bool(1, 1) -> Bool(1, 1)`"
-                    .to_string()
-            )
-        );
-        // a nullary write
-        assert_eq!(
-            LRA::AnyReal(1, 1).check([].map(ok), [].map(ok)),
-            Err("AnyReal(1, 1): expected `I -> Real(1, 1)`, got `I -> I`".to_string())
-        );
-        // errors of wires are propagated
-        assert_eq!(
-            LRA::Not(1, 1).check([Err("bad wire")], [b].map(Ok)),
-            Err("Not(1, 1): bad wire".to_string())
-        );
-    }
-
-    #[test]
-    fn check_uninterpreted() {
-        let f = |r, c| LRA::UninterpretedReal("f".into(), r, c);
-        let t = real(2, 3);
-        // a single write of the given sort
-        assert!(f(2, 3).check([].map(ok), [t].map(ok)).is_ok());
-        assert!(f(3, 2).check([].map(ok), [t].map(ok)).is_err());
-        assert!(f(2, 3).check([].map(ok), [t.tangent()].map(ok)).is_err());
-        assert!(f(2, 3).check([t].map(ok), [].map(ok)).is_err());
-        assert!(f(2, 3).check([t].map(ok), [t].map(ok)).is_err());
-        assert!(f(2, 3).check([].map(ok), [t, t].map(ok)).is_err());
-        assert!(f(2, 3).check([].map(ok), [].map(ok)).is_err());
-        let b = bool_t(2, 3);
-        let g = LRA::UninterpretedBool("g".into(), 2, 3);
-        assert!(g.check([].map(ok), [b].map(ok)).is_ok());
-        assert!(f(2, 3).check([].map(ok), [b].map(ok)).is_err());
-    }
-
-    #[test]
-    fn linear_derivatives() {
-        // `2 * d(t)` folds to a Linear over derivatives
-        let lin =
-            |degree| LRA::TLinear(affine(real_tensor(2, 3), real_tensor(2, 1)), 1, deg(degree));
-        let (x, y) = (real(3, 1), real(2, 1));
-        assert!(
-            lin(1)
-                .check([x.tangent()].map(ok), [y.tangent()].map(ok))
-                .is_ok()
-        );
-        assert!(lin(1).check([x.tangent()].map(ok), [y].map(ok)).is_err());
-        assert!(lin(1).check([x].map(ok), [y.tangent()].map(ok)).is_err());
-        assert!(lin(1).check([x].map(ok), [y].map(ok)).is_err());
-        assert!(
-            lin(2)
-                .check(
-                    [x.tangent().tangent()].map(ok),
-                    [y.tangent().tangent()].map(ok)
-                )
-                .is_ok()
-        );
-        // `Linear` is on values only
-        let linear = LRA::Linear(affine(real_tensor(2, 3), real_tensor(2, 1)), 1);
-        assert!(
-            linear
-                .check([x.tangent()].map(ok), [y.tangent()].map(ok))
-                .is_err()
         );
     }
 }

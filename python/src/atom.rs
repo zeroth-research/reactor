@@ -6,15 +6,15 @@ use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::any::{Any, Combinatorial, Differential, Sequential};
+use theory::any::{Any, Combinatorial, Differential, Sequential, Sort};
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: reactive::Atom<Combinatorial, Sequential, Differential>,
+    base: reactive::Atom<Combinatorial, Sequential, Differential, Sort>,
 }
 
-impl From<reactive::Atom<Combinatorial, Sequential, Differential>> for Atom {
-    fn from(base: reactive::Atom<Combinatorial, Sequential, Differential>) -> Self {
+impl From<reactive::Atom<Combinatorial, Sequential, Differential, Sort>> for Atom {
+    fn from(base: reactive::Atom<Combinatorial, Sequential, Differential, Sort>) -> Self {
         Self { base }
     }
 }
@@ -217,7 +217,7 @@ impl Atom {
 }
 
 impl Atom {
-    pub(crate) fn base(&self) -> &reactive::Atom<Combinatorial, Sequential, Differential> {
+    pub(crate) fn base(&self) -> &reactive::Atom<Combinatorial, Sequential, Differential, Sort> {
         &self.base
     }
 
@@ -315,7 +315,7 @@ pub(crate) struct AtomBlock {
 }
 
 // impl AtomBlock {
-//     fn base(&self) -> &dataflow::diagram::Block<Sequential> {
+//     fn base(&self) -> &dataflow::diagram::Block<Sequential, Sort> {
 //         let atom = &self.atom.get().base;
 //         match self.block {
 //             BlockType::Init => atom.init(),
@@ -357,7 +357,7 @@ impl AtomBlock {
 
     fn __getitem__(&self, index: usize) -> PyResult<Term> {
         let atom = &self.atom.get().base;
-        let item: Option<dataflow::diagram::Term<Any>> = match self.block {
+        let item: Option<dataflow::diagram::Term<Any, Sort>> = match self.block {
             BlockType::Init => atom.init().get(index).cloned().map(Into::into),
             BlockType::Update => atom.update().get(index).cloned().map(Into::into),
             BlockType::Delay => atom.delay().get(index).cloned().map(Into::into),

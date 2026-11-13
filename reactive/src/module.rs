@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::fmt::Debug;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential};
 
 //============================================================
 // Module
@@ -14,11 +14,11 @@ use theory::{Combinatorial, Differential, Sequential, Theory};
 
 /// This data structure corresponds to the module of reactive modules.
 #[derive(Debug, Clone)]
-pub struct Module<I, J, F, S = <I as Theory>::Sort>
+pub struct Module<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
 {
     /// Correspond to the wires of the module divided by visibility
     /// ```text
@@ -49,9 +49,9 @@ where
 
 impl<I, J, F, S> Module<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
 {
     pub fn atoms(&self) -> &[Atom<I, J, F, S>] {
         &self.atoms
@@ -105,9 +105,9 @@ where
 
 impl<I, J, F, S> Module<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
     S: Debug,
 {
     /// Constructs a module **without performing any consistency or visibility checks**.
@@ -266,9 +266,9 @@ where
 
 impl<I, J, F, S> Module<I, J, F, S>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
     S: Clone + Debug,
 {
     /// Constructs a **fully observable module** from a set of atoms.
@@ -672,9 +672,9 @@ where
 
 pub struct Display<'a, I, J, F, S, N>
 where
-    I: Combinatorial<Sort = S>,
-    J: Sequential<Sort = S>,
-    F: Differential<Sort = S>,
+    I: Combinatorial<S>,
+    J: Sequential<S>,
+    F: Differential<S>,
 {
     module: &'a Module<I, J, F, S>,
     name: N,
@@ -682,9 +682,9 @@ where
 
 impl<'a, I, J, F, S, N> Display<'a, I, J, F, S, N>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    F: Differential<Sort = S> + fmt::Display,
+    I: Combinatorial<S> + fmt::Display,
+    J: Sequential<S> + fmt::Display,
+    F: Differential<S> + fmt::Display,
     S: fmt::Display,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
@@ -725,9 +725,9 @@ where
 
 impl<'a, I, J, F, S, N> fmt::Display for Display<'a, I, J, F, S, N>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    F: Differential<Sort = S> + fmt::Display,
+    I: Combinatorial<S> + fmt::Display,
+    J: Sequential<S> + fmt::Display,
+    F: Differential<S> + fmt::Display,
     S: fmt::Display,
     N: Fn(&Var<S>) -> Cow<'a, str>,
 {
@@ -738,9 +738,9 @@ where
 
 impl<I, J, D, S> Module<I, J, D, S>
 where
-    I: Combinatorial<Sort = S> + fmt::Display,
-    J: Sequential<Sort = S> + fmt::Display,
-    D: Differential<Sort = S> + fmt::Display,
+    I: Combinatorial<S> + fmt::Display,
+    J: Sequential<S> + fmt::Display,
+    D: Differential<S> + fmt::Display,
     S: fmt::Display,
 {
     /// Displays the module with variables under the names the given

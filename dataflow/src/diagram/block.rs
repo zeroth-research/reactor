@@ -1,19 +1,19 @@
 use super::Term;
 use super::Wire;
 use std::collections::BTreeSet;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::vec;
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential};
 
 #[derive(Debug, Clone)]
-pub struct Block<T: Theory> {
-    terms: Vec<Term<T>>,
-    read: Vec<Wire<T::Sort>>,
-    write: Vec<Wire<T::Sort>>,
+pub struct Block<T, S> {
+    terms: Vec<Term<T, S>>,
+    read: Vec<Wire<S>>,
+    write: Vec<Wire<S>>,
 }
 
-impl<T: Theory> Block<T> {
-    pub fn iter(&self) -> impl Iterator<Item = &Term<T>> {
+impl<T, S> Block<T, S> {
+    pub fn iter(&self) -> impl Iterator<Item = &Term<T, S>> {
         self.terms.iter()
     }
 
@@ -22,7 +22,7 @@ impl<T: Theory> Block<T> {
     /// The read interface lists all wires that must be provided externally
     /// for the block to operate, and are not written internally by the block.
     /// These wires are inputs required by the block as a whole.
-    pub fn read(&self) -> &[Wire<T::Sort>] {
+    pub fn read(&self) -> &[Wire<S>] {
         self.read.as_slice()
     }
 
@@ -30,12 +30,12 @@ impl<T: Theory> Block<T> {
     ///
     /// The write interface lists all wires that the block writes. These wires represent
     /// the outputs of the block as a whole; they can all be read outside the block.
-    pub fn write(&self) -> &[Wire<T::Sort>] {
+    pub fn write(&self) -> &[Wire<S>] {
         self.write.as_slice()
     }
 
     /// Return a reference to the n-th term in the block
-    pub fn get(&self, n: usize) -> Option<&Term<T>> {
+    pub fn get(&self, n: usize) -> Option<&Term<T, S>> {
         self.terms.get(n)
     }
 
@@ -56,27 +56,27 @@ impl<T: Theory> Block<T> {
     }
 }
 
-impl<'a, T: Theory> IntoIterator for &'a Block<T> {
-    type Item = &'a Term<T>;
-    type IntoIter = std::slice::Iter<'a, Term<T>>;
+impl<'a, T, S> IntoIterator for &'a Block<T, S> {
+    type Item = &'a Term<T, S>;
+    type IntoIter = std::slice::Iter<'a, Term<T, S>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.terms.iter()
     }
 }
 
-impl<T: Theory> IntoIterator for Block<T> {
-    type Item = Term<T>;
-    type IntoIter = vec::IntoIter<Term<T>>;
+impl<T, S> IntoIterator for Block<T, S> {
+    type Item = Term<T, S>;
+    type IntoIter = vec::IntoIter<Term<T, S>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.terms.into_iter()
     }
 }
 
-impl<T: Theory> Block<T>
+impl<T, S> Block<T, S>
 where
-    T::Sort: Clone + Debug,
+    S: Clone + Debug,
 {
     /// Builds a block from an iterator of *fallible* elements, mirroring the
     /// standard library's `FromIterator<Result<A, E>> for Result<V, E>`: the
@@ -88,14 +88,14 @@ where
     /// model — so that `Ok` needs no annotation at infallible call sites.
     pub fn try_from_iter<U, V>(iter: V) -> Result<Self, String>
     where
-        U: Theory<Sort = T::Sort> + Into<T>,
-        V: IntoIterator<Item = Result<Term<U>, String>>,
+        U: Into<T>,
+        V: IntoIterator<Item = Result<Term<U, S>, String>>,
     {
-        let mut read: BTreeSet<Wire<T::Sort>> = BTreeSet::new();
-        let mut write: BTreeSet<Wire<T::Sort>> = BTreeSet::new();
+        let mut read: BTreeSet<Wire<S>> = BTreeSet::new();
+        let mut write: BTreeSet<Wire<S>> = BTreeSet::new();
 
         let iter = iter.into_iter().map(|t| t.map(Term::convert));
-        let terms: Vec<Term<T>> = iter.collect::<Result<Vec<_>, _>>()?;
+        let terms: Vec<Term<T, S>> = iter.collect::<Result<Vec<_>, _>>()?;
 
         for term in terms.iter() {
             for rd in term.read().iter() {
@@ -121,9 +121,9 @@ where
         })
     }
 
-    pub fn convert<U>(block: Block<U>) -> Self
+    pub fn convert<U>(block: Block<U, S>) -> Self
     where
-        U: Theory<Sort = T::Sort> + Into<T>,
+        U: Into<T>,
     {
         Block {
             terms: block.terms.into_iter().map(Term::convert).collect(),
@@ -133,28 +133,30 @@ where
     }
 }
 
-impl<F: Differential> Block<F>
+impl<F, S> Block<F, S>
 where
-    F::Sort: Clone + Debug,
+    F: Differential<S> + Debug,
+    S: Clone + Debug + PartialEq + Display,
 {
     /// Builds a block of one `ZERO` term per write wire, so that theories can
     /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
     /// the compute graph.
-    pub fn zero<W: IntoIterator<Item = Wire<F::Sort>>>(write: W) -> Result<Self, String> {
+    pub fn zero<W: IntoIterator<Item = Wire<S>>>(write: W) -> Result<Self, String> {
         let write = write.into_iter();
         Block::try_from_iter(write.map(|w| Term::constant(F::zero(w.dtype()), [w])))
     }
 }
 
-impl<J: Sequential> Block<J>
+impl<J, S> Block<J, S>
 where
-    J::Sort: Clone + Debug,
+    J: Sequential<S> + Debug,
+    S: Clone + Debug + PartialEq + Display,
 {
     /// Builds a block of one `SKIP` term per `(write, read)` wire pair, so
     /// that theories can keep `SKIP` at a fixed arity and each pair is an
     /// independent edge in the compute graph (no spurious dependency of one
     /// write on all the other reads).
-    pub fn skip<W: IntoIterator<Item = Wire<J::Sort>>, R: IntoIterator<Item = Wire<J::Sort>>>(
+    pub fn skip<W: IntoIterator<Item = Wire<S>>, R: IntoIterator<Item = Wire<S>>>(
         write: W,
         read: R,
     ) -> Result<Self, String> {
@@ -170,12 +172,13 @@ where
     }
 }
 
-impl<I: Combinatorial> Block<I>
+impl<I, S> Block<I, S>
 where
-    I::Sort: Clone + Debug,
+    I: Combinatorial<S> + Debug,
+    S: Clone + Debug + PartialEq + Display,
 {
     /// Builds a block of one `HAVOC` term per write wire
-    pub fn havoc<W: IntoIterator<Item = Wire<I::Sort>>>(write: W) -> Result<Self, String> {
+    pub fn havoc<W: IntoIterator<Item = Wire<S>>>(write: W) -> Result<Self, String> {
         let write = write.into_iter();
         Block::try_from_iter(write.map(|w| Term::constant(I::havoc(w.dtype()), [w])))
     }

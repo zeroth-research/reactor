@@ -1,8 +1,8 @@
 use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
-use crate::{Theory, bv, check_wires, lia, lra};
-use base::boundary::Mono;
+use crate::{bv, lia, lra};
+use base::boundary::{Boundary, Mono, Poly};
 use base::tangent::Tangent;
 use derive_more::From;
 #[cfg(feature = "pyo3")]
@@ -231,25 +231,25 @@ impl<'py> IntoPyObject<'py> for Any {
     }
 }
 
-impl crate::Sequential for Sequential {
+impl crate::Sequential<Sort> for Sequential {
     fn skip(range: &Sort) -> Self {
         Sequential::SKIP(*range)
     }
 }
 
-impl crate::Combinatorial for Sequential {
+impl crate::Combinatorial<Sort> for Sequential {
     fn havoc(range: &Sort) -> Self {
         Sequential::HAVOC(*range)
     }
 }
 
-impl crate::Combinatorial for Combinatorial {
+impl crate::Combinatorial<Sort> for Combinatorial {
     fn havoc(range: &Sort) -> Self {
         Combinatorial::HAVOC(*range)
     }
 }
 
-impl crate::Differential for Differential {
+impl crate::Differential<Sort> for Differential {
     fn zero(range: &Sort) -> Self {
         Differential::ZERO(*range)
     }
@@ -258,110 +258,95 @@ impl crate::Differential for Differential {
 // The distinguished operations are unary, matching the `Id`, `Any*`/`Havoc`, and
 // `*Zerograd` operations of the base theories: `HAVOC` writes any value of its range
 // (`I -> range`), `SKIP` copies a value of its range (`range -> range`), and `ZERO` writes
-// the zero derivative of its range (`I -> range`).
+// the zero derivative of its range (`I -> range`). The operations of the base theories
+// keep their boundaries, over the sorts of `Any` (see `embed`).
 
-/// Check the application of the distinguished operation `op` with the domain and the
-/// codomain the products of the sorts `dom` and `cod` to the read and written wires
-fn check_special_op<R, W, E>(
-    op: &impl fmt::Debug,
-    dom: impl IntoIterator<Item = Sort>,
-    cod: impl IntoIterator<Item = Sort>,
-    read: R,
-    write: W,
-) -> Result<(), String>
-where
-    R: IntoIterator<Item = Result<Sort, E>>,
-    W: IntoIterator<Item = Result<Sort, E>>,
-    E: fmt::Display,
-{
-    let dom = dom.into_iter().product::<Mono<Sort>>();
-    let cod = cod.into_iter().product::<Mono<Sort>>();
-    check_wires(dom.into(), cod.into(), read, write).map_err(|e| format!("{op:?}: {e}"))
+/// The boundary `range` of a single wire
+fn wire(range: Sort) -> Poly<Sort> {
+    Mono::from_iter([range]).into()
 }
 
-impl Theory for Any {
-    type Sort = Sort;
-    const NAME: &'static str = "Any";
+/// The type `ty` over the sorts of a base theory as a type over the sorts of `Any`
+fn embed<S: Into<Sort>>(ty: Poly<S>) -> Poly<Sort> {
+    ty.into_iter()
+        .map(|m| m.into_iter().map(Into::into).collect::<Mono<Sort>>())
+        .collect()
+}
 
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Sort, E>>,
-        W: IntoIterator<Item = Result<Sort, E>>,
-    {
+impl Boundary<Sort> for Any {
+    fn dom(&self) -> Poly<Sort> {
         match self {
-            Any::HAVOC(range) | Any::ZERO(range) => {
-                check_special_op(self, [], [*range], read, write)
-            }
-            Any::SKIP(range) => check_special_op(self, [*range], [*range], read, write),
-            Any::LRA(itype) => itype.check(try_into(read), try_into(write)),
-            Any::LIA(itype) => itype.check(try_into(read), try_into(write)),
-            Any::BV(itype) => itype.check(try_into(read), try_into(write)),
+            Any::HAVOC(_) | Any::ZERO(_) => Poly::unit(),
+            Any::SKIP(range) => wire(*range),
+            Any::LRA(op) => embed(op.dom()),
+            Any::LIA(op) => embed(op.dom()),
+            Any::BV(op) => embed(op.dom()),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            Any::HAVOC(range) | Any::SKIP(range) | Any::ZERO(range) => wire(*range),
+            Any::LRA(op) => embed(op.cod()),
+            Any::LIA(op) => embed(op.cod()),
+            Any::BV(op) => embed(op.cod()),
         }
     }
 }
 
-fn try_into<R, S, T, E: fmt::Display, F: fmt::Display>(
-    iter: R,
-) -> impl Iterator<Item = Result<T, String>>
-where
-    S: TryInto<T, Error = F>,
-    R: IntoIterator<Item = Result<S, E>>,
-{
-    iter.into_iter().map(|r| {
-        r.map_err(|e| e.to_string())
-            .and_then(|s| s.try_into().map_err(|f| f.to_string()))
-    })
-}
-
-impl Theory for Sequential {
-    type Sort = Sort;
-    const NAME: &'static str = "Sequential";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Sort, E>>,
-        W: IntoIterator<Item = Result<Sort, E>>,
-    {
+impl Boundary<Sort> for Sequential {
+    fn dom(&self) -> Poly<Sort> {
         match self {
-            Sequential::HAVOC(range) => check_special_op(self, [], [*range], read, write),
-            Sequential::SKIP(range) => check_special_op(self, [*range], [*range], read, write),
-            Sequential::LRA(itype) => itype.check(try_into(read), try_into(write)),
-            Sequential::LIA(itype) => itype.check(try_into(read), try_into(write)),
-            Sequential::BV(itype) => itype.check(try_into(read), try_into(write)),
+            Sequential::HAVOC(_) => Poly::unit(),
+            Sequential::SKIP(range) => wire(*range),
+            Sequential::LRA(op) => embed(op.dom()),
+            Sequential::LIA(op) => embed(op.dom()),
+            Sequential::BV(op) => embed(op.dom()),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            Sequential::HAVOC(range) | Sequential::SKIP(range) => wire(*range),
+            Sequential::LRA(op) => embed(op.cod()),
+            Sequential::LIA(op) => embed(op.cod()),
+            Sequential::BV(op) => embed(op.cod()),
         }
     }
 }
 
-impl Theory for Combinatorial {
-    type Sort = Sort;
-    const NAME: &'static str = "Combinatorial";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Sort, E>>,
-        W: IntoIterator<Item = Result<Sort, E>>,
-    {
+impl Boundary<Sort> for Combinatorial {
+    fn dom(&self) -> Poly<Sort> {
         match self {
-            Combinatorial::HAVOC(range) => check_special_op(self, [], [*range], read, write),
-            Combinatorial::LRA(itype) => itype.check(try_into(read), try_into(write)),
-            Combinatorial::LIA(itype) => itype.check(try_into(read), try_into(write)),
-            Combinatorial::BV(itype) => itype.check(try_into(read), try_into(write)),
+            Combinatorial::HAVOC(_) => Poly::unit(),
+            Combinatorial::LRA(op) => embed(op.dom()),
+            Combinatorial::LIA(op) => embed(op.dom()),
+            Combinatorial::BV(op) => embed(op.dom()),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            Combinatorial::HAVOC(range) => wire(*range),
+            Combinatorial::LRA(op) => embed(op.cod()),
+            Combinatorial::LIA(op) => embed(op.cod()),
+            Combinatorial::BV(op) => embed(op.cod()),
         }
     }
 }
 
-impl Theory for Differential {
-    type Sort = Sort;
-    const NAME: &'static str = "Differential";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Sort, E>>,
-        W: IntoIterator<Item = Result<Sort, E>>,
-    {
+impl Boundary<Sort> for Differential {
+    fn dom(&self) -> Poly<Sort> {
         match self {
-            Differential::ZERO(range) => check_special_op(self, [], [*range], read, write),
-            Differential::LRA(itype) => itype.check(try_into(read), try_into(write)),
+            Differential::ZERO(_) => Poly::unit(),
+            Differential::LRA(op) => embed(op.dom()),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            Differential::ZERO(range) => wire(*range),
+            Differential::LRA(op) => embed(op.cod()),
         }
     }
 }
@@ -383,9 +368,11 @@ impl From<Combinatorial> for Sequential {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::num::NonZeroU8;
 
-    fn ok(s: Sort) -> Result<Sort, String> {
-        Ok(s)
+    // Formats the boundary of `op` as `dom -> cod`
+    fn show(op: impl Boundary<Sort>) -> String {
+        format!("{} -> {}", op.dom(), op.cod())
     }
 
     // Casts up the hierarchy (Into) wrap the op in the right variant.
@@ -463,104 +450,48 @@ mod tests {
 
     #[test]
     fn skip_is_unary() {
-        let t = || Sort::Real([1, 1], 0);
-        let u = || Sort::Real([2, 1], 0);
-        for skip in [
-            Any::SKIP(t()).check([t()].map(ok), [t()].map(ok)),
-            Sequential::SKIP(t()).check([t()].map(ok), [t()].map(ok)),
-        ] {
-            assert!(skip.is_ok());
-        }
-        // arity and sort mismatches
-        assert!(
-            Any::SKIP(t())
-                .check([t(), u()].map(ok), [t(), u()].map(ok))
-                .is_err()
-        );
-        assert!(Any::SKIP(t()).check([t()].map(ok), [u()].map(ok)).is_err());
-        assert!(Any::SKIP(t()).check([].map(ok), [].map(ok)).is_err());
-        assert!(
-            Sequential::SKIP(t())
-                .check([t(), u()].map(ok), [t(), u()].map(ok))
-                .is_err()
-        );
+        // copies a single wire of its range
+        let t = Sort::Real([1, 1], 0);
+        assert_eq!(show(Any::SKIP(t)), "Real([1,1]) -> Real([1,1])");
+        assert_eq!(show(Sequential::SKIP(t)), "Real([1,1]) -> Real([1,1])");
     }
 
     #[test]
     fn havoc_is_unary() {
-        let t = || Sort::Real([1, 1], 0);
-        let u = || Sort::Real([2, 1], 0);
-        for havoc in [
-            Any::HAVOC(t()).check([].map(ok), [t()].map(ok)),
-            Sequential::HAVOC(t()).check([].map(ok), [t()].map(ok)),
-            Combinatorial::HAVOC(t()).check([].map(ok), [t()].map(ok)),
-        ] {
-            assert!(havoc.is_ok());
-        }
         // no reads, exactly one write
-        assert!(Any::HAVOC(t()).check([t()].map(ok), [t()].map(ok)).is_err());
-        assert!(
-            Any::HAVOC(t())
-                .check([].map(ok), [t(), u()].map(ok))
-                .is_err()
-        );
-        assert!(Any::HAVOC(t()).check([].map(ok), [].map(ok)).is_err());
-        assert!(
-            Combinatorial::HAVOC(t())
-                .check([].map(ok), [t(), u()].map(ok))
-                .is_err()
-        );
+        let t = Sort::Real([1, 1], 0);
+        assert_eq!(show(Any::HAVOC(t)), "I -> Real([1,1])");
+        assert_eq!(show(Sequential::HAVOC(t)), "I -> Real([1,1])");
+        assert_eq!(show(Combinatorial::HAVOC(t)), "I -> Real([1,1])");
     }
 
     #[test]
     fn zero_is_unary() {
-        let t = || Sort::Real([1, 1], 0);
-        let u = || Sort::Real([2, 1], 0);
-        for zero in [
-            Any::ZERO(t()).check([].map(ok), [t()].map(ok)),
-            Differential::ZERO(t()).check([].map(ok), [t()].map(ok)),
-        ] {
-            assert!(zero.is_ok());
-        }
-        // no reads, exactly one write
-        assert!(Any::ZERO(t()).check([t()].map(ok), [t()].map(ok)).is_err());
-        assert!(
-            Any::ZERO(t())
-                .check([].map(ok), [t(), u()].map(ok))
-                .is_err()
-        );
-        assert!(Any::ZERO(t()).check([].map(ok), [].map(ok)).is_err());
-        assert!(
-            Differential::ZERO(t())
-                .check([].map(ok), [t(), u()].map(ok))
-                .is_err()
-        );
+        // no reads, exactly one write (of the derivative)
+        let t = Sort::Real([1, 1], 0).tangent();
+        assert_eq!(show(Any::ZERO(t)), "I -> Real([1,1], 1)");
+        assert_eq!(show(Differential::ZERO(t)), "I -> Real([1,1], 1)");
     }
 
     #[test]
-    fn check_errors() {
-        let t = Sort::Real([1, 1], 0);
+    fn base_theories_keep_their_boundaries() {
+        // the operations of the base theories keep their boundaries, over the sorts of `Any`
         assert_eq!(
-            Any::HAVOC(t).check([t].map(ok), [t].map(ok)),
-            Err("HAVOC(Real([1, 1], 0)): expected `I -> Real([1,1])`, \
-                 got `Real([1,1]) -> Real([1,1])`"
-                .to_string())
+            show(Any::LRA(LRA::Add(1, 1))),
+            "Real([1,1]) ⊗ Real([1,1]) -> Real([1,1])"
         );
-        // the operations of the base theories are checked over their sorts
-        let lra = || Any::LRA(LRA::Add(1, 1));
-        assert!(lra().check([t, t].map(ok), [t].map(ok)).is_ok());
-        let i = Sort::Int([1, 1]);
         assert_eq!(
-            lra().check([i, i].map(ok), [i].map(ok)),
-            Err("Add(1, 1): invalid cast".to_string())
+            show(Sequential::LIA(LIA::Lt(1, 1))),
+            "Int([1,1]) ⊗ Int([1,1]) -> Bool([1,1])"
         );
-        let lia = || Any::LIA(LIA::Add(1, 1));
-        assert!(lia().check([i, i].map(ok), [i].map(ok)).is_ok());
         assert_eq!(
-            lia().check([i, i].map(ok), [Sort::Int([2, 1])].map(ok)),
-            Err("Add(1, 1): expected `Int(1, 1) ⊗ Int(1, 1) -> Int(1, 1)`, \
-                 got `Int(1, 1) ⊗ Int(1, 1) -> Int(2, 1)`"
-                .to_string())
+            show(Combinatorial::BV(BV::Not(8, 1, 1))),
+            "Bv8([1,1]) -> Bv8([1,1])"
         );
+        assert_eq!(
+            show(Differential::LRA(LRA::TAdd(1, 1, NonZeroU8::MIN))),
+            "Real([1,1], 1) ⊗ Real([1,1], 1) -> Real([1,1], 1)"
+        );
+        assert_eq!(show(Any::LRA(LRA::BoolZerograd(1, 1))), "I -> Zero([1,1])");
     }
 }

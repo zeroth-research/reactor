@@ -5,73 +5,26 @@ pub mod lra;
 pub mod matrix;
 pub mod tensor;
 
-use base::boundary::{Mono, Poly};
+use base::boundary::Boundary;
 pub use matrix::{Affine, Matrix};
-use std::fmt;
 pub use tensor::PyTensor;
 
-pub trait Theory {
-    type Sort;
+// The distinguished operations over the sorts `S`. They are unary: `havoc` and `zero`
+// write a single wire of their range (`I -> range`), and `skip` copies a single wire
+// (`range -> range`).
 
-    const NAME: &'static str;
-
-    /// Check that the operation can read and write wires of the given sorts: the sorts of
-    /// the read and written wires (the boundary of the application) must be the domain and
-    /// the codomain of the operation (its [`base::boundary::Boundary`]).
-    /// Derivatives are wires of the tangent sorts (see [`base::tangent::Tangent::tangent`]).
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Self::Sort, E>>,
-        W: IntoIterator<Item = Result<Self::Sort, E>>;
-}
-
-pub trait Combinatorial: Theory {
+pub trait Combinatorial<S>: Boundary<S> {
     // Returns the unary itype that chooses an element within the range
-    fn havoc(range: &Self::Sort) -> Self;
+    fn havoc(range: &S) -> Self;
 }
 
-pub trait Sequential: Theory {
+pub trait Sequential<S>: Boundary<S> {
     // Returns the unary itype that copies a value within the range
-    fn skip(range: &Self::Sort) -> Self;
+    fn skip(range: &S) -> Self;
 }
 
-pub trait Differential: Theory {
+pub trait Differential<S>: Boundary<S> {
     // Returns the unary itype that indicates zero derivative, the range is the sort
     // of the derivative (i.e., a tangent sort)
-    fn zero(range: &Self::Sort) -> Self;
-}
-
-// Helpers for type-checking procedures
-
-/// Check the application of an operation with the domain `dom` and the codomain `cod` to
-/// wires: the sorts of the read wires are the domain of the application and the sorts of
-/// the written wires its codomain. The application is well-formed iff its domain is `dom`
-/// and its codomain is `cod`.
-fn check_wires<S, R, W, E>(dom: Poly<S>, cod: Poly<S>, read: R, write: W) -> Result<(), String>
-where
-    S: PartialEq + fmt::Display,
-    R: IntoIterator<Item = Result<S, E>>,
-    W: IntoIterator<Item = Result<S, E>>,
-    E: fmt::Display,
-{
-    let (read, write) = (wire_sorts(read)?, wire_sorts(write)?);
-    if (&dom, &cod) != (&read, &write) {
-        return Err(format!(
-            "expected `{dom} -> {cod}`, got `{read} -> {write}`"
-        ));
-    }
-    Ok(())
-}
-
-/// The sorts of `wires` (read or written all at once, i.e., a monomial), or the error of
-/// the first wire that has none
-fn wire_sorts<S, I, E: fmt::Display>(wires: I) -> Result<Poly<S>, String>
-where
-    I: IntoIterator<Item = Result<S, E>>,
-{
-    wires
-        .into_iter()
-        .map(|w| w.map_err(|e| e.to_string()))
-        .collect::<Result<Mono<S>, _>>()
-        .map(Poly::from)
+    fn zero(range: &S) -> Self;
 }

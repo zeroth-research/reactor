@@ -26,27 +26,22 @@ The operations in [`LIA`] are:
   with `A` and `B` constant integer matrices, of `x` with `batch` columns.
 - [`LIA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
 
-`LIA` implements [`Theory`]; [`Theory::check`] checks that the sorts of the
-read and written wires are the domain and the codomain of the operation.
+An operation applies to the wires whose sorts are its boundary: the read wires
+have the sorts of its domain, and the written wires the sorts of its codomain.
 
 ## Examples
 
 ```
-use theory::Theory;
-use theory::lia::{LIA, Sort};
+use base::boundary::Boundary;
+use theory::lia::LIA;
 
-// Wires carry a sort.
-let ok = |s| Ok::<_, String>(s);
+let boundary = |op: LIA| format!("{} -> {}", op.dom(), op.cod());
 
-// Pointwise less-than on scalars: Int(1,1), Int(1,1) -> Bool(1,1).
-let i = Sort::Int([1, 1]);
-let b = Sort::Bool([1, 1]);
-assert!(LIA::Lt(1, 1).check([i, i].map(ok), [b].map(ok)).is_ok());
+// Pointwise less-than on scalars.
+assert_eq!(boundary(LIA::Lt(1, 1)), "Int(1, 1) ⊗ Int(1, 1) -> Bool(1, 1)");
 
 // ReLU preserves shape and stays in the integer fragment.
-let m = Sort::Int([3, 4]);
-assert!(LIA::ReLU(3, 4).check([m].map(ok), [m].map(ok)).is_ok());
-assert!(LIA::ReLU(3, 4).check([b].map(ok), [b].map(ok)).is_err());
+assert_eq!(boundary(LIA::ReLU(3, 4)), "Int(3, 4) -> Int(3, 4)");
 ```
 */
 
@@ -158,8 +153,8 @@ impl fmt::Display for LIA {
     }
 }
 
-impl Sequential for LIA {
-    fn skip(range: &Self::Sort) -> Self {
+impl Sequential<Sort> for LIA {
+    fn skip(range: &Sort) -> Self {
         // a zero derivative cannot be copied: the check of the term with it fails
         match *range {
             Sort::Int([r, c]) | Sort::Zero([r, c]) => LIA::IdInt(r, c),
@@ -168,26 +163,13 @@ impl Sequential for LIA {
     }
 }
 
-impl Combinatorial for LIA {
+impl Combinatorial<Sort> for LIA {
     fn havoc(range: &Sort) -> Self {
         // a derivative cannot be havoced: the check of the term with `Zero` fails
         match *range {
             Sort::Int([r, c]) | Sort::Zero([r, c]) => LIA::AnyInt(r, c),
             Sort::Bool([r, c]) => LIA::AnyBool(r, c),
         }
-    }
-}
-
-impl Theory for LIA {
-    type Sort = Sort;
-    const NAME: &'static str = "LIA";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Sort, E>>,
-        W: IntoIterator<Item = Result<Sort, E>>,
-    {
-        check_wires(self.dom(), self.cod(), read, write).map_err(|e| format!("{self:?}: {e}"))
     }
 }
 
@@ -275,8 +257,8 @@ mod tests {
         Sort::Bool([r, c])
     }
 
-    fn ok(s: Sort) -> Result<Sort, String> {
-        Ok(s)
+    fn int_tensor(rows: i64, cols: i64) -> crate::PyTensor {
+        tch::Tensor::zeros([rows, cols], (tch::Kind::Int64, tch::Device::Cpu)).into()
     }
 
     fn matrix(t: crate::PyTensor) -> Matrix {
@@ -287,6 +269,11 @@ mod tests {
         Affine::new(a, b).unwrap()
     }
 
+    // Formats the boundary of `op` as `dom -> cod`
+    fn show(op: LIA) -> String {
+        format!("{} -> {}", op.dom(), op.cod())
+    }
+
     #[test]
     fn type_kind_and_shape() {
         assert!(int(2, 3).is_int() && !int(2, 3).is_bool());
@@ -295,349 +282,12 @@ mod tests {
     }
 
     #[test]
-    fn const_int_ok() {
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
-        assert!(
-            LIA::Int(matrix(cm))
-                .check([].map(ok), [int(2, 2)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn const_int_bool_write_fails() {
-        assert!(
-            LIA::Int(matrix(tch::Tensor::from_slice2(&[[0i64]]).into()))
-                .check([].map(ok), [bool_t(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn const_int_wrong_rows_fails() {
-        assert!(
-            LIA::Int(matrix(tch::Tensor::from_slice2(&[[0i64]]).into()))
-                .check([].map(ok), [int(2, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn const_int_with_read_fails() {
-        let t = int(1, 1);
-        assert!(
-            LIA::Int(matrix(tch::Tensor::from_slice2(&[[0i64]]).into()))
-                .check([t].map(ok), [t].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn const_bool_ok() {
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false], [false, true]]).into();
-        assert!(
-            LIA::Bool(matrix(cm))
-                .check([].map(ok), [bool_t(2, 2)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn const_bool_int_write_fails() {
-        assert!(
-            LIA::Bool(matrix(tch::Tensor::from_slice2(&[[true]]).into()))
-                .check([].map(ok), [int(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn not_ok() {
-        let b = bool_t(2, 3);
-        assert!(LIA::Not(2, 3).check([b].map(ok), [b].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn not_int_input_fails() {
-        let t = int(1, 1);
-        assert!(LIA::Not(1, 1).check([t].map(ok), [t].map(ok)).is_err());
-    }
-
-    #[test]
-    fn and_ok() {
-        let b = bool_t(2, 2);
-        assert!(LIA::And(2, 2).check([b, b].map(ok), [b].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn or_ok() {
-        let b = bool_t(1, 1);
-        assert!(LIA::Or(1, 1).check([b, b].map(ok), [b].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn xor_ok() {
-        let b = bool_t(3, 1);
-        assert!(LIA::Xor(3, 1).check([b, b].map(ok), [b].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn and_int_output_fails() {
-        let b = bool_t(1, 1);
-        assert!(
-            LIA::And(1, 1)
-                .check([b, b].map(ok), [int(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn and_type_mismatch_fails() {
-        assert!(
-            LIA::And(1, 1)
-                .check([bool_t(1, 1), bool_t(1, 2)].map(ok), [bool_t(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn lt_ok() {
-        assert!(
-            LIA::Lt(1, 1)
-                .check([int(1, 1), int(1, 1)].map(ok), [bool_t(1, 1)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn le_ok() {
-        let res = LIA::Le(2, 3).check([int(2, 3), int(2, 3)].map(ok), [bool_t(2, 3)].map(ok));
-        assert!(res.is_ok(), "result: {:?}", res);
-    }
-
-    #[test]
-    fn eq_ok() {
-        assert!(
-            LIA::Eq(3, 2)
-                .check([int(3, 2), int(3, 2)].map(ok), [bool_t(3, 2)].map(ok))
-                .is_ok()
-        );
-        assert!(
-            LIA::Eq(3, 2)
-                .check([int(3, 3), int(3, 2)].map(ok), [bool_t(3, 2)].map(ok))
-                .is_err()
-        );
-        assert!(
-            LIA::Eq(3, 2)
-                .check([int(3, 2), int(3, 2)].map(ok), [bool_t(3, 3)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn cmp_non_bool_output_fails() {
-        let t = int(1, 1);
-        assert!(LIA::Lt(1, 1).check([t, t].map(ok), [t].map(ok)).is_err());
-    }
-
-    #[test]
-    fn cmp_input_mismatch_fails() {
-        assert!(
-            LIA::Eq(1, 1)
-                .check([int(1, 1), int(1, 2)].map(ok), [bool_t(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn add_ok() {
-        let t = int(3, 4);
-        assert!(LIA::Add(3, 4).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn add_shape_mismatch_fails() {
-        assert!(
-            LIA::Add(1, 2)
-                .check([int(1, 2), int(2, 1)].map(ok), [int(1, 2)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn add_bool_fails() {
-        let b = bool_t(1, 1);
-        assert!(LIA::Add(1, 1).check([b, b].map(ok), [b].map(ok)).is_err());
-    }
-
-    #[test]
-    fn relu_ok() {
-        let t = int(3, 4);
-        assert!(LIA::ReLU(3, 4).check([t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn relu_bool_fails() {
-        let b = bool_t(1, 1);
-        assert!(LIA::ReLU(1, 1).check([b].map(ok), [b].map(ok)).is_err());
-    }
-
-    #[test]
-    fn argmax_ok() {
-        assert!(
-            LIA::Argmax(3, 4)
-                .check([int(3, 4)].map(ok), [int(1, 1)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn argmax_matrix_output_fails() {
-        assert!(
-            LIA::Argmax(3, 4)
-                .check([int(3, 4)].map(ok), [int(3, 4)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn min_ok() {
-        // pointwise
-        let t = int(4, 1);
-        assert!(LIA::Min(4, 1).check([t, t].map(ok), [t].map(ok)).is_ok());
-        assert!(
-            LIA::Max(4, 1)
-                .check([t].map(ok), [int(1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn linear_ok() {
-        // A=[2,3] maps 3 features to 2; X=[3,4] is 3 features × 4 batch items.
-        // Convention: Y = A·X  →  Y=[2,4].
-        let a: crate::PyTensor =
-            tch::Tensor::zeros([2, 3], (tch::Kind::Int64, tch::Device::Cpu)).into();
-        let b: crate::PyTensor =
-            tch::Tensor::zeros([0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
-        assert!(
-            LIA::Linear(affine(a, b), 4)
-                .check([int(3, 4)].map(ok), [int(2, 4)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn linear_with_bias_ok() {
-        // A=[2,3], b=[2,1] column bias, X=[3,1] single sample → Y=[2,1].
-        let a: crate::PyTensor =
-            tch::Tensor::zeros([2, 3], (tch::Kind::Int64, tch::Device::Cpu)).into();
-        let b: crate::PyTensor =
-            tch::Tensor::zeros([2, 1], (tch::Kind::Int64, tch::Device::Cpu)).into();
-        assert!(
-            LIA::Linear(affine(a, b), 1)
-                .check([int(3, 1)].map(ok), [int(2, 1)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn linear_dim_mismatch_fails() {
-        // A=[2,3] but X has 4 rows — inner dimension mismatch.
-        let a: crate::PyTensor =
-            tch::Tensor::zeros([2, 3], (tch::Kind::Int64, tch::Device::Cpu)).into();
-        let b: crate::PyTensor =
-            tch::Tensor::zeros([0, 0], (tch::Kind::Int64, tch::Device::Cpu)).into();
-        assert!(
-            LIA::Linear(affine(a, b), 1)
-                .check([int(4, 1)].map(ok), [int(2, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn transpose_ok() {
-        assert!(
-            LIA::TransposeInt(3, 4)
-                .check([int(3, 4)].map(ok), [int(4, 3)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn transpose_wrong_shape_fails() {
-        assert!(
-            LIA::TransposeInt(3, 4)
-                .check([int(3, 4)].map(ok), [int(3, 4)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn ite_ok() {
-        let t = int(3, 4);
-        assert!(
-            LIA::IteInt(3, 4)
-                .check([bool_t(1, 1), t, t].map(ok), [t].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn ite_non_bool_guard_fails() {
-        let t = int(1, 1);
-        assert!(
-            LIA::IteInt(1, 1)
-                .check([t, t, t].map(ok), [t].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn ite_arm_mismatch_fails() {
-        assert!(
-            LIA::IteInt(1, 1)
-                .check(
-                    [bool_t(1, 1), int(1, 1), int(1, 2)].map(ok),
-                    [int(1, 1)].map(ok)
-                )
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn id_ok() {
-        let t = int(4, 4);
-        assert!(LIA::IdInt(4, 4).check([t].map(ok), [t].map(ok)).is_ok());
-        let b = bool_t(4, 4);
-        assert!(LIA::IdBool(4, 4).check([b].map(ok), [b].map(ok)).is_ok());
-        assert!(LIA::IdInt(4, 4).check([b].map(ok), [b].map(ok)).is_err());
-    }
-
-    #[test]
-    fn id_type_mismatch_fails() {
-        assert!(
-            LIA::IdInt(1, 1)
-                .check([int(1, 1)].map(ok), [int(2, 2)].map(ok))
-                .is_err()
-        );
-    }
-
-    // Formats the boundary of `op` as `dom -> cod`
-    fn show(op: LIA) -> String {
-        format!("{} -> {}", op.dom(), op.cod())
-    }
-
-    fn int_tensor(rows: i64, cols: i64) -> crate::PyTensor {
-        tch::Tensor::zeros([rows, cols], (tch::Kind::Int64, tch::Device::Cpu)).into()
-    }
-
-    #[test]
     fn boundary_ops() {
         let bin = |s| format!("{s} ⊗ {s} -> {s}");
         for op in [LIA::And(2, 3), LIA::Or(2, 3), LIA::Xor(2, 3)] {
             assert_eq!(show(op), bin("Bool(2, 3)"));
         }
+        // `Min` and `Max` are pointwise
         for op in [
             LIA::Add(2, 3),
             LIA::Sub(2, 3),
@@ -658,9 +308,11 @@ mod tests {
         }
         assert_eq!(show(LIA::Not(2, 3)), "Bool(2, 3) -> Bool(2, 3)");
         assert_eq!(show(LIA::ReLU(2, 3)), "Int(2, 3) -> Int(2, 3)");
+        // the index into the flattened matrix
         assert_eq!(show(LIA::Argmax(2, 3)), "Int(2, 3) -> Int(1, 1)");
         assert_eq!(show(LIA::TransposeInt(2, 3)), "Int(2, 3) -> Int(3, 2)");
         assert_eq!(show(LIA::TransposeBool(2, 3)), "Bool(2, 3) -> Bool(3, 2)");
+        // a single boolean guard and two branches of the sort of the result
         assert_eq!(
             show(LIA::IteInt(2, 3)),
             "Bool(1, 1) ⊗ Int(2, 3) ⊗ Int(2, 3) -> Int(2, 3)"
@@ -671,9 +323,14 @@ mod tests {
         );
         assert_eq!(show(LIA::IdInt(2, 3)), "Int(2, 3) -> Int(2, 3)");
         assert_eq!(show(LIA::IdBool(2, 3)), "Bool(2, 3) -> Bool(2, 3)");
+        // a single write of the given sort
         assert_eq!(
             show(LIA::UninterpretedInt("f".into(), 2, 3)),
             "I -> Int(2, 3)"
+        );
+        assert_eq!(
+            show(LIA::UninterpretedBool("g".into(), 2, 3)),
+            "I -> Bool(2, 3)"
         );
         assert_eq!(show(LIA::AnyInt(2, 3)), "I -> Int(2, 3)");
         assert_eq!(show(LIA::AnyBool(2, 3)), "I -> Bool(2, 3)");
@@ -681,6 +338,9 @@ mod tests {
 
     #[test]
     fn boundary_const() {
+        // a literal writes a matrix of the shape of its tensor
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
+        assert_eq!(show(LIA::Int(matrix(cm))), "I -> Int(2, 2)");
         assert_eq!(show(LIA::Int(matrix(int_tensor(2, 3)))), "I -> Int(2, 3)");
         let b: crate::PyTensor = tch::Tensor::from_slice2(&[[true, false]]).into();
         assert_eq!(show(LIA::Bool(matrix(b.clone()))), "I -> Bool(1, 2)");
@@ -696,15 +356,40 @@ mod tests {
 
     #[test]
     fn boundary_linear() {
-        // A=[2,3] maps 3 features to 2
+        // A=[2,3] maps 3 features to 2; X=[3,4] is 3 features × 4 batch items.
+        // Convention: Y = A·X + B  →  Y=[2,4].
         assert_eq!(
             show(LIA::Linear(affine(int_tensor(2, 3), int_tensor(2, 1)), 4)),
             "Int(3, 4) -> Int(2, 4)"
         );
+        // A=[2,3] without a bias, X=[3,1] single sample → Y=[2,1].
         assert_eq!(
             show(LIA::Linear(affine(int_tensor(2, 3), int_tensor(0, 0)), 1)),
             "Int(3, 1) -> Int(2, 1)"
         );
+    }
+
+    #[test]
+    fn skip_and_havoc() {
+        let (i, b) = (int(2, 3), bool_t(2, 3));
+        assert_eq!(show(LIA::skip(&i)), "Int(2, 3) -> Int(2, 3)");
+        assert_eq!(show(LIA::skip(&b)), "Bool(2, 3) -> Bool(2, 3)");
+        assert_eq!(show(LIA::havoc(&i)), "I -> Int(2, 3)");
+        assert_eq!(show(LIA::havoc(&b)), "I -> Bool(2, 3)");
+        // derivatives cannot be copied or havoced: `skip` and `havoc` of them are on values
+        let z = i.tangent();
+        assert_eq!(show(LIA::skip(&z)), "Int(2, 3) -> Int(2, 3)");
+        assert_eq!(show(LIA::havoc(&z)), "I -> Int(2, 3)");
+    }
+
+    #[test]
+    fn derivatives() {
+        // the derivatives of integers and booleans are zero; the operations of LIA are on
+        // values only (see `boundary_ops`)
+        let z = int(2, 3).tangent();
+        assert_eq!(z, Sort::Zero([2, 3]));
+        assert_eq!(bool_t(2, 3).tangent(), z);
+        assert_eq!(z.tangent(), z);
     }
 
     #[test]
@@ -722,74 +407,6 @@ mod tests {
         assert_eq!(
             LIA::UninterpretedInt("f".into(), 2, 3).to_string(),
             "UninterpretedInt(f)"
-        );
-    }
-
-    #[test]
-    fn check_errors() {
-        assert_eq!(
-            LIA::Lt(1, 1).check([int(1, 1), int(1, 2)].map(ok), [bool_t(1, 1)].map(ok)),
-            Err("Lt(1, 1): expected `Int(1, 1) ⊗ Int(1, 1) -> Bool(1, 1)`, \
-                 got `Int(1, 1) ⊗ Int(1, 2) -> Bool(1, 1)`"
-                .to_string())
-        );
-        let b = bool_t(1, 1);
-        assert_eq!(
-            LIA::Not(1, 1).check([b, b].map(ok), [b].map(ok)),
-            Err("Not(1, 1): expected `Bool(1, 1) -> Bool(1, 1)`, \
-                 got `Bool(1, 1) ⊗ Bool(1, 1) -> Bool(1, 1)`"
-                .to_string())
-        );
-        // errors of wires are propagated
-        assert_eq!(
-            LIA::Not(1, 1).check([Err("bad wire")], [b].map(Ok)),
-            Err("Not(1, 1): bad wire".to_string())
-        );
-    }
-
-    #[test]
-    fn check_uninterpreted() {
-        let f = || LIA::UninterpretedInt("f".into(), 2, 3);
-        let t = int(2, 3);
-        // a single write of the given sort
-        assert!(f().check([].map(ok), [t].map(ok)).is_ok());
-        assert!(f().check([].map(ok), [bool_t(2, 3)].map(ok)).is_err());
-        assert!(f().check([t].map(ok), [].map(ok)).is_err());
-        assert!(f().check([t].map(ok), [t].map(ok)).is_err());
-        assert!(f().check([].map(ok), [t, t].map(ok)).is_err());
-        assert!(f().check([].map(ok), [].map(ok)).is_err());
-        let g = LIA::UninterpretedBool("g".into(), 1, 1);
-        assert!(g.check([].map(ok), [bool_t(1, 1)].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn check_skip_and_havoc() {
-        let (i, b) = (int(2, 3), bool_t(2, 3));
-        assert!(LIA::skip(&i).check([i].map(ok), [i].map(ok)).is_ok());
-        assert!(LIA::skip(&b).check([b].map(ok), [b].map(ok)).is_ok());
-        assert!(LIA::havoc(&i).check([].map(ok), [i].map(ok)).is_ok());
-        assert!(LIA::havoc(&b).check([].map(ok), [b].map(ok)).is_ok());
-        // derivatives cannot be copied or havoced
-        let z = i.tangent();
-        assert!(LIA::skip(&z).check([z].map(ok), [z].map(ok)).is_err());
-        assert!(LIA::havoc(&z).check([].map(ok), [z].map(ok)).is_err());
-    }
-
-    #[test]
-    fn check_derivatives() {
-        // the derivatives of integers and booleans are zero
-        let z = int(2, 3).tangent();
-        assert_eq!(z, Sort::Zero([2, 3]));
-        assert_eq!(bool_t(2, 3).tangent(), z);
-        assert_eq!(z.tangent(), z);
-        // operations on values do not apply to derivatives
-        assert!(LIA::Add(2, 3).check([z, z].map(ok), [z].map(ok)).is_err());
-        assert!(LIA::Not(2, 3).check([z].map(ok), [z].map(ok)).is_err());
-        assert!(LIA::AnyInt(2, 3).check([].map(ok), [z].map(ok)).is_err());
-        assert!(
-            LIA::IdInt(2, 3)
-                .check([int(2, 3)].map(ok), [z].map(ok))
-                .is_err()
         );
     }
 }

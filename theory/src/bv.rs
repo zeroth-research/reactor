@@ -25,29 +25,28 @@ in [`BV`] are:
 - [`BV::BitSelect`], [`BV::Extend`] — pointwise extraction of bits and zero-extension.
 - [`BV::Ite`] — if-then-else: reads a bit guard and two same-typed branches.
 
-`BV` implements [`Theory`]; [`Theory::check`] checks that the sorts of the
-read and written wires are the domain and the codomain of the operation.
+An operation applies to the wires whose sorts are its boundary: the read wires
+have the sorts of its domain, and the written wires the sorts of its codomain.
 
 ## Examples
 
 ```
-use theory::Theory;
-use theory::bv::{BV, Sort};
+use base::boundary::Boundary;
+use theory::bv::BV;
 
-// 8-bit bit-vectors.
-let a = Sort::BV(8, [2, 3]);
-let b = Sort::BV(8, [3, 4]);
-let c = Sort::BV(8, [2, 4]);
+let boundary = |op: BV| format!("{} -> {}", op.dom(), op.cod());
 
-let ok = |s| Ok::<_, String>(s);
+// Matrix multiply of 8-bit bit-vectors: (2x3) * (3x4) -> (2x4).
+assert_eq!(
+    boundary(BV::MatMul(8, 2, 3, 4)),
+    "BV<8>(2, 3) ⊗ BV<8>(3, 4) -> BV<8>(2, 4)"
+);
 
-// Matrix multiply: (2x3) * (3x4) -> (2x4).
-assert!(BV::MatMul(8, 2, 3, 4).check([a, b].map(ok), [c].map(ok)).is_ok());
-
-// Elementwise Add requires matching shapes.
-let m = Sort::BV(8, [2, 3]);
-assert!(BV::Add(8, 2, 3).check([m, m].map(ok), [m].map(ok)).is_ok());
-assert!(BV::Add(8, 2, 3).check([a, b].map(ok), [c].map(ok)).is_err());
+// Elementwise Add reads and writes matrices of one shape.
+assert_eq!(
+    boundary(BV::Add(8, 2, 3)),
+    "BV<8>(2, 3) ⊗ BV<8>(2, 3) -> BV<8>(2, 3)"
+);
 ```
 */
 
@@ -207,32 +206,19 @@ impl fmt::Display for BV {
     }
 }
 
-impl Sequential for BV {
-    fn skip(range: &Self::Sort) -> Self {
+impl Sequential<Sort> for BV {
+    fn skip(range: &Sort) -> Self {
         // a zero derivative cannot be copied: the check of the term with `Zero` fails
         let [r, c] = *range.shape();
         BV::Id(range.bw(), r, c)
     }
 }
 
-impl Combinatorial for BV {
-    fn havoc(range: &Self::Sort) -> Self {
+impl Combinatorial<Sort> for BV {
+    fn havoc(range: &Sort) -> Self {
         // a derivative cannot be havoced: the check of the term with `Zero` fails
         let [r, c] = *range.shape();
         BV::Havoc(range.bw(), r, c)
-    }
-}
-
-impl Theory for BV {
-    type Sort = Sort;
-    const NAME: &'static str = "BV";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<Sort, E>>,
-        W: IntoIterator<Item = Result<Sort, E>>,
-    {
-        check_wires(self.dom(), self.cod(), read, write).map_err(|e| format!("{self:?}: {e}"))
     }
 }
 
@@ -486,10 +472,6 @@ mod tests {
         Sort::BV(bw, [r, c])
     }
 
-    pub fn ok<S>(s: S) -> Result<S, String> {
-        Ok(s)
-    }
-
     fn int_tensor(rows: i64, cols: i64) -> crate::PyTensor {
         tch::Tensor::zeros([rows, cols], (tch::Kind::Int64, tch::Device::Cpu)).into()
     }
@@ -497,355 +479,6 @@ mod tests {
     fn bv_const(t: crate::PyTensor, width: usize) -> BV {
         BV::Const(BVConst::new(t, width).unwrap())
     }
-
-    // --- Type helpers ---
-
-    #[test]
-    fn type_shape_and_bw() {
-        let t = bv(8, 2, 3);
-        assert_eq!(t.shape(), &[2, 3]);
-        assert_eq!(t.bw(), 8);
-
-        let t = bv(16, 1, 4);
-        assert_eq!(t.shape(), &[1, 4]);
-        assert_eq!(t.bw(), 16);
-    }
-
-    // --- Const ---
-
-    #[test]
-    fn const_ok() {
-        let t = bv(8, 2, 2);
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
-        assert!(bv_const(cm, 8).check([], [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn const_value_max_fits() {
-        let t = bv(8, 1, 1);
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[255i64]]).into();
-        assert!(bv_const(cm, 8).check(vec![], [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn const_wrong_width_fails() {
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[1i64]]).into();
-        assert!(
-            bv_const(cm, 8)
-                .check(vec![], [bv(16, 1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn const_wrong_row_count_fails() {
-        let t = bv(8, 2, 2);
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1]]).into();
-        assert!(bv_const(cm, 8).check(vec![], [t].map(ok)).is_err());
-    }
-
-    #[test]
-    fn const_wrong_col_count_fails() {
-        let t = bv(8, 1, 2);
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64]]).into();
-        assert!(bv_const(cm, 8).check(vec![], [t].map(ok)).is_err());
-    }
-
-    #[test]
-    fn const_with_read_fails() {
-        let t = bv(8, 1, 1);
-        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64]]).into();
-        assert!(bv_const(cm, 8).check([t].map(ok), [t].map(ok)).is_err());
-    }
-
-    // --- Not / Id ---
-
-    #[test]
-    fn not_ok() {
-        let t = bv(8, 2, 3);
-        assert!(BV::Not(8, 2, 3).check([t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn not_type_mismatch_fails() {
-        assert!(
-            BV::Not(8, 1, 1)
-                .check([bv(8, 1, 1)].map(ok), [bv(8, 2, 2)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn id_ok() {
-        let t = bv(32, 4, 4);
-        assert!(BV::Id(32, 4, 4).check([t].map(ok), [t].map(ok)).is_ok());
-        // the width is given by the operation
-        assert!(BV::Id(16, 4, 4).check([t].map(ok), [t].map(ok)).is_err());
-    }
-
-    // --- Binary elementwise (Add, Mul, And, Or, Xor) ---
-
-    #[test]
-    fn add_ok() {
-        let t = bv(8, 3, 3);
-        assert!(BV::Add(8, 3, 3).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn add_shape_mismatch_fails() {
-        assert!(
-            BV::Add(8, 1, 2)
-                .check([bv(8, 1, 2), bv(8, 2, 1)].map(ok), [bv(8, 1, 2)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn mul_ok() {
-        let t = bv(16, 1, 1);
-        assert!(BV::Mul(16, 1, 1).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn and_ok() {
-        let t = bv(1, 2, 2);
-        assert!(BV::And(1, 2, 2).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn or_ok() {
-        let t = bv(1, 2, 2);
-        assert!(BV::Or(1, 2, 2).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn xor_ok() {
-        let t = bv(4, 1, 1);
-        assert!(BV::Xor(4, 1, 1).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    // --- Comparisons ---
-
-    #[test]
-    fn lt_ok() {
-        let t = bv(8, 2, 3);
-        let out = bv(1, 2, 3);
-        assert!(
-            BV::ULt(8, 2, 3)
-                .check([t, t].map(ok), [out].map(ok))
-                .is_ok()
-        );
-        assert!(
-            BV::SLt(8, 2, 3)
-                .check([t, t].map(ok), [out].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn le_ok() {
-        let t = bv(8, 1, 1);
-        let out = bv(1, 1, 1);
-        assert!(
-            BV::ULe(8, 1, 1)
-                .check([t, t].map(ok), [out].map(ok))
-                .is_ok()
-        );
-        assert!(
-            BV::SLe(8, 1, 1)
-                .check([t, t].map(ok), [out].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn eq_ok() {
-        let t = bv(32, 1, 1);
-        let out = bv(1, 1, 1);
-        assert!(
-            BV::Eq(32, 1, 1)
-                .check([t, t].map(ok), [out].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn ne_ok() {
-        let t = bv(8, 1, 1);
-        let out = bv(1, 1, 1);
-        assert!(BV::Ne(8, 1, 1).check([t, t].map(ok), [out].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn cmp_wrong_output_type_fails() {
-        let t = bv(8, 2, 3);
-        // output must be U(1, rows, cols), not U(8, ...)
-        assert!(BV::ULt(8, 2, 3).check([t, t].map(ok), [t].map(ok)).is_err());
-        assert!(BV::SLt(8, 2, 3).check([t, t].map(ok), [t].map(ok)).is_err());
-    }
-
-    #[test]
-    fn cmp_input_mismatch_fails() {
-        let out = bv(1, 1, 1);
-        assert!(
-            BV::Eq(8, 1, 1)
-                .check([bv(8, 1, 1), bv(16, 1, 1)].map(ok), [out].map(ok))
-                .is_err()
-        );
-    }
-
-    // --- UDiv / SDiv ---
-
-    #[test]
-    fn udiv_ok() {
-        let t = bv(8, 1, 1);
-        assert!(BV::UDiv(8, 1, 1).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn sdiv_ok() {
-        let t = bv(8, 1, 1);
-        assert!(BV::SDiv(8, 1, 1).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    // --- MatMul ---
-
-    #[test]
-    fn matmul_ok() {
-        let a = bv(8, 2, 3);
-        let b = bv(8, 3, 4);
-        let c = bv(8, 2, 4);
-        assert!(
-            BV::MatMul(8, 2, 3, 4)
-                .check([a, b].map(ok), [c].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn matmul_inner_dim_mismatch_fails() {
-        let a = bv(8, 2, 3);
-        let b = bv(8, 4, 4);
-        let c = bv(8, 2, 4);
-        assert!(
-            BV::MatMul(8, 2, 3, 4)
-                .check([a, b].map(ok), [c].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn matmul_bw_mismatch_fails() {
-        let a = bv(8, 2, 3);
-        let b = bv(16, 3, 4);
-        let c = bv(8, 2, 4);
-        assert!(
-            BV::MatMul(8, 2, 3, 4)
-                .check([a, b].map(ok), [c].map(ok))
-                .is_err()
-        );
-    }
-
-    // --- Ite ---
-
-    #[test]
-    fn ite_ok() {
-        let cond = bv(1, 1, 1);
-        let t = bv(8, 1, 1);
-        assert!(
-            BV::Ite(8, 1, 1)
-                .check([cond, t, t].map(ok), [t].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn ite_bad_condition_bw_fails() {
-        let cond = bv(8, 1, 1);
-        let t = bv(8, 1, 1);
-        assert!(
-            BV::Ite(8, 1, 1)
-                .check([cond, t, t].map(ok), [t].map(ok))
-                .is_err()
-        );
-    }
-
-    // --- Sub / Neg / UMod / SMod ---
-
-    #[test]
-    fn sub_ok() {
-        let t = bv(8, 2, 3);
-        assert!(BV::Sub(8, 2, 3).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn neg_ok() {
-        let t = bv(8, 2, 3);
-        assert!(BV::Neg(8, 2, 3).check([t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn neg_type_mismatch_fails() {
-        assert!(
-            BV::Neg(8, 1, 1)
-                .check([bv(8, 1, 1)].map(ok), [bv(8, 2, 2)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn umod_ok() {
-        let t = bv(8, 1, 1);
-        assert!(BV::UMod(8, 1, 1).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    #[test]
-    fn smod_ok() {
-        let t = bv(8, 1, 1);
-        assert!(BV::SMod(8, 1, 1).check([t, t].map(ok), [t].map(ok)).is_ok());
-    }
-
-    // --- BVToBool / BoolToBV (SMV bool(...) / word1(...)) ---
-
-    #[test]
-    fn bv_to_bool_ok() {
-        // BV<8>(2,3) -> BV<1>(2,3)
-        assert!(
-            BV::BVToBool(8, 2, 3)
-                .check([bv(8, 2, 3)].map(ok), [bv(1, 2, 3)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn bv_to_bool_identity_width_ok() {
-        // BV<1> -> BV<1> is also fine (idempotent on already-bool input).
-        assert!(
-            BV::BVToBool(1, 1, 1)
-                .check([bv(1, 1, 1)].map(ok), [bv(1, 1, 1)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn bv_to_bool_wrong_out_width_fails() {
-        assert!(
-            BV::BVToBool(8, 1, 1)
-                .check([bv(8, 1, 1)].map(ok), [bv(8, 1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn bv_to_bool_shape_mismatch_fails() {
-        assert!(
-            BV::BVToBool(8, 2, 3)
-                .check([bv(8, 2, 3)].map(ok), [bv(1, 1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    // --- BitSelect / Extend ---
 
     fn bit_select(high: usize, low: usize, width: usize) -> BV {
         let bits = Bits::new(high, low, width).unwrap();
@@ -865,85 +498,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn bit_select_ok() {
-        // BV<16>[11:4] -> BV<8>
-        assert!(
-            bit_select(11, 4, 16)
-                .check([bv(16, 1, 1)].map(ok), [bv(8, 1, 1)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn bit_select_single_bit_ok() {
-        let op = BV::BitSelect {
-            bits: Bits::new(3, 3, 8).unwrap(),
-            rows: 2,
-            cols: 2,
-        };
-        assert!(
-            op.check([bv(8, 2, 2)].map(ok), [bv(1, 2, 2)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn bit_select_wrong_out_width_fails() {
-        assert!(
-            bit_select(7, 0, 16)
-                .check([bv(16, 1, 1)].map(ok), [bv(7, 1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn extend_ok() {
-        assert!(
-            extend(8, 8)
-                .check([bv(8, 1, 1)].map(ok), [bv(16, 1, 1)].map(ok))
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn extend_wrong_out_width_fails() {
-        assert!(
-            extend(4, 8)
-                .check([bv(8, 1, 1)].map(ok), [bv(16, 1, 1)].map(ok))
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn ite_arm_mismatch_fails() {
-        let cond = bv(1, 1, 1);
-        assert!(
-            BV::Ite(8, 1, 1)
-                .check(
-                    [cond, bv(8, 1, 1), bv(16, 1, 1)].map(ok),
-                    [bv(8, 1, 1)].map(ok)
-                )
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn ite_matrix_guard_fails() {
-        // the guard is a single bit, as in LIA and LRA
-        let t = bv(8, 2, 2);
-        assert!(
-            BV::Ite(8, 2, 2)
-                .check([bv(1, 2, 2), t, t].map(ok), [t].map(ok))
-                .is_err()
-        );
-    }
-
-    // --- Boundaries ---
-
     // Formats the boundary of `op` as `dom -> cod`
     fn show(op: BV) -> String {
         format!("{} -> {}", op.dom(), op.cod())
+    }
+
+    #[test]
+    fn type_shape_and_bw() {
+        let t = bv(8, 2, 3);
+        assert_eq!(t.shape(), &[2, 3]);
+        assert_eq!(t.bw(), 8);
+
+        let t = bv(16, 1, 4);
+        assert_eq!(t.shape(), &[1, 4]);
+        assert_eq!(t.bw(), 16);
     }
 
     #[test]
@@ -971,6 +539,9 @@ mod tests {
         ] {
             assert_eq!(show(op), format!("{m} -> {m}"));
         }
+        // the width is given by the operation
+        assert_eq!(show(BV::Id(32, 4, 4)), "BV<32>(4, 4) -> BV<32>(4, 4)");
+        // the comparisons write bits
         for op in [
             BV::ULe(8, 2, 3),
             BV::ULt(8, 2, 3),
@@ -989,20 +560,67 @@ mod tests {
             show(BV::MatMul(8, 2, 3, 4)),
             "BV<8>(2, 3) ⊗ BV<8>(3, 4) -> BV<8>(2, 4)"
         );
+        // SMV `bool(...)`, also of bits
         assert_eq!(show(BV::BVToBool(8, 2, 3)), format!("{m} -> BV<1>(2, 3)"));
-        assert_eq!(show(bit_select(11, 4, 16)), "BV<16>(1, 1) -> BV<8>(1, 1)");
-        assert_eq!(show(extend(8, 8)), "BV<8>(1, 1) -> BV<16>(1, 1)");
+        assert_eq!(show(BV::BVToBool(1, 1, 1)), "BV<1>(1, 1) -> BV<1>(1, 1)");
+        // the guard is a single bit, as in LIA and LRA
         assert_eq!(
             show(BV::Ite(8, 2, 3)),
             format!("BV<1>(1, 1) ⊗ {m} ⊗ {m} -> {m}")
         );
+        // a single write of the given sort
         assert_eq!(
             show(BV::Uninterpreted("f".into(), 8, 2, 3)),
             format!("I -> {m}")
         );
         assert_eq!(show(BV::Havoc(8, 2, 3)), format!("I -> {m}"));
-        assert_eq!(show(bv_const(int_tensor(2, 3), 8)), format!("I -> {m}"));
-        assert_ne!(show(BV::Havoc(8, 2, 3)), show(BV::Havoc(16, 2, 3)));
+        assert_eq!(show(BV::Havoc(16, 2, 3)), "I -> BV<16>(2, 3)");
+    }
+
+    #[test]
+    fn boundary_const() {
+        // a constant writes a matrix of the shape of its tensor and of its width
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[0i64, 1], [2, 3]]).into();
+        assert_eq!(show(bv_const(cm, 8)), "I -> BV<8>(2, 2)");
+        let cm: crate::PyTensor = tch::Tensor::from_slice2(&[[255i64]]).into();
+        assert_eq!(show(bv_const(cm, 8)), "I -> BV<8>(1, 1)");
+        assert_eq!(show(bv_const(int_tensor(2, 3), 16)), "I -> BV<16>(2, 3)");
+    }
+
+    #[test]
+    fn boundary_bits() {
+        // BV<16>[11:4] -> BV<8>
+        assert_eq!(show(bit_select(11, 4, 16)), "BV<16>(1, 1) -> BV<8>(1, 1)");
+        let single = BV::BitSelect {
+            bits: Bits::new(3, 3, 8).unwrap(),
+            rows: 2,
+            cols: 2,
+        };
+        assert_eq!(show(single), "BV<8>(2, 2) -> BV<1>(2, 2)");
+        // zero-extension by `extra` bits
+        assert_eq!(show(extend(8, 8)), "BV<8>(1, 1) -> BV<16>(1, 1)");
+        assert_eq!(show(extend(4, 8)), "BV<8>(1, 1) -> BV<12>(1, 1)");
+    }
+
+    #[test]
+    fn skip_and_havoc() {
+        let t = bv(8, 2, 3);
+        assert_eq!(show(BV::skip(&t)), "BV<8>(2, 3) -> BV<8>(2, 3)");
+        assert_eq!(show(BV::havoc(&t)), "I -> BV<8>(2, 3)");
+        // derivatives cannot be copied or havoced: `skip` and `havoc` of them are on
+        // values (of no bits)
+        let z = t.tangent();
+        assert_eq!(show(BV::skip(&z)), "BV<0>(2, 3) -> BV<0>(2, 3)");
+        assert_eq!(show(BV::havoc(&z)), "I -> BV<0>(2, 3)");
+    }
+
+    #[test]
+    fn derivatives() {
+        // the derivatives of bit-vectors are zero; the operations of BV are on values only
+        // (see `boundary_ops`)
+        let z = bv(8, 2, 3).tangent();
+        assert_eq!(z, Sort::Zero([2, 3]));
+        assert_eq!(z.tangent(), z);
     }
 
     #[test]
@@ -1045,67 +663,5 @@ mod tests {
             BV::Uninterpreted("f".into(), 8, 2, 3).to_string(),
             "Uninterpreted(f)"
         );
-    }
-
-    #[test]
-    fn check_errors() {
-        assert_eq!(
-            BV::Add(8, 1, 1).check([bv(8, 1, 1), bv(16, 1, 1)].map(ok), [bv(8, 1, 1)].map(ok)),
-            Err(
-                "Add(8, 1, 1): expected `BV<8>(1, 1) ⊗ BV<8>(1, 1) -> BV<8>(1, 1)`, \
-                 got `BV<8>(1, 1) ⊗ BV<16>(1, 1) -> BV<8>(1, 1)`"
-                    .to_string()
-            )
-        );
-        let t = bv(8, 1, 1);
-        assert_eq!(
-            BV::Not(8, 1, 1).check([t, t].map(ok), [t].map(ok)),
-            Err("Not(8, 1, 1): expected `BV<8>(1, 1) -> BV<8>(1, 1)`, \
-                 got `BV<8>(1, 1) ⊗ BV<8>(1, 1) -> BV<8>(1, 1)`"
-                .to_string())
-        );
-        // errors of wires are propagated
-        assert_eq!(
-            BV::Not(8, 1, 1).check([Err("bad wire")], [t].map(Ok)),
-            Err("Not(8, 1, 1): bad wire".to_string())
-        );
-    }
-
-    #[test]
-    fn check_uninterpreted() {
-        let f = || BV::Uninterpreted("f".into(), 8, 2, 3);
-        let t = bv(8, 2, 3);
-        // a single write of the given sort
-        assert!(f().check([].map(ok), [t].map(ok)).is_ok());
-        assert!(f().check([].map(ok), [bv(1, 2, 3)].map(ok)).is_err());
-        assert!(f().check([t].map(ok), [].map(ok)).is_err());
-        assert!(f().check([t].map(ok), [t].map(ok)).is_err());
-        assert!(f().check([].map(ok), [t, t].map(ok)).is_err());
-        assert!(f().check([].map(ok), [].map(ok)).is_err());
-    }
-
-    #[test]
-    fn check_derivatives() {
-        // the derivatives of bit-vectors are zero
-        let z = bv(8, 2, 3).tangent();
-        assert_eq!(z, Sort::Zero([2, 3]));
-        assert_eq!(z.tangent(), z);
-        // operations on values do not apply to derivatives
-        let t = bv(8, 2, 3);
-        assert!(BV::Add(8, 2, 3).check([z, z].map(ok), [z].map(ok)).is_err());
-        assert!(BV::Add(8, 2, 3).check([t, z].map(ok), [t].map(ok)).is_err());
-        assert!(BV::Not(8, 2, 3).check([z].map(ok), [t].map(ok)).is_err());
-        assert!(BV::Havoc(8, 2, 3).check([].map(ok), [z].map(ok)).is_err());
-        assert!(BV::havoc(&z).check([].map(ok), [z].map(ok)).is_err());
-        assert!(BV::skip(&z).check([z].map(ok), [z].map(ok)).is_err());
-        assert!(
-            bv_const(int_tensor(2, 3), 8)
-                .check([].map(ok), [z].map(ok))
-                .is_err()
-        );
-        assert!(BV::Id(8, 2, 3).check([t].map(ok), [z].map(ok)).is_err());
-        // ... but values can be copied and havoced
-        assert!(BV::skip(&t).check([t].map(ok), [t].map(ok)).is_ok());
-        assert!(BV::havoc(&t).check([].map(ok), [t].map(ok)).is_ok());
     }
 }
