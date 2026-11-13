@@ -99,16 +99,26 @@ The certificate in `Data.lean` is the one given by `--invariant` and
 the relational and scalar encodings beside it, and the run ends there.
 [What gets generated](#what-gets-generated) has the details.
 
-### 5. Lean certificate (`proof/render.py`, `smt/queries.py`, `proof/from_smt.py`)
+### 5. Lean certificate (`proof/render.py`, `parse/`, `smt/queries.py`, `proof/from_smt.py`, `proof/from_ir.py`)
 
 These steps turn the given predicates into the certificate, before stage 4:
 
-- `predicate_terms` parses the predicates once, into cvc5 terms over the
-  module's encoding.
+- The predicates are parsed once, by the parser `--parser` names:
+  - `cvc5`, the default: `predicate_terms` reads them into cvc5 terms over
+    the module's encoding.
+  - `native`: `parse.native.read_predicates` reads them into reactor's own
+    terms, the IR the module is written in, over the module's wires. It
+    loads no solver.
+
+  Both read the Python predicate syntax first and SMT-LIB for the rest.
 - That parse is printed as Lean by `render_certificate`, into a
-  `LeanCertificate`: the definitions in `Data.lean`. `Certificate.lean` is
-  the same text for every certificate of a safety property, and for every
-  certificate of a Büchi one.
+  `LeanCertificate`: the definitions in `Data.lean`. `from_smt` prints
+  cvc5's terms and `from_ir` reactor's, in the same words. Two spellings
+  differ, each the same Lean term: an Int numeral compared with a Real is
+  `(2 : Real)` from reactor's terms and `(2 : Int)` from cvc5's, and a
+  nested `and`, `or`, `+` or `*` is printed flat from reactor's terms.
+  `Certificate.lean` is the same text for every certificate of a safety
+  property, and for every certificate of a Büchi one.
 
 ### 6. The proofs
 
@@ -182,9 +192,10 @@ layer.
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) |
 | `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
+| `parse/` | Reading a predicate's text, never importing cvc5: `dsl` (the Python predicate syntax, walked over whichever terms a parser hands it), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the native parser: `NativeParser`, `read_predicates`); `PARSERS` names the two a run picks from |
 | `smt/` | The module in cvc5, which the certificate's predicates are read against: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `queries` (`ModuleQueries`, the claim and certificate parsed, and `predicate_terms`), `terms` (walks over terms) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
-| `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, `ProofScripts`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean) |
+| `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, `ProofScripts`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean), `from_ir` (a `parse.Formula` printed as Lean, in the same words) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`, `smv`), and `names`, which translates a claim's names to the internal ones and back |
 | `cli/` | The command line: `parser` (the flags, one `add_*` per group), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
 | `pipeline/` | `uv run reactor`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, `artifacts/`, the certificate rendered), `outputs` (the project, `--cert-file`) |

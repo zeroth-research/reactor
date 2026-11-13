@@ -8,7 +8,7 @@ imports cvc5.
 
 from __future__ import annotations
 
-from ..core.errors import PredicateRefused
+from ..core.errors import PredicateRefused, Unreadable
 
 
 class ModuleEncoding:
@@ -66,7 +66,7 @@ class ModuleEncoding:
         """
         if src is None:
             return None
-        from .predicates import Unreadable, parse_predicate
+        from .predicates import parse_predicate
 
         hit = self._parsed.get(src)
         if hit is None:

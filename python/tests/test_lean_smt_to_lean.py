@@ -1,4 +1,7 @@
-"""Tests for the SMT -> Lean expression translator (`reactor.lean.proof.from_smt`).
+"""Tests for the predicate printers: `reactor.lean.proof.from_smt`, which
+prints what the cvc5 parser read, and `from_ir`, which prints what the native
+parser read. Each test runs under both parsers (`parser`), and holds both to
+the same text.
 
 Covers the `min`/`max` peephole and the sharing pass. There is no `max` kind to translate
 from, so a ReLU unit reaches the translator as `(ite (>= e 0) e 0)`. Left as
@@ -8,14 +11,26 @@ which is what made a wide net exhaust the heartbeat budget rather than fail
 to be provable. `omega` handles `min`/`max` over `Int` with no split at all.
 """
 
+import sys
+
 import pytest
 import torch
 
 from reactor import Module, Term, Var, X, LIA, LRA, Int, Real
-from reactor.lean.proof.render import LeanCertificate, render_certificate
-from reactor.lean.smt.queries import predicate_terms
+from reactor.lean.proof.render import LeanCertificate
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import PredicateRefused
+from reactor.lean.parse import PARSERS
+from reactor.lean.pipeline.certificate import render
+
+PARSER = PARSERS[0]
+
+
+@pytest.fixture(autouse=True, params=PARSERS)
+def parser(request, monkeypatch) -> str:
+    """The parser `_lean` reads with, each in turn."""
+    monkeypatch.setattr(sys.modules[__name__], "PARSER", request.param)
+    return request.param
 
 
 def _int_module() -> Module:
@@ -38,10 +53,9 @@ def _real_module() -> Module:
 
 
 def _lean(module, **cert: str) -> LeanCertificate:
-    """`cert`'s predicates printed as the certificate prints them."""
-    return render_certificate(
-        predicate_terms(module, Claim(), Certificate(**cert))
-    )
+    """`cert`'s predicates printed as the certificate prints them, read by
+    `PARSER`."""
+    return render(module, Claim(), Certificate(**cert), parser=PARSER)
 
 
 def _inv(module, smt: str) -> str:
@@ -144,25 +158,31 @@ def test_a_deep_net_is_emitted_once_per_unit_not_once_per_path():
     assert lean.count("let ") == 14
 
 
-def test_the_same_net_without_sharing_shows_what_it_costs():
-    from reactor.lean.proof.from_smt import smt_to_lean_nat
-    from reactor.lean.smt.queries import predicate_terms
+def _ranking(parser: str, smt: str):
+    """`smt` read as a ranking by `parser`: the term, the state wires, and
+    the printer that prints it."""
+    if parser == "cvc5":
+        from reactor.lean.proof.from_smt import smt_to_lean_nat as nat
+        from reactor.lean.smt.queries import predicate_terms as read
+    else:
+        from reactor.lean.parse.native import read_predicates as read
+        from reactor.lean.proof.from_ir import ir_to_lean_nat as nat
+    q = read(_int_module(), Claim(), Certificate(ranking=smt))
+    return q.ranking, q.wires.ctrl_next, nat
 
-    q = predicate_terms(_int_module(), Claim(), Certificate(ranking=_dense(4)))
-    plain = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
+
+def test_the_same_net_without_sharing_shows_what_it_costs(parser):
+    term, wires, nat = _ranking(parser, _dense(4))
+    plain = nat(term, wires, share=False)
     assert plain.count("(max ") == 30
     assert "let " not in plain
 
 
-def test_sharing_never_makes_the_output_longer():
-    from reactor.lean.proof.from_smt import smt_to_lean_nat
-    from reactor.lean.smt.queries import predicate_terms
-
+def test_sharing_never_makes_the_output_longer(parser):
     for smt in ("s0", "(+ s0 1)", _relu("s0"), _dense(1), _dense(2), _dense(5)):
-        q = predicate_terms(_int_module(), Claim(), Certificate(ranking=smt))
-        wires = q.msmt.ctrl_next
-        assert len(smt_to_lean_nat(q.ranking, wires, share=True)) <= len(
-            smt_to_lean_nat(q.ranking, wires, share=False)
+        term, wires, nat = _ranking(parser, smt)
+        assert len(nat(term, wires, share=True)) <= len(
+            nat(term, wires, share=False)
         ), smt
 
 
@@ -212,9 +232,22 @@ def test_euclidean_division_and_modulus_go_across_unchanged():
     assert "% (2 : Int)" in lean and "/ (2 : Int)" in lean, lean
 
 
-def test_a_kind_with_no_lean_form_is_refused_by_the_flag_it_came_from():
+def test_distinct_is_every_pair_distinct():
+    """cvc5 keeps `(distinct a b c)` as one term of three children, and the
+    printer took the first two: `a ≠ b` alone, a weaker predicate than the
+    one given."""
+    lean = _inv(_int_module(), "(distinct s0 1 2)")
+    assert lean.count("≠") == 3, lean
+    assert "((1 : Int) ≠ (2 : Int))" in lean, lean
+    assert _inv(_int_module(), "(distinct s0 1)") == "fun s => ((s 0 0) ≠ (1 : Int))"
+
+
+def test_a_kind_with_no_lean_form_is_refused_by_the_flag_it_came_from(parser):
     """A refusal, not a bare `ValueError`: `Refused` is what the pipeline
     turns into an `error:` line and an `unsupported` note in `artifacts/`,
-    and an answer with no Lean form is the commonest way to reach it."""
-    with pytest.raises(PredicateRefused, match="--invariant: .*Kind.ABS"):
+    and an answer with no Lean form is the commonest way to reach it. cvc5
+    reads `abs`, and its printer refuses it; reactor's terms have none, so
+    the native parser does."""
+    why = "Kind.ABS" if parser == "cvc5" else "`abs` is no function"
+    with pytest.raises(PredicateRefused, match=f"--invariant: .*{why}"):
         _inv(_int_module(), "(>= (abs s0) 0)")
