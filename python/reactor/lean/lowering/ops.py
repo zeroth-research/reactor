@@ -748,7 +748,7 @@ OPS: tuple[Op, ...] = (
         ALL,
         mat=Inline("codegen.terms._get_expr"),
         scalar=Inline("codegen.terms._get_expr, or the element's flat slot"),
-        box=Unsupported("no Box in `Relational.Box` reads one element of a matrix."),
+        box=Inline("codegen.boxes._get_box"),
         smt=_smt_get,
     ),
     Op(

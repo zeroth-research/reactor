@@ -203,9 +203,6 @@ _KNOWN_GAPS = {
     # No Box combinator yet.
     *(("Cast", name, "box") for name in
       ("IntToReal", "RealToInt", "BVToInt", "BitToBool", "BoolToBit")),
-    ("LIA", "Get", "box"),
-    ("LRA", "Get", "box"),
-    ("BV", "Get", "box"),
     # A transpose has no cvc5 term; `check_na_supported` refuses it by name.
     ("LIA", "Transpose", "smt"),
     ("LRA", "Transpose", "smt"),

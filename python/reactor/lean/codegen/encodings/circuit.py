@@ -55,6 +55,7 @@ _LAYER_SIMP = [
     "Box.nnLinear",
     "Box.linear",
     "Box.relu",
+    "Box.get",
     "Box.argmax_1d",
     "Box.argmax",
     "ite_pair",
