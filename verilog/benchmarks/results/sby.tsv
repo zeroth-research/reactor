@@ -18,5 +18,5 @@ quickstart/cover.sby	top	5:2: `reg` not supported, use `logic`	OK	Equal
 quickstart/demo.sby	demo	3:10: `reg` not supported, use `logic`	OK	Equal	
 quickstart/memory.sby	testbench	15:3: attribute not supported	15:3: attribute not supported	-	other unsupported construct
 quickstart/prove.sby	testbench	5:10: `reg` not supported, use `logic`	16:15: unsupported: StatementItem [at `if`]	-	generate / loops
-tristate/tristate.sby	top_pass	3:38: literal `1'bz` with x/z digits not supported (2-state) (in instance `module1`)	3:38: literal `1'bz` with x/z digits not supported (2-state) (in instance `module1`)	-	x/z values (4-state)
+tristate/tristate.sby	top_pass	3:38: literal `1'bz` with x/z digits not supported (values are 2-state; x is accepted only as the whole value of an assignment in a block that every path overwrites, e.g. `y = 'x;` before a `case`) (in instance `module1`)	3:38: literal `1'bz` with x/z digits not supported (values are 2-state; x is accepted only as the whole value of an assignment in a block that every path overwrites, e.g. `y = 'x;` before a `case`) (in instance `module1`)	-	x/z values (4-state)
 vhd/formal_bind.sby	updowncount	10:1: unsupported: Description [at `bind`]	10:1: unsupported: Description [at `bind`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
