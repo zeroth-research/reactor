@@ -214,8 +214,8 @@ RUNS = [
     ("unreadable_property", COUNTER, ["--buchi", "(= (X @intf.0)"]),
 ]
 
-# `ModuleSMT`s built per run: the predicates are read against the run's
-# `smt.encoding.lazy` encoding, built once.
+# `ModuleSMT`s built per run: the predicates are read against one encoding
+# of the module, built once.
 ENCODINGS = {
     "bare": 0, "supplied": 1, "supplied_pre": 1, "cert_file": 1,
     "unreadable_property": 1,

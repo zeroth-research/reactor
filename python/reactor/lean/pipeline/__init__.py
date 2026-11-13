@@ -71,7 +71,6 @@ import sys
 from ..cli import parse_args
 from ..core.errors import Refused
 from ..project.lakefile import reactor_lean_checkout
-from ..smt.encoding import lazy
 from .certificate import lean_context, record_predicates, render, workspace
 from .claim import claim_from_flags, load, stated_claim
 from .outputs import generate, standalone
@@ -93,8 +92,6 @@ def main():
     settings = stated_claim(settings, problem, argv)
     module = problem.module
     print(module)
-    # The run's one cvc5 encoding, built by whichever stage asks first.
-    smt = lazy(module)
     claim, given = claim_from_flags(settings, problem.names)
     try:
         ctx = lean_context(module)
@@ -109,7 +106,7 @@ def main():
     record_predicates(store, claim, given)
 
     try:
-        lean_cert = render(smt, claim, given)
+        lean_cert = render(module, claim, given)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 

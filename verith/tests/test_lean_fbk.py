@@ -1223,11 +1223,11 @@ def test_a_checkout_that_is_not_one_fails_before_the_project_exists(tmp_path):
 
 def test_a_check_and_a_property_share_one_encoding(monkeypatch):
     """The slot bodies, the `--pre` and the `--safety` property are all read
-    on the run's one `ModuleEncoding`; none of them builds a term manager of
+    on the run's one `Encoding`; none of them builds a term manager of
     its own."""
     from verith.fbk_proveit.engine import check_module
-    from reactor.lean.smt.encoding import ModuleEncoding
     from reactor.lean.smt.module import ModuleSMT
+    from verith.common.encoding import Encoding
 
     built = [0]
     post_init = ModuleSMT.__post_init__
@@ -1239,7 +1239,7 @@ def test_a_check_and_a_property_share_one_encoding(monkeypatch):
     monkeypatch.setattr(ModuleSMT, "__post_init__", counted)
 
     module = _input_start()
-    encoding = ModuleEncoding(module)
+    encoding = Encoding(module)
     checked = check_module(module, True, "(>= e0 5)", encoding)
     prop = property_to_bool_lean(module, "(>= s0 0)", encoding=encoding)
 

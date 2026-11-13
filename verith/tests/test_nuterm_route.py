@@ -27,7 +27,7 @@ from verith.nuterm.engine import (
     _smt_term,
 )
 from verith.common.smtlib import smt_int
-from reactor.lean.smt.limits import SmtBudget
+from verith.common.limits import SmtBudget
 from verith.proofs.precheck import Status, pre_check
 
 pytest.importorskip("cvc5")

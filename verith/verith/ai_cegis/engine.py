@@ -18,10 +18,10 @@ from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.claim import require_transition
 from ..common.llm import DEFAULT_MODEL, describe_preconditions, make_client
-from reactor.lean.smt.obligations import Frame, init_inv, inv_imp_P, step_inv
-from ..common.obligations import rank_decrease, rank_positive
-from reactor.lean.smt.limits import bounded_solver, call_ms
-from reactor.lean.smt.encoding import encoding_of
+from ..common.encoding import encoding_of
+from ..common.limits import bounded_solver, call_ms
+from ..common.obligations import (
+    Frame, init_inv, inv_imp_P, rank_decrease, rank_positive, step_inv)
 from .prompt import PromptResult, prompt_inv_ranking
 
 
@@ -74,7 +74,7 @@ class AiCegisEngine:
         # The run's `--smt-timeout` / `--smt-budget`: each check is a phase.
         self.budget = budget
         self.log = log
-        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
+        # The run's `common.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.max_attempts = max_attempts

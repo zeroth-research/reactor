@@ -1,9 +1,9 @@
 """A claim read against the run's encoding of the module, for a search.
 
 `SynthContext` is the property and preconditions of a `Claim`, parsed over
-the run's `smt.encoding.ModuleEncoding`, with the module's state sorts
-checked against what the searching route reads (`READING_KINDS`). The
-obligations (`common.obligations.Obligations`) are stated over one.
+the run's `encoding.Encoding`, with the module's state sorts checked
+against what the searching route reads (`READING_KINDS`). The obligations
+(`common.obligations.Obligations`) are stated over one.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from functools import cached_property
 
 from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.encoding import encoding_of
+from .encoding import encoding_of
 
 from .smtlib import smtlib_source
 
@@ -84,7 +84,7 @@ def require_transition(enc, route: str) -> None:
 class SynthContext:
     """One module and its property in cvc5, for a search over shapes.
 
-    Stated over the run's `smt.encoding.ModuleEncoding`, the front end the
+    Stated over the run's `encoding.Encoding`, the front end the
     pre-check and the prompt routes read predicates through: the property
     arrives over ``s0..sN-1``, in SMT-LIB or the DSL's Python syntax, and
     that is the namespace every predicate this package reads or writes is
@@ -139,7 +139,7 @@ class SynthContext:
     def build(cls, source, claim: Claim, *, route: str,
               takes: tuple[str, ...] = ("int", "bool", "bv")) -> "SynthContext":
         """The context, or the reason this module is not one `route` reads.
-        `source` is the module, its encoding or a `smt.encoding.lazy` factory.
+        `source` is the module, its encoding or a `encoding.lazy` factory.
 
         ``takes`` is the route's contract, as :data:`READING_KINDS`, and
         this is the one place it is checked: there is one answer to "what

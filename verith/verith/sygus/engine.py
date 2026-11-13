@@ -68,7 +68,7 @@ from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.claim import READING_KINDS, SynthContext
 from ..common.record import announce
-from reactor.lean.smt.limits import bounded_solver, call_ms
+from ..common.limits import bounded_solver, call_ms
 from ..common.obligations import initial, transition
 from ..common.synth import Search, body_of, readings, moduli, program_constants, settle
 
@@ -130,7 +130,7 @@ class SygusEngine:
                 f"{grammar!r} is not one"
             )
         self.module = module
-        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
+        # The run's `common.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.grammar = grammar

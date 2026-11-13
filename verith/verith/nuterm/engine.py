@@ -57,7 +57,7 @@ from reactor import Module
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from ..common.record import announce
-from reactor.lean.smt.encoding import encoding_of
+from ..common.encoding import encoding_of
 from ..common.smtlib import affine_smt, conjunction_smt, smt_int, smtlib_source
 
 
@@ -245,7 +245,7 @@ class NutermEngine:
     def __init__(self, module: Module, *, log=print, encoding=None):
         self.module = module
         self.log = log
-        # The run's `smt.encoding.lazy` encoding, read only for a predicate
+        # The run's `common.encoding.lazy` encoding, read only for a predicate
         # written in the DSL's Python syntax; a library caller's module gets
         # one of its own then.
         self.encoding = encoding

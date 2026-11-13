@@ -19,7 +19,7 @@ import argparse
 from reactor.lean.cli.checks import check_row_options
 from reactor.lean.core.options import given
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
+from .common.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 from . import (
     DEFAULT_ROUTE,

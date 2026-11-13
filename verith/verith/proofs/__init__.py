@@ -23,8 +23,8 @@ from typing import TYPE_CHECKING
 
 from reactor.lean.project.lakefile import LakefileParts, LeanLib
 from reactor.lean.proof.render import ProofScripts
-from reactor.lean.smt.queries import predicate_terms
 
+from ..common.encoding import predicate_terms
 from .build import LakeBuildError, build_certificate
 from .facts import solver_hints
 from .precheck import pre_check
@@ -34,7 +34,8 @@ if TYPE_CHECKING:
     from reactor.lean.codegen.context import LeanContext
     from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
     from reactor.lean.proof.render import LeanCertificate
-    from reactor.lean.smt.limits import SmtBudget
+
+    from ..common.limits import SmtBudget
 
 __all__ = [
     "HAMMER", "LAKEFILE", "build_cert", "hammer_files", "hammer_only",

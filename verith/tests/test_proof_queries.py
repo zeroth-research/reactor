@@ -1,5 +1,6 @@
-"""Tests for what the proofs ask cvc5: the obligations (`proofs.precheck`)
-and the predicates' shape and hints (`proofs.facts`).
+"""Tests for what the proofs ask cvc5: the obligations (`proofs.precheck`),
+the predicates' shape and hints (`proofs.facts`), and the budget every
+query is held to (`common.limits`).
 
 The contract this file pins down is not "cvc5 gets the right answer" so much
 as "nothing here can break the run": every query is bounded, and every
@@ -17,8 +18,8 @@ from reactor import Module, Term, Var, Wire, X, LIA, Int
 from reactor.analyzer import convert_method
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.limits import SmtBudget
-from reactor.lean.smt.queries import predicate_terms
+from verith.common.encoding import predicate_terms
+from verith.common.limits import SmtBudget
 from verith.proofs.facts import predicate_facts, solver_hints
 from verith.proofs.precheck import Status, check_obligations, pre_check
 
@@ -50,6 +51,24 @@ def _status(cert, name):
     q = predicate_terms(countdown(), CLAIM, cert)
     by_name = {v.name: v for v in check_obligations(q, SmtBudget())}
     return by_name[name]
+
+
+# ── the budget ───────────────────────────────────────────────────────
+
+
+def test_the_per_call_limit_is_the_smaller_of_the_two():
+    b = SmtBudget(per_call_ms=250, phase_ms=100000)
+    assert b.next_call_ms() == 250
+    b = SmtBudget(per_call_ms=100000, phase_ms=250)
+    assert b.next_call_ms() <= 250
+
+
+def test_a_phase_can_be_refilled():
+    b = SmtBudget(per_call_ms=10, phase_ms=0)
+    assert b.exhausted
+    b.phase_ms = 5000
+    b.start_phase()
+    assert not b.exhausted
 
 
 # ── verdicts ─────────────────────────────────────────────────────────
@@ -357,14 +376,15 @@ def test_the_hint_layer_shapes_the_obligation_the_kind_states():
     """The plan is read off the obligations the certificate actually has,
     so a safety certificate contributes `inv_imp_P` where a Buchi one
     contributes `hrank`."""
+    from verith.common.obligations import frame
     from verith.proofs.facts import _obligation_labels
 
     buchi = predicate_terms(countdown(), CLAIM, GOOD)
-    assert [name for name, _ in _obligation_labels(buchi, buchi.frame("h_"))
+    assert [name for name, _ in _obligation_labels(buchi, frame(buchi, "h_"))
             ] == ["step_inv", "hrank"]
 
     safe = predicate_terms(countdown(), SAFE_CLAIM, SAFE)
-    assert [name for name, _ in _obligation_labels(safe, safe.frame("h_"))
+    assert [name for name, _ in _obligation_labels(safe, frame(safe, "h_"))
             ] == ["step_inv", "inv_imp_P"]
 
 

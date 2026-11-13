@@ -7,11 +7,10 @@ from __future__ import annotations
 
 
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt import obligations as obl
+from ..common import obligations as obl
 from ..common.obligations import Obligations, ranked as ranked_query
-from reactor.lean.smt.script import script
-from ..common.smtlib import decimals
-from reactor.lean.smt.terms import free_constants, ite_conditions
+from ..common.smtlib import decimals, script
+from ..common.terms import free_constants, ite_conditions
 from ..common.claim import SynthContext
 from ..common.synth import (
     denominator_scale,

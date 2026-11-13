@@ -86,8 +86,8 @@ def render(smt, claim: "Claim | None", cert: Certificate = Certificate(), *,
            verbatim: "LeanAnswer | None" = None) -> "LeanCertificate | None":
     """The certificate as codegen takes it: the predicates parsed once and
     printed as Lean. `None` without a claim: a bare run asks cvc5 nothing.
-    `smt` is the run's `smt.encoding.lazy` encoding, or the module;
-    `verbatim` is an answer that is Lean already."""
+    `smt` is the module, its encoding or a factory for one; `verbatim` is
+    an answer that is Lean already."""
     if claim is None:
         return None
     return render_certificate(predicate_terms(smt, claim, cert),

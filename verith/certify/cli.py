@@ -23,7 +23,7 @@ from reactor.lean.cli.checks import (
     input_adapter,
 )
 from reactor.lean.cli.parser import add_claim, add_input, add_outputs
-from reactor.lean.smt.limits import SmtBudget
+from verith.common.limits import SmtBudget
 from verith import InferRoute
 from verith.flags import (
     add_proofs,

@@ -15,7 +15,7 @@ from reactor.lean.core.errors import PredicateRefused
 from ..common.claim import SynthContext
 from ..common.obligations import Candidate, Obligations
 from ..common.solvers import Solver
-from reactor.lean.smt.terms import free_constants
+from ..common.terms import free_constants
 from ..common.synth import Column
 from .evaluate import Evaluator, Unevaluable
 from .ranks import Ranks, drops

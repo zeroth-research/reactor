@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from reactor.lean.core.errors import Refused
 from ..common.claim import SynthContext
 from ..common.obligations import bound
-from reactor.lean.smt.limits import bounded_solver, call_ms
+from ..common.limits import bounded_solver, call_ms
 from ..common.synth import program_constants
 
 from cvc5 import Kind

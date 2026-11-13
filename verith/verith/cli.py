@@ -55,9 +55,9 @@ from reactor.lean.pipeline.certificate import (
 from reactor.lean.pipeline.claim import claim_from_flags, load, stated_claim
 from reactor.lean.project.lakefile import LakefileParts
 from reactor.lean.project.scaffold import write_lakefile
-from reactor.lean.smt.encoding import lazy
-from reactor.lean.smt.limits import SmtBudget
 
+from .common.encoding import lazy
+from .common.limits import SmtBudget
 from .flags import (
     add_proofs,
     add_routes,

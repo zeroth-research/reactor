@@ -227,14 +227,14 @@ def check_module(
     before the project is generated, is then the only encoding a whole run
     makes.
 
-    `encoding` is the run's `ModuleEncoding`: the slot bodies and the
+    `encoding` is the run's `Encoding`: the slot bodies and the
     `--pre` are read on its term manager.  A caller with none gets an
     encoding of `module` of its own.
     """
-    from reactor.lean.smt.encoding import ModuleEncoding
+    from ..common.encoding import Encoding
 
     if encoding is None:
-        encoding = ModuleEncoding(module)
+        encoding = Encoding(module)
     ctx = LeanContext(module)
     try:
         # The bodies first: the `--pre` is parsed on the same encoding.
@@ -367,14 +367,14 @@ def property_to_bool_lean(module, property_smt: str, encoding=None,
 
     The layout comes from the module's own wires, read off `ctx` (the run's
     `LeanContext`, or one built here). `encoding` is the run's
-    `ModuleEncoding`, which the property is read on.
+    `Encoding`, which the property is read on.
     """
     from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.smt.encoding import ModuleEncoding
+    from ..common.encoding import Encoding
     from .to_bool import smt_to_lean_bool
     from .na import slot_accessors
 
-    term = (encoding or ModuleEncoding(module)).parse(
+    term = (encoding or Encoding(module)).parse(
         property_smt, "property", kind="safety")
     try:
         return smt_to_lean_bool(
@@ -513,7 +513,7 @@ def run(
 
     `prechecked` is what `check_module` returned to the row's precheck,
     before the project was generated. `encoding` is the run's
-    `ModuleEncoding` (`InferInput.smt()`), which the `--safety` property is
+    `Encoding` (`InferInput.smt()`), which the `--safety` property is
     read on, and `ctx` the run's `LeanContext` (`ProjectHandle.ctx`).
     """
     python = sys.executable

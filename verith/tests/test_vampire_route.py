@@ -86,7 +86,7 @@ def derive(name: str, kind: str, prp: str, *, timeout: float = 30,
 def test_the_round_is_split_on_the_conditions_its_ites_test():
     """`m_countdown` resets at zero, so its round is one `ite` and two cases,
     each with the condition as a guard rather than inside the term."""
-    from reactor.lean.smt.terms import ite_conditions
+    from verith.common.terms import ite_conditions
     from verith.vampire.branches import split
 
     ctx, ob, _q = parts("m_countdown", "safety", "(<= s0 100)")
