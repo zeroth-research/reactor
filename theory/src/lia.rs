@@ -23,6 +23,10 @@ operations in [`LIA`] are:
 - [`LIA::Mul`] — the elementwise product of two integer matrices of one
   shape. Of two variables it is not linear; it is here because a
   certificate's predicates multiply.
+- [`LIA::Div`], [`LIA::Mod`] — Euclidean division and remainder, elementwise:
+  SMT-LIB's `div` and `mod`, and Lean's `/` and `%` on `Int`. The remainder is
+  never negative, and by zero the quotient is 0 and the remainder the dividend,
+  as Lean has them (SMT-LIB leaves that case open).
 
 `LIA` implements [`Theory`]; [`Theory::check`] validates read/write
 shapes against the selected operation.
@@ -115,6 +119,9 @@ pub enum LIA {
     Neg(),
     // `x * y`, elementwise: not linear when both read variables
     Mul(),
+    // Euclidean `x div y` and `x mod y`, elementwise; by zero, 0 and `x`
+    Div(),
+    Mod(),
     // XXX: should these be in LIA?
     ReLU(),
     Argmax(),
@@ -172,6 +179,8 @@ impl Theory for LIA {
             | LIA::Sub()
             | LIA::Neg()
             | LIA::Mul()
+            | LIA::Div()
+            | LIA::Mod()
             | LIA::ReLU()
             | LIA::Argmax()
             | LIA::Min()
@@ -354,7 +363,7 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LIA::Add() | LIA::Sub() | LIA::Mul() => {
+        LIA::Add() | LIA::Sub() | LIA::Mul() | LIA::Div() | LIA::Mod() => {
             let (r1, r2, None) = (
                 next_expect_degree(&mut read, 0, 0)?,
                 next_expect_degree(&mut read, 1, 0)?,
@@ -841,6 +850,26 @@ mod tests {
     fn relu_bool_fails() {
         let b = bool_t(1, 1);
         assert!(LIA::ReLU().check([b].map(deg0), [b].map(deg0)).is_err());
+    }
+
+    #[test]
+    fn div_mod_ok() {
+        let t = int(2, 3);
+        for op in [LIA::Div(), LIA::Mod()] {
+            assert!(op.check([t, t].map(deg0), [t].map(deg0)).is_ok());
+        }
+    }
+
+    #[test]
+    fn div_mod_bool_or_reshaped_fails() {
+        let b = bool_t(1, 1);
+        for op in [LIA::Div(), LIA::Mod()] {
+            assert!(op.check([b, b].map(deg0), [b].map(deg0)).is_err());
+            assert!(
+                op.check([int(1, 2), int(2, 1)].map(deg0), [int(1, 2)].map(deg0))
+                    .is_err()
+            );
+        }
     }
 
     #[test]

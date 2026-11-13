@@ -93,6 +93,8 @@ OPS = {
     "LIA_Min": Op("min"),
     "LIA_Max": Op("max"),
     "LIA_Mul": Op("mul"),
+    "LIA_Div": Op("div"),
+    "LIA_Mod": Op("mod"),
     "LIA_Argmax": Op("argmax"),
 }
 

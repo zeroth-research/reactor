@@ -49,6 +49,17 @@ def _nonzero(t):
     return torch.where(t == 0, torch.ones_like(t), t)
 
 
+def _euclid(a, b):
+    """Euclidean `(a div b, a mod b)`, elementwise: the remainder is never
+    negative, as SMT-LIB's `div`/`mod` and Lean's `/`/`%` on `Int` have it.
+    By zero the quotient is 0 and the remainder `a`, as Lean has them."""
+    m = b.abs()
+    r = torch.where(b == 0, a, a.remainder(_nonzero(m)))
+    q = torch.where(b == 0, torch.zeros_like(a),
+                    (a - r).div(_nonzero(b), rounding_mode="trunc"))
+    return q, r
+
+
 def _shaped(t, sort: Sort):
     """`t` in `sort`'s shape. A reduction gives a 0-d tensor, and the wire it
     writes is `[1, 1]`: left 0-d, the next `Linear` reading it fails with
@@ -110,6 +121,10 @@ def eval_itype(itype, read, out_sort=None, in_sorts=None):
             return [-r[0]]
         case LRA.Mul() | LIA.Mul():
             return [r[0] * r[1]]
+        case LIA.Div():
+            return [_euclid(r[0], r[1])[0]]
+        case LIA.Mod():
+            return [_euclid(r[0], r[1])[1]]
 
         # --- arithmetic: BV (modulo 2^width) ---
         case BV.Add():

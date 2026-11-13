@@ -211,6 +211,23 @@ def _smt_mul(op: SmtOp) -> cvc5.Term:
     return op.elementwise(op.binop(kind), *op.args)
 
 
+def _smt_int_divmod(op: SmtOp) -> cvc5.Term:
+    """Euclidean, as SMT-LIB's `div`/`mod` are; SMT-LIB leaves the zero
+    divisor open and the theory has Lean's answer there (0, and the
+    dividend), so that case is spelled out. Not the `_TOTAL` kinds: they
+    print as cvc5's own syntax, and these terms are written out as SMT-LIB
+    for other solvers too."""
+    div = op.name == "Div"
+    kind = op.K.INTS_DIVISION if div else op.K.INTS_MODULUS
+    zero = op.integer(0)
+
+    def one(a, b):
+        return op.mk(op.K.ITE, op.mk(op.K.EQUAL, b, zero),
+                     zero if div else a, op.mk(kind, a, b))
+
+    return op.elementwise(one, *op.args)
+
+
 def _smt_neg(op: SmtOp) -> cvc5.Term:
     kind = op.K.BITVECTOR_NEG if op.is_bv else op.K.NEG
     return op.elementwise(op.unop(kind), op.args[0])
@@ -540,6 +557,21 @@ OPS: tuple[Op, ...] = (
             "new Box in `Relational.Box`."
         ),
         smt=_smt_mul,
+    ),
+    # Lean's `/` and `%` on `Int` are Euclidean, as SMT-LIB's `div` and
+    # `mod` are, and by zero give what the theory gives (0, the dividend).
+    *(
+        Op(
+            name,
+            ("LIA",),
+            mat=lambda a, sym=sym: f"(fun i j => {a[0]} i j {sym} {a[1]} i j)",
+            scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
+            box=Unsupported(
+                f"no `Box` for `{sym}` on `Int` in `Relational.Box`."
+            ),
+            smt=_smt_int_divmod,
+        )
+        for name, sym in (("Div", "/"), ("Mod", "%"))
     ),
     Op(
         "Neg",

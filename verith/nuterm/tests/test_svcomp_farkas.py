@@ -258,7 +258,7 @@ def test_the_kinds_without_a_rule_are_the_ones_the_walk_refuses():
     here before its rule shows up in this set."""
     from nuterm._farkas import OPS
     unruled = {op.kind for op in OPS.values() if op.kind and not op.mode and not op.split}
-    assert unruled == {"min", "max", "argmax", "mul"}
+    assert unruled == {"min", "max", "argmax", "mul", "div", "mod"}
 
 
 @pytest.mark.parametrize("build, itype, why", [

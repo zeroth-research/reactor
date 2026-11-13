@@ -58,6 +58,12 @@ def interpret(itype):
             return _np.frompyfunc(operator.neg, 1, 1)
         case LRA.Mul() | LIA.Mul():
             return _np.frompyfunc(operator.mul, 2, 1)
+        # z3's `/` and `%` on Ints are SMT-LIB's `div` and `mod`, which leave
+        # the zero divisor open; the theory's are Lean's there.
+        case LIA.Div():
+            return _np.frompyfunc(lambda x, y: _z3.If(y == 0, 0, x / y), 2, 1)
+        case LIA.Mod():
+            return _np.frompyfunc(lambda x, y: _z3.If(y == 0, x, x % y), 2, 1)
         case LRA.Linear(weight, bias) | LIA.Linear(weight, bias):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
 
