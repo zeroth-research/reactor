@@ -20,7 +20,7 @@ backends do with it — an emitter, or the reason there is none.
 
 import torch
 import pytest
-from reactor import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Var, X
+from reactor import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Cast, Var, X
 from reactor.lean import ModuleToLean4
 from reactor.lean.lowering.sorts import itype_name
 from reactor.lean.codegen.context import LeanContext
@@ -40,7 +40,7 @@ from reactor.lean.lowering.ops import (
     scalar_emitter,
 )
 
-_THEORIES = {"LIA": LIA, "LRA": LRA, "BV": BV}
+_THEORIES = {"LIA": LIA, "LRA": LRA, "BV": BV, "Cast": Cast}
 
 
 def _variant_names(theory) -> set[str]:
@@ -200,6 +200,18 @@ _KNOWN_GAPS = {
     # term rather than using a Lean emitter.
     *(("LIA", "Xor", c) for c in ("mat", "scalar", "box")),
     *(("LRA", "Xor", c) for c in ("mat", "scalar", "box")),
+    # No Box combinator yet.
+    ("LIA", "Implies", "box"),
+    ("LRA", "Implies", "box"),
+    ("LIA", "Mul", "box"),
+    ("LRA", "Mul", "box"),
+    *(("Cast", name, "box") for name in
+      ("IntToReal", "RealToInt", "BVToInt", "BitToBool", "BoolToBit")),
+    ("LIA", "Get", "box"),
+    ("LRA", "Get", "box"),
+    ("BV", "Get", "box"),
+    ("LIA", "Div", "box"),
+    ("LIA", "Mod", "box"),
     # A transpose has no cvc5 term; `check_na_supported` refuses it by name.
     ("LIA", "Transpose", "smt"),
     ("LRA", "Transpose", "smt"),
@@ -483,16 +495,17 @@ def test_bv_module_emits_bitvec_boxes():
 
 @pytest.mark.parametrize("name", ["UMod", "SMod"])
 def test_bv_modulo_is_dispatchable(name):
-    """BV is the only theory with modulo, and it has two of them.
+    """BV has two modulos, and spells them `UMod`/`SMod`.
 
-    The tables carried one `"Mod"` key, which no theory defines: LIA and LRA
-    have no modulo at all, and BV spells its `UMod`/`SMod`.
+    The tables once carried one `"Mod"` key, which no theory defined. LIA's
+    Euclidean `Mod` is a row of its own now, and answers to LIA alone.
     """
     assert getattr(BV, name, None) is not None, f"BV.{name} does not exist"
     op = getattr(BV, name)()
     assert callable(mat_emitter(op)) and callable(scalar_emitter(op))
     assert box_for(op) == f"Box.bv{name}"
-    assert not any(op.name == "Mod" for op in OPS), "the dead integer Mod key is back"
+    mods = [op.theories for op in OPS if op.name == "Mod"]
+    assert mods == [("LIA",)], f"a `Mod` row answers to {mods}"
 
 
 def test_mat_add_is_not_a_separate_key():

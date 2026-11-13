@@ -147,6 +147,12 @@ def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
     return lifted
 
 
+def _get_expr(term, wire_expr: dict[int, str]) -> str:
+    """`Get`: element `[row][col]` of the read matrix, as a 1x1 one."""
+    op = term.itype
+    return f"(fun _ _ => {wire_expr[term.read[0].id]} {op.row} {op.col})"
+
+
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:
     """Emit a baked-constant LIA/LRA `Linear` op, `Y = A·X + B`, in the reflected
     form `matVecAffine m A b X`.
@@ -211,6 +217,8 @@ def translate_terms_lean(
             )
         elif name == "Linear":
             expr = _linear_expr(term, wire_expr)
+        elif name == "Get":
+            expr = _get_expr(term, wire_expr)
         else:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = mat_emitter(term.itype)(input_exprs)
@@ -340,6 +348,15 @@ def translate_terms_scalar(
             expr = _linear_expr(term, _lift_scalar_reads(term, wire_expr))
             if is_scalar_wire(write_wire):
                 expr = f"({expr} 0 0)"
+        elif name == "Get":
+            # A 1x1 element of whatever is read: its flat slot where the
+            # read wire has them, else the matrix applied to the indices.
+            in_wire, op = term.read[0], term.itype
+            slots = flat_slots.get(in_wire.id)
+            if slots is not None:
+                expr = slots[op.row * dtype_shape(in_wire.dtype)[1] + op.col]
+            else:
+                expr = f"({wire_expr[in_wire.id]} {op.row} {op.col})"
         elif is_scalar_wire(write_wire) and scalar_emitter(term.itype) is not None:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = scalar_emitter(term.itype)(input_exprs)

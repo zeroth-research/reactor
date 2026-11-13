@@ -105,9 +105,11 @@ SmtCell = Union[Callable[["SmtOp"], "cvc5.Term"], Unsupported]
 #  Rows
 # ══════════════════════════════════════════════════════════════════════
 
-THEORIES = ("LIA", "LRA", "BV")
+# `Cast` is no theory of its own sorts: it is what crosses between the
+# other three's (`theory/src/cast.rs`), and has rows of its own only.
+THEORIES = ("LIA", "LRA", "BV", "Cast")
 
-ALL = THEORIES
+ALL = ("LIA", "LRA", "BV")
 LIA_LRA = ("LIA", "LRA")
 BV_ONLY = ("BV",)
 # No theory defines these any more; the emitters are kept until it is
@@ -182,6 +184,10 @@ def _smt_xor(op: SmtOp) -> cvc5.Term:
     return op.elementwise(op.binop(kind), *op.args)
 
 
+def _smt_implies(op: SmtOp) -> cvc5.Term:
+    return op.elementwise(op.binop(op.K.IMPLIES), *op.args)
+
+
 def _smt_ite(op: SmtOp) -> cvc5.Term:
     # cond is Mat Bool 1 1 (LIA/LRA) or Mat BV<1> 1 1 (BV); extract its
     # scalar, coercing a BV<1> condition to a genuine Bool via `!= 0`.
@@ -205,6 +211,23 @@ def _smt_sub(op: SmtOp) -> cvc5.Term:
 def _smt_mul(op: SmtOp) -> cvc5.Term:
     kind = op.K.BITVECTOR_MULT if op.is_bv else op.K.MULT
     return op.elementwise(op.binop(kind), *op.args)
+
+
+def _smt_int_divmod(op: SmtOp) -> cvc5.Term:
+    """Euclidean, as SMT-LIB's `div`/`mod` are; SMT-LIB leaves the zero
+    divisor open and the theory has Lean's answer there (0, and the
+    dividend), so that case is spelled out. Not the `_TOTAL` kinds: they
+    print as cvc5's own syntax, and these terms are written out as SMT-LIB
+    for other solvers too."""
+    div = op.name == "Div"
+    kind = op.K.INTS_DIVISION if div else op.K.INTS_MODULUS
+    zero = op.integer(0)
+
+    def one(a, b):
+        return op.mk(op.K.ITE, op.mk(op.K.EQUAL, b, zero),
+                     zero if div else a, op.mk(kind, a, b))
+
+    return op.elementwise(one, *op.args)
 
 
 def _smt_neg(op: SmtOp) -> cvc5.Term:
@@ -314,6 +337,25 @@ def _smt_argmax(op: SmtOp) -> cvc5.Term:
     if isinstance(op.write.dtype, Real):
         idx = op.mk(op.K.TO_REAL, idx)
     return op.pack([idx])
+
+
+def _smt_get(op: SmtOp) -> cvc5.Term:
+    return op.pack([op.scalar(0, op.term.itype.row, op.term.itype.col)])
+
+
+def _smt_cast(op: SmtOp) -> cvc5.Term:
+    def one(a):
+        if op.name == "IntToReal":
+            return op.mk(op.K.TO_REAL, a)
+        if op.name == "RealToInt":
+            return op.mk(op.K.TO_INTEGER, a)
+        if op.name == "BVToInt":
+            return op.mk(op.K.BITVECTOR_UBV_TO_INT, a)
+        if op.name == "BitToBool":
+            return op.mk(op.K.EQUAL, a, op.bitvector(1, 1))
+        return op.mk(op.K.ITE, a, op.bitvector(1, 1), op.bitvector(1, 0))
+
+    return op.elementwise(one, op.args[0])
 
 
 def _smt_tensor_get(op: SmtOp) -> cvc5.Term:
@@ -432,6 +474,17 @@ OPS: tuple[Op, ...] = (
         smt=_smt_xor,
     ),
     Op(
+        "Implies",
+        LIA_LRA,
+        mat=lambda a: f"(fun _ _ => (!({a[0]} 0 0) || {a[1]} 0 0))",
+        scalar=lambda a: f"(!{a[0]} || {a[1]})",
+        box=Unsupported(
+            "no `Box.implies` in `Relational.Box`; `Box.or` after `Box.not` "
+            "on the first operand is the circuit a new one would name."
+        ),
+        smt=_smt_implies,
+    ),
+    Op(
         "Ite",
         LIA_LRA,
         mat=lambda a: f"(if {a[0]} 0 0 then {a[1]} else {a[2]})",
@@ -513,9 +566,37 @@ OPS: tuple[Op, ...] = (
         box="Box.mul",
         smt=_smt_mul,
     ),
+    # `*` on two `Mat`s is their matrix product (`Relational.Mat`), so the
+    # elementwise product is spelled out element by element.
+    Op(
+        "Mul",
+        LIA_LRA,
+        mat=lambda a: f"(fun i j => {a[0]} i j * {a[1]} i j)",
+        scalar=lambda a: f"({a[0]} * {a[1]})",
+        box=Unsupported(
+            "`Box.mul` is the matrix product; the elementwise one would be a "
+            "new Box in `Relational.Box`."
+        ),
+        smt=_smt_mul,
+    ),
+    # Lean's `/` and `%` on `Int` are Euclidean, as SMT-LIB's `div` and
+    # `mod` are, and by zero give what the theory gives (0, the dividend).
+    *(
+        Op(
+            name,
+            ("LIA",),
+            mat=lambda a, sym=sym: f"(fun i j => {a[0]} i j {sym} {a[1]} i j)",
+            scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
+            box=Unsupported(
+                f"no `Box` for `{sym}` on `Int` in `Relational.Box`."
+            ),
+            smt=_smt_int_divmod,
+        )
+        for name, sym in (("Div", "/"), ("Mod", "%"))
+    ),
     Op(
         "Neg",
-        BV_ONLY,
+        ALL,
         mat=lambda a: f"(-{a[0]})",
         scalar=lambda a: f"(-{a[0]})",
         box="Box.neg",
@@ -668,6 +749,15 @@ OPS: tuple[Op, ...] = (
         box="Box.mul",
         smt=_smt_matmul,
     ),
+    # `Get`'s element is baked into the op, as `Linear`'s matrices are.
+    Op(
+        "Get",
+        ALL,
+        mat=Inline("codegen.terms._get_expr"),
+        scalar=Inline("codegen.terms._get_expr, or the element's flat slot"),
+        box=Unsupported("no Box in `Relational.Box` reads one element of a matrix."),
+        smt=_smt_get,
+    ),
     Op(
         "Transpose",
         LIA_LRA,
@@ -751,6 +841,24 @@ OPS: tuple[Op, ...] = (
             ),
         )
     ),
+    # ── casts between the theories' sorts ─────────────────────────────
+    *(
+        Op(
+            name,
+            ("Cast",),
+            mat=lambda a, one=one: f"(fun i j => {one(f'({a[0]} i j)')})",
+            scalar=lambda a, one=one: one(a[0]),
+            box=Unsupported("no Box in `Relational.Box` casts between sorts."),
+            smt=_smt_cast,
+        )
+        for name, one in (
+            ("IntToReal", lambda x: f"(({x} : Int) : Real)"),
+            ("RealToInt", lambda x: f"⌊{x}⌋"),
+            ("BVToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)"),
+            ("BitToBool", lambda x: f"(decide ({x} = 1))"),
+            ("BoolToBit", lambda x: f"(if {x} then 1 else 0)"),
+        )
+    ),
     # ── nondeterminism and symbols ────────────────────────────────────
     *(
         Op(
@@ -821,9 +929,10 @@ del _op, _theory, _key
 
 
 def theory_of(itype) -> str:
-    """The theory an op came from: "LIA", "LRA" or "BV".
+    """The theory an op came from: "LIA", "LRA", "BV" or "Cast".
 
-    PyO3 exports the variants as `LIA_Add`, `LRA_Real`, `BV_MatMul`; an op
+    PyO3 exports the variants as `LIA_Add`, `LRA_Real`, `BV_MatMul`,
+    `Cast_BVToInt`; an op
     with no such prefix belongs to no theory and gets "".
     """
     name = type(itype).__name__

@@ -258,11 +258,12 @@ def test_the_kinds_without_a_rule_are_the_ones_the_walk_refuses():
     here before its rule shows up in this set."""
     from nuterm._farkas import OPS
     unruled = {op.kind for op in OPS.values() if op.kind and not op.mode and not op.split}
-    assert unruled == {"min", "max", "argmax"}
+    assert unruled == {"min", "max", "argmax", "mul", "div", "mod"}
 
 
 @pytest.mark.parametrize("build, itype, why", [
     (lambda c, _e: (c - 1)._unop(LIA.Min(), out=c.dtype), "LIA_Min", "no rule"),
+    (lambda c, _e: (c - 1)._binop(LIA.Mul(), c.dtype, c), "LIA_Mul", "no rule"),
     (lambda c, _e: dsl_argmax(c), "LIA_Argmax", "no Z3 translation"),
 ])
 def test_an_op_the_procedure_cannot_use_is_refused(build, itype, why):
