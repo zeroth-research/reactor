@@ -34,8 +34,8 @@ from reactor.lean.pipeline.certificate import (
 from reactor.lean.pipeline.claim import claim_from_flags, load, stated_claim
 from reactor.lean.pipeline.outputs import generate, standalone
 from reactor.lean.proof.render import SORRY
-from reactor.lean.smt.encoding import lazy
 from verith import ProjectHandle
+from verith.common.encoding import lazy
 from verith.io import declared
 from verith.proofs import (
     build_cert,

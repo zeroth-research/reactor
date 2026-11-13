@@ -1,6 +1,5 @@
 """The claim and the certificate read against the module
-(`reactor.lean.smt.queries`), and printed as Lean from that one parse; and
-the SMT budget every question to cvc5 is held to (`smt.limits`).
+(`reactor.lean.smt.queries`), and printed as Lean from that one parse.
 """
 
 import pytest
@@ -11,7 +10,6 @@ from reactor.analyzer import convert_method
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor.lean.core.errors import Refused
 from reactor.lean.proof.render import render_certificate
-from reactor.lean.smt.limits import SmtBudget
 from reactor.lean.smt.queries import predicate_terms
 
 pytest.importorskip("cvc5")
@@ -52,21 +50,6 @@ def _dense(layers: int) -> str:
     for _ in range(layers):
         a, b = _relu(f"(+ {a} {b})"), _relu(f"(+ {a} (- {b}))")
     return f"(+ {a} {b})"
-
-
-def test_the_per_call_limit_is_the_smaller_of_the_two():
-    b = SmtBudget(per_call_ms=250, phase_ms=100000)
-    assert b.next_call_ms() == 250
-    b = SmtBudget(per_call_ms=100000, phase_ms=250)
-    assert b.next_call_ms() <= 250
-
-
-def test_a_phase_can_be_refilled():
-    b = SmtBudget(per_call_ms=10, phase_ms=0)
-    assert b.exhausted
-    b.phase_ms = 5000
-    b.start_phase()
-    assert not b.exhausted
 
 
 def test_an_unparseable_predicate_is_refused_by_the_flag_it_came_from():

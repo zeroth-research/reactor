@@ -255,7 +255,7 @@ def check_na_supported(
     zero), so a check run with it on would pass a module the emission then
     could not print.
 
-    `encoding` is the run's `ModuleEncoding`, whose term manager the bodies
+    `encoding` is the run's `Encoding`, whose term manager the bodies
     are built on; without one a caller gets an encoding of `ctx.module` of
     its own.
     """
@@ -486,7 +486,7 @@ def _slot_bodies(
     module -- and is printed by `smt_to_lean_bool`, whose fragment is chosen
     to be what `lean2vmt` translates.
     """
-    from reactor.lean.smt.encoding import encoding_of
+    from ..common.encoding import encoding_of
     from .slots import slot_terms
     from .to_bool import smt_to_lean_bool
 

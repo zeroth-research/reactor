@@ -25,13 +25,15 @@ from typing import TYPE_CHECKING
 
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt import obligations as ob
-from reactor.lean.smt.encoding import encoding_of
-from reactor.lean.smt.script import script
+
+from ..common import obligations as ob
+from ..common.encoding import encoding_of, solver_for
+from ..common.smtlib import script
 
 if TYPE_CHECKING:
-    from reactor.lean.smt.limits import SmtBudget
     from reactor.lean.smt.queries import ModuleQueries
+
+    from ..common.limits import SmtBudget
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -101,7 +103,7 @@ def _ask(q: "ModuleQueries", name, build, budget, artifacts=None) -> Verdict:
     try:
         negation, witness = build()
         written = _dump(artifacts, name, negation)
-        solver = q.solver(budget)
+        solver = solver_for(q, budget)
         if witness:
             solver.setOption("produce-models", "true")
         solver.assertFormula(negation)
@@ -140,7 +142,7 @@ def check_init_inv(q: "ModuleQueries", budget: SmtBudget,
     """`∀ e, init_pre e → inv (init e)`."""
 
     def build():
-        f = q.frame("i_")
+        f = ob.frame(q, "i_")
         return ob.init_inv(f, [q.inv]).negation(q.tm), _labelled(f.entry)
 
     return _ask(q, "init_inv", build, budget, artifacts)
@@ -151,7 +153,7 @@ def check_step_inv(q: "ModuleQueries", budget: SmtBudget,
     """`∀ s e, update_pre e ∧ inv s → inv (update s e)`."""
 
     def build():
-        f = q.frame("p_")
+        f = ob.frame(q, "p_")
         o = ob.step_inv(f, [("inv", q.inv)], [q.inv])
         return o.negation(q.tm), _labelled(f.s)
 
@@ -163,7 +165,7 @@ def check_hrank(q: "ModuleQueries", budget: SmtBudget,
     """`inv s ∧ ¬P s ∧ update_pre e → ranking (update s e) < ranking s`."""
 
     def build():
-        f = q.frame("r_")
+        f = ob.frame(q, "r_")
         o = ob.hrank(f, [("inv", q.inv)], q.prp, q.ranking)
         return o.negation(q.tm), _labelled(f.s)
 
@@ -180,7 +182,7 @@ def check_inv_imp_P(q: "ModuleQueries", budget: SmtBudget,
     """
 
     def build():
-        f = q.frame("p_")
+        f = ob.frame(q, "p_")
         o = ob.inv_imp_P(f, [("inv", q.inv)], q.prp)
         return o.negation(q.tm), _labelled(f.s)
 
@@ -345,7 +347,7 @@ def pre_check(smt, claim: Claim, answer: "Certificate | LeanAnswer | None",
               budget: SmtBudget, log=print, artifacts=None) -> list[Verdict]:
     """Run the obligation pre-check and report it in a few lines.
 
-    `smt` is the module, its encoding or a `smt.encoding.lazy` factory for one.
+    `smt` is the module, its encoding or a `common.encoding.lazy` factory for one.
     Never raises: a module cvc5 cannot encode, or an answer it cannot read,
     reports one line and the run carries on exactly as it would have.
 

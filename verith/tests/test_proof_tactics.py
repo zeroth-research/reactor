@@ -569,8 +569,8 @@ def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
 
     from reactor.lean.core.certificate import Certificate, Claim
     from reactor.lean.pipeline.certificate import render
-    from reactor.lean.smt.limits import SmtBudget
-    from reactor.lean.smt.queries import predicate_terms
+    from verith.common.encoding import predicate_terms
+    from verith.common.limits import SmtBudget
     from verith.proofs.facts import predicate_facts, solver_hints
     from verith.proofs.scripts import print_hints
 

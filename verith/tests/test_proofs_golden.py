@@ -25,8 +25,8 @@ from reactor.lean.proof.render import (
     generate_standalone_cert_lean,
     render_certificate,
 )
-from reactor.lean.smt.limits import SmtBudget
-from reactor.lean.smt.queries import predicate_terms
+from verith.common.encoding import predicate_terms
+from verith.common.limits import SmtBudget
 from verith.proofs.facts import solver_hints
 from verith.proofs.scripts import print_hints, proof_scripts
 

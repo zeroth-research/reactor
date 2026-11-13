@@ -3,23 +3,17 @@
 `ModuleQueries` holds their predicates as cvc5 terms over the module's
 state, parsed once: the certificate's Lean is printed from them
 (`proof.render`), and whatever asks cvc5 about the certificate states its
-questions over them, on the solver and the round they come with.
+questions over them, on the encoding they were read on (`enc`).
 `predicate_terms` is how a run gets one.
 """
 
 from __future__ import annotations
 
 import weakref
-from typing import TYPE_CHECKING
 
 from ..core.certificate import Certificate, Claim
 from ..core.errors import Refused
-from . import obligations as ob
-from .limits import call_ms
 from .encoding import encoding_of
-
-if TYPE_CHECKING:
-    from .limits import SmtBudget
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -55,16 +49,6 @@ class ModuleQueries:
         self.init_pre = enc.parse(claim.init_pre, "pre")
         self.update_pre = enc.parse(claim.update_pre, "pre")
 
-    def solver(self, budget: SmtBudget):
-        """A solver on this module's terms, held to `budget`'s next call."""
-        return self.enc.solver(call_ms(budget), logic="ALL")
-
-    def frame(self, prefix: str) -> ob.Frame:
-        """Fresh constants `{prefix}s0..` and the round from them, the
-        preconditions read over their inputs."""
-        return ob.Frame(self.enc, prefix, init_pre=self.init_pre,
-                        update_pre=self.update_pre)
-
 
 # ══════════════════════════════════════════════════════════════════════
 # The claim, read against the module
@@ -76,7 +60,7 @@ def predicate_terms(
 ) -> "ModuleQueries":
     """`claim` and `cert` parsed against the module: what the Lean is printed
     from, and what a question to cvc5 about them is stated over. `smt` is
-    the module, its encoding or a `smt.encoding.lazy` factory for one.
+    the module, its encoding or a factory for one.
 
     A predicate that does not parse is refused by its role, and a module
     with no encoding (`ModuleSMT` reads one atom, `elem_sort` four sorts,

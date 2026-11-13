@@ -13,12 +13,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from reactor.lean.smt import obligations as ob
-from reactor.lean.smt.terms import ite_conditions, min_max_of, nodes, state_dependent
+from reactor.lean.smt.terms import min_max_of, nodes, state_dependent
+
+from ..common import obligations as ob
+from ..common.encoding import solver_for
+from ..common.terms import ite_conditions
 
 if TYPE_CHECKING:
-    from reactor.lean.smt.limits import SmtBudget
     from reactor.lean.smt.queries import ModuleQueries
+
+    from ..common.limits import SmtBudget
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -425,12 +429,12 @@ def _refutation_shape(
     proved_any = False
     pre_offered = False
     pre_used = False
-    f = q.frame("h_")
+    f = ob.frame(q, "h_")
     for name, labels in _obligation_labels(q, f):
         if budget.exhausted:
             break
         try:
-            solver = q.solver(budget)
+            solver = solver_for(q, budget)
             solver.setOption("produce-proofs", "true")
             solver.setOption("produce-unsat-cores", "true")
             for term in labels.values():
@@ -488,7 +492,7 @@ def _unsat(q: "ModuleQueries", formula, budget: SmtBudget) -> bool:
     if budget.exhausted:
         return False
     try:
-        solver = q.solver(budget)
+        solver = solver_for(q, budget)
         solver.assertFormula(formula)
         return solver.checkSat().isUnsat()
     except Exception:

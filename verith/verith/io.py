@@ -27,8 +27,9 @@ if TYPE_CHECKING:
 
     from reactor.lean.proof.render import LeanCertificate, ProofScripts
     from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.smt.encoding import ModuleEncoding
-    from reactor.lean.smt.limits import SmtBudget
+
+    from .common.encoding import Encoding
+    from .common.limits import SmtBudget
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -202,13 +203,13 @@ class InferInput:
     prechecked: object | None = None
     # This run's `--smt-timeout` / `--smt-budget`, for a route that asks cvc5
     # a question of its own. The obligation queries have always been on it
-    # (`smt.limits.SmtBudget`); a route that *searches* has to be, for the
+    # (`common.limits.SmtBudget`); a route that *searches* has to be, for the
     # same reason and more so -- a synthesis with no limit hangs generation,
     # and `tlimit-per` is the option that actually stops one.
     budget: "SmtBudget | None" = None
     log: Callable = print
     # The run's one cvc5 encoding of `module`, built on first call.
-    smt: "Callable[[], ModuleEncoding] | None" = None
+    smt: "Callable[[], Encoding] | None" = None
 
 
 # ══════════════════════════════════════════════════════════════════════════

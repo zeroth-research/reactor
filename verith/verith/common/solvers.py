@@ -55,7 +55,7 @@ from dataclasses import dataclass
 from enum import Enum
 from fractions import Fraction
 
-from reactor.lean.smt.limits import bounded_solver
+from .limits import bounded_solver
 from .obligations import Question
 
 DEFAULT_TIMEOUT = 120

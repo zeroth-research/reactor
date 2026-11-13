@@ -94,14 +94,16 @@ from dataclasses import dataclass
 from ..common.claim import SynthContext
 from ..common.record import announce
 from ..common.smtlib import affine_smt, conjunction_smt
-from reactor.lean.smt.obligations import (
+from ..common.obligations import (
     Frame,
+    Obligations,
     conjunction,
+    implication,
     init_inv,
     inv_imp_P,
+    ranked,
     step_inv,
 )
-from ..common.obligations import Obligations, implication, ranked
 from ..common.synth import (
     Search,
     denominator_scale,
@@ -198,7 +200,7 @@ class SmtLinearEngine:
         encoding=None,
     ):
         self.module = module
-        # The run's `smt.encoding.lazy` encoding; a library caller's module gets
+        # The run's `common.encoding.lazy` encoding; a library caller's module gets
         # its own.
         self.encoding = encoding
         self.rows = max(1, int(rows))

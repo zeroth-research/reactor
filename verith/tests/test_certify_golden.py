@@ -114,7 +114,7 @@ RUNS = [
 ]
 
 # `ModuleSMT`s built per run. The pre-check, both renderings and a route on
-# `InferInput.smt` share the run's `smt.encoding.lazy` encoding.
+# `InferInput.smt` share the run's `common.encoding.lazy` encoding.
 ENCODINGS = {
     "supplied": 1, "supplied_pre": 1, "cert_file": 1,
     "smt_linear": 1, "houdini": 1, "nuterm": 1, "nuterm_pre": 1,
