@@ -478,10 +478,7 @@ OPS: tuple[Op, ...] = (
         LIA_LRA,
         mat=lambda a: f"(fun _ _ => (!({a[0]} 0 0) || {a[1]} 0 0))",
         scalar=lambda a: f"(!{a[0]} || {a[1]})",
-        box=Unsupported(
-            "no `Box.implies` in `Relational.Box`; `Box.or` after `Box.not` "
-            "on the first operand is the circuit a new one would name."
-        ),
+        box="Box.implies",
         smt=_smt_implies,
     ),
     Op(
