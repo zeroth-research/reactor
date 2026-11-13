@@ -11,7 +11,7 @@ operations in [`LRA`] are:
 
 - [`LRA::Real`] — a matrix literal whose sort (real or boolean) is taken
   from the write wire; the tensor's element kind must match that sort.
-- [`LRA::And`], [`LRA::Or`], [`LRA::Xor`], [`LRA::Not`]
+- [`LRA::And`], [`LRA::Or`], [`LRA::Xor`], [`LRA::Implies`], [`LRA::Not`]
   — boolean operations on the boolean fragment of `Type`.
 - [`LRA::Le`], [`LRA::Lt`], [`LRA::Ge`], [`LRA::Gt`], [`LRA::Eq`], [`LRA::Ne`]
   — pointwise integer comparisons producing a scalar `Bool(1,1)`.
@@ -93,6 +93,8 @@ pub enum LRA {
     Or(),
     Xor(),
     Not(),
+    // `a → b`: false only where `a` holds and `b` does not
+    Implies(),
     // integer comparisons
     Le(),
     Lt(),
@@ -163,7 +165,9 @@ impl Theory for LRA {
             LRA::RealZerograd(shape) => check_zero(&Sort::Real(*shape), read, write),
             LRA::AnyBool(shape) => check_havoc(&Sort::Bool(*shape), read, write),
             LRA::AnyReal(shape) => check_havoc(&Sort::Real(*shape), read, write),
-            LRA::And() | LRA::Or() | LRA::Xor() | LRA::Not() => check_bool(self, read, write),
+            LRA::And() | LRA::Or() | LRA::Xor() | LRA::Implies() | LRA::Not() => {
+                check_bool(self, read, write)
+            }
             LRA::Le() | LRA::Lt() | LRA::Ge() | LRA::Gt() | LRA::Eq() | LRA::Ne() => {
                 check_cmp(self, read, write)
             }
@@ -296,7 +300,7 @@ where
             }
             Ok(())
         }
-        LRA::And() | LRA::Or() | LRA::Xor() => {
+        LRA::And() | LRA::Or() | LRA::Xor() | LRA::Implies() => {
             let w1 = next_expect_degree(&mut write, 0, 0)?;
             let (r1, r2, None) = (
                 next_expect_degree(&mut read, 0, 0)?,
@@ -741,6 +745,28 @@ mod tests {
     fn xor_ok() {
         let b = bool_t(3, 1);
         assert!(LRA::Xor().check([b, b].map(deg0), [b].map(deg0)).is_ok());
+    }
+
+    #[test]
+    fn implies_ok() {
+        let b = bool_t(2, 1);
+        assert!(
+            LRA::Implies()
+                .check([b, b].map(deg0), [b].map(deg0))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn implies_real_input_fails() {
+        let t = real(1, 1);
+        let b = bool_t(1, 1);
+        assert!(
+            LRA::Implies()
+                .check([t, t].map(deg0), [b].map(deg0))
+                .is_err()
+        );
+        assert!(LRA::Implies().check([b].map(deg0), [b].map(deg0)).is_err());
     }
 
     #[test]

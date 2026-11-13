@@ -80,6 +80,8 @@ def interpret(itype):
             return _np.frompyfunc(lambda x: _z3.Not(x), 1, 1)
         case LRA.Xor() | LIA.Xor():
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
+        case LRA.Implies() | LIA.Implies():
+            return _np.frompyfunc(lambda x, y: _z3.Implies(x, y), 2, 1)
 
         # control flow
         case LRA.Ite() | LIA.Ite():

@@ -79,6 +79,9 @@ class LRA:
     class Not(LRA):
         def __init__(self) -> None: ...
 
+    class Implies(LRA):
+        def __init__(self) -> None: ...
+
     class Le(LRA):
         def __init__(self) -> None: ...
 
@@ -160,6 +163,9 @@ class LIA:
         def __init__(self) -> None: ...
 
     class Not(LIA):
+        def __init__(self) -> None: ...
+
+    class Implies(LIA):
         def __init__(self) -> None: ...
 
     class Le(LIA):

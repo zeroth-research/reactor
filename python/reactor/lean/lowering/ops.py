@@ -182,6 +182,10 @@ def _smt_xor(op: SmtOp) -> cvc5.Term:
     return op.elementwise(op.binop(kind), *op.args)
 
 
+def _smt_implies(op: SmtOp) -> cvc5.Term:
+    return op.elementwise(op.binop(op.K.IMPLIES), *op.args)
+
+
 def _smt_ite(op: SmtOp) -> cvc5.Term:
     # cond is Mat Bool 1 1 (LIA/LRA) or Mat BV<1> 1 1 (BV); extract its
     # scalar, coercing a BV<1> condition to a genuine Bool via `!= 0`.
@@ -430,6 +434,17 @@ OPS: tuple[Op, ...] = (
         scalar=_SEE_MAT,
         box=_SEE_MAT,
         smt=_smt_xor,
+    ),
+    Op(
+        "Implies",
+        LIA_LRA,
+        mat=lambda a: f"(fun _ _ => (!({a[0]} 0 0) || {a[1]} 0 0))",
+        scalar=lambda a: f"(!{a[0]} || {a[1]})",
+        box=Unsupported(
+            "no `Box.implies` in `Relational.Box`; `Box.or` after `Box.not` "
+            "on the first operand is the circuit a new one would name."
+        ),
+        smt=_smt_implies,
     ),
     Op(
         "Ite",

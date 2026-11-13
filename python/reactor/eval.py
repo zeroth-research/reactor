@@ -192,6 +192,8 @@ def eval_itype(itype, read, out_sort=None, in_sorts=None):
             return [r[0].logical_not()]
         case LRA.Xor() | LIA.Xor():
             return [r[0].logical_xor(r[1])]
+        case LRA.Implies() | LIA.Implies():
+            return [r[0].logical_not().logical_or(r[1])]
 
         # --- bitwise: BV (width-preserving) ---
         case BV.And():

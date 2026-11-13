@@ -76,6 +76,7 @@ OPS = {
     "LIA_Bool": Op(), "LIA_Id": Op(), "LIA_Transpose": Op(),
     # boolean structure — z3 handles it, and PRED_MODES splits what the LP cannot
     "LIA_And": Op(), "LIA_Or": Op(), "LIA_Xor": Op(), "LIA_Not": Op(),
+    "LIA_Implies": Op(),
     "LIA_Le": Op(), "LIA_Lt": Op(), "LIA_Ge": Op(), "LIA_Gt": Op(),
     "LIA_Eq": Op(), "LIA_Ne": Op(),
     # piecewise-linear

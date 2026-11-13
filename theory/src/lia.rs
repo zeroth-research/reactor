@@ -11,7 +11,7 @@ operations in [`LIA`] are:
 
 - [`LIA::Int`] — a matrix literal whose sort (integer or boolean) is taken
   from the write wire; the tensor's element kind must match that sort.
-- [`LIA::And`], [`LIA::Or`], [`LIA::Xor`], [`LIA::Not`]
+- [`LIA::And`], [`LIA::Or`], [`LIA::Xor`], [`LIA::Implies`], [`LIA::Not`]
   — boolean operations on the boolean fragment of `Type`.
 - [`LIA::Le`], [`LIA::Lt`], [`LIA::Ge`], [`LIA::Gt`], [`LIA::Eq`], [`LIA::Ne`]
   — pointwise integer comparisons producing a scalar `Bool(1,1)`.
@@ -93,6 +93,8 @@ pub enum LIA {
     Or(),
     Xor(),
     Not(),
+    // `a → b`: false only where `a` holds and `b` does not
+    Implies(),
     // integer comparisons
     Le(),
     Lt(),
@@ -147,7 +149,9 @@ impl Theory for LIA {
     {
         match self {
             LIA::Int(cm) | LIA::Bool(cm) => check_const(cm, read, write),
-            LIA::And() | LIA::Or() | LIA::Xor() | LIA::Not() => check_bool(self, read, write),
+            LIA::And() | LIA::Or() | LIA::Xor() | LIA::Implies() | LIA::Not() => {
+                check_bool(self, read, write)
+            }
             LIA::Le() | LIA::Lt() | LIA::Ge() | LIA::Gt() | LIA::Eq() | LIA::Ne() => {
                 check_cmp(self, read, write)
             }
@@ -276,7 +280,7 @@ where
             }
             Ok(())
         }
-        LIA::And() | LIA::Or() | LIA::Xor() => {
+        LIA::And() | LIA::Or() | LIA::Xor() | LIA::Implies() => {
             let w1 = next_expect_degree(&mut write, 0, 0)?;
             let (r1, r2, None) = (
                 next_expect_degree(&mut read, 0, 0)?,
@@ -698,6 +702,28 @@ mod tests {
     fn xor_ok() {
         let b = bool_t(3, 1);
         assert!(LIA::Xor().check([b, b].map(deg0), [b].map(deg0)).is_ok());
+    }
+
+    #[test]
+    fn implies_ok() {
+        let b = bool_t(2, 1);
+        assert!(
+            LIA::Implies()
+                .check([b, b].map(deg0), [b].map(deg0))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn implies_int_input_fails() {
+        let t = int(1, 1);
+        let b = bool_t(1, 1);
+        assert!(
+            LIA::Implies()
+                .check([t, t].map(deg0), [b].map(deg0))
+                .is_err()
+        );
+        assert!(LIA::Implies().check([b].map(deg0), [b].map(deg0)).is_err());
     }
 
     #[test]
