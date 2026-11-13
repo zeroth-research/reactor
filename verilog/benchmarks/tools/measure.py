@@ -271,7 +271,7 @@ BUCKETS = [  # first match wins; pattern on the first error without its location
      "width rules (explicit-width fragment)"),
     (r"Define not found|Include not found|Include error", "preprocessor: define / include missing"),
     (r"x/z digits", "x/z values (4-state)"),
-    (r"initializer|may only load arrays from files|" + AT.format("initial|final"),
+    (r"initializer|initial value|may only load arrays from files|" + AT.format("initial|final"),
      "initializers / `initial` blocks"),
     (AT.format(r"assert|assume|cover|restrict|property|sequence|expect|default|\$past|"
                r"\$rose|\$fell|\$stable|clocking|always_ff_assert|checker"), "assertions / properties"),
