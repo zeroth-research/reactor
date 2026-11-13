@@ -203,6 +203,8 @@ _KNOWN_GAPS = {
     # No Box combinator yet.
     ("LIA", "Implies", "box"),
     ("LRA", "Implies", "box"),
+    ("LIA", "Mul", "box"),
+    ("LRA", "Mul", "box"),
     # A transpose has no cvc5 term; `check_na_supported` refuses it by name.
     ("LIA", "Transpose", "smt"),
     ("LRA", "Transpose", "smt"),

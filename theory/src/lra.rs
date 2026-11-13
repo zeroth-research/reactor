@@ -20,6 +20,9 @@ operations in [`LRA`] are:
   `B` constant integer matrices of compatible shapes.
 - [`LRA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
 - [`LRA::Neg`] — elementwise negation, on real matrices.
+- [`LRA::Mul`] — the elementwise product of two real matrices of one
+  shape. Of two variables it is not linear; it is here because a
+  certificate's predicates multiply.
 
 `RLA` implements [`Theory`]; [`Theory::check`] validates read/write
 shapes against the selected operation.
@@ -111,6 +114,8 @@ pub enum LRA {
     Sub(),
     // `-x`, elementwise
     Neg(),
+    // `x * y`, elementwise: not linear when both read variables
+    Mul(),
     // XXX: should these be in RLA?
     ReLU(),
     Argmax(),
@@ -182,6 +187,7 @@ impl Theory for LRA {
             LRA::Add()
             | LRA::Sub()
             | LRA::Neg()
+            | LRA::Mul()
             | LRA::ReLU()
             | LRA::Argmax()
             | LRA::Min()
@@ -373,7 +379,7 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LRA::Add() | LRA::Sub() => {
+        LRA::Add() | LRA::Sub() | LRA::Mul() => {
             let (r1, r2, None) = (
                 next_with_degree(&mut read, 0)?,
                 next_with_degree(&mut read, 1)?,
@@ -883,6 +889,23 @@ mod tests {
     fn relu_bool_fails() {
         let b = bool_t(1, 1);
         assert!(LRA::ReLU().check([b].map(deg0), [b].map(deg0)).is_err());
+    }
+
+    #[test]
+    fn mul_ok() {
+        let t = real(2, 3);
+        assert!(LRA::Mul().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+    }
+
+    #[test]
+    fn mul_is_elementwise_not_a_matrix_product() {
+        assert!(
+            LRA::Mul()
+                .check([real(2, 3), real(3, 2)].map(deg0), [real(2, 2)].map(deg0))
+                .is_err()
+        );
+        let b = bool_t(1, 1);
+        assert!(LRA::Mul().check([b, b].map(deg0), [b].map(deg0)).is_err());
     }
 
     #[test]

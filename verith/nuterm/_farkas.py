@@ -92,6 +92,7 @@ OPS = {
     # name, whether or not Z3 can read it
     "LIA_Min": Op("min"),
     "LIA_Max": Op("max"),
+    "LIA_Mul": Op("mul"),
     "LIA_Argmax": Op("argmax"),
 }
 

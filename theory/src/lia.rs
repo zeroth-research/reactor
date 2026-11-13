@@ -20,6 +20,9 @@ operations in [`LIA`] are:
   `B` constant integer matrices of compatible shapes.
 - [`LIA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
 - [`LIA::Neg`] — elementwise negation, on integer matrices.
+- [`LIA::Mul`] — the elementwise product of two integer matrices of one
+  shape. Of two variables it is not linear; it is here because a
+  certificate's predicates multiply.
 
 `LIA` implements [`Theory`]; [`Theory::check`] validates read/write
 shapes against the selected operation.
@@ -110,6 +113,8 @@ pub enum LIA {
     Sub(),
     // `-x`, elementwise
     Neg(),
+    // `x * y`, elementwise: not linear when both read variables
+    Mul(),
     // XXX: should these be in LIA?
     ReLU(),
     Argmax(),
@@ -166,6 +171,7 @@ impl Theory for LIA {
             LIA::Add()
             | LIA::Sub()
             | LIA::Neg()
+            | LIA::Mul()
             | LIA::ReLU()
             | LIA::Argmax()
             | LIA::Min()
@@ -348,7 +354,7 @@ where
     let mut read = read.into_iter();
     let mut write = write.into_iter();
     match op {
-        LIA::Add() | LIA::Sub() => {
+        LIA::Add() | LIA::Sub() | LIA::Mul() => {
             let (r1, r2, None) = (
                 next_expect_degree(&mut read, 0, 0)?,
                 next_expect_degree(&mut read, 1, 0)?,
@@ -835,6 +841,23 @@ mod tests {
     fn relu_bool_fails() {
         let b = bool_t(1, 1);
         assert!(LIA::ReLU().check([b].map(deg0), [b].map(deg0)).is_err());
+    }
+
+    #[test]
+    fn mul_ok() {
+        let t = int(2, 3);
+        assert!(LIA::Mul().check([t, t].map(deg0), [t].map(deg0)).is_ok());
+    }
+
+    #[test]
+    fn mul_is_elementwise_not_a_matrix_product() {
+        assert!(
+            LIA::Mul()
+                .check([int(2, 3), int(3, 2)].map(deg0), [int(2, 2)].map(deg0))
+                .is_err()
+        );
+        let b = bool_t(1, 1);
+        assert!(LIA::Mul().check([b, b].map(deg0), [b].map(deg0)).is_err());
     }
 
     #[test]
