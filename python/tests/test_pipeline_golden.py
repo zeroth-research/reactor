@@ -30,6 +30,7 @@ from reactor.lean.proof.render import (
     generate_standalone_cert_lean,
 )
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor.lean.pipeline.certificate import render
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.inputs.python import load_module
 
@@ -146,7 +147,7 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
              verbatim: "LeanAnswer | None" = None) -> str:
     """Data.lean, Module.lean, Proofs.lean, Certificate.lean and the
     standalone certificate, as one text."""
-    lean = None
+    lean = render(module, claim, cert or Certificate(), verbatim=verbatim)
     ctx = LeanContext(module)
     return "\n".join([
         "=== Certificate/Data.lean",
@@ -205,7 +206,6 @@ RUNS = [
     ]),
     ("unreadable_property", COUNTER, ["--buchi", "(= (X @intf.0)"]),
 ]
-
 
 def _runs() -> list:
     return [pytest.param(name, fixture, args, id=name)

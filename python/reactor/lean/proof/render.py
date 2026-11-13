@@ -27,6 +27,8 @@ from reactor.lean.project.templates import render
 if TYPE_CHECKING:
     from reactor import Module
 
+    from reactor.lean.parse.native import NativePredicates
+
 # ══════════════════════════════════════════════════════════════════════════
 # The certificate as Lean
 # ══════════════════════════════════════════════════════════════════════════
@@ -64,27 +66,49 @@ class LeanCertificate:
 
 
 def render_certificate(
-    q, *, share: bool = True,
+    q: "NativePredicates", *, share: bool = True,
     verbatim: LeanAnswer | None = None,
 ) -> LeanCertificate:
     """The one place certificate predicates are printed as Lean.
 
-    `share=False` prints repeated subterms in full instead of `let`-binding
-    them, which Lean reads the same once `simp` has zeta-reduced the
-    `let`s; it is for reading a definition, not for proving with it.
-    `verbatim` is an answer that is Lean already; its `inv` and `ranking`
-    are taken as they are.
+    `q` is what the parser read (`parse.native.NativePredicates`), printed
+    by `from_ir`. `share=False` prints repeated subterms in full instead of
+    `let`-binding them, which Lean reads the same once `simp` has
+    zeta-reduced the `let`s; it is for reading a definition, not for
+    proving with it. `verbatim` is an answer that is Lean already; its
+    `inv` and `ranking` are taken as they are.
     """
+    from .from_ir import ir_to_lean as prop
+    from .from_ir import ir_to_lean_nat as nat
 
-    msmt = q.msmt
+    wires = q.wires
 
     def translate(term, mode: str) -> str | None:
         if term is None:
             return None
+        if mode in ("property", "invariant"):
+            return prop(term, wires.ctrl_next, param_name="s", share=share)
+        if mode == "ranking":
+            return nat(term, wires.ctrl_next, param_name="s", share=share)
+        # preconditions
+        return prop(
+            term,
+            state_wires=[],
+            param_name="e",
+            extra=[
+                ("e", "e.2", wires.extl_next),
+                ("el", "e.1", wires.extl_latched),
+            ],
+            share=share,
+        )
 
     def named(term, role: str) -> str | None:
         """`translate`, with the predicate's role on any refusal.
 
+        The printer walks a term and knows nothing of where it came from;
+        `--pre (= s0 0)` parses and then fails on a name preconditions do
+        not bind, and "Unknown free variable `s0`" alone does not say which
+        of five sources asked for it.
         """
         try:
             return translate(term, role)

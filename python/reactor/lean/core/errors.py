@@ -34,6 +34,14 @@ class Refused(ValueError):
         return f"{self._flag}: {text}" if self._flag else text
 
 
+class Unreadable(Refused):
+    """Text that is no predicate of this module in either dialect: the
+    Python predicate syntax and wrong in it, SMT-LIB its parser cannot
+    read, or nothing at all. It is what a parser raises about its text,
+    and the one thing a caller turns into "cannot read"; anything else
+    raised under it is a bug, and keeps its traceback."""
+
+
 class PredicateRefused(Refused):
     """A refusal about one of the claim's predicates, named by its `role`:
     "property" (of `kind` "safety" or "buchi"), "pre", "invariant" or

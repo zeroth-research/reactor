@@ -1,4 +1,4 @@
-=== exit error: --buchi: cannot read `(= s0`: Expected SMT-LIBv2 term, got `` (EOF_TOK).
+=== exit error: --buchi: cannot read `(= s0`: `(` with no `)` to close it
 === stdout
 module
   interface
