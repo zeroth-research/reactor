@@ -40,6 +40,9 @@ class ModuleQueries:
         self.tm = enc.tm
         self.msmt = enc.msmt
         self.state_vars = enc.state
+        # The wires the predicates are read and printed over: `ModuleSMT`
+        # names them as `parse.native.ModuleWires` does.
+        self.wires = enc.msmt
 
         cert = cert or Certificate()
         self.kind = claim.kind

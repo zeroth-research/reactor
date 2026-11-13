@@ -6,6 +6,11 @@ files, `artifacts/index.json`). Both are compared with the snapshots under
 `tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to rewrite them, and
 only for a change to the output that is intended.
 
+Every case runs under each parser (`parse.PARSERS`) against the one
+snapshot: the native parser prints what the cvc5 one prints. A run whose
+output is the parser's own -- the words it refuses a predicate in -- has a
+snapshot per parser.
+
 The certificate's obligations are proved by `sorry` here. The proofs, and
 the runs that infer the certificate, are `certify`'s, pinned the same way
 in `verith/tests/test_certify_golden.py` and `test_proofs_golden.py`.
@@ -29,10 +34,10 @@ from reactor.lean.proof.render import (
     generate_module_lean,
     generate_proofs_lean,
     generate_standalone_cert_lean,
-    render_certificate,
 )
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-from reactor.lean.smt.queries import predicate_terms
+from reactor.lean.parse import PARSERS
+from reactor.lean.pipeline.certificate import render
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.inputs.python import load_module
 
@@ -148,13 +153,12 @@ CODEGEN = [
 
 
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
-             verbatim: "LeanAnswer | None" = None) -> str:
+             verbatim: "LeanAnswer | None" = None,
+             parser: str = PARSERS[0]) -> str:
     """Data.lean, Module.lean, Proofs.lean, Certificate.lean and the
-    standalone certificate, as one text."""
-    lean = None
-    if claim is not None:
-        lean = render_certificate(predicate_terms(module, claim, cert),
-                                  verbatim=verbatim)
+    standalone certificate, as one text, the predicates read by `parser`."""
+    lean = render(module, claim, cert or Certificate(), verbatim=verbatim,
+                  parser=parser)
     ctx = LeanContext(module)
     return "\n".join([
         "=== Certificate/Data.lean",
@@ -170,19 +174,21 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
     ])
 
 
+@pytest.mark.parametrize("parser", PARSERS)
 @pytest.mark.parametrize("name,make,claim,cert", CODEGEN,
                          ids=[c[0] for c in CODEGEN])
-def test_codegen_is_unchanged(name, make, claim, cert):
-    _check(f"codegen-{name}.golden", _codegen(make(), claim, cert))
+def test_codegen_is_unchanged(name, make, claim, cert, parser):
+    _check(f"codegen-{name}.golden", _codegen(make(), claim, cert, parser=parser))
 
 
-def test_codegen_of_a_lean_answer_is_unchanged():
+@pytest.mark.parametrize("parser", PARSERS)
+def test_codegen_of_a_lean_answer_is_unchanged(parser):
     """An answer that is Lean already is printed as it was given."""
     answer = LeanAnswer("fun s => (s 0 0) ≥ 0",
                         "fun s => ((s 0 0) * (s 0 0)).toNat")
     _check("codegen-lean_answer_nonlinear.golden",
            _codegen(_fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
-                    None, verbatim=answer))
+                    None, verbatim=answer, parser=parser))
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -214,17 +220,21 @@ RUNS = [
     ("unreadable_property", COUNTER, ["--buchi", "(= (X @intf.0)"]),
 ]
 
-# `ModuleSMT`s built per run: the predicates are read against one encoding
-# of the module, built once.
+# `ModuleSMT`s built per run: the cvc5 parser reads the predicates against
+# one encoding of the module, built once. The native parser builds none.
 ENCODINGS = {
     "bare": 0, "supplied": 1, "supplied_pre": 1, "cert_file": 1,
     "unreadable_property": 1,
 }
 
+# The runs whose transcript is the parser's own: what it says of a
+# predicate it cannot read.
+OWN_SNAPSHOT = {"unreadable_property"}
+
 
 def _runs() -> list:
-    return [pytest.param(name, fixture, args, id=name)
-            for name, fixture, args in RUNS]
+    return [pytest.param(name, fixture, args, parser, id=f"{name}-{parser}")
+            for name, fixture, args in RUNS for parser in PARSERS]
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -308,11 +318,14 @@ def _count_encodings(monkeypatch) -> list:
     return built
 
 
-@pytest.mark.parametrize("name,fixture,args", _runs())
-def test_reactor_run_is_unchanged(name, fixture, args, monkeypatch, capsys,
-                                 tmp_path):
+@pytest.mark.parametrize("name,fixture,args,parser", _runs())
+def test_reactor_run_is_unchanged(name, fixture, args, parser, monkeypatch,
+                                 capsys, tmp_path):
     built = _count_encodings(monkeypatch)
-    _check(f"reactor-{name}.golden",
-           _transcript(monkeypatch, capsys, tmp_path, fixture, args))
-    assert built[0] == ENCODINGS.get(name), (
+    snapshot = (f"reactor-{name}.{parser}.golden"
+                if name in OWN_SNAPSHOT and parser != PARSERS[0]
+                else f"reactor-{name}.golden")
+    _check(snapshot, _transcript(monkeypatch, capsys, tmp_path, fixture,
+                                 [*args, "--parser", parser]))
+    assert built[0] == (ENCODINGS.get(name) if parser == "cvc5" else 0), (
         f"{name} encoded the module {built[0]} times")
