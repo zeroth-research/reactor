@@ -8,7 +8,7 @@ descending side is ever reached from init. `hrank` quantifies over every state
 satisfying the invariant, so the unreachable branch has to close too.
 """
 import torch
-from zrth import Module, Term, Wire, Int, Bool, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Bool, LIA, Var, X
 
 
 def module() -> Module:

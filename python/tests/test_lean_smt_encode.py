@@ -1,7 +1,7 @@
-"""Tests for the module -> cvc5 encoder (`zrth.lean.smt.encode`).
+"""Tests for the module -> cvc5 encoder (`reactor.lean.smt.encode`).
 
 `Min` / `Max` are unary *reductions* in the theory: one read wire of any
-shape, a `Mat t 1 1` written, matching `Core.Mat.matMin` / `matMax` and the
+shape, a `Mat t 1 1` written, matching `Relational.Mat.matMin` / `matMax` and the
 shape of `Argmax`. They had been wired to the binary `_elementwise` path, so
 building the SMT term for any module using one raised `TypeError` and took
 down every cvc5 query about that module.
@@ -15,8 +15,8 @@ import cvc5
 import pytest
 import torch
 
-from zrth import Module, Term, Wire, Var, X, LIA, Int
-from zrth.lean.smt.module import ModuleSMT
+from reactor import Module, Term, Wire, Var, X, LIA, Int
+from reactor.lean.smt.module import ModuleSMT
 
 _TM = cvc5.TermManager()
 _KEEP: list = []
@@ -82,8 +82,8 @@ def test_a_bitvector_matrix_product_is_bitvector_arithmetic():
     """`BV.MatMul` is a sum of bit-vector products, modulo the width. Built
     from cvc5's arithmetic `MULT` it was refused outright -- "expecting an
     arithmetic subterm" -- so no module with one had an SMT encoding."""
-    from zrth import BV, BitVec
-    from zrth.lean.smt.encode import _matmul, MatShape
+    from reactor import BV, BitVec
+    from reactor.lean.smt.encode import _matmul, MatShape
 
     tm = cvc5.TermManager()
     bv = lambda v: tm.mkBitVector(4, v)

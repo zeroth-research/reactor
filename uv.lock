@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "reactor",
+    "verith",
 ]
 
 [[package]]
@@ -2021,14 +2022,6 @@ dependencies = [
     { name = "z3-solver" },
 ]
 
-[package.optional-dependencies]
-ai = [
-    { name = "anthropic" },
-]
-ai-local = [
-    { name = "openai" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -2045,21 +2038,18 @@ tutorials = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", marker = "extra == 'ai'", specifier = ">=0.52" },
     { name = "cvc5", specifier = ">=1.3.2" },
     { name = "gymnasium", specifier = ">=1.2.3" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "lark", specifier = ">=1.1" },
     { name = "maturin", specifier = "==1.9" },
     { name = "numpy", specifier = ">=1.26" },
-    { name = "openai", marker = "extra == 'ai-local'", specifier = ">=1.0" },
     { name = "pysmt", specifier = ">=0.9.6" },
     { name = "textual", specifier = ">=8.0.0" },
     { name = "torch", specifier = "==2.15.0" },
     { name = "websockets", specifier = ">=15.0" },
     { name = "z3-solver", specifier = ">=4.12" },
 ]
-provides-extras = ["ai", "ai-local"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.0.2" }]
@@ -2460,6 +2450,46 @@ sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
 ]
+
+[[package]]
+name = "verith"
+version = "0.1.0"
+source = { editable = "verith" }
+dependencies = [
+    { name = "cvc5" },
+    { name = "numpy" },
+    { name = "reactor" },
+    { name = "torch" },
+    { name = "z3-solver" },
+]
+
+[package.optional-dependencies]
+ai = [
+    { name = "anthropic" },
+]
+ai-local = [
+    { name = "openai" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", marker = "extra == 'ai'", specifier = ">=0.52" },
+    { name = "cvc5", specifier = ">=1.3.2" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "openai", marker = "extra == 'ai-local'", specifier = ">=1.0" },
+    { name = "reactor", editable = "python" },
+    { name = "torch", specifier = "==2.15.0" },
+    { name = "z3-solver", specifier = ">=4.12" },
+]
+provides-extras = ["ai", "ai-local"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.0.2" }]
 
 [[package]]
 name = "wcwidth"

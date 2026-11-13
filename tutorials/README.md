@@ -9,9 +9,9 @@ Jupyter notebooks that walk through `reactor` step by step:
 
 Tutorials 2 and 3 build on concepts from Tutorial 1, **do them in order**.
 
-## Lean certificates (`uv run verith`)
+## Lean certificates (`uv run reactor`, `uv run certify`)
 
-- **[verith.md](verith.md)**: the `uv run verith` CLI end to end, as a shell
+- **[verith.md](verith.md)**: the `reactor` and `certify` CLIs end to end, as a shell
   session — safety and Büchi certificates for modules written in the Python API
   and for one read out of a gymnasium environment, what a failing verification
   looks like (an invalid invariant, a missing precondition), and every `--infer`

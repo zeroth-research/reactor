@@ -1,11 +1,11 @@
-import Core.Mat
+import Relational.Mat
 
 /-!
 # ManualTests.Argmax
 
-Pins the semantics of `Core.Mat.argmax_1d` and `Core.Mat.argmax` to
+Pins the semantics of `Relational.Mat.argmax_1d` and `Relational.Mat.argmax` to
 `torch.argmax`, the runtime reference that the SMT encoder in
-`zrth/lean/smt/encode.py` also follows. The Python-side half of this is
+`reactor/lean/smt/encode.py` also follows. The Python-side half of this is
 `tests/test_lean_argmax.py`.
 
 Two conventions matter, and both definitions used to get them wrong:

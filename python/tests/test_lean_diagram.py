@@ -2,12 +2,12 @@
 
 import pytest
 import torch
-from zrth import Wire, Term, Module, Bool, Int, LIA, Var, X
-from zrth.lean import ModuleToLean4
-from zrth.lean.lowering.sorts import itype_name
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.proof.render import generate_certificate_lean
-from zrth.lean.project.main_lean import generate_main_lean
+from reactor import Wire, Term, Module, Bool, Int, LIA, Var, X
+from reactor.lean import ModuleToLean4
+from reactor.lean.lowering.sorts import itype_name
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.proof.render import certificate_files
+from reactor.lean.project.main_lean import generate_main_lean
 
 
 def test_itype_name_strips_prefix():
@@ -225,14 +225,17 @@ def test_main_lean_matrix_signatures():
 
 
 def _cert_for(make_module, module_name="ReactiveModule"):
+    """The project's four certificate files, as one text."""
     m = make_module()
     ctx = LeanContext(m)
-    return generate_certificate_lean(ctx)
+    return "\n".join(certificate_files(ctx).values())
 
 
 def test_certificate_bool_has_rm():
+    """`RM` names no type: Lean reads them off the definitions it is built
+    from, which carry the module's."""
     cert = _cert_for(_make_twobitcounter)
-    assert "def RM : ReactiveModule" in cert
+    assert "} : ReactiveModule _ _)" in cert
     assert "(Mat Bool 1 1)" in cert
     assert "(Mat Bool 1 1) × (Mat Bool 1 1)" in cert
 
@@ -252,20 +255,8 @@ def test_certificate_bool_has_theorems():
     assert "theorem hinv" in cert
 
 
-def test_certificate_bool_has_simp_mod():
-    cert = _cert_for(_make_twobitcounter)
-    assert 'macro "simp_mat"' in cert
-    assert "init, update, inv" in cert
-
-
-def test_certificate_bool_has_no_scalar_constants_in_simp():
-    cert = _cert_for(_make_twobitcounter)
-    # Bool module has no matrix constants, so no c0/c1 in simp
-    assert "c0, c1" not in cert
-
-
 def test_data_lean_has_sorry_when_no_property():
-    from zrth.lean.proof.render import generate_data_lean
+    from reactor.lean.proof.render import generate_data_lean
     m = _make_twobitcounter()
     ctx = LeanContext(m)
     data = generate_data_lean(ctx)
@@ -274,7 +265,7 @@ def test_data_lean_has_sorry_when_no_property():
 
 def test_certificate_matrix_has_rm():
     cert = _cert_for(_make_matrix_module)
-    assert "def RM : ReactiveModule" in cert
+    assert "} : ReactiveModule _ _)" in cert
     assert "Mat Int 2 1" in cert
     assert "Mat Int 3 1" in cert
 
@@ -301,14 +292,6 @@ def test_certificate_has_buchi():
                 "buchi should not be commented out"
             )
             break
-
-
-def test_certificate_matrix_simp_reduces_matmul():
-    cert = _cert_for(_make_matrix_module)
-    # A/B are baked into the Linear op (no interned c0/c1 constants). affineLinear
-    # unfolds to MatMul + b, so the proof simp set must carry MatMul_apply to
-    # reduce the matrix obligations.
-    assert "MatMul_apply" in cert
 
 
 # ──────────────────────────────────────────────────────────────
@@ -512,7 +495,7 @@ def test_effect_gets_only_the_reconstructions_it_uses():
 
 def test_recon_filter_keeps_order_and_transitive_uses():
     """The filter is order-preserving and reaches a fixed point."""
-    from zrth.lean.codegen.encodings.common import _needed_recon
+    from reactor.lean.codegen.encodings.common import _needed_recon
 
     lets = [
         "  let _m0 : T := f extl_l",
@@ -535,8 +518,8 @@ def test_stateless_module_defines_init_and_update_as_unit():
     """No controlled variable means empty blocks, whose only value is `()`.
 
     The certificate's `RM` is built from `init` and `update`, so both must
-    be defined -- and not as `sorry`: `build_certificate` only looks for
-    one under `Certificate/`, so a `sorry` in `System/` would pass.
+    be defined -- and not as `sorry`: a build counts only the `sorry`s under
+    `Certificate/` as unproved, so one in `System/` would pass.
     """
     m2l = ModuleToLean4(Module.sequential([], [], []))
     func = m2l.to_lean_functional()
@@ -550,8 +533,8 @@ def test_stateless_module_defines_init_and_update_as_unit():
 
 def test_unbound_block_output_raises():
     """An output no term writes and no input binds has no Lean value."""
-    from zrth.lean.codegen.literals import ConstantRegistry
-    from zrth.lean.codegen.terms import translate_terms_lean, translate_terms_scalar
+    from reactor.lean.codegen.literals import ConstantRegistry
+    from reactor.lean.codegen.terms import translate_terms_lean, translate_terms_scalar
 
     out = [Wire(Int([1, 1]))]
     with pytest.raises(ValueError, match="written by no term"):
@@ -575,8 +558,8 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
     than silently dropping the theorems or the argmax lemmas."""
     from pathlib import Path
 
-    from zrth.lean.codegen.encodings import ModuleToLean4
-    from zrth.lean.inputs.python import load_module
+    from reactor.lean.codegen.encodings import ModuleToLean4
+    from reactor.lean.inputs.python import load_module
 
     module = load_module(Path(__file__).parent / "limits" / "mods" / f"{mod}.py")
 

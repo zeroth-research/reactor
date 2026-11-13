@@ -1,6 +1,6 @@
-"""Every Lean text verith generates for a module, over every fixture module.
+"""Every Lean text reactor generates for a module, over every fixture module.
 
-The route transcripts (`route_transcripts.py`) and the goldens
+The route transcripts (`verith/scripts/route_transcripts.py`) and the goldens
 (`tests/test_pipeline_golden.py`) cover the certificate files, not the
 `System/*.lean` encodings, the `--cert-file` certificate of a bare module, or
 the fbk-proveit NA model and bridge. This writes those, so a codegen refactor
@@ -14,7 +14,8 @@ OUTDIR/<fixture>/ gets one file per `project.scaffold.ENCODINGS` row (`System.le
 `create_project` does), each row again from a fresh `ModuleToLean4`
 (`alone/`, which is what shows state carried between producers), `Cert.lean`
 (the standalone certificate with no claim), and `NA.lean` / `Bridge.lean`
-where `check_na_supported` takes the module (`property_lean` "true"). A stage
+where `check_na_supported` takes the module (`property_lean` "true"; the
+fbk-proveit route is the `verith/` project's, so only with it installed). A stage
 that refuses writes `<stage>.error` with the refusal instead. Every file
 name ends in `.txt`, which the repository ignores.
 """
@@ -45,16 +46,12 @@ def _write(out: Path, name: str, produce) -> None:
 
 
 def snapshot(path: Path, out: Path) -> None:
-    from zrth.lean import inputs
-    from zrth.lean.codegen.context import LeanContext
-    from zrth.lean.codegen.terms import lean_gaps
-    from zrth.lean.project.scaffold import ENCODINGS
-    from zrth.lean.proof.render import generate_standalone_cert_lean
-    from zrth.lean.codegen.encodings import ModuleToLean4
-    from zrth.lean.infer.fbk_proveit.na import (
-        atom_to_lean_na, check_na_supported,
-    )
-    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+    from reactor.lean import inputs
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.codegen.terms import lean_gaps
+    from reactor.lean.project.scaffold import ENCODINGS
+    from reactor.lean.proof.render import generate_standalone_cert_lean
+    from reactor.lean.codegen.encodings import ModuleToLean4
 
     out.mkdir(parents=True, exist_ok=True)
     try:
@@ -77,6 +74,11 @@ def snapshot(path: Path, out: Path) -> None:
                lambda enc=enc: enc.producer(ModuleToLean4(LeanContext(module))))
     _write(out, "Cert.lean", lambda: generate_standalone_cert_lean(module))
 
+    try:
+        from verith.fbk_proveit.na import atom_to_lean_na, check_na_supported
+        from verith.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+    except ImportError:
+        return
     try:
         bodies = check_na_supported(ctx)
     except Exception as e:

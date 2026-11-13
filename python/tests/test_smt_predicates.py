@@ -11,9 +11,9 @@ from pathlib import Path
 import cvc5
 import pytest
 
-from zrth.lean.smt.module import ModuleSMT
-from zrth.lean.inputs.python import load_module
-from zrth.lean.smt.predicates import (
+from reactor.lean.smt.module import ModuleSMT
+from reactor.lean.inputs.python import load_module
+from reactor.lean.smt.predicates import (
     PredicateParser,
     _NotPredicate,
     _pyeval,
@@ -66,15 +66,15 @@ def test_a_reply_that_escapes_an_eval_sandbox_runs_nothing(monkeypatch):
     """Under `eval` with `{"__builtins__": {}}` this sets the variable: the
     class graph leads from `()` to `os`. Read as the DSL, it is not a
     predicate, and the SMT-LIB parser cannot read it either."""
-    monkeypatch.delenv("ZRTH_RT11_ESCAPE", raising=False)
+    monkeypatch.delenv("REACTOR_RT11_ESCAPE", raising=False)
     src = (
         "[c for c in ().__class__.__base__.__subclasses__() "
         "if c.__name__ == '_wrap_close'][0].__init__.__globals__"
-        "['environ'].__setitem__('ZRTH_RT11_ESCAPE', '1')"
+        "['environ'].__setitem__('REACTOR_RT11_ESCAPE', '1')"
     )
     with pytest.raises(Unreadable):
         parse_predicate(_env("m_countdown"), src)
-    assert "ZRTH_RT11_ESCAPE" not in os.environ
+    assert "REACTOR_RT11_ESCAPE" not in os.environ
 
 
 @pytest.mark.parametrize(
@@ -128,7 +128,7 @@ def test_the_dsl_says_what_is_wrong_with_a_predicate_in_it(src, why):
 
 def test_a_fault_in_the_dsl_itself_is_not_a_parse_error(monkeypatch):
     """A bug raises as itself instead of reading as "could not parse"."""
-    import zrth.lean.smt.predicates as predicates
+    import reactor.lean.smt.predicates as predicates
 
     def broken(src, ns):
         raise AttributeError("a bug")
@@ -142,9 +142,9 @@ def test_nor_is_it_refused_as_the_claim(monkeypatch):
     """One layer up, `ModuleEncoding.parse` and `predicate_terms` caught
     everything, so the same bug printed as `--buchi: cannot read ...` and
     lost its traceback."""
-    import zrth.lean.smt.predicates as predicates
-    from zrth.lean.core.certificate import Claim
-    from zrth.lean.smt.precheck import predicate_terms
+    import reactor.lean.smt.predicates as predicates
+    from reactor.lean.core.certificate import Claim
+    from reactor.lean.smt.queries import predicate_terms
 
     def broken(src, ns):
         raise AttributeError("a bug")

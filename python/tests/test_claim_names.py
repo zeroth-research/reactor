@@ -1,12 +1,11 @@
-"""Claims in the reactive module's own terms: `zrth.lean.inputs.names`."""
+"""Claims in the reactive module's own terms: `reactor.lean.inputs.names`."""
 
-import shlex
 from pathlib import Path
 
 import pytest
 
-from zrth.lean.inputs import ClaimError, Names, load, to_internal, to_surface
-from tests.verith import verith
+from reactor.lean.inputs import ClaimError, Names, load, to_internal, to_surface
+from tests.reactor_cli import reactor
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -80,12 +79,12 @@ def test_a_named_python_module_carries_its_names():
 def test_a_claim_in_names_is_the_claim_by_position(tmp_path):
     """The names are spelling only: the project is byte for byte the one
     the positional claim generates."""
-    named = verith(str(FIXTURES / "twobit_named.py"),
+    named = reactor(str(FIXTURES / "twobit_named.py"),
                    "--buchi", "(and (not (X lo)) (not (X hi)))",
                    "--pre", "(or (X enable) enable)",
                    "--invariant", "true",
                    "--cert-file", str(tmp_path / "named.lean"))
-    positional = verith(str(FIXTURES / "twobit_lia.py"),
+    positional = reactor(str(FIXTURES / "twobit_lia.py"),
                         "--buchi", "(and (not (X @intf.0)) (not (X @intf.1)))",
                         "--pre", "(or (X @extl.0) @extl.0)",
                         "--invariant", "true",
@@ -104,7 +103,7 @@ def test_a_bad_claim_or_name_is_an_error_line(tmp_path):
         (str(FIXTURES / "twobit_named.py"), "--buchi", "(not lo)"),
         (str(FIXTURES / "twobit_named.py"), "-d", "stray", "--buchi", "true"),
     ):
-        r = verith(*args, "-o", str(tmp_path))
+        r = reactor(*args, "-o", str(tmp_path))
         assert r.returncode != 0, args
         assert "Traceback" not in r.stderr, r.stderr
         assert "error:" in r.stderr, r.stderr
@@ -117,18 +116,3 @@ def test_a_bad_claim_or_name_is_an_error_line(tmp_path):
 ])
 def test_text_both_dialects_read_is_shown_as_smtlib(internal, surface):
     assert to_surface(internal) == surface
-
-
-def test_a_found_certificate_is_shown_as_the_flags_take_it(tmp_path):
-    """What one run found, the next can be given: printed in the input's
-    names, quoted for a shell."""
-    r = verith(str(FIXTURES / "counter.py"), "--buchi", "(= (X @intf.0) 0)",
-               "--infer", "houdini", "-o", str(tmp_path))
-    assert r.returncode == 0, r.stderr
-    shown = r.stdout.split(".. The certificate, in the input's names:\n")[1]
-    flags = [shlex.split(line) for line in shown.splitlines()[:2]]
-    assert [f for f, _ in flags] == ["--invariant", "--ranking"]
-    again = verith(str(FIXTURES / "counter.py"), "--buchi", "(= (X @intf.0) 0)",
-                   *(word for pair in flags for word in pair),
-                   "--pre-check", "cvc5", "--cert-file", str(tmp_path / "C.lean"))
-    assert again.returncode == 0, again.stderr

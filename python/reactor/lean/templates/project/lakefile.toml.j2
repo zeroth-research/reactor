@@ -1,0 +1,65 @@
+
+name = "{{ project_name }}"
+version = "0.1.0"
+defaultTargets = ["System", "Certificate"]
+
+# The root `Certificate.lean` imports the certificate alone. The directory
+# can also hold modules that cannot be imported beside it -- stated over a
+# library that declares the same top-level name as one the certificate
+# uses, which is rejected before elaboration -- so the glob reaches each
+# as a module of its own.
+[[lean_lib]]
+name = "Certificate"
+globs = ["Certificate", "Certificate.+"]
+
+[[lean_lib]]
+name = "System"
+{% for lib in parts.libs %}
+
+{% for line in lib.comment.splitlines() %}
+# {{ line }}
+{% endfor %}
+[[lean_lib]]
+name = "{{ lib.name }}"
+{% if lib.src_dir %}
+srcDir = "{{ lib.src_dir }}"
+{% endif %}
+{% endfor %}
+
+[[require]]
+name = "cslib"
+scope = "leanprover"
+rev = "{{ cslib_rev }}"
+
+[[require]]
+name = "smt"
+git = "https://github.com/ufmg-smite/lean-smt.git"
+rev = "db545bebe2de1e06dc2df62a6ff6c20e5736bfc0"
+{% for req in requires %}
+
+{% for line in req.comment.splitlines() %}
+# {{ line }}
+{% endfor %}
+[[require]]
+name = "{{ req.name }}"
+{% if req.path is not none %}
+path = "{{ req.path }}"
+{% else %}
+git = "{{ req.git }}"
+rev = "{{ req.rev }}"
+{% if req.sub_dir is not none %}
+subDir = "{{ req.sub_dir }}"
+{% endif %}
+{% endif %}
+{% endfor %}
+
+#[[require]]
+#name = "mylib"
+#git = "https://github.com/zeroth/proof-prototyping"
+#rev = "main"
+{% if executable %}
+
+[[lean_exe]]
+name = "main"
+root = "Main"
+{% endif %}

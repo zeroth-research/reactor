@@ -2,7 +2,7 @@
 
 `Argmax` exists three times over: `torch.argmax` in the evaluator (the
 runtime reference), `_argmax_flat` in the SMT encoder (what the SMT
-routes reason about), and `argmax_1d` / `argmax` in Core/Mat.lean (what the certificate
+routes reason about), and `argmax_1d` / `argmax` in `Relational.Mat` (what the certificate
 states). If they disagree, an SMT route can prove an invariant that is false of the
 system the Lean proof is about — so these tests pin all three to torch.
 
@@ -23,9 +23,9 @@ import cvc5
 import pytest
 import torch
 
-from zrth import Int, Term, Module, LIA, Var, X
-from zrth.lean import ModuleToLean4
-from zrth.lean.smt.encode import _argmax_flat, MatShape, elem_sort
+from reactor import Int, Term, Module, LIA, Var, X
+from reactor.lean import ModuleToLean4
+from reactor.lean.smt.encode import _argmax_flat, MatShape, elem_sort
 
 
 # (row, expected) — expected is torch's answer, computed below to keep the
@@ -174,7 +174,7 @@ def test_codegen_guard_still_states_the_one_index_contract():
     Kept so the contract is stated where the Lean is emitted: both variants
     produce a `Mat _ 1 1`, so a wider wire cannot be served.
     """
-    from zrth.lean.codegen.terms import check_argmax_output
+    from reactor.lean.codegen.terms import check_argmax_output
 
     check_argmax_output([1, 1])  # the only shape argmax can fill
     check_argmax_output(None)  # opt out
@@ -189,7 +189,7 @@ def test_scalar_argmax_variants_are_named_per_element_type():
     Naming by `n` alone emitted two `def argmax1d_scalar_4` and two `_eq`
     theorems into one file for an Int and a Real Argmax of equal width.
     """
-    from zrth.lean.codegen.terms import argmax_scalar_name
+    from reactor.lean.codegen.terms import argmax_scalar_name
 
     names = {
         argmax_scalar_name(ety, 4)
@@ -206,7 +206,7 @@ def test_scalar_argmax_variants_are_named_per_element_type():
 def test_same_width_variants_emit_distinct_definitions():
     """Two element types at one width must not produce one name twice."""
     import re
-    from zrth.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
+    from reactor.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 
     src = "\n".join(
         _argmax_scalar_def_lines("Int", 4) + _argmax_scalar_def_lines("Real", 4)

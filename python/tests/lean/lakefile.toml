@@ -1,20 +1,20 @@
  name = "ZerothHammerTests"
  version = "0.1.0"
- defaultTargets = ["ZerothHammerTests", "ZerothHammer", "Certs", "ManualTests", "Playground"]
-
- [[lean_lib]]
- name = "Core"
+ defaultTargets = ["ZerothHammerTests", "ZerothHammer", "ManualTests", "Playground"]
 
  # Generated: standalone zeroth_hammer tactic (no module-specific macros)
  [[lean_lib]]
  name = "ZerothHammer"
 
- # Generated: self-contained certificate proofs (one per module, inline init/update)
+ # Generated: self-contained certificate proofs (one per module, inline init/update).
+ # Not a default target: there is no root `Certs.lean`, and there cannot be
+ # one -- every file declares its own `init`/`update` -- so each is built as
+ # a module of its own (`lake build Certs.<Name>`).
  [[lean_lib]]
  name = "Certs"
 
  # Manually written: test zeroth_hammer on standalone goal shapes, and pin
- # the semantics of Core.Mat definitions that no certificate exercises
+ # the semantics of Relational.Mat definitions that no certificate exercises
  [[lean_lib]]
  name = "ManualTests"
  roots = ["ManualTests.Basic", "ManualTests.Argmax", "ManualTests.Reduce"]
@@ -31,9 +31,14 @@
  [[require]]
  name = "cslib"
  scope = "leanprover"
- rev = "v4.28.0"
+ rev = "v4.34.0"
 
  [[require]]
  name = "smt"
  git = "https://github.com/ufmg-smite/lean-smt.git"
- rev = "f58d19d5d0803fcccb5ccb1b4473774dd2ae9f9a"
+ rev = "db545bebe2de1e06dc2df62a6ff6c20e5736bfc0"
+
+ # `Relational.*`, from the reactor-lean checkout beside this repository.
+ [[require]]
+ name = "Relational"
+ path = "../../../../reactor-lean/Relational"

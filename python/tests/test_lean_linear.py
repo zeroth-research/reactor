@@ -4,7 +4,7 @@ These are fast, Lean-free checks that the Python side emits the correct list
 literals for a `LIA.Linear`/`LRA.Linear` op: right orientation (row-major
 `A[i][l]`, not transposed), signs, bias (incl. empty → zeros), non-square
 shapes, and element formatting (Int/Real). They complement the lake-verified
-`Core.Mat.matVecAffine_eq`, which checks the *Lean* side reduces to the intended
+`Relational.Mat.matVecAffine_eq`, which checks the *Lean* side reduces to the intended
 affine map — here we guard the *generator* that feeds it.
 """
 from fractions import Fraction
@@ -12,9 +12,9 @@ from fractions import Fraction
 import pytest
 import torch
 
-from zrth import BitVec, Bool, Wire, Term, LIA, LRA, Int, Real
-from zrth.lean.codegen.literals import linear_list_literals
-from zrth.lean.codegen.terms import _linear_expr
+from reactor import BitVec, Bool, Wire, Term, LIA, LRA, Int, Real
+from reactor.lean.codegen.literals import linear_list_literals
+from reactor.lean.codegen.terms import _linear_expr
 
 
 def _int_linear(A, B, out_rows):
@@ -107,8 +107,8 @@ def test_linear_expr_uses_read_wire_accessor():
 def test_is_scalar_tensor_respects_shape_for_bool():
     """Bool skipped the shape check that Int/BitVec get, so a Bool matrix
     was treated as a scalar and inlined via `tensor.item()`."""
-    from zrth import Wire, Bool, Int, BitVec
-    from zrth.lean.lowering.sorts import is_scalar_tensor
+    from reactor import Wire, Bool, Int, BitVec
+    from reactor.lean.lowering.sorts import is_scalar_tensor
 
     assert is_scalar_tensor(Wire(Bool([1, 1]))) is True
     assert is_scalar_tensor(Wire(Bool([2, 3]))) is False
@@ -121,8 +121,8 @@ def test_is_scalar_tensor_respects_shape_for_bool():
 def test_bool_matrix_constant_is_interned_not_inlined():
     """A Bool matrix constant must become a top-level def, not `.item()`."""
     import torch
-    from zrth import Term, Module, Bool, LIA, Var, X
-    from zrth.lean import ModuleToLean4
+    from reactor import Term, Module, Bool, LIA, Var, X
+    from reactor.lean import ModuleToLean4
 
     flags = Var(Bool([2, 3]))
     data = torch.tensor([[True, False, True], [False, True, False]])
@@ -144,8 +144,8 @@ def test_a_real_constant_is_noncomputable(shape, data):
     does not compile: every hybrid benchmark with a fractional constant was
     `BUILD-FAIL`. `Certs.ScalarEncRealHalf` builds one under `just test-lean`."""
     import torch
-    from zrth import Term, Module, LRA, Var, X
-    from zrth.lean import ModuleToLean4
+    from reactor import Term, Module, LRA, Var, X
+    from reactor.lean import ModuleToLean4
 
     x = Var(Real(shape))
     module = Module.sequential(
@@ -172,8 +172,8 @@ def test_bitvec_literal_uses_of_int():
     `ofNat` on non-negatives — both facts pinned in
     tests/lean/Playground.lean.
     """
-    from zrth import Wire, BitVec
-    from zrth.lean.codegen.literals import lean_literal
+    from reactor import Wire, BitVec
+    from reactor.lean.codegen.literals import lean_literal
 
     dt = Wire(BitVec(8, [1, 1])).dtype
     assert lean_literal(dt, -3) == "(BitVec.ofInt 8 (-3))"
@@ -184,8 +184,8 @@ def test_bitvec_literal_uses_of_int():
 def test_non_negative_bitvec_constant_still_emits():
     """The reachable case must be unchanged by the switch to `ofInt`."""
     import torch
-    from zrth import Term, Module, BitVec, BV, Var, X
-    from zrth.lean import ModuleToLean4
+    from reactor import Term, Module, BitVec, BV, Var, X
+    from reactor.lean import ModuleToLean4
 
     v = Var(BitVec(8, [1, 1]))
     module = Module.sequential(
@@ -211,7 +211,7 @@ def test_non_negative_bitvec_constant_still_emits():
 def test_one_printer_spells_every_literal(sort, value, lean):
     """Ints ascribed whatever their sign, Reals exact -- a float read by its
     decimal form, which is also what the SMT encoding states."""
-    from zrth.lean.codegen.literals import lean_literal
+    from reactor.lean.codegen.literals import lean_literal
 
     assert lean_literal(sort, value) == lean
 
@@ -221,7 +221,7 @@ def test_a_float_constant_in_scientific_notation_encodes():
     builds the constant from the same exact fraction the Lean literal
     states."""
     import cvc5
-    from zrth.lean.smt.encode import translate_terms
+    from reactor.lean.smt.encode import translate_terms
 
     w = Wire(Real([1, 1]))
     term = Term(LRA.Real(torch.tensor([[1e-07]], dtype=torch.float64)), [w], [])

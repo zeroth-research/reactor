@@ -1,32 +1,40 @@
-"""The template tree must have exactly one copy of every Lean source.
+"""The templates, and the Lean library the files they render import.
 
-`templates/` used to carry a second, byte-identical set of the Core files
-(`Mat.lean`, `Box.lean`, `Basic.lean`, `LTL.lean` and the LeanAI tree)
-alongside the ones under `templates/static/`. Only the `static/` copies are
-ever read — `create_project` resolves them through `STATIC_DIR`, and the
-tests/lean fixture syncs from the same place — so edits to the top-level
-copies silently did nothing. That is what these tests exist to prevent.
+`templates/` holds the Jinja templates of the generated project's files and
+no Lean sources: the library those files import -- `Relational.*`, and
+`LeanAI` -- is reactor-lean's, and the project's lakefile requires it. A
+`.lean` file left under `templates/` would be read by nothing, so editing it
+would silently do nothing, which is what the first two tests exist to
+prevent. (`templates/` once carried two byte-identical sets of the Core
+files, and edits to the unread one did nothing for months.)
 """
 
+import re
 from pathlib import Path
 
 import pytest
 
-from zrth.lean.project.scaffold import CORE_FILES, LEAN_AI_FILES, TEMPLATE_DIR
-from zrth.lean.project.templates import TEMPLATES_DIR, STATIC_DIR, PROJECT_TEMPLATES_DIR
+from reactor.lean.core.errors import Refused
+from reactor.lean.project.lakefile import (
+    REACTOR_LEAN_ENV,
+    REACTOR_LEAN_PACKAGES,
+    REACTOR_LEAN_URL,
+    generate_lakefile,
+    reactor_lean_checkout,
+    with_reactor_lean,
+)
+from reactor.lean.project.templates import TEMPLATES_DIR, PROJECT_TEMPLATES_DIR
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_every_lean_template_is_reachable_by_the_generator():
-    """A `.lean` file outside static/ and project/ can never be emitted."""
-    reachable = (STATIC_DIR, PROJECT_TEMPLATES_DIR)
-    stray = [
-        p.relative_to(TEMPLATES_DIR)
-        for p in TEMPLATES_DIR.rglob("*.lean")
-        if not any(p.is_relative_to(d) for d in reachable)
-    ]
+def test_the_templates_hold_no_lean_sources():
+    """The Lean library is reactor-lean's; a copy here can never be emitted."""
+    stray = sorted(str(p.relative_to(TEMPLATES_DIR))
+                   for p in TEMPLATES_DIR.rglob("*.lean"))
     assert not stray, (
-        "these templates are read by nothing, so editing them has no effect: "
-        f"{sorted(map(str, stray))}"
+        "these are read by nothing, so editing them has no effect -- the "
+        f"Lean library the project imports is in reactor-lean: {stray}"
     )
 
 
@@ -42,35 +50,73 @@ def test_every_project_template_is_rendered():
     assert not unused, f"these templates are rendered by nothing: {unused}"
 
 
-@pytest.mark.parametrize("name", CORE_FILES)
-def test_core_file_exists_exactly_once(name):
-    """One source of truth per Core file, under static/Core/."""
-    found = sorted(p.relative_to(TEMPLATES_DIR) for p in TEMPLATES_DIR.rglob(name))
-    assert found == [Path("static") / "Core" / name], (
-        f"{name} should exist only at static/Core/, found {list(map(str, found))}"
-    )
+# ══════════════════════════════════════════════════════════════════════
+#  The lakefile requires reactor-lean: from git, or from $REACTOR_LEAN
+# ══════════════════════════════════════════════════════════════════════
+
+def _checkout(root: Path) -> Path:
+    for p in REACTOR_LEAN_PACKAGES:
+        (root / p).mkdir(parents=True)
+        (root / p / "lakefile.toml").write_text("")
+    return root
 
 
-@pytest.mark.parametrize("name", LEAN_AI_FILES)
-def test_lean_ai_entry_exists_exactly_once(name):
-    """Same for the LeanAI file and directory the generator copies."""
-    found = sorted(
-        p.relative_to(TEMPLATES_DIR)
-        for p in TEMPLATES_DIR.rglob(name)
-        if p.name == name
-    )
-    assert found == [Path("static") / name], (
-        f"{name} should exist only under static/, found {list(map(str, found))}"
-    )
+def _require(lakefile: str, name: str) -> str:
+    """The `[[require]]` table named `name`, up to the next blank line."""
+    block = lakefile.split(f'[[require]]\nname = "{name}"\n', 1)
+    assert len(block) == 2, f"the lakefile does not require {name}"
+    return block[1].split("\n\n", 1)[0]
 
 
-def test_generator_reads_the_static_tree():
-    """Pins the assumption the tests above rely on."""
-    assert TEMPLATE_DIR == STATIC_DIR
-    for name in CORE_FILES:
-        assert (TEMPLATE_DIR / "Core" / name).is_file(), f"Core/{name} missing"
-    for name in LEAN_AI_FILES:
-        assert (TEMPLATE_DIR / name).exists(), f"{name} missing"
+def test_the_lakefile_requires_each_package_from_its_directory_of_the_repo(
+        monkeypatch):
+    monkeypatch.delenv(REACTOR_LEAN_ENV, raising=False)
+    lakefile = generate_lakefile("P")
+    for p in REACTOR_LEAN_PACKAGES:
+        req = _require(lakefile, p)
+        assert f'git = "{REACTOR_LEAN_URL}"' in req
+        assert f'subDir = "{p}"' in req
+        assert "path =" not in req
+
+
+def test_reactor_lean_set_requires_the_checkout_by_path(monkeypatch, tmp_path):
+    root = _checkout(tmp_path / "rl")
+    monkeypatch.setenv(REACTOR_LEAN_ENV, str(root))
+    lakefile = generate_lakefile("P")
+    for p in REACTOR_LEAN_PACKAGES:
+        assert _require(lakefile, p) == f'path = "{root.resolve() / p}"'
+    assert REACTOR_LEAN_URL not in lakefile
+
+
+def test_a_reactor_lean_that_is_not_a_checkout_is_refused_before_the_project(
+        monkeypatch, tmp_path):
+    """Otherwise the lakefile points at nothing, and lake says so only when
+    it is asked to build, long after the project was written."""
+    from reactor.lean.pipeline import main
+
+    monkeypatch.setenv(REACTOR_LEAN_ENV, str(tmp_path))
+    with pytest.raises(Refused, match="is not a reactor-lean checkout"):
+        reactor_lean_checkout()
+    out = tmp_path / "out"
+    monkeypatch.setattr("sys.argv", [
+        "reactor", str(FIXTURES / "counter.py"),
+        "--safety", "(>= (X @intf.0) 0)", "-o", str(out), "-p", "P"])
+    with pytest.raises(SystemExit, match="is not a reactor-lean checkout"):
+        main()
+    assert not out.exists()
+
+
+def test_a_copied_manifest_gets_the_checkout_as_its_own(tmp_path):
+    """`lake build` reads a path dependency's `dir` from the manifest, not
+    the lakefile, so a manifest copied from elsewhere must be repointed."""
+    root = _checkout(tmp_path / "rl")
+    stale = {"name": "Relational", "type": "path", "dir": "../../elsewhere"}
+    kept = {"name": "cslib", "type": "git"}
+    out = with_reactor_lean({"version": "1.1.0", "packages": [kept, stale]}, root)
+    assert out["version"] == "1.1.0"
+    assert out["packages"][0] == kept
+    dirs = {e["name"]: e["dir"] for e in out["packages"] if e["type"] == "path"}
+    assert dirs == {p: str(root / p) for p in REACTOR_LEAN_PACKAGES}
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -81,7 +127,10 @@ REDUCTIONS = ("matMin", "matMax", "argmax_1d", "argmax")
 
 
 def _mat_source() -> str:
-    return (STATIC_DIR / "Core" / "Mat.lean").read_text()
+    checkout = reactor_lean_checkout()
+    if checkout is None:
+        pytest.skip(f"no reactor-lean checkout: set ${REACTOR_LEAN_ENV}")
+    return (checkout / "Relational" / "Relational" / "Mat.lean").read_text()
 
 
 def test_the_reductions_enumerate_with_ofFn_not_finRange():
@@ -105,34 +154,72 @@ def test_the_reductions_enumerate_with_ofFn_not_finRange():
 
 
 def _counter_ctx():
-    from zrth.lean.codegen.context import LeanContext
-    from zrth.lean.inputs.python import load_module
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.inputs.python import load_module
 
     fixture = Path(__file__).parent / "fixtures" / "counter.py"
     return LeanContext(load_module(fixture))
 
 
-def test_the_certificate_simp_set_unfolds_them():
-    """Computing the fold is no use if the definition never opens."""
-    from zrth.lean.proof.render import generate_certificate_lean
+def test_the_certificate_is_one_text_for_each_kind_of_property():
+    """What changes with the module and its certificate is in `Data.lean`,
+    and in `Proofs.lean` once a prover has proved it, so either can be
+    rewritten -- by `reactor` or by anything else -- without the
+    certificate, or `Module.lean`. Unproved, `Proofs.lean` states the
+    obligations of the property's kind and nothing else."""
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor.lean.inputs.python import load_module
+    from reactor.lean.project.names import (
+        CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
+    )
+    from reactor.lean.pipeline.certificate import render
+    from reactor.lean.proof.render import certificate_files
 
-    cert = generate_certificate_lean(_counter_ctx())
-    simp_mat = [ln for ln in cert.splitlines()
-                if "simp [" in ln and "MatAdd_apply" in ln]
-    assert simp_mat, "the simp_mat macro moved"
-    for name in REDUCTIONS:
-        assert name in simp_mat[0], f"{name} is not in simp_mat"
+    counter = load_module(FIXTURES / "counter.py")
+    twobit = load_module(FIXTURES / "twobit.py")
+    variants = {kind: [] for kind in ("buchi", "safety")}
+    for m in (counter, twobit):
+        for kind in variants:
+            variants[kind].append(certificate_files(
+                LeanContext(m), render(m, Claim(kind=kind))))
+    variants["buchi"].append(certificate_files(
+        LeanContext(counter), render(
+            counter, Claim(prp="(= s0 0)"),
+            Certificate(inv="(>= s0 0)", ranking="(ite (= s0 0) 0 s0)"))))
+
+    for kind, files in variants.items():
+        certs = {f[cert_file(CERTIFICATE)] for f in files}
+        assert len(certs) == 1, f"the {kind} certificate changes with the module"
+        proofs = {f[cert_file(PROOFS)] for f in files}
+        assert len(proofs) == 1, f"the unproved {kind} proofs change"
+        data = {f[cert_file(DATA)] for f in files}
+        assert len(data) > 1, "the test's certificates are all alike"
+    for name in (CERTIFICATE, PROOFS):
+        texts = [variants[kind][0][cert_file(name)] for kind in variants]
+        assert texts[0] != texts[1]
+    every = [f for files in variants.values() for f in files]
+    assert len({f[cert_file(MODULE)] for f in every}) == 1
 
 
-def test_the_fbk_bridge_simp_set_agrees_with_it():
-    """The bridge proves the NA model is the module, over the same terms."""
-    from zrth.lean.infer.fbk_proveit.na import check_na_supported
-    from zrth.lean.infer.fbk_proveit.bridge import atom_to_lean_fbk_bridge
+def test_each_obligation_is_stated_alike_in_both_files():
+    """`Certificate.lean` takes each obligation's proof from `Proofs.lean`
+    with `exact`, which checks the statements agree; they are written to,
+    so that the check is a formality rather than a unification."""
+    from reactor.lean.core.certificate import Claim
+    from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
+    from reactor.lean.pipeline.certificate import render
+    from reactor.lean.proof.render import certificate_files
 
     ctx = _counter_ctx()
-    bridge = atom_to_lean_fbk_bridge(ctx, na_module="NA",
-                                     bodies=check_na_supported(ctx))
-    cascade = [ln for ln in bridge.splitlines() if "MatAdd_apply" in ln]
-    assert cascade, "the bridge's cascade has no matrix simp set"
-    for name in REDUCTIONS:
-        assert name in cascade[0], f"{name} is not in the fbk bridge's simp set"
+    for kind, names in (("buchi", ("init_inv", "step_inv", "hrank")),
+                        ("safety", ("init_inv", "step_inv", "inv_imp_P"))):
+        files = certificate_files(ctx, render(ctx.module, Claim(kind=kind)))
+        cert, proofs = files[cert_file(CERTIFICATE)], files[cert_file(PROOFS)]
+        for name in names:
+            stated = re.search(rf"^theorem {name} (.*?) := by\n  exact {name}_proof$",
+                               cert, re.M | re.S)
+            assert stated, f"{kind}: `{name}` is not taken from `{name}_proof`"
+            again = re.search(rf"^theorem {name}_proof (.*?) := by$", proofs, re.M | re.S)
+            assert again, f"{kind}: `Proofs.lean` does not state `{name}_proof`"
+            assert stated.group(1) == again.group(1), name

@@ -1,8 +1,9 @@
 """SV-COMP style termination verification tests.
 
 Each test creates a reactive module, provides a correct invariant and ranking
-function, and generates a Lean 4 project. The zeroth_hammer should close
-all proof obligations including hrank.
+function, and generates a Lean 4 project. With the proofs `verith` writes
+(the `verith/` project beside this one; the slow tests are skipped without
+it), the zeroth_hammer should close all proof obligations including hrank.
 
 To verify proofs actually close (slow, requires lake + mathlib):
     .venv/bin/python -m pytest tests/test_lean_svcomp.py -m slow -v
@@ -13,12 +14,13 @@ import pytest
 from os.path import dirname
 from pathlib import Path
 
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
-from zrth.lean.codegen.context import LeanContext
-from zrth.lean.project.scaffold import create_project
-from zrth.lean.proof.render import certificate_files, lean_certificate
-from zrth.lean.core.certificate import Certificate, Claim
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
+from reactor.lean.codegen.context import LeanContext
+from reactor.lean.project.scaffold import create_project
+from reactor.lean.pipeline.certificate import render
+from reactor.lean.proof.render import certificate_files
+from reactor.lean.core.certificate import Certificate, Claim
 
 OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
 
@@ -28,18 +30,31 @@ OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
 # ──────────────────────────────────────────────────────────────
 
 
-def _gen(name, module, prp, inv, ranking, pre=None):
-    """Generate a Lean project with certificate and return the project dir."""
-    lean_cert = lean_certificate(
-        module,
-        Claim(prp=prp, init_pre=pre, update_pre=pre),
-        Certificate(inv=inv, ranking=ranking),
-    )
+def _gen(name, module, prp, inv, ranking, pre=None, proved=False):
+    """Generate a Lean project with certificate and return the project dir;
+    `proved`, with the proofs `verith` writes for it."""
+    claim = Claim(prp=prp, init_pre=pre, update_pre=pre)
+    cert = Certificate(inv=inv, ranking=ranking)
+    ctx = LeanContext(module)
+    lean_cert = render(module, claim, cert)
+    if not proved:
+        return create_project(
+            output_dir=OUTPUT_DIR,
+            module=module,
+            project_name=name,
+            certificate=certificate_files(ctx, lean_cert),
+        )
+    pytest.importorskip("verith")
+    from verith.proofs import LAKEFILE, hammer_files, prove
+
+    proofs = prove(module, ctx, claim, cert, lean_cert)
     return create_project(
         output_dir=OUTPUT_DIR,
         module=module,
         project_name=name,
-        certificate=certificate_files(LeanContext(module), lean_cert),
+        certificate={**certificate_files(ctx, lean_cert, proofs),
+                     **hammer_files()},
+        lakefile=LAKEFILE,
     )
 
 
@@ -259,6 +274,7 @@ def test_countdown_proofs():
         prp="(= s0 0)",
         inv="(and (>= s0 0) (<= s0 100))",
         ranking="(ite (= s0 0) 0 s0)",
+        proved=True,
     )
     _lake_build(p)
 
@@ -272,6 +288,7 @@ def test_twovars_proofs():
         prp="(= s0 s1)",
         inv="(and (>= s0 0) (<= s0 s1) (= s1 10))",
         ranking="(ite (= s0 s1) 0 (- s1 s0))",
+        proved=True,
     )
     _lake_build(p)
 
@@ -285,5 +302,6 @@ def test_collatz_bounded_proofs():
         prp="(= s0 1)",
         inv="(and (>= s0 1) (<= s0 8))",
         ranking="(ite (= s0 1) 0 (- s0 1))",
+        proved=True,
     )
     _lake_build(p)

@@ -1,0 +1,159 @@
+=== exit 0
+=== stdout
+module
+  interface
+    #N : Int([1,1])
+  atom controls #N reads #N
+  init
+    #N := [[0]] 
+    X(#N) := Id #N
+  delay
+    d(#N) := ZERO 
+  update
+    #N := [[1]] 
+    #N := Add (#N, #N)
+    #N := [[10]] 
+    #N := Eq (#N, #N)
+    #N := [[0]] 
+    #N := Ite (#N, #N, #N)
+    X(#N) := Id #N
+
+.. Generating lean code
+Created project directory: `<OUT>/G`
+Wrote system.txt
+Wrote system.py
+Wrote <OUT>/G/lakefile.toml
+Wrote <OUT>/G/lean-toolchain
+Wrote root module <OUT>/G/System.lean
+++ Generated <OUT>/G/System/System.lean ++
+++ Generated <OUT>/G/System/Circ.lean ++
+++ Generated <OUT>/G/System/Rel.lean ++
+++ Generated <OUT>/G/System/Scalar.lean ++
+++ Generated <OUT>/G/System/ScalarRel.lean ++
+Wrote <OUT>/G/Certificate/Data.lean
+Wrote <OUT>/G/Certificate/Module.lean
+Wrote <OUT>/G/Certificate/Proofs.lean
+Wrote <OUT>/G/Certificate/Certificate.lean
+
+DONE: Project created at: <OUT>/G
+
+Project ready at: <OUT>/G
+
+=== stderr
+
+=== Certificate/Data.lean
+import Relational.Basic
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+def init_pre (e : (Unit) × (Unit)) : Prop := True
+
+def update_pre (e : (Unit) × (Unit)) : Prop := True
+
+def inv (s : (Mat Int 1 1)) : Prop := True
+
+def P (s : (Mat Int 1 1)) : Prop := sorry
+
+instance : DecidablePred P := sorry
+
+def ranking (s : (Mat Int 1 1)) : Nat := sorry
+
+=== Certificate/Module.lean
+import Relational.Basic
+import System.System
+import Certificate.Data
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+noncomputable section
+
+def RM := ({
+    init := fun e => init e.2
+    update := fun x e => update x e.1 e.2
+    init_pre := init_pre
+    update_pre := update_pre
+} : ReactiveModule _ _)
+
+def lts := RM.toTS
+
+end
+
+=== Certificate/Proofs.lean
+import Relational.Basic
+import Certificate.Module
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  sorry
+
+theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+  sorry
+
+theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+    ranking s' < ranking s := by
+  sorry
+
+=== Certificate/Certificate.lean
+import Relational.Basic
+import Certificate.Module
+import Certificate.Proofs
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+noncomputable section
+
+theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  exact init_inv_proof
+
+theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+  exact step_inv_proof
+
+theorem hinv' : lts.StateSet_isInductiveInitial inv := by
+  constructor
+  · intro s hs
+    unfold lts at hs; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs
+    obtain ⟨l, hpre, hl⟩ := hs
+    rw [← hl]
+    exact init_inv l hpre
+  · intro s s' ⟨hs, l, hstep⟩
+    unfold lts at hstep; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
+    rw [← hstep.2]
+    exact step_inv s l ⟨hstep.1, hs⟩
+
+theorem hinv : lts.StateSet_isInvariant inv := by
+  apply TS.StateSet_ind_init_is_inv lts
+  exact hinv'
+
+theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+    ranking s' < ranking s := by
+  exact hrank_proof
+
+def buchi := rule_buchi
+  lts
+  P
+  inv
+  hinv
+  ranking
+  hrank
+
+end
+
+=== artifacts/index.json
+(none)

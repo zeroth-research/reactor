@@ -1,4 +1,4 @@
-"""Tests for the SMT -> Lean expression translator (`zrth.lean.proof.from_smt`).
+"""Tests for the SMT -> Lean expression translator (`reactor.lean.proof.from_smt`).
 
 Covers the `min`/`max` peephole and the sharing pass. There is no `max` kind to translate
 from, so a ReLU unit reaches the translator as `(ite (>= e 0) e 0)`. Left as
@@ -11,11 +11,11 @@ to be provable. `omega` handles `min`/`max` over `Int` with no split at all.
 import pytest
 import torch
 
-from zrth import Module, Term, Var, X, LIA, LRA, Int, Real
-from zrth.lean.proof.render import LeanPredicates, render_certificate
-from zrth.lean.smt.precheck import predicate_terms
-from zrth.lean.core.certificate import Certificate, Claim
-from zrth.lean.core.errors import PredicateRefused
+from reactor import Module, Term, Var, X, LIA, LRA, Int, Real
+from reactor.lean.proof.render import LeanCertificate, render_certificate
+from reactor.lean.smt.queries import predicate_terms
+from reactor.lean.core.certificate import Certificate, Claim
+from reactor.lean.core.errors import PredicateRefused
 
 
 def _int_module() -> Module:
@@ -37,7 +37,7 @@ def _real_module() -> Module:
     )
 
 
-def _lean(module, **cert: str) -> LeanPredicates:
+def _lean(module, **cert: str) -> LeanCertificate:
     """`cert`'s predicates printed as the certificate prints them."""
     return render_certificate(
         predicate_terms(module, Claim(), Certificate(**cert))
@@ -145,8 +145,8 @@ def test_a_deep_net_is_emitted_once_per_unit_not_once_per_path():
 
 
 def test_the_same_net_without_sharing_shows_what_it_costs():
-    from zrth.lean.proof.from_smt import smt_to_lean_nat
-    from zrth.lean.smt.precheck import predicate_terms
+    from reactor.lean.proof.from_smt import smt_to_lean_nat
+    from reactor.lean.smt.queries import predicate_terms
 
     q = predicate_terms(_int_module(), Claim(), Certificate(ranking=_dense(4)))
     plain = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)
@@ -155,8 +155,8 @@ def test_the_same_net_without_sharing_shows_what_it_costs():
 
 
 def test_sharing_never_makes_the_output_longer():
-    from zrth.lean.proof.from_smt import smt_to_lean_nat
-    from zrth.lean.smt.precheck import predicate_terms
+    from reactor.lean.proof.from_smt import smt_to_lean_nat
+    from reactor.lean.smt.queries import predicate_terms
 
     for smt in ("s0", "(+ s0 1)", _relu("s0"), _dense(1), _dense(2), _dense(5)):
         q = predicate_terms(_int_module(), Claim(), Certificate(ranking=smt))

@@ -4,8 +4,8 @@ Python semantics:
     x starts at 0, increments each step, resets to 0 when it reaches 10.
     Property: x == 0 holds infinitely often.
 """
-from zrth import Module, Int, LIA, Var, X
-from zrth.analyzer import convert_method
+from reactor import Module, Int, LIA, Var, X
+from reactor.analyzer import convert_method
 
 
 def init():

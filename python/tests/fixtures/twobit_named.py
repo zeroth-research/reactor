@@ -2,8 +2,8 @@
 `enable` for the input. Its claims and `twobit_lia`'s positional ones
 generate the same project."""
 import torch
-from zrth import Wire, Term, Module, Bool, LIA, Var, X
-from zrth.lean.inputs import Named
+from reactor import Wire, Term, Module, Bool, LIA, Var, X
+from reactor.lean.inputs import Named
 
 
 def module() -> Named:
