@@ -115,6 +115,9 @@ pub enum LIA {
     // control flow
     Ite(),
     Id(),
+    /// Drops the run unless its boolean read equals the polarity
+    #[strum(to_string = "Assume({0})")]
+    Assume(bool),
     #[strum(to_string = "Uninterpreted({0})")]
     Uninterpreted(String),
     AnyInt([usize; 2]),
@@ -144,6 +147,10 @@ impl Conditional for LIA {
     fn ite(_range: &Sort) -> Self {
         LIA::Ite()
     }
+
+    fn assume(polarity: bool) -> Self {
+        LIA::Assume(polarity)
+    }
 }
 
 impl Theory for LIA {
@@ -171,6 +178,7 @@ impl Theory for LIA {
             }
             LIA::Transpose() => check_transpose(self, read, write),
             LIA::Ite() | LIA::Id() => check_flow(self, read, write),
+            LIA::Assume(_) => check_assume(&Sort::Bool([1, 1]), read, write),
             LIA::AnyInt(shape) => check_havoc(&Sort::Int(*shape), read, write),
             LIA::AnyBool(shape) => check_havoc(&Sort::Bool(*shape), read, write),
             LIA::Uninterpreted(_) => {

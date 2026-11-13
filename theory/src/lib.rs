@@ -43,6 +43,12 @@ pub trait Conditional: Theory {
     /// condition of sort [`boolean`](Self::boolean) and two branches of sort
     /// `range`, and writes one value of sort `range`.
     fn ite(range: &Self::Sort) -> Self;
+
+    /// Returns the itype `assume(polarity)`: it reads a condition of sort
+    /// [`boolean`](Self::boolean) and writes nothing. A run goes on only if
+    /// the condition equals `polarity`; otherwise it is dropped, so blocks
+    /// with `assume` are partial.
+    fn assume(polarity: bool) -> Self;
 }
 
 // Helpers for type-checking procedures
@@ -126,6 +132,29 @@ where
     }
     if write.next().is_some() {
         return Err("ZERO expects exactly one write wire, got more".to_string());
+    }
+    Ok(())
+}
+
+// ASSUME reads exactly one wire, of the boolean sort, and writes none.
+// This is a helper routine; concrete theories are free to implement their own
+pub(crate) fn check_assume<S, R, W, E>(boolean: &S, read: R, write: W) -> Result<(), String>
+where
+    R: IntoIterator<Item = Result<(S, u8), E>>,
+    W: IntoIterator<Item = Result<(S, u8), E>>,
+    S: Eq + Debug,
+    E: fmt::Display,
+{
+    if write.into_iter().next().is_some() {
+        return Err("ASSUME expects no write wires".to_string());
+    }
+    let mut read = read.into_iter();
+    let cond = next_expect_degree(&mut read, 0, 0)?;
+    if &cond != boolean {
+        return Err(format!("ASSUME expects a read of sort {:?}", boolean));
+    }
+    if read.next().is_some() {
+        return Err("ASSUME expects exactly one read wire, got more".to_string());
     }
     Ok(())
 }

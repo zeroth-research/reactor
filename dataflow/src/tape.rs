@@ -1,48 +1,77 @@
-//! Tapes: probabilistic and guarded choice between string diagrams.
+//! Tapes: probabilistic and conditional choice between string diagrams.
 //!
 //! A tape `P → Q`, between polynomial types `P = U₁ ⊕ … ⊕ Uₙ` and
 //! `Q = V₁ ⊕ … ⊕ Vₘ`, is an `m × n` matrix whose cell `(i, j)` is a formal sum
 //! of [entries](Entry) `Uⱼ → Vᵢ`, following *Tapes as Stochastic Matrices of
 //! String Diagrams* (Bonchi, Cioffo; arXiv:2601.01472). A value of the `j`-th
 //! input summand `Uⱼ` goes, through the string diagram of an entry in column
-//! `j`, to the output summand of the entry's row. An entry carries a
-//! probabilistic weight and a boolean guard; the empty sum is `0·⋆`.
+//! `j`, to the output summand of the entry's row. An entry is a string
+//! diagram with a probabilistic weight; the empty sum is `0·⋆`.
 //!
-//! # Guards
+//! # Conditions
 //!
-//! A guard is a conjunction of literals over *external* boolean wires: wires
-//! that occur in no block of the tape, so that their value is fixed for the
-//! whole tape. An entry is *enabled* under a valuation of the external wires
-//! if its guard holds.
+//! Conditional choice depends on values computed by the string diagrams
+//! themselves. Its building block is the itype
+//! [`assume(polarity)`](Conditional::assume) of the theory, which drops a
+//! run unless its boolean read equals `polarity`: a block with `assume`
+//! terms is partial. [`guard_split`](Tape::guard_split) sends a value to one
+//! summand or another through two entries of weight `1` that assume
+//! opposite polarities of the same boolean. (Conditionals between values of
+//! the same type can instead stay inside a block, with
+//! [`ite`](Conditional::ite).)
 //!
 //! # Stochasticity
 //!
-//! For every valuation of the external wires and every column, the weights
-//! of the enabled entries of the column sum to `1`. Every constructor
-//! establishes this invariant and every operation preserves it, so it holds
-//! for every tape by construction and is not checked at run time. (Entries
-//! of weight `0`, and entries whose guard contradicts itself, are never
-//! enabled and are dropped.)
+//! For every column and every input value, the weights of the entries of the
+//! column whose `assume`s pass sum to at most `1`, as for the
+//! subdistributions of the paper: the missing mass is the probability that
+//! the run is dropped. The constructors give exactly `1`, except
+//! [`lift`](Tape::lift) of a block with `assume` terms, and every operation
+//! preserves the invariant, so it holds for every tape by construction and
+//! is not checked at run time. The raw weights of a column can sum to more
+//! than `1`: the two entries of a [`guard_split`](Tape::guard_split) have
+//! weight `1` each, but never pass together. (Entries of weight `0` are
+//! dropped.)
 
-use crate::diagram::{Block, Wire};
+use crate::diagram::{Block, Term, Wire};
 use base::boundary::{Boundary, Mono, Poly};
 use base::semiring::{Probability, Semiring};
 use std::fmt::Debug;
 use theory::{Conditional, Theory};
 
-/// A literal of a guard: an external boolean wire and its polarity; the
-/// literal `(w, true)` holds when `w` is true, `(w, false)` when it is false.
-pub type Literal<S> = (Wire<S>, bool);
-
-/// A weighted, guarded string diagram: one summand of a cell of a [`Tape`].
+/// A weighted string diagram: one summand of a cell of a [`Tape`].
 ///
 /// In cell `(i, j)` of a tape `P → Q`, the block has type `Uⱼ → Vᵢ` for the
 /// `j`-th summand `Uⱼ` of `P` and the `i`-th summand `Vᵢ` of `Q`.
-#[derive(Debug, Clone)]
 pub struct Entry<T: Theory, P> {
     block: Block<T>,
-    guard: Vec<Literal<T::Sort>>,
     weight: P,
+}
+
+// Written by hand: `derive` would not require `Block<T>: Clone/Debug`, which
+// needs the same of `T::Sort`.
+impl<T: Theory, P: Clone> Clone for Entry<T, P>
+where
+    Block<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            block: self.block.clone(),
+            weight: self.weight.clone(),
+        }
+    }
+}
+
+impl<T: Theory, P: Debug> Debug for Entry<T, P>
+where
+    Block<T>: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Entry")
+            .field("block", &self.block)
+            .field("weight", &self.weight)
+            .finish()
+    }
 }
 
 impl<T: Theory, P> Entry<T, P> {
@@ -51,50 +80,16 @@ impl<T: Theory, P> Entry<T, P> {
         &self.block
     }
 
-    /// The guard of the entry: the conjunction of its literals, `true` if
-    /// there are none. The literals are on distinct wires.
-    pub fn guard(&self) -> &[Literal<T::Sort>] {
-        &self.guard
-    }
-
     /// The probabilistic weight of the entry.
     pub fn weight(&self) -> &P {
         &self.weight
     }
-
-    /// Whether the entry is enabled under a valuation of the external wires.
-    pub fn is_enabled<V>(&self, mut valuation: V) -> bool
-    where
-        V: FnMut(&Wire<T::Sort>) -> bool,
-    {
-        self.guard.iter().all(|(w, pol)| valuation(w) == *pol)
-    }
 }
 
 impl<T: Theory, P: Semiring> Entry<T, P> {
-    /// Builds an entry, or nothing if it can never be enabled: if its weight
-    /// is `0` or its guard has a literal and its negation. Repeated literals
-    /// are kept once.
-    fn new<G>(block: Block<T>, guard: G, weight: P) -> Option<Self>
-    where
-        G: IntoIterator<Item = Literal<T::Sort>>,
-    {
-        if weight == P::zero() {
-            return None;
-        }
-        let mut lits: Vec<Literal<T::Sort>> = Vec::new();
-        for (w, pol) in guard {
-            match lits.iter().find(|(v, _)| *v == w) {
-                Some((_, p)) if *p == pol => {}
-                Some(_) => return None,
-                None => lits.push((w, pol)),
-            }
-        }
-        Some(Self {
-            block,
-            guard: lits,
-            weight,
-        })
+    /// Builds an entry, or nothing if its weight is `0`.
+    fn new(block: Block<T>, weight: P) -> Option<Self> {
+        (weight != P::zero()).then_some(Self { block, weight })
     }
 }
 
@@ -104,9 +99,9 @@ impl<T: Theory, P: Semiring> Entry<T, P> {
 ///
 /// Tapes are built from the constructors ([`id`](Self::id),
 /// [`merge`](Self::merge), [`prob_split`](Self::prob_split),
-/// [`guard_split`](Self::guard_split), [`swap`](Self::swap),
-/// [`lift`](Self::lift)) and combined by [`sum`](Self::sum) and
-/// [`compose`](Self::compose); these keep the tape stochastic.
+/// [`guard_split`](Self::guard_split), [`branch`](Self::branch),
+/// [`swap`](Self::swap), [`lift`](Self::lift)) and combined by [`sum`](Self::sum) and
+/// [`compose`](Self::compose); these keep the tape (sub)stochastic.
 #[derive(Debug, Clone)]
 pub struct Tape<T: Theory, P> {
     read: Poly<T::Sort>,
@@ -158,19 +153,6 @@ impl<T: Theory, P> Tape<T, P> {
                 .flat_map(move |(j, cell)| cell.iter().map(move |e| (i, j, e)))
         })
     }
-
-    /// The external wires the guards refer to, each once.
-    fn guard_wires(&self) -> Vec<&Wire<T::Sort>> {
-        let mut wires: Vec<&Wire<T::Sort>> = Vec::new();
-        for (_, _, e) in self.entries() {
-            for (w, _) in e.guard.iter() {
-                if !wires.contains(&w) {
-                    wires.push(w);
-                }
-            }
-        }
-        wires
-    }
 }
 
 impl<T: Theory, P> Boundary<T::Sort> for Tape<T, P>
@@ -202,47 +184,42 @@ where
         Self { read, write, cells }
     }
 
-    /// Adds an identity entry on `m` in cell `(row, col)`, unless it can
-    /// never be enabled.
-    fn put_id(
-        &mut self,
-        row: usize,
-        col: usize,
-        m: &Mono<T::Sort>,
-        guard: Vec<Literal<T::Sort>>,
-        weight: P,
-    ) {
-        if let Some(e) = Entry::new(Block::id(m), guard, weight) {
-            self.cells[row][col].push(e);
-        }
+    /// Adds an entry in cell `(row, col)`, unless its weight is `0`.
+    fn put(&mut self, row: usize, col: usize, block: Block<T>, weight: P) {
+        self.cells[row][col].extend(Entry::new(block, weight));
+    }
+
+    /// Adds an identity entry on `m` in cell `(row, col)`, unless its weight
+    /// is `0`.
+    fn put_id(&mut self, row: usize, col: usize, m: &Mono<T::Sort>, weight: P) {
+        self.put(row, col, Block::id(m), weight);
     }
 
     /// The identity `sig → sig`: the diagonal matrix of identity blocks,
-    /// unguarded and of weight `1`.
+    /// of weight `1`.
     pub fn id(sig: Poly<T::Sort>) -> Self {
         let mut tape = Self::empty(sig.clone(), sig.clone());
         for (k, m) in sig.iter().enumerate() {
-            tape.put_id(k, k, m, Vec::new(), P::one());
+            tape.put_id(k, k, m, P::one());
         }
         tape
     }
 
     /// The merge `sig ⊕ sig → sig` (the codiagonal): both copies of each
-    /// summand go to that summand, through identity blocks, unguarded and of
-    /// weight `1`.
+    /// summand go to that summand, through identity blocks of weight `1`.
     pub fn merge(sig: Poly<T::Sort>) -> Self {
         let n = sig.iter().count();
         let mut tape = Self::empty(sig.clone() + sig.clone(), sig.clone());
         for (k, m) in sig.iter().enumerate() {
-            tape.put_id(k, k, m, Vec::new(), P::one());
-            tape.put_id(k, n + k, m, Vec::new(), P::one());
+            tape.put_id(k, k, m, P::one());
+            tape.put_id(k, n + k, m, P::one());
         }
         tape
     }
 
     /// The probabilistic split `sig → sig ⊕ sig`: each summand goes to its
     /// first copy with probability `prob` and to its second with probability
-    /// `1 − prob`, through identity blocks, unguarded.
+    /// `1 − prob`, through identity blocks.
     ///
     /// For `prob = 1` (or `0`) the second (or first) copy is never reached,
     /// and the split behaves as the identity into the other copy.
@@ -256,29 +233,31 @@ where
         let mut tape = Self::empty(sig.clone(), sig.clone() + sig.clone());
         let other = prob.complement();
         for (k, m) in sig.iter().enumerate() {
-            tape.put_id(k, k, m, Vec::new(), prob.clone());
-            tape.put_id(n + k, k, m, Vec::new(), other.clone());
+            tape.put_id(k, k, m, prob.clone());
+            tape.put_id(n + k, k, m, other.clone());
         }
         Ok(tape)
     }
 
     /// The ⊕-symmetry `p ⊕ q → q ⊕ p`: each summand goes to its own copy on
-    /// the other side, through identity blocks, unguarded and of weight `1`.
+    /// the other side, through identity blocks of weight `1`.
     pub fn swap(p: Poly<T::Sort>, q: Poly<T::Sort>) -> Self {
         let np = p.iter().count();
         let nq = q.iter().count();
         let mut tape = Self::empty(p.clone() + q.clone(), q.clone() + p.clone());
         for (k, m) in p.iter().enumerate() {
-            tape.put_id(nq + k, k, m, Vec::new(), P::one());
+            tape.put_id(nq + k, k, m, P::one());
         }
         for (l, m) in q.iter().enumerate() {
-            tape.put_id(l, np + l, m, Vec::new(), P::one());
+            tape.put_id(l, np + l, m, P::one());
         }
         tape
     }
 
-    /// The tape `u → v` of a single block `u → v`: one entry, unguarded and
-    /// of weight `1`.
+    /// The tape `u → v` of a single block `u → v`: one entry of weight `1`.
+    ///
+    /// The block may contain `assume` terms, and then the tape is partial
+    /// (see [Stochasticity](crate::tape#stochasticity)).
     ///
     /// Fails if a wire of the interface of the block is not a `0`-form.
     pub fn lift(block: Block<T>) -> Result<Self, String> {
@@ -293,31 +272,13 @@ where
         let read = Poly::from(block.read_type());
         let write = Poly::from(block.write_type());
         let mut tape = Self::empty(read, write);
-        tape.cells[0][0].extend(Entry::new(block, Vec::new(), P::one()));
+        tape.put(0, 0, block, P::one());
         Ok(tape)
-    }
-
-    /// Fails if a guard of one of the tapes refers to a wire that occurs in a
-    /// block of one of the tapes: guard wires must stay external.
-    fn check_external(tapes: &[&Self]) -> Result<(), String> {
-        for t in tapes {
-            for w in t.guard_wires() {
-                for s in tapes {
-                    if s.entries().any(|(_, _, e)| e.block.mentions(w)) {
-                        return Err(format!("guard wire {:?} occurs in a block", w));
-                    }
-                }
-            }
-        }
-        Ok(())
     }
 
     /// The direct sum `t ⊕ s`: the block-diagonal matrix, from
     /// `t.read ⊕ s.read` to `t.write ⊕ s.write`.
-    ///
-    /// Fails if a guard of one tape refers to a wire of a block of the other.
-    pub fn sum(t: &Self, s: &Self) -> Result<Self, String> {
-        Self::check_external(&[t, s])?;
+    pub fn sum(t: &Self, s: &Self) -> Self {
         let (tc, sc) = (t.cols(), s.cols());
         let mut cells: Vec<Vec<Vec<Entry<T, P>>>> = Vec::new();
         for row in t.cells.iter() {
@@ -330,11 +291,11 @@ where
             r.extend(row.iter().cloned());
             cells.push(r);
         }
-        Ok(Self {
+        Self {
             read: t.read.clone() + s.read.clone(),
             write: t.write.clone() + s.write.clone(),
             cells,
-        })
+        }
     }
 
     /// Sequential composition `t ; s`, first `t` then `s`: the matrix product
@@ -342,12 +303,11 @@ where
     ///
     /// Cell `(u, i)` of the result has an entry for every entry `e` of
     /// `t[j][i]` and `d` of `s[u][j]`, for every summand `j` of
-    /// `t.write = s.read`: its block is `e.block ; d.block`, its guard
-    /// `e.guard ∧ d.guard` and its weight `e.weight · d.weight` (unless it can
-    /// never be enabled).
+    /// `t.write = s.read`: its block is `e.block ; d.block` (which runs only
+    /// if the `assume`s of both pass) and its weight `e.weight · d.weight`
+    /// (unless it is `0`).
     ///
-    /// Fails if `t.write` is not `s.read`, or if a guard of one tape refers
-    /// to a wire of a block of the other.
+    /// Fails if `t.write` is not `s.read`.
     pub fn compose(t: &Self, s: &Self) -> Result<Self, String> {
         if t.write != s.read {
             return Err(format!(
@@ -355,7 +315,6 @@ where
                 t.write, s.read
             ));
         }
-        Self::check_external(&[t, s])?;
         let mut tape = Self::empty(t.read.clone(), s.write.clone());
         for (u, s_row) in s.cells.iter().enumerate() {
             for i in 0..t.cols() {
@@ -363,9 +322,8 @@ where
                     for e in t.cells[j][i].iter() {
                         for d in s_cell.iter() {
                             let block = Block::compose(&e.block, &d.block)?;
-                            let guard = e.guard.iter().chain(d.guard.iter()).cloned();
                             let weight = e.weight.clone() * d.weight.clone();
-                            tape.cells[u][i].extend(Entry::new(block, guard, weight));
+                            tape.put(u, i, block, weight);
                         }
                     }
                 }
@@ -381,26 +339,59 @@ where
     T::Sort: Clone + Debug + PartialEq,
     P: Probability,
 {
-    /// The guarded split `sig → sig ⊕ sig`: each summand goes to its first
-    /// copy when the external wire `guard` is true and to its second when it
-    /// is false, through identity blocks of weight `1`.
+    /// The guarded split `sig ⊗ B → sig ⊕ sig`, for the theory's
+    /// [`boolean`](Conditional::boolean) sort `B`: for each summand `Uₖ` of
+    /// `sig`, a value of `Uₖ ⊗ B` goes to the first copy of `Uₖ` when its
+    /// boolean is true and to the second when it is false, and the boolean is
+    /// consumed. Both entries have weight `1` and pass `Uₖ` through; one
+    /// assumes the boolean true and the other false.
+    pub fn guard_split(sig: Poly<T::Sort>) -> Self {
+        let n = sig.iter().count();
+        let read: Poly<T::Sort> = sig
+            .iter()
+            .map(|m| Mono::from_iter(m.iter().cloned().chain([T::boolean()])))
+            .collect();
+        let mut tape = Self::empty(read, sig.clone() + sig.clone());
+        for (k, m) in sig.iter().enumerate() {
+            for (row, polarity) in [(k, true), (n + k, false)] {
+                let xs: Vec<_> = m.iter().cloned().map(Wire::scalar).collect();
+                let b = Wire::scalar(T::boolean());
+                let assume = Term::function(
+                    T::assume(polarity),
+                    Vec::<Wire<T::Sort>>::new(),
+                    [b.clone()],
+                )
+                .expect("assume reads one boolean");
+                let read = xs.iter().cloned().chain([b]);
+                let block = Block::new(read, xs.clone(), [assume])
+                    .expect("the interface of a guarded split is well formed");
+                tape.put(row, k, block, P::one());
+            }
+        }
+        tape
+    }
+
+    /// The conditional branch `u → u ⊕ u` on a condition `cond : u → B`, for
+    /// the theory's [`boolean`](Conditional::boolean) sort `B`: a value goes
+    /// to the first copy of `u` when `cond` holds on it and to the second
+    /// when it does not.
     ///
-    /// Fails if `guard` is not a `0`-form of the theory's
-    /// [`boolean`](Conditional::boolean) sort.
-    pub fn guard_split(sig: Poly<T::Sort>, guard: Wire<T::Sort>) -> Result<Self, String> {
-        if *guard.dtype() != T::boolean() || guard.degree() != 0 {
+    /// It is `lift(c) ; guard_split(u)`, for the block `c : u → u ⊗ B` that
+    /// passes its input through and also runs `cond` on it.
+    ///
+    /// Fails if `cond` does not write exactly one value of sort `B`, or if
+    /// [`lift`](Self::lift) fails on `c`.
+    pub fn branch(cond: &Block<T>) -> Result<Self, String> {
+        if cond.write_type() != Mono::from_iter([T::boolean()]) {
             return Err(format!(
-                "guard_split: the guard {:?} is not a 0-form of sort {:?}",
-                guard,
+                "branch: the condition writes {:?}, not one value of sort {:?}",
+                cond.write_type(),
                 T::boolean()
             ));
         }
-        let n = sig.iter().count();
-        let mut tape = Self::empty(sig.clone(), sig.clone() + sig.clone());
-        for (k, m) in sig.iter().enumerate() {
-            tape.put_id(k, k, m, vec![(guard.clone(), true)], P::one());
-            tape.put_id(n + k, k, m, vec![(guard.clone(), false)], P::one());
-        }
-        Ok(tape)
+        let write = cond.read().iter().chain(cond.write()).cloned();
+        let c = Block::new(cond.read().to_vec(), write, cond.iter().cloned())?;
+        let sig = Poly::from(cond.read_type());
+        Self::compose(&Self::lift(c)?, &Self::guard_split(sig))
     }
 }

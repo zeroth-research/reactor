@@ -144,6 +144,9 @@ pub enum BV {
     Ite(),
     /// Identity on bitvector matrices
     Id(),
+    /// Drops the run unless its `BV<1>` read equals the polarity
+    #[strum(to_string = "Assume({0})")]
+    Assume(bool),
     /// Element-wise BV<n> to BV<1> via "non-zero comparison" (`x != 0`). Corresponds to SMV ToBool,
     /// FIXME: to be removed and replaced by `Ne x 0`
     BVToBool(),
@@ -179,6 +182,10 @@ impl Conditional for BV {
 
     fn ite(_range: &Sort) -> Self {
         BV::Ite()
+    }
+
+    fn assume(polarity: bool) -> Self {
+        BV::Assume(polarity)
     }
 }
 
@@ -544,6 +551,7 @@ impl Theory for BV {
                 ))
             }
             BV::Havoc(bw, shape) => check_havoc(&Sort::BV(*bw, *shape), read, write),
+            BV::Assume(_) => check_assume(&Sort::BV(1, [1, 1]), read, write),
         }
     }
 }

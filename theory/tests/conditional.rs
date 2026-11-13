@@ -1,5 +1,5 @@
-//! `Conditional`: `ite` type-checks with a condition of the theory's
-//! `boolean()` sort and rejects any other condition.
+//! `Conditional`: `ite` and `assume` type-check with a condition of the
+//! theory's `boolean()` sort and reject any other condition.
 
 use theory::{Conditional, bv, lia, lra};
 
@@ -11,6 +11,7 @@ fn check_ite<T: Conditional>(range: T::Sort, other: T::Sort)
 where
     T::Sort: Copy,
 {
+    check_assume::<T>(other);
     let b = T::boolean();
     let ite = T::ite(&range);
     assert!(
@@ -22,6 +23,24 @@ where
         ite.check([other, range, range].map(deg0), [range].map(deg0))
             .is_err()
     );
+}
+
+/// `assume` reads one boolean and writes nothing, for both polarities.
+fn check_assume<T: Conditional>(other: T::Sort)
+where
+    T::Sort: Copy,
+{
+    let b = T::boolean();
+    let none: [Result<(T::Sort, u8), String>; 0] = [];
+    for polarity in [true, false] {
+        let assume = T::assume(polarity);
+        assert!(assume.check([b].map(deg0), none.clone()).is_ok());
+        assert!(assume.check([other].map(deg0), none.clone()).is_err());
+        assert!(assume.check([b, b].map(deg0), none.clone()).is_err());
+        assert!(assume.check(none.clone(), none.clone()).is_err());
+        assert!(assume.check([b].map(deg0), [b].map(deg0)).is_err());
+        assert!(assume.check([Ok((b, 1))], none.clone()).is_err());
+    }
 }
 
 #[test]

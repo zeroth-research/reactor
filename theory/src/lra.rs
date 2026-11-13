@@ -116,6 +116,9 @@ pub enum LRA {
     // control flow
     Ite(),
     Id(),
+    /// Drops the run unless its boolean read equals the polarity
+    #[strum(to_string = "Assume({0})")]
+    Assume(bool),
     #[strum(to_string = "Uninterpreted({0})")]
     Uninterpreted(String),
     BoolZerograd([usize; 2]), // unstable
@@ -146,6 +149,10 @@ impl Conditional for LRA {
 
     fn ite(_range: &Sort) -> Self {
         LRA::Ite()
+    }
+
+    fn assume(polarity: bool) -> Self {
+        LRA::Assume(polarity)
     }
 }
 
@@ -187,6 +194,7 @@ impl Theory for LRA {
             }
             LRA::Transpose() => check_transpose(self, read, write),
             LRA::Ite() | LRA::Id() => check_flow(self, read, write),
+            LRA::Assume(_) => check_assume(&Sort::Bool([1, 1]), read, write),
             LRA::Uninterpreted(_) => {
                 let mut read = read.into_iter();
                 let mut write = write.into_iter();

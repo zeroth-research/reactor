@@ -127,6 +127,9 @@ class LRA:
     class Id(LRA):
         def __init__(self) -> None: ...
 
+    class Assume(LRA):
+        def __init__(self, polarity: bool) -> None: ...
+
     class Uninterpreted(LRA):
         def __init__(self, name: str) -> None: ...
 
@@ -209,6 +212,9 @@ class LIA:
 
     class Id(LIA):
         def __init__(self) -> None: ...
+
+    class Assume(LIA):
+        def __init__(self, polarity: bool) -> None: ...
 
     class Uninterpreted(LIA):
         def __init__(self, name: str) -> None: ...
@@ -301,6 +307,9 @@ class BV:
 
     class Id(BV):
         def __init__(self) -> None: ...
+
+    class Assume(BV):
+        def __init__(self, polarity: bool) -> None: ...
 
     class BVToBool(BV):
         def __init__(self) -> None: ...

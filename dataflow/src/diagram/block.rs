@@ -229,12 +229,6 @@ where
         Ok(Block { terms, read, write })
     }
 
-    /// Whether `wire` occurs in the block: as a read wire or as a wire
-    /// written by a term. (Write wires are among these, by construction.)
-    pub(crate) fn mentions(&self, wire: &Wire<T::Sort>) -> bool {
-        self.read.contains(wire) || self.terms.iter().any(|t| t.write().contains(wire))
-    }
-
     /// The identity on `sig`: a block of fresh `0`-form wires, one per
     /// factor, each passed through from the read to the write interface.
     pub fn id(sig: &Mono<T::Sort>) -> Self {
