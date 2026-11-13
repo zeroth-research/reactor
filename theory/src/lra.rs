@@ -19,6 +19,7 @@ operations in [`LRA`] are:
 - [`LRA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
   `B` constant integer matrices of compatible shapes.
 - [`LRA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
+- [`LRA::Get`]` { row, col }` — one element of a matrix, as a 1x1 matrix.
 - [`LRA::Neg`] — elementwise negation, on real matrices.
 - [`LRA::Mul`] — the elementwise product of two real matrices of one
   shape. Of two variables it is not linear; it is here because a
@@ -75,6 +76,19 @@ impl Sort {
     }
 }
 
+impl Matrix for Sort {
+    fn dims(&self) -> [usize; 2] {
+        *self.shape()
+    }
+
+    fn element(&self) -> Self {
+        match self {
+            Sort::Real(_) => Sort::Real([1, 1]),
+            Sort::Bool(_) => Sort::Bool([1, 1]),
+        }
+    }
+}
+
 impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -123,6 +137,12 @@ pub enum LRA {
     Max(),
     // matrix operations
     Transpose(),
+    // element `[row][col]` of a matrix, as a 1x1 matrix
+    #[strum(to_string = "Get[{row}][{col}]")]
+    Get {
+        row: usize,
+        col: usize,
+    },
     // control flow
     Ite(),
     Id(),
@@ -193,6 +213,7 @@ impl Theory for LRA {
             | LRA::Min()
             | LRA::Max() => check_mat_ops(self, read, write),
             LRA::Transpose() => check_transpose(self, read, write),
+            LRA::Get { row, col } => check_get(self, *row, *col, read, write),
             LRA::Ite() | LRA::Id() => check_flow(self, read, write),
             LRA::Uninterpreted(_) => {
                 let mut read = read.into_iter();
@@ -906,6 +927,37 @@ mod tests {
         );
         let b = bool_t(1, 1);
         assert!(LRA::Mul().check([b, b].map(deg0), [b].map(deg0)).is_err());
+    }
+
+    #[test]
+    fn get_ok() {
+        let get = LRA::Get { row: 1, col: 2 };
+        assert!(
+            get.check([real(2, 3)].map(deg0), [real(1, 1)].map(deg0))
+                .is_ok()
+        );
+        assert!(
+            get.check([bool_t(2, 3)].map(deg0), [bool_t(1, 1)].map(deg0))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn get_outside_or_mistyped_fails() {
+        let get = LRA::Get { row: 2, col: 0 };
+        assert!(
+            get.check([real(2, 3)].map(deg0), [real(1, 1)].map(deg0))
+                .is_err()
+        );
+        let get = LRA::Get { row: 0, col: 0 };
+        assert!(
+            get.check([real(2, 3)].map(deg0), [real(1, 3)].map(deg0))
+                .is_err()
+        );
+        assert!(
+            get.check([real(2, 3)].map(deg0), [bool_t(1, 1)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]

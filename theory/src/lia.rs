@@ -19,6 +19,7 @@ operations in [`LIA`] are:
 - [`LIA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
   `B` constant integer matrices of compatible shapes.
 - [`LIA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
+- [`LIA::Get`]` { row, col }` — one element of a matrix, as a 1x1 matrix.
 - [`LIA::Neg`] — elementwise negation, on integer matrices.
 - [`LIA::Mul`] — the elementwise product of two integer matrices of one
   shape. Of two variables it is not linear; it is here because a
@@ -79,6 +80,19 @@ impl Sort {
     }
 }
 
+impl Matrix for Sort {
+    fn dims(&self) -> [usize; 2] {
+        *self.shape()
+    }
+
+    fn element(&self) -> Self {
+        match self {
+            Sort::Int(_) => Sort::Int([1, 1]),
+            Sort::Bool(_) => Sort::Bool([1, 1]),
+        }
+    }
+}
+
 impl fmt::Display for Sort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -129,6 +143,12 @@ pub enum LIA {
     Max(),
     // matrix operations
     Transpose(),
+    // element `[row][col]` of a matrix, as a 1x1 matrix
+    #[strum(to_string = "Get[{row}][{col}]")]
+    Get {
+        row: usize,
+        col: usize,
+    },
     // control flow
     Ite(),
     Id(),
@@ -186,6 +206,7 @@ impl Theory for LIA {
             | LIA::Min()
             | LIA::Max() => check_mat_ops(self, read, write),
             LIA::Transpose() => check_transpose(self, read, write),
+            LIA::Get { row, col } => check_get(self, *row, *col, read, write),
             LIA::Ite() | LIA::Id() => check_flow(self, read, write),
             LIA::AnyInt(shape) => check_havoc(&Sort::Int(*shape), read, write),
             LIA::AnyBool(shape) => check_havoc(&Sort::Bool(*shape), read, write),
@@ -887,6 +908,37 @@ mod tests {
         );
         let b = bool_t(1, 1);
         assert!(LIA::Mul().check([b, b].map(deg0), [b].map(deg0)).is_err());
+    }
+
+    #[test]
+    fn get_ok() {
+        let get = LIA::Get { row: 1, col: 2 };
+        assert!(
+            get.check([int(2, 3)].map(deg0), [int(1, 1)].map(deg0))
+                .is_ok()
+        );
+        assert!(
+            get.check([bool_t(2, 3)].map(deg0), [bool_t(1, 1)].map(deg0))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn get_outside_or_mistyped_fails() {
+        let get = LIA::Get { row: 2, col: 0 };
+        assert!(
+            get.check([int(2, 3)].map(deg0), [int(1, 1)].map(deg0))
+                .is_err()
+        );
+        let get = LIA::Get { row: 0, col: 0 };
+        assert!(
+            get.check([int(2, 3)].map(deg0), [int(1, 3)].map(deg0))
+                .is_err()
+        );
+        assert!(
+            get.check([int(2, 3)].map(deg0), [bool_t(1, 1)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]

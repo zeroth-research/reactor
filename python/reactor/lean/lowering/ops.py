@@ -337,6 +337,10 @@ def _smt_argmax(op: SmtOp) -> cvc5.Term:
     return op.pack([idx])
 
 
+def _smt_get(op: SmtOp) -> cvc5.Term:
+    return op.pack([op.scalar(0, op.term.itype.row, op.term.itype.col)])
+
+
 def _smt_tensor_get(op: SmtOp) -> cvc5.Term:
     return op.pack([op.scalar(0)])
 
@@ -727,6 +731,15 @@ OPS: tuple[Op, ...] = (
         scalar=lambda a: f"({a[0]} * {a[1]})",
         box="Box.mul",
         smt=_smt_matmul,
+    ),
+    # `Get`'s element is baked into the op, as `Linear`'s matrices are.
+    Op(
+        "Get",
+        ALL,
+        mat=Inline("codegen.terms._get_expr"),
+        scalar=Inline("codegen.terms._get_expr, or the element's flat slot"),
+        box=Unsupported("no Box in `Relational.Box` reads one element of a matrix."),
+        smt=_smt_get,
     ),
     Op(
         "Transpose",

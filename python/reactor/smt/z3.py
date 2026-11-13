@@ -112,6 +112,8 @@ def interpret(itype):
 
         case LRA.Transpose() | LIA.Transpose():
             return _np.transpose
+        case LRA.Get(row=i, col=j) | LIA.Get(row=i, col=j):
+            return lambda x: x[i:i + 1, j:j + 1]
         case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):
             raise RuntimeError(f"cannot translate uninterpreted '{name}' to Z3")
         case _:

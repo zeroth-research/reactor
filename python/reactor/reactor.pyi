@@ -130,6 +130,17 @@ class LRA:
     class Transpose(LRA):
         def __init__(self) -> None: ...
 
+    class Get(LRA):
+        """Element `[row][col]` of a matrix, as a 1x1 matrix."""
+
+        def __init__(self, *, row: int, col: int) -> None: ...
+
+        @property
+        def row(self) -> int: ...
+
+        @property
+        def col(self) -> int: ...
+
     class Ite(LRA):
         def __init__(self) -> None: ...
 
@@ -227,6 +238,17 @@ class LIA:
 
     class Transpose(LIA):
         def __init__(self) -> None: ...
+
+    class Get(LIA):
+        """Element `[row][col]` of a matrix, as a 1x1 matrix."""
+
+        def __init__(self, *, row: int, col: int) -> None: ...
+
+        @property
+        def row(self) -> int: ...
+
+        @property
+        def col(self) -> int: ...
 
     class Ite(LIA):
         def __init__(self) -> None: ...
@@ -334,6 +356,17 @@ class BV:
 
     class Extend(BV):
         def __init__(self, *, extra: int) -> None: ...
+
+    class Get(BV):
+        """Element `[row][col]` of a matrix, as a 1x1 matrix."""
+
+        def __init__(self, *, row: int, col: int) -> None: ...
+
+        @property
+        def row(self) -> int: ...
+
+        @property
+        def col(self) -> int: ...
 
     class Uninterpreted(BV):
         def __init__(self, name: str) -> None: ...

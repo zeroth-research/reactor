@@ -15,6 +15,7 @@ in [`BV`] are:
   elementwise binary; both inputs and the output share the same shape.
 - [`BV::MatMul`] — matrix multiplication: `(m,k) × (k,n) → (m,n)`, with
   the inner dimensions required to agree.
+- [`BV::Get`]` { row, col }` — one element of a matrix, as a 1x1 matrix.
 
 `BV<N>` implements [`Theory`], so [`Theory::check`] type-checks terms by
 validating read/write argument shapes against the operation.
@@ -67,6 +68,16 @@ impl Sort {
         match self {
             Sort::BV(bw, _) => *bw,
         }
+    }
+}
+
+impl Matrix for Sort {
+    fn dims(&self) -> [usize; 2] {
+        *self.shape()
+    }
+
+    fn element(&self) -> Self {
+        Sort::BV(self.bw(), [1, 1])
     }
 }
 
@@ -158,6 +169,12 @@ pub enum BV {
     #[strum(to_string = "Extend(+{extra})")]
     Extend {
         extra: usize,
+    },
+    /// Element `[row][col]` of a matrix, as a 1x1 matrix
+    #[strum(to_string = "Get[{row}][{col}]")]
+    Get {
+        row: usize,
+        col: usize,
     },
     /// Uninterpreted symbol
     #[strum(to_string = "Uninterpreted({0})")]
@@ -485,6 +502,7 @@ impl Theory for BV {
                 }
                 Ok(())
             }
+            BV::Get { row, col } => check_get(self, *row, *col, read, write),
             BV::Extend { extra } => {
                 let (r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
                     return Err(format!("{self}: must read exactly one value"));
@@ -858,6 +876,31 @@ mod tests {
         assert!(
             BV::BVToBool()
                 .check([bv(8, 2, 3)].map(deg0), [bv(1, 1, 1)].map(deg0))
+                .is_err()
+        );
+    }
+
+    // --- Get ---
+
+    #[test]
+    fn get_ok() {
+        let get = BV::Get { row: 0, col: 2 };
+        assert!(
+            get.check([bv(8, 1, 3)].map(deg0), [bv(8, 1, 1)].map(deg0))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn get_outside_or_mistyped_fails() {
+        let get = BV::Get { row: 0, col: 3 };
+        assert!(
+            get.check([bv(8, 1, 3)].map(deg0), [bv(8, 1, 1)].map(deg0))
+                .is_err()
+        );
+        let get = BV::Get { row: 0, col: 0 };
+        assert!(
+            get.check([bv(8, 1, 3)].map(deg0), [bv(4, 1, 1)].map(deg0))
                 .is_err()
         );
     }

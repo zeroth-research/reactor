@@ -118,6 +118,50 @@ where
     Ok(())
 }
 
+/// A theory's sort read as a matrix of elements, for the checks every
+/// theory shares ([`check_get`]).
+pub(crate) trait Matrix: Copy + Eq + fmt::Display {
+    /// `[rows, cols]`
+    fn dims(&self) -> [usize; 2];
+    /// The sort of one element, as a 1x1 matrix
+    fn element(&self) -> Self;
+}
+
+// GET reads one matrix and writes its element `[row][col]`, as a 1x1 matrix
+// of the same element sort.
+pub(crate) fn check_get<S, R, W, E>(
+    op: &dyn fmt::Display,
+    row: usize,
+    col: usize,
+    read: R,
+    write: W,
+) -> Result<(), String>
+where
+    S: Matrix,
+    R: IntoIterator<Item = Result<(S, u8), E>>,
+    W: IntoIterator<Item = Result<(S, u8), E>>,
+    E: fmt::Display,
+{
+    let mut read = read.into_iter();
+    let mut write = write.into_iter();
+    let (r, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
+        return Err(format!("{op}: must read exactly one value"));
+    };
+    let (w, None) = (next_expect_degree(&mut write, 0, 0)?, write.next()) else {
+        return Err(format!("{op}: must write exactly one value"));
+    };
+    let [rows, cols] = r.dims();
+    if row >= rows || col >= cols {
+        return Err(format!(
+            "{op}: a {rows}x{cols} matrix has no element [{row}][{col}]"
+        ));
+    }
+    if w != r.element() {
+        return Err(format!("{op}: output must be {}, got {w}", r.element()));
+    }
+    Ok(())
+}
+
 fn next_expect_degree<R, S, E: fmt::Display>(
     iter: &mut R,
     pos: usize,

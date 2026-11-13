@@ -246,6 +246,9 @@ def eval_itype(itype, read, out_sort=None, in_sorts=None):
         # --- matrix ---
         case LRA.Transpose() | LIA.Transpose():
             return [r[0].transpose(0, 1)]
+        case (LRA.Get(row=i, col=j) | LIA.Get(row=i, col=j)
+              | BV.Get(row=i, col=j)):
+            return [r[0][i:i + 1, j:j + 1].clone()]
 
         # --- uninterpreted ---
         case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):
