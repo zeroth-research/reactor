@@ -48,6 +48,10 @@ pub enum Literal {
     Unsized(Ty, BitVec),
 }
 
+/// Why a literal with x or z digits is rejected, and where x is accepted.
+pub const X_HINT: &str = "values are 2-state; x is accepted only as the whole value of an \
+    assignment in a block that every path overwrites, e.g. `y = 'x;` before a `case`";
+
 /// Parses a literal without whitespace and `_`: `N'[s]<b|o|d|h>digits` or
 /// decimal digits, or an unsized based literal `'[s]<b|o|d|h>digits`. x/z
 /// digits are rejected (values are 2-state), and so are values that do
@@ -85,7 +89,7 @@ pub fn literal(text: &str) -> Result<Literal, String> {
     let digits = chars.as_str();
     if digits.contains(['x', 'X', 'z', 'Z', '?']) {
         return Err(format!(
-            "literal `{text}` with x/z digits not supported (2-state)"
+            "literal `{text}` with x/z digits not supported ({X_HINT})"
         ));
     }
     let value = BigUint::parse_bytes(digits.as_bytes(), radix)

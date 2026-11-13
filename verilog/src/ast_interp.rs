@@ -316,6 +316,8 @@ impl<'m> Interp<'m> {
                     None => Ok(()),
                 }
             }
+            // a dead store of x (typing): every path assigns the bits again
+            StmtKind::Unknown { .. } => Ok(()),
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
                 let env = &self.ctxs[c].env;
                 let width = typing::pieces(env, lhs).iter().map(|p| p.width()).sum();

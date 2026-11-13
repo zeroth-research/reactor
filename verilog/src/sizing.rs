@@ -178,6 +178,7 @@ impl Sizer<'_> {
                 *rhs = self.assign(width, rhs)?;
                 self.target(lhs)
             }
+            StmtKind::Unknown { .. } => Ok(()),
         }
     }
 
@@ -755,6 +756,7 @@ fn stmt(env: &Env, s: &Stmt) -> String {
             format!("{} <= {};", target(env, lhs), expr(env, rhs))
         }
         StmtKind::Blocking { lhs, rhs } => format!("{} = {};", target(env, lhs), expr(env, rhs)),
+        StmtKind::Unknown { .. } => s.to_string(),
     }
 }
 

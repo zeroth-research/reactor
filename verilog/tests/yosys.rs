@@ -1213,7 +1213,15 @@ fn mutants(source: &str) -> Vec<Mutant> {
                 _ => 16,
             };
             let digits = rest[1..].replace('_', "");
-            let v = u128::from_str_radix(&digits, radix).unwrap();
+            // x digits (only in assignments of x, which have no effect; the
+            // tokens split `1'bx` after the base): no mutant
+            let Ok(v) = u128::from_str_radix(&digits, radix) else {
+                assert!(
+                    digits.is_empty() || digits.to_ascii_lowercase().ends_with('x'),
+                    "{text}"
+                );
+                continue;
+            };
             if !signed.is_empty() {
                 out.push(mutant(start, end, &format!("{size}'{rest}")));
             }
@@ -1975,6 +1983,16 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "unsized.sv",
         "24:42 `2` -> `'d2`",
         "the sum with the unsigned `'h7fffffff` is unsigned either way: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "xstore.sv",
+        "27:20 `3` -> `2`",
+        "a target of an assignment of x, which has no effect (`wide` is assigned again on every path)",
+    ),
+    (
+        "xstore.sv",
+        "27:22 `0` -> `1`",
+        "a target of an assignment of x, which has no effect (`wide` is assigned again on every path)",
     ),
 ];
 
