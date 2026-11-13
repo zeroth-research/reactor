@@ -205,6 +205,8 @@ _KNOWN_GAPS = {
     ("LRA", "Implies", "box"),
     ("LIA", "Mul", "box"),
     ("LRA", "Mul", "box"),
+    ("LIA", "Div", "box"),
+    ("LIA", "Mod", "box"),
     # A transpose has no cvc5 term; `check_na_supported` refuses it by name.
     ("LIA", "Transpose", "smt"),
     ("LRA", "Transpose", "smt"),
@@ -488,16 +490,17 @@ def test_bv_module_emits_bitvec_boxes():
 
 @pytest.mark.parametrize("name", ["UMod", "SMod"])
 def test_bv_modulo_is_dispatchable(name):
-    """BV is the only theory with modulo, and it has two of them.
+    """BV has two modulos, and spells them `UMod`/`SMod`.
 
-    The tables carried one `"Mod"` key, which no theory defines: LIA and LRA
-    have no modulo at all, and BV spells its `UMod`/`SMod`.
+    The tables once carried one `"Mod"` key, which no theory defined. LIA's
+    Euclidean `Mod` is a row of its own now, and answers to LIA alone.
     """
     assert getattr(BV, name, None) is not None, f"BV.{name} does not exist"
     op = getattr(BV, name)()
     assert callable(mat_emitter(op)) and callable(scalar_emitter(op))
     assert box_for(op) == f"Box.bv{name}"
-    assert not any(op.name == "Mod" for op in OPS), "the dead integer Mod key is back"
+    mods = [op.theories for op in OPS if op.name == "Mod"]
+    assert mods == [("LIA",)], f"a `Mod` row answers to {mods}"
 
 
 def test_mat_add_is_not_a_separate_key():

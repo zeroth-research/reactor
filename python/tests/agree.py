@@ -99,6 +99,9 @@ def _ops() -> dict:
     out["LRA.Neg"] = (LRA.Neg(), [real], real)
     out["LIA.Mul"] = (LIA.Mul(), [Int([2, 2]), Int([2, 2])], Int([2, 2]))
     out["LRA.Mul"] = (LRA.Mul(), [real, real], real)
+    for name in ("Div", "Mod"):
+        out[f"LIA.{name}"] = (getattr(LIA, name)(), [Int([1, 2]), Int([1, 2])],
+                              Int([1, 2]))
     out["LRA.Not"] = (LRA.Not(), [boolean], boolean)
     for name in ("Ge", "Le", "Ne"):
         out[f"LRA.{name}"] = (getattr(LRA, name)(), [real, real], boolean)
