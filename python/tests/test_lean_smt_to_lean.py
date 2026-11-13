@@ -212,6 +212,16 @@ def test_euclidean_division_and_modulus_go_across_unchanged():
     assert "% (2 : Int)" in lean and "/ (2 : Int)" in lean, lean
 
 
+def test_distinct_is_every_pair_distinct():
+    """cvc5 keeps `(distinct a b c)` as one term of three children, and the
+    printer took the first two: `a ≠ b` alone, a weaker predicate than the
+    one given."""
+    lean = _inv(_int_module(), "(distinct s0 1 2)")
+    assert lean.count("≠") == 3, lean
+    assert "((1 : Int) ≠ (2 : Int))" in lean, lean
+    assert _inv(_int_module(), "(distinct s0 1)") == "fun s => ((s 0 0) ≠ (1 : Int))"
+
+
 def test_a_kind_with_no_lean_form_is_refused_by_the_flag_it_came_from():
     """A refusal, not a bare `ValueError`: `Refused` is what the pipeline
     turns into an `error:` line and an `unsupported` note in `artifacts/`,

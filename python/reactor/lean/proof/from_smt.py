@@ -292,7 +292,12 @@ def _walk(
         return f"({recur(t[0])}{_INFIX_CMP[k]}{recur(t[1])})"
 
     if k == Kind.DISTINCT:
-        return f"({recur(t[0])} ≠ {recur(t[1])})"
+        # Every pair distinct. cvc5 keeps `(distinct a b c)` as one term,
+        # and printing its first two children stated `a ≠ b` alone: a
+        # weaker predicate than the one given, and still proved.
+        parts = [recur(c) for c in t]
+        pairs = [f"({a} ≠ {b})" for i, a in enumerate(parts) for b in parts[i + 1:]]
+        return pairs[0] if len(pairs) == 1 else "(" + " ∧ ".join(pairs) + ")"
 
     if k == Kind.NEG:
         return f"(- {recur(t[0])})"
