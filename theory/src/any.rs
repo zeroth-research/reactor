@@ -1,4 +1,5 @@
 use crate::bv::BV;
+use crate::cast::Cast;
 use crate::lia::LIA;
 use crate::lra::LRA;
 use crate::{Theory, bv, lia, lra};
@@ -149,6 +150,9 @@ pub enum Any {
     #[subenum(Combinatorial, Sequential)]
     #[strum(to_string = "{0}")]
     BV(BV),
+    #[subenum(Combinatorial, Sequential)]
+    #[strum(to_string = "{0}")]
+    Cast(Cast),
 }
 
 #[cfg(feature = "pyo3")]
@@ -163,8 +167,11 @@ impl<'py> FromPyObject<'py> for Any {
         if let Ok(a) = obj.extract::<BV>() {
             return Ok(Any::BV(a));
         }
+        if let Ok(a) = obj.extract::<Cast>() {
+            return Ok(Any::Cast(a));
+        }
         Err(pyo3::exceptions::PyTypeError::new_err(
-            "expected one of LRA, LIA, or BV",
+            "expected one of LRA, LIA, BV, or Cast",
         ))
     }
 }
@@ -185,6 +192,7 @@ impl<'py> IntoPyObject<'py> for Any {
             Any::LRA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::LIA(a) => a.into_pyobject(py).map(Bound::into_any),
             Any::BV(a) => a.into_pyobject(py).map(Bound::into_any),
+            Any::Cast(a) => a.into_pyobject(py).map(Bound::into_any),
         }
     }
 }
@@ -231,6 +239,7 @@ impl Theory for Any {
             Any::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Any::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Any::BV(itype) => itype.check(try_into(read), try_into(write)),
+            Any::Cast(itype) => itype.check(read, write),
         }
     }
 }
@@ -263,6 +272,7 @@ impl Theory for Sequential {
             Sequential::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Sequential::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Sequential::BV(itype) => itype.check(try_into(read), try_into(write)),
+            Sequential::Cast(itype) => itype.check(read, write),
         }
     }
 }
@@ -283,6 +293,7 @@ impl Theory for Combinatorial {
             Combinatorial::LRA(itype) => itype.check(try_into(read), try_into(write)),
             Combinatorial::LIA(itype) => itype.check(try_into(read), try_into(write)),
             Combinatorial::BV(itype) => itype.check(try_into(read), try_into(write)),
+            Combinatorial::Cast(itype) => itype.check(read, write),
         }
     }
 }
@@ -315,6 +326,7 @@ impl From<Combinatorial> for Sequential {
             Combinatorial::BV(bv) => Sequential::BV(bv),
             Combinatorial::LRA(lra) => Sequential::LRA(lra),
             Combinatorial::LIA(lia) => Sequential::LIA(lia),
+            Combinatorial::Cast(cast) => Sequential::Cast(cast),
         }
     }
 }
@@ -338,6 +350,14 @@ mod tests {
         assert!(matches!(LIA::Add().into(), Sequential::LIA(LIA::Add())));
         assert!(matches!(BV::And().into(), Combinatorial::BV(BV::And())));
         assert!(matches!(BV::And().into(), Sequential::BV(BV::And())));
+        assert!(matches!(
+            Cast::IntToReal().into(),
+            Combinatorial::Cast(Cast::IntToReal())
+        ));
+        assert!(matches!(
+            Cast::IntToReal().into(),
+            Sequential::Cast(Cast::IntToReal())
+        ));
     }
 
     #[test]
@@ -375,6 +395,7 @@ mod tests {
             "BitSelect[7:0]"
         );
         assert_eq!(BV::Extend { extra: 8 }.to_string(), "Extend(+8)");
+        assert_eq!(Any::Cast(Cast::BitToBool()).to_string(), "BitToBool");
     }
 
     #[test]
@@ -390,6 +411,8 @@ mod tests {
         assert!(Sequential::try_from(Any::ZERO(t)).is_err());
         assert!(Combinatorial::try_from(Any::SKIP(t)).is_err());
         assert!(Differential::try_from(Any::SKIP(t)).is_err());
+        // A cast is a step of a round, never a flow.
+        assert!(Differential::try_from(Any::Cast(Cast::IntToReal())).is_err());
     }
 
     // The distinguished elements are unary at every level of the hierarchy,

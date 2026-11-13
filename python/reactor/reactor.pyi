@@ -5,7 +5,7 @@ are maintained by hand: PyO3 does not generate stubs, so adding a theory or an o
 updating this file too (see https://pyo3.rs/v0.29.0/python-typing-hints).
 
 The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec), the per-theory
-op enums `LRA` / `LIA` / `BV` (complex enums: each variant is its own subclass,
+op enums `LRA` / `LIA` / `BV` and the casts between their sorts, `Cast` (complex enums: each variant is its own subclass,
 payloads are read via `match`/unpacking), and the structural layer `Wire` / `Var` /
 `Term` / `Atom` / `Module`. A `Var` bundles the latched, next (`X(v)`), and
 derivative (`d(v)`) wires of a state variable and stands for its latched wire
@@ -372,6 +372,31 @@ class BV:
         def __init__(self, name: str) -> None: ...
 
 
+class Cast:
+    """Casts between the theories' sorts, elementwise and shape-keeping."""
+
+    class IntToReal(Cast):
+        def __init__(self) -> None: ...
+
+    class RealToInt(Cast):
+        """The floor."""
+
+        def __init__(self) -> None: ...
+
+    class BVToInt(Cast):
+        """The unsigned value."""
+
+        def __init__(self) -> None: ...
+
+    class BitToBool(Cast):
+        """`BV<1>` to Bool: whether the bit is 1."""
+
+        def __init__(self) -> None: ...
+
+    class BoolToBit(Cast):
+        def __init__(self) -> None: ...
+
+
 # ---------------------------------------------------------------------------
 # Wires / Variables / Terms
 # ---------------------------------------------------------------------------
@@ -459,17 +484,17 @@ def d(var: Var) -> Wire:
 class Term:
     @staticmethod
     def function(
-            itype: LRA | LIA | BV,
+            itype: LRA | LIA | BV | Cast,
             write: Sequence[Wire | Var],
             read: Sequence[Wire | Var],
     ) -> Term: ...
 
     @staticmethod
-    def constant(itype: LRA | LIA | BV, write: Sequence[Wire | Var]) -> Term: ...
+    def constant(itype: LRA | LIA | BV | Cast, write: Sequence[Wire | Var]) -> Term: ...
 
     def __init__(
             self,
-            itype: LRA | LIA | BV,
+            itype: LRA | LIA | BV | Cast,
             write: Sequence[Wire | Var],
             read: Sequence[Wire | Var] | None = None,
     ) -> None: ...
@@ -481,7 +506,7 @@ class Term:
     def read(self) -> Sequence[Wire]: ...
 
     @property
-    def itype(self) -> LRA | LIA | BV: ...
+    def itype(self) -> LRA | LIA | BV | Cast: ...
 
     @override
     def __str__(self) -> str: ...

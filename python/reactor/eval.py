@@ -7,7 +7,7 @@ needs the output Sort for its width — threaded in as `out_sort`.
 """
 
 import torch
-from .reactor import LRA, LIA, BV
+from .reactor import LRA, LIA, BV, Cast
 from .sort import BitVec, Sort
 
 
@@ -249,6 +249,18 @@ def eval_itype(itype, read, out_sort=None, in_sorts=None):
         case (LRA.Get(row=i, col=j) | LIA.Get(row=i, col=j)
               | BV.Get(row=i, col=j)):
             return [r[0][i:i + 1, j:j + 1].clone()]
+
+        # --- casts between the theories' sorts ---
+        case Cast.IntToReal():
+            return [r[0].to(torch.float64)]
+        case Cast.RealToInt():
+            return [r[0].floor().to(torch.int64)]
+        case Cast.BVToInt():
+            return [r[0].clone()]           # stored unsigned (`_wrap`)
+        case Cast.BitToBool():
+            return [r[0] == 1]
+        case Cast.BoolToBit():
+            return [r[0].to(torch.int64)]
 
         # --- uninterpreted ---
         case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):

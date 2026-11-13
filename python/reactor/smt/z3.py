@@ -7,7 +7,7 @@ yet (BV ops fall through to a clear error).
 
 import z3 as _z3
 import torch
-from ..reactor import LRA, LIA, BV, Combinatorial
+from ..reactor import LRA, LIA, BV, Cast, Combinatorial
 from ..sort import Real, Int, Bool
 import numpy as _np
 import operator
@@ -114,6 +114,10 @@ def interpret(itype):
             return _np.transpose
         case LRA.Get(row=i, col=j) | LIA.Get(row=i, col=j):
             return lambda x: x[i:i + 1, j:j + 1]
+        case Cast.IntToReal():
+            return _np.frompyfunc(_z3.ToReal, 1, 1)
+        case Cast.RealToInt():
+            return _np.frompyfunc(_z3.ToInt, 1, 1)
         case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):
             raise RuntimeError(f"cannot translate uninterpreted '{name}' to Z3")
         case _:

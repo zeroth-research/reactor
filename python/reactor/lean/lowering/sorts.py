@@ -84,8 +84,8 @@ def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
 def itype_name(itype) -> str:
     """Get the variant name of an op, e.g. LIA.Add() -> 'Add'."""
     name = type(itype).__name__
-    # PyO3 exports theory ops as LIA_Add, LRA_Real, BV_MatMul, etc.
-    for prefix in ("LIA_", "LRA_", "BV_"):
+    # PyO3 exports theory ops as LIA_Add, LRA_Real, BV_MatMul, Cast_BVToInt, etc.
+    for prefix in ("LIA_", "LRA_", "BV_", "Cast_"):
         if name.startswith(prefix):
             return name[len(prefix):]
     return name

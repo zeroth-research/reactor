@@ -105,9 +105,11 @@ SmtCell = Union[Callable[["SmtOp"], "cvc5.Term"], Unsupported]
 #  Rows
 # ══════════════════════════════════════════════════════════════════════
 
-THEORIES = ("LIA", "LRA", "BV")
+# `Cast` is no theory of its own sorts: it is what crosses between the
+# other three's (`theory/src/cast.rs`), and has rows of its own only.
+THEORIES = ("LIA", "LRA", "BV", "Cast")
 
-ALL = THEORIES
+ALL = ("LIA", "LRA", "BV")
 LIA_LRA = ("LIA", "LRA")
 BV_ONLY = ("BV",)
 # No theory defines these any more; the emitters are kept until it is
@@ -339,6 +341,21 @@ def _smt_argmax(op: SmtOp) -> cvc5.Term:
 
 def _smt_get(op: SmtOp) -> cvc5.Term:
     return op.pack([op.scalar(0, op.term.itype.row, op.term.itype.col)])
+
+
+def _smt_cast(op: SmtOp) -> cvc5.Term:
+    def one(a):
+        if op.name == "IntToReal":
+            return op.mk(op.K.TO_REAL, a)
+        if op.name == "RealToInt":
+            return op.mk(op.K.TO_INTEGER, a)
+        if op.name == "BVToInt":
+            return op.mk(op.K.BITVECTOR_UBV_TO_INT, a)
+        if op.name == "BitToBool":
+            return op.mk(op.K.EQUAL, a, op.bitvector(1, 1))
+        return op.mk(op.K.ITE, a, op.bitvector(1, 1), op.bitvector(1, 0))
+
+    return op.elementwise(one, op.args[0])
 
 
 def _smt_tensor_get(op: SmtOp) -> cvc5.Term:
@@ -824,6 +841,24 @@ OPS: tuple[Op, ...] = (
             ),
         )
     ),
+    # ── casts between the theories' sorts ─────────────────────────────
+    *(
+        Op(
+            name,
+            ("Cast",),
+            mat=lambda a, one=one: f"(fun i j => {one(f'({a[0]} i j)')})",
+            scalar=lambda a, one=one: one(a[0]),
+            box=Unsupported("no Box in `Relational.Box` casts between sorts."),
+            smt=_smt_cast,
+        )
+        for name, one in (
+            ("IntToReal", lambda x: f"(({x} : Int) : Real)"),
+            ("RealToInt", lambda x: f"⌊{x}⌋"),
+            ("BVToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)"),
+            ("BitToBool", lambda x: f"(decide ({x} = 1))"),
+            ("BoolToBit", lambda x: f"(if {x} then 1 else 0)"),
+        )
+    ),
     # ── nondeterminism and symbols ────────────────────────────────────
     *(
         Op(
@@ -894,9 +929,10 @@ del _op, _theory, _key
 
 
 def theory_of(itype) -> str:
-    """The theory an op came from: "LIA", "LRA" or "BV".
+    """The theory an op came from: "LIA", "LRA", "BV" or "Cast".
 
-    PyO3 exports the variants as `LIA_Add`, `LRA_Real`, `BV_MatMul`; an op
+    PyO3 exports the variants as `LIA_Add`, `LRA_Real`, `BV_MatMul`,
+    `Cast_BVToInt`; an op
     with no such prefix belongs to no theory and gets "".
     """
     name = type(itype).__name__

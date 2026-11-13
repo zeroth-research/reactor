@@ -1,5 +1,6 @@
 pub mod any;
 pub mod bv;
+pub mod cast;
 pub mod lia;
 pub mod lra;
 pub mod tensor;
