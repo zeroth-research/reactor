@@ -86,9 +86,11 @@ BoxCell = Union[str, Inline, Unsupported]
 #  Rows
 # ══════════════════════════════════════════════════════════════════════
 
-THEORIES = ("LIA", "LRA", "BV")
+# `Cast` is no theory of its own sorts: it is what crosses between the
+# other three's (`theory/src/cast.rs`), and has rows of its own only.
+THEORIES = ("LIA", "LRA", "BV", "Cast")
 
-ALL = THEORIES
+ALL = ("LIA", "LRA", "BV")
 LIA_LRA = ("LIA", "LRA")
 BV_ONLY = ("BV",)
 # No theory defines these any more; the emitters are kept until it is
@@ -195,6 +197,16 @@ OPS: tuple[Op, ...] = (
         box=_SEE_MAT,
     ),
     Op(
+        "Implies",
+        LIA_LRA,
+        mat=lambda a: f"(fun _ _ => (!({a[0]} 0 0) || {a[1]} 0 0))",
+        scalar=lambda a: f"(!{a[0]} || {a[1]})",
+        box=Unsupported(
+            "no `Box.implies` in `Relational.Box`; `Box.or` after `Box.not` "
+            "on the first operand is the circuit a new one would name."
+        ),
+    ),
+    Op(
         "Ite",
         LIA_LRA,
         mat=lambda a: f"(if {a[0]} 0 0 then {a[1]} else {a[2]})",
@@ -267,9 +279,35 @@ OPS: tuple[Op, ...] = (
         scalar=lambda a: f"({a[0]} * {a[1]})",
         box="Box.mul",
     ),
+    # `*` on two `Mat`s is their matrix product (`Relational.Mat`), so the
+    # elementwise product is spelled out element by element.
+    Op(
+        "Mul",
+        LIA_LRA,
+        mat=lambda a: f"(fun i j => {a[0]} i j * {a[1]} i j)",
+        scalar=lambda a: f"({a[0]} * {a[1]})",
+        box=Unsupported(
+            "`Box.mul` is the matrix product; the elementwise one would be a "
+            "new Box in `Relational.Box`."
+        ),
+    ),
+    # Lean's `/` and `%` on `Int` are Euclidean, as SMT-LIB's `div` and
+    # `mod` are, and by zero give what the theory gives (0, the dividend).
+    *(
+        Op(
+            name,
+            ("LIA",),
+            mat=lambda a, sym=sym: f"(fun i j => {a[0]} i j {sym} {a[1]} i j)",
+            scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
+            box=Unsupported(
+                f"no `Box` for `{sym}` on `Int` in `Relational.Box`."
+            ),
+        )
+        for name, sym in (("Div", "/"), ("Mod", "%"))
+    ),
     Op(
         "Neg",
-        BV_ONLY,
+        ALL,
         mat=lambda a: f"(-{a[0]})",
         scalar=lambda a: f"(-{a[0]})",
         box="Box.neg",
@@ -392,6 +430,14 @@ OPS: tuple[Op, ...] = (
         scalar=lambda a: f"({a[0]} * {a[1]})",
         box="Box.mul",
     ),
+    # `Get`'s element is baked into the op, as `Linear`'s matrices are.
+    Op(
+        "Get",
+        ALL,
+        mat=Inline("codegen.terms._get_expr"),
+        scalar=Inline("codegen.terms._get_expr, or the element's flat slot"),
+        box=Unsupported("no Box in `Relational.Box` reads one element of a matrix."),
+    ),
     Op(
         "Transpose",
         LIA_LRA,
@@ -461,6 +507,23 @@ OPS: tuple[Op, ...] = (
             ),
         )
     ),
+    # ── casts between the theories' sorts ─────────────────────────────
+    *(
+        Op(
+            name,
+            ("Cast",),
+            mat=lambda a, one=one: f"(fun i j => {one(f'({a[0]} i j)')})",
+            scalar=lambda a, one=one: one(a[0]),
+            box=Unsupported("no Box in `Relational.Box` casts between sorts."),
+        )
+        for name, one in (
+            ("IntToReal", lambda x: f"(({x} : Int) : Real)"),
+            ("RealToInt", lambda x: f"⌊{x}⌋"),
+            ("BVToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)"),
+            ("BitToBool", lambda x: f"(decide ({x} = 1))"),
+            ("BoolToBit", lambda x: f"(if {x} then 1 else 0)"),
+        )
+    ),
     # ── nondeterminism and symbols ────────────────────────────────────
     *(
         Op(
@@ -527,9 +590,10 @@ del _op, _theory, _key
 
 
 def theory_of(itype) -> str:
-    """The theory an op came from: "LIA", "LRA" or "BV".
+    """The theory an op came from: "LIA", "LRA", "BV" or "Cast".
 
-    PyO3 exports the variants as `LIA_Add`, `LRA_Real`, `BV_MatMul`; an op
+    PyO3 exports the variants as `LIA_Add`, `LRA_Real`, `BV_MatMul`,
+    `Cast_BVToInt`; an op
     with no such prefix belongs to no theory and gets "".
     """
     name = type(itype).__name__

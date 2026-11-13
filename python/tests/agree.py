@@ -73,7 +73,7 @@ def _ops() -> dict:
     """One-op modules for every op the corpus never reaches but some
     encoding encodes, so that each encoded op is held to the interpreter.
     BV at width 4, where a random draw is negative as often as not."""
-    from reactor import BV, LIA, LRA
+    from reactor import BV, LIA, LRA, Cast
 
     bv, bv1 = BitVec(4, [1, 1]), BitVec(1, [1, 1])
     real, boolean = Real([1, 1]), Bool([1, 1])
@@ -91,6 +91,27 @@ def _ops() -> dict:
     for name in ("And", "Or", "Xor"):
         out[f"LRA.{name}"] = (getattr(LRA, name)(), [boolean, boolean], boolean)
     out["LIA.Xor"] = (LIA.Xor(), [boolean, boolean], boolean)
+    out["LIA.Eq.Bool"] = (LIA.Eq(), [boolean, boolean], boolean)
+    out["LRA.Ne.Bool"] = (LRA.Ne(), [boolean, boolean], boolean)
+    for theory in (LIA, LRA):
+        out[f"{theory.__name__}.Implies"] = (
+            theory.Implies(), [boolean, boolean], boolean)
+    out["LIA.Neg"] = (LIA.Neg(), [Int([1, 2])], Int([1, 2]))
+    out["LRA.Neg"] = (LRA.Neg(), [real], real)
+    out["LIA.Mul"] = (LIA.Mul(), [Int([2, 2]), Int([2, 2])], Int([2, 2]))
+    out["LRA.Mul"] = (LRA.Mul(), [real, real], real)
+    out["LIA.Get"] = (LIA.Get(row=1, col=2), [Int([2, 3])], Int([1, 1]))
+    out["LIA.Get.Bool"] = (LIA.Get(row=1, col=0), [Bool([2, 2])], boolean)
+    out["LRA.Get"] = (LRA.Get(row=0, col=1), [Real([1, 2])], real)
+    out["BV.Get"] = (BV.Get(row=0, col=2), [BitVec(4, [1, 3])], bv)
+    out["Cast.IntToReal"] = (Cast.IntToReal(), [Int([1, 2])], Real([1, 2]))
+    out["Cast.RealToInt"] = (Cast.RealToInt(), [real], Int([1, 1]))
+    out["Cast.BVToInt"] = (Cast.BVToInt(), [BitVec(4, [1, 2])], Int([1, 2]))
+    out["Cast.BitToBool"] = (Cast.BitToBool(), [bv1], boolean)
+    out["Cast.BoolToBit"] = (Cast.BoolToBit(), [Bool([1, 2])], BitVec(1, [1, 2]))
+    for name in ("Div", "Mod"):
+        out[f"LIA.{name}"] = (getattr(LIA, name)(), [Int([1, 2]), Int([1, 2])],
+                              Int([1, 2]))
     out["LRA.Not"] = (LRA.Not(), [boolean], boolean)
     for name in ("Ge", "Le", "Ne"):
         out[f"LRA.{name}"] = (getattr(LRA, name)(), [real, real], boolean)
