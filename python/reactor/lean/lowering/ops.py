@@ -841,15 +841,16 @@ OPS: tuple[Op, ...] = (
             ("Cast",),
             mat=lambda a, one=one: f"(fun i j => {one(f'({a[0]} i j)')})",
             scalar=lambda a, one=one: one(a[0]),
-            box=Unsupported("no Box in `Relational.Box` casts between sorts."),
+            box=box,
             smt=_smt_cast,
         )
-        for name, one in (
-            ("IntToReal", lambda x: f"(({x} : Int) : Real)"),
-            ("RealToInt", lambda x: f"⌊{x}⌋"),
-            ("BVToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)"),
-            ("BitToBool", lambda x: f"(decide ({x} = 1))"),
-            ("BoolToBit", lambda x: f"(if {x} then 1 else 0)"),
+        for name, one, box in (
+            ("IntToReal", lambda x: f"(({x} : Int) : Real)", "Box.intToReal"),
+            ("RealToInt", lambda x: f"⌊{x}⌋", "Box.realToInt"),
+            ("BVToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)",
+             "Box.bvToInt"),
+            ("BitToBool", lambda x: f"(decide ({x} = 1))", "Box.bitToBool"),
+            ("BoolToBit", lambda x: f"(if {x} then 1 else 0)", "Box.boolToBit"),
         )
     ),
     # ── nondeterminism and symbols ────────────────────────────────────
