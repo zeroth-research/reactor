@@ -34,18 +34,19 @@ fn module_write_all_ctrl() {
     let y = Var::new("real");
     let x0 = Var::new("real");
 
-    let update: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x)], [x]).unwrap()].to_vec();
+    let update: Vec<Term<Ops, &'static str>> = [term!(mk_op("ID"), [X(x)], [x]).unwrap()].to_vec();
 
     let obs = &[x, y, x0];
 
     let m = Module::sequential(obs, vec![], update.clone());
     assert!(m.is_err());
 
-    let init: Vec<Term<Ops>> = [term!(mk_op("ID"), [X(x0)], [X(x)]).unwrap()].to_vec();
+    let init: Vec<Term<Ops, &'static str>> =
+        [term!(mk_op("ID"), [X(x0)], [X(x)]).unwrap()].to_vec();
     let m = Module::sequential(obs, init, update.clone());
     assert!(m.is_err());
 
-    let init: Vec<Term<Ops>> = [
+    let init: Vec<Term<Ops, &'static str>> = [
         term!(mk_op("ID"), [X(x)], [X(x0)]).unwrap(),
         term!(mk_op("ID"), [X(y)], [X(x0)]).unwrap(),
     ]
@@ -54,7 +55,7 @@ fn module_write_all_ctrl() {
     let m = Module::sequential(obs, init.clone(), update);
     assert!(m.is_err());
 
-    let update: Vec<Term<Ops>> = [
+    let update: Vec<Term<Ops, &'static str>> = [
         term!(mk_op("ID"), [X(x)], [x]).unwrap(),
         term!(mk_op("ID"), [X(y)], [y]).unwrap(),
     ]
@@ -69,7 +70,7 @@ fn atom_with_invalid_read() {
     let x = Var::new("A");
     let y = Var::new("B");
     let z = Var::new("C");
-    let p = Wire::scalar("P");
+    let p = Wire::new("P");
 
     let init = Term::function(mk_op("i"), [X(y), X(z)], [p, X(x)]).unwrap();
     let update = Term::function(mk_op("u"), [X(y), X(z)], [p, X(x), *y, *z]).unwrap();
@@ -125,8 +126,9 @@ fn differential_drifting_clocks() {
     // The atom writes only d(x) and d(y), so `t` is inferred external.
     let obs = &[x, y, t];
 
-    let module: reactive::Module<LRA, LRA, LRA> = reactive::Module::differential(obs, init, delay)
-        .expect("differential module should be well-formed");
+    let module: reactive::Module<LRA, LRA, LRA, Sort> =
+        reactive::Module::differential(obs, init, delay)
+            .expect("differential module should be well-formed");
 
     // An open module: the input clock is external.
     assert!(module.is_open());
@@ -157,32 +159,6 @@ fn differential_drifting_clocks() {
 
     // All three variables are observable.
     assert_eq!(module.obs().len(), 3);
-}
-
-/// Proposes a differential module encoding
-///
-/// ```text
-///     dx = x
-/// ```
-///
-/// and expects it to be rejected: the delay term drives the derivative
-/// `d(x)` (degree 1) directly from the value wire `x` (degree 0), and
-/// ordinary operations require uniform degrees across their operands.
-#[test]
-fn differential_module_rejects_dx_equals_x() {
-    use theory::lra::{LRA, Sort};
-
-    let scalar = Sort::Real([1, 1]);
-    let x = Var::new(scalar);
-
-    // dx = x: already ill-formed at the term level.
-    let delay = Term::function(LRA::Id(), [d(x)], [x]);
-
-    let module = delay.and_then(|delay| {
-        let init = [Term::constant(LRA::AnyReal([1, 1]), [X(x)]).unwrap()];
-        reactive::Module::<LRA, LRA, LRA>::differential(&[x], init, [delay])
-    });
-    assert!(module.is_err());
 }
 
 /// A jump module: only the update is given, the initial state is
@@ -277,7 +253,7 @@ fn simple_timed_automaton() {
 
     // jump: guard x >= 1; toggle the location and reset the clock when it
     // fires, hold both otherwise
-    let guard = Wire::scalar("bool");
+    let guard = Wire::new("bool");
     let update = [
         Term::function(mk_op("GEQ(1)"), [guard], [x]).unwrap(),
         Term::function(mk_op("TOGGLE_IF"), [X(loc)], [guard, *loc]).unwrap(),
@@ -319,7 +295,7 @@ fn hybrid_rejects_missing_flow() {
         Term::constant(mk_op("CONST(0)"), [X(x)]).unwrap(),
     ];
 
-    let guard = Wire::scalar("bool");
+    let guard = Wire::new("bool");
     let update = [
         Term::function(mk_op("GEQ(1)"), [guard], [x]).unwrap(),
         Term::function(mk_op("TOGGLE_IF"), [X(loc)], [guard, *loc]).unwrap(),

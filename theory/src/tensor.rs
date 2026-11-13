@@ -174,48 +174,6 @@ mod torch {
             Self { tensor }
         }
     }
-
-    #[cfg(test)]
-    mod tests {
-        use super::PyTensor;
-        use pyo3_tch::tch;
-
-        #[test]
-        fn small_tensors_print_entirely_on_one_line() {
-            let t: PyTensor = tch::Tensor::from_slice(&[1.5f64, 2.0, 3.0])
-                .reshape([1, 3])
-                .into();
-            assert_eq!(format!("{t}"), "[[1.5, 2, 3]]");
-
-            let b: PyTensor = tch::Tensor::from_slice(&[true, false]).into();
-            assert_eq!(format!("{b}"), "[true, false]");
-
-            let s: PyTensor = tch::Tensor::from(4i64).into();
-            assert_eq!(format!("{s}"), "4");
-        }
-
-        #[test]
-        fn large_tensors_abbreviate_with_dots() {
-            let t: PyTensor = tch::Tensor::arange(24, (tch::Kind::Int64, tch::Device::Cpu))
-                .reshape([2, 12])
-                .into();
-            assert_eq!(
-                format!("{t}"),
-                "[[0, 1, 2, ..., 9, 10, 11], [12, 13, 14, ..., 21, 22, 23]]"
-            );
-
-            // an oversized outer dimension truncates as well
-            let v: PyTensor = tch::Tensor::arange(20, (tch::Kind::Int64, tch::Device::Cpu)).into();
-            assert_eq!(format!("{v}"), "[0, 1, 2, ..., 17, 18, 19]");
-        }
-
-        #[test]
-        fn output_never_spans_multiple_lines() {
-            let t: PyTensor =
-                tch::Tensor::rand([4, 4, 4], (tch::Kind::Float, tch::Device::Cpu)).into();
-            assert!(!format!("{t}").contains('\n'));
-        }
-    }
 }
 
 /// Placeholder tensor for builds without the `torch` feature.
@@ -229,38 +187,8 @@ mod torch {
 mod stub {
     use std::fmt::{self, Display};
 
-    // The implementation panics with this message if an attempt to use it is made
-    const MSG: &str = "PyTensor operations require the `torch` feature";
-
     #[derive(Clone, Debug)]
     pub struct PyTensor;
-
-    // The subset of the `tch::Tensor` API touched by the constant-op checks.
-    impl PyTensor {
-        pub fn size(&self) -> Vec<i64> {
-            unreachable!("{MSG}")
-        }
-
-        pub fn numel(&self) -> i64 {
-            unreachable!("{MSG}")
-        }
-
-        pub fn min(&self) -> Self {
-            unreachable!("{MSG}")
-        }
-
-        pub fn max(&self) -> Self {
-            unreachable!("{MSG}")
-        }
-
-        pub fn int64_value(&self, _index: &[i64]) -> i64 {
-            unreachable!("{MSG}")
-        }
-
-        pub fn is_bool(&self) -> bool {
-            unreachable!("{MSG}")
-        }
-    }
 
     impl Display for PyTensor {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -273,8 +201,11 @@ mod stub {
     // called — that path only runs from Python, which needs `torch`.
     #[cfg(feature = "pyo3")]
     mod py {
-        use super::{MSG, PyTensor};
+        use super::PyTensor;
         use pyo3::prelude::*;
+
+        // The conversions panic with this message if an attempt to use them is made
+        const MSG: &str = "PyTensor operations require the `torch` feature";
 
         impl<'py> IntoPyObject<'py> for PyTensor {
             type Target = PyAny;

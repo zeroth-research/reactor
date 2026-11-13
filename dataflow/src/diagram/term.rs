@@ -1,7 +1,7 @@
 use super::Wire;
 use std::borrow::Cow;
 use std::fmt;
-use theory::{Theory, any};
+use theory::any;
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -12,17 +12,17 @@ use theory::{Theory, any};
 /// and it references the input/output edges (read/write wires).
 /// `Interface`s are essentially single static assignments.
 #[derive(Debug, Clone)]
-pub struct Term<T: Theory> {
+pub struct Term<T, S> {
     /// The instruction to be executed by this node.
     itype: T,
     /// The outputs of this term.
-    write: Vec<Wire<T::Sort>>,
+    write: Vec<Wire<S>>,
     /// The inputs to this term.
-    read: Vec<Wire<T::Sort>>,
+    read: Vec<Wire<S>>,
 }
 
-impl<T: Theory> Term<T> {
-    fn new_unchecked(itype: T, write: Vec<Wire<T::Sort>>, read: Vec<Wire<T::Sort>>) -> Self {
+impl<T, S> Term<T, S> {
+    fn new_unchecked(itype: T, write: Vec<Wire<S>>, read: Vec<Wire<S>>) -> Self {
         Self { itype, write, read }
     }
 
@@ -30,11 +30,11 @@ impl<T: Theory> Term<T> {
         &self.itype
     }
 
-    pub fn write(&self) -> &[Wire<T::Sort>] {
+    pub fn write(&self) -> &[Wire<S>] {
         self.write.as_slice()
     }
 
-    pub fn read(&self) -> &[Wire<T::Sort>] {
+    pub fn read(&self) -> &[Wire<S>] {
         self.read.as_slice()
     }
 }
@@ -43,48 +43,33 @@ impl<T: Theory> Term<T> {
 // Public constructors
 //============================================================
 
-impl<T> Term<T>
-where
-    T: Theory,
-    T::Sort: Clone,
-{
+impl<T, S> Term<T, S> {
+    /// Fails if the term reads a wire it also writes.
     pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, String>
     where
-        D: Into<Wire<T::Sort>>,
-        U: Into<Wire<T::Sort>>,
+        D: Into<Wire<S>>,
+        U: Into<Wire<S>>,
         W: IntoIterator<Item = D>,
         R: IntoIterator<Item = U>,
     {
-        let read: Vec<Wire<T::Sort>> = read.into_iter().map(Into::into).collect();
-        let write: Vec<Wire<T::Sort>> = write.into_iter().map(Into::into).collect();
+        let read: Vec<Wire<S>> = read.into_iter().map(Into::into).collect();
+        let write: Vec<Wire<S>> = write.into_iter().map(Into::into).collect();
 
         if read.iter().any(|i| write.iter().any(|j| i == j)) {
             return Err("Term reads and writes the same wire".into());
         }
 
-        // type-check the term. We do it only after contruction of the term, because type-checking
-        // would consume the values of `write` and `read` otherwise
-        let ok = Result::<_, String>::Ok;
-        let r = read.iter().cloned().map(Into::into).map(ok);
-        let w = write.iter().cloned().map(Into::into).map(ok);
-        itype.check(r, w)?;
-
         Ok(Self::new_unchecked(itype, write, read))
     }
 
+    /// Never fails for now (a term that reads nothing cannot read a wire it
+    /// writes), but returns a `Result` so that it may fail in the future.
     pub fn constant<D, W>(itype: T, write: W) -> Result<Self, String>
     where
-        D: Into<Wire<T::Sort>>,
+        D: Into<Wire<S>>,
         W: IntoIterator<Item = D>,
     {
-        let write: Vec<Wire<T::Sort>> = write.into_iter().map(Into::into).collect();
-
-        // type-check the term. We do it only after contruction of the term, because type-checking
-        // would consume the values of `write` and `read` otherwise
-        let ok = Result::<_, String>::Ok;
-        let w = write.iter().cloned().map(Into::into).map(ok);
-        itype.check(std::iter::empty(), w)?;
-
+        let write: Vec<Wire<S>> = write.into_iter().map(Into::into).collect();
         Ok(Self::new_unchecked(itype, write, Vec::new()))
     }
 }
@@ -93,15 +78,15 @@ where
 // Cast operators
 //============================================================
 
-impl<T: Theory> Term<T> {
+impl<T, S> Term<T, S> {
     /// Re-types a term along an infallible theory embedding (`U: Into<T>`).
     ///
     /// Only the instruction is converted; the wires are untouched, so a term
     /// that was well-formed over `U` stays well-formed over `T` and no
     /// re-validation is needed.
-    pub(super) fn convert<U>(term: Term<U>) -> Self
+    pub(super) fn convert<U>(term: Term<U, S>) -> Self
     where
-        U: Theory<Sort = T::Sort> + Into<T>,
+        U: Into<T>,
     {
         Self::new_unchecked(term.itype.into(), term.write, term.read)
     }
@@ -112,50 +97,50 @@ impl<T: Theory> Term<T> {
     /// Only the instruction is converted; the wires are untouched, so a term
     /// that was well-formed over `U` stays well-formed over `T` and no
     /// re-validation is needed.
-    fn try_convert<U, E>(term: Term<U>) -> Result<Self, E>
+    fn try_convert<U, E>(term: Term<U, S>) -> Result<Self, E>
     where
-        U: Theory<Sort = T::Sort> + TryInto<T, Error = E>,
+        U: TryInto<T, Error = E>,
     {
         let itype = term.itype.try_into()?;
         Ok(Self::new_unchecked(itype, term.write, term.read))
     }
 }
 
-impl From<Term<any::Combinatorial>> for Term<any::Any> {
-    fn from(term: Term<any::Combinatorial>) -> Self {
+impl From<Term<any::Combinatorial, any::Sort>> for Term<any::Any, any::Sort> {
+    fn from(term: Term<any::Combinatorial, any::Sort>) -> Self {
         Self::convert(term)
     }
 }
 
-impl From<Term<any::Sequential>> for Term<any::Any> {
-    fn from(term: Term<any::Sequential>) -> Self {
+impl From<Term<any::Sequential, any::Sort>> for Term<any::Any, any::Sort> {
+    fn from(term: Term<any::Sequential, any::Sort>) -> Self {
         Self::convert(term)
     }
 }
 
-impl From<Term<any::Differential>> for Term<any::Any> {
-    fn from(term: Term<any::Differential>) -> Self {
+impl From<Term<any::Differential, any::Sort>> for Term<any::Any, any::Sort> {
+    fn from(term: Term<any::Differential, any::Sort>) -> Self {
         Self::convert(term)
     }
 }
 
-impl TryFrom<Term<any::Any>> for Term<any::Combinatorial> {
+impl TryFrom<Term<any::Any, any::Sort>> for Term<any::Combinatorial, any::Sort> {
     type Error = String;
-    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
+    fn try_from(term: Term<any::Any, any::Sort>) -> Result<Self, Self::Error> {
         Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 
-impl TryFrom<Term<any::Any>> for Term<any::Sequential> {
+impl TryFrom<Term<any::Any, any::Sort>> for Term<any::Sequential, any::Sort> {
     type Error = String;
-    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
+    fn try_from(term: Term<any::Any, any::Sort>) -> Result<Self, Self::Error> {
         Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 
-impl TryFrom<Term<any::Any>> for Term<any::Differential> {
+impl TryFrom<Term<any::Any, any::Sort>> for Term<any::Differential, any::Sort> {
     type Error = String;
-    fn try_from(term: Term<any::Any>) -> Result<Self, Self::Error> {
+    fn try_from(term: Term<any::Any, any::Sort>) -> Result<Self, Self::Error> {
         Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
@@ -164,23 +149,21 @@ impl TryFrom<Term<any::Any>> for Term<any::Differential> {
 // Display routines
 //============================================================
 
-pub struct Display<'a, T, N>
+pub struct Display<'a, T, S, N>
 where
-    T: Theory + 'a,
-    N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
+    N: Fn(&Wire<S>) -> Cow<'a, str>,
 {
-    term: &'a Term<T>,
+    term: &'a Term<T, S>,
     name: N,
 }
 
-impl<'a, T: Theory + 'a, N> Display<'a, T, N>
+impl<'a, T, S, N> Display<'a, T, S, N>
 where
-    T: Theory + 'a,
-    N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
+    N: Fn(&Wire<S>) -> Cow<'a, str>,
 {
     fn fmt_tuple<I>(&self, f: &mut fmt::Formatter<'_>, iter: I) -> fmt::Result
     where
-        I: Iterator<Item = &'a Wire<T::Sort>>,
+        I: Iterator<Item = &'a Wire<S>>,
     {
         write!(f, "(")?;
         for (i, w) in iter.enumerate() {
@@ -194,7 +177,7 @@ where
 
     fn fmt_intf<I>(&self, f: &mut fmt::Formatter<'_>, iter: I) -> fmt::Result
     where
-        I: Iterator<Item = &'a Wire<T::Sort>> + ExactSizeIterator,
+        I: Iterator<Item = &'a Wire<S>> + ExactSizeIterator,
     {
         if iter.len() == 1 {
             let mut iter = iter;
@@ -206,10 +189,10 @@ where
     }
 }
 
-impl<'a, T, N> fmt::Display for Display<'a, T, N>
+impl<'a, T, S, N> fmt::Display for Display<'a, T, S, N>
 where
-    T: Theory + 'a + fmt::Display,
-    N: Fn(&Wire<T::Sort>) -> Cow<'a, str>,
+    T: fmt::Display,
+    N: Fn(&Wire<S>) -> Cow<'a, str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let term = self.term;
@@ -222,9 +205,9 @@ where
     }
 }
 
-impl<T> Term<T>
+impl<T, S> Term<T, S>
 where
-    T: Theory + fmt::Display,
+    T: fmt::Display,
 {
     /// Displays the term with wires under the names the given function
     /// assigns. Covariance lets `'a` shrink to a caller-local buffer: the
@@ -236,15 +219,15 @@ where
     pub fn with_wirenames<'a, N, R>(
         &'a self,
         name: N,
-    ) -> Display<'a, T, impl Fn(&Wire<T::Sort>) -> Cow<'a, str>>
+    ) -> Display<'a, T, S, impl Fn(&Wire<S>) -> Cow<'a, str>>
     where
-        N: Fn(&Wire<T::Sort>) -> R,
+        N: Fn(&Wire<S>) -> R,
         R: Into<Cow<'a, str>>,
         T: 'a,
     {
         Display {
             term: self,
-            name: move |w: &Wire<T::Sort>| name(w).into(),
+            name: move |w: &Wire<S>| name(w).into(),
         }
     }
 }

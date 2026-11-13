@@ -2,7 +2,6 @@ use dataflow::diagram::Term;
 use dataflow::diagram::Wire;
 use reactive::Var;
 use reactive::var::{X, X_ref, d, d_ref};
-use theory::lra::{LRA, Sort};
 
 #[test]
 fn variables_are_globally_ordered_by_creation() {
@@ -39,17 +38,13 @@ fn variable_casts_to_its_wires() {
     assert_eq!(d(x), b);
     assert_eq!(X(x), c);
 
-    // three distinct wires; the latched and next are values (degree 0),
-    // the derivative is one degree up
+    // three distinct wires
     assert_ne!(a, b);
     assert_ne!(a, c);
     assert_ne!(b, c);
-    assert_eq!(a.degree(), 0);
-    assert_eq!(b.degree(), 1);
 
     // the variable dereferences to its latched wire: `Wire`'s methods
     // apply to it directly, and `&x` coerces to `&Wire<_>`
-    assert_eq!(x.degree(), 0);
     assert_eq!(x.id(), a.id());
     let borrowed: &Wire<_> = &x;
     assert_eq!(*borrowed, a);
@@ -82,11 +77,4 @@ fn variables_pass_into_term_constructors() {
     let t = Term::function(LRA::Id(), [X(x)], [x]).unwrap();
     assert_eq!(t.write().iter().next().map(Wire::id), Some(X(x).id()));
     assert_eq!(t.read().iter().next().map(Wire::id), Some(x.id()));
-}
-
-#[test]
-fn variable_fail_into_term_constructors() {
-    let x = Var::new(Sort::Real([1, 1]));
-    // dx = x: the derivative is degree 1, ordinary operands must be degree 0
-    assert!(Term::function(LRA::Id(), [d(x)], [x]).is_err());
 }

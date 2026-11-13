@@ -8,39 +8,26 @@ use reactive::var::{Var, X};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use theory::{Combinatorial, Differential, Sequential, Theory};
+use theory::{Combinatorial, Differential, Sequential};
 
 #[derive(Clone, Debug)]
 #[allow(unused)]
 pub struct Ops(pub &'static str);
 
-impl Theory for Ops {
-    type Sort = &'static str;
-    const NAME: &'static str = "Ops";
-
-    fn check<R, W, E: fmt::Display>(&self, _read: R, _write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-    {
-        Ok(())
-    }
-}
-
-impl Combinatorial for Ops {
-    fn havoc(_range: &Self::Sort) -> Self {
+impl Combinatorial<&'static str> for Ops {
+    fn havoc(_range: &&'static str) -> Self {
         Ops("HAVOC")
     }
 }
 
-impl Sequential for Ops {
-    fn skip(_range: &Self::Sort) -> Self {
+impl Sequential<&'static str> for Ops {
+    fn skip(_range: &&'static str) -> Self {
         Ops("SKIP")
     }
 }
 
-impl Differential for Ops {
-    fn zero(_range: &Self::Sort) -> Self {
+impl Differential<&'static str> for Ops {
+    fn zero(_range: &&'static str) -> Self {
         Ops("ZERO")
     }
 }
@@ -51,8 +38,8 @@ impl Display for Ops {
     }
 }
 
-pub type Module = reactive::Module<Ops, Ops, Ops>;
-pub type Atom = reactive::Atom<Ops, Ops, Ops>;
+pub type Module = reactive::Module<Ops, Ops, Ops, &'static str>;
+pub type Atom = reactive::Atom<Ops, Ops, Ops, &'static str>;
 
 pub fn mk_op(name: &'static str) -> Ops {
     Ops(name)
@@ -77,31 +64,31 @@ pub fn example_counter() -> Result<(Module, HashMap<Var<&'static str>, String>),
     let y0 = Var::new("real");
     let z0 = Var::new("real");
 
-    let mut init: Vec<Term<Ops>> = Vec::new();
+    let mut init: Vec<Term<Ops, &'static str>> = Vec::new();
 
-    let tmp1 = Wire::scalar("real");
+    let tmp1 = Wire::new("real");
     init.push(term!(mk_op("ZERO"), [tmp1])?);
 
-    let tmp2 = Wire::scalar("bool");
-    let tmp3 = Wire::scalar("bool");
+    let tmp2 = Wire::new("bool");
+    let tmp3 = Wire::new("bool");
     init.push(term!(mk_op("ID"), [X(x)], [tmp1])?);
     init.push(term!(mk_op("ABS"), [tmp2], [X(y0)])?);
     init.push(term!(mk_op("ID"), [X(y)], [tmp2])?);
     init.push(term!(mk_op("ABS"), [tmp3], [X(z0)])?);
     init.push(term!(mk_op("ID"), [X(z)], [tmp3])?);
 
-    let mut update: Vec<Term<Ops>> = Vec::new();
+    let mut update: Vec<Term<Ops, &'static str>> = Vec::new();
 
-    let tmp4 = Wire::scalar("bool");
-    let tmp5 = Wire::scalar("bool");
-    let tmp6 = Wire::scalar("bool");
+    let tmp4 = Wire::new("bool");
+    let tmp5 = Wire::new("bool");
+    let tmp6 = Wire::new("bool");
     update.push(term!(mk_op("ZERO"), [tmp1])?);
     update.push(term!(mk_op("LEQ"), [tmp4], [x, y])?);
     update.push(term!(mk_op("LEQ"), [tmp5], [x, z])?);
     update.push(term!(mk_op("OR"), [tmp6], [tmp4, tmp5])?);
 
-    let tmp7 = Wire::scalar("real");
-    let tmp8 = Wire::scalar("real");
+    let tmp7 = Wire::new("real");
+    let tmp8 = Wire::new("real");
     update.push(term!(mk_op("ONE"), [tmp7])?);
     update.push(term!(mk_op("ADD"), [tmp8], [*x, tmp7])?);
 
@@ -129,36 +116,36 @@ pub fn example_peterson1() -> Result<Module, String> {
     let pc2 = Var::new(stype);
     let x2 = Var::new("bool");
 
-    let mut init: Vec<Term<Ops>> = Vec::new();
+    let mut init: Vec<Term<Ops, &'static str>> = Vec::new();
     init.push(term!(mk_op("CONST(outCS)"), [X(pc1)]).unwrap());
     init.push(term!(mk_op("CONST(true)"), [X(x1)]).unwrap());
 
-    let mut update: Vec<Term<Ops>> = Vec::new();
-    let out_cs = Wire::scalar(stype);
-    let cond1 = Wire::scalar("bool");
+    let mut update: Vec<Term<Ops, &'static str>> = Vec::new();
+    let out_cs = Wire::new(stype);
+    let cond1 = Wire::new("bool");
     update.push(term!(mk_op("CONST(outCS)"), [out_cs]).unwrap());
     update.push(term!(mk_op("EQ"), [cond1], [out_cs, *pc1]).unwrap());
 
-    let req_cs = Wire::scalar(stype);
-    let cond2 = Wire::scalar("bool");
+    let req_cs = Wire::new(stype);
+    let cond2 = Wire::new("bool");
     update.push(term!(mk_op("CONST(reqCS)"), [req_cs]).unwrap());
-    let tmp11 = Wire::scalar("bool");
+    let tmp11 = Wire::new("bool");
     update.push(term!(mk_op("EQ"), [tmp11], [req_cs, *pc1]).unwrap());
 
-    let tmp12 = Wire::scalar("bool");
-    let tmp13 = Wire::scalar("bool");
-    let tmp14 = Wire::scalar("bool");
+    let tmp12 = Wire::new("bool");
+    let tmp13 = Wire::new("bool");
+    let tmp14 = Wire::new("bool");
     update.push(term!(mk_op("EQ"), [tmp12], [out_cs, *pc2]).unwrap());
     update.push(term!(mk_op("NEQ"), [tmp13], [x1, x2]).unwrap());
     update.push(term!(mk_op("OR"), [tmp14], [tmp12, tmp13]).unwrap());
     update.push(term!(mk_op("AND"), [cond2], [tmp14, tmp11]).unwrap());
 
-    let in_cs = Wire::scalar(stype);
-    let cond3 = Wire::scalar("bool");
+    let in_cs = Wire::new(stype);
+    let cond3 = Wire::new("bool");
     update.push(term!(mk_op("CONST(inCS)"), [in_cs]).unwrap());
     update.push(term!(mk_op("EQ"), [cond3], [in_cs, *pc1]).unwrap());
 
-    let const_true = Wire::scalar("bool");
+    let const_true = Wire::new("bool");
     update.push(term!(mk_op("CONST(true)"), [const_true]).unwrap());
 
     update.push(
@@ -182,7 +169,7 @@ pub fn example_tiny1(
     wait: bool,
 ) -> Result<Module, String> {
     let private = Var::new("Tny");
-    let temp = Wire::scalar("Tny");
+    let temp = Wire::new("Tny");
 
     let cons = Term::constant(mk_op("CONST"), [temp]).unwrap();
 
