@@ -27,10 +27,8 @@ import torch
 from reactor import Module, Wire, Term, LIA, LRA, Int, Real, Bool, Var, X
 from reactor.analyzer import convert_method
 from reactor.lean.codegen.context import LeanContext
-from reactor.lean.proof.render import (
-    generate_standalone_cert_lean,
-    lean_certificate,
-)
+from reactor.lean.pipeline.certificate import render
+from reactor.lean.proof.render import generate_standalone_cert_lean
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.project.names import LINTERS_OFF
 from reactor.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
@@ -377,7 +375,7 @@ def proved_cert_lean(module: Module, claim: Claim,
     from verith.proofs import prove
 
     ctx = LeanContext(module)
-    lean = lean_certificate(module, claim, cert)
+    lean = render(module, claim, cert)
     return generate_standalone_cert_lean(
         ctx, lean, prove(module, ctx, claim, cert, lean))
 
@@ -514,7 +512,7 @@ def generate_lean_files() -> None:
         module = make_module()
         ctx = LeanContext(module)
         t = ModuleToLean4(module)
-        cert = lean_certificate(module, Claim(prp=prop, kind="safety"))
+        cert = render(module, Claim(prp=prop, kind="safety"))
         (_CERTS_DIR / f"Bridge{name}.lean").write_text(
             "\n".join([
                 "import Relational.Basic", "import Relational.Box", "import Relational.Mat",

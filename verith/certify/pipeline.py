@@ -23,7 +23,7 @@ from __future__ import annotations
 import sys
 
 from reactor.lean.core.errors import Refused
-from reactor.lean.project.lakefile import LakefileParts, reactor_lean_checkout
+from reactor.lean.project.lakefile import reactor_lean_checkout
 from reactor.lean.project.scaffold import write_files
 from reactor.lean.pipeline.certificate import (
     lean_context,
@@ -36,8 +36,8 @@ from reactor.lean.pipeline.outputs import generate, standalone
 from reactor.lean.proof.render import SORRY
 from reactor.lean.smt.encoding import lazy
 from verith import ProjectHandle
+from verith.io import declared
 from verith.proofs import (
-    LAKEFILE,
     build_cert,
     hammer_files,
     hammer_only,
@@ -45,7 +45,13 @@ from verith.proofs import (
     pre_check,
     prove,
 )
-from verith.run import regenerate, route_precheck, run_route, show_certificate
+from verith.run import (
+    lakefile_parts,
+    regenerate,
+    route_precheck,
+    run_route,
+    show_certificate,
+)
 
 from .cli import parse_args
 
@@ -79,6 +85,7 @@ def main(argv: "list[str] | None" = None) -> None:
     except Refused as e:                # about the module, not the route
         raise SystemExit(f"error: {e}") from e
 
+    route = settings.route
     # The workspace belongs to the project, not to the route: `--artifacts
     # reset` is what to pass when a bad artifact is being inherited by every
     # run, and a run that selects no route is one of those runs. Built
@@ -89,13 +96,13 @@ def main(argv: "list[str] | None" = None) -> None:
         else workspace(
             settings.output_dir / settings.project_name, module, claim,
             kind=settings.kind, mode=settings.artifacts,
-            producer=settings.route.name if settings.route else "")
+            producer=route.name if route else "")
     )
     record_predicates(store, claim, given)
 
     # With a route the certificate is the inferred one, and `regenerate`
     # checks that instead.
-    if settings.pre_check == "cvc5" and settings.route is None:
+    if settings.pre_check == "cvc5" and route is None:
         if claim is None:
             print(".. SMT pre-check: nothing to check (no certificate data)")
         else:
@@ -107,7 +114,7 @@ def main(argv: "list[str] | None" = None) -> None:
     # ends up with.
     try:
         lean_cert = render(smt, claim, given)
-        proofs = SORRY if settings.route is not None else prove(
+        proofs = SORRY if route is not None else prove(
             smt, ctx, claim, given, lean_cert, budget=hint_budget(settings))
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
@@ -116,41 +123,26 @@ def main(argv: "list[str] | None" = None) -> None:
         standalone(settings.cert_file, ctx, lean_cert, proofs)
         return
 
-    route = settings.route
     project_dir = generate(
         settings, module, ctx, lean_cert, problem.source,
-        lakefile=(
-            (route.lakefile(settings.route_config, settings.project_name)
-             if route is not None and route.lakefile else LakefileParts())
-            # A route that answers with files proves its certificate itself.
-            + (LAKEFILE if route is None or route.returns != "files"
-               else LakefileParts())
-        ),
+        lakefile=lakefile_parts(route, settings.route_config,
+                                settings.project_name),
         proofs=proofs,
     )
     if route is None:
         write_files(project_dir, hammer_files())
-
-    if settings.route is not None:
-        print(f".. Inferring the certificate with --infer {settings.route.name}")
+    else:
+        print(f".. Inferring the certificate with --infer {route.name}")
         handle = ProjectHandle(
             dir=project_dir,
             name=settings.project_name,
             ctx=ctx,
-            reads=frozenset(settings.route.reads),
-            owns=settings.route.owns,
-            resumes=frozenset(settings.route.reads_artifacts),
             artifacts=store,
+            **declared(route),
         )
         result = run_route(settings, module, handle, claim, given, prechecked,
                            smt=smt)
-        # `files`: the certificate is the route's own, so there is nothing
-        # of ours to be complete about and nothing to regenerate from.
-        lean_cert = (
-            None if settings.route.returns == "files"
-            else regenerate(settings, smt, handle, claim, result)
-        )
-        handle.write_files(result.files)
+        lean_cert = regenerate(settings, smt, handle, claim, result)
         show_certificate(result.cert, problem.names)
 
     if settings.build_cert:

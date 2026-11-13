@@ -7,8 +7,10 @@ checks what it handed back against what its row declares; `refused` says
 a refusal under the flag it is about, and `note_refusal` leaves it in
 `artifacts/` for the next run; `show_certificate` prints what it found in
 the input's names; `regenerate` rewrites the project's certificate from it,
-with its proofs. Both commands that run a route -- `verith` and `certify`
--- run it through these.
+with its proofs, unless the route's answer is files of its own (`proves`);
+`lakefile_parts` is what the project's lakefile needs for both. Both
+commands that run a route -- `verith` and `certify` -- run it through
+these.
 """
 
 from __future__ import annotations
@@ -19,10 +21,11 @@ from typing import TYPE_CHECKING
 from reactor.lean.core.certificate import Certificate, Claim
 from reactor.lean.core.errors import Refused
 from reactor.lean.pipeline.certificate import record_predicates, render
+from reactor.lean.project.lakefile import LakefileParts
 
 from .common.record import GaveUp, note
 from .io import InferInput, InferResult, ProjectHandle
-from .proofs import hint_budget, pre_check, prove
+from .proofs import LAKEFILE, hint_budget, pre_check, prove
 from .route import InferRoute
 
 if TYPE_CHECKING:
@@ -181,6 +184,24 @@ def show_certificate(cert: Certificate, names: "Names") -> None:
         print(f"   {flag} {shlex.quote(to_surface(text, names))}")
 
 
+def proves(route: "InferRoute | None") -> bool:
+    """Whether the run proves the certificate: unless its route answers
+    with whole files, whose certificate is its own."""
+    return route is None or route.returns != "files"
+
+
+def lakefile_parts(route: "InferRoute | None", route_config,
+                   project_name: str) -> LakefileParts:
+    """What the project's lakefile needs beyond what `reactor` writes: the
+    route's libraries and requires, and the hammer the proofs call."""
+    parts = LakefileParts()
+    if route is not None and route.lakefile is not None:
+        parts += route.lakefile(route_config, project_name)
+    if proves(route):
+        parts += LAKEFILE
+    return parts
+
+
 def note_unrenderable(store, route, e: Refused) -> None:
     """Leave in `artifacts/` that a route's answer has no Lean form.
 
@@ -203,22 +224,27 @@ def regenerate(settings, smt, handle: ProjectHandle, claim: Claim,
                result: InferResult) -> "LeanCertificate | None":
     """The project's certificate, rewritten from `result` and proved:
     from the route's answer, or, without a route, from the certificate the
-    run was given.
+    run was given; and the files the route handed back, written. Returns
+    what the certificate was rendered from, or `None` if nothing was.
 
     The certificate is that alone, under the claim the run was given, and
     its proofs are written for it. The definitions (`Data.lean`) and the
     proofs (`Proofs.lean`), read off their shape, are rewritten together,
     through the handle, so a route that writes more of the project and the
     proofs go through one writer. An answer in Lean has no terms for cvc5
-    to read, so it is neither pre-checked nor hinted. Without a project
-    (`verith` with no `--project`) there is nowhere to write, and only the
-    pre-check runs: `None`.
+    to read, so it is not pre-checked. Without a project (`verith` with no
+    `--project`) there is nowhere to write, and only the pre-check runs. A
+    route whose answer is files has proved its certificate itself, and only
+    those are written.
 
     `settings` is the command's: `route`, `pre_check`, `smt_tactics`,
     `budget`.
     """
     cert, lean = result.cert, result.lean
     route = settings.route
+    if not proves(route):
+        handle.write_files(result.files)
+        return None
     store = handle.artifacts
     if settings.pre_check == "cvc5":
         pre_check(smt, claim, lean or cert, settings.budget,
@@ -237,7 +263,8 @@ def regenerate(settings, smt, handle: ProjectHandle, claim: Claim,
         # it is about is the route's answer, not one the user passed.
         raise SystemExit(f"error: --infer {route.name}: {e}") from e
     proofs = prove(smt, handle.ctx, claim, cert, lean_cert,
-                   budget=hint_budget(settings) if lean is None else None,
-                   restated=route is not None, verbatim=lean)
+                   budget=hint_budget(settings), restated=route is not None,
+                   verbatim=lean)
     handle.write_certificate(lean_cert, proofs)
+    handle.write_files(result.files)
     return lean_cert

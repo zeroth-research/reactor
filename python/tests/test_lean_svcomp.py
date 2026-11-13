@@ -18,7 +18,8 @@ from reactor import Module, Int, LIA, Var, X
 from reactor.analyzer import convert_method
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.project.scaffold import create_project
-from reactor.lean.proof.render import certificate_files, lean_certificate
+from reactor.lean.pipeline.certificate import render
+from reactor.lean.proof.render import certificate_files
 from reactor.lean.core.certificate import Certificate, Claim
 
 OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
@@ -35,7 +36,7 @@ def _gen(name, module, prp, inv, ranking, pre=None, proved=False):
     claim = Claim(prp=prp, init_pre=pre, update_pre=pre)
     cert = Certificate(inv=inv, ranking=ranking)
     ctx = LeanContext(module)
-    lean_cert = lean_certificate(module, claim, cert)
+    lean_cert = render(module, claim, cert)
     if not proved:
         return create_project(
             output_dir=OUTPUT_DIR,

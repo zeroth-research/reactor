@@ -45,7 +45,6 @@ class ModuleQueries:
         self.enc = weakref.proxy(enc)
         self.tm = enc.tm
         self.msmt = enc.msmt
-        self.env = enc.env
         self.state_vars = enc.state
 
         cert = cert or Certificate()

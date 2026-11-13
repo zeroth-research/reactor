@@ -433,9 +433,8 @@ came from; `render_certificate(q, share=..., verbatim=...)` translates the
 terms. `share=False` prints repeated subterms in full, for reading; a
 certificate is printed shared, which Lean reads the same once `simp` has
 zeta-reduced the `let`s. `verbatim` takes the invariant and ranking of a
-`LeanAnswer` as they are. Every certificate is printed through it, the
-pipeline's (`pipeline.certificate.render`) and the tests'
-(`lean_certificate(module, claim, cert)`) alike; `certificate_files` renders
+`LeanAnswer` as they are. Every certificate is printed through it, by
+`pipeline.certificate.render(smt, claim, cert)`; `certificate_files` renders
 the project's `Data.lean`, `Module.lean`, `Proofs.lean` and
 `Certificate.lean` from it, and `create_project` writes that text as it is.
 

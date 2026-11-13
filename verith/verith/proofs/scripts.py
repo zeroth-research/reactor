@@ -15,10 +15,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from jinja2 import FileSystemLoader
 
 from reactor.lean.core.certificate import LeanAnswer
 from reactor.lean.core.errors import Refused
+from reactor.lean.project.templates import env as reactor_env
 from reactor.lean.proof.render import LeanCertificate, ProofScripts
 
 from .facts import predicate_facts
@@ -33,13 +34,9 @@ if TYPE_CHECKING:
 
 TEMPLATES = Path(__file__).parent / "templates"
 
-_env = Environment(
-    loader=FileSystemLoader(str(TEMPLATES)),
-    undefined=StrictUndefined,
-    keep_trailing_newline=True,
-    trim_blocks=True,
-    lstrip_blocks=True,
-)
+# `reactor`'s environment over these templates: the scripts are spliced
+# into what it renders, so they are rendered with its whitespace rules.
+_env = reactor_env.overlay(loader=FileSystemLoader(str(TEMPLATES)))
 
 
 def render(template: str, **context: object) -> str:
@@ -47,9 +44,12 @@ def render(template: str, **context: object) -> str:
     return _env.get_template(template).render(**context)
 
 
+# The hammer: the library of the tactics the scripts call.
+HAMMER_LIB = "ZerothHammer"
+
 # What the scripts use beyond the statements: the `Fin` sums `simp_mat`
-# reduces with, and the hammer's tactics (`hammer.py`).
-IMPORTS = ("Mathlib.Algebra.BigOperators.Fin", "ZerothHammer")
+# reduces with, and the hammer's tactics.
+IMPORTS = ("Mathlib.Algebra.BigOperators.Fin", HAMMER_LIB)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -202,10 +202,9 @@ def proof_scripts(
     def part(name: str) -> str:
         return str(getattr(macros, name)()).strip("\n")
 
-    third = "inv_imp_P" if lean_cert.is_safety else "hrank"
     return ProofScripts(
         imports=IMPORTS,
         options=part("options"),
         preamble=part("preamble"),
-        scripts={name: part(name) for name in ("init_inv", "step_inv", third)},
+        scripts={name: part(name) for name in lean_cert.obligations},
     )

@@ -7,9 +7,9 @@ then, once parsed, `resolve_aliases`, `check_route_options`, `route_fields`,
 `check_route` and `resolve_route`, in that order. Every rule reads a field
 of the route's row, so none of them knows a route by name.
 
-What cvc5 is asked about the certificate (`add_smt_checks`), under what
-budget (`add_budget`, `check_budget`), and whether the certificate is built
-(`add_build`, `check_build`) are the proofs' flags.
+The proofs' flags are added by `add_proofs` -- whether the certificate is
+built, what cvc5 is asked about it and under what budget -- and read by
+`check_budget`, `proof_fields`, `supplied_complete` and `check_build`.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import argparse
 from reactor.lean.cli.checks import check_row_options
 from reactor.lean.core.options import given
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS
+from reactor.lean.smt.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 from . import (
     DEFAULT_ROUTE,
@@ -55,17 +55,14 @@ def infer_help() -> str:
     return " ".join(lines)
 
 
-def add_routes(parser: argparse.ArgumentParser, *,
-               required: bool = False) -> None:
+def add_routes(parser: argparse.ArgumentParser) -> None:
     """The route that infers the certificate, and every route's own
-    options, grouped by the routes that declare them. `required` for a
-    command that does nothing else."""
+    options, grouped by the routes that declare them."""
     parser.add_argument(
         "--infer",
         nargs="?",
         const=DEFAULT_ROUTE,
         default=None,
-        required=required,
         choices=list(route_names()),
         help=infer_help(),
     )
@@ -224,6 +221,25 @@ def resolve_route(parser: argparse.ArgumentParser, settings) -> None:
 # ══════════════════════════════════════════════════════════════════════════
 
 
+def add_proofs(parser: argparse.ArgumentParser) -> None:
+    """The proofs' flags: whether the certificate is built, what cvc5 is
+    asked about it, and under what budget."""
+    add_build(parser)
+    add_smt_checks(parser)
+    add_budget(parser)
+
+
+def proof_fields(args) -> dict:
+    """The fields a command's `Settings` carries about the proofs."""
+    return dict(
+        pre_check=args.pre_check,
+        smt_tactics=args.smt_tactics,
+        build_cert=args.build_cert,
+        budget=SmtBudget(per_call_ms=args.smt_timeout,
+                         phase_ms=args.smt_budget),
+    )
+
+
 def add_smt_checks(parser: argparse.ArgumentParser) -> None:
     """What cvc5 is asked about the certificate."""
     parser.add_argument(
@@ -312,11 +328,18 @@ def check_budget(parser: argparse.ArgumentParser, args) -> None:
             )
 
 
-def check_build(parser: argparse.ArgumentParser, settings, *,
-                finds_certificate: bool = False) -> None:
-    """--build-cert needs a project and a certificate worth building.
-    `finds_certificate` is whether the run finds the certificate itself:
-    then it has one to build without --invariant.
+def supplied_complete(settings) -> bool:
+    """Whether the flags alone carry a certificate: the property and the
+    invariant, and the ranking function unless the property is a safety
+    one."""
+    return bool(settings.prp and settings.invariant
+                and (settings.is_safety or settings.ranking))
+
+
+def check_build(parser: argparse.ArgumentParser, settings) -> None:
+    """--build-cert needs a certificate worth building: one the run's route
+    finds, or one the flags supply. Whether there is a project to build it
+    in is each command's own rule.
 
     A bare project's unsupplied fields default to `True` (`inv`, the
     preconditions) or to `sorry` (`P`, `ranking`), and its obligations are
@@ -325,7 +348,7 @@ def check_build(parser: argparse.ArgumentParser, settings, *,
     of nothing. Asking for that is a mistake."""
     if not settings.build_cert:
         return
-    if not (finds_certificate or settings.supplied_complete
+    if not (settings.route is not None or supplied_complete(settings)
             or settings.claim_deferred):
         parser.error(
             "--build-cert needs a certificate to build: pass --safety "

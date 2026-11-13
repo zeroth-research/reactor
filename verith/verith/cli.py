@@ -59,23 +59,28 @@ from reactor.lean.smt.encoding import lazy
 from reactor.lean.smt.limits import SmtBudget
 
 from .flags import (
-    add_budget,
-    add_build,
+    add_proofs,
     add_routes,
-    add_smt_checks,
     check_budget,
-    check_build,
     check_route,
     check_route_options,
+    proof_fields,
     resolve_aliases,
     resolve_route,
     route_fields,
     selected_route,
+    supplied_complete,
 )
-from .io import InferResult, ProjectHandle
-from .proofs import LAKEFILE, build_cert
+from .io import InferResult, ProjectHandle, declared
+from .proofs import build_cert
 from .route import InferRoute
-from .run import regenerate, route_precheck, run_route, show_certificate
+from .run import (
+    lakefile_parts,
+    regenerate,
+    route_precheck,
+    run_route,
+    show_certificate,
+)
 
 
 _EPILOG = """\
@@ -145,19 +150,6 @@ class Settings:
         return self.kind == "safety"
 
     @property
-    def supplied_complete(self) -> bool:
-        """Whether the flags alone carry a certificate, as
-        `reactor.lean.cli.Settings` says it."""
-        return bool(self.prp and self.invariant
-                    and (self.is_safety or self.ranking))
-
-    @property
-    def proves(self) -> bool:
-        """Whether the certificate is proved here: unless a route answers
-        with whole files, whose certificate is its own."""
-        return self.route is None or self.route.returns != "files"
-
-    @property
     def project_name(self) -> str | None:
         """The project's name, which is its directory's: what a route that
         names Lean modules after it (`fbk-proveit`) checks."""
@@ -179,7 +171,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    add_input(parser, project=False, required=True)
+    add_input(parser, project=False)
     add_claim(parser)
     add_routes(parser)
     parser.add_argument(
@@ -213,9 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
             "log on stderr."
         ),
     )
-    add_build(parser)
-    add_smt_checks(parser)
-    add_budget(parser)
+    add_proofs(parser)
     return parser
 
 
@@ -249,14 +239,10 @@ def parse_args(argv: "list[str] | None" = None, *,
         pre=args.pre,
         invariant=args.invariant,
         ranking=args.ranking,
-        budget=SmtBudget(per_call_ms=args.smt_timeout,
-                         phase_ms=args.smt_budget),
         project=Path(args.project) if args.project else None,
         artifacts=args.artifacts,
         json=args.json,
-        pre_check=args.pre_check,
-        smt_tactics=args.smt_tactics,
-        build_cert=args.build_cert,
+        **proof_fields(args),
         **route_fields(args, route),
     )
     settings.claim_deferred = claim_deferred(settings, adapter, defer_claim)
@@ -266,8 +252,9 @@ def parse_args(argv: "list[str] | None" = None, *,
         if route is not None:
             check_route(parser, settings)
         else:
+            # Which also leaves --build-cert nothing to refuse: the
+            # certificate given is complete.
             check_given(parser, settings)
-    check_build(parser, settings, finds_certificate=route is not None)
     resolve_route(parser, settings)
     return settings
 
@@ -281,7 +268,7 @@ def check_given(parser: argparse.ArgumentParser, settings: Settings) -> None:
             "--project to prove the one --invariant and --ranking give, or "
             "--pre-check cvc5 to ask cvc5 about it"
         )
-    if not settings.supplied_complete:
+    if not supplied_complete(settings):
         parser.error(
             "without --infer, the certificate is the one given: pass "
             "--safety with --invariant, or --buchi with --invariant and "
@@ -335,15 +322,10 @@ def project_handle(settings: Settings, module,
     apart by), compared up to the numbering of its wires (`same_module`).
     """
     route = settings.route
-    declared = dict(
-        reads=frozenset(route.reads) if route else frozenset(),
-        owns=route.owns if route else (),
-        resumes=frozenset(route.reads_artifacts) if route else frozenset(),
-    )
     project = settings.project
     if project is None:
         return ProjectHandle(dir=None, name="", ctx=None, artifacts=None,
-                             **declared)
+                             **declared(route))
 
     stamp = project / "dbg" / "system.txt"
     if not stamp.is_file() or not same_module(stamp.read_text(), str(module)):
@@ -362,12 +344,7 @@ def project_handle(settings: Settings, module,
     # The lakefile `reactor` generates carries no route's libraries or
     # requires, nor the hammer the proofs call; what this run needs is
     # added now, before the route writes the files that need it.
-    parts = (
-        (route.lakefile(settings.route_config, project.name)
-         if route is not None and route.lakefile is not None
-         else LakefileParts())
-        + (LAKEFILE if settings.proves else LakefileParts())
-    )
+    parts = lakefile_parts(route, settings.route_config, project.name)
     if parts != LakefileParts():
         try:
             write_lakefile(
@@ -378,7 +355,7 @@ def project_handle(settings: Settings, module,
         except Refused as e:            # a `$REACTOR_LEAN` that is no checkout
             raise SystemExit(f"error: {e}") from e
     return ProjectHandle(dir=project, name=project.name, ctx=ctx,
-                         artifacts=store, **declared)
+                         artifacts=store, **declared(route))
 
 
 def same_module(a: str, b: str) -> bool:
@@ -477,12 +454,7 @@ def infer(settings: Settings, argv: list[str]):
         print(f".. Inferring the certificate with --infer {route.name}")
         result = run_route(settings, module, handle, claim, given, prechecked,
                            smt=smt)
-    if settings.proves:
-        lean_cert = regenerate(settings, smt, handle, claim, result)
-    else:
-        record_predicates(handle.artifacts, claim, result.cert, inferred=True)
-        lean_cert = None
-    handle.write_files(result.files)
+    lean_cert = regenerate(settings, smt, handle, claim, result)
     if route is not None and not settings.json:
         show_answer(settings, result, problem.names)
     if settings.build_cert:
