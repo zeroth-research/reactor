@@ -13,12 +13,11 @@ import pytest
 
 from reactor.lean.smt.module import ModuleSMT
 from reactor.lean.inputs.python import load_module
+from reactor.lean.core.errors import Unreadable
+from reactor.lean.parse.dsl import NotPredicate, evaluate
 from reactor.lean.smt.predicates import (
     PredicateParser,
-    _NotPredicate,
-    _pyeval,
     _pyeval_namespace,
-    Unreadable,
     parse_predicate,
 )
 
@@ -100,8 +99,8 @@ def test_a_reply_that_escapes_an_eval_sandbox_runs_nothing(monkeypatch):
 )
 def test_python_outside_the_dsl_is_not_read(src):
     ns = _pyeval_namespace(_env("m_countdown"))
-    with pytest.raises((_NotPredicate, SyntaxError)):
-        _pyeval(src, ns)
+    with pytest.raises((NotPredicate, SyntaxError)):
+        evaluate(src, ns)
 
 
 def test_a_bare_numeral_still_falls_through_to_smtlib():
@@ -133,7 +132,7 @@ def test_a_fault_in_the_dsl_itself_is_not_a_parse_error(monkeypatch):
     def broken(src, ns):
         raise AttributeError("a bug")
 
-    monkeypatch.setattr(predicates, "_pyeval", broken)
+    monkeypatch.setattr(predicates, "evaluate", broken)
     with pytest.raises(AttributeError, match="a bug"):
         parse_predicate(_env("m_countdown"), "s[0][0] == 0")
 
@@ -149,7 +148,7 @@ def test_nor_is_it_refused_as_the_claim(monkeypatch):
     def broken(src, ns):
         raise AttributeError("a bug")
 
-    monkeypatch.setattr(predicates, "_pyeval", broken)
+    monkeypatch.setattr(predicates, "evaluate", broken)
     module = load_module(MODS / "m_countdown.py")
     with pytest.raises(AttributeError, match="a bug"):
         predicate_terms(module, Claim(prp="s[0][0] == 0"))

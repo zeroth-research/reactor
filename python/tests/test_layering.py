@@ -40,7 +40,9 @@ LAYERS: dict[str, frozenset[str]] = {
     "lowering": frozenset({"core"}),
     "artifacts": frozenset({"core"}),
     "codegen": frozenset({"core", "lowering"}),
-    "smt": frozenset({"core", "lowering", "artifacts"}),
+    # Reading a predicate's text: the parsers, cvc5's aside.
+    "parse": frozenset({"core"}),
+    "smt": frozenset({"core", "lowering", "artifacts", "parse"}),
     # The project on disk. It writes the certificate's files as the text it
     # is handed, so it sits below `proof`, which renders them.
     "project": frozenset({"core", "lowering", "codegen"}),
