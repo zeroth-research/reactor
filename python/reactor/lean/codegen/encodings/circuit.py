@@ -35,6 +35,7 @@ _LAYER_SIMP = [
     "Box.not",
     "Box.and",
     "Box.or",
+    "Box.implies",
     "Box.ite",
     "Box.add",
     "Box.sub",

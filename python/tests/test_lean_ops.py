@@ -201,8 +201,6 @@ _KNOWN_GAPS = {
     *(("LIA", "Xor", c) for c in ("mat", "scalar", "box")),
     *(("LRA", "Xor", c) for c in ("mat", "scalar", "box")),
     # No Box combinator yet.
-    ("LIA", "Implies", "box"),
-    ("LRA", "Implies", "box"),
     ("LIA", "Mul", "box"),
     ("LRA", "Mul", "box"),
     *(("Cast", name, "box") for name in
