@@ -1,6 +1,6 @@
 """The rules about which flags go together, each read off the rows it is
-about: an input format's options, the claim, the SMT budget and the
-outputs a run can write.
+about: an input format's options, the claim and the outputs a run can
+write.
 
 Public so that a command built on this one, which takes these flags too,
 applies the same rules.
@@ -111,31 +111,8 @@ def check_claim_flags(parser: argparse.ArgumentParser, args) -> None:
 
 
 def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
-                  finds_certificate: bool = False) -> None:
-    """What the run writes, against what it was given. `finds_certificate`
-    is whether a command built on this one finds the certificate itself:
-    then --build-cert has one to build without --invariant."""
-    # --build-cert needs a certificate worth building. A bare project's
-    # unsupplied fields default to `True`
-    # (`inv`, the preconditions) or to `sorry` (`P`, `ranking`), and its
-    # obligations are still handed to the tactics -- which cannot close one
-    # stated over a `sorry`, so `lake build` fails on it rather than
-    # compiling to a proof of nothing. Asking for that is a mistake.
-    if settings.build_cert:
-        if settings.cert_file or settings.hammer_file:
-            which = "--cert-file" if settings.cert_file else "--hammer-file"
-            parser.error(
-                f"--build-cert is incompatible with {which}: that writes a "
-                "file and generates no project to build"
-            )
-        if not (finds_certificate or settings.supplied_complete):
-            parser.error(
-                "--build-cert needs a certificate to build: pass --safety "
-                "with --invariant, or --buchi with --invariant and "
-                "--ranking. Without them the certificate's predicates are "
-                "`True` or `sorry`, and its obligations cannot be discharged."
-            )
+                  one_file: "tuple[tuple[str, object], ...]" = ()) -> None:
+    """What the run writes, against what it was given. `one_file` is a
+    command's own flags that, as --cert-file does, write one file and
+    return, each with its value."""
 
-    # `--hammer-file` alone writes one tactic file and needs no module.
-    if not settings.module_file and not settings.hammer_file:
-        parser.error("module_file is required (unless --hammer-file is used alone)")

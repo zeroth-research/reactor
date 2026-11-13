@@ -48,23 +48,9 @@ SYSTEM_LAYOUT = Layout(base="System", prefix="System.")
 # that globs it, so every file in it is built.
 CERT_LIB = "Certificate"
 DATA = "Data"                   # the predicates (`Data.lean.j2`)
-PROOF = "Certificate"           # the proof (`Certificate.lean.j2`)
-
-
-# The lemmas `simp_mat` reduces matrix arithmetic with, after the
-# certificate's own definitions. The bridge's cascade uses the same set:
-# without it a `Linear` arrives as `matVecAffine 2 [[1, 0], [0, 1]] [0, 1]
-# (fun i j => match i, j with ...)` and no arithmetic prover can touch it.
-MAT_SIMP: tuple[str, ...] = (
-    "MatAdd_apply", "MatMul_apply", "MatZero_apply", "Pi.add_apply",
-    "mul_Mat_apply", "add_Mat_apply", "Bool.or_eq_true", "decide_eq_true_eq",
-    "Fin.sum_univ_succ", "Fin.sum_univ_zero", "Fin.isValue", "Fin.sum_univ_one",
-    "Fin.sum_univ_two", "Fin.sum_univ_three", "matVecAffine", "dotL",
-    "List.ofFn_succ", "List.ofFn_zero",
-    # The three reductions unfold to a `List.ofFn` fold that the two lemmas
-    # above then compute; without the defs here the fold never opens.
-    "matMin", "matMax", "argmax_1d", "argmax",
-)
+MODULE = "Module"               # `RM` and `lts`, fixed text (`Module.lean.j2`)
+PROOFS = "Proofs"               # the obligations' proofs (`Proofs.lean.j2`)
+CERTIFICATE = "Certificate"     # the certificate, fixed text (`Certificate.lean.j2`)
 
 
 # The linters every generated Lean file turns off, after its imports. Each
@@ -84,9 +70,11 @@ LINTERS_OFF = "\n".join(
 
 def rm_def(extl_type: str, ctrl_type: str, noncomputable: bool = False) -> str:
     """`RM`, the module as a `ReactiveModule` over the functional
-    encoding's `init`/`update` and the certificate's preconditions. The
-    certificate states its theorems about it, and any other proof about the
-    module can print this same one in its own namespace."""
+    encoding's `init`/`update` and the certificate's preconditions, with
+    its types spelled out: for a proof about the module that prints its own
+    in its own namespace. The certificate's `Module.lean` defines the same
+    one with its types left to Lean, so that its text names none of the
+    module's."""
     return "\n".join([
         f"{'noncomputable ' if noncomputable else ''}def RM : ReactiveModule "
         f"({extl_type}) ({ctrl_type}) := {{",

@@ -23,9 +23,9 @@ examples:
   # a safety property, `G (<= (X @intf.0) 100)`: invariant only, no ranking function
   uv run reactor mymodule.py --safety "(<= (X @intf.0) 100)" -o out/ -p MyProject
 
-  # build the certificate: `lake build Certificate`
+  # the certificate's predicates: its obligations are stated, and proved by `sorry`
   uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" --ranking "(X @intf.0)" \\
-      --build-cert -o out/ -p MyProject
+      -o out/ -p MyProject
 """
 
 
@@ -48,7 +48,9 @@ def build_parser() -> argparse.ArgumentParser:
             "from a Python file or another format --format names. "
             "The property goes under --safety (`G FORMULA`: every reachable "
             "state) or --buchi (`G (F FORMULA)`: infinitely often), and the "
-            "certificate's predicates under --invariant and --ranking."
+            "certificate's predicates under --invariant and --ranking. The "
+            "certificate states its obligations and proves each by `sorry`, "
+            "for a prover to replace in Certificate/Proofs.lean."
         ),
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -60,20 +62,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def add_input(parser: argparse.ArgumentParser, *, project: bool = True,
-              required: bool = False) -> None:
+              optional: str = "") -> None:
     """The input: the module file, the format it is read in and that
     format's own options, and, with `project`, where the project is
-    written. `required` for a command with no `--hammer-file` to run
-    without a module; a command that writes no project passes neither."""
+    written. The module file is required, unless `optional` says when a
+    command runs without one."""
     parser.add_argument(
         "module_file",
-        nargs=None if required else "?",
+        nargs="?" if optional else None,
         help=(
             "The input: a file stating the module, in the format --format "
             "names (by default the one its suffix names; a Python file must "
             "contain a callable that returns a Module)."
-            + ("" if required else
-               " Optional when --hammer-file is used alone.")
+            + (f" {optional}" if optional else "")
         ),
     )
     if project:
@@ -175,35 +176,15 @@ def add_claim(parser: argparse.ArgumentParser) -> None:
 
 
 def add_outputs(parser: argparse.ArgumentParser) -> None:
-    """What the run writes besides the project, and whether it builds it."""
+    """What the run writes besides the project."""
     parser.add_argument(
         "--cert-file",
         default=None,
         help=(
             "Write a standalone, self-contained certificate .lean file to this path "
-            "instead of creating a full project.  The file inlines init/update and "
-            "imports zeroth_hammer from ZerothHammer.  The other encodings of the "
+            "instead of creating a full project.  The file inlines init/update, "
+            "the definitions and the obligations' proofs.  The other encodings of the "
             "same module are written beside it under the same stem (Rel, Scalar, "
             "ScalarRel), as they are in a project."
         ),
     )
-    parser.add_argument(
-        "--hammer-file",
-        default=None,
-        help="Write a standalone ZerothHammer.lean to this path.",
-    )
-    parser.add_argument(
-        "--build-cert",
-        action="store_true",
-        help=(
-            "Build the generated certificate: `lake update` then `lake "
-            "build Certificate` in the project. Needs a certificate with "
-            "predicates in it, so pass --invariant and --ranking; an "
-            "obligation left as `sorry` is an error, as is one "
-            "lake cannot close. Off by default because the build resolves "
-            "and compiles cslib and Mathlib -- minutes "
-            "against a warm package cache, much longer against a cold one."
-        ),
-    )
-
-

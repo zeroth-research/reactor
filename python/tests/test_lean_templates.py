@@ -9,6 +9,7 @@ prevent. (`templates/` once carried two byte-identical sets of the Core
 files, and edits to the unread one did nothing for months.)
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -160,13 +161,65 @@ def _counter_ctx():
     return LeanContext(load_module(fixture))
 
 
-def test_the_certificate_simp_set_unfolds_them():
-    """Computing the fold is no use if the definition never opens."""
-    from reactor.lean.proof.render import generate_certificate_lean
+def test_the_certificate_is_one_text_for_each_kind_of_property():
+    """What changes with the module and its certificate is in `Data.lean`,
+    and in `Proofs.lean` once a prover has proved it, so either can be
+    rewritten -- by `reactor` or by anything else -- without the
+    certificate, or `Module.lean`. Unproved, `Proofs.lean` states the
+    obligations of the property's kind and nothing else."""
+    from reactor.lean.codegen.context import LeanContext
+    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor.lean.inputs.python import load_module
+    from reactor.lean.project.names import (
+        CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
+    )
+    from reactor.lean.pipeline.certificate import render
+    from reactor.lean.proof.render import certificate_files
 
-    cert = generate_certificate_lean(_counter_ctx())
-    simp_mat = [ln for ln in cert.splitlines()
-                if "simp [" in ln and "MatAdd_apply" in ln]
-    assert simp_mat, "the simp_mat macro moved"
-    for name in REDUCTIONS:
-        assert name in simp_mat[0], f"{name} is not in simp_mat"
+    counter = load_module(FIXTURES / "counter.py")
+    twobit = load_module(FIXTURES / "twobit.py")
+    variants = {kind: [] for kind in ("buchi", "safety")}
+    for m in (counter, twobit):
+        for kind in variants:
+            variants[kind].append(certificate_files(
+                LeanContext(m), render(m, Claim(kind=kind))))
+    variants["buchi"].append(certificate_files(
+        LeanContext(counter), render(
+            counter, Claim(prp="(= s0 0)"),
+            Certificate(inv="(>= s0 0)", ranking="(ite (= s0 0) 0 s0)"))))
+
+    for kind, files in variants.items():
+        certs = {f[cert_file(CERTIFICATE)] for f in files}
+        assert len(certs) == 1, f"the {kind} certificate changes with the module"
+        proofs = {f[cert_file(PROOFS)] for f in files}
+        assert len(proofs) == 1, f"the unproved {kind} proofs change"
+        data = {f[cert_file(DATA)] for f in files}
+        assert len(data) > 1, "the test's certificates are all alike"
+    for name in (CERTIFICATE, PROOFS):
+        texts = [variants[kind][0][cert_file(name)] for kind in variants]
+        assert texts[0] != texts[1]
+    every = [f for files in variants.values() for f in files]
+    assert len({f[cert_file(MODULE)] for f in every}) == 1
+
+
+def test_each_obligation_is_stated_alike_in_both_files():
+    """`Certificate.lean` takes each obligation's proof from `Proofs.lean`
+    with `exact`, which checks the statements agree; they are written to,
+    so that the check is a formality rather than a unification."""
+    from reactor.lean.core.certificate import Claim
+    from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
+    from reactor.lean.pipeline.certificate import render
+    from reactor.lean.proof.render import certificate_files
+
+    ctx = _counter_ctx()
+    for kind, names in (("buchi", ("init_inv", "step_inv", "hrank")),
+                        ("safety", ("init_inv", "step_inv", "inv_imp_P"))):
+        files = certificate_files(ctx, render(ctx.module, Claim(kind=kind)))
+        cert, proofs = files[cert_file(CERTIFICATE)], files[cert_file(PROOFS)]
+        for name in names:
+            stated = re.search(rf"^theorem {name} (.*?) := by\n  exact {name}_proof$",
+                               cert, re.M | re.S)
+            assert stated, f"{kind}: `{name}` is not taken from `{name}_proof`"
+            again = re.search(rf"^theorem {name}_proof (.*?) := by$", proofs, re.M | re.S)
+            assert again, f"{kind}: `Proofs.lean` does not state `{name}_proof`"
+            assert stated.group(1) == again.group(1), name

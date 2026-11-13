@@ -18,7 +18,6 @@ from pathlib import Path
 from ..inputs import InputAdapter
 from .checks import (
     check_blanks,
-    check_budget,
     check_claim_flags,
     check_input_options,
     check_outputs,
@@ -39,7 +38,6 @@ def parse_args(argv: "list[str] | None" = None) -> Settings:
 
     check_blanks(parser, args)
     check_claim_flags(parser, args)
-    check_budget(parser, args)
 
     adapter = input_adapter(parser, args)
     check_input_options(parser, args, adapter)
@@ -68,6 +66,4 @@ def settings_fields(args, adapter: "InputAdapter | None") -> dict:
         invariant=args.invariant,
         ranking=args.ranking,
         cert_file=args.cert_file,
-        hammer_file=args.hammer_file,
-        build_cert=args.build_cert,
     )

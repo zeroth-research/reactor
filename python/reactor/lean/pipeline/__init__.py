@@ -2,8 +2,11 @@
 
 `main` runs the stages in order. `claim` reads the module and what is to
 be proved of it; `certificate` checks the module and renders the
-certificate; `outputs` writes the project, or the one file asked for, and
-builds it.
+certificate; `outputs` writes the project, or the one file asked for.
+
+The certificate states its obligations and proves each by `sorry`: the
+proofs are a prover's to write, into `Certificate/Proofs.lean`, which
+nothing else in the project depends on but the certificate's `exact`s.
 
 Quick start
 -----------
@@ -29,6 +32,12 @@ A claim is written in the module's own terms: ``(X x)`` is the value of ``x``
 after the round.  Names like ``x`` come from a module file that returns
 ``reactor.lean.inputs.Named(module, {"x": var})``, and ``(X @intf.0)`` names
 interface variable 0 by position, which works for any module.
+
+Supply the certificate's predicates::
+
+    uv run reactor mymodule.py --buchi "(= (X x) 0)" \\
+        --invariant "(<= (X x) 10)" --ranking "(- 10 (X x))" \\
+        -o out/ -p MyProject
 
 Module file format
 ------------------
@@ -62,15 +71,11 @@ from ..core.errors import Refused
 from ..project.lakefile import reactor_lean_checkout
 from .certificate import lean_context, render
 from .claim import claim_from_flags, load
-from .outputs import build_cert, generate, hammer_only, standalone
+from .outputs import generate, standalone
 
 
 def main():
     settings = parse_args()
-
-    if settings.hammer_file:
-        hammer_only(settings.hammer_file)
-        return
 
     # `$REACTOR_LEAN` is a checkout the project's lakefile will require, so
     # a bad one is refused here, before any of the project is written.
@@ -100,8 +105,4 @@ def main():
         return
 
     project_dir = generate(settings, module, ctx, lean_cert, problem.source)
-
-    if settings.build_cert:
-        build_cert(project_dir, lean_cert)
-
     print(f"\nProject ready at: {project_dir}")
