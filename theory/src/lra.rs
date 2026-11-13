@@ -14,7 +14,8 @@ operations in [`LRA`] are:
 - [`LRA::And`], [`LRA::Or`], [`LRA::Xor`], [`LRA::Implies`], [`LRA::Not`]
   — boolean operations on the boolean fragment of `Type`.
 - [`LRA::Le`], [`LRA::Lt`], [`LRA::Ge`], [`LRA::Gt`], [`LRA::Eq`], [`LRA::Ne`]
-  — pointwise integer comparisons producing a scalar `Bool(1,1)`.
+  — pointwise integer comparisons producing a scalar `Bool(1,1)`; [`LRA::Eq`]
+  and [`LRA::Ne`] compare two Bool matrices as well.
 - [`LRA::Ite`] — if-then-else: reads a boolean guard and two same-typed branches.
 - [`LRA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
   `B` constant integer matrices of compatible shapes.
@@ -373,8 +374,10 @@ where
     if r1 != r2 {
         return Err(format!("{:?}: input values must have the same type", op));
     }
-    let shape = match r1 {
-        (Sort::Real(s), _) => s,
+    let shape = match (op, r1) {
+        (_, (Sort::Real(s), _)) => s,
+        // Two Bools are equal or not; only numbers are ordered.
+        (LRA::Eq() | LRA::Ne(), (Sort::Bool(s), _)) => s,
         _ => {
             return Err(format!(
                 "{:?}: inputs must be Real matrices, got {}",
@@ -779,6 +782,15 @@ mod tests {
     fn xor_ok() {
         let b = bool_t(3, 1);
         assert!(LRA::Xor().check([b, b].map(deg0), [b].map(deg0)).is_ok());
+    }
+
+    #[test]
+    fn bools_are_equal_or_not_and_unordered() {
+        let b = bool_t(1, 2);
+        for op in [LRA::Eq(), LRA::Ne()] {
+            assert!(op.check([b, b].map(deg0), [b].map(deg0)).is_ok());
+        }
+        assert!(LRA::Lt().check([b, b].map(deg0), [b].map(deg0)).is_err());
     }
 
     #[test]

@@ -14,7 +14,8 @@ operations in [`LIA`] are:
 - [`LIA::And`], [`LIA::Or`], [`LIA::Xor`], [`LIA::Implies`], [`LIA::Not`]
   — boolean operations on the boolean fragment of `Type`.
 - [`LIA::Le`], [`LIA::Lt`], [`LIA::Ge`], [`LIA::Gt`], [`LIA::Eq`], [`LIA::Ne`]
-  — pointwise integer comparisons producing a scalar `Bool(1,1)`.
+  — pointwise integer comparisons producing a scalar `Bool(1,1)`; [`LIA::Eq`]
+  and [`LIA::Ne`] compare two Bool matrices as well.
 - [`LIA::Ite`] — if-then-else: reads a boolean guard and two same-typed branches.
 - [`LIA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
   `B` constant integer matrices of compatible shapes.
@@ -362,8 +363,10 @@ where
     if r1 != r2 {
         return Err(format!("{:?}: input values must have the same type", op));
     }
-    let shape = match r1 {
-        Sort::Int(s) => s,
+    let shape = match (op, r1) {
+        (_, Sort::Int(s)) => s,
+        // Two Bools are equal or not; only numbers are ordered.
+        (LIA::Eq() | LIA::Ne(), Sort::Bool(s)) => s,
         _ => return Err(format!("{:?}: inputs must be Int matrices, got {r1}", op)),
     };
     let w1 = next_expect_degree(&mut write, 0, 0)?;
@@ -745,6 +748,15 @@ mod tests {
     fn xor_ok() {
         let b = bool_t(3, 1);
         assert!(LIA::Xor().check([b, b].map(deg0), [b].map(deg0)).is_ok());
+    }
+
+    #[test]
+    fn bools_are_equal_or_not_and_unordered() {
+        let b = bool_t(1, 2);
+        for op in [LIA::Eq(), LIA::Ne()] {
+            assert!(op.check([b, b].map(deg0), [b].map(deg0)).is_ok());
+        }
+        assert!(LIA::Lt().check([b, b].map(deg0), [b].map(deg0)).is_err());
     }
 
     #[test]
