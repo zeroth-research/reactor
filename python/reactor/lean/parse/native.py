@@ -6,7 +6,8 @@ Python predicate syntax first (`dsl`), SMT-LIB (`smtlib`) for text that is
 no Python -- against the module's own wires (`ModuleWires`): `s{i}` is `X`
 of the `i`th controlled variable, `e{i}` the `i`th input awaited in the
 round and `el{i}` the one latched before it. What it makes of one is a
-`Formula`. `NativeParser` is the parser a run reads its predicates with.
+`Formula`. `NativeParser` reads them one at a time, and `read_predicates`
+a claim's and a certificate's together, as `proof.render` prints them.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from fractions import Fraction
 
 from reactor import BitVec, X
 
+from ..core.certificate import Certificate, Claim
 from ..core.errors import PredicateRefused, Unreadable
 from ..lowering.sorts import wire_shape
 from . import dsl
@@ -269,3 +271,34 @@ class NativeParser:
                                    kind=kind)
         return hit
 
+
+@dataclass(frozen=True)
+class NativePredicates:
+    """A claim and a certificate read by the native parser: what
+    `proof.render.render_certificate` prints, as it prints the cvc5
+    parser's `smt.queries.ModuleQueries`. A predicate left out is `None`."""
+
+    kind: str
+    wires: ModuleWires
+    prp: "Formula | None" = None
+    inv: "Formula | None" = None
+    ranking: "Formula | None" = None
+    init_pre: "Formula | None" = None
+    update_pre: "Formula | None" = None
+
+
+def read_predicates(module, claim: Claim,
+                    cert: "Certificate | None" = None) -> NativePredicates:
+    """`claim` and `cert` read against `module`, each predicate refused by
+    its role as the cvc5 parser refuses it (`smt.queries.predicate_terms`)."""
+    p = NativeParser(module)
+    cert = cert or Certificate()
+    return NativePredicates(
+        kind=claim.kind,
+        wires=p.wires,
+        prp=p.parse(claim.prp, "property", kind=claim.kind),
+        inv=p.parse(cert.inv, "invariant"),
+        ranking=p.parse(cert.ranking, "ranking", want="Int"),
+        init_pre=p.parse(claim.init_pre, "pre"),
+        update_pre=p.parse(claim.update_pre, "pre"),
+    )

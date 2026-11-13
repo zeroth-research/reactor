@@ -106,7 +106,7 @@ def main():
     record_predicates(store, claim, given)
 
     try:
-        lean_cert = render(module, claim, given)
+        lean_cert = render(module, claim, given, parser=settings.parser)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 

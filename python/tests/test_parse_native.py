@@ -153,3 +153,26 @@ def test_a_predicate_of_the_wrong_sort_is_refused_by_its_flag():
     with pytest.raises(PredicateRefused, match="--invariant: must have sort Bool, got Int"):
         parser.parse("s0", "invariant")
 
+
+def test_a_native_run_loads_no_solver(tmp_path):
+    """`reactor --parser native`, from the command line to the project:
+    the predicates read, printed and written, and cvc5 never imported."""
+    import subprocess
+    import sys
+
+    fixture = Path(__file__).parent / "fixtures" / "counter.py"
+    argv = [
+        "reactor", str(fixture), "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
+        "--ranking", "(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))",
+        "-o", str(tmp_path), "-p", "G", "--parser", "native",
+    ]
+    code = ("import sys, torch\n"
+            "from reactor.lean.pipeline import main\n"
+            f"sys.argv = {argv!r}\n"
+            "main()\n"
+            "print('cvc5' in sys.modules)")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                         text=True, check=True).stdout
+    assert out.splitlines()[-1] == "False", out
+    assert (tmp_path / "G" / "Certificate" / "Data.lean").exists()
