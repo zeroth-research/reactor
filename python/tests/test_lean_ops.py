@@ -205,6 +205,9 @@ _KNOWN_GAPS = {
     ("LRA", "Implies", "box"),
     ("LIA", "Mul", "box"),
     ("LRA", "Mul", "box"),
+    ("LIA", "Get", "box"),
+    ("LRA", "Get", "box"),
+    ("BV", "Get", "box"),
     ("LIA", "Div", "box"),
     ("LIA", "Mod", "box"),
     # A transpose has no cvc5 term; `check_na_supported` refuses it by name.

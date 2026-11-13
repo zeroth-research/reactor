@@ -99,6 +99,10 @@ def _ops() -> dict:
     out["LRA.Neg"] = (LRA.Neg(), [real], real)
     out["LIA.Mul"] = (LIA.Mul(), [Int([2, 2]), Int([2, 2])], Int([2, 2]))
     out["LRA.Mul"] = (LRA.Mul(), [real, real], real)
+    out["LIA.Get"] = (LIA.Get(row=1, col=2), [Int([2, 3])], Int([1, 1]))
+    out["LIA.Get.Bool"] = (LIA.Get(row=1, col=0), [Bool([2, 2])], boolean)
+    out["LRA.Get"] = (LRA.Get(row=0, col=1), [Real([1, 2])], real)
+    out["BV.Get"] = (BV.Get(row=0, col=2), [BitVec(4, [1, 3])], bv)
     for name in ("Div", "Mod"):
         out[f"LIA.{name}"] = (getattr(LIA, name)(), [Int([1, 2]), Int([1, 2])],
                               Int([1, 2]))
