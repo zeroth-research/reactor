@@ -180,18 +180,6 @@ _KNOWN_GAPS = {
     # `Xor` has no Lean emitter.
     *(("LIA", "Xor", c) for c in ("mat", "scalar", "box")),
     *(("LRA", "Xor", c) for c in ("mat", "scalar", "box")),
-    # No Box combinator yet.
-    ("LIA", "Implies", "box"),
-    ("LRA", "Implies", "box"),
-    ("LIA", "Mul", "box"),
-    ("LRA", "Mul", "box"),
-    *(("Cast", name, "box") for name in
-      ("IntToReal", "RealToInt", "BVToInt", "BitToBool", "BoolToBit")),
-    ("LIA", "Get", "box"),
-    ("LRA", "Get", "box"),
-    ("BV", "Get", "box"),
-    ("LIA", "Div", "box"),
-    ("LIA", "Mod", "box"),
     ("LIA", "Transpose"),
     ("LRA", "Transpose"),
     # Dead rows keep whatever they had.

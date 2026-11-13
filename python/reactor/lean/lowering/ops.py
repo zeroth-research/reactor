@@ -201,10 +201,7 @@ OPS: tuple[Op, ...] = (
         LIA_LRA,
         mat=lambda a: f"(fun _ _ => (!({a[0]} 0 0) || {a[1]} 0 0))",
         scalar=lambda a: f"(!{a[0]} || {a[1]})",
-        box=Unsupported(
-            "no `Box.implies` in `Relational.Box`; `Box.or` after `Box.not` "
-            "on the first operand is the circuit a new one would name."
-        ),
+        box="Box.implies",
     ),
     Op(
         "Ite",
@@ -280,16 +277,14 @@ OPS: tuple[Op, ...] = (
         box="Box.mul",
     ),
     # `*` on two `Mat`s is their matrix product (`Relational.Mat`), so the
-    # elementwise product is spelled out element by element.
+    # elementwise product is spelled out element by element, and its Box is
+    # `Box.hadamard` rather than `Box.mul`.
     Op(
         "Mul",
         LIA_LRA,
         mat=lambda a: f"(fun i j => {a[0]} i j * {a[1]} i j)",
         scalar=lambda a: f"({a[0]} * {a[1]})",
-        box=Unsupported(
-            "`Box.mul` is the matrix product; the elementwise one would be a "
-            "new Box in `Relational.Box`."
-        ),
+        box="Box.hadamard",
     ),
     # Lean's `/` and `%` on `Int` are Euclidean, as SMT-LIB's `div` and
     # `mod` are, and by zero give what the theory gives (0, the dividend).
@@ -299,11 +294,9 @@ OPS: tuple[Op, ...] = (
             ("LIA",),
             mat=lambda a, sym=sym: f"(fun i j => {a[0]} i j {sym} {a[1]} i j)",
             scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
-            box=Unsupported(
-                f"no `Box` for `{sym}` on `Int` in `Relational.Box`."
-            ),
+            box=box,
         )
-        for name, sym in (("Div", "/"), ("Mod", "%"))
+        for name, sym, box in (("Div", "/", "Box.div"), ("Mod", "%", "Box.mod"))
     ),
     Op(
         "Neg",
@@ -436,7 +429,7 @@ OPS: tuple[Op, ...] = (
         ALL,
         mat=Inline("codegen.terms._get_expr"),
         scalar=Inline("codegen.terms._get_expr, or the element's flat slot"),
-        box=Unsupported("no Box in `Relational.Box` reads one element of a matrix."),
+        box=Inline("codegen.boxes._get_box"),
     ),
     Op(
         "Transpose",
@@ -514,14 +507,15 @@ OPS: tuple[Op, ...] = (
             ("Cast",),
             mat=lambda a, one=one: f"(fun i j => {one(f'({a[0]} i j)')})",
             scalar=lambda a, one=one: one(a[0]),
-            box=Unsupported("no Box in `Relational.Box` casts between sorts."),
+            box=box,
         )
-        for name, one in (
-            ("IntToReal", lambda x: f"(({x} : Int) : Real)"),
-            ("RealToInt", lambda x: f"⌊{x}⌋"),
-            ("BVToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)"),
-            ("BitToBool", lambda x: f"(decide ({x} = 1))"),
-            ("BoolToBit", lambda x: f"(if {x} then 1 else 0)"),
+        for name, one, box in (
+            ("IntToReal", lambda x: f"(({x} : Int) : Real)", "Box.intToReal"),
+            ("RealToInt", lambda x: f"⌊{x}⌋", "Box.realToInt"),
+            ("BVToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)",
+             "Box.bvToInt"),
+            ("BitToBool", lambda x: f"(decide ({x} = 1))", "Box.bitToBool"),
+            ("BoolToBit", lambda x: f"(if {x} then 1 else 0)", "Box.boolToBit"),
         )
     ),
     # ── nondeterminism and symbols ────────────────────────────────────
