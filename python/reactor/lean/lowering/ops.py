@@ -530,7 +530,7 @@ OPS: tuple[Op, ...] = (
     ),
     Op(
         "Neg",
-        BV_ONLY,
+        ALL,
         mat=lambda a: f"(-{a[0]})",
         scalar=lambda a: f"(-{a[0]})",
         box="Box.neg",
