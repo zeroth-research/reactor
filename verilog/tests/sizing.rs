@@ -151,13 +151,19 @@ fn vectors() {
     }
 }
 
-/// Every register at 0, by path.
+/// Every register without an initial value at 0, by path.
 fn registers(inst: &elab::Inst) -> Values {
     let mut out = Values::new();
     let mut walk = vec![(inst, String::new())];
     while let Some((i, prefix)) = walk.pop() {
         let env = typing::check(&i.module).unwrap();
-        for q in i.module.registers() {
+        let inits: Vec<&String> = i.module.inits.iter().map(|i| &i.target).collect();
+        for q in i
+            .module
+            .registers()
+            .into_iter()
+            .filter(|q| !inits.contains(q))
+        {
             out.insert(format!("{prefix}{q}"), BitVec::zero(env[q].ty.width));
         }
         for (u, c) in &i.children {

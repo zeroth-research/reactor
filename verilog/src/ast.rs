@@ -117,6 +117,8 @@ pub struct Module {
     /// The unpacked arrays, in source order.
     pub arrays: Vec<Array>,
     pub items: Vec<Item>,
+    /// The initial values of registers, in source order (see [`Init`]).
+    pub inits: Vec<Init>,
 }
 
 impl Module {
@@ -149,6 +151,77 @@ impl Module {
             .flat_map(Item::targets)
             .collect()
     }
+
+    /// Makes every initialized signal that nothing drives a constant: its
+    /// initializer becomes an `assign` of the value (`logic [15:0] c =
+    /// 16'h392b;` and nothing writes `c`). A signal connected to an
+    /// instance whose ports are not known yet is left alone, as are values
+    /// that read signals, the elements of arrays (an array that is never written is a ROM, loaded
+    /// from a file) and inputs; [`typing::check`](crate::typing::check)
+    /// rejects what remains on a signal that is no register. Applying it
+    /// again changes nothing.
+    pub fn constants(&mut self) {
+        let mut driven: BTreeSet<Name> = BTreeSet::new();
+        for item in &self.items {
+            match item {
+                // an output drives its actual; with the ports not known
+                // yet, any connected name may be driven
+                Item::Instance(i) => {
+                    for c in &i.conns {
+                        if let (
+                            Some(ExprKind::Var(y)),
+                            None
+                            | Some(Formal {
+                                dir: Dir::Output, ..
+                            }),
+                        ) = (c.actual.as_ref().map(|e| &e.kind), &c.formal)
+                        {
+                            driven.insert(y.clone());
+                        }
+                    }
+                }
+                _ => driven.extend(item.targets().into_iter().map(|y| array_of(y).to_string())),
+            }
+        }
+        let inputs: BTreeSet<&Name> = (self.ports.iter())
+            .filter(|p| p.dir == Dir::Input)
+            .map(|p| &p.decl.name)
+            .collect();
+        let (constants, inits): (Vec<Init>, Vec<Init>) =
+            std::mem::take(&mut self.inits).into_iter().partition(|i| {
+                let mut reads = Vec::new();
+                i.value.reads(&mut reads);
+                reads.is_empty()
+                    && !i.target.contains('[')
+                    && !driven.contains(&i.target)
+                    && !inputs.contains(&i.target)
+            });
+        self.inits = inits;
+        for i in constants {
+            let lhs = Lvalue {
+                kind: LvalueKind::Var(i.target),
+                span: i.span,
+            };
+            self.items.push(Item::Assign {
+                lhs,
+                rhs: i.value,
+                span: i.span,
+            });
+        }
+    }
+}
+
+/// The initial value of a register: `logic q = c;`, `initial q = c;`, or a
+/// word of `$readmemb` for an element of an array that is also written
+/// (`m[3]`). The register starts with the value of `value`, a constant
+/// expression, assigned to it (sized like an assignment); at power-on in
+/// hardware that keeps initial values (FPGAs).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Init {
+    pub target: Name,
+    pub value: Expr,
+    /// The position of the target.
+    pub span: Span,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -566,6 +639,15 @@ impl Stmt {
         match &self.kind {
             StmtKind::NonBlocking { lhs, .. } | StmtKind::Blocking { lhs, .. } => lhs.targets(out),
             _ => self.children().into_iter().for_each(|s| s.targets(out)),
+        }
+    }
+
+    /// Adds the targets of the assignments in the statement to `out`, in
+    /// source order.
+    pub fn lvalues<'s>(&'s self, out: &mut Vec<&'s Lvalue>) {
+        match &self.kind {
+            StmtKind::NonBlocking { lhs, .. } | StmtKind::Blocking { lhs, .. } => out.push(lhs),
+            _ => self.children().into_iter().for_each(|s| s.lvalues(out)),
         }
     }
 

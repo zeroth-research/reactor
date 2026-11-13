@@ -280,6 +280,8 @@ fn round_declares_havoc() {
         clocks: vec![],
         registers: vec![],
         reset_registers: vec![],
+        initialized: vec![],
+        register_widths: Default::default(),
         unread_inputs: vec![],
         wire_names: HashMap::new(),
         instances: vec![],

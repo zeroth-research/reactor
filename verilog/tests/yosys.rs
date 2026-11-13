@@ -437,7 +437,9 @@ fn registers_match_examples() {
             .iter()
             .map(|(p, r)| (p.clone(), ys.registers[r]))
             .collect();
-        assert_eq!(widths, registers(&inst), "{}", path.display());
+        let mut free = registers(&inst);
+        free.retain(|p, _| !t.initialized.contains(p));
+        assert_eq!(widths, free, "{}", path.display());
         for (p, r) in &samples {
             assert!(r.contains(&format!("sample_data$/{p}#sampled$")), "{r}");
         }
@@ -482,7 +484,8 @@ fn registers_mismatch() {
         [
             "Yosys register `m1.q` is not a sample of `clk2fflogic`",
             "Yosys has 2 clock samples and 3 data samples, for 2 registers there should be 2 and 4",
-            "register `m1.l.q` has no output sample in Yosys",
+            "register `m1.l.q` has no output sample in Yosys that its initial states leave free \
+             (an initial value in Yosys only?)",
             "register `m2.l.q` has width 4, in Yosys 3",
         ]
     );
@@ -741,6 +744,78 @@ endmodule
     );
 }
 
+/// Initial values: compared in the init round, also when the value is 0,
+/// which makes the output sample look like a data sample (`|T_i|` sets
+/// those to 0 too), and when the register is read by another register. A
+/// side without the initial value (ours or Yosys's) is found, and an
+/// update counterexample starting away from the initial values replays.
+#[test]
+fn initial_values_compared() {
+    let Some((yosys, z3)) = tools() else { return };
+    let source = "\
+module boot (
+  input  logic       clk,
+  input  logic [7:0] a,
+  output logic [7:0] y, q
+);
+  logic [7:0] p = 8'd0;
+  logic [7:0] r = 8'd5;
+  always_ff @(posedge clk) begin
+    p <= a;
+    r <= r + p;
+    q <= r;
+  end
+  assign y = p ^ r;
+endmodule
+";
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    let path = dir.join("boot.sv");
+    std::fs::write(&path, source).unwrap();
+    let inst = elab::load(source, &path).unwrap();
+    let ys = yosys::run(&yosys, &path, "boot", &[]).unwrap();
+    let t = lower_inst(&inst).unwrap();
+    assert_eq!(t.initialized, ["p", "r"]);
+    let samples = miter::registers(&t, &ys).unwrap();
+    assert_eq!(samples.keys().collect::<Vec<_>>(), ["q"]);
+    let m = miter::build(&t, &ys).unwrap();
+    assert_eq!(blame(&z3, &inst, &t, &m), []);
+
+    // ours without the initial value of `r`: no free output sample to tie
+    // our `r@init` to
+    let free = source.replace("r = 8'd5", "r");
+    let edited = elab::load(&free, &path).unwrap();
+    let t = lower_inst(&edited).unwrap();
+    let e = miter::build(&t, &ys).unwrap_err();
+    assert!(
+        e.contains("register `r` has no output sample in Yosys that its initial states leave free"),
+        "{e}"
+    );
+    // Yosys without it: the init query finds it
+    let theirs = dir.join("boot_free.sv");
+    std::fs::write(&theirs, &free).unwrap();
+    let ys_free = yosys::run(&yosys, &theirs, "boot", &[]).unwrap();
+    let t = lower_inst(&inst).unwrap();
+    let m = miter::build(&t, &ys_free).unwrap();
+    assert_eq!(
+        blame(&z3, &inst, &t, &m),
+        [
+            ("init:r".into(), Side::Ours, None),
+            ("init:y".into(), Side::Ours, None)
+        ]
+    );
+    // a wrong update of an initialized register, from any state
+    let wrong = elab::load(&source.replace("r + p", "r - p"), &path).unwrap();
+    let t = lower_inst(&wrong).unwrap();
+    let m = miter::build(&t, &ys).unwrap();
+    assert_eq!(
+        blame(&z3, &inst, &t, &m),
+        [
+            ("r".into(), Side::Theirs, None),
+            ("y".into(), Side::Theirs, None)
+        ]
+    );
+}
+
 /// A known deviation of Yosys (0.69) from IEEE 1800: it extends an
 /// unsized based literal whose top bit is 1 (`'hffffffff`) with ones in a
 /// wider context, while the standard (§5.7.1, an unsigned 32-bit value)
@@ -926,6 +1001,19 @@ fn cli_yosys() {
     let (ok, _, stderr) = v2rm(&["--yosys", "--smt", "examples/counter.sv"]);
     assert!(!ok);
     assert!(stderr.starts_with("usage:"), "{stderr}");
+    // Yosys keeps initial values, so it cannot compare without them
+    let (ok, _, stderr) = v2rm(&["--yosys", "--ignore-initializers", "examples/powerup.sv"]);
+    assert!(!ok);
+    assert!(stderr.starts_with("usage:"), "{stderr}");
+    let (ok, with, _) = v2rm(&["examples/powerup.sv"]);
+    assert!(ok && with.contains("X(cnt) := 8'd250") && !with.contains("cnt@init"));
+    let (ok, without, _) = v2rm(&["--ignore-initializers", "examples/powerup.sv"]);
+    assert!(
+        ok && without.contains("X(cnt) := ID X(cnt@init)"),
+        "{without}"
+    );
+    // the constant keeps its value
+    assert!(without.contains("X(pattern) := CONCAT"), "{without}");
 }
 
 /// A planted bug: one change to the source of an example.
@@ -1333,12 +1421,14 @@ impl Rand {
 
 /// The first difference random simulation finds between the reference
 /// semantics of `inst` and of `mutant`, on the same random initial
-/// registers and inputs (clocks at random levels): the values of every
+/// registers (those without initial values) and inputs (clocks at random levels): the values of every
 /// signal in every round, including the first.
 fn simulated_difference(inst: &Inst, mutant: &Inst, rand: &mut Rand) -> Option<String> {
     for _ in 0..10 {
+        let initialized = inst.initialized();
         let init: Values = registers(inst)
             .into_iter()
+            .filter(|(p, _)| !initialized.contains(p))
             .map(|(p, w)| (p, rand.bits(w)))
             .collect();
         let mut original = Interp::new(inst, &init).unwrap();
@@ -1666,6 +1756,51 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
     ),
     (
+        "initinst.sv",
+        "4:36 `4` -> `'d4`",
+        "the default width is the same as an unsigned 32-bit value",
+    ),
+    (
+        "initinst.sv",
+        "4:57 `-` -> `+`",
+        "the type of `INIT` only resizes the always overridden value (`4'd3` and `6'd60` fit)",
+    ),
+    (
+        "initinst.sv",
+        "4:58 `1` -> `0`",
+        "the type of `INIT` only resizes the always overridden value (`4'd3` and `6'd60` fit)",
+    ),
+    (
+        "initinst.sv",
+        "4:70 `'0` -> `'1`",
+        "the default `INIT` is always overridden",
+    ),
+    (
+        "initinst.sv",
+        "4:93 `0` -> `1`",
+        "the default `ID` is always overridden",
+    ),
+    (
+        "initinst.sv",
+        "4:93 `0` -> `'d0`",
+        "the default `ID` is always overridden",
+    ),
+    (
+        "initinst.sv",
+        "21:16 `6` -> `'d6`",
+        "a width of 6 either way",
+    ),
+    (
+        "initinst.sv",
+        "21:38 `5` -> `'d5`",
+        "5 either way, assigned to the 4-bit `id`",
+    ),
+    (
+        "initinst.sv",
+        "22:30 `9` -> `'d9`",
+        "9 either way, assigned to the 4-bit `id`",
+    ),
+    (
         "mac.sv",
         "13:23 `16'sd0` -> `16'd0`",
         "zero is zero at any signedness",
@@ -1744,6 +1879,16 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "portw.sv",
         "24:15 `5` -> `'d5`",
         "truncated to the 8 bits of the port: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "powerup.sv",
+        "25:13 `1` -> `'d1`",
+        "1 either way, assigned to the 1-bit `armed`",
+    ),
+    (
+        "ramload.sv",
+        "14:10 `7` -> `6`",
+        "the ROM's values are below 128, so 7-bit elements hold them",
     ),
     (
         "regfile.sv",

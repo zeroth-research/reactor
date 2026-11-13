@@ -1,0 +1,165 @@
+module ramload
+  external
+    clk : bv1
+    we : bv1
+    wa : bv3
+    ra : bv3
+    k : bv2
+    d : bv8
+    ram[4]@init : bv8
+    ram[5]@init : bv8
+    q@init : bv8
+    vals[1]@init : bv8
+    p@init : bv8
+  interface
+    q : bv8
+    p : bv8
+    r : bv8
+  private
+    ram[0] : bv8
+    ram[1] : bv8
+    ram[2] : bv8
+    ram[3] : bv8
+    ram[4] : bv8
+    ram[5] : bv8
+    ram[6] : bv8
+    ram[7] : bv8
+    vals[0] : bv8
+    vals[1] : bv8
+    vals[2] : bv8
+    vals[3] : bv8
+  atom controls q, ram[0], ram[1], ram[2], ram[3], ram[4], ram[5], ram[6], ram[7] reads clk, we, wa, ra, d, q, ram[0], ram[1], ram[2], ram[3], ram[4], ram[5], ram[6], ram[7] awaits clk, ram[4]@init, ram[5]@init, q@init
+    init
+      X(ram[0]) := 8'd17
+      X(ram[1]) := 8'd34
+      X(ram[2]) := 8'd51
+      X(ram[3]) := 8'd68
+      X(ram[4]) := ID X(ram[4]@init)
+      X(ram[5]) := ID X(ram[5]@init)
+      X(ram[6]) := 8'd102
+      X(ram[7]) := 8'd119
+      X(q) := ID X(q@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 3'd0
+      %3 := EQ (wa, %2)
+      %4 := ITE (%3, d, ram[0])
+      %5 := 3'd1
+      %6 := EQ (wa, %5)
+      %7 := ITE (%6, d, ram[1])
+      %8 := 3'd2
+      %9 := EQ (wa, %8)
+      %10 := ITE (%9, d, ram[2])
+      %11 := 3'd3
+      %12 := EQ (wa, %11)
+      %13 := ITE (%12, d, ram[3])
+      %14 := 3'd4
+      %15 := EQ (wa, %14)
+      %16 := ITE (%15, d, ram[4])
+      %17 := 3'd5
+      %18 := EQ (wa, %17)
+      %19 := ITE (%18, d, ram[5])
+      %20 := 3'd6
+      %21 := EQ (wa, %20)
+      %22 := ITE (%21, d, ram[6])
+      %23 := 3'd7
+      %24 := EQ (wa, %23)
+      %25 := ITE (%24, d, ram[7])
+      %26 := ITE (we, %4, ram[0])
+      %27 := ITE (we, %7, ram[1])
+      %28 := ITE (we, %10, ram[2])
+      %29 := ITE (we, %13, ram[3])
+      %30 := ITE (we, %16, ram[4])
+      %31 := ITE (we, %19, ram[5])
+      %32 := ITE (we, %22, ram[6])
+      %33 := ITE (we, %25, ram[7])
+      %34 := EXTRACT[0:0] ra
+      %35 := ITE (%34, ram[1], ram[0])
+      %36 := ITE (%34, ram[3], ram[2])
+      %37 := ITE (%34, ram[5], ram[4])
+      %38 := ITE (%34, ram[7], ram[6])
+      %39 := EXTRACT[1:1] ra
+      %40 := ITE (%39, %36, %35)
+      %41 := ITE (%39, %38, %37)
+      %42 := EXTRACT[2:2] ra
+      %43 := ITE (%42, %41, %40)
+      X(ram[0]) := ITE (clk@pos, %26, ram[0])
+      X(ram[1]) := ITE (clk@pos, %27, ram[1])
+      X(ram[2]) := ITE (clk@pos, %28, ram[2])
+      X(ram[3]) := ITE (clk@pos, %29, ram[3])
+      X(ram[4]) := ITE (clk@pos, %30, ram[4])
+      X(ram[5]) := ITE (clk@pos, %31, ram[5])
+      X(ram[6]) := ITE (clk@pos, %32, ram[6])
+      X(ram[7]) := ITE (clk@pos, %33, ram[7])
+      X(q) := ITE (clk@pos, %43, q)
+  atom controls p, vals[0], vals[1], vals[2], vals[3] reads clk, k, d, p, vals[0], vals[1], vals[2], vals[3] awaits clk, vals[1]@init, p@init
+    init
+      X(vals[0]) := 8'd10
+      X(vals[1]) := ID X(vals[1]@init)
+      X(vals[2]) := 8'd30
+      X(vals[3]) := 8'd40
+      X(p) := ID X(p@init)
+    update
+      %1 := NOT clk
+      clk@pos#2 := AND (%1, X(clk))
+      %2 := EXTRACT[0:0] k
+      %3 := ITE (%2, vals[1], vals[0])
+      %4 := ITE (%2, vals[3], vals[2])
+      %5 := EXTRACT[1:1] k
+      %6 := ITE (%5, %4, %3)
+      %7 := ADD (%6, d)
+      %8 := 2'd0
+      %9 := EQ (k, %8)
+      %10 := ITE (%9, %7, vals[0])
+      %11 := 2'd1
+      %12 := EQ (k, %11)
+      %13 := ITE (%12, %7, vals[1])
+      %14 := 2'd2
+      %15 := EQ (k, %14)
+      %16 := ITE (%15, %7, vals[2])
+      %17 := 2'd3
+      %18 := EQ (k, %17)
+      %19 := ITE (%18, %7, vals[3])
+      %20 := NOT k
+      %21 := EXTRACT[0:0] %20
+      %22 := ITE (%21, vals[1], vals[0])
+      %23 := ITE (%21, vals[3], vals[2])
+      %24 := EXTRACT[1:1] %20
+      %25 := ITE (%24, %23, %22)
+      X(vals[0]) := ITE (clk@pos#2, %10, vals[0])
+      X(vals[1]) := ITE (clk@pos#2, %13, vals[1])
+      X(vals[2]) := ITE (clk@pos#2, %16, vals[2])
+      X(vals[3]) := ITE (clk@pos#2, %19, vals[3])
+      X(p) := ITE (clk@pos#2, %25, p)
+  atom controls r awaits ra, ram[0], ram[1], ram[2], ram[3], ram[4], ram[5], ram[6], ram[7]
+    init = update
+      %1 := 8'd1
+      %2 := 8'd2
+      %3 := 8'd3
+      %4 := 8'd4
+      %5 := 8'd5
+      %6 := 8'd6
+      %7 := 8'd7
+      %8 := 8'd8
+      %9 := EXTRACT[0:0] X(ra)
+      %10 := ITE (%9, %2, %1)
+      %11 := ITE (%9, %4, %3)
+      %12 := ITE (%9, %6, %5)
+      %13 := ITE (%9, %8, %7)
+      %14 := EXTRACT[1:1] X(ra)
+      %15 := ITE (%14, %11, %10)
+      %16 := ITE (%14, %13, %12)
+      %17 := EXTRACT[2:2] X(ra)
+      %18 := ITE (%17, %16, %15)
+      %19 := EXTRACT[0:0] X(ra)
+      %20 := ITE (%19, X(ram[1]), X(ram[0]))
+      %21 := ITE (%19, X(ram[3]), X(ram[2]))
+      %22 := ITE (%19, X(ram[5]), X(ram[4]))
+      %23 := ITE (%19, X(ram[7]), X(ram[6]))
+      %24 := EXTRACT[1:1] X(ra)
+      %25 := ITE (%24, %21, %20)
+      %26 := ITE (%24, %23, %22)
+      %27 := EXTRACT[2:2] X(ra)
+      %28 := ITE (%27, %26, %25)
+      X(r) := XOR (%18, %28)

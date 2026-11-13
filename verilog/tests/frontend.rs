@@ -3,7 +3,7 @@
 
 use verilog::ast::{Dir, Edge, Item, Ty};
 use verilog::lower::Translation;
-use verilog::{frontend, lower};
+use verilog::{elab, frontend, lower};
 
 /// The right-hand side of `assign y = <e>;`, fully parenthesized.
 fn parse_expr(e: &str) -> String {
@@ -235,7 +235,6 @@ fn rejected_declarations() {
         "int",
         "type `int` not supported",
     );
-    rejects(None, "  wire [7:0] t = a;", 2, "t", "initializer");
     rejects(None, "  tri [7:0] t;", 2, "tri", "net type `tri`");
     rejects(
         None,
@@ -251,10 +250,10 @@ fn rejected_items() {
     rejects(None, "  assign #1 y = a;", 2, "#1", "delay");
     rejects(
         None,
-        "  initial y = a;",
+        "  initial $display(a);\n  assign y = a;",
         2,
-        "y",
-        "`initial` may only load arrays from files",
+        "$display",
+        "`initial` may only give signals initial values (`q = 8'd0;`) and load arrays",
     );
     rejects(None, "  assign y = ;", 2, ";", "syntax error");
 }
@@ -1522,12 +1521,11 @@ fn rejected_arrays() {
         (
             format!(
                 "  logic [7:0] t [4];\n  initial $readmemb(\"{ok}\", t);\n  \
-                 always_ff @(posedge clk) t[j] <= a;\n  assign y = t[1];"
+                 initial t[2] = 8'd1;\n  assign y = t[1];"
             ),
             4,
-            "t[j]",
-            "`t` is loaded by `$readmemb` at 3:11 and assigned here: a loaded array must not \
-             be written",
+            "t[2]",
+            "`t` is loaded at 3:11, and nothing writes it: its elements are constants",
         ),
         (
             "  logic [7:0] t [4];\n  initial $readmemb(\"missing.mem\", t);\n  assign y = t[1];"
@@ -1552,7 +1550,8 @@ fn rejected_arrays() {
             ),
             3,
             "$readmemb",
-            "no value for `t[3]` (every element of a loaded array needs one)",
+            "no value for `t[3]` (every element of an array that is never written needs one: it \
+             is a ROM)",
         ),
         (
             format!(
@@ -1601,14 +1600,14 @@ fn rejected_arrays() {
                  assign y = t[1];"
             ),
             3,
-            "y =",
-            "`initial` may only load arrays from files",
+            "a; end",
+            "the initial value of `y` must be a constant, it reads `a`",
         ),
         (
             "  initial begin logic x; end\n  assign y = a;".into(),
             2,
             "logic x",
-            "`initial` may only load arrays from files",
+            "`initial` may only give signals initial values",
         ),
     ];
     for (body, line, needle, msg) in &cases {
@@ -1621,5 +1620,258 @@ fn rejected_arrays() {
         1,
         "[2]",
         "unpacked dimension not supported",
+    );
+}
+
+/// The init action of the atom controlling `q`, printed.
+fn init_of(t: &Translation, q: &str) -> String {
+    let text = t.print();
+    let start = text
+        .match_indices("atom controls ")
+        .map(|(k, _)| k)
+        .find(|k| {
+            let line = text[*k..].lines().next().unwrap();
+            let ctrl = line["atom controls ".len()..]
+                .split(" reads")
+                .next()
+                .unwrap();
+            ctrl.split(" awaits")
+                .next()
+                .unwrap()
+                .split(", ")
+                .any(|x| x == q)
+        })
+        .unwrap_or_else(|| panic!("no atom of `{q}` in\n{text}"));
+    let atom = &text[start..];
+    let init = &atom[atom.find("init").unwrap()..];
+    init[..init.find("update").unwrap_or(init.len())].to_string()
+}
+
+#[test]
+fn accepted_initial_values() {
+    // declaration, `initial`, both in `begin … end`, sized as assignments
+    // (`-1` is extended by its sign); `x` everywhere is no initial value
+    let t = translate_ff(
+        "  logic [7:0] p = -1, r;\n  logic [3:0] s = 4'b1010;\n  logic [7:0] u;\n  \
+         initial r = 8'd3;\n  initial begin u = 'x; y = 2 + 3; end\n  \
+         always_ff @(posedge clk) begin p <= a; r <= p; s <= a[3:0]; u <= a; y <= {s, s}; end",
+    );
+    assert_eq!(t.initialized, ["p", "r", "s", "y"]);
+    let names: Vec<&str> = t.vars.keys().map(|k| k.as_str()).collect();
+    assert!(
+        names.contains(&"u@init") && !names.contains(&"p@init"),
+        "{names:?}"
+    );
+    let init = init_of(&t, "p");
+    for line in [
+        "X(p) := 8'd255",
+        "X(r) := 8'd3",
+        "X(s) := 4'd10",
+        "X(u) := ID X(u@init)",
+        "X(y) := 8'd5",
+    ] {
+        assert!(init.contains(line), "{line} in\n{init}");
+    }
+    // an initial value of an output; a 1-bit x literal on a 1-bit register
+    let t = translate_with(
+        "module m(input logic clk, output logic [3:0] y = 4'd7, output logic z);",
+        "  initial z = 1'bx;\n  always_ff @(posedge clk) begin y <= y + 4'd1; z <= !z; end",
+    );
+    assert_eq!(t.initialized, ["y"]);
+    assert!(t.vars.contains_key("z@init"));
+    // with an asynchronous reset, the reset value wins in the first round
+    let t = translate_ff(
+        "  logic r = 1'b1;\n  logic [7:0] q = 8'd9;\n  \
+         always_ff @(posedge clk or posedge r) if (r) q <= 8'd0; else q <= a;\n  \
+         always_ff @(posedge clk) r <= 1'b0;\n  assign y = q;",
+    );
+    assert!(
+        init_of(&t, "q").contains("X(q) := ITE (X(r), %2, %1)"),
+        "{}",
+        init_of(&t, "q")
+    );
+    // a constant: initialized and never written; also an output
+    let t = translate_with(
+        "module m(input logic [3:0] i, output logic b, output logic [3:0] k = 4'd5);",
+        "  logic [15:0] c = {15'h392b, 1'b0};\n  assign b = c[i];",
+    );
+    assert!(t.registers.is_empty() && t.initialized.is_empty());
+    assert!(t.print().contains("X(k) := 4'd5"), "{}", t.print());
+    // `wire y = e;` is `assign y = e;`
+    let t = translate_with(HEADER, "  wire [8:0] t = a + 9'd1;\n  assign y = t[8:1];");
+    assert_eq!(t.module.atoms().len(), 2);
+    // a RAM preloaded from a file (address 2 left out) and given element
+    // values; with initial values ignored, every element is free
+    let file = mem_file("preload.mem", "1 10\n@3 11\n");
+    let body = format!(
+        "  logic [1:0] t [4];\n  logic [7:0] v [2];\n  initial $readmemb(\"{file}\", t);\n  \
+         initial v[1] = 8'd7;\n  \
+         always_ff @(posedge clk) begin t[j] <= a[1:0]; v[j[0]] <= a; y <= {{v[i[0]], 6'd0}} | t[j]; end"
+    );
+    let t = translate_with(HEADER_ARRAY, &body);
+    assert_eq!(t.initialized, ["t[0]", "t[1]", "t[3]", "v[1]"]);
+    let src = format!("{HEADER_ARRAY}\n{body}\nendmodule\n");
+    let mut inst = elab::load(&src, "test.sv").unwrap();
+    assert_eq!(inst.initialized(), t.initialized);
+    inst.ignore_initializers();
+    let t = lower::lower_inst(&inst).unwrap();
+    assert!(t.initialized.is_empty());
+    assert!(t.vars.contains_key("t[0]@init"));
+}
+
+#[test]
+fn rejected_initial_values() {
+    let cases: &[(&str, usize, &str, &str)] = &[
+        (
+            "  logic [7:0] t = 8'd1;\n  assign t = a;\n  assign y = t;",
+            2,
+            "t =",
+            "`t` is driven by an `assign` at 3:10, which computes it in every time step: an \
+             initial value has no effect on it",
+        ),
+        (
+            "  initial y = 8'd0;\n  always_comb y = a;",
+            2,
+            "y",
+            "`y` is driven by an `always_comb` at 3:15",
+        ),
+        (
+            "  initial a = 8'd0;\n  assign y = a;",
+            2,
+            "a =",
+            "`a` is an input: only signals of the module have initial values",
+        ),
+        (
+            "  logic [7:0] t = a;\n  always_ff @(posedge clk) t <= a;\n  assign y = t;",
+            2,
+            "a;",
+            "the initial value of `t` must be a constant, it reads `a`",
+        ),
+        (
+            "  logic [7:0] t = 8'd1;\n  initial t = 8'd2;\n  always_ff @(posedge clk) t <= a;\n  \
+             assign y = t;",
+            3,
+            "t =",
+            "`t` already has an initial value at 2:15",
+        ),
+        (
+            "  logic [7:0] t = 'x;\n  initial t = 8'd2;\n  always_ff @(posedge clk) t <= a;\n  \
+             assign y = t;",
+            3,
+            "t =",
+            "`t` already has an initial value at 2:15",
+        ),
+        (
+            "  initial y <= 8'd0;\n  always_ff @(posedge clk) y <= a;",
+            2,
+            "y <=",
+            "`initial` gives initial values with blocking assignments (`q = 8'd0;`), not `<=`",
+        ),
+        (
+            "  initial y[3:0] = 4'd0;\n  always_ff @(posedge clk) y <= a;",
+            2,
+            "y[3:0]",
+            "initial values are given to whole signals and elements",
+        ),
+        (
+            "  initial y = 4'bxxxx;\n  always_ff @(posedge clk) y <= a;",
+            2,
+            "y",
+            "the initial value of `y` has 4 x bits, but `y` has 8 bits",
+        ),
+        (
+            "  initial y = 8'b0000_xxxx;\n  always_ff @(posedge clk) y <= a;",
+            2,
+            "8'b",
+            "x",
+        ),
+        (
+            "  initial y += 8'd1;\n  always_ff @(posedge clk) y <= a;",
+            2,
+            "+=",
+            "`+=` not supported",
+        ),
+        (
+            "  initial begin if (a) y = 8'd1; end\n  always_ff @(posedge clk) y <= a;",
+            2,
+            "if",
+            "`initial` may only give signals initial values",
+        ),
+    ];
+    for (body, line, needle, msg) in cases {
+        rejects(Some(HEADER_FF), body, *line, needle, msg);
+    }
+    let ok = mem_file("init.mem", "1 2 3 4\n");
+    let few = mem_file("init_few.mem", "1 2\n");
+    let cases: Vec<(String, usize, &str, &str)> = vec![
+        (
+            "  logic [7:0] t [4] = '{8'd0, 8'd1, 8'd2, 8'd3};\n  assign y = t[j];".into(),
+            2,
+            "'{",
+            "initial values of whole arrays not supported",
+        ),
+        (
+            "  logic [7:0] t [4];\n  initial t[j] = 8'd0;\n  always_ff @(posedge clk) t[j] <= a;\n  \
+             assign y = t[1];"
+                .into(),
+            3,
+            "t[j]",
+            "the initial value of an element needs a constant address",
+        ),
+        (
+            "  logic [7:0] t [4];\n  initial t[4] = 8'd0;\n  always_ff @(posedge clk) t[j] <= a;\n  \
+             assign y = t[1];"
+                .into(),
+            3,
+            "t[4]",
+            "`t[4]` out of range: `t` has addresses 0 to 3",
+        ),
+        (
+            "  logic [7:0] t [2];\n  initial begin t[0] = 8'd0; t[1] = 8'd1; end\n  \
+             assign y = t[i[0]];"
+                .into(),
+            3,
+            "t[0]",
+            "`t[0]`: nothing writes the array `t`, so its elements are constants: load it from \
+             a file",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial $readmemh(\"{ok}\", t);\n  initial t[1] = 8'd0;\n  \
+                 always_ff @(posedge clk) t[j] <= a;\n  assign y = t[1];"
+            ),
+            4,
+            "t[1]",
+            "`t[1]` already has an initial value at 3:11",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial $readmemh(\"{few}\", t);\n  \
+                 assign y = t[j];"
+            ),
+            3,
+            "$readmemh",
+            "no value for `t[2]` (every element of an array that is never written needs one",
+        ),
+        (
+            format!(
+                "  logic [7:0] t [4];\n  initial $readmemh(\"{ok}\", t);\n  \
+                 always_comb begin t[0] = a; t[1] = a; t[2] = a; t[3] = a; end\n  \
+                 assign y = t[j];"
+            ),
+            3,
+            "$readmemh",
+            "is driven by an `always_comb`",
+        ),
+    ];
+    for (body, line, needle, msg) in &cases {
+        rejects(Some(HEADER_ARRAY), body, *line, needle, msg);
+    }
+    rejects(
+        Some("module m(input logic [7:0] a = 8'd0, output logic [7:0] y);"),
+        "  assign y = a;",
+        1,
+        "8'd0",
+        "default values of inputs not supported",
     );
 }

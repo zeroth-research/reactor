@@ -27,8 +27,8 @@ time:
 
 - our init round ([`smt::round`] with [`Phase::Init`]) and its ties, with
   `|s|` an initial state (`|T_i|`): the initial value `|X(p@init)|` of every
-  register `p` is its output sample in `|s|` ([`registers`]), every input
-  `|X(v)|` is the wire `v` in `|s|`;
+  register `p` without an initial value of its own is its output sample in
+  `|s|` ([`registers`]), every input `|X(v)|` is the wire `v` in `|s|`;
 - our update round ([`Phase::Update`]) and its ties, matching names: every
   latched value `|*v|` of the round is the wire `v` in `|s|`, and every next
   input `|X(v)|` is the wire `v` in `|s'|`.
@@ -48,7 +48,11 @@ from the output samples, computes Yosys's wires; this includes each
 register's own wire, so the output sample is the register's value there
 (no edge happens in the first step). [`registers`] checks that Yosys has
 one flip-flop per register of ours and that `|T_i|` leaves the output
-samples free, so every initial value of ours is one of Yosys's too.
+samples of the registers without initial values free, so every initial
+value of ours is one of Yosys's too. A register with an initial value
+(`logic q = c;`) starts with it in our init round, and its init query
+compares that with its wire in every initial state of Yosys: it fails if
+`|T_i|` gives the register another value or none.
 Round k + 1: if our values in round k are Yosys's wires in a state `|s|`,
 the update queries show that our next values are Yosys's wires in any
 `|s'|` after `|s|` with the same inputs. They are asked for every state
@@ -78,7 +82,7 @@ round apart from a wrong module.
 use crate::ast::Name;
 use crate::ast_interp::{Interp, Values};
 use crate::elab::Inst;
-use crate::lower::{Translation, init_name};
+use crate::lower::Translation;
 use crate::rm_sim::{Sim, Valuation};
 use crate::smt::{self, Phase};
 use crate::yosys::{self, Sample, Smt2};
@@ -183,9 +187,14 @@ pub enum Verdict {
 /// to the instance's output) is the data sample named after `p` that
 /// `|T_i|` leaves free ([`Smt2::free_initially`]); a data input sample can
 /// carry the same name, but is set to 0 initially. Its width must be that
-/// of `p@init`. [`build`] ties the initial value `p@init` to it, and the
+/// of `p`. [`build`] ties the initial value `p@init` to it, and the
 /// init query of `p`'s variable then checks that it is the output sample:
 /// Yosys's wire `p` equals it in every initial state.
+///
+/// A register with an initial value has no `p@init`, and is left out: its
+/// output sample is set to the initial value by `|T_i|`, which is no
+/// different from a data sample set to 0 when the value is 0. Its init
+/// query checks the value.
 pub fn registers(t: &Translation, ys: &Smt2) -> Result<BTreeMap<Name, String>, Vec<String>> {
     let mut errors = vec![];
     let (mut edges, mut data, mut controls) = (0, 0, 0);
@@ -222,8 +231,8 @@ pub fn registers(t: &Translation, ys: &Smt2) -> Result<BTreeMap<Name, String>, V
         ));
     }
     let mut out = BTreeMap::new();
-    for p in &t.registers {
-        let width = t.var(&init_name(p)).dtype().width();
+    for p in t.registers.iter().filter(|p| !t.initialized.contains(p)) {
+        let width = t.register_widths[p];
         let free: Vec<&str> = named
             .get(p.as_str())
             .into_iter()
@@ -232,7 +241,10 @@ pub fn registers(t: &Translation, ys: &Smt2) -> Result<BTreeMap<Name, String>, V
             .filter(|r| ys.free_initially(r))
             .collect();
         match free.as_slice() {
-            [] => errors.push(format!("register `{p}` has no output sample in Yosys")),
+            [] => errors.push(format!(
+                "register `{p}` has no output sample in Yosys that its initial states leave \
+                 free (an initial value in Yosys only?)"
+            )),
             [r] if ys.registers[*r] != width => errors.push(format!(
                 "register `{p}` has width {width}, in Yosys {}",
                 ys.registers[*r]
@@ -344,7 +356,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         };
         names.filter_map(probe).collect::<Vec<Probe>>()
     };
-    let width = |p: &String| t.var(&init_name(p)).dtype().width();
+    let width = |p: &String| t.register_widths[p];
     let initial = probes(
         &mut samples.iter().map(|(p, r)| (p, r.as_str(), width(p))),
         S,
@@ -668,7 +680,12 @@ pub struct Via {
 /// inputs of `|s'|` then computes the next values. The reference
 /// interpreter starts from the same registers and runs the same two
 /// rounds; the second gives the values in `|s'|`. A counterexample of the
-/// init round is replayed in round 0 only, from the output samples.
+/// init round is replayed in round 0 only, from the output samples. Since
+/// `|s|` need not be an initial state, round 0 of an update counterexample
+/// sets the registers with initial values to their values in `|s|` too
+/// ([`Sim::step_forced`]), and the reference interpreter runs on `inst`
+/// with the initial values dropped ([`Inst::ignore_initializers`]): the
+/// update rounds are the same. (`inst` has the signals of `t`.)
 ///
 /// The side is decided on values that each come from one side only: the
 /// next value in `rm_sim` (ours), in the reference, and in Yosys's `|s'|`,
@@ -696,9 +713,26 @@ pub fn replay(inst: &Inst, t: &Translation, cex: &Cex) -> Result<Replay, String>
             .get(name)
             .ok_or_else(|| format!("`{name}` is not a variable of the module"))
     };
+    let get_register = |p: &str| cex.registers.get(p).cloned().ok_or_else(|| missing(p));
     let mut sim = Sim::new(&t.module);
-    let now = sim.step(&extl(&cex.inputs)?)?;
-    let mut interp = Interp::new(inst, &cex.registers).map_err(|e| e.to_string())?;
+    let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
+    let forced: Valuation = match cex.phase {
+        Phase::Init => Valuation::new(),
+        Phase::Update => (t.initialized.iter())
+            .map(|p| Ok((*var(&naming[p])?, get_register(p)?)))
+            .collect::<Result<_, String>>()?,
+    };
+    let now = sim.step_forced(&extl(&cex.inputs)?, &forced)?;
+    let mut free;
+    let reference_inst = match cex.phase {
+        Phase::Init => inst,
+        Phase::Update => {
+            free = inst.clone();
+            free.ignore_initializers();
+            &free
+        }
+    };
+    let mut interp = Interp::new(reference_inst, &cex.registers).map_err(|e| e.to_string())?;
     let reference_now = interp.step(&cex.inputs)?;
     let (rm_sim, reference) = match cex.phase {
         Phase::Init => (now[var(&cex.name)?].clone(), reference_now.clone()),

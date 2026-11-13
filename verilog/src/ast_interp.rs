@@ -13,7 +13,9 @@ value. A block runs on the values of the previous round, the values just
 before the edge, and its registers take the values it assigns, the last
 assignment to a register winning; a register no executed assignment
 targets keeps its value. In the first round no edge happens: the
-registers have their initial values. In any round, including the first,
+registers have their initial values: the value of their initializer
+(`logic q = c;`, `initial q = c;`, assigned to the register), or else the
+value given to [`Interp::new`]. In any round, including the first,
 in which the asynchronous reset of a block is active (its level now is 1,
 or 0 for `negedge rst_n`), the registers the reset branch assigns have
 their reset values instead, whether or not the edge happens; the reset
@@ -43,7 +45,8 @@ element at an index that is no address writes nothing.
 A hierarchy runs as one design: every signal is known by its name (see
 [`Inst::naming`]), so a port connected to a signal is that signal, and an
 input connected to another expression is computed from it on demand.
-Register initial values are given by path (`u.q`).
+Register initial values are given by path (`u.q`), for the registers
+without an initializer.
 
 [`SvOp`]: crate::SvOp
 */
@@ -80,6 +83,8 @@ pub struct Interp<'m> {
     inputs: Vec<(Name, Ty)>,
     /// The registers: path, name and type.
     registers: Vec<(Name, Name, Ty)>,
+    /// The registers with an initializer: name, instance and value.
+    initialized: Vec<(Name, usize, &'m Expr)>,
     /// The initial value of every register, by name.
     init: Values,
     /// The values of the previous round; none before the first round.
@@ -105,8 +110,8 @@ enum Driver<'m> {
 }
 
 impl<'m> Interp<'m> {
-    /// Starts with `init` giving a value for every register, by path (and
-    /// nothing else).
+    /// Starts with `init` giving a value for every register without an
+    /// initializer, by path (and nothing else).
     pub fn new(inst: &'m Inst, init: &Values) -> Result<Self, Error> {
         let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
         let mut it = Interp {
@@ -116,6 +121,7 @@ impl<'m> Interp<'m> {
             signals: BTreeMap::new(),
             inputs: Vec::new(),
             registers: Vec::new(),
+            initialized: Vec::new(),
             init: Values::new(),
             prev: None,
         };
@@ -126,7 +132,27 @@ impl<'m> Interp<'m> {
             }
         }
         let err = |msg: String| Error::new(Span::default(), msg);
+        for (name, c, e) in &it.initialized {
+            let width = it.signals[name].width;
+            let v = it
+                .assigned(
+                    *c,
+                    e,
+                    width,
+                    &Values::new(),
+                    &mut Values::new(),
+                    &mut BTreeSet::new(),
+                )
+                .map_err(|msg| Error::new(e.span, msg))?;
+            it.init.insert(name.clone(), v);
+        }
         for (path, name, ty) in &it.registers {
+            if it.initialized.iter().any(|(y, ..)| y == name) {
+                if init.contains_key(path) {
+                    return Err(err(format!("register `{path}` has an initializer")));
+                }
+                continue;
+            }
             let v = init
                 .get(path)
                 .ok_or_else(|| err(format!("no initial value for register `{path}`")))?;
@@ -160,6 +186,10 @@ impl<'m> Interp<'m> {
             .collect();
         for (x, sig) in &env {
             self.signals.insert(names[x].clone(), sig.ty);
+        }
+        for i in &m.inits {
+            self.initialized
+                .push((names[&i.target].clone(), c, &i.value));
         }
         for item in &m.items {
             match item {

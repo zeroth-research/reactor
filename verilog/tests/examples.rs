@@ -48,10 +48,13 @@ fn load(path: &Path) -> (Inst, Translation) {
     (inst, t)
 }
 
-/// The registers of a hierarchy by path, with their types.
+/// The registers of a hierarchy without an initial value, by path, with
+/// their types.
 fn registers(inst: &Inst) -> Vec<(String, Ty)> {
+    let initialized = inst.initialized();
     inst.registers()
         .into_iter()
+        .filter(|p| !initialized.contains(p))
         .map(|path| {
             let (prefix, q) = match path.rsplit_once('.') {
                 Some((p, q)) => (format!("{p}."), q.to_string()),
@@ -187,7 +190,8 @@ fn structure() {
                 .collect::<Vec<_>>()
         };
         let mut extl = ports(Dir::Input);
-        extl.extend(t.registers.iter().map(|q| init_name(q)));
+        let free = t.registers.iter().filter(|q| !t.initialized.contains(q));
+        extl.extend(free.map(|q| init_name(q)));
         let display = path.display();
         assert_eq!(names(t.module.extl()), sorted(extl), "{display}");
         assert_eq!(
@@ -219,7 +223,10 @@ fn structure() {
             }
             // the initial values, the clock (an input clock, or a register
             // or a copy of one: a derived clock) and the reset
-            let mut inits: Vec<String> = ctrl.iter().map(|q| init_name(regs[q])).collect();
+            let mut inits: Vec<String> = (ctrl.iter())
+                .filter(|q| !t.initialized.contains(regs[*q]))
+                .map(|q| init_name(regs[q]))
+                .collect();
             let wait = names(atom.wait());
             let (clock, reset) = &clocking[&ctrl[0]];
             let edges: Vec<&String> = [clock].into_iter().chain(reset).collect();
@@ -486,13 +493,19 @@ fn iverilog_bin() -> Option<PathBuf> {
 }
 
 /// The declarations of a testbench for the top module of `inst`: the
-/// ports and the instance `dut`.
-fn tb_header(inst: &Inst) -> String {
+/// ports and the instance `dut`; the inputs in `start` start with these
+/// values (before time 0, so their first assignment makes no edge).
+fn tb_header(inst: &Inst, start: &Values) -> String {
     let m = &inst.module;
     let mut tb = String::from("module tb;\n");
     for p in &m.ports {
         let kind = if p.dir == Dir::Input { "logic" } else { "wire" };
-        tb += &format!("  {kind} [{}:0] {};\n", p.decl.ty.width - 1, p.decl.name);
+        let x = &p.decl.name;
+        let value = match start.get(x) {
+            Some(v) => format!(" = {}'h{:x}", v.width(), v.unsigned()),
+            None => String::new(),
+        };
+        tb += &format!("  {kind} [{}:0] {x}{value};\n", p.decl.ty.width - 1);
     }
     let conns: Vec<String> = m
         .ports
@@ -551,14 +564,18 @@ fn tb_display(inst: &Inst) -> String {
 /// then sets the registers to `init`, by hierarchical assignment
 /// (`dut.q = …`; iverilog accepts this although the standard forbids
 /// writing an `always_ff` variable from another process), overriding
-/// whatever an edge from the unknown starting level of a clock did, and
+/// whatever an edge from x of a derived clock did (input clocks start at
+/// their level in the first round, so that registers with an initial value
+/// see no edge from x either), and
 /// only then sets the other inputs: an asynchronous reset active in the
 /// first round then resets its registers (its change from x is an edge
 /// of the reset). `t.reset_registers` are set only once: an edge from x
 /// of a reset that is a register can have reset them already.
 fn testbench(inst: &Inst, t: &Translation, init: &Values, rounds: &[Values]) -> String {
     let is_clock = |n: &str| t.clocks.iter().any(|c| c == n);
-    let mut tb = tb_header(inst);
+    let mut start = rounds.first().cloned().unwrap_or_default();
+    start.retain(|n, _| is_clock(n));
+    let mut tb = tb_header(inst, &start);
     for (k, v) in rounds.iter().enumerate() {
         tb += &tb_set(v, is_clock);
         tb += "    #1;\n";
@@ -579,7 +596,7 @@ fn testbench(inst: &Inst, t: &Translation, init: &Values, rounds: &[Values]) -> 
 /// change from x to 1 would be a rising edge.
 fn cycle_testbench(inst: &Inst, t: &Translation, init: &Values, vectors: &[Values]) -> String {
     let clk = t.clocks.first().map(String::as_str);
-    let mut tb = tb_header(inst);
+    let mut tb = tb_header(inst, &Values::new());
     if let Some(clk) = clk {
         tb += &format!("    {clk} = 1'b0;\n");
     }

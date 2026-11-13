@@ -36,6 +36,29 @@ impl<'m> Sim<'m> {
     /// external variable (and of nothing else). Returns the next values of
     /// all variables of the module.
     pub fn step(&mut self, extl: &Valuation) -> Result<Valuation, String> {
+        self.run(extl, &Valuation::new())
+    }
+
+    /// Runs the init round like [`step`](Self::step), but with each
+    /// controlled variable in `forced` set to the value given there instead
+    /// of the one its atom computes, before the atoms after it read it: a
+    /// first round in a state the init blocks need not reach, e.g. with
+    /// registers away from their initial values.
+    pub fn step_forced(
+        &mut self,
+        extl: &Valuation,
+        forced: &Valuation,
+    ) -> Result<Valuation, String> {
+        if self.last.is_some() {
+            return Err("only the init round can be forced".into());
+        }
+        if let Some(var) = forced.keys().find(|v| !self.module.ctrl().contains(*v)) {
+            return Err(format!("{var:?} is not a controlled variable"));
+        }
+        self.run(extl, forced)
+    }
+
+    fn run(&mut self, extl: &Valuation, forced: &Valuation) -> Result<Valuation, String> {
         let module = self.module;
         let mut env: HashMap<Wire, BitVec> = HashMap::new();
 
@@ -77,6 +100,11 @@ impl<'m> Sim<'m> {
                     .collect::<Result<Vec<_>, _>>()?;
                 let value = eval(term.itype(), &args)?;
                 env.insert(term.write()[0], value);
+            }
+            for var in atom.ctrl() {
+                if let Some(value) = forced.get(var) {
+                    env.insert(X(var), value.clone());
+                }
             }
         }
 

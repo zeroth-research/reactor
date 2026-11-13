@@ -1,0 +1,58 @@
+module initrst
+  external
+    clk : bv1
+    rst : bv1
+    d : bv8
+    q@init : bv8
+  interface
+    q : bv8
+    n : bv8
+    s : bv8
+    slow : bv1
+  private
+    r : bv8
+  atom controls q reads clk, rst, q, r awaits clk, rst, q@init
+    init
+      %1 := 8'd1
+      X(q) := ITE (X(rst), %1, X(q@init))
+    update
+      %2 := NOT clk
+      clk@pos := AND (%2, X(clk))
+      %3 := 8'd1
+      %4 := ADD (q, r)
+      %5 := ITE (rst, %3, %4)
+      %6 := ITE (clk@pos, %5, q)
+      %7 := 8'd1
+      X(q) := ITE (X(rst), %7, %6)
+  atom controls slow, r reads clk, rst, d, slow, r awaits clk
+    init
+      X(r) := 8'd17
+      X(slow) := 1'd0
+    update
+      %1 := NOT clk
+      clk@pos#2 := AND (%1, X(clk))
+      %2 := 8'd0
+      %3 := ADD (r, d)
+      %4 := ITE (rst, %2, %3)
+      %5 := NOT slow
+      X(r) := ITE (clk@pos#2, %4, r)
+      X(slow) := ITE (clk@pos#2, %5, slow)
+  atom controls n reads clk, n awaits clk
+    init
+      X(n) := 8'd128
+    update
+      %1 := NOT X(clk)
+      clk@neg := AND (clk, %1)
+      %2 := EXTRACT[0:0] n
+      %3 := EXTRACT[7:1] n
+      %4 := CONCAT (%2, %3)
+      X(n) := ITE (clk@neg, %4, n)
+  atom controls s reads s, slow awaits slow
+    init
+      X(s) := 8'd4
+    update
+      %1 := NOT slow
+      slow@pos := AND (%1, X(slow))
+      %2 := 8'd2
+      %3 := ADD (s, %2)
+      X(s) := ITE (slow@pos, %3, s)

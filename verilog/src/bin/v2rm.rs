@@ -1,4 +1,4 @@
-//! `v2rm [--top NAME] [-G NAME=VALUE]… [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv`:
+//! `v2rm [--top NAME] [-G NAME=VALUE]… [--ignore-initializers] [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv`:
 //! translates the top module of a SystemVerilog file (with its instances)
 //! and prints the reactive module. `-G` sets a parameter of the top module
 //! to a constant expression. `--instances` first prints the module of every
@@ -8,13 +8,19 @@
 //! module of the library). `--smt` prints an update round of the module as
 //! an SMT-LIB script instead, `--smt-init` the init round.
 //!
+//! `--ignore-initializers` drops the initial values of registers
+//! (`logic q = c;`, `initial q = c;`, files loaded into written arrays), so
+//! that they start with any value, as on hardware that does not keep
+//! initial values (ASICs); constants and ROMs keep their values.
+//!
 //! `--yosys` compares the translation with Yosys's instead (see the
 //! `miter` module of the library): for every variable on which the two
 //! differ, in the init or in the update round, it prints a counterexample
 //! and the replay of it in both interpreters, saying which side the
 //! reference semantics agrees with. Exits with failure if a variable
 //! differs or the solver gives up. Needs Yosys and z3 (found as in the
-//! `yosys` and `z3` modules), and does not take `-G` yet.
+//! `yosys` and `z3` modules), and does not take `-G` or
+//! `--ignore-initializers` (Yosys keeps initial values).
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
@@ -25,7 +31,7 @@ use verilog::miter::{self, Verdict};
 use verilog::smt::{self, Phase};
 use verilog::{constant, elab, frontend, lower, sizing, yosys, z3};
 
-const USAGE: &str = "usage: v2rm [--top NAME] [-G NAME=VALUE]... \
+const USAGE: &str = "usage: v2rm [--top NAME] [-G NAME=VALUE]... [--ignore-initializers] \
                      [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv";
 
 fn main() -> ExitCode {
@@ -37,10 +43,12 @@ fn main() -> ExitCode {
     let mut sized = false;
     let mut smt = None;
     let mut compare = false;
+    let mut ignore = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--top" => top = args.next(),
             "--yosys" => compare = true,
+            "--ignore-initializers" => ignore = true,
             "--instances" => instances = true,
             "--sized" => sized = true,
             "--smt" => smt = Some(Phase::Update),
@@ -62,6 +70,7 @@ fn main() -> ExitCode {
         .filter(|b| **b)
         .count()
         > 1
+        || (compare && ignore)
     {
         return usage();
     }
@@ -86,7 +95,10 @@ fn main() -> ExitCode {
                 span: Span::default(),
             });
         }
-        let inst = elab::elaborate(&d, &top, &overrides)?;
+        let mut inst = elab::elaborate(&d, &top, &overrides)?;
+        if ignore {
+            inst.ignore_initializers();
+        }
         let t = lower::lower_inst(&inst)?;
         Ok::<_, Error>((inst, t, overrides))
     })();

@@ -281,6 +281,41 @@ endmodule
     );
 }
 
+/// Initial values of signals driven by instances, and of instance signals.
+#[test]
+fn initial_values_and_instances() {
+    // an output of an instance is no register of the parent
+    rejects(
+        &top("  initial q = 4'd1;\n  child u (.clk, .a, .q, .y);"),
+        2,
+        "q",
+        "`q` is driven by the instance `u` at 3:23, which computes it in every time step",
+    );
+    // an initialized signal connected to an input of an instance only is
+    // a constant; registers of instances keep their initial values
+    let t = translate(&format!(
+        "{}{CHILD}",
+        top("  logic [3:0] k = 4'd6;\n  child u (.clk, .a(k), .q, .y);")
+    ))
+    .unwrap();
+    assert!(t.print().contains("X(k) := 4'd6"), "{}", t.print());
+    let src = "module top(input logic clk, output logic [3:0] q);
+  sub u (.clk, .q);
+endmodule
+module sub(input logic clk, output logic [3:0] q);
+  logic [3:0] r = 4'd2;
+  always_ff @(posedge clk) r <= r + 4'd1;
+  assign q = r;
+endmodule
+";
+    let mut inst = elab::load(src, "test.sv").unwrap();
+    assert_eq!(inst.initialized(), ["u.r"]);
+    assert_eq!(lower_inst(&inst).unwrap().initialized, ["u.r"]);
+    inst.ignore_initializers();
+    let t = lower_inst(&inst).unwrap();
+    assert!(t.initialized.is_empty() && t.vars.contains_key("u.r@init"));
+}
+
 #[test]
 fn rejected_loops_and_recursion() {
     // a loop through an instance: y = u.y = a + K = x = y

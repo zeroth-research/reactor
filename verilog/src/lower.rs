@@ -68,9 +68,12 @@ with a map from each register to the wire holding its value after the
 edge so far, starting with `*q` (a register keeps its value on paths that
 do not assign it). `q <= e` sets the entry of `q` to the wire of `e`, so
 the last assignment wins; at `if`, both branches start from the same map
-and the bits that differ are merged with `Ite`. The init action sets
-every register to an external variable `q@init`, so all initial states
-are possible.
+and the bits that differ are merged with `Ite`. The init action sets a
+register with an initial value (`logic q = c;`, `initial q = c;`) to it,
+`X(q) := c`, as hardware that keeps initial values does at power-on
+(FPGAs load them with the configuration). Every other register gets the
+value of an external variable `q@init`, `X(q) := ID X(q@init)`, so all
+its initial values are possible.
 
 Reading values just before the edge is what hardware does under two
 timing assumptions, which this semantics makes and does not check:
@@ -117,6 +120,8 @@ reset value, whether or not a clock edge happens:
 X(q) := ITE (X(rst), c, ITE (clk@pos, new, q))     update
 X(q) := ITE (X(rst), c, X(q@init))                 init
 ```
+
+(with an initial value `v`, the init action is `ITE (X(rst), c, v)`)
 
 so the atom also awaits the reset (and a register reset by a signal
 computed from itself is a loop). The value after the edge, `new`, comes
@@ -213,7 +218,8 @@ type Result<T> = std::result::Result<T, Error>;
 pub struct Translation {
     pub name: Name,
     pub module: Module,
-    /// Every source signal, and `q@init` for every register `q`, by name.
+    /// Every source signal, and `q@init` for every register `q` without an
+    /// initial value, by name.
     pub vars: BTreeMap<Name, Var>,
     /// The input clocks of the whole design: the inputs of the top module
     /// that the `always_ff` blocks are clocked by, directly or through
@@ -221,6 +227,11 @@ pub struct Translation {
     pub clocks: Vec<Name>,
     /// The signals assigned in `always_ff` blocks, in source order.
     pub registers: Vec<Name>,
+    /// The registers with an initial value (so without `q@init`), by
+    /// path, in source order.
+    pub initialized: Vec<Name>,
+    /// The width of every register, by path.
+    pub register_widths: BTreeMap<Name, usize>,
     /// The registers with an asynchronous reset (those the reset branch of
     /// their block assigns), by path, in source order.
     pub reset_registers: Vec<Name>,
@@ -245,6 +256,15 @@ pub struct Part {
     /// instantiation: `stage #(.W(4))`.
     pub title: String,
     pub module: Module,
+}
+
+/// The value of a literal or constant (after sizing, of the type of its
+/// context).
+fn literal(e: &Expr) -> Option<BitVec> {
+    match &e.kind {
+        ExprKind::Lit { value, .. } | ExprKind::Const { value, .. } => Some(value.clone()),
+        _ => None,
+    }
 }
 
 /// The name of the external variable holding the initial value of the
@@ -301,6 +321,8 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         naming: &naming,
         vars: BTreeMap::new(),
         registers: Vec::new(),
+        initialized: Vec::new(),
+        register_widths: BTreeMap::new(),
         reset_registers: Vec::new(),
         wire_names: HashMap::new(),
         instances: Vec::new(),
@@ -322,6 +344,8 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         vars: out.vars,
         clocks,
         registers: out.registers,
+        initialized: out.initialized,
+        register_widths: out.register_widths,
         reset_registers: out.reset_registers,
         unread_inputs,
         wire_names: out.wire_names,
@@ -337,6 +361,10 @@ struct Out<'n> {
     vars: BTreeMap<Name, Var>,
     /// The paths of the registers.
     registers: Vec<Name>,
+    /// The paths of the registers with an initial value.
+    initialized: Vec<Name>,
+    /// The widths of the registers, by path.
+    register_widths: BTreeMap<Name, usize>,
     /// The paths of the registers with an asynchronous reset.
     reset_registers: Vec<Name>,
     wire_names: HashMap<Wire, Name>,
@@ -370,6 +398,8 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
     })?;
     let m = &sized;
     let registers: Vec<Name> = m.registers().into_iter().cloned().collect();
+    // the initial values of registers (the others have `q@init`)
+    let inits: BTreeMap<&Name, &Expr> = m.inits.iter().map(|i| (&i.target, &i.value)).collect();
 
     // an input connected to an expression other than a name is a signal
     // `u.a` of the module, driven by an `assign`
@@ -410,7 +440,12 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
     }
     for q in &registers {
         let path = format!("{prefix}{q}");
-        vars.insert(init_name(q), out.var(&init_name(&path), env[q].ty.width));
+        if inits.contains_key(q) {
+            out.initialized.push(path.clone());
+        } else {
+            vars.insert(init_name(q), out.var(&init_name(&path), env[q].ty.width));
+        }
+        out.register_widths.insert(path.clone(), env[q].ty.width);
         out.registers.push(path);
     }
     for (q, _) in m.items.iter().filter_map(reset_of).flat_map(|(_, v)| v) {
@@ -442,6 +477,7 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
                 // await the next value of an asynchronous reset
                 Item::AlwaysFf { clock, .. } => ctrl
                     .iter()
+                    .filter(|q| !inits.contains_key(q))
                     .map(|q| init_name(q))
                     .chain([clock.clone()])
                     .chain(reset_of(item).map(|(r, _)| r.name.clone()))
@@ -516,21 +552,32 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
                     .map(|(r, values)| (b.reset_level(r), values.as_slice()));
                 b.finish_guarded(e, active, span)?;
                 out.add_names(prefix, std::mem::take(&mut b.names));
-                // the init action: the initial value, or the reset value
-                // if the reset is active in the first round
+                // the init action: the initial value (given, or any), or
+                // the reset value if the reset is active in the first round
                 let mut init = Builder::new(&env, &vars, true);
                 let active = reset.as_ref().map(|(r, _)| init.reset_level(r));
                 for q in &regs {
-                    let (q0, var) = (vars[&init_name(q)], vars[*q]);
-                    init.used.insert(init_name(q));
+                    let var = vars[*q];
                     let value = reset.iter().flat_map(|(_, v)| v).find(|(r, _)| r == q);
-                    match (active, value) {
-                        (Some(a), Some((_, c))) => {
-                            let (c, _) = init.expr(c)?;
-                            init.emit_to(SvOp::Ite, &[a, c, X(q0)], X(var), span)?;
+                    let start = match (inits.get(q), active.zip(value)) {
+                        // a constant initial value directly: `X(q) := 8'd5`
+                        (Some(v), None) if let Some(c) = literal(v) => {
+                            init.emit_to(SvOp::Lit(c), &[], X(var), span)?;
+                            continue;
                         }
-                        _ => {
-                            init.emit_to(SvOp::Id, &[X(q0)], X(var), span)?;
+                        (Some(v), _) => init.expr(v)?.0,
+                        (None, _) => {
+                            init.used.insert(init_name(q));
+                            X(vars[&init_name(q)])
+                        }
+                    };
+                    match active.zip(value) {
+                        Some((a, (_, c))) => {
+                            let (c, _) = init.expr(c)?;
+                            init.emit_to(SvOp::Ite, &[a, c, start], X(var), span)?;
+                        }
+                        None => {
+                            init.emit_to(SvOp::Id, &[start], X(var), span)?;
                         }
                     }
                 }
