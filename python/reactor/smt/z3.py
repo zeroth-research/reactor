@@ -54,6 +54,8 @@ def interpret(itype):
             return _np.frompyfunc(operator.sub, 2, 1)
         case LRA.Add() | LIA.Add():
             return _np.frompyfunc(operator.add, 2, 1)
+        case LRA.Neg() | LIA.Neg():
+            return _np.frompyfunc(operator.neg, 1, 1)
         case LRA.Linear(weight, bias) | LIA.Linear(weight, bias):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
 

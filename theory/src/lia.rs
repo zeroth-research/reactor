@@ -19,6 +19,7 @@ operations in [`LIA`] are:
 - [`LIA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
   `B` constant integer matrices of compatible shapes.
 - [`LIA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
+- [`LIA::Neg`] — elementwise negation, on integer matrices.
 
 `LIA` implements [`Theory`]; [`Theory::check`] validates read/write
 shapes against the selected operation.
@@ -107,6 +108,8 @@ pub enum LIA {
     Linear(crate::PyTensor, crate::PyTensor),
     Add(),
     Sub(),
+    // `-x`, elementwise
+    Neg(),
     // XXX: should these be in LIA?
     ReLU(),
     Argmax(),
@@ -160,9 +163,13 @@ impl Theory for LIA {
                 let mut write = write.into_iter();
                 check_linear_affine(self, a, b, &mut read, &mut write)
             }
-            LIA::Add() | LIA::Sub() | LIA::ReLU() | LIA::Argmax() | LIA::Min() | LIA::Max() => {
-                check_mat_ops(self, read, write)
-            }
+            LIA::Add()
+            | LIA::Sub()
+            | LIA::Neg()
+            | LIA::ReLU()
+            | LIA::Argmax()
+            | LIA::Min()
+            | LIA::Max() => check_mat_ops(self, read, write),
             LIA::Transpose() => check_transpose(self, read, write),
             LIA::Ite() | LIA::Id() => check_flow(self, read, write),
             LIA::AnyInt(shape) => check_havoc(&Sort::Int(*shape), read, write),
@@ -370,7 +377,7 @@ where
             }
             Ok(())
         }
-        LIA::ReLU() => {
+        LIA::Neg() | LIA::ReLU() => {
             let (r1, None) = (next_expect_degree(&mut read, 0, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
@@ -828,6 +835,23 @@ mod tests {
     fn relu_bool_fails() {
         let b = bool_t(1, 1);
         assert!(LIA::ReLU().check([b].map(deg0), [b].map(deg0)).is_err());
+    }
+
+    #[test]
+    fn neg_ok() {
+        let t = int(3, 4);
+        assert!(LIA::Neg().check([t].map(deg0), [t].map(deg0)).is_ok());
+    }
+
+    #[test]
+    fn neg_bool_or_reshaped_fails() {
+        let b = bool_t(1, 1);
+        assert!(LIA::Neg().check([b].map(deg0), [b].map(deg0)).is_err());
+        assert!(
+            LIA::Neg()
+                .check([int(3, 4)].map(deg0), [int(4, 3)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]

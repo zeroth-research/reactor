@@ -106,6 +106,8 @@ def eval_itype(itype, read, out_sort=None, in_sorts=None):
             return [r[0] + r[1]]
         case LRA.Sub() | LIA.Sub():
             return [r[0] - r[1]]
+        case LRA.Neg() | LIA.Neg():
+            return [-r[0]]
 
         # --- arithmetic: BV (modulo 2^width) ---
         case BV.Add():

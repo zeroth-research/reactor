@@ -72,7 +72,8 @@ def _relu_region(e, mode):
 # Adding support for an operation is an entry here and nothing else.
 OPS = {
     # affine arithmetic — evaluated straight through
-    "LIA_Linear": Op(), "LIA_Add": Op(), "LIA_Sub": Op(), "LIA_Int": Op(),
+    "LIA_Linear": Op(), "LIA_Add": Op(), "LIA_Sub": Op(), "LIA_Neg": Op(),
+    "LIA_Int": Op(),
     "LIA_Bool": Op(), "LIA_Id": Op(), "LIA_Transpose": Op(),
     # boolean structure — z3 handles it, and PRED_MODES splits what the LP cannot
     "LIA_And": Op(), "LIA_Or": Op(), "LIA_Xor": Op(), "LIA_Not": Op(),

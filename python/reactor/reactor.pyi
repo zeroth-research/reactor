@@ -109,6 +109,9 @@ class LRA:
     class Sub(LRA):
         def __init__(self) -> None: ...
 
+    class Neg(LRA):
+        def __init__(self) -> None: ...
+
     class ReLU(LRA):
         def __init__(self) -> None: ...
 
@@ -193,6 +196,9 @@ class LIA:
         def __init__(self) -> None: ...
 
     class Sub(LIA):
+        def __init__(self) -> None: ...
+
+    class Neg(LIA):
         def __init__(self) -> None: ...
 
     class ReLU(LIA):

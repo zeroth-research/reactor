@@ -19,6 +19,7 @@ operations in [`LRA`] are:
 - [`LRA::Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and
   `B` constant integer matrices of compatible shapes.
 - [`LRA::ReLU`] — the shape-preserving rectified-linear map on integer matrices.
+- [`LRA::Neg`] — elementwise negation, on real matrices.
 
 `RLA` implements [`Theory`]; [`Theory::check`] validates read/write
 shapes against the selected operation.
@@ -108,6 +109,8 @@ pub enum LRA {
     Linear(crate::PyTensor, crate::PyTensor),
     Add(),
     Sub(),
+    // `-x`, elementwise
+    Neg(),
     // XXX: should these be in RLA?
     ReLU(),
     Argmax(),
@@ -176,9 +179,13 @@ impl Theory for LRA {
                 let mut write = write.into_iter();
                 check_linear_affine(self, a, b, &mut read, &mut write)
             }
-            LRA::Add() | LRA::Sub() | LRA::ReLU() | LRA::Argmax() | LRA::Min() | LRA::Max() => {
-                check_mat_ops(self, read, write)
-            }
+            LRA::Add()
+            | LRA::Sub()
+            | LRA::Neg()
+            | LRA::ReLU()
+            | LRA::Argmax()
+            | LRA::Min()
+            | LRA::Max() => check_mat_ops(self, read, write),
             LRA::Transpose() => check_transpose(self, read, write),
             LRA::Ite() | LRA::Id() => check_flow(self, read, write),
             LRA::Uninterpreted(_) => {
@@ -395,7 +402,7 @@ where
             }
             Ok(())
         }
-        LRA::ReLU() => {
+        LRA::Neg() | LRA::ReLU() => {
             let (r1, None) = (next_with_degree(&mut read, 0)?, read.next()) else {
                 return Err(format!("{:?}: must read exactly one value", op));
             };
@@ -876,6 +883,23 @@ mod tests {
     fn relu_bool_fails() {
         let b = bool_t(1, 1);
         assert!(LRA::ReLU().check([b].map(deg0), [b].map(deg0)).is_err());
+    }
+
+    #[test]
+    fn neg_ok() {
+        let t = real(3, 4);
+        assert!(LRA::Neg().check([t].map(deg0), [t].map(deg0)).is_ok());
+    }
+
+    #[test]
+    fn neg_bool_or_reshaped_fails() {
+        let b = bool_t(1, 1);
+        assert!(LRA::Neg().check([b].map(deg0), [b].map(deg0)).is_err());
+        assert!(
+            LRA::Neg()
+                .check([real(3, 4)].map(deg0), [real(4, 3)].map(deg0))
+                .is_err()
+        );
     }
 
     #[test]
