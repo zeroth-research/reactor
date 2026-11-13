@@ -528,6 +528,19 @@ OPS: tuple[Op, ...] = (
         box="Box.mul",
         smt=_smt_mul,
     ),
+    # `*` on two `Mat`s is their matrix product (`Relational.Mat`), so the
+    # elementwise product is spelled out element by element.
+    Op(
+        "Mul",
+        LIA_LRA,
+        mat=lambda a: f"(fun i j => {a[0]} i j * {a[1]} i j)",
+        scalar=lambda a: f"({a[0]} * {a[1]})",
+        box=Unsupported(
+            "`Box.mul` is the matrix product; the elementwise one would be a "
+            "new Box in `Relational.Box`."
+        ),
+        smt=_smt_mul,
+    ),
     Op(
         "Neg",
         ALL,

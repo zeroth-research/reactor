@@ -97,6 +97,8 @@ def _ops() -> dict:
             theory.Implies(), [boolean, boolean], boolean)
     out["LIA.Neg"] = (LIA.Neg(), [Int([1, 2])], Int([1, 2]))
     out["LRA.Neg"] = (LRA.Neg(), [real], real)
+    out["LIA.Mul"] = (LIA.Mul(), [Int([2, 2]), Int([2, 2])], Int([2, 2]))
+    out["LRA.Mul"] = (LRA.Mul(), [real, real], real)
     out["LRA.Not"] = (LRA.Not(), [boolean], boolean)
     for name in ("Ge", "Le", "Ne"):
         out[f"LRA.{name}"] = (getattr(LRA, name)(), [real, real], boolean)
