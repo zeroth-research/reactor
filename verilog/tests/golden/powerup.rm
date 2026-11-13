@@ -1,0 +1,70 @@
+module powerup
+  external
+    clk : bv1
+    en : bv1
+    i : bv4
+    d : bv8
+    last@init : bv8
+    seen@init : bv8
+  interface
+    st : bv4
+    y : bv8
+    b : bv1
+    w : bv4
+  private
+    cnt : bv8
+    last : bv8
+    seen : bv8
+    armed : bv1
+    wide : bv12
+    pattern : bv16
+    next : bv8
+  atom controls st, cnt, last, seen, armed, wide reads clk, en, d, st, cnt, last, seen, armed, wide, next awaits clk, last@init, seen@init
+    init
+      X(cnt) := 8'd250
+      X(last) := ID X(last@init)
+      X(seen) := ID X(seen@init)
+      X(armed) := 1'd1
+      X(st) := 4'd9
+      X(wide) := 12'd4093
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := ITE (en, next, cnt)
+      %3 := OR (seen, d)
+      %4 := 8'd255
+      %5 := EQ (cnt, %4)
+      %6 := AND (armed, %5)
+      %7 := 1'd0
+      %8 := ITE (%6, %7, armed)
+      %9 := 4'd1
+      %10 := SUB (st, %9)
+      %11 := ZEXT[12] d
+      %12 := ADD (wide, %11)
+      X(cnt) := ITE (clk@pos, %2, cnt)
+      X(last) := ITE (clk@pos, d, last)
+      X(seen) := ITE (clk@pos, %3, seen)
+      X(armed) := ITE (clk@pos, %8, armed)
+      X(st) := ITE (clk@pos, %10, st)
+      X(wide) := ITE (clk@pos, %12, wide)
+  atom controls next awaits cnt
+    init = update
+      %1 := 8'd3
+      X(next) := ADD (X(cnt), %1)
+  atom controls y awaits cnt, last, seen
+    init = update
+      %1 := XOR (X(cnt), X(last))
+      X(y) := XOR (%1, X(seen))
+  atom controls w awaits wide
+    init = update
+      X(w) := EXTRACT[11:8] X(wide)
+  atom controls pattern
+    init = update
+      %1 := 15'd14635
+      %2 := 1'd0
+      X(pattern) := CONCAT (%1, %2)
+  atom controls b awaits i, armed, pattern
+    init = update
+      %1 := LSHR (X(pattern), X(i))
+      %2 := EXTRACT[0:0] %1
+      X(b) := AND (%2, X(armed))

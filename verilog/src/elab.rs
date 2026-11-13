@@ -134,6 +134,8 @@ fn inst(
         }
         children.push((i.name.clone(), child));
     }
+    // with the ports known, the signals connected to instances too
+    module.constants();
     stack.pop();
     Ok(Inst { module, children })
 }
@@ -202,6 +204,40 @@ impl Inst {
         );
         for (u, child) in &self.children {
             child.walk_registers(&format!("{prefix}{u}."), out);
+        }
+    }
+
+    /// The paths of the registers with an initial value, in order (a
+    /// module's before its instances').
+    pub fn initialized(&self) -> Vec<Name> {
+        let mut out = Vec::new();
+        self.walk_initialized("", &mut out);
+        out
+    }
+
+    fn walk_initialized(&self, prefix: &str, out: &mut Vec<Name>) {
+        let m = &self.module;
+        let inits: BTreeSet<&Name> = m.inits.iter().map(|i| &i.target).collect();
+        out.extend(
+            m.registers()
+                .into_iter()
+                .filter(|q| inits.contains(q))
+                .map(|q| format!("{prefix}{q}")),
+        );
+        for (u, child) in &self.children {
+            child.walk_initialized(&format!("{prefix}{u}."), out);
+        }
+    }
+
+    /// Drops the initial values of all registers, so that they start with
+    /// any value (constants and ROMs keep their values): for hardware that
+    /// does not keep initial values, such as ASICs.
+    pub fn ignore_initializers(&mut self) {
+        let m = &mut self.module;
+        let registers: BTreeSet<Name> = m.registers().into_iter().cloned().collect();
+        m.inits.retain(|i| !registers.contains(&i.target));
+        for (_, child) in &mut self.children {
+            child.ignore_initializers();
         }
     }
 

@@ -95,6 +95,11 @@ pub fn module(m: &Module, env: &Env) -> Result<Module> {
             }
         }
     }
+    // an initial value is assigned to its register
+    for init in &mut out.inits {
+        let width = typing::lookup(env, &init.target, init.span)?.ty.width;
+        init.value = s.assign(width, &init.value)?;
+    }
     Ok(out)
 }
 
@@ -679,6 +684,9 @@ fn body(env: &Env, m: &Module, names: &BTreeMap<Name, Name>) -> String {
             let task = if r.binary { "$readmemb" } else { "$readmemh" };
             out += &format!("  initial {task}(\"{}\", {});\n", r.file, a.name);
         }
+    }
+    for i in &m.inits {
+        out += &format!("  initial {} = {};\n", i.target, expr(env, &i.value));
     }
     for item in &m.items {
         out += "  ";

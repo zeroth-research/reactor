@@ -63,6 +63,14 @@ is resized); the expression connected to an input is assigned to the port
 (sized like any assignment). A clock port of an instance is connected to
 the name of a 1-bit signal, which then counts as a clock of the module.
 
+Only registers have initial values (`logic q = c;`, `initial q = c;`, a
+file loaded into a written array): a signal computed by an `assign`, an
+`always_comb` or an instance takes its value in every time step, so an
+initial value would have no effect on it, and an input is set from
+outside. An initial value is a constant, sized like an assignment to the
+register. A signal with an initial value that nothing drives is a constant
+(the frontend has made it an `assign` of the value).
+
 An `always_comb` block must also be free of latches and of reads of stale
 values ([`definite`]): every signal it drives is assigned on every path
 through the block, and read only after it has been assigned on every path
@@ -277,6 +285,9 @@ pub fn check(m: &Module) -> Result<Env> {
             }
         }
     }
+    for init in &m.inits {
+        initial_value(&env, m, &driver, init)?;
+    }
     for (name, sig) in &env {
         if sig.dir != Some(Dir::Input) && !driver.contains_key(name) {
             return Err(Error::new(sig.span, format!("`{name}` is never driven")));
@@ -294,6 +305,67 @@ pub fn check(m: &Module) -> Result<Env> {
         }
     }
     Ok(env)
+}
+
+/// Checks the initial value of a signal: a constant (an expression that
+/// reads no signal), given to a register. A signal driven by an `assign`,
+/// an `always_comb` or an instance is computed in every time step, so an
+/// initial value would have no effect (the frontend has made initialized
+/// signals that nothing drives constants already, see
+/// [`Module::constants`]).
+fn initial_value(
+    env: &Env,
+    m: &Module,
+    driver: &BTreeMap<Name, (Span, usize)>,
+    init: &ast::Init,
+) -> Result<()> {
+    let y = &init.target;
+    let sig = lookup(env, y, init.span)?;
+    let mut reads = Vec::new();
+    init.value.reads(&mut reads);
+    if let Some((x, span)) = reads.first() {
+        return Err(Error::new(
+            *span,
+            format!("the initial value of `{y}` must be a constant, it reads `{x}`"),
+        ));
+    }
+    if sig.dir == Some(Dir::Input) {
+        return Err(Error::new(
+            init.span,
+            format!("`{y}` is an input: only signals of the module have initial values"),
+        ));
+    }
+    let array = ast::array_of(y);
+    let first = driver
+        .iter()
+        .find(|(x, _)| ast::array_of(x) == array)
+        .map(|(_, d)| *d);
+    let (span, i) = match first {
+        Some(d) => d,
+        None if array != y => {
+            return Err(Error::new(
+                init.span,
+                format!(
+                    "`{y}`: nothing writes the array `{array}`, so its elements are constants: \
+                     load it from a file (`$readmemb`, `$readmemh`) instead"
+                ),
+            ));
+        }
+        None => return Err(Error::new(sig.span, format!("`{y}` is never driven"))),
+    };
+    let kind = match &m.items[i] {
+        Item::AlwaysFf { .. } => return Ok(()),
+        Item::Assign { .. } => "an `assign`".to_string(),
+        Item::AlwaysComb { .. } => "an `always_comb`".to_string(),
+        Item::Instance(u) => format!("the instance `{}`", u.name),
+    };
+    Err(Error::new(
+        init.span,
+        format!(
+            "`{y}` is driven by {kind} at {span}, which computes it in every time step: an \
+             initial value has no effect on it (only registers have initial values)"
+        ),
+    ))
 }
 
 /// What drives a signal, as [`domains`] sees it: an item of an instance,
@@ -789,6 +861,9 @@ pub fn explicit(env: &Env, m: &Module) -> Result<()> {
                 }
             }
         }
+    }
+    for i in &m.inits {
+        assign(env[&i.target].ty.width, expr(env, &i.value)?, i.span)?;
     }
     Ok(())
 }

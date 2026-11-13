@@ -1,0 +1,44 @@
+module initinst
+  external
+    clk : bv1
+    en : bv1
+  interface
+    a : bv6
+    b : bv4
+    ids : bv4
+  private
+    ia : bv4
+    ib : bv4
+    v.en : bv1
+  atom controls v.en awaits en
+    init = update
+      X(v.en) := NOT X(en)
+  atom controls a reads clk, en, a awaits clk
+    init
+      X(a) := 6'd60
+    update
+      %1 := NOT clk
+      u.clk@pos := AND (%1, X(clk))
+      %2 := 6'd1
+      %3 := ADD (a, %2)
+      %4 := ITE (en, %3, a)
+      X(a) := ITE (u.clk@pos, %4, a)
+  atom controls ia
+    init = update
+      X(ia) := 4'd5
+  atom controls b reads clk, b, v.en awaits clk
+    init
+      X(b) := 4'd3
+    update
+      %1 := NOT clk
+      v.clk@pos := AND (%1, X(clk))
+      %2 := 4'd1
+      %3 := ADD (b, %2)
+      %4 := ITE (v.en, %3, b)
+      X(b) := ITE (v.clk@pos, %4, b)
+  atom controls ib
+    init = update
+      X(ib) := 4'd9
+  atom controls ids awaits ia, ib
+    init = update
+      X(ids) := XOR (X(ia), X(ib))

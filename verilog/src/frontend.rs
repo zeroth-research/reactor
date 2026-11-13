@@ -22,12 +22,23 @@ name.
 An unpacked array `logic [7:0] m [0:N-1]` (or `[N-1:0]`, `[N]`; one
 dimension, addresses from 0, not as a port) becomes one signal per element,
 `m[0]`, …, `m[N-1]` (see [`ast::Array`]). An element with a constant index
-is that signal; one with a variable index is an [`ast::Elem`]. The only
-`initial` blocks accepted load arrays from files: `$readmemb("f", m);` or
-`$readmemh`, with `f` relative to the directory of the source file and read
-here. A loaded array must never be written: it is a ROM, whose elements are
-constants rather than signals. Arrays are resolved after the whole module
-is read, since the `initial` may come after the uses.
+is that signal; one with a variable index is an [`ast::Elem`]. An array is
+loaded from a file by `initial $readmemb("f", m);` or `$readmemh`, with `f`
+relative to the directory of the source file and read here. A loaded array
+that is never written is a ROM, whose elements are constants rather than
+signals; every element needs a value. For an array that is also written,
+the file gives the initial values of the elements it covers (a RAM
+preload), and the others have no initial value. Arrays are resolved after
+the whole module is read, since the `initial` may come after the uses.
+
+Initial values ([`ast::Init`]) come from declarations (`logic q = c;`,
+`output logic q = c`) and from `initial` blocks of blocking assignments
+`q = c;` to whole signals or to elements with a constant index (`m[3] =
+c;`). A value that is x in every bit (`'x`, `1'bx` for a 1-bit signal)
+says that the initial value is unknown, which is what a signal without an
+initial value has, so it adds nothing. A net declaration with a value,
+`wire y = e;`, is no initial value but a continuous assignment, the same
+as `assign y = e;`.
 
 `sv-parser` ignores operator precedence: a chain of binary operators comes
 out nested to the right in source order (`a * b + c` as `a * (b + c)`), and
@@ -42,7 +53,7 @@ not affected.
 
 use crate::ast::{
     self, Array, BinOp, CaseItem, Cast, Conn, Const, Decl, Dir, Edge, Elem, Elems, Error, Expr,
-    ExprKind, Index, Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port,
+    ExprKind, Index, Init, Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port,
     Reset, Rom, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::constant::{self, Failure, Literal};
@@ -142,6 +153,9 @@ impl Design {
             used: RefCell::new(BTreeSet::new()),
             dir: &self.dir,
             arrays: RefCell::new(Vec::new()),
+            inits: RefCell::new(Vec::new()),
+            unknown: RefCell::new(Vec::new()),
+            loads: RefCell::new(Vec::new()),
         }
     }
 
@@ -259,6 +273,27 @@ struct Cx<'t> {
     dir: &'t Path,
     /// The arrays declared so far.
     arrays: RefCell<Vec<Array>>,
+    /// The initial values so far.
+    inits: RefCell<Vec<Init>>,
+    /// The initial values that are x in every bit, so no initial values:
+    /// the target, the size of the literal (none if unsized) and the
+    /// position of the target.
+    unknown: RefCell<Vec<(Name, Option<usize>, Span)>>,
+    /// The arrays loaded from files so far.
+    loads: RefCell<Vec<Load>>,
+}
+
+/// An array loaded by `$readmemb` or `$readmemh`: the contents of a ROM, or
+/// the initial values of the elements of a written array.
+struct Load {
+    array: Name,
+    binary: bool,
+    /// The file name as written, and the file read.
+    file: String,
+    path: PathBuf,
+    /// The value of each element, if the file gives one.
+    values: Vec<Option<BitVec>>,
+    span: Span,
 }
 
 /// Whether the node contains any token; optional syntax that is absent or
@@ -331,6 +366,7 @@ impl Cx<'_> {
             decls: Vec::new(),
             arrays: Vec::new(),
             items: Vec::new(),
+            inits: Vec::new(),
         };
         if let Some(params) = params {
             self.parameter_port_list(params, &mut module)?;
@@ -352,7 +388,10 @@ impl Cx<'_> {
             self.module_item(item, &mut module, body_overridable)?;
         }
         module.arrays = self.arrays.take();
-        resolve(&mut module)?;
+        module.inits = self.inits.take();
+        self.unknown_values(&module)?;
+        resolve(&mut module, self.loads.take())?;
+        module.constants();
         for o in self.overrides {
             if !self.used.borrow().contains(&o.name) {
                 let msg = if module.params.iter().any(|p| p.name == o.name) {
@@ -531,13 +570,12 @@ impl Cx<'_> {
     /// A port of the ANSI header. Direction and type are inherited from the
     /// previous port where omitted (`input logic [7:0] a, b`).
     fn port(&self, p: &sv::AnsiPortDeclaration, prev: Option<(Dir, Ty)>) -> Result<Port> {
-        let (dir, ty, id) = match p {
+        let (dir, ty, id, default) = match p {
             sv::AnsiPortDeclaration::Net(n) => {
                 let (header, id, dims, default) = &n.nodes;
                 self.absent(dims, "unpacked dimension")?;
-                self.absent(default, "port default")?;
                 match header {
-                    None => (None, None, id),
+                    None => (None, None, id, default),
                     Some(sv::NetPortHeaderOrInterfacePortHeader::NetPortHeader(h)) => {
                         let (dir, ty) = &h.nodes;
                         let ty = match ty {
@@ -550,7 +588,7 @@ impl Cx<'_> {
                             }
                             t => return self.unsupported(t),
                         };
-                        (dir.as_ref(), Some(ty), id)
+                        (dir.as_ref(), Some(ty), id, default)
                     }
                     Some(h) => return self.unsupported(h),
                 }
@@ -558,16 +596,15 @@ impl Cx<'_> {
             sv::AnsiPortDeclaration::Variable(v) => {
                 let (header, id, dims, default) = &v.nodes;
                 self.absent(dims, "unpacked dimension")?;
-                self.absent(default, "port default")?;
                 match header {
-                    None => (None, None, id),
+                    None => (None, None, id, default),
                     Some(h) => {
                         let (dir, ty) = &h.nodes;
                         let ty = match &ty.nodes.0 {
                             sv::VarDataType::DataType(t) => self.data_type(t)?,
                             sv::VarDataType::Var(v) => self.data_type_or_implicit(&v.nodes.1)?,
                         };
-                        (dir.as_ref(), Some(ty), id)
+                        (dir.as_ref(), Some(ty), id, default)
                     }
                 }
             }
@@ -587,10 +624,38 @@ impl Cx<'_> {
             (None, Some((_, ty))) => ty,
             (None, None) => unreachable!("the first port has a header"),
         };
+        let name = self.identifier(&id.nodes.0)?;
+        if let Some((_, value)) = default {
+            if dir == Dir::Input {
+                return self.err(value, "default values of inputs not supported");
+            }
+            // a constant expression in the grammar, so evaluated here
+            let span = self.span(id);
+            let text = self.text(value);
+            match unknown_value(&text) {
+                Some(size) => self.unknown.borrow_mut().push((name.clone(), size, span)),
+                None => {
+                    let c = self.const_expr(value)?;
+                    let value = Expr {
+                        kind: ExprKind::Const {
+                            text,
+                            ty: c.ty,
+                            value: c.value,
+                        },
+                        span: self.span(value),
+                    };
+                    self.inits.borrow_mut().push(Init {
+                        target: name.clone(),
+                        value,
+                        span,
+                    });
+                }
+            }
+        }
         Ok(Port {
             dir,
             decl: Decl {
-                name: self.identifier(&id.nodes.0)?,
+                name,
                 ty,
                 span: self.span(id),
             },
@@ -1233,24 +1298,43 @@ impl Cx<'_> {
             }
             _ => {}
         }
-        // (name, unpacked dimensions, initializer)
+        // (name, type, unpacked dimensions, value, whether a net)
         let mut add = |id: &sv::Identifier,
                        ty: Ty,
                        dims: Vec<&sv::UnpackedDimension>,
-                       init: bool|
+                       value: Option<&sv::Expression>,
+                       net: bool|
          -> Result<()> {
-            if init {
-                return self.err(
-                    id,
-                    "declaration with initializer not supported, use `assign`",
-                );
-            }
             let name = self.identifier(id)?;
             let span = self.span(id);
             let Some(size) = self.array_size(id, &dims)? else {
-                m.decls.push(Decl { name, ty, span });
+                m.decls.push(Decl {
+                    name: name.clone(),
+                    ty,
+                    span,
+                });
+                match value {
+                    // `wire y = e;` is `assign y = e;`
+                    Some(e) if net => {
+                        let lhs = Lvalue {
+                            kind: LvalueKind::Var(name),
+                            span,
+                        };
+                        let rhs = self.expr(e)?;
+                        m.items.push(Item::Assign { lhs, rhs, span });
+                    }
+                    Some(e) => self.initializer(name, span, e)?,
+                    None => {}
+                }
                 return Ok(());
             };
+            if let Some(e) = value {
+                return self.err(
+                    e,
+                    "initial values of whole arrays not supported (load the array from a file \
+                     with `$readmemb` or `$readmemh`)",
+                );
+            }
             for k in 0..size {
                 m.decls.push(Decl {
                     name: ast::element(&name, k),
@@ -1278,7 +1362,8 @@ impl Cx<'_> {
                     let ty = self.data_type_or_implicit(ty)?;
                     for a in list.nodes.0.contents() {
                         let (id, dims, init) = &a.nodes;
-                        add(&id.nodes.0, ty, dims.iter().collect(), init.is_some())?;
+                        let value = init.as_ref().map(|(_, e)| e);
+                        add(&id.nodes.0, ty, dims.iter().collect(), value, true)?;
                     }
                     Ok(())
                 }
@@ -1309,7 +1394,8 @@ impl Cx<'_> {
                                         }
                                     }
                                 }
-                                add(&id.nodes.0, ty, unpacked, init.is_some())?;
+                                let value = init.as_ref().map(|(_, e)| e);
+                                add(&id.nodes.0, ty, unpacked, value, false)?;
                             }
                             a => return self.unsupported(a),
                         }
@@ -1508,11 +1594,12 @@ impl Cx<'_> {
         Ok(Some(size))
     }
 
-    /// `initial` with `$readmemb("file", m);` or `$readmemh(…)` calls only
-    /// (one, or several in `begin … end`): the contents of ROMs.
+    /// `initial` with blocking assignments of initial values, `q = c;` or
+    /// `m[3] = c;`, and `$readmemb("file", m);` or `$readmemh(…)` calls
+    /// (one statement, or several in `begin … end`).
     fn initial(&self, i: &sv::InitialConstruct) -> Result<()> {
-        let only = "`initial` may only load arrays from files (`$readmemb(\"file\", m);`): \
-                    initial values are not supported yet";
+        let only = "`initial` may only give signals initial values (`q = 8'd0;`) and load \
+                    arrays from files (`$readmemb(\"file\", m);`)";
         let (_, s) = &i.nodes;
         let stmts: Vec<&sv::Statement> = match s {
             sv::StatementOrNull::Statement(s) => match &s.nodes.2 {
@@ -1543,8 +1630,20 @@ impl Cx<'_> {
             let (label, attrs, item) = &s.nodes;
             self.absent(label, "statement label")?;
             self.absent(attrs, "attribute")?;
-            let sv::StatementItem::SubroutineCallStatement(c) = item else {
-                return self.err(s, only);
+            let c = match item {
+                sv::StatementItem::BlockingAssignment(a) => {
+                    self.initial_assignment(&a.0, only)?;
+                    continue;
+                }
+                sv::StatementItem::NonblockingAssignment(_) => {
+                    return self.err(
+                        s,
+                        "`initial` gives initial values with blocking assignments (`q = 8'd0;`), \
+                         not `<=`",
+                    );
+                }
+                sv::StatementItem::SubroutineCallStatement(c) => c,
+                _ => return self.err(s, only),
             };
             let sv::SubroutineCallStatement::SubroutineCall(c) = c.as_ref() else {
                 return self.err(c.as_ref(), only);
@@ -1603,12 +1702,12 @@ impl Cx<'_> {
                 f => return self.err(f, format!("the file of `{task}` must be a string literal")),
             };
             let m_text = self.text(m);
-            let mut arrays = self.arrays.borrow_mut();
-            let Some(array) = arrays.iter_mut().find(|a| a.name == m_text) else {
+            let arrays = self.arrays.borrow();
+            let Some(array) = arrays.iter().find(|a| a.name == m_text) else {
                 return self.err(m, format!("`{m_text}` is not an array declared before"));
             };
-            if let Some(r) = &array.rom {
-                return self.err(&c.0, format!("`{m_text}` is already loaded at {}", r.span));
+            if let Some(l) = self.loads.borrow().iter().find(|l| l.array == m_text) {
+                return self.err(&c.0, format!("`{m_text}` is already loaded at {}", l.span));
             }
             let path = self.dir.join(&file_name);
             let text = std::fs::read_to_string(&path).map_err(|e| {
@@ -1619,12 +1718,100 @@ impl Cx<'_> {
             })?;
             let values = readmem(&text, binary, array)
                 .map_err(|msg| Error::new(span, format!("{}: {msg}", path.display())))?;
-            array.rom = Some(Rom {
+            self.loads.borrow_mut().push(Load {
+                array: m_text,
                 binary,
                 file: file_name,
+                path,
                 values,
                 span,
             });
+        }
+        Ok(())
+    }
+
+    /// `q = c;` or `m[3] = c;` in `initial`.
+    fn initial_assignment(&self, a: &sv::BlockingAssignment, only: &str) -> Result<()> {
+        let sv::BlockingAssignment::OperatorAssignment(a) = a else {
+            return self.err(a, only);
+        };
+        let (lhs, op, rhs) = &a.nodes;
+        if self.text(op) != "=" {
+            return self.err(op, format!("`{}` not supported", self.text(op)));
+        }
+        let l = self.variable_lvalue(lhs)?;
+        let target = match &l.kind {
+            LvalueKind::Var(x) => x.clone(),
+            LvalueKind::Elem(e) if e.sel.is_none() => match e.index {
+                Index::Const(k) => ast::element(&e.array, k),
+                Index::Expr(_) => {
+                    return self.err(
+                        lhs,
+                        "the initial value of an element needs a constant address (`m[3] = \
+                         8'd0;`)",
+                    );
+                }
+            },
+            _ => {
+                return self.err(
+                    lhs,
+                    "initial values are given to whole signals and elements (`q = 8'd0;`, \
+                     `m[3] = 8'd0;`), not to selects or concatenations",
+                );
+            }
+        };
+        self.initializer(target, l.span, rhs)
+    }
+
+    /// The initial value `e` of `target` at `span`.
+    fn initializer(&self, target: Name, span: Span, e: &sv::Expression) -> Result<()> {
+        match unknown_value(&self.text(e)) {
+            Some(size) => self.unknown.borrow_mut().push((target, size, span)),
+            None => {
+                let value = self.expr(e)?;
+                self.inits.borrow_mut().push(Init {
+                    target,
+                    value,
+                    span,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks the initial values that are x in every bit: an x literal
+    /// narrower than its signal is extended with zeros, so it would say
+    /// that some bits are 0; and no signal has two initial values.
+    fn unknown_values(&self, m: &Module) -> Result<()> {
+        let signals = m.ports.iter().map(|p| &p.decl).chain(&m.decls);
+        let widths: BTreeMap<&Name, usize> = signals.map(|d| (&d.name, d.ty.width)).collect();
+        for (y, size, span) in self.unknown.borrow().iter() {
+            if let (Some(n), Some(w)) = (size, widths.get(y))
+                && n < w
+            {
+                return Err(Error::new(
+                    *span,
+                    format!(
+                        "the initial value of `{y}` has {n} x bits, but `{y}` has {w} bits, so \
+                         the others would be 0: values are 2-state, x is accepted only as the \
+                         whole initial value (`'x`), meaning none"
+                    ),
+                ));
+            }
+        }
+        let unknown = self.unknown.borrow();
+        let mut all: Vec<(&Name, Span)> = (m.inits.iter().map(|i| (&i.target, i.span)))
+            .chain(unknown.iter().map(|(y, _, span)| (y, *span)))
+            .collect();
+        all.sort_by_key(|(_, span)| *span);
+        let mut seen: BTreeMap<&Name, Span> = BTreeMap::new();
+        for (y, span) in all {
+            if let Some(prev) = seen.insert(y, span) {
+                return Err(Error::new(
+                    span,
+                    format!("`{y}` already has an initial value at {prev}"),
+                ));
+            }
         }
         Ok(())
     }
@@ -2222,7 +2409,37 @@ impl Op {
 /// comments, `_` in words ignored, `@a` (hexadecimal) setting the address
 /// of the next word. Every element must get a value, which must fit the
 /// element; x and z digits are not supported (2-state).
-fn readmem(text: &str, binary: bool, m: &Array) -> std::result::Result<Vec<BitVec>, String> {
+/// If `text` is a literal that is x in every bit (`'x`, `4'bxxxx`, `1'hx`,
+/// in parentheses or not), its size: `None` if unsized.
+fn unknown_value(text: &str) -> Option<Option<usize>> {
+    let mut t: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '_')
+        .collect();
+    while t.starts_with('(') && t.ends_with(')') {
+        t = t[1..t.len() - 1].to_string();
+    }
+    let (size, rest) = t.split_once('\'')?;
+    let size = match size {
+        "" => None,
+        n => Some(n.parse().ok()?),
+    };
+    let rest = rest.to_ascii_lowercase();
+    let rest = rest.strip_prefix('s').unwrap_or(&rest);
+    let digits = match rest.strip_prefix(['b', 'o', 'd', 'h']) {
+        Some(d) if !d.is_empty() => d,
+        _ => rest,
+    };
+    (!digits.is_empty() && digits.chars().all(|c| c == 'x')).then_some(size)
+}
+
+/// The words of a file read by `$readmemb` (`binary`) or `$readmemh` for
+/// the array `m`: the value of each element the file gives one.
+fn readmem(
+    text: &str,
+    binary: bool,
+    m: &Array,
+) -> std::result::Result<Vec<Option<BitVec>>, String> {
     let mut values: Vec<Option<BitVec>> = vec![None; m.size];
     let mut address = 0usize;
     let mut rest = text;
@@ -2280,21 +2497,111 @@ fn readmem(text: &str, binary: bool, m: &Array) -> std::result::Result<Vec<BitVe
         *slot = Some(BitVec::wrap(m.ty.width, value));
         address += 1;
     }
-    match values.iter().position(Option::is_none) {
-        Some(k) => Err(format!(
-            "no value for `{}` (every element of a loaded array needs one)",
-            ast::element(&m.name, k)
-        )),
-        None => Ok(values.into_iter().flatten().collect()),
-    }
+    Ok(values)
 }
 
 /// Resolves the elements of arrays in `m` once all of its items are known
-/// (an array is a ROM if `initial` loads it, possibly after its uses): a
-/// ROM's elements are its contents, and it must not be written; the
-/// element `m[3]` of any other array is the signal `m[3]`, and `m[i]` with
-/// a variable index any of its element signals.
-fn resolve(m: &mut Module) -> Result<()> {
+/// (an array is a ROM if `initial` loads it and nothing writes it, possibly
+/// after its uses): a ROM's elements are its contents, every one given by
+/// the file; the element `m[3]` of any other array is the signal `m[3]`,
+/// and `m[i]` with a variable index any of its element signals. A file
+/// loaded into a written array gives initial values to its elements.
+fn resolve(m: &mut Module, loads: Vec<Load>) -> Result<()> {
+    // the arrays assigned anywhere (before resolving, every access to an
+    // array is an element)
+    let mut written = BTreeSet::new();
+    for item in &m.items {
+        let mut targets = Vec::new();
+        match item {
+            Item::Assign { lhs, .. } => targets.push(lhs),
+            Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => {
+                body.lvalues(&mut targets)
+            }
+            Item::Instance(_) => {}
+        }
+        while let Some(l) = targets.pop() {
+            match &l.kind {
+                LvalueKind::Elem(e) => {
+                    written.insert(e.array.clone());
+                }
+                LvalueKind::Concat(ls) => targets.extend(ls),
+                LvalueKind::Var(_) | LvalueKind::Select(..) => {}
+            }
+        }
+    }
+    for load in loads {
+        let a = m
+            .arrays
+            .iter_mut()
+            .find(|a| a.name == load.array)
+            .expect("a declared array");
+        if written.contains(&a.name) {
+            for (k, v) in load.values.into_iter().enumerate() {
+                let Some(value) = v else { continue };
+                let target = ast::element(&a.name, k);
+                if let Some(i) = m.inits.iter().find(|i| i.target == target) {
+                    return Err(Error::new(
+                        i.span,
+                        format!("`{target}` already has an initial value at {}", load.span),
+                    ));
+                }
+                let value = Expr {
+                    kind: ExprKind::Lit { ty: a.ty, value },
+                    span: load.span,
+                };
+                m.inits.push(Init {
+                    target,
+                    value,
+                    span: load.span,
+                });
+            }
+            continue;
+        }
+        if let Some(k) = load.values.iter().position(Option::is_none) {
+            return Err(Error::new(
+                load.span,
+                format!(
+                    "{}: no value for `{}` (every element of an array that is never written \
+                     needs one: it is a ROM)",
+                    load.path.display(),
+                    ast::element(&a.name, k)
+                ),
+            ));
+        }
+        a.rom = Some(Rom {
+            binary: load.binary,
+            file: load.file,
+            values: load.values.into_iter().flatten().collect(),
+            span: load.span,
+        });
+    }
+    for i in &m.inits {
+        let Some((name, k)) = i.target.split_once('[') else {
+            continue;
+        };
+        let a = m.arrays.iter().find(|a| a.name == name).expect("an array");
+        let k: usize = k.trim_end_matches(']').parse().expect("an address");
+        if k >= a.size {
+            return Err(Error::new(
+                i.span,
+                format!(
+                    "`{}` out of range: `{name}` has addresses 0 to {}",
+                    i.target,
+                    a.size - 1
+                ),
+            ));
+        }
+        if let Some(r) = &a.rom {
+            return Err(Error::new(
+                i.span,
+                format!(
+                    "`{name}` is loaded at {}, and nothing writes it: its elements are \
+                     constants, without initial values of their own",
+                    r.span
+                ),
+            ));
+        }
+    }
     let arrays: BTreeMap<Name, Array> = m
         .arrays
         .iter()
@@ -2393,16 +2700,7 @@ impl Resolver<'_> {
             ));
         }
         match (&a.rom, &e.index) {
-            (Some(r), _) if written => Err(Error::new(
-                span,
-                format!(
-                    "`{}` is loaded by `{}` at {} and assigned here: a loaded array must not \
-                     be written (initial contents of written arrays are not supported yet)",
-                    a.name,
-                    if r.binary { "$readmemb" } else { "$readmemh" },
-                    r.span
-                ),
-            )),
+            (Some(_), _) if written => unreachable!("a ROM is not written"),
             (Some(r), _) => {
                 e.elems = Elems::Consts(a.ty, r.values.clone());
                 Ok(None)
