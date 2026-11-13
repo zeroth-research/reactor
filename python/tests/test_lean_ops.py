@@ -200,18 +200,6 @@ _KNOWN_GAPS = {
     # term rather than using a Lean emitter.
     *(("LIA", "Xor", c) for c in ("mat", "scalar", "box")),
     *(("LRA", "Xor", c) for c in ("mat", "scalar", "box")),
-    # No Box combinator yet.
-    ("LIA", "Implies", "box"),
-    ("LRA", "Implies", "box"),
-    ("LIA", "Mul", "box"),
-    ("LRA", "Mul", "box"),
-    *(("Cast", name, "box") for name in
-      ("IntToReal", "RealToInt", "BVToInt", "BitToBool", "BoolToBit")),
-    ("LIA", "Get", "box"),
-    ("LRA", "Get", "box"),
-    ("BV", "Get", "box"),
-    ("LIA", "Div", "box"),
-    ("LIA", "Mod", "box"),
     # A transpose has no cvc5 term; `check_na_supported` refuses it by name.
     ("LIA", "Transpose", "smt"),
     ("LRA", "Transpose", "smt"),
