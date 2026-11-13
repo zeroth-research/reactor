@@ -70,7 +70,7 @@ fn atom_with_invalid_read() {
     let x = Var::new("A");
     let y = Var::new("B");
     let z = Var::new("C");
-    let p = Wire::scalar("P");
+    let p = Wire::new("P");
 
     let init = Term::function(mk_op("i"), [X(y), X(z)], [p, X(x)]).unwrap();
     let update = Term::function(mk_op("u"), [X(y), X(z)], [p, X(x), *y, *z]).unwrap();
@@ -253,7 +253,7 @@ fn simple_timed_automaton() {
 
     // jump: guard x >= 1; toggle the location and reset the clock when it
     // fires, hold both otherwise
-    let guard = Wire::scalar("bool");
+    let guard = Wire::new("bool");
     let update = [
         Term::function(mk_op("GEQ(1)"), [guard], [x]).unwrap(),
         Term::function(mk_op("TOGGLE_IF"), [X(loc)], [guard, *loc]).unwrap(),
@@ -295,7 +295,7 @@ fn hybrid_rejects_missing_flow() {
         Term::constant(mk_op("CONST(0)"), [X(x)]).unwrap(),
     ];
 
-    let guard = Wire::scalar("bool");
+    let guard = Wire::new("bool");
     let update = [
         Term::function(mk_op("GEQ(1)"), [guard], [x]).unwrap(),
         Term::function(mk_op("TOGGLE_IF"), [X(loc)], [guard, *loc]).unwrap(),

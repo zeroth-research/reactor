@@ -320,16 +320,13 @@ class BV:
 # ---------------------------------------------------------------------------
 
 class Wire:
-    def __init__(self, dtype: Sort, degree: int = 0) -> None: ...
+    def __init__(self, dtype: Sort) -> None: ...
 
     @property
     def id(self) -> int: ...
 
     @property
     def dtype(self) -> Sort: ...
-
-    @property
-    def degree(self) -> int: ...
 
     @override
     def __eq__(self, other: object) -> bool: ...
@@ -352,8 +349,8 @@ class Wire:
 class Var:
     """A state variable: three wires (latched, next, derivative).
 
-    A variable stands for its latched wire — attribute lookups (`id`, `dtype`,
-    `degree`), equality, hashing, and ordering all go through it, so a `Var`
+    A variable stands for its latched wire — attribute lookups (`id`, `dtype`),
+    equality, hashing, and ordering all go through it, so a `Var`
     and its latched `Wire` are interchangeable e.g. as dictionary keys.
     """
 
@@ -364,9 +361,6 @@ class Var:
 
     @property
     def dtype(self) -> Sort: ...
-
-    @property
-    def degree(self) -> int: ...
 
     @override
     def __eq__(self, other: object) -> bool: ...
