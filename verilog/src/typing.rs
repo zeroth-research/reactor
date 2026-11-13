@@ -75,6 +75,13 @@ An `always_comb` block must also be free of latches and of reads of stale
 values ([`definite`]): every signal it drives is assigned on every path
 through the block, and read only after it has been assigned on every path
 to the read.
+
+Values are 2-state: an x is accepted only as a dead store, `y = 'x;` in an
+`always_comb` or `q <= 'x;` in an `always_ff` (a literal that is x in every
+bit, to a target with constant indices), whose bits every path assigns
+again before they are read or the block ends ([`definite`]). Such an
+assignment has no effect. (A live x would be a don't-care, which synthesis
+may resolve to any value; that is not modelled.)
 */
 
 use crate::ast::{
@@ -235,6 +242,7 @@ pub fn check(m: &Module) -> Result<Env> {
                         reset_branch(branch, &mut BTreeSet::new())?;
                     }
                 }
+                definite(&env, item)?;
             }
             Item::AlwaysComb { body, .. } => {
                 stmt(&env, body, Proc::Comb, &mut |lhs, span| {
@@ -765,8 +773,11 @@ fn stmt(
                 None => Ok(()),
             }
         }
-        StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-            let blocking = matches!(s.kind, StmtKind::Blocking { .. });
+        StmtKind::NonBlocking { .. } | StmtKind::Blocking { .. } | StmtKind::Unknown { .. } => {
+            let blocking = matches!(
+                s.kind,
+                StmtKind::Blocking { .. } | StmtKind::Unknown { blocking: true, .. }
+            );
             match (proc, blocking) {
                 (Proc::Ff, true) => {
                     return Err(Error::new(
@@ -782,11 +793,57 @@ fn stmt(
                 }
                 _ => {}
             }
-            lvalue(lhs, drive)?;
-            target_names(env, lhs)?;
-            names(env, rhs)
+            match &s.kind {
+                StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
+                    lvalue(lhs, drive)?;
+                    target_names(env, lhs)?;
+                    names(env, rhs)
+                }
+                StmtKind::Unknown { lhs, size, .. } => unknown(env, lhs, *size, drive),
+                _ => unreachable!(),
+            }
         }
     }
+}
+
+/// Checks the target `lhs` of an assignment of an x literal of `size`
+/// bits (`None` if unsized). The bits the literal sets must be known, so
+/// the target has no variable index; and a sized literal narrower than its
+/// target would be extended with zeros, so its x would cover only some
+/// bits.
+fn unknown(
+    env: &Env,
+    lhs: &Lvalue,
+    size: Option<usize>,
+    drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>,
+) -> Result<()> {
+    let w = lvalue(lhs, drive)?;
+    target_names(env, lhs)?;
+    if pieces(env, lhs)
+        .iter()
+        .any(|p| p.variable.is_some() || p.elem.is_some())
+    {
+        return Err(Error::new(
+            lhs.span,
+            format!(
+                "`{lhs}` has a variable index: x may only be assigned to targets with \
+                 constant indices, so that the bits assigned again later are known"
+            ),
+        ));
+    }
+    if let Some(n) = size
+        && n < w
+    {
+        return Err(Error::new(
+            lhs.span,
+            format!(
+                "the x literal has {n} bit{}, but `{lhs}` has {w} bits, so the others \
+                 would be 0: use `'x` for x in every bit",
+                if n == 1 { "" } else { "s" }
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Checks that every signal the indices of a target read is declared.
@@ -847,6 +904,7 @@ pub fn explicit(env: &Env, m: &Module) -> Result<()> {
                 }
                 assign(width(env, lhs), expr(env, rhs)?, s.span)
             }
+            StmtKind::Unknown { .. } => Ok(()),
         }
     }
     for item in &m.items {
@@ -1164,7 +1222,7 @@ fn bits_text(y: &str, bits: &[usize], width: usize) -> String {
 
 /// Checks that an `always_comb` block assigns each signal it drives on
 /// every path before reading it and by the end of the block (no
-/// latch).
+/// latch), and that the x a block of either kind assigns is dead.
 ///
 /// A signal not assigned on some path would keep its value from the
 /// previous evaluation of the block: hardware needs a latch for that, a
@@ -1177,22 +1235,35 @@ fn bits_text(y: &str, bits: &[usize], width: usize) -> String {
 /// A read with a variable index reads every bit of its signal; an
 /// assignment with a variable index assigns no bit for sure and keeps the
 /// others, so the whole signal must be assigned before it.
+///
+/// Values are 2-state, so an assignment of x (`y = 'x;`, `q <= 'x;`)
+/// leaves its bits unassigned, and every path must assign them again: in
+/// an `always_comb` before they are read, in both kinds of blocks before
+/// the end. (Synthesis reads a live x as a don't-care, free to pick any
+/// value; that is not modelled.) In an `always_ff` this is all that is
+/// checked: a register not assigned keeps its value, and reads see the
+/// values from before the clock edge.
 pub fn definite(env: &Env, item: &Item) -> Result<()> {
     let targets = item.targets();
     let body = item.body().expect("a block");
+    let comb = matches!(item, Item::AlwaysComb { .. });
     let mut d = Definite {
         env,
         targets: &targets,
+        comb,
         partial: BTreeMap::new(),
     };
-    let mut done = Bits::new();
-    d.stmt(body, &mut done)?;
+    let mut st = State::default();
+    d.stmt(body, &mut st)?;
     for y in &targets {
         let n = env[*y].ty.width;
         let missing: Vec<usize> = (0..n)
-            .filter(|b| !done.contains(&((*y).clone(), *b)))
+            .filter(|b| !st.done.contains(&((*y).clone(), *b)))
             .collect();
-        if missing.is_empty() {
+        if let Some(e) = st.live_x(y, &missing, n, "before the end of the block") {
+            return Err(e);
+        }
+        if missing.is_empty() || !comb {
             continue;
         }
         let bits = bits_text(y, &missing, n);
@@ -1220,18 +1291,55 @@ pub fn definite(env: &Env, item: &Item) -> Result<()> {
 /// Bits of signals.
 type Bits = BTreeSet<(Name, usize)>;
 
+/// What the paths to a point of a block have assigned.
+#[derive(Clone, Default)]
+struct State {
+    /// The bits assigned on every path.
+    done: Bits,
+    /// The bits assigned x and not assigned again on some path, with the
+    /// first such assignment of x.
+    x: BTreeMap<(Name, usize), Span>,
+}
+
+impl State {
+    /// The error for the bits of `y` among `missing` (of `n`) that hold an
+    /// x, if any; `when` says what comes before they are assigned again.
+    fn live_x(&self, y: &Name, missing: &[usize], n: usize, when: &str) -> Option<Error> {
+        let bits: Vec<usize> = missing
+            .iter()
+            .copied()
+            .filter(|b| self.x.contains_key(&(y.clone(), *b)))
+            .collect();
+        let span = bits.iter().map(|b| self.x[&(y.clone(), *b)]).min()?;
+        Some(Error::new(
+            span,
+            format!(
+                "{} is assigned x here and not assigned again on every path {when}: \
+                 x is accepted only when it is overwritten (a live x is a don't-care \
+                 in synthesis, which is not modelled)",
+                bits_text(y, &bits, n)
+            ),
+        ))
+    }
+}
+
 struct Definite<'t> {
     env: &'t Env,
     targets: &'t [&'t Name],
+    /// An `always_comb` (else an `always_ff`, where only x is checked).
+    comb: bool,
     /// For each target, the first `if` or `case` after which some of its
     /// bits are assigned on some paths only, with a description.
     partial: BTreeMap<Name, (Span, &'static str)>,
 }
 
 impl Definite<'_> {
-    /// Checks the reads in `e`, with `done` the bits of targets assigned on
-    /// every path so far.
-    fn reads(&self, e: &Expr, done: &Bits) -> Result<()> {
+    /// Checks the reads in `e` in an `always_comb`, with `st` what the
+    /// paths so far assigned.
+    fn reads(&self, e: &Expr, st: &State) -> Result<()> {
+        if !self.comb {
+            return Ok(());
+        }
         let mut reads = Vec::new();
         bit_reads(self.env, e, &mut reads);
         for (x, hi, lo, span) in reads {
@@ -1240,8 +1348,11 @@ impl Definite<'_> {
             }
             let n = self.env[x].ty.width;
             let missing: Vec<usize> = (lo..=hi)
-                .filter(|b| !done.contains(&(x.clone(), *b)))
+                .filter(|b| !st.done.contains(&(x.clone(), *b)))
                 .collect();
+            if let Some(e) = st.live_x(x, &missing, n, &format!("before it is read at {span}")) {
+                return Err(e);
+            }
             if !missing.is_empty() {
                 return Err(Error::new(
                     span,
@@ -1256,23 +1367,23 @@ impl Definite<'_> {
         Ok(())
     }
 
-    /// Adds to `done` the bits of targets that `s` assigns on every path.
-    fn stmt(&mut self, s: &Stmt, done: &mut Bits) -> Result<()> {
+    /// Adds to `st` what `s` assigns.
+    fn stmt(&mut self, s: &Stmt, st: &mut State) -> Result<()> {
         match &s.kind {
-            StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| self.stmt(s, done)),
+            StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| self.stmt(s, st)),
             StmtKind::If(c, a, b) => {
-                self.reads(c, done)?;
+                self.reads(c, st)?;
                 let branches = [a.as_ref(), b.as_ref()];
-                self.merge(&branches, false, done, s.span, "`if`")
+                self.merge(&branches, false, st, s.span, "`if`")
             }
             StmtKind::Case {
                 sel,
                 items,
                 default,
             } => {
-                self.reads(sel, done)?;
+                self.reads(sel, st)?;
                 for l in items.iter().flat_map(|i| &i.labels) {
-                    self.reads(l, done)?;
+                    self.reads(l, st)?;
                 }
                 let mut branches: Vec<&Stmt> = items.iter().map(|i| &i.body).collect();
                 let why = match default {
@@ -1282,34 +1393,61 @@ impl Definite<'_> {
                     }
                     None => "`case` (without `default`, nothing is assigned when no label matches)",
                 };
-                self.merge(&branches, default.is_none(), done, s.span, why)
+                self.merge(&branches, default.is_none(), st, s.span, why)
+            }
+            StmtKind::Unknown { lhs, .. } => {
+                for p in pieces(self.env, lhs) {
+                    for b in p.lo..=p.hi {
+                        let bit = (p.name.clone(), b);
+                        st.done.remove(&bit);
+                        st.x.insert(bit, s.span);
+                    }
+                }
+                Ok(())
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                self.reads(rhs, done)?;
+                self.reads(rhs, st)?;
                 let pieces = pieces(self.env, lhs);
                 for p in &pieces {
                     if let Some(v) = p.variable {
-                        self.reads(v.index, done)?;
+                        self.reads(v.index, st)?;
                     }
                     if let Some(e) = p.elem {
-                        self.reads(e.index, done)?;
+                        self.reads(e.index, st)?;
                     }
                 }
                 for p in pieces {
+                    if p.variable.is_none() && p.elem.is_none() {
+                        for b in p.lo..=p.hi {
+                            let bit = (p.name.clone(), b);
+                            st.x.remove(&bit);
+                            st.done.insert(bit);
+                        }
+                        continue;
+                    }
+                    if !self.comb {
+                        // in an always_ff a variable index keeps the other
+                        // bits, x included
+                        continue;
+                    }
                     if let Some(e) = p.elem {
                         // a variable element index assigns no element for
                         // sure and keeps the others
-                        let missing: Vec<String> = e
-                            .elems
-                            .iter()
-                            .filter_map(|y| {
-                                let n = self.env[y].ty.width;
-                                let bits: Vec<usize> = (0..n)
-                                    .filter(|b| !done.contains(&(y.clone(), *b)))
-                                    .collect();
-                                (!bits.is_empty()).then(|| bits_text(y, &bits, n))
-                            })
-                            .collect();
+                        let mut missing = Vec::new();
+                        for y in e.elems {
+                            let n = self.env[y].ty.width;
+                            let bits: Vec<usize> = (0..n)
+                                .filter(|b| !st.done.contains(&(y.clone(), *b)))
+                                .collect();
+                            let when =
+                                format!("before `{lhs}`, which keeps the bits it does not assign");
+                            if let Some(e) = st.live_x(y, &bits, n, &when) {
+                                return Err(e);
+                            }
+                            if !bits.is_empty() {
+                                missing.push(bits_text(y, &bits, n));
+                            }
+                        }
                         if !missing.is_empty() {
                             let some = if missing.len() > 3 {
                                 format!("{}, …", missing[..3].join(", "))
@@ -1329,16 +1467,16 @@ impl Definite<'_> {
                         }
                         continue;
                     }
-                    let n = self.env[&p.name].ty.width;
-                    if p.variable.is_none() {
-                        done.extend((p.lo..=p.hi).map(|b| (p.name.clone(), b)));
-                        continue;
-                    }
                     // a variable index assigns no bit for sure and keeps
                     // the other bits
+                    let n = self.env[&p.name].ty.width;
                     let missing: Vec<usize> = (0..n)
-                        .filter(|b| !done.contains(&(p.name.clone(), *b)))
+                        .filter(|b| !st.done.contains(&(p.name.clone(), *b)))
                         .collect();
+                    let when = format!("before `{lhs}`, which keeps the bits it does not assign");
+                    if let Some(e) = st.live_x(&p.name, &missing, n, &when) {
+                        return Err(e);
+                    }
                     if !missing.is_empty() {
                         return Err(Error::new(
                             lhs.span,
@@ -1359,35 +1497,43 @@ impl Definite<'_> {
         }
     }
 
-    /// Runs each branch from `done` and keeps the targets assigned in all
-    /// of them; `fallthrough` adds a path that runs no branch.
+    /// Runs each branch from `st` and keeps the bits assigned in all of
+    /// them, and the x of any of them; `fallthrough` adds a path that runs
+    /// no branch.
     fn merge(
         &mut self,
         branches: &[&Stmt],
         fallthrough: bool,
-        done: &mut Bits,
+        st: &mut State,
         span: Span,
         why: &'static str,
     ) -> Result<()> {
         let mut outs = Vec::new();
         for b in branches {
-            let mut out = done.clone();
+            let mut out = st.clone();
             self.stmt(b, &mut out)?;
             outs.push(out);
         }
         if fallthrough {
-            outs.push(done.clone());
+            outs.push(st.clone());
         }
-        let all: Bits = outs.iter().flatten().cloned().collect();
+        let all: Bits = outs.iter().flat_map(|o| &o.done).cloned().collect();
         let every: Bits = all
             .iter()
-            .filter(|x| outs.iter().all(|o| o.contains(*x)))
+            .filter(|x| outs.iter().all(|o| o.done.contains(*x)))
             .cloned()
             .collect();
         for (x, _) in all.difference(&every) {
             self.partial.entry(x.clone()).or_insert((span, why));
         }
-        *done = every;
+        let mut x = BTreeMap::new();
+        for o in &outs {
+            for (bit, at) in &o.x {
+                let first = x.entry(bit.clone()).or_insert(*at);
+                *first = (*first).min(*at);
+            }
+        }
+        *st = State { done: every, x };
         Ok(())
     }
 }

@@ -1875,3 +1875,182 @@ fn rejected_initial_values() {
         "default values of inputs not supported",
     );
 }
+
+const HEADER_X: &str = "module m(input logic clk, input logic [1:0] s, input logic [7:0] a, \
+                        output logic [7:0] y, output logic q);";
+
+/// An assignment of x that every path overwrites has no effect: the
+/// translation equals the one without it.
+#[test]
+fn accepted_x_stores() {
+    let cases = [
+        // the lighthouse shape: a full `case` after the x
+        (
+            "  always_comb begin q = 1'bx; case (s) 2'b00: q = 1'b0; 2'b01: q = a[0]; \
+             default: q = 1'b1; endcase end\n  assign y = a;",
+            "  always_comb begin case (s) 2'b00: q = 1'b0; 2'b01: q = a[0]; \
+             default: q = 1'b1; endcase end\n  assign y = a;",
+        ),
+        // after a value, overwritten bit by bit; unsized, sized, in parentheses
+        (
+            "  always_comb begin y = a; y = 'x; y[7:4] = a[3:0]; y[3:0] = a[7:4]; end\n  \
+             always_comb begin q = (1'bx); q = s[0]; end",
+            "  always_comb begin y = a; y[7:4] = a[3:0]; y[3:0] = a[7:4]; end\n  \
+             always_comb begin q = s[0]; end",
+        ),
+        // a concatenation target, a wider literal, x on one path only (the
+        // condition is still evaluated, as for an empty branch)
+        (
+            "  always_comb begin {q, y} = 16'hx; if (s[0]) {q, y} = 9'bx_xxxx_xxxx; else y = 8'hx; \
+             {q, y} = {a[0], a}; end",
+            "  always_comb begin if (s[0]) ; {q, y} = {a[0], a}; end",
+        ),
+        // always_ff: every path assigns the register again
+        (
+            "  always_ff @(posedge clk) begin q <= 'x; y <= 8'hx; if (s[0]) q <= a[0]; \
+             else q <= 1'b0; y <= a; end",
+            "  always_ff @(posedge clk) begin if (s[0]) q <= a[0]; else q <= 1'b0; y <= a; end",
+        ),
+        // overwritten on one path, the register kept on the other
+        (
+            "  always_ff @(posedge clk) begin if (s[0]) begin q <= 'x; q <= a[0]; end end\n  \
+             assign y = a;",
+            "  always_ff @(posedge clk) begin if (s[0]) begin q <= a[0]; end end\n  assign y = a;",
+        ),
+        // a register read after its x (reads see the value before the edge)
+        (
+            "  always_ff @(posedge clk) begin y <= 'x; y <= y + a; q <= y[0]; end",
+            "  always_ff @(posedge clk) begin y <= y + a; q <= y[0]; end",
+        ),
+    ];
+    for (with, without) in cases {
+        assert_eq!(
+            translate_with(HEADER_X, with).print(),
+            translate_with(HEADER_X, without).print(),
+            "{with}"
+        );
+    }
+}
+
+#[test]
+fn rejected_x_stores() {
+    let live = "is assigned x here and not assigned again on every path";
+    let cases: [(&str, usize, &str, &str); 14] = [
+        (
+            "  always_comb begin y = 'x; if (a[0]) y = a; end\n  assign q = 1'b0;",
+            2,
+            "y = 'x",
+            "`y` is assigned x here and not assigned again on every path before the end of \
+             the block: x is accepted only when it is overwritten (a live x is a don't-care in \
+             synthesis, which is not modelled)",
+        ),
+        (
+            "  always_comb begin y = 'x; q = y[0]; y = a; end",
+            2,
+            "y = 'x",
+            "`y[0]` is assigned x here and not assigned again on every path before it is read \
+             at 2:33",
+        ),
+        (
+            "  always_comb begin y = 'x; y[3:0] = a[3:0]; end\n  assign q = 1'b0;",
+            2,
+            "y = 'x",
+            "`y[7:4]` is assigned x here",
+        ),
+        // x on one path, the end on the other
+        (
+            "  always_comb begin y = a; if (s[0]) y = 'x; end\n  assign q = 1'b0;",
+            2,
+            "y = 'x",
+            live,
+        ),
+        // the first x of several
+        (
+            "  always_comb begin if (s[0]) y = 'x; else y = 8'hx; end\n  assign q = 1'b0;",
+            2,
+            "y = 'x",
+            live,
+        ),
+        (
+            "  always_comb begin y = 'x; y[s] = 1'b1; end\n  assign q = 1'b0;",
+            2,
+            "y = 'x",
+            "before `y[s]`, which keeps the bits it does not assign",
+        ),
+        (
+            "  always_comb begin y = 1'bx; y = a; end\n  assign q = 1'b0;",
+            2,
+            "y = 1'bx",
+            "the x literal has 1 bit, but `y` has 8 bits, so the others would be 0",
+        ),
+        (
+            "  always_comb begin y = '0; y[s] = 'x; y = a; end\n  assign q = 1'b0;",
+            2,
+            "y[s] = 'x",
+            "`y[s]` has a variable index: x may only be assigned to targets with constant indices",
+        ),
+        (
+            "  always_ff @(posedge clk) begin q <= 'x; if (s[0]) q <= a[0]; end\n  assign y = a;",
+            2,
+            "q <= 'x",
+            "`q` is assigned x here and not assigned again on every path before the end",
+        ),
+        (
+            "  always_ff @(posedge clk) begin y <= 'x; y[s] <= 1'b1; end\n  assign q = 1'b0;",
+            2,
+            "y <= 'x",
+            live,
+        ),
+        (
+            "  always_ff @(posedge clk) begin q = 'x; q = 1'b0; end\n  assign y = a;",
+            2,
+            "q = 'x",
+            "blocking assignment not allowed in `always_ff`",
+        ),
+        (
+            "  always_comb begin q <= 'x; q <= 1'b0; end\n  assign y = a;",
+            2,
+            "q <= 'x",
+            "non-blocking assignment not allowed in `always_comb`",
+        ),
+        // x only as the whole value
+        (
+            "  always_comb begin y = 8'b0000_xxxx; y = a; end\n  assign q = 1'b0;",
+            2,
+            "8'b0000",
+            "x/z digits not supported (values are 2-state; x is accepted only as the whole value",
+        ),
+        (
+            "  always_comb begin y = a ^ 'x; y = a; end\n  assign q = 1'b0;",
+            2,
+            "'x",
+            "x/z digits not supported",
+        ),
+    ];
+    for (body, line, needle, msg) in cases {
+        rejects(Some(HEADER_X), body, line, needle, msg);
+    }
+    // an overwritten x does not make a latch an x
+    rejects(
+        Some(HEADER_X),
+        "  always_comb begin if (s[0]) begin y = 'x; y = a; end end\n  assign q = 1'b0;",
+        2,
+        "if",
+        "`y` is assigned on only some paths through this `if`",
+    );
+    // z, and x in the reset branch
+    rejects(
+        Some(HEADER_X),
+        "  always_comb begin y = 'z; y = a; end\n  assign q = 1'b0;",
+        2,
+        "'z",
+        "x/z digits not supported",
+    );
+    rejects(
+        Some("module m(input logic clk, r, input logic [7:0] a, output logic [7:0] y);"),
+        "  always_ff @(posedge clk or posedge r) if (r) y <= 'x; else y <= a;",
+        2,
+        "y <= 'x",
+        "the reset branch may only assign constants",
+    );
+}

@@ -56,7 +56,7 @@ use crate::ast::{
     ExprKind, Index, Init, Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port,
     Reset, Rom, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
-use crate::constant::{self, Failure, Literal};
+use crate::constant::{self, Failure, Literal, X_HINT};
 use crate::value::BitVec;
 use num_bigint::BigUint;
 use std::cell::RefCell;
@@ -1111,12 +1111,19 @@ impl Cx<'_> {
                 let (lhs, _, delay, rhs) = &a.0.nodes;
                 self.absent(delay, "intra-assignment delay")?;
                 let lhs = self.variable_lvalue(lhs)?;
-                let rhs = self.expr(rhs)?;
                 let span = lhs.span;
-                return Ok(Stmt {
-                    kind: StmtKind::NonBlocking { lhs, rhs },
-                    span,
-                });
+                let kind = match unknown_value(&self.text(rhs)) {
+                    Some(size) => StmtKind::Unknown {
+                        lhs,
+                        blocking: false,
+                        size,
+                    },
+                    None => StmtKind::NonBlocking {
+                        lhs,
+                        rhs: self.expr(rhs)?,
+                    },
+                };
+                return Ok(Stmt { kind, span });
             }
             sv::StatementItem::BlockingAssignment(a) => match &a.0 {
                 sv::BlockingAssignment::OperatorAssignment(a) => {
@@ -1125,12 +1132,19 @@ impl Cx<'_> {
                         return self.err(op, format!("`{}` not supported", self.text(op)));
                     }
                     let lhs = self.variable_lvalue(lhs)?;
-                    let rhs = self.expr(rhs)?;
                     let span = lhs.span;
-                    return Ok(Stmt {
-                        kind: StmtKind::Blocking { lhs, rhs },
-                        span,
-                    });
+                    let kind = match unknown_value(&self.text(rhs)) {
+                        Some(size) => StmtKind::Unknown {
+                            lhs,
+                            blocking: true,
+                            size,
+                        },
+                        None => StmtKind::Blocking {
+                            lhs,
+                            rhs: self.expr(rhs)?,
+                        },
+                    };
+                    return Ok(Stmt { kind, span });
                 }
                 sv::BlockingAssignment::Variable(a) => {
                     return self.err(&a.nodes.2, "intra-assignment delay not supported");
@@ -1961,7 +1975,7 @@ impl Cx<'_> {
                         t => {
                             return self.err(
                                 p,
-                                format!("literal `{t}` with x/z digits not supported (2-state)"),
+                                format!("literal `{t}` with x/z digits not supported ({X_HINT})"),
                             );
                         }
                     };
@@ -2664,6 +2678,7 @@ impl Resolver<'_> {
                 self.lvalue(lhs)?;
                 self.expr(rhs)
             }
+            StmtKind::Unknown { lhs, .. } => self.lvalue(lhs),
         }
     }
 

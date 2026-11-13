@@ -1,0 +1,58 @@
+module xstore
+  external
+    clk : bv1
+    mode : bv2
+    slow : bv1
+    fast : bv1
+    d : bv4
+    state@init : bv2
+    q@init : bv4
+  interface
+    led : bv1
+    q : bv4
+    wide : bv5
+  private
+    blink : bv1
+    state : bv2
+    next : bv2
+  atom controls blink awaits mode, slow, fast
+    init = update
+      %1 := 2'd0
+      %2 := EQ (X(mode), %1)
+      %3 := 2'd1
+      %4 := EQ (X(mode), %3)
+      %5 := 2'd2
+      %6 := EQ (X(mode), %5)
+      blink@1 := 1'd0
+      blink@2 := 1'd1
+      blink@3 := ITE (%6, X(fast), blink@2)
+      blink@4 := ITE (%4, X(slow), blink@3)
+      X(blink) := ITE (%2, blink@1, blink@4)
+  atom controls led awaits blink
+    init = update
+      X(led) := NOT X(blink)
+  atom controls q, state reads clk, d, q, state, next awaits clk, state@init, q@init
+    init
+      X(state) := ID X(state@init)
+      X(q) := ID X(q@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := EXTRACT[0:0] d
+      %3 := 4'd1
+      %4 := ADD (q, %3)
+      %5 := ITE (%2, d, %4)
+      X(state) := ITE (clk@pos, next, state)
+      X(q) := ITE (clk@pos, %5, q)
+  atom controls wide, next awaits d, state
+    init = update
+      %1 := 2'd3
+      %2 := EQ (X(state), %1)
+      next@1 := 2'd0
+      %3 := 2'd1
+      next@2 := ADD (X(state), %3)
+      next@3 := ITE (%2, next@1, next@2)
+      %4 := 2'd0
+      %5 := EQ (next@3, %4)
+      X(wide) := CONCAT (%5, X(d))
+      X(next) := ID next@3

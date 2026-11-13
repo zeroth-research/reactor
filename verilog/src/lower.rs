@@ -34,6 +34,7 @@ which has no `>`, `>=` and no logical operators:
 | target `x[i -: w] = e` (variable) | the same on `{x, (w-1)'0}`, then `Extract` of the top bits |
 | `N'(e)` | `SExt`/`ZExt` (as `e`'s signedness says) when widening, `Extract` when narrowing |
 | an implicit resize (from sizing) | `SExt`/`ZExt` as the type it resizes to says, `Extract` when narrowing |
+| `y = 'x;`, `q <= 'x;` (overwritten on every path, checked by typing) | nothing |
 
 ## Time and clocks
 
@@ -954,6 +955,8 @@ fn depend(s: &Stmt, ctrl: &BTreeSet<Name>, deps: &mut BTreeMap<Name, BTreeSet<Na
                 }
             }
         }
+        // no effect (dead, see `typing::definite`)
+        StmtKind::Unknown { .. } => {}
     }
 }
 
@@ -1180,6 +1183,8 @@ impl<'a> Builder<'a> {
                 let (w, _) = self.expr(rhs)?;
                 self.assign(lhs, w, s.span)
             }
+            // dead (typing): every path assigns the bits again
+            StmtKind::Unknown { .. } => Ok(()),
         }
     }
 

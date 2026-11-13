@@ -515,6 +515,16 @@ pub enum StmtKind {
     NonBlocking { lhs: Lvalue, rhs: Expr },
     /// `lhs = rhs;`, with `span` the position of `lhs`.
     Blocking { lhs: Lvalue, rhs: Expr },
+    /// `lhs = 'x;` (`blocking`) or `lhs <= 'x;`: an assignment of a literal
+    /// that is x in every bit, of `size` bits (`None` if unsized). Values
+    /// are 2-state, so it is accepted only as a dead store: every path
+    /// assigns the bits again before they are read or the block ends
+    /// ([`definite`](crate::typing::definite)). It has no effect.
+    Unknown {
+        lhs: Lvalue,
+        blocking: bool,
+        size: Option<usize>,
+    },
 }
 
 /// The target of an assignment.
@@ -595,7 +605,9 @@ impl Stmt {
                 .map(|i| &i.body)
                 .chain(default.as_deref())
                 .collect(),
-            StmtKind::NonBlocking { .. } | StmtKind::Blocking { .. } => Vec::new(),
+            StmtKind::NonBlocking { .. } | StmtKind::Blocking { .. } | StmtKind::Unknown { .. } => {
+                Vec::new()
+            }
         }
     }
 
@@ -637,7 +649,9 @@ impl Stmt {
     /// the order of their first assignment.
     fn targets<'s>(&'s self, out: &mut Vec<&'s Name>) {
         match &self.kind {
-            StmtKind::NonBlocking { lhs, .. } | StmtKind::Blocking { lhs, .. } => lhs.targets(out),
+            StmtKind::NonBlocking { lhs, .. }
+            | StmtKind::Blocking { lhs, .. }
+            | StmtKind::Unknown { lhs, .. } => lhs.targets(out),
             _ => self.children().into_iter().for_each(|s| s.targets(out)),
         }
     }
@@ -646,7 +660,9 @@ impl Stmt {
     /// source order.
     pub fn lvalues<'s>(&'s self, out: &mut Vec<&'s Lvalue>) {
         match &self.kind {
-            StmtKind::NonBlocking { lhs, .. } | StmtKind::Blocking { lhs, .. } => out.push(lhs),
+            StmtKind::NonBlocking { lhs, .. }
+            | StmtKind::Blocking { lhs, .. }
+            | StmtKind::Unknown { lhs, .. } => out.push(lhs),
             _ => self.children().into_iter().for_each(|s| s.lvalues(out)),
         }
     }
@@ -679,6 +695,7 @@ impl Stmt {
                 rhs.reads(out);
                 lhs.reads(out);
             }
+            StmtKind::Unknown { lhs, .. } => lhs.reads(out),
         }
     }
 }
@@ -1121,6 +1138,15 @@ impl fmt::Display for Stmt {
             }
             StmtKind::NonBlocking { lhs, rhs } => write!(f, "{lhs} <= {rhs};"),
             StmtKind::Blocking { lhs, rhs } => write!(f, "{lhs} = {rhs};"),
+            StmtKind::Unknown {
+                lhs,
+                blocking,
+                size,
+            } => {
+                let op = if *blocking { "=" } else { "<=" };
+                let x = size.map_or("'x".to_string(), |n| format!("{n}'bx"));
+                write!(f, "{lhs} {op} {x};")
+            }
         }
     }
 }
