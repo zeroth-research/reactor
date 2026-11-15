@@ -2,6 +2,7 @@ pub mod any;
 pub mod bv;
 pub mod lia;
 pub mod lra;
+pub mod real;
 pub mod tensor;
 
 pub use tensor::PyTensor;

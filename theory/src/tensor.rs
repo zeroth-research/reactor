@@ -55,6 +55,15 @@ mod torch {
         pub fn is_bool(&self) -> bool {
             self.tensor.kind() == tch::Kind::Bool
         }
+
+        /// The `[rows, cols]` shape of the underlying tensor, which must be a matrix.
+        pub fn shape(&self) -> [usize; 2] {
+            let size = self.tensor.size();
+            let [rows, cols] = size[..] else {
+                panic!("expected a matrix, got a tensor of shape {size:?}")
+            };
+            [rows as usize, cols as usize]
+        }
     }
 
     impl std::ops::Deref for PyTensor {
@@ -231,6 +240,13 @@ mod stub {
 
     #[derive(Clone, Debug)]
     pub struct PyTensor;
+
+    impl PyTensor {
+        /// The stub carries no data, so it has no shape.
+        pub fn shape(&self) -> [usize; 2] {
+            unreachable!("PyTensor operations require the `torch` feature")
+        }
+    }
 
     impl Display for PyTensor {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
