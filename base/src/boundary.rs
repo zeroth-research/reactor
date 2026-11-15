@@ -67,6 +67,13 @@ impl<G> Mono<G> {
     pub fn iter(&self) -> std::slice::Iter<'_, G> {
         self.0.iter()
     }
+
+    /// The tuple type with `f` applied to each base type, in order. With
+    /// `f = H::from`, this converts the base types, which a `From` impl
+    /// between monomials cannot do, as it would overlap with `From<T> for T`.
+    pub fn map<H>(self, f: impl FnMut(G) -> H) -> Mono<H> {
+        Mono(self.0.into_iter().map(f).collect())
+    }
 }
 
 impl<G> IntoIterator for Mono<G> {
@@ -170,6 +177,14 @@ impl<G> Poly<G> {
     /// The variants of the sum, each a product type, in order.
     pub fn iter(&self) -> std::slice::Iter<'_, Mono<G>> {
         self.0.iter()
+    }
+
+    /// The sum type with `f` applied to each base type of each variant, in
+    /// order. With `f = H::from`, this converts the base types, which a
+    /// `From` impl between polynomials cannot do, as it would overlap with
+    /// `From<T> for T`.
+    pub fn map<H>(self, mut f: impl FnMut(G) -> H) -> Poly<H> {
+        Poly(self.0.into_iter().map(|m| m.map(&mut f)).collect())
     }
 }
 
