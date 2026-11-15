@@ -1,9 +1,11 @@
 pub mod any;
 pub mod bv;
+pub mod int;
 pub mod lia;
 pub mod lra;
 pub mod real;
 pub mod tensor;
+pub mod zero;
 
 pub use tensor::PyTensor;
 

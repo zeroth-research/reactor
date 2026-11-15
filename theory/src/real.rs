@@ -57,10 +57,10 @@ impl fmt::Display for Real {
 /// The rate of change of a real matrix is a real matrix of the same shape,
 /// one degree higher.
 impl Tangent for Real {
-    fn tangent(&self) -> Self {
+    fn of(s: Real) -> Self {
         Real {
-            degree: self.degree + 1,
-            shape: self.shape,
+            degree: s.degree + 1,
+            shape: s.shape,
         }
     }
 }
@@ -133,8 +133,8 @@ impl Boundary<Real> for Sub {
     }
 }
 
-/// With `A` of shape `[self.0, self.1]` and `B` of shape `[self.0, k]`, the map takes `x`
-/// of shape `[self.1, k]` to a matrix of shape `[self.0, k]`.
+/// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
+/// of shape `[n, k]` to a matrix of shape `[m, k]`.
 impl Boundary<Real> for Linear {
     fn dom(&self) -> Poly<Real> {
         let [_, n] = self.0.shape();
@@ -177,7 +177,7 @@ impl Boundary<Real> for Max {
     }
 }
 
-/// Takes a matrix of shape `[self.0, self.1]` to one of shape `[self.1, self.0]`.
+/// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
 impl Boundary<Real> for Transpose {
     fn dom(&self) -> Poly<Real> {
         mono![Real::new([self.0, self.1])].into()
@@ -188,7 +188,7 @@ impl Boundary<Real> for Transpose {
     }
 }
 
-/// Takes matrices of shapes `[self.0, self.1]` and `[self.1, k]` to one of shape `[self.0, k]`.
+/// Takes matrices of shapes `[m, n]` and `[n, k]` to one of shape `[m, k]`.
 impl Boundary<Real> for MatMul {
     fn dom(&self) -> Poly<Real> {
         mono![Real::new([self.0, self.1]), Real::new([self.1, self.2])].into()
@@ -276,15 +276,11 @@ mod tests {
     #[test]
     fn tangent_raises_degree() {
         let r = Real::new([2, 3]);
-        assert_eq!(
-            T(r),
-            Real {
-                degree: 1,
-                shape: [2, 3]
-            }
-        );
-        assert_eq!(T(T(r)).degree(), 2);
-        assert_eq!(T(r).to_string(), "T^1(Real(2, 3))");
+        let t: Real = T(r);
+        assert_eq!(t.degree(), 1);
+        assert_eq!(t.shape(), [2, 3]);
+        assert_eq!(Real::of(t).degree(), 2);
+        assert_eq!(t.to_string(), "T^1(Real(2, 3))");
     }
 
     #[test]
