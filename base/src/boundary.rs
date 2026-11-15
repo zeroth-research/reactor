@@ -94,6 +94,29 @@ impl<G> FromIterator<G> for Mono<G> {
     }
 }
 
+/// Creates a [`Mono`] from its base types, with the same forms as [`vec!`]:
+///
+/// - `mono![]` is the unit type `I`;
+/// - `mono![x, y, z]` is the tuple type `x ⊗ y ⊗ z`, in order;
+/// - `mono![x; n]` is the tuple type `x ⊗ … ⊗ x` of `n` copies of `x`,
+///   which must implement [`Clone`].
+#[macro_export]
+macro_rules! mono {
+    () => {
+        $crate::boundary::Mono::unit()
+    };
+    ($elem:expr; $n:expr) => {
+        <$crate::boundary::Mono<_> as ::core::iter::FromIterator<_>>::from_iter(
+            ::std::vec![$elem; $n],
+        )
+    };
+    ($($x:expr),+ $(,)?) => {
+        <$crate::boundary::Mono<_> as ::core::iter::FromIterator<_>>::from_iter(
+            [$($x),+],
+        )
+    };
+}
+
 /// A product type is a sum type with a single variant.
 impl<G> From<Mono<G>> for Poly<G> {
     fn from(m: Mono<G>) -> Self {
