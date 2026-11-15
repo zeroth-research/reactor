@@ -18,8 +18,8 @@ information to compute its [`Boundary`]:
 
 use crate::zero::Zero;
 use base::boundary::{Boundary, Poly};
+use base::differentiable::Differentiable;
 use base::mono;
-use base::tangent::Tangent;
 use std::fmt;
 
 /// The sort of integer matrices with the given `[rows, cols]` shape.
@@ -47,8 +47,10 @@ impl fmt::Display for Int {
 
 /// Integers are discrete, so their tangent is trivial: the singleton sort
 /// [`Zero`].
-impl Tangent<Int> for Zero {
-    fn of(_: Int) -> Zero {
+impl Differentiable for Int {
+    type Tangent = Zero;
+
+    fn tangent(self) -> Zero {
         Zero
     }
 }
@@ -244,7 +246,7 @@ impl fmt::Display for MatMul {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::tangent::T;
+    use base::differentiable::T;
 
     fn one(s: Int) -> Poly<Int> {
         mono![s].into()
@@ -263,9 +265,8 @@ mod tests {
 
     #[test]
     fn tangent_is_trivial() {
-        let t: Zero = T(Int::new([2, 3]));
-        assert_eq!(t, Zero);
-        assert_eq!(Zero::of(Int::new([2, 3])), Zero);
+        assert_eq!(T(Int::new([2, 3])), Zero);
+        assert_eq!(T(T(Int::new([2, 3]))), Zero);
     }
 
     #[test]

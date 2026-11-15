@@ -4,11 +4,11 @@
 Defines the sort [`Zero`], with exactly one value. It is the trivial
 tangent of discrete sorts, such as integers: their rates of change carry
 no information, so `T` maps them to `Zero` rather than leaving them
-without a tangent. Each discrete sort states this with its own
-`impl Tangent<S> for Zero`.
+without a tangent. Each discrete sort states this in its own
+`impl Differentiable`, with `type Tangent = Zero`.
 */
 
-use base::tangent::Tangent;
+use base::differentiable::Differentiable;
 use std::fmt;
 
 /// The singleton sort, with exactly one value: the trivial tangent of
@@ -22,8 +22,10 @@ impl fmt::Display for Zero {
     }
 }
 
-impl Tangent for Zero {
-    fn of(_: Zero) -> Zero {
+impl Differentiable for Zero {
+    type Tangent = Zero;
+
+    fn tangent(self) -> Zero {
         Zero
     }
 }
@@ -31,13 +33,11 @@ impl Tangent for Zero {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::tangent::T;
+    use base::differentiable::T;
 
     #[test]
     fn tangent_is_itself() {
-        let t: Zero = T(Zero);
-        assert_eq!(t, Zero);
-        assert_eq!(Zero::of(Zero), Zero);
+        assert_eq!(T(Zero), Zero);
     }
 
     #[test]

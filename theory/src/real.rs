@@ -16,8 +16,8 @@ information to compute its [`Boundary`]:
 */
 
 use base::boundary::{Boundary, Poly};
+use base::differentiable::Differentiable;
 use base::mono;
-use base::tangent::Tangent;
 use std::fmt;
 
 /// The sort of real matrices with the given `[rows, cols]` shape, graded by
@@ -56,11 +56,13 @@ impl fmt::Display for Real {
 
 /// The rate of change of a real matrix is a real matrix of the same shape,
 /// one degree higher.
-impl Tangent for Real {
-    fn of(s: Real) -> Self {
+impl Differentiable for Real {
+    type Tangent = Real;
+
+    fn tangent(self) -> Real {
         Real {
-            degree: s.degree + 1,
-            shape: s.shape,
+            degree: self.degree + 1,
+            shape: self.shape,
         }
     }
 }
@@ -256,7 +258,7 @@ impl fmt::Display for MatMul {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::tangent::T;
+    use base::differentiable::T;
 
     fn one(s: Real) -> Poly<Real> {
         mono![s].into()
@@ -276,11 +278,10 @@ mod tests {
     #[test]
     fn tangent_raises_degree() {
         let r = Real::new([2, 3]);
-        let t: Real = T(r);
-        assert_eq!(t.degree(), 1);
-        assert_eq!(t.shape(), [2, 3]);
-        assert_eq!(Real::of(t).degree(), 2);
-        assert_eq!(t.to_string(), "T^1(Real(2, 3))");
+        assert_eq!(T(r).degree(), 1);
+        assert_eq!(T(r).shape(), [2, 3]);
+        assert_eq!(T(T(r)).degree(), 2);
+        assert_eq!(T(r).to_string(), "T^1(Real(2, 3))");
     }
 
     #[test]

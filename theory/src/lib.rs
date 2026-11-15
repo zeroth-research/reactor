@@ -10,11 +10,9 @@ pub mod zero;
 pub use tensor::PyTensor;
 
 use base::boundary::{Boundary, Poly};
-use base::tangent::Tangent;
+use base::differentiable::{Differentiable, T};
 use derive_more::From;
-use real::Real;
 use subenum::subenum;
-use zero::Zero;
 
 /// The sorts of all theories: a value of `Any` is a sort of one of them.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, From)]
@@ -25,12 +23,14 @@ pub enum Any {
 }
 
 /// Each sort's tangent, taken within `Any`.
-impl Tangent for Any {
-    fn of(s: Any) -> Any {
-        match s {
-            Any::Real(r) => Real::of(r).into(),
-            Any::Int(i) => Zero::of(i).into(),
-            Any::Zero(z) => Zero::of(z).into(),
+impl Differentiable for Any {
+    type Tangent = Any;
+
+    fn tangent(self) -> Any {
+        match self {
+            Any::Real(r) => T(r).into(),
+            Any::Int(i) => T(i).into(),
+            Any::Zero(z) => T(z).into(),
         }
     }
 }
@@ -149,17 +149,13 @@ pub trait Differential<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::tangent::T;
 
     #[test]
     fn any_tangent_is_each_sorts_tangent() {
         let r = real::Real::new([2, 3]);
-        let t: Any = T(Any::from(r));
-        assert_eq!(t, Any::Real(T(r)));
-        let t: Any = T(Any::from(int::Int::new([2, 3])));
-        assert_eq!(t, Any::Zero(zero::Zero));
-        let t: Any = T(Any::from(zero::Zero));
-        assert_eq!(t, Any::Zero(zero::Zero));
+        assert_eq!(T(Any::from(r)), Any::Real(T(r)));
+        assert_eq!(T(Any::from(int::Int::new([2, 3]))), Any::Zero(zero::Zero));
+        assert_eq!(T(Any::from(zero::Zero)), Any::Zero(zero::Zero));
     }
 
     #[test]
