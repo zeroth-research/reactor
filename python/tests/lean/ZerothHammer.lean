@@ -115,6 +115,25 @@ macro "lra_close_ceil" : tactic =>
              (try simp only [← Int.toNat_sub] at *); (try zify at *);
              (try simp only [Int.toNat_eq_max] at *); ceil_bounds; lra_close))
 
+/-- Every floor `⌊a⌋` in the goal or the context, split at `0`: `⌊a⌋ ≤ 0`
+    or `0 < ⌊a⌋`, on every goal. In `ℝ` a floor is no longer an integer,
+    and `lra_leaf` turns the second into `1 ≤ ⌊a⌋`, which is where the
+    integrality is. -/
+elab "floor_split" : tactic => withMainContext do
+  let mut es := #[← instantiateMVars (← getMainTarget)]
+  for d in ← getLCtx do
+    if !d.isImplementationDetail then es := es.push (← instantiateMVars d.type)
+  for a in es.foldl (fun acc e => collectFloorArgs e acc) #[] do
+    let stx ← Term.exprToSyntax a
+    evalTactic (← `(tactic| all_goals rcases le_or_gt ⌊$stx⌋ 0 with _ | _))
+
+-- `lra_close` once each floor is split at `0`, and `Int.fract x` is
+-- `x - ⌊x⌋` again (`norm_num` folds the difference into it). An invariant
+-- that says `2 * x` is a whole number, `2 * x - ⌊2 * x⌋ = 0`, rules out
+-- `0 < x < 1/2` only through `⌊2 * x⌋` being an integer: `m_lra_half`'s,
+-- beside a rank of `⌊2 * x⌋`.
+macro "lra_close_frac" : tactic =>
+  `(tactic| ((try simp only [← Int.self_sub_floor] at *); floor_split; all_goals lra_close))
 
 syntax "zeroth_hammer" : tactic
 

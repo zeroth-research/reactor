@@ -788,13 +788,19 @@ def test_a_ceiling_gets_its_own_lra_close_last():
     assert "lra_close_ceil" not in _plan(_real_module(), "fun s => ⌊s 0 0⌋.toNat").closers
 
 
+def test_a_floored_real_rank_gets_the_floors_split_last():
+    closers = _plan(_real_module(), "fun s => ⌊2 * s 0 0⌋.toNat").closers
+    assert closers.index("lra_close_frac") > closers.index("lra_close")
+    assert "lra_close_frac" not in _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)").closers
+
+
 def test_the_hammer_defines_every_closer_the_plan_can_name():
     """A closer the plan names and the project does not define is a parse
     error in every certificate that carries it, not a failed alternative."""
     from verith.proofs import generate_zeroth_hammer_lean
     hammer = generate_zeroth_hammer_lean()
     for name in ("lra_close", "lra_leaf", "lra_atoms", "floor_bounds",
-                 "lra_close_ceil", "ceil_bounds"):
+                 "lra_close_ceil", "ceil_bounds", "lra_close_frac", "floor_split"):
         assert f'"{name}"' in hammer
 
 
