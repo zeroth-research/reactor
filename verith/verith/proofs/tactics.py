@@ -127,6 +127,9 @@ class Features:
     has_or: bool = False
     has_eq: bool = False
     has_floor: bool = False
+    # A ceiling, `⌈x⌉` or `⌈x⌉₊`, or a floor into `ℕ`, `⌊x⌋₊`. Only a Lean
+    # answer writes one: SMT-LIB's `to_int` is the floor, printed `⌊x⌋`.
+    has_ceil: bool = False
     nonlinear: bool = False
     # The distinct `⌊·⌋` arguments the predicates take a floor of, as Lean
     # text over the state binder. A floored rank is the only thing that puts
@@ -325,6 +328,8 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
          *floor_arguments(scanned))
     ))
     f.has_floor = bool(f.floor_args)
+    f.has_ceil = ("⌈" in scanned or "⌋₊" in scanned
+                  or bool(re.search(r"\b(?:Nat|Int)\.(?:ceil|floor)\b", scanned)))
     # The transition branches if it has an `Ite`, and a ReLU/Min/Max reduces
     # to a branch in the goal even though the term itself is not an `Ite`.
     f.has_ite = bool(_BRANCHING_OPS & f.ops) or "if " in scanned
@@ -721,6 +726,12 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
     # and comes after all of them: a goal one of those proves never reaches
     # these, so a proof that builds today builds the same way. A finite
     # state keeps `decide` last instead.
+    if f.has_real and f.has_ceil:
+        # `lra_close`, with `⌈x⌉₊` and `⌊x⌋₊` taken to `ℤ` and the ceilings
+        # bounded as the floors are: `lra_close` reads `⌈x⌉₊` as an atom. A
+        # Lean answer's `Nat.ceil ((12 - h) * 2 / 3)` for `m_watertank`'s
+        # refills, which falls by one a tick.
+        closers.append("lra_close_ceil")
     if f.nonlinear and f.has_int and not f.finite_state:
         # A product under a ranking's `Int.toNat`: `nlinarith` reads
         # `(a * b).toNat` as an atom, and omega refuses the product. Moved
