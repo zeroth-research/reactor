@@ -78,6 +78,44 @@ macro "lra_close" : tactic =>
                 | lra_leaf
                 | (by_contra hneg; lra_atoms; (try casesm* _ ∧ _, _ ∨ _); all_goals lra_leaf))))
 
+/-- Every `⌈a⌉` in `e`, by its argument `a`, as `collectFloorArgs` collects
+    the floors. -/
+partial def collectCeilArgs (e : Expr) (acc : Array Expr) : Array Expr :=
+  if e.getAppFn.isConstOf ``Int.ceil && e.getAppNumArgs > 0 then
+    let a := e.appArg!
+    collectCeilArgs a (if acc.contains a then acc else acc.push a)
+  else match e with
+  | .app f a => collectCeilArgs a (collectCeilArgs f acc)
+  | .lam _ t b _ | .forallE _ t b _ => collectCeilArgs b (collectCeilArgs t acc)
+  | .letE _ t v b _ => collectCeilArgs b (collectCeilArgs v (collectCeilArgs t acc))
+  | .mdata _ b | .proj _ _ b => collectCeilArgs b acc
+  | _ => acc
+
+/-- For every `⌈a⌉` in the goal or the context, add `a ≤ ↑⌈a⌉` and
+    `↑⌈a⌉ < a + 1`: `floor_bounds` for a ceiling. -/
+elab "ceil_bounds" : tactic => withMainContext do
+  let mut es := #[← instantiateMVars (← getMainTarget)]
+  for d in ← getLCtx do
+    if !d.isImplementationDetail then es := es.push (← instantiateMVars d.type)
+  for a in es.foldl (fun acc e => collectCeilArgs e acc) #[] do
+    let stx ← Term.exprToSyntax a
+    evalTactic (← `(tactic| have := Int.le_ceil $stx))
+    evalTactic (← `(tactic| have := Int.ceil_lt_add_one $stx))
+
+-- `lra_close` over a rank that takes a ceiling, or a floor into `ℕ`:
+-- `⌈x⌉₊` is `⌈x⌉.toNat` and `⌊x⌋₊` is `⌊x⌋.toNat`, a truncated `m - n` is
+-- `(↑m - ↑n).toNat`, each `toNat` is a `max` with `0` in `ℤ`, and the
+-- ceilings are bounded as the floors are. A ranking written
+-- `Nat.ceil ((12 - h) * 2 / 3)` decreases by one per step, and
+-- `⌈x - 1⌉₊ < ⌈x⌉₊` was out of reach while `⌈·⌉₊` was an atom; the
+-- subtraction is `norm_num`'s, which writes `⌊8 * x - 95⌋₊` as
+-- `⌊8 * x⌋₊ - 95`.
+macro "lra_close_ceil" : tactic =>
+  `(tactic| ((try simp only [← Int.ceil_toNat, ← Int.floor_toNat] at *);
+             (try simp only [← Int.toNat_sub] at *); (try zify at *);
+             (try simp only [Int.toNat_eq_max] at *); ceil_bounds; lra_close))
+
+
 syntax "zeroth_hammer" : tactic
 
 /-- Zeroth hammer: cascading automated prover for reactive module goals.
