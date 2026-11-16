@@ -23,7 +23,7 @@ from reactor.lean.project.templates import env as reactor_env
 from reactor.lean.proof.render import LeanCertificate, ProofScripts
 
 from .facts import predicate_facts
-from .tactics import MAT_SIMP, plan_for
+from .tactics import DSIMP_ERASE, MAT_SIMP, plan_for
 
 if TYPE_CHECKING:
     from reactor.lean.codegen.context import LeanContext
@@ -197,6 +197,7 @@ def proof_scripts(
         plan=plan,
         all_defs=_all_defs(ctx, lean_cert),
         mat_simp=", ".join(MAT_SIMP),
+        dsimp_erase=", ".join(f"-{n}" for n in DSIMP_ERASE),
     ))
 
     def part(name: str) -> str:

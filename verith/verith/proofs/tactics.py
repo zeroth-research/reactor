@@ -72,6 +72,17 @@ MAT_SIMP: tuple[str, ...] = (
     "matMin", "matMax", "argmax_1d", "argmax",
 )
 
+# Mathlib's lemmas for reading an entry of a matrix operation, which
+# `simp_defs`' `dsimp` leaves out. They are proved by `rfl`, so `dsimp`
+# rewrites with them in place: inside a `decide` the proposition changes and
+# its `Decidable` instance keeps stating the old terms, and the `if` that
+# `decide` guards can no longer be split (`Relational.Mat` says why).
+# `MAT_SIMP`'s own entry lemmas are not `rfl` ones.
+DSIMP_ERASE: tuple[str, ...] = (
+    "Matrix.add_apply", "Matrix.sub_apply", "Matrix.neg_apply",
+    "Matrix.zero_apply", "Matrix.transpose_apply",
+)
+
 
 # ══════════════════════════════════════════════════════════════════════
 # Feature detection
@@ -116,6 +127,9 @@ class Features:
     has_or: bool = False
     has_eq: bool = False
     has_floor: bool = False
+    # A ceiling, `⌈x⌉` or `⌈x⌉₊`, or a floor into `ℕ`, `⌊x⌋₊`. Only a Lean
+    # answer writes one: SMT-LIB's `to_int` is the floor, printed `⌊x⌋`.
+    has_ceil: bool = False
     nonlinear: bool = False
     # The distinct `⌊·⌋` arguments the predicates take a floor of, as Lean
     # text over the state binder. A floored rank is the only thing that puts
@@ -314,6 +328,8 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
          *floor_arguments(scanned))
     ))
     f.has_floor = bool(f.floor_args)
+    f.has_ceil = ("⌈" in scanned or "⌋₊" in scanned
+                  or bool(re.search(r"\b(?:Nat|Int)\.(?:ceil|floor)\b", scanned)))
     # The transition branches if it has an `Ite`, and a ReLU/Min/Max reduces
     # to a branch in the goal even though the term itself is not an `Ite`.
     f.has_ite = bool(_BRANCHING_OPS & f.ops) or "if " in scanned
@@ -704,6 +720,41 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
         # `cousot9`'s `s0 * (max s2 0 + 1) + max s1 0`.
         closers.append("(simp only [max_def, min_def] at *; split_ifs at * "
                        "<;> (repeat' apply And.intro) <;> nlinarith)")
+
+    # ── last resorts ──
+    # Each closer below was added for goals every closer above gave up on,
+    # and comes after all of them: a goal one of those proves never reaches
+    # these, so a proof that builds today builds the same way. A finite
+    # state keeps `decide` last instead.
+    if f.has_real and f.has_ceil:
+        # `lra_close`, with `⌈x⌉₊` and `⌊x⌋₊` taken to `ℤ` and the ceilings
+        # bounded as the floors are: `lra_close` reads `⌈x⌉₊` as an atom. A
+        # Lean answer's `Nat.ceil ((12 - h) * 2 / 3)` for `m_watertank`'s
+        # refills, which falls by one a tick.
+        closers.append("lra_close_ceil")
+    if f.has_real and f.has_floor:
+        # `lra_close` with each floor split at `0`, so that `0 < ⌊x⌋` is
+        # `1 ≤ ⌊x⌋`: the integrality `linarith` cannot see in `ℝ`.
+        # `m_lra_half`'s certificate that `2 * x` is a whole number.
+        closers.append("lra_close_frac")
+    if f.nonlinear and f.has_int and not f.finite_state:
+        # A product under a ranking's `Int.toNat`: `nlinarith` reads
+        # `(a * b).toNat` as an atom, and omega refuses the product. Moved
+        # to `ℤ` with each `toNat` a `max`, and the `max` split, the
+        # products cancel and `nlinarith` finishes.
+        # `LeikeHeizmann-TACAS2014-Fig1`'s `(x*2 + (1 - y)*(2 - y)).toNat`,
+        # and `speedpldi3`'s `(n - i).toNat * (m + 1).toNat`.
+        closers.append("(zify; simp only [Int.toNat_eq_max, max_def, min_def] at *; "
+                       "split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)")
+    if f.has_int and not f.finite_state:
+        # `omega` does not implement the dark and grey shadows, so it gives
+        # up on an integer problem whose rational relaxation is feasible:
+        # `a + 2*b + c + 2*d ≤ 2` beside `a + b + c + 2*d ≥ 1` and the rest
+        # of a Petri net's place invariant, where only integrality rules
+        # out `d = -1/2`. `lia` (cutsat) decides linear integer arithmetic:
+        # `petri/philo/forks`'s `step_inv` builds with it and did not
+        # without.
+        closers.append("lia")
 
     # `decide` goes last: on a finite state it settles goals nothing else
     # can, but it is the most expensive thing in the plan.

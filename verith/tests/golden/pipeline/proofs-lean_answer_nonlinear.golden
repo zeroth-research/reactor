@@ -24,7 +24,7 @@ macro "simp_mat" : tactic =>
 -- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
 -- closers see the invariant's conditions.
 macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp at *))
+  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp [-Matrix.add_apply, -Matrix.sub_apply, -Matrix.neg_apply, -Matrix.zero_apply, -Matrix.transpose_apply] at *))
 
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
   intro s hpre
@@ -46,7 +46,9 @@ theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
       | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
       | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 15 closers proved this goal"))
+      | (zify; simp only [Int.toNat_eq_max, max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
+      | lia
+      | fail "none of the 17 closers proved this goal"))
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
   intro s e ⟨hpre, hinv⟩
@@ -68,7 +70,9 @@ theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update
       | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
       | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 15 closers proved this goal"))
+      | (zify; simp only [Int.toNat_eq_max, max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
+      | lia
+      | fail "none of the 17 closers proved this goal"))
 
 theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
@@ -95,7 +99,9 @@ theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) �
       | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
       | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 15 closers proved this goal"))
+      | (zify; simp only [Int.toNat_eq_max, max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
+      | lia
+      | fail "none of the 17 closers proved this goal"))
 
 === standalone
 import Relational.Basic
@@ -166,7 +172,7 @@ macro "simp_mat" : tactic =>
 -- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
 -- closers see the invariant's conditions.
 macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp at *))
+  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp [-Matrix.add_apply, -Matrix.sub_apply, -Matrix.neg_apply, -Matrix.zero_apply, -Matrix.transpose_apply] at *))
 
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
   intro s hpre
@@ -188,7 +194,9 @@ theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
       | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
       | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 15 closers proved this goal"))
+      | (zify; simp only [Int.toNat_eq_max, max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
+      | lia
+      | fail "none of the 17 closers proved this goal"))
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
   intro s e ⟨hpre, hinv⟩
@@ -210,7 +218,9 @@ theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update
       | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
       | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 15 closers proved this goal"))
+      | (zify; simp only [Int.toNat_eq_max, max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
+      | lia
+      | fail "none of the 17 closers proved this goal"))
 
 theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
@@ -237,7 +247,9 @@ theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) �
       | (simp_all; nlinarith)
       | (split_ifs at * <;> simp_all <;> omega)
       | (simp only [max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
-      | fail "none of the 15 closers proved this goal"))
+      | (zify; simp only [Int.toNat_eq_max, max_def, min_def] at *; split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)
+      | lia
+      | fail "none of the 17 closers proved this goal"))
 
 noncomputable section
 
