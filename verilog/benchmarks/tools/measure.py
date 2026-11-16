@@ -6,15 +6,14 @@ Usage (from anywhere; always run with -I, the sets are untrusted data):
     python3 -I tools/measure.py [--sets verilog-eval,sv-tests,ebmc,sby] [--jobs 8] [--limit N]
 
 For every selected case it runs
-  raw:       v2rm on the file as is (several files concatenated, v2rm takes one),
-  rewritten: v2rm on the file after `tools/rewrite.sed` (mechanical, meaning-preserving),
-  yosys:     `v2rm --yosys` on the first variant that was accepted (raw, else rewritten).
+  v2rm:   v2rm on the file as is (several files concatenated, v2rm takes one),
+  yosys:  `v2rm --yosys` on it, if v2rm accepted it.
 Failures are classified by v2rm's first error, normalized (locations, names and numbers
 stripped) and mapped to a coarse bucket (BUCKETS below).
 
 Output in results/: <set>.tsv (one row per case), skipped-<set>.tsv (every file not
 measured, with the reason), SUMMARY.md. Generated inputs go to work/.
-Nothing from the clones is executed: files are only read, and sed/v2rm/yosys get paths.
+Nothing from the clones is executed: files are only read, and v2rm/yosys get paths.
 """
 
 import argparse
@@ -28,7 +27,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SETS_DIR = ROOT / "sets"
-TOOLS = ROOT / "tools"
 WORK = ROOT / "work"
 RESULTS = ROOT / "results"
 V2RM = Path(os.environ.get("V2RM", Path.home() / ".cache/rm-target/release/v2rm"))
@@ -165,17 +163,13 @@ NOT_MEASURED = [
 
 # ---------------------------------------------------------------- running
 
-def prepare(case, variant):
-    """The file v2rm reads for `case` in `variant` ('raw' or 'rewritten')."""
-    if variant == "raw" and len(case.files) == 1:
+def prepare(case):
+    """The file v2rm reads for `case`: its only file, or its files concatenated."""
+    if len(case.files) == 1:
         return case.files[0]
-    out = WORK / case.set / variant / (case.id.replace("/", "__") + ".sv")
+    out = WORK / case.set / (case.id.replace("/", "__") + ".sv")
     out.parent.mkdir(parents=True, exist_ok=True)
-    text = "".join(f.read_text(errors="replace") + "\n" for f in case.files)
-    if variant == "rewritten":
-        text = subprocess.run(["sed", "-E", "-f", str(TOOLS / "rewrite.sed")], input=text,
-                              capture_output=True, text=True, check=True).stdout
-    out.write_text(text)
+    out.write_text("".join(f.read_text(errors="replace") + "\n" for f in case.files))
     return out
 
 
@@ -190,8 +184,8 @@ def run(args, timeout):
     return p
 
 
-def accept(case, variant):
-    path = prepare(case, variant)
+def accept(case):
+    path = prepare(case)
     top = ["--top", case.top] if case.top else []
     p = run([*top, str(path)], TIMEOUT)
     if p is None:
@@ -208,7 +202,8 @@ def accept(case, variant):
 def where(path, msg):
     """Adds the keyword at the error's location to generic messages, which name only an
     sv-parser node kind (`unsupported: ModuleCommonItem`) or nothing (`syntax error`)."""
-    m = re.match(r"(\d+):(\d+): (unsupported: \w+|syntax error|`[^`]*` not supported)$", msg)
+    m = re.match(r"(\d+):(\d+): (unsupported: \w+|syntax error|`[^`]*` not supported|"
+                 r"a plain `always` needs an event control.*)$", msg)
     if not m:
         return msg
     try:
@@ -223,6 +218,8 @@ def where(path, msg):
     word = w.group(1)
     if word == "always" and re.match(r"\s*(assert|assume|cover)\b", line[w.end():]):
         word = "assert"  # EBMC's `always assert p: e` (not standard SystemVerilog)
+    elif word == "always" and re.match(r"\s*#", line[w.end():]):
+        word = "#"  # a testbench clock `always #5 clk = ~clk;`
     return f"{msg} [at `{word}`]"
 
 
@@ -245,11 +242,9 @@ def yosys(case, path):
 
 
 def measure(case):
-    raw_path, raw = accept(case, "raw")
-    rw_path, rw = accept(case, "rewritten")
-    target = raw_path if raw == "OK" else rw_path if rw == "OK" else None
-    ys = yosys(case, target) if target else "-"
-    return case, raw, rw, ys
+    path, result = accept(case)
+    ys = yosys(case, path) if result == "OK" else "-"
+    return case, result, ys
 
 
 # ---------------------------------------------------------------- classification
@@ -266,7 +261,7 @@ AT = r"\[at `({})`\]"
 BUCKETS = [  # first match wins; pattern on the first error without its location
     (r"^PANIC", "internal error (panic): a bug in v2rm"),
     (r"^TIMEOUT", "timeout"),
-    (r"`reg` not supported|plain `always`|" + AT.format("always"), "spelling: `reg` / plain `always`"),
+    (r"`reg` not supported|plain `always` not supported", "spelling: `reg` / plain `always`"),
     (r"unsized literal|resize explicitly|differs from selector|bits to \d+ bits|signedness",
      "width rules (explicit-width fragment)"),
     (r"Define not found|Include not found|Include error", "preprocessor: define / include missing"),
@@ -297,6 +292,7 @@ BUCKETS = [  # first match wins; pattern on the first error without its location
     (r"several top|no module", "top-module selection"),
     (r"latch|read before|never driven|undriven|driven by|drives nothing|combinational loop",
      "design rejected by a checking rule (latch, loop, drivers)"),
+    (AT.format("always"), "plain `always` without event control"),
     (r"syntax error", "parse error (sv-parser)"),
     (r"^unsupported: ", "other unsupported syntax"),
     (r"not supported", "other unsupported construct"),
@@ -332,38 +328,34 @@ def report(per_set, skipped_per_set):
     repos = {"verilog-eval": "verilog-eval", "sv-tests": "sv-tests", "ebmc": "hw-cbmc", "sby": "sby"}
     out = ["# Benchmark coverage of v2rm", "",
            f"Generated by `tools/measure.py`; v2rm at commit `{v}` of this repository.",
-           "**raw** = file as is; **rewritten** = after `tools/rewrite.sed`; **Yosys** = "
-           "`v2rm --yosys` on the first accepted variant. Failures are classified by v2rm's "
-           "*first* error only, so a bucket counts the blocker that is hit first.", "",
-           "| set | commit | cases | skipped | raw OK | rewritten OK | Yosys Equal | Differs | Yosys error/other |",
-           "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
+           "**v2rm OK** = accepted, file as is; **Yosys** = `v2rm --yosys` on the accepted "
+           "designs. Failures are classified by v2rm's *first* error only, so a bucket counts "
+           "the blocker that is hit first.", "",
+           "| set | commit | cases | skipped | v2rm OK | Yosys Equal | Differs | Yosys error/other |",
+           "|---|---|---:|---:|---:|---:|---:|---:|"]
     for s, rows in per_set.items():
         n = len(rows)
-        raw = sum(r[1] == "OK" for r in rows)
-        rw = sum(r[2] == "OK" for r in rows)
-        eq = sum(r[3] == "Equal" for r in rows)
-        dif = sum(r[3].startswith("Differs") for r in rows)
-        oth = sum(r[3] not in ("-", "Equal") and not r[3].startswith("Differs") for r in rows)
+        ok = sum(r[1] == "OK" for r in rows)
+        eq = sum(r[2] == "Equal" for r in rows)
+        dif = sum(r[2].startswith("Differs") for r in rows)
+        oth = sum(r[2] not in ("-", "Equal") and not r[2].startswith("Differs") for r in rows)
         out.append(f"| {s} | `{commit(repos[s])[:12]}` | {n} | {len(skipped_per_set[s])} | "
-                   f"{raw} ({100 * raw / max(n, 1):.0f}%) | {rw} ({100 * rw / max(n, 1):.0f}%) | "
-                   f"{eq} | {dif} | {oth} |")
+                   f"{ok} ({100 * ok / max(n, 1):.0f}%) | {eq} | {dif} | {oth} |")
     for s, rows in per_set.items():
         n = len(rows)
         if not n:
             continue
         out += ["", f"## {s}", ""]
-        for col, name in ((1, "raw"), (2, "rewritten")):
-            fails = [r[col] for r in rows if r[col] != "OK"]
-            out += [f"### First error, {name} ({len(fails)} of {n} fail)", "",
-                    table(Counter(bucket(m) for m in fails), n, "bucket"), ""]
-        fails = [r[2] for r in rows if r[2] != "OK"]
-        out += ["### Most frequent first errors, rewritten (normalized, top 25)", "",
+        fails = [r[1] for r in rows if r[1] != "OK"]
+        out += [f"### First error ({len(fails)} of {n} fail)", "",
+                table(Counter(bucket(m) for m in fails), n, "bucket"), ""]
+        out += ["### Most frequent first errors (normalized, top 25)", "",
                 table(Counter(normalize(m) for m in fails[:]), n, "message"), ""]
         out[-2] = "\n".join(out[-2].splitlines()[:27])
-        bad = [r for r in rows if r[3] not in ("-", "Equal")]
+        bad = [r for r in rows if r[2] not in ("-", "Equal")]
         if bad:
             out += ["### Yosys check: not Equal", "", "| case | result |", "|---|---|"]
-            out += [f"| {r[0].id} | {r[3][:200]} |" for r in bad] + [""]
+            out += [f"| {r[0].id} | {r[2][:200]} |" for r in bad] + [""]
         out += [f"### Skipped files ({len(skipped_per_set[s])}, list in `skipped-{s}.tsv`)", "",
                 table(Counter(re.sub(r"`[^`]*`", "`…`", why) if "input" in why else why
                               for _, why in skipped_per_set[s]),
@@ -394,13 +386,12 @@ def main():
         print(f"{s}: {len(cases)} cases, {len(skipped)} skipped", file=sys.stderr, flush=True)
         with cf.ThreadPoolExecutor(a.jobs) as ex:
             rows = list(ex.map(measure, cases))
-        rows = [(c, raw, rw, ys) for c, raw, rw, ys in rows]
         per_set[s], skipped_per_set[s] = rows, skipped
         with open(RESULTS / f"{s}.tsv", "w") as f:
-            f.write("case\ttop\traw\trewritten\tyosys\tbucket\n")
-            for c, raw, rw, ys in rows:
-                b = "" if rw == "OK" else bucket(rw)
-                f.write(f"{c.id}\t{c.top or ''}\t{raw}\t{rw}\t{ys}\t{b}\n")
+            f.write("case\ttop\tv2rm\tyosys\tbucket\n")
+            for c, result, ys in rows:
+                b = "" if result == "OK" else bucket(result)
+                f.write(f"{c.id}\t{c.top or ''}\t{result}\t{ys}\t{b}\n")
         with open(RESULTS / f"skipped-{s}.tsv", "w") as f:
             f.write("file\treason\n")
             f.writelines(f"{p}\t{why}\n" for p, why in skipped)
