@@ -159,7 +159,7 @@ def test_bitvec_extl_is_parsed_as_bitvec():
     main = generate_main_lean("Rea", module, "Rea")
     assert "Array (BitVec 8)" in main, "BitVec input parsed into an Int array"
     assert "BitVec.ofInt 8 v" in main, "BitVec input is not converted"
-    assert "Fin 1 → Fin 1 → (BitVec 8)" in main
+    assert "Mat (BitVec 8) 1 1" in main
     assert "Array Int" not in main
 
 

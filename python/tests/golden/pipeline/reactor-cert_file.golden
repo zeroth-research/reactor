@@ -56,16 +56,16 @@ set_option linter.unnecessarySeqFocus false
 
 
 @[simp] def init (extl_n: Unit) : (Mat Int 1 1) :=
-  let x0 : (Mat Int 1 1) := (fun _ _ => (0 : Int))
+  let x0 : (Mat Int 1 1) := (Mat.mk fun _ _ => (0 : Int))
   let x1 : (Mat Int 1 1) := x0
   x1
 
 @[simp] def update (ctrl: (Mat Int 1 1)) (extl_l: Unit) (extl_n: Unit) : (Mat Int 1 1) :=
-  let x0 : (Mat Int 1 1) := (fun _ _ => (1 : Int))
+  let x0 : (Mat Int 1 1) := (Mat.mk fun _ _ => (1 : Int))
   let x1 : (Mat Int 1 1) := (ctrl + x0)
-  let x2 : (Mat Int 1 1) := (fun _ _ => (10 : Int))
-  let x3 : (Mat Bool 1 1) := (fun _ _ => decide (x1 0 0 = x2 0 0))
-  let x4 : (Mat Int 1 1) := (fun _ _ => (0 : Int))
+  let x2 : (Mat Int 1 1) := (Mat.mk fun _ _ => (10 : Int))
+  let x3 : (Mat Bool 1 1) := (Mat.mk fun _ _ => decide (x1 0 0 = x2 0 0))
+  let x4 : (Mat Int 1 1) := (Mat.mk fun _ _ => (0 : Int))
   let x5 : (Mat Int 1 1) := (if x3 0 0 then x4 else x1)
   let x6 : (Mat Int 1 1) := x5
   x6
