@@ -72,6 +72,17 @@ MAT_SIMP: tuple[str, ...] = (
     "matMin", "matMax", "argmax_1d", "argmax",
 )
 
+# Mathlib's lemmas for reading an entry of a matrix operation, which
+# `simp_defs`' `dsimp` leaves out. They are proved by `rfl`, so `dsimp`
+# rewrites with them in place: inside a `decide` the proposition changes and
+# its `Decidable` instance keeps stating the old terms, and the `if` that
+# `decide` guards can no longer be split (`Relational.Mat` says why).
+# `MAT_SIMP`'s own entry lemmas are not `rfl` ones.
+DSIMP_ERASE: tuple[str, ...] = (
+    "Matrix.add_apply", "Matrix.sub_apply", "Matrix.neg_apply",
+    "Matrix.zero_apply", "Matrix.transpose_apply",
+)
+
 
 # ══════════════════════════════════════════════════════════════════════
 # Feature detection
