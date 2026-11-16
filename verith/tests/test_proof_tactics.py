@@ -743,6 +743,41 @@ def test_a_nonlinear_predicate_gets_its_max_split_into_cases():
     assert not any("max_def" in c for c in linear.closers)
 
 
+def test_the_last_resorts_come_after_every_other_closer():
+    """A closer added for goals nothing else proves goes after all the
+    closers that were there, so a proof that builds today never reaches it."""
+    old = {"omega", "contradiction", "linarith", "(norm_cast; omega)", "(norm_num; done)",
+           "nlinarith", "positivity", "tauto", "(simp_all; done)", "(simp_all; omega)",
+           "(simp_all; linarith)", "(simp_all; nlinarith)", "lra_close",
+           "(split_ifs at * <;> simp_all <;> omega)"}
+    plan = _plan(_int_module(), "fun s => (if (s 0 0) = 0 then (s 0 0) * (s 0 0) else 0 : Int).toNat")
+    new = [c for c in plan.closers if c.startswith("(zify;") or c == "lia"]
+    assert len(new) == 2
+    first_new = min(plan.closers.index(c) for c in new)
+    assert all(plan.closers.index(c) < first_new for c in plan.closers
+               if c in old or c.startswith("(simp only [max_def") or c.startswith("(constructor"))
+
+
+def test_a_product_under_a_toNat_is_moved_to_int_first():
+    """`nlinarith` reads `(a * b).toNat` as an atom; the closer that takes
+    each `toNat` to a `max` in `ℤ` comes after the one that does not."""
+    plan = _plan(_int_module(), "fun s => (((s 0 0) * (s 0 0) + 1 : Int)).toNat")
+    zified = [c for c in plan.closers if c.startswith("(zify;")]
+    assert len(zified) == 1 and "Int.toNat_eq_max" in zified[0]
+    assert plan.closers.index(zified[0]) > plan.closers.index("nlinarith")
+    linear = _plan(_int_module(), "fun s => (((s 0 0) + 1 : Int)).toNat")
+    assert not any(c.startswith("(zify;") for c in linear.closers)
+
+
+def test_lia_is_the_last_integer_closer():
+    """omega gives up on integer problems only integrality refutes; `lia`
+    does not, and runs only where every other closer gave up."""
+    closers = _plan(_int_module(), "fun s => ((s 0 0) ≥ 0)").closers
+    assert closers[-1] == "lia"
+    assert "lia" not in _plan(_real_module(), "fun s => ((s 0 0) ≥ 0)").closers
+    assert "lia" not in _plan(_bv_module(), "fun s => ((s 0 0) = 1#1)").closers
+
+
 def test_the_hammer_defines_every_closer_the_plan_can_name():
     """A closer the plan names and the project does not define is a parse
     error in every certificate that carries it, not a failed alternative."""

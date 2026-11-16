@@ -716,6 +716,30 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
         closers.append("(simp only [max_def, min_def] at *; split_ifs at * "
                        "<;> (repeat' apply And.intro) <;> nlinarith)")
 
+    # ── last resorts ──
+    # Each closer below was added for goals every closer above gave up on,
+    # and comes after all of them: a goal one of those proves never reaches
+    # these, so a proof that builds today builds the same way. A finite
+    # state keeps `decide` last instead.
+    if f.nonlinear and f.has_int and not f.finite_state:
+        # A product under a ranking's `Int.toNat`: `nlinarith` reads
+        # `(a * b).toNat` as an atom, and omega refuses the product. Moved
+        # to `ℤ` with each `toNat` a `max`, and the `max` split, the
+        # products cancel and `nlinarith` finishes.
+        # `LeikeHeizmann-TACAS2014-Fig1`'s `(x*2 + (1 - y)*(2 - y)).toNat`,
+        # and `speedpldi3`'s `(n - i).toNat * (m + 1).toNat`.
+        closers.append("(zify; simp only [Int.toNat_eq_max, max_def, min_def] at *; "
+                       "split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)")
+    if f.has_int and not f.finite_state:
+        # `omega` does not implement the dark and grey shadows, so it gives
+        # up on an integer problem whose rational relaxation is feasible:
+        # `a + 2*b + c + 2*d ≤ 2` beside `a + b + c + 2*d ≥ 1` and the rest
+        # of a Petri net's place invariant, where only integrality rules
+        # out `d = -1/2`. `lia` (cutsat) decides linear integer arithmetic:
+        # `petri/philo/forks`'s `step_inv` builds with it and did not
+        # without.
+        closers.append("lia")
+
     # `decide` goes last: on a finite state it settles goals nothing else
     # can, but it is the most expensive thing in the plan.
     #
