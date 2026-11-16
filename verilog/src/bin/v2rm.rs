@@ -107,6 +107,9 @@ fn main() -> ExitCode {
             for name in &t.unread_inputs {
                 eprintln!("{path}: warning: input `{name}` is never read and is left out");
             }
+            for w in &t.out_of_range {
+                eprintln!("{path}:{}: warning: {}", w.span, w.msg);
+            }
             if compare {
                 return match yosys_check(&path, &inst, &t, &overrides) {
                     Ok(true) => ExitCode::SUCCESS,

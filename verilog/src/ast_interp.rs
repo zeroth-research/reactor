@@ -292,6 +292,7 @@ impl<'m> Interp<'m> {
                 sel,
                 items,
                 default,
+                ..
             } => {
                 let scope = scope(out);
                 // the selector and the labels are evaluated at one type
@@ -696,19 +697,29 @@ impl<'m> Interp<'m> {
         values: &mut Values,
         active: &mut BTreeSet<Name>,
     ) -> Result<BitVec, String> {
-        let base = match sel.index() {
-            None => sel.constant().flatten().expect("constant").1,
-            // typing guarantees the index is in range
-            Some(i) => {
-                let i = self.own(c, i, scope, values, active)?;
-                let i = i.unsigned().to_usize().expect("an index in range");
-                match sel {
-                    Select::Down(_, w) => i + 1 - w,
-                    _ => i,
-                }
-            }
+        let w = sel.width();
+        let Some(i) = sel.index() else {
+            let lo = sel.constant().flatten().expect("constant").1;
+            return Ok(slice(v, lo + w - 1, lo));
         };
-        Ok(slice(v, base + sel.width() - 1, base))
+        // bit by bit; bits outside `v` read 0
+        let i = BigInt::from(self.own(c, i, scope, values, active)?.unsigned().clone());
+        let lo = match sel {
+            Select::Down(..) => i - (w - 1),
+            _ => i,
+        };
+        let mut out = BigUint::from(0u8);
+        for k in 0..w {
+            let at = &lo + k;
+            let bit = usize::try_from(&at)
+                .ok()
+                .filter(|at| *at < v.width())
+                .is_some_and(|at| v.unsigned().bit(at as u64));
+            if bit {
+                out.set_bit(k as u64, true);
+            }
+        }
+        Ok(BitVec::wrap(w, out))
     }
 
     /// The values of `es`, each at its own type, concatenated.

@@ -283,6 +283,7 @@ fn round_declares_havoc() {
         initialized: vec![],
         register_widths: Default::default(),
         unread_inputs: vec![],
+        out_of_range: vec![],
         wire_names: HashMap::new(),
         instances: vec![],
     };

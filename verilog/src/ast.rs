@@ -505,11 +505,16 @@ pub enum StmtKind {
     If(Expr, Box<Stmt>, Box<Stmt>),
     /// `case (sel) labels: stmt … default: stmt endcase`: the first item
     /// with a label equal to `sel` runs, else `default` (if any). The
-    /// `default` can be written anywhere among the items.
+    /// `default` can be written anywhere among the items. `parallel` is the
+    /// position of a `(* parallel_case *)` attribute: synthesis then builds
+    /// a multiplexer without priority, so it is accepted only when the
+    /// labels are distinct constants (checked in
+    /// [`sizing`](crate::sizing)), where it changes nothing.
     Case {
         sel: Expr,
         items: Vec<CaseItem>,
         default: Option<Box<Stmt>>,
+        parallel: Option<Span>,
     },
     /// `lhs <= rhs;`, with `span` the position of `lhs`.
     NonBlocking { lhs: Lvalue, rhs: Expr },
@@ -549,7 +554,7 @@ pub enum LvalueKind {
 
 impl Lvalue {
     /// Adds the signals assigned to `out`, each once.
-    fn targets<'l>(&'l self, out: &mut Vec<&'l Name>) {
+    pub fn targets<'l>(&'l self, out: &mut Vec<&'l Name>) {
         match &self.kind {
             LvalueKind::Var(y) | LvalueKind::Select(y, _) => {
                 if !out.contains(&y) {
@@ -681,6 +686,7 @@ impl Stmt {
                 sel,
                 items,
                 default,
+                ..
             } => {
                 sel.reads(out);
                 for item in items {
@@ -1125,6 +1131,7 @@ impl fmt::Display for Stmt {
                 sel,
                 items,
                 default,
+                ..
             } => {
                 write!(f, "case ({sel})")?;
                 for item in items {

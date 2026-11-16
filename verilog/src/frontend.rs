@@ -40,6 +40,12 @@ initial value has, so it adds nothing. A net declaration with a value,
 `wire y = e;`, is no initial value but a continuous assignment, the same
 as `assign y = e;`.
 
+Attributes `(* … *)` are rejected, except `(* parallel_case *)` on a `case`
+statement (kept in [`ast::StmtKind::Case`]; sizing
+accepts it only when the labels are distinct constants, where it changes
+nothing). Others may change what synthesis builds (`full_case` turns
+missing cases into don't-cares), so they are not ignored.
+
 `sv-parser` ignores operator precedence: a chain of binary operators comes
 out nested to the right in source order (`a * b + c` as `a * (b + c)`), and
 `?:` is nested the same way (`a + b ? c : d` as `a + (b ? c : d)`). The
@@ -1104,7 +1110,7 @@ impl Cx<'_> {
     fn statement(&self, s: &sv::Statement) -> Result<Stmt> {
         let (label, attrs, item) = &s.nodes;
         self.absent(label, "statement label")?;
-        self.absent(attrs, "attribute")?;
+        let parallel = self.parallel_case(attrs, item)?;
         let span = self.span(item);
         let kind = match item {
             sv::StatementItem::NonblockingAssignment(a) => {
@@ -1190,7 +1196,7 @@ impl Cx<'_> {
                 StmtKind::Block(stmts.iter().map(|s| self.stmt(s)).collect::<Result<_>>()?)
             }
             sv::StatementItem::CaseStatement(c) => match c.as_ref() {
-                sv::CaseStatement::Normal(c) => return self.case(c, span),
+                sv::CaseStatement::Normal(c) => return self.case(c, parallel, span),
                 sv::CaseStatement::Matches(c) => {
                     return self.err(&c.nodes.3, "`case … matches` not supported");
                 }
@@ -1205,7 +1211,12 @@ impl Cx<'_> {
 
     /// `case (sel) … endcase`: no `casez`/`casex`, no
     /// `unique`/`priority`, at most one `default`.
-    fn case(&self, c: &sv::CaseStatementNormal, span: Span) -> Result<Stmt> {
+    fn case(
+        &self,
+        c: &sv::CaseStatementNormal,
+        parallel: Option<Span>,
+        span: Span,
+    ) -> Result<Stmt> {
         let (unique, kw, sel, first, rest, _) = &c.nodes;
         if let Some(u) = unique {
             return self.err(u, format!("`{}` not supported", self.text(u)));
@@ -1244,9 +1255,46 @@ impl Cx<'_> {
                 sel,
                 items,
                 default,
+                parallel,
             },
             span,
         })
+    }
+
+    /// The attributes of a statement: only `(* parallel_case *)` on a
+    /// `case` is accepted (its position is returned); any other attribute
+    /// is rejected, since some change what synthesis builds (`full_case`
+    /// makes missing cases don't-cares).
+    fn parallel_case(
+        &self,
+        attrs: &[sv::AttributeInstance],
+        item: &sv::StatementItem,
+    ) -> Result<Option<Span>> {
+        let mut parallel = None;
+        for a in attrs {
+            for spec in a.nodes.1.contents() {
+                let (name, value) = &spec.nodes;
+                if self.text(name) != "parallel_case" {
+                    return self.err(
+                        spec,
+                        format!("attribute `{}` not supported", self.text(spec)),
+                    );
+                }
+                if let Some((_, v)) = value {
+                    return self.err(v, "`parallel_case` takes no value");
+                }
+                let is_case = matches!(
+                    item,
+                    sv::StatementItem::CaseStatement(c)
+                        if matches!(c.as_ref(), sv::CaseStatement::Normal(_))
+                );
+                if !is_case {
+                    return self.err(spec, "`parallel_case` is only supported on a `case`");
+                }
+                parallel = Some(self.span(spec));
+            }
+        }
+        Ok(parallel)
     }
 
     /// The condition of an `if`: one expression, no patterns.
@@ -2663,6 +2711,7 @@ impl Resolver<'_> {
                 sel,
                 items,
                 default,
+                ..
             } => {
                 self.expr(sel)?;
                 for item in items {

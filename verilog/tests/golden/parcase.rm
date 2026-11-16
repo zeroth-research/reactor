@@ -1,0 +1,76 @@
+module parcase
+  external
+    clk : bv1
+    go : bv1
+    d : bv8
+    acc@init : bv8
+  interface
+    mode : bv2
+    y : bv8
+  private
+    st : bv3
+    acc : bv8
+  atom controls st, acc reads clk, go, d, st, acc awaits clk, acc@init
+    init
+      X(st) := 3'd0
+      X(acc) := ID X(acc@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := ZEXT[32] st
+      %3 := 32'd0
+      %4 := EQ (%2, %3)
+      %5 := 32'd1
+      %6 := EQ (%2, %5)
+      %7 := 32'd2
+      %8 := EQ (%2, %7)
+      %9 := 32'd3
+      %10 := EQ (%2, %9)
+      %11 := 32'd4
+      %12 := EQ (%2, %11)
+      %13 := OR (%10, %12)
+      %14 := 3'd1
+      %15 := ITE (go, %14, st)
+      %16 := 3'd2
+      %17 := ADD (acc, d)
+      %18 := NOT go
+      %19 := 3'd3
+      %20 := ITE (%18, %19, st)
+      %21 := 32'd2
+      %22 := 32'd4
+      %23 := ITE (go, %21, %22)
+      %24 := EXTRACT[2:0] %23
+      %25 := 3'd0
+      %26 := ITE (%13, %24, %25)
+      %27 := ITE (%8, %20, %26)
+      %28 := ITE (%8, %17, acc)
+      %29 := ITE (%6, %16, %27)
+      %30 := ITE (%6, d, %28)
+      %31 := ITE (%4, %15, %29)
+      %32 := ITE (%4, acc, %30)
+      X(st) := ITE (clk@pos, %31, st)
+      X(acc) := ITE (clk@pos, %32, acc)
+  atom controls mode, y awaits st, acc
+    init = update
+      %1 := ZEXT[32] X(st)
+      %2 := 32'd0
+      %3 := EQ (%1, %2)
+      %4 := 32'd1
+      %5 := EQ (%1, %4)
+      %6 := 32'd2
+      %7 := EQ (%1, %6)
+      %8 := OR (%5, %7)
+      %9 := 32'd3
+      %10 := EQ (%1, %9)
+      mode@1 := 2'd0
+      y@1 := 8'd0
+      mode@2 := 2'd1
+      mode@3 := 2'd2
+      mode@4 := 2'd3
+      y@2 := NOT X(acc)
+      mode@5 := ITE (%10, mode@3, mode@4)
+      y@3 := ITE (%10, X(acc), y@2)
+      mode@6 := ITE (%8, mode@2, mode@5)
+      y@4 := ITE (%8, X(acc), y@3)
+      X(mode) := ITE (%3, mode@1, mode@6)
+      X(y) := ITE (%3, y@1, y@4)

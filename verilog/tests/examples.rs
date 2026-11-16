@@ -657,6 +657,21 @@ fn hex_line(inst: &Inst, values: &Values) -> String {
         .join(" ")
 }
 
+/// Whether iverilog's output line `got` agrees with the expected `line`.
+/// With `x` (a design with reads that may select bits outside a signal),
+/// a hex digit that iverilog prints as x (wholly or partly unknown) agrees
+/// with any digit: iverilog gives such bits x, where we read 0.
+fn agrees(got: &str, line: &str, x: bool) -> bool {
+    if !x {
+        return got == line;
+    }
+    got.len() == line.len()
+        && got
+            .chars()
+            .zip(line.chars())
+            .all(|(g, e)| g == e || matches!(g, 'x' | 'X'))
+}
+
 /// Compiles and runs a testbench for the design at `path`, and returns
 /// its output lines.
 fn run_iverilog(bin: &Path, path: &Path, name: &str, tb: &str) -> Vec<String> {
@@ -719,8 +734,14 @@ fn ast_matches_iverilog() {
         let tb = testbench(&inst, &t, &init, &rounds);
         let got = run_iverilog(&bin, &path, &m.name, &tb);
         assert_eq!(got.len(), expected.len(), "{}: {got:?}", path.display());
+        let x = !t.out_of_range.is_empty();
         for (k, (g, e)) in got.iter().zip(&expected).enumerate() {
-            assert_eq!(g, e, "{}: round {k} = {:?}", path.display(), rounds[k]);
+            assert!(
+                agrees(g, e, x),
+                "{}: round {k} = {:?}\n{g}\n{e}",
+                path.display(),
+                rounds[k]
+            );
         }
     }
     assert_eq!(skipped, SIMULATOR_DIFFERS);
@@ -763,7 +784,11 @@ fn rounds_match_cycles() {
             .collect();
         let tb = cycle_testbench(&inst, &t, &init, &vectors);
         let got = run_iverilog(&bin, &path, &format!("{}_cycles", m.name), &tb);
-        assert_eq!(got, expected, "{}", path.display());
+        let x = !t.out_of_range.is_empty();
+        assert_eq!(got.len(), expected.len(), "{}", path.display());
+        for (g, e) in got.iter().zip(&expected) {
+            assert!(agrees(g, e, x), "{}\n{g}\n{e}", path.display());
+        }
         compared += 1;
     }
     assert!(compared > 20, "{compared}");
