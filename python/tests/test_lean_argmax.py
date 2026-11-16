@@ -149,7 +149,7 @@ def test_multi_row_input_selects_the_general_variant():
     one_row = ModuleToLean4(_argmax_module([1, 4], [1, 1])).to_lean_functional()
     many_row = ModuleToLean4(_argmax_module([3, 4], [1, 1])).to_lean_functional()
     assert "argmax_1d" in one_row
-    assert "(Mat Int 1 1) := (fun i j => ((argmax ctrl" in many_row, (
+    assert "(Mat Int 1 1) := (Mat.mk fun i j => ((argmax ctrl" in many_row, (
         "multi-row Argmax should use the general variant with a 1x1 result"
     )
 

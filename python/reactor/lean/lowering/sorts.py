@@ -81,6 +81,19 @@ def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
     return f"(Mat {ty} {shape.m} {shape.n})"
 
 
+def mat_mk(entry: str, i: str = "_", j: str = "_") -> str:
+    """The Lean matrix whose entry `(i, j)` is `entry`: `(Mat.mk fun i j => entry)`.
+
+    The codegen writes every matrix it builds from its entries as a
+    `Mat.mk`, never as a bare `fun i j => ...`: `Relational.Mat`'s `Mat.mk`
+    makes it a `Mat` by its type, not a function that is one only because
+    `Mat` unfolds to a function type. Its size is not in the term, so the
+    expression needs an expected type, which every emitted `let` and
+    definition gives it.
+    """
+    return f"(Mat.mk fun {i} {j} => {entry})"
+
+
 def itype_name(itype) -> str:
     """Get the variant name of an op, e.g. LIA.Add() -> 'Add'."""
     name = type(itype).__name__

@@ -66,6 +66,7 @@ _LAYER_SIMP = [
     "ite_pair",
     "Mat_1_1_lt_iff",
     "Mat_1_1_le_iff",
+    "↓Mat.mk_apply",
 ]
 
 

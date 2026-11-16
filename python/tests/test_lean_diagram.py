@@ -81,7 +81,7 @@ def test_twobitcounter_has_inlined_scalars():
 
     # Scalar Bool constants are inlined as Mat-typed literals, not top-level defs
     assert "def c0" not in lean
-    assert "let x0 : (Mat Bool 1 1) := (fun _ _ => false)" in lean
+    assert "let x0 : (Mat Bool 1 1) := (Mat.mk fun _ _ => false)" in lean
 
 
 def test_twobitcounter_update_has_let_bindings():
@@ -391,10 +391,10 @@ def test_scalar_encoding_extracts_a_scalar_from_linear():
     lean = ModuleToLean4(module).to_lean_scalar()
     line = next(l for l in lean.splitlines() if "matVecAffine" in l)
     assert line.strip().endswith("0 0)"), f"result not extracted: {line.strip()}"
-    # Ascribed, not a bare `fun _ _ => ctrl`: `matVecAffine`'s batch
+    # Ascribed, not a bare `Mat.mk fun _ _ => ctrl`: `matVecAffine`'s batch
     # dimension is not determined by the lambda, and an un-ascribed lift
     # leaves `n` unsolved wherever the surrounding term does not pin it.
-    assert "(fun _ _ => ctrl : Mat Int 1 1)" in line, (
+    assert "((Mat.mk fun _ _ => ctrl) : Mat Int 1 1)" in line, (
         f"operand not lifted with its type: {line.strip()}"
     )
     assert ": Int :=" in line, "a 1x1 write wire should stay scalar-typed"
@@ -422,7 +422,7 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
     ite = [l for l in lean.splitlines() if "if " in l]
     assert ite, "no Ite emitted"
     for line in ite:
-        assert "(fun _ _ =>" in line, f"scalar operand not lifted: {line.strip()}"
+        assert "(Mat.mk fun _ _ =>" in line, f"scalar operand not lifted: {line.strip()}"
 
 
 # ──────────────────────────────────────────────────────────────
