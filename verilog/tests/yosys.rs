@@ -1643,6 +1643,16 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "the cast `W'(…)` of 1 is 1 either way",
     ),
     (
+        "arlow.sv",
+        "18:15 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "arlow.sv",
+        "18:21 `1` -> `'d1`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
         "barrel.sv",
         "18:22 `>>>` -> `>>`",
         "`y` is unsigned: `>>>` shifts in zeros",
@@ -1651,6 +1661,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "bcd.sv",
         "16:38 `3` -> `2`",
         "`h` is at most 2, so its bit 3 is 0, the zero the assignment extends with",
+    ),
+    (
+        "bytes.sv",
+        "15:24 `7` -> `'d7`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
     ),
     (
         "bytes.sv",
@@ -1712,6 +1727,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "decode.sv",
         "16:13 `3'd0` -> `3'd1`",
         "both labels are shadowed by earlier items",
+    ),
+    (
+        "ffblock.sv",
+        "24:14 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
     ),
     (
         "fsmint.sv",
@@ -1809,6 +1829,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "9 either way, assigned to the 4-bit `id`",
     ),
     (
+        "initrst.sv",
+        "24:36 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
         "mac.sv",
         "13:23 `16'sd0` -> `16'd0`",
         "zero is zero at any signedness",
@@ -1824,6 +1849,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "sign-extending to 15 bits, then to 16, is sign-extending to 16",
     ),
     (
+        "memcomb.sv",
+        "26:18 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
         "meminst.sv",
         "4:23 `4` -> `3`",
         "every instance of `mem` overrides this default of `DEPTH`",
@@ -1832,6 +1862,21 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "meminst.sv",
         "4:23 `4` -> `'d4`",
         "every instance of `mem` overrides this default of `DEPTH`",
+    ),
+    (
+        "meminst.sv",
+        "39:15 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "meminst.sv",
+        "40:15 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "memoor.sv",
+        "16:32 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
     ),
     (
         "modcount.sv",
@@ -1854,6 +1899,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "a select of width 1 is the same bit either way",
     ),
     (
+        "mux4.sv",
+        "24:18 `15` -> `'d15`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
         "nest.sv",
         "6:32 `3` -> `2`",
         "the values `mid` gives `K` (2 and 7) fit in 3 bits",
@@ -1869,9 +1919,74 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "the values of `K` (2 and 7) fit in 3 bits",
     ),
     (
+        "nibreg.sv",
+        "13:12 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "nibreg.sv",
+        "14:12 `1` -> `'d1`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "nibreg.sv",
+        "19:18 `7` -> `'d7`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "onehot.sv",
+        "19:13 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "oorread.sv",
+        "12:16 `15` -> `'d15`",
+        "`'d15 - c` has the same 32 bits as `15 - c`, and an index is read as unsigned either way",
+    ),
+    (
+        "oorread.sv",
+        "19:12 `15` -> `'d15`",
+        "`'d15 - c` has the same 32 bits as `15 - c`, and an index is read as unsigned either way",
+    ),
+    (
         "oorwr.sv",
         "18:11 `1` -> `'d1`",
         "`i` is unsigned, so `i - 1` is an unsigned 32-bit subtraction either way",
+    ),
+    (
+        "oorwr.sv",
+        "19:11 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "oorwr.sv",
+        "19:30 `1` -> `'d1`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "parcase.sv",
+        "8:21 `0` -> `'d0`",
+        "`'dN` is a 32-bit unsigned constant of the same value as `N`: the labels compare equal at 32 bits and assignments keep the same low bits",
+    ),
+    (
+        "parcase.sv",
+        "9:21 `1` -> `'d1`",
+        "`'dN` is a 32-bit unsigned constant of the same value as `N`: the labels compare equal at 32 bits and assignments keep the same low bits",
+    ),
+    (
+        "parcase.sv",
+        "10:20 `2` -> `'d2`",
+        "`'dN` is a 32-bit unsigned constant of the same value as `N`: the labels compare equal at 32 bits and assignments keep the same low bits",
+    ),
+    (
+        "parcase.sv",
+        "11:21 `3` -> `'d3`",
+        "`'dN` is a 32-bit unsigned constant of the same value as `N`: the labels compare equal at 32 bits and assignments keep the same low bits",
+    ),
+    (
+        "parcase.sv",
+        "12:21 `4` -> `'d4`",
+        "`'dN` is a 32-bit unsigned constant of the same value as `N`: the labels compare equal at 32 bits and assignments keep the same low bits",
     ),
     (
         "pipe.sv",
@@ -1904,6 +2019,46 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "the address 0 either way",
     ),
     ("regfile.sv", "23:13 `8'sd0` -> `8'd0`", "zero either way"),
+    (
+        "ripple.sv",
+        "19:15 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "ripple.sv",
+        "19:25 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "ripple.sv",
+        "20:15 `1` -> `'d1`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "ripple.sv",
+        "20:25 `1` -> `'d1`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "ripple.sv",
+        "21:15 `2` -> `'d2`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "ripple.sv",
+        "21:25 `2` -> `'d2`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "ripple.sv",
+        "22:15 `3` -> `'d3`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "ripple.sv",
+        "22:25 `3` -> `'d3`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
     (
         "rom.sv",
         "21:42 `8` -> `7`",
@@ -1993,6 +2148,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "xstore.sv",
         "27:22 `0` -> `1`",
         "a target of an assignment of x, which has no effect (`wide` is assigned again on every path)",
+    ),
+    (
+        "xstore.sv",
+        "36:11 `0` -> `'d0`",
+        "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
     ),
 ];
 

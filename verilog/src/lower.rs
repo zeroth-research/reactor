@@ -27,7 +27,8 @@ which has no `>`, `>=` and no logical operators:
 | `{a, b, c}` | `Concat(a, Concat(b, c))` |
 | `{n{e}}` | `n` copies of `e`'s wire, nested as above |
 | `x[h:l]`, `x[c]`, `x[c +: w]`, … (constant) | `Extract`, nothing for all bits |
-| `x[i]`, `x[i +: w]` (variable) | `Extract{w-1, 0}(LShr(x, i))` |
+| `x[i]`, `x[i +: w]` (variable) | `Extract{w-1, 0}(LShr(x, i))`: bits beyond the top read 0 |
+| `x[i -: w]` (variable, `w > 1`) | the same on `{x, (w-1)'0}`: bits below bit 0 read 0 too |
 | `m[i]` (element of an array, variable index) | a tree of `Ite`s on the bits of `i`, from bit 0, over the elements `m[0]`, `m[1]`, … |
 | target `m[i] = e` (element, variable index) | for each element `m[k]`: `m[k] := Ite(Eq(i, k), new, m[k])`, with `new` the element after the assignment |
 | target `x[i] = e`, `x[i +: w] = e` (variable) | `x := Or(And(x, Not(Shl(ones, i))), Shl(ZExt(e), i))`, `ones` = `w` one bits |
@@ -35,6 +36,15 @@ which has no `>`, `>=` and no logical operators:
 | `N'(e)` | `SExt`/`ZExt` (as `e`'s signedness says) when widening, `Extract` when narrowing |
 | an implicit resize (from sizing) | `SExt`/`ZExt` as the type it resizes to says, `Extract` when narrowing |
 | `y = 'x;`, `q <= 'x;` (overwritten on every path, checked by typing) | nothing |
+| `q = e;` in an `always_ff` (its value never read later in the block, checked by typing) | as `q <= e;` |
+| `(* parallel_case *) case …` (distinct constant labels, checked by sizing) | as without the attribute |
+
+A read with a variable index may select bits outside its signal; they read
+0. That is the standard's value for a 2-state signal and what Yosys builds;
+for a 4-state `logic` or `reg` the standard gives x, which synthesis may
+resolve to any value, so the translation is exact for such reads only
+under synthesis tools that choose 0 (see [`typing::may_leave`]; the reads
+are listed in [`Translation::out_of_range`] and the CLI warns about each).
 
 ## Time and clocks
 
@@ -238,6 +248,11 @@ pub struct Translation {
     pub reset_registers: Vec<Name>,
     /// Inputs that nothing reads; they are not variables of the module.
     pub unread_inputs: Vec<Name>,
+    /// Reads with a variable index that may select bits outside their
+    /// signal, located (with the instance path), sorted by position:
+    /// those bits read 0, which for a 4-state signal is one choice for the
+    /// standard's x (see [`typing::may_leave`]).
+    pub out_of_range: Vec<Error>,
     /// Names of wires local to an atom: the intermediate values `y@1`,
     /// `y@2`, … of the signals of `always_comb` blocks, and the edge tests
     /// `clk@pos`, `clk@neg` of `always_ff` blocks (`clk@pos#2` for the
@@ -327,8 +342,12 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         reset_registers: Vec::new(),
         wire_names: HashMap::new(),
         instances: Vec::new(),
+        out_of_range: Vec::new(),
     };
     let module = lower_rec(inst, "", &mut out)?;
+    out.out_of_range
+        .sort_by(|a, b| (a.span, &a.msg).cmp(&(b.span, &b.msg)));
+    out.out_of_range.dedup();
     let clocks = typing::domains(inst)?.into_iter().collect();
     let m = &inst.module;
     let unread_inputs = m
@@ -349,6 +368,7 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         register_widths: out.register_widths,
         reset_registers: out.reset_registers,
         unread_inputs,
+        out_of_range: out.out_of_range,
         wire_names: out.wire_names,
         instances: out.instances,
     })
@@ -370,6 +390,8 @@ struct Out<'n> {
     reset_registers: Vec<Name>,
     wire_names: HashMap<Wire, Name>,
     instances: Vec<Part>,
+    /// The reads that may select bits outside their signal, as warnings.
+    out_of_range: Vec<Error>,
 }
 
 impl Out<'_> {
@@ -530,6 +552,7 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
                 let (w, _) = b.expr(rhs)?;
                 b.assign(lhs, w, span)?;
                 b.finish_all(span)?;
+                out.out_of_range.extend(b.out_of_range.drain(..).map(ctx));
                 out.add_names(prefix, b.names);
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
                 Atom::combinatorial(scope, b.terms).map_err(|e| internal(span, e))?
@@ -583,6 +606,9 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
                     }
                 }
                 b.used.extend(init.used);
+                out.out_of_range.extend(b.out_of_range.drain(..).map(ctx));
+                out.out_of_range
+                    .extend(init.out_of_range.drain(..).map(ctx));
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
                 Atom::sequential(scope, init.terms, b.terms).map_err(|e| internal(span, e))?
             }
@@ -591,6 +617,7 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
                 b.start(&item.targets(), |_| None);
                 b.stmt(body)?;
                 b.finish_all(span)?;
+                out.out_of_range.extend(b.out_of_range.drain(..).map(ctx));
                 out.add_names(prefix, b.names);
                 let scope: Vec<&Var> = b.used.iter().map(|n| &vars[n]).collect();
                 Atom::combinatorial(scope, b.terms).map_err(|e| internal(span, e))?
@@ -919,6 +946,7 @@ fn depend(s: &Stmt, ctrl: &BTreeSet<Name>, deps: &mut BTreeMap<Name, BTreeSet<Na
             sel,
             items,
             default,
+            ..
         } => {
             let mut inner = ctrl.clone();
             inner.extend(resolve(sel, deps));
@@ -1090,6 +1118,9 @@ struct Builder<'a> {
     /// The wires that [`finish`](Self::finish) renamed, to the variable
     /// wire they became.
     renamed: HashMap<Wire, Wire>,
+    /// The reads with a variable index that may select bits outside their
+    /// signal (those bits read 0), as warnings.
+    out_of_range: Vec<Error>,
 }
 
 impl<'a> Builder<'a> {
@@ -1104,6 +1135,7 @@ impl<'a> Builder<'a> {
             names: HashMap::new(),
             versions: BTreeMap::new(),
             renamed: HashMap::new(),
+            out_of_range: Vec::new(),
         }
     }
 
@@ -1145,6 +1177,7 @@ impl<'a> Builder<'a> {
                 sel,
                 items,
                 default,
+                ..
             } => {
                 // whether each item matches, from the values before the case
                 let (ws, _) = self.expr(sel)?;
@@ -1790,15 +1823,9 @@ impl<'a> Builder<'a> {
                             (w, _) => w,
                         }
                     }
-                    // the lowest selected bit is the index: `-:` has width 1
-                    Some((wi, _)) => {
+                    Some((wi, ti)) => {
                         let (wx, _) = self.read(x, None, span)?;
-                        let shifted = self.emit(SvOp::LShr, &[wx, wi], Sort(tx.width), span)?;
-                        let op = SvOp::Extract {
-                            hi: t.width - 1,
-                            lo: 0,
-                        };
-                        self.emit(op, &[shifted], Sort(t.width), span)?
+                        self.shifted_select(wx, tx, x, sel, (wi, ti), span)?
                     }
                 };
                 Ok((w, t))
@@ -1883,17 +1910,47 @@ impl<'a> Builder<'a> {
                     wx
                 }
             }
-            // the lowest selected bit is the index: `-:` has width 1
-            Some((wi, _)) => {
-                let shifted = self.emit(SvOp::LShr, &[wx, wi], Sort(tx.width), span)?;
-                let op = SvOp::Extract {
-                    hi: t.width - 1,
-                    lo: 0,
-                };
-                self.emit(op, &[shifted], Sort(t.width), span)?
-            }
+            Some(index) => self.shifted_select(wx, tx, name, sel, index, span)?,
         };
         Ok((w, t))
+    }
+
+    /// The wire holding the bits that `sel`, with the variable index
+    /// `(wi, ti)` (wire and type), selects from `wx`, the value `name` of
+    /// type `tx`: `Extract{w-1,0}(LShr(wx, i))`, so bits beyond the top
+    /// read 0. For `-:` of width `w > 1`, `wx` is first padded below with
+    /// `w-1` zero bits, so that bits below bit 0 read 0 too. Records a
+    /// warning if some index value selects bits outside `name`.
+    fn shifted_select(
+        &mut self,
+        wx: Wire,
+        tx: Ty,
+        name: &str,
+        sel: &Select,
+        (wi, ti): (Wire, Ty),
+        span: Span,
+    ) -> Result<Wire> {
+        if typing::may_leave(tx, sel, ti) {
+            self.out_of_range
+                .push(typing::leave_warning(name, tx, sel, span));
+        }
+        let w = sel.width();
+        let (wx, width) = match sel {
+            Select::Down(_, w) if *w > 1 => {
+                let zeros = BitVec::zero(w - 1);
+                let z = self.emit(SvOp::Lit(zeros), &[], Sort(w - 1), span)?;
+                let width = tx.width + w - 1;
+                (self.emit(SvOp::Concat, &[wx, z], Sort(width), span)?, width)
+            }
+            // the lowest selected bit is the index
+            _ => (wx, tx.width),
+        };
+        let shifted = self.emit(SvOp::LShr, &[wx, wi], Sort(width), span)?;
+        if w == width {
+            return Ok(shifted);
+        }
+        let op = SvOp::Extract { hi: w - 1, lo: 0 };
+        self.emit(op, &[shifted], Sort(w), span)
     }
 
     /// The wire holding `{e1, e2, …}`, as nested binary `Concat`s

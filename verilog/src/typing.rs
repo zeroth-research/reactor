@@ -34,10 +34,12 @@ operand of a widening cast must have a width independent of its context
 than the cast. A narrowing cast evaluates its operand at the operand's own
 width and truncates.
 
-Selects never reach outside the signal: constant indices are checked, and
-a variable index is accepted only if every value it can take is in range
-(`a[i]` with `i` of 3 bits needs `a` of at least 8 bits; [`select`], which
-sizing calls with the type of the index).
+A constant select must be inside its signal. A read with a variable
+(unsigned) index may select bits outside it, which read 0: the standard's
+value for a 2-state signal, and what Yosys builds; for a 4-state `logic` or
+`reg` the standard gives x, so such a read is exact only for synthesis
+tools that resolve that x to 0 ([`select`], which sizing calls with the
+type of the index, and [`may_leave`]).
 
 The elements of an unpacked array are signals of their own (`m[3]`); an
 element read with a variable index, `m[i]`, is accepted only if every value
@@ -161,9 +163,12 @@ pub fn env(m: &Module) -> Result<Env> {
 /// Drivers: every signal other than an input has exactly one driver, an
 /// `assign`, an `always_ff` or an `always_comb` block. Within one block a
 /// signal can be assigned several times (the last assignment wins). An
-/// `always_ff` block has only non-blocking assignments `<=`, an
-/// `always_comb` block only blocking ones `=`, and every block drives
-/// something. This is the
+/// `always_comb` block has only blocking assignments `=`; an `always_ff`
+/// block has non-blocking ones `<=`, and blocking ones `=` only where they
+/// mean the same: each signal is assigned either only with `<=` or only
+/// with `=`, and nothing a `=` assigns is read later in the block (checked
+/// by [`definite`]; reads before it see the value before the edge, as with
+/// `<=`). Every block drives something. This is the
 /// rule of IEEE 1800-2017 for whole variables: a variable assigned in an
 /// `always_ff` "shall not be written to by any other process" (§9.2.2.4),
 /// and procedural and continuous assignments to the same variable must not
@@ -231,6 +236,7 @@ pub fn check(m: &Module) -> Result<Env> {
                     drive(&env, &mut driver, lhs, span, i)
                 })?;
                 drives_something(item)?;
+                one_kind_of_assignment(body, &mut BTreeMap::new())?;
                 if let Some(r) = reset {
                     if lookup(&env, &r.name, r.span)?.ty.width != 1 {
                         return Err(Error::new(
@@ -760,6 +766,7 @@ fn stmt(
             sel,
             items,
             default,
+            ..
         } => {
             names(env, sel)?;
             for item in items {
@@ -778,20 +785,12 @@ fn stmt(
                 s.kind,
                 StmtKind::Blocking { .. } | StmtKind::Unknown { blocking: true, .. }
             );
-            match (proc, blocking) {
-                (Proc::Ff, true) => {
-                    return Err(Error::new(
-                        s.span,
-                        "blocking assignment not allowed in `always_ff`, use `<=`",
-                    ));
-                }
-                (Proc::Comb, false) => {
-                    return Err(Error::new(
-                        s.span,
-                        "non-blocking assignment not allowed in `always_comb`, use `=`",
-                    ));
-                }
-                _ => {}
+            // an always_ff takes both kinds (see `one_kind_of_assignment`)
+            if proc == Proc::Comb && !blocking {
+                return Err(Error::new(
+                    s.span,
+                    "non-blocking assignment not allowed in `always_comb`, use `=`",
+                ));
             }
             match &s.kind {
                 StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
@@ -883,6 +882,7 @@ pub fn explicit(env: &Env, m: &Module) -> Result<()> {
                 sel,
                 items,
                 default,
+                ..
             } => {
                 let t = expr(env, sel)?;
                 for item in items {
@@ -1240,9 +1240,11 @@ fn bits_text(y: &str, bits: &[usize], width: usize) -> String {
 /// leaves its bits unassigned, and every path must assign them again: in
 /// an `always_comb` before they are read, in both kinds of blocks before
 /// the end. (Synthesis reads a live x as a don't-care, free to pick any
-/// value; that is not modelled.) In an `always_ff` this is all that is
-/// checked: a register not assigned keeps its value, and reads see the
-/// values from before the clock edge.
+/// value; that is not modelled.) In an `always_ff` a register not assigned
+/// keeps its value, and reads see the values from before the clock edge;
+/// besides x, only blocking assignments are checked there: no read may
+/// follow a `=` that may have assigned the bits it reads (on any path), so
+/// that every `=` means the same as `<=`.
 pub fn definite(env: &Env, item: &Item) -> Result<()> {
     let targets = item.targets();
     let body = item.body().expect("a block");
@@ -1299,6 +1301,9 @@ struct State {
     /// The bits assigned x and not assigned again on some path, with the
     /// first such assignment of x.
     x: BTreeMap<(Name, usize), Span>,
+    /// In an `always_ff`: the bits a blocking `=` may have assigned on some
+    /// path, with the first such assignment.
+    blocked: BTreeMap<(Name, usize), Span>,
 }
 
 impl State {
@@ -1323,6 +1328,67 @@ impl State {
     }
 }
 
+/// Checks that every signal assigned in the `always_ff` body `s` is
+/// assigned either only with `=` or only with `<=`; `first` maps each
+/// signal seen so far to its first assignment (span, blocking).
+fn one_kind_of_assignment<'s>(
+    s: &'s Stmt,
+    first: &mut BTreeMap<&'s Name, (Span, bool)>,
+) -> Result<()> {
+    let (lhs, blocking) = match &s.kind {
+        StmtKind::Blocking { lhs, .. } => (lhs, true),
+        StmtKind::NonBlocking { lhs, .. } => (lhs, false),
+        StmtKind::Unknown { lhs, blocking, .. } => (lhs, *blocking),
+        _ => {
+            return s
+                .children()
+                .into_iter()
+                .try_for_each(|c| one_kind_of_assignment(c, first));
+        }
+    };
+    let mut ys = Vec::new();
+    lhs.targets(&mut ys);
+    for y in ys {
+        let (at, b) = *first.entry(y).or_insert((s.span, blocking));
+        if b != blocking {
+            let (this, other) = if blocking { ("=", "<=") } else { ("<=", "=") };
+            return Err(Error::new(
+                s.span,
+                format!(
+                    "`{y}` is assigned with `{this}` here and with `{other}` at {at}: in an \
+                     `always_ff`, assign each signal either only with `<=` or only with `=`"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Checks that no read among `reads` (in an `always_ff`) reads a bit that a
+/// blocking `=` before it may have assigned: a `=` is accepted there only
+/// where it means the same as `<=`, so its new value must never be read in
+/// the block.
+fn blocked_reads(reads: &[(&Name, usize, usize, Span)], st: &State) -> Result<()> {
+    for (x, hi, lo, span) in reads {
+        let Some(at) = (*lo..=*hi)
+            .filter_map(|b| st.blocked.get(&((*x).clone(), b)))
+            .min()
+        else {
+            continue;
+        };
+        return Err(Error::new(
+            *span,
+            format!(
+                "`{x}` is read here after the blocking assignment at {at} may have \
+                 assigned it: in an `always_ff`, `=` is accepted only where it means \
+                 the same as `<=` (nothing it assigns is read later in the block); \
+                 use `<=`"
+            ),
+        ));
+    }
+    Ok(())
+}
+
 struct Definite<'t> {
     env: &'t Env,
     targets: &'t [&'t Name],
@@ -1337,11 +1403,11 @@ impl Definite<'_> {
     /// Checks the reads in `e` in an `always_comb`, with `st` what the
     /// paths so far assigned.
     fn reads(&self, e: &Expr, st: &State) -> Result<()> {
-        if !self.comb {
-            return Ok(());
-        }
         let mut reads = Vec::new();
         bit_reads(self.env, e, &mut reads);
+        if !self.comb {
+            return blocked_reads(&reads, st);
+        }
         for (x, hi, lo, span) in reads {
             if !self.targets.contains(&x) {
                 continue;
@@ -1380,6 +1446,7 @@ impl Definite<'_> {
                 sel,
                 items,
                 default,
+                ..
             } => {
                 self.reads(sel, st)?;
                 for l in items.iter().flat_map(|i| &i.labels) {
@@ -1395,13 +1462,16 @@ impl Definite<'_> {
                 };
                 self.merge(&branches, default.is_none(), st, s.span, why)
             }
-            StmtKind::Unknown { lhs, .. } => {
+            StmtKind::Unknown { lhs, blocking, .. } => {
                 for p in pieces(self.env, lhs) {
                     for b in p.lo..=p.hi {
                         let bit = (p.name.clone(), b);
                         st.done.remove(&bit);
                         st.x.insert(bit, s.span);
                     }
+                }
+                if *blocking && !self.comb {
+                    self.block(lhs, s.span, st);
                 }
                 Ok(())
             }
@@ -1415,6 +1485,9 @@ impl Definite<'_> {
                     if let Some(e) = p.elem {
                         self.reads(e.index, st)?;
                     }
+                }
+                if matches!(s.kind, StmtKind::Blocking { .. }) && !self.comb {
+                    self.block(lhs, s.span, st);
                 }
                 for p in pieces {
                     if p.variable.is_none() && p.elem.is_none() {
@@ -1497,6 +1570,28 @@ impl Definite<'_> {
         }
     }
 
+    /// Adds to `st` the bits that the blocking assignment to `lhs` at
+    /// `span` in an `always_ff` may assign: with a variable index, every
+    /// bit of the signal (or of every element).
+    fn block(&self, lhs: &Lvalue, span: Span, st: &mut State) {
+        for p in pieces(self.env, lhs) {
+            let names: Vec<&Name> = match p.elem {
+                Some(e) => e.elems.iter().collect(),
+                None => vec![&p.name],
+            };
+            for y in names {
+                let (hi, lo) = if p.variable.is_some() || p.elem.is_some() {
+                    (self.env[y].ty.width - 1, 0)
+                } else {
+                    (p.hi, p.lo)
+                };
+                for b in lo..=hi {
+                    st.blocked.entry((y.clone(), b)).or_insert(span);
+                }
+            }
+        }
+    }
+
     /// Runs each branch from `st` and keeps the bits assigned in all of
     /// them, and the x of any of them; `fallthrough` adds a path that runs
     /// no branch.
@@ -1527,13 +1622,22 @@ impl Definite<'_> {
             self.partial.entry(x.clone()).or_insert((span, why));
         }
         let mut x = BTreeMap::new();
+        let mut blocked = BTreeMap::new();
         for o in &outs {
             for (bit, at) in &o.x {
                 let first = x.entry(bit.clone()).or_insert(*at);
                 *first = (*first).min(*at);
             }
+            for (bit, at) in &o.blocked {
+                let first = blocked.entry(bit.clone()).or_insert(*at);
+                *first = (*first).min(*at);
+            }
         }
-        *st = State { done: every, x };
+        *st = State {
+            done: every,
+            x,
+            blocked,
+        };
         Ok(())
     }
 }
@@ -1626,9 +1730,9 @@ pub fn repl(n: usize, t: Ty) -> Ty {
 }
 
 /// The type of the select `x[…]` of a signal of type `t`, with `index` the
-/// type of a variable index: always unsigned. The selected bits must be
-/// inside `x` whatever the value of the index is; a variable index must be
-/// unsigned.
+/// type of a variable index: always unsigned. A constant select must be
+/// inside `x`; a variable index must be unsigned, and may select bits
+/// outside `x`, which read 0 (see [`may_leave`]).
 pub fn select(x: &str, t: Ty, sel: &Select, index: Option<Ty>, span: Span) -> Result<Ty> {
     let width = sel.width();
     if let Select::Up(_, 0) | Select::Down(_, 0) = sel {
@@ -1644,34 +1748,52 @@ pub fn select(x: &str, t: Ty, sel: &Select, index: Option<Ty>, span: Span) -> Re
             format!("the index of `{x}{sel}` must be unsigned"),
         ));
     }
-    // the highest bit selected for the largest index, and the lowest for
-    // the smallest index (0)
+    if width > t.width {
+        return Err(Error::new(
+            span,
+            format!(
+                "`{x}{sel}` selects {width} bits, but `{x}` has only {}",
+                t.width
+            ),
+        ));
+    }
+    Ok(Ty::unsigned(width))
+}
+
+/// Whether the read `x[sel]` of a signal of type `t`, with a variable
+/// index of type `i`, selects bits outside `x` for some index value.
+///
+/// Such bits read 0: the standard's value for a 2-state signal, and what
+/// Yosys builds. For a 4-state `logic` or `reg` the standard gives x, which
+/// synthesis may resolve to any value; so where these bits are read, the
+/// translation is exact only for synthesis tools that choose 0 (the
+/// translator warns about each such read).
+pub fn may_leave(t: Ty, sel: &Select, i: Ty) -> bool {
+    // the largest index value; `None` if it does not fit a `usize`
     let max = u32::try_from(i.width)
         .ok()
         .and_then(|w| 1usize.checked_shl(w))
         .map(|m| m - 1);
-    let (top, low_ok) = match sel {
-        Select::Bit(_) => (max, true),
-        Select::Up(_, w) => (max.and_then(|m| m.checked_add(w - 1)), true),
-        Select::Down(_, w) => (max, *w == 1),
-        Select::Part { .. } => unreachable!("constant"),
+    let top = match sel {
+        Select::Bit(_) | Select::Down(..) => max,
+        Select::Up(_, w) => max.and_then(|m| m.checked_add(w - 1)),
+        Select::Part { .. } => return false,
     };
-    match top {
-        Some(top) if top < t.width && low_ok => Ok(Ty::unsigned(width)),
-        _ if !low_ok => Err(Error::new(
-            span,
-            format!("`{x}{sel}` reaches below bit 0 for small indices; use `+:`"),
-        )),
-        _ => Err(Error::new(
-            span,
-            format!(
-                "`{x}{sel}` may select beyond bit {} of `{x}`: the index has {} bits, \
-                 so every one of its values must be in range (narrow the index)",
-                t.width - 1,
-                i.width
-            ),
-        )),
-    }
+    let below = matches!(sel, Select::Down(_, w) if *w > 1);
+    below || top.is_none_or(|top| top >= t.width)
+}
+
+/// The warning for a read `x[sel]` that [`may_leave`] the signal.
+pub fn leave_warning(x: &str, t: Ty, sel: &Select, span: Span) -> Error {
+    Error::new(
+        span,
+        format!(
+            "`{x}{sel}` may select bits outside `{x}` (bits {}:0), which read 0 here; \
+             for a 4-state signal they are x in the standard, which another synthesis \
+             tool may resolve differently",
+            t.width - 1
+        ),
+    )
 }
 
 /// The bits `(hi, lo)` of a constant select `x[…]` of a signal of type `t`,

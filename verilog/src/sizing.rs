@@ -59,8 +59,8 @@ divisor of `/` and `%` is a nonzero constant.
 */
 
 use crate::ast::{
-    BinOp, Cast, Dir, Elem, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Name,
-    Select, Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, CaseItem, Cast, Dir, Elem, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind,
+    Module, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::theory::SvOp;
@@ -140,6 +140,41 @@ fn join(a: Ty, b: Ty) -> Ty {
     }
 }
 
+/// Checks that the sized labels of a `case` with `(* parallel_case *)` (at
+/// `at`) are pairwise distinct constants. Synthesis reads the attribute as
+/// "at most one label matches" and builds a multiplexer without priority,
+/// while simulation runs the first matching item; with distinct constant
+/// labels both agree, so the attribute changes nothing.
+fn distinct_labels(items: &[CaseItem], at: Span) -> Result<()> {
+    let mut seen: Vec<(&BitVec, &Expr)> = Vec::new();
+    for l in items.iter().flat_map(|i| &i.labels) {
+        let (ExprKind::Lit { value, .. } | ExprKind::Const { value, .. }) = &l.kind else {
+            return Err(Error::new(
+                l.span,
+                format!(
+                    "the label `{l}` is not a constant, but the `case` has \
+                     `(* parallel_case *)` (at {at}): it is accepted only with distinct \
+                     constant labels, where it changes nothing"
+                ),
+            ));
+        };
+        if let Some((_, first)) = seen.iter().find(|(v, _)| **v == *value) {
+            return Err(Error::new(
+                l.span,
+                format!(
+                    "the label `{l}` has the same value as `{first}` at {}, but the `case` \
+                     has `(* parallel_case *)` (at {at}): synthesis would build a \
+                     multiplexer without priority, so the result would differ from \
+                     simulation's first match",
+                    first.span
+                ),
+            ));
+        }
+        seen.push((value, l));
+    }
+    Ok(())
+}
+
 impl Sizer<'_> {
     fn stmt(&self, s: &mut Stmt) -> Result<()> {
         match &mut s.kind {
@@ -153,6 +188,7 @@ impl Sizer<'_> {
                 sel,
                 items,
                 default,
+                parallel,
             } => {
                 let mut t = self.det(sel)?;
                 for l in items.iter().flat_map(|i| &i.labels) {
@@ -164,6 +200,9 @@ impl Sizer<'_> {
                         *l = self.check(l, t)?;
                     }
                     self.stmt(&mut item.body)?;
+                }
+                if let Some(at) = parallel {
+                    distinct_labels(items, *at)?;
                 }
                 match default {
                     Some(d) => self.stmt(d),
@@ -263,17 +302,7 @@ impl Sizer<'_> {
                     Some(i) => Some(self.det(i)?),
                     None => None,
                 };
-                typing::select(x, t, sel, index, e.span).map_err(|err| match sel.index() {
-                    Some(i) if index.is_some_and(|t| t.width >= 32) && has_const(i) => Error::new(
-                        err.span,
-                        format!(
-                            "{}; an unsized literal or an integer parameter makes the \
-                                     index 32 bits wide",
-                            err.msg
-                        ),
-                    ),
-                    _ => err,
-                })?
+                typing::select(x, t, sel, index, e.span)?
             }
             ExprKind::Elem(el) => {
                 let t = typing::elem_type(self.env, el);
@@ -435,18 +464,6 @@ impl Sizer<'_> {
             Select::Up(i, w) => Select::Up(self.index(i)?, *w),
             Select::Down(i, w) => Select::Down(self.index(i)?, *w),
         })
-    }
-}
-
-/// Whether `e` contains a constant (a parameter or an unsized literal).
-fn has_const(e: &Expr) -> bool {
-    match &e.kind {
-        ExprKind::Const { .. } => true,
-        ExprKind::Unary(_, a) | ExprKind::Cast(_, a) | ExprKind::Resize(_, a) => has_const(a),
-        ExprKind::Binary(_, a, b) => has_const(a) || has_const(b),
-        ExprKind::Cond(c, a, b) => has_const(c) || has_const(a) || has_const(b),
-        ExprKind::Concat(es) | ExprKind::Repl(_, es) => es.iter().any(has_const),
-        _ => false,
     }
 }
 
@@ -741,8 +758,14 @@ fn stmt(env: &Env, s: &Stmt) -> String {
             sel,
             items,
             default,
+            parallel,
         } => {
-            let mut out = format!("case ({})", expr(env, sel));
+            let attr = if parallel.is_some() {
+                "(* parallel_case *) "
+            } else {
+                ""
+            };
+            let mut out = format!("{attr}case ({})", expr(env, sel));
             for item in items {
                 let labels: Vec<String> = item.labels.iter().map(|l| expr(env, l)).collect();
                 out += &format!(" {}: {}", labels.join(", "), stmt(env, &item.body));

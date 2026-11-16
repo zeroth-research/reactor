@@ -1,0 +1,64 @@
+module ffblock
+  external
+    clk : bv1
+    en : bv1
+    s : bv2
+    d : bv8
+    hit@init : bv1
+    cnt@init : bv8
+    w@init : bv8
+    m@init : bv4
+  interface
+    cnt : bv8
+    hit : bv1
+    w : bv8
+    m : bv4
+  atom controls cnt, hit reads clk, en, cnt, hit awaits clk, hit@init, cnt@init
+    init
+      X(hit) := ID X(hit@init)
+      X(cnt) := ID X(cnt@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      %2 := 8'd4
+      %3 := EQ (cnt, %2)
+      %4 := 1'd1
+      %5 := 1'd0
+      %6 := ITE (%3, %4, %5)
+      %7 := 8'd1
+      %8 := ADD (cnt, %7)
+      %9 := ITE (en, %8, cnt)
+      X(hit) := ITE (clk@pos, %6, hit)
+      X(cnt) := ITE (clk@pos, %9, cnt)
+  atom controls w, m reads clk, s, d, w, m awaits clk, w@init, m@init
+    init
+      X(w) := ID X(w@init)
+      X(m) := ID X(m@init)
+    update
+      %1 := NOT X(clk)
+      clk@neg := AND (clk, %1)
+      %2 := EXTRACT[3:0] d
+      %3 := 2'd0
+      %4 := EQ (s, %3)
+      %5 := 2'd1
+      %6 := EQ (s, %5)
+      %7 := EXTRACT[7:4] d
+      %8 := EXTRACT[7:4] w
+      %9 := XOR (%7, %8)
+      %10 := EXTRACT[7:4] w
+      %11 := 4'd1
+      %12 := ADD (%10, %11)
+      %13 := EXTRACT[7:4] w
+      %14 := ITE (%6, %12, %13)
+      %15 := ITE (%4, %9, %14)
+      %16 := EXTRACT[0:0] d
+      %17 := 4'd1
+      %18 := SHL (%17, s)
+      %19 := ZEXT[4] %16
+      %20 := SHL (%19, s)
+      %21 := NOT %18
+      %22 := AND (m, %21)
+      %23 := OR (%22, %20)
+      %24 := CONCAT (%15, %2)
+      X(w) := ITE (clk@neg, %24, w)
+      X(m) := ITE (clk@neg, %23, m)

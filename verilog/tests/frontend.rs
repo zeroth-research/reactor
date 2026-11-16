@@ -387,9 +387,10 @@ fn accepted_derived_clocks() {
 fn rejected_always() {
     let cases = [
         (
-            "  always_ff @(posedge clk) y = a;",
-            "y =",
-            "blocking assignment",
+            "  always_ff @(posedge clk) begin y = a; y[0] <= 1'b0; end",
+            "y[0]",
+            "`y` is assigned with `<=` here and with `=` at 2:34: in an `always_ff`, assign \
+             each signal either only with `<=` or only with `=`",
         ),
         (
             "  always_ff @(edge clk) y <= a;",
@@ -933,19 +934,11 @@ fn rejected_sizing() {
         ),
         ("  assign o = a[0 -: 2];", "a[", "out of range"),
         (
-            "  assign y = {a[i +: 4], a[3:0]};",
+            "  assign w = a[i +: 9];",
             "a[i",
-            "may select beyond bit 7",
+            "`a[i +: 9]` selects 9 bits, but `a` has only 8",
         ),
-        ("  assign o = a[j];", "a[j", "the index has 4 bits"),
         ("  assign o = a[k];", "a[k", "must be unsigned"),
-        ("  assign o = a[i -: 2];", "a[i", "use `+:`"),
-        (
-            "  assign o = a[i + 1];",
-            "a[",
-            "the index has 32 bits, so every one of its values must be in range (narrow the \
-             index); an unsized literal or an integer parameter makes the index 32 bits wide",
-        ),
         (
             "  assign y = a / a;",
             "a;",
@@ -2002,10 +1995,10 @@ fn rejected_x_stores() {
             live,
         ),
         (
-            "  always_ff @(posedge clk) begin q = 'x; q = 1'b0; end\n  assign y = a;",
+            "  always_ff @(posedge clk) begin q = 'x; q <= 1'b0; end\n  assign y = a;",
             2,
-            "q = 'x",
-            "blocking assignment not allowed in `always_ff`",
+            "q <=",
+            "`q` is assigned with `<=` here and with `=` at",
         ),
         (
             "  always_comb begin q <= 'x; q <= 1'b0; end\n  assign y = a;",
@@ -2053,4 +2046,215 @@ fn rejected_x_stores() {
         "y <= 'x",
         "the reset branch may only assign constants",
     );
+}
+
+/// `(* parallel_case *)` on a `case` with distinct constant labels changes
+/// nothing: the translation equals the one without it.
+#[test]
+fn accepted_parallel_case() {
+    let cases = [
+        "  always_comb begin (* parallel_case *) case (s) 2'd0: y = a; 2'd1, 2'd2: y = ~a; \
+         default: y = 8'd0; endcase end\n  assign q = 1'b0;",
+        // integer constants compared with a 2-bit selector at 32 bits
+        "  localparam A = 0;\n  localparam B = 3;\n  always_ff @(posedge clk) (* parallel_case *) \
+         case (s) A: q <= 1'b0; B: q <= a[0]; endcase\n  assign y = a;",
+        // labels that differ only above the selector's width
+        "  always_comb begin (* parallel_case *) case (s) 3'd1: y = a; 3'd5: y = ~a; \
+         default: y = 8'd0; endcase end\n  assign q = 1'b0;",
+    ];
+    for with in cases {
+        let without = with.replace("(* parallel_case *) ", "");
+        assert_eq!(
+            translate_with(HEADER_X, with).print(),
+            translate_with(HEADER_X, &without).print(),
+            "{with}"
+        );
+    }
+}
+
+#[test]
+fn rejected_attributes() {
+    let cases: [(&str, usize, &str, &str); 7] = [
+        (
+            "  always_comb begin (* parallel_case *) case (s) 2'd1: y = a; 1: y = ~a; \
+             default: y = 8'd0; endcase end\n  assign q = 1'b0;",
+            2,
+            "1: y = ~a",
+            "the label `1` has the same value as `2'd1` at 2:50, but the `case` has \
+             `(* parallel_case *)` (at 2:24): synthesis would build a multiplexer without \
+             priority, so the result would differ from simulation's first match",
+        ),
+        (
+            "  always_comb begin (* parallel_case *) case (s) a[1:0]: y = a; \
+             default: y = 8'd0; endcase end\n  assign q = 1'b0;",
+            2,
+            "a[1:0]",
+            "the label `a[1:0]` is not a constant, but the `case` has `(* parallel_case *)` \
+             (at 2:24): it is accepted only with distinct constant labels, where it changes \
+             nothing",
+        ),
+        (
+            "  always_comb begin (* full_case *) case (s) 2'd0: y = a; endcase end\n  \
+             assign q = 1'b0;",
+            2,
+            "full_case",
+            "attribute `full_case` not supported",
+        ),
+        (
+            "  always_comb begin (* parallel_case, full_case *) case (s) 2'd0: y = a; \
+             default: y = 8'd0; endcase end\n  assign q = 1'b0;",
+            2,
+            "full_case",
+            "attribute `full_case` not supported",
+        ),
+        (
+            "  always_comb begin (* parallel_case = 1 *) case (s) 2'd0: y = a; \
+             default: y = 8'd0; endcase end\n  assign q = 1'b0;",
+            2,
+            "1 *)",
+            "`parallel_case` takes no value",
+        ),
+        (
+            "  always_comb begin (* parallel_case *) if (s[0]) y = a; else y = 8'd0; end\n  \
+             assign q = 1'b0;",
+            2,
+            "parallel_case",
+            "`parallel_case` is only supported on a `case`",
+        ),
+        (
+            "  always_comb begin (* keep *) y = a; end\n  assign q = 1'b0;",
+            2,
+            "keep",
+            "attribute `keep` not supported",
+        ),
+    ];
+    for (body, line, needle, msg) in cases {
+        rejects(Some(HEADER_X), body, line, needle, msg);
+    }
+}
+
+/// A blocking `=` in an `always_ff` whose new value is never read in the
+/// block means the same as `<=`.
+#[test]
+fn accepted_blocking_ff() {
+    let cases = [
+        "  always_ff @(posedge clk) begin q = a[0]; y = y + a; end",
+        // read before, in its own statement and in another one
+        "  always_ff @(posedge clk) begin if (y == a) q <= 1'b1; y = y + 8'd1; end",
+        // other bits of the same signal
+        "  always_ff @(posedge clk) begin y[3:0] = a[3:0]; y[7:4] = y[7:4] + a[7:4]; \
+         q = 1'b0; end",
+        // read on another path only
+        "  always_ff @(posedge clk) if (s[0]) y = a; else q <= y[0];",
+        // assigned twice, a variable index, an x overwritten
+        "  always_ff @(posedge clk) begin y = a; y = ~a; q = 'x; q = s[1]; end",
+        "  always_ff @(posedge clk) begin y[s] = a[0]; q <= a[1]; end",
+    ];
+    for with in cases {
+        let without = with.replace(" = ", " <= ");
+        assert_eq!(
+            translate_with(HEADER_X, with).print(),
+            translate_with(HEADER_X, &without).print(),
+            "{with}"
+        );
+    }
+}
+
+#[test]
+fn rejected_blocking_ff() {
+    let after = |at: &str| {
+        format!(
+            "is read here after the blocking assignment at {at} may have assigned it: in an \
+             `always_ff`, `=` is accepted only where it means the same as `<=` (nothing it \
+             assigns is read later in the block); use `<=`"
+        )
+    };
+    let cases: Vec<(&str, &str, String)> = vec![
+        (
+            "  always_ff @(posedge clk) begin y = a; q <= y[0]; end",
+            "y[0]",
+            format!("`y` {}", after("2:34")),
+        ),
+        (
+            "  always_ff @(posedge clk) begin if (s[0]) y = a; q <= y[1]; end",
+            "y[1]",
+            after("2:44"),
+        ),
+        (
+            "  always_ff @(posedge clk) begin y[s] = 1'b1; q <= y[7]; end",
+            "y[7]",
+            after("2:34"),
+        ),
+        (
+            "  always_ff @(posedge clk) begin y[3:0] = a[3:0]; q <= y[2]; end",
+            "y[2]",
+            after("2:34"),
+        ),
+        (
+            "  always_ff @(posedge clk) begin y = a; q <= a[y[2:0]]; end",
+            "y[2",
+            after("2:34"),
+        ),
+        (
+            "  always_ff @(posedge clk) begin y = a; if (y[0]) q <= 1'b1; end",
+            "y[0]",
+            after("2:34"),
+        ),
+        (
+            "  always_ff @(posedge clk) begin y = a; case (s) 2'd0: q <= y[1]; default: ; \
+             endcase end",
+            "y[1]",
+            after("2:34"),
+        ),
+        (
+            "  always_ff @(posedge clk) begin y = a; y = y + a; q <= 1'b0; end",
+            "y + a",
+            after("2:34"),
+        ),
+        (
+            "  always_ff @(posedge clk) begin q = 1'b1; if (s[0]) q <= 1'b0; y <= a; end",
+            "q <= 1'b0",
+            "`q` is assigned with `<=` here and with `=` at 2:34: in an `always_ff`, assign \
+             each signal either only with `<=` or only with `=`"
+                .to_string(),
+        ),
+        (
+            "  always_ff @(posedge clk) begin y <= a; y[0] = 1'b0; q <= 1'b0; end",
+            "y[0] =",
+            "`y` is assigned with `=` here and with `<=` at 2:34".to_string(),
+        ),
+    ];
+    for (body, needle, msg) in &cases {
+        rejects(Some(HEADER_X), body, 2, needle, msg);
+    }
+}
+
+/// Reads with a variable index that may select bits outside their signal
+/// are accepted (those bits read 0) and listed as warnings, sorted.
+#[test]
+fn out_of_range_reads() {
+    let t = translate_with(
+        "module m(input logic [1:0] s, input logic [2:0] i, input logic [3:0] j, \
+         input logic [7:0] a, output logic [7:0] y, output logic q);",
+        "  assign y = {a[s +: 6], a[i -: 2]};\n  assign q = a[j] ^ a[i] ^ a[s] ^ a[7 - j];",
+    );
+    let warnings: Vec<String> = t.out_of_range.iter().map(|e| e.to_string()).collect();
+    let outside = "may select bits outside `a` (bits 7:0), which read 0 here; for a 4-state \
+                   signal they are x in the standard, which another synthesis tool may resolve \
+                   differently";
+    assert_eq!(
+        warnings,
+        [
+            format!("2:15: `a[s +: 6]` {outside}"),
+            format!("2:26: `a[i -: 2]` {outside}"),
+            format!("3:14: `a[j]` {outside}"),
+            format!("3:35: `a[(7 - j)]` {outside}"),
+        ]
+    );
+    // in range for every index value: no warning
+    let t = translate_with(
+        HEADER_X,
+        "  assign y = {a[s +: 5], a[s]};\n  assign q = a[{1'b0, s}];",
+    );
+    assert!(t.out_of_range.is_empty());
 }
