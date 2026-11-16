@@ -854,7 +854,8 @@ fn combinational_loop(pending: &[Pending]) -> Error {
                     "clock"
                 };
                 msg += &format!(
-                    " (through the {what} of the `always_ff` at {})",
+                    " (through the {what} of the {} at {})",
+                    pending[i].item.block(),
                     pending[i].span
                 );
             }
@@ -865,8 +866,9 @@ fn combinational_loop(pending: &[Pending]) -> Error {
                 };
                 if !deps[ctrl].contains(awaited) {
                     msg += &format!(
-                        "; in the `always_comb` at {}, `{ctrl}` does not depend on `{awaited}`, \
+                        "; in the {} at {}, `{ctrl}` does not depend on `{awaited}`, \
                          but the block is translated as a whole: split it",
+                        pending[i].item.block(),
                         pending[i].span
                     );
                     break;

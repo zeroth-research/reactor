@@ -201,11 +201,11 @@ fn rejected_drivers() {
 fn rejected_declarations() {
     let header = |h: &'static str| Some(h);
     rejects(
-        header("module m(input reg [7:0] a, output logic [7:0] y);"),
+        header("module m(input integer a, output logic [7:0] y);"),
         "",
         1,
-        "reg",
-        "`reg` not supported",
+        "integer",
+        "type `integer` not supported",
     );
     rejects(
         header("module m(input logic [8:1] a, output logic [7:0] y);"),
@@ -412,11 +412,6 @@ fn rejected_always() {
         ("  always_ff @* y <= a;", "@", "needs `@(posedge"),
         ("  always_ff y <= a;", "y <=", "needs `@(posedge"),
         (
-            "  always @(posedge clk) y <= a;",
-            "always",
-            "plain `always` not supported, use `always_ff` or `always_comb`",
-        ),
-        (
             "  always_ff @(posedge clk) ;",
             "always_ff",
             "drives nothing",
@@ -451,6 +446,218 @@ fn rejected_always() {
     ];
     for (body, needle, msg) in cases {
         rejects(Some(HEADER_FF), body, 2, needle, msg);
+    }
+}
+
+const HEADER_PLAIN: &str = "module m(input logic clk, input logic r, input logic [7:0] a, \
+     input logic [7:0] b, output reg [7:0] y, output reg [7:0] z);";
+
+/// A plain `always` translates exactly like the block written with
+/// `always_ff` or `always_comb`, and `reg` like `logic`.
+#[test]
+fn accepted_plain_always() {
+    let canonical = HEADER_PLAIN.replace("reg", "logic");
+    let cases = [
+        (
+            "  always @(posedge clk) y <= a;\n  always @ (negedge clk) z <= b;",
+            "  always_ff @(posedge clk) y <= a;\n  always_ff @(negedge clk) z <= b;",
+        ),
+        // asynchronous resets, events in either order
+        (
+            "  always @(posedge clk, posedge r) if (r) y <= 8'd0; else y <= a;\n  \
+             always @(negedge r or negedge clk) if (!r) z <= 8'd1; else z <= b;",
+            "  always_ff @(posedge clk, posedge r) if (r) y <= 8'd0; else y <= a;\n  \
+             always_ff @(negedge r or negedge clk) if (!r) z <= 8'd1; else z <= b;",
+        ),
+        // blocking `=` where it means `<=`
+        (
+            "  always @(posedge clk) begin y = a; z <= b; end",
+            "  always_ff @(posedge clk) begin y = a; z <= b; end",
+        ),
+        (
+            "  always @* y = a + b;\n  always @(*) z = a;",
+            "  always_comb y = a + b;\n  always_comb z = a;",
+        ),
+        (
+            "  always @ (*) begin y = a; if (r) y = b; end\n  always@* z = a;",
+            "  always_comb begin y = a; if (r) y = b; end\n  always_comb z = a;",
+        ),
+        // level lists naming every signal read; an extra name, an own
+        // target read after it is assigned
+        (
+            "  always @(a or b) y = a + b;\n  always @(r, a, clk) begin z = a; if (r) z = z + 8'd1; end",
+            "  always_comb y = a + b;\n  always_comb begin z = a; if (r) z = z + 8'd1; end",
+        ),
+        // `reg` declarations, initial values, arrays (an array name in the
+        // list stands for its elements)
+        (
+            "  reg [7:0] m [0:3];\n  reg signed [3:0] t;\n  reg u = 1'b1;\n  \
+             always @(posedge clk) begin m[a[1:0]] <= b; t <= b[3:0]; u <= r; end\n  \
+             always @(m, a, t, u) y = m[a[1:0]] + {4'd0, t} + {7'd0, u};\n  assign z = a;",
+            "  logic [7:0] m [0:3];\n  logic signed [3:0] t;\n  logic u = 1'b1;\n  \
+             always_ff @(posedge clk) begin m[a[1:0]] <= b; t <= b[3:0]; u <= r; end\n  \
+             always_comb y = m[a[1:0]] + {4'd0, t} + {7'd0, u};\n  assign z = a;",
+        ),
+    ];
+    for (plain, written) in cases {
+        assert_eq!(
+            translate_with(HEADER_PLAIN, plain).print(),
+            translate_with(&canonical, written).print(),
+            "{plain}"
+        );
+    }
+}
+
+/// `SYNTHESIS` is predefined as 1: the code for synthesis is read, the
+/// simulation-only code is not.
+#[test]
+fn synthesis_defined() {
+    let with = "module m(input logic [3:0] a, output logic [3:0] y);\n`ifdef SYNTHESIS\n  \
+                assign y = a + 4'(`SYNTHESIS);\n`else\n  assign y = ~a;\n`endif\n\
+                `ifndef SYNTHESIS\n  logic [31:0] s;\n  always_comb s = \"dbg\";\n`endif\n\
+                endmodule\n";
+    let without = "module m(input logic [3:0] a, output logic [3:0] y);\n  assign y = a + 4'(1);\nendmodule\n";
+    let print = |src: &str| {
+        lower::lower(&frontend::parse(src, "test.sv").unwrap())
+            .unwrap()
+            .print()
+    };
+    assert_eq!(print(with), print(without));
+}
+
+#[test]
+fn rejected_plain_always() {
+    let missing = "is read here but missing from the event list of the `always` at 2:3: a \
+                   simulator runs the block only when a listed signal changes, synthesis \
+                   ignores the list, so the two would disagree; add";
+    let cases: [(&str, usize, &str, &str); 19] = [
+        (
+            "  always @(a) y = a + b;\n  assign z = a;",
+            2,
+            "b;",
+            missing,
+        ),
+        (
+            "  always @(a) if (b[0]) y = a; else y = 8'd0;\n  assign z = a;",
+            2,
+            "b[0]",
+            "`b` is read here but missing",
+        ),
+        (
+            "  always @(a, c) y = a;\n  assign z = a;",
+            2,
+            "c)",
+            "`c` is not declared",
+        ),
+        (
+            "  logic [7:0] m [0:1];\n  always_ff @(posedge clk) m[r] <= a;\n  \
+             always @(r) y = m[r];\n  assign z = a;",
+            4,
+            "m[r]",
+            "`m[0]` is read here but missing from the event list of the `always` at 4:3: a \
+             simulator runs the block only when a listed signal changes, synthesis ignores \
+             the list, so the two would disagree; add `m` to the list or write `always @*`",
+        ),
+        (
+            "  always @(a or posedge clk) y <= a;\n  assign z = a;",
+            2,
+            "a or",
+            "level-sensitive event not supported",
+        ),
+        (
+            "  always @(a[0]) y = a;\n  assign z = a;",
+            2,
+            "a[0]",
+            "an event must be on a signal name",
+        ),
+        (
+            "  always @(a iff r) y = a;\n  assign z = a;",
+            2,
+            "iff",
+            "`iff`",
+        ),
+        (
+            "  always y = a;\n  assign z = a;",
+            2,
+            "y =",
+            "a plain `always` needs an event control: `@(posedge <clock>)`, \
+             `@(negedge <clock>)` or `@*`",
+        ),
+        (
+            "  always #5 y = a;\n  assign z = a;",
+            2,
+            "#5",
+            "a plain `always` needs an event control",
+        ),
+        (
+            "  always @a y = a;\n  assign z = a;",
+            2,
+            "@a",
+            "a plain `always` needs an event control",
+        ),
+        (
+            "  always @* y <= a;\n  assign z = a;",
+            2,
+            "y <=",
+            "non-blocking assignment not allowed in a combinational `always`, use `=`",
+        ),
+        (
+            "  always @* begin z = y; y = a; end",
+            2,
+            "y;",
+            "`y` read before it is assigned on every path in this combinational `always` \
+             (it would read its value from the previous evaluation)",
+        ),
+        (
+            "  always @* if (r) y = a;\n  assign z = a;",
+            2,
+            "if",
+            "assigned on only some paths through this `if`",
+        ),
+        (
+            "  always @(posedge clk) ;\n  assign y = a;\n  assign z = a;",
+            2,
+            "always",
+            "this clocked `always` drives nothing",
+        ),
+        (
+            "  always @(posedge clk) begin y = a; y[0] <= 1'b0; end\n  assign z = a;",
+            2,
+            "y[0]",
+            "`y` is assigned with `<=` here and with `=` at 2:31: in a clocked `always`, \
+             assign each signal either only with `<=` or only with `=`",
+        ),
+        (
+            "  always @(posedge clk) begin y = a; z <= y; end",
+            2,
+            "y;",
+            "`y` is read here after the blocking assignment at 2:31 may have assigned it: in \
+             a clocked `always`, `=` is accepted",
+        ),
+        (
+            "  reg [7:0] t = 8'd1;\n  always @* t = a;\n  assign y = t;\n  assign z = a;",
+            2,
+            "t =",
+            "`t` is driven by a combinational `always` at 3:13, which computes it in every \
+             time step",
+        ),
+        (
+            "  reg [7:0] t, u;\n  always @* begin t = a; y = u; end\n  always @* u = t;\n  \
+             assign z = a;",
+            3,
+            "always",
+            "; in the combinational `always` at 3:3, `t` does not depend on `u`, but the \
+             block is translated as a whole: split it",
+        ),
+        (
+            "  reg s;\n  always @(posedge s) s <= !s;\n  assign y = a;\n  assign z = a;",
+            3,
+            "always",
+            "(through the clock of the clocked `always` at 3:3)",
+        ),
+    ];
+    for (body, line, needle, msg) in cases {
+        rejects(Some(HEADER_PLAIN), body, line, needle, msg);
     }
 }
 

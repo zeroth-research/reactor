@@ -77,6 +77,16 @@ An `always_comb` block must also be free of latches and of reads of stale
 values ([`definite`]): every signal it drives is assigned on every path
 through the block, and read only after it has been assigned on every path
 to the read.
+(A simulator gives such a read the value from the block's previous run,
+which changes whenever any signal the block reads changes, while synthesis
+gives the value assigned later in the block: the two disagree, and no
+hardware element behaves like the first.) A plain `always @*` is a
+combinational block with the same rules, and so is a plain `always` with
+an event list without edges (`@(a or b)`) if the list names every signal
+the block reads apart from its own targets: a simulator runs the block only
+when a listed signal changes, while synthesis ignores the list, so a
+missing signal would make them disagree. A plain `always` with edge events
+is a clocked block with the rules of `always_ff`.
 
 Values are 2-state: an x is accepted only as a dead store, `y = 'x;` in an
 `always_comb` or `q <= 'x;` in an `always_ff` (a literal that is x in every
@@ -88,7 +98,7 @@ may resolve to any value; that is not modelled.)
 
 use crate::ast::{
     self, BinOp, Cast, Dir, Elem, Elems, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind,
-    Module, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
+    Module, Name, Select, Span, Stmt, StmtKind, Ty, UnOp, Written,
 };
 use crate::elab::{self, Inst};
 use std::collections::{BTreeMap, BTreeSet};
@@ -236,7 +246,7 @@ pub fn check(m: &Module) -> Result<Env> {
                     drive(&env, &mut driver, lhs, span, i)
                 })?;
                 drives_something(item)?;
-                one_kind_of_assignment(body, &mut BTreeMap::new())?;
+                one_kind_of_assignment(body, item.block(), &mut BTreeMap::new())?;
                 if let Some(r) = reset {
                     if lookup(&env, &r.name, r.span)?.ty.width != 1 {
                         return Err(Error::new(
@@ -250,11 +260,14 @@ pub fn check(m: &Module) -> Result<Env> {
                 }
                 definite(&env, item)?;
             }
-            Item::AlwaysComb { body, .. } => {
-                stmt(&env, body, Proc::Comb, &mut |lhs, span| {
+            Item::AlwaysComb { body, written, .. } => {
+                stmt(&env, body, Proc::Comb(item.block()), &mut |lhs, span| {
                     drive(&env, &mut driver, lhs, span, i)
                 })?;
                 drives_something(item)?;
+                if let Written::List(list) = written {
+                    event_list(&env, m, item, list)?;
+                }
                 definite(&env, item)?;
             }
             Item::Instance(inst) => {
@@ -370,7 +383,7 @@ fn initial_value(
     let kind = match &m.items[i] {
         Item::AlwaysFf { .. } => return Ok(()),
         Item::Assign { .. } => "an `assign`".to_string(),
-        Item::AlwaysComb { .. } => "an `always_comb`".to_string(),
+        Item::AlwaysComb { .. } => m.items[i].a_block(),
         Item::Instance(u) => format!("the instance `{}`", u.name),
     };
     Err(Error::new(
@@ -695,7 +708,45 @@ fn drive(
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Proc {
     Ff,
-    Comb,
+    /// A combinational block, with its kind as written ([`Item::block`]).
+    Comb(&'static str),
+}
+
+/// Checks the event list `list` of a combinational plain `always` (`@(a or
+/// b)`): every name is a signal or an array, and every signal the block
+/// reads, other than its own targets, is listed (an array name stands for
+/// its elements). Then the block means `always @*`. A simulator runs the
+/// block only when a listed signal changes, while synthesis ignores the
+/// list, so with a missing signal the two would disagree.
+fn event_list(env: &Env, m: &Module, item: &Item, list: &[(Name, Span)]) -> Result<()> {
+    for (x, span) in list {
+        if !m.arrays.iter().any(|a| a.name == *x) {
+            lookup(env, x, *span)?;
+        }
+    }
+    let targets: BTreeSet<&str> = item
+        .targets()
+        .into_iter()
+        .map(|y| ast::array_of(y))
+        .collect();
+    for (x, span) in item.reads() {
+        let listed = |x: &str| list.iter().any(|(l, _)| l == x);
+        if targets.contains(ast::array_of(x)) || listed(x) || listed(ast::array_of(x)) {
+            continue;
+        }
+        return Err(Error::new(
+            span,
+            format!(
+                "`{x}` is read here but missing from the event list of the `always` at {}: a \
+                 simulator runs the block only when a listed signal changes, synthesis \
+                 ignores the list, so the two would disagree; add `{}` to the list or write \
+                 `always @*`",
+                item.span(),
+                ast::array_of(x)
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Checks the reset branch of a block with an asynchronous reset: only
@@ -735,13 +786,9 @@ fn reset_branch<'s>(s: &'s Stmt, seen: &mut BTreeSet<&'s Name>) -> Result<()> {
 
 fn drives_something(item: &Item) -> Result<()> {
     if item.targets().is_empty() {
-        let kw = match item {
-            Item::AlwaysComb { .. } => "always_comb",
-            _ => "always_ff",
-        };
         return Err(Error::new(
             item.span(),
-            format!("this `{kw}` drives nothing"),
+            format!("this {} drives nothing", item.block()),
         ));
     }
     Ok(())
@@ -786,10 +833,18 @@ fn stmt(
                 StmtKind::Blocking { .. } | StmtKind::Unknown { blocking: true, .. }
             );
             // an always_ff takes both kinds (see `one_kind_of_assignment`)
-            if proc == Proc::Comb && !blocking {
+            if let (Proc::Comb(kind), false) = (proc, blocking) {
                 return Err(Error::new(
                     s.span,
-                    "non-blocking assignment not allowed in `always_comb`, use `=`",
+                    format!(
+                        "non-blocking assignment not allowed in {}, use `=`",
+                        // `always_comb` without an article, as the keyword
+                        if kind.starts_with('`') {
+                            kind.to_string()
+                        } else {
+                            ast::with_article(kind)
+                        }
+                    ),
                 ));
             }
             match &s.kind {
@@ -1253,6 +1308,7 @@ pub fn definite(env: &Env, item: &Item) -> Result<()> {
         env,
         targets: &targets,
         comb,
+        block: item.block(),
         partial: BTreeMap::new(),
     };
     let mut st = State::default();
@@ -1281,8 +1337,9 @@ pub fn definite(env: &Env, item: &Item) -> Result<()> {
             None => Error::new(
                 item.span(),
                 format!(
-                    "{bits} is never assigned in this `always_comb`, \
-                     so it would keep its old value (a latch)"
+                    "{bits} is never assigned in this {}, \
+                     so it would keep its old value (a latch)",
+                    item.block()
                 ),
             ),
         });
@@ -1330,9 +1387,11 @@ impl State {
 
 /// Checks that every signal assigned in the `always_ff` body `s` is
 /// assigned either only with `=` or only with `<=`; `first` maps each
-/// signal seen so far to its first assignment (span, blocking).
+/// signal seen so far to its first assignment (span, blocking); `block` is
+/// the kind of block as written ([`Item::block`]).
 fn one_kind_of_assignment<'s>(
     s: &'s Stmt,
+    block: &str,
     first: &mut BTreeMap<&'s Name, (Span, bool)>,
 ) -> Result<()> {
     let (lhs, blocking) = match &s.kind {
@@ -1343,7 +1402,7 @@ fn one_kind_of_assignment<'s>(
             return s
                 .children()
                 .into_iter()
-                .try_for_each(|c| one_kind_of_assignment(c, first));
+                .try_for_each(|c| one_kind_of_assignment(c, block, first));
         }
     };
     let mut ys = Vec::new();
@@ -1355,8 +1414,9 @@ fn one_kind_of_assignment<'s>(
             return Err(Error::new(
                 s.span,
                 format!(
-                    "`{y}` is assigned with `{this}` here and with `{other}` at {at}: in an \
-                     `always_ff`, assign each signal either only with `<=` or only with `=`"
+                    "`{y}` is assigned with `{this}` here and with `{other}` at {at}: in {}, \
+                     assign each signal either only with `<=` or only with `=`",
+                    ast::with_article(block)
                 ),
             ));
         }
@@ -1368,7 +1428,7 @@ fn one_kind_of_assignment<'s>(
 /// blocking `=` before it may have assigned: a `=` is accepted there only
 /// where it means the same as `<=`, so its new value must never be read in
 /// the block.
-fn blocked_reads(reads: &[(&Name, usize, usize, Span)], st: &State) -> Result<()> {
+fn blocked_reads(reads: &[(&Name, usize, usize, Span)], st: &State, block: &str) -> Result<()> {
     for (x, hi, lo, span) in reads {
         let Some(at) = (*lo..=*hi)
             .filter_map(|b| st.blocked.get(&((*x).clone(), b)))
@@ -1380,9 +1440,10 @@ fn blocked_reads(reads: &[(&Name, usize, usize, Span)], st: &State) -> Result<()
             *span,
             format!(
                 "`{x}` is read here after the blocking assignment at {at} may have \
-                 assigned it: in an `always_ff`, `=` is accepted only where it means \
+                 assigned it: in {}, `=` is accepted only where it means \
                  the same as `<=` (nothing it assigns is read later in the block); \
-                 use `<=`"
+                 use `<=`",
+                ast::with_article(block)
             ),
         ));
     }
@@ -1394,6 +1455,8 @@ struct Definite<'t> {
     targets: &'t [&'t Name],
     /// An `always_comb` (else an `always_ff`, where only x is checked).
     comb: bool,
+    /// The kind of block as written ([`Item::block`]).
+    block: &'static str,
     /// For each target, the first `if` or `case` after which some of its
     /// bits are assigned on some paths only, with a description.
     partial: BTreeMap<Name, (Span, &'static str)>,
@@ -1406,7 +1469,7 @@ impl Definite<'_> {
         let mut reads = Vec::new();
         bit_reads(self.env, e, &mut reads);
         if !self.comb {
-            return blocked_reads(&reads, st);
+            return blocked_reads(&reads, st, self.block);
         }
         for (x, hi, lo, span) in reads {
             if !self.targets.contains(&x) {
@@ -1423,9 +1486,10 @@ impl Definite<'_> {
                 return Err(Error::new(
                     span,
                     format!(
-                        "{} read before it is assigned on every path in this `always_comb` \
+                        "{} read before it is assigned on every path in this {} \
                          (it would read its value from the previous evaluation)",
-                        bits_text(x, &missing, n)
+                        bits_text(x, &missing, n),
+                        self.block
                     ),
                 ));
             }
