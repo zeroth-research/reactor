@@ -4,7 +4,7 @@ How much of public SystemVerilog benchmark sets v2rm accepts, why it rejects the
 whether the accepted designs agree with Yosys (`v2rm --yosys`).
 
 Results: [`results/SUMMARY.md`](results/SUMMARY.md) (tables), `results/<set>.tsv` (one row per
-case: raw / rewritten / Yosys result and bucket), `results/skipped-<set>.tsv` (every file not
+case: v2rm / Yosys result and bucket), `results/skipped-<set>.tsv` (every file not
 measured, with its reason). They are committed, so the effect of a new feature shows as a diff.
 
 ## Run
@@ -22,22 +22,20 @@ python3 -I tools/measure.py --sets verilog-eval --limit 10          # a subset
 The sets are **not** in this repository: [`sets.conf`](sets.conf) pins each one (URL + commit) and
 [`fetch.sh`](fetch.sh) shallow-fetches them into `sets/` (git-ignored). They are third-party data
 under their own licenses (sv-tests, sby, riscv-formal: ISC; verilog-eval: MIT; hw-cbmc: BSD-style)
-and are only read: `tools/measure.py` passes their paths to `sed`, `v2rm`, Yosys and z3, and never
+and are only read: `tools/measure.py` passes their paths to `v2rm`, Yosys and z3, and never
 builds or executes anything from them. Run it with `python3 -I`, so Python does not import modules
-from the current directory. Generated inputs (concatenated or rewritten files) go to `work/`
+from the current directory. Generated inputs (concatenated files) go to `work/`
 (git-ignored).
 
 ## What is measured
 
 For each case:
-- **raw**: `v2rm [--top T] FILE`. Several files (SBY jobs) are concatenated into one, since v2rm
-  reads one file; nothing else changes.
-- **rewritten**: the same after [`tools/rewrite.sed`](tools/rewrite.sed): `reg` → `logic`,
-  `always @(posedge/negedge …)` → `always_ff`, `always @(*)` / `always @*` → `always_comb`. These
-  only change spelling the subset rejects; the typing still checks the rest (only `<=` in
-  `always_ff`, …).
-- **Yosys**: `v2rm --yosys` on the first accepted variant (raw, else rewritten): `Equal` = every
-  controlled variable equal to Yosys's in the init and the update round.
+- **v2rm**: `v2rm [--top T] FILE`, on the file as is. Several files (SBY jobs) are concatenated
+  into one, since v2rm reads one file; nothing else changes. (Until 2026-11-16 a second column
+  measured the files after mechanical rewrites of `reg` and plain `always`; since v2rm accepts
+  those spellings, it equalled the first and was dropped.)
+- **Yosys**: `v2rm --yosys` on every accepted design: `Equal` = every controlled variable equal
+  to Yosys's in the init and the update round. Both v2rm and Yosys define the macro `SYNTHESIS`.
 - Failures are classified by v2rm's **first** error only (v2rm stops there): the message is
   normalized (locations, names, numbers stripped) and mapped to a coarse bucket (`BUCKETS` in the
   script). Generic messages that only name an sv-parser node (`unsupported: ModuleCommonItem`,
