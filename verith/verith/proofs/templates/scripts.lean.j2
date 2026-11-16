@@ -27,7 +27,7 @@ macro "simp_mat" : tactic =>
 -- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
 -- closers see the invariant's conditions.
 macro "simp_defs" : tactic =>
-  `(tactic| (simp only [{{ all_defs }}] at *; try dsimp at *))
+  `(tactic| (simp only [{{ all_defs }}] at *; try dsimp [{{ dsimp_erase }}] at *))
 {% endmacro %}
 {% macro steps() %}
 try simp_defs

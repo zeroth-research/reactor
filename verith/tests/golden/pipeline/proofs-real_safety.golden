@@ -24,7 +24,7 @@ macro "simp_mat" : tactic =>
 -- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
 -- closers see the invariant's conditions.
 macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, c0, c1] at *; try dsimp at *))
+  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, c0, c1] at *; try dsimp [-Matrix.add_apply, -Matrix.sub_apply, -Matrix.neg_apply, -Matrix.zero_apply, -Matrix.transpose_apply] at *))
 
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
   intro s hpre
@@ -143,7 +143,7 @@ macro "simp_mat" : tactic =>
 -- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
 -- closers see the invariant's conditions.
 macro "simp_defs" : tactic =>
-  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, c0, c1] at *; try dsimp at *))
+  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, c0, c1] at *; try dsimp [-Matrix.add_apply, -Matrix.sub_apply, -Matrix.neg_apply, -Matrix.zero_apply, -Matrix.transpose_apply] at *))
 
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
   intro s hpre
