@@ -921,7 +921,7 @@ ebmc/CLI/reset2.sv#top	top	3:3: `reg` not supported, use `logic`	9:7: unsupporte
 ebmc/CLI/reset3.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/CLI/reset4.sv		OK	OK	Equal	
 ebmc/CLI/reset5.sv#top	top	3:3: `reg` not supported, use `logic`	5:28: unsupported: StatementItem [at `always_ff`]	-	other unsupported syntax
-ebmc/CLI/show-trans1.v		2:3: `reg` not supported, use `logic`	3:28: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
+ebmc/CLI/show-trans1.v		2:3: `reg` not supported, use `logic`	OK	Equal	
 ebmc/CLI/very_long_property1.sv		13:10: unsupported: Description [at `endmodule`]	13:10: unsupported: Description [at `endmodule`]	-	other unsupported syntax
 ebmc/Calypto-Parallel-Adder/main.v#main	main	41:20: syntax error [at `assert`]	41:20: syntax error [at `assert`]	-	assertions / properties
 ebmc/Calypto-Serial-Adder/main.v#main	main	45:18: syntax error [at `assert`]	45:18: syntax error [at `assert`]	-	assertions / properties
@@ -1007,7 +1007,7 @@ ebmc/liveness-to-safety/passing2.sv		3:3: `reg` not supported, use `logic`	11:3:
 ebmc/liveness-to-safety/safety_assumption1.sv		3:3: `reg` not supported, use `logic`	12:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
 ebmc/netlist/netlist-conversion1.v		8:17: syntax error [at `assert`]	8:17: syntax error [at `assert`]	-	assertions / properties
 ebmc/netlist/netlist-conversion2.sv		5:3: unsupported: ModuleOrGenerateItem [at `not`]	5:3: unsupported: ModuleOrGenerateItem [at `not`]	-	gate primitives (`and`, `nor`, …)
-ebmc/netlist/netlist-output1.v		3:3: `reg` not supported, use `logic`	8:5: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
+ebmc/netlist/netlist-output1.v		3:3: `reg` not supported, use `logic`	OK	Equal	
 ebmc/netlist/netlist-trace1.sv		5:3: `reg` not supported, use `logic`	14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/netlist/netlist-trace2.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/neural-liveness/counter1.sv		5:3: `reg` not supported, use `logic`	14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
@@ -1018,13 +1018,13 @@ ebmc/new-ic3/not_supported1.sv		3:3: `reg` not supported, use `logic`	11:3: unsu
 ebmc/new-ic3/proved1.sv		9:3: `reg` not supported, use `logic`	23:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/new-ic3/refuted1.sv#main	main	2:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/new-ic3/refuted_initial.sv#main	main	2:3: `reg` not supported, use `logic`	5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
-ebmc/p-command-line-option/p-command-line-option1.v		3:3: `reg` not supported, use `logic`	8:5: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
+ebmc/p-command-line-option/p-command-line-option1.v		3:3: `reg` not supported, use `logic`	OK	Equal	
 ebmc/p-command-line-option/p-command-line-option2.v		OK	OK	Equal	
 ebmc/random-traces/boolean1.v		OK	OK	Equal	
-ebmc/random-traces/bv1.v		4:3: `reg` not supported, use `logic`	7:5: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
-ebmc/random-traces/counter_with_initial_value.v		4:3: `reg` not supported, use `logic`	9:7: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
-ebmc/random-traces/initial_state1.v		4:3: `reg` not supported, use `logic`	5:28: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
-ebmc/random-traces/long_trace1.v		4:3: `reg` not supported, use `logic`	8:7: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
+ebmc/random-traces/bv1.v		4:3: `reg` not supported, use `logic`	3:8: `clk` is never driven	-	design rejected by a checking rule (latch, loop, drivers)
+ebmc/random-traces/counter_with_initial_value.v		4:3: `reg` not supported, use `logic`	5:22: the initial value of `some_reg` must be a constant, it reads `input1`	-	initializers / `initial` blocks
+ebmc/random-traces/initial_state1.v		4:3: `reg` not supported, use `logic`	OK	Equal	
+ebmc/random-traces/long_trace1.v		4:3: `reg` not supported, use `logic`	3:8: `clk` is never driven	-	design rejected by a checking rule (latch, loop, drivers)
 ebmc/random-traces/with_submodule.v		11:25: positional port connections not supported, write `.port(signal)`	11:25: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
 ebmc/ranking-function/clock24h.sv		3:3: `reg` not supported, use `logic`	39:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/ranking-function/counter1.sv		5:3: `reg` not supported, use `logic`	14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
