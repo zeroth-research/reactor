@@ -92,7 +92,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     )
     lines.append("")
     lines.append(
-        "def showMat {t : Type} (m n : Nat) (f : t → String) (mat : Fin m → Fin n → t)"
+        "def showMat {t : Type} (m n : Nat) (f : t → String) (mat : Mat t m n)"
         " : String :="
     )
     lines.append(
