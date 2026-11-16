@@ -40,6 +40,25 @@ initial value has, so it adds nothing. A net declaration with a value,
 `wire y = e;`, is no initial value but a continuous assignment, the same
 as `assign y = e;`.
 
+The macro `SYNTHESIS` is predefined (as `1`), as Yosys does, since we
+translate what synthesis builds: code under `` `ifdef SYNTHESIS `` is read
+and code under `` `ifndef SYNTHESIS `` (often simulation-only debug code) is
+not. (Simulators such as iverilog do not define it.)
+
+Verilog spellings: `reg` is the same 2-state vector as `logic` and `bit`
+(in the standard `reg` and `logic` are one 4-state type). A plain `always`
+is classified by its event control alone: with edge events it is a clocked
+block, the same as `always_ff`; with `@*` or `@(*)` a combinational block,
+the same as `always_comb`; with a list of signals without edges (`@(a or
+b)`, `@(a, b)`) also a combinational block, accepted by
+[`typing`](crate::typing) only if the list names every signal the block
+reads. The AST keeps the two kinds of block and records how each was
+written ([`ast::Written`], `plain`), only for messages. A simulator runs an
+`always @*` block for the first time when one of its signals changes,
+while an `always_comb` also runs at time 0; the translation does not
+depend on that (a combinational block computes its targets in every time
+step). (`sv-parser` rejects `@ *` with a space; `@*` and `@ (*)` work.)
+
 Attributes `(* … *)` are rejected, except `(* parallel_case *)` on a `case`
 statement (kept in [`ast::StmtKind::Case`]; sizing
 accepts it only when the labels are distinct constants, where it changes
@@ -60,7 +79,7 @@ not affected.
 use crate::ast::{
     self, Array, BinOp, CaseItem, Cast, Conn, Const, Decl, Dir, Edge, Elem, Elems, Error, Expr,
     ExprKind, Index, Init, Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port,
-    Reset, Rom, Select, Span, Stmt, StmtKind, Ty, UnOp,
+    Reset, Rom, Select, Span, Stmt, StmtKind, Ty, UnOp, Written,
 };
 use crate::constant::{self, Failure, Literal, X_HINT};
 use crate::value::BitVec;
@@ -108,7 +127,15 @@ pub fn parse_design(source: &str, path: impl AsRef<Path>) -> Result<Design> {
         .parent()
         .unwrap_or(Path::new(""))
         .to_path_buf();
-    let defines: HashMap<String, Option<sv::Define>> = HashMap::new();
+    // `SYNTHESIS` is predefined (as `1`), as by Yosys: the translation
+    // follows what synthesis reads
+    let synthesis = sv::Define::new(
+        "SYNTHESIS".to_string(),
+        vec![],
+        Some(sv::DefineText::new("1".to_string(), None)),
+    );
+    let defines: HashMap<String, Option<sv::Define>> =
+        HashMap::from([("SYNTHESIS".to_string(), Some(synthesis))]);
     let includes: [PathBuf; 0] = [];
     let mut lines = vec![0];
     lines.extend(source.match_indices('\n').map(|(i, _)| i + 1));
@@ -689,12 +716,9 @@ impl Cx<'_> {
         match t {
             sv::DataType::Vector(v) => {
                 let (kind, signing, dims) = &v.nodes;
-                match kind {
-                    sv::IntegerVectorType::Logic(_) | sv::IntegerVectorType::Bit(_) => {}
-                    sv::IntegerVectorType::Reg(_) => {
-                        return self.err(kind, "`reg` not supported, use `logic`");
-                    }
-                }
+                // `reg`, `logic` and `bit` are the same 2-state vector here
+                // (`reg` and `logic` are one 4-state type in the standard)
+                let _ = kind;
                 self.vector(signing, dims)
             }
             t => self.err(t, format!("type `{}` not supported", self.text(t))),
@@ -909,55 +933,71 @@ impl Cx<'_> {
     /// asynchronous reset `@(posedge clk or posedge rst) if (rst) … else …`
     /// (or `negedge rst_n` and `if (!rst_n)`; events in either order,
     /// separated by `or` or `,`). The reset is the event the `if` tests.
+    ///
+    /// A plain `always` is classified by its event control alone: with
+    /// edge events it is a clocked block (as `always_ff`), with `@*` or
+    /// `@(*)` a combinational one (as `always_comb`), and with a list of
+    /// signals without edges (`@(a or b)`, `@(a, b)`) also a combinational
+    /// one, which typing accepts only if the list names every signal the
+    /// block reads. Synthesis ignores such a list, a simulator runs the
+    /// block only when a listed signal changes: with a missing signal the
+    /// two disagree. A plain `always` without event control is rejected.
     fn always(&self, a: &sv::AlwaysConstruct) -> Result<Item> {
         let (kw, stmt) = &a.nodes;
-        match kw {
-            sv::AlwaysKeyword::AlwaysFf(_) => {}
+        let plain = match kw {
+            sv::AlwaysKeyword::AlwaysFf(_) => false,
             sv::AlwaysKeyword::AlwaysComb(_) => {
                 return Ok(Item::AlwaysComb {
                     body: self.statement(stmt)?,
                     span: self.span(kw),
+                    written: Written::Keyword,
                 });
             }
             sv::AlwaysKeyword::AlwaysLatch(_) => {
                 return self.err(kw, "`always_latch` not supported");
             }
-            sv::AlwaysKeyword::Always(_) => {
-                return self.err(
-                    kw,
-                    "plain `always` not supported, use `always_ff` or `always_comb`",
-                );
-            }
-        }
+            sv::AlwaysKeyword::Always(_) => true,
+        };
+        let needs = if plain {
+            "a plain `always` needs an event control: `@(posedge <clock>)`, \
+             `@(negedge <clock>)` or `@*`"
+        } else {
+            "`always_ff` needs `@(posedge <clock>)` or `@(negedge <clock>)`"
+        };
         let (label, attrs, item) = &stmt.nodes;
         self.absent(label, "statement label")?;
         self.absent(attrs, "attribute")?;
         let sv::StatementItem::ProceduralTimingControlStatement(t) = item else {
-            return self.err(
-                stmt,
-                "`always_ff` needs `@(posedge <clock>)` or `@(negedge <clock>)`",
-            );
+            return self.err(stmt, needs);
         };
         let (ctrl, body) = &t.nodes;
         let event = match ctrl {
             sv::ProceduralTimingControl::EventControl(e) => match e.as_ref() {
                 sv::EventControl::EventExpression(e) => &e.nodes.1.nodes.1,
-                e => {
-                    return self.err(
-                        e,
-                        "`always_ff` needs `@(posedge <clock>)` or `@(negedge <clock>)`",
-                    );
+                sv::EventControl::Asterisk(_) | sv::EventControl::ParenAsterisk(_) if plain => {
+                    return Ok(Item::AlwaysComb {
+                        body: self.stmt(body)?,
+                        span: self.span(kw),
+                        written: Written::Star,
+                    });
                 }
+                e => return self.err(e, needs),
             },
-            c => {
-                return self.err(
-                    c,
-                    "`always_ff` needs `@(posedge <clock>)` or `@(negedge <clock>)`",
-                );
-            }
+            c => return self.err(c, needs),
         };
         let mut events = Vec::new();
         self.events(event, &mut events)?;
+        if plain && events.iter().all(|e| e.nodes.0.is_none()) {
+            let names = events
+                .into_iter()
+                .map(|e| self.level_event(e))
+                .collect::<Result<Vec<_>>>()?;
+            return Ok(Item::AlwaysComb {
+                body: self.stmt(body)?,
+                span: self.span(kw),
+                written: Written::List(names),
+            });
+        }
         if let Some(e) = events.get(2) {
             return self.err(
                 *e,
@@ -1030,6 +1070,7 @@ impl Cx<'_> {
             reset,
             body,
             span: self.span(kw),
+            plain,
         })
     }
 
@@ -1056,6 +1097,26 @@ impl Cx<'_> {
             }
         }
         Ok(())
+    }
+
+    /// One event of a level list `@(a or b)` of a plain `always`: a signal
+    /// name (an array name stands for all its elements) and its position.
+    fn level_event(&self, event: &sv::EventExpressionExpression) -> Result<(Name, Span)> {
+        let (_, x, iff) = &event.nodes;
+        self.absent(iff, "`iff`")?;
+        let span = self.span(x);
+        // the text, not `expr`: an array name alone is no expression
+        let text = self.text(x);
+        let name = text.trim();
+        let mut chars = name.chars();
+        let ident = chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
+        if !ident {
+            return Err(Error::new(span, "an event must be on a signal name"));
+        }
+        Ok((name.to_string(), span))
     }
 
     /// One event `posedge x` or `negedge x` of an `always_ff` block: the

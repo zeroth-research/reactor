@@ -298,6 +298,23 @@ fn miter_examples() {
 /// empty modules (blackboxes, instances left undeclared). Each is compared
 /// like any other; `queries` = number of controlled variables. (Yosys
 /// 0.69 makes a ROM from 16 entries on, not from 8.)
+/// A design whose meaning depends on the macro `SYNTHESIS`; with it
+/// defined as 1 (as by Yosys and v2rm), `y = a + 1`, and the debug code under
+/// `` `ifndef SYNTHESIS `` (a string, which v2rm rejects) is not read.
+const SYNTH: &str = "\
+module synth (input logic [3:0] a, output logic [3:0] y);
+`ifdef SYNTHESIS
+  assign y = a + 4'(`SYNTHESIS);
+`else
+  assign y = ~a;
+`endif
+`ifndef SYNTHESIS
+  logic [31:0] s;
+  always_comb s = \"dbg\";
+`endif
+endmodule
+";
+
 #[test]
 fn miter_yosys_defaults() {
     let Some((yosys, z3)) = tools() else { return };
@@ -322,6 +339,8 @@ endmodule
             1,
         ),
         ("nothing", "module nothing (input logic a); endmodule\n", 0),
+        // both sides read the code for synthesis (`SYNTHESIS` defined as 1)
+        ("synth", SYNTH, 1),
     ];
     for (top, source, queries) in cases {
         let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("{top}.sv"));
@@ -1249,12 +1268,19 @@ fn reset_mutants(
     close: &dyn Fn(usize) -> usize,
     at: &dyn Fn(usize) -> String,
 ) -> Vec<Mutant> {
+    if tokens[k + 1].2 != "(" {
+        return vec![]; // `@*`
+    }
     let (open, end) = (tokens[k + 1].0, close(k + 1));
     let list = &source[open + 1..end - 1];
     let events: Vec<&str> = list.split([',']).flat_map(|e| e.split(" or ")).collect();
+    // two edge events (a level list `@(a or b)` has no reset)
     let [e1, e2] = events[..] else {
         return vec![];
     };
+    if ![e1, e2].iter().all(|e| e.contains("edge ")) {
+        return vec![];
+    }
     let i = k + tokens[k..].iter().position(|t| t.2 == "if").unwrap();
     let (c0, c1) = (tokens[i + 1].0, close(i + 1));
     let cond = source[c0 + 1..c1 - 1].trim();
@@ -1997,6 +2023,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "pipe.sv",
         "24:14 `4` -> `'d4`",
         "`W` is an `int`: the override takes the value 4 either way",
+    ),
+    (
+        "plainff.sv",
+        "19:12 `0` -> `'d0`",
+        "a constant bit index: `0` and `'d0` select the same bit",
     ),
     (
         "portw.sv",

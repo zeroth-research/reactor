@@ -378,7 +378,8 @@ pub enum Item {
     /// body`, with `span` the position of `always_ff` and `clock_span` that
     /// of `clock`. With an asynchronous reset, `@(posedge clock or posedge
     /// rst) if (rst) … else …` (or `negedge rst_n` and `if (!rst_n)`): the
-    /// body is the `if` as written, see [`Stmt::reset_values`].
+    /// body is the `if` as written, see [`Stmt::reset_values`]. A plain
+    /// `always` with the same event control (`plain`) means the same.
     AlwaysFf {
         clock: Name,
         edge: Edge,
@@ -386,14 +387,62 @@ pub enum Item {
         reset: Option<Reset>,
         body: Stmt,
         span: Span,
+        plain: bool,
     },
-    /// `always_comb body`, with `span` the position of `always_comb`.
-    AlwaysComb { body: Stmt, span: Span },
+    /// `always_comb body`, with `span` the position of `always_comb`; a
+    /// plain `always @* body`, `always @(*) body` or `always @(a or b)
+    /// body` means the same (`written`).
+    AlwaysComb {
+        body: Stmt,
+        span: Span,
+        written: Written,
+    },
     /// A module instance.
     Instance(Instance),
 }
 
+/// A kind of block as [`Item::block`] names it, with its indefinite
+/// article (`` an `always_ff` ``, ``a clocked `always` ``).
+pub fn with_article(block: &str) -> String {
+    let article = if block.starts_with('`') { "an" } else { "a" };
+    format!("{article} {block}")
+}
+
+/// How a combinational block was written.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Written {
+    /// `always_comb`.
+    Keyword,
+    /// `always @*` or `always @(*)`.
+    Star,
+    /// `always @(a or b)` or `always @(a, b)`: the names with their
+    /// positions. It means `always @*` only if it names every signal the
+    /// block reads (checked in [`typing`](crate::typing)).
+    List(Vec<(Name, Span)>),
+}
+
 impl Item {
+    /// The kind of block as written, for messages: `` `always_ff` ``,
+    /// `` `always_comb` ``, ``clocked `always` `` or ``combinational
+    /// `always` `` (empty for other items).
+    pub fn block(&self) -> &'static str {
+        match self {
+            Item::AlwaysFf { plain: false, .. } => "`always_ff`",
+            Item::AlwaysFf { plain: true, .. } => "clocked `always`",
+            Item::AlwaysComb {
+                written: Written::Keyword,
+                ..
+            } => "`always_comb`",
+            Item::AlwaysComb { .. } => "combinational `always`",
+            Item::Assign { .. } | Item::Instance(_) => "",
+        }
+    }
+
+    /// [`Item::block`] with its indefinite article.
+    pub fn a_block(&self) -> String {
+        with_article(self.block())
+    }
+
     /// The signals the item drives, in the order of their first
     /// assignment.
     pub fn targets(&self) -> Vec<&Name> {

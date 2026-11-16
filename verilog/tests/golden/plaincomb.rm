@@ -1,0 +1,58 @@
+module plaincomb
+  external
+    clk : bv1
+    go : bv1
+    a : bv8
+    b : bv8
+    sel : bv2
+    state@init : bv2
+  interface
+    y : bv8
+    m : bv8
+    state : bv2
+  private
+    next : bv2
+    t : bv8
+  atom controls state reads clk, state, next awaits clk, state@init
+    init
+      X(state) := ID X(state@init)
+    update
+      %1 := NOT clk
+      clk@pos := AND (%1, X(clk))
+      X(state) := ITE (clk@pos, next, state)
+  atom controls next awaits go, state
+    init = update
+      %1 := 2'd0
+      %2 := EQ (X(state), %1)
+      %3 := 2'd1
+      %4 := EQ (X(state), %3)
+      %5 := 2'd1
+      %6 := 2'd0
+      next@1 := ITE (X(go), %5, %6)
+      %7 := 2'd1
+      %8 := 2'd2
+      next@2 := ITE (X(go), %7, %8)
+      next@3 := 2'd0
+      next@4 := ITE (%4, next@2, next@3)
+      X(next) := ITE (%2, next@1, next@4)
+  atom controls m awaits a, b, sel
+    init = update
+      %1 := 2'd0
+      %2 := EQ (X(sel), %1)
+      %3 := 2'd1
+      %4 := EQ (X(sel), %3)
+      m@1 := AND (X(a), X(b))
+      m@2 := ITE (%4, X(b), m@1)
+      X(m) := ITE (%2, X(a), m@2)
+  atom controls t awaits a, b
+    init = update
+      t@1 := ADD (X(a), X(b))
+      %1 := EXTRACT[3:0] t@1
+      %2 := EXTRACT[7:4] t@1
+      %3 := CONCAT (%1, %2)
+      X(t) := XOR (t@1, %3)
+  atom controls y awaits m, state, t
+    init = update
+      %1 := 2'd1
+      %2 := EQ (X(state), %1)
+      X(y) := ITE (%2, X(t), X(m))
