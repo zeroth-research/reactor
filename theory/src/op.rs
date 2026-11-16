@@ -456,4 +456,20 @@ mod tests {
         assert!(LIA::try_from(op.clone()).is_ok());
         assert!(BV::try_from(op).is_ok());
     }
+
+    #[test]
+    fn tangent_ops_are_in_lra() {
+        let r = sort::Real::new([2, 3]);
+        let op = real(real::TAdd(2, 3, 1));
+        let dom: Poly<sort::Any> = base::mono![T(r).into(), T(r).into()].into();
+        assert_eq!(op.dom(), dom);
+        let op = real(real::TIte(2, 3, 1));
+        let dom: Poly<sort::Any> =
+            base::mono![sort::Bool::new([1, 1]).into(), T(r).into(), T(r).into()].into();
+        assert_eq!(op.dom(), dom);
+
+        assert!(LRA::try_from(real(real::TAdd(2, 3, 1))).is_ok());
+        assert!(LRA::try_from(real(real::TId(2, 3, 1))).is_ok());
+        assert!(LIA::try_from(real(real::TSub(2, 3, 1))).is_err());
+    }
 }

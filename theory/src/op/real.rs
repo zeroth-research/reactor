@@ -22,6 +22,9 @@ information to compute its [`Boundary`]:
 - [`Havoc`] — an arbitrary matrix, chosen nondeterministically.
 - [`Uninterpreted`] — a named value of unknown meaning.
 - [`Zero`] — the zero matrix, of rates of change of a given degree.
+- [`TAdd`], [`TSub`], [`TLinear`], [`TTranspose`], [`TIte`], [`TId`] —
+  [`Add`], [`Sub`], [`Linear`], [`Transpose`], [`Ite`] and [`Id`] on the
+  rates of change of a given degree.
 
 The comparisons are those of SMT-LIB2's `Reals` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
@@ -168,6 +171,44 @@ pub struct Uninterpreted(pub String, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Zero(pub usize, pub usize, pub u8);
 
+/// Pointwise addition `x + y` of `[m, n]` matrices of the rates of change of
+/// degree `d`, as `TAdd(m, n, d)`. Addition is linear, so `TAdd(m, n, d + 1)`
+/// is the derivative of `TAdd(m, n, d)`, and `TAdd(m, n, 0)` is [`Add`].
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct TAdd(pub usize, pub usize, pub u8);
+
+/// Pointwise subtraction `x - y` of `[m, n]` matrices of the rates of
+/// change of degree `d`, as `TSub(m, n, d)`. Subtraction is linear, so
+/// `TSub(m, n, d + 1)` is the derivative of `TSub(m, n, d)`, and
+/// `TSub(m, n, 0)` is [`Sub`].
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct TSub(pub usize, pub usize, pub u8);
+
+/// The affine map `x ↦ A·x + B` on the rates of change of degree `d`, as
+/// `TLinear(A, B, d)`, where `A` and `B` are constants; `TLinear(A, B, 0)`
+/// is [`Linear`]`(A, B)`. It adds `B`, as `Linear` did on rates in the old
+/// LRA, so the derivative of `TLinear(A, B, d)` is `TLinear(A, 0, d + 1)`.
+#[derive(Clone, Debug)]
+pub struct TLinear(pub crate::PyTensor, pub crate::PyTensor, pub u8);
+
+/// Transposition `xᵀ` of `[m, n]` matrices of the rates of change of degree
+/// `d`, as `TTranspose(m, n, d)`. Transposition is linear, so
+/// `TTranspose(m, n, d + 1)` is the derivative of `TTranspose(m, n, d)`,
+/// and `TTranspose(m, n, 0)` is [`Transpose`].
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct TTranspose(pub usize, pub usize, pub u8);
+
+/// If-then-else `if c then x else y` of `[m, n]` matrices of the rates of
+/// change of degree `d`, on a single (plain) boolean `c`, as
+/// `TIte(m, n, d)`; `TIte(m, n, 0)` is [`Ite`].
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct TIte(pub usize, pub usize, pub u8);
+
+/// The identity `x ↦ x` on `[m, n]` matrices of the rates of change of
+/// degree `d`, as `TId(m, n, d)`; `TId(m, n, 0)` is [`Id`].
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct TId(pub usize, pub usize, pub u8);
+
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
 /// with their boundary in [`Sort`].
 ///
@@ -220,6 +261,18 @@ pub enum NRA {
     Uninterpreted(Uninterpreted),
     #[subenum(LRA)]
     Zero(Zero),
+    #[subenum(LRA)]
+    TAdd(TAdd),
+    #[subenum(LRA)]
+    TSub(TSub),
+    #[subenum(LRA)]
+    TLinear(TLinear),
+    #[subenum(LRA)]
+    TTranspose(TTranspose),
+    #[subenum(LRA)]
+    TIte(TIte),
+    #[subenum(LRA)]
+    TId(TId),
 }
 
 impl Boundary<Sort> for NRA {
@@ -248,6 +301,12 @@ impl Boundary<Sort> for NRA {
             NRA::Havoc(op) => op.dom().map(Sort::from),
             NRA::Uninterpreted(op) => op.dom().map(Sort::from),
             NRA::Zero(op) => op.dom().map(Sort::from),
+            NRA::TAdd(op) => op.dom().map(Sort::from),
+            NRA::TSub(op) => op.dom().map(Sort::from),
+            NRA::TLinear(op) => op.dom().map(Sort::from),
+            NRA::TTranspose(op) => op.dom().map(Sort::from),
+            NRA::TIte(op) => op.dom(),
+            NRA::TId(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -276,6 +335,12 @@ impl Boundary<Sort> for NRA {
             NRA::Havoc(op) => op.cod().map(Sort::from),
             NRA::Uninterpreted(op) => op.cod().map(Sort::from),
             NRA::Zero(op) => op.cod().map(Sort::from),
+            NRA::TAdd(op) => op.cod().map(Sort::from),
+            NRA::TSub(op) => op.cod().map(Sort::from),
+            NRA::TLinear(op) => op.cod().map(Sort::from),
+            NRA::TTranspose(op) => op.cod().map(Sort::from),
+            NRA::TIte(op) => op.cod(),
+            NRA::TId(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -302,6 +367,12 @@ impl Boundary<Sort> for LRA {
             LRA::Havoc(op) => op.dom().map(Sort::from),
             LRA::Uninterpreted(op) => op.dom().map(Sort::from),
             LRA::Zero(op) => op.dom().map(Sort::from),
+            LRA::TAdd(op) => op.dom().map(Sort::from),
+            LRA::TSub(op) => op.dom().map(Sort::from),
+            LRA::TLinear(op) => op.dom().map(Sort::from),
+            LRA::TTranspose(op) => op.dom().map(Sort::from),
+            LRA::TIte(op) => op.dom(),
+            LRA::TId(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -327,6 +398,12 @@ impl Boundary<Sort> for LRA {
             LRA::Havoc(op) => op.cod().map(Sort::from),
             LRA::Uninterpreted(op) => op.cod().map(Sort::from),
             LRA::Zero(op) => op.cod().map(Sort::from),
+            LRA::TAdd(op) => op.cod().map(Sort::from),
+            LRA::TSub(op) => op.cod().map(Sort::from),
+            LRA::TLinear(op) => op.cod().map(Sort::from),
+            LRA::TTranspose(op) => op.cod().map(Sort::from),
+            LRA::TIte(op) => op.cod(),
+            LRA::TId(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -571,6 +648,76 @@ impl Boundary<Real> for Zero {
     }
 }
 
+impl Boundary<Real> for TAdd {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::with_degree([self.0, self.1], self.2); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree([self.0, self.1], self.2)].into()
+    }
+}
+
+impl Boundary<Real> for TSub {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::with_degree([self.0, self.1], self.2); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree([self.0, self.1], self.2)].into()
+    }
+}
+
+/// As [`Linear`], with `A` of shape `[m, n]` and `B` of shape `[m, k]`, the
+/// map takes `x` of shape `[n, k]` to a matrix of shape `[m, k]`, here of
+/// the rates of change of degree `d`.
+impl Boundary<Real> for TLinear {
+    fn dom(&self) -> Poly<Real> {
+        let [_, n] = self.0.shape();
+        let [_, k] = self.1.shape();
+        mono![Real::with_degree([n, k], self.2)].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree(self.1.shape(), self.2)].into()
+    }
+}
+
+/// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`, both of the
+/// rates of change of degree `d`.
+impl Boundary<Real> for TTranspose {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::with_degree([self.0, self.1], self.2)].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree([self.1, self.0], self.2)].into()
+    }
+}
+
+/// Takes a (plain) boolean of shape `[1, 1]` and two matrices of shape
+/// `[m, n]` of the rates of change of degree `d` to such a matrix.
+impl Boundary<Sort> for TIte {
+    fn dom(&self) -> Poly<Sort> {
+        let x: Sort = Real::with_degree([self.0, self.1], self.2).into();
+        mono![Bool::new([1, 1]).into(), x, x].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Real::with_degree([self.0, self.1], self.2).into()].into()
+    }
+}
+
+impl Boundary<Real> for TId {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::with_degree([self.0, self.1], self.2)].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree([self.0, self.1], self.2)].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -709,6 +856,42 @@ impl fmt::Display for Zero {
     }
 }
 
+impl fmt::Display for TLinear {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TLinear({}, {})", self.0, self.1)
+    }
+}
+
+impl fmt::Display for TAdd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TAdd")
+    }
+}
+
+impl fmt::Display for TSub {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TSub")
+    }
+}
+
+impl fmt::Display for TTranspose {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TTranspose")
+    }
+}
+
+impl fmt::Display for TIte {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TIte")
+    }
+}
+
+impl fmt::Display for TId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TId")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -799,6 +982,50 @@ mod tests {
     }
 
     #[test]
+    fn tangent_ops_act_on_rates_of_their_degree() {
+        let r = Real::new([2, 3]);
+        assert_eq!(TAdd(2, 3, 1).dom(), two(T(r)));
+        assert_eq!(TAdd(2, 3, 1).cod(), one(T(r)));
+        assert_eq!(TSub(2, 3, 2).dom(), two(T(T(r))));
+        assert_eq!(TSub(2, 3, 2).cod(), one(T(T(r))));
+        assert_eq!(TId(2, 3, 1).dom(), one(T(r)));
+        assert_eq!(TId(2, 3, 1).cod(), one(T(r)));
+        assert_eq!(TTranspose(2, 3, 1).dom(), one(T(r)));
+        assert_eq!(TTranspose(2, 3, 1).cod(), one(T(Real::new([3, 2]))));
+
+        let c: Sort = Bool::new([1, 1]).into();
+        let x: Sort = T(r).into();
+        let dom: Poly<Sort> = mono![c, x, x].into();
+        let cod: Poly<Sort> = mono![x].into();
+        assert_eq!(TIte(2, 3, 1).dom(), dom);
+        assert_eq!(TIte(2, 3, 1).cod(), cod);
+    }
+
+    #[test]
+    fn tangent_ops_of_degree_zero_are_the_plain_ones() {
+        assert_eq!(TAdd(2, 3, 0).dom(), Add(2, 3).dom());
+        assert_eq!(TSub(2, 3, 0).cod(), Sub(2, 3).cod());
+        assert_eq!(TId(2, 3, 0).dom(), Id(2, 3).dom());
+        assert_eq!(TTranspose(2, 3, 0).cod(), Transpose(2, 3).cod());
+        assert_eq!(TIte(2, 3, 0).dom(), Ite(2, 3).dom());
+        assert_eq!(TIte(2, 3, 0).cod(), Ite(2, 3).cod());
+    }
+
+    #[cfg(feature = "torch")]
+    #[test]
+    fn tlinear_is_linear_on_rates() {
+        use pyo3_tch::tch;
+        let a = || -> crate::PyTensor { tch::Tensor::zeros([4, 2], tch::kind::FLOAT_CPU).into() };
+        let b = || -> crate::PyTensor { tch::Tensor::zeros([4, 3], tch::kind::FLOAT_CPU).into() };
+        let t = TLinear(a(), b(), 1);
+        assert_eq!(t.dom(), one(T(Real::new([2, 3]))));
+        assert_eq!(t.cod(), one(T(Real::new([4, 3]))));
+        let t = TLinear(a(), b(), 0);
+        assert_eq!(t.dom(), Linear(a(), b()).dom());
+        assert_eq!(t.cod(), Linear(a(), b()).cod());
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(Add(1, 1).to_string(), "Add");
         assert_eq!(Mul(1, 1).to_string(), "Mul");
@@ -814,6 +1041,7 @@ mod tests {
             "Uninterpreted(f)"
         );
         assert_eq!(Zero(1, 1, 1).to_string(), "Zero");
+        assert_eq!(TAdd(1, 1, 1).to_string(), "TAdd");
     }
     #[test]
     fn comparisons_write_booleans() {
