@@ -19,7 +19,7 @@ Prob017_mux2to1v	RefModule	OK	OK	Equal
 Prob018_mux256to1	RefModule	OK	OK	Equal	
 Prob019_m2014_q4f	RefModule	OK	OK	Equal	
 Prob020_mt2015_eq2	RefModule	OK	OK	Equal	
-Prob021_mux256to1v	RefModule	8:17: `in[((sel * 4) + 3)]` may select beyond bit 1023 of `in`: the index has 32 bits, so every one of its values must be in range (narrow the index); an unsized literal or an integer parameter makes the index 32 bits wide	8:17: `in[((sel * 4) + 3)]` may select beyond bit 1023 of `in`: the index has 32 bits, so every one of its values must be in range (narrow the index); an unsized literal or an integer parameter makes the index 32 bits wide	-	width rules (explicit-width fragment)
+Prob021_mux256to1v	RefModule	OK	OK	Equal	
 Prob022_mux2to1	RefModule	OK	OK	Equal	
 Prob023_vector100r	RefModule	4:10: `reg` not supported, use `logic`	8:5: unsupported: StatementItem [at `for`]	-	generate / loops
 Prob024_hadd	RefModule	OK	OK	Equal	
@@ -116,7 +116,7 @@ Prob114_bugs_case	RefModule	4:10: `reg` not supported, use `logic`	OK	Equal
 Prob115_shift18	RefModule	8:10: `reg` not supported, use `logic`	19:16: `q` is assigned x here and not assigned again on every path before the end of the block: x is accepted only when it is overwritten (a live x is a don't-care in synthesis, which is not modelled)	-	x/z values (4-state)
 Prob116_m2014_q3	RefModule	9:13: `f` is assigned x here and not assigned again on every path before the end of the block: x is accepted only when it is overwritten (a live x is a don't-care in synthesis, which is not modelled)	9:13: `f` is assigned x here and not assigned again on every path before the end of the block: x is accepted only when it is overwritten (a live x is a don't-care in synthesis, which is not modelled)	-	x/z values (4-state)
 Prob117_circuit9	RefModule	5:10: `reg` not supported, use `logic`	OK	Equal	
-Prob118_history_shift	RefModule	14:3: plain `always` not supported, use `always_ff` or `always_comb`	16:7: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
+Prob118_history_shift	RefModule	14:3: plain `always` not supported, use `always_ff` or `always_comb`	19:9: `predict_history` is assigned with `<=` here and with `=` at 16:7: in an `always_ff`, assign each signal either only with `<=` or only with `=`	-	other error
 Prob119_fsm3	RefModule	10:3: `reg` not supported, use `logic`	14:3: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob120_fsm3s	RefModule	10:3: `reg` not supported, use `logic`	14:5: `next` is assigned on only some paths through this `case` (without `default`, nothing is assigned when no label matches), so it would keep its old value on the others (a latch); assign it on every path or before	-	design rejected by a checking rule (latch, loop, drivers)
 Prob121_2014_q3bfsm	RefModule	6:10: `reg` not supported, use `logic`	24:16: `next` is assigned x here and not assigned again on every path before the end of the block: x is accepted only when it is overwritten (a live x is a don't-care in synthesis, which is not modelled)	-	x/z values (4-state)

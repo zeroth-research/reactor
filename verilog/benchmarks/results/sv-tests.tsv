@@ -393,8 +393,8 @@ chapter-9/9.3.1--sequential_block.sv		16:2: `reg` not supported, use `logic`	20:
 chapter-9/9.3.4--block_names_seq.sv		16:2: `reg` not supported, use `logic`	20:8: block name not supported	-	other unsupported construct
 chapter-9/9.3.5--statement_labels_seq.sv		16:2: `reg` not supported, use `logic`	24:6: block name not supported	-	other unsupported construct
 chapter-9/9.4.2--event_control_edge.sv		16:2: `reg` not supported, use `logic`	18:2: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
-chapter-9/9.4.2--event_control_negedge.sv		16:2: `reg` not supported, use `logic`	18:27: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
-chapter-9/9.4.2--event_control_posedge.sv		16:2: `reg` not supported, use `logic`	18:27: blocking assignment not allowed in `always_ff`, use `<=`	-	other error
+chapter-9/9.4.2--event_control_negedge.sv		16:2: `reg` not supported, use `logic`	18:22: the clock `clk` is computed combinationally: gated clocks are not supported	-	other unsupported construct
+chapter-9/9.4.2--event_control_posedge.sv		16:2: `reg` not supported, use `logic`	18:22: the clock `clk` is computed combinationally: gated clocks are not supported	-	other unsupported construct
 chapter-9/9.4.2.1--event_comma_op.sv		20:2: `reg` not supported, use `logic`	21:2: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
 chapter-9/9.4.2.1--event_or_op.sv		20:2: `reg` not supported, use `logic`	21:2: plain `always` not supported, use `always_ff` or `always_comb`	-	spelling: `reg` / plain `always`
 chapter-9/9.4.2.2--event_implicit.sv		20:2: `reg` not supported, use `logic`	OK	Equal	
