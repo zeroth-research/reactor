@@ -214,8 +214,8 @@ layer.
 | `Int` shape `[n]` | `(Mat Int 1 n)` | — |
 | `Int` shape `[m,n]` | `(Mat Int m n)` | — |
 
-All intermediate values are `Mat T m n` (Lean: `Fin m → Fin n → T`) even when
-scalar.  This keeps the algebra uniform.  Float-typed modules require
+All intermediate values are `Mat T m n` (Lean: Mathlib's
+`Matrix (Fin m) (Fin n) T`) even when scalar.  This keeps the algebra uniform.  Float-typed modules require
 `noncomputable` on all definitions because `Real` lacks decidable equality.
 
 **`product_accessor(pos, total)`** builds right-nested product accessors:

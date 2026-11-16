@@ -71,7 +71,8 @@ def lean_elem_type(sort: Sort) -> str:
 
 
 def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
-    """Map a Wire's Sort to a native Lean type (Bool, Int, Fin m → Fin n → Int)."""
+    """Map a Wire's Sort to its Lean type, `(Mat t m n)`; with `simple_types`, a
+    1×1 wire is its bare element type `t`."""
 
     dt = wire.dtype
     ty = lean_elem_type(dt)
@@ -85,11 +86,11 @@ def mat_mk(entry: str, i: str = "_", j: str = "_") -> str:
     """The Lean matrix whose entry `(i, j)` is `entry`: `(Mat.mk fun i j => entry)`.
 
     The codegen writes every matrix it builds from its entries as a
-    `Mat.mk`, never as a bare `fun i j => ...`: `Relational.Mat`'s `Mat.mk`
-    makes it a `Mat` by its type, not a function that is one only because
-    `Mat` unfolds to a function type. Its size is not in the term, so the
-    expression needs an expected type, which every emitted `let` and
-    definition gives it.
+    `Mat.mk`, never as a bare `fun i j => ...`: `Mat` is Mathlib's
+    `Matrix`, which `simp` and instance search do not see through, so to
+    them a bare lambda is a function and no `Matrix` lemma or instance
+    applies to it. Its size is not in the term, so the expression needs an
+    expected type, which every emitted `let` and definition gives it.
     """
     return f"(Mat.mk fun {i} {j} => {entry})"
 

@@ -61,7 +61,7 @@ from reactor.lean.lowering.elements import flat_layout
 # (Mat.mk fun i j => match i, j with ...)` and no arithmetic prover can
 # touch it.
 MAT_SIMP: tuple[str, ...] = (
-    "MatAdd_apply", "MatMul_apply", "MatZero_apply", "Pi.add_apply",
+    "MatAdd_apply", "MatMul_apply", "MatZero_apply",
     "mul_Mat_apply", "add_Mat_apply", "↓Mat.mk_apply", "Bool.or_eq_true",
     "decide_eq_true_eq",
     "Fin.sum_univ_succ", "Fin.sum_univ_zero", "Fin.isValue", "Fin.sum_univ_one",
