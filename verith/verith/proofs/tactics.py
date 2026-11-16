@@ -732,6 +732,11 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
         # Lean answer's `Nat.ceil ((12 - h) * 2 / 3)` for `m_watertank`'s
         # refills, which falls by one a tick.
         closers.append("lra_close_ceil")
+    if f.has_real and f.has_floor:
+        # `lra_close` with each floor split at `0`, so that `0 < ⌊x⌋` is
+        # `1 ≤ ⌊x⌋`: the integrality `linarith` cannot see in `ℝ`.
+        # `m_lra_half`'s certificate that `2 * x` is a whole number.
+        closers.append("lra_close_frac")
     if f.nonlinear and f.has_int and not f.finite_state:
         # A product under a ranking's `Int.toNat`: `nlinarith` reads
         # `(a * b).toNat` as an atom, and omega refuses the product. Moved
