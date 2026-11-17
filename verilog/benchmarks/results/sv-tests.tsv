@@ -212,7 +212,7 @@ chapter-5/5.11-arrays-replication.sv		16:3: type `int` not supported	-	other dat
 chapter-5/5.11-arrays.sv		16:3: type `int` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 chapter-5/5.12-attributes-case.sv		23:5: attribute not supported	-	other unsupported construct
 chapter-5/5.12-attributes-conditional.sv		20:13: attribute not supported	-	other unsupported construct
-chapter-5/5.12-attributes-module.sv		0:0: several top modules (`topa`, `topb`, `topc`): choose one	-	top-module selection
+chapter-5/5.12-attributes-module.sv		16:4: attribute `optimize_power` not supported	-	other unsupported construct
 chapter-5/5.12-attributes-operator.sv		22:13: attribute not supported	-	other unsupported construct
 chapter-5/5.12-attributes-variable.sv		17:3: attribute not supported	-	other unsupported construct
 chapter-5/5.13-builtin-methods-strings.sv		16:3: type `string` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
