@@ -207,6 +207,23 @@ duplicating shared subterms and of the one-to-one correspondence between
 blocks and atoms. The check runs on names, not paths: a port connected to
 a signal name is that signal. A loop through instances is found on the
 atoms of the composed modules and reported with the signals on it.
+
+## Blackboxes and pins
+
+A blackbox (a module marked `(* blackbox *)`, with ports and parameters but
+no body) is the boundary of the design: its behaviour belongs to the
+environment, as a vendor cell (a PLL, an I/O cell) whose meaning the source
+does not give. An instance of it adds no atoms and no variables of its own.
+The signal connected to one of its outputs has no driver in the module, so
+it is an external variable, exactly like an input of the top module: it
+may take any value in every round (a sound over-approximation of every
+behaviour of the cell), it is in no clock domain, and it may be an input
+clock (the output of a PLL). Its inputs are read by nothing: what drives
+them stays in the module as ordinary signals. A pin (an `inout` port of the
+top module) is only connected to `inout` ports of blackboxes, so it lies
+outside the design as well and is no variable. A model of a cell, if a
+property needs one, is a refinement of this: a module composed with the
+translation that drives the external variables of the blackbox outputs.
 */
 
 use crate::ast::{
@@ -248,11 +265,20 @@ pub struct Translation {
     pub reset_registers: Vec<Name>,
     /// Inputs that nothing reads; they are not variables of the module.
     pub unread_inputs: Vec<Name>,
+    /// The signals connected to outputs of blackboxes, by name (see
+    /// [`Inst::blackbox_outputs`]): free in every round, like inputs. Those
+    /// that something reads are external variables.
+    pub blackbox_outputs: Vec<Name>,
     /// Reads with a variable index that may select bits outside their
     /// signal, located (with the instance path), sorted by position:
     /// those bits read 0, which for a 4-state signal is one choice for the
     /// standard's x (see [`typing::may_leave`]).
     pub out_of_range: Vec<Error>,
+    /// One located warning per instance of a blackbox (with the instance
+    /// path), in order: the signals on its outputs take any value in every
+    /// round and nothing reads its inputs, since its behaviour is not part
+    /// of the design (see the module docs, "Blackboxes and pins").
+    pub blackboxes: Vec<Error>,
     /// Names of wires local to an atom: the intermediate values `y@1`,
     /// `y@2`, … of the signals of `always_comb` blocks, and the edge tests
     /// `clk@pos`, `clk@neg` of `always_ff` blocks (`clk@pos#2` for the
@@ -343,6 +369,7 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         wire_names: HashMap::new(),
         instances: Vec::new(),
         out_of_range: Vec::new(),
+        blackboxes: Vec::new(),
     };
     let module = lower_rec(inst, "", &mut out)?;
     out.out_of_range
@@ -368,7 +395,9 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         register_widths: out.register_widths,
         reset_registers: out.reset_registers,
         unread_inputs,
+        blackbox_outputs: inst.blackbox_outputs(),
         out_of_range: out.out_of_range,
+        blackboxes: out.blackboxes,
         wire_names: out.wire_names,
         instances: out.instances,
     })
@@ -392,6 +421,8 @@ struct Out<'n> {
     instances: Vec<Part>,
     /// The reads that may select bits outside their signal, as warnings.
     out_of_range: Vec<Error>,
+    /// The instances of blackboxes, as warnings.
+    blackboxes: Vec<Error>,
 }
 
 impl Out<'_> {
@@ -428,7 +459,8 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
     // `u.a` of the module, driven by an `assign`
     let mut connections = Vec::new();
     for i in m.instances() {
-        for (c, f) in i.conns(Dir::Input) {
+        // nothing reads the inputs of a blackbox
+        for (c, f) in i.conns(Dir::Input).filter(|(_, f)| !f.blackbox) {
             let Some(e) = c.actual.as_ref().filter(|_| c.shared().is_none()) else {
                 continue;
             };
@@ -639,7 +671,17 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
     let own =
         Module::partially_observable(atoms, |_| false).map_err(|e| internal(Span::default(), e))?;
     let mut modules = vec![(own, Span::default())];
-    let mut hidden: BTreeSet<Var> = m.decls.iter().map(|d| vars[&d.name]).collect();
+    // the outputs of blackboxes are external, like inputs, so not hidden
+    let free: BTreeSet<&Name> = m
+        .instances()
+        .flat_map(|i| i.conns(Dir::Output))
+        .filter(|(_, f)| f.blackbox)
+        .filter_map(|(c, _)| c.shared())
+        .collect();
+    let mut hidden: BTreeSet<Var> = (m.decls.iter())
+        .filter(|d| !free.contains(&d.name))
+        .map(|d| vars[&d.name])
+        .collect();
     hidden.extend(
         connections
             .iter()
@@ -648,6 +690,33 @@ fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
     );
     for (u, child) in &inst.children {
         let i = m.instances().find(|i| i.name == *u).expect("an instance");
+        if child.module.blackbox {
+            let free: Vec<String> = (i.conns(Dir::Output))
+                .filter_map(|(c, _)| c.shared())
+                .map(|y| format!("`{}`", out.naming[&format!("{prefix}{y}")]))
+                .collect();
+            let mut what = match free.as_slice() {
+                [] => Vec::new(),
+                [y] => vec![format!("{y} takes any value in every time step")],
+                ys => vec![format!(
+                    "{} take any value in every time step",
+                    ys.join(", ")
+                )],
+            };
+            if i.conns(Dir::Input).next().is_some() {
+                what.push("nothing reads its inputs".to_string());
+            }
+            let what = match what.as_slice() {
+                [] => String::new(),
+                _ => format!(": {}", what.join(", and ")),
+            };
+            let msg = format!(
+                "`{u}` is an instance of the blackbox `{}`, whose behaviour is not modelled{what}",
+                child.module.name
+            );
+            out.blackboxes.push(ctx(Error::new(i.span, msg)));
+            continue;
+        }
         let path = format!("{prefix}{u}.");
         let module = lower_rec(child, &path, out)?;
         out.instances.push(Part {

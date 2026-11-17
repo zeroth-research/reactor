@@ -18,7 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use verilog::ast::{Dir, Edge, Item, Module, Ty};
+use verilog::ast::{Dir, Edge, Item, Ty};
 use verilog::ast_interp::{Interp, Values};
 use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, init_name, lower_inst};
@@ -67,8 +67,36 @@ fn registers(inst: &Inst) -> Vec<(String, Ty)> {
         .collect()
 }
 
+/// The inputs of a design, with their types and their names in a
+/// testbench: the inputs of the top module, then the signals connected to
+/// outputs of blackboxes, which take any value in every round as inputs
+/// do (written in a testbench through the output of the blackbox stub,
+/// `dut.g.clk_out`, a variable that only the testbench assigns).
+fn design_inputs(inst: &Inst) -> Vec<(String, Ty, String)> {
+    let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
+    let mut out: Vec<(String, Ty, String)> = (inst.module.ports.iter())
+        .filter(|p| p.dir == Dir::Input)
+        .map(|p| (p.decl.name.clone(), p.decl.ty, p.decl.name.clone()))
+        .collect();
+    let mut walk = vec![(inst, String::new())];
+    while let Some((i, prefix)) = walk.pop() {
+        for u in i.module.instances() {
+            for (c, f) in u.conns(Dir::Output).filter(|(_, f)| f.blackbox) {
+                if let Some(y) = c.shared() {
+                    let name = naming[&format!("{prefix}{y}")].clone();
+                    out.push((name, f.ty, format!("dut.{prefix}{}.{}", u.name, c.port)));
+                }
+            }
+        }
+        for (u, child) in i.children.iter().rev() {
+            walk.push((child, format!("{prefix}{u}.")));
+        }
+    }
+    out
+}
+
 /// The number of atoms of a hierarchy: one per item, and one per input
-/// connected to an expression other than a name.
+/// connected to an expression other than a name (blackboxes have none).
 fn atoms(inst: &Inst) -> usize {
     let m = &inst.module;
     let own = m
@@ -79,7 +107,7 @@ fn atoms(inst: &Inst) -> usize {
     let conns = m
         .instances()
         .flat_map(|i| i.conns(Dir::Input))
-        .filter(|(c, _)| c.actual.as_ref().is_some_and(|_| c.shared().is_none()))
+        .filter(|(c, f)| !f.blackbox && c.actual.as_ref().is_some_and(|_| c.shared().is_none()))
         .count();
     own + conns + inst.children.iter().map(|(_, c)| atoms(c)).sum::<usize>()
 }
@@ -192,6 +220,13 @@ fn structure() {
         let mut extl = ports(Dir::Input);
         let free = t.registers.iter().filter(|q| !t.initialized.contains(q));
         extl.extend(free.map(|q| init_name(q)));
+        // the outputs of blackboxes
+        let outputs: Vec<String> = design_inputs(&inst)
+            .into_iter()
+            .skip(m.ports.iter().filter(|p| p.dir == Dir::Input).count())
+            .map(|(name, ..)| name)
+            .collect();
+        extl.extend(outputs.iter().cloned());
         let display = path.display();
         assert_eq!(names(t.module.extl()), sorted(extl), "{display}");
         assert_eq!(
@@ -204,7 +239,7 @@ fn structure() {
             .naming()
             .into_iter()
             .map(|(_, n)| n)
-            .filter(|n| !top.contains(n))
+            .filter(|n| !top.contains(n) && !outputs.contains(n))
             .collect();
         assert_eq!(
             names(t.module.prvt()),
@@ -278,12 +313,12 @@ impl Rand {
         BitVec::new(width, v & ones).unwrap()
     }
 
-    /// A value for every input, clocks included.
-    fn inputs(&mut self, m: &Module) -> Values {
-        m.ports
-            .iter()
-            .filter(|p| p.dir == Dir::Input)
-            .map(|p| (p.decl.name.clone(), self.bits(p.decl.ty.width)))
+    /// A value for every input of the design (see [`design_inputs`]),
+    /// clocks included.
+    fn inputs(&mut self, inst: &Inst) -> Values {
+        design_inputs(inst)
+            .into_iter()
+            .map(|(name, ty, _)| (name, self.bits(ty.width)))
             .collect()
     }
 
@@ -299,7 +334,6 @@ impl Rand {
         clocking: Gen,
         rounds: usize,
     ) -> Vec<Values> {
-        let m = &inst.module;
         let resets = resets(inst);
         // per clock: its period (in rounds per level) and first level
         let shapes: Vec<(usize, u64)> = clocks
@@ -314,7 +348,7 @@ impl Rand {
             .collect();
         (0..rounds)
             .map(|k| {
-                let mut v = self.inputs(m);
+                let mut v = self.inputs(inst);
                 if clocking != Gen::Random {
                     for (c, (period, first)) in clocks.iter().zip(&shapes) {
                         let level = (first + (k / period) as u64) % 2;
@@ -516,11 +550,18 @@ fn tb_header(inst: &Inst, start: &Values) -> String {
     tb
 }
 
-/// `    name = value;` for each of `values` whose name `pick` accepts.
-fn tb_set(values: &Values, pick: impl Fn(&str) -> bool) -> String {
+/// `    name = value;` for each of `values` (inputs of the design) whose
+/// name `pick` accepts, with `name` as the testbench writes it (see
+/// [`design_inputs`]).
+fn tb_set(inst: &Inst, values: &Values, pick: impl Fn(&str) -> bool) -> String {
+    let paths: BTreeMap<String, String> = design_inputs(inst)
+        .into_iter()
+        .map(|(name, _, path)| (name, path))
+        .collect();
     let mut out = String::new();
     for (name, value) in values.iter().filter(|(n, _)| pick(n)) {
-        out += &format!("    {name} = {}'h{:x};\n", value.width(), value.unsigned());
+        let path = &paths[name];
+        out += &format!("    {path} = {}'h{:x};\n", value.width(), value.unsigned());
     }
     out
 }
@@ -577,12 +618,12 @@ fn testbench(inst: &Inst, t: &Translation, init: &Values, rounds: &[Values]) -> 
     start.retain(|n, _| is_clock(n));
     let mut tb = tb_header(inst, &start);
     for (k, v) in rounds.iter().enumerate() {
-        tb += &tb_set(v, is_clock);
+        tb += &tb_set(inst, v, is_clock);
         tb += "    #1;\n";
         if k == 0 {
             tb += &tb_init_twice(t, init);
         }
-        tb += &tb_set(v, |n| !is_clock(n));
+        tb += &tb_set(inst, v, |n| !is_clock(n));
         tb += &format!("    #1 {}", tb_display(inst));
     }
     tb += "    $finish;\n  end\nendmodule\n";
@@ -596,16 +637,20 @@ fn testbench(inst: &Inst, t: &Translation, init: &Values, rounds: &[Values]) -> 
 /// change from x to 1 would be a rising edge.
 fn cycle_testbench(inst: &Inst, t: &Translation, init: &Values, vectors: &[Values]) -> String {
     let clk = t.clocks.first().map(String::as_str);
+    let level = |b: u8| {
+        let v = Values::from([(clk.unwrap().to_string(), BitVec::new(1, b).unwrap())]);
+        tb_set(inst, &v, |_| true)
+    };
     let mut tb = tb_header(inst, &Values::new());
-    if let Some(clk) = clk {
-        tb += &format!("    {clk} = 1'b0;\n");
+    if clk.is_some() {
+        tb += &level(0);
     }
     tb += &tb_init_twice(t, init);
     for v in vectors {
-        tb += &tb_set(v, |n| Some(n) != clk);
+        tb += &tb_set(inst, v, |n| Some(n) != clk);
         tb += &format!("    #1 {}", tb_display(inst));
         match clk {
-            Some(clk) => tb += &format!("    {clk} = 1'b1;\n    #1 {clk} = 1'b0;\n"),
+            Some(_) => tb += &format!("{}    #1\n{}", level(1), level(0)),
             None => tb += "    #1;\n",
         }
     }
@@ -625,15 +670,13 @@ fn cycle(interp: &mut Interp, clk: &str, inputs: &Values) -> Values {
     values
 }
 
-/// The signals compared with iverilog: all but the inputs of the top
-/// module, by name (which is a hierarchical name, see `elab`).
+/// The signals compared with iverilog: all but the inputs of the design
+/// (see [`design_inputs`]), by name (which is a hierarchical name, see
+/// `elab`).
 fn shown(inst: &Inst) -> Vec<String> {
-    let inputs: BTreeSet<&String> = inst
-        .module
-        .ports
-        .iter()
-        .filter(|p| p.dir == Dir::Input)
-        .map(|p| &p.decl.name)
+    let inputs: BTreeSet<String> = design_inputs(inst)
+        .into_iter()
+        .map(|(name, ..)| name)
         .collect();
     let mut out: Vec<String> = Vec::new();
     for (_, name) in inst.naming() {
@@ -769,7 +812,7 @@ fn rounds_match_cycles() {
         let init = rand.registers(&inst);
         let vectors: Vec<Values> = (0..200)
             .map(|_| {
-                let mut v = rand.inputs(m);
+                let mut v = rand.inputs(&inst);
                 v.retain(|n, _| Some(n.as_str()) != clk);
                 v
             })
@@ -876,7 +919,7 @@ fn simulator_differs(inst: &Inst) -> Option<String> {
                     }
                 }
                 Item::Instance(u) => {
-                    for (c, _) in u.conns(Dir::Input) {
+                    for (c, _) in u.conns(Dir::Input).filter(|(_, f)| !f.blackbox) {
                         let Some(e) = &c.actual else { continue };
                         let mut reads = Vec::new();
                         e.reads(&mut reads);
@@ -908,12 +951,9 @@ fn simulator_differs(inst: &Inst) -> Option<String> {
             break;
         }
     }
-    let inputs: BTreeSet<&String> = inst
-        .module
-        .ports
-        .iter()
-        .filter(|p| p.dir == Dir::Input)
-        .map(|p| &p.decl.name)
+    let inputs: BTreeSet<String> = design_inputs(inst)
+        .into_iter()
+        .map(|(name, ..)| name)
         .collect();
     for (q, c, reads) in blocks {
         if inputs.contains(&c) {

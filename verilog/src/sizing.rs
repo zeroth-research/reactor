@@ -679,8 +679,12 @@ impl Printer {
 /// A module as source, named `{}`, with `names` the printed module name of
 /// each instance.
 fn body(env: &Env, m: &Module, names: &BTreeMap<Name, Name>) -> String {
-    let mut out = String::from("module {} (\n");
-    let ports: Vec<String> = m
+    let mut out = String::new();
+    if m.blackbox {
+        out += "(* blackbox *)\n";
+    }
+    out += "module {} (\n";
+    let mut ports: Vec<String> = m
         .ports
         .iter()
         .map(|p| {
@@ -691,6 +695,11 @@ fn body(env: &Env, m: &Module, names: &BTreeMap<Name, Name>) -> String {
             format!("  {dir} {} {}", p.decl.ty, p.decl.name)
         })
         .collect();
+    // a pin is a net (`wire`), as an `inout` port must be
+    ports.extend(m.pins.iter().map(|d| {
+        let range = (d.ty.width > 1).then(|| format!(" [{}:0]", d.ty.width - 1));
+        format!("  inout  wire{} {}", range.unwrap_or_default(), d.name)
+    }));
     out += &ports.join(",\n");
     out += "\n);\n";
     for d in m.decls.iter().filter(|d| !d.name.contains('[')) {
@@ -725,9 +734,8 @@ fn body(env: &Env, m: &Module, names: &BTreeMap<Name, Name>) -> String {
             }
             Item::AlwaysComb { body, .. } => format!("always_comb {}", stmt(env, body)),
             Item::Instance(i) => {
-                let conns: Vec<String> = i
-                    .conns
-                    .iter()
+                let conns: Vec<String> = (i.conns.iter())
+                    .chain(&i.pins)
                     .map(|c| match &c.actual {
                         Some(e) => format!(".{}({})", c.port, expr(env, e)),
                         None => format!(".{}()", c.port),

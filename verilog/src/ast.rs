@@ -31,6 +31,10 @@ impl fmt::Display for Span {
 pub struct Error {
     pub span: Span,
     pub msg: String,
+    /// The source file, for a design of several files once the error is
+    /// located (see [`Design::located`](crate::frontend::Design::located));
+    /// `span` is then the position in this file.
+    pub file: Option<std::path::PathBuf>,
 }
 
 impl Error {
@@ -38,6 +42,15 @@ impl Error {
         Self {
             span,
             msg: msg.into(),
+            file: None,
+        }
+    }
+
+    /// The error, in the file `path`.
+    pub fn in_file(self, path: impl AsRef<std::path::Path>) -> Self {
+        Self {
+            file: Some(path.as_ref().to_path_buf()),
+            ..self
         }
     }
 }
@@ -109,8 +122,12 @@ pub struct Module {
     pub name: Name,
     /// The parameters and local parameters, in order, with their values.
     pub params: Vec<Param>,
-    /// The ports of the ANSI header, in order.
+    /// The input and output ports of the ANSI header, in order.
     pub ports: Vec<Port>,
+    /// The `inout` ports (pins), in order. They are no signals: a pin may
+    /// only be connected to an `inout` port of a blackbox, so it lies
+    /// outside the translated design (see [`Module::blackbox`]).
+    pub pins: Vec<Decl>,
     /// The internal signals; the elements of an array are signals `m[0]`,
     /// `m[1]`, … of their own (see [`Array`]).
     pub decls: Vec<Decl>,
@@ -119,6 +136,11 @@ pub struct Module {
     pub items: Vec<Item>,
     /// The initial values of registers, in source order (see [`Init`]).
     pub inits: Vec<Init>,
+    /// Whether the module is a blackbox, marked `(* blackbox *)`: it has
+    /// ports and parameters but no body. Its behaviour is outside the
+    /// design: every output may take any value in every time step, as an
+    /// input of the top module does, and nothing reads its inputs.
+    pub blackbox: bool,
 }
 
 impl Module {
@@ -300,6 +322,10 @@ pub struct Instance {
     /// The parameter values given, evaluated in the instantiating module.
     pub params: Vec<Override>,
     pub conns: Vec<Conn>,
+    /// The connections of `inout` ports of a blackbox, each to a pin of
+    /// the instantiating module or to nothing; moved out of `conns` by
+    /// [`elab`](crate::elab).
+    pub pins: Vec<Conn>,
     /// The position of the instance name.
     pub span: Span,
 }
@@ -336,6 +362,10 @@ pub struct Formal {
     /// other expression) is assigned to the port, which is then a signal
     /// of its own.
     pub shared: bool,
+    /// Whether the instantiated module is a blackbox (see
+    /// [`Module::blackbox`]): an output is then free in every time step,
+    /// and an input is read by nothing.
+    pub blackbox: bool,
 }
 
 impl Conn {

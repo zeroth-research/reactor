@@ -1,0 +1,61 @@
+module bbtop
+  external
+    en : bv1
+    clk : bv1
+    rst : bv1
+    a : bv1
+    b_pos : bv1
+    b_neg : bv1
+    count@init : bv4
+    seen@init : bv2
+    slow@init : bv1
+    slow_seen@init : bv1
+  interface
+    count : bv4
+    seen : bv2
+    slow_seen : bv1
+  private
+    slow : bv1
+    img : bv2
+  atom controls count, seen reads en, count, seen, clk, rst, b_pos, b_neg awaits clk, rst, count@init, seen@init
+    init
+      %1 := 4'd0
+      X(count) := ITE (X(rst), %1, X(count@init))
+      %2 := 2'd0
+      X(seen) := ITE (X(rst), %2, X(seen@init))
+    update
+      %3 := NOT clk
+      clk@pos := AND (%3, X(clk))
+      %4 := 4'd0
+      %5 := 2'd0
+      %6 := 4'd1
+      %7 := ADD (count, %6)
+      %8 := ITE (en, %7, count)
+      %9 := CONCAT (b_pos, b_neg)
+      %10 := ITE (rst, %4, %8)
+      %11 := ITE (rst, %5, %9)
+      %12 := ITE (clk@pos, %10, count)
+      %13 := 4'd0
+      X(count) := ITE (X(rst), %13, %12)
+      %14 := ITE (clk@pos, %11, seen)
+      %15 := 2'd0
+      X(seen) := ITE (X(rst), %15, %14)
+  atom controls slow reads clk, slow awaits clk, slow@init
+    init
+      X(slow) := ID X(slow@init)
+    update
+      %1 := NOT clk
+      clk@pos#2 := AND (%1, X(clk))
+      %2 := NOT slow
+      X(slow) := ITE (clk@pos#2, %2, slow)
+  atom controls img awaits seen, a
+    init = update
+      %1 := CONCAT (X(a), X(a))
+      X(img) := XOR (X(seen), %1)
+  atom controls slow_seen reads slow_seen, a, slow awaits slow, slow_seen@init
+    init
+      X(slow_seen) := ID X(slow_seen@init)
+    update
+      %1 := NOT slow
+      slow@pos := AND (%1, X(slow))
+      X(slow_seen) := ITE (slow@pos, a, slow_seen)

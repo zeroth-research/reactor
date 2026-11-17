@@ -42,6 +42,10 @@ The element `m[i]` of an array is the signal `m[k]` with `k` the value of
 `i` (typing makes sure it is an address when read); an assignment to an
 element at an index that is no address writes nothing.
 
+The outputs of blackboxes (see [`crate::lower`]) are inputs of the design,
+given to [`Interp::step`] like the inputs of the top module; nothing reads
+the inputs of a blackbox.
+
 A hierarchy runs as one design: every signal is known by its name (see
 [`Inst::naming`]), so a port connected to a signal is that signal, and an
 input connected to another expression is computed from it on demand.
@@ -79,7 +83,7 @@ pub struct Interp<'m> {
     blocks: Vec<Block<'m>>,
     /// Every signal, by name, with its type.
     signals: BTreeMap<Name, Ty>,
-    /// The inputs of the top module.
+    /// The inputs of the design (see [`Interp::inputs`]).
     inputs: Vec<(Name, Ty)>,
     /// The registers: path, name and type.
     registers: Vec<(Name, Name, Ty)>,
@@ -125,12 +129,12 @@ impl<'m> Interp<'m> {
             init: Values::new(),
             prev: None,
         };
-        it.add(inst, "", &naming)?;
         for p in &inst.module.ports {
             if p.dir == Dir::Input {
                 it.inputs.push((p.decl.name.clone(), p.decl.ty));
             }
         }
+        it.add(inst, "", &naming)?;
         let err = |msg: String| Error::new(Span::default(), msg);
         for (name, c, e) in &it.initialized {
             let width = it.signals[name].width;
@@ -212,6 +216,17 @@ impl<'m> Interp<'m> {
                             .insert(names[y].clone(), (c, Driver::Item(item)));
                     }
                 }
+                // the connected outputs of a blackbox are inputs of the
+                // design; nothing reads its inputs
+                Item::Instance(i)
+                    if i.conns.iter().any(|c| c.formal.is_some_and(|f| f.blackbox)) =>
+                {
+                    for (conn, f) in i.conns(Dir::Output) {
+                        if let Some(y) = conn.shared() {
+                            self.inputs.push((names[y].clone(), f.ty));
+                        }
+                    }
+                }
                 Item::Instance(i) => {
                     for (conn, f) in i.conns(Dir::Input) {
                         if let Some(e) = &conn.actual
@@ -226,7 +241,7 @@ impl<'m> Interp<'m> {
             }
         }
         self.ctxs.push(Ctx { env, names });
-        for (u, child) in &inst.children {
+        for (u, child) in inst.children.iter().filter(|(_, c)| !c.module.blackbox) {
             self.add(child, &format!("{prefix}{u}."), naming)?;
         }
         Ok(())
@@ -237,7 +252,9 @@ impl<'m> Interp<'m> {
         self.registers.iter().map(|(p, _, t)| (p, *t)).collect()
     }
 
-    /// The inputs of the top module, clocks included, with their types.
+    /// The inputs of the design, clocks included, with their types: the
+    /// inputs of the top module, then the connected outputs of blackboxes
+    /// (free in every round, like inputs).
     pub fn inputs(&self) -> &[(Name, Ty)] {
         &self.inputs
     }

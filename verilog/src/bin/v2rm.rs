@@ -1,6 +1,11 @@
-//! `v2rm [--top NAME] [-G NAME=VALUE]… [--ignore-initializers] [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv`:
-//! translates the top module of a SystemVerilog file (with its instances)
-//! and prints the reactive module. `-G` sets a parameter of the top module
+//! `v2rm [--top NAME] [-G NAME=VALUE]… [--ignore-initializers] [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv…`:
+//! translates the top module of a SystemVerilog design (with its
+//! instances) and prints the reactive module. A design of several files is
+//! read as if the files were one, in the order given (a file of blackbox
+//! stubs, say); errors name the file they are in. Warnings (on standard
+//! error) name the inputs nothing reads, every instance of a blackbox with
+//! the signals it leaves free (see the crate docs, "The boundary of a
+//! design"), and reads that may select bits outside a signal. `-G` sets a parameter of the top module
 //! to a constant expression. `--instances` first prints the module of every
 //! instance as it is composed into its parent, children before parents.
 //! `--sized` prints the design instead with every implicit resize written
@@ -32,13 +37,13 @@ use verilog::smt::{self, Phase};
 use verilog::{constant, elab, frontend, lower, sizing, yosys, z3};
 
 const USAGE: &str = "usage: v2rm [--top NAME] [-G NAME=VALUE]... [--ignore-initializers] \
-                     [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv";
+                     [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv...";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut top = None;
     let mut params = Vec::new();
-    let mut path = None;
+    let mut paths: Vec<String> = Vec::new();
     let mut instances = false;
     let mut sized = false;
     let mut smt = None;
@@ -58,11 +63,11 @@ fn main() -> ExitCode {
                 None => return usage(),
             },
             _ if a.starts_with("-G") => params.push(a[2..].to_string()),
-            _ if path.is_none() && !a.starts_with('-') => path = Some(a),
+            _ if !a.starts_with('-') => paths.push(a),
             _ => return usage(),
         }
     }
-    let Some(path) = path else {
+    let Some(path) = paths.first().cloned() else {
         return usage();
     };
     if [instances, sized, smt.is_some(), compare]
@@ -74,8 +79,10 @@ fn main() -> ExitCode {
     {
         return usage();
     }
+    // the design, once parsed, to locate errors in their files
+    let mut design = None;
     let result = (|| {
-        let d = frontend::parse_design_file(&path)?;
+        let d = design.insert(frontend::parse_design_files(&paths)?);
         let top = match top {
             Some(t) => t,
             None => d.top()?,
@@ -95,23 +102,38 @@ fn main() -> ExitCode {
                 span: Span::default(),
             });
         }
-        let mut inst = elab::elaborate(&d, &top, &overrides)?;
+        let mut inst = elab::elaborate(d, &top, &overrides)?;
         if ignore {
             inst.ignore_initializers();
         }
         let t = lower::lower_inst(&inst)?;
         Ok::<_, Error>((inst, t, overrides))
     })();
+    // `FILE:L:C: message`, with the file of the error
+    let located = |e: Error| {
+        let e = match &design {
+            Some(d) => d.located(e),
+            None => e,
+        };
+        let file = e
+            .file
+            .as_ref()
+            .map_or(path.clone(), |f| f.display().to_string());
+        format!("{file}:{e}")
+    };
     match result {
         Ok((inst, t, overrides)) => {
             for name in &t.unread_inputs {
                 eprintln!("{path}: warning: input `{name}` is never read and is left out");
             }
-            for w in &t.out_of_range {
-                eprintln!("{path}:{}: warning: {}", w.span, w.msg);
+            for w in t.blackboxes.iter().chain(&t.out_of_range) {
+                eprintln!(
+                    "{}",
+                    located(Error::new(w.span, format!("warning: {}", w.msg)))
+                );
             }
             if compare {
-                return match yosys_check(&path, &inst, &t, &overrides) {
+                return match yosys_check(&paths, &inst, &t, &overrides) {
                     Ok(true) => ExitCode::SUCCESS,
                     Ok(false) => ExitCode::FAILURE,
                     Err(e) => {
@@ -127,7 +149,7 @@ fn main() -> ExitCode {
                         ExitCode::SUCCESS
                     }
                     Err(e) => {
-                        eprintln!("{path}:{e}");
+                        eprintln!("{}", located(e));
                         ExitCode::FAILURE
                     }
                 };
@@ -145,24 +167,25 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("{path}:{e}");
+            eprintln!("{}", located(e));
             ExitCode::FAILURE
         }
     }
 }
 
-/// Compares `t`, lowered from `inst`, with Yosys's translation of the file
-/// at `path`, printing every difference with its counterexample and replay.
-/// `Ok(true)` if every variable is equal in both rounds.
+/// Compares `t`, lowered from `inst`, with Yosys's translation of the
+/// files at `paths`, printing every difference with its counterexample and
+/// replay. `Ok(true)` if every variable is equal in both rounds.
 fn yosys_check(
-    path: &str,
+    paths: &[String],
     inst: &Inst,
     t: &Translation,
     overrides: &[Override],
 ) -> Result<bool, String> {
     let yosys = yosys::find().ok_or("yosys not found (set $YOSYS_BIN)")?;
     let z3 = z3::find().ok_or("z3 not found (set $Z3_BIN)")?;
-    let ys = yosys::run(&yosys, path.as_ref(), &t.name, overrides)?;
+    let files: Vec<&std::path::Path> = paths.iter().map(|p| p.as_ref()).collect();
+    let ys = yosys::run_files(&yosys, &files, &t.name, overrides)?;
     let m = miter::build(t, &ys)?;
     let verdicts = miter::check(&z3, &m)?;
     let round = |phase| match phase {
@@ -187,8 +210,9 @@ fn yosys_check(
         }
     }
     println!(
-        "{path}: {equal} of {} queries equal (every controlled variable, in the init and \
+        "{}: {equal} of {} queries equal (every controlled variable, in the init and \
          the update round)",
+        paths.join(" "),
         verdicts.len()
     );
     Ok(equal == verdicts.len())
