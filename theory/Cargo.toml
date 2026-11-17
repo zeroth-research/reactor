@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+base = { path = "../base" }
 pyo3 = { version = "0.24", optional = true }
 tch = { version = "0.22", optional = true }
 pyo3-tch = { version = "0.22", optional = true }

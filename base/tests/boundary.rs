@@ -1,6 +1,7 @@
 //! Tests for boundaries: polynomials of `⊗`-monomials under `⊕` and `⊗`.
 
 use base::boundary::{Mono, Poly};
+use base::mono;
 
 /// A monomial over single-character objects: `mono("xy")` is `x ⊗ y`.
 fn mono(word: &str) -> Mono<char> {
@@ -28,6 +29,36 @@ fn boundaries() {
         Mono::from_iter(['x']) * Mono::from_iter(['y']),
         Mono::from_iter(['x', 'y'])
     );
+}
+
+#[test]
+fn mono_macro_works_like_vec() {
+    // the empty form is the unit I
+    assert_eq!(mono![], Mono::<char>::unit());
+    // a list of base types is their product, in order, trailing comma allowed
+    assert_eq!(mono!['x', 'y', 'z'], mono("xyz"));
+    assert_eq!(mono!['x', 'y',], mono("xy"));
+    // the repeat form is the product of n copies
+    assert_eq!(mono!['x'; 3], mono("xxx"));
+    assert_eq!(mono!['x'; 0], Mono::unit());
+}
+
+#[test]
+fn map_applies_to_each_base_type_in_order() {
+    // on a monomial, each base type is mapped, in order
+    assert_eq!(mono("xyz").map(|c| c.to_ascii_uppercase()), mono("XYZ"));
+    assert_eq!(Mono::<char>::unit().map(|c| c as u32), Mono::unit());
+
+    // on a polynomial, each variant is mapped, keeping the sum's shape
+    assert_eq!(
+        poly(&["xy", "", "z"]).map(|c| c.to_ascii_uppercase()),
+        poly(&["XY", "", "Z"])
+    );
+    assert_eq!(Poly::<char>::zero().map(|c| c as u32), Poly::zero());
+
+    // with `From`, it converts the base types
+    let p: Poly<u32> = poly(&["ab"]).map(u32::from);
+    assert_eq!(p, Poly::from(mono!['a' as u32, 'b' as u32]));
 }
 
 #[test]
