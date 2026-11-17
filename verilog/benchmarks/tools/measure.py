@@ -155,6 +155,8 @@ SETS = {"verilog-eval": verilog_eval, "sv-tests": sv_tests, "ebmc": ebmc, "sby":
 
 # Not measured at all, documented in SUMMARY.md.
 NOT_MEASURED = [
+    ("lighthouse", "case study, measured separately: `lighthouse/measure.sh` "
+     "(results in `lighthouse.md`)"),
     ("riscv-formal", "case-study size (RISC-V cores checked against RVFI with SVA); "
      "future step, once the subset handles a whole core"),
     ("hw-cbmc/regression/{smv,vhdl,hw-cbmc,vlindex,rajdeep}", "not SystemVerilog designs "
