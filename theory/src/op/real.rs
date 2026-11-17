@@ -25,6 +25,7 @@ sorts of the theory, rather than in [`Real`].
 
 use crate::sort::{Bool, Real};
 use base::boundary::{Boundary, Poly};
+use crate::Tensor;
 use base::mono;
 use derive_more::From;
 use std::fmt;
@@ -36,9 +37,9 @@ use subenum::subenum;
 /// [`sort::Reals`](crate::sort::Reals) of the sorts of all theories.
 pub use crate::sort::Reals as Sort;
 
-/// A constant real matrix literal.
+/// A constant real matrix literal, held in a tensor of type `T`.
 #[derive(Clone, Debug)]
-pub struct Const(pub crate::PyTensor);
+pub struct Const<T>(pub T);
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -62,7 +63,7 @@ pub struct Div(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
 #[derive(Clone, Debug)]
-pub struct Linear(pub crate::PyTensor, pub crate::PyTensor);
+pub struct Linear<T>(pub T, pub T);
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
@@ -136,9 +137,9 @@ pub struct Ne(pub usize, pub usize);
 /// casts between them: `From` up to `NRA`, and `TryFrom` down from it.
 #[subenum(LRA)]
 #[derive(Clone, Debug, From)]
-pub enum NRA {
+pub enum NRA<T> {
     #[subenum(LRA)]
-    Const(Const),
+    Const(Const<T>),
     #[subenum(LRA)]
     Add(Add),
     #[subenum(LRA)]
@@ -146,7 +147,7 @@ pub enum NRA {
     Mul(Mul),
     Div(Div),
     #[subenum(LRA)]
-    Linear(Linear),
+    Linear(Linear<T>),
     #[subenum(LRA)]
     ReLU(ReLU),
     #[subenum(LRA)]
@@ -170,7 +171,7 @@ pub enum NRA {
     Ne(Ne),
 }
 
-impl Boundary<Sort> for NRA {
+impl<T: Tensor> Boundary<Sort> for NRA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             NRA::Const(op) => op.dom().map(Sort::from),
@@ -215,7 +216,7 @@ impl Boundary<Sort> for NRA {
         }
     }
 }
-impl Boundary<Sort> for LRA {
+impl<T: Tensor> Boundary<Sort> for LRA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             LRA::Const(op) => op.dom().map(Sort::from),
@@ -255,7 +256,7 @@ impl Boundary<Sort> for LRA {
     }
 }
 
-impl Boundary<Real> for Const {
+impl<T: Tensor> Boundary<Real> for Const<T> {
     fn dom(&self) -> Poly<Real> {
         Poly::unit()
     }
@@ -307,7 +308,7 @@ impl Boundary<Real> for Div {
 
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl Boundary<Real> for Linear {
+impl<T: Tensor> Boundary<Real> for Linear<T> {
     fn dom(&self) -> Poly<Real> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
@@ -431,13 +432,13 @@ impl Boundary<Sort> for Ne {
     }
 }
 
-impl fmt::Display for Const {
+impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl fmt::Display for Linear {
+impl<T: fmt::Display> fmt::Display for Linear<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Linear({}, {})", self.0, self.1)
     }

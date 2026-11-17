@@ -1,3 +1,11 @@
+/// A matrix of values, as held by the operations that carry data: the
+/// constants, and the coefficients of `Linear`. The operations are generic
+/// over it, so that any tensor representation can back them.
+pub trait Tensor {
+    /// The `[rows, cols]` shape of the matrix.
+    fn shape(&self) -> [usize; 2];
+}
+
 // Pick what tensor implementation to use based on the set features
 #[cfg(not(feature = "torch"))]
 pub use stub::PyTensor;
@@ -63,6 +71,12 @@ mod torch {
                 panic!("expected a matrix, got a tensor of shape {size:?}")
             };
             [rows as usize, cols as usize]
+        }
+    }
+
+    impl crate::Tensor for PyTensor {
+        fn shape(&self) -> [usize; 2] {
+            PyTensor::shape(self)
         }
     }
 
@@ -245,6 +259,12 @@ mod stub {
         /// The stub carries no data, so it has no shape.
         pub fn shape(&self) -> [usize; 2] {
             unreachable!("PyTensor operations require the `torch` feature")
+        }
+    }
+
+    impl crate::Tensor for PyTensor {
+        fn shape(&self) -> [usize; 2] {
+            PyTensor::shape(self)
         }
     }
 

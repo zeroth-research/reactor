@@ -27,6 +27,7 @@ sorts of the theory, rather than in [`Int`].
 
 use crate::sort::{Bool, Int};
 use base::boundary::{Boundary, Poly};
+use crate::Tensor;
 use base::mono;
 use derive_more::From;
 use std::fmt;
@@ -38,9 +39,9 @@ use subenum::subenum;
 /// [`sort::Ints`](crate::sort::Ints) of the sorts of all theories.
 pub use crate::sort::Ints as Sort;
 
-/// A constant integer matrix literal.
+/// A constant integer matrix literal, held in a tensor of type `T`.
 #[derive(Clone, Debug)]
-pub struct Const(pub crate::PyTensor);
+pub struct Const<T>(pub T);
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -74,7 +75,7 @@ pub struct Mod(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
 #[derive(Clone, Debug)]
-pub struct Linear(pub crate::PyTensor, pub crate::PyTensor);
+pub struct Linear<T>(pub T, pub T);
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
@@ -148,9 +149,9 @@ pub struct Ne(pub usize, pub usize);
 /// the casts between them: `From` up to `NIA`, and `TryFrom` down from it.
 #[subenum(LIA)]
 #[derive(Clone, Debug, From)]
-pub enum NIA {
+pub enum NIA<T> {
     #[subenum(LIA)]
-    Const(Const),
+    Const(Const<T>),
     #[subenum(LIA)]
     Add(Add),
     #[subenum(LIA)]
@@ -159,7 +160,7 @@ pub enum NIA {
     Div(Div),
     Mod(Mod),
     #[subenum(LIA)]
-    Linear(Linear),
+    Linear(Linear<T>),
     #[subenum(LIA)]
     ReLU(ReLU),
     #[subenum(LIA)]
@@ -183,7 +184,7 @@ pub enum NIA {
     Ne(Ne),
 }
 
-impl Boundary<Sort> for NIA {
+impl<T: Tensor> Boundary<Sort> for NIA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             NIA::Const(op) => op.dom().map(Sort::from),
@@ -230,7 +231,7 @@ impl Boundary<Sort> for NIA {
         }
     }
 }
-impl Boundary<Sort> for LIA {
+impl<T: Tensor> Boundary<Sort> for LIA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             LIA::Const(op) => op.dom().map(Sort::from),
@@ -270,7 +271,7 @@ impl Boundary<Sort> for LIA {
     }
 }
 
-impl Boundary<Int> for Const {
+impl<T: Tensor> Boundary<Int> for Const<T> {
     fn dom(&self) -> Poly<Int> {
         Poly::unit()
     }
@@ -332,7 +333,7 @@ impl Boundary<Int> for Mod {
 
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl Boundary<Int> for Linear {
+impl<T: Tensor> Boundary<Int> for Linear<T> {
     fn dom(&self) -> Poly<Int> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
@@ -456,13 +457,13 @@ impl Boundary<Sort> for Ne {
     }
 }
 
-impl fmt::Display for Const {
+impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl fmt::Display for Linear {
+impl<T: fmt::Display> fmt::Display for Linear<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Linear({}, {})", self.0, self.1)
     }

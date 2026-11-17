@@ -6,7 +6,7 @@ pub mod op;
 pub mod sort;
 pub mod tensor;
 
-pub use tensor::PyTensor;
+pub use tensor::{PyTensor, Tensor};
 
 pub trait Combinatorial<S> {
     // Returns the unary itype that chooses an element within the range

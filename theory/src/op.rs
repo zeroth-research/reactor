@@ -31,13 +31,15 @@ pub mod int;
 pub mod real;
 pub mod word;
 
+use crate::Tensor;
 use crate::sort;
 use base::boundary::{Boundary, Poly};
 use derive_more::From;
 use subenum::subenum;
 
 /// The operations of all theories: a value of `Any` is an operation of one
-/// of them, on the sorts in [`sort::Any`].
+/// of them, on the sorts in [`sort::Any`], with its data held in tensors of
+/// type `T`.
 ///
 /// `subenum` defines the logics that take whole theories: [`Prop`],
 /// propositional logic; [`NRA`] and [`NIA`], non-linear real and integer
@@ -48,34 +50,34 @@ use subenum::subenum;
 /// on their own, with the same casts.
 #[subenum(NRA, NIA, Prop, BV)]
 #[derive(Clone, Debug, From)]
-pub enum Any {
+pub enum Any<T> {
     #[subenum(NRA)]
-    Real(real::NRA),
+    Real(real::NRA<T>),
     #[subenum(NIA)]
-    Int(int::NIA),
+    Int(int::NIA<T>),
     #[subenum(NRA, NIA, Prop, BV)]
-    Bool(bool::Prop),
+    Bool(bool::Prop<T>),
     #[subenum(BV)]
-    Word(word::BV),
+    Word(word::BV<T>),
 }
 
 /// Linear real arithmetic: the linear operations of [`real`], with the
 /// boolean operations.
 #[derive(Clone, Debug, From)]
-pub enum LRA {
-    Real(real::LRA),
-    Bool(bool::Prop),
+pub enum LRA<T> {
+    Real(real::LRA<T>),
+    Bool(bool::Prop<T>),
 }
 
 /// Linear integer arithmetic: the linear operations of [`int`], with the
 /// boolean operations.
 #[derive(Clone, Debug, From)]
-pub enum LIA {
-    Int(int::LIA),
-    Bool(bool::Prop),
+pub enum LIA<T> {
+    Int(int::LIA<T>),
+    Bool(bool::Prop<T>),
 }
 
-impl Boundary<sort::Any> for Any {
+impl<T: Tensor> Boundary<sort::Any> for Any<T> {
     fn dom(&self) -> Poly<sort::Any> {
         match self {
             Any::Real(op) => op.dom().map(sort::Any::from),
@@ -95,8 +97,8 @@ impl Boundary<sort::Any> for Any {
     }
 }
 
-impl From<LRA> for Any {
-    fn from(op: LRA) -> Self {
+impl<T> From<LRA<T>> for Any<T> {
+    fn from(op: LRA<T>) -> Self {
         match op {
             LRA::Real(op) => Any::Real(op.into()),
             LRA::Bool(op) => Any::Bool(op),
@@ -104,10 +106,10 @@ impl From<LRA> for Any {
     }
 }
 
-impl TryFrom<Any> for LRA {
+impl<T> TryFrom<Any<T>> for LRA<T> {
     type Error = String;
 
-    fn try_from(op: Any) -> Result<Self, Self::Error> {
+    fn try_from(op: Any<T>) -> Result<Self, Self::Error> {
         match op {
             Any::Real(op) => op
                 .try_into()
@@ -119,8 +121,8 @@ impl TryFrom<Any> for LRA {
     }
 }
 
-impl From<LIA> for Any {
-    fn from(op: LIA) -> Self {
+impl<T> From<LIA<T>> for Any<T> {
+    fn from(op: LIA<T>) -> Self {
         match op {
             LIA::Int(op) => Any::Int(op.into()),
             LIA::Bool(op) => Any::Bool(op),
@@ -128,10 +130,10 @@ impl From<LIA> for Any {
     }
 }
 
-impl TryFrom<Any> for LIA {
+impl<T> TryFrom<Any<T>> for LIA<T> {
     type Error = String;
 
-    fn try_from(op: Any) -> Result<Self, Self::Error> {
+    fn try_from(op: Any<T>) -> Result<Self, Self::Error> {
         match op {
             Any::Int(op) => op
                 .try_into()
@@ -147,38 +149,38 @@ impl TryFrom<Any> for LIA {
 // between `Any` and each logic, but not between two of them. `Prop` embeds
 // into every other logic, and each linear logic into its non-linear one.
 // Their inverses are absent, as nothing casts down between logics.
-impl From<Prop> for NRA {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for NRA<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         NRA::Bool(op)
     }
 }
 
-impl From<Prop> for NIA {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for NIA<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         NIA::Bool(op)
     }
 }
 
-impl From<Prop> for LRA {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for LRA<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         LRA::Bool(op)
     }
 }
 
-impl From<Prop> for LIA {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for LIA<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         LIA::Bool(op)
     }
 }
 
-impl From<Prop> for BV {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for BV<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         BV::Bool(op)
     }
 }
 
-impl From<LRA> for NRA {
-    fn from(op: LRA) -> Self {
+impl<T> From<LRA<T>> for NRA<T> {
+    fn from(op: LRA<T>) -> Self {
         match op {
             LRA::Real(op) => NRA::Real(op.into()),
             LRA::Bool(op) => NRA::Bool(op),
@@ -186,8 +188,8 @@ impl From<LRA> for NRA {
     }
 }
 
-impl From<LIA> for NIA {
-    fn from(op: LIA) -> Self {
+impl<T> From<LIA<T>> for NIA<T> {
+    fn from(op: LIA<T>) -> Self {
         match op {
             LIA::Int(op) => NIA::Int(op.into()),
             LIA::Bool(op) => NIA::Bool(op),
@@ -199,19 +201,43 @@ impl From<LIA> for NIA {
 mod tests {
     use super::*;
 
-    fn real(op: impl Into<real::NRA>) -> Any {
+    /// A tensor carrying its shape only, enough to compute boundaries.
+    #[derive(Clone, Debug)]
+    struct Mat([usize; 2]);
+
+    impl Tensor for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    // The operations and logics, instantiated with `Mat`; these shadow the
+    // generic ones of `super`.
+    type Any = super::Any<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type NRA = super::NRA<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type NIA = super::NIA<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type LRA = super::LRA<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type LIA = super::LIA<Mat>;
+    type Prop = super::Prop<Mat>;
+    type BV = super::BV<Mat>;
+
+    fn real(op: impl Into<real::NRA<Mat>>) -> Any {
         Any::Real(op.into())
     }
 
-    fn int(op: impl Into<int::NIA>) -> Any {
+    fn int(op: impl Into<int::NIA<Mat>>) -> Any {
         Any::Int(op.into())
     }
 
-    fn boolean(op: impl Into<bool::Prop>) -> Any {
+    fn boolean(op: impl Into<bool::Prop<Mat>>) -> Any {
         Any::Bool(op.into())
     }
 
-    fn word(op: impl Into<word::BV>) -> Any {
+    fn word(op: impl Into<word::BV<Mat>>) -> Any {
         Any::Word(op.into())
     }
 
@@ -237,13 +263,37 @@ mod tests {
     }
 
     #[test]
+    fn data_operations_take_their_shape_from_their_tensors() {
+        let c = real(real::Const(Mat([2, 3])));
+        assert_eq!(c.dom(), Poly::unit());
+        let cod: Poly<sort::Any> = base::mono![sort::Real::new([2, 3]).into()].into();
+        assert_eq!(c.cod(), cod);
+
+        // `A` of shape `[2, 3]` and `B` of shape `[2, 4]` take `[3, 4]` to `[2, 4]`
+        let l = int(int::Linear(Mat([2, 3]), Mat([2, 4])));
+        let dom: Poly<sort::Any> = base::mono![sort::Int::new([3, 4]).into()].into();
+        let cod: Poly<sort::Any> = base::mono![sort::Int::new([2, 4]).into()].into();
+        assert_eq!(l.dom(), dom);
+        assert_eq!(l.cod(), cod);
+
+        let w = word(word::Const(Mat([1, 2]), 8));
+        let cod: Poly<sort::Any> =
+            base::mono![sort::Word::new_unchecked(8, [1, 2]).into()].into();
+        assert_eq!(w.cod(), cod);
+
+        // constants are linear
+        assert!(LRA::try_from(c).is_ok());
+        assert!(LIA::try_from(l).is_ok());
+    }
+
+    #[test]
     fn theories_mark_their_linear_operations() {
-        assert!(real::LRA::try_from(real::NRA::from(real::Add(2, 3))).is_ok());
-        assert!(real::LRA::try_from(real::NRA::from(real::Lt(2, 3))).is_ok());
-        assert!(real::LRA::try_from(real::NRA::from(real::Mul(2, 3))).is_err());
-        assert!(real::LRA::try_from(real::NRA::from(real::MatMul(2, 3, 4))).is_err());
-        assert!(int::LIA::try_from(int::NIA::from(int::Mod(2, 3))).is_err());
-        assert!(int::LIA::try_from(int::NIA::from(int::ReLU(2, 3))).is_ok());
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::Add(2, 3))).is_ok());
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::Lt(2, 3))).is_ok());
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::Mul(2, 3))).is_err());
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::MatMul(2, 3, 4))).is_err());
+        assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::Mod(2, 3))).is_err());
+        assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::ReLU(2, 3))).is_ok());
     }
 
     #[test]
@@ -360,11 +410,11 @@ mod tests {
 
         // signed and unsigned operations are distinct operations
         assert!(matches!(
-            word::BV::from(word::signed::Div(8, 2, 3)),
+            word::BV::<Mat>::from(word::signed::Div(8, 2, 3)),
             word::BV::SDiv(_)
         ));
         assert!(matches!(
-            word::BV::from(word::unsigned::Div(8, 2, 3)),
+            word::BV::<Mat>::from(word::unsigned::Div(8, 2, 3)),
             word::BV::UDiv(_)
         ));
     }

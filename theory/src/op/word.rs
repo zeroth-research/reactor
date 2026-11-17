@@ -47,6 +47,7 @@ comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
 
 use crate::sort::{Bool, Word};
 use base::boundary::{Boundary, Poly};
+use crate::Tensor;
 use base::mono;
 use derive_more::From;
 use std::fmt;
@@ -58,11 +59,12 @@ use std::fmt;
 /// theories.
 pub use crate::sort::Words as Sort;
 
-/// A constant matrix literal of `w`-bit words, as `Const(tensor, w)`.
+/// A constant matrix literal of `w`-bit words, as `Const(tensor, w)`, held
+/// in a tensor of type `T`.
 ///
 /// SMT-LIB2: a literal `#b…` or `(_ bvN w)`.
 #[derive(Clone, Debug)]
-pub struct Const(pub crate::PyTensor, pub usize);
+pub struct Const<T>(pub T, pub usize);
 
 /// Pointwise concatenation `x ++ y` of a `u`-bit word `x`, the high bits
 /// of the result, and a `v`-bit word `y`, its low bits, as
@@ -192,8 +194,8 @@ pub struct Ne(pub usize, pub usize, pub usize);
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
 /// as `SDiv` for [`signed::Div`] and `UDiv` for [`unsigned::Div`].
 #[derive(Clone, Debug, From)]
-pub enum BV {
-    Const(Const),
+pub enum BV<T> {
+    Const(Const<T>),
     Concat(Concat),
     Extract(Extract),
     Repeat(Repeat),
@@ -232,7 +234,7 @@ pub enum BV {
     UGe(unsigned::Ge),
 }
 
-impl Boundary<Sort> for BV {
+impl<T: Tensor> Boundary<Sort> for BV<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             BV::Const(op) => op.dom(),
@@ -318,7 +320,7 @@ impl Boundary<Sort> for BV {
     }
 }
 
-impl Boundary<Sort> for Const {
+impl<T: Tensor> Boundary<Sort> for Const<T> {
     fn dom(&self) -> Poly<Sort> {
         Poly::unit()
     }
@@ -523,7 +525,7 @@ impl Boundary<Sort> for Ne {
     }
 }
 
-impl fmt::Display for Const {
+impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }

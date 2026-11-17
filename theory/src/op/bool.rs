@@ -13,13 +13,14 @@ information to compute its [`Boundary`]:
 
 use crate::sort::Bool;
 use base::boundary::{Boundary, Poly};
+use crate::Tensor;
 use base::mono;
 use derive_more::From;
 use std::fmt;
 
-/// A constant boolean matrix literal.
+/// A constant boolean matrix literal, held in a tensor of type `T`.
 #[derive(Clone, Debug)]
-pub struct Const(pub crate::PyTensor);
+pub struct Const<T>(pub T);
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -40,15 +41,15 @@ pub struct Not(pub usize, pub usize);
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
 #[derive(Clone, Debug, From)]
-pub enum Prop {
-    Const(Const),
+pub enum Prop<T> {
+    Const(Const<T>),
     And(And),
     Or(Or),
     Xor(Xor),
     Not(Not),
 }
 
-impl Boundary<Bool> for Prop {
+impl<T: Tensor> Boundary<Bool> for Prop<T> {
     fn dom(&self) -> Poly<Bool> {
         match self {
             Prop::Const(op) => op.dom(),
@@ -70,7 +71,7 @@ impl Boundary<Bool> for Prop {
     }
 }
 
-impl Boundary<Bool> for Const {
+impl<T: Tensor> Boundary<Bool> for Const<T> {
     fn dom(&self) -> Poly<Bool> {
         Poly::unit()
     }
@@ -120,7 +121,7 @@ impl Boundary<Bool> for Not {
     }
 }
 
-impl fmt::Display for Const {
+impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
