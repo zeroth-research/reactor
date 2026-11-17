@@ -62,8 +62,24 @@ step). (`sv-parser` rejects `@ *` with a space; `@*` and `@ (*)` work.)
 Attributes `(* … *)` are rejected, except `(* parallel_case *)` on a `case`
 statement (kept in [`ast::StmtKind::Case`]; sizing
 accepts it only when the labels are distinct constants, where it changes
-nothing). Others may change what synthesis builds (`full_case` turns
-missing cases into don't-cares), so they are not ignored.
+nothing) and `(* blackbox *)` on a module. Others may change what synthesis
+builds (`full_case` turns missing cases into don't-cares), so they are not
+ignored.
+
+A module marked `(* blackbox *)` is a stub of a cell outside the design
+(see [`ast::Module::blackbox`]): it may declare parameters (also in its
+body) but nothing else, and the widths of its ports must not depend on its
+parameters, since the values an instance gives them have no effect. A
+blackbox is never the top module. `inout` ports (*pins*) are accepted on
+any module and kept apart from the other ports ([`ast::Module::pins`]);
+elaboration and typing restrict their use.
+
+A design may consist of several files ([`parse_design_files`]): they are
+read as one text in the order given, so a macro defined in one file is
+defined in the following ones (as Yosys and iverilog do). Positions count
+the lines of all files; [`Design::locate`] gives the file and the position
+in it. The files of `$readmemb`/`$readmemh` are found relative to the
+directory of the file declaring the module.
 
 `sv-parser` ignores operator precedence: a chain of binary operators comes
 out nested to the right in source order (`a * b + c` as `a * (b + c)`), and
@@ -113,20 +129,37 @@ pub fn parse(source: &str, path: impl AsRef<Path>) -> Result<Module> {
 
 /// Parses a file.
 pub fn parse_design_file(path: impl AsRef<Path>) -> Result<Design> {
-    let path = path.as_ref();
-    let source = std::fs::read_to_string(path)
-        .map_err(|e| Error::new(Span::default(), format!("{}: {e}", path.display())))?;
-    parse_design(&source, path)
+    parse_design_files(&[path])
+}
+
+/// Parses several files as one design, as if they were one file in the
+/// order given (a macro defined in one is defined in the following ones,
+/// as for Yosys and iverilog). Errors are located with [`Design::locate`];
+/// those of this function already carry their file.
+pub fn parse_design_files<P: AsRef<Path>>(paths: &[P]) -> Result<Design> {
+    let mut sources = Vec::new();
+    for path in paths {
+        let path = path.as_ref();
+        let source = std::fs::read_to_string(path).map_err(|e| {
+            Error::new(Span::default(), format!("{}: {e}", path.display())).in_file(path)
+        })?;
+        sources.push((source, path.to_path_buf()));
+    }
+    parse_sources(sources)
 }
 
 /// Parses `source`; `path` is used for messages of the preprocessor and to
 /// find the files of `$readmemb`/`$readmemh` (relative to its directory).
 pub fn parse_design(source: &str, path: impl AsRef<Path>) -> Result<Design> {
-    let dir = path
-        .as_ref()
-        .parent()
-        .unwrap_or(Path::new(""))
-        .to_path_buf();
+    parse_sources(vec![(source.to_string(), path.as_ref().to_path_buf())])
+}
+
+/// Parses the sources, each with its path, as one text.
+fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
+    let Some((_, first)) = sources.first() else {
+        return Err(Error::new(Span::default(), "no source file"));
+    };
+    let first = first.clone();
     // `SYNTHESIS` is predefined (as `1`), as by Yosys: the translation
     // follows what synthesis reads
     let synthesis = sv::Define::new(
@@ -137,24 +170,66 @@ pub fn parse_design(source: &str, path: impl AsRef<Path>) -> Result<Design> {
     let defines: HashMap<String, Option<sv::Define>> =
         HashMap::from([("SYNTHESIS".to_string(), Some(synthesis))]);
     let includes: [PathBuf; 0] = [];
+    let mut text = String::new();
+    let mut files = Vec::new();
+    for (source, path) in sources {
+        let line = text.matches('\n').count() + 1;
+        let dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
+        files.push(SourceFile { path, dir, line });
+        text.push_str(&source);
+        if !source.ends_with('\n') {
+            text.push('\n');
+        }
+    }
     let mut lines = vec![0];
-    lines.extend(source.match_indices('\n').map(|(i, _)| i + 1));
-    let (tree, _) =
-        sv::parse_sv_str(source, path, &defines, &includes, false, false).map_err(|e| match e {
-            sv::Error::Parse(Some((_, offset))) => Error::new(at(&lines, offset), "syntax error"),
+    lines.extend(text.match_indices('\n').map(|(i, _)| i + 1));
+    let several = files.len() > 1;
+    let located = |e: Error| -> Error { if several { locate_in(&files, e) } else { e } };
+    let (tree, _) = sv::parse_sv_str(&text, &first, &defines, &includes, false, false).map_err(
+        |e| match e {
+            sv::Error::Parse(Some((_, offset))) => {
+                located(Error::new(at(&lines, offset), "syntax error"))
+            }
             e => Error::new(Span::default(), e.to_string()),
-        })?;
-    let d = Design { tree, lines, dir };
+        },
+    )?;
+    let d = Design { tree, lines, files };
     let mut seen: BTreeMap<Name, Span> = BTreeMap::new();
-    let cx = d.cx(&[]);
-    for m in d.decls()? {
-        let id = &m.nodes.0.nodes.3;
-        let name = cx.identifier(&id.nodes.0)?;
+    let cx = d.cx(&[], 0);
+    for m in d.decls().map_err(|e| d.located(e))? {
+        let (attrs, _, _, id, ..) = &m.nodes.0.nodes;
+        cx.module_attributes(attrs).map_err(|e| d.located(e))?;
+        let name = cx.identifier(&id.nodes.0).map_err(|e| d.located(e))?;
         if let Some(prev) = seen.insert(name.clone(), cx.span(id)) {
-            return cx.err(id, format!("module `{name}` already declared at {prev}"));
+            let prev = if d.files.len() > 1 {
+                let (path, span) = d.locate(prev);
+                format!("{}:{span}", path.display())
+            } else {
+                prev.to_string()
+            };
+            let e = Error::new(
+                cx.span(id),
+                format!("module `{name}` already declared at {prev}"),
+            );
+            return Err(d.located(e));
         }
     }
     Ok(d)
+}
+
+/// `e` with its position in its own file, and the file (see
+/// [`Design::locate`]).
+fn locate_in(files: &[SourceFile], e: Error) -> Error {
+    if e.span == Span::default() {
+        return e;
+    }
+    let k = files.partition_point(|f| f.line <= e.span.line).max(1) - 1;
+    let f = &files[k];
+    let span = Span {
+        line: e.span.line - f.line + 1,
+        col: e.span.col,
+    };
+    Error { span, ..e }.in_file(&f.path)
 }
 
 /// The position of a byte offset, with `lines` the offsets at which lines
@@ -167,24 +242,60 @@ fn at(lines: &[usize], offset: usize) -> Span {
     }
 }
 
-/// A parsed source file. Its modules are elaborated on demand: once for
-/// each set of parameter values.
+/// Parsed source files. Their modules are elaborated on demand: once for
+/// each set of parameter values. Positions ([`Span`]) count the lines of
+/// all files in order, as if they were one text; [`Design::locate`] gives
+/// the file and the position in it.
 pub struct Design {
     tree: SyntaxTree,
     lines: Vec<usize>,
-    /// The directory of the source file.
+    files: Vec<SourceFile>,
+}
+
+/// A source file of a [`Design`].
+struct SourceFile {
+    path: PathBuf,
+    /// The directory of the file.
     dir: PathBuf,
+    /// The line at which the file starts in the design.
+    line: usize,
 }
 
 impl Design {
-    fn cx<'t>(&'t self, overrides: &'t [Override]) -> Cx<'t> {
+    /// The file of a position of the design, with the position in that
+    /// file.
+    pub fn locate(&self, span: Span) -> (PathBuf, Span) {
+        let e = locate_in(&self.files, Error::new(span, ""));
+        let path = e.file.unwrap_or_else(|| self.files[0].path.clone());
+        (path, e.span)
+    }
+
+    /// The error with its position in its file, and the file, if the
+    /// design has several files (an error with a file is left alone).
+    pub fn located(&self, e: Error) -> Error {
+        if self.files.len() > 1 && e.file.is_none() {
+            locate_in(&self.files, e)
+        } else {
+            e
+        }
+    }
+
+    /// The paths of the files, in order.
+    pub fn paths(&self) -> Vec<&Path> {
+        self.files.iter().map(|f| f.path.as_path()).collect()
+    }
+
+    /// A context for elaborating a module at `line`, whose `$readmem`
+    /// files are found relative to the directory of its file.
+    fn cx<'t>(&'t self, overrides: &'t [Override], line: usize) -> Cx<'t> {
+        let k = self.files.partition_point(|f| f.line <= line).max(1) - 1;
         Cx {
             tree: &self.tree,
             lines: &self.lines,
             params: RefCell::new(BTreeMap::new()),
             overrides,
             used: RefCell::new(BTreeSet::new()),
-            dir: &self.dir,
+            dir: &self.files[k].dir,
             arrays: RefCell::new(Vec::new()),
             inits: RefCell::new(Vec::new()),
             unknown: RefCell::new(Vec::new()),
@@ -194,7 +305,7 @@ impl Design {
 
     /// The module declarations, in source order.
     fn decls(&self) -> Result<Vec<&sv::ModuleDeclarationAnsi>> {
-        let cx = self.cx(&[]);
+        let cx = self.cx(&[], 0);
         let st = (&self.tree)
             .into_iter()
             .find_map(|n| match n {
@@ -224,7 +335,7 @@ impl Design {
     }
 
     fn find(&self, name: &str) -> Option<&sv::ModuleDeclarationAnsi> {
-        let cx = self.cx(&[]);
+        let cx = self.cx(&[], 0);
         let decls = self.decls().ok()?;
         decls
             .into_iter()
@@ -233,7 +344,7 @@ impl Design {
 
     /// The names of the modules, in source order.
     pub fn names(&self) -> Vec<Name> {
-        let cx = self.cx(&[]);
+        let cx = self.cx(&[], 0);
         let decls = self.decls().unwrap_or_default();
         decls
             .into_iter()
@@ -246,9 +357,16 @@ impl Design {
         self.find(name).is_some()
     }
 
-    /// The top module: the one no module instantiates.
+    /// Whether the module `name` is marked `(* blackbox *)`.
+    pub fn is_blackbox(&self, name: &str) -> bool {
+        let cx = self.cx(&[], 0);
+        self.find(name)
+            .is_some_and(|m| cx.module_attributes(&m.nodes.0.nodes.0) == Ok(true))
+    }
+
+    /// The top module: the one no module instantiates (blackboxes aside).
     pub fn top(&self) -> Result<Name> {
-        let cx = self.cx(&[]);
+        let cx = self.cx(&[], 0);
         let mut instantiated = BTreeSet::new();
         for m in self.decls()? {
             for n in Iter::new(m.into()) {
@@ -260,7 +378,7 @@ impl Design {
         let tops: Vec<Name> = self
             .names()
             .into_iter()
-            .filter(|n| !instantiated.contains(n))
+            .filter(|n| !instantiated.contains(n) && !self.is_blackbox(n))
             .collect();
         match tops.as_slice() {
             [top] => Ok(top.clone()),
@@ -289,7 +407,8 @@ impl Design {
         let m = self
             .find(name)
             .ok_or_else(|| Error::new(Span::default(), format!("no module `{name}`")))?;
-        self.cx(overrides).module(m)
+        let line = self.cx(&[], 0).span(m).line;
+        self.cx(overrides, line).module(m)
     }
 }
 
@@ -388,7 +507,7 @@ impl Cx<'_> {
     fn module(&self, m: &sv::ModuleDeclarationAnsi) -> Result<Module> {
         let (header, timeunits, items, _, _) = &m.nodes;
         let (attrs, _, lifetime, name, imports, params, ports, _) = &header.nodes;
-        self.absent(attrs, "attribute")?;
+        let blackbox = self.module_attributes(attrs)?;
         self.absent(lifetime, "lifetime")?;
         self.absent(imports, "package import")?;
         self.absent(timeunits, "timeunits declaration")?;
@@ -400,6 +519,8 @@ impl Cx<'_> {
             arrays: Vec::new(),
             items: Vec::new(),
             inits: Vec::new(),
+            pins: Vec::new(),
+            blackbox,
         };
         if let Some(params) = params {
             self.parameter_port_list(params, &mut module)?;
@@ -410,15 +531,37 @@ impl Cx<'_> {
             let mut prev = None;
             for (attrs, port) in list.contents() {
                 self.absent(attrs, "attribute")?;
-                let p = self.port(port, prev)?;
-                prev = Some((p.dir, p.decl.ty));
-                module.ports.push(p);
+                let (dir, decl) = if blackbox {
+                    self.blackbox_port(port, prev, &module.name)?
+                } else {
+                    self.port(port, prev)?
+                };
+                prev = Some((dir, decl.ty));
+                match dir {
+                    Some(dir) => module.ports.push(Port { dir, decl }),
+                    None => module.pins.push(decl),
+                }
             }
         }
         // with a parameter port list, a `parameter` in the body is local
         let body_overridable = params.is_none();
         for item in items {
+            let before = (module.items.len(), module.decls.len());
+            let loads = self.loads.borrow().len() + self.inits.borrow().len();
             self.module_item(item, &mut module, body_overridable)?;
+            let after = (module.items.len(), module.decls.len());
+            let loaded = self.loads.borrow().len() + self.inits.borrow().len();
+            if blackbox && (before != after || loads != loaded || !self.arrays.borrow().is_empty())
+            {
+                return self.err(
+                    item,
+                    format!(
+                        "the blackbox `{}` has a body: a blackbox declares only its ports and \
+                         parameters",
+                        module.name
+                    ),
+                );
+            }
         }
         module.arrays = self.arrays.take();
         module.inits = self.inits.take();
@@ -436,6 +579,56 @@ impl Cx<'_> {
             }
         }
         Ok(module)
+    }
+
+    /// The attributes of a module: only `(* blackbox *)`, without a value.
+    /// Whether it is there.
+    fn module_attributes(&self, attrs: &[sv::AttributeInstance]) -> Result<bool> {
+        let mut blackbox = false;
+        for a in attrs {
+            for spec in a.nodes.1.contents() {
+                let (name, value) = &spec.nodes;
+                if self.text(name) != "blackbox" {
+                    return self.err(
+                        spec,
+                        format!("attribute `{}` not supported", self.text(spec)),
+                    );
+                }
+                if value.is_some() {
+                    return self.err(spec, "`blackbox` takes no value");
+                }
+                blackbox = true;
+            }
+        }
+        Ok(blackbox)
+    }
+
+    /// A port of the blackbox `module`: its width must not depend on a
+    /// parameter, since the values given to the parameters of a blackbox
+    /// are not used.
+    fn blackbox_port(
+        &self,
+        p: &sv::AnsiPortDeclaration,
+        prev: Option<(Option<Dir>, Ty)>,
+        module: &str,
+    ) -> Result<(Option<Dir>, Decl)> {
+        let params = self.params.take();
+        let without = self.port(p, prev);
+        self.params.replace(params);
+        match without {
+            Ok(port) => Ok(port),
+            Err(e) => match self.port(p, prev) {
+                Ok((_, decl)) => Err(Error::new(
+                    e.span,
+                    format!(
+                        "the width of port `{}` of the blackbox `{module}` depends on a \
+                         parameter: the widths of blackbox ports must be constants",
+                        decl.name
+                    ),
+                )),
+                Err(e) => Err(e),
+            },
+        }
     }
 
     /// `#(parameter N = 8, localparam M = N + 1, …)` or `#(N = 8, …)`.
@@ -602,7 +795,14 @@ impl Cx<'_> {
 
     /// A port of the ANSI header. Direction and type are inherited from the
     /// previous port where omitted (`input logic [7:0] a, b`).
-    fn port(&self, p: &sv::AnsiPortDeclaration, prev: Option<(Dir, Ty)>) -> Result<Port> {
+    /// A port, with its direction (`None` for `inout`); `prev` is the
+    /// direction and type of the previous port, which a port without a
+    /// header takes.
+    fn port(
+        &self,
+        p: &sv::AnsiPortDeclaration,
+        prev: Option<(Option<Dir>, Ty)>,
+    ) -> Result<(Option<Dir>, Decl)> {
         let (dir, ty, id, default) = match p {
             sv::AnsiPortDeclaration::Net(n) => {
                 let (header, id, dims, default) = &n.nodes;
@@ -644,8 +844,9 @@ impl Cx<'_> {
             p => return self.unsupported(p),
         };
         let dir = match dir {
-            Some(sv::PortDirection::Input(_)) => Dir::Input,
-            Some(sv::PortDirection::Output(_)) => Dir::Output,
+            Some(sv::PortDirection::Input(_)) => Some(Dir::Input),
+            Some(sv::PortDirection::Output(_)) => Some(Dir::Output),
+            Some(sv::PortDirection::Inout(_)) => None,
             Some(d) => return self.unsupported(d),
             None => match prev {
                 Some((dir, _)) => dir,
@@ -659,8 +860,12 @@ impl Cx<'_> {
         };
         let name = self.identifier(&id.nodes.0)?;
         if let Some((_, value)) = default {
-            if dir == Dir::Input {
-                return self.err(value, "default values of inputs not supported");
+            match dir {
+                Some(Dir::Input) => {
+                    return self.err(value, "default values of inputs not supported");
+                }
+                None => return self.err(value, "default values of `inout` ports not supported"),
+                Some(Dir::Output) => {}
             }
             // a constant expression in the grammar, so evaluated here
             let span = self.span(id);
@@ -685,14 +890,12 @@ impl Cx<'_> {
                 }
             }
         }
-        Ok(Port {
-            dir,
-            decl: Decl {
-                name,
-                ty,
-                span: self.span(id),
-            },
-        })
+        let decl = Decl {
+            name,
+            ty,
+            span: self.span(id),
+        };
+        Ok((dir, decl))
     }
 
     fn net_type(&self, net: &sv::NetType) -> Result<()> {
@@ -922,6 +1125,7 @@ impl Cx<'_> {
                 name: self.identifier(&id.nodes.0)?,
                 params: params.clone(),
                 conns: out,
+                pins: Vec::new(),
                 span: self.span(id),
             }));
         }

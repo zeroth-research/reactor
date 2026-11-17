@@ -149,7 +149,10 @@ pub fn env(m: &Module) -> Result<Env> {
             };
             (d.name.clone(), sig)
         });
-    let mut names: Vec<_> = params.chain(insts).chain(arrays).chain(sigs).collect();
+    let pins = m.pins.iter().map(|d| (&d.name, d.span, None));
+    let mut names: Vec<_> = (params.chain(insts).chain(arrays).chain(pins))
+        .chain(sigs)
+        .collect();
     names.sort_by_key(|(_, span, _)| *span);
     let mut seen: BTreeMap<&Name, Span> = BTreeMap::new();
     let mut env = Env::new();
@@ -188,6 +191,15 @@ pub fn env(m: &Module) -> Result<Env> {
 /// `y[3:0]` and `y[7:4]` from two `assign`s is rejected. Likewise, all
 /// elements of an array have one driver.
 ///
+/// Blackboxes and pins: a blackbox (see
+/// [`Module::blackbox`](crate::ast::Module::blackbox)) has nothing to check
+/// but its ports. An output of a blackbox drives the signal it is
+/// connected to like the output of any instance, but that signal is then a
+/// free value, like an input, so it may not be an output of the module
+/// (an `assign` from an internal signal makes one). A pin (`inout` port)
+/// is no signal: any use other than a connection to a pin of a blackbox
+/// (checked in [`elab`]) is rejected.
+///
 /// Clocks: an `always_ff` block runs at the rising (`posedge`) or falling
 /// (`negedge`) edge of a 1-bit signal, and a clock port of an instance is
 /// connected to the name of a 1-bit signal. A module may have several
@@ -204,6 +216,11 @@ pub fn env(m: &Module) -> Result<Env> {
 /// from is checked by [`domains`].
 pub fn check(m: &Module) -> Result<Env> {
     let env = env(m)?;
+    if m.blackbox {
+        // ports and parameters only (the frontend made sure)
+        return Ok(env);
+    }
+    pin_uses(m)?;
     // the position of the first assignment to each signal, and its item
     let mut driver: BTreeMap<Name, (Span, usize)> = BTreeMap::new();
     // every use of a signal as a clock
@@ -299,6 +316,20 @@ pub fn check(m: &Module) -> Result<Env> {
                                 ));
                             };
                             let t = drive(&env, &mut driver, y, e.span, i)?;
+                            // a blackbox output acts like an input of the
+                            // module, so no output of it
+                            if f.blackbox && env[y].dir == Some(Dir::Output) {
+                                return Err(Error::new(
+                                    e.span,
+                                    format!(
+                                        "`{y}` is an output of `{}`, but port `{}` of the \
+                                         blackbox `{}` gives a free value in every time \
+                                         step, like an input: connect an internal signal \
+                                         and `assign` it to `{y}`",
+                                        m.name, c.port, inst.name
+                                    ),
+                                ));
+                            }
                             if t.width != f.ty.width {
                                 return Err(Error::new(
                                     e.span,
@@ -332,6 +363,74 @@ pub fn check(m: &Module) -> Result<Env> {
         }
     }
     Ok(env)
+}
+
+/// Rejects every use of a pin (an `inout` port) other than a connection
+/// to a pin of a blackbox (those are no longer among the connections, see
+/// [`Instance::pins`](crate::ast::Instance::pins)): a pin is outside the
+/// translated design, so nothing in it reads or drives a pin.
+fn pin_uses(m: &Module) -> Result<()> {
+    if m.pins.is_empty() {
+        return Ok(());
+    }
+    let is_pin = |x: &str| m.pins.iter().any(|p| p.name == x);
+    let err = |x: &str, span: Span| {
+        Err(Error::new(
+            span,
+            format!(
+                "`{x}` is an `inout` port: it may only be connected to an `inout` port of a \
+                 blackbox"
+            ),
+        ))
+    };
+    for item in &m.items {
+        let mut uses: Vec<(&Name, Span)> = item.reads();
+        match item {
+            Item::Assign { lhs, .. } => {
+                let mut targets = Vec::new();
+                lhs.targets(&mut targets);
+                uses.extend(targets.into_iter().map(|y| (y, lhs.span)));
+            }
+            Item::AlwaysFf {
+                clock,
+                clock_span,
+                reset,
+                body,
+                ..
+            } => {
+                uses.push((clock, *clock_span));
+                uses.extend(reset.iter().map(|r| (&r.name, r.span)));
+                let mut lvalues = Vec::new();
+                body.lvalues(&mut lvalues);
+                for lv in lvalues {
+                    let mut targets = Vec::new();
+                    lv.targets(&mut targets);
+                    uses.extend(targets.into_iter().map(|y| (y, lv.span)));
+                }
+            }
+            Item::AlwaysComb { body, .. } => {
+                let mut lvalues = Vec::new();
+                body.lvalues(&mut lvalues);
+                for lv in lvalues {
+                    let mut targets = Vec::new();
+                    lv.targets(&mut targets);
+                    uses.extend(targets.into_iter().map(|y| (y, lv.span)));
+                }
+            }
+            Item::Instance(i) => {
+                for c in &i.conns {
+                    if let Some(e) = &c.actual {
+                        e.reads(&mut uses);
+                    }
+                }
+            }
+        }
+        uses.sort_by_key(|(_, span)| *span);
+        if let Some((x, span)) = uses.into_iter().find(|(x, _)| is_pin(x)) {
+            return err(x, span);
+        }
+    }
+    Ok(())
 }
 
 /// Checks the initial value of a signal: a constant (an expression that
@@ -411,7 +510,9 @@ enum Source<'m> {
 /// clocked, through the chain below, by itself is a loop of awaits (its
 /// edge test awaits its clock), which lowering rejects.
 ///
-/// A clock is either an input of the top module (an *input clock*), or a
+/// A clock is either an input of the top module or an output of a
+/// blackbox (an *input clock*: both are free values, set by the
+/// environment in every time step, such as the output of a PLL), or a
 /// register (a *derived clock*, e.g. a divider `slow <= !slow`), or a
 /// copy or a constant bit select of one of these driven by an `assign`
 /// (`assign c = cnt[3]`), also through instance ports. Its *root* is the
@@ -421,7 +522,7 @@ enum Source<'m> {
 /// input clock must have 1 bit (a bit of a wider input is no clock).
 ///
 /// An asynchronous reset follows the same chain and must end at an input
-/// (of any width) or at a register: it acts as a level within the time
+/// or a blackbox output (of any width) or at a register: it acts as a level within the time
 /// step, and a reset computed by an operator could glitch and reset
 /// registers that rounds keep. Releasing the reset is no crossing of its
 /// own: the block's `if (rst)` reads the reset at the clock edge like any
@@ -430,7 +531,8 @@ enum Source<'m> {
 /// The domain of a signal is the set of roots of the clocks of the
 /// registers it depends on through combinational logic (`assign`,
 /// `always_comb`, instance connections): the root of its own clock for a
-/// register, none for an input. A register may read only signals whose
+/// register, none for an input or a blackbox output. A register may read
+/// only signals whose
 /// domain is empty or its own root: registers on either edge of one input
 /// clock and of the clocks derived from it are *related*, and reads among
 /// them see the value from before the edge (see the timing assumptions in
@@ -457,9 +559,10 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
         for item in &i.module.items {
             match item {
                 Item::Instance(u) => {
-                    for (c, _) in u.conns(Dir::Input) {
+                    for (c, f) in u.conns(Dir::Input) {
                         if let Some(e) = &c.actual
                             && c.shared().is_none()
+                            && !f.blackbox
                         {
                             let path = format!("{prefix}{}.{}", u.name, c.port);
                             let source = Source::Conn(e, c.span);
@@ -476,13 +579,22 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
             }
         }
     }
-    let top: BTreeMap<&Name, usize> = inst
+    // the inputs of the top module and the outputs of blackboxes: free
+    // values, by name, with their widths
+    let mut top: BTreeMap<Name, usize> = inst
         .module
         .ports
         .iter()
         .filter(|p| p.dir == Dir::Input)
-        .map(|p| (&p.decl.name, p.decl.ty.width))
+        .map(|p| (p.decl.name.clone(), p.decl.ty.width))
         .collect();
+    for (k, (i, _)) in insts.iter().enumerate() {
+        for (c, f) in i.module.instances().flat_map(|u| u.conns(Dir::Output)) {
+            if let (true, Some(y)) = (f.blackbox, c.shared()) {
+                top.insert(canon(k, y), f.ty.width);
+            }
+        }
+    }
 
     // the root of the clock `c` of instance `k`, used at `span`; for a
     // reset (`reset`), the input or register at the end of the chain
@@ -501,8 +613,9 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
                     Some(1) => Ok(x),
                     Some(_) if reset => Ok(x),
                     Some(_) => Err(err(format!(
-                        "the clock `{c}` is a bit of the input `{x}`: input clocks must be \
-                         1-bit inputs"
+                        "the clock `{c}` is a bit of `{x}`, which has {} bits: input clocks \
+                         must be 1-bit inputs (or blackbox outputs)",
+                        top[&x]
                     ))),
                     None => Err(err(format!("internal error: `{x}` has no driver"))),
                 };
@@ -595,7 +708,7 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
                     }
                 }
                 Item::Instance(u) => {
-                    for (c, _) in u.conns(Dir::Input) {
+                    for (c, _) in u.conns(Dir::Input).filter(|(_, f)| !f.blackbox) {
                         let Some(e) = &c.actual else { continue };
                         let mut reads = Vec::new();
                         e.reads(&mut reads);

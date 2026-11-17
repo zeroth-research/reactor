@@ -222,10 +222,10 @@ fn rejected_declarations() {
         "range [0:7] not supported",
     );
     rejects(
-        header("module m(input logic [7:0] a, inout logic [7:0] y);"),
+        header("module m(input logic [7:0] a, ref logic [7:0] y);"),
         "",
         1,
-        "inout",
+        "ref",
         "unsupported",
     );
     rejects(
@@ -697,7 +697,7 @@ fn rejected_clocks() {
         "  logic c;\n  assign c = a[0];\n  always_ff @(posedge c) y <= a;",
         4,
         "c)",
-        "the clock `c` is a bit of the input `a`: input clocks must be 1-bit inputs",
+        "the clock `c` is a bit of `a`, which has 8 bits: input clocks must be 1-bit inputs",
     );
     // a copy of a register made in an `always_comb`, a gated clock behind
     // a copy, a register clocked by a gated clock

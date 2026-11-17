@@ -7,10 +7,13 @@ Yosys is looked up as `$YOSYS_BIN` (the binary itself), then
 gives it the script of [`script`]:
 
 ```text
-read_verilog -sv -noblackbox FILE; hierarchy -top TOP; proc -norom;
-setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; memory_collect; memory_map;
-clk2fflogic; write_smt2 -wires -
+read_verilog -sv -noblackbox FILE…; hierarchy -top TOP; proc -norom;
+setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; cutpoint -blackbox;
+memory_collect; memory_map; clk2fflogic; write_smt2 -wires -
 ```
+
+(all files of the design in one `read_verilog`, so that a macro defined in
+one is defined in the following ones, as in our frontend).
 
 `flatten` makes the whole hierarchy one module, whose wires have our
 instance path names (`u.q`); without `opt`, every register stays one
@@ -38,7 +41,13 @@ The other problems `check` reports do not hide differences: a used wire
 without a driver is free in every step (Yosys's side only gets more
 behaviors; a register bit that is never written, which for us keeps its
 initial value, is one), and `write_smt2` itself fails on a combinational
-loop. `memory_collect; memory_map` turns every unpacked array into one
+loop. `cutpoint -blackbox` replaces each instance of a module marked
+`(* blackbox *)` (which `-noblackbox` leaves marked) by a fresh value per
+step on each of its outputs, under the name of the wire it drives, and
+drops the outputs nothing is connected to: the same abstraction as ours, so
+the outputs are compared like inputs. A pin (`inout` port) only connected
+to blackboxes is listed as an input and an output of the top module; we
+have no variable for it. `memory_collect; memory_map` turns every unpacked array into one
 flip-flop per element, named by its address (`m[3]`) as our element
 signals are, and the read ports into multiplexers (a ROM loaded by
 `$readmemb` into constants); `write_smt2` would otherwise write memories
@@ -127,14 +136,24 @@ pub fn find() -> Option<PathBuf> {
 /// instances below it) into SMT-LIB on standard output. Fails on a path
 /// Yosys cannot read inside a script (one with `"` or a line break).
 pub fn script(file: &Path, top: &str) -> Result<String, String> {
-    let file = file.to_string_lossy();
-    if file.contains(['"', '\n', '\r']) {
-        return Err(format!("{file}: path not usable in a Yosys script"));
+    script_files(&[file], top)
+}
+
+/// [`script`] for a design of several files.
+pub fn script_files(files: &[&Path], top: &str) -> Result<String, String> {
+    let mut quoted = Vec::new();
+    for file in files {
+        let file = file.to_string_lossy();
+        if file.contains(['"', '\n', '\r']) {
+            return Err(format!("{file}: path not usable in a Yosys script"));
+        }
+        quoted.push(format!("\"{file}\""));
     }
     Ok(format!(
-        "read_verilog -sv -noblackbox \"{file}\"; hierarchy -top {top}; proc -norom; \
-         setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; memory_collect; memory_map; \
-         clk2fflogic; write_smt2 -wires -"
+        "read_verilog -sv -noblackbox {}; hierarchy -top {top}; proc -norom; \
+         setattr -set keep 1 w:[!$]*; opt_clean; flatten; check; cutpoint -blackbox; \
+         memory_collect; memory_map; clk2fflogic; write_smt2 -wires -",
+        quoted.join(" ")
     ))
 }
 
@@ -143,6 +162,21 @@ pub fn script(file: &Path, top: &str) -> Result<String, String> {
 /// wire with conflicting drivers (see the module docs), or `overrides` is
 /// not empty (not supported yet).
 pub fn run(bin: &Path, file: &Path, top: &str, overrides: &[Override]) -> Result<Smt2, String> {
+    run_files(bin, &[file], top, overrides)
+}
+
+/// [`run`] for a design of several files.
+pub fn run_files(
+    bin: &Path,
+    files: &[&Path],
+    top: &str,
+    overrides: &[Override],
+) -> Result<Smt2, String> {
+    let file = files
+        .iter()
+        .map(|f| f.display().to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
     if let Some(o) = overrides.first() {
         return Err(format!(
             "parameter overrides are not supported by the Yosys comparison yet (`{}`)",
@@ -150,20 +184,20 @@ pub fn run(bin: &Path, file: &Path, top: &str, overrides: &[Override]) -> Result
         ));
     }
     let out = Command::new(bin)
-        .args(["-q", "-p", &script(file, top)?])
+        .args(["-q", "-p", &script_files(files, top)?])
         .output()
         .map_err(|e| format!("{}: {e}", bin.display()))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let log = String::from_utf8_lossy(&out.stdout);
-        return Err(format!("yosys failed on {}:\n{err}{log}", file.display()));
+        return Err(format!("yosys failed on {file}:\n{err}{log}"));
     }
     let err = String::from_utf8_lossy(&out.stderr);
     if err.contains("Warning: multiple conflicting drivers") {
         return Err(format!(
             "Yosys's netlist of {} has conflicting drivers, so a comparison with it would \
              not be meaningful:\n{err}",
-            file.display()
+            file
         ));
     }
     parse(&String::from_utf8_lossy(&out.stdout))

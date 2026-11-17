@@ -12,6 +12,14 @@ instantiating module can be checked on its own: a connection must name a
 port, at most once, and every input must be
 connected. Outputs may be left unconnected (`.y()` or not mentioned).
 
+A blackbox (a module marked `(* blackbox *)`, see
+[`Module::blackbox`](crate::ast::Module::blackbox)) is elaborated like any
+module, but the values given to its parameters have no effect (its port
+widths are constants). Its `inout` ports go to
+[`Instance::pins`](crate::ast::Instance::pins), each connected to a pin of
+the instantiating module or to nothing; only the top module and
+blackboxes have `inout` ports.
+
 The signals of a hierarchy have *paths*: `x` in the top module, `u.x` in
 its instance `u`, `u.v.x` deeper down. Several paths may denote the same
 signal: a port connected to the name of a signal of its width is that
@@ -21,7 +29,8 @@ outermost signal it is connected to. So the ports of the top module keep
 their names, and the other names are paths, which simulators accept as
 hierarchical names (`dut.u.x`). An input connected to any other
 expression, or to a name of another width, keeps its own path, `u.a`; the
-instantiating module drives it.
+instantiating module drives it. The ports of a blackbox are no signals and
+have no paths: the signals connected to its outputs are free values.
 */
 
 use crate::ast::{Dir, Error, ExprKind, Formal, Item, Module, Name, Override, Span};
@@ -56,6 +65,12 @@ pub fn load(source: &str, path: impl AsRef<Path>) -> Result<Inst> {
 /// Elaborates the module `top` of `d` with the parameter values
 /// `overrides`, and all instances below it.
 pub fn elaborate(d: &Design, top: &str, overrides: &[Override]) -> Result<Inst> {
+    if d.is_blackbox(top) {
+        return Err(Error::new(
+            Span::default(),
+            format!("`{top}` is a blackbox: it cannot be the top module"),
+        ));
+    }
     inst(d, top, overrides, "", &mut Vec::new())
 }
 
@@ -84,6 +99,10 @@ fn inst(
         .chain(&module.decls)
         .map(|d| (d.name.clone(), d.ty.width))
         .collect();
+    let pins: BTreeMap<Name, usize> = (module.pins.iter())
+        .map(|d| (d.name.clone(), d.ty.width))
+        .collect();
+    let module_name = module.name.clone();
     let mut children = Vec::new();
     for item in &mut module.items {
         let Item::Instance(i) = item else {
@@ -91,7 +110,15 @@ fn inst(
         };
         let err = |span: Span, msg: String| Err(context(Error::new(span, msg), prefix));
         if !d.has(&i.module) {
-            return err(i.span, format!("no module `{}`", i.module));
+            return err(
+                i.span,
+                format!(
+                    "no module `{}` (for a vendor cell or another module defined outside the \
+                     design, declare a stub with its ports, marked `(* blackbox *)`: its \
+                     outputs are then free in every time step)",
+                    i.module
+                ),
+            );
         }
         if stack.contains(&i.module) {
             return err(i.span, format!("recursive instantiation of `{}`", i.module));
@@ -101,6 +128,56 @@ fn inst(
         let ports = &child.module.ports;
         let clocks = child.module.clocks();
         let mut seen = BTreeSet::new();
+        // the `inout` ports: pins of a blackbox, connected to pins
+        let child_pins = &child.module.pins;
+        if let (false, Some(p)) = (child.module.blackbox, child_pins.first()) {
+            return err(
+                i.span,
+                format!(
+                    "`{}` has an `inout` port `{}`: only blackboxes and the top module may \
+                     have `inout` ports",
+                    i.module, p.name
+                ),
+            );
+        }
+        let (pin_conns, conns): (Vec<_>, Vec<_>) = std::mem::take(&mut i.conns)
+            .into_iter()
+            .partition(|c| child_pins.iter().any(|p| p.name == c.port));
+        i.conns = conns;
+        for c in &pin_conns {
+            if !seen.insert(c.port.clone()) {
+                return err(c.span, format!("port `{}` connected twice", c.port));
+            }
+            let Some(e) = &c.actual else { continue };
+            let formal = child_pins.iter().find(|p| p.name == c.port).expect("a pin");
+            match &e.kind {
+                ExprKind::Var(x) if pins.contains_key(x) => {
+                    if pins[x] != formal.ty.width {
+                        return err(
+                            e.span,
+                            format!(
+                                "`inout` port `{}` of `{}` has {}, `{x}` {}",
+                                c.port,
+                                i.name,
+                                bits(formal.ty.width),
+                                pins[x]
+                            ),
+                        );
+                    }
+                }
+                _ => {
+                    return err(
+                        e.span,
+                        format!(
+                            "`inout` port `{}` of `{}` must be connected to an `inout` port of \
+                             `{module_name}` (or left unconnected)",
+                            c.port, i.name
+                        ),
+                    );
+                }
+            }
+        }
+        i.pins = pin_conns;
         for c in &mut i.conns {
             let width = |x: &Name| widths.get(x).copied();
             let Some(p) = ports.iter().find(|p| p.decl.name == c.port) else {
@@ -118,6 +195,7 @@ fn inst(
                 ty: p.decl.ty,
                 clock: clocks.contains(&p.decl.name),
                 shared,
+                blackbox: child.module.blackbox,
             });
         }
         for p in ports.iter().filter(|p| p.dir == Dir::Input) {
@@ -138,6 +216,15 @@ fn inst(
     module.constants();
     stack.pop();
     Ok(Inst { module, children })
+}
+
+/// `n` bits, as in messages: `1 bit`, `2 bits`.
+fn bits(n: usize) -> String {
+    if n == 1 {
+        "1 bit".to_string()
+    } else {
+        format!("{n} bits")
+    }
 }
 
 impl Inst {
@@ -174,7 +261,9 @@ impl Inst {
             map.insert(path.clone(), name.clone());
             out.push((path, name));
         }
-        for (u, child) in &self.children {
+        // the ports of a blackbox are no signals of the design: its
+        // outputs are the signals they are connected to
+        for (u, child) in self.children.iter().filter(|(_, c)| !c.module.blackbox) {
             let i = m.instances().find(|i| i.name == *u).expect("an instance");
             let mut connected = BTreeMap::new();
             for c in &i.conns {
@@ -185,6 +274,27 @@ impl Inst {
             }
             child.walk(&format!("{prefix}{u}."), &connected, out, map);
         }
+    }
+
+    /// The signals connected to outputs of blackboxes, by name (see
+    /// [`Inst::naming`]), in order (a module's before its instances').
+    pub fn blackbox_outputs(&self) -> Vec<Name> {
+        let naming: BTreeMap<Name, Name> = self.naming().into_iter().collect();
+        let mut out = Vec::new();
+        let mut walk = vec![(self, String::new())];
+        while let Some((i, prefix)) = walk.pop() {
+            for u in i.module.instances() {
+                for (c, _) in u.conns(Dir::Output).filter(|(_, f)| f.blackbox) {
+                    if let Some(y) = c.shared() {
+                        out.push(naming[&format!("{prefix}{y}")].clone());
+                    }
+                }
+            }
+            for (u, child) in i.children.iter().rev() {
+                walk.push((child, format!("{prefix}{u}.")));
+            }
+        }
+        out
     }
 
     /// The paths of the registers, in order (a module's before its

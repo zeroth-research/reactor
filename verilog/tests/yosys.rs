@@ -47,10 +47,18 @@ fn registers(inst: &Inst) -> BTreeMap<String, usize> {
 }
 
 /// The top ports in direction `dir`, with their widths.
+/// The ports of the top module with direction `dir` and its pins (`inout`
+/// ports, which Yosys lists as inputs and as outputs), with their widths.
 fn ports(inst: &Inst, dir: Dir) -> BTreeMap<String, usize> {
     let ports = inst.module.ports.iter().filter(|p| p.dir == dir);
     ports
         .map(|p| (p.decl.name.clone(), p.decl.ty.width))
+        .chain(
+            inst.module
+                .pins
+                .iter()
+                .map(|d| (d.name.clone(), d.ty.width)),
+        )
         .collect()
 }
 
@@ -198,7 +206,7 @@ fn overrides_rejected() {
 
 /// Yosys's registers are three samples per register path of ours (four with
 /// an asynchronous reset), its inputs and outputs are the top ports (clocks
-/// and unread inputs included), and every variable of our module except
+/// and unread inputs included; pins are both), and every variable of our module except
 /// `q@init` is a Yosys wire of the same width. With z3,
 /// every accessor of [`yosys::Smt2::value`] is a bit vector of the listed
 /// width, and the transition and hierarchy predicates are satisfiable.
@@ -1682,6 +1690,96 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "barrel.sv",
         "18:22 `>>>` -> `>>`",
         "`y` is unsigned: `>>>` shifts in zeros",
+    ),
+    (
+        "bbchild.sv",
+        "6:38 `1` -> `0`",
+        "the default of a blackbox parameter, which has no effect",
+    ),
+    (
+        "bbchild.sv",
+        "6:38 `1` -> `'d1`",
+        "the default of a blackbox parameter, which has no effect",
+    ),
+    (
+        "bbchild.sv",
+        "17:35 `8` -> `'d8`",
+        "`filter`'s default `W` as an unsigned 32-bit value: the same widths and casts",
+    ),
+    (
+        "bbchild.sv",
+        "24:18 `4` -> `3`",
+        "the value of a blackbox parameter, which has no effect",
+    ),
+    (
+        "bbchild.sv",
+        "24:18 `4` -> `'d4`",
+        "the value of a blackbox parameter, which has no effect",
+    ),
+    (
+        "bbchild.sv",
+        "47:15 `10` -> `'d10`",
+        "the same parameter value, unsigned",
+    ),
+    (
+        "bbchild.sv",
+        "51:20 `10` -> `9`",
+        "`9'(b)` keeps all of the 8-bit unsigned `b`, extended to 10 bits anyway",
+    ),
+    (
+        "bbtop.sv",
+        "16:25 `5` -> `4`",
+        "the type of a blackbox parameter, which has no effect",
+    ),
+    (
+        "bbtop.sv",
+        "16:41 `6'b000000` -> `6'd1`",
+        "the default of a blackbox parameter, which has no effect",
+    ),
+    (
+        "bbtop.sv",
+        "27:43 `1` -> `0`",
+        "the width of a blackbox input, which nothing reads",
+    ),
+    (
+        "bbtop.sv",
+        "43:19 `6'b110000` -> `6'd49`",
+        "the value of a blackbox parameter, which has no effect",
+    ),
+    (
+        "bbtop.sv",
+        "44:42 `0` -> `1`",
+        "a blackbox input, which nothing reads",
+    ),
+    (
+        "bbtop.sv",
+        "44:42 `0` -> `'d0`",
+        "a blackbox input, which nothing reads",
+    ),
+    (
+        "bbtop.sv",
+        "44:51 `1'b0` -> `1'd1`",
+        "a blackbox input, which nothing reads",
+    ),
+    (
+        "bbtop.sv",
+        "46:19 `6'b110000` -> `6'd49`",
+        "the value of a blackbox parameter, which has no effect",
+    ),
+    (
+        "bbtop.sv",
+        "47:39 `&` -> `|`",
+        "a blackbox input, which nothing reads",
+    ),
+    (
+        "bbtop.sv",
+        "49:22 `==` -> `!=`",
+        "a blackbox input, which nothing reads",
+    ),
+    (
+        "bbtop.sv",
+        "49:25 `4'hf` -> `4'd0`",
+        "a blackbox input, which nothing reads",
     ),
     (
         "bcd.sv",

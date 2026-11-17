@@ -1,0 +1,78 @@
+module bbchild
+  external
+    clk : bv1
+    rst : bv1
+    f1.s : bv8
+    f1.v : bv1
+    f1.acc@init : bv10
+    f2.s : bv8
+    f2.v : bv1
+    f2.acc@init : bv8
+    k1.c : bv1
+    k1.q@init : bv3
+    k2.c : bv1
+    k2.q@init : bv3
+  interface
+    sum : bv10
+    ticks : bv3
+  private
+    a : bv10
+    b : bv8
+    t1 : bv3
+    t2 : bv3
+    k1.q : bv3
+    k2.q : bv3
+  atom controls a reads clk, rst, a, f1.s, f1.v awaits clk, f1.acc@init
+    init
+      X(a) := ID X(f1.acc@init)
+    update
+      %1 := NOT clk
+      f1.clk@pos := AND (%1, X(clk))
+      %2 := 10'd0
+      %3 := ZEXT[10] f1.s
+      %4 := ADD (a, %3)
+      %5 := ITE (f1.v, %4, a)
+      %6 := ITE (rst, %2, %5)
+      X(a) := ITE (f1.clk@pos, %6, a)
+  atom controls b reads clk, rst, b, f2.s, f2.v awaits clk, f2.acc@init
+    init
+      X(b) := ID X(f2.acc@init)
+    update
+      %1 := NOT clk
+      f2.clk@pos := AND (%1, X(clk))
+      %2 := 8'd0
+      %3 := ADD (b, f2.s)
+      %4 := ITE (f2.v, %3, b)
+      %5 := ITE (rst, %2, %4)
+      X(b) := ITE (f2.clk@pos, %5, b)
+  atom controls k1.q reads k1.c, k1.q awaits k1.c, k1.q@init
+    init
+      X(k1.q) := ID X(k1.q@init)
+    update
+      %1 := NOT X(k1.c)
+      k1.c@neg := AND (k1.c, %1)
+      %2 := 3'd1
+      %3 := ADD (k1.q, %2)
+      X(k1.q) := ITE (k1.c@neg, %3, k1.q)
+  atom controls k2.q reads k2.c, k2.q awaits k2.c, k2.q@init
+    init
+      X(k2.q) := ID X(k2.q@init)
+    update
+      %1 := NOT X(k2.c)
+      k2.c@neg := AND (k2.c, %1)
+      %2 := 3'd1
+      %3 := ADD (k2.q, %2)
+      X(k2.q) := ITE (k2.c@neg, %3, k2.q)
+  atom controls sum awaits a, b
+    init = update
+      %1 := ZEXT[10] X(b)
+      X(sum) := ADD (X(a), %1)
+  atom controls t1 awaits k1.q
+    init = update
+      X(t1) := ID X(k1.q)
+  atom controls t2 awaits k2.q
+    init = update
+      X(t2) := ID X(k2.q)
+  atom controls ticks awaits t1, t2
+    init = update
+      X(ticks) := XOR (X(t1), X(t2))

@@ -365,11 +365,15 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         &mut t.registers.iter().map(|p| (p, p.as_str(), width(p))),
         S,
     );
-    let inputs = probes(&mut ys.inputs.iter().map(|(n, w)| (n, n.as_str(), *w)), S);
-    let next_inputs = probes(
-        &mut ys.inputs.iter().map(|(n, w)| (n, n.as_str(), *w)),
-        NEXT,
-    );
+    // the outputs of blackboxes are inputs of the design, Yosys's wires
+    // with a free value in every step (from `cutpoint`)
+    let free: Vec<(String, usize)> = (t.blackbox_outputs.iter())
+        .filter(|n| !ys.inputs.contains_key(*n))
+        .map(|n| (n.clone(), ys.wires.get(n).copied().unwrap_or_default()))
+        .collect();
+    let all = || (ys.inputs.iter()).chain(free.iter().map(|(n, w)| (n, w)));
+    let inputs = probes(&mut all().map(|(n, w)| (n, n.as_str(), *w)), S);
+    let next_inputs = probes(&mut all().map(|(n, w)| (n, n.as_str(), *w)), NEXT);
     let latched = round
         .latched
         .iter()
