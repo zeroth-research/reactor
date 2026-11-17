@@ -6,18 +6,33 @@ information to compute its [`Boundary`]:
 
 - [`Const`] — a constant real matrix literal.
 - [`Add`], [`Sub`] — pointwise addition and subtraction.
+- [`Mul`] — pointwise multiplication `x ⊙ y`.
+- [`Div`] — pointwise division `x / y`.
 - [`Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
   constant real matrices of compatible shapes.
 - [`ReLU`] — the shape-preserving rectified-linear map `x ↦ max(x, 0)`.
 - [`Min`], [`Max`] — pointwise minimum and maximum.
 - [`Transpose`] — matrix transposition.
 - [`MatMul`] — the matrix product `x·y`.
+- [`Lt`], [`Le`], [`Gt`], [`Ge`], [`Eq`](struct@Eq), [`Ne`] — pointwise
+  comparisons, which write boolean matrices of the same shape.
+
+The comparisons are those of SMT-LIB2's `Reals` theory, `<`, `<=`, `>` and
+`>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
+to matrices. As they write booleans, their boundary is in [`Sort`], the
+sorts of the theory, rather than in [`Real`].
 */
 
-use crate::sort::Real;
+use crate::sort::{Bool, Real};
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use std::fmt;
+
+/// The sorts of the theory, as in the signature of SMT-LIB2's `Reals`:
+/// real matrices, and the booleans of the Core theory, which comparisons
+/// write, together with [`Zero`](crate::sort::Zero). It is the subset
+/// [`sort::Reals`](crate::sort::Reals) of the sorts of all theories.
+pub use crate::sort::Reals as Sort;
 
 /// A constant real matrix literal.
 #[derive(Clone, Debug)]
@@ -30,6 +45,18 @@ pub struct Add(pub usize, pub usize);
 /// Pointwise subtraction `x - y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Sub(pub usize, pub usize);
+
+/// Pointwise multiplication `x ⊙ y` of `[m, n]` matrices: the Hadamard
+/// product, not the matrix product [`MatMul`].
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Mul(pub usize, pub usize);
+
+/// Pointwise division `x / y` of `[m, n]` matrices: the Hadamard division
+/// `x ⊘ y`. As in SMT-LIB2, `x / 0` is unspecified.
+///
+/// SMT-LIB2: `(/ x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Div(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
 #[derive(Clone, Debug)]
@@ -57,6 +84,48 @@ pub struct Transpose(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct MatMul(pub usize, pub usize, pub usize);
 
+/// Pointwise comparison `x < y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(< x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Lt(pub usize, pub usize);
+
+/// Pointwise comparison `x ≤ y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(<= x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Le(pub usize, pub usize);
+
+/// Pointwise comparison `x > y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(> x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Gt(pub usize, pub usize);
+
+/// Pointwise comparison `x ≥ y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(>= x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Ge(pub usize, pub usize);
+
+/// Pointwise comparison `x = y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(= x y)`, of the Core theory.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Eq(pub usize, pub usize);
+
+/// Pointwise comparison `x ≠ y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(distinct x y)`, of the Core theory.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Ne(pub usize, pub usize);
+
 impl Boundary<Real> for Const {
     fn dom(&self) -> Poly<Real> {
         Poly::unit()
@@ -78,6 +147,26 @@ impl Boundary<Real> for Add {
 }
 
 impl Boundary<Real> for Sub {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1]); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
+    }
+}
+
+impl Boundary<Real> for Mul {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1]); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
+    }
+}
+
+impl Boundary<Real> for Div {
     fn dom(&self) -> Poly<Real> {
         mono![Real::new([self.0, self.1]); 2].into()
     }
@@ -153,6 +242,66 @@ impl Boundary<Real> for MatMul {
     }
 }
 
+impl Boundary<Sort> for Lt {
+    fn dom(&self) -> Poly<Sort> {
+        mono![Real::new([self.0, self.1]).into(); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Bool::new([self.0, self.1]).into()].into()
+    }
+}
+
+impl Boundary<Sort> for Le {
+    fn dom(&self) -> Poly<Sort> {
+        mono![Real::new([self.0, self.1]).into(); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Bool::new([self.0, self.1]).into()].into()
+    }
+}
+
+impl Boundary<Sort> for Gt {
+    fn dom(&self) -> Poly<Sort> {
+        mono![Real::new([self.0, self.1]).into(); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Bool::new([self.0, self.1]).into()].into()
+    }
+}
+
+impl Boundary<Sort> for Ge {
+    fn dom(&self) -> Poly<Sort> {
+        mono![Real::new([self.0, self.1]).into(); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Bool::new([self.0, self.1]).into()].into()
+    }
+}
+
+impl Boundary<Sort> for Eq {
+    fn dom(&self) -> Poly<Sort> {
+        mono![Real::new([self.0, self.1]).into(); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Bool::new([self.0, self.1]).into()].into()
+    }
+}
+
+impl Boundary<Sort> for Ne {
+    fn dom(&self) -> Poly<Sort> {
+        mono![Real::new([self.0, self.1]).into(); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Bool::new([self.0, self.1]).into()].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -174,6 +323,18 @@ impl fmt::Display for Add {
 impl fmt::Display for Sub {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Sub")
+    }
+}
+
+impl fmt::Display for Mul {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Mul")
+    }
+}
+
+impl fmt::Display for Div {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Div")
     }
 }
 
@@ -207,6 +368,42 @@ impl fmt::Display for MatMul {
     }
 }
 
+impl fmt::Display for Lt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Lt")
+    }
+}
+
+impl fmt::Display for Le {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Le")
+    }
+}
+
+impl fmt::Display for Gt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Gt")
+    }
+}
+
+impl fmt::Display for Ge {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ge")
+    }
+}
+
+impl fmt::Display for Eq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Eq")
+    }
+}
+
+impl fmt::Display for Ne {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ne")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +422,10 @@ mod tests {
         assert_eq!(Add(2, 3).dom(), two(r));
         assert_eq!(Add(2, 3).cod(), one(r));
         assert_eq!(Sub(2, 3).dom(), two(r));
+        assert_eq!(Mul(2, 3).dom(), two(r));
+        assert_eq!(Mul(2, 3).cod(), one(r));
+        assert_eq!(Div(2, 3).dom(), two(r));
+        assert_eq!(Div(2, 3).cod(), one(r));
         assert_eq!(Min(2, 3).dom(), two(r));
         assert_eq!(Max(2, 3).cod(), one(r));
         assert_eq!(ReLU(2, 3).dom(), one(r));
@@ -249,7 +450,29 @@ mod tests {
     #[test]
     fn ops_display_their_name() {
         assert_eq!(Add(1, 1).to_string(), "Add");
+        assert_eq!(Mul(1, 1).to_string(), "Mul");
+        assert_eq!(Div(1, 1).to_string(), "Div");
         assert_eq!(ReLU(1, 1).to_string(), "ReLU");
         assert_eq!(Transpose(1, 1).to_string(), "Transpose");
+    }
+    #[test]
+    fn comparisons_write_booleans() {
+        let x: Sort = Real::new([2, 3]).into();
+        let b: Sort = Bool::new([2, 3]).into();
+        let dom: Poly<Sort> = mono![x, x].into();
+        let cod: Poly<Sort> = mono![b].into();
+        for (d, c) in [
+            (Lt(2, 3).dom(), Lt(2, 3).cod()),
+            (Le(2, 3).dom(), Le(2, 3).cod()),
+            (Gt(2, 3).dom(), Gt(2, 3).cod()),
+            (Ge(2, 3).dom(), Ge(2, 3).cod()),
+            (Eq(2, 3).dom(), Eq(2, 3).cod()),
+            (Ne(2, 3).dom(), Ne(2, 3).cod()),
+        ] {
+            assert_eq!(d, dom);
+            assert_eq!(c, cod);
+        }
+        assert_eq!(Le(1, 1).to_string(), "Le");
+        assert_eq!(Ne(1, 1).to_string(), "Ne");
     }
 }

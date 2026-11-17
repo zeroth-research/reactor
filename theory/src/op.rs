@@ -27,8 +27,9 @@ use subenum::subenum;
 /// real arithmetic, and [`NIA`], non-linear integer arithmetic, with all
 /// the operations of [`real`] and [`int`] respectively, together with those
 /// of `Prop`; [`LRA`], linear real arithmetic, and [`LIA`], linear integer
-/// arithmetic, each with the operations of its non-linear logic but
-/// `MatMul`, which multiplies two variables and so is not linear; and
+/// arithmetic, each with the operations of its non-linear logic but `Mul`,
+/// `Div`, `Mod` and `MatMul`, which multiply or divide two variables and so
+/// are not linear; and
 /// [`BV`], the SMT-LIB2 logic QF_BV of fixed-size bit-vectors, with the
 /// operations of [`word`] together with those of `Prop`. It also generates
 /// the casts between `Any` and each logic: `From` up to `Any`, and
@@ -42,6 +43,10 @@ pub enum Any {
     RealAdd(real::Add),
     #[subenum(NRA, LRA)]
     RealSub(real::Sub),
+    #[subenum(NRA)]
+    RealMul(real::Mul),
+    #[subenum(NRA)]
+    RealDiv(real::Div),
     #[subenum(NRA, LRA)]
     RealLinear(real::Linear),
     #[subenum(NRA, LRA)]
@@ -54,12 +59,30 @@ pub enum Any {
     RealTranspose(real::Transpose),
     #[subenum(NRA)]
     RealMatMul(real::MatMul),
+    #[subenum(NRA, LRA)]
+    RealLt(real::Lt),
+    #[subenum(NRA, LRA)]
+    RealLe(real::Le),
+    #[subenum(NRA, LRA)]
+    RealGt(real::Gt),
+    #[subenum(NRA, LRA)]
+    RealGe(real::Ge),
+    #[subenum(NRA, LRA)]
+    RealEq(real::Eq),
+    #[subenum(NRA, LRA)]
+    RealNe(real::Ne),
     #[subenum(NIA, LIA)]
     Int(int::Const),
     #[subenum(NIA, LIA)]
     IntAdd(int::Add),
     #[subenum(NIA, LIA)]
     IntSub(int::Sub),
+    #[subenum(NIA)]
+    IntMul(int::Mul),
+    #[subenum(NIA)]
+    IntDiv(int::Div),
+    #[subenum(NIA)]
+    IntMod(int::Mod),
     #[subenum(NIA, LIA)]
     IntLinear(int::Linear),
     #[subenum(NIA, LIA)]
@@ -72,6 +95,18 @@ pub enum Any {
     IntTranspose(int::Transpose),
     #[subenum(NIA)]
     IntMatMul(int::MatMul),
+    #[subenum(NIA, LIA)]
+    IntLt(int::Lt),
+    #[subenum(NIA, LIA)]
+    IntLe(int::Le),
+    #[subenum(NIA, LIA)]
+    IntGt(int::Gt),
+    #[subenum(NIA, LIA)]
+    IntGe(int::Ge),
+    #[subenum(NIA, LIA)]
+    IntEq(int::Eq),
+    #[subenum(NIA, LIA)]
+    IntNe(int::Ne),
     #[subenum(NRA, NIA, LRA, LIA, Prop, BV)]
     Bool(bool::Const),
     #[subenum(NRA, NIA, LRA, LIA, Prop, BV)]
@@ -233,6 +268,12 @@ impl From<LRA> for NRA {
             LRA::RealMin(op) => NRA::RealMin(op),
             LRA::RealMax(op) => NRA::RealMax(op),
             LRA::RealTranspose(op) => NRA::RealTranspose(op),
+            LRA::RealLt(op) => NRA::RealLt(op),
+            LRA::RealLe(op) => NRA::RealLe(op),
+            LRA::RealGt(op) => NRA::RealGt(op),
+            LRA::RealGe(op) => NRA::RealGe(op),
+            LRA::RealEq(op) => NRA::RealEq(op),
+            LRA::RealNe(op) => NRA::RealNe(op),
             LRA::Bool(op) => NRA::Bool(op),
             LRA::And(op) => NRA::And(op),
             LRA::Or(op) => NRA::Or(op),
@@ -253,6 +294,12 @@ impl From<LIA> for NIA {
             LIA::IntMin(op) => NIA::IntMin(op),
             LIA::IntMax(op) => NIA::IntMax(op),
             LIA::IntTranspose(op) => NIA::IntTranspose(op),
+            LIA::IntLt(op) => NIA::IntLt(op),
+            LIA::IntLe(op) => NIA::IntLe(op),
+            LIA::IntGt(op) => NIA::IntGt(op),
+            LIA::IntGe(op) => NIA::IntGe(op),
+            LIA::IntEq(op) => NIA::IntEq(op),
+            LIA::IntNe(op) => NIA::IntNe(op),
             LIA::Bool(op) => NIA::Bool(op),
             LIA::And(op) => NIA::And(op),
             LIA::Or(op) => NIA::Or(op),
@@ -269,21 +316,38 @@ impl Boundary<sort::Any> for Any {
             Any::Real(op) => op.dom().map(sort::Any::from),
             Any::RealAdd(op) => op.dom().map(sort::Any::from),
             Any::RealSub(op) => op.dom().map(sort::Any::from),
+            Any::RealMul(op) => op.dom().map(sort::Any::from),
+            Any::RealDiv(op) => op.dom().map(sort::Any::from),
             Any::RealLinear(op) => op.dom().map(sort::Any::from),
             Any::RealReLU(op) => op.dom().map(sort::Any::from),
             Any::RealMin(op) => op.dom().map(sort::Any::from),
             Any::RealMax(op) => op.dom().map(sort::Any::from),
             Any::RealTranspose(op) => op.dom().map(sort::Any::from),
             Any::RealMatMul(op) => op.dom().map(sort::Any::from),
+            Any::RealLt(op) => op.dom().map(sort::Any::from),
+            Any::RealLe(op) => op.dom().map(sort::Any::from),
+            Any::RealGt(op) => op.dom().map(sort::Any::from),
+            Any::RealGe(op) => op.dom().map(sort::Any::from),
+            Any::RealEq(op) => op.dom().map(sort::Any::from),
+            Any::RealNe(op) => op.dom().map(sort::Any::from),
             Any::Int(op) => op.dom().map(sort::Any::from),
             Any::IntAdd(op) => op.dom().map(sort::Any::from),
             Any::IntSub(op) => op.dom().map(sort::Any::from),
+            Any::IntMul(op) => op.dom().map(sort::Any::from),
+            Any::IntDiv(op) => op.dom().map(sort::Any::from),
+            Any::IntMod(op) => op.dom().map(sort::Any::from),
             Any::IntLinear(op) => op.dom().map(sort::Any::from),
             Any::IntReLU(op) => op.dom().map(sort::Any::from),
             Any::IntMin(op) => op.dom().map(sort::Any::from),
             Any::IntMax(op) => op.dom().map(sort::Any::from),
             Any::IntTranspose(op) => op.dom().map(sort::Any::from),
             Any::IntMatMul(op) => op.dom().map(sort::Any::from),
+            Any::IntLt(op) => op.dom().map(sort::Any::from),
+            Any::IntLe(op) => op.dom().map(sort::Any::from),
+            Any::IntGt(op) => op.dom().map(sort::Any::from),
+            Any::IntGe(op) => op.dom().map(sort::Any::from),
+            Any::IntEq(op) => op.dom().map(sort::Any::from),
+            Any::IntNe(op) => op.dom().map(sort::Any::from),
             Any::Bool(op) => op.dom().map(sort::Any::from),
             Any::And(op) => op.dom().map(sort::Any::from),
             Any::Or(op) => op.dom().map(sort::Any::from),
@@ -334,21 +398,38 @@ impl Boundary<sort::Any> for Any {
             Any::Real(op) => op.cod().map(sort::Any::from),
             Any::RealAdd(op) => op.cod().map(sort::Any::from),
             Any::RealSub(op) => op.cod().map(sort::Any::from),
+            Any::RealMul(op) => op.cod().map(sort::Any::from),
+            Any::RealDiv(op) => op.cod().map(sort::Any::from),
             Any::RealLinear(op) => op.cod().map(sort::Any::from),
             Any::RealReLU(op) => op.cod().map(sort::Any::from),
             Any::RealMin(op) => op.cod().map(sort::Any::from),
             Any::RealMax(op) => op.cod().map(sort::Any::from),
             Any::RealTranspose(op) => op.cod().map(sort::Any::from),
             Any::RealMatMul(op) => op.cod().map(sort::Any::from),
+            Any::RealLt(op) => op.cod().map(sort::Any::from),
+            Any::RealLe(op) => op.cod().map(sort::Any::from),
+            Any::RealGt(op) => op.cod().map(sort::Any::from),
+            Any::RealGe(op) => op.cod().map(sort::Any::from),
+            Any::RealEq(op) => op.cod().map(sort::Any::from),
+            Any::RealNe(op) => op.cod().map(sort::Any::from),
             Any::Int(op) => op.cod().map(sort::Any::from),
             Any::IntAdd(op) => op.cod().map(sort::Any::from),
             Any::IntSub(op) => op.cod().map(sort::Any::from),
+            Any::IntMul(op) => op.cod().map(sort::Any::from),
+            Any::IntDiv(op) => op.cod().map(sort::Any::from),
+            Any::IntMod(op) => op.cod().map(sort::Any::from),
             Any::IntLinear(op) => op.cod().map(sort::Any::from),
             Any::IntReLU(op) => op.cod().map(sort::Any::from),
             Any::IntMin(op) => op.cod().map(sort::Any::from),
             Any::IntMax(op) => op.cod().map(sort::Any::from),
             Any::IntTranspose(op) => op.cod().map(sort::Any::from),
             Any::IntMatMul(op) => op.cod().map(sort::Any::from),
+            Any::IntLt(op) => op.cod().map(sort::Any::from),
+            Any::IntLe(op) => op.cod().map(sort::Any::from),
+            Any::IntGt(op) => op.cod().map(sort::Any::from),
+            Any::IntGe(op) => op.cod().map(sort::Any::from),
+            Any::IntEq(op) => op.cod().map(sort::Any::from),
+            Any::IntNe(op) => op.cod().map(sort::Any::from),
             Any::Bool(op) => op.cod().map(sort::Any::from),
             Any::And(op) => op.cod().map(sort::Any::from),
             Any::Or(op) => op.cod().map(sort::Any::from),
@@ -444,6 +525,20 @@ mod tests {
         // `MatMul` is in neither linear theory
         assert!(LRA::try_from(Any::from(real::MatMul(2, 3, 4))).is_err());
         assert!(LIA::try_from(Any::from(int::MatMul(2, 3, 4))).is_err());
+
+        // neither is the pointwise `Mul`, which is in the non-linear logics
+        assert!(LRA::try_from(Any::from(real::Mul(2, 3))).is_err());
+        assert!(LIA::try_from(Any::from(int::Mul(2, 3))).is_err());
+        assert!(NRA::try_from(Any::from(real::Mul(2, 3))).is_ok());
+        assert!(NIA::try_from(Any::from(int::Mul(2, 3))).is_ok());
+
+        // nor are division and remainder, which are also non-linear
+        assert!(LRA::try_from(Any::from(real::Div(2, 3))).is_err());
+        assert!(LIA::try_from(Any::from(int::Div(2, 3))).is_err());
+        assert!(LIA::try_from(Any::from(int::Mod(2, 3))).is_err());
+        assert!(NRA::try_from(Any::from(real::Div(2, 3))).is_ok());
+        assert!(NIA::try_from(Any::from(int::Div(2, 3))).is_ok());
+        assert!(NIA::try_from(Any::from(int::Mod(2, 3))).is_ok());
     }
 
     #[test]
@@ -527,6 +622,31 @@ mod tests {
             word::unsigned::Div(8, 2, 3).into(),
             Any::BvUDiv(word::unsigned::Div(8, 2, 3))
         ));
+    }
+
+    #[test]
+    fn comparisons_are_in_the_arithmetic_logics() {
+        // comparisons are linear, so in both the linear and non-linear logics
+        assert!(LRA::try_from(Any::from(real::Lt(2, 3))).is_ok());
+        assert!(NRA::try_from(Any::from(real::Ne(2, 3))).is_ok());
+        assert!(LIA::try_from(Any::from(int::Ge(2, 3))).is_ok());
+        assert!(NIA::try_from(Any::from(int::Eq(2, 3))).is_ok());
+        assert!(LIA::try_from(Any::from(real::Lt(2, 3))).is_err());
+        assert!(LRA::try_from(Any::from(int::Lt(2, 3))).is_err());
+        assert!(Prop::try_from(Any::from(real::Le(2, 3))).is_err());
+
+        let lra: LRA = real::Gt(2, 3).into();
+        assert!(matches!(NRA::from(lra), NRA::RealGt(real::Gt(2, 3))));
+        let lia: LIA = int::Le(2, 3).into();
+        assert!(matches!(NIA::from(lia), NIA::IntLe(int::Le(2, 3))));
+
+        // they read numbers and write booleans, in `sort::Any`
+        let op: Any = int::Lt(2, 3).into();
+        let i: sort::Any = sort::Int::new([2, 3]).into();
+        let dom: Poly<sort::Any> = base::mono![i, i].into();
+        let cod: Poly<sort::Any> = base::mono![sort::Bool::new([2, 3]).into()].into();
+        assert_eq!(op.dom(), dom);
+        assert_eq!(op.cod(), cod);
     }
 
     #[test]
