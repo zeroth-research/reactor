@@ -513,7 +513,7 @@ verilog/interface/virtual_interface1.sv		2:1: unsupported: Description [at `inte
 verilog/let/let1.sv		5:3: unsupported: PackageOrGenerateItemDeclaration [at `let`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/let/let_constant1.sv		3:3: unsupported: PackageOrGenerateItemDeclaration [at `let`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/let/let_ports1.sv		5:3: unsupported: PackageOrGenerateItemDeclaration [at `let`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-verilog/library-dir/library_dir1.sv		9:7: no module `sub`	-	top-module selection
+verilog/library-dir/library_dir1.sv		9:7: no module `sub` (for a vendor cell or another module defined outside the design, declare a stub with its ports, marked `(* blackbox *)`: its outputs are then free in every time step)	-	top-module selection
 verilog/modules/cyclic_parameter_dependencies.v		2:17: expected a constant expression, got `q`: `q` is not a parameter	-	other error
 verilog/modules/decoder1.sv		22:20: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/defparam1.v#top	top	13:17: syntax error [at `assert`]	-	assertions / properties
@@ -542,7 +542,7 @@ verilog/modules/localparam3.v		9:25: syntax error [at `assert`]	-	assertions / p
 verilog/modules/missing_connection1.v		7:15: positional port connections not supported, write `.port(signal)`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/module_instance_identifier1.v		11:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/module_name_space1.sv		2:1: unsupported: Description [at `parameter`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-verilog/modules/module_not_found1.v#main	main	3:35: no module `some_module_that_does_not_exist`	-	top-module selection
+verilog/modules/module_not_found1.v#main	main	3:35: no module `some_module_that_does_not_exist` (for a vendor cell or another module defined outside the design, declare a stub with its ports, marked `(* blackbox *)`: its outputs are then free in every time step)	-	top-module selection
 verilog/modules/multiple_top_level_modules1.sv		0:0: several top modules (`moduleA`, `moduleB`): choose one	-	top-module selection
 verilog/modules/named_parameter_assignment1.sv#main	main	16:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/modules/named_port_connection1.sv		8:24: port `a` connected twice	-	other error
