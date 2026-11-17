@@ -28,7 +28,9 @@ sorts of the theory, rather than in [`Int`].
 use crate::sort::{Bool, Int};
 use base::boundary::{Boundary, Poly};
 use base::mono;
+use derive_more::From;
 use std::fmt;
+use subenum::subenum;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Ints`:
 /// int matrices, and the booleans of the Core theory, which comparisons
@@ -137,6 +139,136 @@ pub struct Eq(pub usize, pub usize);
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Ne(pub usize, pub usize);
+
+/// The operations of the theory of integer arithmetic, SMT-LIB2's `Ints`,
+/// with their boundary in [`Sort`].
+///
+/// `subenum` defines [`LIA`], the linear ones: all but `Mul`, `Div`, `Mod`
+/// and `MatMul`, which multiply or divide two variables. It also generates
+/// the casts between them: `From` up to `NIA`, and `TryFrom` down from it.
+#[subenum(LIA)]
+#[derive(Clone, Debug, From)]
+pub enum NIA {
+    #[subenum(LIA)]
+    Const(Const),
+    #[subenum(LIA)]
+    Add(Add),
+    #[subenum(LIA)]
+    Sub(Sub),
+    Mul(Mul),
+    Div(Div),
+    Mod(Mod),
+    #[subenum(LIA)]
+    Linear(Linear),
+    #[subenum(LIA)]
+    ReLU(ReLU),
+    #[subenum(LIA)]
+    Min(Min),
+    #[subenum(LIA)]
+    Max(Max),
+    #[subenum(LIA)]
+    Transpose(Transpose),
+    MatMul(MatMul),
+    #[subenum(LIA)]
+    Lt(Lt),
+    #[subenum(LIA)]
+    Le(Le),
+    #[subenum(LIA)]
+    Gt(Gt),
+    #[subenum(LIA)]
+    Ge(Ge),
+    #[subenum(LIA)]
+    Eq(Eq),
+    #[subenum(LIA)]
+    Ne(Ne),
+}
+
+impl Boundary<Sort> for NIA {
+    fn dom(&self) -> Poly<Sort> {
+        match self {
+            NIA::Const(op) => op.dom().map(Sort::from),
+            NIA::Add(op) => op.dom().map(Sort::from),
+            NIA::Sub(op) => op.dom().map(Sort::from),
+            NIA::Mul(op) => op.dom().map(Sort::from),
+            NIA::Div(op) => op.dom().map(Sort::from),
+            NIA::Mod(op) => op.dom().map(Sort::from),
+            NIA::Linear(op) => op.dom().map(Sort::from),
+            NIA::ReLU(op) => op.dom().map(Sort::from),
+            NIA::Min(op) => op.dom().map(Sort::from),
+            NIA::Max(op) => op.dom().map(Sort::from),
+            NIA::Transpose(op) => op.dom().map(Sort::from),
+            NIA::MatMul(op) => op.dom().map(Sort::from),
+            NIA::Lt(op) => op.dom(),
+            NIA::Le(op) => op.dom(),
+            NIA::Gt(op) => op.dom(),
+            NIA::Ge(op) => op.dom(),
+            NIA::Eq(op) => op.dom(),
+            NIA::Ne(op) => op.dom(),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            NIA::Const(op) => op.cod().map(Sort::from),
+            NIA::Add(op) => op.cod().map(Sort::from),
+            NIA::Sub(op) => op.cod().map(Sort::from),
+            NIA::Mul(op) => op.cod().map(Sort::from),
+            NIA::Div(op) => op.cod().map(Sort::from),
+            NIA::Mod(op) => op.cod().map(Sort::from),
+            NIA::Linear(op) => op.cod().map(Sort::from),
+            NIA::ReLU(op) => op.cod().map(Sort::from),
+            NIA::Min(op) => op.cod().map(Sort::from),
+            NIA::Max(op) => op.cod().map(Sort::from),
+            NIA::Transpose(op) => op.cod().map(Sort::from),
+            NIA::MatMul(op) => op.cod().map(Sort::from),
+            NIA::Lt(op) => op.cod(),
+            NIA::Le(op) => op.cod(),
+            NIA::Gt(op) => op.cod(),
+            NIA::Ge(op) => op.cod(),
+            NIA::Eq(op) => op.cod(),
+            NIA::Ne(op) => op.cod(),
+        }
+    }
+}
+impl Boundary<Sort> for LIA {
+    fn dom(&self) -> Poly<Sort> {
+        match self {
+            LIA::Const(op) => op.dom().map(Sort::from),
+            LIA::Add(op) => op.dom().map(Sort::from),
+            LIA::Sub(op) => op.dom().map(Sort::from),
+            LIA::Linear(op) => op.dom().map(Sort::from),
+            LIA::ReLU(op) => op.dom().map(Sort::from),
+            LIA::Min(op) => op.dom().map(Sort::from),
+            LIA::Max(op) => op.dom().map(Sort::from),
+            LIA::Transpose(op) => op.dom().map(Sort::from),
+            LIA::Lt(op) => op.dom(),
+            LIA::Le(op) => op.dom(),
+            LIA::Gt(op) => op.dom(),
+            LIA::Ge(op) => op.dom(),
+            LIA::Eq(op) => op.dom(),
+            LIA::Ne(op) => op.dom(),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            LIA::Const(op) => op.cod().map(Sort::from),
+            LIA::Add(op) => op.cod().map(Sort::from),
+            LIA::Sub(op) => op.cod().map(Sort::from),
+            LIA::Linear(op) => op.cod().map(Sort::from),
+            LIA::ReLU(op) => op.cod().map(Sort::from),
+            LIA::Min(op) => op.cod().map(Sort::from),
+            LIA::Max(op) => op.cod().map(Sort::from),
+            LIA::Transpose(op) => op.cod().map(Sort::from),
+            LIA::Lt(op) => op.cod(),
+            LIA::Le(op) => op.cod(),
+            LIA::Gt(op) => op.cod(),
+            LIA::Ge(op) => op.cod(),
+            LIA::Eq(op) => op.cod(),
+            LIA::Ne(op) => op.cod(),
+        }
+    }
+}
 
 impl Boundary<Int> for Const {
     fn dom(&self) -> Poly<Int> {

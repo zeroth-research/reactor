@@ -48,6 +48,7 @@ comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
 use crate::sort::{Bool, Word};
 use base::boundary::{Boundary, Poly};
 use base::mono;
+use derive_more::From;
 use std::fmt;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's
@@ -185,6 +186,137 @@ pub struct Eq(pub usize, pub usize, pub usize);
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Ne(pub usize, pub usize, pub usize);
+
+/// The operations of the theory of fixed-size bit-vectors, SMT-LIB2's
+/// `FixedSizeBitVectors`, with their boundary in [`Sort`]. Those of
+/// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
+/// as `SDiv` for [`signed::Div`] and `UDiv` for [`unsigned::Div`].
+#[derive(Clone, Debug, From)]
+pub enum BV {
+    Const(Const),
+    Concat(Concat),
+    Extract(Extract),
+    Repeat(Repeat),
+    Not(Not),
+    And(And),
+    Or(Or),
+    Xor(Xor),
+    Nand(Nand),
+    Nor(Nor),
+    Xnor(Xnor),
+    Neg(Neg),
+    Add(Add),
+    Sub(Sub),
+    Mul(Mul),
+    Shl(Shl),
+    RotateLeft(RotateLeft),
+    RotateRight(RotateRight),
+    Eq(Eq),
+    Ne(Ne),
+    SDiv(signed::Div),
+    SRem(signed::Rem),
+    SMod(signed::Mod),
+    AShr(signed::Shr),
+    SignExtend(signed::Extend),
+    SLt(signed::Lt),
+    SLe(signed::Le),
+    SGt(signed::Gt),
+    SGe(signed::Ge),
+    UDiv(unsigned::Div),
+    URem(unsigned::Rem),
+    LShr(unsigned::Shr),
+    ZeroExtend(unsigned::Extend),
+    ULt(unsigned::Lt),
+    ULe(unsigned::Le),
+    UGt(unsigned::Gt),
+    UGe(unsigned::Ge),
+}
+
+impl Boundary<Sort> for BV {
+    fn dom(&self) -> Poly<Sort> {
+        match self {
+            BV::Const(op) => op.dom(),
+            BV::Concat(op) => op.dom(),
+            BV::Extract(op) => op.dom(),
+            BV::Repeat(op) => op.dom(),
+            BV::Not(op) => op.dom(),
+            BV::And(op) => op.dom(),
+            BV::Or(op) => op.dom(),
+            BV::Xor(op) => op.dom(),
+            BV::Nand(op) => op.dom(),
+            BV::Nor(op) => op.dom(),
+            BV::Xnor(op) => op.dom(),
+            BV::Neg(op) => op.dom(),
+            BV::Add(op) => op.dom(),
+            BV::Sub(op) => op.dom(),
+            BV::Mul(op) => op.dom(),
+            BV::Shl(op) => op.dom(),
+            BV::RotateLeft(op) => op.dom(),
+            BV::RotateRight(op) => op.dom(),
+            BV::Eq(op) => op.dom(),
+            BV::Ne(op) => op.dom(),
+            BV::SDiv(op) => op.dom(),
+            BV::SRem(op) => op.dom(),
+            BV::SMod(op) => op.dom(),
+            BV::AShr(op) => op.dom(),
+            BV::SignExtend(op) => op.dom(),
+            BV::SLt(op) => op.dom(),
+            BV::SLe(op) => op.dom(),
+            BV::SGt(op) => op.dom(),
+            BV::SGe(op) => op.dom(),
+            BV::UDiv(op) => op.dom(),
+            BV::URem(op) => op.dom(),
+            BV::LShr(op) => op.dom(),
+            BV::ZeroExtend(op) => op.dom(),
+            BV::ULt(op) => op.dom(),
+            BV::ULe(op) => op.dom(),
+            BV::UGt(op) => op.dom(),
+            BV::UGe(op) => op.dom(),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            BV::Const(op) => op.cod(),
+            BV::Concat(op) => op.cod(),
+            BV::Extract(op) => op.cod(),
+            BV::Repeat(op) => op.cod(),
+            BV::Not(op) => op.cod(),
+            BV::And(op) => op.cod(),
+            BV::Or(op) => op.cod(),
+            BV::Xor(op) => op.cod(),
+            BV::Nand(op) => op.cod(),
+            BV::Nor(op) => op.cod(),
+            BV::Xnor(op) => op.cod(),
+            BV::Neg(op) => op.cod(),
+            BV::Add(op) => op.cod(),
+            BV::Sub(op) => op.cod(),
+            BV::Mul(op) => op.cod(),
+            BV::Shl(op) => op.cod(),
+            BV::RotateLeft(op) => op.cod(),
+            BV::RotateRight(op) => op.cod(),
+            BV::Eq(op) => op.cod(),
+            BV::Ne(op) => op.cod(),
+            BV::SDiv(op) => op.cod(),
+            BV::SRem(op) => op.cod(),
+            BV::SMod(op) => op.cod(),
+            BV::AShr(op) => op.cod(),
+            BV::SignExtend(op) => op.cod(),
+            BV::SLt(op) => op.cod(),
+            BV::SLe(op) => op.cod(),
+            BV::SGt(op) => op.cod(),
+            BV::SGe(op) => op.cod(),
+            BV::UDiv(op) => op.cod(),
+            BV::URem(op) => op.cod(),
+            BV::LShr(op) => op.cod(),
+            BV::ZeroExtend(op) => op.cod(),
+            BV::ULt(op) => op.cod(),
+            BV::ULe(op) => op.cod(),
+            BV::UGt(op) => op.cod(),
+            BV::UGe(op) => op.cod(),
+        }
+    }
+}
 
 impl Boundary<Sort> for Const {
     fn dom(&self) -> Poly<Sort> {

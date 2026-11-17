@@ -26,7 +26,9 @@ sorts of the theory, rather than in [`Real`].
 use crate::sort::{Bool, Real};
 use base::boundary::{Boundary, Poly};
 use base::mono;
+use derive_more::From;
 use std::fmt;
+use subenum::subenum;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Reals`:
 /// real matrices, and the booleans of the Core theory, which comparisons
@@ -125,6 +127,133 @@ pub struct Eq(pub usize, pub usize);
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Ne(pub usize, pub usize);
+
+/// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
+/// with their boundary in [`Sort`].
+///
+/// `subenum` defines [`LRA`], the linear ones: all but `Mul`, `Div` and
+/// `MatMul`, which multiply or divide two variables. It also generates the
+/// casts between them: `From` up to `NRA`, and `TryFrom` down from it.
+#[subenum(LRA)]
+#[derive(Clone, Debug, From)]
+pub enum NRA {
+    #[subenum(LRA)]
+    Const(Const),
+    #[subenum(LRA)]
+    Add(Add),
+    #[subenum(LRA)]
+    Sub(Sub),
+    Mul(Mul),
+    Div(Div),
+    #[subenum(LRA)]
+    Linear(Linear),
+    #[subenum(LRA)]
+    ReLU(ReLU),
+    #[subenum(LRA)]
+    Min(Min),
+    #[subenum(LRA)]
+    Max(Max),
+    #[subenum(LRA)]
+    Transpose(Transpose),
+    MatMul(MatMul),
+    #[subenum(LRA)]
+    Lt(Lt),
+    #[subenum(LRA)]
+    Le(Le),
+    #[subenum(LRA)]
+    Gt(Gt),
+    #[subenum(LRA)]
+    Ge(Ge),
+    #[subenum(LRA)]
+    Eq(Eq),
+    #[subenum(LRA)]
+    Ne(Ne),
+}
+
+impl Boundary<Sort> for NRA {
+    fn dom(&self) -> Poly<Sort> {
+        match self {
+            NRA::Const(op) => op.dom().map(Sort::from),
+            NRA::Add(op) => op.dom().map(Sort::from),
+            NRA::Sub(op) => op.dom().map(Sort::from),
+            NRA::Mul(op) => op.dom().map(Sort::from),
+            NRA::Div(op) => op.dom().map(Sort::from),
+            NRA::Linear(op) => op.dom().map(Sort::from),
+            NRA::ReLU(op) => op.dom().map(Sort::from),
+            NRA::Min(op) => op.dom().map(Sort::from),
+            NRA::Max(op) => op.dom().map(Sort::from),
+            NRA::Transpose(op) => op.dom().map(Sort::from),
+            NRA::MatMul(op) => op.dom().map(Sort::from),
+            NRA::Lt(op) => op.dom(),
+            NRA::Le(op) => op.dom(),
+            NRA::Gt(op) => op.dom(),
+            NRA::Ge(op) => op.dom(),
+            NRA::Eq(op) => op.dom(),
+            NRA::Ne(op) => op.dom(),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            NRA::Const(op) => op.cod().map(Sort::from),
+            NRA::Add(op) => op.cod().map(Sort::from),
+            NRA::Sub(op) => op.cod().map(Sort::from),
+            NRA::Mul(op) => op.cod().map(Sort::from),
+            NRA::Div(op) => op.cod().map(Sort::from),
+            NRA::Linear(op) => op.cod().map(Sort::from),
+            NRA::ReLU(op) => op.cod().map(Sort::from),
+            NRA::Min(op) => op.cod().map(Sort::from),
+            NRA::Max(op) => op.cod().map(Sort::from),
+            NRA::Transpose(op) => op.cod().map(Sort::from),
+            NRA::MatMul(op) => op.cod().map(Sort::from),
+            NRA::Lt(op) => op.cod(),
+            NRA::Le(op) => op.cod(),
+            NRA::Gt(op) => op.cod(),
+            NRA::Ge(op) => op.cod(),
+            NRA::Eq(op) => op.cod(),
+            NRA::Ne(op) => op.cod(),
+        }
+    }
+}
+impl Boundary<Sort> for LRA {
+    fn dom(&self) -> Poly<Sort> {
+        match self {
+            LRA::Const(op) => op.dom().map(Sort::from),
+            LRA::Add(op) => op.dom().map(Sort::from),
+            LRA::Sub(op) => op.dom().map(Sort::from),
+            LRA::Linear(op) => op.dom().map(Sort::from),
+            LRA::ReLU(op) => op.dom().map(Sort::from),
+            LRA::Min(op) => op.dom().map(Sort::from),
+            LRA::Max(op) => op.dom().map(Sort::from),
+            LRA::Transpose(op) => op.dom().map(Sort::from),
+            LRA::Lt(op) => op.dom(),
+            LRA::Le(op) => op.dom(),
+            LRA::Gt(op) => op.dom(),
+            LRA::Ge(op) => op.dom(),
+            LRA::Eq(op) => op.dom(),
+            LRA::Ne(op) => op.dom(),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            LRA::Const(op) => op.cod().map(Sort::from),
+            LRA::Add(op) => op.cod().map(Sort::from),
+            LRA::Sub(op) => op.cod().map(Sort::from),
+            LRA::Linear(op) => op.cod().map(Sort::from),
+            LRA::ReLU(op) => op.cod().map(Sort::from),
+            LRA::Min(op) => op.cod().map(Sort::from),
+            LRA::Max(op) => op.cod().map(Sort::from),
+            LRA::Transpose(op) => op.cod().map(Sort::from),
+            LRA::Lt(op) => op.cod(),
+            LRA::Le(op) => op.cod(),
+            LRA::Gt(op) => op.cod(),
+            LRA::Ge(op) => op.cod(),
+            LRA::Eq(op) => op.cod(),
+            LRA::Ne(op) => op.cod(),
+        }
+    }
+}
 
 impl Boundary<Real> for Const {
     fn dom(&self) -> Poly<Real> {

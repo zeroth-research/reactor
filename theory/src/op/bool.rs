@@ -14,6 +14,7 @@ information to compute its [`Boundary`]:
 use crate::sort::Bool;
 use base::boundary::{Boundary, Poly};
 use base::mono;
+use derive_more::From;
 use std::fmt;
 
 /// A constant boolean matrix literal.
@@ -35,6 +36,39 @@ pub struct Xor(pub usize, pub usize);
 /// Pointwise negation `¬x` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Not(pub usize, pub usize);
+
+/// The operations of propositional logic, the boolean operations of
+/// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
+#[derive(Clone, Debug, From)]
+pub enum Prop {
+    Const(Const),
+    And(And),
+    Or(Or),
+    Xor(Xor),
+    Not(Not),
+}
+
+impl Boundary<Bool> for Prop {
+    fn dom(&self) -> Poly<Bool> {
+        match self {
+            Prop::Const(op) => op.dom(),
+            Prop::And(op) => op.dom(),
+            Prop::Or(op) => op.dom(),
+            Prop::Xor(op) => op.dom(),
+            Prop::Not(op) => op.dom(),
+        }
+    }
+
+    fn cod(&self) -> Poly<Bool> {
+        match self {
+            Prop::Const(op) => op.cod(),
+            Prop::And(op) => op.cod(),
+            Prop::Or(op) => op.cod(),
+            Prop::Xor(op) => op.cod(),
+            Prop::Not(op) => op.cod(),
+        }
+    }
+}
 
 impl Boundary<Bool> for Const {
     fn dom(&self) -> Poly<Bool> {
