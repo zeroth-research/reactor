@@ -52,6 +52,11 @@ For each case:
 | **EBMC regression** (`hw-cbmc/regression/verilog`, `regression/ebmc`) | every `*.desc` marked `CORE` with a `.v`/`.sv` input; top from `--module`/`--top` | non-`CORE` (`KNOWNBUG`), non-Verilog inputs (SMV, AIGER, …), tests needing `-I`/`-D`/`-y`, and **duplicates**: several `.desc` run the same file and top with other engines/bounds; each (file, top) is measured once |
 | **SymbiYosys examples** (`sby/docs/examples`) | every `.sby` job: the Verilog files of its `[files]` section, concatenated in order, top from `prep -top`/`hierarchy -top` | jobs without Verilog files (VHDL). `[tasks]` variants and `read -define` are ignored, `FORMAL` is **not** defined: `` `ifdef FORMAL `` blocks (the properties of most SBY examples) are dropped by the preprocessor, so an accepted SBY design is measured without its properties |
 
+**Case study, measured separately:** the Lighthouse deck FPGA ([`lighthouse/`](lighthouse/README.md)):
+a whole design (22 generated modules plus a hand-written one). Its Verilog is not in any
+repository: `lighthouse/generate.sh` generates it from the SpinalHDL sources in Docker, and
+`lighthouse/measure.sh` writes `results/lighthouse.{md,tsv}`.
+
 **Not measured:**
 - **riscv-formal** (fetched): case-study size (RISC-V cores checked against the RVFI interface
   with SVA properties). A later step, once the subset handles a whole core (arrays, functions,
