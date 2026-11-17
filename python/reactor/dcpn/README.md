@@ -132,15 +132,15 @@ Connections are ordered lists of place objects. Our priority is to implement inp
 | Attribute    | Meaning                                     |
 | ------------ | ------------------------------------------- |
 | `inputs`     | Select and consume one token per occurrence |
-| `outputs`    | Produce up to one token per occurrence      |
+| `outputs`    | Produce exactly one token per occurrence    |
 
 and support the three flavors of SDCPN transitions:
 
 | Transition class       | Required methods    |
 | ---------------------- | ------------------- |
-| `ImmediateTransition`  | `produce`           |
-| `GuardedTransition`    | `produce` + `guard` |
-| `StochasticTransition` | `produce` + `rate`  |
+| `ImmediateTransition`  | `produce` if outputs are declared |
+| `GuardedTransition`    | `guard`; `produce` if outputs are declared |
+| `StochasticTransition` | `rate`; `produce` if outputs are declared |
 
 `guard`, `produce`, and `rate` receive one generated `Color` record per selected
 input token after `self`. Consumed-token records come first, in `inputs` order,
@@ -153,9 +153,13 @@ For example, `inputs = (Work, Work)` selects two distinct tokens, passed as
 
 #### Token production
 
-`produce` returns a tuple aligned with `outputs`. Each entry is a destination
-`Color` record or `None` for no token. The empty record `Place.Color()` produces
-an uncoloured token.
+`produce` is required only when `outputs` is nonempty. Without output places,
+it may be omitted; if defined, it must return an empty tuple.
+
+`produce` returns a tuple aligned with `outputs`. Each entry must be the
+destination place's `Color` record and produces exactly one token. `None` entries
+are not allowed. The empty record `Place.Color()` produces an uncoloured token.
+Transitions with `outputs = ()` produce no tokens.
 
 #### Enabling and inhibiting arcs
 
