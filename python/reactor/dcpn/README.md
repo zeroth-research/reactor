@@ -123,7 +123,7 @@ class Moving(Place):
         return 2 * d(t)
 ```
 
-Use this place in a `Net(theory=LRA, ...)`; a source transition can supply `Moving.Color(position=...)`.
+Use this place in a `DCPN(theory=LRA, ...)`; a source transition can supply `Moving.Color(position=...)`.
 
 ### Transitions
 
@@ -184,7 +184,7 @@ in principle we want all classes to be instantiated as singletons. The `@obj` he
 
 ## Translation
 
-`Net` describes the net for an arbitrary number of tokens.
+`DCPN` describes the net for an arbitrary number of tokens.
 `to_modules(token_capacity=N)` lowers it to reactive modules, with **N token
 modules** plus **modules for transition coordination**.
 
