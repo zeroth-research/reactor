@@ -45,90 +45,17 @@ theory FixedSizeBitVectors or are defined by the logic QF_BV. The
 comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
 */
 
-use crate::bool::Bool;
-use crate::zero::Zero;
+use crate::sort::{Bool, Word};
 use base::boundary::{Boundary, Poly};
-use base::differentiable::Differentiable;
 use base::mono;
-use derive_more::From;
 use std::fmt;
 
-/// The sort of matrices of `width`-bit words with the given `[rows, cols]`
-/// shape: entrywise, the SMT-LIB2 sort `(_ BitVec width)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
-pub struct Word {
-    width: usize,
-    shape: [usize; 2],
-}
-
-impl Word {
-    /// Matrices of `width`-bit words; as in SMT-LIB2, `width` must be
-    /// positive, or this returns an error.
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, String> {
-        if width == 0 {
-            return Err("words have at least one bit".to_string());
-        }
-        Ok(Word { width, shape })
-    }
-
-    /// Matrices of `width`-bit words, as [`Word::new`], but panics if
-    /// `width` is zero.
-    pub fn new_unchecked(width: usize, shape: [usize; 2]) -> Self {
-        Self::new(width, shape).unwrap_or_else(|e| panic!("{e}"))
-    }
-
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-}
-
-impl fmt::Display for Word {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let [i, j] = self.shape;
-        write!(f, "Word<{}>({i}, {j})", self.width)
-    }
-}
-
-/// Words are discrete, so their tangent is trivial: the singleton sort
-/// [`Zero`].
-impl Differentiable for Word {
-    type Tangent = Zero;
-
-    fn tangent(self) -> Zero {
-        Zero
-    }
-}
-
-/// The sorts of the theory, as in the signature of SMT-LIB2's QF_BV: words,
-/// and the booleans of the Core theory, which comparisons write.
-#[derive(Clone, Copy, PartialEq, Debug, Eq, From)]
-pub enum Sort {
-    Word(Word),
-    Bool(Bool),
-}
-
-impl fmt::Display for Sort {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Sort::Word(w) => w.fmt(f),
-            Sort::Bool(b) => b.fmt(f),
-        }
-    }
-}
-
-/// Both sorts are discrete, so their tangent is trivial: the singleton
-/// sort [`Zero`].
-impl Differentiable for Sort {
-    type Tangent = Zero;
-
-    fn tangent(self) -> Zero {
-        Zero
-    }
-}
+/// The sorts of the theory, as in the signature of SMT-LIB2's
+/// FixedSizeBitVectors: words, and the booleans of the Core theory, which
+/// comparisons write, together with [`Zero`](crate::sort::Zero), the tangent of both. It is
+/// the subset [`sort::Words`](crate::sort::Words) of the sorts of all
+/// theories.
+pub use crate::sort::Words as Sort;
 
 /// A constant matrix literal of `w`-bit words, as `Const(tensor, w)`.
 ///
@@ -588,7 +515,7 @@ impl fmt::Display for Ne {
 /// signedness; the others are in the parent module.
 pub mod signed {
     use super::{Sort, Word};
-    use crate::bool::Bool;
+    use crate::sort::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     use std::fmt;
@@ -802,7 +729,7 @@ pub mod signed {
 /// signedness; the others are in the parent module.
 pub mod unsigned {
     use super::{Sort, Word};
-    use crate::bool::Bool;
+    use crate::sort::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     use std::fmt;
@@ -990,7 +917,6 @@ pub mod unsigned {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::differentiable::T;
 
     fn w(width: usize, shape: [usize; 2]) -> Sort {
         Word::new(width, shape).unwrap().into()
@@ -1006,52 +932,6 @@ mod tests {
 
     fn two(s: Sort) -> Poly<Sort> {
         mono![s, s].into()
-    }
-
-    #[test]
-    fn word_width_shape_and_display() {
-        let x = Word::new(8, [2, 3]).unwrap();
-        assert_eq!(x.width(), 8);
-        assert_eq!(x.shape(), [2, 3]);
-        assert_eq!(x.to_string(), "Word<8>(2, 3)");
-    }
-
-    #[test]
-    fn word_has_positive_width() {
-        assert_eq!(
-            Word::new(0, [2, 3]),
-            Err("words have at least one bit".to_string())
-        );
-        assert!(Word::new(1, [2, 3]).is_ok());
-    }
-
-    #[test]
-    fn new_unchecked_builds_positive_widths() {
-        assert_eq!(
-            Word::new_unchecked(8, [2, 3]),
-            Word::new(8, [2, 3]).unwrap()
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "words have at least one bit")]
-    fn new_unchecked_panics_on_zero_width() {
-        Word::new_unchecked(0, [2, 3]);
-    }
-
-    #[test]
-    fn sort_is_word_or_bool() {
-        let x = Word::new(8, [2, 3]).unwrap();
-        assert_eq!(Sort::from(x), Sort::Word(x));
-        assert_eq!(w(8, [2, 3]).to_string(), "Word<8>(2, 3)");
-        assert_eq!(b([2, 3]).to_string(), "Bool(2, 3)");
-    }
-
-    #[test]
-    fn tangent_is_trivial() {
-        assert_eq!(T(Word::new(8, [2, 3]).unwrap()), Zero);
-        assert_eq!(T(w(8, [2, 3])), Zero);
-        assert_eq!(T(b([2, 3])), Zero);
     }
 
     #[test]

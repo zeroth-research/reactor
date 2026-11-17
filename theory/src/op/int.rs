@@ -1,73 +1,26 @@
 /*!
-# Real arithmetic
+# Integer arithmetic
 
-Defines the sort [`Real`] of real matrices and one type per operation on
-them. Every operation reads and writes real matrices, and carries enough
+Defines one type per operation on the sort [`Int`] of integer matrices. Every
+operation reads and writes integer matrices, and carries enough
 information to compute its [`Boundary`]:
 
-- [`Const`] — a constant real matrix literal.
+- [`Const`] — a constant integer matrix literal.
 - [`Add`], [`Sub`] — pointwise addition and subtraction.
 - [`Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
-  constant real matrices of compatible shapes.
+  constant integer matrices of compatible shapes.
 - [`ReLU`] — the shape-preserving rectified-linear map `x ↦ max(x, 0)`.
 - [`Min`], [`Max`] — pointwise minimum and maximum.
 - [`Transpose`] — matrix transposition.
 - [`MatMul`] — the matrix product `x·y`.
 */
 
+use crate::sort::Int;
 use base::boundary::{Boundary, Poly};
-use base::differentiable::Differentiable;
 use base::mono;
 use std::fmt;
 
-/// The sort of real matrices with the given `[rows, cols]` shape, graded by
-/// their `degree`: values of degree `d` are `d`-th order rates of change,
-/// and plain reals have degree 0.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
-pub struct Real {
-    degree: u8,
-    shape: [usize; 2],
-}
-
-impl Real {
-    /// Plain real matrices of the given shape, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Real { degree: 0, shape }
-    }
-
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-}
-
-impl fmt::Display for Real {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let [i, j] = self.shape;
-        match self.degree {
-            0 => write!(f, "Real({i}, {j})"),
-            d => write!(f, "T^{d}(Real({i}, {j}))"),
-        }
-    }
-}
-
-/// The rate of change of a real matrix is a real matrix of the same shape,
-/// one degree higher.
-impl Differentiable for Real {
-    type Tangent = Real;
-
-    fn tangent(self) -> Real {
-        Real {
-            degree: self.degree + 1,
-            shape: self.shape,
-        }
-    }
-}
-
-/// A constant real matrix literal.
+/// A constant integer matrix literal.
 #[derive(Clone, Debug)]
 pub struct Const(pub crate::PyTensor);
 
@@ -105,99 +58,99 @@ pub struct Transpose(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct MatMul(pub usize, pub usize, pub usize);
 
-impl Boundary<Real> for Const {
-    fn dom(&self) -> Poly<Real> {
+impl Boundary<Int> for Const {
+    fn dom(&self) -> Poly<Int> {
         Poly::unit()
     }
 
-    fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.0.shape())].into()
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new(self.0.shape())].into()
     }
 }
 
-impl Boundary<Real> for Add {
-    fn dom(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1]); 2].into()
+impl Boundary<Int> for Add {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1]); 2].into()
     }
 
-    fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
     }
 }
 
-impl Boundary<Real> for Sub {
-    fn dom(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1]); 2].into()
+impl Boundary<Int> for Sub {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1]); 2].into()
     }
 
-    fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
     }
 }
 
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl Boundary<Real> for Linear {
-    fn dom(&self) -> Poly<Real> {
+impl Boundary<Int> for Linear {
+    fn dom(&self) -> Poly<Int> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
-        mono![Real::new([n, k])].into()
+        mono![Int::new([n, k])].into()
     }
 
-    fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.1.shape())].into()
-    }
-}
-
-impl Boundary<Real> for ReLU {
-    fn dom(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1])].into()
-    }
-
-    fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new(self.1.shape())].into()
     }
 }
 
-impl Boundary<Real> for Min {
-    fn dom(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1]); 2].into()
+impl Boundary<Int> for ReLU {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
     }
 
-    fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
     }
 }
 
-impl Boundary<Real> for Max {
-    fn dom(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1]); 2].into()
+impl Boundary<Int> for Min {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1]); 2].into()
     }
 
-    fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
+    }
+}
+
+impl Boundary<Int> for Max {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1]); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
     }
 }
 
 /// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
-impl Boundary<Real> for Transpose {
-    fn dom(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1])].into()
+impl Boundary<Int> for Transpose {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
     }
 
-    fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.1, self.0])].into()
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([self.1, self.0])].into()
     }
 }
 
 /// Takes matrices of shapes `[m, n]` and `[n, k]` to one of shape `[m, k]`.
-impl Boundary<Real> for MatMul {
-    fn dom(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.1]), Real::new([self.1, self.2])].into()
+impl Boundary<Int> for MatMul {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1]), Int::new([self.1, self.2])].into()
     }
 
-    fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.0, self.2])].into()
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.2])].into()
     }
 }
 
@@ -258,35 +211,18 @@ impl fmt::Display for MatMul {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::differentiable::T;
 
-    fn one(s: Real) -> Poly<Real> {
+    fn one(s: Int) -> Poly<Int> {
         mono![s].into()
     }
 
-    fn two(s: Real) -> Poly<Real> {
+    fn two(s: Int) -> Poly<Int> {
         mono![s, s].into()
     }
 
     #[test]
-    fn sort_shape_and_display() {
-        let r = Real::new([2, 3]);
-        assert_eq!(r.shape(), [2, 3]);
-        assert_eq!(r.to_string(), "Real(2, 3)");
-    }
-
-    #[test]
-    fn tangent_raises_degree() {
-        let r = Real::new([2, 3]);
-        assert_eq!(T(r).degree(), 1);
-        assert_eq!(T(r).shape(), [2, 3]);
-        assert_eq!(T(T(r)).degree(), 2);
-        assert_eq!(T(r).to_string(), "T^1(Real(2, 3))");
-    }
-
-    #[test]
     fn pointwise_boundaries() {
-        let r = Real::new([2, 3]);
+        let r = Int::new([2, 3]);
         assert_eq!(Add(2, 3).dom(), two(r));
         assert_eq!(Add(2, 3).cod(), one(r));
         assert_eq!(Sub(2, 3).dom(), two(r));
@@ -299,16 +235,16 @@ mod tests {
     #[test]
     fn transpose_swaps_shape() {
         let t = Transpose(2, 3);
-        assert_eq!(t.dom(), one(Real::new([2, 3])));
-        assert_eq!(t.cod(), one(Real::new([3, 2])));
+        assert_eq!(t.dom(), one(Int::new([2, 3])));
+        assert_eq!(t.cod(), one(Int::new([3, 2])));
     }
 
     #[test]
     fn matmul_contracts_inner_size() {
         let p = MatMul(2, 3, 4);
-        let dom: Poly<Real> = mono![Real::new([2, 3]), Real::new([3, 4])].into();
+        let dom: Poly<Int> = mono![Int::new([2, 3]), Int::new([3, 4])].into();
         assert_eq!(p.dom(), dom);
-        assert_eq!(p.cod(), one(Real::new([2, 4])));
+        assert_eq!(p.cod(), one(Int::new([2, 4])));
     }
 
     #[test]

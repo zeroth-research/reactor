@@ -1,61 +1,25 @@
 /*!
-# Integer arithmetic
+# Real arithmetic
 
-Defines the sort [`Int`] of integer matrices, whose tangent is the
-singleton sort [`Zero`], and one type per operation on them. Every
-operation reads and writes integer matrices, and carries enough
+Defines one type per operation on the sort [`Real`] of real matrices. Every operation reads and writes real matrices, and carries enough
 information to compute its [`Boundary`]:
 
-- [`Const`] — a constant integer matrix literal.
+- [`Const`] — a constant real matrix literal.
 - [`Add`], [`Sub`] — pointwise addition and subtraction.
 - [`Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
-  constant integer matrices of compatible shapes.
+  constant real matrices of compatible shapes.
 - [`ReLU`] — the shape-preserving rectified-linear map `x ↦ max(x, 0)`.
 - [`Min`], [`Max`] — pointwise minimum and maximum.
 - [`Transpose`] — matrix transposition.
 - [`MatMul`] — the matrix product `x·y`.
 */
 
-use crate::zero::Zero;
+use crate::sort::Real;
 use base::boundary::{Boundary, Poly};
-use base::differentiable::Differentiable;
 use base::mono;
 use std::fmt;
 
-/// The sort of integer matrices with the given `[rows, cols]` shape.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
-pub struct Int {
-    shape: [usize; 2],
-}
-
-impl Int {
-    pub fn new(shape: [usize; 2]) -> Self {
-        Int { shape }
-    }
-
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-}
-
-impl fmt::Display for Int {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let [i, j] = self.shape;
-        write!(f, "Int({i}, {j})")
-    }
-}
-
-/// Integers are discrete, so their tangent is trivial: the singleton sort
-/// [`Zero`].
-impl Differentiable for Int {
-    type Tangent = Zero;
-
-    fn tangent(self) -> Zero {
-        Zero
-    }
-}
-
-/// A constant integer matrix literal.
+/// A constant real matrix literal.
 #[derive(Clone, Debug)]
 pub struct Const(pub crate::PyTensor);
 
@@ -93,99 +57,99 @@ pub struct Transpose(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct MatMul(pub usize, pub usize, pub usize);
 
-impl Boundary<Int> for Const {
-    fn dom(&self) -> Poly<Int> {
+impl Boundary<Real> for Const {
+    fn dom(&self) -> Poly<Real> {
         Poly::unit()
     }
 
-    fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.0.shape())].into()
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new(self.0.shape())].into()
     }
 }
 
-impl Boundary<Int> for Add {
-    fn dom(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1]); 2].into()
+impl Boundary<Real> for Add {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1]); 2].into()
     }
 
-    fn cod(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
     }
 }
 
-impl Boundary<Int> for Sub {
-    fn dom(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1]); 2].into()
+impl Boundary<Real> for Sub {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1]); 2].into()
     }
 
-    fn cod(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
     }
 }
 
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl Boundary<Int> for Linear {
-    fn dom(&self) -> Poly<Int> {
+impl Boundary<Real> for Linear {
+    fn dom(&self) -> Poly<Real> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
-        mono![Int::new([n, k])].into()
+        mono![Real::new([n, k])].into()
     }
 
-    fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.1.shape())].into()
-    }
-}
-
-impl Boundary<Int> for ReLU {
-    fn dom(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1])].into()
-    }
-
-    fn cod(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new(self.1.shape())].into()
     }
 }
 
-impl Boundary<Int> for Min {
-    fn dom(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1]); 2].into()
+impl Boundary<Real> for ReLU {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
     }
 
-    fn cod(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
     }
 }
 
-impl Boundary<Int> for Max {
-    fn dom(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1]); 2].into()
+impl Boundary<Real> for Min {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1]); 2].into()
     }
 
-    fn cod(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1])].into()
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
+    }
+}
+
+impl Boundary<Real> for Max {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1]); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
     }
 }
 
 /// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
-impl Boundary<Int> for Transpose {
-    fn dom(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1])].into()
+impl Boundary<Real> for Transpose {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
     }
 
-    fn cod(&self) -> Poly<Int> {
-        mono![Int::new([self.1, self.0])].into()
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.1, self.0])].into()
     }
 }
 
 /// Takes matrices of shapes `[m, n]` and `[n, k]` to one of shape `[m, k]`.
-impl Boundary<Int> for MatMul {
-    fn dom(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.1]), Int::new([self.1, self.2])].into()
+impl Boundary<Real> for MatMul {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1]), Real::new([self.1, self.2])].into()
     }
 
-    fn cod(&self) -> Poly<Int> {
-        mono![Int::new([self.0, self.2])].into()
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.2])].into()
     }
 }
 
@@ -246,32 +210,18 @@ impl fmt::Display for MatMul {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::differentiable::T;
 
-    fn one(s: Int) -> Poly<Int> {
+    fn one(s: Real) -> Poly<Real> {
         mono![s].into()
     }
 
-    fn two(s: Int) -> Poly<Int> {
+    fn two(s: Real) -> Poly<Real> {
         mono![s, s].into()
     }
 
     #[test]
-    fn sort_shape_and_display() {
-        let r = Int::new([2, 3]);
-        assert_eq!(r.shape(), [2, 3]);
-        assert_eq!(r.to_string(), "Int(2, 3)");
-    }
-
-    #[test]
-    fn tangent_is_trivial() {
-        assert_eq!(T(Int::new([2, 3])), Zero);
-        assert_eq!(T(T(Int::new([2, 3]))), Zero);
-    }
-
-    #[test]
     fn pointwise_boundaries() {
-        let r = Int::new([2, 3]);
+        let r = Real::new([2, 3]);
         assert_eq!(Add(2, 3).dom(), two(r));
         assert_eq!(Add(2, 3).cod(), one(r));
         assert_eq!(Sub(2, 3).dom(), two(r));
@@ -284,16 +234,16 @@ mod tests {
     #[test]
     fn transpose_swaps_shape() {
         let t = Transpose(2, 3);
-        assert_eq!(t.dom(), one(Int::new([2, 3])));
-        assert_eq!(t.cod(), one(Int::new([3, 2])));
+        assert_eq!(t.dom(), one(Real::new([2, 3])));
+        assert_eq!(t.cod(), one(Real::new([3, 2])));
     }
 
     #[test]
     fn matmul_contracts_inner_size() {
         let p = MatMul(2, 3, 4);
-        let dom: Poly<Int> = mono![Int::new([2, 3]), Int::new([3, 4])].into();
+        let dom: Poly<Real> = mono![Real::new([2, 3]), Real::new([3, 4])].into();
         assert_eq!(p.dom(), dom);
-        assert_eq!(p.cod(), one(Int::new([2, 4])));
+        assert_eq!(p.cod(), one(Real::new([2, 4])));
     }
 
     #[test]

@@ -1,8 +1,7 @@
 /*!
 # Boolean algebra
 
-Defines the sort [`Bool`] of boolean matrices, whose tangent is the
-singleton sort [`Zero`], and one type per operation on them. Every
+Defines one type per operation on the sort [`Bool`] of boolean matrices. Every
 operation reads and writes boolean matrices, and carries enough
 information to compute its [`Boundary`]:
 
@@ -12,44 +11,10 @@ information to compute its [`Boundary`]:
 - [`Not`] — pointwise negation.
 */
 
-use crate::zero::Zero;
+use crate::sort::Bool;
 use base::boundary::{Boundary, Poly};
-use base::differentiable::Differentiable;
 use base::mono;
 use std::fmt;
-
-/// The sort of boolean matrices with the given `[rows, cols]` shape.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
-pub struct Bool {
-    shape: [usize; 2],
-}
-
-impl Bool {
-    pub fn new(shape: [usize; 2]) -> Self {
-        Bool { shape }
-    }
-
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-}
-
-impl fmt::Display for Bool {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let [i, j] = self.shape;
-        write!(f, "Bool({i}, {j})")
-    }
-}
-
-/// Booleans are discrete, so their tangent is trivial: the singleton sort
-/// [`Zero`].
-impl Differentiable for Bool {
-    type Tangent = Zero;
-
-    fn tangent(self) -> Zero {
-        Zero
-    }
-}
 
 /// A constant boolean matrix literal.
 #[derive(Clone, Debug)]
@@ -154,7 +119,6 @@ impl fmt::Display for Not {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::differentiable::T;
 
     fn one(s: Bool) -> Poly<Bool> {
         mono![s].into()
@@ -162,19 +126,6 @@ mod tests {
 
     fn two(s: Bool) -> Poly<Bool> {
         mono![s, s].into()
-    }
-
-    #[test]
-    fn sort_shape_and_display() {
-        let b = Bool::new([2, 3]);
-        assert_eq!(b.shape(), [2, 3]);
-        assert_eq!(b.to_string(), "Bool(2, 3)");
-    }
-
-    #[test]
-    fn tangent_is_trivial() {
-        assert_eq!(T(Bool::new([2, 3])), Zero);
-        assert_eq!(T(T(Bool::new([2, 3]))), Zero);
     }
 
     #[test]
