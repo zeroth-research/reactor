@@ -242,12 +242,14 @@ def yosys(case, path):
     p = run(["--yosys", f"-t:{QUERY_TIMEOUT_MS}", *top, str(path)], YOSYS_TIMEOUT)
     if p is None:
         return "TIMEOUT"
+    # exit status 0: every query equal; 1: a variable differs or z3 gave up on a query;
+    # anything else (2: an error, 101: a panic) is an error
     if p.returncode == 0:
         return "Equal"
     out = p.stdout.splitlines()
-    if any(l.startswith("differs:") for l in out):
+    if p.returncode == 1 and any(l.startswith("differs:") for l in out):
         return "Differs " + " ".join(l.split("`")[1] for l in out if l.startswith("differs:"))
-    if any(l.startswith("unknown:") for l in out):
+    if p.returncode == 1 and any(l.startswith("unknown:") for l in out):
         return "Unknown"
     first = next((l for l in p.stderr.splitlines()
                   if l.strip() and ": warning: " not in l), "(no message)")

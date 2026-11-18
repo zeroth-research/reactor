@@ -1336,9 +1336,9 @@ fn counterexample_contents() {
     assert!(text.starts_with("`z` is "), "{text}");
 }
 
-/// `v2rm --yosys`: a summary line and success if every query is equal;
-/// failure with a message for parameter overrides, and with the usage if
-/// combined with another output.
+/// `v2rm --yosys`: a summary line and exit status 0 if every query is
+/// equal; status 2 with a message for parameter overrides. (Wrong
+/// arguments are tested in `cli.rs`.)
 #[test]
 fn cli_yosys() {
     let Some(_) = tools() else { return };
@@ -1349,48 +1349,125 @@ fn cli_yosys() {
             .output()
             .unwrap();
         let text = |b: Vec<u8>| String::from_utf8(b).unwrap();
-        (out.status.success(), text(out.stdout), text(out.stderr))
+        (
+            out.status.code().unwrap(),
+            text(out.stdout),
+            text(out.stderr),
+        )
     };
-    let (ok, stdout, _) = v2rm(&["--yosys", "examples/counter.sv"]);
-    assert!(ok);
+    let (code, stdout, _) = v2rm(&["--yosys", "examples/counter.sv"]);
+    assert_eq!(code, 0);
     assert_eq!(
         stdout,
         "examples/counter.sv: 4 of 4 queries equal (every controlled variable, \
          in the init and the update round)\n"
     );
-    let (ok, _, stderr) = v2rm(&["--yosys", "-G", "N=5", "examples/modcount.sv"]);
-    assert!(!ok);
+    let (code, _, stderr) = v2rm(&["--yosys", "-G", "N=5", "examples/modcount.sv"]);
+    assert_eq!(code, 2);
     assert!(
         stderr.contains("parameter overrides are not supported"),
         "{stderr}"
     );
-    let (ok, _, stderr) = v2rm(&["--yosys", "--smt", "examples/counter.sv"]);
-    assert!(!ok);
-    assert!(stderr.starts_with("usage:"), "{stderr}");
-    // a time limit per query, only for the comparison and only a positive one
-    let (ok, stdout, _) = v2rm(&["--yosys", "-t:60000", "examples/counter.sv"]);
-    assert!(ok && stdout.contains("4 of 4 queries equal"), "{stdout}");
-    for bad in [
-        &["-t:1000", "examples/counter.sv"][..],
-        &["--yosys", "-t:0", "examples/counter.sv"],
-        &["--yosys", "-t:x", "examples/counter.sv"],
-    ] {
-        let (ok, _, stderr) = v2rm(bad);
-        assert!(!ok && stderr.starts_with("usage:"), "{bad:?}: {stderr}");
-    }
-    // Yosys keeps initial values, so it cannot compare without them
-    let (ok, _, stderr) = v2rm(&["--yosys", "--ignore-initializers", "examples/powerup.sv"]);
-    assert!(!ok);
-    assert!(stderr.starts_with("usage:"), "{stderr}");
+    // a time limit per query
+    let (code, stdout, _) = v2rm(&["--yosys", "-t:60000", "examples/counter.sv"]);
+    assert!(
+        code == 0 && stdout.contains("4 of 4 queries equal"),
+        "{stdout}"
+    );
     let (ok, with, _) = v2rm(&["examples/powerup.sv"]);
-    assert!(ok && with.contains("X(cnt) := 8'd250") && !with.contains("cnt@init"));
+    assert!(ok == 0 && with.contains("X(cnt) := 8'd250") && !with.contains("cnt@init"));
     let (ok, without, _) = v2rm(&["--ignore-initializers", "examples/powerup.sv"]);
     assert!(
-        ok && without.contains("X(cnt) := ID X(cnt@init)"),
+        ok == 0 && without.contains("X(cnt) := ID X(cnt@init)"),
         "{without}"
     );
     // the constant keeps its value
     assert!(without.contains("X(pattern) := CONCAT"), "{without}");
+}
+
+/// `v2rm --yosys` on a design where Yosys and we differ: exit status 1, a
+/// `differs:` block per differing query. A counterexample that cannot be
+/// made (here: z3 answers the first `get-value` with nonsense) is reported
+/// in its query's block, and the other queries still get theirs.
+#[cfg(unix)]
+#[test]
+fn cli_yosys_differs() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some((_, z3)) = tools() else { return };
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("cli-differs");
+    std::fs::create_dir_all(&dir).unwrap();
+    // a port connection that Yosys sizes by itself, against the standard
+    let design = dir.join("portwidth.sv");
+    std::fs::write(
+        &design,
+        "module child (input logic signed [7:0] a, output logic [7:0] y);\n  \
+         assign y = a;\nendmodule\n\
+         module top (input logic signed [3:0] x, output logic [7:0] z);\n  \
+         child v (.a(x + 4'sd1), .y(z));\nendmodule\n",
+    )
+    .unwrap();
+    let v2rm = |z3: &Path| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_v2rm"))
+            .args(["--yosys", design.to_str().unwrap()])
+            .env("Z3_BIN", z3)
+            .output()
+            .unwrap();
+        let text = |b: Vec<u8>| String::from_utf8(b).unwrap();
+        (
+            out.status.code().unwrap(),
+            text(out.stdout),
+            text(out.stderr),
+        )
+    };
+    let blocks = |stdout: &str| -> Vec<String> {
+        stdout
+            .split("differs: ")
+            .skip(1)
+            .map(|b| b.lines().map(|l| format!("{l}\n")).collect())
+            .collect()
+    };
+    let (code, stdout, stderr) = v2rm(&z3);
+    assert_eq!(code, 1, "{stdout}{stderr}");
+    let all = blocks(&stdout);
+    assert_eq!(all.len(), 4, "{stdout}");
+    assert!(
+        all.iter().all(|b| b.contains("agrees with ours")),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with(
+            "0 of 4 queries equal (every controlled variable, in the init \
+                              and the update round)\n"
+        ),
+        "{stdout}"
+    );
+    // a z3 that spoils the first counterexample
+    let stub = dir.join("z3");
+    let count = dir.join("count");
+    let _ = std::fs::remove_file(&count);
+    let real = std::fs::canonicalize(&z3).unwrap_or(z3.clone());
+    std::fs::write(
+        &stub,
+        format!(
+            "#!/bin/sh\nf=$(mktemp)\ncat > \"$f\"\n\
+             if grep -q get-value \"$f\" && [ ! -e '{count}' ]; then\n  \
+             touch '{count}'; rm -f \"$f\"; echo sat; echo '(nonsense)'; exit 0\nfi\n\
+             '{real}' \"$@\" < \"$f\"; s=$?; rm -f \"$f\"; exit $s\n",
+            count = count.display(),
+            real = real.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (code, stdout, stderr) = v2rm(&stub);
+    assert_eq!(code, 1, "{stdout}{stderr}");
+    let spoiled = blocks(&stdout);
+    assert_eq!(spoiled.len(), 4, "{stdout}");
+    assert!(
+        spoiled[0].contains("  no counterexample: ") && !spoiled[0].contains("agrees"),
+        "{stdout}"
+    );
+    assert_eq!(spoiled[1..], all[1..], "{stdout}");
 }
 
 /// The comparison warns when Yosys is not the version the format of its
