@@ -400,4 +400,11 @@ mod tests {
         assert!(BV::try_from(word(word::Ite(8, 2, 3))).is_ok());
         assert!(Prop::try_from(boolean(bool::Ite(2, 3))).is_ok());
     }
+
+    #[test]
+    fn argmax_is_in_the_linear_logic_of_its_theory() {
+        assert!(LRA::try_from(real(real::Argmax(2, 3))).is_ok());
+        assert!(LIA::try_from(int(int::Argmax(2, 3))).is_ok());
+        assert!(LIA::try_from(real(real::Argmax(2, 3))).is_err());
+    }
 }

@@ -20,6 +20,7 @@ information to compute its [`Boundary`]:
   comparisons, which write boolean matrices of the same shape.
 - [`Id`] — the identity.
 - [`Ite`] — if-then-else, on a single boolean.
+- [`Argmax`] — the index of a largest entry.
 
 The comparisons are those of SMT-LIB2's `Ints` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
@@ -155,6 +156,11 @@ pub struct Id(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Ite(pub usize, pub usize);
 
+/// The index of the first largest entry of `[m, n]` matrices, counted from
+/// `0` in row-major order, as a `[1, 1]` integer matrix.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Argmax(pub usize, pub usize);
+
 /// The operations of the theory of integer arithmetic, SMT-LIB2's `Ints`,
 /// with their boundary in [`Sort`].
 ///
@@ -200,6 +206,8 @@ pub enum NIA {
     Id(Id),
     #[subenum(LIA)]
     Ite(Ite),
+    #[subenum(LIA)]
+    Argmax(Argmax),
 }
 
 impl Boundary<Sort> for NIA {
@@ -225,6 +233,7 @@ impl Boundary<Sort> for NIA {
             NIA::Ne(op) => op.dom(),
             NIA::Id(op) => op.dom().map(Sort::from),
             NIA::Ite(op) => op.dom(),
+            NIA::Argmax(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -250,6 +259,7 @@ impl Boundary<Sort> for NIA {
             NIA::Ne(op) => op.cod(),
             NIA::Id(op) => op.cod().map(Sort::from),
             NIA::Ite(op) => op.cod(),
+            NIA::Argmax(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -272,6 +282,7 @@ impl Boundary<Sort> for LIA {
             LIA::Ne(op) => op.dom(),
             LIA::Id(op) => op.dom().map(Sort::from),
             LIA::Ite(op) => op.dom(),
+            LIA::Argmax(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -293,6 +304,7 @@ impl Boundary<Sort> for LIA {
             LIA::Ne(op) => op.cod(),
             LIA::Id(op) => op.cod().map(Sort::from),
             LIA::Ite(op) => op.cod(),
+            LIA::Argmax(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -506,6 +518,17 @@ impl Boundary<Sort> for Ite {
     }
 }
 
+/// Takes a matrix of shape `[m, n]` to one of shape `[1, 1]`.
+impl Boundary<Int> for Argmax {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([1, 1])].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -626,6 +649,12 @@ impl fmt::Display for Ite {
     }
 }
 
+impl fmt::Display for Argmax {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Argmax")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -689,6 +718,12 @@ mod tests {
     }
 
     #[test]
+    fn argmax_writes_a_single_entry() {
+        assert_eq!(Argmax(2, 3).dom(), one(Int::new([2, 3])));
+        assert_eq!(Argmax(2, 3).cod(), one(Int::new([1, 1])));
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(Add(1, 1).to_string(), "Add");
         assert_eq!(Mul(1, 1).to_string(), "Mul");
@@ -698,6 +733,7 @@ mod tests {
         assert_eq!(Transpose(1, 1).to_string(), "Transpose");
         assert_eq!(Id(1, 1).to_string(), "Id");
         assert_eq!(Ite(1, 1).to_string(), "Ite");
+        assert_eq!(Argmax(1, 1).to_string(), "Argmax");
     }
     #[test]
     fn comparisons_write_booleans() {
