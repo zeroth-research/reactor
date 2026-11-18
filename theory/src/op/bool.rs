@@ -13,6 +13,13 @@ information to compute its [`Boundary`]:
 - [`Ite`] — if-then-else, on a single boolean.
 - [`Havoc`] — an arbitrary matrix, chosen nondeterministically.
 - [`Uninterpreted`] — a named value of unknown meaning.
+- [`Zero`] — the only value of the sort [`Zero`](crate::sort::Zero).
+
+[`Zero`] writes no booleans, but the rate of change of discrete values,
+of the sort [`Zero`](crate::sort::Zero), which all theories share, as
+they share [`Bool`]. It is here so that every logic holds it, as each
+holds [`Prop`]; so the boundary of `Prop` is in [`Sort`], the sorts of
+the theory, rather than in [`Bool`].
 */
 
 use crate::sort::Bool;
@@ -20,6 +27,12 @@ use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
 use std::fmt;
+
+/// The sorts of the theory: the booleans of SMT-LIB2's `Core` theory,
+/// together with [`Zero`](crate::sort::Zero), which [`Zero`] writes. It is
+/// the subset [`sort::Prop`](crate::sort::Prop) of the sorts of all
+/// theories.
+pub use crate::sort::Prop as Sort;
 
 /// A constant boolean matrix literal.
 #[derive(Clone, Debug)]
@@ -63,8 +76,13 @@ pub struct Havoc(pub usize, pub usize);
 #[derive(Clone, PartialEq, Debug, Eq)]
 pub struct Uninterpreted(pub String, pub usize, pub usize);
 
+/// The only value of the sort [`Zero`](crate::sort::Zero): the rate of
+/// change of discrete values.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Zero;
+
 /// The operations of propositional logic, the boolean operations of
-/// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
+/// SMT-LIB2's `Core` theory, and [`Zero`], with their boundary in [`Sort`].
 #[derive(Clone, Debug, From)]
 pub enum Prop {
     Const(Const),
@@ -76,34 +94,37 @@ pub enum Prop {
     Ite(Ite),
     Havoc(Havoc),
     Uninterpreted(Uninterpreted),
+    Zero(Zero),
 }
 
-impl Boundary<Bool> for Prop {
-    fn dom(&self) -> Poly<Bool> {
+impl Boundary<Sort> for Prop {
+    fn dom(&self) -> Poly<Sort> {
         match self {
-            Prop::Const(op) => op.dom(),
-            Prop::And(op) => op.dom(),
-            Prop::Or(op) => op.dom(),
-            Prop::Xor(op) => op.dom(),
-            Prop::Not(op) => op.dom(),
-            Prop::Id(op) => op.dom(),
-            Prop::Ite(op) => op.dom(),
-            Prop::Havoc(op) => op.dom(),
-            Prop::Uninterpreted(op) => op.dom(),
+            Prop::Const(op) => op.dom().map(Sort::from),
+            Prop::And(op) => op.dom().map(Sort::from),
+            Prop::Or(op) => op.dom().map(Sort::from),
+            Prop::Xor(op) => op.dom().map(Sort::from),
+            Prop::Not(op) => op.dom().map(Sort::from),
+            Prop::Id(op) => op.dom().map(Sort::from),
+            Prop::Ite(op) => op.dom().map(Sort::from),
+            Prop::Havoc(op) => op.dom().map(Sort::from),
+            Prop::Uninterpreted(op) => op.dom().map(Sort::from),
+            Prop::Zero(op) => op.dom(),
         }
     }
 
-    fn cod(&self) -> Poly<Bool> {
+    fn cod(&self) -> Poly<Sort> {
         match self {
-            Prop::Const(op) => op.cod(),
-            Prop::And(op) => op.cod(),
-            Prop::Or(op) => op.cod(),
-            Prop::Xor(op) => op.cod(),
-            Prop::Not(op) => op.cod(),
-            Prop::Id(op) => op.cod(),
-            Prop::Ite(op) => op.cod(),
-            Prop::Havoc(op) => op.cod(),
-            Prop::Uninterpreted(op) => op.cod(),
+            Prop::Const(op) => op.cod().map(Sort::from),
+            Prop::And(op) => op.cod().map(Sort::from),
+            Prop::Or(op) => op.cod().map(Sort::from),
+            Prop::Xor(op) => op.cod().map(Sort::from),
+            Prop::Not(op) => op.cod().map(Sort::from),
+            Prop::Id(op) => op.cod().map(Sort::from),
+            Prop::Ite(op) => op.cod().map(Sort::from),
+            Prop::Havoc(op) => op.cod().map(Sort::from),
+            Prop::Uninterpreted(op) => op.cod().map(Sort::from),
+            Prop::Zero(op) => op.cod(),
         }
     }
 }
@@ -201,6 +222,16 @@ impl Boundary<Bool> for Uninterpreted {
     }
 }
 
+impl Boundary<Sort> for Zero {
+    fn dom(&self) -> Poly<Sort> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![crate::sort::Zero.into()].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -252,6 +283,12 @@ impl fmt::Display for Havoc {
 impl fmt::Display for Uninterpreted {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Uninterpreted({})", self.0)
+    }
+}
+
+impl fmt::Display for Zero {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Zero")
     }
 }
 
@@ -307,6 +344,13 @@ mod tests {
     }
 
     #[test]
+    fn zero_writes_the_only_value_of_zero() {
+        assert_eq!(Zero.dom(), Poly::unit());
+        let cod: Poly<Sort> = mono![crate::sort::Zero.into()].into();
+        assert_eq!(Zero.cod(), cod);
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(And(1, 1).to_string(), "And");
         assert_eq!(Not(1, 1).to_string(), "Not");
@@ -317,5 +361,6 @@ mod tests {
             Uninterpreted("f".to_string(), 1, 1).to_string(),
             "Uninterpreted(f)"
         );
+        assert_eq!(Zero.to_string(), "Zero");
     }
 }

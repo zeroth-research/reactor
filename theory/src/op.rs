@@ -198,6 +198,7 @@ impl From<LIA> for NIA {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base::differentiable::T;
 
     fn real(op: impl Into<real::NRA>) -> Any {
         Any::Real(op.into())
@@ -433,5 +434,26 @@ mod tests {
         assert!(LIA::try_from(int(int::Uninterpreted(f(), 2, 3))).is_ok());
         assert!(BV::try_from(word(word::Uninterpreted(f(), 8, 2, 3))).is_ok());
         assert!(Prop::try_from(boolean(bool::Uninterpreted(f(), 2, 3))).is_ok());
+    }
+
+    #[test]
+    fn zeros_write_tangents() {
+        let r = sort::Real::new([2, 3]);
+        let op = real(real::Zero(2, 3, 1));
+        assert_eq!(op.cod(), base::mono![sort::Any::from(T(r))].into());
+        let op = boolean(bool::Zero);
+        let i = sort::Int::new([2, 3]);
+        assert_eq!(op.cod(), base::mono![T(sort::Any::from(i))].into());
+
+        assert!(LRA::try_from(real(real::Zero(2, 3, 1))).is_ok());
+        assert!(LIA::try_from(real(real::Zero(2, 3, 1))).is_err());
+        // the zero of the discrete sorts is in every logic
+        let op = boolean(bool::Zero);
+        assert!(Prop::try_from(op.clone()).is_ok());
+        assert!(NRA::try_from(op.clone()).is_ok());
+        assert!(NIA::try_from(op.clone()).is_ok());
+        assert!(LRA::try_from(op.clone()).is_ok());
+        assert!(LIA::try_from(op.clone()).is_ok());
+        assert!(BV::try_from(op).is_ok());
     }
 }

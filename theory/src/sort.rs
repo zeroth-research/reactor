@@ -68,6 +68,12 @@ impl Real {
         Real { degree: 0, shape }
     }
 
+    /// Real matrices of the given shape and degree: the rates of change of
+    /// order `degree`, and plain reals if it is 0.
+    pub(crate) fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Real { degree, shape }
+    }
+
     pub fn degree(&self) -> u8 {
         self.degree
     }

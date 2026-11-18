@@ -21,6 +21,7 @@ information to compute its [`Boundary`]:
 - [`Argmax`] — the index of a largest entry.
 - [`Havoc`] — an arbitrary matrix, chosen nondeterministically.
 - [`Uninterpreted`] — a named value of unknown meaning.
+- [`Zero`] — the zero matrix, of rates of change of a given degree.
 
 The comparisons are those of SMT-LIB2's `Reals` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
@@ -161,6 +162,12 @@ pub struct Havoc(pub usize, pub usize);
 #[derive(Clone, PartialEq, Debug, Eq)]
 pub struct Uninterpreted(pub String, pub usize, pub usize);
 
+/// The zero `[m, n]` matrix of the rates of change of degree `d`, as
+/// `Zero(m, n, d)`: with `d = 1`, the derivative of a constant. With
+/// `d = 0`, it is the zero matrix of plain reals.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Zero(pub usize, pub usize, pub u8);
+
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
 /// with their boundary in [`Sort`].
 ///
@@ -211,6 +218,8 @@ pub enum NRA {
     Havoc(Havoc),
     #[subenum(LRA)]
     Uninterpreted(Uninterpreted),
+    #[subenum(LRA)]
+    Zero(Zero),
 }
 
 impl Boundary<Sort> for NRA {
@@ -238,6 +247,7 @@ impl Boundary<Sort> for NRA {
             NRA::Argmax(op) => op.dom().map(Sort::from),
             NRA::Havoc(op) => op.dom().map(Sort::from),
             NRA::Uninterpreted(op) => op.dom().map(Sort::from),
+            NRA::Zero(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -265,6 +275,7 @@ impl Boundary<Sort> for NRA {
             NRA::Argmax(op) => op.cod().map(Sort::from),
             NRA::Havoc(op) => op.cod().map(Sort::from),
             NRA::Uninterpreted(op) => op.cod().map(Sort::from),
+            NRA::Zero(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -290,6 +301,7 @@ impl Boundary<Sort> for LRA {
             LRA::Argmax(op) => op.dom().map(Sort::from),
             LRA::Havoc(op) => op.dom().map(Sort::from),
             LRA::Uninterpreted(op) => op.dom().map(Sort::from),
+            LRA::Zero(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -314,6 +326,7 @@ impl Boundary<Sort> for LRA {
             LRA::Argmax(op) => op.cod().map(Sort::from),
             LRA::Havoc(op) => op.cod().map(Sort::from),
             LRA::Uninterpreted(op) => op.cod().map(Sort::from),
+            LRA::Zero(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -548,6 +561,16 @@ impl Boundary<Real> for Uninterpreted {
     }
 }
 
+impl Boundary<Real> for Zero {
+    fn dom(&self) -> Poly<Real> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree([self.0, self.1], self.2)].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -680,9 +703,16 @@ impl fmt::Display for Uninterpreted {
     }
 }
 
+impl fmt::Display for Zero {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Zero")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base::differentiable::T;
 
     fn one(s: Real) -> Poly<Real> {
         mono![s].into()
@@ -760,6 +790,15 @@ mod tests {
     }
 
     #[test]
+    fn zero_writes_rates_of_its_degree() {
+        let r = Real::new([2, 3]);
+        assert_eq!(Zero(2, 3, 1).dom(), Poly::unit());
+        assert_eq!(Zero(2, 3, 1).cod(), one(T(r)));
+        assert_eq!(Zero(2, 3, 2).cod(), one(T(T(r))));
+        assert_eq!(Zero(2, 3, 0).cod(), one(r));
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(Add(1, 1).to_string(), "Add");
         assert_eq!(Mul(1, 1).to_string(), "Mul");
@@ -774,6 +813,7 @@ mod tests {
             Uninterpreted("f".to_string(), 1, 1).to_string(),
             "Uninterpreted(f)"
         );
+        assert_eq!(Zero(1, 1, 1).to_string(), "Zero");
     }
     #[test]
     fn comparisons_write_booleans() {
