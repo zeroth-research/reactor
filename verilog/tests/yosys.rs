@@ -1,6 +1,9 @@
 //! The Yosys helper: parsing `write_smt2` output, and the names and widths
 //! Yosys gives the example designs against our translations. The tests that
-//! run Yosys (and z3) are skipped with a message if it is not found.
+//! run Yosys (and z3) are skipped with a message if it is not found (they
+//! fail instead with `V2RM_REQUIRE_TOOLS=1`, see `common::missing`).
+
+mod common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -122,7 +125,7 @@ fn parse_comments() {
 #[test]
 fn free_values_of_blackboxes() {
     let Some(bin) = yosys::find() else {
-        eprintln!("yosys not found: skipped");
+        common::missing("yosys", "the whole test");
         return;
     };
     for name in ["bbtop.sv", "bbchild.sv"] {
@@ -302,12 +305,12 @@ fn overrides_rejected() {
 #[test]
 fn names_match_examples() {
     let Some(bin) = yosys::find() else {
-        eprintln!("yosys not found: skipped");
+        common::missing("yosys", "the whole test");
         return;
     };
     let z3 = z3::find();
     if z3.is_none() {
-        eprintln!("z3 not found: accessor sorts not checked");
+        common::missing("z3", "the check of the accessor sorts");
     }
     for path in examples() {
         let (inst, t) = load(&path);
@@ -349,13 +352,14 @@ fn names_match_examples() {
 
 /// Yosys and z3, or `None` (with a message) if one is missing.
 fn tools() -> Option<(PathBuf, PathBuf)> {
-    match (yosys::find(), z3::find()) {
-        (Some(y), Some(z)) => Some((y, z)),
-        _ => {
-            eprintln!("yosys or z3 not found: skipped");
-            None
-        }
+    let (y, z) = (yosys::find(), z3::find());
+    if y.is_none() {
+        common::missing("yosys", "the whole test");
     }
+    if z.is_none() {
+        common::missing("z3", "the whole test");
+    }
+    Some((y?, z?))
 }
 
 /// The miter of an example, from Yosys's translation of it.
@@ -650,7 +654,7 @@ endmodule
 #[test]
 fn registers_match_examples() {
     let Some(yosys) = yosys::find() else {
-        eprintln!("yosys not found: skipped");
+        common::missing("yosys", "the whole test");
         return;
     };
     for path in examples() {
@@ -678,7 +682,7 @@ fn registers_match_examples() {
 #[test]
 fn registers_mismatch() {
     let Some(yosys) = yosys::find() else {
-        eprintln!("yosys not found: skipped");
+        common::missing("yosys", "the whole test");
         return;
     };
     let example = |name: &str| {
@@ -1356,7 +1360,7 @@ endmodule
 #[test]
 fn yosys_inputs_must_be_free() {
     let Some(bin) = yosys::find() else {
-        eprintln!("yosys not found: skipped");
+        common::missing("yosys", "the whole test");
         return;
     };
     let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("driven.sv");

@@ -2,9 +2,12 @@
 //! printed as closed terms; z3 must prove each term equal to the literal of
 //! the value `eval` gives. Shifts are also checked exhaustively on small
 //! widths. Skipped (with a message) if z3 is not found in `$Z3_BIN`,
-//! `~/tools/oss-cad-suite/bin` or the `PATH`. And the exact text of a few
+//! `~/tools/oss-cad-suite/bin` or the `PATH` (a failure instead with
+//! `V2RM_REQUIRE_TOOLS=1`, see `common::missing`). And the exact text of a few
 //! rounds of examples, which pins the documented format (what the rounds of
 //! all examples mean is checked in `examples.rs`).
+
+mod common;
 
 use num_bigint::BigUint;
 use std::path::Path;
@@ -203,7 +206,7 @@ fn check(bin: &Path, cases: &[(SvOp, Vec<BitVec>)]) {
 #[test]
 fn ops_match_eval() {
     let Some(bin) = z3::find() else {
-        eprintln!("z3 not found: skipped");
+        common::missing("z3", "the whole test");
         return;
     };
     let mut rand = Rand(0x9e37_79b9_7f4a_7c15);
@@ -218,7 +221,7 @@ fn ops_match_eval() {
 #[test]
 fn shifts_match_eval() {
     let Some(bin) = z3::find() else {
-        eprintln!("z3 not found: skipped");
+        common::missing("z3", "the whole test");
         return;
     };
     check(&bin, &shift_cases());
