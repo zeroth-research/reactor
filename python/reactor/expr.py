@@ -288,7 +288,7 @@ def _matmul(theory, a: Expr, b: Expr) -> Term:
             out_sort = Int(out_shape)
         else:
             raise TypeError(f"{theory.__name__} has no linear fold (expected LRA or LIA)")
-        return Term(ov.linear(a._value, torch.empty(0, 0), b.dtype), [Wire(out_sort)], [b._wire])
+        return Term(ov.linear_map(a._value, b.dtype), [Wire(out_sort)], [b._wire])
     raise RuntimeError(f"{theory.__name__} matmul requires a constant left operand; use a Linear instead")
 
 

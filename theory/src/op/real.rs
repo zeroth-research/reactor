@@ -33,6 +33,7 @@ sorts of the theory, rather than in [`Real`]. So is the boundary of
 [`Ite`], which reads a boolean.
 */
 
+use crate::Tensor;
 use crate::sort::{Bool, Real};
 use base::boundary::{Boundary, Poly};
 use base::mono;
@@ -46,19 +47,15 @@ use subenum::subenum;
 /// [`sort::Reals`](crate::sort::Reals) of the sorts of all theories.
 pub use crate::sort::Reals as Sort;
 
-/// A constant real matrix literal.
+/// A constant real matrix literal, held in a tensor of type `T`.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
-)]
-pub struct Const(pub crate::PyTensor);
+pub struct Const<T>(pub T);
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Add(pub usize, pub usize);
 
@@ -66,7 +63,7 @@ pub struct Add(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Sub(pub usize, pub usize);
 
@@ -75,7 +72,7 @@ pub struct Sub(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Mul(pub usize, pub usize);
 
@@ -86,24 +83,20 @@ pub struct Mul(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Div(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
-)]
-pub struct Linear(pub crate::PyTensor, pub crate::PyTensor);
+pub struct Linear<T>(pub T, pub T);
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct ReLU(pub usize, pub usize);
 
@@ -111,7 +104,7 @@ pub struct ReLU(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Min(pub usize, pub usize);
 
@@ -119,7 +112,7 @@ pub struct Min(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Max(pub usize, pub usize);
 
@@ -127,7 +120,7 @@ pub struct Max(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Transpose(pub usize, pub usize);
 
@@ -136,7 +129,7 @@ pub struct Transpose(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct MatMul(pub usize, pub usize, pub usize);
 
@@ -147,7 +140,7 @@ pub struct MatMul(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Lt(pub usize, pub usize);
 
@@ -158,7 +151,7 @@ pub struct Lt(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Le(pub usize, pub usize);
 
@@ -169,7 +162,7 @@ pub struct Le(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Gt(pub usize, pub usize);
 
@@ -180,7 +173,7 @@ pub struct Gt(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Ge(pub usize, pub usize);
 
@@ -191,7 +184,7 @@ pub struct Ge(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Eq(pub usize, pub usize);
 
@@ -202,7 +195,7 @@ pub struct Eq(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Ne(pub usize, pub usize);
 
@@ -210,7 +203,7 @@ pub struct Ne(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Id(pub usize, pub usize);
 
@@ -222,7 +215,7 @@ pub struct Id(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Ite(pub usize, pub usize);
 
@@ -231,7 +224,7 @@ pub struct Ite(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Argmax(pub usize, pub usize);
 
@@ -239,7 +232,7 @@ pub struct Argmax(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Havoc(pub usize, pub usize);
 
@@ -249,7 +242,7 @@ pub struct Havoc(pub usize, pub usize);
 #[derive(Clone, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Uninterpreted(pub String, pub usize, pub usize);
 
@@ -259,7 +252,7 @@ pub struct Uninterpreted(pub String, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct Zero(pub usize, pub usize, pub u8);
 
@@ -269,7 +262,7 @@ pub struct Zero(pub usize, pub usize, pub u8);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct TAdd(pub usize, pub usize, pub u8);
 
@@ -280,7 +273,7 @@ pub struct TAdd(pub usize, pub usize, pub u8);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct TSub(pub usize, pub usize, pub u8);
 
@@ -289,11 +282,7 @@ pub struct TSub(pub usize, pub usize, pub u8);
 /// is [`Linear`]`(A, B)`. It adds `B`, as `Linear` did on rates in the old
 /// LRA, so the derivative of `TLinear(A, B, d)` is `TLinear(A, 0, d + 1)`.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
-)]
-pub struct TLinear(pub crate::PyTensor, pub crate::PyTensor, pub u8);
+pub struct TLinear<T>(pub T, pub T, pub u8);
 
 /// Transposition `xᵀ` of `[m, n]` matrices of the rates of change of degree
 /// `d`, as `TTranspose(m, n, d)`. Transposition is linear, so
@@ -302,7 +291,7 @@ pub struct TLinear(pub crate::PyTensor, pub crate::PyTensor, pub u8);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct TTranspose(pub usize, pub usize, pub u8);
 
@@ -312,7 +301,7 @@ pub struct TTranspose(pub usize, pub usize, pub u8);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct TIte(pub usize, pub usize, pub u8);
 
@@ -321,7 +310,7 @@ pub struct TIte(pub usize, pub usize, pub u8);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.real")
 )]
 pub struct TId(pub usize, pub usize, pub u8);
 
@@ -333,9 +322,9 @@ pub struct TId(pub usize, pub usize, pub u8);
 /// casts between them: `From` up to `NRA`, and `TryFrom` down from it.
 #[subenum(LRA)]
 #[derive(Clone, Debug, From, Display)]
-pub enum NRA {
+pub enum NRA<T> {
     #[subenum(LRA)]
-    Const(Const),
+    Const(Const<T>),
     #[subenum(LRA)]
     Add(Add),
     #[subenum(LRA)]
@@ -343,7 +332,7 @@ pub enum NRA {
     Mul(Mul),
     Div(Div),
     #[subenum(LRA)]
-    Linear(Linear),
+    Linear(Linear<T>),
     #[subenum(LRA)]
     ReLU(ReLU),
     #[subenum(LRA)]
@@ -382,7 +371,7 @@ pub enum NRA {
     #[subenum(LRA)]
     TSub(TSub),
     #[subenum(LRA)]
-    TLinear(TLinear),
+    TLinear(TLinear<T>),
     #[subenum(LRA)]
     TTranspose(TTranspose),
     #[subenum(LRA)]
@@ -391,7 +380,7 @@ pub enum NRA {
     TId(TId),
 }
 
-impl Boundary<Sort> for NRA {
+impl<T: Tensor> Boundary<Sort> for NRA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             NRA::Const(op) => op.dom().map(Sort::from),
@@ -460,7 +449,7 @@ impl Boundary<Sort> for NRA {
         }
     }
 }
-impl Boundary<Sort> for LRA {
+impl<T: Tensor> Boundary<Sort> for LRA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             LRA::Const(op) => op.dom().map(Sort::from),
@@ -524,7 +513,7 @@ impl Boundary<Sort> for LRA {
     }
 }
 
-impl Boundary<Real> for Const {
+impl<T: Tensor> Boundary<Real> for Const<T> {
     fn dom(&self) -> Poly<Real> {
         Poly::unit()
     }
@@ -576,7 +565,7 @@ impl Boundary<Real> for Div {
 
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl Boundary<Real> for Linear {
+impl<T: Tensor> Boundary<Real> for Linear<T> {
     fn dom(&self) -> Poly<Real> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
@@ -787,7 +776,7 @@ impl Boundary<Real> for TSub {
 /// As [`Linear`], with `A` of shape `[m, n]` and `B` of shape `[m, k]`, the
 /// map takes `x` of shape `[n, k]` to a matrix of shape `[m, k]`, here of
 /// the rates of change of degree `d`.
-impl Boundary<Real> for TLinear {
+impl<T: Tensor> Boundary<Real> for TLinear<T> {
     fn dom(&self) -> Poly<Real> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
@@ -834,13 +823,13 @@ impl Boundary<Real> for TId {
     }
 }
 
-impl fmt::Display for Const {
+impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl fmt::Display for Linear {
+impl<T: fmt::Display> fmt::Display for Linear<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Linear({}, {})", self.0, self.1)
     }
@@ -972,7 +961,7 @@ impl fmt::Display for Zero {
     }
 }
 
-impl fmt::Display for TLinear {
+impl<T: fmt::Display> fmt::Display for TLinear<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "TLinear({}, {})", self.0, self.1)
     }
@@ -1005,6 +994,165 @@ impl fmt::Display for TIte {
 impl fmt::Display for TId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "TId")
+    }
+}
+
+/// Extracts an operation of real arithmetic from a Python object, trying
+/// each operation in turn: those carrying no data through their own
+/// classes, and [`Const`], [`Linear`] and [`TLinear`] through the
+/// extraction that the tensor type `T` provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::FromPyObject<'py> for NRA<T>
+where
+    Const<T>: pyo3::FromPyObject<'py>,
+    Linear<T>: pyo3::FromPyObject<'py>,
+    TLinear<T>: pyo3::FromPyObject<'py>,
+{
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<Add>() {
+            return Ok(NRA::Add(op));
+        }
+        if let Ok(op) = ob.extract::<Sub>() {
+            return Ok(NRA::Sub(op));
+        }
+        if let Ok(op) = ob.extract::<Mul>() {
+            return Ok(NRA::Mul(op));
+        }
+        if let Ok(op) = ob.extract::<Div>() {
+            return Ok(NRA::Div(op));
+        }
+        if let Ok(op) = ob.extract::<ReLU>() {
+            return Ok(NRA::ReLU(op));
+        }
+        if let Ok(op) = ob.extract::<Min>() {
+            return Ok(NRA::Min(op));
+        }
+        if let Ok(op) = ob.extract::<Max>() {
+            return Ok(NRA::Max(op));
+        }
+        if let Ok(op) = ob.extract::<Transpose>() {
+            return Ok(NRA::Transpose(op));
+        }
+        if let Ok(op) = ob.extract::<MatMul>() {
+            return Ok(NRA::MatMul(op));
+        }
+        if let Ok(op) = ob.extract::<Lt>() {
+            return Ok(NRA::Lt(op));
+        }
+        if let Ok(op) = ob.extract::<Le>() {
+            return Ok(NRA::Le(op));
+        }
+        if let Ok(op) = ob.extract::<Gt>() {
+            return Ok(NRA::Gt(op));
+        }
+        if let Ok(op) = ob.extract::<Ge>() {
+            return Ok(NRA::Ge(op));
+        }
+        if let Ok(op) = ob.extract::<Eq>() {
+            return Ok(NRA::Eq(op));
+        }
+        if let Ok(op) = ob.extract::<Ne>() {
+            return Ok(NRA::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<Id>() {
+            return Ok(NRA::Id(op));
+        }
+        if let Ok(op) = ob.extract::<Ite>() {
+            return Ok(NRA::Ite(op));
+        }
+        if let Ok(op) = ob.extract::<Argmax>() {
+            return Ok(NRA::Argmax(op));
+        }
+        if let Ok(op) = ob.extract::<Havoc>() {
+            return Ok(NRA::Havoc(op));
+        }
+        if let Ok(op) = ob.extract::<Uninterpreted>() {
+            return Ok(NRA::Uninterpreted(op));
+        }
+        if let Ok(op) = ob.extract::<Zero>() {
+            return Ok(NRA::Zero(op));
+        }
+        if let Ok(op) = ob.extract::<TAdd>() {
+            return Ok(NRA::TAdd(op));
+        }
+        if let Ok(op) = ob.extract::<TSub>() {
+            return Ok(NRA::TSub(op));
+        }
+        if let Ok(op) = ob.extract::<TTranspose>() {
+            return Ok(NRA::TTranspose(op));
+        }
+        if let Ok(op) = ob.extract::<TIte>() {
+            return Ok(NRA::TIte(op));
+        }
+        if let Ok(op) = ob.extract::<TId>() {
+            return Ok(NRA::TId(op));
+        }
+        if let Ok(op) = ob.extract::<Const<T>>() {
+            return Ok(NRA::Const(op));
+        }
+        if let Ok(op) = ob.extract::<Linear<T>>() {
+            return Ok(NRA::Linear(op));
+        }
+        if let Ok(op) = ob.extract::<TLinear<T>>() {
+            return Ok(NRA::TLinear(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of real arithmetic, got {}",
+            ob.get_type()
+        )))
+    }
+}
+
+/// Converts an operation of real arithmetic into a Python object: those
+/// carrying no data into their own classes, and [`Const`], [`Linear`] and
+/// [`TLinear`] through the conversion that the tensor type `T` provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::IntoPyObject<'py> for NRA<T>
+where
+    Const<T>: pyo3::IntoPyObject<'py>,
+    Linear<T>: pyo3::IntoPyObject<'py>,
+    TLinear<T>: pyo3::IntoPyObject<'py>,
+{
+    type Target = pyo3::PyAny;
+    type Output = pyo3::Bound<'py, pyo3::PyAny>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: pyo3::Python<'py>) -> pyo3::PyResult<Self::Output> {
+        use pyo3::IntoPyObjectExt;
+
+        match self {
+            NRA::Const(op) => op.into_bound_py_any(py),
+            NRA::Add(op) => op.into_bound_py_any(py),
+            NRA::Sub(op) => op.into_bound_py_any(py),
+            NRA::Mul(op) => op.into_bound_py_any(py),
+            NRA::Div(op) => op.into_bound_py_any(py),
+            NRA::Linear(op) => op.into_bound_py_any(py),
+            NRA::ReLU(op) => op.into_bound_py_any(py),
+            NRA::Min(op) => op.into_bound_py_any(py),
+            NRA::Max(op) => op.into_bound_py_any(py),
+            NRA::Transpose(op) => op.into_bound_py_any(py),
+            NRA::MatMul(op) => op.into_bound_py_any(py),
+            NRA::Lt(op) => op.into_bound_py_any(py),
+            NRA::Le(op) => op.into_bound_py_any(py),
+            NRA::Gt(op) => op.into_bound_py_any(py),
+            NRA::Ge(op) => op.into_bound_py_any(py),
+            NRA::Eq(op) => op.into_bound_py_any(py),
+            NRA::Ne(op) => op.into_bound_py_any(py),
+            NRA::Id(op) => op.into_bound_py_any(py),
+            NRA::Ite(op) => op.into_bound_py_any(py),
+            NRA::Argmax(op) => op.into_bound_py_any(py),
+            NRA::Havoc(op) => op.into_bound_py_any(py),
+            NRA::Uninterpreted(op) => op.into_bound_py_any(py),
+            NRA::Zero(op) => op.into_bound_py_any(py),
+            NRA::TAdd(op) => op.into_bound_py_any(py),
+            NRA::TSub(op) => op.into_bound_py_any(py),
+            NRA::TLinear(op) => op.into_bound_py_any(py),
+            NRA::TTranspose(op) => op.into_bound_py_any(py),
+            NRA::TIte(op) => op.into_bound_py_any(py),
+            NRA::TId(op) => op.into_bound_py_any(py),
+        }
     }
 }
 

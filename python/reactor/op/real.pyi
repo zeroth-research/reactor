@@ -7,7 +7,7 @@ from torch import Tensor as TorchTensor
 
 
 class Const:
-    """A constant real matrix literal."""
+    """A constant real matrix: a `torch.Tensor` of floating-point elements."""
 
     __match_args__ = ("tensor",)
     def __init__(self, tensor: TorchTensor) -> None: ...
@@ -55,7 +55,7 @@ class Div:
     def n(self) -> int: ...
 
 class Linear:
-    """The affine map `x ↦ A·x + B`, where `A` and `B` are constants."""
+    """The affine map `x ↦ A·x + B` of real matrices: `torch.Tensor`s of floating-point elements, `A` of shape `[m, n]` and `B` of shape `[m, k]`."""
 
     __match_args__ = ("a", "b")
     def __init__(self, a: TorchTensor, b: TorchTensor) -> None: ...
@@ -265,7 +265,7 @@ class TSub:
     def d(self) -> int: ...
 
 class TLinear:
-    """The affine map `x ↦ A·x + B` on the rates of change of degree `d`, as `TLinear(A, B, d)`, where `A` and `B` are constants; `TLinear(A, B, 0)` is `Linear``(A, B)`."""
+    """The affine map `x ↦ A·x + B` on the rates of change of degree `d`, as `TLinear(A, B, d)`, with `A` and `B` as for `Linear`; `TLinear(A, B, 0)` is `Linear(A, B)`."""
 
     __match_args__ = ("a", "b", "d")
     def __init__(self, a: TorchTensor, b: TorchTensor, d: int) -> None: ...

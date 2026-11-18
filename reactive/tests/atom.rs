@@ -98,10 +98,15 @@ fn atom_with_invalid_read() {
 #[test]
 fn differential_drifting_clocks() {
     use std::collections::HashSet;
-    use theory::op::{LRA, real};
+    use theory::PyTensor;
+    use theory::op::real;
     use theory::sort::{Any, Real};
 
-    fn lra(op: impl Into<real::LRA>) -> LRA {
+    // The operations hold no tensors here, so any tensor type will do.
+    #[allow(clippy::upper_case_acronyms)]
+    type LRA = theory::op::LRA<PyTensor>;
+
+    fn lra(op: impl Into<real::LRA<PyTensor>>) -> LRA {
         LRA::Real(op.into())
     }
 

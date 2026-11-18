@@ -53,6 +53,7 @@ has, on words:
 - [`Uninterpreted`] — a named value of unknown meaning.
 */
 
+use crate::Tensor;
 use crate::sort::{Bool, Word};
 use base::boundary::{Boundary, Poly};
 use base::mono;
@@ -66,15 +67,12 @@ use std::fmt;
 /// theories.
 pub use crate::sort::Words as Sort;
 
-/// A constant matrix literal of `w`-bit words, as `Const(tensor, w)`.
+/// A constant matrix literal of `w`-bit words, as `Const(tensor, w)`, held
+/// in a tensor of type `T`.
 ///
 /// SMT-LIB2: a literal `#b…` or `(_ bvN w)`.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
-)]
-pub struct Const(pub crate::PyTensor, pub usize);
+pub struct Const<T>(pub T, pub usize);
 
 /// Pointwise concatenation `x ++ y` of a `u`-bit word `x`, the high bits
 /// of the result, and a `v`-bit word `y`, its low bits, as
@@ -84,7 +82,7 @@ pub struct Const(pub crate::PyTensor, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Concat(pub usize, pub usize, pub usize, pub usize);
 
@@ -96,7 +94,7 @@ pub struct Concat(pub usize, pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Extract(pub usize, pub usize, pub usize, pub usize, pub usize);
 
@@ -107,7 +105,7 @@ pub struct Extract(pub usize, pub usize, pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Repeat(pub usize, pub usize, pub usize, pub usize);
 
@@ -117,7 +115,7 @@ pub struct Repeat(pub usize, pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Not(pub usize, pub usize, pub usize);
 
@@ -127,7 +125,7 @@ pub struct Not(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct And(pub usize, pub usize, pub usize);
 
@@ -137,7 +135,7 @@ pub struct And(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Or(pub usize, pub usize, pub usize);
 
@@ -147,7 +145,7 @@ pub struct Or(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Xor(pub usize, pub usize, pub usize);
 
@@ -157,7 +155,7 @@ pub struct Xor(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Nand(pub usize, pub usize, pub usize);
 
@@ -167,7 +165,7 @@ pub struct Nand(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Nor(pub usize, pub usize, pub usize);
 
@@ -178,7 +176,7 @@ pub struct Nor(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Xnor(pub usize, pub usize, pub usize);
 
@@ -189,7 +187,7 @@ pub struct Xnor(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Neg(pub usize, pub usize, pub usize);
 
@@ -199,7 +197,7 @@ pub struct Neg(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Add(pub usize, pub usize, pub usize);
 
@@ -209,7 +207,7 @@ pub struct Add(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Sub(pub usize, pub usize, pub usize);
 
@@ -219,7 +217,7 @@ pub struct Sub(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Mul(pub usize, pub usize, pub usize);
 
@@ -229,7 +227,7 @@ pub struct Mul(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Shl(pub usize, pub usize, pub usize);
 
@@ -240,7 +238,7 @@ pub struct Shl(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct RotateLeft(pub usize, pub usize, pub usize, pub usize);
 
@@ -251,7 +249,7 @@ pub struct RotateLeft(pub usize, pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct RotateRight(pub usize, pub usize, pub usize, pub usize);
 
@@ -261,7 +259,7 @@ pub struct RotateRight(pub usize, pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Eq(pub usize, pub usize, pub usize);
 
@@ -271,7 +269,7 @@ pub struct Eq(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Ne(pub usize, pub usize, pub usize);
 
@@ -279,7 +277,7 @@ pub struct Ne(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Id(pub usize, pub usize, pub usize);
 
@@ -291,7 +289,7 @@ pub struct Id(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Ite(pub usize, pub usize, pub usize);
 
@@ -300,7 +298,7 @@ pub struct Ite(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Havoc(pub usize, pub usize, pub usize);
 
@@ -310,7 +308,7 @@ pub struct Havoc(pub usize, pub usize, pub usize);
 #[derive(Clone, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.word")
 )]
 pub struct Uninterpreted(pub String, pub usize, pub usize, pub usize);
 
@@ -319,8 +317,8 @@ pub struct Uninterpreted(pub String, pub usize, pub usize, pub usize);
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
 /// as `SDiv` for [`signed::Div`] and `UDiv` for [`unsigned::Div`].
 #[derive(Clone, Debug, From, Display)]
-pub enum BV {
-    Const(Const),
+pub enum BV<T> {
+    Const(Const<T>),
     Concat(Concat),
     Extract(Extract),
     Repeat(Repeat),
@@ -363,7 +361,7 @@ pub enum BV {
     Uninterpreted(Uninterpreted),
 }
 
-impl Boundary<Sort> for BV {
+impl<T: Tensor> Boundary<Sort> for BV<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             BV::Const(op) => op.dom(),
@@ -457,7 +455,7 @@ impl Boundary<Sort> for BV {
     }
 }
 
-impl Boundary<Sort> for Const {
+impl<T: Tensor> Boundary<Sort> for Const<T> {
     fn dom(&self) -> Poly<Sort> {
         Poly::unit()
     }
@@ -705,7 +703,7 @@ impl Boundary<Sort> for Uninterpreted {
     }
 }
 
-impl fmt::Display for Const {
+impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -866,7 +864,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "SDiv", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "SDiv", module = "reactor.op.word")
     )]
     pub struct Div(pub usize, pub usize, pub usize);
 
@@ -877,7 +875,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "SRem", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "SRem", module = "reactor.op.word")
     )]
     pub struct Rem(pub usize, pub usize, pub usize);
 
@@ -888,7 +886,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "SMod", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "SMod", module = "reactor.op.word")
     )]
     pub struct Mod(pub usize, pub usize, pub usize);
 
@@ -899,7 +897,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "AShr", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "AShr", module = "reactor.op.word")
     )]
     pub struct Shr(pub usize, pub usize, pub usize);
 
@@ -910,7 +908,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "SignExtend", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "SignExtend", module = "reactor.op.word")
     )]
     pub struct Extend(pub usize, pub usize, pub usize, pub usize);
 
@@ -920,7 +918,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "SLt", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "SLt", module = "reactor.op.word")
     )]
     pub struct Lt(pub usize, pub usize, pub usize);
 
@@ -930,7 +928,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "SLe", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "SLe", module = "reactor.op.word")
     )]
     pub struct Le(pub usize, pub usize, pub usize);
 
@@ -940,7 +938,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "SGt", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "SGt", module = "reactor.op.word")
     )]
     pub struct Gt(pub usize, pub usize, pub usize);
 
@@ -950,7 +948,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "SGe", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "SGe", module = "reactor.op.word")
     )]
     pub struct Ge(pub usize, pub usize, pub usize);
 
@@ -1115,7 +1113,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "UDiv", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "UDiv", module = "reactor.op.word")
     )]
     pub struct Div(pub usize, pub usize, pub usize);
 
@@ -1125,7 +1123,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "URem", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "URem", module = "reactor.op.word")
     )]
     pub struct Rem(pub usize, pub usize, pub usize);
 
@@ -1136,7 +1134,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "LShr", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "LShr", module = "reactor.op.word")
     )]
     pub struct Shr(pub usize, pub usize, pub usize);
 
@@ -1147,7 +1145,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "ZeroExtend", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "ZeroExtend", module = "reactor.op.word")
     )]
     pub struct Extend(pub usize, pub usize, pub usize, pub usize);
 
@@ -1157,7 +1155,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "ULt", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "ULt", module = "reactor.op.word")
     )]
     pub struct Lt(pub usize, pub usize, pub usize);
 
@@ -1167,7 +1165,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "ULe", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "ULe", module = "reactor.op.word")
     )]
     pub struct Le(pub usize, pub usize, pub usize);
 
@@ -1177,7 +1175,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "UGt", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "UGt", module = "reactor.op.word")
     )]
     pub struct Gt(pub usize, pub usize, pub usize);
 
@@ -1187,7 +1185,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, str, name = "UGe", module = "reactor.op.word")
+        pyo3::pyclass(frozen, eq, str, name = "UGe", module = "reactor.op.word")
     )]
     pub struct Ge(pub usize, pub usize, pub usize);
 
@@ -1316,6 +1314,209 @@ pub mod unsigned {
     impl fmt::Display for Ge {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "UGe")
+        }
+    }
+}
+
+/// Extracts an operation of fixed-size bit-vectors from a Python object,
+/// trying each operation in turn: those carrying no data through their own
+/// classes, and [`Const`] through the extraction that the tensor type `T`
+/// provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::FromPyObject<'py> for BV<T>
+where
+    Const<T>: pyo3::FromPyObject<'py>,
+{
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<Concat>() {
+            return Ok(BV::Concat(op));
+        }
+        if let Ok(op) = ob.extract::<Extract>() {
+            return Ok(BV::Extract(op));
+        }
+        if let Ok(op) = ob.extract::<Repeat>() {
+            return Ok(BV::Repeat(op));
+        }
+        if let Ok(op) = ob.extract::<Not>() {
+            return Ok(BV::Not(op));
+        }
+        if let Ok(op) = ob.extract::<And>() {
+            return Ok(BV::And(op));
+        }
+        if let Ok(op) = ob.extract::<Or>() {
+            return Ok(BV::Or(op));
+        }
+        if let Ok(op) = ob.extract::<Xor>() {
+            return Ok(BV::Xor(op));
+        }
+        if let Ok(op) = ob.extract::<Nand>() {
+            return Ok(BV::Nand(op));
+        }
+        if let Ok(op) = ob.extract::<Nor>() {
+            return Ok(BV::Nor(op));
+        }
+        if let Ok(op) = ob.extract::<Xnor>() {
+            return Ok(BV::Xnor(op));
+        }
+        if let Ok(op) = ob.extract::<Neg>() {
+            return Ok(BV::Neg(op));
+        }
+        if let Ok(op) = ob.extract::<Add>() {
+            return Ok(BV::Add(op));
+        }
+        if let Ok(op) = ob.extract::<Sub>() {
+            return Ok(BV::Sub(op));
+        }
+        if let Ok(op) = ob.extract::<Mul>() {
+            return Ok(BV::Mul(op));
+        }
+        if let Ok(op) = ob.extract::<Shl>() {
+            return Ok(BV::Shl(op));
+        }
+        if let Ok(op) = ob.extract::<RotateLeft>() {
+            return Ok(BV::RotateLeft(op));
+        }
+        if let Ok(op) = ob.extract::<RotateRight>() {
+            return Ok(BV::RotateRight(op));
+        }
+        if let Ok(op) = ob.extract::<Eq>() {
+            return Ok(BV::Eq(op));
+        }
+        if let Ok(op) = ob.extract::<Ne>() {
+            return Ok(BV::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Div>() {
+            return Ok(BV::SDiv(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Rem>() {
+            return Ok(BV::SRem(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Mod>() {
+            return Ok(BV::SMod(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Shr>() {
+            return Ok(BV::AShr(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Extend>() {
+            return Ok(BV::SignExtend(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Lt>() {
+            return Ok(BV::SLt(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Le>() {
+            return Ok(BV::SLe(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Gt>() {
+            return Ok(BV::SGt(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Ge>() {
+            return Ok(BV::SGe(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Div>() {
+            return Ok(BV::UDiv(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Rem>() {
+            return Ok(BV::URem(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Shr>() {
+            return Ok(BV::LShr(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Extend>() {
+            return Ok(BV::ZeroExtend(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Lt>() {
+            return Ok(BV::ULt(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Le>() {
+            return Ok(BV::ULe(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Gt>() {
+            return Ok(BV::UGt(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Ge>() {
+            return Ok(BV::UGe(op));
+        }
+        if let Ok(op) = ob.extract::<Id>() {
+            return Ok(BV::Id(op));
+        }
+        if let Ok(op) = ob.extract::<Ite>() {
+            return Ok(BV::Ite(op));
+        }
+        if let Ok(op) = ob.extract::<Havoc>() {
+            return Ok(BV::Havoc(op));
+        }
+        if let Ok(op) = ob.extract::<Uninterpreted>() {
+            return Ok(BV::Uninterpreted(op));
+        }
+        if let Ok(op) = ob.extract::<Const<T>>() {
+            return Ok(BV::Const(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of fixed-size bit-vectors, got {}",
+            ob.get_type()
+        )))
+    }
+}
+
+/// Converts an operation of fixed-size bit-vectors into a Python object:
+/// those carrying no data into their own classes, and [`Const`] through
+/// the conversion that the tensor type `T` provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::IntoPyObject<'py> for BV<T>
+where
+    Const<T>: pyo3::IntoPyObject<'py>,
+{
+    type Target = pyo3::PyAny;
+    type Output = pyo3::Bound<'py, pyo3::PyAny>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: pyo3::Python<'py>) -> pyo3::PyResult<Self::Output> {
+        use pyo3::IntoPyObjectExt;
+
+        match self {
+            BV::Const(op) => op.into_bound_py_any(py),
+            BV::Concat(op) => op.into_bound_py_any(py),
+            BV::Extract(op) => op.into_bound_py_any(py),
+            BV::Repeat(op) => op.into_bound_py_any(py),
+            BV::Not(op) => op.into_bound_py_any(py),
+            BV::And(op) => op.into_bound_py_any(py),
+            BV::Or(op) => op.into_bound_py_any(py),
+            BV::Xor(op) => op.into_bound_py_any(py),
+            BV::Nand(op) => op.into_bound_py_any(py),
+            BV::Nor(op) => op.into_bound_py_any(py),
+            BV::Xnor(op) => op.into_bound_py_any(py),
+            BV::Neg(op) => op.into_bound_py_any(py),
+            BV::Add(op) => op.into_bound_py_any(py),
+            BV::Sub(op) => op.into_bound_py_any(py),
+            BV::Mul(op) => op.into_bound_py_any(py),
+            BV::Shl(op) => op.into_bound_py_any(py),
+            BV::RotateLeft(op) => op.into_bound_py_any(py),
+            BV::RotateRight(op) => op.into_bound_py_any(py),
+            BV::Eq(op) => op.into_bound_py_any(py),
+            BV::Ne(op) => op.into_bound_py_any(py),
+            BV::SDiv(op) => op.into_bound_py_any(py),
+            BV::SRem(op) => op.into_bound_py_any(py),
+            BV::SMod(op) => op.into_bound_py_any(py),
+            BV::AShr(op) => op.into_bound_py_any(py),
+            BV::SignExtend(op) => op.into_bound_py_any(py),
+            BV::SLt(op) => op.into_bound_py_any(py),
+            BV::SLe(op) => op.into_bound_py_any(py),
+            BV::SGt(op) => op.into_bound_py_any(py),
+            BV::SGe(op) => op.into_bound_py_any(py),
+            BV::UDiv(op) => op.into_bound_py_any(py),
+            BV::URem(op) => op.into_bound_py_any(py),
+            BV::LShr(op) => op.into_bound_py_any(py),
+            BV::ZeroExtend(op) => op.into_bound_py_any(py),
+            BV::ULt(op) => op.into_bound_py_any(py),
+            BV::ULe(op) => op.into_bound_py_any(py),
+            BV::UGt(op) => op.into_bound_py_any(py),
+            BV::UGe(op) => op.into_bound_py_any(py),
+            BV::Id(op) => op.into_bound_py_any(py),
+            BV::Ite(op) => op.into_bound_py_any(py),
+            BV::Havoc(op) => op.into_bound_py_any(py),
+            BV::Uninterpreted(op) => op.into_bound_py_any(py),
         }
     }
 }

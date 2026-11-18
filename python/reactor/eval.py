@@ -24,9 +24,7 @@ def _signed(t, w):
 
 
 def _linear(weight, bias, x):
-    """A·x (+ b). An empty bias tensor means no bias (matmul-as-Linear)."""
-    if bias is None or bias.numel() == 0:
-        return weight @ x
+    """A·x + B."""
     return weight @ x + bias
 
 

@@ -12,9 +12,10 @@ subenum = "1.2.0"
 derive_more = { version = "2.1.1", features = ["display", "from"] }
 
 [features]
-# `pyo3` makes the sorts and operations Python classes.
+# `pyo3` makes the sorts and the operations carrying no data Python classes.
 # `torch` additionally adds the tch/pyo3-tch backing for `PyTensor` (which links
-# libtorch) and requires `pyo3`. Kept separate so future features can turn on
+# libtorch) and the Python classes of the operations carrying tensors, and
+# requires `pyo3`. Kept separate so future features can turn on
 # the Python bindings without pulling in torch.
 pyo3 = ["dep:pyo3"]
 torch = ["pyo3", "dep:tch", "dep:pyo3-tch"]

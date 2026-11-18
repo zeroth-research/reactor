@@ -27,9 +27,10 @@ def _validate_theory_supports_nn(theory):
     LIA provide them on their numbers; BV does not on words (no Transpose/Linear), so
     reject it with a clear error rather than a deep TheoryError from the builder."""
     sort = _numeric_sort(theory, 1)
+    zero = torch.zeros(1, 1, dtype=torch.float32 if _is_float_sort(sort) else torch.int64)
     ops = {
         "Transpose": lambda: ov.transpose(sort),
-        "Linear": lambda: ov.linear(torch.zeros(1, 1), torch.zeros(1, 1), sort),
+        "Linear": lambda: ov.linear(zero, zero, sort),
         "ReLU": lambda: ov.relu(sort),
     }
     missing = []

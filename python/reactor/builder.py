@@ -302,9 +302,8 @@ class LRATermBuilder(TermBuilder):
         a_wire, b_wire = _wire(a), _wire(b)
         out_shape = [_shape(a_wire.dtype)[0], _shape(b_wire.dtype)[1]]
         if isinstance(a, Term) and isinstance(a.itype, op.real.Const):
-            no_bias = torch.empty(0, 0)
             return Term(
-                ov.linear(_const_tensor(a.itype), no_bias, b_wire.dtype),
+                ov.linear_map(_const_tensor(a.itype), b_wire.dtype),
                 [Wire(Real(out_shape))],
                 [b_wire],
             )
@@ -344,9 +343,8 @@ class LIATermBuilder(TermBuilder):
         a_wire, b_wire = _wire(a), _wire(b)
         out_shape = [_shape(a_wire.dtype)[0], _shape(b_wire.dtype)[1]]
         if isinstance(a, Term) and isinstance(a.itype, op.int.Const):
-            no_bias = torch.empty(0, 0)
             return Term(
-                ov.linear(_const_tensor(a.itype), no_bias, b_wire.dtype),
+                ov.linear_map(_const_tensor(a.itype), b_wire.dtype),
                 [Wire(Int(out_shape))],
                 [b_wire],
             )

@@ -7,7 +7,7 @@ from torch import Tensor as TorchTensor
 
 
 class Const:
-    """A constant integer matrix literal."""
+    """A constant integer matrix: a `torch.Tensor` of integer elements."""
 
     __match_args__ = ("tensor",)
     def __init__(self, tensor: TorchTensor) -> None: ...
@@ -65,7 +65,7 @@ class Mod:
     def n(self) -> int: ...
 
 class Linear:
-    """The affine map `x ↦ A·x + B`, where `A` and `B` are constants."""
+    """The affine map `x ↦ A·x + B` of integer matrices: `torch.Tensor`s of integer elements, `A` of shape `[m, n]` and `B` of shape `[m, k]`."""
 
     __match_args__ = ("a", "b")
     def __init__(self, a: TorchTensor, b: TorchTensor) -> None: ...

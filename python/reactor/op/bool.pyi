@@ -7,7 +7,7 @@ from torch import Tensor as TorchTensor
 
 
 class Const:
-    """A constant boolean matrix literal."""
+    """A constant boolean matrix: a `torch.Tensor` of boolean elements."""
 
     __match_args__ = ("tensor",)
     def __init__(self, tensor: TorchTensor) -> None: ...

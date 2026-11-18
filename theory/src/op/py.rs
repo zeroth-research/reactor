@@ -11,22 +11,19 @@ An operation's constructor takes its fields in order, as
 operation's documentation, and `__match_args__` lists them, so that
 `match` takes an operation apart as it is built, as in
 `case real.Linear(a, b):`. Its fields are also read as attributes, as
-`op.m`. Operations are immutable, and print as in Rust (`str`) or as their
-constructor (`repr`).
+`op.m`. Operations are immutable, compare by value, and print as in Rust
+(`str`) or as their constructor (`repr`).
 
-The enum of each theory, [`real::NRA`], [`int::NIA`], [`bool::Prop`] and
-[`word::BV`], and [`Any`], convert from the classes of its operations and
-into them; [`add_modules`] adds the modules of the theories to a Python
-module.
+The operations carrying tensors, the constants and the affine maps, are
+generic over their tensor type, so they are not classes themselves: with
+the `torch` feature, the classes of `crate::torch` stand for them, holding
+torch tensors checked to be of their theory, with the same constructors,
+`match` and printing, and [`add_modules`] adds them to the modules of their
+theories too. The enum of each theory, as [`real::NRA`], and
+[`Any`](super::Any) convert from all these classes and into them.
 */
 
-use super::Any;
-use super::bool::{self, Prop};
-use super::int::{self, NIA};
-use super::real::{self, NRA};
-use super::word::{self, BV};
-use crate::PyTensor;
-use pyo3::exceptions::PyTypeError;
+use super::{bool, int, real, word};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
@@ -53,20 +50,13 @@ impl Repr for String {
     }
 }
 
-impl Repr for PyTensor {
-    fn repr(&self) -> String {
-        self.to_string()
-    }
-}
-
-/// The Python classes of the operations of a theory, from the variant and
-/// the operation of each, with its fields: their index, the name of the
-/// Python field, and the type. Also the conversions between the enum of
-/// the theory and these classes, and the function `$add` that adds the
-/// classes to a Python module.
+/// The Python classes of the operations of a theory carrying no data, from
+/// the name of each in Python and its operation, with its fields: their
+/// index, the name of the Python field, and the type. Also the function
+/// `$add` that adds the classes to a Python module.
 macro_rules! theory {
     (
-        $theory:ident, $enum:ident, $add:ident {
+        $theory:ident, $add:ident {
             $($variant:ident = $op:ty { $($i:tt $field:ident: $type:ty),* }),* $(,)?
         }
     ) => {
@@ -100,32 +90,6 @@ macro_rules! theory {
             }
         )*
 
-        impl<'py> FromPyObject<'py> for $enum {
-            fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
-                $(
-                    if let Ok(op) = obj.downcast::<$op>() {
-                        return Ok($enum::$variant(op.get().clone()));
-                    }
-                )*
-                Err(PyTypeError::new_err(format!(
-                    concat!("expected an operation of ", stringify!($theory), ", got {}"),
-                    obj.get_type()
-                )))
-            }
-        }
-
-        impl<'py> IntoPyObject<'py> for $enum {
-            type Target = PyAny;
-            type Output = Bound<'py, PyAny>;
-            type Error = PyErr;
-
-            fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-                match self {
-                    $($enum::$variant(op) => Bound::new(py, op).map(Bound::into_any),)*
-                }
-            }
-        }
-
         /// The classes of the operations of the theory, to add to a
         /// Python module.
         fn $add(module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -136,13 +100,11 @@ macro_rules! theory {
 }
 
 theory! {
-    real, NRA, add_real {
-        Const = real::Const { 0 tensor: PyTensor },
+    real, add_real {
         Add = real::Add { 0 m: usize, 1 n: usize },
         Sub = real::Sub { 0 m: usize, 1 n: usize },
         Mul = real::Mul { 0 m: usize, 1 n: usize },
         Div = real::Div { 0 m: usize, 1 n: usize },
-        Linear = real::Linear { 0 a: PyTensor, 1 b: PyTensor },
         ReLU = real::ReLU { 0 m: usize, 1 n: usize },
         Min = real::Min { 0 m: usize, 1 n: usize },
         Max = real::Max { 0 m: usize, 1 n: usize },
@@ -162,7 +124,6 @@ theory! {
         Zero = real::Zero { 0 m: usize, 1 n: usize, 2 d: u8 },
         TAdd = real::TAdd { 0 m: usize, 1 n: usize, 2 d: u8 },
         TSub = real::TSub { 0 m: usize, 1 n: usize, 2 d: u8 },
-        TLinear = real::TLinear { 0 a: PyTensor, 1 b: PyTensor, 2 d: u8 },
         TTranspose = real::TTranspose { 0 m: usize, 1 n: usize, 2 d: u8 },
         TIte = real::TIte { 0 m: usize, 1 n: usize, 2 d: u8 },
         TId = real::TId { 0 m: usize, 1 n: usize, 2 d: u8 },
@@ -170,14 +131,12 @@ theory! {
 }
 
 theory! {
-    int, NIA, add_int {
-        Const = int::Const { 0 tensor: PyTensor },
+    int, add_int {
         Add = int::Add { 0 m: usize, 1 n: usize },
         Sub = int::Sub { 0 m: usize, 1 n: usize },
         Mul = int::Mul { 0 m: usize, 1 n: usize },
         Div = int::Div { 0 m: usize, 1 n: usize },
         Mod = int::Mod { 0 m: usize, 1 n: usize },
-        Linear = int::Linear { 0 a: PyTensor, 1 b: PyTensor },
         ReLU = int::ReLU { 0 m: usize, 1 n: usize },
         Min = int::Min { 0 m: usize, 1 n: usize },
         Max = int::Max { 0 m: usize, 1 n: usize },
@@ -198,8 +157,7 @@ theory! {
 }
 
 theory! {
-    bool, Prop, add_bool {
-        Const = bool::Const { 0 tensor: PyTensor },
+    bool, add_bool {
         And = bool::And { 0 m: usize, 1 n: usize },
         Or = bool::Or { 0 m: usize, 1 n: usize },
         Xor = bool::Xor { 0 m: usize, 1 n: usize },
@@ -213,8 +171,7 @@ theory! {
 }
 
 theory! {
-    word, BV, add_word {
-        Const = word::Const { 0 tensor: PyTensor, 1 w: usize },
+    word, add_word {
         Concat = word::Concat { 0 u: usize, 1 v: usize, 2 m: usize, 3 n: usize },
         Extract = word::Extract { 0 i: usize, 1 j: usize, 2 w: usize, 3 m: usize, 4 n: usize },
         Repeat = word::Repeat { 0 i: usize, 1 w: usize, 2 m: usize, 3 n: usize },
@@ -273,41 +230,7 @@ pub fn add_modules(module: &Bound<'_, PyModule>) -> PyResult<()> {
         add(&theory)?;
         module.add(name, theory)?;
     }
+    #[cfg(feature = "torch")]
+    crate::torch::add_classes(module)?;
     Ok(())
-}
-
-impl<'py> FromPyObject<'py> for Any {
-    fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
-        if let Ok(op) = obj.extract::<NRA>() {
-            return Ok(Any::Real(op));
-        }
-        if let Ok(op) = obj.extract::<NIA>() {
-            return Ok(Any::Int(op));
-        }
-        if let Ok(op) = obj.extract::<Prop>() {
-            return Ok(Any::Bool(op));
-        }
-        if let Ok(op) = obj.extract::<BV>() {
-            return Ok(Any::Word(op));
-        }
-        Err(PyTypeError::new_err(format!(
-            "expected an operation of real, int, bool or word, got {}",
-            obj.get_type()
-        )))
-    }
-}
-
-impl<'py> IntoPyObject<'py> for Any {
-    type Target = PyAny;
-    type Output = Bound<'py, PyAny>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        match self {
-            Any::Real(op) => op.into_pyobject(py),
-            Any::Int(op) => op.into_pyobject(py),
-            Any::Bool(op) => op.into_pyobject(py),
-            Any::Word(op) => op.into_pyobject(py),
-        }
-    }
 }

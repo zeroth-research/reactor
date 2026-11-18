@@ -7,14 +7,14 @@ from torch import Tensor as TorchTensor
 
 
 class Const:
-    """A constant matrix literal of `w`-bit words, as `Const(tensor, w)`."""
+    """A constant matrix of bit-vectors of a width: a `torch.Tensor` of integer elements, each holding a bit-vector in its low bits."""
 
-    __match_args__ = ("tensor", "w")
-    def __init__(self, tensor: TorchTensor, w: int) -> None: ...
+    __match_args__ = ("tensor", "width")
+    def __init__(self, tensor: TorchTensor, width: int) -> None: ...
     @property
     def tensor(self) -> TorchTensor: ...
     @property
-    def w(self) -> int: ...
+    def width(self) -> int: ...
 
 class Concat:
     """Pointwise concatenation `x ++ y` of a `u`-bit word `x`, the high bits of the result, and a `v`-bit word `y`, its low bits, as `Concat(u, v, m, n)`; the result has `u + v` bits."""

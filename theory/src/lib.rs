@@ -1,8 +1,10 @@
 pub mod op;
 pub mod sort;
 pub mod tensor;
+#[cfg(feature = "torch")]
+pub mod torch;
 
-pub use tensor::PyTensor;
+pub use tensor::{PyTensor, Tensor};
 
 pub trait Combinatorial<S> {
     /// The operation `I → range` that chooses an arbitrary value of

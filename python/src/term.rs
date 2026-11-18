@@ -1,7 +1,7 @@
+use crate::Any;
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
-use theory::op::Any;
 use theory::sort::Any as Sort;
 
 #[pyclass(frozen)]

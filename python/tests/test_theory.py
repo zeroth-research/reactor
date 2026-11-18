@@ -95,6 +95,51 @@ def test_terms_reject_what_is_not_an_operation():
         Term.constant(Real([1, 1]), [Wire(Real([1, 1]))])
 
 
+def test_operations_compare_by_value():
+    assert op.real.Add(2, 3) == op.real.Add(2, 3) and op.real.Add(2, 3) != op.real.Add(3, 2)
+    assert op.word.SDiv(8, 1, 1) != op.word.UDiv(8, 1, 1)
+    term = Term.constant(op.int.Havoc(1, 2), [Wire(Int([1, 2]))])
+    assert term.itype == op.int.Havoc(1, 2)
+
+
+def test_tensor_operations_hold_tensors_of_their_theory():
+    with pytest.raises(TypeError, match="floating-point"):
+        op.real.Const(torch.tensor([[1]]))
+    with pytest.raises(TypeError, match="integer"):
+        op.int.Linear(torch.eye(2), torch.zeros(2, 1))
+    with pytest.raises(TypeError, match="boolean"):
+        op.bool.Const(torch.tensor([[1]]))
+    with pytest.raises(ValueError, match=r"\[m, k\]"):
+        op.real.TLinear(torch.eye(2), torch.zeros(3, 1), 1)
+
+
+def test_tensor_operations_are_operations_of_their_theory_module():
+    for theory, classes in [
+        ("real", (op.real.Const, op.real.Linear, op.real.TLinear)),
+        ("int", (op.int.Const, op.int.Linear)),
+        ("bool", (op.bool.Const,)),
+        ("word", (op.word.Const,)),
+    ]:
+        for cls in classes:
+            assert cls.__module__ == f"reactor.op.{theory}"
+    match op.word.Const(torch.tensor([[5]]), 8):
+        case op.word.Const(tensor, width):
+            assert (tensor.item(), width) == (5, 8)
+    match op.real.TLinear(torch.eye(2), torch.zeros(2, 1), 1):
+        case op.real.TLinear(a, b, d):
+            assert torch.equal(a, torch.eye(2)) and b.shape == (2, 1) and d == 1
+    assert repr(op.real.Const(torch.tensor([[1.0]]))) == "real.Const(tensor([[1.]]))"
+    assert repr(op.word.Const(torch.tensor([[5]]), 8)) == "word.Const(tensor([[5]]), 8)"
+
+
+def test_terms_share_the_tensors_of_their_operations():
+    a = torch.eye(2)
+    term = Term(op.real.Linear(a, torch.zeros(2, 1)), [Wire(Real([2, 1]))], [Wire(Real([2, 1]))])
+    match term.itype:
+        case op.real.Linear(weight, _):
+            assert weight.data_ptr() == a.data_ptr()
+
+
 def test_logics_contain_their_operations():
     assert LRA.contains(op.real.Add(1, 1)) and LRA.contains(op.bool.And(1, 1))
     assert not LRA.contains(op.real.Mul(1, 1))

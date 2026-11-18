@@ -130,9 +130,9 @@ def test_lossless_value_conversions_are_not_happening():
         expr(True, theory=LRA, sort=REAL)  # int -> Real
         assert tensor_of_term(terms[0]).dtype == torch.float
 
-    with collecting() as terms:
+    # a tensor is taken as it is, and a real constant holds floating-point elements
+    with pytest.raises(TypeError, match="floating-point"):
         expr(torch.tensor([[2]]), theory=LRA, sort=REAL)
-        assert tensor_of_term(terms[0]).dtype == torch.long
 
     # assert expr(True, theory=LIA, sort=INT)._value.dtype is torch.int64  # bool -> Int
     # assert expr(True, theory=LRA, sort=REAL)._value.dtype is torch.float32  # bool -> Real

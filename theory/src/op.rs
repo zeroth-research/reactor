@@ -25,7 +25,9 @@ arithmetic to its linear operations where the logic is linear:
 | [`LIA`] | [`int::LIA`], [`bool::Prop`] | `QF_LIA` |
 | [`BV`] | [`word::BV`], [`bool::Prop`] | `QF_BV` |
 
-With the `pyo3` feature, each operation is also a Python class, in `py`.
+With the `pyo3` feature, each operation carrying no data is also a Python
+class, in `py`; with the `torch` feature, so are the operations carrying
+tensors, in `crate::torch`.
 */
 
 pub mod bool;
@@ -35,6 +37,7 @@ pub mod py;
 pub mod real;
 pub mod word;
 
+use crate::Tensor;
 use crate::sort;
 use crate::{Combinatorial, Differential, Sequential};
 use base::boundary::{Boundary, Poly};
@@ -42,7 +45,8 @@ use derive_more::{Display, From};
 use subenum::subenum;
 
 /// The operations of all theories: a value of `Any` is an operation of one
-/// of them, on the sorts in [`sort::Any`].
+/// of them, on the sorts in [`sort::Any`], with its data held in tensors of
+/// type `T`.
 ///
 /// `subenum` defines the logics that take whole theories: [`Prop`],
 /// propositional logic; [`NRA`] and [`NIA`], non-linear real and integer
@@ -53,34 +57,34 @@ use subenum::subenum;
 /// on their own, with the same casts.
 #[subenum(NRA, NIA, Prop, BV)]
 #[derive(Clone, Debug, From, Display)]
-pub enum Any {
+pub enum Any<T> {
     #[subenum(NRA)]
-    Real(real::NRA),
+    Real(real::NRA<T>),
     #[subenum(NIA)]
-    Int(int::NIA),
+    Int(int::NIA<T>),
     #[subenum(NRA, NIA, Prop, BV)]
-    Bool(bool::Prop),
+    Bool(bool::Prop<T>),
     #[subenum(BV)]
-    Word(word::BV),
+    Word(word::BV<T>),
 }
 
 /// Linear real arithmetic: the linear operations of [`real`], with the
 /// boolean operations.
 #[derive(Clone, Debug, From, Display)]
-pub enum LRA {
-    Real(real::LRA),
-    Bool(bool::Prop),
+pub enum LRA<T> {
+    Real(real::LRA<T>),
+    Bool(bool::Prop<T>),
 }
 
 /// Linear integer arithmetic: the linear operations of [`int`], with the
 /// boolean operations.
 #[derive(Clone, Debug, From, Display)]
-pub enum LIA {
-    Int(int::LIA),
-    Bool(bool::Prop),
+pub enum LIA<T> {
+    Int(int::LIA<T>),
+    Bool(bool::Prop<T>),
 }
 
-impl Boundary<sort::Any> for Any {
+impl<T: Tensor> Boundary<sort::Any> for Any<T> {
     fn dom(&self) -> Poly<sort::Any> {
         match self {
             Any::Real(op) => op.dom().map(sort::Any::from),
@@ -100,8 +104,69 @@ impl Boundary<sort::Any> for Any {
     }
 }
 
-impl From<LRA> for Any {
-    fn from(op: LRA) -> Self {
+/// Extracts an operation of any theory from a Python object, trying each
+/// theory in turn through its own extraction: real, integer, boolean, and
+/// then bit-vector operations. The operations of each theory are distinct
+/// Python classes, so at most one theory accepts a given object.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::FromPyObject<'py> for Any<T>
+where
+    real::NRA<T>: pyo3::FromPyObject<'py>,
+    int::NIA<T>: pyo3::FromPyObject<'py>,
+    bool::Prop<T>: pyo3::FromPyObject<'py>,
+    word::BV<T>: pyo3::FromPyObject<'py>,
+{
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<real::NRA<T>>() {
+            return Ok(Any::Real(op));
+        }
+        if let Ok(op) = ob.extract::<int::NIA<T>>() {
+            return Ok(Any::Int(op));
+        }
+        if let Ok(op) = ob.extract::<bool::Prop<T>>() {
+            return Ok(Any::Bool(op));
+        }
+        if let Ok(op) = ob.extract::<word::BV<T>>() {
+            return Ok(Any::Word(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of real, integer, boolean or bit-vector \
+             arithmetic, got {}",
+            ob.get_type()
+        )))
+    }
+}
+
+/// Converts an operation of any theory into a Python object, through the
+/// conversion of its theory.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::IntoPyObject<'py> for Any<T>
+where
+    real::NRA<T>: pyo3::IntoPyObject<'py>,
+    int::NIA<T>: pyo3::IntoPyObject<'py>,
+    bool::Prop<T>: pyo3::IntoPyObject<'py>,
+    word::BV<T>: pyo3::IntoPyObject<'py>,
+{
+    type Target = pyo3::PyAny;
+    type Output = pyo3::Bound<'py, pyo3::PyAny>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: pyo3::Python<'py>) -> pyo3::PyResult<Self::Output> {
+        use pyo3::IntoPyObjectExt;
+
+        match self {
+            Any::Real(op) => op.into_bound_py_any(py),
+            Any::Int(op) => op.into_bound_py_any(py),
+            Any::Bool(op) => op.into_bound_py_any(py),
+            Any::Word(op) => op.into_bound_py_any(py),
+        }
+    }
+}
+
+impl<T> From<LRA<T>> for Any<T> {
+    fn from(op: LRA<T>) -> Self {
         match op {
             LRA::Real(op) => Any::Real(op.into()),
             LRA::Bool(op) => Any::Bool(op),
@@ -109,10 +174,10 @@ impl From<LRA> for Any {
     }
 }
 
-impl TryFrom<Any> for LRA {
+impl<T> TryFrom<Any<T>> for LRA<T> {
     type Error = String;
 
-    fn try_from(op: Any) -> Result<Self, Self::Error> {
+    fn try_from(op: Any<T>) -> Result<Self, Self::Error> {
         match op {
             Any::Real(op) => op
                 .try_into()
@@ -124,8 +189,8 @@ impl TryFrom<Any> for LRA {
     }
 }
 
-impl From<LIA> for Any {
-    fn from(op: LIA) -> Self {
+impl<T> From<LIA<T>> for Any<T> {
+    fn from(op: LIA<T>) -> Self {
         match op {
             LIA::Int(op) => Any::Int(op.into()),
             LIA::Bool(op) => Any::Bool(op),
@@ -133,10 +198,10 @@ impl From<LIA> for Any {
     }
 }
 
-impl TryFrom<Any> for LIA {
+impl<T> TryFrom<Any<T>> for LIA<T> {
     type Error = String;
 
-    fn try_from(op: Any) -> Result<Self, Self::Error> {
+    fn try_from(op: Any<T>) -> Result<Self, Self::Error> {
         match op {
             Any::Int(op) => op
                 .try_into()
@@ -152,38 +217,38 @@ impl TryFrom<Any> for LIA {
 // between `Any` and each logic, but not between two of them. `Prop` embeds
 // into every other logic, and each linear logic into its non-linear one.
 // Their inverses are absent, as nothing casts down between logics.
-impl From<Prop> for NRA {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for NRA<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         NRA::Bool(op)
     }
 }
 
-impl From<Prop> for NIA {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for NIA<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         NIA::Bool(op)
     }
 }
 
-impl From<Prop> for LRA {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for LRA<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         LRA::Bool(op)
     }
 }
 
-impl From<Prop> for LIA {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for LIA<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         LIA::Bool(op)
     }
 }
 
-impl From<Prop> for BV {
-    fn from(Prop::Bool(op): Prop) -> Self {
+impl<T> From<Prop<T>> for BV<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
         BV::Bool(op)
     }
 }
 
-impl From<LRA> for NRA {
-    fn from(op: LRA) -> Self {
+impl<T> From<LRA<T>> for NRA<T> {
+    fn from(op: LRA<T>) -> Self {
         match op {
             LRA::Real(op) => NRA::Real(op.into()),
             LRA::Bool(op) => NRA::Bool(op),
@@ -191,8 +256,8 @@ impl From<LRA> for NRA {
     }
 }
 
-impl From<LIA> for NIA {
-    fn from(op: LIA) -> Self {
+impl<T> From<LIA<T>> for NIA<T> {
+    fn from(op: LIA<T>) -> Self {
         match op {
             LIA::Int(op) => NIA::Int(op.into()),
             LIA::Bool(op) => NIA::Bool(op),
@@ -212,7 +277,7 @@ impl From<LIA> for NIA {
 /// # Panics
 ///
 /// If `L` does not hold `op`, as `range` is not one of its sorts.
-fn restrict<L: TryFrom<Any>>(op: Any, logic: &str, what: &str, range: &sort::Any) -> L {
+fn restrict<T, L: TryFrom<Any<T>>>(op: Any<T>, logic: &str, what: &str, range: &sort::Any) -> L {
     L::try_from(op).unwrap_or_else(|_| panic!("{logic} has no {what} on {range}"))
 }
 
@@ -222,7 +287,7 @@ fn restrict<L: TryFrom<Any>>(op: Any, logic: &str, what: &str, range: &sort::Any
 /// # Panics
 ///
 /// On reals of degree above 0, rates of change: no operation chooses one.
-impl Combinatorial<sort::Any> for Any {
+impl<T> Combinatorial<sort::Any> for Any<T> {
     fn havoc(range: &sort::Any) -> Self {
         match *range {
             sort::Any::Real(r) if r.degree() == 0 => {
@@ -247,39 +312,39 @@ impl Combinatorial<sort::Any> for Any {
     }
 }
 
-impl Combinatorial<sort::Any> for NRA {
+impl<T> Combinatorial<sort::Any> for NRA<T> {
     fn havoc(range: &sort::Any) -> Self {
-        restrict(Any::havoc(range), "NRA", "havoc", range)
+        restrict(Any::<T>::havoc(range), "NRA", "havoc", range)
     }
 }
 
-impl Combinatorial<sort::Any> for LRA {
+impl<T> Combinatorial<sort::Any> for LRA<T> {
     fn havoc(range: &sort::Any) -> Self {
-        restrict(Any::havoc(range), "LRA", "havoc", range)
+        restrict(Any::<T>::havoc(range), "LRA", "havoc", range)
     }
 }
 
-impl Combinatorial<sort::Any> for NIA {
+impl<T> Combinatorial<sort::Any> for NIA<T> {
     fn havoc(range: &sort::Any) -> Self {
-        restrict(Any::havoc(range), "NIA", "havoc", range)
+        restrict(Any::<T>::havoc(range), "NIA", "havoc", range)
     }
 }
 
-impl Combinatorial<sort::Any> for LIA {
+impl<T> Combinatorial<sort::Any> for LIA<T> {
     fn havoc(range: &sort::Any) -> Self {
-        restrict(Any::havoc(range), "LIA", "havoc", range)
+        restrict(Any::<T>::havoc(range), "LIA", "havoc", range)
     }
 }
 
-impl Combinatorial<sort::Any> for Prop {
+impl<T> Combinatorial<sort::Any> for Prop<T> {
     fn havoc(range: &sort::Any) -> Self {
-        restrict(Any::havoc(range), "Prop", "havoc", range)
+        restrict(Any::<T>::havoc(range), "Prop", "havoc", range)
     }
 }
 
-impl Combinatorial<sort::Any> for BV {
+impl<T> Combinatorial<sort::Any> for BV<T> {
     fn havoc(range: &sort::Any) -> Self {
-        restrict(Any::havoc(range), "BV", "havoc", range)
+        restrict(Any::<T>::havoc(range), "BV", "havoc", range)
     }
 }
 
@@ -289,7 +354,7 @@ impl Combinatorial<sort::Any> for BV {
 /// # Panics
 ///
 /// On `Zero`: no operation copies its only value.
-impl Sequential<sort::Any> for Any {
+impl<T> Sequential<sort::Any> for Any<T> {
     fn skip(range: &sort::Any) -> Self {
         match *range {
             sort::Any::Real(r) => {
@@ -316,39 +381,39 @@ impl Sequential<sort::Any> for Any {
     }
 }
 
-impl Sequential<sort::Any> for NRA {
+impl<T> Sequential<sort::Any> for NRA<T> {
     fn skip(range: &sort::Any) -> Self {
-        restrict(Any::skip(range), "NRA", "skip", range)
+        restrict(Any::<T>::skip(range), "NRA", "skip", range)
     }
 }
 
-impl Sequential<sort::Any> for LRA {
+impl<T> Sequential<sort::Any> for LRA<T> {
     fn skip(range: &sort::Any) -> Self {
-        restrict(Any::skip(range), "LRA", "skip", range)
+        restrict(Any::<T>::skip(range), "LRA", "skip", range)
     }
 }
 
-impl Sequential<sort::Any> for NIA {
+impl<T> Sequential<sort::Any> for NIA<T> {
     fn skip(range: &sort::Any) -> Self {
-        restrict(Any::skip(range), "NIA", "skip", range)
+        restrict(Any::<T>::skip(range), "NIA", "skip", range)
     }
 }
 
-impl Sequential<sort::Any> for LIA {
+impl<T> Sequential<sort::Any> for LIA<T> {
     fn skip(range: &sort::Any) -> Self {
-        restrict(Any::skip(range), "LIA", "skip", range)
+        restrict(Any::<T>::skip(range), "LIA", "skip", range)
     }
 }
 
-impl Sequential<sort::Any> for Prop {
+impl<T> Sequential<sort::Any> for Prop<T> {
     fn skip(range: &sort::Any) -> Self {
-        restrict(Any::skip(range), "Prop", "skip", range)
+        restrict(Any::<T>::skip(range), "Prop", "skip", range)
     }
 }
 
-impl Sequential<sort::Any> for BV {
+impl<T> Sequential<sort::Any> for BV<T> {
     fn skip(range: &sort::Any) -> Self {
-        restrict(Any::skip(range), "BV", "skip", range)
+        restrict(Any::<T>::skip(range), "BV", "skip", range)
     }
 }
 
@@ -359,7 +424,7 @@ impl Sequential<sort::Any> for BV {
 ///
 /// On `Int`, `Bool` and `Word`: their rates of change are of sort `Zero`, so
 /// no derivative wire is of these sorts.
-impl Differential<sort::Any> for Any {
+impl<T> Differential<sort::Any> for Any<T> {
     fn zero(range: &sort::Any) -> Self {
         match *range {
             sort::Any::Real(r) => {
@@ -374,39 +439,39 @@ impl Differential<sort::Any> for Any {
     }
 }
 
-impl Differential<sort::Any> for NRA {
+impl<T> Differential<sort::Any> for NRA<T> {
     fn zero(range: &sort::Any) -> Self {
-        restrict(Any::zero(range), "NRA", "zero", range)
+        restrict(Any::<T>::zero(range), "NRA", "zero", range)
     }
 }
 
-impl Differential<sort::Any> for LRA {
+impl<T> Differential<sort::Any> for LRA<T> {
     fn zero(range: &sort::Any) -> Self {
-        restrict(Any::zero(range), "LRA", "zero", range)
+        restrict(Any::<T>::zero(range), "LRA", "zero", range)
     }
 }
 
-impl Differential<sort::Any> for NIA {
+impl<T> Differential<sort::Any> for NIA<T> {
     fn zero(range: &sort::Any) -> Self {
-        restrict(Any::zero(range), "NIA", "zero", range)
+        restrict(Any::<T>::zero(range), "NIA", "zero", range)
     }
 }
 
-impl Differential<sort::Any> for LIA {
+impl<T> Differential<sort::Any> for LIA<T> {
     fn zero(range: &sort::Any) -> Self {
-        restrict(Any::zero(range), "LIA", "zero", range)
+        restrict(Any::<T>::zero(range), "LIA", "zero", range)
     }
 }
 
-impl Differential<sort::Any> for Prop {
+impl<T> Differential<sort::Any> for Prop<T> {
     fn zero(range: &sort::Any) -> Self {
-        restrict(Any::zero(range), "Prop", "zero", range)
+        restrict(Any::<T>::zero(range), "Prop", "zero", range)
     }
 }
 
-impl Differential<sort::Any> for BV {
+impl<T> Differential<sort::Any> for BV<T> {
     fn zero(range: &sort::Any) -> Self {
-        restrict(Any::zero(range), "BV", "zero", range)
+        restrict(Any::<T>::zero(range), "BV", "zero", range)
     }
 }
 
@@ -415,19 +480,50 @@ mod tests {
     use super::*;
     use base::differentiable::T;
 
-    fn real(op: impl Into<real::NRA>) -> Any {
+    /// A tensor carrying its shape only, enough to compute boundaries.
+    #[derive(Clone, Debug)]
+    struct Mat([usize; 2]);
+
+    impl Tensor for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    /// The operations display their tensors, so `Mat` displays its shape.
+    impl std::fmt::Display for Mat {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Mat{:?}", self.0)
+        }
+    }
+
+    // The operations and logics, instantiated with `Mat`; these shadow the
+    // generic ones of `super`.
+    type Any = super::Any<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type NRA = super::NRA<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type NIA = super::NIA<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type LRA = super::LRA<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type LIA = super::LIA<Mat>;
+    type Prop = super::Prop<Mat>;
+    type BV = super::BV<Mat>;
+
+    fn real(op: impl Into<real::NRA<Mat>>) -> Any {
         Any::Real(op.into())
     }
 
-    fn int(op: impl Into<int::NIA>) -> Any {
+    fn int(op: impl Into<int::NIA<Mat>>) -> Any {
         Any::Int(op.into())
     }
 
-    fn boolean(op: impl Into<bool::Prop>) -> Any {
+    fn boolean(op: impl Into<bool::Prop<Mat>>) -> Any {
         Any::Bool(op.into())
     }
 
-    fn word(op: impl Into<word::BV>) -> Any {
+    fn word(op: impl Into<word::BV<Mat>>) -> Any {
         Any::Word(op.into())
     }
 
@@ -474,13 +570,36 @@ mod tests {
     }
 
     #[test]
+    fn data_operations_take_their_shape_from_their_tensors() {
+        let c = real(real::Const(Mat([2, 3])));
+        assert_eq!(c.dom(), Poly::unit());
+        let cod: Poly<sort::Any> = base::mono![sort::Real::new([2, 3]).into()].into();
+        assert_eq!(c.cod(), cod);
+
+        // `A` of shape `[2, 3]` and `B` of shape `[2, 4]` take `[3, 4]` to `[2, 4]`
+        let l = int(int::Linear(Mat([2, 3]), Mat([2, 4])));
+        let dom: Poly<sort::Any> = base::mono![sort::Int::new([3, 4]).into()].into();
+        let cod: Poly<sort::Any> = base::mono![sort::Int::new([2, 4]).into()].into();
+        assert_eq!(l.dom(), dom);
+        assert_eq!(l.cod(), cod);
+
+        let w = word(word::Const(Mat([1, 2]), 8));
+        let cod: Poly<sort::Any> = base::mono![sort::Word::new_unchecked(8, [1, 2]).into()].into();
+        assert_eq!(w.cod(), cod);
+
+        // constants are linear
+        assert!(LRA::try_from(c).is_ok());
+        assert!(LIA::try_from(l).is_ok());
+    }
+
+    #[test]
     fn theories_mark_their_linear_operations() {
-        assert!(real::LRA::try_from(real::NRA::from(real::Add(2, 3))).is_ok());
-        assert!(real::LRA::try_from(real::NRA::from(real::Lt(2, 3))).is_ok());
-        assert!(real::LRA::try_from(real::NRA::from(real::Mul(2, 3))).is_err());
-        assert!(real::LRA::try_from(real::NRA::from(real::MatMul(2, 3, 4))).is_err());
-        assert!(int::LIA::try_from(int::NIA::from(int::Mod(2, 3))).is_err());
-        assert!(int::LIA::try_from(int::NIA::from(int::ReLU(2, 3))).is_ok());
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::Add(2, 3))).is_ok());
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::Lt(2, 3))).is_ok());
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::Mul(2, 3))).is_err());
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::MatMul(2, 3, 4))).is_err());
+        assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::Mod(2, 3))).is_err());
+        assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::ReLU(2, 3))).is_ok());
     }
 
     #[test]
@@ -597,11 +716,11 @@ mod tests {
 
         // signed and unsigned operations are distinct operations
         assert!(matches!(
-            word::BV::from(word::signed::Div(8, 2, 3)),
+            word::BV::<Mat>::from(word::signed::Div(8, 2, 3)),
             word::BV::SDiv(_)
         ));
         assert!(matches!(
-            word::BV::from(word::unsigned::Div(8, 2, 3)),
+            word::BV::<Mat>::from(word::unsigned::Div(8, 2, 3)),
             word::BV::UDiv(_)
         ));
     }
@@ -902,5 +1021,111 @@ mod tests {
     #[should_panic(expected = "LIA has no zero on T^1(Real(2, 3))")]
     fn logics_zero_panics_on_other_sorts() {
         let _ = LIA::zero(&T(sort::Any::from(sort::Real::new([2, 3]))));
+    }
+}
+
+#[cfg(all(test, feature = "pyo3"))]
+mod py_tests {
+    use super::*;
+    use pyo3::prelude::*;
+
+    /// A tensor type with no Python form: the operations carrying it never
+    /// extract, so that only those carrying no data do.
+    #[derive(Clone, Debug)]
+    struct NoData;
+
+    fn no_data<T>(ob: &Bound<'_, PyAny>) -> PyResult<T> {
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "no tensor in {}",
+            ob.get_type()
+        )))
+    }
+
+    impl<'py> FromPyObject<'py> for real::Const<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for real::Linear<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for real::TLinear<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for int::Const<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for int::Linear<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for bool::Const<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for word::Const<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    #[test]
+    fn any_extracts_the_operations_of_each_theory() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let real_add = Bound::new(py, real::Add(2, 3)).unwrap();
+            let op = real_add.extract::<Any<NoData>>().unwrap();
+            assert!(matches!(op, Any::Real(real::NRA::Add(real::Add(2, 3)))));
+
+            let int_add = Bound::new(py, int::Add(2, 3)).unwrap();
+            let op = int_add.extract::<Any<NoData>>().unwrap();
+            assert!(matches!(op, Any::Int(int::NIA::Add(int::Add(2, 3)))));
+
+            let and = Bound::new(py, bool::And(2, 3)).unwrap();
+            let op = and.extract::<Any<NoData>>().unwrap();
+            assert!(matches!(op, Any::Bool(bool::Prop::And(bool::And(2, 3)))));
+
+            let sdiv = Bound::new(py, word::signed::Div(8, 2, 3)).unwrap();
+            let op = sdiv.extract::<Any<NoData>>().unwrap();
+            assert!(matches!(
+                op,
+                Any::Word(word::BV::SDiv(word::signed::Div(8, 2, 3)))
+            ));
+
+            let not_an_operation = 42i64.into_pyobject(py).unwrap();
+            assert!(not_an_operation.extract::<Any<NoData>>().is_err());
+        });
+    }
+
+    #[test]
+    fn each_theory_extracts_its_own_operations_only() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let real_mul = Bound::new(py, real::Mul(2, 3)).unwrap();
+            assert!(real_mul.extract::<real::NRA<NoData>>().is_ok());
+            assert!(real_mul.extract::<int::NIA<NoData>>().is_err());
+
+            let int_mod = Bound::new(py, int::Mod(2, 3)).unwrap();
+            assert!(int_mod.extract::<int::NIA<NoData>>().is_ok());
+
+            // `Not` is a different class in propositional logic and in QF_BV
+            let not = Bound::new(py, bool::Not(2, 3)).unwrap();
+            assert!(not.extract::<bool::Prop<NoData>>().is_ok());
+            assert!(not.extract::<word::BV<NoData>>().is_err());
+        });
     }
 }

@@ -31,6 +31,7 @@ sorts of the theory, rather than in [`Int`]. So is the boundary of
 [`Ite`], which reads a boolean.
 */
 
+use crate::Tensor;
 use crate::sort::{Bool, Int};
 use base::boundary::{Boundary, Poly};
 use base::mono;
@@ -44,19 +45,15 @@ use subenum::subenum;
 /// [`sort::Ints`](crate::sort::Ints) of the sorts of all theories.
 pub use crate::sort::Ints as Sort;
 
-/// A constant integer matrix literal.
+/// A constant integer matrix literal, held in a tensor of type `T`.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
-)]
-pub struct Const(pub crate::PyTensor);
+pub struct Const<T>(pub T);
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Add(pub usize, pub usize);
 
@@ -64,7 +61,7 @@ pub struct Add(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Sub(pub usize, pub usize);
 
@@ -73,7 +70,7 @@ pub struct Sub(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Mul(pub usize, pub usize);
 
@@ -86,7 +83,7 @@ pub struct Mul(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Div(pub usize, pub usize);
 
@@ -98,24 +95,20 @@ pub struct Div(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Mod(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
-)]
-pub struct Linear(pub crate::PyTensor, pub crate::PyTensor);
+pub struct Linear<T>(pub T, pub T);
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct ReLU(pub usize, pub usize);
 
@@ -123,7 +116,7 @@ pub struct ReLU(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Min(pub usize, pub usize);
 
@@ -131,7 +124,7 @@ pub struct Min(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Max(pub usize, pub usize);
 
@@ -139,7 +132,7 @@ pub struct Max(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Transpose(pub usize, pub usize);
 
@@ -148,7 +141,7 @@ pub struct Transpose(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct MatMul(pub usize, pub usize, pub usize);
 
@@ -159,7 +152,7 @@ pub struct MatMul(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Lt(pub usize, pub usize);
 
@@ -170,7 +163,7 @@ pub struct Lt(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Le(pub usize, pub usize);
 
@@ -181,7 +174,7 @@ pub struct Le(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Gt(pub usize, pub usize);
 
@@ -192,7 +185,7 @@ pub struct Gt(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Ge(pub usize, pub usize);
 
@@ -203,7 +196,7 @@ pub struct Ge(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Eq(pub usize, pub usize);
 
@@ -214,7 +207,7 @@ pub struct Eq(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Ne(pub usize, pub usize);
 
@@ -222,7 +215,7 @@ pub struct Ne(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Id(pub usize, pub usize);
 
@@ -234,7 +227,7 @@ pub struct Id(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Ite(pub usize, pub usize);
 
@@ -243,7 +236,7 @@ pub struct Ite(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Argmax(pub usize, pub usize);
 
@@ -251,7 +244,7 @@ pub struct Argmax(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Havoc(pub usize, pub usize);
 
@@ -261,7 +254,7 @@ pub struct Havoc(pub usize, pub usize);
 #[derive(Clone, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.int")
 )]
 pub struct Uninterpreted(pub String, pub usize, pub usize);
 
@@ -273,9 +266,9 @@ pub struct Uninterpreted(pub String, pub usize, pub usize);
 /// the casts between them: `From` up to `NIA`, and `TryFrom` down from it.
 #[subenum(LIA)]
 #[derive(Clone, Debug, From, Display)]
-pub enum NIA {
+pub enum NIA<T> {
     #[subenum(LIA)]
-    Const(Const),
+    Const(Const<T>),
     #[subenum(LIA)]
     Add(Add),
     #[subenum(LIA)]
@@ -284,7 +277,7 @@ pub enum NIA {
     Div(Div),
     Mod(Mod),
     #[subenum(LIA)]
-    Linear(Linear),
+    Linear(Linear<T>),
     #[subenum(LIA)]
     ReLU(ReLU),
     #[subenum(LIA)]
@@ -318,7 +311,7 @@ pub enum NIA {
     Uninterpreted(Uninterpreted),
 }
 
-impl Boundary<Sort> for NIA {
+impl<T: Tensor> Boundary<Sort> for NIA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             NIA::Const(op) => op.dom().map(Sort::from),
@@ -375,7 +368,7 @@ impl Boundary<Sort> for NIA {
         }
     }
 }
-impl Boundary<Sort> for LIA {
+impl<T: Tensor> Boundary<Sort> for LIA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             LIA::Const(op) => op.dom().map(Sort::from),
@@ -425,7 +418,7 @@ impl Boundary<Sort> for LIA {
     }
 }
 
-impl Boundary<Int> for Const {
+impl<T: Tensor> Boundary<Int> for Const<T> {
     fn dom(&self) -> Poly<Int> {
         Poly::unit()
     }
@@ -487,7 +480,7 @@ impl Boundary<Int> for Mod {
 
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl Boundary<Int> for Linear {
+impl<T: Tensor> Boundary<Int> for Linear<T> {
     fn dom(&self) -> Poly<Int> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
@@ -665,13 +658,13 @@ impl Boundary<Int> for Uninterpreted {
     }
 }
 
-impl fmt::Display for Const {
+impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl fmt::Display for Linear {
+impl<T: fmt::Display> fmt::Display for Linear<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Linear({}, {})", self.0, self.1)
     }
@@ -800,6 +793,139 @@ impl fmt::Display for Havoc {
 impl fmt::Display for Uninterpreted {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Uninterpreted({})", self.0)
+    }
+}
+
+/// Extracts an operation of integer arithmetic from a Python object, trying
+/// each operation in turn: those carrying no data through their own
+/// classes, and [`Const`] and [`Linear`] through the extraction that the
+/// tensor type `T` provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::FromPyObject<'py> for NIA<T>
+where
+    Const<T>: pyo3::FromPyObject<'py>,
+    Linear<T>: pyo3::FromPyObject<'py>,
+{
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<Add>() {
+            return Ok(NIA::Add(op));
+        }
+        if let Ok(op) = ob.extract::<Sub>() {
+            return Ok(NIA::Sub(op));
+        }
+        if let Ok(op) = ob.extract::<Mul>() {
+            return Ok(NIA::Mul(op));
+        }
+        if let Ok(op) = ob.extract::<Div>() {
+            return Ok(NIA::Div(op));
+        }
+        if let Ok(op) = ob.extract::<Mod>() {
+            return Ok(NIA::Mod(op));
+        }
+        if let Ok(op) = ob.extract::<ReLU>() {
+            return Ok(NIA::ReLU(op));
+        }
+        if let Ok(op) = ob.extract::<Min>() {
+            return Ok(NIA::Min(op));
+        }
+        if let Ok(op) = ob.extract::<Max>() {
+            return Ok(NIA::Max(op));
+        }
+        if let Ok(op) = ob.extract::<Transpose>() {
+            return Ok(NIA::Transpose(op));
+        }
+        if let Ok(op) = ob.extract::<MatMul>() {
+            return Ok(NIA::MatMul(op));
+        }
+        if let Ok(op) = ob.extract::<Lt>() {
+            return Ok(NIA::Lt(op));
+        }
+        if let Ok(op) = ob.extract::<Le>() {
+            return Ok(NIA::Le(op));
+        }
+        if let Ok(op) = ob.extract::<Gt>() {
+            return Ok(NIA::Gt(op));
+        }
+        if let Ok(op) = ob.extract::<Ge>() {
+            return Ok(NIA::Ge(op));
+        }
+        if let Ok(op) = ob.extract::<Eq>() {
+            return Ok(NIA::Eq(op));
+        }
+        if let Ok(op) = ob.extract::<Ne>() {
+            return Ok(NIA::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<Id>() {
+            return Ok(NIA::Id(op));
+        }
+        if let Ok(op) = ob.extract::<Ite>() {
+            return Ok(NIA::Ite(op));
+        }
+        if let Ok(op) = ob.extract::<Argmax>() {
+            return Ok(NIA::Argmax(op));
+        }
+        if let Ok(op) = ob.extract::<Havoc>() {
+            return Ok(NIA::Havoc(op));
+        }
+        if let Ok(op) = ob.extract::<Uninterpreted>() {
+            return Ok(NIA::Uninterpreted(op));
+        }
+        if let Ok(op) = ob.extract::<Const<T>>() {
+            return Ok(NIA::Const(op));
+        }
+        if let Ok(op) = ob.extract::<Linear<T>>() {
+            return Ok(NIA::Linear(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of integer arithmetic, got {}",
+            ob.get_type()
+        )))
+    }
+}
+
+/// Converts an operation of integer arithmetic into a Python object: those
+/// carrying no data into their own classes, and [`Const`] and [`Linear`]
+/// through the conversion that the tensor type `T` provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::IntoPyObject<'py> for NIA<T>
+where
+    Const<T>: pyo3::IntoPyObject<'py>,
+    Linear<T>: pyo3::IntoPyObject<'py>,
+{
+    type Target = pyo3::PyAny;
+    type Output = pyo3::Bound<'py, pyo3::PyAny>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: pyo3::Python<'py>) -> pyo3::PyResult<Self::Output> {
+        use pyo3::IntoPyObjectExt;
+
+        match self {
+            NIA::Const(op) => op.into_bound_py_any(py),
+            NIA::Add(op) => op.into_bound_py_any(py),
+            NIA::Sub(op) => op.into_bound_py_any(py),
+            NIA::Mul(op) => op.into_bound_py_any(py),
+            NIA::Div(op) => op.into_bound_py_any(py),
+            NIA::Mod(op) => op.into_bound_py_any(py),
+            NIA::Linear(op) => op.into_bound_py_any(py),
+            NIA::ReLU(op) => op.into_bound_py_any(py),
+            NIA::Min(op) => op.into_bound_py_any(py),
+            NIA::Max(op) => op.into_bound_py_any(py),
+            NIA::Transpose(op) => op.into_bound_py_any(py),
+            NIA::MatMul(op) => op.into_bound_py_any(py),
+            NIA::Lt(op) => op.into_bound_py_any(py),
+            NIA::Le(op) => op.into_bound_py_any(py),
+            NIA::Gt(op) => op.into_bound_py_any(py),
+            NIA::Ge(op) => op.into_bound_py_any(py),
+            NIA::Eq(op) => op.into_bound_py_any(py),
+            NIA::Ne(op) => op.into_bound_py_any(py),
+            NIA::Id(op) => op.into_bound_py_any(py),
+            NIA::Ite(op) => op.into_bound_py_any(py),
+            NIA::Argmax(op) => op.into_bound_py_any(py),
+            NIA::Havoc(op) => op.into_bound_py_any(py),
+            NIA::Uninterpreted(op) => op.into_bound_py_any(py),
+        }
     }
 }
 

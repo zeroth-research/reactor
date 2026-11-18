@@ -68,8 +68,11 @@ fn variable_casts_to_its_wires() {
 #[test]
 fn variables_pass_into_term_constructors() {
     use crate::Term;
-    use theory::op::{Any, real};
+    use theory::PyTensor;
+    use theory::op::real;
     use theory::sort::{self, Real};
+
+    type Any = theory::op::Any<PyTensor>;
 
     let x: Var<sort::Any> = Var::new(Real::new([1, 1]).into());
 

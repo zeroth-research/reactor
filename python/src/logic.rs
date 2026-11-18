@@ -19,8 +19,8 @@ macro_rules! logic {
             impl $logic {
                 /// Whether `op` is an operation of the logic.
                 #[staticmethod]
-                fn contains(op: op::Any) -> bool {
-                    op::$logic::try_from(op).is_ok()
+                fn contains(op: crate::Any) -> bool {
+                    op::$logic::<theory::PyTensor>::try_from(op).is_ok()
                 }
             }
         )*

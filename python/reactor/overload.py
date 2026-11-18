@@ -16,6 +16,8 @@ The sort is that of the operands, or of the result where there are none (``const
 ``TheoryError``, e.g. ``mul`` on rates of change, or ``matmul`` on words.
 """
 
+import torch
+
 from . import op
 from .sort import Real, Int, Bool, Word, Zero
 
@@ -150,6 +152,13 @@ def linear(a, b, sort):
         case Int(_):
             return op.int.Linear(a, b)
     raise _none("Linear", sort)
+
+
+def linear_map(a, sort):
+    """The linear map ``x ↦ a·x``, on ``x`` of ``sort``: ``linear`` with a zero bias
+    of the shape of ``a·x``, as the affine maps of the theories have a bias."""
+    _, k = sort.shape
+    return linear(a, torch.zeros(a.shape[0], k, dtype=a.dtype), sort)
 
 
 def matmul(left, right):

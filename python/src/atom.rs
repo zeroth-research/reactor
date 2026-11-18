@@ -1,3 +1,4 @@
+use crate::Any;
 use crate::term::{Term, TermInterfaceType};
 use crate::var::Var;
 use crate::wire::Wire;
@@ -6,7 +7,6 @@ use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::op::Any;
 use theory::sort::Any as Sort;
 
 #[pyclass(frozen)]

@@ -444,7 +444,7 @@ def test_heterogeneous_composition():
     y = Var(Real([1, 1]))
     z = Var(Real([1, 1]))
 
-    zero = torch.tensor([[0]])
+    zero = torch.tensor([[0.0]])
     init = [Term(op.real.Const(zero), [X(x)])]
     update = [Term(op.real.Id(1, 1), [X(x)], [x])]
     P = Module.sequential([x], init, update)

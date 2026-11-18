@@ -22,6 +22,7 @@ holds [`Prop`]; so the boundary of `Prop` is in [`Sort`], the sorts of
 the theory, rather than in [`Bool`].
 */
 
+use crate::Tensor;
 use crate::sort::Bool;
 use base::boundary::{Boundary, Poly};
 use base::mono;
@@ -34,19 +35,15 @@ use std::fmt;
 /// theories.
 pub use crate::sort::Prop as Sort;
 
-/// A constant boolean matrix literal.
+/// A constant boolean matrix literal, held in a tensor of type `T`.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
-)]
-pub struct Const(pub crate::PyTensor);
+pub struct Const<T>(pub T);
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.bool")
 )]
 pub struct And(pub usize, pub usize);
 
@@ -54,7 +51,7 @@ pub struct And(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.bool")
 )]
 pub struct Or(pub usize, pub usize);
 
@@ -62,7 +59,7 @@ pub struct Or(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.bool")
 )]
 pub struct Xor(pub usize, pub usize);
 
@@ -70,7 +67,7 @@ pub struct Xor(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.bool")
 )]
 pub struct Not(pub usize, pub usize);
 
@@ -78,7 +75,7 @@ pub struct Not(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.bool")
 )]
 pub struct Id(pub usize, pub usize);
 
@@ -90,7 +87,7 @@ pub struct Id(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.bool")
 )]
 pub struct Ite(pub usize, pub usize);
 
@@ -98,7 +95,7 @@ pub struct Ite(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.bool")
 )]
 pub struct Havoc(pub usize, pub usize);
 
@@ -108,7 +105,7 @@ pub struct Havoc(pub usize, pub usize);
 #[derive(Clone, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.bool")
 )]
 pub struct Uninterpreted(pub String, pub usize, pub usize);
 
@@ -117,15 +114,15 @@ pub struct Uninterpreted(pub String, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+    pyo3::pyclass(frozen, eq, str, module = "reactor.op.bool")
 )]
 pub struct Zero;
 
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, and [`Zero`], with their boundary in [`Sort`].
 #[derive(Clone, Debug, From, Display)]
-pub enum Prop {
-    Const(Const),
+pub enum Prop<T> {
+    Const(Const<T>),
     And(And),
     Or(Or),
     Xor(Xor),
@@ -137,7 +134,7 @@ pub enum Prop {
     Zero(Zero),
 }
 
-impl Boundary<Sort> for Prop {
+impl<T: Tensor> Boundary<Sort> for Prop<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             Prop::Const(op) => op.dom().map(Sort::from),
@@ -169,7 +166,7 @@ impl Boundary<Sort> for Prop {
     }
 }
 
-impl Boundary<Bool> for Const {
+impl<T: Tensor> Boundary<Bool> for Const<T> {
     fn dom(&self) -> Poly<Bool> {
         Poly::unit()
     }
@@ -272,7 +269,7 @@ impl Boundary<Sort> for Zero {
     }
 }
 
-impl fmt::Display for Const {
+impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -329,6 +326,85 @@ impl fmt::Display for Uninterpreted {
 impl fmt::Display for Zero {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Zero")
+    }
+}
+
+/// Extracts an operation of propositional logic from a Python object,
+/// trying each operation in turn: those carrying no data through their own
+/// classes, and [`Const`] through the extraction that the tensor type `T`
+/// provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::FromPyObject<'py> for Prop<T>
+where
+    Const<T>: pyo3::FromPyObject<'py>,
+{
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<And>() {
+            return Ok(Prop::And(op));
+        }
+        if let Ok(op) = ob.extract::<Or>() {
+            return Ok(Prop::Or(op));
+        }
+        if let Ok(op) = ob.extract::<Xor>() {
+            return Ok(Prop::Xor(op));
+        }
+        if let Ok(op) = ob.extract::<Not>() {
+            return Ok(Prop::Not(op));
+        }
+        if let Ok(op) = ob.extract::<Id>() {
+            return Ok(Prop::Id(op));
+        }
+        if let Ok(op) = ob.extract::<Ite>() {
+            return Ok(Prop::Ite(op));
+        }
+        if let Ok(op) = ob.extract::<Havoc>() {
+            return Ok(Prop::Havoc(op));
+        }
+        if let Ok(op) = ob.extract::<Uninterpreted>() {
+            return Ok(Prop::Uninterpreted(op));
+        }
+        if let Ok(op) = ob.extract::<Zero>() {
+            return Ok(Prop::Zero(op));
+        }
+        if let Ok(op) = ob.extract::<Const<T>>() {
+            return Ok(Prop::Const(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of propositional logic, got {}",
+            ob.get_type()
+        )))
+    }
+}
+
+/// Converts an operation of propositional logic into a Python object:
+/// those carrying no data into their own classes, and [`Const`] through
+/// the conversion that the tensor type `T` provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::IntoPyObject<'py> for Prop<T>
+where
+    Const<T>: pyo3::IntoPyObject<'py>,
+{
+    type Target = pyo3::PyAny;
+    type Output = pyo3::Bound<'py, pyo3::PyAny>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: pyo3::Python<'py>) -> pyo3::PyResult<Self::Output> {
+        use pyo3::IntoPyObjectExt;
+
+        match self {
+            Prop::Const(op) => op.into_bound_py_any(py),
+            Prop::And(op) => op.into_bound_py_any(py),
+            Prop::Or(op) => op.into_bound_py_any(py),
+            Prop::Xor(op) => op.into_bound_py_any(py),
+            Prop::Not(op) => op.into_bound_py_any(py),
+            Prop::Id(op) => op.into_bound_py_any(py),
+            Prop::Ite(op) => op.into_bound_py_any(py),
+            Prop::Havoc(op) => op.into_bound_py_any(py),
+            Prop::Uninterpreted(op) => op.into_bound_py_any(py),
+            Prop::Zero(op) => op.into_bound_py_any(py),
+        }
     }
 }
 
