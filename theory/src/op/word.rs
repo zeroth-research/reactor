@@ -43,6 +43,11 @@ two's complement, and [`unsigned`], reading them in binary.
 includes, at the sort `(_ BitVec w)`; all the others belong to the
 theory FixedSizeBitVectors or are defined by the logic QF_BV. The
 comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
+
+Besides those of QF_BV, the theory has the operations that every theory
+has, on words:
+
+- [`Id`] — the identity.
 */
 
 use crate::sort::{Bool, Word};
@@ -187,6 +192,10 @@ pub struct Eq(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Ne(pub usize, pub usize, pub usize);
 
+/// The identity `x ↦ x` on `w`-bit words, as `Id(w, m, n)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Id(pub usize, pub usize, pub usize);
+
 /// The operations of the theory of fixed-size bit-vectors, SMT-LIB2's
 /// `FixedSizeBitVectors`, with their boundary in [`Sort`]. Those of
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
@@ -230,6 +239,7 @@ pub enum BV {
     ULe(unsigned::Le),
     UGt(unsigned::Gt),
     UGe(unsigned::Ge),
+    Id(Id),
 }
 
 impl Boundary<Sort> for BV {
@@ -272,6 +282,7 @@ impl Boundary<Sort> for BV {
             BV::ULe(op) => op.dom(),
             BV::UGt(op) => op.dom(),
             BV::UGe(op) => op.dom(),
+            BV::Id(op) => op.dom(),
         }
     }
 
@@ -314,6 +325,7 @@ impl Boundary<Sort> for BV {
             BV::ULe(op) => op.cod(),
             BV::UGt(op) => op.cod(),
             BV::UGe(op) => op.cod(),
+            BV::Id(op) => op.cod(),
         }
     }
 }
@@ -523,6 +535,16 @@ impl Boundary<Sort> for Ne {
     }
 }
 
+impl Boundary<Sort> for Id {
+    fn dom(&self) -> Poly<Sort> {
+        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -640,6 +662,12 @@ impl fmt::Display for Eq {
 impl fmt::Display for Ne {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Ne")
+    }
+}
+
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Id")
     }
 }
 
@@ -1109,6 +1137,13 @@ mod tests {
     }
 
     #[test]
+    fn id_keeps_sort() {
+        let x = w(8, [2, 3]);
+        assert_eq!(Id(8, 2, 3).dom(), one(x));
+        assert_eq!(Id(8, 2, 3).cod(), one(x));
+    }
+
+    #[test]
     fn ops_display_their_name_and_indices() {
         assert_eq!(Add(8, 1, 1).to_string(), "Add");
         assert_eq!(Ne(8, 1, 1).to_string(), "Ne");
@@ -1122,5 +1157,6 @@ mod tests {
         assert_eq!(signed::Ge(8, 1, 1).to_string(), "SGe");
         assert_eq!(signed::Extend(8, 8, 1, 1).to_string(), "SignExtend(8)");
         assert_eq!(unsigned::Extend(8, 8, 1, 1).to_string(), "ZeroExtend(8)");
+        assert_eq!(Id(8, 1, 1).to_string(), "Id");
     }
 }

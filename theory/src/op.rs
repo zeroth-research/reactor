@@ -378,4 +378,13 @@ mod tests {
         assert_eq!(op.dom(), dom);
         assert_eq!(op.cod(), cod);
     }
+
+    #[test]
+    fn id_is_in_the_logics_of_its_theory() {
+        assert!(LRA::try_from(real(real::Id(2, 3))).is_ok());
+        assert!(LIA::try_from(real(real::Id(2, 3))).is_err());
+        assert!(LIA::try_from(int(int::Id(2, 3))).is_ok());
+        assert!(BV::try_from(word(word::Id(8, 2, 3))).is_ok());
+        assert!(Prop::try_from(boolean(bool::Id(2, 3))).is_ok());
+    }
 }

@@ -9,6 +9,7 @@ information to compute its [`Boundary`]:
 - [`And`], [`Or`], [`Xor`] — pointwise conjunction, disjunction and
   exclusive disjunction.
 - [`Not`] — pointwise negation.
+- [`Id`] — the identity.
 */
 
 use crate::sort::Bool;
@@ -37,6 +38,10 @@ pub struct Xor(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Not(pub usize, pub usize);
 
+/// The identity `x ↦ x` on `[m, n]` matrices.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Id(pub usize, pub usize);
+
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
 #[derive(Clone, Debug, From)]
@@ -46,6 +51,7 @@ pub enum Prop {
     Or(Or),
     Xor(Xor),
     Not(Not),
+    Id(Id),
 }
 
 impl Boundary<Bool> for Prop {
@@ -56,6 +62,7 @@ impl Boundary<Bool> for Prop {
             Prop::Or(op) => op.dom(),
             Prop::Xor(op) => op.dom(),
             Prop::Not(op) => op.dom(),
+            Prop::Id(op) => op.dom(),
         }
     }
 
@@ -66,6 +73,7 @@ impl Boundary<Bool> for Prop {
             Prop::Or(op) => op.cod(),
             Prop::Xor(op) => op.cod(),
             Prop::Not(op) => op.cod(),
+            Prop::Id(op) => op.cod(),
         }
     }
 }
@@ -120,6 +128,16 @@ impl Boundary<Bool> for Not {
     }
 }
 
+impl Boundary<Bool> for Id {
+    fn dom(&self) -> Poly<Bool> {
+        mono![Bool::new([self.0, self.1])].into()
+    }
+
+    fn cod(&self) -> Poly<Bool> {
+        mono![Bool::new([self.0, self.1])].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -150,6 +168,12 @@ impl fmt::Display for Not {
     }
 }
 
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Id")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,8 +198,16 @@ mod tests {
     }
 
     #[test]
+    fn id_keeps_sort() {
+        let x = Bool::new([2, 3]);
+        assert_eq!(Id(2, 3).dom(), one(x));
+        assert_eq!(Id(2, 3).cod(), one(x));
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(And(1, 1).to_string(), "And");
         assert_eq!(Not(1, 1).to_string(), "Not");
+        assert_eq!(Id(1, 1).to_string(), "Id");
     }
 }

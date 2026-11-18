@@ -16,6 +16,7 @@ information to compute its [`Boundary`]:
 - [`MatMul`] — the matrix product `x·y`.
 - [`Lt`], [`Le`], [`Gt`], [`Ge`], [`Eq`](struct@Eq), [`Ne`] — pointwise
   comparisons, which write boolean matrices of the same shape.
+- [`Id`] — the identity.
 
 The comparisons are those of SMT-LIB2's `Reals` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
@@ -128,6 +129,10 @@ pub struct Eq(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Ne(pub usize, pub usize);
 
+/// The identity `x ↦ x` on `[m, n]` matrices.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Id(pub usize, pub usize);
+
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
 /// with their boundary in [`Sort`].
 ///
@@ -168,6 +173,8 @@ pub enum NRA {
     Eq(Eq),
     #[subenum(LRA)]
     Ne(Ne),
+    #[subenum(LRA)]
+    Id(Id),
 }
 
 impl Boundary<Sort> for NRA {
@@ -190,6 +197,7 @@ impl Boundary<Sort> for NRA {
             NRA::Ge(op) => op.dom(),
             NRA::Eq(op) => op.dom(),
             NRA::Ne(op) => op.dom(),
+            NRA::Id(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -212,6 +220,7 @@ impl Boundary<Sort> for NRA {
             NRA::Ge(op) => op.cod(),
             NRA::Eq(op) => op.cod(),
             NRA::Ne(op) => op.cod(),
+            NRA::Id(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -232,6 +241,7 @@ impl Boundary<Sort> for LRA {
             LRA::Ge(op) => op.dom(),
             LRA::Eq(op) => op.dom(),
             LRA::Ne(op) => op.dom(),
+            LRA::Id(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -251,6 +261,7 @@ impl Boundary<Sort> for LRA {
             LRA::Ge(op) => op.cod(),
             LRA::Eq(op) => op.cod(),
             LRA::Ne(op) => op.cod(),
+            LRA::Id(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -431,6 +442,16 @@ impl Boundary<Sort> for Ne {
     }
 }
 
+impl Boundary<Real> for Id {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.0, self.1])].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -533,6 +554,12 @@ impl fmt::Display for Ne {
     }
 }
 
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Id")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,12 +604,20 @@ mod tests {
     }
 
     #[test]
+    fn id_keeps_sort() {
+        let x = Real::new([2, 3]);
+        assert_eq!(Id(2, 3).dom(), one(x));
+        assert_eq!(Id(2, 3).cod(), one(x));
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(Add(1, 1).to_string(), "Add");
         assert_eq!(Mul(1, 1).to_string(), "Mul");
         assert_eq!(Div(1, 1).to_string(), "Div");
         assert_eq!(ReLU(1, 1).to_string(), "ReLU");
         assert_eq!(Transpose(1, 1).to_string(), "Transpose");
+        assert_eq!(Id(1, 1).to_string(), "Id");
     }
     #[test]
     fn comparisons_write_booleans() {

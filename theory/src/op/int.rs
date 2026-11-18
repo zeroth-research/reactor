@@ -18,6 +18,7 @@ information to compute its [`Boundary`]:
 - [`MatMul`] — the matrix product `x·y`.
 - [`Lt`], [`Le`], [`Gt`], [`Ge`], [`Eq`](struct@Eq), [`Ne`] — pointwise
   comparisons, which write boolean matrices of the same shape.
+- [`Id`] — the identity.
 
 The comparisons are those of SMT-LIB2's `Ints` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
@@ -140,6 +141,10 @@ pub struct Eq(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Ne(pub usize, pub usize);
 
+/// The identity `x ↦ x` on `[m, n]` matrices.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Id(pub usize, pub usize);
+
 /// The operations of the theory of integer arithmetic, SMT-LIB2's `Ints`,
 /// with their boundary in [`Sort`].
 ///
@@ -181,6 +186,8 @@ pub enum NIA {
     Eq(Eq),
     #[subenum(LIA)]
     Ne(Ne),
+    #[subenum(LIA)]
+    Id(Id),
 }
 
 impl Boundary<Sort> for NIA {
@@ -204,6 +211,7 @@ impl Boundary<Sort> for NIA {
             NIA::Ge(op) => op.dom(),
             NIA::Eq(op) => op.dom(),
             NIA::Ne(op) => op.dom(),
+            NIA::Id(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -227,6 +235,7 @@ impl Boundary<Sort> for NIA {
             NIA::Ge(op) => op.cod(),
             NIA::Eq(op) => op.cod(),
             NIA::Ne(op) => op.cod(),
+            NIA::Id(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -247,6 +256,7 @@ impl Boundary<Sort> for LIA {
             LIA::Ge(op) => op.dom(),
             LIA::Eq(op) => op.dom(),
             LIA::Ne(op) => op.dom(),
+            LIA::Id(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -266,6 +276,7 @@ impl Boundary<Sort> for LIA {
             LIA::Ge(op) => op.cod(),
             LIA::Eq(op) => op.cod(),
             LIA::Ne(op) => op.cod(),
+            LIA::Id(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -456,6 +467,16 @@ impl Boundary<Sort> for Ne {
     }
 }
 
+impl Boundary<Int> for Id {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([self.0, self.1])].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -564,6 +585,12 @@ impl fmt::Display for Ne {
     }
 }
 
+impl fmt::Display for Id {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Id")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -610,6 +637,13 @@ mod tests {
     }
 
     #[test]
+    fn id_keeps_sort() {
+        let x = Int::new([2, 3]);
+        assert_eq!(Id(2, 3).dom(), one(x));
+        assert_eq!(Id(2, 3).cod(), one(x));
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(Add(1, 1).to_string(), "Add");
         assert_eq!(Mul(1, 1).to_string(), "Mul");
@@ -617,6 +651,7 @@ mod tests {
         assert_eq!(Mod(1, 1).to_string(), "Mod");
         assert_eq!(ReLU(1, 1).to_string(), "ReLU");
         assert_eq!(Transpose(1, 1).to_string(), "Transpose");
+        assert_eq!(Id(1, 1).to_string(), "Id");
     }
     #[test]
     fn comparisons_write_booleans() {
