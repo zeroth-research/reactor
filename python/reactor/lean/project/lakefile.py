@@ -26,7 +26,7 @@ LEAN_TOOLCHAIN = f"leanprover/lean4:{MATHLIB_REV}"
 REACTOR_LEAN_URL = "https://github.com/zeroth-research/reactor-lean"
 # A commit rather than a branch, so a project cannot drift from the
 # generator that wrote it.
-REACTOR_LEAN_REV = "9f9f0fe26f3589ec266254b4154a4c698265e7a3"
+REACTOR_LEAN_REV = "3ca1fe8af3225a68041e6cd4fea3d92742dda40b"
 REACTOR_LEAN_PACKAGES = ("Relational", "LeanAI")
 # A reactor-lean checkout to require by path instead of from git, to work on
 # the libraries and the generator together.
