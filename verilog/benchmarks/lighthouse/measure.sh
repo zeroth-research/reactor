@@ -20,6 +20,11 @@ RES=$HERE/../results
 [ -x "$V2RM" ] || { echo "$V2RM missing"; exit 1; }
 DESIGN="$DIR/LighthouseTopLevel.v $DIR/ts4231Configurator.v $HERE/cells.v"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+# Every v2rm runs under GNU `timeout`, which puts itself into a process group of its own and, when
+# time is up or it gets SIGINT/SIGTERM, signals that whole group: v2rm and the z3 it runs.
+# Interrupting this script passes the signal on to the `timeout`s of the background checks.
+trap 'kill $(jobs -p) 2>/dev/null; wait; exit 130' INT TERM
+QUERY_MS=3600000  # z3's time per query of `v2rm --yosys` (out of time: Unknown); the run's is 4 h
 
 accept() {  # accept MODULE FILES...: v2rm result and seconds into $TMP/MODULE.v2rm
   local m=$1; shift
@@ -34,11 +39,13 @@ accept() {  # accept MODULE FILES...: v2rm result and seconds into $TMP/MODULE.v
 check() {  # check MODULE FILES...: Yosys result and seconds into $TMP/MODULE.yosys
   local m=$1; shift
   local start=$(date +%s) s ys
-  timeout 14400 "$V2RM" --yosys --top "$m" "$@" >"$TMP/$m.ys" 2>&1; s=$?
+  timeout 14400 "$V2RM" --yosys -t:$QUERY_MS --top "$m" "$@" >"$TMP/$m.ys" 2>&1; s=$?
   if [ $s = 124 ]; then ys=TIMEOUT
   elif [ $s = 0 ]; then ys="Equal ($(grep -o '[0-9]* of [0-9]* queries' "$TMP/$m.ys"))"
   elif grep -q '^differs:' "$TMP/$m.ys"; then
     ys="Differs $(grep '^differs:' "$TMP/$m.ys" | cut -d'`' -f2 | tr '\n' ' ')"
+  elif grep -q '^unknown:' "$TMP/$m.ys"; then
+    ys="Unknown $(grep '^unknown:' "$TMP/$m.ys" | cut -d'`' -f2 | tr '\n' ' ')"
   else ys="Error $(grep -v ': warning: ' "$TMP/$m.ys" | tail -1 | sed "s|$DIR/||; s|$HERE/||")"; fi
   printf '\t%s\t%d' "$ys" $(( $(date +%s) - start )) > "$TMP/$m.yosys"
 }

@@ -435,3 +435,40 @@ fn round_nest() {
 "
     );
 }
+
+/// A z3 that stops before it has read the whole script, or that a signal
+/// ends, is an error that gives z3's exit status and its standard error,
+/// not just the broken pipe of the script that could not be written.
+#[cfg(unix)]
+#[test]
+fn z3_stopping_early_is_reported() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("z3-stub");
+    std::fs::create_dir_all(&dir).unwrap();
+    let stub = |name: &str, body: &str| {
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    };
+    // larger than a pipe's buffer, so that writing it must fail
+    let script = "(check-sat)\n".repeat(100_000);
+    let quits = stub("quits", "echo 'out of memory' >&2; exit 3");
+    let e = z3::run(&quits, &script).unwrap_err();
+    assert!(e.contains("stopped before reading the whole script"), "{e}");
+    assert!(
+        e.contains("exit status: 3") && e.contains("out of memory"),
+        "{e}"
+    );
+    let killed = stub(
+        "killed",
+        "cat >/dev/null; echo sat; echo dying >&2; kill -9 $$",
+    );
+    let e = z3::run(&killed, "(check-sat)\n").unwrap_err();
+    assert!(
+        e.contains("ended by a signal") && e.contains("dying") && e.contains("sat"),
+        "{e}"
+    );
+    let fine = stub("fine", "cat >/dev/null; echo sat; exit 1");
+    assert_eq!(z3::run(&fine, &script).unwrap(), ["sat"]);
+}
