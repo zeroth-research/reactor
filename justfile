@@ -27,6 +27,15 @@ FEATURES := ""
 # venv's torch. If neccessary, override with `just CARGO=cargo ...` to use
 # a bare toolchain.
 CARGO := "uv run cargo"
+
+# The uv venv lives in cargo's target dir, as `<target-dir>/.venv`. The target dir is
+# asked to plain cargo (not `uv run`, which would create a venv first) from the repo
+# root and exported as an absolute path: a relative CARGO_TARGET_DIR (e.g.
+# `target-linux`, to keep per-OS builds apart in a shared checkout) then means the same
+# dir in recipes that `cd` elsewhere. An explicit UV_PROJECT_ENVIRONMENT still wins.
+TARGET_DIR := `cargo metadata --no-deps --format-version 1 --offline | sed 's/.*"target_directory":"\([^"]*\)".*/\1/'`
+export CARGO_TARGET_DIR := TARGET_DIR
+export UV_PROJECT_ENVIRONMENT := env("UV_PROJECT_ENVIRONMENT", TARGET_DIR / ".venv")
 NBSTRIPOUT := "uvx nbstripout@0.9.1 --max-size 16k --drop-empty-cells"
 
 # Convert FEATURES into a flag only if set
@@ -47,7 +56,7 @@ test: rs-test py-test nb-test
 # `cargo clean` needs no torch, and running it under `uv run` would trigger a
 # sync that can fail — cleaning the repo works fine outside the virtual env.
 
-# Clean the current build (the shared cargo target directory)
+# Clean the current build: the cargo target dir, including the `.venv` in it
 clean:
     cargo clean
 
