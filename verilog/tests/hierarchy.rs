@@ -509,6 +509,7 @@ fn rejected_parameters() {
             "the divisor must be a nonzero constant",
         ),
         ("  localparam K = a;", "a;", "`a` is not a parameter"),
+        ("  localparam K = $;", "$;", "`$` not supported"),
         ("  localparam N = 3;", "N =", "`N` already declared"),
         ("  logic N;", "N;", "`N` already declared"),
         ("  assign y = a[N];", "a[N]", "out of range"),
