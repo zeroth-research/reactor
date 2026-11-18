@@ -245,6 +245,20 @@ fn parse_errors() {
     // an input sharing its symbol with a fresh value
     let shared = format!("{SAMPLE}; yosys-smt2-anyseq top#3 1 $cut\n");
     assert!(err(&shared).starts_with(driven), "{}", err(&shared));
+    // names that cannot be SMT-LIB quoted symbols (from an escaped
+    // identifier or a source path in an internal name)
+    for bad in [
+        format!("{SAMPLE}; yosys-smt2-wire a|b 1\n"),
+        format!("{SAMPLE}; yosys-smt2-register $x$/p|q.sv:1$2 1\n"),
+        format!("{SAMPLE}; yosys-smt2-wire a\\b 1\n"),
+        SAMPLE.replace("; yosys-smt2-topmod top\n", "; yosys-smt2-topmod t|p\n"),
+    ] {
+        assert!(
+            err(&bad).contains("which an SMT-LIB symbol cannot"),
+            "{}",
+            err(&bad)
+        );
+    }
     let malformed = format!("{SAMPLE}; yosys-smt2-wire y\n");
     assert!(err(&malformed).contains("malformed"), "{}", err(&malformed));
     let (head, _) = SAMPLE.split_once("(define-fun |top_i|").unwrap();
@@ -1334,6 +1348,41 @@ fn counterexample_contents() {
     assert!(ys.inputs.contains_key("clk"));
     let text = cex.to_string();
     assert!(text.starts_with("`z` is "), "{text}");
+}
+
+/// A translation that does not fit the miter or the replay (one changed
+/// by hand, or an instance of another design) gives an error, not a panic.
+#[test]
+fn mismatched_translations_are_errors() {
+    let path = |name: &str| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("examples")
+            .join(name)
+    };
+    let (counter, _) = load(&path("counter.sv"));
+    let (_, powerup) = load(&path("powerup.sv"));
+    let cex = miter::Cex {
+        phase: Phase::Update,
+        name: "y".into(),
+        registers: Values::new(),
+        inputs: Values::new(),
+        next_inputs: Values::new(),
+        latched: Values::new(),
+        ours: BitVec::zero(8),
+        theirs: BitVec::zero(8),
+    };
+    let e = miter::replay(&counter, &powerup, &cex).unwrap_err();
+    assert!(e.contains("is not a signal of the instance"), "{e}");
+    let Some((yosys, _)) = tools() else { return };
+    let (_, mut t) = load(&path("counter.sv"));
+    let ys = yosys::run(&yosys, &path("counter.sv"), &t.name, &[]).unwrap();
+    let q = t.registers[0].clone();
+    t.register_widths.remove(&q);
+    let e = miter::build(&t, &ys).err().unwrap();
+    assert!(
+        e.contains(&format!("register `{q}` has no width in the translation")),
+        "{e}"
+    );
 }
 
 /// `v2rm --yosys`: a summary line and exit status 0 if every query is

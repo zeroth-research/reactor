@@ -361,10 +361,24 @@ impl Smt2 {
     }
 }
 
+/// `name`, or an error if it contains `|` or `\`, which an SMT-LIB quoted
+/// symbol cannot ([`smt::symbol`]). `write_smt2` writes `\` in a name as
+/// `/`, but keeps `|` (and then writes invalid SMT-LIB itself); names get
+/// a `|` only from escaped identifiers, which the frontend rejects, or from
+/// the path of a source file in the name of an internal wire.
+fn symbol_safe(name: &str) -> Result<&str, String> {
+    if name.contains(['|', '\\']) {
+        return Err(format!(
+            "Yosys's name `{name}` contains `|` or `\\`, which an SMT-LIB symbol cannot"
+        ));
+    }
+    Ok(name)
+}
+
 /// Parses the output of `write_smt2`. Fails if it has no top module or
 /// several modules (the design was not flattened), if a name is listed
-/// twice with different widths, or if an input or a fresh value is not
-/// free in every step (see the module docs).
+/// twice with different widths or cannot be an SMT-LIB symbol, or if an
+/// input or a fresh value is not free in every step (see the module docs).
 pub fn parse(text: &str) -> Result<Smt2, String> {
     let mut modules = Vec::new();
     let mut top = None;
@@ -380,7 +394,7 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
                 continue;
             }
             "topmod" => {
-                top = Some(arg.to_string());
+                top = Some(symbol_safe(arg)?.to_string());
                 continue;
             }
             "input" => &mut maps[0],
@@ -400,6 +414,7 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
             .rsplit_once(' ')
             .and_then(|(n, w)| Some((n, w.parse::<usize>().ok()?)))
             .ok_or_else(|| format!("malformed Yosys comment: {line}"))?;
+        symbol_safe(name)?;
         if let Some(old) = map.insert(name.to_string(), width)
             && old != width
         {

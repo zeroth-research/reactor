@@ -333,11 +333,13 @@ fn yosys_check(
             Verdict::Unknown => println!("unknown: `{name}` in the {} round", round(*phase)),
             Verdict::Differs => {
                 println!("differs: `{name}` in the {} round", round(*phase));
-                let q = m
+                let cex = m
                     .queries
                     .iter()
-                    .find(|q| q.phase == *phase && &q.name == name);
-                match miter::counterexample(&z3, &m, q.expect("queried")) {
+                    .find(|q| q.phase == *phase && &q.name == name)
+                    .ok_or_else(|| format!("the miter has no query of `{name}`"))
+                    .and_then(|q| miter::counterexample(&z3, &m, q));
+                match cex {
                     Err(e) => println!("  no counterexample: {}", indent(e)),
                     Ok(cex) => {
                         println!("  {cex}");
