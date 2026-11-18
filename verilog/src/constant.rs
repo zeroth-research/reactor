@@ -65,7 +65,11 @@ pub const X_HINT: &str = "values are 2-state; x is accepted only as the whole va
 /// digits are rejected (values are 2-state), and so are values that do
 /// not fit in the width (32 bits for unsized literals).
 pub fn literal(text: &str) -> Result<Literal, String> {
+    let decimal = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
     let Some((size, rest)) = text.split_once('\'') else {
+        if !decimal(text) {
+            return Err(format!("malformed literal `{text}`"));
+        }
         let value: i64 = text
             .parse()
             .ok()
@@ -75,6 +79,8 @@ pub fn literal(text: &str) -> Result<Literal, String> {
     };
     let width: usize = if size.is_empty() {
         32
+    } else if !decimal(size) {
+        return Err(format!("malformed literal `{text}`"));
     } else {
         size.parse()
             .map_err(|_| format!("literal size `{size}` too large"))?
@@ -258,8 +264,11 @@ pub fn int(e: &Expr) -> Result<i64, Failure> {
 /// or an unsized decimal with a sign (`-3`).
 pub fn parse(text: &str) -> Result<Expr, String> {
     let (negative, digits) = match text.strip_prefix('-') {
-        Some(d) if d.starts_with(|c: char| c.is_ascii_digit()) && !d.contains('\'') => (true, d),
-        _ => (false, text),
+        Some(d) if d.contains('\'') => {
+            return Err(format!("`{text}`: only an unsized decimal can have a sign"));
+        }
+        Some(d) => (true, d),
+        None => (false, text),
     };
     let digits: String = digits.chars().filter(|c| *c != '_').collect();
     let (ty, value) = match literal(&digits) {
@@ -348,6 +357,9 @@ mod tests {
         assert_eq!(literal("1000"), Ok(Literal::Int(1000)));
         assert!(literal("2147483648").is_err());
         assert!(literal("'hx").is_err());
+        for text in ["", "abc", "1a", "4x'h3", "'", "8'"] {
+            assert_eq!(literal(text), Err(format!("malformed literal `{text}`")));
+        }
         let Ok(Literal::Sized(ty, v)) = literal("4'sb1010") else {
             panic!()
         };
