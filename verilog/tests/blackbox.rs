@@ -453,3 +453,72 @@ fn several_files() {
         "{stderr}"
     );
 }
+
+/// Positions that a message mentions besides its own (an earlier driver, a
+/// gate) are given in their own files too, like the position of the error:
+/// as `L:C` in the error's file, else with the path of their file.
+#[test]
+fn positions_in_messages_of_later_files() {
+    let error = |paths: &[std::path::PathBuf]| {
+        let d = verilog::frontend::parse_design_files(paths).unwrap();
+        let err = elab::elaborate(&d, "top", &[])
+            .and_then(|inst| lower_inst(&inst).map(|_| ()))
+            .unwrap_err();
+        d.located(err)
+    };
+    // both positions in the second file
+    let paths = files(
+        "mentions",
+        &[
+            (
+                "a.sv",
+                "module a(input logic x, output logic y);\n  assign y = x;\nendmodule\n",
+            ),
+            (
+                "b.sv",
+                "// second\nmodule top(input logic p, q, output logic y);\n  assign y = p;\n  \
+                 assign y = q;\nendmodule\n",
+            ),
+        ],
+    );
+    let err = error(&paths);
+    assert_eq!(err.file.as_ref(), Some(&paths[1]));
+    assert_eq!(err.to_string(), "4:10: `y` already driven at 3:10");
+    // the error in the first file, the gate in the second
+    let paths = files(
+        "mentions-other",
+        &[
+            (
+                "top.sv",
+                "module top(input logic a, b, output logic y);\n  logic g;\n  m u(.a, .b, .g);\n  \
+                 always_ff @(posedge g) y <= 1;\nendmodule\n",
+            ),
+            (
+                "m.sv",
+                "// child\nmodule m(input logic a, b, output logic g);\n  assign g = a & b;\nendmodule\n",
+            ),
+        ],
+    );
+    let err = error(&paths);
+    assert_eq!(err.file.as_ref(), Some(&paths[0]));
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "4:23: the clock `g` comes from `u.g`, computed combinationally at {}:3:10: gated \
+             clocks are not supported",
+            paths[1].display()
+        )
+    );
+    // the CLI prints the same
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_v2rm"))
+        .args(&paths)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.starts_with(&format!("{}:4:23: ", paths[0].display()))
+            && stderr.contains(&format!("at {}:3:10:", paths[1].display())),
+        "{stderr}"
+    );
+}

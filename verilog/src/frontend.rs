@@ -257,12 +257,6 @@ fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
         cx.module_attributes(attrs).map_err(|e| d.located(e))?;
         let name = cx.identifier(&id.nodes.0).map_err(|e| d.located(e))?;
         if let Some(prev) = seen.insert(name.clone(), cx.span(id)) {
-            let prev = if d.files.len() > 1 {
-                let (path, span) = d.locate(prev);
-                format!("{}:{span}", path.display())
-            } else {
-                prev.to_string()
-            };
             let e = Error::new(
                 cx.span(id),
                 format!("module `{name}` already declared at {prev}"),
@@ -274,18 +268,61 @@ fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
 }
 
 /// `e` with its position in its own file, and the file (see
-/// [`Design::locate`]).
+/// [`Design::locate`]). The positions its message mentions (`at L:C`, see
+/// [`mentions_in`]) are given in their files too.
 fn locate_in(files: &[SourceFile], e: Error) -> Error {
     if e.span == Span::default() {
         return e;
     }
-    let k = files.partition_point(|f| f.line <= e.span.line).max(1) - 1;
+    let (f, span) = file_of(files, e.span);
+    let msg = mentions_in(files, &f.path, &e.msg);
+    Error { span, msg, ..e }.in_file(&f.path)
+}
+
+/// The file of a position of the design, with the position in that file.
+fn file_of(files: &[SourceFile], span: Span) -> (&SourceFile, Span) {
+    let k = files.partition_point(|f| f.line <= span.line).max(1) - 1;
     let f = &files[k];
     let span = Span {
-        line: e.span.line - f.line + 1,
-        col: e.span.col,
+        line: span.line - f.line + 1,
+        col: span.col,
     };
-    Error { span, ..e }.in_file(&f.path)
+    (f, span)
+}
+
+/// `msg` with every position of the design it mentions as `at L:C` (the
+/// form messages use to point to a second place, such as an earlier
+/// driver) given in its own file: as `L:C` in that file if it is `file`
+/// (the file of the error), else as `path:L:C`. A mention is the word `at`
+/// followed by one space and `L:C` (identifiers in messages cannot
+/// contain spaces or colons).
+fn mentions_in(files: &[SourceFile], file: &Path, msg: &str) -> String {
+    let digits = |s: &str| s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    let mut out = String::new();
+    let mut rest = msg;
+    while let Some(k) = rest.find("at ") {
+        out.push_str(&rest[..k]);
+        // `at` is a word: no letter, digit or `_` right before it
+        let word = !out.ends_with(|c: char| c.is_alphanumeric() || c == '_');
+        out.push_str("at ");
+        rest = &rest[k + 3..];
+        let n = digits(rest);
+        let m = rest.get(n + 1..).map_or(0, digits);
+        if !word || n == 0 || m == 0 || !rest[n..].starts_with(':') {
+            continue;
+        }
+        let (Ok(line), Ok(col)) = (rest[..n].parse(), rest[n + 1..n + 1 + m].parse()) else {
+            continue;
+        };
+        let (f, span) = file_of(files, Span { line, col });
+        if f.path != file {
+            out.push_str(&format!("{}:", f.path.display()));
+        }
+        out.push_str(&span.to_string());
+        rest = &rest[n + 1 + m..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The position of a byte offset, with `lines` the offsets at which lines
