@@ -3,16 +3,20 @@
 Generated from the operations of `theory::op`; keep them in step with it.
 """
 
-from torch import Tensor as TorchTensor
+from typing import Any
+
+# A matrix that an operation holds: a `torch.Tensor`, whose storage it shares, or a
+# list of rows, which it copies.
+Matrix = Any
 
 
 class Const:
-    """A constant matrix of bit-vectors of a width: a `torch.Tensor` of integer elements, each holding a bit-vector in its low bits."""
+    """A constant matrix of bit-vectors of a width, held in a `Matrix` of integer elements, each holding a bit-vector in its low bits."""
 
     __match_args__ = ("tensor", "width")
-    def __init__(self, tensor: TorchTensor, width: int) -> None: ...
+    def __init__(self, tensor: Matrix, width: int) -> None: ...
     @property
-    def tensor(self) -> TorchTensor: ...
+    def tensor(self) -> Matrix: ...
     @property
     def width(self) -> int: ...
 

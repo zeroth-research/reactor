@@ -14,6 +14,7 @@ from . import op, overload as ov
 from .reactor import Wire, Term, Var
 from .op import LRA, LIA, BV
 from .overload import TheoryError
+from .tensor import as_torch
 from .sort import Sort, Bool, Real, Int, Word, shape as _shape, with_shape as _with_shape
 
 
@@ -57,10 +58,10 @@ def _bool_sort(sort: Sort) -> Sort:
 
 
 def _const_tensor(itype):
-    """The constant tensor carried by a const op, or None."""
+    """The constant tensor carried by a const op, as a torch tensor, or None."""
     match itype:
         case op.real.Const(t) | op.int.Const(t) | op.bool.Const(t) | op.word.Const(t, _):
-            return t
+            return as_torch(t)
     return None
 
 

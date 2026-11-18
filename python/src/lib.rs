@@ -6,6 +6,7 @@ use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fmt::Write;
+use theory::op::Any;
 use theory::sort::Any as Sort;
 
 mod atom;
@@ -20,11 +21,6 @@ use crate::module::Module;
 use crate::term::Term;
 use crate::var::Var;
 use crate::wire::Wire;
-
-/// The operations of the terms: those of every theory, holding their
-/// tensors in a [`theory::PyTensor`], which is `Clone` and `Sync`, as the
-/// classes holding terms must be, where a `tch::Tensor` is neither.
-pub(crate) type Any = theory::op::Any<theory::PyTensor>;
 
 #[pymodule]
 fn reactor(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {

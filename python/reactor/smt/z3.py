@@ -9,6 +9,7 @@ import z3 as _z3
 import torch
 from .. import op
 from ..sort import Real, Int, Bool
+from ..tensor import as_numpy
 import numpy as _np
 import operator
 
@@ -30,11 +31,11 @@ def interpret(itype):
         case op.real.Id() | op.real.TId() | op.int.Id() | op.bool.Id():
             return lambda x: x
         case op.bool.Const(t):
-            return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(t.detach().numpy())
+            return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(as_numpy(t))
         case op.real.Const(t):
-            return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(t.detach().numpy())
+            return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(as_numpy(t))
         case op.int.Const(t):
-            return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(t.detach().numpy())
+            return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(as_numpy(t))
         case op.real.Havoc(m, n):
             return lambda: fresh(Real([m, n]), "HAVOC")
         case op.int.Havoc(m, n):
@@ -48,7 +49,7 @@ def interpret(itype):
         case op.real.Add() | op.real.TAdd() | op.int.Add():
             return _np.frompyfunc(operator.add, 2, 1)
         case op.real.Linear(weight, bias) | op.real.TLinear(weight, bias, _) | op.int.Linear(weight, bias):
-            return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
+            return lambda x: as_numpy(weight) @ x + as_numpy(bias)
 
         # comparisons (produce Bool)
         case op.real.Eq() | op.int.Eq():

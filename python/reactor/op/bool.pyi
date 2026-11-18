@@ -3,16 +3,20 @@
 Generated from the operations of `theory::op`; keep them in step with it.
 """
 
-from torch import Tensor as TorchTensor
+from typing import Any
+
+# A matrix that an operation holds: a `torch.Tensor`, whose storage it shares, or a
+# list of rows, which it copies.
+Matrix = Any
 
 
 class Const:
-    """A constant boolean matrix: a `torch.Tensor` of boolean elements."""
+    """A constant boolean matrix, held in a `Matrix` of boolean elements."""
 
     __match_args__ = ("tensor",)
-    def __init__(self, tensor: TorchTensor) -> None: ...
+    def __init__(self, tensor: Matrix) -> None: ...
     @property
-    def tensor(self) -> TorchTensor: ...
+    def tensor(self) -> Matrix: ...
 
 class And:
     """Pointwise conjunction `x ∧ y` of `[m, n]` matrices."""

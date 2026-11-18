@@ -1,310 +1,276 @@
-/// A matrix of values, as held by the operations that carry data: the
-/// constants, and the coefficients of `Linear`. The operations are generic
-/// over it, so that any tensor representation can back them.
-pub trait Tensor {
-    /// The `[rows, cols]` shape of the matrix.
-    fn shape(&self) -> [usize; 2];
+/*!
+# Tensors
+
+The matrices that the operations carrying data hold, the constants and the
+coefficients of the affine maps: a [`Tensor`] is one of
+
+- a [`Builtin`] matrix, held in Rust, in every build;
+- a `Torch` tensor, with the `torch` feature.
+
+The operations of a module may hold tensors of different backends. A
+tensor gives its shape, the [`Kind`] of its elements, which the operations
+check (a real constant holds floating-point elements), and its values, as
+it displays them on a single line.
+
+Only this module tells the backends apart. The variants of [`Tensor`]
+depend on the features, which Cargo unifies across a build, so a `match` on
+it elsewhere would break when another crate turns on a feature; code
+elsewhere uses the methods of [`Tensor`] instead.
+
+With the `pyo3` feature, a tensor converts from and into its Python object:
+a `torch.Tensor`, or, for a [`Builtin`], a list of rows.
+*/
+
+mod builtin;
+#[cfg(feature = "pyo3")]
+mod py;
+#[cfg(feature = "torch")]
+mod torch;
+
+pub use builtin::Builtin;
+#[cfg(feature = "torch")]
+pub use torch::Torch;
+
+use std::fmt;
+
+/// A matrix held by an operation, in one of the backends.
+#[derive(Clone, Debug)]
+pub enum Tensor {
+    /// A matrix held in Rust.
+    Builtin(Builtin),
+    /// A torch tensor.
+    #[cfg(feature = "torch")]
+    Torch(Torch),
 }
 
-// Pick what tensor implementation to use based on the set features
-#[cfg(not(feature = "torch"))]
-pub use stub::PyTensor;
+impl Tensor {
+    /// The `[rows, cols]` shape of the matrix.
+    pub fn shape(&self) -> [usize; 2] {
+        match self {
+            Tensor::Builtin(t) => t.shape(),
+            #[cfg(feature = "torch")]
+            Tensor::Torch(t) => t.shape(),
+        }
+    }
+
+    /// The kind of the elements.
+    pub fn kind(&self) -> Kind {
+        match self {
+            Tensor::Builtin(t) => t.kind(),
+            #[cfg(feature = "torch")]
+            Tensor::Torch(t) => t.kind(),
+        }
+    }
+
+    /// Fails unless the elements are of `kind`.
+    pub fn expect_kind(&self, kind: Kind) -> Result<(), Error> {
+        let got = self.kind();
+        if got == kind {
+            Ok(())
+        } else {
+            Err(Error::Kind {
+                expected: kind,
+                got,
+            })
+        }
+    }
+}
+
+/// Fails unless `a` and `b` are the matrices of an affine map `x ↦ A·x + B`
+/// with elements of `kind`: `A` of shape `[m, n]` and `B` of shape `[m, k]`.
+pub fn expect_affine(a: &Tensor, b: &Tensor, kind: Kind) -> Result<(), Error> {
+    a.expect_kind(kind.clone())?;
+    b.expect_kind(kind)?;
+    let (a, b) = (a.shape(), b.shape());
+    if a[0] != b[0] {
+        return Err(Error::Affine { a, b });
+    }
+    Ok(())
+}
+
+impl From<Builtin> for Tensor {
+    fn from(t: Builtin) -> Self {
+        Tensor::Builtin(t)
+    }
+}
+
 #[cfg(feature = "torch")]
-pub use torch::PyTensor;
-
-/// Tensor backing for the `torch` feature: a real [`tch::Tensor`] that can be
-/// converted to/from Python `torch.Tensor` objects via PyO3.
-#[cfg(feature = "torch")]
-mod torch {
-    // The implementation of PyTensor is mostly taken from the `tch-pyo3` crate:
-    // https://github.com/LaurentMazare/tch-rs/blob/main/pyo3-tch/src/lib.rs
-    //
-    // The used code comes with the following LICENSE (see
-    // https://github.com/LaurentMazare/tch-rs?tab=readme-ov-file#license):
-
-    // Permission is hereby granted, free of charge, to any
-    // person obtaining a copy of this software and associated
-    // documentation files (the "Software"), to deal in the
-    // Software without restriction, including without
-    // limitation the rights to use, copy, modify, merge,
-    // publish, distribute, sublicense, and/or sell copies of
-    // the Software, and to permit persons to whom the Software
-    // is furnished to do so, subject to the following
-    // conditions:
-    //
-    // The above copyright notice and this permission notice
-    // shall be included in all copies or substantial portions
-    // of the Software.
-    //
-    // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-    // ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-    // TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-    // PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-    // SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-    // CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-    // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-    // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-    // DEALINGS IN THE SOFTWARE.
-
-    use pyo3::exceptions::PyTypeError;
-    use pyo3::prelude::*;
-    use pyo3_tch::tch;
-    use pyo3_tch::wrap_tch_err;
-    use std::fmt::Display;
-
-    #[derive(Debug)]
-    pub struct PyTensor {
-        pub tensor: tch::Tensor,
+impl From<Torch> for Tensor {
+    fn from(t: Torch) -> Self {
+        Tensor::Torch(t)
     }
+}
 
-    impl PyTensor {
-        /// Whether the underlying tensor has boolean element type (used to validate a
-        /// constant against its write wire's sort).
-        pub fn is_bool(&self) -> bool {
-            self.tensor.kind() == tch::Kind::Bool
-        }
-
-        /// The `[rows, cols]` shape of the underlying tensor, which must be a matrix.
-        pub fn shape(&self) -> [usize; 2] {
-            let size = self.tensor.size();
-            let [rows, cols] = size[..] else {
-                panic!("expected a matrix, got a tensor of shape {size:?}")
-            };
-            [rows as usize, cols as usize]
+impl fmt::Display for Tensor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Tensor::Builtin(t) => t.fmt(f),
+            #[cfg(feature = "torch")]
+            Tensor::Torch(t) => t.fmt(f),
         }
     }
+}
 
-    impl crate::Tensor for PyTensor {
-        fn shape(&self) -> [usize; 2] {
-            PyTensor::shape(self)
+/// The kind of the elements of a tensor, as the operations tell them apart.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Bool,
+    Int,
+    Float,
+    /// Elements of none of the other kinds, as complex numbers, under the
+    /// name their backend gives them.
+    Other(String),
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Kind::Bool => write!(f, "boolean"),
+            Kind::Int => write!(f, "integer"),
+            Kind::Float => write!(f, "floating-point"),
+            Kind::Other(name) => write!(f, "{name}"),
         }
     }
+}
 
-    impl std::ops::Deref for PyTensor {
-        type Target = tch::Tensor;
+/// Why a tensor cannot be the data of an operation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Error {
+    /// The tensor, of the given shape, is not a matrix.
+    NotAMatrix(Vec<usize>),
+    /// The elements are of the kind `got`, where `expected` is required.
+    Kind { expected: Kind, got: Kind },
+    /// `A` and `B` are not of the shapes `[m, n]` and `[m, k]` of an affine
+    /// map `x ↦ A·x + B`.
+    Affine { a: [usize; 2], b: [usize; 2] },
+}
 
-        fn deref(&self) -> &Self::Target {
-            &self.tensor
-        }
-    }
-
-    impl<'source> FromPyObject<'source> for PyTensor {
-        fn extract_bound(ob: &Bound<'source, PyAny>) -> PyResult<Self> {
-            let ptr = ob.as_ptr() as *mut tch::python::CPyObject;
-            let tensor = unsafe { tch::Tensor::pyobject_unpack(ptr) };
-            tensor
-                .map_err(wrap_tch_err)?
-                .ok_or_else(|| {
-                    let type_ = ob.get_type();
-                    PyErr::new::<PyTypeError, _>(format!("expected a torch.Tensor, got {type_}"))
-                })
-                .map(|val| PyTensor { tensor: val })
-        }
-    }
-
-    impl<'py> IntoPyObject<'py> for PyTensor {
-        type Output = Bound<'py, Self::Target>;
-        type Target = PyAny;
-        type Error = PyErr;
-
-        fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-            // There is no fallible alternative to ToPyObject/IntoPy at the moment so we return
-            // None on errors. https://github.com/PyO3/pyo3/issues/1813
-            let v = self.tensor.pyobject_wrap().map_or_else(
-                |_| py.None(),
-                |ptr| unsafe { PyObject::from_owned_ptr(py, ptr as *mut pyo3::ffi::PyObject) },
-            );
-            Ok(v.into_pyobject(py)?)
-        }
-    }
-
-    // It is safe to share PyTensor between threads (first, the C++ API of
-    // torch::Tensor should be concurrent, second, the implementation of from and
-    // into python object use Bounds which hold the Python's GIL.
-    unsafe impl Sync for PyTensor {}
-
-    impl Clone for PyTensor {
-        fn clone(&self) -> Self {
-            Self {
-                tensor: self.tensor.shallow_clone(),
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::NotAMatrix(shape) => {
+                write!(f, "expected a matrix, got a tensor of shape {shape:?}")
             }
+            Error::Kind { expected, got } => {
+                write!(
+                    f,
+                    "expected a tensor of {expected} elements, got {got} elements"
+                )
+            }
+            Error::Affine { a, b } => write!(
+                f,
+                "expected A of shape [m, n] and B of shape [m, k], got {a:?} and {b:?}"
+            ),
         }
     }
+}
 
-    /// Elements above which a tensor is no longer printed entirely.
-    const FMT_MAX_NUMEL: i64 = 16;
-    /// Elements kept on each side of the `...` when truncating a dimension.
-    const FMT_EDGE: i64 = 3;
+impl std::error::Error for Error {}
 
-    fn fmt_scalar(f: &mut std::fmt::Formatter<'_>, t: &tch::Tensor) -> std::fmt::Result {
-        match t.kind() {
-            tch::Kind::Bool => write!(f, "{}", t.int64_value(&[]) != 0),
-            tch::Kind::Uint8
-            | tch::Kind::Int8
-            | tch::Kind::Int16
-            | tch::Kind::Int
-            | tch::Kind::Int64 => write!(f, "{}", t.int64_value(&[])),
-            _ => write!(f, "{}", t.double_value(&[])),
+/// An element of a tensor, as it displays.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Value {
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Bool(v) => write!(f, "{v}"),
+            Value::Int(v) => write!(f, "{v}"),
+            Value::Float(v) => write!(f, "{v}"),
         }
     }
+}
 
-    fn fmt_slice(
-        f: &mut std::fmt::Formatter<'_>,
-        t: &tch::Tensor,
-        dims: &[i64],
-        truncate: bool,
-    ) -> std::fmt::Result {
-        let Some((&n, rest)) = dims.split_first() else {
-            return fmt_scalar(f, t);
-        };
+/// Elements above which a matrix is no longer printed entirely.
+const FMT_MAX_NUMEL: usize = 16;
+/// Elements kept on each side of the `...` when truncating a dimension.
+const FMT_EDGE: usize = 3;
 
-        let item = |f: &mut std::fmt::Formatter<'_>, i: i64, first: bool| {
-            if !first {
+/// Writes the matrix of shape `[m, n]` whose elements `value` gives, on a
+/// single line: entirely when it is small, and abbreviated with `...` along
+/// each oversized dimension when it is not.
+fn fmt_matrix(
+    f: &mut fmt::Formatter<'_>,
+    [m, n]: [usize; 2],
+    value: impl Fn(usize, usize) -> Value,
+) -> fmt::Result {
+    let truncate = m * n > FMT_MAX_NUMEL;
+    // the indices printed along a dimension of `len`, `None` for the `...`
+    let indices = |len: usize| -> Vec<Option<usize>> {
+        if truncate && len > 2 * FMT_EDGE {
+            let head = (0..FMT_EDGE).map(Some);
+            let tail = (len - FMT_EDGE..len).map(Some);
+            head.chain([None]).chain(tail).collect()
+        } else {
+            (0..len).map(Some).collect()
+        }
+    };
+    let list = |f: &mut fmt::Formatter<'_>,
+                len: usize,
+                item: &dyn Fn(&mut fmt::Formatter<'_>, usize) -> fmt::Result| {
+        write!(f, "[")?;
+        for (k, index) in indices(len).into_iter().enumerate() {
+            if k > 0 {
                 write!(f, ", ")?;
             }
-            fmt_slice(f, &t.get(i), rest, truncate)
-        };
-
-        write!(f, "[")?;
-        if truncate && n > 2 * FMT_EDGE {
-            for i in 0..FMT_EDGE {
-                item(f, i, i == 0)?;
-            }
-            write!(f, ", ...")?;
-            for i in (n - FMT_EDGE)..n {
-                item(f, i, false)?;
-            }
-        } else {
-            for i in 0..n {
-                item(f, i, i == 0)?;
+            match index {
+                Some(index) => item(f, index)?,
+                None => write!(f, "...")?,
             }
         }
         write!(f, "]")
-    }
-
-    impl Display for PyTensor {
-        /// Single-line rendering: the values are printed entirely when the
-        /// tensor is small, and abbreviated with `...` along each oversized
-        /// dimension when it is not.
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-            let truncate = self.tensor.numel() as i64 > FMT_MAX_NUMEL;
-            fmt_slice(f, &self.tensor, &self.tensor.size(), truncate)
-        }
-    }
-
-    impl From<tch::Tensor> for PyTensor {
-        fn from(tensor: tch::Tensor) -> Self {
-            Self { tensor }
-        }
-    }
-
-    impl From<PyTensor> for tch::Tensor {
-        fn from(tensor: PyTensor) -> Self {
-            tensor.tensor
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::PyTensor;
-        use pyo3_tch::tch;
-
-        #[test]
-        fn small_tensors_print_entirely_on_one_line() {
-            let t: PyTensor = tch::Tensor::from_slice(&[1.5f64, 2.0, 3.0])
-                .reshape([1, 3])
-                .into();
-            assert_eq!(format!("{t}"), "[[1.5, 2, 3]]");
-
-            let b: PyTensor = tch::Tensor::from_slice(&[true, false]).into();
-            assert_eq!(format!("{b}"), "[true, false]");
-
-            let s: PyTensor = tch::Tensor::from(4i64).into();
-            assert_eq!(format!("{s}"), "4");
-        }
-
-        #[test]
-        fn large_tensors_abbreviate_with_dots() {
-            let t: PyTensor = tch::Tensor::arange(24, (tch::Kind::Int64, tch::Device::Cpu))
-                .reshape([2, 12])
-                .into();
-            assert_eq!(
-                format!("{t}"),
-                "[[0, 1, 2, ..., 9, 10, 11], [12, 13, 14, ..., 21, 22, 23]]"
-            );
-
-            // an oversized outer dimension truncates as well
-            let v: PyTensor = tch::Tensor::arange(20, (tch::Kind::Int64, tch::Device::Cpu)).into();
-            assert_eq!(format!("{v}"), "[0, 1, 2, ..., 17, 18, 19]");
-        }
-
-        #[test]
-        fn output_never_spans_multiple_lines() {
-            let t: PyTensor =
-                tch::Tensor::rand([4, 4, 4], (tch::Kind::Float, tch::Device::Cpu)).into();
-            assert!(!format!("{t}").contains('\n'));
-        }
-    }
+    };
+    list(f, m, &|f, i| {
+        list(f, n, &|f, j| write!(f, "{}", value(i, j)))
+    })
 }
 
-/// Placeholder tensor for builds without the `torch` feature.
-///
-/// It carries no data at the moment: it exists only so the op enums
-/// (which hold `PyTensor`) still type-check when this crate is used without
-/// PyO3 and/or Torch, e.g., from the `base` crate.
-/// If required, we can turn this into a basic working implementation of tensor
-/// that would be used if torch is not available or desired.
-#[cfg(not(feature = "torch"))]
-mod stub {
-    use std::fmt::{self, Display};
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    #[derive(Clone, Debug)]
-    pub struct PyTensor;
-
-    impl PyTensor {
-        /// The stub carries no data, so it has no shape.
-        pub fn shape(&self) -> [usize; 2] {
-            unreachable!("PyTensor operations require the `torch` feature")
-        }
+    #[test]
+    fn tensors_check_the_kind_of_their_elements() {
+        let floats: Tensor = Builtin::floats([2, 3], vec![0.0; 6]).into();
+        assert_eq!(floats.kind(), Kind::Float);
+        assert!(floats.expect_kind(Kind::Float).is_ok());
+        assert_eq!(
+            floats.expect_kind(Kind::Int),
+            Err(Error::Kind {
+                expected: Kind::Int,
+                got: Kind::Float
+            })
+        );
     }
 
-    impl crate::Tensor for PyTensor {
-        fn shape(&self) -> [usize; 2] {
-            PyTensor::shape(self)
-        }
-    }
-
-    impl Display for PyTensor {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "<tensor>")
-        }
-    }
-
-    // With `pyo3` (but not `torch`) the op enums still derive `#[pyclass]`, whose
-    // getters/constructors require these conversions to exist. They are never
-    // called — that path only runs from Python, which needs `torch`.
-    #[cfg(feature = "pyo3")]
-    mod py {
-        use super::PyTensor;
-        use pyo3::prelude::*;
-
-        // The conversions panic with this message if an attempt to use them is made
-        const MSG: &str = "PyTensor operations require the `torch` feature";
-
-        impl<'py> IntoPyObject<'py> for PyTensor {
-            type Target = PyAny;
-            type Output = Bound<'py, PyAny>;
-            type Error = PyErr;
-
-            fn into_pyobject(self, _py: Python<'py>) -> Result<Self::Output, Self::Error> {
-                unreachable!("{MSG}")
+    #[test]
+    fn affine_maps_take_a_and_b_of_the_same_rows() {
+        let a: Tensor = Builtin::ints([4, 2], vec![0; 8]).into();
+        let b: Tensor = Builtin::ints([4, 3], vec![0; 12]).into();
+        assert!(expect_affine(&a, &b, Kind::Int).is_ok());
+        assert!(matches!(
+            expect_affine(&a, &b, Kind::Float),
+            Err(Error::Kind { .. })
+        ));
+        let c: Tensor = Builtin::ints([3, 3], vec![0; 9]).into();
+        assert_eq!(
+            expect_affine(&a, &c, Kind::Int),
+            Err(Error::Affine {
+                a: [4, 2],
+                b: [3, 3]
+            })
+        );
+        assert_eq!(
+            Error::Affine {
+                a: [4, 2],
+                b: [3, 3]
             }
-        }
-
-        impl<'source> FromPyObject<'source> for PyTensor {
-            fn extract_bound(_ob: &Bound<'source, PyAny>) -> PyResult<Self> {
-                unreachable!("{MSG}")
-            }
-        }
+            .to_string(),
+            "expected A of shape [m, n] and B of shape [m, k], got [4, 2] and [3, 3]"
+        );
     }
 }

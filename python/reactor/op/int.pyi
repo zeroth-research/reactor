@@ -3,16 +3,20 @@
 Generated from the operations of `theory::op`; keep them in step with it.
 """
 
-from torch import Tensor as TorchTensor
+from typing import Any
+
+# A matrix that an operation holds: a `torch.Tensor`, whose storage it shares, or a
+# list of rows, which it copies.
+Matrix = Any
 
 
 class Const:
-    """A constant integer matrix: a `torch.Tensor` of integer elements."""
+    """A constant integer matrix, held in a `Matrix` of integer elements."""
 
     __match_args__ = ("tensor",)
-    def __init__(self, tensor: TorchTensor) -> None: ...
+    def __init__(self, tensor: Matrix) -> None: ...
     @property
-    def tensor(self) -> TorchTensor: ...
+    def tensor(self) -> Matrix: ...
 
 class Add:
     """Pointwise addition `x + y` of `[m, n]` matrices."""
@@ -65,14 +69,14 @@ class Mod:
     def n(self) -> int: ...
 
 class Linear:
-    """The affine map `x ↦ A·x + B` of integer matrices: `torch.Tensor`s of integer elements, `A` of shape `[m, n]` and `B` of shape `[m, k]`."""
+    """The affine map `x ↦ A·x + B` of integer matrices, with `A` and `B` held in `Matrix`es of integer elements, of shapes `[m, n]` and `[m, k]`."""
 
     __match_args__ = ("a", "b")
-    def __init__(self, a: TorchTensor, b: TorchTensor) -> None: ...
+    def __init__(self, a: Matrix, b: Matrix) -> None: ...
     @property
-    def a(self) -> TorchTensor: ...
+    def a(self) -> Matrix: ...
     @property
-    def b(self) -> TorchTensor: ...
+    def b(self) -> Matrix: ...
 
 class ReLU:
     """The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to `[m, n]` matrices."""

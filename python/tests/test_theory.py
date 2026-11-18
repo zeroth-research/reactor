@@ -132,6 +132,18 @@ def test_tensor_operations_are_operations_of_their_theory_module():
     assert repr(op.word.Const(torch.tensor([[5]]), 8)) == "word.Const(tensor([[5]]), 8)"
 
 
+def test_lists_of_rows_are_matrices_held_as_lists():
+    assert op.int.Const([[1, 2]]).tensor == [[1, 2]]
+    assert op.bool.Const([[True], [False]]).tensor == [[True], [False]]
+    assert repr(op.real.Const([[1.5, 2]])) == "real.Const([[1.5, 2.0]])"
+    with pytest.raises(TypeError, match="floating-point"):
+        op.real.Const([[1, 2]])
+    with pytest.raises(ValueError, match="equal length"):
+        op.int.Const([[1], [2, 3]])
+    (value,) = eval_itype(op.int.Const([[4]]), [])
+    assert torch.equal(value, torch.tensor([[4]]))
+
+
 def test_terms_share_the_tensors_of_their_operations():
     a = torch.eye(2)
     term = Term(op.real.Linear(a, torch.zeros(2, 1)), [Wire(Real([2, 1]))], [Wire(Real([2, 1]))])

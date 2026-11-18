@@ -1,10 +1,10 @@
-use crate::Any;
 use crate::*;
 use pyo3::Py;
 use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
 use std::borrow::Cow;
 use std::collections::HashMap;
+use theory::op::Any;
 use theory::sort::Any as Sort;
 
 #[pyclass(subclass, frozen)]

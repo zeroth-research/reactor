@@ -31,8 +31,8 @@ sorts of the theory, rather than in [`Int`]. So is the boundary of
 [`Ite`], which reads a boolean.
 */
 
-use crate::Tensor;
 use crate::sort::{Bool, Int};
+use crate::tensor::{self, Kind, Tensor};
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::{Display, From};
@@ -45,9 +45,22 @@ use subenum::subenum;
 /// [`sort::Ints`](crate::sort::Ints) of the sorts of all theories.
 pub use crate::sort::Ints as Sort;
 
-/// A constant integer matrix literal, held in a tensor of type `T`.
+/// A constant integer matrix literal: a [`Tensor`] of integer elements.
 #[derive(Clone, Debug)]
-pub struct Const<T>(pub T);
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+)]
+pub struct Const(pub Tensor);
+
+impl Const {
+    /// The constant `tensor`, which fails unless its elements are
+    /// integer.
+    pub fn new(tensor: Tensor) -> Result<Self, tensor::Error> {
+        tensor.expect_kind(Kind::Int)?;
+        Ok(Const(tensor))
+    }
+}
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -101,7 +114,20 @@ pub struct Mod(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
 #[derive(Clone, Debug)]
-pub struct Linear<T>(pub T, pub T);
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.int")
+)]
+pub struct Linear(pub Tensor, pub Tensor);
+
+impl Linear {
+    /// The affine map `x ↦ A·x + B`, which fails unless `A` and `B` are of
+    /// integer elements, of shapes `[m, n]` and `[m, k]`.
+    pub fn new(a: Tensor, b: Tensor) -> Result<Self, tensor::Error> {
+        tensor::expect_affine(&a, &b, Kind::Int)?;
+        Ok(Linear(a, b))
+    }
+}
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
@@ -266,9 +292,9 @@ pub struct Uninterpreted(pub String, pub usize, pub usize);
 /// the casts between them: `From` up to `NIA`, and `TryFrom` down from it.
 #[subenum(LIA)]
 #[derive(Clone, Debug, From, Display)]
-pub enum NIA<T> {
+pub enum NIA {
     #[subenum(LIA)]
-    Const(Const<T>),
+    Const(Const),
     #[subenum(LIA)]
     Add(Add),
     #[subenum(LIA)]
@@ -277,7 +303,7 @@ pub enum NIA<T> {
     Div(Div),
     Mod(Mod),
     #[subenum(LIA)]
-    Linear(Linear<T>),
+    Linear(Linear),
     #[subenum(LIA)]
     ReLU(ReLU),
     #[subenum(LIA)]
@@ -311,7 +337,7 @@ pub enum NIA<T> {
     Uninterpreted(Uninterpreted),
 }
 
-impl<T: Tensor> Boundary<Sort> for NIA<T> {
+impl Boundary<Sort> for NIA {
     fn dom(&self) -> Poly<Sort> {
         match self {
             NIA::Const(op) => op.dom().map(Sort::from),
@@ -368,7 +394,7 @@ impl<T: Tensor> Boundary<Sort> for NIA<T> {
         }
     }
 }
-impl<T: Tensor> Boundary<Sort> for LIA<T> {
+impl Boundary<Sort> for LIA {
     fn dom(&self) -> Poly<Sort> {
         match self {
             LIA::Const(op) => op.dom().map(Sort::from),
@@ -418,7 +444,7 @@ impl<T: Tensor> Boundary<Sort> for LIA<T> {
     }
 }
 
-impl<T: Tensor> Boundary<Int> for Const<T> {
+impl Boundary<Int> for Const {
     fn dom(&self) -> Poly<Int> {
         Poly::unit()
     }
@@ -480,7 +506,7 @@ impl Boundary<Int> for Mod {
 
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl<T: Tensor> Boundary<Int> for Linear<T> {
+impl Boundary<Int> for Linear {
     fn dom(&self) -> Poly<Int> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
@@ -658,13 +684,13 @@ impl Boundary<Int> for Uninterpreted {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Const<T> {
+impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Linear<T> {
+impl fmt::Display for Linear {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Linear({}, {})", self.0, self.1)
     }
@@ -793,139 +819,6 @@ impl fmt::Display for Havoc {
 impl fmt::Display for Uninterpreted {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Uninterpreted({})", self.0)
-    }
-}
-
-/// Extracts an operation of integer arithmetic from a Python object, trying
-/// each operation in turn: those carrying no data through their own
-/// classes, and [`Const`] and [`Linear`] through the extraction that the
-/// tensor type `T` provides.
-#[cfg(feature = "pyo3")]
-impl<'py, T> pyo3::FromPyObject<'py> for NIA<T>
-where
-    Const<T>: pyo3::FromPyObject<'py>,
-    Linear<T>: pyo3::FromPyObject<'py>,
-{
-    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
-        use pyo3::types::PyAnyMethods;
-
-        if let Ok(op) = ob.extract::<Add>() {
-            return Ok(NIA::Add(op));
-        }
-        if let Ok(op) = ob.extract::<Sub>() {
-            return Ok(NIA::Sub(op));
-        }
-        if let Ok(op) = ob.extract::<Mul>() {
-            return Ok(NIA::Mul(op));
-        }
-        if let Ok(op) = ob.extract::<Div>() {
-            return Ok(NIA::Div(op));
-        }
-        if let Ok(op) = ob.extract::<Mod>() {
-            return Ok(NIA::Mod(op));
-        }
-        if let Ok(op) = ob.extract::<ReLU>() {
-            return Ok(NIA::ReLU(op));
-        }
-        if let Ok(op) = ob.extract::<Min>() {
-            return Ok(NIA::Min(op));
-        }
-        if let Ok(op) = ob.extract::<Max>() {
-            return Ok(NIA::Max(op));
-        }
-        if let Ok(op) = ob.extract::<Transpose>() {
-            return Ok(NIA::Transpose(op));
-        }
-        if let Ok(op) = ob.extract::<MatMul>() {
-            return Ok(NIA::MatMul(op));
-        }
-        if let Ok(op) = ob.extract::<Lt>() {
-            return Ok(NIA::Lt(op));
-        }
-        if let Ok(op) = ob.extract::<Le>() {
-            return Ok(NIA::Le(op));
-        }
-        if let Ok(op) = ob.extract::<Gt>() {
-            return Ok(NIA::Gt(op));
-        }
-        if let Ok(op) = ob.extract::<Ge>() {
-            return Ok(NIA::Ge(op));
-        }
-        if let Ok(op) = ob.extract::<Eq>() {
-            return Ok(NIA::Eq(op));
-        }
-        if let Ok(op) = ob.extract::<Ne>() {
-            return Ok(NIA::Ne(op));
-        }
-        if let Ok(op) = ob.extract::<Id>() {
-            return Ok(NIA::Id(op));
-        }
-        if let Ok(op) = ob.extract::<Ite>() {
-            return Ok(NIA::Ite(op));
-        }
-        if let Ok(op) = ob.extract::<Argmax>() {
-            return Ok(NIA::Argmax(op));
-        }
-        if let Ok(op) = ob.extract::<Havoc>() {
-            return Ok(NIA::Havoc(op));
-        }
-        if let Ok(op) = ob.extract::<Uninterpreted>() {
-            return Ok(NIA::Uninterpreted(op));
-        }
-        if let Ok(op) = ob.extract::<Const<T>>() {
-            return Ok(NIA::Const(op));
-        }
-        if let Ok(op) = ob.extract::<Linear<T>>() {
-            return Ok(NIA::Linear(op));
-        }
-        Err(pyo3::exceptions::PyTypeError::new_err(format!(
-            "expected an operation of integer arithmetic, got {}",
-            ob.get_type()
-        )))
-    }
-}
-
-/// Converts an operation of integer arithmetic into a Python object: those
-/// carrying no data into their own classes, and [`Const`] and [`Linear`]
-/// through the conversion that the tensor type `T` provides.
-#[cfg(feature = "pyo3")]
-impl<'py, T> pyo3::IntoPyObject<'py> for NIA<T>
-where
-    Const<T>: pyo3::IntoPyObject<'py>,
-    Linear<T>: pyo3::IntoPyObject<'py>,
-{
-    type Target = pyo3::PyAny;
-    type Output = pyo3::Bound<'py, pyo3::PyAny>;
-    type Error = pyo3::PyErr;
-
-    fn into_pyobject(self, py: pyo3::Python<'py>) -> pyo3::PyResult<Self::Output> {
-        use pyo3::IntoPyObjectExt;
-
-        match self {
-            NIA::Const(op) => op.into_bound_py_any(py),
-            NIA::Add(op) => op.into_bound_py_any(py),
-            NIA::Sub(op) => op.into_bound_py_any(py),
-            NIA::Mul(op) => op.into_bound_py_any(py),
-            NIA::Div(op) => op.into_bound_py_any(py),
-            NIA::Mod(op) => op.into_bound_py_any(py),
-            NIA::Linear(op) => op.into_bound_py_any(py),
-            NIA::ReLU(op) => op.into_bound_py_any(py),
-            NIA::Min(op) => op.into_bound_py_any(py),
-            NIA::Max(op) => op.into_bound_py_any(py),
-            NIA::Transpose(op) => op.into_bound_py_any(py),
-            NIA::MatMul(op) => op.into_bound_py_any(py),
-            NIA::Lt(op) => op.into_bound_py_any(py),
-            NIA::Le(op) => op.into_bound_py_any(py),
-            NIA::Gt(op) => op.into_bound_py_any(py),
-            NIA::Ge(op) => op.into_bound_py_any(py),
-            NIA::Eq(op) => op.into_bound_py_any(py),
-            NIA::Ne(op) => op.into_bound_py_any(py),
-            NIA::Id(op) => op.into_bound_py_any(py),
-            NIA::Ite(op) => op.into_bound_py_any(py),
-            NIA::Argmax(op) => op.into_bound_py_any(py),
-            NIA::Havoc(op) => op.into_bound_py_any(py),
-            NIA::Uninterpreted(op) => op.into_bound_py_any(py),
-        }
     }
 }
 

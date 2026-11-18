@@ -33,8 +33,8 @@ sorts of the theory, rather than in [`Real`]. So is the boundary of
 [`Ite`], which reads a boolean.
 */
 
-use crate::Tensor;
 use crate::sort::{Bool, Real};
+use crate::tensor::{self, Kind, Tensor};
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::{Display, From};
@@ -47,9 +47,22 @@ use subenum::subenum;
 /// [`sort::Reals`](crate::sort::Reals) of the sorts of all theories.
 pub use crate::sort::Reals as Sort;
 
-/// A constant real matrix literal, held in a tensor of type `T`.
+/// A constant real matrix literal: a [`Tensor`] of floating-point elements.
 #[derive(Clone, Debug)]
-pub struct Const<T>(pub T);
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
+pub struct Const(pub Tensor);
+
+impl Const {
+    /// The constant `tensor`, which fails unless its elements are
+    /// floating-point.
+    pub fn new(tensor: Tensor) -> Result<Self, tensor::Error> {
+        tensor.expect_kind(Kind::Float)?;
+        Ok(Const(tensor))
+    }
+}
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -89,7 +102,20 @@ pub struct Div(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
 #[derive(Clone, Debug)]
-pub struct Linear<T>(pub T, pub T);
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
+pub struct Linear(pub Tensor, pub Tensor);
+
+impl Linear {
+    /// The affine map `x ↦ A·x + B`, which fails unless `A` and `B` are of
+    /// floating-point elements, of shapes `[m, n]` and `[m, k]`.
+    pub fn new(a: Tensor, b: Tensor) -> Result<Self, tensor::Error> {
+        tensor::expect_affine(&a, &b, Kind::Float)?;
+        Ok(Linear(a, b))
+    }
+}
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
@@ -282,7 +308,20 @@ pub struct TSub(pub usize, pub usize, pub u8);
 /// is [`Linear`]`(A, B)`. It adds `B`, as `Linear` did on rates in the old
 /// LRA, so the derivative of `TLinear(A, B, d)` is `TLinear(A, 0, d + 1)`.
 #[derive(Clone, Debug)]
-pub struct TLinear<T>(pub T, pub T, pub u8);
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
+pub struct TLinear(pub Tensor, pub Tensor, pub u8);
+
+impl TLinear {
+    /// The affine map `x ↦ A·x + B` on the rates of change of degree `d`,
+    /// which fails unless `A` and `B` are as for [`Linear::new`].
+    pub fn new(a: Tensor, b: Tensor, d: u8) -> Result<Self, tensor::Error> {
+        tensor::expect_affine(&a, &b, Kind::Float)?;
+        Ok(TLinear(a, b, d))
+    }
+}
 
 /// Transposition `xᵀ` of `[m, n]` matrices of the rates of change of degree
 /// `d`, as `TTranspose(m, n, d)`. Transposition is linear, so
@@ -322,9 +361,9 @@ pub struct TId(pub usize, pub usize, pub u8);
 /// casts between them: `From` up to `NRA`, and `TryFrom` down from it.
 #[subenum(LRA)]
 #[derive(Clone, Debug, From, Display)]
-pub enum NRA<T> {
+pub enum NRA {
     #[subenum(LRA)]
-    Const(Const<T>),
+    Const(Const),
     #[subenum(LRA)]
     Add(Add),
     #[subenum(LRA)]
@@ -332,7 +371,7 @@ pub enum NRA<T> {
     Mul(Mul),
     Div(Div),
     #[subenum(LRA)]
-    Linear(Linear<T>),
+    Linear(Linear),
     #[subenum(LRA)]
     ReLU(ReLU),
     #[subenum(LRA)]
@@ -371,7 +410,7 @@ pub enum NRA<T> {
     #[subenum(LRA)]
     TSub(TSub),
     #[subenum(LRA)]
-    TLinear(TLinear<T>),
+    TLinear(TLinear),
     #[subenum(LRA)]
     TTranspose(TTranspose),
     #[subenum(LRA)]
@@ -380,7 +419,7 @@ pub enum NRA<T> {
     TId(TId),
 }
 
-impl<T: Tensor> Boundary<Sort> for NRA<T> {
+impl Boundary<Sort> for NRA {
     fn dom(&self) -> Poly<Sort> {
         match self {
             NRA::Const(op) => op.dom().map(Sort::from),
@@ -449,7 +488,7 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
         }
     }
 }
-impl<T: Tensor> Boundary<Sort> for LRA<T> {
+impl Boundary<Sort> for LRA {
     fn dom(&self) -> Poly<Sort> {
         match self {
             LRA::Const(op) => op.dom().map(Sort::from),
@@ -513,7 +552,7 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
     }
 }
 
-impl<T: Tensor> Boundary<Real> for Const<T> {
+impl Boundary<Real> for Const {
     fn dom(&self) -> Poly<Real> {
         Poly::unit()
     }
@@ -565,7 +604,7 @@ impl Boundary<Real> for Div {
 
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl<T: Tensor> Boundary<Real> for Linear<T> {
+impl Boundary<Real> for Linear {
     fn dom(&self) -> Poly<Real> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
@@ -776,7 +815,7 @@ impl Boundary<Real> for TSub {
 /// As [`Linear`], with `A` of shape `[m, n]` and `B` of shape `[m, k]`, the
 /// map takes `x` of shape `[n, k]` to a matrix of shape `[m, k]`, here of
 /// the rates of change of degree `d`.
-impl<T: Tensor> Boundary<Real> for TLinear<T> {
+impl Boundary<Real> for TLinear {
     fn dom(&self) -> Poly<Real> {
         let [_, n] = self.0.shape();
         let [_, k] = self.1.shape();
@@ -823,13 +862,13 @@ impl Boundary<Real> for TId {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Const<T> {
+impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Linear<T> {
+impl fmt::Display for Linear {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Linear({}, {})", self.0, self.1)
     }
@@ -961,7 +1000,7 @@ impl fmt::Display for Zero {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for TLinear<T> {
+impl fmt::Display for TLinear {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "TLinear({}, {})", self.0, self.1)
     }
@@ -994,165 +1033,6 @@ impl fmt::Display for TIte {
 impl fmt::Display for TId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "TId")
-    }
-}
-
-/// Extracts an operation of real arithmetic from a Python object, trying
-/// each operation in turn: those carrying no data through their own
-/// classes, and [`Const`], [`Linear`] and [`TLinear`] through the
-/// extraction that the tensor type `T` provides.
-#[cfg(feature = "pyo3")]
-impl<'py, T> pyo3::FromPyObject<'py> for NRA<T>
-where
-    Const<T>: pyo3::FromPyObject<'py>,
-    Linear<T>: pyo3::FromPyObject<'py>,
-    TLinear<T>: pyo3::FromPyObject<'py>,
-{
-    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
-        use pyo3::types::PyAnyMethods;
-
-        if let Ok(op) = ob.extract::<Add>() {
-            return Ok(NRA::Add(op));
-        }
-        if let Ok(op) = ob.extract::<Sub>() {
-            return Ok(NRA::Sub(op));
-        }
-        if let Ok(op) = ob.extract::<Mul>() {
-            return Ok(NRA::Mul(op));
-        }
-        if let Ok(op) = ob.extract::<Div>() {
-            return Ok(NRA::Div(op));
-        }
-        if let Ok(op) = ob.extract::<ReLU>() {
-            return Ok(NRA::ReLU(op));
-        }
-        if let Ok(op) = ob.extract::<Min>() {
-            return Ok(NRA::Min(op));
-        }
-        if let Ok(op) = ob.extract::<Max>() {
-            return Ok(NRA::Max(op));
-        }
-        if let Ok(op) = ob.extract::<Transpose>() {
-            return Ok(NRA::Transpose(op));
-        }
-        if let Ok(op) = ob.extract::<MatMul>() {
-            return Ok(NRA::MatMul(op));
-        }
-        if let Ok(op) = ob.extract::<Lt>() {
-            return Ok(NRA::Lt(op));
-        }
-        if let Ok(op) = ob.extract::<Le>() {
-            return Ok(NRA::Le(op));
-        }
-        if let Ok(op) = ob.extract::<Gt>() {
-            return Ok(NRA::Gt(op));
-        }
-        if let Ok(op) = ob.extract::<Ge>() {
-            return Ok(NRA::Ge(op));
-        }
-        if let Ok(op) = ob.extract::<Eq>() {
-            return Ok(NRA::Eq(op));
-        }
-        if let Ok(op) = ob.extract::<Ne>() {
-            return Ok(NRA::Ne(op));
-        }
-        if let Ok(op) = ob.extract::<Id>() {
-            return Ok(NRA::Id(op));
-        }
-        if let Ok(op) = ob.extract::<Ite>() {
-            return Ok(NRA::Ite(op));
-        }
-        if let Ok(op) = ob.extract::<Argmax>() {
-            return Ok(NRA::Argmax(op));
-        }
-        if let Ok(op) = ob.extract::<Havoc>() {
-            return Ok(NRA::Havoc(op));
-        }
-        if let Ok(op) = ob.extract::<Uninterpreted>() {
-            return Ok(NRA::Uninterpreted(op));
-        }
-        if let Ok(op) = ob.extract::<Zero>() {
-            return Ok(NRA::Zero(op));
-        }
-        if let Ok(op) = ob.extract::<TAdd>() {
-            return Ok(NRA::TAdd(op));
-        }
-        if let Ok(op) = ob.extract::<TSub>() {
-            return Ok(NRA::TSub(op));
-        }
-        if let Ok(op) = ob.extract::<TTranspose>() {
-            return Ok(NRA::TTranspose(op));
-        }
-        if let Ok(op) = ob.extract::<TIte>() {
-            return Ok(NRA::TIte(op));
-        }
-        if let Ok(op) = ob.extract::<TId>() {
-            return Ok(NRA::TId(op));
-        }
-        if let Ok(op) = ob.extract::<Const<T>>() {
-            return Ok(NRA::Const(op));
-        }
-        if let Ok(op) = ob.extract::<Linear<T>>() {
-            return Ok(NRA::Linear(op));
-        }
-        if let Ok(op) = ob.extract::<TLinear<T>>() {
-            return Ok(NRA::TLinear(op));
-        }
-        Err(pyo3::exceptions::PyTypeError::new_err(format!(
-            "expected an operation of real arithmetic, got {}",
-            ob.get_type()
-        )))
-    }
-}
-
-/// Converts an operation of real arithmetic into a Python object: those
-/// carrying no data into their own classes, and [`Const`], [`Linear`] and
-/// [`TLinear`] through the conversion that the tensor type `T` provides.
-#[cfg(feature = "pyo3")]
-impl<'py, T> pyo3::IntoPyObject<'py> for NRA<T>
-where
-    Const<T>: pyo3::IntoPyObject<'py>,
-    Linear<T>: pyo3::IntoPyObject<'py>,
-    TLinear<T>: pyo3::IntoPyObject<'py>,
-{
-    type Target = pyo3::PyAny;
-    type Output = pyo3::Bound<'py, pyo3::PyAny>;
-    type Error = pyo3::PyErr;
-
-    fn into_pyobject(self, py: pyo3::Python<'py>) -> pyo3::PyResult<Self::Output> {
-        use pyo3::IntoPyObjectExt;
-
-        match self {
-            NRA::Const(op) => op.into_bound_py_any(py),
-            NRA::Add(op) => op.into_bound_py_any(py),
-            NRA::Sub(op) => op.into_bound_py_any(py),
-            NRA::Mul(op) => op.into_bound_py_any(py),
-            NRA::Div(op) => op.into_bound_py_any(py),
-            NRA::Linear(op) => op.into_bound_py_any(py),
-            NRA::ReLU(op) => op.into_bound_py_any(py),
-            NRA::Min(op) => op.into_bound_py_any(py),
-            NRA::Max(op) => op.into_bound_py_any(py),
-            NRA::Transpose(op) => op.into_bound_py_any(py),
-            NRA::MatMul(op) => op.into_bound_py_any(py),
-            NRA::Lt(op) => op.into_bound_py_any(py),
-            NRA::Le(op) => op.into_bound_py_any(py),
-            NRA::Gt(op) => op.into_bound_py_any(py),
-            NRA::Ge(op) => op.into_bound_py_any(py),
-            NRA::Eq(op) => op.into_bound_py_any(py),
-            NRA::Ne(op) => op.into_bound_py_any(py),
-            NRA::Id(op) => op.into_bound_py_any(py),
-            NRA::Ite(op) => op.into_bound_py_any(py),
-            NRA::Argmax(op) => op.into_bound_py_any(py),
-            NRA::Havoc(op) => op.into_bound_py_any(py),
-            NRA::Uninterpreted(op) => op.into_bound_py_any(py),
-            NRA::Zero(op) => op.into_bound_py_any(py),
-            NRA::TAdd(op) => op.into_bound_py_any(py),
-            NRA::TSub(op) => op.into_bound_py_any(py),
-            NRA::TLinear(op) => op.into_bound_py_any(py),
-            NRA::TTranspose(op) => op.into_bound_py_any(py),
-            NRA::TIte(op) => op.into_bound_py_any(py),
-            NRA::TId(op) => op.into_bound_py_any(py),
-        }
     }
 }
 
@@ -1275,12 +1155,11 @@ mod tests {
         assert_eq!(TIte(2, 3, 0).cod(), Ite(2, 3).cod());
     }
 
-    #[cfg(feature = "torch")]
     #[test]
     fn tlinear_is_linear_on_rates() {
-        use pyo3_tch::tch;
-        let a = || -> crate::PyTensor { tch::Tensor::zeros([4, 2], tch::kind::FLOAT_CPU).into() };
-        let b = || -> crate::PyTensor { tch::Tensor::zeros([4, 3], tch::kind::FLOAT_CPU).into() };
+        use crate::tensor::Builtin;
+        let a = || -> Tensor { Builtin::floats([4, 2], vec![0.0; 8]).into() };
+        let b = || -> Tensor { Builtin::floats([4, 3], vec![0.0; 12]).into() };
         let t = TLinear(a(), b(), 1);
         assert_eq!(t.dom(), one(T(Real::new([2, 3]))));
         assert_eq!(t.cod(), one(T(Real::new([4, 3]))));

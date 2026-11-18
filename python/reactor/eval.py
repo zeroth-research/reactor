@@ -9,6 +9,7 @@ two's complement.
 
 import torch
 from . import op
+from .tensor import as_torch
 
 
 def _wrap(t, w):
@@ -51,7 +52,7 @@ def eval_itype(itype, read):
 
         # --- constants (payload bound from the op) ---
         case op.real.Const(t) | op.int.Const(t) | op.bool.Const(t) | op.word.Const(t, _):
-            return [t.clone()]
+            return [as_torch(t).clone()]
         case op.real.Zero(m, n, _):
             return [torch.zeros(m, n)]
         case op.bool.Zero():
@@ -75,7 +76,7 @@ def eval_itype(itype, read):
 
         # --- Linear: A, B constants carried in the op ---
         case op.real.Linear(weight, bias) | op.real.TLinear(weight, bias, _) | op.int.Linear(weight, bias):
-            return [_linear(weight, bias, r[0])]
+            return [_linear(as_torch(weight), as_torch(bias), r[0])]
 
         # --- arithmetic: words (modulo 2^w) ---
         case op.word.Add(w, _, _):

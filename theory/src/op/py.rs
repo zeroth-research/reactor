@@ -11,61 +11,93 @@ An operation's constructor takes its fields in order, as
 operation's documentation, and `__match_args__` lists them, so that
 `match` takes an operation apart as it is built, as in
 `case real.Linear(a, b):`. Its fields are also read as attributes, as
-`op.m`. Operations are immutable, compare by value, and print as in Rust
-(`str`) or as their constructor (`repr`).
+`op.m`. Operations are immutable, and print as in Rust (`str`) or as their
+constructor (`repr`); those carrying no data compare by value.
 
-The operations carrying tensors, the constants and the affine maps, are
-generic over their tensor type, so they are not classes themselves: with
-the `torch` feature, the classes of `crate::torch` stand for them, holding
-torch tensors checked to be of their theory, with the same constructors,
-`match` and printing, and [`add_modules`] adds them to the modules of their
-theories too. The enum of each theory, as [`real::NRA`], and
-[`Any`](super::Any) convert from all these classes and into them.
+The operations carrying data, the constants and the affine maps, hold
+[`Tensor`]s, which convert from and into their Python objects, such as a
+`torch.Tensor`; their constructors check their tensors, as
+[`real::Const::new`] does, raising a `TypeError` for elements of another
+kind and a `ValueError` for tensors of another shape.
+
+The enum of each theory, as [`real::NRA`], and [`Any`] convert from the
+classes of their operations and into them; [`add_modules`] adds the modules
+of the theories to a Python module.
 */
 
-use super::{bool, int, real, word};
+use super::Any;
+use super::bool::{self, Prop};
+use super::int::{self, NIA};
+use super::real::{self, NRA};
+use super::word::{self, BV};
+use crate::Tensor;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 /// A field of an operation as its `repr` shows it.
 trait Repr {
-    fn repr(&self) -> String;
+    fn repr(&self, py: Python<'_>) -> PyResult<String>;
 }
 
 impl Repr for usize {
-    fn repr(&self) -> String {
-        self.to_string()
+    fn repr(&self, _: Python<'_>) -> PyResult<String> {
+        Ok(self.to_string())
     }
 }
 
 impl Repr for u8 {
-    fn repr(&self) -> String {
-        self.to_string()
+    fn repr(&self, _: Python<'_>) -> PyResult<String> {
+        Ok(self.to_string())
     }
 }
 
 impl Repr for String {
-    fn repr(&self) -> String {
-        format!("{self:?}")
+    fn repr(&self, _: Python<'_>) -> PyResult<String> {
+        Ok(format!("{self:?}"))
     }
 }
 
-/// The Python classes of the operations of a theory carrying no data, from
-/// the name of each in Python and its operation, with its fields: their
-/// index, the name of the Python field, and the type. Also the function
-/// `$add` that adds the classes to a Python module.
+/// A tensor as the `repr` of its Python object shows it, as
+/// `tensor([[1.]])` for a `torch.Tensor`.
+impl Repr for Tensor {
+    fn repr(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(self.clone().into_pyobject(py)?.repr()?.to_string())
+    }
+}
+
+/// The constructor of an operation from its fields: the struct itself, or,
+/// for an operation that checks its fields, its `new`.
+macro_rules! construct {
+    ([$($i:tt $field:ident),*]) => {
+        Ok(Self { $($i: $field),* })
+    };
+    ([$($i:tt $field:ident),*] $new:ident) => {
+        Self::$new($($field),*).map_err(PyErr::from)
+    };
+}
+
+/// The Python classes of the operations of a theory, from the variant and
+/// the operation of each, with its fields: their index, the name of the
+/// Python field, and the type; an operation that checks its fields is built
+/// `via` its constructor. Also the conversions between the enum of the
+/// theory and these classes, and the function `$add` that adds the classes
+/// to a Python module.
 macro_rules! theory {
     (
-        $theory:ident, $add:ident {
-            $($variant:ident = $op:ty { $($i:tt $field:ident: $type:ty),* }),* $(,)?
+        $theory:ident, $enum:ident, $add:ident {
+            $(
+                $variant:ident = $op:ty { $($i:tt $field:ident: $type:ty),* }
+                $(via $new:ident)?
+            ),* $(,)?
         }
     ) => {
         $(
             #[pymethods]
             impl $op {
                 #[new]
-                fn py_new($($field: $type),*) -> Self {
-                    Self { $($i: $field),* }
+                fn py_new($($field: $type),*) -> PyResult<Self> {
+                    construct!([$($i $field),*] $($new)?)
                 }
 
                 $(
@@ -80,15 +112,42 @@ macro_rules! theory {
                     PyTuple::new(py, Vec::<&str>::from([$(stringify!($field)),*]))
                 }
 
-                fn __repr__(&self) -> String {
-                    let fields: Vec<String> = vec![$(Repr::repr(&self.$i)),*];
-                    format!(
+                #[allow(unused_variables)] // `py`, for an operation without fields
+                fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+                    let fields: Vec<String> = vec![$(Repr::repr(&self.$i, py)?),*];
+                    Ok(format!(
                         concat!(stringify!($theory), ".", stringify!($variant), "({})"),
                         fields.join(", ")
-                    )
+                    ))
                 }
             }
         )*
+
+        impl<'py> FromPyObject<'py> for $enum {
+            fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
+                $(
+                    if let Ok(op) = obj.downcast::<$op>() {
+                        return Ok($enum::$variant(op.get().clone()));
+                    }
+                )*
+                Err(PyTypeError::new_err(format!(
+                    concat!("expected an operation of ", stringify!($theory), ", got {}"),
+                    obj.get_type()
+                )))
+            }
+        }
+
+        impl<'py> IntoPyObject<'py> for $enum {
+            type Target = PyAny;
+            type Output = Bound<'py, PyAny>;
+            type Error = PyErr;
+
+            fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+                match self {
+                    $($enum::$variant(op) => Bound::new(py, op).map(Bound::into_any),)*
+                }
+            }
+        }
 
         /// The classes of the operations of the theory, to add to a
         /// Python module.
@@ -100,11 +159,13 @@ macro_rules! theory {
 }
 
 theory! {
-    real, add_real {
+    real, NRA, add_real {
+        Const = real::Const { 0 tensor: Tensor } via new,
         Add = real::Add { 0 m: usize, 1 n: usize },
         Sub = real::Sub { 0 m: usize, 1 n: usize },
         Mul = real::Mul { 0 m: usize, 1 n: usize },
         Div = real::Div { 0 m: usize, 1 n: usize },
+        Linear = real::Linear { 0 a: Tensor, 1 b: Tensor } via new,
         ReLU = real::ReLU { 0 m: usize, 1 n: usize },
         Min = real::Min { 0 m: usize, 1 n: usize },
         Max = real::Max { 0 m: usize, 1 n: usize },
@@ -124,6 +185,7 @@ theory! {
         Zero = real::Zero { 0 m: usize, 1 n: usize, 2 d: u8 },
         TAdd = real::TAdd { 0 m: usize, 1 n: usize, 2 d: u8 },
         TSub = real::TSub { 0 m: usize, 1 n: usize, 2 d: u8 },
+        TLinear = real::TLinear { 0 a: Tensor, 1 b: Tensor, 2 d: u8 } via new,
         TTranspose = real::TTranspose { 0 m: usize, 1 n: usize, 2 d: u8 },
         TIte = real::TIte { 0 m: usize, 1 n: usize, 2 d: u8 },
         TId = real::TId { 0 m: usize, 1 n: usize, 2 d: u8 },
@@ -131,12 +193,14 @@ theory! {
 }
 
 theory! {
-    int, add_int {
+    int, NIA, add_int {
+        Const = int::Const { 0 tensor: Tensor } via new,
         Add = int::Add { 0 m: usize, 1 n: usize },
         Sub = int::Sub { 0 m: usize, 1 n: usize },
         Mul = int::Mul { 0 m: usize, 1 n: usize },
         Div = int::Div { 0 m: usize, 1 n: usize },
         Mod = int::Mod { 0 m: usize, 1 n: usize },
+        Linear = int::Linear { 0 a: Tensor, 1 b: Tensor } via new,
         ReLU = int::ReLU { 0 m: usize, 1 n: usize },
         Min = int::Min { 0 m: usize, 1 n: usize },
         Max = int::Max { 0 m: usize, 1 n: usize },
@@ -157,7 +221,8 @@ theory! {
 }
 
 theory! {
-    bool, add_bool {
+    bool, Prop, add_bool {
+        Const = bool::Const { 0 tensor: Tensor } via new,
         And = bool::And { 0 m: usize, 1 n: usize },
         Or = bool::Or { 0 m: usize, 1 n: usize },
         Xor = bool::Xor { 0 m: usize, 1 n: usize },
@@ -171,7 +236,8 @@ theory! {
 }
 
 theory! {
-    word, add_word {
+    word, BV, add_word {
+        Const = word::Const { 0 tensor: Tensor, 1 width: usize } via new,
         Concat = word::Concat { 0 u: usize, 1 v: usize, 2 m: usize, 3 n: usize },
         Extract = word::Extract { 0 i: usize, 1 j: usize, 2 w: usize, 3 m: usize, 4 n: usize },
         Repeat = word::Repeat { 0 i: usize, 1 w: usize, 2 m: usize, 3 n: usize },
@@ -230,7 +296,201 @@ pub fn add_modules(module: &Bound<'_, PyModule>) -> PyResult<()> {
         add(&theory)?;
         module.add(name, theory)?;
     }
-    #[cfg(feature = "torch")]
-    crate::torch::add_classes(module)?;
     Ok(())
+}
+
+impl<'py> FromPyObject<'py> for Any {
+    fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(op) = obj.extract::<NRA>() {
+            return Ok(Any::Real(op));
+        }
+        if let Ok(op) = obj.extract::<NIA>() {
+            return Ok(Any::Int(op));
+        }
+        if let Ok(op) = obj.extract::<Prop>() {
+            return Ok(Any::Bool(op));
+        }
+        if let Ok(op) = obj.extract::<BV>() {
+            return Ok(Any::Word(op));
+        }
+        Err(PyTypeError::new_err(format!(
+            "expected an operation of real, int, bool or word, got {}",
+            obj.get_type()
+        )))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Any {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match self {
+            Any::Real(op) => op.into_pyobject(py),
+            Any::Int(op) => op.into_pyobject(py),
+            Any::Bool(op) => op.into_pyobject(py),
+            Any::Word(op) => op.into_pyobject(py),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "torch"))]
+mod torch_tests {
+    use super::*;
+    use crate::tensor::Torch;
+    use base::boundary::Boundary;
+    use pyo3_tch::tch;
+
+    /// Starts Python and imports `torch` once for all tests, before any of
+    /// them holds the GIL: tests run in parallel threads, and importing
+    /// `torch` from several of them at once deadlocks the import.
+    fn prepare_python_with_torch() {
+        static TORCH: std::sync::Once = std::sync::Once::new();
+        TORCH.call_once(|| {
+            pyo3::prepare_freethreaded_python();
+            Python::with_gil(|py| {
+                py.import("torch").unwrap();
+            });
+        });
+    }
+
+    /// A tensor of `value`s of shape `[rows, cols]` and element `kind`.
+    fn full(rows: i64, cols: i64, value: f64, kind: tch::Kind) -> tch::Tensor {
+        tch::Tensor::full([rows, cols], value, (kind, tch::Device::Cpu))
+    }
+
+    /// The Python `torch.Tensor` of `tensor`, sharing it.
+    fn python<'py>(py: Python<'py>, tensor: tch::Tensor) -> Bound<'py, PyAny> {
+        Torch::new(tensor).unwrap().into_pyobject(py).unwrap()
+    }
+
+    /// The storage of a torch tensor.
+    fn data_ptr(tensor: &Tensor) -> *mut std::ffi::c_void {
+        let Tensor::Torch(t) = tensor else {
+            panic!("expected a torch tensor, got {tensor:?}")
+        };
+        t.tensor().data_ptr()
+    }
+
+    #[test]
+    fn torch_tensors_back_the_operations() {
+        let a = Torch::new(full(4, 2, 0.0, tch::Kind::Float)).unwrap();
+        let b = Torch::new(full(4, 3, 0.0, tch::Kind::Float)).unwrap();
+        assert_eq!(a.shape(), [4, 2]);
+        // `A` of shape `[4, 2]` and `B` of shape `[4, 3]` map `[2, 3]` to `[4, 3]`
+        let linear = real::Linear::new(a.into(), b.into()).unwrap();
+        assert_eq!(linear.dom(), real::ReLU(2, 3).dom());
+        assert_eq!(linear.cod(), real::ReLU(4, 3).cod());
+    }
+
+    #[test]
+    fn constants_are_built_from_tensors_of_their_theory_only() {
+        prepare_python_with_torch();
+        Python::with_gil(|py| {
+            let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
+            let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
+            let bools = python(py, full(2, 3, 0.0, tch::Kind::Bool));
+
+            let real = py.get_type::<real::Const>();
+            let int = py.get_type::<int::Const>();
+            let boolean = py.get_type::<bool::Const>();
+            let word = py.get_type::<word::Const>();
+
+            assert!(real.call1((&floats,)).is_ok());
+            assert!(real.call1((&ints,)).is_err());
+            assert!(int.call1((&ints,)).is_ok());
+            assert!(int.call1((&bools,)).is_err());
+            assert!(boolean.call1((&bools,)).is_ok());
+            assert!(boolean.call1((&floats,)).is_err());
+            assert!(word.call1((&ints, 8)).is_ok());
+            assert!(word.call1((&floats, 8)).is_err());
+            assert!(real.call1((42,)).is_err());
+        });
+    }
+
+    #[test]
+    fn constants_extract_from_the_class_of_their_theory() {
+        prepare_python_with_torch();
+        Python::with_gil(|py| {
+            let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
+            let constant = py.get_type::<real::Const>().call1((&floats,)).unwrap();
+            let op = constant.extract::<real::Const>().unwrap();
+            assert_eq!(op.cod(), real::ReLU(2, 3).cod());
+
+            // the tensor is that of the constant
+            let t = floats.extract::<Tensor>().unwrap();
+            assert_eq!(data_ptr(&op.0), data_ptr(&t));
+
+            // the class decides the theory, not the tensor
+            assert!(constant.extract::<int::Const>().is_err());
+            assert!(floats.extract::<real::Const>().is_err());
+
+            let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
+            let constant = py.get_type::<word::Const>().call1((&ints, 8)).unwrap();
+            let op = constant.extract::<word::Const>().unwrap();
+            assert_eq!(op.1, 8);
+        });
+    }
+
+    #[test]
+    fn linear_maps_are_built_from_tensors_of_their_theory_and_shapes() {
+        prepare_python_with_torch();
+        Python::with_gil(|py| {
+            let a = python(py, full(4, 2, 1.0, tch::Kind::Float));
+            let b = python(py, full(4, 1, 1.0, tch::Kind::Float));
+            let real = py.get_type::<real::Linear>();
+            assert!(real.call1((&a, &b)).is_ok());
+
+            // `B` must have the rows of `A`
+            let wrong_rows = python(py, full(3, 1, 1.0, tch::Kind::Float));
+            assert!(real.call1((&a, &wrong_rows)).is_err());
+
+            // and both must be matrices of the theory
+            let ints = python(py, full(4, 1, 1.0, tch::Kind::Int64));
+            assert!(real.call1((&a, &ints)).is_err());
+            let int = py.get_type::<int::Linear>();
+            let ia = python(py, full(4, 2, 1.0, tch::Kind::Int64));
+            assert!(int.call1((&ia, &ints)).is_ok());
+            assert!(int.call1((&a, &b)).is_err());
+        });
+    }
+
+    #[test]
+    fn rate_linear_maps_are_built_as_linear_maps() {
+        prepare_python_with_torch();
+        Python::with_gil(|py| {
+            let a = python(py, full(4, 2, 1.0, tch::Kind::Float));
+            let b = python(py, full(4, 3, 1.0, tch::Kind::Float));
+            let class = py.get_type::<real::TLinear>();
+            let op = class.call1((&a, &b, 1)).unwrap();
+            let op = op.extract::<real::TLinear>().unwrap();
+            assert_eq!(op.dom(), real::TAdd(2, 3, 1).cod());
+            assert_eq!(op.cod(), real::TAdd(4, 3, 1).cod());
+
+            let wrong_rows = python(py, full(3, 3, 1.0, tch::Kind::Float));
+            assert!(class.call1((&a, &wrong_rows, 1)).is_err());
+            let ints = python(py, full(4, 3, 1.0, tch::Kind::Int64));
+            assert!(class.call1((&a, &ints, 1)).is_err());
+        });
+    }
+
+    #[test]
+    fn any_converts_from_and_into_the_classes_sharing_tensors() {
+        prepare_python_with_torch();
+        Python::with_gil(|py| {
+            let a = python(py, full(4, 2, 1.0, tch::Kind::Int64));
+            let b = python(py, full(4, 1, 1.0, tch::Kind::Int64));
+            let linear = py.get_type::<int::Linear>().call1((&a, &b)).unwrap();
+            let any = linear.extract::<Any>().unwrap();
+            let Any::Int(NIA::Linear(op)) = &any else {
+                panic!("expected an integer linear map, got {any:?}")
+            };
+            assert_eq!(data_ptr(&op.0), data_ptr(&a.extract().unwrap()));
+
+            let back = any.into_pyobject(py).unwrap();
+            let op = back.downcast::<int::Linear>().unwrap().get();
+            assert_eq!(data_ptr(&op.0), data_ptr(&a.extract().unwrap()));
+        });
+    }
 }
