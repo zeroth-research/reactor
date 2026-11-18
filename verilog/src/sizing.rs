@@ -41,6 +41,11 @@ of its own. The rules are those of IEEE 1800-2023, §11.6 to §11.8:
   and truncates the result to the target. A size cast `N'(e)` is such an
   assignment to an `N`-bit value. The selector and the labels of a `case`
   are sized together like the operands of a comparison.
+  An input port connection is an assignment to the port (IEEE 1800
+  §23.3.3), so `.a(x + 4'sd1)` into an 8-bit port adds at 8 bits. Yosys
+  and iverilog evaluate such an expression at its own width instead and
+  then extend it (7 + 1 wraps to -8 at 4 bits); an expression as wide
+  as its port means the same in both readings.
 
 These rules are the bidirectional reading of Desfrene et al. (CAV 2026,
 Fig. 6 and 7), which is proved there to agree with the LRM's two-phase

@@ -876,6 +876,51 @@ endmodule
     );
 }
 
+/// A known deviation of Yosys (0.69) from IEEE 1800: an expression
+/// connected to an input port is evaluated by its own width, then
+/// extended to the port (`x + 4'sd1` at 4 bits, so 7 + 1 wraps to -8 and
+/// gives 248 in an 8-bit port; iverilog does the same). The standard makes
+/// a port connection a continuous assignment to the port (§23.3.3), so the
+/// expression is evaluated at the port's width and gives 8, as we do (slang
+/// agrees). The miter finds it, and the replay sides with us. The examples
+/// connect only expressions as wide as their ports.
+#[test]
+fn yosys_sizes_port_expressions_by_themselves() {
+    let Some((yosys, z3)) = tools() else { return };
+    let source = "\
+module child (
+  input  logic signed [7:0] a,
+  output logic        [7:0] y
+);
+  assign y = a;
+endmodule
+
+module top (
+  input  logic signed [3:0] x,
+  output logic        [7:0] y,
+  output logic        [7:0] z
+);
+  child u (.a(x), .y(y));
+  child v (.a(x + 4'sd1), .y(z));
+endmodule
+";
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("portwidth.sv");
+    std::fs::write(&path, source).unwrap();
+    let inst = elab::load(source, &path).unwrap();
+    let ys = yosys::run(&yosys, &path, "top", &[]).unwrap();
+    let t = lower_inst(&inst).unwrap();
+    let m = miter::build(&t, &ys).unwrap();
+    assert_eq!(
+        blame(&z3, &inst, &t, &m),
+        [
+            ("init:v.a".into(), Side::Ours, None),
+            ("init:z".into(), Side::Ours, None),
+            ("v.a".into(), Side::Ours, None),
+            ("z".into(), Side::Ours, None)
+        ]
+    );
+}
+
 /// Yosys (0.69) deviates from the standard on two assignments to selects
 /// with a variable index (`tests/varwrites.sv`; `tests/targets.rs` checks
 /// our values against hand-computed ones). It drops a `-:` select reaching
