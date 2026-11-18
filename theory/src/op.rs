@@ -387,4 +387,17 @@ mod tests {
         assert!(BV::try_from(word(word::Id(8, 2, 3))).is_ok());
         assert!(Prop::try_from(boolean(bool::Id(2, 3))).is_ok());
     }
+
+    #[test]
+    fn ite_is_in_the_logics_of_its_theory() {
+        let op = real(real::Ite(2, 3));
+        let x: sort::Any = sort::Real::new([2, 3]).into();
+        let dom: Poly<sort::Any> = base::mono![sort::Bool::new([1, 1]).into(), x, x].into();
+        assert_eq!(op.dom(), dom);
+
+        assert!(LRA::try_from(real(real::Ite(2, 3))).is_ok());
+        assert!(LIA::try_from(int(int::Ite(2, 3))).is_ok());
+        assert!(BV::try_from(word(word::Ite(8, 2, 3))).is_ok());
+        assert!(Prop::try_from(boolean(bool::Ite(2, 3))).is_ok());
+    }
 }

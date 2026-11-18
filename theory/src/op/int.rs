@@ -19,11 +19,13 @@ information to compute its [`Boundary`]:
 - [`Lt`], [`Le`], [`Gt`], [`Ge`], [`Eq`](struct@Eq), [`Ne`] — pointwise
   comparisons, which write boolean matrices of the same shape.
 - [`Id`] — the identity.
+- [`Ite`] — if-then-else, on a single boolean.
 
 The comparisons are those of SMT-LIB2's `Ints` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
 to matrices. As they write booleans, their boundary is in [`Sort`], the
-sorts of the theory, rather than in [`Int`].
+sorts of the theory, rather than in [`Int`]. So is the boundary of
+[`Ite`], which reads a boolean.
 */
 
 use crate::sort::{Bool, Int};
@@ -145,6 +147,14 @@ pub struct Ne(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Id(pub usize, pub usize);
 
+/// If-then-else `if c then x else y` of `[m, n]` matrices, on a single
+/// boolean `c`, which picks either matrix whole.
+///
+/// SMT-LIB2: `(ite c x y)`, of the Core theory, with the same `c` for every
+/// entry.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Ite(pub usize, pub usize);
+
 /// The operations of the theory of integer arithmetic, SMT-LIB2's `Ints`,
 /// with their boundary in [`Sort`].
 ///
@@ -188,6 +198,8 @@ pub enum NIA {
     Ne(Ne),
     #[subenum(LIA)]
     Id(Id),
+    #[subenum(LIA)]
+    Ite(Ite),
 }
 
 impl Boundary<Sort> for NIA {
@@ -212,6 +224,7 @@ impl Boundary<Sort> for NIA {
             NIA::Eq(op) => op.dom(),
             NIA::Ne(op) => op.dom(),
             NIA::Id(op) => op.dom().map(Sort::from),
+            NIA::Ite(op) => op.dom(),
         }
     }
 
@@ -236,6 +249,7 @@ impl Boundary<Sort> for NIA {
             NIA::Eq(op) => op.cod(),
             NIA::Ne(op) => op.cod(),
             NIA::Id(op) => op.cod().map(Sort::from),
+            NIA::Ite(op) => op.cod(),
         }
     }
 }
@@ -257,6 +271,7 @@ impl Boundary<Sort> for LIA {
             LIA::Eq(op) => op.dom(),
             LIA::Ne(op) => op.dom(),
             LIA::Id(op) => op.dom().map(Sort::from),
+            LIA::Ite(op) => op.dom(),
         }
     }
 
@@ -277,6 +292,7 @@ impl Boundary<Sort> for LIA {
             LIA::Eq(op) => op.cod(),
             LIA::Ne(op) => op.cod(),
             LIA::Id(op) => op.cod().map(Sort::from),
+            LIA::Ite(op) => op.cod(),
         }
     }
 }
@@ -477,6 +493,19 @@ impl Boundary<Int> for Id {
     }
 }
 
+/// Takes a boolean of shape `[1, 1]` and two matrices of shape `[m, n]` to
+/// a matrix of shape `[m, n]`.
+impl Boundary<Sort> for Ite {
+    fn dom(&self) -> Poly<Sort> {
+        let x: Sort = Int::new([self.0, self.1]).into();
+        mono![Bool::new([1, 1]).into(), x, x].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Int::new([self.0, self.1]).into()].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -591,6 +620,12 @@ impl fmt::Display for Id {
     }
 }
 
+impl fmt::Display for Ite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ite")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -644,6 +679,16 @@ mod tests {
     }
 
     #[test]
+    fn ite_reads_a_single_boolean() {
+        let c: Sort = Bool::new([1, 1]).into();
+        let x: Sort = Int::new([2, 3]).into();
+        let dom: Poly<Sort> = mono![c, x, x].into();
+        let cod: Poly<Sort> = mono![x].into();
+        assert_eq!(Ite(2, 3).dom(), dom);
+        assert_eq!(Ite(2, 3).cod(), cod);
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(Add(1, 1).to_string(), "Add");
         assert_eq!(Mul(1, 1).to_string(), "Mul");
@@ -652,6 +697,7 @@ mod tests {
         assert_eq!(ReLU(1, 1).to_string(), "ReLU");
         assert_eq!(Transpose(1, 1).to_string(), "Transpose");
         assert_eq!(Id(1, 1).to_string(), "Id");
+        assert_eq!(Ite(1, 1).to_string(), "Ite");
     }
     #[test]
     fn comparisons_write_booleans() {

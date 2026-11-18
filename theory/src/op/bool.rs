@@ -10,6 +10,7 @@ information to compute its [`Boundary`]:
   exclusive disjunction.
 - [`Not`] — pointwise negation.
 - [`Id`] — the identity.
+- [`Ite`] — if-then-else, on a single boolean.
 */
 
 use crate::sort::Bool;
@@ -42,6 +43,14 @@ pub struct Not(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Id(pub usize, pub usize);
 
+/// If-then-else `if c then x else y` of `[m, n]` matrices, on a single
+/// boolean `c`, which picks either matrix whole.
+///
+/// SMT-LIB2: `(ite c x y)`, of the Core theory, with the same `c` for every
+/// entry.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Ite(pub usize, pub usize);
+
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
 #[derive(Clone, Debug, From)]
@@ -52,6 +61,7 @@ pub enum Prop {
     Xor(Xor),
     Not(Not),
     Id(Id),
+    Ite(Ite),
 }
 
 impl Boundary<Bool> for Prop {
@@ -63,6 +73,7 @@ impl Boundary<Bool> for Prop {
             Prop::Xor(op) => op.dom(),
             Prop::Not(op) => op.dom(),
             Prop::Id(op) => op.dom(),
+            Prop::Ite(op) => op.dom(),
         }
     }
 
@@ -74,6 +85,7 @@ impl Boundary<Bool> for Prop {
             Prop::Xor(op) => op.cod(),
             Prop::Not(op) => op.cod(),
             Prop::Id(op) => op.cod(),
+            Prop::Ite(op) => op.cod(),
         }
     }
 }
@@ -138,6 +150,19 @@ impl Boundary<Bool> for Id {
     }
 }
 
+/// Takes a boolean of shape `[1, 1]` and two matrices of shape `[m, n]` to
+/// a matrix of shape `[m, n]`.
+impl Boundary<Bool> for Ite {
+    fn dom(&self) -> Poly<Bool> {
+        let x = Bool::new([self.0, self.1]);
+        mono![Bool::new([1, 1]), x, x].into()
+    }
+
+    fn cod(&self) -> Poly<Bool> {
+        mono![Bool::new([self.0, self.1])].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -174,6 +199,12 @@ impl fmt::Display for Id {
     }
 }
 
+impl fmt::Display for Ite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ite")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,9 +236,18 @@ mod tests {
     }
 
     #[test]
+    fn ite_reads_a_single_boolean() {
+        let x = Bool::new([2, 3]);
+        let dom: Poly<Bool> = mono![Bool::new([1, 1]), x, x].into();
+        assert_eq!(Ite(2, 3).dom(), dom);
+        assert_eq!(Ite(2, 3).cod(), one(x));
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(And(1, 1).to_string(), "And");
         assert_eq!(Not(1, 1).to_string(), "Not");
         assert_eq!(Id(1, 1).to_string(), "Id");
+        assert_eq!(Ite(1, 1).to_string(), "Ite");
     }
 }

@@ -48,6 +48,7 @@ Besides those of QF_BV, the theory has the operations that every theory
 has, on words:
 
 - [`Id`] — the identity.
+- [`Ite`] — if-then-else, on a single boolean.
 */
 
 use crate::sort::{Bool, Word};
@@ -196,6 +197,14 @@ pub struct Ne(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Id(pub usize, pub usize, pub usize);
 
+/// If-then-else `if c then x else y` of `w`-bit words, on a single boolean
+/// `c`, which picks either matrix whole, as `Ite(w, m, n)`.
+///
+/// SMT-LIB2: `(ite c x y)`, of the Core theory, with the same `c` for every
+/// entry.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Ite(pub usize, pub usize, pub usize);
+
 /// The operations of the theory of fixed-size bit-vectors, SMT-LIB2's
 /// `FixedSizeBitVectors`, with their boundary in [`Sort`]. Those of
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
@@ -240,6 +249,7 @@ pub enum BV {
     UGt(unsigned::Gt),
     UGe(unsigned::Ge),
     Id(Id),
+    Ite(Ite),
 }
 
 impl Boundary<Sort> for BV {
@@ -283,6 +293,7 @@ impl Boundary<Sort> for BV {
             BV::UGt(op) => op.dom(),
             BV::UGe(op) => op.dom(),
             BV::Id(op) => op.dom(),
+            BV::Ite(op) => op.dom(),
         }
     }
 
@@ -326,6 +337,7 @@ impl Boundary<Sort> for BV {
             BV::UGt(op) => op.cod(),
             BV::UGe(op) => op.cod(),
             BV::Id(op) => op.cod(),
+            BV::Ite(op) => op.cod(),
         }
     }
 }
@@ -545,6 +557,19 @@ impl Boundary<Sort> for Id {
     }
 }
 
+/// Takes a boolean of shape `[1, 1]` and two matrices of shape `[m, n]` to
+/// a matrix of shape `[m, n]`.
+impl Boundary<Sort> for Ite {
+    fn dom(&self) -> Poly<Sort> {
+        let x: Sort = Word::new_unchecked(self.0, [self.1, self.2]).into();
+        mono![Bool::new([1, 1]).into(), x, x].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -668,6 +693,12 @@ impl fmt::Display for Ne {
 impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Id")
+    }
+}
+
+impl fmt::Display for Ite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ite")
     }
 }
 
@@ -1144,6 +1175,14 @@ mod tests {
     }
 
     #[test]
+    fn ite_reads_a_single_boolean() {
+        let x = w(8, [2, 3]);
+        let dom: Poly<Sort> = mono![b([1, 1]), x, x].into();
+        assert_eq!(Ite(8, 2, 3).dom(), dom);
+        assert_eq!(Ite(8, 2, 3).cod(), one(x));
+    }
+
+    #[test]
     fn ops_display_their_name_and_indices() {
         assert_eq!(Add(8, 1, 1).to_string(), "Add");
         assert_eq!(Ne(8, 1, 1).to_string(), "Ne");
@@ -1158,5 +1197,6 @@ mod tests {
         assert_eq!(signed::Extend(8, 8, 1, 1).to_string(), "SignExtend(8)");
         assert_eq!(unsigned::Extend(8, 8, 1, 1).to_string(), "ZeroExtend(8)");
         assert_eq!(Id(8, 1, 1).to_string(), "Id");
+        assert_eq!(Ite(8, 1, 1).to_string(), "Ite");
     }
 }
