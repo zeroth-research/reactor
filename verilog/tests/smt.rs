@@ -277,6 +277,7 @@ fn round_declares_havoc() {
         name: "noise".into(),
         module: Module::observable([atom]).unwrap(),
         vars: BTreeMap::from([("a".into(), a), ("y".into(), y)]),
+        paths: BTreeMap::from([("a".into(), "a".into()), ("y".into(), "y".into())]),
         clocks: vec![],
         registers: vec![],
         reset_registers: vec![],

@@ -114,6 +114,37 @@ fn parse_comments() {
     assert!(s.free_initially("not mentioned"));
 }
 
+/// In the examples with blackboxes, the signals connected to blackbox
+/// outputs are Yosys wires with a fresh value in every step (`cutpoint`),
+/// each its own, and no other wire is.
+#[test]
+fn free_values_of_blackboxes() {
+    let Some(bin) = yosys::find() else {
+        eprintln!("yosys not found: skipped");
+        return;
+    };
+    for name in ["bbtop.sv", "bbchild.sv"] {
+        let path = examples().into_iter().find(|p| p.ends_with(name)).unwrap();
+        let (_, t) = load(&path);
+        let ys = yosys::run(&bin, &path, &t.name, &[]).unwrap();
+        let mut symbols = std::collections::BTreeSet::new();
+        for wire in ys.wires.keys() {
+            let free = ys.free_value(wire);
+            let blackbox = t
+                .paths
+                .get(wire)
+                .is_some_and(|n| t.blackbox_outputs.contains(n));
+            assert_eq!(free.is_some(), blackbox, "{name}: {wire}");
+            if let Some(symbol) = free
+                && t.blackbox_outputs.contains(wire)
+            {
+                assert!(symbols.insert(symbol), "{name}: {wire}");
+            }
+        }
+        assert!(!symbols.is_empty(), "{name}");
+    }
+}
+
 /// The names of the registers `clk2fflogic` makes.
 #[test]
 fn sample_names() {
@@ -444,6 +475,116 @@ fn miter_errors() {
     bad.script = bad.script.replace("QF_UFBV", "QF_BV");
     let e = miter::check(&z3, &bad).unwrap_err();
     assert!(e.contains("unexpected z3 output"), "{e}");
+}
+
+/// The miter compares only our controlled variables and ties each of our
+/// external variables to a Yosys wire, so a lowering bug that drops a signal
+/// or turns a computed signal into a free one would leave nothing to find a
+/// difference with. `build` therefore checks the interfaces: each stand-in
+/// for such a bug (our translation of a changed text, Yosys's of the
+/// original) is an error, not "all equal".
+#[test]
+fn miter_checks_interfaces() {
+    let Some((yosys, z3)) = tools() else { return };
+    let original = "\
+module cnt (input logic clk, en, output logic [7:0] q, output logic full, output logic g);
+  logic [7:0] n;
+  logic f;
+  assign n = q + 8'd1;
+  always_ff @(posedge clk) if (en) q <= n;
+  assign f = &q;
+  assign full = f;
+  assign g = full;
+endmodule
+";
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("interfaces.sv");
+    std::fs::write(&path, original).unwrap();
+    let ys = yosys::run(&yosys, &path, "cnt", &[]).unwrap();
+    let ours = |source: &str| lower_inst(&elab::load(source, &path).unwrap()).unwrap();
+    let m = miter::build(&ours(original), &ys).unwrap();
+    let verdicts = miter::check(&z3, &m).unwrap();
+    assert!(verdicts.iter().all(|(.., v)| *v == Verdict::Equal));
+
+    let changed_all = |edits: &[(&str, &str)]| {
+        let mut source = original.to_string();
+        for (from, to) in edits {
+            assert!(source.contains(from), "{from}");
+            source = source.replace(from, to);
+        }
+        miter::build(&ours(&source), &ys).unwrap_err()
+    };
+    let changed = |from: &str, to: &str| changed_all(&[(from, to)]);
+    let has = |e: &str, parts: &[&str]| {
+        for part in parts {
+            assert!(e.contains(part), "{part}\n{e}");
+        }
+    };
+    // outputs dropped: nothing would compare them
+    let e = changed(
+        ", output logic full, output logic g);",
+        ");\n  logic full, g;",
+    );
+    has(
+        &e,
+        &[
+            "Yosys output `full` is not an output of ours",
+            "Yosys output `g` is not an output of ours",
+        ],
+    );
+    let e = changed_all(&[(", output logic g);", ");"), ("  assign g = full;\n", "")]);
+    has(
+        &e,
+        &[
+            "Yosys output `g` is not an output of ours",
+            "Yosys wire `g` is no signal of ours",
+        ],
+    );
+    let e = changed(
+        "output logic full, output logic g);",
+        "output logic full);\n  logic g;",
+    );
+    has(&e, &["Yosys output `g` is not an output of ours"]);
+    // a computed output made an input: our free `full` would be tied to
+    // Yosys's computed one, and `g` would compare equal
+    let e = changed_all(&[
+        (
+            "output logic full, output logic g);",
+            "input logic full, output logic g);",
+        ),
+        ("  assign full = f;\n", ""),
+    ]);
+    has(
+        &e,
+        &[
+            "`full` is free in every round, in Yosys neither an input nor a blackbox output",
+            "Yosys output `full` is not an output of ours",
+        ],
+    );
+    // an internal signal dropped (inlined), or made the output of a
+    // blackbox, which Yosys computes
+    let e = changed_all(&[
+        ("  logic [7:0] n;\n", ""),
+        ("  assign n = q + 8'd1;\n", ""),
+        ("q <= n;", "q <= q + 8'd1;"),
+    ]);
+    has(&e, &["Yosys wire `n` is no signal of ours"]);
+    let e = changed_all(&[
+        ("  assign f = &q;\n", "  src u (.o(f));\n"),
+        (
+            "endmodule\n",
+            "endmodule\n(* blackbox *)\nmodule src (output logic o);\nendmodule\n",
+        ),
+    ]);
+    has(
+        &e,
+        &["`f` is free in every round, in Yosys neither an input nor a blackbox output"],
+    );
+    // an output that Yosys does not have
+    let e = changed(
+        "output logic g);",
+        "output logic g, output logic h);\n  assign h = g;",
+    );
+    has(&e, &["output `h` is not a Yosys output"]);
 }
 
 /// On every example, every register of our translation has one output

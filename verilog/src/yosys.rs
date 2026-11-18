@@ -70,8 +70,10 @@ every state, and an accessor `(|T_n v| s)` for every port, register and wire
 `v` (with `-wires`, every named wire). Each accessor follows a comment
 `; yosys-smt2-wire v W` (W = width); ports and registers additionally get
 `; yosys-smt2-input v W`, `; yosys-smt2-output v W` or
-`; yosys-smt2-register v W`. [`parse`] collects these four kinds into
-[`Smt2`] and ignores the others (`clock`, `witness`, …).
+`; yosys-smt2-register v W`. A fresh value per step (an `$anyseq` cell,
+as `cutpoint` makes them) is a function `|T#k|` of the state, after a
+comment `; yosys-smt2-anyseq T#k W CELL`. [`parse`] collects these five
+kinds into [`Smt2`] and ignores the others (`clock`, `witness`, …).
 
 An accessor of width 1 returns `Bool`, wider ones `(_ BitVec W)`;
 [`Smt2::value`] always gives a bit vector, as our rounds use
@@ -256,6 +258,10 @@ pub struct Smt2 {
     pub registers: BTreeMap<String, usize>,
     /// Every named wire, including ports and registers.
     pub wires: BTreeMap<String, usize>,
+    /// The free values Yosys draws in every step (`$anyseq` cells, which
+    /// `cutpoint` puts on the outputs of blackboxes), by symbol (`T#k`),
+    /// with their widths.
+    pub anyseq: BTreeMap<String, usize>,
     /// The conjuncts of the initial-state predicate `|T_i|`, by the
     /// register each constrains.
     pub initial: BTreeMap<String, String>,
@@ -293,7 +299,7 @@ impl Smt2 {
 pub fn parse(text: &str) -> Result<Smt2, String> {
     let mut modules = Vec::new();
     let mut top = None;
-    let mut maps: [BTreeMap<String, usize>; 4] = Default::default();
+    let mut maps: [BTreeMap<String, usize>; 5] = Default::default();
     for line in text.lines() {
         let Some(rest) = line.strip_prefix("; yosys-smt2-") else {
             continue;
@@ -312,9 +318,15 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
             "output" => &mut maps[1],
             "register" => &mut maps[2],
             "wire" => &mut maps[3],
+            "anyseq" => &mut maps[4],
             _ => continue,
         };
-        // the width is the last word: a name could contain spaces
+        // the width is the last word: a name could contain spaces; an
+        // `anyseq` comment has the symbol, the width and the cell name
+        let arg = match kind {
+            "anyseq" => arg.splitn(3, ' ').take(2).collect::<Vec<_>>().join(" "),
+            _ => arg.to_string(),
+        };
         let (name, width) = arg
             .rsplit_once(' ')
             .and_then(|(n, w)| Some((n, w.parse::<usize>().ok()?)))
@@ -333,7 +345,7 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
             "expected only module `{top}`, Yosys output has {modules:?}"
         ));
     }
-    let [inputs, outputs, registers, wires] = maps;
+    let [inputs, outputs, registers, wires, anyseq] = maps;
     let initial = initial(text, &top)?;
     Ok(Smt2 {
         top,
@@ -342,6 +354,7 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
         outputs,
         registers,
         wires,
+        anyseq,
         initial,
     })
 }
@@ -375,6 +388,30 @@ fn initial(text: &str, top: &str) -> Result<BTreeMap<String, String>, String> {
 }
 
 impl Smt2 {
+    /// The `$anyseq` symbol (`T#k`) whose value the wire `name` is in every
+    /// state, or `None` if its accessor is anything else: a wire that is a
+    /// fresh value in every step, of the same width. `write_smt2` defines
+    /// such an accessor as `(|T#k| state)`, or for width 1 as
+    /// `(= ((_ extract 0 0) (|T#k| state)) #b1)`.
+    pub fn free_value(&self, name: &str) -> Option<&str> {
+        let width = *self.wires.get(name)?;
+        let head = format!(
+            "(define-fun {} ((state {})) ",
+            smt::symbol(&format!("{}_n {name}", self.top)),
+            self.state_sort()
+        );
+        let line = self.text.lines().find(|l| l.starts_with(&head))?;
+        let body = line[head.len()..].strip_suffix(')')?;
+        let body = match width {
+            1 => body
+                .strip_prefix("Bool (= ((_ extract 0 0) ")?
+                .strip_suffix(") #b1)")?,
+            w => body.strip_prefix(&format!("(_ BitVec {w}) "))?,
+        };
+        let symbol = body.strip_prefix("(|")?.strip_suffix("| state)")?;
+        (self.anyseq.get(symbol) == Some(&width)).then_some(symbol)
+    }
+
     /// The sort of states, `|T_s|`.
     pub fn state_sort(&self) -> String {
         smt::symbol(&format!("{}_s", self.top))
