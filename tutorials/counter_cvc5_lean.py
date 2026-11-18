@@ -41,8 +41,8 @@ def make_counter() -> Module:
         init(y0, z0) = (0, y0, z0)
         update(x, y, z) = if x < y or x < z then (x+1, y, z) else (0, y, z)
 
-    State = Mat Int 3 1  (x, y, z stacked)
-    Extl  = Mat Int 2 1  (y0, z0)
+    State = Matrix (Fin 3) (Fin 1) Int  (x, y, z stacked)
+    Extl  = Matrix (Fin 2) (Fin 1) Int  (y0, z0)
     """
     state = (Wire(Int(3, 1)), Wire(Int(3, 1)))
     extl = (Wire(Int(2, 1)), Wire(Int(2, 1)))

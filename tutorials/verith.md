@@ -347,7 +347,7 @@ Three obligations, all discharged by cvc5:
 * `inv_imp_P` — the invariant implies the property
 
 The SMT-LIB predicates are compiled into Lean in the certificate's
-`Data.lean`. `s0` becomes `s 0 0`, the single entry of a `Mat Int 1 1`; a
+`Data.lean`. `s0` becomes `s 0 0`, the single entry of a `Matrix (Fin 1) (Fin 1) Int`; a
 module with several wires gets a product, and `s0, s1, s2, …` become `s.1`,
 `s.2.1`, `s.2.2.1`, ….
 
@@ -368,9 +368,9 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
+def inv : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
+def P : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (100 : Int)))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 ```
@@ -471,9 +471,9 @@ grep -E '^theorem |exact .*_proof|^def ' "$OUT/$PROJ/Certificate/Certificate.lea
 ```
 
 ```lean
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (9 : Int)))
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
-def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = (0 : Int)) then (0 : Int) else ((10 : Int) - (s 0 0))) : Int)).toNat
+def inv : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (9 : Int)))
+def P : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => ((s 0 0) = (0 : Int))
+def ranking : (Matrix (Fin 1) (Fin 1) Int) → Nat := fun s => (((if ((s 0 0) = (0 : Int)) then (0 : Int) else ((10 : Int) - (s 0 0))) : Int)).toNat
 theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
   exact init_inv_proof
 theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
@@ -574,12 +574,12 @@ module
 
 | SMT var | wire | Lean type | in `Data.lean` |
 |---|---|---|---|
-| `s0` | `self.state` (private) | `Mat Real 1 1` | `s.1` |
-| `s1` | observation | `Mat Real 1 1` | `s.2.1` |
-| `s2` | reward | `Mat Real 1 1` | `s.2.2.1` |
-| `s3` | terminated | `Mat Bool 1 1` | `s.2.2.2.1` |
-| `s4` | truncated | `Mat Bool 1 1` | `s.2.2.2.2` |
-| `e0` / `el0` | action, one-hot of width 2 | `Mat Real 1 2` | — |
+| `s0` | `self.state` (private) | `Matrix (Fin 1) (Fin 1) Real` | `s.1` |
+| `s1` | observation | `Matrix (Fin 1) (Fin 1) Real` | `s.2.1` |
+| `s2` | reward | `Matrix (Fin 1) (Fin 1) Real` | `s.2.2.1` |
+| `s3` | terminated | `Matrix (Fin 1) (Fin 1) Bool` | `s.2.2.2.1` |
+| `s4` | truncated | `Matrix (Fin 1) (Fin 1) Bool` | `s.2.2.2.2` |
+| `e0` / `el0` | action, one-hot of width 2 | `Matrix (Fin 1) (Fin 2) Real` | — |
 
 Note that the arithmetic is **real**, not integer: under the default theory a
 `Discrete` action space becomes a one-hot real vector (read back with `argmax`)
@@ -609,8 +609,8 @@ Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
 ```lean
-def inv : (Mat Real 1 1) × (Mat Real 1 1) × (Mat Real 1 1) × (Mat Bool 1 1) × (Mat Bool 1 1) → Prop := fun s => (((s.1 0 0) ≥ (0 : Real)) ∧ ((s.1 0 0) ≤ (2 : Real)))
-def P : (Mat Real 1 1) × (Mat Real 1 1) × (Mat Real 1 1) × (Mat Bool 1 1) × (Mat Bool 1 1) → Prop := fun s => (((s.1 0 0) ≥ (0 : Real)) ∧ ((s.1 0 0) ≤ (2 : Real)))
+def inv : (Matrix (Fin 1) (Fin 1) Real) × (Matrix (Fin 1) (Fin 1) Real) × (Matrix (Fin 1) (Fin 1) Real) × (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool) → Prop := fun s => (((s.1 0 0) ≥ (0 : Real)) ∧ ((s.1 0 0) ≤ (2 : Real)))
+def P : (Matrix (Fin 1) (Fin 1) Real) × (Matrix (Fin 1) (Fin 1) Real) × (Matrix (Fin 1) (Fin 1) Real) × (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool) → Prop := fun s => (((s.1 0 0) ≥ (0 : Real)) ∧ ((s.1 0 0) ≤ (2 : Real)))
 ```
 
 Two things worth knowing about the real-valued case before reaching for a
@@ -714,8 +714,8 @@ Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
 ```lean
-def init_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (1 : Int))
-def update_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (1 : Int))
+def init_pre : ((Matrix (Fin 1) (Fin 1) Int)) × ((Matrix (Fin 1) (Fin 1) Int)) → Prop := fun e => ((e.2 0 0) ≥ (1 : Int))
+def update_pre : ((Matrix (Fin 1) (Fin 1) Int)) × ((Matrix (Fin 1) (Fin 1) Int)) → Prop := fun e => ((e.2 0 0) ≥ (1 : Int))
 ```
 
 A precondition is a promise about the environment, and the certificate is only
@@ -751,8 +751,8 @@ Project ready at: /tmp/verith-tutorial.noindex/Rea
 ```
 
 ```lean
-def inv : (Mat Int 1 1) → Prop := fun s => ((0 ≤ (s 0 0)) ∧ ((s 0 0) ≤ 100))
-def ranking : (Mat Int 1 1) → Nat := fun s => (((s 0 0) : Int)).toNat
+def inv : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => ((0 ≤ (s 0 0)) ∧ ((s 0 0) ≤ 100))
+def ranking : (Matrix (Fin 1) (Fin 1) Int) → Nat := fun s => (((s 0 0) : Int)).toNat
 ```
 
 ```bash
