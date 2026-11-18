@@ -74,14 +74,14 @@ NAME/
 ```
 
 The Lean library the project is stated in is not part of it: the lakefile
-requires three packages of [reactor-lean][reactor-lean], each in its own
+requires two packages of [reactor-lean][reactor-lean], each in its own
 directory of that repository.
 
-| Package | Modules | Contents |
-|---------|---------|----------|
-| `Spec` | `Spec.LTL` | LTL formulas and their semantics |
-| `Relational` | `Relational.Mat`, `.Box`, `.Basic` | matrices, ReactiveModule, the proof rules (`rule_globally`, `rule_buchi`) |
-| `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
+| Package | Library | Modules | Contents |
+|---------|---------|---------|----------|
+| `ReactLib` | `Spec` | `Spec.LTL` | LTL formulas and their semantics |
+| | `Relational` | `Relational.Mat`, `.Box`, `.Basic` | matrices, ReactiveModule, the proof rules (`rule_globally`, `rule_buchi`) |
+| `LeanAI` | `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
 
 By default they are git requires at `project/lakefile.py`'s
 `REACTOR_LEAN_REV`. With `REACTOR_LEAN` set to a reactor-lean checkout they
@@ -89,7 +89,7 @@ are path requires on it instead, which is how to change the library and the
 generator together; `reactor` refuses a `REACTOR_LEAN` that is not a
 checkout before it writes anything. The tests set it to the checkout beside
 this repository when there is one, and `tests/lean`'s lakefile requires
-`Relational` from there.
+`ReactLib` from there.
 
 [reactor-lean]: https://github.com/zeroth-research/reactor-lean
 

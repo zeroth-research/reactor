@@ -1,6 +1,6 @@
 """The project's lakefile: the dependencies every project requires
-(Mathlib, Cslib, lean-smt, and reactor-lean's `Spec`, `Relational` and
-`LeanAI`) at the revisions it pins, and what a caller adds to them
+(Mathlib, Cslib, lean-smt, and reactor-lean's `ReactLib` and `LeanAI`) at
+the revisions it pins, and what a caller adds to them
 (`LakefileParts`).
 """
 
@@ -19,20 +19,17 @@ CSLIB_REV = MATHLIB_REV
 # Lean toolchain version — should match Mathlib's requirement
 LEAN_TOOLCHAIN = f"leanprover/lean4:{MATHLIB_REV}"
 
-# The Lean libraries the generated files import -- `Relational.*`, which the
-# encodings and the certificate are stated in, `Spec.*`, the LTL their proof
-# rules are stated in, and `LeanAI`, the `ai_solve` tactic -- are Lake
-# packages of their own, each in its own directory of the reactor-lean
-# repository, which is also what each package is named.  `Relational`
-# requires `Spec` by path, so `Spec` would come along unnamed; it is named
-# anyway, so that like the others it is a git require at
-# `REACTOR_LEAN_REV` or a path require on `$REACTOR_LEAN`, and
-# `with_reactor_lean` repoints it in a copied manifest.
+# The Lean libraries the generated files import come in two Lake packages,
+# each in its own directory of the reactor-lean repository, which is also
+# what each package is named: `ReactLib`, whose libraries are
+# `Relational.*`, which the encodings and the certificate are stated in,
+# and `Spec.*`, the LTL their proof rules are stated in; and `LeanAI`, the
+# `ai_solve` tactic.
 REACTOR_LEAN_URL = "https://github.com/zeroth-research/reactor-lean"
 # A commit rather than a branch, so a project cannot drift from the
 # generator that wrote it.
-REACTOR_LEAN_REV = "0a650ed3a58cdfd1f3449f8363b91f9ee12d8476"
-REACTOR_LEAN_PACKAGES = ("Spec", "Relational", "LeanAI")
+REACTOR_LEAN_REV = "6998cd9d52d3a746bf3b1f7926fc03d7cd4b2743"
+REACTOR_LEAN_PACKAGES = ("ReactLib", "LeanAI")
 # A reactor-lean checkout to require by path instead of from git, to work on
 # the libraries and the generator together.
 REACTOR_LEAN_ENV = "REACTOR_LEAN"
@@ -99,14 +96,11 @@ def reactor_lean_checkout() -> Path | None:
 
 
 _REACTOR_LEAN_COMMENTS = {
-    "Spec": (
-        "reactor-lean's `Spec.*`: the LTL the proof rules are stated in.\n"
+    "ReactLib": (
+        "reactor-lean's `ReactLib`: `Relational.*`, what the encodings and the "
+        "certificate are stated in, and `Spec.*`, the LTL of its proof rules.\n"
         f"Set ${REACTOR_LEAN_ENV} to a reactor-lean checkout to require its "
         "packages by path."
-    ),
-    "Relational": (
-        "reactor-lean's `Relational.*`: what the encodings and the certificate "
-        "are stated in."
     ),
     "LeanAI": "reactor-lean's `LeanAI`: the `ai_solve` tactic.",
 }
