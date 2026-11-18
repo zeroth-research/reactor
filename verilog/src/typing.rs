@@ -204,7 +204,8 @@ pub fn env(m: &Module) -> Result<Env> {
 /// Clocks: an `always_ff` block runs at the rising (`posedge`) or falling
 /// (`negedge`) edge of a 1-bit signal, and a clock port of an instance is
 /// connected to the name of a 1-bit signal. A module may have several
-/// clocks, and clocks may also be read as data. Where a clock comes from
+/// clocks, and clocks may also be read as data (but not by the blocks they
+/// run, see [`domains`]). Where a clock comes from
 /// (an input, a register, or a copy or bit of one) and which registers may
 /// read each other are checked on the whole hierarchy, by [`domains`].
 ///
@@ -577,6 +578,16 @@ enum Source<'m> {
 /// open, so a simulator may give the reader the value before or after the
 /// assignment, while synthesis (and the translation) gives the value
 /// before. Such a read is rejected.
+///
+/// An `always_ff` block may not read its own clock, nor anything on the
+/// chain its clock comes from (copies, the registers of derived clocks and
+/// their clocks, up to the input clock), directly or through
+/// combinational logic: such a value changes in the time step of the very
+/// edge that runs the block, so the setup and hold times the semantics
+/// assumes (see [`crate::lower`]) cannot hold for it. A simulator reads
+/// the value after the edge (`if (clk)` at `posedge clk` is true), the
+/// translation the value before it (false), and hardware races. Other
+/// blocks may read clocks as data.
 pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
     let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
     // the instances with their paths, each instance before its children
@@ -756,6 +767,7 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
             }
         }
     }
+    own_clock_reads(&insts, &drivers, &comb, &canon)?;
     loop {
         let mut changed = false;
         for (y, x) in &comb {
@@ -1011,6 +1023,98 @@ fn blocking_races(
                     );
                     return Err(elab::context(Error::new(span, msg), prefix));
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Rejects a read, in an `always_ff` block, of a signal on the chain of
+/// its own clock (see [`domains`]), directly or through combinational
+/// logic.
+fn own_clock_reads(
+    insts: &[(&Inst, String)],
+    drivers: &BTreeMap<Name, (usize, Name, Source<'_>)>,
+    comb: &[(Name, Name)],
+    canon: &dyn Fn(usize, &str) -> Name,
+) -> Result<()> {
+    // the chain of every block's clock, by name, from the clock to its root
+    let mut chains: BTreeMap<(usize, usize), Vec<Name>> = BTreeMap::new();
+    for (k, (i, _)) in insts.iter().enumerate() {
+        for (n, item) in i.module.items.iter().enumerate() {
+            let Item::AlwaysFf { clock, .. } = item else {
+                continue;
+            };
+            let mut chain = vec![canon(k, clock)];
+            while let Some((d, _, source)) = drivers.get(chain.last().unwrap()) {
+                let next = match source {
+                    Source::Item(Item::AlwaysFf { clock, .. }) => Some(clock),
+                    Source::Item(Item::Assign { lhs, rhs, .. })
+                        if matches!(lhs.kind, LvalueKind::Var(_)) =>
+                    {
+                        copy(rhs)
+                    }
+                    Source::Conn(e, _) => copy(e),
+                    _ => None,
+                };
+                // `domains` has rejected clock loops already
+                match next.map(|y| canon(*d, y)) {
+                    Some(y) if !chain.contains(&y) => chain.push(y),
+                    _ => break,
+                }
+            }
+            chains.insert((k, n), chain);
+        }
+    }
+    // the signals on some chain that every signal depends on through
+    // combinational logic
+    let mut dep: BTreeMap<Name, BTreeSet<Name>> = chains
+        .values()
+        .flatten()
+        .map(|c| (c.clone(), BTreeSet::from([c.clone()])))
+        .collect();
+    loop {
+        let mut changed = false;
+        for (y, x) in comb {
+            let add = dep.get(x).cloned().unwrap_or_default();
+            let d = dep.entry(y.clone()).or_default();
+            let before = d.len();
+            d.extend(add);
+            changed |= d.len() != before;
+        }
+        if !changed {
+            break;
+        }
+    }
+    for (k, (i, prefix)) in insts.iter().enumerate() {
+        for (n, item) in i.module.items.iter().enumerate() {
+            let Item::AlwaysFf { clock, .. } = item else {
+                continue;
+            };
+            let chain = &chains[&(k, n)];
+            for (x, span) in item.reads() {
+                let Some(c) = dep
+                    .get(&canon(k, x))
+                    .and_then(|d| chain.iter().find(|c| d.contains(*c)))
+                else {
+                    continue;
+                };
+                let what = match (canon(k, x) == *c, *c == chain[0]) {
+                    (true, true) => format!("`{x}`, its clock"),
+                    (true, false) => format!("`{x}`, from which its clock is derived"),
+                    (false, true) => format!("`{x}`, which depends on its clock"),
+                    (false, false) => format!(
+                        "`{x}`, which depends on `{c}`, from which its clock is derived"
+                    ),
+                };
+                let y = item.targets()[0];
+                let msg = format!(
+                    "`{y}` (clocked by `{clock}`) reads {what}: that value changes in the time \
+                     step of the edge that runs the block, so the read races with the edge \
+                     (a simulator reads the value after the edge, the translation the value \
+                     before it); a block may not read the chain of its own clock"
+                );
+                return Err(elab::context(Error::new(span, msg), prefix));
             }
         }
     }

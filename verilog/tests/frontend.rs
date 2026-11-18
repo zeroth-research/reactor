@@ -354,12 +354,13 @@ fn accepted_clocks() {
         "  logic [7:0] n;\n  always_ff @(negedge clk) n <= a;\n  always_ff @(posedge clk) y <= n;",
     );
     assert_eq!(t.clocks, ["clk"]);
-    // the clock read as data, in an `if` and through an `assign`
-    let t = translate_ff("  always_ff @(posedge clk) if (clk) y <= a;");
-    assert_eq!(t.registers, ["y"]);
-    let t = translate_ff(
-        "  logic [7:0] t;\n  assign t = clk ? a : y;\n  always_ff @(negedge clk) y <= t;",
-    );
+    // the clock read as data by combinational logic, which its blocks do
+    // not read
+    let src = "module m(input logic clk, input logic [7:0] a, output logic [7:0] y, t);\n  \
+               assign t = clk ? a : y;\n  always_ff @(negedge clk) y <= a;\nendmodule\n";
+    let t = frontend::parse(src, "test.sv")
+        .and_then(|m| lower::lower(&m))
+        .unwrap();
     assert_eq!(t.clocks, ["clk"]);
     // two unrelated clocks, each register reading inputs and its own
     // domain only; an `assign` may combine both domains
@@ -387,9 +388,9 @@ fn accepted_clocks() {
 #[test]
 fn accepted_derived_clocks() {
     // a divider; the register on the derived clock reads one of the input
-    // clock and the derived clock itself
+    // clock
     let t = translate_ff(
-        "  logic s;\n  logic [7:0] q;\n  always_ff @(posedge s) y <= q + {7'd0, s};\n  \
+        "  logic s;\n  logic [7:0] q;\n  always_ff @(posedge s) y <= q + a;\n  \
          always_ff @(posedge clk) begin s <= !s; q <= a; end",
     );
     assert_eq!(t.clocks, ["clk"]);
@@ -2491,6 +2492,76 @@ const HEADER_RACE: &str =
 /// A signal assigned with a blocking `=` in one `always_ff` block and read
 /// by another block that runs at the same clock edge: simulators may run
 /// the two blocks in either order, so the read races with the assignment.
+/// A block may not read its own clock, nor the chain its clock comes from:
+/// that value changes in the time step of the edge that runs the block.
+#[test]
+fn rejected_own_clock_reads() {
+    let race = "that value changes in the time step of the edge that runs the block, so the \
+                read races with the edge (a simulator reads the value after the edge, the \
+                translation the value before it); a block may not read the chain of its own \
+                clock";
+    let cases = [
+        (
+            "  always_ff @(posedge clk) if (clk) y <= a;",
+            2,
+            "clk) y",
+            "`y` (clocked by `clk`) reads `clk`, its clock",
+        ),
+        (
+            "  always_ff @(negedge clk) y <= {7'd0, clk};",
+            2,
+            "clk}",
+            "`y` (clocked by `clk`) reads `clk`, its clock",
+        ),
+        // through combinational logic
+        (
+            "  logic [7:0] t;\n  assign t = clk ? a : y;\n  always_ff @(negedge clk) y <= t;",
+            4,
+            "t;",
+            "`y` (clocked by `clk`) reads `t`, which depends on its clock",
+        ),
+        // a derived clock, read by its own blocks
+        (
+            "  logic s;\n  always_ff @(posedge s) y <= {7'd0, s};\n  \
+             always_ff @(posedge clk) s <= !s;",
+            3,
+            "s};",
+            "`y` (clocked by `s`) reads `s`, its clock",
+        ),
+        // the clock a derived clock comes from, and a copy of it
+        (
+            "  logic s;\n  always_ff @(posedge s) y <= clk ? a : y;\n  \
+             always_ff @(posedge clk) s <= !s;",
+            3,
+            "clk ?",
+            "`y` (clocked by `s`) reads `clk`, from which its clock is derived",
+        ),
+        (
+            "  logic k, s;\n  logic [7:0] t;\n  assign k = clk;\n  assign t = {7'd0, k};\n  \
+             always_ff @(posedge s) y <= t;\n  always_ff @(posedge k) s <= !s;",
+            6,
+            "t;",
+            "`y` (clocked by `s`) reads `t`, which depends on `k`, from which its clock is \
+             derived",
+        ),
+    ];
+    for (body, line, needle, msg) in cases {
+        rejects(Some(HEADER_FF), body, line, needle, &format!("{msg}: {race}"));
+    }
+    // other blocks may read a clock as data: a block on another clock, and
+    // the block of the clock a derived clock comes from (the derived clock
+    // is an ordinary register there)
+    let two = "module m(input logic ca, cb, input logic [7:0] a, output logic [7:0] y, z, w);";
+    let src = format!(
+        "{two}\n  logic s;\n  always_ff @(posedge ca) y <= cb ? a : y;\n  \
+         always_ff @(posedge cb) begin s <= !s; z <= s ? a : z; end\n  \
+         always_ff @(posedge s) w <= a;\nendmodule\n"
+    );
+    frontend::parse(&src, "test.sv")
+        .and_then(|m| lower::lower(&m))
+        .unwrap_or_else(|e| panic!("{src}\n{e}"));
+}
+
 #[test]
 fn rejected_blocking_ff_race() {
     let race = |what: &str, at: &str, q: &str| {
