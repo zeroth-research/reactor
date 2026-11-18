@@ -1393,6 +1393,68 @@ fn cli_yosys() {
     assert!(without.contains("X(pattern) := CONCAT"), "{without}");
 }
 
+/// The comparison warns when Yosys is not the version the format of its
+/// output was checked with (here a stand-in that reports another version
+/// and otherwise runs the real Yosys), and compares all the same.
+#[cfg(unix)]
+#[test]
+fn cli_warns_on_other_yosys_versions() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some((yosys, _)) = tools() else { return };
+    assert_eq!(
+        yosys::parse_version("Yosys 0.69+173 (git sha1 53f1cdd34-dirty, Release, Clang)\n"),
+        Some("0.69+173".into())
+    );
+    assert_eq!(yosys::parse_version("Yosys\n"), None);
+    assert_eq!(yosys::parse_version("something else"), None);
+    let checked = Ok(yosys::CHECKED_VERSION.to_string());
+    assert_eq!(yosys::version_warning(&checked), None);
+    let other = yosys::version_warning(&Ok("0.70".into())).unwrap();
+    assert!(
+        other.starts_with("Yosys 0.70: ") && other.contains("0.69+173"),
+        "{other}"
+    );
+    assert!(yosys::version_warning(&Err("no answer".into())).is_some());
+    let v2rm = |bin: &Path| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_v2rm"))
+            .args(["--yosys", "examples/counter.sv"])
+            .env("YOSYS_BIN", bin)
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .unwrap();
+        let text = |b: Vec<u8>| String::from_utf8(b).unwrap();
+        (out.status.success(), text(out.stdout), text(out.stderr))
+    };
+    let found = yosys::version(&yosys).unwrap();
+    let (ok, stdout, stderr) = v2rm(&yosys);
+    assert!(ok && stdout.contains("4 of 4 queries equal"), "{stdout}");
+    assert_eq!(
+        stderr.contains("warning: Yosys"),
+        found != yosys::CHECKED_VERSION,
+        "{stderr}"
+    );
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("yosys-version");
+    std::fs::create_dir_all(&dir).unwrap();
+    let stub = dir.join("yosys");
+    let real = std::fs::canonicalize(&yosys).unwrap_or(yosys.clone());
+    std::fs::write(
+        &stub,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = -V ] && {{ echo 'Yosys 0.70 (git sha1 0)'; exit 0; }}\n\
+             exec '{}' \"$@\"\n",
+            real.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (ok, stdout, stderr) = v2rm(&stub);
+    assert!(ok && stdout.contains("4 of 4 queries equal"), "{stdout}");
+    assert!(
+        stderr.starts_with("examples/counter.sv: warning: Yosys 0.70: the comparison relies on"),
+        "{stderr}"
+    );
+}
+
 /// A planted bug: one change to the source of an example.
 struct Mutant {
     /// Where and what, e.g. ``8:24 `+` -> `-` ``.
