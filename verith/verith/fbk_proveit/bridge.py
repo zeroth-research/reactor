@@ -356,7 +356,7 @@ def atom_to_lean_fbk_bridge(
         "    certificate `proveit.py` installed is the one step this file",
         "    does not take: it is `main_theorem` there, in",
         "    `lean-ltl-certifying`'s LTL vocabulary rather than",
-        "    `Relational.LTL`'s, and translating between the two is a fixed",
+        "    `Spec.LTL`'s, and translating between the two is a fixed",
         "    piece of work that does not vary per module. -/",
         "theorem module_safety",
         "    (hM : ∀ ts μs, MTS.ωTrace ts μs →",

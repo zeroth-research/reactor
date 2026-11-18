@@ -1,6 +1,6 @@
 """The project's lakefile: the dependencies every project requires
-(Mathlib, Cslib, lean-smt, and reactor-lean's `Relational` and `LeanAI`)
-at the revisions it pins, and what a caller adds to them
+(Mathlib, Cslib, lean-smt, and reactor-lean's `Spec`, `Relational` and
+`LeanAI`) at the revisions it pins, and what a caller adds to them
 (`LakefileParts`).
 """
 
@@ -20,14 +20,19 @@ CSLIB_REV = MATHLIB_REV
 LEAN_TOOLCHAIN = f"leanprover/lean4:{MATHLIB_REV}"
 
 # The Lean libraries the generated files import -- `Relational.*`, which the
-# encodings and the certificate are stated in, and `LeanAI`, the `ai_solve`
-# tactic -- are Lake packages of their own, each in its own directory of the
-# reactor-lean repository, which is also what each package is named.
+# encodings and the certificate are stated in, `Spec.*`, the LTL their proof
+# rules are stated in, and `LeanAI`, the `ai_solve` tactic -- are Lake
+# packages of their own, each in its own directory of the reactor-lean
+# repository, which is also what each package is named.  `Relational`
+# requires `Spec` by path, so `Spec` would come along unnamed; it is named
+# anyway, so that like the others it is a git require at
+# `REACTOR_LEAN_REV` or a path require on `$REACTOR_LEAN`, and
+# `with_reactor_lean` repoints it in a copied manifest.
 REACTOR_LEAN_URL = "https://github.com/zeroth-research/reactor-lean"
 # A commit rather than a branch, so a project cannot drift from the
 # generator that wrote it.
-REACTOR_LEAN_REV = "a5365e15e0f9c05b5b4b6fdd80ec8fd67711627a"
-REACTOR_LEAN_PACKAGES = ("Relational", "LeanAI")
+REACTOR_LEAN_REV = "0a650ed3a58cdfd1f3449f8363b91f9ee12d8476"
+REACTOR_LEAN_PACKAGES = ("Spec", "Relational", "LeanAI")
 # A reactor-lean checkout to require by path instead of from git, to work on
 # the libraries and the generator together.
 REACTOR_LEAN_ENV = "REACTOR_LEAN"
@@ -94,11 +99,14 @@ def reactor_lean_checkout() -> Path | None:
 
 
 _REACTOR_LEAN_COMMENTS = {
-    "Relational": (
-        "reactor-lean's `Relational.*`: what the encodings and the certificate "
-        "are stated in.\n"
+    "Spec": (
+        "reactor-lean's `Spec.*`: the LTL the proof rules are stated in.\n"
         f"Set ${REACTOR_LEAN_ENV} to a reactor-lean checkout to require its "
         "packages by path."
+    ),
+    "Relational": (
+        "reactor-lean's `Relational.*`: what the encodings and the certificate "
+        "are stated in."
     ),
     "LeanAI": "reactor-lean's `LeanAI`: the `ai_solve` tactic.",
 }

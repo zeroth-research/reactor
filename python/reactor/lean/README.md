@@ -74,12 +74,13 @@ NAME/
 ```
 
 The Lean library the project is stated in is not part of it: the lakefile
-requires two packages of [reactor-lean][reactor-lean], each in its own
+requires three packages of [reactor-lean][reactor-lean], each in its own
 directory of that repository.
 
 | Package | Modules | Contents |
 |---------|---------|----------|
-| `Relational` | `Relational.Mat`, `.Box`, `.LTL`, `.Basic` | matrices, ReactiveModule, LTL, the proof rules (`rule_globally`, `rule_buchi`) |
+| `Spec` | `Spec.LTL` | LTL formulas and their semantics |
+| `Relational` | `Relational.Mat`, `.Box`, `.Basic` | matrices, ReactiveModule, the proof rules (`rule_globally`, `rule_buchi`) |
 | `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
 
 By default they are git requires at `project/lakefile.py`'s
