@@ -11,8 +11,8 @@ information to compute its [`Boundary`]:
 - [`Not`] — pointwise negation.
 */
 
+use super::sort::Bool;
 use crate::Tensor;
-use crate::sort::Bool;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;

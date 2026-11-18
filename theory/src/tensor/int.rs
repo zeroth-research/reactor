@@ -25,8 +25,8 @@ to matrices. As they write booleans, their boundary is in [`Sort`], the
 sorts of the theory, rather than in [`Int`].
 */
 
+use super::sort::{Bool, Int};
 use crate::Tensor;
-use crate::sort::{Bool, Int};
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
@@ -35,9 +35,9 @@ use subenum::subenum;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Ints`:
 /// int matrices, and the booleans of the Core theory, which comparisons
-/// write, together with [`Zero`](crate::sort::Zero). It is the subset
-/// [`sort::Ints`](crate::sort::Ints) of the sorts of all theories.
-pub use crate::sort::Ints as Sort;
+/// write, together with [`Zero`](crate::tensor::sort::Zero). It is the subset
+/// [`tensor::sort::Ints`](crate::tensor::sort::Ints) of the sorts of all theories.
+pub use super::sort::Ints as Sort;
 
 /// A constant integer matrix literal, held in a tensor of type `T`.
 #[derive(Clone, Debug)]

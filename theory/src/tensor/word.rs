@@ -45,8 +45,8 @@ theory FixedSizeBitVectors or are defined by the logic QF_BV. The
 comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
 */
 
+use super::sort::{Bool, Word};
 use crate::Tensor;
-use crate::sort::{Bool, Word};
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
@@ -54,10 +54,10 @@ use std::fmt;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's
 /// FixedSizeBitVectors: words, and the booleans of the Core theory, which
-/// comparisons write, together with [`Zero`](crate::sort::Zero), the tangent of both. It is
-/// the subset [`sort::Words`](crate::sort::Words) of the sorts of all
+/// comparisons write, together with [`Zero`](crate::tensor::sort::Zero), the tangent of both. It is
+/// the subset [`tensor::sort::Words`](crate::tensor::sort::Words) of the sorts of all
 /// theories.
-pub use crate::sort::Words as Sort;
+pub use super::sort::Words as Sort;
 
 /// A constant matrix literal of `w`-bit words, as `Const(tensor, w)`, held
 /// in a tensor of type `T`.
@@ -668,7 +668,7 @@ impl fmt::Display for Ne {
 /// signedness; the others are in the parent module.
 pub mod signed {
     use super::{Sort, Word};
-    use crate::sort::Bool;
+    use crate::tensor::sort::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     use std::fmt;
@@ -891,7 +891,7 @@ pub mod signed {
 /// signedness; the others are in the parent module.
 pub mod unsigned {
     use super::{Sort, Word};
-    use crate::sort::Bool;
+    use crate::tensor::sort::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     use std::fmt;

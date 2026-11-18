@@ -2,13 +2,13 @@ pub mod any;
 pub mod bv;
 pub mod lia;
 pub mod lra;
-pub mod op;
-pub mod sort;
+pub mod pytensor;
 pub mod tensor;
 #[cfg(feature = "torch")]
 pub mod torch;
 
-pub use tensor::{PyTensor, Tensor};
+pub use pytensor::PyTensor;
+pub use tensor::Tensor;
 
 pub trait Combinatorial<S> {
     // Returns the unary itype that chooses an element within the range

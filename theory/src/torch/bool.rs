@@ -32,10 +32,10 @@ impl Const {
     }
 }
 
-impl<'py> FromPyObject<'py> for crate::op::bool::Const<tch::Tensor> {
+impl<'py> FromPyObject<'py> for crate::tensor::bool::Const<tch::Tensor> {
     /// Fails when `ob` is not a [`Const`].
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let constant = ob.downcast::<Const>()?.get();
-        Ok(crate::op::bool::Const(constant.0.shallow_clone()))
+        Ok(crate::tensor::bool::Const(constant.0.shallow_clone()))
     }
 }

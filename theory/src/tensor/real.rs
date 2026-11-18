@@ -23,8 +23,8 @@ to matrices. As they write booleans, their boundary is in [`Sort`], the
 sorts of the theory, rather than in [`Real`].
 */
 
+use super::sort::{Bool, Real};
 use crate::Tensor;
-use crate::sort::{Bool, Real};
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
@@ -33,9 +33,9 @@ use subenum::subenum;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Reals`:
 /// real matrices, and the booleans of the Core theory, which comparisons
-/// write, together with [`Zero`](crate::sort::Zero). It is the subset
-/// [`sort::Reals`](crate::sort::Reals) of the sorts of all theories.
-pub use crate::sort::Reals as Sort;
+/// write, together with [`Zero`](crate::tensor::sort::Zero). It is the subset
+/// [`tensor::sort::Reals`](crate::tensor::sort::Reals) of the sorts of all theories.
+pub use super::sort::Reals as Sort;
 
 /// A constant real matrix literal, held in a tensor of type `T`.
 #[derive(Clone, Debug)]

@@ -1,9 +1,9 @@
 /*!
 # Torch
 
-The torch backing of the operations of [`crate::op`]: [`tch::Tensor`]
+The torch backing of the operations of [`crate::tensor`]: [`tch::Tensor`]
 implements [`crate::Tensor`], so that the operations carrying tensors hold
-torch tensors directly, as `op::real::Const<tch::Tensor>`. The Python
+torch tensors directly, as `tensor::real::Const<tch::Tensor>`. The Python
 `torch.Tensor` objects convert to and from them through
 [`pyo3_tch::PyTensor`], sharing their storage.
 
@@ -14,13 +14,13 @@ private field, a [`tch::Tensor`] of the element kind of its theory, checked
 on construction, and [`word::Const`] its width too. A [`tch::Tensor`] is not
 `Sync`, which a Python class must be, so each class implements `Sync`
 itself, as only its own module touches the tensor. The constants of
-[`crate::op`] extract from the class of their theory, sharing its tensor.
+[`crate::tensor`] extract from the class of their theory, sharing its tensor.
 
 The affine maps are Python classes too, [`real::Linear`] and
 [`int::Linear`], each holding, in private fields, the [`tch::Tensor`]s `A`
 and `B` of its theory, of shapes `[m, n]` and `[m, k]`, checked on
-construction, and implementing `Sync` in the same way. [`crate::op::real::Linear`]
-and [`crate::op::int::Linear`] extract from the class of their theory, sharing its
+construction, and implementing `Sync` in the same way. [`crate::tensor::real::Linear`]
+and [`crate::tensor::int::Linear`] extract from the class of their theory, sharing its
 tensors.
 */
 
@@ -65,7 +65,7 @@ fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> PyResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::op;
+    use crate::tensor;
     use base::boundary::Boundary;
     use pyo3_tch::PyTensor;
 
@@ -102,9 +102,9 @@ mod tests {
         // `A` of shape `[4, 2]` and `B` of shape `[4, 3]` map `[2, 3]` to `[4, 3]`
         let a = full(4, 2, 0.0, tch::Kind::Float);
         let b = full(4, 3, 0.0, tch::Kind::Float);
-        let linear = op::real::Linear(a, b);
-        assert_eq!(linear.dom(), op::real::ReLU(2, 3).dom());
-        assert_eq!(linear.cod(), op::real::ReLU(4, 3).cod());
+        let linear = tensor::real::Linear(a, b);
+        assert_eq!(linear.dom(), tensor::real::ReLU(2, 3).dom());
+        assert_eq!(linear.cod(), tensor::real::ReLU(4, 3).cod());
     }
 
     #[test]
@@ -138,20 +138,32 @@ mod tests {
         Python::with_gil(|py| {
             let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
             let constant = py.get_type::<real::Const>().call1((&floats,)).unwrap();
-            let op = constant.extract::<op::real::Const<tch::Tensor>>().unwrap();
-            assert_eq!(op.cod(), op::real::ReLU(2, 3).cod());
+            let op = constant
+                .extract::<tensor::real::Const<tch::Tensor>>()
+                .unwrap();
+            assert_eq!(op.cod(), tensor::real::ReLU(2, 3).cod());
 
             // the tensor is that of the constant
             let t = floats.extract::<PyTensor>().unwrap();
             assert_eq!(op.0.data_ptr(), t.data_ptr());
 
             // the class decides the theory, not the tensor
-            assert!(constant.extract::<op::int::Const<tch::Tensor>>().is_err());
-            assert!(floats.extract::<op::real::Const<tch::Tensor>>().is_err());
+            assert!(
+                constant
+                    .extract::<tensor::int::Const<tch::Tensor>>()
+                    .is_err()
+            );
+            assert!(
+                floats
+                    .extract::<tensor::real::Const<tch::Tensor>>()
+                    .is_err()
+            );
 
             let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
             let constant = py.get_type::<word::Const>().call1((&ints, 8)).unwrap();
-            let op = constant.extract::<op::word::Const<tch::Tensor>>().unwrap();
+            let op = constant
+                .extract::<tensor::word::Const<tch::Tensor>>()
+                .unwrap();
             assert_eq!(op.1, 8);
         });
     }
@@ -186,18 +198,23 @@ mod tests {
             let a = python(py, full(4, 2, 1.0, tch::Kind::Float));
             let b = python(py, full(4, 3, 1.0, tch::Kind::Float));
             let class = py.get_type::<real::Linear>().call1((&a, &b)).unwrap();
-            let linear = class.extract::<op::real::Linear<tch::Tensor>>().unwrap();
-            assert_eq!(linear.dom(), op::real::ReLU(2, 3).dom());
-            assert_eq!(linear.cod(), op::real::ReLU(4, 3).cod());
+            let linear = class
+                .extract::<tensor::real::Linear<tch::Tensor>>()
+                .unwrap();
+            assert_eq!(linear.dom(), tensor::real::ReLU(2, 3).dom());
+            assert_eq!(linear.cod(), tensor::real::ReLU(4, 3).cod());
 
             // the tensors are those of the class
             let ta = a.extract::<PyTensor>().unwrap();
             assert_eq!(linear.0.data_ptr(), ta.data_ptr());
 
             // the class decides the theory
-            assert!(class.extract::<op::int::Linear<tch::Tensor>>().is_err());
-            let any = class.extract::<op::Any<tch::Tensor>>().unwrap();
-            assert!(matches!(any, op::Any::Real(op::real::NRA::Linear(_))));
+            assert!(class.extract::<tensor::int::Linear<tch::Tensor>>().is_err());
+            let any = class.extract::<tensor::Any<tch::Tensor>>().unwrap();
+            assert!(matches!(
+                any,
+                tensor::Any::Real(tensor::real::NRA::Linear(_))
+            ));
         });
     }
 
@@ -207,19 +224,22 @@ mod tests {
         Python::with_gil(|py| {
             let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
             let constant = py.get_type::<int::Const>().call1((&ints,)).unwrap();
-            let any = constant.extract::<op::Any<tch::Tensor>>().unwrap();
-            assert!(matches!(any, op::Any::Int(op::int::NIA::Const(_))));
+            let any = constant.extract::<tensor::Any<tch::Tensor>>().unwrap();
+            assert!(matches!(any, tensor::Any::Int(tensor::int::NIA::Const(_))));
 
             let bools = python(py, full(2, 3, 0.0, tch::Kind::Bool));
             let constant = py.get_type::<bool::Const>().call1((&bools,)).unwrap();
-            let any = constant.extract::<op::Any<tch::Tensor>>().unwrap();
-            assert!(matches!(any, op::Any::Bool(op::bool::Prop::Const(_))));
+            let any = constant.extract::<tensor::Any<tch::Tensor>>().unwrap();
+            assert!(matches!(
+                any,
+                tensor::Any::Bool(tensor::bool::Prop::Const(_))
+            ));
 
             let a = python(py, full(4, 2, 1.0, tch::Kind::Int64));
             let b = python(py, full(4, 1, 1.0, tch::Kind::Int64));
             let linear = py.get_type::<int::Linear>().call1((&a, &b)).unwrap();
-            let any = linear.extract::<op::Any<tch::Tensor>>().unwrap();
-            assert!(matches!(any, op::Any::Int(op::int::NIA::Linear(_))));
+            let any = linear.extract::<tensor::Any<tch::Tensor>>().unwrap();
+            assert!(matches!(any, tensor::Any::Int(tensor::int::NIA::Linear(_))));
         });
     }
 }

@@ -41,11 +41,11 @@ impl Linear {
     }
 }
 
-impl<'py> FromPyObject<'py> for crate::op::real::Linear<tch::Tensor> {
+impl<'py> FromPyObject<'py> for crate::tensor::real::Linear<tch::Tensor> {
     /// Fails when `ob` is not a [`Linear`].
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let linear = ob.downcast::<Linear>()?.get();
-        Ok(crate::op::real::Linear(
+        Ok(crate::tensor::real::Linear(
             linear.0.shallow_clone(),
             linear.1.shallow_clone(),
         ))
@@ -82,10 +82,10 @@ impl Const {
     }
 }
 
-impl<'py> FromPyObject<'py> for crate::op::real::Const<tch::Tensor> {
+impl<'py> FromPyObject<'py> for crate::tensor::real::Const<tch::Tensor> {
     /// Fails when `ob` is not a [`Const`].
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let constant = ob.downcast::<Const>()?.get();
-        Ok(crate::op::real::Const(constant.0.shallow_clone()))
+        Ok(crate::tensor::real::Const(constant.0.shallow_clone()))
     }
 }
