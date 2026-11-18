@@ -32,6 +32,7 @@ pub mod real;
 pub mod word;
 
 use crate::sort;
+use crate::{Combinatorial, Differential, Sequential};
 use base::boundary::{Boundary, Poly};
 use derive_more::From;
 use subenum::subenum;
@@ -192,6 +193,216 @@ impl From<LIA> for NIA {
             LIA::Int(op) => NIA::Int(op.into()),
             LIA::Bool(op) => NIA::Bool(op),
         }
+    }
+}
+
+// `Any` and its logics choose, copy and zero the values of `sort::Any`. A
+// logic gives the operation that `Any` gives, on the sorts of its theories
+// only: `NRA` and `LRA` on `sort::Reals`, `NIA` and `LIA` on `sort::Ints`,
+// `Prop` on `sort::Prop`, and `BV` on `sort::Words`. It panics on any other
+// sort.
+
+/// The operation `op` of `Any`, its `what` on `range`, as one of the logic
+/// `L`, named `logic`.
+///
+/// # Panics
+///
+/// If `L` does not hold `op`, as `range` is not one of its sorts.
+fn restrict<L: TryFrom<Any>>(op: Any, logic: &str, what: &str, range: &sort::Any) -> L {
+    L::try_from(op).unwrap_or_else(|_| panic!("{logic} has no {what} on {range}"))
+}
+
+/// Each theory's `Havoc`, and `bool::Zero` on `Zero`, whose only value is
+/// the arbitrary one.
+///
+/// # Panics
+///
+/// On reals of degree above 0, rates of change: no operation chooses one.
+impl Combinatorial<sort::Any> for Any {
+    fn havoc(range: &sort::Any) -> Self {
+        match *range {
+            sort::Any::Real(r) if r.degree() == 0 => {
+                let [m, n] = r.shape();
+                Any::Real(real::Havoc(m, n).into())
+            }
+            sort::Any::Real(_) => panic!("Any has no havoc on {range}"),
+            sort::Any::Int(i) => {
+                let [m, n] = i.shape();
+                Any::Int(int::Havoc(m, n).into())
+            }
+            sort::Any::Bool(b) => {
+                let [m, n] = b.shape();
+                Any::Bool(bool::Havoc(m, n).into())
+            }
+            sort::Any::Word(w) => {
+                let [m, n] = w.shape();
+                Any::Word(word::Havoc(w.width(), m, n).into())
+            }
+            sort::Any::Zero(_) => Any::Bool(bool::Zero.into()),
+        }
+    }
+}
+
+impl Combinatorial<sort::Any> for NRA {
+    fn havoc(range: &sort::Any) -> Self {
+        restrict(Any::havoc(range), "NRA", "havoc", range)
+    }
+}
+
+impl Combinatorial<sort::Any> for LRA {
+    fn havoc(range: &sort::Any) -> Self {
+        restrict(Any::havoc(range), "LRA", "havoc", range)
+    }
+}
+
+impl Combinatorial<sort::Any> for NIA {
+    fn havoc(range: &sort::Any) -> Self {
+        restrict(Any::havoc(range), "NIA", "havoc", range)
+    }
+}
+
+impl Combinatorial<sort::Any> for LIA {
+    fn havoc(range: &sort::Any) -> Self {
+        restrict(Any::havoc(range), "LIA", "havoc", range)
+    }
+}
+
+impl Combinatorial<sort::Any> for Prop {
+    fn havoc(range: &sort::Any) -> Self {
+        restrict(Any::havoc(range), "Prop", "havoc", range)
+    }
+}
+
+impl Combinatorial<sort::Any> for BV {
+    fn havoc(range: &sort::Any) -> Self {
+        restrict(Any::havoc(range), "BV", "havoc", range)
+    }
+}
+
+/// Each theory's `Id`, and `real::TId` on reals of degree above 0, rates of
+/// change.
+///
+/// # Panics
+///
+/// On `Zero`: no operation copies its only value.
+impl Sequential<sort::Any> for Any {
+    fn skip(range: &sort::Any) -> Self {
+        match *range {
+            sort::Any::Real(r) => {
+                let [m, n] = r.shape();
+                match r.degree() {
+                    0 => Any::Real(real::Id(m, n).into()),
+                    d => Any::Real(real::TId(m, n, d).into()),
+                }
+            }
+            sort::Any::Int(i) => {
+                let [m, n] = i.shape();
+                Any::Int(int::Id(m, n).into())
+            }
+            sort::Any::Bool(b) => {
+                let [m, n] = b.shape();
+                Any::Bool(bool::Id(m, n).into())
+            }
+            sort::Any::Word(w) => {
+                let [m, n] = w.shape();
+                Any::Word(word::Id(w.width(), m, n).into())
+            }
+            sort::Any::Zero(_) => panic!("Any has no skip on {range}"),
+        }
+    }
+}
+
+impl Sequential<sort::Any> for NRA {
+    fn skip(range: &sort::Any) -> Self {
+        restrict(Any::skip(range), "NRA", "skip", range)
+    }
+}
+
+impl Sequential<sort::Any> for LRA {
+    fn skip(range: &sort::Any) -> Self {
+        restrict(Any::skip(range), "LRA", "skip", range)
+    }
+}
+
+impl Sequential<sort::Any> for NIA {
+    fn skip(range: &sort::Any) -> Self {
+        restrict(Any::skip(range), "NIA", "skip", range)
+    }
+}
+
+impl Sequential<sort::Any> for LIA {
+    fn skip(range: &sort::Any) -> Self {
+        restrict(Any::skip(range), "LIA", "skip", range)
+    }
+}
+
+impl Sequential<sort::Any> for Prop {
+    fn skip(range: &sort::Any) -> Self {
+        restrict(Any::skip(range), "Prop", "skip", range)
+    }
+}
+
+impl Sequential<sort::Any> for BV {
+    fn skip(range: &sort::Any) -> Self {
+        restrict(Any::skip(range), "BV", "skip", range)
+    }
+}
+
+/// `real::Zero` on reals, of the same degree, and `bool::Zero` on `Zero`,
+/// the sort of the rates of change of the discrete sorts.
+///
+/// # Panics
+///
+/// On `Int`, `Bool` and `Word`: their rates of change are of sort `Zero`, so
+/// no derivative wire is of these sorts.
+impl Differential<sort::Any> for Any {
+    fn zero(range: &sort::Any) -> Self {
+        match *range {
+            sort::Any::Real(r) => {
+                let [m, n] = r.shape();
+                Any::Real(real::Zero(m, n, r.degree()).into())
+            }
+            sort::Any::Zero(_) => Any::Bool(bool::Zero.into()),
+            sort::Any::Int(_) | sort::Any::Bool(_) | sort::Any::Word(_) => {
+                panic!("Any has no zero on {range}")
+            }
+        }
+    }
+}
+
+impl Differential<sort::Any> for NRA {
+    fn zero(range: &sort::Any) -> Self {
+        restrict(Any::zero(range), "NRA", "zero", range)
+    }
+}
+
+impl Differential<sort::Any> for LRA {
+    fn zero(range: &sort::Any) -> Self {
+        restrict(Any::zero(range), "LRA", "zero", range)
+    }
+}
+
+impl Differential<sort::Any> for NIA {
+    fn zero(range: &sort::Any) -> Self {
+        restrict(Any::zero(range), "NIA", "zero", range)
+    }
+}
+
+impl Differential<sort::Any> for LIA {
+    fn zero(range: &sort::Any) -> Self {
+        restrict(Any::zero(range), "LIA", "zero", range)
+    }
+}
+
+impl Differential<sort::Any> for Prop {
+    fn zero(range: &sort::Any) -> Self {
+        restrict(Any::zero(range), "Prop", "zero", range)
+    }
+}
+
+impl Differential<sort::Any> for BV {
+    fn zero(range: &sort::Any) -> Self {
+        restrict(Any::zero(range), "BV", "zero", range)
     }
 }
 
@@ -471,5 +682,200 @@ mod tests {
         assert!(LRA::try_from(real(real::TAdd(2, 3, 1))).is_ok());
         assert!(LRA::try_from(real(real::TId(2, 3, 1))).is_ok());
         assert!(LIA::try_from(real(real::TSub(2, 3, 1))).is_err());
+    }
+
+    fn sorts() -> (sort::Any, sort::Any, sort::Any, sort::Any, sort::Any) {
+        (
+            sort::Real::new([2, 3]).into(),
+            sort::Int::new([2, 3]).into(),
+            sort::Bool::new([2, 3]).into(),
+            sort::Word::new_unchecked(8, [2, 3]).into(),
+            sort::Zero.into(),
+        )
+    }
+
+    #[test]
+    fn havoc_chooses_a_value_of_its_range() {
+        let (r, i, b, v, z) = sorts();
+        for range in [r, i, b, v, z] {
+            let op = Any::havoc(&range);
+            assert_eq!(op.dom(), Poly::unit());
+            assert_eq!(op.cod(), base::mono![range].into());
+        }
+        assert!(matches!(
+            Any::havoc(&v),
+            Any::Word(word::BV::Havoc(word::Havoc(8, 2, 3)))
+        ));
+        assert!(matches!(
+            Any::havoc(&z),
+            Any::Bool(bool::Prop::Zero(bool::Zero))
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "Any has no havoc on T^1(Real(2, 3))")]
+    fn havoc_panics_on_rates_of_change_of_reals() {
+        let _ = Any::havoc(&T(sort::Any::from(sort::Real::new([2, 3]))));
+    }
+
+    #[test]
+    fn logics_havoc_on_their_sorts() {
+        let (r, i, b, v, z) = sorts();
+        assert!(matches!(
+            LRA::havoc(&r),
+            LRA::Real(real::LRA::Havoc(real::Havoc(2, 3)))
+        ));
+        assert!(matches!(
+            NRA::havoc(&r),
+            NRA::Real(real::NRA::Havoc(real::Havoc(2, 3)))
+        ));
+        assert!(matches!(
+            LRA::havoc(&b),
+            LRA::Bool(bool::Prop::Havoc(bool::Havoc(2, 3)))
+        ));
+        assert!(matches!(
+            LRA::havoc(&z),
+            LRA::Bool(bool::Prop::Zero(bool::Zero))
+        ));
+        assert!(matches!(
+            LIA::havoc(&i),
+            LIA::Int(int::LIA::Havoc(int::Havoc(2, 3)))
+        ));
+        assert!(matches!(
+            NIA::havoc(&i),
+            NIA::Int(int::NIA::Havoc(int::Havoc(2, 3)))
+        ));
+        assert!(matches!(
+            Prop::havoc(&b),
+            Prop::Bool(bool::Prop::Havoc(bool::Havoc(2, 3)))
+        ));
+        assert!(matches!(
+            BV::havoc(&v),
+            BV::Word(word::BV::Havoc(word::Havoc(8, 2, 3)))
+        ));
+        assert!(matches!(
+            BV::havoc(&b),
+            BV::Bool(bool::Prop::Havoc(bool::Havoc(2, 3)))
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "LRA has no havoc on Int(2, 3)")]
+    fn logics_havoc_panics_on_other_sorts() {
+        let _ = LRA::havoc(&sort::Int::new([2, 3]).into());
+    }
+
+    #[test]
+    fn skip_copies_a_value_of_its_range() {
+        let (r, i, b, v, _) = sorts();
+        for range in [r, T(T(r)), i, b, v] {
+            let op = Any::skip(&range);
+            assert_eq!(op.dom(), base::mono![range].into());
+            assert_eq!(op.cod(), base::mono![range].into());
+        }
+        assert!(matches!(
+            Any::skip(&r),
+            Any::Real(real::NRA::Id(real::Id(2, 3)))
+        ));
+        assert!(matches!(
+            Any::skip(&T(T(r))),
+            Any::Real(real::NRA::TId(real::TId(2, 3, 2)))
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "Any has no skip on Zero")]
+    fn skip_panics_on_zero() {
+        let _ = Any::skip(&sort::Zero.into());
+    }
+
+    #[test]
+    fn logics_skip_on_their_sorts() {
+        let (r, i, b, v, _) = sorts();
+        assert!(matches!(
+            LRA::skip(&r),
+            LRA::Real(real::LRA::Id(real::Id(2, 3)))
+        ));
+        assert!(matches!(
+            LRA::skip(&T(r)),
+            LRA::Real(real::LRA::TId(real::TId(2, 3, 1)))
+        ));
+        assert!(matches!(
+            LRA::skip(&b),
+            LRA::Bool(bool::Prop::Id(bool::Id(2, 3)))
+        ));
+        assert!(matches!(
+            LIA::skip(&i),
+            LIA::Int(int::LIA::Id(int::Id(2, 3)))
+        ));
+        assert!(matches!(
+            Prop::skip(&b),
+            Prop::Bool(bool::Prop::Id(bool::Id(2, 3)))
+        ));
+        assert!(matches!(
+            BV::skip(&v),
+            BV::Word(word::BV::Id(word::Id(8, 2, 3)))
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "Prop has no skip on Real(2, 3)")]
+    fn logics_skip_panics_on_other_sorts() {
+        let _ = Prop::skip(&sort::Real::new([2, 3]).into());
+    }
+
+    #[test]
+    fn zero_writes_the_rate_of_change_of_each_sort() {
+        let (r, i, b, v, z) = sorts();
+        for s in [r, i, b, v, z] {
+            let op = Any::zero(&T(s));
+            assert_eq!(op.dom(), Poly::unit());
+            assert_eq!(op.cod(), base::mono![T(s)].into());
+        }
+        assert!(matches!(
+            Any::zero(&T(r)),
+            Any::Real(real::NRA::Zero(real::Zero(2, 3, 1)))
+        ));
+        assert!(matches!(
+            Any::zero(&T(i)),
+            Any::Bool(bool::Prop::Zero(bool::Zero))
+        ));
+    }
+
+    #[test]
+    fn zero_on_plain_reals_is_the_zero_matrix() {
+        let (r, ..) = sorts();
+        let op = Any::zero(&r);
+        assert!(matches!(
+            op,
+            Any::Real(real::NRA::Zero(real::Zero(2, 3, 0)))
+        ));
+        assert_eq!(op.cod(), base::mono![r].into());
+    }
+
+    #[test]
+    #[should_panic(expected = "Any has no zero on Int(2, 3)")]
+    fn zero_panics_on_discrete_sorts() {
+        let _ = Any::zero(&sort::Int::new([2, 3]).into());
+    }
+
+    #[test]
+    fn logics_zero_on_their_sorts() {
+        let (r, .., z) = sorts();
+        assert!(matches!(
+            LRA::zero(&T(r)),
+            LRA::Real(real::LRA::Zero(real::Zero(2, 3, 1)))
+        ));
+        assert!(matches!(LRA::zero(&z), LRA::Bool(bool::Prop::Zero(_))));
+        assert!(matches!(NIA::zero(&z), NIA::Bool(bool::Prop::Zero(_))));
+        assert!(matches!(LIA::zero(&z), LIA::Bool(bool::Prop::Zero(_))));
+        assert!(matches!(Prop::zero(&z), Prop::Bool(bool::Prop::Zero(_))));
+        assert!(matches!(BV::zero(&z), BV::Bool(bool::Prop::Zero(_))));
+    }
+
+    #[test]
+    #[should_panic(expected = "LIA has no zero on T^1(Real(2, 3))")]
+    fn logics_zero_panics_on_other_sorts() {
+        let _ = LIA::zero(&T(sort::Any::from(sort::Real::new([2, 3]))));
     }
 }

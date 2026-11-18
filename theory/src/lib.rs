@@ -9,16 +9,18 @@ pub mod tensor;
 pub use tensor::PyTensor;
 
 pub trait Combinatorial<S> {
-    // Returns the unary itype that chooses an element within the range
+    /// The operation `I → range` that chooses an arbitrary value of
+    /// `range`.
     fn havoc(range: &S) -> Self;
 }
 
 pub trait Sequential<S> {
-    // Returns the unary itype that copies a value within the range
+    /// The operation `range → range` that copies its value.
     fn skip(range: &S) -> Self;
 }
 
 pub trait Differential<S> {
-    // Returns the unary itype that indicates zero derivative
+    /// The operation `I → range` that writes the zero rate of change, where
+    /// `range` is the sort of the derivative wire, not of its variable.
     fn zero(range: &S) -> Self;
 }
