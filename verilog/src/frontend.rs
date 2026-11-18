@@ -61,7 +61,8 @@ written ([`ast::Written`], `plain`), only for messages. A simulator runs an
 `always @*` block for the first time when one of its signals changes,
 while an `always_comb` also runs at time 0; the translation does not
 depend on that (a combinational block computes its targets in every time
-step). (`sv-parser` rejects `@ *` with a space; `@*` and `@ (*)` work.)
+step), except that an `always @*` reading no signal never runs, so
+[`typing`](crate::typing) rejects it. (`sv-parser` rejects `@ *` with a space; `@*` and `@ (*)` work.)
 
 Attributes `(* … *)` are rejected, except `(* parallel_case *)` on a `case`
 statement (kept in [`ast::StmtKind::Case`]; sizing

@@ -563,7 +563,21 @@ fn rejected_plain_always() {
     let missing = "is read here but missing from the event list of the `always` at 2:3: a \
                    simulator runs the block only when a listed signal changes, synthesis \
                    ignores the list, so the two would disagree; add";
-    let cases: [(&str, usize, &str, &str); 19] = [
+    let cases: [(&str, usize, &str, &str); 21] = [
+        (
+            "  always @* y = 8'd5;\n  assign z = a;",
+            2,
+            "always",
+            "this combinational `always` reads no signal: a simulator runs an `always @*` \
+             block only when a signal it reads changes, so it never runs this one and its \
+             targets stay x; use `assign` or `always_comb`, which also run at time 0",
+        ),
+        (
+            "  always @(*) begin y = 8'd5; z = y; end",
+            2,
+            "always",
+            "this combinational `always` reads no signal",
+        ),
         (
             "  always @(a) y = a + b;\n  assign z = a;",
             2,

@@ -86,7 +86,10 @@ an event list without edges (`@(a or b)`) if the list names every signal
 the block reads apart from its own targets: a simulator runs the block only
 when a listed signal changes, while synthesis ignores the list, so a
 missing signal would make them disagree. A plain `always` with edge events
-is a clocked block with the rules of `always_ff`.
+is a clocked block with the rules of `always_ff`. An `always @*` must read
+a signal other than its own targets: a simulator never runs one that reads
+none (it runs the block only when a signal it reads changes), so its
+targets would stay x.
 
 Values are 2-state: an x is accepted only as a dead store, `y = 'x;` in an
 `always_comb` or `q <= 'x;` in an `always_ff` (a literal that is x in every
@@ -284,8 +287,10 @@ pub fn check(m: &Module) -> Result<Env> {
                     drive(&env, &mut driver, lhs, span, i)
                 })?;
                 drives_something(item)?;
-                if let Written::List(list) = written {
-                    event_list(&env, m, item, list)?;
+                match written {
+                    Written::List(list) => event_list(&env, m, item, list)?,
+                    Written::Star => star_reads(item)?,
+                    Written::Keyword => {}
                 }
                 definite(&env, item)?;
             }
@@ -1310,6 +1315,35 @@ fn event_list(env: &Env, m: &Module, item: &Item, list: &[(Name, Span)]) -> Resu
         ));
     }
     Ok(())
+}
+
+/// Checks that an `always @*` block reads a signal other than its own
+/// targets. A simulator runs such a block only when a signal it reads
+/// changes, and not at time 0, so a block reading none never runs and its
+/// targets stay x, while a combinational block computes them in every time
+/// step.
+fn star_reads(item: &Item) -> Result<()> {
+    let targets: BTreeSet<&str> = item
+        .targets()
+        .into_iter()
+        .map(|y| ast::array_of(y))
+        .collect();
+    if item
+        .reads()
+        .iter()
+        .any(|(x, _)| !targets.contains(ast::array_of(x)))
+    {
+        return Ok(());
+    }
+    Err(Error::new(
+        item.span(),
+        format!(
+            "this {} reads no signal: a simulator runs an `always @*` block only when a \
+             signal it reads changes, so it never runs this one and its targets stay x; use \
+             `assign` or `always_comb`, which also run at time 0",
+            item.block()
+        ),
+    ))
 }
 
 /// Checks the reset branch of a block with an asynchronous reset: only
