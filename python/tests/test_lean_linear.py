@@ -132,7 +132,7 @@ def test_bool_matrix_constant_is_interned_not_inlined():
         [Term(LIA.Id(), [X(flags)], [flags])],
     )
     lean = ModuleToLean4(module).to_lean_functional()
-    assert "Mat Bool 2 3" in lean, "the Bool matrix constant was not emitted"
+    assert "Matrix (Fin 2) (Fin 3) Bool" in lean, "the Bool matrix constant was not emitted"
 
 
 @pytest.mark.parametrize("shape, data", [

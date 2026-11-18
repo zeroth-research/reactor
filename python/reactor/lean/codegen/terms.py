@@ -95,9 +95,9 @@ def _argmax_expr(
 ) -> str:
     """Emit `argmax_1d` for 1-d input and `argmax` for generic 2-d input.
 
-    Both yield a single index in a `Mat _ 1 1` -- the column index for one
+    Both yield a single index in a 1×1 `Matrix` -- the column index for one
     row, the row-major flat index otherwise -- so the two agree wherever
-    they overlap. Wrap output as `Mat Int 1 _` to match the Python IR's Int
+    they overlap. Wrap output as an `Int` matrix to match the Python IR's Int
     output type."""
     check_argmax_output(output_shape)
     if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
@@ -113,7 +113,7 @@ def check_argmax_output(output_shape: "list[int] | None") -> None:
     """Reject an Argmax output wider than the single index we can emit.
 
     Argmax follows `torch.argmax`, which returns one row-major flat index,
-    so both Lean variants produce a `Mat _ 1 1`. The theory is looser -- it
+    so both Lean variants produce a 1×1 `Matrix`. The theory is looser -- it
     accepts any vector output (see the FIXME on `LIA::Argmax` in
     theory/src/lia.rs) -- and a wider wire would previously get that 1x1
     body ascribed to it, which does not elaborate. Fail here with the reason
@@ -134,16 +134,16 @@ def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
 
     In the scalar encoding a 1x1 wire is bound to a bare `Bool`/`Int`, but
     the matrix-form emitters apply their operands to `0 0`. Wrapping as
-    `Mat.mk fun _ _ => x` makes that reduce back to `x` and typecheck.
+    `Matrix.mk fun _ _ => x` makes that reduce back to `x` and typecheck.
     """
     lifted = dict(wire_expr)
     for w in term.read:
         if is_scalar_wire(w):
             # The ascription is load-bearing: `matVecAffine`'s batch
-            # dimension is not determined by `Mat.mk fun _ _ => x`, so an
+            # dimension is not determined by `Matrix.mk fun _ _ => x`, so an
             # un-ascribed lift leaves `n` unsolved ("don't know how to
             # synthesize implicit argument `n`").
-            ty = f"Mat {flat_element_type(w)} 1 1"
+            ty = f"Matrix (Fin 1) (Fin 1) {flat_element_type(w)}"
             lifted[w.id] = f"({mat_mk(wire_expr[w.id])} : {ty})"
     return lifted
 
@@ -269,7 +269,7 @@ def product_type_scalar(wires: list[Wire]) -> str:
 
 
 def _constant_expr_scalar(term, w: "Wire", constants: ConstantRegistry) -> str:
-    """Like constant_expr but returns bare scalar values (no Mat wrapper)."""
+    """Like constant_expr but returns bare scalar values (no matrix around them)."""
     if is_scalar_wire(w):
         # Element type (Bool/Int/Real) is taken from the wire's dtype.
         return tensor_to_lean_scalar(term.itype._0, w)
@@ -285,7 +285,7 @@ def argmax_scalar_name(elem_ty: str, n: int) -> str:
 
     The element type belongs in the name: variants are collected per
     `(elem_ty, n)`, so naming them by `n` alone made an Argmax over
-    `Mat Int 1 4` and one over `Mat Real 1 4` emit two definitions and two
+    a 1×4 `Int` matrix and one over a 1×4 `Real` one emit two definitions and two
     `_eq` theorems under one name.
     """
     return f"argmax1d_scalar_{elem_ty_slug(elem_ty)}_{n}"
@@ -342,8 +342,8 @@ def translate_terms_scalar(
                 )
                 expr = f"({mat_expr} 0 0)" if is_scalar_wire(write_wire) else mat_expr
         elif name == "Linear":
-            # `matVecAffine` consumes a `Mat t n batch` and yields a
-            # `Mat t out batch`, but a 1x1 wire is bound to a bare scalar
+            # `matVecAffine` consumes an `n × batch` matrix and yields
+            # an `out × batch` one, but a 1x1 wire is bound to a bare scalar
             # here and ascribed one. Lift the operand and take `0 0` off
             # the result, as the Argmax branch above does.
             expr = _linear_expr(term, _lift_scalar_reads(term, wire_expr))
@@ -369,7 +369,7 @@ def translate_terms_scalar(
             lifted = _lift_scalar_reads(term, wire_expr)
             input_exprs = [lifted[w.id] for w in term.read]
             expr = mat_emitter(term.itype)(input_exprs)
-            # A matrix form yields a `Mat`; a scalar write wire is ascribed
+            # A matrix form yields a `Matrix`; a scalar write wire is ascribed
             # the bare element type, so project it — the same step the
             # `Argmax` and `Linear` branches above already take. Without it
             # a 1x1 `Min`/`Max` emitted `let x : Int := matMax …`.

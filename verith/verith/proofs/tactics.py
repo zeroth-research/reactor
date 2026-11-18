@@ -58,11 +58,11 @@ from reactor.lean.lowering.elements import flat_layout
 # The lemmas `simp_mat` reduces matrix arithmetic with, after the
 # certificate's own definitions. The bridge's cascade uses the same set:
 # without it a `Linear` arrives as `matVecAffine 2 [[1, 0], [0, 1]] [0, 1]
-# (Mat.mk fun i j => match i, j with ...)` and no arithmetic prover can
+# (Matrix.mk fun i j => match i, j with ...)` and no arithmetic prover can
 # touch it.
 MAT_SIMP: tuple[str, ...] = (
-    "MatAdd_apply", "MatMul_apply", "MatZero_apply",
-    "mul_Mat_apply", "add_Mat_apply", "↓Mat.mk_apply", "Bool.or_eq_true",
+    "zero_Matrix_apply", "mul_Matrix_apply", "add_Matrix_apply",
+    "↓Matrix.mk_apply", "Bool.or_eq_true",
     "decide_eq_true_eq",
     "Fin.sum_univ_succ", "Fin.sum_univ_zero", "Fin.isValue", "Fin.sum_univ_one",
     "Fin.sum_univ_two", "Fin.sum_univ_three", "matVecAffine", "dotL",
@@ -628,7 +628,7 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
     # ── closers: cheapest first, and only what this state can use ──
     # `linarith` stays in every plan regardless of theory. It is cheap, and
     # gating it on Real cost two integer certificates that were closing on it
-    # — an integer goal that omega cannot phrase (a `Mat`-valued comparison
+    # — an integer goal that omega cannot phrase (a `Matrix`-valued comparison
     # simp left behind, say) is still ordinary linear arithmetic.
     closers: list[str] = []
     # `omega` first where it is in play, then `contradiction`. A branch whose

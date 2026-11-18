@@ -37,7 +37,7 @@ def _unpack_body(param: str, wires: "list[Wire]") -> str:
 
 
 def _pack_body(var: str, wires: "list[Wire]") -> str:
-    """Body of ``pack``: reconstruct each wire's Mat from flat scalar slots.
+    """Body of ``pack``: reconstruct each wire's matrix from flat scalar slots.
 
     The exact inverse of `_unpack_body`, and it has to be: `update_scalar_eq`
     and the `ScalarRel` bridges all rest on `pack (unpack x) = x`. Both walk
@@ -79,7 +79,7 @@ def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
 def _recon_lemma_lines(w) -> "list[str]":
     """Lemma: rebuilding a wire from its own elements gives the wire back.
 
-    `Scalar.update` reconstructs a `Mat` from the unpacked scalars whenever a
+    `Scalar.update` reconstructs a `Matrix` from the unpacked scalars whenever a
     term needs the whole matrix (`matVecAffine`, say). In `update_scalar_eq`
     that reconstruction sits inside the argument, so the two sides differ by
     exactly `pack (unpack ctrl)` vs `ctrl` and `simp` cannot close the gap
@@ -127,9 +127,9 @@ def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
         f"{noncomp}def {name} {params} : Int :=",
         *body,
         "",
-        f"@[simp] theorem {name}_eq (v : Mat {elem_ty} 1 {n}) :",
+        f"@[simp] theorem {name}_eq (v : Matrix (Fin 1) (Fin {n}) {elem_ty}) :",
         f"    {name} {eq_params} = (↑(argmax_1d v 0 0) : Int) := by",
-        f"  simp only [{name}, argmax_1d, ↓Mat.mk_apply, List.ofFn_succ, List.ofFn_zero]",
+        f"  simp only [{name}, argmax_1d, ↓Matrix.mk_apply, List.ofFn_succ, List.ofFn_zero]",
         f"  rfl",
         "",
     ]
@@ -287,15 +287,15 @@ def to_lean_scalar_equiv(
             f"  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
             f"  try (funext i j; simp [Fin.fin_one_eq_zero])",
             f"  try simp [Fin.fin_one_eq_zero]",
-            # The scalar side repacks a 1×1 wire as `Mat.mk fun _ _ => w 0 0`,
+            # The scalar side repacks a 1×1 wire as `Matrix.mk fun _ _ => w 0 0`,
             # and the matrix side hands `w` itself to an operator that
             # consumes the whole matrix (`matVecAffine ... w`). Neither
             # `fin_cases` nor `Fin.fin_one_eq_zero` touches the argument, so
-            # what is left is `op w 0 0 = op (Mat.mk fun _ _ => w 0 0) 0 0` --
+            # what is left is `op w 0 0 = op (Matrix.mk fun _ _ => w 0 0) 0 0` --
             # true, and closed only by rewriting the repacked wire back into
             # the wire. Over every goal: with two or more wires `Prod.ext`
             # leaves one per component, each with its own copy of the residue.
-            f"  all_goals try simp [← Mat_1_1_eq]",
+            f"  all_goals try simp [← Matrix_1_1_eq]",
         ]
 
     input_groups = [
