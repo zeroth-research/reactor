@@ -97,6 +97,41 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
     }
 }
 
+/// Extracts an operation of any theory from a Python object, trying each
+/// theory in turn through its own extraction: real, integer, boolean, and
+/// then bit-vector operations. The operations of each theory are distinct
+/// Python classes, so at most one theory accepts a given object.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::FromPyObject<'py> for Any<T>
+where
+    real::NRA<T>: pyo3::FromPyObject<'py>,
+    int::NIA<T>: pyo3::FromPyObject<'py>,
+    bool::Prop<T>: pyo3::FromPyObject<'py>,
+    word::BV<T>: pyo3::FromPyObject<'py>,
+{
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<real::NRA<T>>() {
+            return Ok(Any::Real(op));
+        }
+        if let Ok(op) = ob.extract::<int::NIA<T>>() {
+            return Ok(Any::Int(op));
+        }
+        if let Ok(op) = ob.extract::<bool::Prop<T>>() {
+            return Ok(Any::Bool(op));
+        }
+        if let Ok(op) = ob.extract::<word::BV<T>>() {
+            return Ok(Any::Word(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of real, integer, boolean or bit-vector \
+             arithmetic, got {}",
+            ob.get_type()
+        )))
+    }
+}
+
 impl<T> From<LRA<T>> for Any<T> {
     fn from(op: LRA<T>) -> Self {
         match op {
@@ -277,8 +312,7 @@ mod tests {
         assert_eq!(l.cod(), cod);
 
         let w = word(word::Const(Mat([1, 2]), 8));
-        let cod: Poly<sort::Any> =
-            base::mono![sort::Word::new_unchecked(8, [1, 2]).into()].into();
+        let cod: Poly<sort::Any> = base::mono![sort::Word::new_unchecked(8, [1, 2]).into()].into();
         assert_eq!(w.cod(), cod);
 
         // constants are linear
@@ -427,5 +461,105 @@ mod tests {
         let cod: Poly<sort::Any> = base::mono![sort::Bool::new([2, 3]).into()].into();
         assert_eq!(op.dom(), dom);
         assert_eq!(op.cod(), cod);
+    }
+}
+
+#[cfg(all(test, feature = "pyo3"))]
+mod py_tests {
+    use super::*;
+    use pyo3::prelude::*;
+
+    /// A tensor type with no Python form: the operations carrying it never
+    /// extract, so that only those carrying no data do.
+    #[derive(Clone, Debug)]
+    struct NoData;
+
+    fn no_data<T>(ob: &Bound<'_, PyAny>) -> PyResult<T> {
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "no tensor in {}",
+            ob.get_type()
+        )))
+    }
+
+    impl<'py> FromPyObject<'py> for real::Const<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for real::Linear<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for int::Const<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for int::Linear<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for bool::Const<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    impl<'py> FromPyObject<'py> for word::Const<NoData> {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            no_data(ob)
+        }
+    }
+
+    #[test]
+    fn any_extracts_the_operations_of_each_theory() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let real_add = Bound::new(py, real::Add(2, 3)).unwrap();
+            let op = real_add.extract::<Any<NoData>>().unwrap();
+            assert!(matches!(op, Any::Real(real::NRA::Add(real::Add(2, 3)))));
+
+            let int_add = Bound::new(py, int::Add(2, 3)).unwrap();
+            let op = int_add.extract::<Any<NoData>>().unwrap();
+            assert!(matches!(op, Any::Int(int::NIA::Add(int::Add(2, 3)))));
+
+            let and = Bound::new(py, bool::And(2, 3)).unwrap();
+            let op = and.extract::<Any<NoData>>().unwrap();
+            assert!(matches!(op, Any::Bool(bool::Prop::And(bool::And(2, 3)))));
+
+            let sdiv = Bound::new(py, word::signed::Div(8, 2, 3)).unwrap();
+            let op = sdiv.extract::<Any<NoData>>().unwrap();
+            assert!(matches!(
+                op,
+                Any::Word(word::BV::SDiv(word::signed::Div(8, 2, 3)))
+            ));
+
+            let not_an_operation = 42i64.into_pyobject(py).unwrap();
+            assert!(not_an_operation.extract::<Any<NoData>>().is_err());
+        });
+    }
+
+    #[test]
+    fn each_theory_extracts_its_own_operations_only() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let real_mul = Bound::new(py, real::Mul(2, 3)).unwrap();
+            assert!(real_mul.extract::<real::NRA<NoData>>().is_ok());
+            assert!(real_mul.extract::<int::NIA<NoData>>().is_err());
+
+            let int_mod = Bound::new(py, int::Mod(2, 3)).unwrap();
+            assert!(int_mod.extract::<int::NIA<NoData>>().is_ok());
+
+            // `Not` is a different class in propositional logic and in QF_BV
+            let not = Bound::new(py, bool::Not(2, 3)).unwrap();
+            assert!(not.extract::<bool::Prop<NoData>>().is_ok());
+            assert!(not.extract::<word::BV<NoData>>().is_err());
+        });
     }
 }

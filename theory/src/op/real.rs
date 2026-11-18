@@ -23,9 +23,9 @@ to matrices. As they write booleans, their boundary is in [`Sort`], the
 sorts of the theory, rather than in [`Real`].
 */
 
+use crate::Tensor;
 use crate::sort::{Bool, Real};
 use base::boundary::{Boundary, Poly};
-use crate::Tensor;
 use base::mono;
 use derive_more::From;
 use std::fmt;
@@ -43,15 +43,18 @@ pub struct Const<T>(pub T);
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Add(pub usize, pub usize);
 
 /// Pointwise subtraction `x - y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Sub(pub usize, pub usize);
 
 /// Pointwise multiplication `x ⊙ y` of `[m, n]` matrices: the Hadamard
 /// product, not the matrix product [`MatMul`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Mul(pub usize, pub usize);
 
 /// Pointwise division `x / y` of `[m, n]` matrices: the Hadamard division
@@ -59,6 +62,7 @@ pub struct Mul(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(/ x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Div(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
@@ -68,23 +72,28 @@ pub struct Linear<T>(pub T, pub T);
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct ReLU(pub usize, pub usize);
 
 /// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Min(pub usize, pub usize);
 
 /// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Max(pub usize, pub usize);
 
 /// Transposition `xᵀ` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Transpose(pub usize, pub usize);
 
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the sizes given as `MatMul(m, n, k)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct MatMul(pub usize, pub usize, pub usize);
 
 /// Pointwise comparison `x < y` of `[m, n]` matrices, writing an `[m, n]`
@@ -92,6 +101,7 @@ pub struct MatMul(pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `(< x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Lt(pub usize, pub usize);
 
 /// Pointwise comparison `x ≤ y` of `[m, n]` matrices, writing an `[m, n]`
@@ -99,6 +109,7 @@ pub struct Lt(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(<= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Le(pub usize, pub usize);
 
 /// Pointwise comparison `x > y` of `[m, n]` matrices, writing an `[m, n]`
@@ -106,6 +117,7 @@ pub struct Le(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(> x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Gt(pub usize, pub usize);
 
 /// Pointwise comparison `x ≥ y` of `[m, n]` matrices, writing an `[m, n]`
@@ -113,6 +125,7 @@ pub struct Gt(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(>= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Ge(pub usize, pub usize);
 
 /// Pointwise comparison `x = y` of `[m, n]` matrices, writing an `[m, n]`
@@ -120,6 +133,7 @@ pub struct Ge(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Eq(pub usize, pub usize);
 
 /// Pointwise comparison `x ≠ y` of `[m, n]` matrices, writing an `[m, n]`
@@ -127,6 +141,7 @@ pub struct Eq(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Ne(pub usize, pub usize);
 
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
@@ -531,6 +546,77 @@ impl fmt::Display for Eq {
 impl fmt::Display for Ne {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Ne")
+    }
+}
+
+/// Extracts an operation of real arithmetic from a Python object, trying
+/// each operation in turn: those carrying no data through their own
+/// classes, and [`Const`] and [`Linear`] through the extraction that the
+/// tensor type `T` provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::FromPyObject<'py> for NRA<T>
+where
+    Const<T>: pyo3::FromPyObject<'py>,
+    Linear<T>: pyo3::FromPyObject<'py>,
+{
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<Add>() {
+            return Ok(NRA::Add(op));
+        }
+        if let Ok(op) = ob.extract::<Sub>() {
+            return Ok(NRA::Sub(op));
+        }
+        if let Ok(op) = ob.extract::<Mul>() {
+            return Ok(NRA::Mul(op));
+        }
+        if let Ok(op) = ob.extract::<Div>() {
+            return Ok(NRA::Div(op));
+        }
+        if let Ok(op) = ob.extract::<ReLU>() {
+            return Ok(NRA::ReLU(op));
+        }
+        if let Ok(op) = ob.extract::<Min>() {
+            return Ok(NRA::Min(op));
+        }
+        if let Ok(op) = ob.extract::<Max>() {
+            return Ok(NRA::Max(op));
+        }
+        if let Ok(op) = ob.extract::<Transpose>() {
+            return Ok(NRA::Transpose(op));
+        }
+        if let Ok(op) = ob.extract::<MatMul>() {
+            return Ok(NRA::MatMul(op));
+        }
+        if let Ok(op) = ob.extract::<Lt>() {
+            return Ok(NRA::Lt(op));
+        }
+        if let Ok(op) = ob.extract::<Le>() {
+            return Ok(NRA::Le(op));
+        }
+        if let Ok(op) = ob.extract::<Gt>() {
+            return Ok(NRA::Gt(op));
+        }
+        if let Ok(op) = ob.extract::<Ge>() {
+            return Ok(NRA::Ge(op));
+        }
+        if let Ok(op) = ob.extract::<Eq>() {
+            return Ok(NRA::Eq(op));
+        }
+        if let Ok(op) = ob.extract::<Ne>() {
+            return Ok(NRA::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<Const<T>>() {
+            return Ok(NRA::Const(op));
+        }
+        if let Ok(op) = ob.extract::<Linear<T>>() {
+            return Ok(NRA::Linear(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of real arithmetic, got {}",
+            ob.get_type()
+        )))
     }
 }
 

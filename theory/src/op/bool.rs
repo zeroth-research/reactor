@@ -11,9 +11,9 @@ information to compute its [`Boundary`]:
 - [`Not`] — pointwise negation.
 */
 
+use crate::Tensor;
 use crate::sort::Bool;
 use base::boundary::{Boundary, Poly};
-use crate::Tensor;
 use base::mono;
 use derive_more::From;
 use std::fmt;
@@ -24,18 +24,22 @@ pub struct Const<T>(pub T);
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct And(pub usize, pub usize);
 
 /// Pointwise disjunction `x ∨ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Or(pub usize, pub usize);
 
 /// Pointwise exclusive disjunction `x ⊕ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Xor(pub usize, pub usize);
 
 /// Pointwise negation `¬x` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Not(pub usize, pub usize);
 
 /// The operations of propositional logic, the boolean operations of
@@ -148,6 +152,40 @@ impl fmt::Display for Xor {
 impl fmt::Display for Not {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Not")
+    }
+}
+
+/// Extracts an operation of propositional logic from a Python object,
+/// trying each operation in turn: those carrying no data through their own
+/// classes, and [`Const`] through the extraction that the tensor type `T`
+/// provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::FromPyObject<'py> for Prop<T>
+where
+    Const<T>: pyo3::FromPyObject<'py>,
+{
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<And>() {
+            return Ok(Prop::And(op));
+        }
+        if let Ok(op) = ob.extract::<Or>() {
+            return Ok(Prop::Or(op));
+        }
+        if let Ok(op) = ob.extract::<Xor>() {
+            return Ok(Prop::Xor(op));
+        }
+        if let Ok(op) = ob.extract::<Not>() {
+            return Ok(Prop::Not(op));
+        }
+        if let Ok(op) = ob.extract::<Const<T>>() {
+            return Ok(Prop::Const(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of propositional logic, got {}",
+            ob.get_type()
+        )))
     }
 }
 

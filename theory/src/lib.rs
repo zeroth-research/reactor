@@ -5,6 +5,8 @@ pub mod lra;
 pub mod op;
 pub mod sort;
 pub mod tensor;
+#[cfg(feature = "torch")]
+pub mod torch;
 
 pub use tensor::{PyTensor, Tensor};
 

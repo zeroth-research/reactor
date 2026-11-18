@@ -45,9 +45,9 @@ theory FixedSizeBitVectors or are defined by the logic QF_BV. The
 comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
 */
 
+use crate::Tensor;
 use crate::sort::{Bool, Word};
 use base::boundary::{Boundary, Poly};
-use crate::Tensor;
 use base::mono;
 use derive_more::From;
 use std::fmt;
@@ -72,6 +72,7 @@ pub struct Const<T>(pub T, pub usize);
 ///
 /// SMT-LIB2: `(concat x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Concat(pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise extraction of the bits `i` down to `j`, both included, from
@@ -80,6 +81,7 @@ pub struct Concat(pub usize, pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `((_ extract i j) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Extract(pub usize, pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise concatenation of `i ≥ 1` copies of `w`-bit words, as
@@ -87,42 +89,49 @@ pub struct Extract(pub usize, pub usize, pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `((_ repeat i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Repeat(pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise negation `!x`, as `Not(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvnot x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Not(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise conjunction `x & y`, as `And(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct And(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise disjunction `x | y`, as `Or(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Or(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise exclusive disjunction `x ^ y`, as `Xor(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvxor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Xor(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise negated conjunction `!(x & y)`, as `Nand(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvnand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Nand(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise negated disjunction `!(x | y)`, as `Nor(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Nor(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise negated exclusive disjunction `!(x ^ y)`, as
@@ -130,6 +139,7 @@ pub struct Nor(pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `(bvxnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Xnor(pub usize, pub usize, pub usize);
 
 /// Pointwise two's-complement negation `-x`, modulo `2^w`, as
@@ -137,30 +147,35 @@ pub struct Xnor(pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `(bvneg x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Neg(pub usize, pub usize, pub usize);
 
 /// Pointwise addition `x + y`, modulo `2^w`, as `Add(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvadd x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Add(pub usize, pub usize, pub usize);
 
 /// Pointwise subtraction `x - y`, modulo `2^w`, as `Sub(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvsub x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Sub(pub usize, pub usize, pub usize);
 
 /// Pointwise multiplication `x * y`, modulo `2^w`, as `Mul(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvmul x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Mul(pub usize, pub usize, pub usize);
 
 /// Pointwise left shift `x << y`, filling with zeros, as `Shl(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvshl x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Shl(pub usize, pub usize, pub usize);
 
 /// Pointwise rotation left by a constant `i` bits, as
@@ -168,6 +183,7 @@ pub struct Shl(pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `((_ rotate_left i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct RotateLeft(pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise rotation right by a constant `i` bits, as
@@ -175,18 +191,21 @@ pub struct RotateLeft(pub usize, pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `((_ rotate_right i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct RotateRight(pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise equality `x = y` of `w`-bit words, as `Eq(w, m, n)`.
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Eq(pub usize, pub usize, pub usize);
 
 /// Pointwise disequality `x ≠ y` of `w`-bit words, as `Ne(w, m, n)`.
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Ne(pub usize, pub usize, pub usize);
 
 /// The operations of the theory of fixed-size bit-vectors, SMT-LIB2's
@@ -660,6 +679,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsdiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SDiv"))]
     pub struct Div(pub usize, pub usize, pub usize);
 
     /// Pointwise remainder `x % y`, with the sign of `x`, as `Rem(w, m, n)`;
@@ -667,6 +687,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsrem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SRem"))]
     pub struct Rem(pub usize, pub usize, pub usize);
 
     /// Pointwise modulo `x mod y`, with the sign of `y`, as `Mod(w, m, n)`;
@@ -674,6 +695,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsmod x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SMod"))]
     pub struct Mod(pub usize, pub usize, pub usize);
 
     /// Pointwise arithmetic right shift `x >> y`, filling with the sign bit,
@@ -681,6 +703,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvashr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "AShr"))]
     pub struct Shr(pub usize, pub usize, pub usize);
 
     /// Pointwise extension of `w`-bit words by `i` copies of the sign bit,
@@ -688,30 +711,35 @@ pub mod signed {
     ///
     /// SMT-LIB2: `((_ sign_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SignExtend"))]
     pub struct Extend(pub usize, pub usize, pub usize, pub usize);
 
     /// Pointwise signed comparison `x < y`, as `Lt(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvslt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SLt"))]
     pub struct Lt(pub usize, pub usize, pub usize);
 
     /// Pointwise signed comparison `x ≤ y`, as `Le(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvsle x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SLe"))]
     pub struct Le(pub usize, pub usize, pub usize);
 
     /// Pointwise signed comparison `x > y`, as `Gt(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvsgt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SGt"))]
     pub struct Gt(pub usize, pub usize, pub usize);
 
     /// Pointwise signed comparison `x ≥ y`, as `Ge(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvsge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SGe"))]
     pub struct Ge(pub usize, pub usize, pub usize);
 
     impl Boundary<Sort> for Div {
@@ -873,12 +901,14 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvudiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "UDiv"))]
     pub struct Div(pub usize, pub usize, pub usize);
 
     /// Pointwise remainder `x % y`, as `Rem(w, m, n)`; `x % 0 = x`.
     ///
     /// SMT-LIB2: `(bvurem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "URem"))]
     pub struct Rem(pub usize, pub usize, pub usize);
 
     /// Pointwise logical right shift `x >> y`, filling with zeros, as
@@ -886,6 +916,7 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvlshr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "LShr"))]
     pub struct Shr(pub usize, pub usize, pub usize);
 
     /// Pointwise extension of `w`-bit words by `i` zero bits, as
@@ -893,30 +924,35 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `((_ zero_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "ZeroExtend"))]
     pub struct Extend(pub usize, pub usize, pub usize, pub usize);
 
     /// Pointwise unsigned comparison `x < y`, as `Lt(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvult x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "ULt"))]
     pub struct Lt(pub usize, pub usize, pub usize);
 
     /// Pointwise unsigned comparison `x ≤ y`, as `Le(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvule x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "ULe"))]
     pub struct Le(pub usize, pub usize, pub usize);
 
     /// Pointwise unsigned comparison `x > y`, as `Gt(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvugt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "UGt"))]
     pub struct Gt(pub usize, pub usize, pub usize);
 
     /// Pointwise unsigned comparison `x ≥ y`, as `Ge(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvuge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "UGe"))]
     pub struct Ge(pub usize, pub usize, pub usize);
 
     impl Boundary<Sort> for Div {
@@ -1045,6 +1081,136 @@ pub mod unsigned {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "UGe")
         }
+    }
+}
+
+/// Extracts an operation of fixed-size bit-vectors from a Python object,
+/// trying each operation in turn: those carrying no data through their own
+/// classes, and [`Const`] through the extraction that the tensor type `T`
+/// provides.
+#[cfg(feature = "pyo3")]
+impl<'py, T> pyo3::FromPyObject<'py> for BV<T>
+where
+    Const<T>: pyo3::FromPyObject<'py>,
+{
+    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<Concat>() {
+            return Ok(BV::Concat(op));
+        }
+        if let Ok(op) = ob.extract::<Extract>() {
+            return Ok(BV::Extract(op));
+        }
+        if let Ok(op) = ob.extract::<Repeat>() {
+            return Ok(BV::Repeat(op));
+        }
+        if let Ok(op) = ob.extract::<Not>() {
+            return Ok(BV::Not(op));
+        }
+        if let Ok(op) = ob.extract::<And>() {
+            return Ok(BV::And(op));
+        }
+        if let Ok(op) = ob.extract::<Or>() {
+            return Ok(BV::Or(op));
+        }
+        if let Ok(op) = ob.extract::<Xor>() {
+            return Ok(BV::Xor(op));
+        }
+        if let Ok(op) = ob.extract::<Nand>() {
+            return Ok(BV::Nand(op));
+        }
+        if let Ok(op) = ob.extract::<Nor>() {
+            return Ok(BV::Nor(op));
+        }
+        if let Ok(op) = ob.extract::<Xnor>() {
+            return Ok(BV::Xnor(op));
+        }
+        if let Ok(op) = ob.extract::<Neg>() {
+            return Ok(BV::Neg(op));
+        }
+        if let Ok(op) = ob.extract::<Add>() {
+            return Ok(BV::Add(op));
+        }
+        if let Ok(op) = ob.extract::<Sub>() {
+            return Ok(BV::Sub(op));
+        }
+        if let Ok(op) = ob.extract::<Mul>() {
+            return Ok(BV::Mul(op));
+        }
+        if let Ok(op) = ob.extract::<Shl>() {
+            return Ok(BV::Shl(op));
+        }
+        if let Ok(op) = ob.extract::<RotateLeft>() {
+            return Ok(BV::RotateLeft(op));
+        }
+        if let Ok(op) = ob.extract::<RotateRight>() {
+            return Ok(BV::RotateRight(op));
+        }
+        if let Ok(op) = ob.extract::<Eq>() {
+            return Ok(BV::Eq(op));
+        }
+        if let Ok(op) = ob.extract::<Ne>() {
+            return Ok(BV::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Div>() {
+            return Ok(BV::SDiv(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Rem>() {
+            return Ok(BV::SRem(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Mod>() {
+            return Ok(BV::SMod(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Shr>() {
+            return Ok(BV::AShr(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Extend>() {
+            return Ok(BV::SignExtend(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Lt>() {
+            return Ok(BV::SLt(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Le>() {
+            return Ok(BV::SLe(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Gt>() {
+            return Ok(BV::SGt(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Ge>() {
+            return Ok(BV::SGe(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Div>() {
+            return Ok(BV::UDiv(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Rem>() {
+            return Ok(BV::URem(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Shr>() {
+            return Ok(BV::LShr(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Extend>() {
+            return Ok(BV::ZeroExtend(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Lt>() {
+            return Ok(BV::ULt(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Le>() {
+            return Ok(BV::ULe(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Gt>() {
+            return Ok(BV::UGt(op));
+        }
+        if let Ok(op) = ob.extract::<unsigned::Ge>() {
+            return Ok(BV::UGe(op));
+        }
+        if let Ok(op) = ob.extract::<Const<T>>() {
+            return Ok(BV::Const(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of fixed-size bit-vectors, got {}",
+            ob.get_type()
+        )))
     }
 }
 
