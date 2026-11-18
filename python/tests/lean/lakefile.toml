@@ -41,4 +41,4 @@
  # `Relational.*`, from the reactor-lean checkout beside this repository.
  [[require]]
  name = "Relational"
- path = "../../../../reactor-lean/Relational"
+ path = "../../../../ReactLib/Relational"
