@@ -2897,3 +2897,84 @@ fn planted_bugs() {
         "mutants found equivalent (left), listed (right)"
     );
 }
+
+/// Yosys reads the same text as we do. It runs in an empty directory, so
+/// files of `$readmemb`/`$readmemh` are found next to the source file only,
+/// as by us, not in the caller's directory (here one with other `rom.hex`
+/// and `rom.bin`). A design whose text depends on the macro `YOSYS`, which
+/// Yosys always defines and we do not, is not compared; a mention of
+/// `YOSYS` that does not change the text is no obstacle.
+#[test]
+fn yosys_reads_the_text_we_read() {
+    let Some(_) = tools() else { return };
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("yosys-text");
+    let (design, cwd) = (root.join("design"), root.join("cwd"));
+    for d in [&design, &cwd] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
+    for f in ["rom.sv", "rom.bin", "rom.hex"] {
+        std::fs::copy(examples.join(f), design.join(f)).unwrap();
+    }
+    std::fs::write(cwd.join("rom.hex"), "ff ff ff ff\n").unwrap();
+    std::fs::write(cwd.join("rom.bin"), "11111\n".repeat(8)).unwrap();
+    let v2rm = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_v2rm"))
+            .args(args)
+            .current_dir(&cwd)
+            .output()
+            .unwrap();
+        let text = |b: Vec<u8>| String::from_utf8(b).unwrap();
+        (
+            out.status.code().unwrap(),
+            text(out.stdout),
+            text(out.stderr),
+        )
+    };
+    let rom = design.join("rom.sv");
+    for path in [rom.to_str().unwrap(), "../design/rom.sv"] {
+        let (code, stdout, stderr) = v2rm(&["--yosys", path]);
+        assert!(
+            code == 0 && stdout.contains("queries equal"),
+            "{path}: {stdout}{stderr}"
+        );
+    }
+    let macro_design = |name: &str, body: &str| {
+        let path = design.join(name);
+        std::fs::write(
+            &path,
+            format!(
+                "module m(input logic [3:0] a, input logic [3:0] b, output logic [3:0] y);\n\
+                 {body}\nendmodule\n"
+            ),
+        )
+        .unwrap();
+        path.to_str().unwrap().to_string()
+    };
+    let tests = [
+        "`ifdef YOSYS\n assign y = a - b;\n`else\n assign y = a + b;\n`endif",
+        "`ifndef YOSYS\n assign y = a + b;\n`endif",
+        "`ifdef X\n`elsif YOSYS\n assign y = a - b;\n`else\n assign y = a + b;\n`endif",
+    ];
+    for (k, body) in tests.iter().enumerate() {
+        let path = macro_design(&format!("tests{k}.sv"), body);
+        let (code, _, _) = v2rm(&[&path]);
+        assert_eq!(code, 0, "{body}");
+        let (code, stdout, stderr) = v2rm(&["--yosys", &path]);
+        assert!(
+            code == 2 && stderr.contains("`YOSYS`") && stdout.is_empty(),
+            "{body}: {stdout}{stderr}"
+        );
+    }
+    // only a comment, or a branch that is not read either way
+    let path = macro_design(
+        "mentions.sv",
+        "// under Yosys (`ifdef YOSYS) nothing changes\n\
+         `ifdef NEVER\n`ifdef YOSYS\n`endif\n`endif\n assign y = a + b;",
+    );
+    let (code, stdout, stderr) = v2rm(&["--yosys", &path]);
+    assert!(
+        code == 0 && stdout.contains("queries equal"),
+        "{stdout}{stderr}"
+    );
+}

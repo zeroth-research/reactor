@@ -47,7 +47,9 @@ as `assign y = e;`.
 The macro `SYNTHESIS` is predefined (as `1`), as Yosys does, since we
 translate what synthesis builds: code under `` `ifdef SYNTHESIS `` is read
 and code under `` `ifndef SYNTHESIS `` (often simulation-only debug code) is
-not. (Simulators such as iverilog do not define it.)
+not. (Simulators such as iverilog do not define it.) `YOSYS`, which Yosys
+also defines, is not: Yosys-specific code under `` `ifdef YOSYS `` is not
+read. [`depends_on_macro`] tells whether a design depends on a macro.
 
 Verilog spellings: `reg` is the same 2-state vector as `logic` and `bit`
 (in the standard `reg` and `logic` are one 4-state type). A plain `always`
@@ -142,6 +144,11 @@ pub fn parse_design_file(path: impl AsRef<Path>) -> Result<Design> {
 /// as for Yosys and iverilog). Errors are located with [`Design::locate`];
 /// those of this function already carry their file.
 pub fn parse_design_files<P: AsRef<Path>>(paths: &[P]) -> Result<Design> {
+    parse_sources(read_sources(paths)?)
+}
+
+/// The contents of the files, each with its path.
+fn read_sources<P: AsRef<Path>>(paths: &[P]) -> Result<Vec<(String, PathBuf)>> {
     let mut sources = Vec::new();
     for path in paths {
         let path = path.as_ref();
@@ -150,7 +157,66 @@ pub fn parse_design_files<P: AsRef<Path>>(paths: &[P]) -> Result<Design> {
         })?;
         sources.push((source, path.to_path_buf()));
     }
-    parse_sources(sources)
+    Ok(sources)
+}
+
+/// Whether the text the files preprocess to (as one design, see
+/// [`parse_design_files`]) changes when the macro `name` is predefined (as
+/// `1`) besides `SYNTHESIS`: whether the design tests it, or uses it.
+/// A mention in a comment, or in a branch of a conditional that is not read
+/// either way, changes nothing. Yosys defines `YOSYS` in every file it
+/// reads, so it reads another text than we do exactly if this holds for
+/// `YOSYS`. A design that fails to preprocess with `name` defined (but not
+/// without it) depends on it too.
+pub fn depends_on_macro<P: AsRef<Path>>(paths: &[P], name: &str) -> Result<bool> {
+    let sources = read_sources(paths)?;
+    let first = sources
+        .first()
+        .ok_or_else(|| Error::new(Span::default(), "no source file"))?
+        .1
+        .clone();
+    let (text, _) = join_sources(sources);
+    let includes: [PathBuf; 0] = [];
+    let preprocess = |defines: &HashMap<String, Option<sv::Define>>| {
+        sv::preprocess_str(&text, &first, defines, &includes, false, false, 0, 0)
+            .map(|(t, _)| t.text().to_string())
+    };
+    let mut defines = predefined();
+    let ours = preprocess(&defines).map_err(|e| Error::new(Span::default(), e.to_string()))?;
+    defines.insert(name.to_string(), Some(define(name, "1")));
+    Ok(preprocess(&defines).map_or(true, |theirs| theirs != ours))
+}
+
+/// A macro `name` without arguments, defined as `value`.
+fn define(name: &str, value: &str) -> sv::Define {
+    sv::Define::new(
+        name.to_string(),
+        vec![],
+        Some(sv::DefineText::new(value.to_string(), None)),
+    )
+}
+
+/// The predefined macros: `SYNTHESIS` (as `1`), as by Yosys, since the
+/// translation follows what synthesis reads.
+fn predefined() -> HashMap<String, Option<sv::Define>> {
+    HashMap::from([("SYNTHESIS".to_string(), Some(define("SYNTHESIS", "1")))])
+}
+
+/// The sources as one text, each followed by a line break if it does not
+/// end with one, and the files with the line at which each starts.
+fn join_sources(sources: Vec<(String, PathBuf)>) -> (String, Vec<SourceFile>) {
+    let mut text = String::new();
+    let mut files = Vec::new();
+    for (source, path) in sources {
+        let line = text.matches('\n').count() + 1;
+        let dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
+        files.push(SourceFile { path, dir, line });
+        text.push_str(&source);
+        if !source.ends_with('\n') {
+            text.push('\n');
+        }
+    }
+    (text, files)
 }
 
 /// Parses `source`; `path` is used for messages of the preprocessor and to
@@ -165,27 +231,9 @@ fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
         return Err(Error::new(Span::default(), "no source file"));
     };
     let first = first.clone();
-    // `SYNTHESIS` is predefined (as `1`), as by Yosys: the translation
-    // follows what synthesis reads
-    let synthesis = sv::Define::new(
-        "SYNTHESIS".to_string(),
-        vec![],
-        Some(sv::DefineText::new("1".to_string(), None)),
-    );
-    let defines: HashMap<String, Option<sv::Define>> =
-        HashMap::from([("SYNTHESIS".to_string(), Some(synthesis))]);
+    let defines = predefined();
     let includes: [PathBuf; 0] = [];
-    let mut text = String::new();
-    let mut files = Vec::new();
-    for (source, path) in sources {
-        let line = text.matches('\n').count() + 1;
-        let dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
-        files.push(SourceFile { path, dir, line });
-        text.push_str(&source);
-        if !source.ends_with('\n') {
-            text.push('\n');
-        }
-    }
+    let (text, files) = join_sources(sources);
     let mut lines = vec![0];
     lines.extend(text.match_indices('\n').map(|(i, _)| i + 1));
     let several = files.len() > 1;
