@@ -36,7 +36,7 @@ which has no `>`, `>=` and no logical operators:
 | `N'(e)` | `SExt`/`ZExt` (as `e`'s signedness says) when widening, `Extract` when narrowing |
 | an implicit resize (from sizing) | `SExt`/`ZExt` as the type it resizes to says, `Extract` when narrowing |
 | `y = 'x;`, `q <= 'x;` (overwritten on every path, checked by typing) | nothing |
-| `q = e;` in an `always_ff` (its value never read later in the block, checked by typing) | as `q <= e;` |
+| `q = e;` in an `always_ff` (its value never read later in the block, nor by another block at the same clock edge, checked by typing) | as `q <= e;` |
 | `(* parallel_case *) case …` (distinct constant labels, checked by sizing) | as without the attribute |
 
 A read with a variable index may select bits outside its signal; they read
