@@ -56,6 +56,11 @@ wires for clocks derived from registers), sampled at every step of an
 implicit global clock, so that one transition is one time step, as one of
 our rounds is (see below).
 
+`write_smt2` has no x: it encodes an x bit as 0, such as the value of an
+out-of-range read. That is why Yosys agrees with us on out-of-range reads with
+a variable index, which read 0 in our semantics; it is no independent check
+of that rule.
+
 ## The output
 
 [`Smt2::text`] is the script Yosys writes (its `write_smt2` help describes

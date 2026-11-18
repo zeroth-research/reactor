@@ -7,7 +7,7 @@ resets of each module. The widths and signedness of expressions are left
 to [`sizing`](crate::sizing), which makes every implicit resize of
 IEEE 1800 explicit.
 
-Its result is in the *explicit-width fragment*, which [`explicit`] checks
+Sizing's result is in the *explicit-width fragment*, which [`explicit`] checks
 and which lowering translates. The typing rules of the fragment are one
 function per expression form ([`unary`], [`binary`], [`cond`]), called
 again by lowering while it builds terms. They accept only expressions in
@@ -97,8 +97,8 @@ may resolve to any value; that is not modelled.)
 */
 
 use crate::ast::{
-    self, BinOp, Cast, Dir, Elem, Elems, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind,
-    Module, Name, Select, Span, Stmt, StmtKind, Ty, UnOp, Written,
+    self, BinOp, Cast, Dir, Edge, Elem, Elems, Error, Expr, ExprKind, Index, Item, Lvalue,
+    LvalueKind, Module, Name, Select, Span, Stmt, StmtKind, Ty, UnOp, Written,
 };
 use crate::elab::{self, Inst};
 use std::collections::{BTreeMap, BTreeSet};
@@ -288,13 +288,15 @@ pub fn check(m: &Module) -> Result<Env> {
                 definite(&env, item)?;
             }
             Item::Instance(inst) => {
+                // the signals the outputs of this instance drive so far
+                let mut outputs: BTreeMap<&Name, Span> = BTreeMap::new();
                 for c in &inst.conns {
                     let f = c.formal.ok_or_else(|| {
                         Error::new(c.span, "internal error: instance not elaborated")
                     })?;
                     let port = format!("port `{}` of `{}`", c.port, inst.name);
                     match (&c.actual, f.dir) {
-                        (Some(e), _) if f.clock => match &e.kind {
+                        (Some(e), Dir::Input) if f.clock => match &e.kind {
                             ExprKind::Var(x) => clocks.push((x, e.span)),
                             _ => {
                                 return Err(Error::new(
@@ -315,7 +317,21 @@ pub fn check(m: &Module) -> Result<Env> {
                                     ),
                                 ));
                             };
+                            // `drive` lets one item assign a signal several
+                            // times (as a block may); two outputs of one
+                            // instance are two drivers
+                            if let Some(prev) = outputs.insert(y, e.span) {
+                                return Err(Error::new(
+                                    e.span,
+                                    format!("`{y}` already driven at {prev}"),
+                                ));
+                            }
                             let t = drive(&env, &mut driver, y, e.span, i)?;
+                            // an output the child also uses as a clock is a
+                            // clock here too (a derived one)
+                            if f.clock {
+                                clocks.push((y, e.span));
+                            }
                             // a blackbox output acts like an input of the
                             // module, so no output of it
                             if f.blackbox && env[y].dir == Some(Dir::Output) {
@@ -541,6 +557,17 @@ enum Source<'m> {
 /// with a change of the value, which crossings do not have yet. Signals
 /// are compared by name (see [`Inst::naming`]), so a port connected to a
 /// signal is that signal.
+///
+/// A register on the chain of a derived clock may have an asynchronous
+/// reset from another domain (an input, or a register on another input
+/// clock). Asserting it sets the register at a time unrelated to the root,
+/// which is an edge of the derived clock: a falling one for reset value 0,
+/// a rising one for 1 (either, if the value is not a plain constant). A
+/// block that such an edge moves, directly or through further registers on
+/// the chain, may then read only signals that depend on no register, or
+/// only on registers on the same edge of the same clock: anything else
+/// would be sampled at a time unrelated to its changes. Blocks on the
+/// other edge never run at a reset, so the rule above suffices for them.
 pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
     let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
     // the instances with their paths, each instance before its children
@@ -767,14 +794,174 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
             }
         }
     }
+    // the edges every signal depends on through combinational logic: the
+    // clock and edge of each register, by name, like `dom`
+    let mut edges: BTreeMap<Name, BTreeSet<(Name, bool)>> = BTreeMap::new();
+    for (k, (i, _)) in insts.iter().enumerate() {
+        for item in &i.module.items {
+            if let Item::AlwaysFf { clock, edge, .. } = item {
+                for q in item.targets() {
+                    let e = (canon(k, clock), *edge == Edge::Pos);
+                    edges.insert(canon(k, q), BTreeSet::from([e]));
+                }
+            }
+        }
+    }
+    loop {
+        let mut changed = false;
+        for (y, x) in &comb {
+            let add = edges.get(x).cloned().unwrap_or_default();
+            let d = edges.entry(y.clone()).or_default();
+            let before = d.len();
+            d.extend(add);
+            changed |= d.len() != before;
+        }
+        if !changed {
+            break;
+        }
+    }
+    // edges made by asynchronous resets: an asynchronous reset from another
+    // domain sets a register at a time unrelated to its clock, which is an
+    // edge of a clock derived from the register. A block on such an edge
+    // may read only signals that depend on no register, or only on
+    // registers on the same edge of the same clock (they change together).
+    for (k, (i, prefix)) in insts.iter().enumerate() {
+        for item in &i.module.items {
+            let Item::AlwaysFf { clock, edge, .. } = item else {
+                continue;
+            };
+            let c = canon(k, clock);
+            let r = &roots[&c];
+            let Some(made) = reset_edge(&insts, &drivers, &dom, &canon, &root, &c, *edge, r)?
+            else {
+                continue;
+            };
+            let own = BTreeSet::from([(c.clone(), *edge == Edge::Pos)]);
+            for (x, span) in item.reads() {
+                let Some(e) = edges.get(&canon(k, x)) else {
+                    continue;
+                };
+                if e.is_empty() || *e == own {
+                    continue;
+                }
+                let q = item.targets()[0];
+                let msg = format!(
+                    "`{q}` (clocked by {}) reads `{x}`, which depends on registers on other \
+                     clocks or edges, but {made} at a time unrelated to `{r}`: crossings \
+                     between unrelated clocks are not supported yet",
+                    clocked(&c)
+                );
+                return Err(elab::context(Error::new(span, msg), prefix));
+            }
+        }
+    }
     Ok(roots.into_values().collect())
+}
+
+/// Whether an edge `edge` of the clock `c` (by name) can be made by an
+/// asynchronous reset from a domain other than `r`, the root of `c`: a
+/// description of that reset if so. Follows the chain of `c` as `root`
+/// does, with the edge of the current signal that moves the block and the
+/// bit of the next register that the current signal is (a bit select): a
+/// reset to 0 makes a falling edge, a reset to 1 a rising one, and a reset
+/// value that is not a plain constant is taken to make either. Past a
+/// register, any edge of its clock that it runs at moves it.
+#[allow(clippy::too_many_arguments)]
+fn reset_edge(
+    insts: &[(&Inst, String)],
+    drivers: &BTreeMap<Name, (usize, Name, Source<'_>)>,
+    dom: &BTreeMap<Name, BTreeSet<Name>>,
+    canon: &dyn Fn(usize, &str) -> Name,
+    root: &dyn Fn(usize, &Name, Span, bool) -> Result<Name>,
+    c: &Name,
+    edge: Edge,
+    r: &Name,
+) -> Result<Option<String>> {
+    let (mut x, mut want, mut bit) = (c.clone(), edge, None);
+    while let Some((d, path, source)) = drivers.get(&x) {
+        let next = match source {
+            Source::Item(Item::AlwaysFf {
+                clock,
+                edge,
+                reset,
+                body,
+                ..
+            }) => {
+                let local = &path[insts[*d].1.len()..];
+                let value = body.reset_values().into_iter().find(|(q, _)| *q == local);
+                if let (Some(rst), Some((_, v))) = (reset, value) {
+                    // the domain of the reset: the root of its register's
+                    // clock, or the input itself
+                    let end = root(*d, &rst.name, rst.span, true)?;
+                    let same = match dom.get(&end) {
+                        Some(roots) => roots.contains(r),
+                        None => end == *r,
+                    };
+                    let b = reset_bit(v, bit);
+                    if !same && b.is_none_or(|b| b == (want == Edge::Pos)) {
+                        let of = match bit {
+                            Some(b) => format!("bit {b} of it"),
+                            None => "it".to_string(),
+                        };
+                        let what = match (b, want) {
+                            (Some(b), Edge::Pos) => {
+                                format!("sets {of} to {}, a rising edge", u8::from(b))
+                            }
+                            (Some(b), Edge::Neg) => {
+                                format!("sets {of} to {}, a falling edge", u8::from(b))
+                            }
+                            (None, _) => format!("sets {of} to `{v}`, which could make an edge"),
+                        };
+                        return Ok(Some(format!(
+                            "the asynchronous reset `{}` of `{path}` {what}",
+                            rst.name
+                        )));
+                    }
+                }
+                want = *edge;
+                Some((clock, None))
+            }
+            Source::Item(Item::Assign { rhs, .. }) => copy_bit(rhs),
+            Source::Conn(e, _) => copy_bit(e),
+            _ => None,
+        };
+        let Some((y, b)) = next else { break };
+        bit = match source {
+            Source::Item(Item::AlwaysFf { .. }) => None,
+            _ => b.or(bit),
+        };
+        x = canon(*d, y);
+    }
+    Ok(None)
+}
+
+/// Bit `bit` (0 if not given) of the reset value `v`, assigned to the
+/// register, if `v` is a literal, a parameter or `'0`/`'1`: extended by its
+/// own signedness, as an assignment does.
+fn reset_bit(v: &Expr, bit: Option<usize>) -> Option<bool> {
+    let k = bit.unwrap_or(0);
+    match &v.kind {
+        ExprKind::Lit { ty, value } | ExprKind::Const { ty, value, .. } => Some(if k < ty.width {
+            value.unsigned().bit(k as u64)
+        } else {
+            ty.signed && value.msb()
+        }),
+        ExprKind::Fill(b) => Some(*b),
+        _ => None,
+    }
 }
 
 /// The signal `e` copies (all of it or one bit): a name or a constant bit
 /// select of a name.
 fn copy(e: &Expr) -> Option<&Name> {
+    copy_bit(e).map(|(x, _)| x)
+}
+
+/// [`copy`], with the bit for a bit select.
+fn copy_bit(e: &Expr) -> Option<(&Name, Option<usize>)> {
     match &e.kind {
-        ExprKind::Var(x) | ExprKind::Select(x, Select::Bit(Index::Const(_))) => Some(x),
+        ExprKind::Var(x) => Some((x, None)),
+        ExprKind::Select(x, Select::Bit(Index::Const(b))) => Some((x, Some(*b))),
         _ => None,
     }
 }
@@ -1124,6 +1311,7 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
                 let w = match &e.sel {
                     None => t.width,
                     Some(sel) if sel.index().is_some() => {
+                        nonzero_width(&name, sel, l.span)?;
                         let w = sel.width();
                         if w == 0 || w > t.width {
                             return Err(Error::new(
@@ -1152,6 +1340,7 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
             LvalueKind::Var(y) => (y, drive(y, l.span)?.width - 1, 0),
             LvalueKind::Select(y, sel) if sel.index().is_some() => {
                 let t = drive(y, l.span)?;
+                nonzero_width(y, sel, l.span)?;
                 let w = sel.width();
                 if w == 0 || w > t.width {
                     return Err(Error::new(
@@ -1906,15 +2095,21 @@ pub fn repl(n: usize, t: Ty) -> Ty {
     Ty::unsigned(n * t.width)
 }
 
+/// Rejects `x[b +: 0]` and `x[b -: 0]`.
+fn nonzero_width(x: &str, sel: &Select, span: Span) -> Result<()> {
+    if let Select::Up(_, 0) | Select::Down(_, 0) = sel {
+        return Err(Error::new(span, format!("select `{x}{sel}` of width 0")));
+    }
+    Ok(())
+}
+
 /// The type of the select `x[…]` of a signal of type `t`, with `index` the
 /// type of a variable index: always unsigned. A constant select must be
 /// inside `x`; a variable index must be unsigned, and may select bits
 /// outside `x`, which read 0 (see [`may_leave`]).
 pub fn select(x: &str, t: Ty, sel: &Select, index: Option<Ty>, span: Span) -> Result<Ty> {
     let width = sel.width();
-    if let Select::Up(_, 0) | Select::Down(_, 0) = sel {
-        return Err(Error::new(span, format!("select `{x}{sel}` of width 0")));
-    }
+    nonzero_width(x, sel, span)?;
     let Some(i) = index else {
         constant_select(x, t, sel, span)?;
         return Ok(Ty::unsigned(width));
@@ -1976,6 +2171,7 @@ pub fn leave_warning(x: &str, t: Ty, sel: &Select, span: Span) -> Error {
 /// The bits `(hi, lo)` of a constant select `x[…]` of a signal of type `t`,
 /// checked to be inside `x`.
 fn constant_select(x: &str, t: Ty, sel: &Select, span: Span) -> Result<(usize, usize)> {
+    nonzero_width(x, sel, span)?;
     match sel.constant().expect("a constant select") {
         Some((hi, lo)) if lo <= hi && hi < t.width => Ok((hi, lo)),
         Some((hi, lo)) if lo > hi => Err(Error::new(

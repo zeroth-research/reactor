@@ -14,8 +14,12 @@ unsigned bits (`'hff`); `'0` and `'1` take the width of their context. An
 integer constant (built from unsized literals and `int` parameters with
 `+ - * / % **` and `$clog2`) keeps its operators, so that
 [`sizing`](crate::sizing) evaluates it at the type of its context; only
-`**` and `$clog2` are folded here. An unsized literal is no item of a
-concatenation (IEEE 1800 forbids it). Instances keep their parameter
+`**` and `$clog2` are folded here, at `int`. For `**` that differs from
+the standard (base converted to the context's type first) only for a
+negative base in an unsigned context wider than 32 bits, which sizing
+rejects. A concatenation item must not take its
+width from an unsized literal (`{a, 1}`, `{a, N - 1}`; IEEE 1800 forbids
+it), see [`unsized_width`]. Instances keep their parameter
 values and connections; [`elab`](crate::elab) elaborates the modules they
 name.
 
@@ -636,7 +640,7 @@ impl Cx<'_> {
         match l {
             sv::ParameterPortList::Assignment(a) => {
                 let (first, rest) = &a.nodes.1.nodes.1;
-                self.param_assignments(None, first, true, m)?;
+                self.param_assignments(ParamTy::OfValue, first, true, m)?;
                 for (_, d) in rest {
                     self.parameter_port_declaration(d, m)?;
                 }
@@ -672,7 +676,7 @@ impl Cx<'_> {
             sv::ParameterPortDeclaration::ParamList(p) => {
                 let (ty, list) = &p.nodes;
                 let ty = self.param_data_type(ty)?;
-                self.param_assignments(Some(ty), list, true, m)
+                self.param_assignments(ParamTy::Typed(ty), list, true, m)
             }
             d => self.err(d, "type parameters not supported"),
         }
@@ -694,19 +698,17 @@ impl Cx<'_> {
         }
     }
 
-    /// The declared type of a parameter, `None` if it has none (it then
-    /// takes the type of its value).
-    fn param_type(&self, t: &sv::DataTypeOrImplicit) -> Result<Option<Ty>> {
+    /// The declared type of a parameter (see [`ParamTy`]).
+    fn param_type(&self, t: &sv::DataTypeOrImplicit) -> Result<ParamTy> {
         match t {
-            sv::DataTypeOrImplicit::DataType(t) => self.param_data_type(t).map(Some),
-            sv::DataTypeOrImplicit::ImplicitDataType(t) => {
-                let (signing, dims) = &t.nodes;
-                if signing.is_none() && dims.is_empty() {
-                    Ok(None)
-                } else {
-                    self.vector(signing, dims).map(Some)
+            sv::DataTypeOrImplicit::DataType(t) => self.param_data_type(t).map(ParamTy::Typed),
+            sv::DataTypeOrImplicit::ImplicitDataType(t) => match &t.nodes {
+                (None, dims) if dims.is_empty() => Ok(ParamTy::OfValue),
+                (Some(signing), dims) if dims.is_empty() => {
+                    Ok(ParamTy::Signing(matches!(signing, sv::Signing::Signed(_))))
                 }
-            }
+                (signing, dims) => self.vector(signing, dims).map(ParamTy::Typed),
+            },
         }
     }
 
@@ -727,12 +729,12 @@ impl Cx<'_> {
         }
     }
 
-    /// `N = v, M = w, …` of a parameter declaration with type `ty` (`None`:
-    /// the type of the value). An overridable parameter takes the value of
-    /// the instance if it gives one.
+    /// `N = v, M = w, …` of a parameter declaration with type `ty`. An
+    /// overridable parameter takes the value of the instance if it gives
+    /// one.
     fn param_assignments(
         &self,
-        ty: Option<Ty>,
+        ty: ParamTy,
         list: &sv::ListOfParamAssignments,
         overridable: bool,
         m: &mut Module,
@@ -764,7 +766,14 @@ impl Cx<'_> {
             };
             // a typed parameter takes its value as in an assignment: extended
             // as the value's signedness says, or truncated
-            let ty = ty.unwrap_or(value.ty);
+            let ty = match ty {
+                ParamTy::OfValue => value.ty,
+                ParamTy::Typed(ty) => ty,
+                ParamTy::Signing(signed) => Ty {
+                    width: value.ty.width,
+                    signed,
+                },
+            };
             let value = Const {
                 ty,
                 value: constant::resize(ty.width, &value).value,
@@ -793,11 +802,9 @@ impl Cx<'_> {
         })
     }
 
-    /// A port of the ANSI header. Direction and type are inherited from the
-    /// previous port where omitted (`input logic [7:0] a, b`).
-    /// A port, with its direction (`None` for `inout`); `prev` is the
-    /// direction and type of the previous port, which a port without a
-    /// header takes.
+    /// A port of the ANSI header, with its direction (`None` for `inout`).
+    /// Direction and type are inherited from the previous port (`prev`)
+    /// where omitted (`input logic [7:0] a, b`).
     fn port(
         &self,
         p: &sv::AnsiPortDeclaration,
@@ -879,6 +886,8 @@ impl Cx<'_> {
                             text,
                             ty: c.ty,
                             value: c.value,
+                            is_unsized: false,
+                            negative_power: false,
                         },
                         span: self.span(value),
                     };
@@ -2311,12 +2320,14 @@ impl Cx<'_> {
                 match (self.select(select)?, param) {
                     (None, Some(c)) => {
                         return Ok(match constant::as_int(&c) {
-                            Some(value) => Leaf::int(value, id, Ty::INT, span),
+                            Some(value) => Leaf::int(value, id, Ty::INT, false, span),
                             None => Leaf::Expr(Expr {
                                 kind: ExprKind::Const {
                                     text: id,
                                     ty: c.ty,
                                     value: c.value,
+                                    is_unsized: false,
+                                    negative_power: false,
                                 },
                                 span,
                             }),
@@ -2389,19 +2400,18 @@ impl Cx<'_> {
     fn concatenation(&self, c: &sv::Concatenation) -> Result<Vec<Expr>> {
         let item = |e: &sv::Expression| {
             let e = self.expr(e)?;
-            let literal = match &e.kind {
-                ExprKind::Const { text, .. } => {
-                    text.starts_with(|c: char| c.is_ascii_digit() || c == '\'')
-                }
-                ExprKind::Fill(_) => true,
-                _ => false,
-            };
-            if literal {
-                return Err(Error::new(
-                    e.span,
+            if let Some(lit) = unsized_width(&e) {
+                let what = if lit.span == e.span {
+                    format!("unsized literal `{e}` in a concatenation")
+                } else {
                     format!(
-                        "unsized literal `{e}` in a concatenation: write its width (e.g. `8'd1`)"
-                    ),
+                        "`{e}` in a concatenation has the width of the unsized literal `{lit}` \
+                         (32 bits or more)"
+                    )
+                };
+                return Err(Error::new(
+                    lit.span,
+                    format!("{what}: write its width (e.g. `8'd1`)"),
                 ));
             }
             Ok(e)
@@ -2448,7 +2458,13 @@ impl Cx<'_> {
                 return match self.leaf_expr(e)? {
                     Leaf::Int { value, expr, .. } => {
                         let value = constant::clog2(value).map_err(|m| Error::new(span, m))?;
-                        Ok(Leaf::int(value, format!("$clog2({expr})"), Ty::INT, span))
+                        Ok(Leaf::int(
+                            value,
+                            format!("$clog2({expr})"),
+                            Ty::INT,
+                            false,
+                            span,
+                        ))
                     }
                     Leaf::Expr(_) => self.err(
                         c,
@@ -2478,14 +2494,20 @@ impl Cx<'_> {
                 kind: ExprKind::Lit { ty, value },
                 span,
             })),
-            Literal::Int(value) => Ok(Leaf::int(value, text, Ty::INT, span)),
+            Literal::Int(value) => Ok(Leaf::int(value, text, Ty::INT, true, span)),
             // `'sd5` is an integer, `'d5` a 32-bit unsigned vector
             Literal::Unsized(ty, value) if ty.signed => {
                 let v = num_traits::ToPrimitive::to_i64(&value.signed()).expect("32 bits");
-                Ok(Leaf::int(v, text, ty, span))
+                Ok(Leaf::int(v, text, ty, true, span))
             }
             Literal::Unsized(ty, value) => Ok(Leaf::Expr(Expr {
-                kind: ExprKind::Const { text, ty, value },
+                kind: ExprKind::Const {
+                    text,
+                    ty,
+                    value,
+                    is_unsized: true,
+                    negative_power: false,
+                },
                 span,
             })),
         }
@@ -2535,12 +2557,25 @@ impl Cx<'_> {
         {
             let at = op.span();
             let value = constant::int_op(symbol, *x, *y).map_err(|m| Error::new(at, m))?;
+            let negative_base = *x < 0;
             let (Leaf::Int { expr: ea, span, .. }, Leaf::Int { expr: eb, .. }) = (a, b) else {
                 unreachable!("integer constants");
             };
             out.push(match op {
                 // `**` is folded: there is no operator for it
-                Op::Pow(_) => Leaf::int(value, format!("({ea} ** {eb})"), Ty::INT, span),
+                Op::Pow(_) => {
+                    // the base is context-determined, the exponent not
+                    let is_unsized = unsized_width(&ea).is_some();
+                    let text = format!("({ea} ** {eb})");
+                    let mut leaf = Leaf::int(value, text, Ty::INT, is_unsized, span);
+                    if negative_base
+                        && let Leaf::Int { expr, .. } = &mut leaf
+                        && let ExprKind::Const { negative_power, .. } = &mut expr.kind
+                    {
+                        *negative_power = true;
+                    }
+                    leaf
+                }
                 Op::Bin(bin, at) => Leaf::Int {
                     value,
                     expr: Expr {
@@ -2654,11 +2689,13 @@ enum Leaf {
 
 impl Leaf {
     /// The expression of an integer constant: a constant leaf.
-    fn int(value: i64, text: String, ty: Ty, span: Span) -> Leaf {
+    fn int(value: i64, text: String, ty: Ty, is_unsized: bool, span: Span) -> Leaf {
         let kind = ExprKind::Const {
             text,
             ty,
             value: BitVec::from_signed(ty.width, value),
+            is_unsized,
+            negative_power: false,
         };
         Leaf::Int {
             value,
@@ -2731,11 +2768,6 @@ impl Op {
     }
 }
 
-/// The contents of the array `m` from the text of a `$readmemb` (`binary`)
-/// or `$readmemh` file: words separated by white space, `//` and `/* */`
-/// comments, `_` in words ignored, `@a` (hexadecimal) setting the address
-/// of the next word. Every element must get a value, which must fit the
-/// element; x and z digits are not supported (2-state).
 /// If `text` is a literal that is x in every bit (`'x`, `4'bxxxx`, `1'hx`,
 /// in parentheses or not), its size: `None` if unsized.
 fn unknown_value(text: &str) -> Option<Option<usize>> {
@@ -2761,7 +2793,10 @@ fn unknown_value(text: &str) -> Option<Option<usize>> {
 }
 
 /// The words of a file read by `$readmemb` (`binary`) or `$readmemh` for
-/// the array `m`: the value of each element the file gives one.
+/// the array `m`: the value of each element the file gives one. Words are
+/// separated by white space and `//` and `/* */` comments, `_` in words is
+/// ignored, and `@a` (hexadecimal) sets the address of the next word. Every
+/// word must fit the element; x and z digits are not supported (2-state).
 fn readmem(
     text: &str,
     binary: bool,
@@ -3089,5 +3124,51 @@ impl Resolver<'_> {
                 Ok(())
             }
         }
+    }
+}
+
+/// The declared type of a value parameter.
+#[derive(Clone, Copy)]
+enum ParamTy {
+    /// None (`parameter N = 8`): the type of the final value.
+    OfValue,
+    /// A data type or a range (`parameter int N`, `parameter [3:0] K`).
+    Typed(Ty),
+    /// A signing but no range (`parameter signed P`): signed or unsigned as
+    /// declared, with the width of the final value, overrides included
+    /// (IEEE 1800-2017 §6.20.2); the bits are kept.
+    Signing(bool),
+}
+
+/// An unsized literal (or `'0`, `'1`) that gives `e` its width, if there is
+/// one: a leaf reached through the operands that take the width of their
+/// context (arithmetic and bitwise operands, the left operand of a shift,
+/// the arms of `?:`, sign casts). IEEE 1800 forbids such an expression where
+/// its width counts, as in a concatenation (§11.4.12): an unsized literal
+/// has no definite width. Parameters have a type and do not count, nor do
+/// literals in self-determined places (`{a == 1}`, `{a << 1}`).
+fn unsized_width(e: &Expr) -> Option<&Expr> {
+    match &e.kind {
+        ExprKind::Const {
+            is_unsized: true, ..
+        }
+        | ExprKind::Fill(_) => Some(e),
+        ExprKind::Unary(UnOp::BitNot | UnOp::Neg | UnOp::Plus, a) => unsized_width(a),
+        ExprKind::Binary(op, a, b) => match op {
+            BinOp::Shl | BinOp::Shr | BinOp::AShl | BinOp::AShr => unsized_width(a),
+            BinOp::Add
+            | BinOp::Sub
+            | BinOp::Mul
+            | BinOp::Div
+            | BinOp::Mod
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::BitXnor => unsized_width(a).or_else(|| unsized_width(b)),
+            _ => None,
+        },
+        ExprKind::Cond(_, a, b) => unsized_width(a).or_else(|| unsized_width(b)),
+        ExprKind::Cast(Cast::Signed | Cast::Unsigned, a) => unsized_width(a),
+        _ => None,
     }
 }

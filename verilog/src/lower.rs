@@ -116,7 +116,10 @@ relative to the other, so a register sampling a value from another clock
 domain in a round where that value changes could store any mix of old and
 new bits (metastability). Such reads across clock domains are rejected for
 now ([`typing::domains`]); so are clocks computed by logic (gated clocks)
-and clock loops.
+and clock loops. An asynchronous reset from another domain on the
+register of a derived clock makes edges of that clock at a time unrelated
+to its source, so blocks on such an edge must not read other domains
+either (see [`typing::domains`]).
 
 ## Asynchronous resets
 

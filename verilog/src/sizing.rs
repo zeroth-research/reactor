@@ -51,11 +51,14 @@ Nothing is narrowed: `q == 15` with a 4-bit `q` compares 32 bits.
 Constant operator expressions (`N - 1`, `-1`) are folded into one
 constant at the type of their context, after sizing, so their value is
 the one of IEEE 1800 at that type rather than the exact integer: `u + -1`
-with a 40-bit unsigned `u` adds 40 ones.
+with a 40-bit unsigned `u` adds 40 ones. The exception is `**`, which the
+frontend folds at `int`: a negative base in an unsigned context wider than
+32 bits, where that gives other bits, is rejected.
 
-Sizing also checks what needs the sized types: selects stay inside their
-signal for every value of a variable index ([`typing::select`]), and the
-divisor of `/` and `%` is a nonzero constant.
+Sizing also checks what needs the sized types: constant selects stay
+inside their signal (a variable index may leave it: those bits read 0,
+with a warning; see [`typing::select`]), and the divisor of `/` and `%`
+is a nonzero constant.
 */
 
 use crate::ast::{
@@ -379,7 +382,23 @@ impl Sizer<'_> {
                     text: e.to_string(),
                     ty: t,
                     value,
+                    is_unsized: false,
+                    negative_power: false,
                 })
+            }
+            ExprKind::Const {
+                negative_power: true,
+                ..
+            } if t.width > 32 && !t.signed => {
+                return Err(Error::new(
+                    e.span,
+                    format!(
+                        "`{e}` has a negative base, in a {}-bit unsigned context: `**` is \
+                         evaluated at 32 bits for now, which gives other bits there than \
+                         IEEE 1800 (the base extended to the context first)",
+                        t.width
+                    ),
+                ));
             }
             _ => {
                 let own = self.det(e)?;
@@ -479,6 +498,8 @@ fn resize(e: Expr, from: Ty, to: Ty) -> Expr {
                 text: e.to_string(),
                 ty: to,
                 value: convert(v, to),
+                is_unsized: false,
+                negative_power: false,
             },
             span: e.span,
         };
@@ -551,6 +572,8 @@ fn fold(e: Expr, t: Ty) -> Result<Expr> {
             text: e.to_string(),
             ty: t,
             value,
+            is_unsized: false,
+            negative_power: false,
         },
         span: e.span,
     })
