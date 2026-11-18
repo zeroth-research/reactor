@@ -22,6 +22,8 @@ struct Counter {
     q_init: Var,
     q: Var,
     full: Var,
+    /// The local wire holding `q + 1`.
+    inc: Wire,
 }
 
 fn counter(atoms_in_wrong_order: bool) -> Result<Counter, String> {
@@ -57,6 +59,7 @@ fn counter(atoms_in_wrong_order: bool) -> Result<Counter, String> {
         q_init,
         q,
         full,
+        inc,
     })
 }
 
@@ -93,6 +96,40 @@ fn structure() {
     assert_eq!(names(c.module.intf()), ["full", "q"]);
     assert!(c.module.prvt().is_empty());
     println!("{}", c.module.with_varnames(|v| c.name(v)));
+}
+
+/// The plain-text printer: the variables by section, each atom with its
+/// sets, unnamed local wires numbered in the order they are written,
+/// `init = update` for an atom whose two blocks are the same, delay blocks
+/// left out.
+#[test]
+fn printed() {
+    let c = counter(false).unwrap();
+    let print = |names: &dyn Fn(&Wire) -> Option<String>| {
+        verilog::print::module(&c.module, "counter", |v| c.name(v).to_string(), names)
+    };
+    let expected = "\
+module counter
+  external
+    en : bv1
+    q_init : bv8
+  interface
+    q : bv8
+    full : bv1
+  atom controls q reads en, q awaits q_init
+    init
+      X(q) := ID X(q_init)
+    update
+      %1 := 8'd1
+      %2 := ADD (q, %1)
+      X(q) := ITE (en, %2, q)
+  atom controls full awaits q
+    init = update
+      X(full) := REDAND X(q)
+";
+    assert_eq!(print(&|_| None), expected);
+    let named = print(&|w| (*w == c.inc).then(|| "inc".to_string()));
+    assert_eq!(named, expected.replace("%2", "inc"));
 }
 
 #[test]

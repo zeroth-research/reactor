@@ -474,4 +474,31 @@ fn z3_stopping_early_is_reported() {
     );
     let fine = stub("fine", "cat >/dev/null; echo sat; exit 1");
     assert_eq!(z3::run(&fine, &script).unwrap(), ["sat"]);
+    // a binary that is not there
+    let missing = dir.join("no-such-z3");
+    let e = z3::run(&missing, "(check-sat)\n").unwrap_err();
+    assert!(e.starts_with(&format!("{}: ", missing.display())), "{e}");
+    // the time limit is z3's `-t:` in milliseconds, at least 1 (0 would
+    // mean no limit)
+    let args = stub("args", "cat >/dev/null; echo \"$@\"");
+    assert_eq!(z3::run(&args, "").unwrap(), ["-smt2 -in"]);
+    for (limit, arg) in [(2500, "-t:2500"), (0, "-t:1")] {
+        let t = std::time::Duration::from_millis(limit);
+        let out = z3::run_with(&args, "", Some(t)).unwrap();
+        assert_eq!(out, [format!("-smt2 -in {arg}")]);
+    }
+}
+
+/// A script with errors is no failure of `z3::run`: z3 reports the errors
+/// in its output and goes on with the rest of the script.
+#[test]
+fn z3_reports_script_errors_in_its_output() {
+    let Some(bin) = z3::find() else {
+        common::missing("z3", "the whole test");
+        return;
+    };
+    let out = z3::run(&bin, "(assert x)\n(check-sat)\n").unwrap();
+    assert_eq!(out.len(), 2, "{out:?}");
+    assert!(out[0].starts_with("(error "), "{out:?}");
+    assert_eq!(out[1], "sat");
 }
