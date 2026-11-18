@@ -407,4 +407,17 @@ mod tests {
         assert!(LIA::try_from(int(int::Argmax(2, 3))).is_ok());
         assert!(LIA::try_from(real(real::Argmax(2, 3))).is_err());
     }
+
+    #[test]
+    fn havoc_is_in_the_logics_of_its_theory() {
+        let op = int(int::Havoc(2, 3));
+        assert_eq!(op.dom(), Poly::unit());
+        let cod: Poly<sort::Any> = base::mono![sort::Int::new([2, 3]).into()].into();
+        assert_eq!(op.cod(), cod);
+
+        assert!(LRA::try_from(real(real::Havoc(2, 3))).is_ok());
+        assert!(LIA::try_from(int(int::Havoc(2, 3))).is_ok());
+        assert!(BV::try_from(word(word::Havoc(8, 2, 3))).is_ok());
+        assert!(Prop::try_from(boolean(bool::Havoc(2, 3))).is_ok());
+    }
 }

@@ -49,6 +49,7 @@ has, on words:
 
 - [`Id`] — the identity.
 - [`Ite`] — if-then-else, on a single boolean.
+- [`Havoc`] — an arbitrary matrix, chosen nondeterministically.
 */
 
 use crate::sort::{Bool, Word};
@@ -205,6 +206,11 @@ pub struct Id(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Ite(pub usize, pub usize, pub usize);
 
+/// An arbitrary matrix of `w`-bit words, chosen nondeterministically, as
+/// `Havoc(w, m, n)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+pub struct Havoc(pub usize, pub usize, pub usize);
+
 /// The operations of the theory of fixed-size bit-vectors, SMT-LIB2's
 /// `FixedSizeBitVectors`, with their boundary in [`Sort`]. Those of
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
@@ -250,6 +256,7 @@ pub enum BV {
     UGe(unsigned::Ge),
     Id(Id),
     Ite(Ite),
+    Havoc(Havoc),
 }
 
 impl Boundary<Sort> for BV {
@@ -294,6 +301,7 @@ impl Boundary<Sort> for BV {
             BV::UGe(op) => op.dom(),
             BV::Id(op) => op.dom(),
             BV::Ite(op) => op.dom(),
+            BV::Havoc(op) => op.dom(),
         }
     }
 
@@ -338,6 +346,7 @@ impl Boundary<Sort> for BV {
             BV::UGe(op) => op.cod(),
             BV::Id(op) => op.cod(),
             BV::Ite(op) => op.cod(),
+            BV::Havoc(op) => op.cod(),
         }
     }
 }
@@ -570,6 +579,16 @@ impl Boundary<Sort> for Ite {
     }
 }
 
+impl Boundary<Sort> for Havoc {
+    fn dom(&self) -> Poly<Sort> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -699,6 +718,12 @@ impl fmt::Display for Id {
 impl fmt::Display for Ite {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Ite")
+    }
+}
+
+impl fmt::Display for Havoc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Havoc")
     }
 }
 
@@ -1183,6 +1208,12 @@ mod tests {
     }
 
     #[test]
+    fn havoc_reads_nothing() {
+        assert_eq!(Havoc(8, 2, 3).dom(), Poly::unit());
+        assert_eq!(Havoc(8, 2, 3).cod(), one(w(8, [2, 3])));
+    }
+
+    #[test]
     fn ops_display_their_name_and_indices() {
         assert_eq!(Add(8, 1, 1).to_string(), "Add");
         assert_eq!(Ne(8, 1, 1).to_string(), "Ne");
@@ -1198,5 +1229,6 @@ mod tests {
         assert_eq!(unsigned::Extend(8, 8, 1, 1).to_string(), "ZeroExtend(8)");
         assert_eq!(Id(8, 1, 1).to_string(), "Id");
         assert_eq!(Ite(8, 1, 1).to_string(), "Ite");
+        assert_eq!(Havoc(8, 1, 1).to_string(), "Havoc");
     }
 }
