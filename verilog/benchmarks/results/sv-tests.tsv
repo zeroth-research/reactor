@@ -124,7 +124,7 @@ chapter-13/13.4.1--function-return-assignment.sv		18:1: unsupported: PackageOrGe
 chapter-13/13.4.1--function-return.sv		18:1: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
 chapter-13/13.4.2--function-automatic.sv		18:1: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
 chapter-13/13.4.2--function-recursive.sv		26:1: unsupported: PackageOrGenerateItemDeclaration [at `function`]	-	functions / tasks
-chapter-13/13.4.3--const-function.sv		18:16: expected a constant expression, got `fun(3)`: `fun` is not a parameter	-	other error
+chapter-13/13.4.3--const-function.sv		18:16: call `fun(3)` not supported	-	other unsupported construct
 chapter-15/15.4--mailbox-blocking.sv		18:1: type `mailbox #(string)` not supported	-	other unsupported construct
 chapter-15/15.4--mailbox-non-blocking.sv		18:1: type `mailbox #(string)` not supported	-	other unsupported construct
 chapter-16/16.12--property-disable-iff.sv		22:1: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
@@ -158,7 +158,7 @@ chapter-20/20.5--real-bits-conv.sv		20:2: `initial` may only give signals initia
 chapter-20/20.5--rtoi.sv		20:2: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 chapter-20/20.6--bits.sv		20:2: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 chapter-20/20.6--bits_type.sv		19:1: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-chapter-20/20.6--isunbounded.sv		18:19: expected a constant expression, got `$`: `$` not supported in constant expressions	-	other unsupported construct
+chapter-20/20.6--isunbounded.sv		18:19: `$` not supported in constant expressions	-	other unsupported construct
 chapter-20/20.6--typename.sv		20:2: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 chapter-20/20.6--typename_type.sv		20:2: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 chapter-20/20.7--array-queries-multi-dim.sv		22:2: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
@@ -286,11 +286,11 @@ chapter-6/6.20.2--parameter_aggregate.sv		16:27: unpacked dimension not supporte
 chapter-6/6.20.2--parameter_dep.sv		OK	Equal	
 chapter-6/6.20.2--parameter_port_list.sv		OK	Equal	
 chapter-6/6.20.2--parameter_range.sv		OK	Equal	
-chapter-6/6.20.2--parameter_real.sv		16:16: expected a constant expression, got `4.76`: `4.76` is not a constant expression	-	other error
+chapter-6/6.20.2--parameter_real.sv		16:16: real numbers not supported	-	other unsupported construct
 chapter-6/6.20.4--localparam.sv		OK	Equal	
 chapter-6/6.20.4--localparam_int.sv		OK	Equal	
-chapter-6/6.20.4--localparam_logic.sv		16:24: expected a constant expression, got `1 << 5`: `1 << 5` is not a constant expression	-	other error
-chapter-6/6.20.4--localparam_string.sv		16:18: expected a constant expression, got `"foo"`: `"foo"` is not a constant expression	-	other error
+chapter-6/6.20.4--localparam_logic.sv		OK	Equal	
+chapter-6/6.20.4--localparam_string.sv		16:18: unsupported: PrimaryLiteral [at `localparam`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 chapter-6/6.20.4--localparam_unsigned_int.sv		16:13: parameter type `int unsigned` not supported, use `int` or `logic`	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 chapter-6/6.20.5--specparam.sv		16:2: unsupported: NonPortModuleItem [at `specparam`]	-	other unsupported syntax
 chapter-6/6.23--localparam_type_decl.sv		17:1: type parameters not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)

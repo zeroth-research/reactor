@@ -5,8 +5,8 @@ autotune/divider.sby	divider	OK	Equal
 demos/fib.sby	fib	OK	Equal	
 demos/picorv32_axicheck.sby	testbench	84:11: syntax error [at `restrict`]	-	assertions / properties
 dft/data_diode.sby	top	256:5: syntax error [at `$overwrite_tag`]	-	simulation constructs (delays, system tasks)
-fifo/fifo.sby	fifo	37:21: expected a constant integer, got `MAX_DATA-1`: `MAXDATA` is not a parameter	-	other error
-fifo/golden/fifo.sby	fifo	30:13: expected a constant integer, got `ADDR_BITS`: `ADDRBITS` is not a parameter	-	other error
+fifo/fifo.sby	fifo	62:13: `initial` gives initial values with blocking assignments (`q = 8'd0;`), not `<=`	-	initializers / `initial` blocks
+fifo/golden/fifo.sby	fifo	64:13: `initial` gives initial values with blocking assignments (`q = 8'd0;`), not `<=`	-	initializers / `initial` blocks
 indinv/prove_p0.sby	example	3:27: syntax error [at `output`]	-	parse error (sv-parser)
 indinv/prove_p23.sby	example	3:27: syntax error [at `output`]	-	parse error (sv-parser)
 multiclk/dpmem.sby	top	44:2: attribute not supported	-	other unsupported construct

@@ -127,7 +127,7 @@ verilog/SVA/system_verilog_assertion1.sv#main	main	11:5: statement label not sup
 verilog/SVA/system_verilog_assertion2.sv#main	main	10:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/SVA/system_verilog_assertion3.sv#main	main	3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/SVA/system_verilog_assertion4.sv#main	main	11:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
-verilog/SVA/unbounded1.sv#main	main	3:21: expected a constant expression, got `$`: `$` not supported in constant expressions	-	other unsupported construct
+verilog/SVA/unbounded1.sv#main	main	3:21: `$` not supported in constant expressions	-	other unsupported construct
 verilog/SVA/weak1.sv		12:11: statement label not supported	-	other unsupported construct
 verilog/UDPs/multiplexer1.sv#main	main	2:1: unsupported: Description [at `primitive`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/arbiter1/arbiter_change.v		34:15: syntax error [at `assert`]	-	assertions / properties
@@ -269,13 +269,13 @@ verilog/data-types/time1.sv		3:17: block name not supported	-	other unsupported 
 verilog/data-types/type_operator.sv		4:8: type `type(some_wire)` not supported	-	other unsupported construct
 verilog/data-types/var1.sv		4:8: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/data-types/vector_types1.sv		14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
-verilog/data-types/vector_types2.sv		4:8: expected a constant integer, got `1<<p`: `1<<p` is not a constant expression	-	other error
+verilog/data-types/vector_types2.sv		6:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/data-types/wire_must_be_fourvalued.sv		4:12: `some_wire` is never driven	-	design rejected by a checking rule (latch, loop, drivers)
 verilog/delays/delay_with_unit1.v		5:10: a plain `always` needs an event control: `@(posedge <clock>)`, `@(negedge <clock>)` or `@*` [at `#`]	-	simulation constructs (delays, system tasks)
 verilog/delays/time_literals1.sv		3:1: type `realtime` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/directives/default_nettype1.sv		OK	Equal	
 verilog/elaboration/type_operator.sv		4:8: type `type(some_wire)` not supported	-	other unsupported construct
-verilog/elaboration/var_bits.sv		4:8: expected a constant integer, got `$bits(some_var)-1`: `$bits` not supported in constant expressions	-	other unsupported construct
+verilog/elaboration/var_bits.sv		4:8: call `$bits(some_var)` not supported	-	other unsupported construct
 verilog/elaboration/wire_bits.v		10:17: syntax error [at `assert`]	-	assertions / properties
 verilog/enums/compilation_unit_enum1.sv		1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/enums/enum1.sv		3:3: type `enum { RED, YELLOW1, GREEN, YELLOW2 }` not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
@@ -288,7 +288,7 @@ verilog/enums/enum_base_type2.sv		4:3: unsupported: DataDeclaration [at `typedef
 verilog/enums/enum_cast1.sv		3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/enums/enum_in_assert.sv		3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/enums/enum_initializers1.sv		3:3: type `enum { A = 1, B = A + 10 }` not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-verilog/enums/enum_initializers2.sv		3:17: expected a constant expression, got `A + 1`: `A` is not a parameter	-	other error
+verilog/enums/enum_initializers2.sv		3:17: expected a constant expression, got `(A + 1)`: `A` is not a parameter	-	other error
 verilog/enums/enum_initializers3.sv		4:17: expected a constant expression, got `A`: `A` is not a parameter	-	other error
 verilog/enums/enum_name_collision.sv		3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/enums/enum_vs_typedef1.sv		1:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
@@ -317,8 +317,8 @@ verilog/expressions/concatenation4.v		5:21: unsized literal `'b1010` in a concat
 verilog/expressions/concatenation5.v		4:13: real numbers not supported	-	other unsupported construct
 verilog/expressions/concatenation6.sv		3:3: unsupported: DataDeclaration [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/expressions/concatenation7.v		5:21: unsized literal `'1` in a concatenation: write its width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
-verilog/expressions/conditional_operator_short_circuit1.sv		8:9: expected a constant integer, got `(0 ? 1/0 : 3)-1`: `(0 ? 1/0 : 3)-1` is not a constant expression	-	other error
-verilog/expressions/conditional_operator_short_circuit2.sv		6:9: expected a constant integer, got `(1 ? 3 : 1/0)-1`: `(1 ? 3 : 1/0)-1` is not a constant expression	-	other error
+verilog/expressions/conditional_operator_short_circuit1.sv		8:16: the divisor must be a nonzero constant (2-state values have no result for a division by zero)	-	other error
+verilog/expressions/conditional_operator_short_circuit2.sv		6:20: the divisor must be a nonzero constant (2-state values have no result for a division by zero)	-	other error
 verilog/expressions/constants1.v		8:25: syntax error [at `assert`]	-	assertions / properties
 verilog/expressions/constants2.sv		49:17: syntax error [at `parameter`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/expressions/div1.sv		4:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
@@ -329,21 +329,21 @@ verilog/expressions/equality4.sv		4:11: `initial` may only give signals initial 
 verilog/expressions/equality5.sv		4:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/expressions/iff1.sv		5:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/expressions/implies1.sv		4:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
-verilog/expressions/index-constant1.sv		5:17: expected a constant expression, got `p[3]`: `p[3]` is not a constant expression	-	other error
-verilog/expressions/index-constant2.sv		4:17: expected a constant expression, got `(1>0)`: `(1>0)` is not a constant expression	-	other error
+verilog/expressions/index-constant1.sv		5:17: select of parameter `p` not supported	-	other unsupported construct
+verilog/expressions/index-constant2.sv		5:17: select of parameter `p` not supported	-	other unsupported construct
 verilog/expressions/index-of-real.sv		4:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/expressions/inside1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/expressions/integer_literals1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/expressions/integer_literals2.sv		8:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/expressions/integer_literals3.sv		7:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/expressions/integer_literals4.sv		8:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
-verilog/expressions/integer_operands1.sv		7:42: expected a constant expression, got `$clog2(PORTS) - $clog2(PORTS_IN)`: `PORTSIN` is not a parameter	-	other error
+verilog/expressions/integer_operands1.sv		13:3: type `integer` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/expressions/minus1.sv		4:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/expressions/mod1.sv		4:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/expressions/mod2.v		4:12: real numbers not supported	-	other unsupported construct
 verilog/expressions/mult1.sv		4:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/expressions/negation1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
-verilog/expressions/part-select-constant1.sv		5:17: expected a constant expression, got `p[3:1]`: `p[3:1]` is not a constant expression	-	other error
+verilog/expressions/part-select-constant1.sv		5:17: select of parameter `p` not supported	-	other unsupported construct
 verilog/expressions/part-select-of-real.sv		4:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/expressions/plus1.sv		4:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/expressions/power1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
@@ -358,7 +358,7 @@ verilog/expressions/relational1.sv		6:11: `initial` may only give signals initia
 verilog/expressions/replication1.v		9:25: syntax error [at `assert`]	-	assertions / properties
 verilog/expressions/replication2.v		6:22: unsized literal `'b1010` in a concatenation: write its width (e.g. `8'd1`)	-	width rules (explicit-width fragment)
 verilog/expressions/replication3.v		3:22: real numbers not supported	-	other unsupported construct
-verilog/expressions/replication4.sv		8:24: expected a constant expression, got `{2'b10, {0{1'b1}}, 2'b01}`: `{2'b10, {0{1'b1}}, 2'b01}` is not a constant expression	-	other error
+verilog/expressions/replication4.sv		8:32: replication count 0 not supported	-	other unsupported construct
 verilog/expressions/replication5.sv		6:18: replication count 0 not supported	-	other unsupported construct
 verilog/expressions/replication6.sv		5:19: replication count 0 not supported	-	other unsupported construct
 verilog/expressions/shl3.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
@@ -594,7 +594,7 @@ verilog/modules/root1.sv#the_top	the_top	8:11: `initial` may only give signals i
 verilog/modules/show-module-hierarchy1.v		OK	Equal	
 verilog/modules/too_many_parameter_assignments.v		8:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/type_parameter_port1.sv		9:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
-verilog/modules/type_parameter_port2.sv		9:12: expected a constant expression, got `byte`: `byte` is not a parameter	-	other error
+verilog/modules/type_parameter_port2.sv		9:12: type parameters not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/modules/type_parameter_port3.sv		9:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/type_parameter_port4.sv		9:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/type_parameter_port5.sv		9:9: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
@@ -673,13 +673,13 @@ verilog/packages/unit_scope1.sv		1:1: unsupported: Description [at `typedef`]	-	
 verilog/parameters/compilation_unit_parameter1.sv		1:1: unsupported: Description [at `parameter`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/parameters/four_valued_parameter1.sv		2:31: literal `4'b01xz` with x/z digits not supported (values are 2-state; x is accepted only as the whole value of an assignment in a block that every path overwrites, e.g. `y = 'x;` before a `case`)	-	x/z values (4-state)
 verilog/parameters/four_valued_parameter2.sv		2:37: literal `4'b01xz` with x/z digits not supported (values are 2-state; x is accepted only as the whole value of an assignment in a block that every path overwrites, e.g. `y = 'x;` before a `case`)	-	x/z values (4-state)
-verilog/parameters/parameter_equality1.sv		4:32: expected a constant expression, got `(1 << N_LG2) == N`: `(1 << N_LG2) == N` is not a constant expression	-	other error
+verilog/parameters/parameter_equality1.sv		7:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/parameters/parameter_override_logic1.sv#main	main	8:29: literal `4'b10x1` with x/z digits not supported (values are 2-state; x is accepted only as the whole value of an assignment in a block that every path overwrites, e.g. `y = 'x;` before a `case`)	-	x/z values (4-state)
 verilog/parameters/parameter_without_value1.sv		2:19: parameter `N` has no value: give it a default or set it in the instance	-	other error
 verilog/parameters/ranged_parameter1.sv		6:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/parameters/untyped_parameter1.sv		3:22: range [10:3] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
-verilog/parameters/untyped_parameter2.sv#main	main	6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	-	other error
-verilog/parameters/untyped_real_parameter1.sv		6:17: expected a constant expression, got `1.5`: `1.5` is not a constant expression	-	other error
+verilog/parameters/untyped_parameter2.sv#main	main	6:17: real numbers not supported	-	other unsupported construct
+verilog/parameters/untyped_real_parameter1.sv		6:17: real numbers not supported	-	other unsupported construct
 verilog/part-select/increasing-range-part-select1.sv#main	main	4:8: range [0:7] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
 verilog/part-select/increasing-range-part-select2.sv#main	main	4:7: range [0:7] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
 verilog/part-select/indexed-part-select1.sv		1:1: non-ANSI port list not supported	-	port / parameter syntax (non-ANSI, positional)
@@ -847,7 +847,7 @@ verilog/system-functions/realtime1.sv		3:3: type `real` not supported	-	other da
 verilog/system-functions/realtobits1.sv#main	main	4:10: a plain `always` needs an event control: `@(posedge <clock>)`, `@(negedge <clock>)` or `@*` [at `assert`]	-	assertions / properties
 verilog/system-functions/rtoi1.sv#main	main	4:10: a plain `always` needs an event control: `@(posedge <clock>)`, `@(negedge <clock>)` or `@*` [at `assert`]	-	assertions / properties
 verilog/system-functions/shortrealtobits1.sv#main	main	4:10: a plain `always` needs an event control: `@(posedge <clock>)`, `@(negedge <clock>)` or `@*` [at `assert`]	-	assertions / properties
-verilog/system-functions/signed1.v		3:17: expected a constant expression, got `$signed(123)`: `$signed` not supported in constant expressions	-	other unsupported construct
+verilog/system-functions/signed1.v		OK	Equal	
 verilog/system-functions/signed2.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/system-functions/size1.sv#main	main	4:8: range [0:7] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
 verilog/system-functions/size2.sv		3:3: type `real` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
@@ -856,7 +856,7 @@ verilog/system-functions/stime1.sv		6:3: unsupported: ModuleCommonItem [at `asse
 verilog/system-functions/main.sv#main	main	8:10: a plain `always` needs an event control: `@(posedge <clock>)`, `@(negedge <clock>)` or `@*` [at `assert`]	-	assertions / properties
 verilog/system-functions/test_plusargs1.sv#main	main	4:10: a plain `always` needs an event control: `@(posedge <clock>)`, `@(negedge <clock>)` or `@*` [at `assert`]	-	assertions / properties
 verilog/system-functions/time1.sv		9:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
-verilog/system-functions/typename_array1.sv		3:18: `'h10` has type `logic [31:0]`, expected an integer (unsized literals and `int` parameters)	-	width rules (explicit-width fragment)
+verilog/system-functions/typename_array1.sv		4:18: array range `[2:20]` not supported: addresses must start at 0 (`[0:N-1]`, `[N-1:0]` or `[N]`)	-	arrays
 verilog/system-functions/typename_bit1.sv		5:7: range [0:31] not supported, only [N-1:0]	-	ranges other than `[N-1:0]`
 verilog/system-functions/typename_enum1.sv		3:3: type `enum { FOO, BAR }` not supported	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/system-functions/typename_integral1.sv		3:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
