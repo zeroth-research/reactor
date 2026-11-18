@@ -11,7 +11,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from reactor.gym import Env
-from reactor import NonLinearError, TheoryError, Bool, Real, Int, BitVec
+from reactor import NonLinearError, TheoryError, Bool, Real, Int, Word
 
 
 # ── boilerplate ───────────────────────────────────────────────────
@@ -332,14 +332,14 @@ class _Untraced(_MinEnv):
 
 
 def test_untraced_call():
-    from reactor import LRA
+    from reactor import op
 
     e = _wrap(_Untraced())  # real env runs the function via delegation
     labels = []
     for atom in e.atoms:
         for t in list(atom.update):
             match t.itype:
-                case LRA.Uninterpreted(name):
+                case op.real.Uninterpreted(name):
                     labels.append(name)
     assert any('(...)' in lbl for lbl in labels), "expected an Uninterpreted term"
     e.reset();

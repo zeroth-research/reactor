@@ -6,15 +6,16 @@ use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::any::{Any, Combinatorial, Differential, Sequential, Sort};
+use theory::op::Any;
+use theory::sort::Any as Sort;
 
 #[pyclass(frozen)]
 pub(crate) struct Atom {
-    base: reactive::Atom<Combinatorial, Sequential, Differential, Sort>,
+    base: reactive::Atom<Any, Any, Any, Sort>,
 }
 
-impl From<reactive::Atom<Combinatorial, Sequential, Differential, Sort>> for Atom {
-    fn from(base: reactive::Atom<Combinatorial, Sequential, Differential, Sort>) -> Self {
+impl From<reactive::Atom<Any, Any, Any, Sort>> for Atom {
+    fn from(base: reactive::Atom<Any, Any, Any, Sort>) -> Self {
         Self { base }
     }
 }
@@ -153,7 +154,7 @@ impl Atom {
     #[staticmethod]
     fn combinatorial(vars: &Bound<'_, PyAny>, assign: &Bound<'_, PyAny>) -> PyResult<Self> {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
+        let assign = try_term_iter_cloned(&assign)?;
 
         match reactive::Atom::combinatorial(vars.iter(), assign) {
             Ok(base) => Ok(base.into()),
@@ -217,7 +218,7 @@ impl Atom {
 }
 
 impl Atom {
-    pub(crate) fn base(&self) -> &reactive::Atom<Combinatorial, Sequential, Differential, Sort> {
+    pub(crate) fn base(&self) -> &reactive::Atom<Any, Any, Any, Sort> {
         &self.base
     }
 
@@ -242,7 +243,7 @@ struct AtomInterface {
 }
 
 impl AtomInterface {
-    fn base(&self) -> &reactive::Interface<theory::any::Sort> {
+    fn base(&self) -> &reactive::Interface<Sort> {
         let atom = &self.atom.get().base;
         match self.interface {
             AtomInterfaceType::Read => atom.read(),
@@ -358,9 +359,9 @@ impl AtomBlock {
     fn __getitem__(&self, index: usize) -> PyResult<Term> {
         let atom = &self.atom.get().base;
         let item: Option<dataflow::diagram::Term<Any, Sort>> = match self.block {
-            BlockType::Init => atom.init().get(index).cloned().map(Into::into),
-            BlockType::Update => atom.update().get(index).cloned().map(Into::into),
-            BlockType::Delay => atom.delay().get(index).cloned().map(Into::into),
+            BlockType::Init => atom.init().get(index).cloned(),
+            BlockType::Update => atom.update().get(index).cloned(),
+            BlockType::Delay => atom.delay().get(index).cloned(),
         };
         item.map(Into::into)
             .ok_or(PyIndexError::new_err("index out of bounds"))
@@ -383,7 +384,7 @@ struct AtomBlockInterface {
 }
 
 impl AtomBlockInterface {
-    fn base(&self) -> &[dataflow::diagram::Wire<theory::any::Sort>] {
+    fn base(&self) -> &[dataflow::diagram::Wire<Sort>] {
         let atom = &self.block.get().atom.get().base;
         match (&self.block.get().block, &self.interface) {
             (BlockType::Init, TermInterfaceType::Read) => atom.init().read(),

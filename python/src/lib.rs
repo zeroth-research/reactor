@@ -1,6 +1,3 @@
-use ::theory::bv::BV;
-use ::theory::lia::LIA;
-use ::theory::lra::LRA;
 use pyo3::PyClass;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
@@ -9,9 +6,11 @@ use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fmt::Write;
-use theory::any::{Any, Combinatorial, Differential, Sequential, Sort};
+use theory::op::Any;
+use theory::sort::Any as Sort;
 
 mod atom;
+mod logic;
 mod module;
 mod term;
 mod var;
@@ -25,19 +24,18 @@ use crate::wire::Wire;
 
 #[pymodule]
 fn reactor(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Sort>()?;
+    theory::sort::py::add_classes(m)?;
     m.add_class::<Wire>()?;
     m.add_class::<Var>()?;
     m.add_class::<Atom>()?;
     m.add_class::<Term>()?;
     m.add_class::<Module>()?;
 
-    m.add_class::<Combinatorial>()?;
-    m.add_class::<Sequential>()?;
-    m.add_class::<Differential>()?;
-    m.add_class::<LRA>()?;
-    m.add_class::<LIA>()?;
-    m.add_class::<BV>()?;
+    // the operations of each theory, and the logics, in `reactor.op`
+    let op = PyModule::new(m.py(), "reactor.op")?;
+    theory::op::py::add_modules(&op)?;
+    logic::add_classes(&op)?;
+    m.add("op", op)?;
 
     m.add_function(wrap_pyfunction!(var::x, m)?)?;
     m.add_function(wrap_pyfunction!(var::d, m)?)?;
@@ -59,7 +57,7 @@ where
 
 fn try_var_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = reactive::Var<theory::any::Sort>>> {
+) -> PyResult<impl Iterator<Item = reactive::Var<Sort>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Var>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
@@ -67,23 +65,19 @@ fn try_var_iter_cloned(
     Ok(seq)
 }
 
-fn try_term_iter_cloned<T>(
+fn try_term_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<T, Sort>>>
-where
-    dataflow::diagram::Term<Any, Sort>: TryInto<dataflow::diagram::Term<T, Sort>>,
-    <dataflow::diagram::Term<Any, Sort> as TryInto<dataflow::diagram::Term<T, Sort>>>::Error: Debug,
-{
+) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<Any, Sort>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
-    let seq = seq.map(|r| r.base().clone().try_into().unwrap());
+    let seq = seq.map(|r| r.base().clone());
     Ok(seq)
 }
 
 fn try_wire_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = dataflow::diagram::Wire<theory::any::Sort>>> {
+) -> PyResult<impl Iterator<Item = dataflow::diagram::Wire<Sort>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = seq.try_iter()?.map(|i| -> PyResult<_> {
         let i = i?;

@@ -3,8 +3,9 @@ import torch
 import inspect
 import gymnasium as gym
 
-from ..reactor import Module, Wire, LIA, BV, X, Var
-from ..sort import Sort, Bool, Real, Int, BitVec
+from ..reactor import Module, Wire, X, Var
+from ..op import LIA, BV
+from ..sort import Sort, Bool, Real, Int, Word
 from ..builder import builder_for, _normalize_shape, _shape
 from ..analyzer import (
     convert_method,
@@ -28,14 +29,14 @@ def space_to_dtype(space, theory, is_action: bool) -> Sort:
         n = space.n
         if theory is BV:
             bits = max(1, int(math.ceil(math.log2(n + 1))))
-            return BitVec(bits, [1, 1])
+            return Word(bits, [1, 1])
         if is_action:
             return Real([1, n])
         return Int([1, 1]) if theory is LIA else Real([1, 1])
     elif isinstance(space, gym.spaces.Box):
         shape = _normalize_shape(list(space.shape))
         if theory is BV:
-            return BitVec(32, shape)
+            return Word(32, shape)
         return Int(shape) if theory is LIA else Real(shape)
     elif isinstance(space, gym.spaces.MultiBinary):
         return Bool([1, space.n])
@@ -444,8 +445,7 @@ class Env(Module, gym.Wrapper):
         """Interpret an atom's init/update block, writing results to state."""
         for term in get_block(atom):
             read = [self._state[w] for w in term.read]
-            out_sort = term.write[0].dtype if len(term.write) else None
-            results = eval_itype(term.itype, read, out_sort)
+            results = eval_itype(term.itype, read)
             for w, val in zip(term.write, results):
                 self._state[w] = val
 

@@ -4,17 +4,18 @@ use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::any::{Combinatorial, Differential, Sequential, Sort};
+use theory::op::Any;
+use theory::sort::Any as Sort;
 
 #[pyclass(subclass, frozen)]
 pub(crate) struct Module {
-    pub(crate) base: reactive::Module<Combinatorial, Sequential, Differential, Sort>,
+    pub(crate) base: reactive::Module<Any, Any, Any, Sort>,
 }
 
 impl Module {
     fn partially_observable<A>(atoms: A, hide: &Bound<'_, PyAny>) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential, Sort>>,
+        A: IntoIterator<Item = reactive::Atom<Any, Any, Any, Sort>>,
     {
         let hide = Hide::try_from(hide)?;
         let module = reactive::Module::partially_observable(atoms, hide.as_fn());
@@ -24,7 +25,7 @@ impl Module {
 
     fn observable<A>(atoms: A) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential, Sort>>,
+        A: IntoIterator<Item = reactive::Atom<Any, Any, Any, Sort>>,
     {
         let module = reactive::Module::observable(atoms);
         module.map(Into::into).map_err(PyException::new_err)
@@ -136,7 +137,7 @@ impl Module {
         assign: &Bound<'_, PyAny>,
         hide: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
+        let assign = try_term_iter_cloned(&assign)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
             let atom =
@@ -373,8 +374,8 @@ impl Module {
     }
 }
 
-impl From<reactive::Module<Combinatorial, Sequential, Differential, Sort>> for Module {
-    fn from(base: reactive::Module<Combinatorial, Sequential, Differential, Sort>) -> Self {
+impl From<reactive::Module<Any, Any, Any, Sort>> for Module {
+    fn from(base: reactive::Module<Any, Any, Any, Sort>) -> Self {
         Self { base }
     }
 }

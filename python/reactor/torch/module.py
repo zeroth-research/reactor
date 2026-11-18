@@ -1,6 +1,8 @@
 import inspect
+import torch
 import torch.nn as nn
 
+from .. import overload as ov
 from ..reactor import Module as _BaseModule, X
 from ..sort import Real
 from ..builder import builder_for
@@ -9,7 +11,7 @@ from ..analyzer import convert_method, resolve_wire
 
 def _numeric_sort(theory, n):
     """The theory's numeric vector sort of width `n` (LRA/None -> Real, LIA -> Int,
-    BV -> BitVec32), derived the same way gym and dsl derive their interface sorts."""
+    BV -> Word(32)), derived the same way gym and dsl derive their interface sorts."""
     return builder_for(theory)._numeric_wire([1, n]).dtype
 
 
@@ -22,10 +24,20 @@ def _is_float_sort(sort) -> bool:
 
 def _validate_theory_supports_nn(theory):
     """A neural module needs the matrix ops a `Linear`+`ReLU` net compiles to. LRA and
-    LIA provide them; BV does not (no Transpose/Linear), so reject it with a clear error
-    rather than a deep AttributeError from the builder."""
-    ns = builder_for(theory)._ns
-    missing = [op for op in ("Transpose", "Linear", "ReLU") if not hasattr(ns, op)]
+    LIA provide them on their numbers; BV does not on words (no Transpose/Linear), so
+    reject it with a clear error rather than a deep TheoryError from the builder."""
+    sort = _numeric_sort(theory, 1)
+    ops = {
+        "Transpose": lambda: ov.transpose(sort),
+        "Linear": lambda: ov.linear(torch.zeros(1, 1), torch.zeros(1, 1), sort),
+        "ReLU": lambda: ov.relu(sort),
+    }
+    missing = []
+    for name, build in ops.items():
+        try:
+            build()
+        except ov.TheoryError:
+            missing.append(name)
     if missing:
         tname = getattr(theory, "__name__", "LRA")
         raise NotImplementedError(
@@ -36,7 +48,7 @@ def _validate_theory_supports_nn(theory):
 
 def _validate_weight_dtypes(live_layers, theory):
     """Weights are used as-is (no coercion), so their dtype must match the theory:
-    floating-point for Real (LRA), integer for Int/BitVec (LIA/BV). Raise otherwise."""
+    floating-point for Real (LRA), integer for Int/Word (LIA/BV). Raise otherwise."""
     want_float = _is_float_sort(_numeric_sort(theory, 1))
     kind = "floating-point" if want_float else "integer"
     tname = getattr(theory, "__name__", "LRA")

@@ -18,7 +18,7 @@ from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
 from .reactor import Wire, Term, Var, X
-from .sort import Bool, Real, Int, BitVec
+from .sort import Bool, Real, Int, Word
 from .builder import (
     TermBuilder,
     LRATermBuilder,
@@ -1281,7 +1281,7 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
 def _torch_dtype(target_dtype):
     """Map a Sort to the corresponding torch dtype. Defaults to float32."""
     match target_dtype:
-        case Int(_) | BitVec(_, _):
+        case Int(_) | Word(_, _):
             return torch.long
         case Bool(_):
             return torch.bool

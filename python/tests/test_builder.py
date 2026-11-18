@@ -21,5 +21,5 @@ def test_mul_scales_a_column_vector(theory, sort, dtype, n):
     term = builder.mul(const, x)
 
     vals = torch.arange(1, n + 1, dtype=dtype).reshape(n, 1)
-    out = eval_itype(term.itype, [vals], term.write[0].dtype)[0]
+    out = eval_itype(term.itype, [vals])[0]
     assert out.flatten().tolist() == [3 * v for v in range(1, n + 1)]

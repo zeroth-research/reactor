@@ -1,7 +1,8 @@
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
-use theory::any::{Any, Sort};
+use theory::op::Any;
+use theory::sort::Any as Sort;
 
 #[pyclass(frozen)]
 pub(crate) struct Term {

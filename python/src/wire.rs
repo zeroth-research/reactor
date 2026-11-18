@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use theory::any::Sort;
+use theory::sort::Any as Sort;
 
 #[pyclass(frozen, eq, hash, ord)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]

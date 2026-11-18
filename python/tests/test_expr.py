@@ -7,14 +7,14 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from reactor import LIA, LRA, BV, Wire, Bool, Int, Real, BitVec, Var, X as _X
+from reactor import LIA, LRA, BV, Wire, Bool, Int, Real, Word, Var, X as _X, op
 from reactor.builder import NonLinearError
 from reactor.eval import eval_itype
 from reactor.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
 
 INT = Int([1, 1])
 REAL = Real([1, 1])
-BV32 = BitVec(32, [1, 1])
+BV32 = Word(32, [1, 1])
 
 
 @pytest.fixture(autouse=True)
@@ -40,8 +40,7 @@ def _varexpr(sort, theory=LIA, signed=False):
 def _run(terms, state):
     for t in terms:
         read = [state[w] for w in t.read]
-        out_sort = t.write[0].dtype if len(t.write) else None
-        for w, val in zip(t.write, eval_itype(t.itype, read, out_sort)):
+        for w, val in zip(t.write, eval_itype(t.itype, read)):
             state[w] = val
     return state
 
@@ -112,13 +111,7 @@ def test_numeric_literal_needs_explicit_sort():
 
 def tensor_of_term(term):
     match term.itype:
-        case LRA.Real(t):
-            return t
-        case LRA.Bool(t):
-            return t
-        case LIA.Bool(t):
-            return t
-        case LIA.Int(t):
+        case op.real.Const(t) | op.int.Const(t) | op.bool.Const(t) | op.word.Const(t, _):
             return t
         case _:
             return None
@@ -192,7 +185,7 @@ def test_theory_baked_real_and_bv():
     assert (xr + 1.0).dtype == REAL
     xb, yb = _varexpr(BV32, theory=BV), _varexpr(BV32, theory=BV)
     assert (xb + 1).dtype == BV32
-    assert (xb < yb).dtype == BitVec(1, [1, 1])
+    assert (xb < yb).dtype == Bool([1, 1])
 
 
 # --- equality builds predicates; truth-testing is refused -------------------
@@ -202,17 +195,17 @@ def test_equality_operators_build_predicates():
     x, y = _varexpr(INT), _varexpr(INT)
     with collecting() as terms:
         e = x == y
-    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, LIA.Eq)
+    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, op.int.Eq)
     with collecting() as terms:
         e = x != y
-    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, LIA.Ne)
+    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, op.int.Ne)
 
 
 def test_equality_coerces_a_raw_operand():
     x = _varexpr(INT)
     with collecting() as terms:
         e = x == 3
-    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, LIA.Eq)
+    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, op.int.Eq)
 
 
 def test_truth_testing_raises():
@@ -257,12 +250,12 @@ def test_bv_signedness_picks_op():
     xs, ys = _varexpr(BV32, theory=BV, signed=True), _varexpr(BV32, theory=BV, signed=True)
     with collecting() as terms:
         xs < ys
-    assert isinstance(terms[-1].itype, BV.SLt)
+    assert isinstance(terms[-1].itype, op.word.SLt)
 
     xu, yu = _varexpr(BV32, theory=BV), _varexpr(BV32, theory=BV)
     with collecting() as terms:
         xu < yu
-    assert isinstance(terms[-1].itype, BV.ULt)
+    assert isinstance(terms[-1].itype, op.word.ULt)
 
 
 def test_coercion_inherits_signedness_regardless_of_operand_order():
@@ -271,10 +264,10 @@ def test_coercion_inherits_signedness_regardless_of_operand_order():
     xs = _varexpr(BV32, theory=BV, signed=True)
     with collecting() as terms:
         (xs + 5) < 3
-    assert isinstance(terms[-1].itype, BV.SLt)
+    assert isinstance(terms[-1].itype, op.word.SLt)
     with collecting() as terms:
         (5 + xs) < 3
-    assert isinstance(terms[-1].itype, BV.SLt)
+    assert isinstance(terms[-1].itype, op.word.SLt)
 
 
 def test_mixing_signed_and_unsigned_bv_raises():
@@ -292,7 +285,7 @@ def test_collecting_records_deps_first():
     with collecting() as terms:
         ite(x < y, x + 1, y)
     optypes = [type(t.itype) for t in terms]
-    assert optypes == [LIA.Lt, LIA.Int, LIA.Add, LIA.Ite]
+    assert optypes == [op.int.Lt, op.int.Const, op.int.Add, op.int.Ite]
 
 
 def test_shared_subexpression_recorded_once():
@@ -301,7 +294,7 @@ def test_shared_subexpression_recorded_once():
         g = x < y
         ite(g, x + 1, x)
         ite(g, y, y)
-    assert sum(isinstance(t.itype, LIA.Lt) for t in terms) == 1
+    assert sum(isinstance(t.itype, op.int.Lt) for t in terms) == 1
 
 
 # --- evaluation end-to-end --------------------------------------------------
@@ -326,7 +319,7 @@ def test_mul_by_constant_folds_to_linear():
     x = _varexpr(INT)
     with collecting() as terms:
         e = x * 2
-    assert isinstance(terms[-1].itype, LIA.Linear)
+    assert isinstance(terms[-1].itype, op.int.Linear)
     assert _run(terms, {x.wire: _int(3)})[e.wire].item() == 6
 
 
@@ -335,7 +328,7 @@ def test_scaling_a_column_vector_by_a_constant(n):
     x = _varexpr(Int([n, 1]))
     with collecting() as terms:
         e = x * 3
-    assert isinstance(terms[-1].itype, LIA.Linear)
+    assert isinstance(terms[-1].itype, op.int.Linear)
     vals = torch.arange(1, n + 1, dtype=torch.int64).reshape(n, 1)
     got = _run(terms, {x.wire: vals})[e.wire]
     assert got.flatten().tolist() == [3 * v for v in range(1, n + 1)]

@@ -53,6 +53,7 @@ Two base-class constraints force this (both flagged for design review):
 
 import inspect
 
+from . import overload as ov
 from .reactor import Module as _Module, Term as _Term, X as base_X, d as base_d, Var
 
 from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
@@ -88,7 +89,7 @@ def _build_init_block(cls, ctrl, extl, theory) -> list:
             raise ValueError(f"init expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_Term(theory.Id(), [base_X(var)], [e.wire]))
+            terms.append(_Term(ov.id_(e.dtype), [base_X(var)], [e.wire]))
         return terms
 
 
@@ -109,7 +110,7 @@ def _build_update_block(cls, ctrl, extl, theory) -> list:
             raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_Term(theory.Id(), [base_X(var)], [e.wire]))
+            terms.append(_Term(ov.id_(e.dtype), [base_X(var)], [e.wire]))
         return terms
 
 
@@ -130,7 +131,7 @@ def _build_delay_block(cls, ctrl, extl, theory) -> list:
             raise ValueError(f"delay expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_Term(theory.Id(), [base_d(var)], [e.wire]))
+            terms.append(_Term(ov.id_(e.dtype), [base_d(var)], [e.wire]))
         return terms
 
 

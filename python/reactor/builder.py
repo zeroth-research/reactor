@@ -3,14 +3,18 @@
 Temporary scaffolding kept to move fast during the theory_pyo3 migration; the
 end-state is to call the theory ops directly, so this should not grow.
 
-Per the theory_pyo3 design, Sorts and ops expose no accessor methods — shape,
-bitwidth and const payloads are obtained via `match`/unpacking (see the module
-helpers below).
+A builder picks the sorts of the literals of its theory (`Real` for LRA, `Int` for
+LIA, `Word(32)` for BV, and `Bool` for all), and the operations by the sorts of their
+operands, through `reactor.overload`; shape, width and const payloads are obtained
+via `match`/unpacking (see the module helpers below).
 """
 
 import torch
-from .reactor import Wire, Term, LRA, LIA, BV, Var
-from .sort import Sort, Bool, Real, Int, BitVec
+from . import op, overload as ov
+from .reactor import Wire, Term, Var
+from .op import LRA, LIA, BV
+from .overload import TheoryError
+from .sort import Sort, Bool, Real, Int, Word, shape as _shape, with_shape as _with_shape
 
 
 def _wire(t) -> Wire:
@@ -38,52 +42,26 @@ def _normalize_shape(shape: list) -> list:
     return shape
 
 
-# --- Sort / op access via `match` (no methods on Sort or the ops) ------------
-
-
-def _shape(sort: Sort) -> list:
-    match sort:
-        case Bool(s) | Int(s) | Real(s):
-            return list(s)
-        case BitVec(_, s):
-            return list(s)
-    raise TypeError(f"sort has no shape: {sort}")
-
-
-def _with_shape(sort: Sort, shape: list) -> Sort:
-    match sort:
-        case Bool(_):
-            return Bool(shape)
-        case Int(_):
-            return Int(shape)
-        case Real(_):
-            return Real(shape)
-        case BitVec(bw, _):
-            return BitVec(bw, shape)
-    raise TypeError(f"unknown sort: {sort}")
+# --- Sort / op access via `match` --------------------------------------------
 
 
 def _bv_width(sort: Sort) -> int:
     match sort:
-        case BitVec(bw, _):
+        case Word(bw, _):
             return bw
-    raise TypeError(f"not a BitVec sort: {sort}")
+    raise TypeError(f"not a Word sort: {sort}")
 
 
 def _bool_sort(sort: Sort) -> Sort:
     return Bool(_shape(sort))
 
 
-def _const_tensor(op):
-    """The constant tensor carried by a const op, or None (ops expose no getters)."""
-    match op:
-        case LRA.Real(t) | LRA.Bool(t) | LIA.Int(t) | LIA.Bool(t) | BV.Const(t):
+def _const_tensor(itype):
+    """The constant tensor carried by a const op, or None."""
+    match itype:
+        case op.real.Const(t) | op.int.Const(t) | op.bool.Const(t) | op.word.Const(t, _):
             return t
     return None
-
-
-class TheoryError(Exception):
-    """An operation cannot be expressed in the selected theory."""
 
 
 class NonLinearError(TheoryError):
@@ -96,65 +74,61 @@ class NonLinearError(TheoryError):
 
 
 class TermBuilder:
-    """Abstract base. Subclasses set `_ns = LRA / LIA / BV`."""
+    """Abstract base. Subclasses set `_logic = LRA / LIA / BV`."""
 
-    _ns = None
+    _logic = None
 
     # --- low-level helpers ---
 
-    def _binary_op(self, op_fn, output_sort: Sort, a, b) -> Term:
-        return Term(op_fn(), [Wire(output_sort)], [_wire(a), _wire(b)])
+    def _binary_op(self, itype, output_sort: Sort, a, b) -> Term:
+        return Term(itype, [Wire(output_sort)], [_wire(a), _wire(b)])
 
-    def _unary_op(self, op_fn, a) -> Term:
-        return Term(op_fn(), [Wire(_dtype(a))], [_wire(a)])
+    def _unary_op(self, overloaded, a) -> Term:
+        return Term(overloaded(_dtype(a)), [Wire(_dtype(a))], [_wire(a)])
+
+    def _cmp(self, overloaded, a, b) -> Term:
+        return self._binary_op(overloaded(_dtype(a)), _bool_sort(_dtype(a)), a, b)
 
     # --- theory-independent ops ---
 
     def id_(self, src, output_wire=None) -> Term:
-        assert self._ns
         w = output_wire or Wire(_dtype(src))
-        return Term(self._ns.Id(), [w], [_wire(src)])
+        return Term(ov.id_(_dtype(src)), [w], [_wire(src)])
 
     def ite(self, cond, a, b, output_wire=None) -> Term:
-        assert self._ns
         w = output_wire or Wire(_dtype(a))
-        return Term(self._ns.Ite(), [w], [_wire(cond), _wire(a), _wire(b)])
+        return Term(ov.ite(_dtype(a)), [w], [_wire(cond), _wire(a), _wire(b)])
 
+    # Logic on booleans, and bitwise on words: the result has the operands' sort.
     def not_(self, a) -> Term:
-        assert self._ns
-        return Term(self._ns.Not(), [Wire(_bool_sort(_dtype(a)))], [_wire(a)])
+        return self._unary_op(ov.not_, a)
 
     def and_(self, a, b) -> Term:
-        return self._binary_op(self._ns.And, _bool_sort(_dtype(a)), a, b)
+        return self._binary_op(ov.and_(_dtype(a)), _dtype(a), a, b)
 
     def or_(self, a, b) -> Term:
-        return self._binary_op(self._ns.Or, _bool_sort(_dtype(a)), a, b)
+        return self._binary_op(ov.or_(_dtype(a)), _dtype(a), a, b)
 
     def xor_(self, a, b) -> Term:
-        return self._binary_op(self._ns.Xor, _bool_sort(_dtype(a)), a, b)
+        return self._binary_op(ov.xor_(_dtype(a)), _dtype(a), a, b)
 
     def const_bool(self, value: bool, output_wire=None) -> Term:
-        # Route through the theory's const() so each theory represents bools its
-        # own way (LIA/LRA Const on a Bool wire; BV Const as BitVec<1>).
         return self.const(
             torch.tensor([[bool(value)]], dtype=torch.bool), output_wire=output_wire
         )
 
     def transpose(self, a) -> Term:
-        assert self._ns
         w = _wire(a)
         s = _shape(w.dtype)
-        return Term(self._ns.Transpose(), [Wire(_with_shape(w.dtype, [s[1], s[0]]))], [w])
+        return Term(ov.transpose(w.dtype), [Wire(_with_shape(w.dtype, [s[1], s[0]]))], [w])
 
     def relu(self, a) -> Term:
-        assert self._ns
-        return self._unary_op(self._ns.ReLU, a)
+        return self._unary_op(ov.relu, a)
 
     def argmax(self, a) -> Term:
-        assert self._ns
         w = _wire(a)
         # Output keeps the input's sort family, reshaped to [1, 1].
-        return Term(self._ns.Argmax(), [Wire(_with_shape(w.dtype, [1, 1]))], [w])
+        return Term(ov.argmax(w.dtype), [Wire(_with_shape(w.dtype, [1, 1]))], [w])
 
     def python_type_to_dtype(self, python_type: type, shape: list):
         raise NotImplementedError
@@ -163,7 +137,6 @@ class TermBuilder:
         raise NotImplementedError
 
     def _try_mul_as_linear(self, a, b, const_cls, scalar_dtype):
-        assert self._ns
         for const_t, var_t in [(a, b), (b, a)]:
             if not isinstance(const_t, Term):
                 continue
@@ -179,12 +152,12 @@ class TermBuilder:
             n = s[0]
             A = torch.eye(n, dtype=scalar_dtype) * data.item()
             b_bias = torch.zeros(n, 1, dtype=scalar_dtype)
-            return Term(self._ns.Linear(A, b_bias), [Wire(var_wire.dtype)], [var_wire])
+            itype = ov.linear(A, b_bias, var_wire.dtype)
+            return Term(itype, [Wire(var_wire.dtype)], [var_wire])
         return None
 
     def uninterpreted(self, name: str, sort: Sort) -> Term:
-        assert self._ns
-        return Term.constant(self._ns.Uninterpreted(name), [Wire(sort)])
+        return Term.constant(ov.uninterpreted(name, sort), [Wire(sort)])
 
     def _numeric_wire(self, shape: list) -> Wire:
         """Wire of this theory's numeric sort with the given shape."""
@@ -192,58 +165,60 @@ class TermBuilder:
 
     def linear(self, x, weight, bias) -> list:
         """Emit [Transpose-in, Linear, Transpose-out]. Last write[0] is the output wire."""
-        assert self._ns
         x_wire = _wire(x)
         shape = _shape(x_wire.dtype)  # [1, in_features] row-major
         in_features = shape[-1]
         out_features = weight.shape[0]
 
         input_col_wire = Wire(_with_shape(x_wire.dtype, [in_features, 1]))
-        t_in = Term(self._ns.Transpose(), [input_col_wire], [x_wire])
+        t_in = Term(ov.transpose(x_wire.dtype), [input_col_wire], [x_wire])
 
         linear_out_wire = self._numeric_wire([out_features, 1])
-        t_lin = Term(self._ns.Linear(weight, bias), [linear_out_wire], [input_col_wire])
+        t_lin = Term(
+            ov.linear(weight, bias, input_col_wire.dtype), [linear_out_wire], [input_col_wire]
+        )
 
         out_wire = self._numeric_wire([1, out_features])
-        t_out = Term(self._ns.Transpose(), [out_wire], [linear_out_wire])
+        t_out = Term(ov.transpose(linear_out_wire.dtype), [out_wire], [linear_out_wire])
 
         return [t_in, t_lin, t_out]
 
     def linear_symbolic(self, x, out_features: int):
-        # theory_pyo3's Linear carries its weight/bias as *constant* tensors in the
-        # op, so a Linear with symbolic (wire) weights is no longer expressible.
-        # Revisit when porting the analyzer/torch NN path (Step 4).
+        # Linear carries its weight/bias as *constant* tensors in the op, so a Linear
+        # with symbolic (wire) weights is not expressible.
         raise NotImplementedError(
             "symbolic Linear (wire weights) is not expressible: theory Linear takes constant A, B"
         )
 
-    # --- theory-specific ops (abstract) ---
+    # --- arithmetic and comparisons, on the operands' sort ---
 
     def add(self, a, b) -> Term:
-        raise NotImplementedError
+        return self._binary_op(ov.add(_dtype(a)), _dtype(a), a, b)
 
     def sub(self, a, b) -> Term:
-        raise NotImplementedError
-
-    def mul(self, a, b) -> Term:
-        raise NotImplementedError
+        return self._binary_op(ov.sub(_dtype(a)), _dtype(a), a, b)
 
     def lt(self, a, b) -> Term:
-        raise NotImplementedError
+        return self._cmp(ov.lt, a, b)
 
     def le(self, a, b) -> Term:
-        raise NotImplementedError
+        return self._cmp(ov.le, a, b)
 
     def gt(self, a, b) -> Term:
-        raise NotImplementedError
+        return self._cmp(ov.gt, a, b)
 
     def ge(self, a, b) -> Term:
-        raise NotImplementedError
+        return self._cmp(ov.ge, a, b)
 
     def eq(self, a, b) -> Term:
-        raise NotImplementedError
+        return self._cmp(ov.eq, a, b)
 
     def ne(self, a, b) -> Term:
+        return self._cmp(ov.ne, a, b)
+
+    # --- theory-specific ops (abstract) ---
+
+    def mul(self, a, b) -> Term:
         raise NotImplementedError
 
     def const(self, tensor, output_wire=None) -> Term:
@@ -262,7 +237,7 @@ class TermBuilder:
     # or notebook changes are needed.
 
     def _theory(self) -> str:
-        return self._ns.__name__ if self._ns is not None else "the selected theory"
+        return self._logic.__name__ if self._logic is not None else "the selected theory"
 
     def sin(self, a) -> Term:
         raise NonLinearError(self._theory(), "sin (non-linear; needs a non-linear theory)")
@@ -288,9 +263,24 @@ class TermBuilder:
             "(indexing needs a theory that provides TensorGet)"
         )
 
+    # --- constants, of the theory's sorts ---
+
+    def _const(self, tensor, numeric, output_wire=None) -> Term:
+        """A constant: a boolean tensor is a `Bool`, and any other one of the sort
+        `numeric(shape)`, unless `output_wire` gives the sort."""
+        shape = _normalize_shape(list(tensor.size()))
+        tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
+        if output_wire is not None:
+            w = output_wire
+        elif tensor.dtype == torch.bool:
+            w = Wire(Bool(shape))
+        else:
+            w = Wire(numeric(shape))
+        return Term.constant(ov.const(tensor, w.dtype), [w])
+
 
 class LRATermBuilder(TermBuilder):
-    _ns = LRA
+    _logic = LRA
 
     def _numeric_wire(self, shape: list) -> Wire:
         return Wire(Real(shape))
@@ -300,34 +290,10 @@ class LRATermBuilder(TermBuilder):
             return Bool(shape)
         return Real(shape)
 
-    def add(self, a, b) -> Term:
-        return self._binary_op(LRA.Add, _dtype(a), a, b)
-
-    def sub(self, a, b) -> Term:
-        return self._binary_op(LRA.Sub, _dtype(a), a, b)
-
-    def lt(self, a, b) -> Term:
-        return self._binary_op(LRA.Lt, _bool_sort(_dtype(a)), a, b)
-
-    def le(self, a, b) -> Term:
-        return self._binary_op(LRA.Le, _bool_sort(_dtype(a)), a, b)
-
-    def gt(self, a, b) -> Term:
-        return self._binary_op(LRA.Gt, _bool_sort(_dtype(a)), a, b)
-
-    def ge(self, a, b) -> Term:
-        return self._binary_op(LRA.Ge, _bool_sort(_dtype(a)), a, b)
-
-    def eq(self, a, b) -> Term:
-        return self._binary_op(LRA.Eq, _bool_sort(_dtype(a)), a, b)
-
-    def ne(self, a, b) -> Term:
-        return self._binary_op(LRA.Ne, _bool_sort(_dtype(a)), a, b)
-
     # LRA is linear real arithmetic: no transcendentals / generic division.
     # (sin/cos/tanh/pow/stack/tensor_get inherit the base's deferred-op errors.)
     def mul(self, a, b) -> Term:
-        result = self._try_mul_as_linear(a, b, LRA.Real, torch.float32)
+        result = self._try_mul_as_linear(a, b, op.real.Const, torch.float32)
         if result is not None:
             return result
         raise NonLinearError("LRA")
@@ -335,10 +301,10 @@ class LRATermBuilder(TermBuilder):
     def matmul(self, a, b) -> Term:
         a_wire, b_wire = _wire(a), _wire(b)
         out_shape = [_shape(a_wire.dtype)[0], _shape(b_wire.dtype)[1]]
-        if isinstance(a, Term) and isinstance(a.itype, LRA.Const):
+        if isinstance(a, Term) and isinstance(a.itype, op.real.Const):
             no_bias = torch.empty(0, 0)
             return Term(
-                LRA.Linear(_const_tensor(a.itype), no_bias),
+                ov.linear(_const_tensor(a.itype), no_bias, b_wire.dtype),
                 [Wire(Real(out_shape))],
                 [b_wire],
             )
@@ -354,17 +320,11 @@ class LRATermBuilder(TermBuilder):
         )
 
     def const(self, tensor, output_wire=None) -> Term:
-        shape = _normalize_shape(list(tensor.size()))
-        tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
-        if tensor.dtype == torch.bool:
-            w = output_wire or Wire(Bool(shape))
-            return Term.constant(LRA.Bool(tensor), [w])
-        w = output_wire or Wire(Real(shape))
-        return Term.constant(LRA.Real(tensor), [w])
+        return self._const(tensor, Real, output_wire)
 
 
 class LIATermBuilder(TermBuilder):
-    _ns = LIA
+    _logic = LIA
 
     def _numeric_wire(self, shape: list) -> Wire:
         return Wire(Int(shape))
@@ -374,32 +334,8 @@ class LIATermBuilder(TermBuilder):
             return Bool(shape)
         return Int(shape)
 
-    def add(self, a, b) -> Term:
-        return self._binary_op(LIA.Add, _dtype(a), a, b)
-
-    def sub(self, a, b) -> Term:
-        return self._binary_op(LIA.Sub, _dtype(a), a, b)
-
-    def lt(self, a, b) -> Term:
-        return self._binary_op(LIA.Lt, _bool_sort(_dtype(a)), a, b)
-
-    def le(self, a, b) -> Term:
-        return self._binary_op(LIA.Le, _bool_sort(_dtype(a)), a, b)
-
-    def gt(self, a, b) -> Term:
-        return self._binary_op(LIA.Gt, _bool_sort(_dtype(a)), a, b)
-
-    def ge(self, a, b) -> Term:
-        return self._binary_op(LIA.Ge, _bool_sort(_dtype(a)), a, b)
-
-    def eq(self, a, b) -> Term:
-        return self._binary_op(LIA.Eq, _bool_sort(_dtype(a)), a, b)
-
-    def ne(self, a, b) -> Term:
-        return self._binary_op(LIA.Ne, _bool_sort(_dtype(a)), a, b)
-
     def mul(self, a, b) -> Term:
-        result = self._try_mul_as_linear(a, b, LIA.Int, torch.int64)
+        result = self._try_mul_as_linear(a, b, op.int.Const, torch.int64)
         if result is not None:
             return result
         raise NonLinearError("LIA")
@@ -407,10 +343,10 @@ class LIATermBuilder(TermBuilder):
     def matmul(self, a, b) -> Term:
         a_wire, b_wire = _wire(a), _wire(b)
         out_shape = [_shape(a_wire.dtype)[0], _shape(b_wire.dtype)[1]]
-        if isinstance(a, Term) and isinstance(a.itype, LIA.Int):
+        if isinstance(a, Term) and isinstance(a.itype, op.int.Const):
             no_bias = torch.empty(0, 0)
             return Term(
-                LIA.Linear(_const_tensor(a.itype), no_bias),
+                ov.linear(_const_tensor(a.itype), no_bias, b_wire.dtype),
                 [Wire(Int(out_shape))],
                 [b_wire],
             )
@@ -425,95 +361,42 @@ class LIATermBuilder(TermBuilder):
         return self.const(tensor, output_wire=output_wire)
 
     def const(self, tensor, output_wire=None) -> Term:
-        shape = _normalize_shape(list(tensor.size()))
-        tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
-        if tensor.dtype == torch.bool:
-            w = output_wire or Wire(Bool(shape))
-            return Term.constant(LIA.Const(tensor), [w])
-        w = output_wire or Wire(Int(shape))
-        return Term.constant(LIA.Int(tensor), [w])
+        return self._const(tensor, Int, output_wire)
 
 
 class BVTermBuilder(TermBuilder):
-    _ns = BV
+    _logic = BV
 
     # FIXME: make 32 a parameter
     def _numeric_wire(self, shape: list) -> Wire:
-        return Wire(BitVec(32, shape))
+        return Wire(Word(32, shape))
 
     def python_type_to_dtype(self, python_type: type, shape: list):
         if python_type is bool:
             return Bool(shape)
-        return BitVec(32, shape)
-
-    def add(self, a, b) -> Term:
-        return self._binary_op(BV.Add, _dtype(a), a, b)
-
-    def sub(self, a, b) -> Term:
-        return self._binary_op(BV.Sub, _dtype(a), a, b)
+        return Word(32, shape)
 
     def mul(self, a, b) -> Term:
-        return self._binary_op(BV.Mul, _dtype(a), a, b)
+        return self._binary_op(ov.mul(_dtype(a)), _dtype(a), a, b)
 
-    # In the BV (SMT-LIB) model there is no Bool: bitwise ops preserve the
-    # operand's BV width, and comparisons yield a 1-bit BV.
-    def _bv1(self, a) -> Sort:
-        return BitVec(1, _shape(_dtype(a)))
-
-    def and_(self, a, b) -> Term:
-        return self._binary_op(BV.And, _dtype(a), a, b)
-
-    def or_(self, a, b) -> Term:
-        return self._binary_op(BV.Or, _dtype(a), a, b)
-
-    def xor_(self, a, b) -> Term:
-        return self._binary_op(BV.Xor, _dtype(a), a, b)
-
-    def not_(self, a) -> Term:
-        return Term(BV.Not(), [Wire(_dtype(a))], [_wire(a)])
-
-    # Comparisons default to unsigned (Sort carries no signedness yet; the smv
-    # parser tracks signedness and picks U*/S* directly). TODO: signed path.
-    def lt(self, a, b) -> Term:
-        return self._binary_op(BV.ULt, self._bv1(a), a, b)
-
-    def le(self, a, b) -> Term:
-        return self._binary_op(BV.ULe, self._bv1(a), a, b)
-
-    def gt(self, a, b) -> Term:
-        return self._binary_op(BV.UGt, self._bv1(a), a, b)
-
-    def ge(self, a, b) -> Term:
-        return self._binary_op(BV.UGe, self._bv1(a), a, b)
-
-    def eq(self, a, b) -> Term:
-        return self._binary_op(BV.Eq, self._bv1(a), a, b)
-
-    def ne(self, a, b) -> Term:
-        return self._binary_op(BV.Ne, self._bv1(a), a, b)
+    # Comparisons default to unsigned (Sort carries no signedness; the smv parser
+    # tracks signedness and picks U*/S* directly), and write booleans, as in QF_BV.
 
     def neg(self, a) -> Term:
-        return self._unary_op(BV.Neg, a)
-
-    def abs_(self, a) -> Term:
-        return self._unary_op(BV.Abs, a)
+        return self._unary_op(ov.neg, a)
 
     def matmul(self, a, b) -> Term:
-        a_w, b_w = _wire(a), _wire(b)
-        out_shape = [_shape(a_w.dtype)[0], _shape(b_w.dtype)[1]]
-        out = Wire(BitVec(_bv_width(a_w.dtype), out_shape))
-        return Term(BV.MatMul(), [out], [a_w, b_w])
+        raise TheoryError("BV has no MatMul")
 
     def bit_select(self, a, high: int, low: int) -> Term:
-        bw = high - low + 1
-        out = Wire(BitVec(bw, [1, 1]))
-        return Term(BV.BitSelect(high=high, low=low), [out], [_wire(a)])
+        a_w = _wire(a)
+        out = Wire(Word(high - low + 1, _shape(a_w.dtype)))
+        return Term(ov.extract(a_w.dtype, high, low), [out], [a_w])
 
     def extend(self, a, extra: int) -> Term:
         a_w = _wire(a)
-        new_bw = _bv_width(a_w.dtype) + extra
-        out = Wire(BitVec(new_bw, [1, 1]))
-        return Term(BV.Extend(extra=extra), [out], [a_w])
+        out = Wire(Word(_bv_width(a_w.dtype) + extra, _shape(a_w.dtype)))
+        return Term(ov.extend(a_w.dtype, extra), [out], [a_w])
 
     def const_for_value(self, value, output_wire=None) -> Term:
         if isinstance(value, bool):
@@ -523,13 +406,7 @@ class BVTermBuilder(TermBuilder):
         return self.const(tensor, output_wire=output_wire)
 
     def const(self, tensor, output_wire=None) -> Term:
-        shape = _normalize_shape(list(tensor.size()))
-        tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
-        if tensor.dtype == torch.bool:
-            w = output_wire or Wire(BitVec(1, shape))
-            return Term.constant(BV.Const(tensor), [w])
-        out = output_wire or Wire(BitVec(32, shape))
-        return Term.constant(BV.Const(tensor), [out])
+        return self._const(tensor, lambda shape: Word(32, shape), output_wire)
 
 
 def builder_for(theory=None) -> "TermBuilder":

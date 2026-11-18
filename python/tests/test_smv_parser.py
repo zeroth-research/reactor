@@ -3,7 +3,7 @@
 from pathlib import Path
 import pytest
 
-from reactor import Wire, Module, parse_smv, BV, BitVec, Var, X
+from reactor import Wire, Module, parse_smv, Word, Var, X, op
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 
@@ -45,12 +45,12 @@ def test_counter_init_terms():
     # At least one init term should be a zero-valued BV constant for x.
     def _is_const_zero(itype):
         match itype:
-            case BV.Const(data):
+            case op.word.Const(data, _):
                 return int(data.item()) == 0
         return False
 
     const_zero_found = any(_is_const_zero(t.itype) for t in init_terms)
-    assert const_zero_found, "Expected a BV.Const(0) init term for x"
+    assert const_zero_found, "Expected a word.Const(0) init term for x"
 
 
 def test_test_itypes():
@@ -80,7 +80,7 @@ def test_wire_overrides():
 
     # Create override wires for 'x'
     # The SMV parser is BV-only; overrides must match.
-    dtype = BitVec(32, [1, 1])
+    dtype = Word(32, [1, 1])
     ov = Var(dtype)
 
     module, name_map = parse_smv(text, overrides={"x": ov})
@@ -135,7 +135,7 @@ def test_enum_type():
     # state should have TensorInt dtype (enum mapped to int)
     state = name_map["state"]
     # SMV parser maps `integer` / enum types to BV<32>.
-    assert isinstance(state.dtype, BitVec)
+    assert isinstance(state.dtype, Word)
 
 
 def test_frozen_var():
@@ -157,3 +157,36 @@ def test_frozen_var():
     atom = module.atoms[0]
     update_itypes = [str(t.itype) for t in atom.update]
     assert any("Id" in it for it in update_itypes)
+
+
+def test_booleans_are_bools_and_composites_evaluate():
+    """SMV booleans are `Bool`s, as in QF_BV, which comparisons write; `<->`, `->` and
+    `abs`, which have no op of their own, are built from others."""
+    from reactor import Bool
+    from reactor.eval import execute_init, execute_update
+
+    text = """
+    MODULE main
+    VAR b : boolean;
+        c : boolean;
+        x : signed word[8];
+    ASSIGN
+        init(b) := TRUE;
+        init(c) := FALSE;
+        init(x) := -0sd8_3;
+        next(b) := (x < 0sd8_0) <-> c;
+        next(c) := b -> c;
+        next(x) := case b : abs(x); TRUE : x; esac;
+    """
+    module, name_map = parse_smv(text)
+    assert name_map["b"].dtype == Bool([1, 1])
+    assert name_map["x"].dtype == Word(8, [1, 1])
+
+    state = {}
+    execute_init(state, module.atoms)
+    for var in name_map.values():
+        state[var] = state[X(var)]
+    execute_update(state, module.atoms)
+    got = {name: state[X(var)].item() for name, var in name_map.items()}
+    # x < 0 is true, so b' = (true <-> false) and c' = (true -> false); |-3| = 3
+    assert got == {"b": False, "c": False, "x": 3}

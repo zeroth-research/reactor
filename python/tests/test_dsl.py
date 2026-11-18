@@ -28,8 +28,7 @@ def _run_block(m, state, get_block):
     for a in m.atoms:
         for t in get_block(a):
             read = [state[w] for w in t.read]
-            out_sort = t.write[0].dtype if len(t.write) else None
-            state.update(zip(t.write, eval_itype(t.itype, read, out_sort)))
+            state.update(zip(t.write, eval_itype(t.itype, read)))
     return state
 
 
