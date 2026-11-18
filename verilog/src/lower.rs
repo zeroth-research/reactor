@@ -147,7 +147,20 @@ is released sees the reset still active and keeps the reset values:
 releasing the reset takes effect at the next edge. This is the timing
 assumption of resets: the release meets the recovery and removal times of
 the registers (it does not change too close to an edge), just as data
-inputs meet setup and hold. Registers of the block that the reset branch
+inputs meet setup and hold. A reset asserted in a round where a clock has
+an edge acts after that edge: the registers it resets end the round at
+their reset values, while every block running at an edge of that round
+reads their values from before the reset (the latched ones), as it reads
+all registers; a reset asserted just before an edge in hardware is a reset
+in an earlier round here. The same holds for registers clocked by an edge
+that a reset makes (the reset of a derived clock's register, see
+[`typing::domains`]): they change in the round of the reset, and blocks on
+other clocks see the change from their next edge on. When the reset comes
+from another clock domain, these registers and the reset registers
+themselves change at a time unrelated to the clocks of the blocks reading
+them, which could sample them during the change; this is assumed not to
+happen (the reset is synchronized to the readers' clocks or asserted away
+from their edges) and is not checked. Registers of the block that the reset branch
 does not assign are not reset; they keep their value while the reset is
 active, as plain registers whose value at an edge depends on the latched
 reset. A reset must come from an input or a register, possibly through
@@ -194,7 +207,9 @@ own, with fresh variables), with the module's internal signals hidden.
 A port connected to a signal name is that signal's variable (so a clock
 port is the clock of the instantiating module, and the instance's blocks
 test its edges themselves); an input connected to another expression is a variable `u.a` driven by an extra
-atom of the module, as if by `assign u.a = …`. Variables are named as
+atom of the module, as if by `assign u.a = …` (so the expression is sized
+as the right-hand side of an assignment to the port, see [`sizing`]; Yosys
+sizes it by itself). Variables are named as
 [`Inst::naming`] says, the initial value of a register at path `u.q` is the
 external variable `u.q@init`, and intermediate values of an instance's
 blocks are prefixed with its path.
