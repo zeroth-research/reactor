@@ -534,7 +534,7 @@ impl<'m> Interp<'m> {
             ExprKind::Unary(UnOp::BitNot | UnOp::Neg | UnOp::Plus, a) => self.det(c, a),
             ExprKind::Unary(..) => Ty::BIT,
             ExprKind::Binary(op, a, b) => match op {
-                BinOp::Shl | BinOp::Shr | BinOp::AShl | BinOp::AShr => self.det(c, a),
+                BinOp::Shl | BinOp::Shr | BinOp::AShl | BinOp::AShr | BinOp::Pow => self.det(c, a),
                 op if compare(*op) || matches!(op, BinOp::LogAnd | BinOp::LogOr) => Ty::BIT,
                 _ => both(self.det(c, a), self.det(c, b)),
             },
@@ -646,6 +646,12 @@ impl<'m> Interp<'m> {
                 let x = self.own(c, a, scope, values, active)?;
                 let y = self.own(c, b, scope, values, active)?;
                 binary(*op, &x, &y, false)?
+            }
+            // the base context-determined, the exponent self-determined
+            ExprKind::Binary(BinOp::Pow, a, b) => {
+                let x = self.value(c, a, t, scope, values, active)?;
+                let y = self.own(c, b, scope, values, active)?;
+                return power(&x, t.signed, &y, self.det(c, b).signed);
             }
             ExprKind::Binary(op, a, b) => {
                 let x = self.value(c, a, t, scope, values, active)?;
@@ -822,6 +828,52 @@ fn unary(op: UnOp, a: &BitVec) -> BitVec {
     }
 }
 
+/// `a ** b` at the width of `a`, the operands read as signed numbers where
+/// `signed_a` and `signed_b` say (IEEE 1800 Table 11-4 with 2-state
+/// values): a negative exponent gives 0 unless the base is 1 or -1; 0 to a
+/// negative power is x, an error (sizing rules it out).
+fn power(a: &BitVec, signed_a: bool, b: &BitVec, signed_b: bool) -> Result<BitVec, String> {
+    let w = a.width();
+    let base = if signed_a {
+        a.signed()
+    } else {
+        BigInt::from(a.unsigned().clone())
+    };
+    let exp = if signed_b {
+        b.signed()
+    } else {
+        BigInt::from(b.unsigned().clone())
+    };
+    if exp.sign() == num_bigint::Sign::Minus {
+        let one = BigInt::from(1);
+        return if base.is_zero() {
+            Err("0 to a negative power".into())
+        } else if base == one {
+            Ok(BitVec::from_signed(w, one))
+        } else if base == -one.clone() {
+            let odd = (&exp % 2u8) != BigInt::from(0);
+            Ok(BitVec::from_signed(w, if odd { -one } else { one }))
+        } else {
+            Ok(BitVec::zero(w))
+        };
+    }
+    // repeated squaring, keeping `w` bits
+    let (mut acc, mut sq, mut e) = (
+        BigUint::from(1u8),
+        a.unsigned().clone(),
+        exp.magnitude().clone(),
+    );
+    let mask = (BigUint::from(1u8) << w) - 1u8;
+    while !e.is_zero() {
+        if e.bit(0) {
+            acc = (&acc * &sq) & &mask;
+        }
+        sq = (&sq * &sq) & &mask;
+        e >>= 1;
+    }
+    Ok(BitVec::wrap(w, acc))
+}
+
 /// `signed` is the signedness of the (equally typed) operands. Division by
 /// zero is an error (typing rules it out).
 fn binary(op: BinOp, a: &BitVec, b: &BitVec, signed: bool) -> Result<BitVec, String> {
@@ -862,5 +914,6 @@ fn binary(op: BinOp, a: &BitVec, b: &BitVec, signed: bool) -> Result<BitVec, Str
         BinOp::Div => BitVec::wrap(w, x / y),
         BinOp::Mod if signed => BitVec::from_signed(w, a.signed() % b.signed()),
         BinOp::Mod => BitVec::wrap(w, x % y),
+        BinOp::Pow => unreachable!("see `power`"),
     })
 }

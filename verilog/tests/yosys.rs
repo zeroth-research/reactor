@@ -4,13 +4,13 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use verilog::ast::{Const, Dir, Override, Ty};
+use verilog::ast::{Dir, Override, Ty};
 use verilog::ast_interp::{Interp, Values};
 use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, lower_inst};
 use verilog::miter::{self, Side, Verdict};
 use verilog::smt::Phase;
-use verilog::{BitVec, typing, yosys, z3};
+use verilog::{BitVec, constant, typing, yosys, z3};
 
 fn examples() -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
@@ -286,10 +286,7 @@ fn parse_errors() {
 fn overrides_rejected() {
     let o = Override {
         name: "N".into(),
-        value: Const {
-            ty: Ty::INT,
-            value: BitVec::new(32, 4u32).unwrap(),
-        },
+        value: constant::parse("4").unwrap(),
         span: Default::default(),
     };
     let e = yosys::run(Path::new("no-yosys"), Path::new("x.sv"), "top", &[o]).unwrap_err();
@@ -1977,11 +1974,61 @@ fn mutants(source: &str) -> Vec<Mutant> {
             let n: u64 = text.replace('_', "").parse().unwrap();
             let to = if n == 0 { 1 } else { n - 1 };
             out.push(mutant(start, end, &to.to_string()));
-            // unsigned instead of an `int`
-            out.push(mutant(start, end, &format!("'d{n}")));
+            // unsigned instead of an `int`, where the sign can matter
+            if !integer_position(&tokens, k) {
+                out.push(mutant(start, end, &format!("'d{n}")));
+            }
         }
     }
     out
+}
+
+/// Whether the number at token `k` is a whole integer position, where only
+/// its value counts, not its type: a bound of a range or part select, the
+/// width of an indexed part select, a cast size or a replication count.
+fn integer_position(tokens: &[(usize, usize, &str)], k: usize) -> bool {
+    let text = |i: usize| tokens.get(i).map(|t| t.2);
+    if text(k + 1) == Some("'") && text(k + 2) == Some("(") {
+        return true;
+    }
+    if k > 0 && text(k - 1) == Some("{") && text(k + 1) == Some("{") {
+        return true;
+    }
+    // the innermost bracket around `k`
+    let mut depth = 0;
+    let Some(open) = (0..k).rev().find(|&i| {
+        depth += match text(i) {
+            Some("]") => 1,
+            Some("[") => -1,
+            _ => 0,
+        };
+        depth < 0
+    }) else {
+        return false;
+    };
+    let (mut depth, mut conditionals) = (0, 0);
+    let mut colon = None;
+    for i in open + 1.. {
+        match text(i) {
+            Some("[" | "(" | "{") => depth += 1,
+            Some(")" | "}") => depth -= 1,
+            Some("]") if depth == 0 => break,
+            Some("]") => depth -= 1,
+            // the `:` of a `?:` is no range
+            Some("?") if depth == 0 => conditionals += 1,
+            Some(":") if depth == 0 && conditionals > 0 => conditionals -= 1,
+            Some(":" | "+:" | "-:") if depth == 0 => colon = Some(i),
+            None => return false,
+            _ => {}
+        }
+    }
+    match colon {
+        // `[b +: w]`: only the width
+        Some(c) if text(c) != Some(":") => k > c,
+        // `[hi:lo]`
+        Some(_) => true,
+        None => false,
+    }
 }
 
 /// The mutants of the asynchronous reset of the block whose event control
@@ -2066,7 +2113,6 @@ fn mutants_of_text() {
             "3:14 `3` -> `'d3`",
             "3:16 `+:` -> `-:`",
             "3:19 `2` -> `1`",
-            "3:19 `2` -> `'d2`",
             "3:22 `>>>` -> `>>`",
             "3:26 `8'sd1` -> `8'd1`",
             "3:26 `8'sd1` -> `8'sd2`",
@@ -2079,7 +2125,7 @@ fn mutants_of_text() {
     assert!(m[1].source.contains("@(negedge clk) if"));
     assert!(m[2].source.contains("if (!(en && (x))) q"));
     assert!(m[5].source.contains("q <= 4'd0;"));
-    assert!(m[14].source.contains("@(posedge c) r"));
+    assert!(m[13].source.contains("@(posedge c) r"));
     // names as select indices, not in declarations or nested selects
     let source =
         "logic [W-1:0] v; assign y = a[i] ^ b[j +: 2] ^ c[k[1:0]]; always_comb z[n] = 1'b0;";
@@ -2088,27 +2134,23 @@ fn mutants_of_text() {
     assert_eq!(
         whats,
         [
+            // no `'d` mutants of range bounds and widths: only the value counts
             "1:9 `-` -> `+`",
             "1:10 `1` -> `0`",
-            "1:10 `1` -> `'d1`",
             "1:12 `0` -> `1`",
-            "1:12 `0` -> `'d0`",
             "1:30 `[i` -> `[~i`",
             "1:34 `^` -> `&`",
             "1:37 `[j` -> `[~j`",
             "1:40 `+:` -> `-:`",
             "1:43 `2` -> `1`",
-            "1:43 `2` -> `'d2`",
             "1:46 `^` -> `&`",
             "1:52 `1` -> `0`",
-            "1:52 `1` -> `'d1`",
             "1:54 `0` -> `1`",
-            "1:54 `0` -> `'d0`",
             "1:72 `[n` -> `[~n`",
             "1:78 `1'b0` -> `1'd1`",
         ]
     );
-    assert!(m[5].source.contains("a[~i] ^"));
+    assert!(m[3].source.contains("a[~i] ^"));
     // unsized literals and sign casts
     let source = "assign y = $signed(a) + 'd3 + 'sh7 + '1 + $unsigned('0);";
     let whats: Vec<String> = mutants(source).into_iter().map(|m| m.what).collect();
@@ -2548,6 +2590,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
     ),
     (
         "castparam.sv",
+        "9:31 `1` -> `'d1`",
+        "`M` is typed: `-'d1` truncated to 8 bits is eight ones, as `-1` is",
+    ),
+    (
+        "castparam.sv",
         "19:17 `16` -> `15`",
         "the sum of two 8-bit values fits in 15 bits",
     ),
@@ -2555,6 +2602,91 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "castparam.sv",
         "20:27 `1` -> `'d1`",
         "the shift amount is unsigned anyway",
+    ),
+    (
+        "consts.sv",
+        "10:17 `9` -> `'d9`",
+        "`N` is used only in a range, where the unsigned 8 gives the same width",
+    ),
+    (
+        "consts.sv",
+        "10:32 `1` -> `'d1`",
+        "`N` is used only in a range, where the unsigned 8 gives the same width",
+    ),
+    (
+        "consts.sv",
+        "11:23 `16` -> `'d16`",
+        "`W` is typed: it takes the value 16 either way",
+    ),
+    (
+        "consts.sv",
+        "12:18 `3` -> `'d3`",
+        "`S` is used only in `1 << S` and `S > 2`, which give the same values for the unsigned 3",
+    ),
+    (
+        "consts.sv",
+        "13:18 `1` -> `'d1`",
+        "`L` is used only in a range, where the unsigned 8 gives the same width",
+    ),
+    (
+        "consts.sv",
+        "14:20 `>` -> `>=`",
+        "`S` is 3: `S >= 2` is true as `S > 2` is",
+    ),
+    (
+        "consts.sv",
+        "14:22 `2` -> `1`",
+        "`S` is 3: `S > 1` is true as `S > 2` is",
+    ),
+    (
+        "consts.sv",
+        "14:22 `2` -> `'d2`",
+        "`K` is used only in ranges, and the comparison gives the same bit",
+    ),
+    (
+        "consts.sv",
+        "14:26 `1` -> `'d1`",
+        "`K` is used only in ranges, where the unsigned 1 gives the same width",
+    ),
+    (
+        "consts.sv",
+        "14:30 `0` -> `1`",
+        "`S > 2` holds, so the else arm is never taken",
+    ),
+    (
+        "consts.sv",
+        "14:30 `0` -> `'d0`",
+        "`S > 2` holds, so the else arm is never taken",
+    ),
+    (
+        "consts.sv",
+        "35:16 `65536` -> `'d65536`",
+        "the operands are positive: unsigned, the 64-bit product is 2^32 too",
+    ),
+    (
+        "consts.sv",
+        "35:24 `65536` -> `'d65536`",
+        "the operands are positive: unsigned, the 64-bit product is 2^32 too",
+    ),
+    (
+        "consts.sv",
+        "36:16 `2` -> `'d2`",
+        "the base is positive: unsigned, the 64-bit power is 2^31 too",
+    ),
+    (
+        "consts.sv",
+        "36:21 `31` -> `'d31`",
+        "the exponent is self-determined and positive: the power is the same",
+    ),
+    (
+        "consts.sv",
+        "38:25 `3` -> `'d3`",
+        "`-'d3` has the bits of -3 at 40 bits, and the power keeps 40 bits either way",
+    ),
+    (
+        "consts.sv",
+        "38:31 `3` -> `'d3`",
+        "the exponent is self-determined and positive: the power is the same",
     ),
     (
         "ctxwidth.sv",
@@ -2693,6 +2825,21 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
     ),
     (
         "memcomb.sv",
+        "14:17 `4` -> `'d4`",
+        "an array size: the unsigned 4 gives the same size",
+    ),
+    (
+        "memcomb.sv",
+        "25:13 `1` -> `'d1`",
+        "a constant element index: the unsigned 1 picks the same element",
+    ),
+    (
+        "memcomb.sv",
+        "25:19 `0` -> `'d0`",
+        "a constant element index: the unsigned 0 picks the same element",
+    ),
+    (
+        "memcomb.sv",
         "26:18 `0` -> `'d0`",
         "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
     ),
@@ -2705,6 +2852,26 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "meminst.sv",
         "4:23 `4` -> `'d4`",
         "every instance of `mem` overrides this default of `DEPTH`",
+    ),
+    (
+        "meminst.sv",
+        "5:19 `4` -> `'d4`",
+        "`W` is used only in ranges, where the unsigned 4 gives the same width",
+    ),
+    (
+        "meminst.sv",
+        "28:16 `8` -> `'d8`",
+        "`DEPTH` is used only in `$clog2(DEPTH)` and as an array size, the same for the unsigned 8",
+    ),
+    (
+        "meminst.sv",
+        "28:23 `6` -> `'d6`",
+        "`W` is used only in ranges, where the unsigned 6 gives the same width",
+    ),
+    (
+        "meminst.sv",
+        "36:16 `2` -> `'d2`",
+        "`DEPTH` is used only in `$clog2(DEPTH)` and as an array size, the same for the unsigned 2",
     ),
     (
         "meminst.sv",
@@ -2725,6 +2892,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "modcount.sv",
         "7:21 `10` -> `'d10`",
         "`N` is an `int`: it takes the value 10 either way",
+    ),
+    (
+        "modcount.sv",
+        "14:42 `1` -> `'d1`",
+        "`N - 'd1` is positive: cast to `W` bits it has the same bits as `N - 1`",
     ),
     (
         "modcount.sv",
@@ -2858,8 +3030,18 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
     ),
     (
         "ramload.sv",
+        "13:21 `4` -> `'d4`",
+        "an array size: the unsigned 4 gives the same size",
+    ),
+    (
+        "ramload.sv",
         "14:10 `7` -> `6`",
         "the ROM's values are below 128, so 7-bit elements hold them",
+    ),
+    (
+        "regfile.sv",
+        "18:24 `8` -> `'d8`",
+        "an array size: the unsigned 8 gives the same size",
     ),
     (
         "regfile.sv",
@@ -2906,6 +3088,11 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "ripple.sv",
         "22:25 `3` -> `'d3`",
         "an unsized based index `'dN` is a variable index of the same value as the constant `N`, so the same bits are read",
+    ),
+    (
+        "rom.sv",
+        "13:19 `4` -> `'d4`",
+        "an array size: the unsigned 4 gives the same size",
     ),
     (
         "rom.sv",
@@ -2986,6 +3173,16 @@ const EQUIVALENT: &[(&str, &str, &str)] = &[
         "unsized.sv",
         "24:42 `2` -> `'d2`",
         "the sum with the unsigned `'h7fffffff` is unsigned either way: a nonnegative constant: unsigned or `int`, the value at the width it is used at is the same",
+    ),
+    (
+        "wrinst.sv",
+        "3:19 `4` -> `'d4`",
+        "`W` is used only in `$clog2(W)` and a range, the same for the unsigned 4",
+    ),
+    (
+        "wrinst.sv",
+        "20:13 `8` -> `'d8`",
+        "`W` is used only in `$clog2(W)` and a range, the same for the unsigned 8",
     ),
     (
         "xstore.sv",

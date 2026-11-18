@@ -91,6 +91,21 @@ const VECTORS: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
+        "consts",
+        &[
+            (
+                "a=c8 b=0000000005",
+                "w=015a l=37 k=0 c=08 h=a9 big=0000000100000000 pow=0000000080000000 \
+                 least=ffffffff80000000 negpow=ffffffffea",
+            ),
+            (
+                "a=ff b=0000000001",
+                "w=0191 l=00 k=3 c=1f h=e0 big=0000000100000000 pow=0000000080000000 \
+                 least=ffffffff80000000 negpow=ffffffffe6",
+            ),
+        ],
+    ),
+    (
         "portw",
         &[(
             "n4=a s4=a w16=1234 a=ff b=02",
@@ -319,9 +334,10 @@ endmodule
     assert_eq!(names["u.y"], "y");
 }
 
-/// `**` is folded at 32-bit `int`, which differs from IEEE 1800 (the base
-/// converted to the context type first) only for a negative base in an
-/// unsigned context wider than 32 bits: rejected there, accepted elsewhere.
+/// `**` is evaluated at the type of its context like the other
+/// arithmetic operators: the base is context-determined, the exponent
+/// self-determined (IEEE 1800 Table 11-21), so a negative base in a wide
+/// unsigned context is extended before the power is taken.
 #[test]
 fn powers_of_negative_bases() {
     let ok = |ports: &str, e: &str, expected: &str| assert_eq!(sized(ports, e), expected);
@@ -346,23 +362,126 @@ fn powers_of_negative_bases() {
         "(-3) ** 1",
         "40'sd1099511627773",
     );
+    // the base extended to 40 bits first: -3 and -7, not 2^32 - 3
+    ok(
+        "input logic [39:0] a, output logic [39:0] y",
+        "a + (-3) ** 1",
+        "(a + 40'd1099511627773)",
+    );
+    ok(
+        "input logic [39:0] a, output logic [39:0] y",
+        "a + ((-2) ** 3 + 1)",
+        "(a + 40'd1099511627769)",
+    );
+    // the exponent is self-determined: an unsigned exponent is never negative
+    ok(
+        "input logic [7:0] a, output logic [7:0] y",
+        "a + 8'd2 ** 4'b1111",
+        "(a + 8'd0)",
+    );
+    ok(
+        "input logic [7:0] a, output logic [7:0] y",
+        "a + 8'd3 ** 4'd3",
+        "(a + 8'd27)",
+    );
+    // a negative exponent: 0 for bases other than 0, 1 and -1
+    ok(
+        "input logic [7:0] a, output logic [7:0] y",
+        "a + 8'd2 ** -1",
+        "(a + 8'd0)",
+    );
+    ok(
+        "input logic [7:0] a, output logic [7:0] y",
+        "a + 8'd1 ** -1",
+        "(a + 8'd1)",
+    );
+    // the base -1 only in a signed context: unsigned, it is 255
+    ok(
+        "input logic signed [7:0] a, output logic signed [7:0] y",
+        "a + (-8'sd1) ** -3",
+        "(a + 8'sd255)",
+    );
+    ok(
+        "input logic [7:0] a, output logic [7:0] y",
+        "a + (-8'd1) ** -3",
+        "(a + 8'd0)",
+    );
+}
+
+/// The source of a module `m` with the parameters `params` and the body
+/// `body`, its ports `ports`, translated; the error if it is rejected.
+fn translate(params: &str, ports: &str, body: &str) -> Result<String, verilog::ast::Error> {
+    let src = format!("module m #({params}) ({ports});\n{body}\nendmodule\n");
+    elab::load(&src, "test.sv")
+        .and_then(|i| lower_inst(&i))
+        .map(|t| t.print())
+}
+
+/// Constant expressions are expressions like any other: comments inside
+/// them, every operator, typed parameters. Integer constants are exact in
+/// ranges and untyped parameters; in a value expression they are evaluated
+/// at the width of the context, so `65536 * 65536` does not overflow there.
+#[test]
+fn constant_expressions() {
+    let width = |params: &str, range: &str| {
+        let ports = format!("input logic {range} a, output logic {range} y");
+        translate(params, &ports, "  assign y = a;")
+            .unwrap_or_else(|e| panic!("{params} {range}: {e}"))
+    };
     let cases = [
-        "  assign y = a + (-3) ** 1;",
-        "  assign y = a + ((-2) ** 3 + 1);",
+        ("parameter N = 8 /* bits */ - 0", "[N /* w */ -1:0]", "bv8"),
+        ("parameter N = 3", "[(1 << N) - 1:0]", "bv8"),
+        ("parameter N = 3", "[N > 2 ? 1 : 0:0]", "bv2"),
+        ("parameter [4:0] W = 8", "[W-1:0]", "bv8"),
+        ("parameter [4:0] W = 8", "[$clog2(W):0]", "bv4"),
+        ("parameter N = 8 // bits\n", "[N-1:0]", "bv8"),
     ];
-    for body in cases {
-        let src =
-            format!("module m(input logic [39:0] a, output logic [39:0] y);\n{body}\nendmodule\n");
-        let err = elab::load(&src, "test.sv")
-            .and_then(|i| verilog::lower::lower_inst(&i))
-            .err()
-            .unwrap_or_else(|| panic!("accepted:\n{src}"));
+    for (params, range, sort) in cases {
+        let text = width(params, range);
         assert!(
-            err.msg.contains("negative base") && err.msg.contains("40-bit unsigned"),
-            "{src}\n{err}"
+            text.contains(&format!("a : {sort}")),
+            "{params} {range}:\n{text}"
         );
-        let text = src.lines().nth(1).unwrap();
-        assert_eq!(err.span.line, 2, "{err}");
-        assert_eq!(err.span.col, text.find('-').unwrap() + 1, "{src}\n{err}");
+    }
+    let ok = |ports: &str, e: &str, expected: &str| assert_eq!(sized(ports, e), expected);
+    ok("output logic [63:0] y", "65536 * 65536", "64'sd4294967296");
+    ok("output logic [63:0] y", "2 ** 31", "64'sd2147483648");
+    ok("output logic [63:0] y", "2**32 / 2", "64'sd2147483648");
+    // the least `int`: the literal 2147483648 negated at once
+    let text = translate(
+        "localparam P = -2147483648",
+        "output logic [63:0] y, output logic [31:0] z",
+        "  assign y = P;\n  assign z = -2147483648;",
+    )
+    .unwrap();
+    // 0xffffffff80000000 and 0x80000000
+    assert!(text.contains("X(y) := 64'd18446744071562067968"), "{text}");
+    assert!(text.contains("X(z) := 32'd2147483648"), "{text}");
+    // a typed parameter is assigned its value: evaluated at its type
+    let text = translate(
+        "localparam int I = 65536 * 65536, localparam logic [63:0] Q = 65536 * 65536, \
+         localparam [7:0] K = 8'd1 + 8'd2",
+        "output logic [31:0] i, output logic [63:0] q, output logic [7:0] k",
+        "  assign i = I;\n  assign q = Q;\n  assign k = K;",
+    )
+    .unwrap();
+    assert!(text.contains("X(i) := 32'd0"), "{text}");
+    assert!(text.contains("X(q) := 64'd4294967296"), "{text}");
+    assert!(text.contains("X(k) := 8'd3"), "{text}");
+    // integer constants stay exact where an integer is needed
+    let rejected = [
+        ("localparam P = 65536 * 65536", "[0:0]", "overflows 32 bits"),
+        ("localparam P = 2147483648", "[0:0]", "too large"),
+        ("localparam P = 1", "[65536 * 65536:0]", "overflows 32 bits"),
+        ("localparam P = 0 ** -1", "[0:0]", "0 ** -1"),
+        // a typed parameter of 0 minus 1 is a large unsigned number
+        ("parameter [3:0] W = 0", "[W-1:0]", "is 4294967295"),
+    ];
+    for (params, range, msg) in rejected {
+        let ports = format!("input logic {range} a, output logic {range} y");
+        let err = translate(params, &ports, "  assign y = a;")
+            .err()
+            .unwrap_or_else(|| panic!("accepted: {params} {range}"));
+        assert!(err.msg.contains(msg), "{params} {range}: {err}");
     }
 }

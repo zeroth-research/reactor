@@ -330,11 +330,13 @@ pub struct Instance {
     pub span: Span,
 }
 
-/// `.N(v)` in `#(…)`.
+/// `.N(v)` in `#(…)`. The value is a constant expression, evaluated
+/// where the parameter is declared, at its type (see
+/// [`constant`](crate::constant)).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Override {
     pub name: Name,
-    pub value: Const,
+    pub value: Expr,
     pub span: Span,
 }
 
@@ -808,16 +810,10 @@ pub enum ExprKind {
         text: String,
         ty: Ty,
         value: BitVec,
-        /// An unsized literal (`5`, `'hff`), or a `**` of one folded into
-        /// one constant: IEEE 1800 forbids it where its width would count,
-        /// as in a concatenation. A parameter has a type, so it is no
-        /// unsized constant.
+        /// An unsized literal (`5`, `'hff`): IEEE 1800 forbids it where its
+        /// width would count, as in a concatenation. A parameter has a
+        /// type, so it is no unsized constant.
         is_unsized: bool,
-        /// A `**` of a negative base, folded at `int` (`(-3) ** 1`). IEEE
-        /// 1800 converts the base to the type of the context first, which
-        /// gives other bits in an unsigned context wider than 32 bits, so
-        /// sizing rejects it there.
-        negative_power: bool,
     },
     Var(Name),
     Unary(UnOp, Box<Expr>),
@@ -1043,6 +1039,10 @@ pub enum BinOp {
     AShl,
     /// `>>>`
     AShr,
+    /// `**`: the base is context-determined, the exponent self-determined.
+    /// Sizing requires constant operands and folds it, at the type of its
+    /// context.
+    Pow,
 }
 
 impl fmt::Display for UnOp {
@@ -1090,6 +1090,7 @@ impl fmt::Display for BinOp {
             Shr => ">>",
             AShl => "<<<",
             AShr => ">>>",
+            Pow => "**",
         })
     }
 }

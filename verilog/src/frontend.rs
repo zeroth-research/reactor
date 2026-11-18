@@ -7,17 +7,14 @@ the accepted subset with a located error.
 
 A module is lowered once for each set of parameter values: the values are
 substituted while lowering, so the result has no parameters left. Ranges,
-replication counts, select bounds and cast sizes are [`constant`]
-expressions. In other expressions, a parameter becomes a constant of its
-type and an unsized literal a constant of type `int` (`5`) or of 32
-unsigned bits (`'hff`); `'0` and `'1` take the width of their context. An
-integer constant (built from unsized literals and `int` parameters with
-`+ - * / % **` and `$clog2`) keeps its operators, so that
-[`sizing`](crate::sizing) evaluates it at the type of its context; only
-`**` and `$clog2` are folded here, at `int`. For `**` that differs from
-the standard (base converted to the context's type first) only for a
-negative base in an unsigned context wider than 32 bits, which sizing
-rejects. A concatenation item must not take its
+replication counts, select bounds, cast sizes and parameter values are
+[`constant`] expressions: built into an [`Expr`] like every other
+expression, then evaluated. In every expression, a parameter becomes a
+constant of its type and an unsized literal a constant of type `int`
+(`5`) or of 32 unsigned bits (`'hff`); `'0` and `'1` take the width of
+their context. Operators on constants are kept, so that
+[`sizing`](crate::sizing) evaluates them at the type of their context;
+only `$clog2` is folded here, into an `int`. A concatenation item must not take its
 width from an unsized literal (`{a, 1}`, `{a, N - 1}`; IEEE 1800 forbids
 it), see [`unsized_width`]. Instances keep their parameter
 values and connections; [`elab`](crate::elab) elaborates the modules they
@@ -114,6 +111,11 @@ use sv_parser as sv;
 use sv_parser::{Iter, RefNode, RefNodes, SyntaxTree};
 
 type Result<T> = std::result::Result<T, Error>;
+
+/// The largest integer accepted where one is needed (a range bound, a
+/// replication count, a cast size, …): 2^16, the least limit on the width
+/// of a vector that IEEE 1800 lets tools set (§6.9.1).
+const LARGEST: usize = 1 << 16;
 
 const VARIABLE_TARGET: &str = "a continuous assignment needs a constant select: an `assign` \
      drives fixed bits (assign the bit in an `always_comb` instead)";
@@ -797,12 +799,23 @@ impl Cx<'_> {
                 return self.err(id, format!("`{name}` already declared at {}", prev.span));
             }
             let given = self.overrides.iter().find(|o| o.name == name);
-            let value = match (given, default) {
+            let (value, at) = match (given, default) {
                 (Some(o), _) if overridable => {
                     self.used.borrow_mut().insert(name.clone());
-                    o.value.clone()
+                    (o.value.clone(), o.span)
                 }
-                (_, Some((_, e))) => self.const_expr(e)?,
+                (_, Some((_, e))) => {
+                    let e = match e {
+                        sv::ConstantParamExpression::ConstantMintypmaxExpression(m) => {
+                            match m.as_ref() {
+                                sv::ConstantMintypmaxExpression::Unary(e) => e,
+                                m => return self.err(m, "min:typ:max expression not supported"),
+                            }
+                        }
+                        e => return self.err(e, "type parameters not supported"),
+                    };
+                    (self.const_expression(e)?, self.span(e))
+                }
                 (_, None) => {
                     return self.err(
                         id,
@@ -813,20 +826,27 @@ impl Cx<'_> {
                     );
                 }
             };
-            // a typed parameter takes its value as in an assignment: extended
-            // as the value's signedness says, or truncated
-            let ty = match ty {
-                ParamTy::OfValue => value.ty,
-                ParamTy::Typed(ty) => ty,
-                ParamTy::Signing(signed) => Ty {
-                    width: value.ty.width,
-                    signed,
-                },
+            // a typed parameter takes its value as in an assignment; an
+            // untyped one has the type of its value
+            let failed = |f| match f {
+                Failure::NotConstant(why) => Err(Error::new(
+                    at,
+                    format!("expected a constant expression, got `{value}`: {why}"),
+                )),
+                Failure::Error(e) => Err(e),
             };
-            let value = Const {
-                ty,
-                value: constant::resize(ty.width, &value).value,
+            let value = match ty {
+                ParamTy::Typed(ty) => constant::assigned(&value, ty).or_else(failed)?,
+                ParamTy::OfValue => constant::value(&value).or_else(failed)?,
+                ParamTy::Signing(signed) => {
+                    let c = constant::value(&value).or_else(failed)?;
+                    Const {
+                        ty: Ty { signed, ..c.ty },
+                        value: c.value,
+                    }
+                }
             };
+            let ty = value.ty;
             self.params.borrow_mut().insert(name.clone(), value.clone());
             m.params.push(Param {
                 name,
@@ -837,18 +857,6 @@ impl Cx<'_> {
             });
         }
         Ok(())
-    }
-
-    /// The value of a constant expression (see [`constant`]).
-    fn const_expr<'a>(&self, e: impl Into<RefNodes<'a>> + Copy) -> Result<Const> {
-        let text = self.text(e);
-        constant::eval(&text, &self.params.borrow()).or_else(|f| match f {
-            Failure::NotConstant(why) => self.err(
-                e,
-                format!("expected a constant expression, got `{text}`: {why}"),
-            ),
-            Failure::Error(msg) => self.err(e, msg),
-        })
     }
 
     /// A port of the ANSI header, with its direction (`None` for `inout`).
@@ -929,17 +937,15 @@ impl Cx<'_> {
             match unknown_value(&text) {
                 Some(size) => self.unknown.borrow_mut().push((name.clone(), size, span)),
                 None => {
-                    let c = self.const_expr(value)?;
-                    let value = Expr {
-                        kind: ExprKind::Const {
-                            text,
-                            ty: c.ty,
-                            value: c.value,
-                            is_unsized: false,
-                            negative_power: false,
-                        },
-                        span: self.span(value),
-                    };
+                    // an initial value, like one in a declaration
+                    let e = self.const_expression(value)?;
+                    if let Some(x) = constant::signal(&e) {
+                        return self.err(
+                            value,
+                            format!("expected a constant expression, got `{text}`: `{x}` is not a parameter"),
+                        );
+                    }
+                    let value = e;
                     self.inits.borrow_mut().push(Init {
                         target: name.clone(),
                         value,
@@ -1008,28 +1014,30 @@ impl Cx<'_> {
         Ok(Ty { width, signed })
     }
 
-    /// A non-negative integer constant (unsized literals and `int`
-    /// parameters, see [`constant`]).
-    fn const_int<'a>(&self, e: impl Into<RefNodes<'a>> + Copy) -> Result<usize> {
-        let text = self.text(e);
-        let c = constant::eval(&text, &self.params.borrow()).or_else(|f| match f {
-            Failure::NotConstant(why) => self.err(
-                e,
-                format!("expected a constant integer, got `{text}`: {why}"),
-            ),
-            Failure::Error(msg) => self.err(e, msg),
-        })?;
-        match constant::as_int(&c) {
-            Some(n) if n >= 0 => Ok(n as usize),
-            Some(n) => self.err(e, format!("`{text}` is negative ({n})")),
-            None => self.err(
-                e,
+    /// A non-negative integer given by a constant expression of the grammar.
+    fn const_int(&self, e: &sv::ConstantExpression) -> Result<usize> {
+        self.int_of(e, &self.const_expression(e)?)
+    }
+
+    /// The constant expression `e`, written at `node`, as a non-negative
+    /// integer (see [`constant::int`]).
+    fn int_of<'a>(&self, node: impl Into<RefNodes<'a>> + Copy, e: &Expr) -> Result<usize> {
+        let text = self.text(node);
+        match constant::int(e) {
+            Ok(n) if n > LARGEST as i64 => self.err(
+                node,
                 format!(
-                    "`{text}` has type `{}`, expected an integer (unsized literals and \
-                     `int` parameters)",
-                    c.ty
+                    "`{text}` is {n}: widths, sizes, counts and bounds up to {LARGEST} are \
+                     supported (IEEE 1800 lets tools limit vectors to that many bits)"
                 ),
             ),
+            Ok(n) => usize::try_from(n)
+                .or_else(|_| self.err(node, format!("`{text}` is negative ({n})"))),
+            Err(Failure::NotConstant(why)) => self.err(
+                node,
+                format!("expected a constant integer, got `{text}`: {why}"),
+            ),
+            Err(Failure::Error(e)) => Err(e),
         }
     }
 
@@ -1118,9 +1126,27 @@ impl Cx<'_> {
                         if params.iter().any(|o: &Override| o.name == name) {
                             return self.err(id, format!("parameter `{name}` given twice"));
                         }
+                        let value = match e {
+                            sv::ParamExpression::MintypmaxExpression(m) => match m.as_ref() {
+                                sv::MintypmaxExpression::Expression(x) => self.expr(x)?,
+                                m => return self.err(m, "min:typ:max expression not supported"),
+                            },
+                            e => return self.err(e, "type parameters not supported"),
+                        };
+                        // evaluated where the parameter is declared, at its type
+                        if let Some(x) = constant::signal(&value) {
+                            return self.err(
+                                e,
+                                format!(
+                                    "expected a constant expression, got `{}`: `{x}` is not a \
+                                     parameter",
+                                    self.text(e)
+                                ),
+                            );
+                        }
                         params.push(Override {
                             name,
-                            value: self.const_expr(e)?,
+                            value,
                             span: self.span(id),
                         });
                     }
@@ -1823,11 +1849,10 @@ impl Cx<'_> {
         let (member, bits, part) = &select.nodes;
         self.absent(member, "member select")?;
         let index = |e: &sv::ConstantExpression| {
-            let text = self.text(e);
-            match constant::eval(&text, &self.params.borrow()) {
-                Ok(_) => self.const_int(e).map(Index::Const),
-                Err(Failure::NotConstant(_)) => self.err(e, VARIABLE_TARGET),
-                Err(Failure::Error(msg)) => self.err(e, msg),
+            let x = self.const_expression(e)?;
+            match constant::signal(&x) {
+                Some(_) => self.err(e, VARIABLE_TARGET),
+                None => self.int_of(e, &x).map(Index::Const),
             }
         };
         let bits = &bits.nodes.0;
@@ -2210,14 +2235,17 @@ impl Cx<'_> {
         }
     }
 
-    /// A bit position: an integer constant, or any expression.
+    /// A bit position: an integer constant (see [`constant::exact`]), or any
+    /// expression.
     fn index(&self, e: &sv::Expression) -> Result<Index> {
-        match self.leaf_expr(e)? {
-            Leaf::Int { value, span, .. } if value < 0 => {
-                Err(Error::new(span, format!("negative index {value}")))
+        let e = self.expr(e)?;
+        match constant::exact(&e) {
+            Some(Ok(value)) if value < 0 => {
+                Err(Error::new(e.span, format!("negative index {value}")))
             }
-            Leaf::Int { value, .. } => Ok(Index::Const(value as usize)),
-            Leaf::Expr(e) => Ok(Index::Expr(Box::new(e))),
+            Some(Ok(value)) => Ok(Index::Const(value as usize)),
+            Some(Err(msg)) => Err(Error::new(e.span, msg)),
+            None => Ok(Index::Expr(Box::new(e))),
         }
     }
 
@@ -2238,51 +2266,58 @@ impl Cx<'_> {
     // ------------------------------------------------------------------
 
     fn expr(&self, e: &sv::Expression) -> Result<Expr> {
-        let l = self.leaf_expr(e)?;
-        self.leaf_to_expr(l)
-    }
-
-    /// An expression, as a [`Leaf`]: an integer constant stays a number.
-    fn leaf_expr(&self, e: &sv::Expression) -> Result<Leaf> {
         let mut operands = Vec::new();
         let mut ops = Vec::new();
-        self.flatten(e, &mut operands, &mut ops)?;
-        self.reassociate(operands, ops)
+        self.flatten(Node::Expr(e), &mut operands, &mut ops)?;
+        Ok(self.reassociate(operands, ops))
     }
 
-    /// The expression of a leaf.
-    fn leaf_to_expr(&self, l: Leaf) -> Result<Expr> {
-        match l {
-            Leaf::Expr(e) | Leaf::Int { expr: e, .. } => Ok(e),
-        }
+    /// A constant expression of the grammar (a range bound, a parameter
+    /// value, …), built like any other expression: parameters are
+    /// constants, other names stay signals, which [`constant::value`]
+    /// rejects.
+    fn const_expression(&self, e: &sv::ConstantExpression) -> Result<Expr> {
+        let mut operands = Vec::new();
+        let mut ops = Vec::new();
+        self.flatten(Node::Const(e), &mut operands, &mut ops)?;
+        Ok(self.reassociate(operands, ops))
     }
 
     /// Flattens a chain of binary operators and conditionals into its
     /// operands and operators, in source order.
-    fn flatten(
-        &self,
-        e: &sv::Expression,
-        operands: &mut Vec<Leaf>,
-        ops: &mut Vec<Op>,
-    ) -> Result<()> {
+    fn flatten(&self, e: Node, operands: &mut Vec<Expr>, ops: &mut Vec<Op>) -> Result<()> {
         match e {
-            sv::Expression::Binary(b) => {
+            Node::Expr(sv::Expression::Binary(b)) => {
                 let (l, op, attrs, r) = &b.nodes;
                 self.absent(attrs, "attribute")?;
-                self.flatten(l, operands, ops)?;
+                self.flatten(Node::Expr(l), operands, ops)?;
                 ops.push(self.binop(op)?);
-                self.flatten(r, operands, ops)
+                self.flatten(Node::Expr(r), operands, ops)
             }
-            sv::Expression::ConditionalExpression(c) => {
+            Node::Const(sv::ConstantExpression::Binary(b)) => {
+                let (l, op, attrs, r) = &b.nodes;
+                self.absent(attrs, "attribute")?;
+                self.flatten(Node::Const(l), operands, ops)?;
+                ops.push(self.binop(op)?);
+                self.flatten(Node::Const(r), operands, ops)
+            }
+            Node::Expr(sv::Expression::ConditionalExpression(c)) => {
                 let (pred, q, attrs, then, _, els) = &c.nodes;
                 self.absent(attrs, "attribute")?;
                 let pred = match pred.nodes.0.contents().as_slice() {
                     [sv::ExpressionOrCondPattern::Expression(p)] => p.as_ref(),
                     _ => return self.err(pred, "`&&&` and patterns not supported"),
                 };
-                self.flatten(pred, operands, ops)?;
+                self.flatten(Node::Expr(pred), operands, ops)?;
                 ops.push(Op::Cond(self.expr(then)?, self.span(q)));
-                self.flatten(els, operands, ops)
+                self.flatten(Node::Expr(els), operands, ops)
+            }
+            Node::Const(sv::ConstantExpression::Ternary(c)) => {
+                let (pred, q, attrs, then, _, els) = &c.nodes;
+                self.absent(attrs, "attribute")?;
+                self.flatten(Node::Const(pred), operands, ops)?;
+                ops.push(Op::Cond(self.const_expression(then)?, self.span(q)));
+                self.flatten(Node::Const(els), operands, ops)
             }
             e => {
                 operands.push(self.operand(e)?);
@@ -2292,113 +2327,167 @@ impl Cx<'_> {
     }
 
     /// An expression that is not a binary operation or a conditional.
-    fn operand(&self, e: &sv::Expression) -> Result<Leaf> {
+    fn operand(&self, e: Node) -> Result<Expr> {
         match e {
-            sv::Expression::Primary(p) => self.primary(p),
-            sv::Expression::Unary(u) => {
+            Node::Expr(sv::Expression::Primary(p)) => self.primary(p),
+            Node::Expr(sv::Expression::Unary(u)) => {
                 let (op, attrs, p) = &u.nodes;
-                self.absent(attrs, "attribute")?;
-                let span = self.span(op);
-                let op = self.unop(op)?;
-                match (op, self.primary(p)?) {
-                    (UnOp::Plus | UnOp::Neg, Leaf::Int { value, expr, .. }) => {
-                        let value = match op {
-                            UnOp::Neg => {
-                                constant::int_neg(value).map_err(|m| Error::new(span, m))?
-                            }
-                            _ => value,
-                        };
-                        let kind = ExprKind::Unary(op, Box::new(expr));
-                        Ok(Leaf::Int {
-                            value,
-                            expr: Expr { kind, span },
-                            span,
-                        })
-                    }
-                    (op, l) => {
-                        let kind = ExprKind::Unary(op, Box::new(self.leaf_to_expr(l)?));
-                        Ok(Leaf::Expr(Expr { kind, span }))
-                    }
-                }
+                self.unary(op, attrs, p, || self.primary(p))
             }
-            sv::Expression::IncOrDecExpression(e) => {
+            Node::Expr(sv::Expression::IncOrDecExpression(e)) => {
                 self.err(e.as_ref(), "`++`/`--` not supported")
             }
-            sv::Expression::OperatorAssignment(e) => {
+            Node::Expr(sv::Expression::OperatorAssignment(e)) => {
                 self.err(e.as_ref(), "assignment in expression not supported")
             }
-            e => self.unsupported(e),
+            Node::Expr(e) => self.unsupported(e),
+            Node::Const(sv::ConstantExpression::ConstantPrimary(p)) => self.const_primary(p),
+            Node::Const(sv::ConstantExpression::Unary(u)) => {
+                let (op, attrs, p) = &u.nodes;
+                self.unary(op, attrs, p, || self.const_primary(p))
+            }
+            Node::Const(e) => self.unsupported(e),
         }
     }
 
-    fn primary(&self, p: &sv::Primary) -> Result<Leaf> {
+    /// `op p`, with `operand` building `p`. `-2147483648` is the least
+    /// `int`: the literal 2147483648 is no `int` by itself, but negated at
+    /// once it is one constant.
+    fn unary<'a>(
+        &self,
+        op: &sv::UnaryOperator,
+        attrs: &'a Vec<sv::AttributeInstance>,
+        p: impl Into<RefNodes<'a>>,
+        operand: impl FnOnce() -> Result<Expr>,
+    ) -> Result<Expr> {
+        self.absent(attrs, "attribute")?;
+        let span = self.span(op);
+        let op = self.unop(op)?;
+        let digits: String = self
+            .text(p)
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '_')
+            .collect();
+        if op == UnOp::Neg && digits == "2147483648" {
+            let kind = ExprKind::Const {
+                text: format!("-{digits}"),
+                ty: Ty::INT,
+                value: BitVec::from_signed(32, i32::MIN),
+                is_unsized: true,
+            };
+            return Ok(Expr { kind, span });
+        }
+        let kind = ExprKind::Unary(op, Box::new(operand()?));
+        Ok(Expr { kind, span })
+    }
+
+    /// A parameter `id` as a constant, or else the signal `id`.
+    fn name(&self, id: Name, span: Span) -> Expr {
+        let kind = match self.params.borrow().get(&id) {
+            Some(c) => ExprKind::Const {
+                text: id,
+                ty: c.ty,
+                value: c.value.clone(),
+                is_unsized: false,
+            },
+            None => ExprKind::Var(id),
+        };
+        Expr { kind, span }
+    }
+
+    fn primary(&self, p: &sv::Primary) -> Result<Expr> {
         let span = self.span(p);
         let kind = match p {
-            sv::Primary::PrimaryLiteral(l) => match l.as_ref() {
-                sv::PrimaryLiteral::Number(n) => match n.as_ref() {
-                    sv::Number::IntegralNumber(n) => return self.literal(n),
-                    n => return self.err(n, "real numbers not supported"),
-                },
-                sv::PrimaryLiteral::UnbasedUnsizedLiteral(l) => {
-                    let kind = match self.text(l.as_ref()).trim() {
-                        "'0" => ExprKind::Fill(false),
-                        "'1" => ExprKind::Fill(true),
-                        t => {
-                            return self.err(
-                                p,
-                                format!("literal `{t}` with x/z digits not supported ({X_HINT})"),
-                            );
-                        }
-                    };
-                    return Ok(Leaf::Expr(Expr { kind, span }));
-                }
-                l => return self.unsupported(l),
-            },
+            sv::Primary::PrimaryLiteral(l) => return self.primary_literal(l, p),
             sv::Primary::Hierarchical(h) => {
                 let (scope, id, select) = &h.nodes;
                 self.absent(scope, "package or class scope")?;
                 let id = self.identifier(self.simple_hierarchical(id)?)?;
                 if self.is_array(&id) {
                     let elem = self.element(id, select, span)?;
-                    return Ok(Leaf::Expr(Expr {
+                    return Ok(Expr {
                         kind: ExprKind::Elem(Box::new(elem)),
                         span,
-                    }));
+                    });
                 }
-                let param = self.params.borrow().get(&id).cloned();
+                let param = self.params.borrow().contains_key(&id);
                 match (self.select(select)?, param) {
-                    (None, Some(c)) => {
-                        return Ok(match constant::as_int(&c) {
-                            Some(value) => Leaf::int(value, id, Ty::INT, false, span),
-                            None => Leaf::Expr(Expr {
-                                kind: ExprKind::Const {
-                                    text: id,
-                                    ty: c.ty,
-                                    value: c.value,
-                                    is_unsized: false,
-                                    negative_power: false,
-                                },
-                                span,
-                            }),
-                        });
-                    }
-                    (Some(_), Some(_)) => {
+                    (None, _) => return Ok(self.name(id, span)),
+                    (Some(_), true) => {
                         return self.err(p, format!("select of parameter `{id}` not supported"));
                     }
-                    (None, None) => ExprKind::Var(id),
-                    (Some(sel), None) => ExprKind::Select(id, sel),
+                    (Some(sel), false) => ExprKind::Select(id, sel),
                 }
             }
             sv::Primary::MintypmaxExpression(m) => match &m.nodes.0.nodes.1 {
-                sv::MintypmaxExpression::Expression(e) => return self.leaf_expr(e),
+                sv::MintypmaxExpression::Expression(e) => return self.expr(e),
                 m => return self.err(m, "min:typ:max expression not supported"),
             },
             sv::Primary::Concatenation(c) => {
                 let (c, select) = &c.nodes;
                 self.absent(select, "select of a concatenation")?;
-                ExprKind::Concat(self.concatenation(c)?)
+                let items = c.nodes.0.nodes.1.contents();
+                let items = items.into_iter().map(|e| self.expr(e));
+                ExprKind::Concat(self.concatenation(items.collect::<Result<_>>()?)?)
             }
             sv::Primary::MultipleConcatenation(c) => {
+                let (c, select) = &c.nodes;
+                self.absent(select, "select of a concatenation")?;
+                let (n, c) = &c.nodes.0.nodes.1;
+                let n = self.int_of(n, &self.expr(n)?)?;
+                if n == 0 {
+                    return self.err(p, "replication count 0 not supported");
+                }
+                let items = c.nodes.0.nodes.1.contents();
+                let items = items.into_iter().map(|e| self.expr(e));
+                ExprKind::Repl(n, self.concatenation(items.collect::<Result<_>>()?)?)
+            }
+            sv::Primary::Cast(c) => {
+                let (ty, _, e) = &c.nodes;
+                ExprKind::Cast(self.cast(ty, p)?, Box::new(self.expr(&e.nodes.1)?))
+            }
+            sv::Primary::FunctionSubroutineCall(c) => return self.call(&c.nodes.0, span),
+            p => return self.unsupported(p),
+        };
+        Ok(Expr { kind, span })
+    }
+
+    /// A primary of a constant expression; see [`Cx::const_expression`].
+    fn const_primary(&self, p: &sv::ConstantPrimary) -> Result<Expr> {
+        let span = self.span(p);
+        let kind = match p {
+            sv::ConstantPrimary::PrimaryLiteral(l) => return self.primary_literal(l, p),
+            sv::ConstantPrimary::PsParameter(x) => {
+                let (id, select) = &x.nodes;
+                let id = match id {
+                    sv::PsParameterIdentifier::Scope(s) => {
+                        let (scope, id) = &s.nodes;
+                        self.absent(scope, "package or class scope")?;
+                        &id.nodes.0
+                    }
+                    id => return self.unsupported(id),
+                };
+                return self.const_name(self.identifier(id)?, select, p);
+            }
+            sv::ConstantPrimary::GenvarIdentifier(id) => {
+                return Ok(self.name(self.identifier(&id.nodes.0)?, span));
+            }
+            sv::ConstantPrimary::FormalPort(x) => {
+                let (id, select) = &x.nodes;
+                return self.const_name(self.identifier(&id.nodes.0)?, select, p);
+            }
+            sv::ConstantPrimary::MintypmaxExpression(m) => match &m.nodes.0.nodes.1 {
+                sv::ConstantMintypmaxExpression::Unary(e) => return self.const_expression(e),
+                m => return self.err(m, "min:typ:max expression not supported"),
+            },
+            sv::ConstantPrimary::Concatenation(c) => {
+                let (c, select) = &c.nodes;
+                self.absent(select, "select of a concatenation")?;
+                let items = c.nodes.0.nodes.1.contents();
+                let items = items.into_iter().map(|e| self.const_expression(e));
+                ExprKind::Concat(self.concatenation(items.collect::<Result<_>>()?)?)
+            }
+            sv::ConstantPrimary::MultipleConcatenation(c) => {
                 let (c, select) = &c.nodes;
                 self.absent(select, "select of a concatenation")?;
                 let (n, c) = &c.nodes.0.nodes.1;
@@ -2406,50 +2495,87 @@ impl Cx<'_> {
                 if n == 0 {
                     return self.err(p, "replication count 0 not supported");
                 }
-                ExprKind::Repl(n, self.concatenation(c)?)
+                let items = c.nodes.0.nodes.1.contents();
+                let items = items.into_iter().map(|e| self.const_expression(e));
+                ExprKind::Repl(n, self.concatenation(items.collect::<Result<_>>()?)?)
             }
-            sv::Primary::Cast(c) => {
+            sv::ConstantPrimary::ConstantCast(c) => {
                 let (ty, _, e) = &c.nodes;
-                let cast = match ty {
-                    sv::CastingType::ConstantPrimary(n) => {
-                        let n = self.const_int(n.as_ref())?;
-                        if n == 0 {
-                            return self.err(p, "cast to 0 bits");
-                        }
-                        Cast::Size(n)
-                    }
-                    sv::CastingType::Signing(s) if self.text(s.as_ref()) == "signed" => {
-                        Cast::Signed
-                    }
-                    sv::CastingType::Signing(_) => Cast::Unsigned,
-                    // `W'(e)` parses as a cast to a type named `W`
-                    sv::CastingType::SimpleType(t)
-                        if self.params.borrow().contains_key(&self.text(t.as_ref())) =>
-                    {
-                        let n = self.const_int(t.as_ref())?;
-                        if n == 0 {
-                            return self.err(p, "cast to 0 bits");
-                        }
-                        Cast::Size(n)
-                    }
-                    t => {
-                        return self.err(t, format!("cast to `{}` not supported", self.text(t)));
-                    }
-                };
-                ExprKind::Cast(cast, Box::new(self.expr(&e.nodes.1)?))
+                let e = self.const_expression(&e.nodes.1)?;
+                ExprKind::Cast(self.cast(ty, p)?, Box::new(e))
             }
-            sv::Primary::FunctionSubroutineCall(c) => return self.call(&c.nodes.0, span),
+            sv::ConstantPrimary::ConstantFunctionCall(c) => {
+                // a plain name may parse as a call without arguments
+                if let sv::SubroutineCall::TfCall(t) = &c.nodes.0.nodes.0
+                    && let (id, attrs, None) = &t.nodes
+                    && attrs.is_empty()
+                {
+                    let name = self.text(id);
+                    let mut chars = name.chars();
+                    if chars
+                        .next()
+                        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+                    {
+                        return Ok(self.name(name, span));
+                    }
+                }
+                return self.call(&c.nodes.0.nodes.0, span);
+            }
             p => return self.unsupported(p),
         };
-        Ok(Leaf::Expr(Expr { kind, span }))
+        Ok(Expr { kind, span })
+    }
+
+    /// The name `id` with the select `select` in a constant expression: a
+    /// parameter, or a signal, which [`constant::value`] rejects.
+    fn const_name(
+        &self,
+        id: Name,
+        select: &sv::ConstantSelect,
+        p: &sv::ConstantPrimary,
+    ) -> Result<Expr> {
+        let selected = !self.text(select).is_empty();
+        if selected && self.params.borrow().contains_key(&id) {
+            return self.err(p, format!("select of parameter `{id}` not supported"));
+        }
+        Ok(self.name(id, self.span(p)))
+    }
+
+    /// The kind of a cast `t'(…)` at `p`: a size cast, or a sign cast.
+    fn cast<'a>(&self, t: &sv::CastingType, p: impl Into<RefNodes<'a>> + Copy) -> Result<Cast> {
+        Ok(match t {
+            sv::CastingType::ConstantPrimary(n) => {
+                let n = self.int_of(n.as_ref(), &self.const_primary(n)?)?;
+                if n == 0 {
+                    return self.err(p, "cast to 0 bits");
+                }
+                Cast::Size(n)
+            }
+            sv::CastingType::Signing(s) if self.text(s.as_ref()) == "signed" => Cast::Signed,
+            sv::CastingType::Signing(_) => Cast::Unsigned,
+            // `W'(e)` parses as a cast to a type named `W`
+            sv::CastingType::SimpleType(t)
+                if self.params.borrow().contains_key(&self.text(t.as_ref())) =>
+            {
+                let size = self.name(self.text(t.as_ref()), self.span(t.as_ref()));
+                let n = self.int_of(t.as_ref(), &size)?;
+                if n == 0 {
+                    return self.err(p, "cast to 0 bits");
+                }
+                Cast::Size(n)
+            }
+            t => {
+                return self.err(t, format!("cast to `{}` not supported", self.text(t)));
+            }
+        })
     }
 
     /// The items of `{a, b, …}`. An unsized literal is no item: IEEE 1800
     /// forbids it (simulators give it 32 bits, or 1 for `'1`).
-    fn concatenation(&self, c: &sv::Concatenation) -> Result<Vec<Expr>> {
-        let item = |e: &sv::Expression| {
-            let e = self.expr(e)?;
-            if let Some(lit) = unsized_width(&e) {
+    fn concatenation(&self, items: Vec<Expr>) -> Result<Vec<Expr>> {
+        for e in &items {
+            if let Some(lit) = unsized_width(e) {
                 let what = if lit.span == e.span {
                     format!("unsized literal `{e}` in a concatenation")
                 } else {
@@ -2463,14 +2589,13 @@ impl Cx<'_> {
                     format!("{what}: write its width (e.g. `8'd1`)"),
                 ));
             }
-            Ok(e)
-        };
-        c.nodes.0.nodes.1.contents().into_iter().map(item).collect()
+        }
+        Ok(items)
     }
 
     /// A call; only `$signed(e)` and `$unsigned(e)`, which are casts, and
-    /// `$clog2(n)` of an integer constant.
-    fn call(&self, c: &sv::SubroutineCall, span: Span) -> Result<Leaf> {
+    /// `$clog2(n)` of a constant, which is folded into an integer constant.
+    fn call(&self, c: &sv::SubroutineCall, span: Span) -> Result<Expr> {
         let unsupported = || self.err(c, format!("call `{}` not supported", self.text(c)));
         let sv::SubroutineCall::SystemTfCall(call) = c else {
             return unsupported();
@@ -2504,68 +2629,89 @@ impl Cx<'_> {
             "$signed" => Cast::Signed,
             "$unsigned" => Cast::Unsigned,
             "$clog2" => {
-                return match self.leaf_expr(e)? {
-                    Leaf::Int { value, expr, .. } => {
-                        let value = constant::clog2(value).map_err(|m| Error::new(span, m))?;
-                        Ok(Leaf::int(
-                            value,
-                            format!("$clog2({expr})"),
-                            Ty::INT,
-                            false,
-                            span,
-                        ))
+                let arg = self.expr(e)?;
+                let n = constant::value(&arg).or_else(|f| match f {
+                    Failure::NotConstant(why) => {
+                        self.err(c, format!("`$clog2` of a constant only: {why}"))
                     }
-                    Leaf::Expr(_) => self.err(
-                        c,
-                        "`$clog2` of an integer constant only (unsized literals and `int` \
-                         parameters)",
-                    ),
+                    Failure::Error(e) => Err(e),
+                })?;
+                let value = constant::clog2(&n).map_err(|m| Error::new(span, m))?;
+                let kind = ExprKind::Const {
+                    text: format!("$clog2({arg})"),
+                    ty: Ty::INT,
+                    value: BitVec::from_signed(32, value),
+                    is_unsized: false,
                 };
+                return Ok(Expr { kind, span });
             }
             _ => return unsupported(),
         };
         let kind = ExprKind::Cast(cast, Box::new(self.expr(e)?));
-        Ok(Leaf::Expr(Expr { kind, span }))
+        Ok(Expr { kind, span })
+    }
+
+    /// A literal of a primary `p`: a number, `'0` or `'1`.
+    fn primary_literal<'a>(
+        &self,
+        l: &sv::PrimaryLiteral,
+        p: impl Into<RefNodes<'a>> + Copy,
+    ) -> Result<Expr> {
+        let span = self.span(p);
+        match l {
+            sv::PrimaryLiteral::Number(n) => match n.as_ref() {
+                sv::Number::IntegralNumber(n) => self.literal(n),
+                n => self.err(n, "real numbers not supported"),
+            },
+            sv::PrimaryLiteral::UnbasedUnsizedLiteral(l) => {
+                let kind = match self.text(l.as_ref()).trim() {
+                    "'0" => ExprKind::Fill(false),
+                    "'1" => ExprKind::Fill(true),
+                    t => {
+                        return self.err(
+                            p,
+                            format!("literal `{t}` with x/z digits not supported ({X_HINT})"),
+                        );
+                    }
+                };
+                Ok(Expr { kind, span })
+            }
+            l => self.unsupported(l),
+        }
     }
 
     /// A literal: sized `N'[s]<base><digits>`, without x/z digits (values
-    /// are 2-state) and with a value that fits in `N` bits, or an unsized
-    /// decimal, which is an integer.
-    fn literal(&self, n: &sv::IntegralNumber) -> Result<Leaf> {
+    /// are 2-state) and with a value that fits in `N` bits, or unsized: a
+    /// decimal, which is an integer, or based (`'hff`, `'sd5`).
+    fn literal(&self, n: &sv::IntegralNumber) -> Result<Expr> {
         let text: String = self
             .text(n)
             .chars()
             .filter(|c| !c.is_whitespace() && *c != '_')
             .collect();
         let span = self.span(n);
-        match constant::literal(&text).map_err(|m| Error::new(span, m))? {
-            Literal::Sized(ty, value) => Ok(Leaf::Expr(Expr {
-                kind: ExprKind::Lit { ty, value },
-                span,
-            })),
-            Literal::Int(value) => Ok(Leaf::int(value, text, Ty::INT, true, span)),
+        let kind = match constant::literal(&text).map_err(|m| Error::new(span, m))? {
+            Literal::Sized(ty, value) => ExprKind::Lit { ty, value },
+            Literal::Int(value) => ExprKind::Const {
+                text,
+                ty: Ty::INT,
+                value: BitVec::from_signed(32, value),
+                is_unsized: true,
+            },
             // `'sd5` is an integer, `'d5` a 32-bit unsigned vector
-            Literal::Unsized(ty, value) if ty.signed => {
-                let v = num_traits::ToPrimitive::to_i64(&value.signed()).expect("32 bits");
-                Ok(Leaf::int(v, text, ty, true, span))
-            }
-            Literal::Unsized(ty, value) => Ok(Leaf::Expr(Expr {
-                kind: ExprKind::Const {
-                    text,
-                    ty,
-                    value,
-                    is_unsized: true,
-                    negative_power: false,
-                },
-                span,
-            })),
-        }
+            Literal::Unsized(ty, value) => ExprKind::Const {
+                text,
+                ty,
+                value,
+                is_unsized: true,
+            },
+        };
+        Ok(Expr { kind, span })
     }
 
     /// Builds the tree of a flattened chain by precedence (shunting-yard).
-    /// Binary operators associate to the left, `?:` to the right. `+ - * /
-    /// % **` on integer constants fold into one integer constant.
-    fn reassociate(&self, operands: Vec<Leaf>, ops: Vec<Op>) -> Result<Leaf> {
+    /// Binary operators associate to the left, `?:` to the right.
+    fn reassociate(&self, operands: Vec<Expr>, ops: Vec<Op>) -> Expr {
         let mut operands = operands.into_iter();
         let mut out = vec![operands.next().expect("operand")];
         let mut stack: Vec<Op> = Vec::new();
@@ -2574,7 +2720,7 @@ impl Cx<'_> {
             while let Some(top) = stack.last() {
                 if top.prec() > op.prec() || (top.prec() == op.prec() && !right_assoc) {
                     let top = stack.pop().unwrap();
-                    self.reduce(&mut out, top)?;
+                    reduce(&mut out, top);
                 } else {
                     break;
                 }
@@ -2583,86 +2729,10 @@ impl Cx<'_> {
             out.push(operand);
         }
         while let Some(op) = stack.pop() {
-            self.reduce(&mut out, op)?;
+            reduce(&mut out, op);
         }
         assert_eq!(out.len(), 1);
-        Ok(out.pop().unwrap())
-    }
-
-    fn reduce(&self, out: &mut Vec<Leaf>, op: Op) -> Result<()> {
-        let b = out.pop().expect("operand");
-        let a = out.pop().expect("operand");
-        let symbol = match &op {
-            Op::Bin(BinOp::Add, _) => Some("+"),
-            Op::Bin(BinOp::Sub, _) => Some("-"),
-            Op::Bin(BinOp::Mul, _) => Some("*"),
-            Op::Bin(BinOp::Div, _) => Some("/"),
-            Op::Bin(BinOp::Mod, _) => Some("%"),
-            Op::Pow(_) => Some("**"),
-            _ => None,
-        };
-        if let (Some(symbol), Leaf::Int { value: x, .. }, Leaf::Int { value: y, .. }) =
-            (symbol, &a, &b)
-        {
-            let at = op.span();
-            let value = constant::int_op(symbol, *x, *y).map_err(|m| Error::new(at, m))?;
-            let negative_base = *x < 0;
-            let (Leaf::Int { expr: ea, span, .. }, Leaf::Int { expr: eb, .. }) = (a, b) else {
-                unreachable!("integer constants");
-            };
-            out.push(match op {
-                // `**` is folded: there is no operator for it
-                Op::Pow(_) => {
-                    // the base is context-determined, the exponent not
-                    let is_unsized = unsized_width(&ea).is_some();
-                    let text = format!("({ea} ** {eb})");
-                    let mut leaf = Leaf::int(value, text, Ty::INT, is_unsized, span);
-                    if negative_base
-                        && let Leaf::Int { expr, .. } = &mut leaf
-                        && let ExprKind::Const { negative_power, .. } = &mut expr.kind
-                    {
-                        *negative_power = true;
-                    }
-                    leaf
-                }
-                Op::Bin(bin, at) => Leaf::Int {
-                    value,
-                    expr: Expr {
-                        kind: ExprKind::Binary(bin, Box::new(ea), Box::new(eb)),
-                        span: at,
-                    },
-                    span,
-                },
-                Op::Cond(..) => unreachable!("not an arithmetic operator"),
-            });
-            return Ok(());
-        }
-        let (kind, span) = match op {
-            Op::Bin(op, span) => (
-                ExprKind::Binary(
-                    op,
-                    Box::new(self.leaf_to_expr(a)?),
-                    Box::new(self.leaf_to_expr(b)?),
-                ),
-                span,
-            ),
-            Op::Pow(span) => {
-                return Err(Error::new(
-                    span,
-                    "`**` only between integer constants (unsized literals and `int` parameters)",
-                ));
-            }
-            Op::Cond(then, span) => (
-                ExprKind::Cond(
-                    Box::new(self.leaf_to_expr(a)?),
-                    Box::new(then),
-                    Box::new(self.leaf_to_expr(b)?),
-                ),
-                span,
-            ),
-        };
-        out.push(Leaf::Expr(Expr { kind, span }));
-        Ok(())
+        out.pop().unwrap()
     }
 
     fn unop(&self, op: &sv::UnaryOperator) -> Result<UnOp> {
@@ -2710,7 +2780,7 @@ impl Cx<'_> {
                 ">>>" => AShr,
                 "/" => Div,
                 "%" => Mod,
-                "**" => return Ok(Op::Pow(span)),
+                "**" => Pow,
                 s => return self.err(op, format!("operator `{s}` not supported")),
             },
             span,
@@ -2718,40 +2788,23 @@ impl Cx<'_> {
     }
 }
 
-/// An operand while an expression is built: an integer constant (unsized
-/// literals and `int` parameters, see [`constant`]) keeps its exact value
-/// beside its expression until it meets anything else, so that `N - 1`
-/// can be an integer (a range bound, a replication count) where one is
-/// needed.
-enum Leaf {
-    Expr(Expr),
-    Int {
-        value: i64,
-        /// The expression as written, with parameters and unsized
-        /// literals as [`ExprKind::Const`] leaves (`**` and `$clog2`
-        /// folded into one): in a value expression it is sized like any
-        /// other, so that its width and signedness come from the context.
-        expr: Expr,
-        span: Span,
-    },
+/// An expression of the grammar, or a constant expression, which the
+/// grammar keeps apart; both become an [`Expr`].
+#[derive(Clone, Copy)]
+enum Node<'a> {
+    Expr(&'a sv::Expression),
+    Const(&'a sv::ConstantExpression),
 }
 
-impl Leaf {
-    /// The expression of an integer constant: a constant leaf.
-    fn int(value: i64, text: String, ty: Ty, is_unsized: bool, span: Span) -> Leaf {
-        let kind = ExprKind::Const {
-            text,
-            ty,
-            value: BitVec::from_signed(ty.width, value),
-            is_unsized,
-            negative_power: false,
-        };
-        Leaf::Int {
-            value,
-            expr: Expr { kind, span },
-            span,
-        }
-    }
+/// Applies the operator `op` to the last two expressions of `out`.
+fn reduce(out: &mut Vec<Expr>, op: Op) {
+    let b = Box::new(out.pop().expect("operand"));
+    let a = Box::new(out.pop().expect("operand"));
+    let (kind, span) = match op {
+        Op::Bin(op, span) => (ExprKind::Binary(op, a, b), span),
+        Op::Cond(then, span) => (ExprKind::Cond(a, Box::new(then), b), span),
+    };
+    out.push(Expr { kind, span });
 }
 
 /// What the `if` of a block with an asynchronous reset tests: the body is a
@@ -2773,12 +2826,11 @@ fn reset_test(body: &Stmt) -> Option<(&Name, bool, Span)> {
     }
 }
 
-/// An operator of a flattened chain: a binary operator, `**`, or `? then :`
-/// of a conditional, which acts as a right-associative binary operator
-/// between condition and else branch.
+/// An operator of a flattened chain: a binary operator, or `? then :` of a
+/// conditional, which acts as a right-associative binary operator between
+/// condition and else branch.
 enum Op {
     Bin(BinOp, Span),
-    Pow(Span),
     Cond(Expr, Span),
 }
 
@@ -2787,6 +2839,7 @@ enum Op {
 pub fn prec(op: Option<BinOp>) -> u8 {
     use BinOp::*;
     match op {
+        Some(Pow) => 11,
         Some(Mul | Div | Mod) => 10,
         Some(Add | Sub) => 9,
         Some(Shl | Shr | AShl | AShr) => 8,
@@ -2805,14 +2858,7 @@ impl Op {
     fn prec(&self) -> u8 {
         match self {
             Op::Bin(op, _) => prec(Some(*op)),
-            Op::Pow(_) => 11,
             Op::Cond(..) => prec(None),
-        }
-    }
-
-    fn span(&self) -> Span {
-        match self {
-            Op::Bin(_, s) | Op::Pow(s) | Op::Cond(_, s) => *s,
         }
     }
 }
@@ -3191,8 +3237,8 @@ enum ParamTy {
 
 /// An unsized literal (or `'0`, `'1`) that gives `e` its width, if there is
 /// one: a leaf reached through the operands that take the width of their
-/// context (arithmetic and bitwise operands, the left operand of a shift,
-/// the arms of `?:`, sign casts). IEEE 1800 forbids such an expression where
+/// context (arithmetic and bitwise operands, the left operand of a shift
+/// and the base of `**`, the arms of `?:`, sign casts). IEEE 1800 forbids such an expression where
 /// its width counts, as in a concatenation (§11.4.12): an unsized literal
 /// has no definite width. Parameters have a type and do not count, nor do
 /// literals in self-determined places (`{a == 1}`, `{a << 1}`).
@@ -3204,7 +3250,7 @@ fn unsized_width(e: &Expr) -> Option<&Expr> {
         | ExprKind::Fill(_) => Some(e),
         ExprKind::Unary(UnOp::BitNot | UnOp::Neg | UnOp::Plus, a) => unsized_width(a),
         ExprKind::Binary(op, a, b) => match op {
-            BinOp::Shl | BinOp::Shr | BinOp::AShl | BinOp::AShr => unsized_width(a),
+            BinOp::Shl | BinOp::Shr | BinOp::AShl | BinOp::AShr | BinOp::Pow => unsized_width(a),
             BinOp::Add
             | BinOp::Sub
             | BinOp::Mul

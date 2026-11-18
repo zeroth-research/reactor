@@ -158,7 +158,7 @@ fn rejected_expressions() {
         (
             "  assign y = {a, (2 ** 3)};",
             "2 **",
-            "unsized literal `(2 ** 3)` in a concatenation",
+            "`(2 ** 3)` in a concatenation has the width of the unsized literal `2`",
         ),
         (
             "  assign y = {a, a[0] ? 'd1 : 8'd0};",
@@ -166,15 +166,11 @@ fn rejected_expressions() {
             "has the width of the unsized literal `'d1`",
         ),
         ("  assign y = 8'd256;", "8'd256", "does not fit"),
-        (
-            "  assign y = a ** a;",
-            "**",
-            "`**` only between integer constants",
-        ),
+        ("  assign y = a ** a;", "**", "`**` only between constants"),
         (
             "  assign y = $clog2(a);",
             "$clog2",
-            "`$clog2` of an integer constant only",
+            "`$clog2` of a constant only",
         ),
         (
             "  assign y = $countones(a);",
