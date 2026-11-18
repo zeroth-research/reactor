@@ -1214,6 +1214,51 @@ fn miter_requires_satisfiable_base() {
     assert!(err.starts_with("in the update round, "), "{err}");
 }
 
+/// A query on which z3 runs out of its time limit is `unknown`, and the
+/// other queries of the round are still answered. Yosys's side of one
+/// query is made hard: it differs from ours exactly when two 64-bit numbers
+/// greater than 1 multiply to a large prime, which never happens but is
+/// hard to prove.
+#[test]
+fn miter_timeout_gives_unknown() {
+    let Some((yosys, z3)) = tools() else { return };
+    let path = examples()
+        .into_iter()
+        .find(|p| p.ends_with("counter.sv"))
+        .unwrap();
+    let (_, _, mut m) = miter_of(&yosys, &path);
+    // the largest prime below 2^64
+    let n: u128 = 18_446_744_073_709_551_557;
+    m.script +=
+        "(declare-fun |hard a| () (_ BitVec 64))\n(declare-fun |hard b| () (_ BitVec 64))\n";
+    let wide = |x: &str| format!("((_ zero_extend 64) {x})");
+    let factored = format!(
+        "(and (= (bvmul {} {}) (_ bv{n} 128)) (bvugt |hard a| (_ bv1 64)) \
+         (bvugt |hard b| (_ bv1 64)))",
+        wide("|hard a|"),
+        wide("|hard b|")
+    );
+    let hard = m
+        .queries
+        .iter()
+        .position(|q| q.phase == Phase::Update)
+        .unwrap();
+    let q = &mut m.queries[hard];
+    q.theirs = format!("(ite {factored} (bvnot {0}) {0})", q.ours);
+    let name = q.name.clone();
+    m.timeout = Some(std::time::Duration::from_millis(300));
+    let verdicts = miter::check(&z3, &m).unwrap();
+    assert_eq!(verdicts.len(), m.queries.len());
+    for (phase, n, verdict) in verdicts {
+        let expected = if phase == Phase::Update && n == name {
+            Verdict::Unknown
+        } else {
+            Verdict::Equal
+        };
+        assert_eq!(verdict, expected, "`{n}` in the {phase:?} round");
+    }
+}
+
 /// Wrong on both sides: our `q` counts down, Yosys's stays, the reference
 /// counts up, so the reference agrees with neither.
 #[test]
@@ -1322,6 +1367,17 @@ fn cli_yosys() {
     let (ok, _, stderr) = v2rm(&["--yosys", "--smt", "examples/counter.sv"]);
     assert!(!ok);
     assert!(stderr.starts_with("usage:"), "{stderr}");
+    // a time limit per query, only for the comparison and only a positive one
+    let (ok, stdout, _) = v2rm(&["--yosys", "-t:60000", "examples/counter.sv"]);
+    assert!(ok && stdout.contains("4 of 4 queries equal"), "{stdout}");
+    for bad in [
+        &["-t:1000", "examples/counter.sv"][..],
+        &["--yosys", "-t:0", "examples/counter.sv"],
+        &["--yosys", "-t:x", "examples/counter.sv"],
+    ] {
+        let (ok, _, stderr) = v2rm(bad);
+        assert!(!ok && stderr.starts_with("usage:"), "{bad:?}: {stderr}");
+    }
     // Yosys keeps initial values, so it cannot compare without them
     let (ok, _, stderr) = v2rm(&["--yosys", "--ignore-initializers", "examples/powerup.sv"]);
     assert!(!ok);

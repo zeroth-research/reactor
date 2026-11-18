@@ -1,4 +1,4 @@
-//! `v2rm [--top NAME] [-G NAME=VALUE]… [--ignore-initializers] [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv…`:
+//! `v2rm [--top NAME] [-G NAME=VALUE]… [--ignore-initializers] [--instances | --sized | --smt | --smt-init | --yosys [-t:MS]] FILE.sv…`:
 //! translates the top module of a SystemVerilog design (with its
 //! instances) and prints the reactive module. A design of several files is
 //! read as if the files were one, in the order given (a file of blackbox
@@ -25,7 +25,9 @@
 //! reference semantics agrees with. Exits with failure if a variable
 //! differs or the solver gives up. Needs Yosys and z3 (found as in the
 //! `yosys` and `z3` modules), and does not take `-G` or
-//! `--ignore-initializers` (Yosys keeps initial values).
+//! `--ignore-initializers` (Yosys keeps initial values). `-t:MS` gives z3
+//! at most `MS` milliseconds for each query (no limit without it); a query
+//! that runs out of time is reported as `unknown:`.
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;
@@ -37,7 +39,7 @@ use verilog::smt::{self, Phase};
 use verilog::{constant, elab, frontend, lower, sizing, yosys, z3};
 
 const USAGE: &str = "usage: v2rm [--top NAME] [-G NAME=VALUE]... [--ignore-initializers] \
-                     [--instances | --sized | --smt | --smt-init | --yosys] FILE.sv...";
+                     [--instances | --sized | --smt | --smt-init | --yosys [-t:MS]] FILE.sv...";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -49,6 +51,7 @@ fn main() -> ExitCode {
     let mut smt = None;
     let mut compare = false;
     let mut ignore = false;
+    let mut timeout = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--top" => top = args.next(),
@@ -63,6 +66,10 @@ fn main() -> ExitCode {
                 None => return usage(),
             },
             _ if a.starts_with("-G") => params.push(a[2..].to_string()),
+            _ if a.starts_with("-t:") => match a[3..].parse::<u64>() {
+                Ok(ms) if ms > 0 => timeout = Some(std::time::Duration::from_millis(ms)),
+                _ => return usage(),
+            },
             _ if !a.starts_with('-') => paths.push(a),
             _ => return usage(),
         }
@@ -76,6 +83,7 @@ fn main() -> ExitCode {
         .count()
         > 1
         || (compare && ignore)
+        || (timeout.is_some() && !compare)
     {
         return usage();
     }
@@ -133,7 +141,7 @@ fn main() -> ExitCode {
                 );
             }
             if compare {
-                return match yosys_check(&paths, &inst, &t, &overrides) {
+                return match yosys_check(&paths, &inst, &t, &overrides, timeout) {
                     Ok(true) => ExitCode::SUCCESS,
                     Ok(false) => ExitCode::FAILURE,
                     Err(e) => {
@@ -175,18 +183,21 @@ fn main() -> ExitCode {
 
 /// Compares `t`, lowered from `inst`, with Yosys's translation of the
 /// files at `paths`, printing every difference with its counterexample and
-/// replay. `Ok(true)` if every variable is equal in both rounds.
+/// replay, giving z3 at most `timeout` per query. `Ok(true)` if every
+/// variable is equal in both rounds.
 fn yosys_check(
     paths: &[String],
     inst: &Inst,
     t: &Translation,
     overrides: &[Override],
+    timeout: Option<std::time::Duration>,
 ) -> Result<bool, String> {
     let yosys = yosys::find().ok_or("yosys not found (set $YOSYS_BIN)")?;
     let z3 = z3::find().ok_or("z3 not found (set $Z3_BIN)")?;
     let files: Vec<&std::path::Path> = paths.iter().map(|p| p.as_ref()).collect();
     let ys = yosys::run_files(&yosys, &files, &t.name, overrides)?;
-    let m = miter::build(t, &ys)?;
+    let mut m = miter::build(t, &ys)?;
+    m.timeout = timeout;
     let verdicts = miter::check(&z3, &m)?;
     let round = |phase| match phase {
         Phase::Init => "init",

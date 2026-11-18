@@ -109,6 +109,7 @@ use num_bigint::BigUint;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
+use std::time::Duration;
 
 /// The state before the transition.
 const S: &str = "|s|";
@@ -139,6 +140,11 @@ pub struct Miter {
     pub inputs: Vec<Probe>,
     pub next_inputs: Vec<Probe>,
     pub latched: Vec<Probe>,
+    /// The time z3 may take for each single query in [`check`] and
+    /// [`counterexample`] (and for the check without a query that comes
+    /// first in each round); none if `None`, as [`build`] leaves it. A
+    /// query that runs out of time is [`Verdict::Unknown`].
+    pub timeout: Option<Duration>,
 }
 
 /// A named value in the script, as a bit-vector term.
@@ -187,7 +193,7 @@ pub enum Verdict {
     Equal,
     /// `sat`: some state and input make them differ.
     Differs,
-    /// The solver gave up.
+    /// The solver gave up, or ran out of the time [`Miter::timeout`].
     Unknown,
 }
 
@@ -421,6 +427,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         inputs,
         next_inputs,
         latched,
+        timeout: None,
     })
 }
 
@@ -573,7 +580,7 @@ pub fn check(z3: &Path, m: &Miter) -> Result<Vec<(Phase, Name, Verdict)>, String
         for q in &queries {
             script += &format!("(push 1)\n{}\n(check-sat)\n(pop 1)\n", q.differ());
         }
-        let out = crate::z3::run(z3, &script)?;
+        let out = crate::z3::run_with(z3, &script, m.timeout)?;
         let round = match phase {
             Phase::Init => "init",
             Phase::Update => "update",
@@ -581,9 +588,14 @@ pub fn check(z3: &Path, m: &Miter) -> Result<Vec<(Phase, Name, Verdict)>, String
         match out.first().map(String::as_str) {
             Some("sat") => {}
             Some(base @ ("unsat" | "unknown")) => {
-                let found = match base {
-                    "unsat" => "have no solution (z3: unsat)",
-                    _ => "may have no solution (z3: unknown)",
+                let found = match (base, m.timeout) {
+                    ("unsat", _) => "have no solution (z3: unsat)".to_string(),
+                    (_, None) => "may have no solution (z3: unknown)".to_string(),
+                    (_, Some(t)) => format!(
+                        "may have no solution (z3: unknown, perhaps out of its time limit \
+                         of {} ms per query)",
+                        t.as_millis()
+                    ),
                 };
                 return Err(format!(
                     "in the {round} round, Yosys's constraints and the ties {found}, so every \
@@ -671,7 +683,7 @@ pub fn counterexample(z3: &Path, m: &Miter, q: &Query) -> Result<Cex, String> {
         q.differ(),
         terms.join(" ")
     );
-    let out = crate::z3::run(z3, &script)?;
+    let out = crate::z3::run_with(z3, &script, m.timeout)?;
     let fail = |why: &str| {
         format!(
             "no counterexample for `{}`: {why}:\n{}",

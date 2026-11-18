@@ -20,6 +20,7 @@ import argparse
 import concurrent.futures as cf
 import os
 import re
+import signal
 import subprocess
 import sys
 from collections import Counter
@@ -33,6 +34,9 @@ V2RM = Path(os.environ.get("V2RM", Path.home() / ".cache/rm-target/release/v2rm"
 OSS = Path.home() / "tools/oss-cad-suite/bin"
 TIMEOUT = 60
 YOSYS_TIMEOUT = 300
+# z3's time per query of `v2rm --yosys`, in ms: a query out of time is `Unknown`, and the other
+# queries of the case are still answered
+QUERY_TIMEOUT_MS = 60_000
 
 
 class Case:
@@ -176,14 +180,22 @@ def prepare(case):
 
 
 def run(args, timeout):
+    """v2rm with `args`, or None if it takes longer than `timeout` seconds. v2rm runs in a session
+    of its own, so that a timeout kills its whole process group: its z3 runs too."""
     env = dict(os.environ)
     env["PATH"] = f"{OSS}:{env['PATH']}"
-    try:
-        p = subprocess.run([str(V2RM), *args], capture_output=True, text=True,
-                           timeout=timeout, env=env, cwd=WORK)
-    except subprocess.TimeoutExpired:
-        return None
-    return p
+    with subprocess.Popen([str(V2RM), *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True, env=env, cwd=WORK, start_new_session=True) as p:
+        try:
+            stdout, stderr = p.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.communicate()
+            return None
+    return subprocess.CompletedProcess(p.args, p.returncode, stdout, stderr)
 
 
 def accept(case):
@@ -227,7 +239,7 @@ def where(path, msg):
 
 def yosys(case, path):
     top = ["--top", case.top] if case.top else []
-    p = run(["--yosys", *top, str(path)], YOSYS_TIMEOUT)
+    p = run(["--yosys", f"-t:{QUERY_TIMEOUT_MS}", *top, str(path)], YOSYS_TIMEOUT)
     if p is None:
         return "TIMEOUT"
     if p.returncode == 0:
