@@ -92,7 +92,9 @@ timing assumptions, which this semantics makes and does not check:
 - data inputs meet the setup and hold times of the registers reading
   them: an input does not change in the round where an edge samples it
   (it takes its new value in the round, but the edge sees the latched
-  one);
+  one). This cannot hold for a block's own clock, which changes at the
+  very edge that runs the block, nor for the chain its clock comes from,
+  so a block may not read them ([`typing::domains`]);
 - at an edge, the registers of one clock (on either edge) and the signals
   computed from them change only after the edge, as their clock-to-output
   delay makes them do; so a register clocked by `negedge clk` reading one

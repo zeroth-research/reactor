@@ -280,6 +280,15 @@ endmodule
         "`q` (clocked by `clk`) reads `a`, assigned with a blocking `=` at 3:28 in another \
          `always_ff` block that runs at the same clock edge",
     );
+    // the clock passed to an instance as data too, read by the block it
+    // runs
+    rejects(
+        &top("  child u (.clk, .a({3'd0, clk}), .q, .y);"),
+        6 + 4,
+        "a;",
+        "`q` (clocked by `clk`) reads `a`, which depends on its clock: that value changes in \
+         the time step of the edge that runs the block",
+    );
     // a register of one clock domain read in another, through instances
     rejects(
         "module top(input logic clk, clk2, input logic [3:0] a, output logic [3:0] q, y);
