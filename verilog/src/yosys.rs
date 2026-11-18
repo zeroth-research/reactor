@@ -126,7 +126,8 @@ by `(= (bvand q #b0…) #b0…)` (always true) or not at all. A data input
 sample can carry the name of a register (`/s1#sampled` above) with its
 width, so names alone do not tell the output sample of a register; see
 [`miter::registers`](crate::miter::registers). The names contain line
-numbers of Yosys's source: the format was checked with Yosys 0.69+173.
+numbers of Yosys's source: the format was checked with Yosys 0.69+173
+([`CHECKED_VERSION`]; `v2rm --yosys` warns with any other version).
 
 ## Limits
 
@@ -153,6 +154,53 @@ pub fn find() -> Option<PathBuf> {
         let ok = Command::new("yosys").arg("-V").output().is_ok();
         ok.then(|| PathBuf::from("yosys"))
     })
+}
+
+/// The Yosys version the format of its output (names of registers and
+/// samples, the initial-state predicate, see the module docs) was checked
+/// with. Another version may name or build them differently.
+pub const CHECKED_VERSION: &str = "0.69+173";
+
+/// The version of the Yosys binary `bin`, as `yosys -V` gives it (`0.69+173`
+/// from `Yosys 0.69+173 (git sha1 …)`). Fails if Yosys cannot be started or
+/// its answer has no version.
+pub fn version(bin: &Path) -> Result<String, String> {
+    let out = Command::new(bin)
+        .arg("-V")
+        .output()
+        .map_err(|e| format!("{}: {e}", bin.display()))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    parse_version(&text).ok_or_else(|| {
+        format!(
+            "{}: no version in the answer to `-V`: {}",
+            bin.display(),
+            text.trim()
+        )
+    })
+}
+
+/// The version in Yosys's answer `text` to `-V`: the word after `Yosys`.
+pub fn parse_version(text: &str) -> Option<String> {
+    let mut words = text.split_whitespace();
+    words.find(|w| *w == "Yosys")?;
+    words.next().map(str::to_string)
+}
+
+/// A warning if `version` (of [`version`]) is not [`CHECKED_VERSION`], or
+/// could not be found.
+pub fn version_warning(version: &Result<String, String>) -> Option<String> {
+    let checked = "the comparison relies on the names Yosys gives registers and their \
+                   samples, a format checked only with Yosys";
+    match version {
+        Ok(v) if v == CHECKED_VERSION => None,
+        Ok(v) => Some(format!(
+            "Yosys {v}: {checked} {CHECKED_VERSION}; another version may give other names, \
+             or build the samples differently"
+        )),
+        Err(e) => Some(format!(
+            "the Yosys version is unknown ({e}): {checked} {CHECKED_VERSION}"
+        )),
+    }
 }
 
 /// The Yosys script translating the module `top` of `file` (with all

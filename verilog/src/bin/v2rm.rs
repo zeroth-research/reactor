@@ -25,7 +25,8 @@
 //! reference semantics agrees with. Exits with failure if a variable
 //! differs or the solver gives up. Needs Yosys and z3 (found as in the
 //! `yosys` and `z3` modules), and does not take `-G` or
-//! `--ignore-initializers` (Yosys keeps initial values). `-t:MS` gives z3
+//! `--ignore-initializers` (Yosys keeps initial values). It warns if Yosys
+//! is not the version the format of its output was checked with. `-t:MS` gives z3
 //! at most `MS` milliseconds for each query (no limit without it); a query
 //! that runs out of time is reported as `unknown:`.
 
@@ -193,6 +194,9 @@ fn yosys_check(
     timeout: Option<std::time::Duration>,
 ) -> Result<bool, String> {
     let yosys = yosys::find().ok_or("yosys not found (set $YOSYS_BIN)")?;
+    if let Some(w) = yosys::version_warning(&yosys::version(&yosys)) {
+        eprintln!("{}: warning: {w}", paths[0]);
+    }
     let z3 = z3::find().ok_or("z3 not found (set $Z3_BIN)")?;
     let files: Vec<&std::path::Path> = paths.iter().map(|p| p.as_ref()).collect();
     let ys = yosys::run_files(&yosys, &files, &t.name, overrides)?;
