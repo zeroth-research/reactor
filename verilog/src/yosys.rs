@@ -15,6 +15,19 @@ memory_collect; memory_map; clk2fflogic; write_smt2 -wires -
 (all files of the design in one `read_verilog`, so that a macro defined in
 one is defined in the following ones, as in our frontend).
 
+Yosys must read the same text as our frontend. [`run`] starts it in an
+empty directory of its own, with the files' absolute paths: Yosys looks
+for a file of `$readmemb`/`$readmemh` with a relative name first in its
+working directory and then next to the source file, ours only next to the
+source file, so in an empty directory both find the same file.
+`read_verilog` defines the macros `SYNTHESIS`, as our frontend does, and
+`YOSYS` in every file, which our frontend does not (Yosys-specific code
+under `` `ifdef YOSYS `` is usually beyond the language we translate) and
+which cannot be undefined for Yosys. So [`run`] refuses a design whose
+text after preprocessing depends on `YOSYS`
+([`frontend::depends_on_macro`]); a mere mention, in a comment or in a
+branch skipped either way, is fine.
+
 `flatten` makes the whole hierarchy one module, whose wires have our
 instance path names (`u.q`); without `opt`, every register stays one
 flip-flop. `-noblackbox`: by default `read_verilog` marks an empty module
@@ -137,6 +150,7 @@ with the default parameter values.
 */
 
 use crate::ast::Override;
+use crate::frontend;
 use crate::miter::{Sexp, sexp, tokens};
 use crate::smt;
 use std::collections::{BTreeMap, BTreeSet};
@@ -230,8 +244,9 @@ pub fn script_files(files: &[&Path], top: &str) -> Result<String, String> {
 
 /// Runs the Yosys binary `bin` on the module `top` of `file` and parses
 /// its output. Fails if Yosys cannot be started, reports an error or a
-/// wire with conflicting drivers (see the module docs), or `overrides` is
-/// not empty (not supported yet).
+/// wire with conflicting drivers (see the module docs), `overrides` is not
+/// empty (not supported yet), or the design depends on the macro `YOSYS`
+/// (see the module docs).
 pub fn run(bin: &Path, file: &Path, top: &str, overrides: &[Override]) -> Result<Smt2, String> {
     run_files(bin, &[file], top, overrides)
 }
@@ -254,11 +269,27 @@ pub fn run_files(
             o.name
         ));
     }
+    if frontend::depends_on_macro(files, "YOSYS").map_err(|e| format!("{file}: {e}"))? {
+        return Err(
+            "the design tests the macro `YOSYS`, which Yosys defines and we do not, \
+                    so Yosys would read another text than ours: not compared"
+                .into(),
+        );
+    }
+    // absolute paths, for Yosys runs in an empty directory of its own
+    let absolute = files
+        .iter()
+        .map(|f| std::path::absolute(f).map_err(|e| format!("{}: {e}", f.display())))
+        .collect::<Result<Vec<_>, _>>()?;
+    let absolute: Vec<&Path> = absolute.iter().map(PathBuf::as_path).collect();
+    let dir = EmptyDir::new().map_err(|e| format!("a directory for Yosys: {e}"))?;
     // `-e`: Yosys stops with an error instead of the warning
     let out = Command::new(bin)
-        .args(["-q", "-e", CONFLICT, "-p", &script_files(files, top)?])
+        .args(["-q", "-e", CONFLICT, "-p", &script_files(&absolute, top)?])
+        .current_dir(&dir.0)
         .output()
         .map_err(|e| format!("{}: {e}", bin.display()))?;
+    drop(dir);
     let err = String::from_utf8_lossy(&out.stderr);
     // the warning's text, in case it does not stop Yosys
     if err.contains(CONFLICT) {
@@ -273,6 +304,33 @@ pub fn run_files(
         return Err(format!("yosys failed on {file}:\n{err}{log}"));
     }
     parse(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// A new empty directory in the system's temporary directory, removed with
+/// everything in it when dropped.
+struct EmptyDir(PathBuf);
+
+impl EmptyDir {
+    fn new() -> std::io::Result<Self> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        loop {
+            let k = NEXT.fetch_add(1, Ordering::Relaxed);
+            let name = format!("v2rm-yosys-{}-{k}", std::process::id());
+            let path = std::env::temp_dir().join(name);
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(Self(path)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
+    }
+}
+
+impl Drop for EmptyDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// Yosys's warning about a wire with several drivers.
