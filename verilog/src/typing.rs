@@ -2504,9 +2504,9 @@ pub fn cast(c: Cast, t: Ty, context_free: bool, span: Span) -> Result<Ty> {
 
 /// Whether the width at which `e` is evaluated does not depend on its
 /// context: signals, selects, literals, constants, concatenations and
-/// casts. (An integer constant like `N * N` is evaluated exactly, so at any
-/// width it fits in.) An
-/// operator expression is evaluated at the width of its context.
+/// casts. (Sizing folds an operator on constants into one constant at its
+/// final type.) An operator expression is evaluated at the width of its
+/// context.
 pub fn context_free(e: &Expr) -> bool {
     matches!(
         e.kind,
@@ -2594,6 +2594,10 @@ pub fn binary(op: BinOp, a: Ty, b: Ty, span: Span) -> Result<Ty> {
         LogAnd | LogOr => Ok(Ty::BIT),
         // the shift amount is self-determined and unsigned
         Shl | Shr | AShl | AShr => Ok(a),
+        Pow => Err(Error::new(
+            span,
+            "internal error: `**` is folded by sizing, it has no operator",
+        )),
     }
 }
 

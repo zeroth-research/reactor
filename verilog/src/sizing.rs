@@ -14,7 +14,8 @@ of its own. The rules are those of IEEE 1800-2023, §11.6 to §11.8:
   (signed, 32 bits), an unsized based literal (`'hff`) unsigned 32 bits,
   `'0`/`'1` 1 bit. The arithmetic and bitwise operators and `?:` take the
   larger width of their operands (the arms for `?:`) and are signed only
-  if both are; `~ - +` and the shifts the type of their (left) operand.
+  if both are; `~ - +`, the shifts and `**` the type of their (left)
+  operand.
   Comparisons, `! && ||` and the reductions give 1 unsigned bit;
   concatenations, replications and selects are unsigned, of the width they
   pick; a size cast `N'(e)` has `N` bits and the signedness of `e`;
@@ -22,13 +23,14 @@ of its own. The rules are those of IEEE 1800-2023, §11.6 to §11.8:
 - The type of the whole expression is then passed down to its
   *context-determined* operands ([`Sizer::check`]): the operands of the
   arithmetic and bitwise operators, of `~ - +`, the left operand of a
-  shift and the arms of `?:`. Where it reaches any other expression (a
+  shift, the base of `**` and the arms of `?:`. Where it reaches any other expression (a
   signal, a constant, a comparison, a concatenation, …), that value is
   extended to the type: with copies of its top bit if the type passed
   down is signed, with zeros if not, whatever the signedness of the value
   itself. So in `s + u`, with `s` signed and `u` unsigned, `s` is
   zero-extended. The other operands are *self-determined*: each is sized
-  at its own type (the condition of `?:`, the shift amount, the operands
+  at its own type (the condition of `?:`, the shift amount, the exponent
+  of `**`, the operands
   of `! && ||` and of the reductions, the items of concatenations and
   replications, select indices and element indices of arrays, the
   argument of `$signed`/`$unsigned`). An element of an array has the
@@ -53,12 +55,15 @@ description for widths, extended with signedness as IEEE 1800 §11.8.1 and
 §11.8.2 give it (the paper and its formalization leave signedness out).
 Nothing is narrowed: `q == 15` with a 4-bit `q` compares 32 bits.
 
-Constant operator expressions (`N - 1`, `-1`) are folded into one
-constant at the type of their context, after sizing, so their value is
+Constant operator expressions (`N - 1`, `-1`, `2 ** 31`) are folded into
+one constant at the type of their context, after sizing, so their value is
 the one of IEEE 1800 at that type rather than the exact integer: `u + -1`
-with a 40-bit unsigned `u` adds 40 ones. The exception is `**`, which the
-frontend folds at `int`: a negative base in an unsigned context wider than
-32 bits, where that gives other bits, is rejected.
+with a 40-bit unsigned `u` adds 40 ones, `65536 * 65536` assigned to 64
+bits is 2^32. `**` has no operator in the translated module, so both of
+its operands must be constants; a negative exponent gives 0 except for the
+bases 1 and -1 (IEEE 1800 Table 11-4), and 0 to a negative power, which is
+x, is rejected. [`constant`](crate::constant) evaluates constant
+expressions with these rules too ([`Sizer::constants`]).
 
 Sizing also checks what needs the sized types: constant selects stay
 inside their signal (a variable index may leave it: those bits read 0,
@@ -82,7 +87,7 @@ type Result<T> = std::result::Result<T, Error>;
 /// The module with every expression sized (see the module documentation).
 /// Expects `m` to pass [`typing::check`], which gives `env`.
 pub fn module(m: &Module, env: &Env) -> Result<Module> {
-    let s = Sizer { env };
+    let s = Sizer::new(env);
     let mut out = m.clone();
     for item in &mut out.items {
         match item {
@@ -114,14 +119,17 @@ pub fn module(m: &Module, env: &Env) -> Result<Module> {
 /// The sizing rules, over the signals `env`.
 pub struct Sizer<'e> {
     pub env: &'e Env,
+    /// Whether concatenations and replications of constants are folded too,
+    /// so that a constant expression becomes one constant.
+    fold_items: bool,
 }
 
 /// How an operator treats its operands.
 enum Kind {
     /// Arithmetic and bitwise: both operands context-determined.
     Arith,
-    /// Shifts: the left operand context-determined, the amount
-    /// self-determined.
+    /// Shifts and `**`: the left operand context-determined, the amount
+    /// (exponent) self-determined.
     Shift,
     /// Comparisons: operands sized together, 1-bit result.
     Compare,
@@ -133,7 +141,7 @@ fn kind(op: BinOp) -> Kind {
     use BinOp::*;
     match op {
         BitAnd | BitOr | BitXor | BitXnor | Add | Sub | Mul | Div | Mod => Kind::Arith,
-        Shl | Shr | AShl | AShr => Kind::Shift,
+        Shl | Shr | AShl | AShr | Pow => Kind::Shift,
         Eq | Ne | CaseEq | CaseNe | Lt | Le | Gt | Ge => Kind::Compare,
         LogAnd | LogOr => Kind::Logic,
     }
@@ -183,7 +191,25 @@ fn distinct_labels(items: &[CaseItem], at: Span) -> Result<()> {
     Ok(())
 }
 
-impl Sizer<'_> {
+impl<'e> Sizer<'e> {
+    /// The sizing rules of value expressions over the signals `env`.
+    pub fn new(env: &'e Env) -> Self {
+        Sizer {
+            env,
+            fold_items: false,
+        }
+    }
+
+    /// The sizing rules for constant expressions (`env` has no signals):
+    /// every operator on constants is folded, so a constant expression
+    /// becomes one constant.
+    pub fn constants(env: &'e Env) -> Self {
+        Sizer {
+            env,
+            fold_items: true,
+        }
+    }
+
     fn stmt(&self, s: &mut Stmt) -> Result<()> {
         match &mut s.kind {
             StmtKind::Block(stmts) => stmts.iter_mut().try_for_each(|s| self.stmt(s)),
@@ -370,7 +396,17 @@ impl Sizer<'_> {
                 if matches!(op, BinOp::Div | BinOp::Mod) {
                     divisor(&b)?;
                 }
-                node(ExprKind::Binary(*op, Box::new(a), Box::new(b)))
+                let sized = fold(node(ExprKind::Binary(*op, Box::new(a), Box::new(b))), t)?;
+                if let ExprKind::Binary(BinOp::Pow, ..) = sized.kind {
+                    return Err(Error::new(
+                        span,
+                        format!(
+                            "`**` only between constants (`{e}`): the translation has no \
+                             power operator"
+                        ),
+                    ));
+                }
+                return Ok(sized);
             }
             ExprKind::Cond(c, a, b) => node(ExprKind::Cond(
                 Box::new(self.synth(c)?),
@@ -388,22 +424,7 @@ impl Sizer<'_> {
                     ty: t,
                     value,
                     is_unsized: false,
-                    negative_power: false,
                 })
-            }
-            ExprKind::Const {
-                negative_power: true,
-                ..
-            } if t.width > 32 && !t.signed => {
-                return Err(Error::new(
-                    e.span,
-                    format!(
-                        "`{e}` has a negative base, in a {}-bit unsigned context: `**` is \
-                         evaluated at 32 bits for now, which gives other bits there than \
-                         IEEE 1800 (the base extended to the context first)",
-                        t.width
-                    ),
-                ));
             }
             _ => {
                 let own = self.det(e)?;
@@ -438,8 +459,20 @@ impl Sizer<'_> {
                     boxed(self.synth(b))?,
                 )),
             },
-            ExprKind::Concat(es) => node(ExprKind::Concat(self.synth_all(es)?)),
-            ExprKind::Repl(n, es) => node(ExprKind::Repl(*n, self.synth_all(es)?)),
+            ExprKind::Concat(es) => {
+                let es = self.synth_all(es)?;
+                match self.items(&es, 1) {
+                    Some(c) => c,
+                    None => node(ExprKind::Concat(es)),
+                }
+            }
+            ExprKind::Repl(n, es) => {
+                let es = self.synth_all(es)?;
+                match self.items(&es, *n) {
+                    Some(c) => c,
+                    None => node(ExprKind::Repl(*n, es)),
+                }
+            }
             ExprKind::Select(x, sel) => node(ExprKind::Select(x.clone(), self.select(sel)?)),
             ExprKind::Elem(el) => {
                 let mut el = el.clone();
@@ -466,6 +499,38 @@ impl Sizer<'_> {
         };
         let t = self.det(e)?;
         fold(sized, t)
+    }
+
+    /// `n` copies of the concatenation of `es`, as one constant if they are
+    /// constants and constant items are folded.
+    fn items(&self, es: &[Expr], n: usize) -> Option<Expr> {
+        if !self.fold_items {
+            return None;
+        }
+        let values: Vec<&BitVec> = es.iter().map(constant).collect::<Option<_>>()?;
+        let one = values
+            .into_iter()
+            .cloned()
+            .reduce(|hi, lo| eval(SvOp::Concat, &[&hi, &lo]).expect("concatenation"))?;
+        let all = (1..n).fold(one.clone(), |acc, _| {
+            eval(SvOp::Concat, &[&acc, &one]).expect("concatenation")
+        });
+        let ty = Ty::unsigned(all.width());
+        let span = es.first()?.span;
+        let text = es
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        Some(Expr {
+            kind: ExprKind::Const {
+                text: format!("{{{text}}}"),
+                ty,
+                value: all,
+                is_unsized: false,
+            },
+            span,
+        })
     }
 
     fn synth_all(&self, es: &[Expr]) -> Result<Vec<Expr>> {
@@ -504,7 +569,6 @@ fn resize(e: Expr, from: Ty, to: Ty) -> Expr {
                 ty: to,
                 value: convert(v, to),
                 is_unsized: false,
-                negative_power: false,
             },
             span: e.span,
         };
@@ -552,6 +616,11 @@ fn fold(e: Expr, t: Ty) -> Result<Expr> {
             Some(a) => unary(*op, a, t)?,
             None => return Ok(e),
         },
+        ExprKind::Binary(BinOp::Pow, a, b) => match (constant(a), constant(b)) {
+            (Some(va), Some(vb)) => power(va, t.signed, vb, operand_signed(b))
+                .map_err(|m| Error::new(e.span, format!("`{e}`: {m}")))?,
+            _ => return Ok(e),
+        },
         ExprKind::Binary(op, a, b) => match (constant(a), constant(b)) {
             (Some(va), Some(vb)) => binary(*op, va, operand_signed(a), vb, t)?,
             _ => return Ok(e),
@@ -578,7 +647,6 @@ fn fold(e: Expr, t: Ty) -> Result<Expr> {
             ty: t,
             value,
             is_unsized: false,
-            negative_power: false,
         },
         span: e.span,
     })
@@ -642,9 +710,39 @@ fn binary(op: BinOp, a: &BitVec, signed: bool, b: &BitVec, t: Ty) -> Result<BitV
         Shl | AShl => eval(SvOp::Shl, &[a, b])?,
         Shr => eval(SvOp::LShr, &[a, b])?,
         AShr => eval(pick(SvOp::AShr, SvOp::LShr), &[a, b])?,
+        Pow => unreachable!("`**` is folded by `power`"),
     };
     debug_assert_eq!(v.width(), t.width);
     Ok(v)
+}
+
+/// `a ** b` at the width of `a`, as IEEE 1800 Table 11-4 gives it for
+/// 2-state values: `a` and `b` read as signed numbers where `signed_a` and
+/// `signed_b` say. A negative exponent gives 1 for the base 1, ±1 for the
+/// base -1 and 0 for other bases except 0, where the result is x: an
+/// error.
+pub fn power(
+    a: &BitVec,
+    signed_a: bool,
+    b: &BitVec,
+    signed_b: bool,
+) -> std::result::Result<BitVec, String> {
+    let w = a.width();
+    let one = BitVec::wrap(w, 1u8);
+    let minus_one = BitVec::from_signed(w, -1);
+    if signed_b && b.signed().sign() == num_bigint::Sign::Minus {
+        return if a.is_zero() {
+            Err("0 to a negative power has no value (it is x)".into())
+        } else if *a == one {
+            Ok(one)
+        } else if signed_a && *a == minus_one {
+            Ok(if b.unsigned().bit(0) { minus_one } else { one })
+        } else {
+            Ok(BitVec::zero(w))
+        };
+    }
+    let modulus = num_bigint::BigUint::from(1u8) << w;
+    Ok(BitVec::wrap(w, a.unsigned().modpow(b.unsigned(), &modulus)))
 }
 
 /// The sized hierarchy as SystemVerilog source in the explicit-width

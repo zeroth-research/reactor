@@ -6,7 +6,8 @@
 //! error) name the inputs nothing reads, every instance of a blackbox with
 //! the signals it leaves free (see the crate docs, "The boundary of a
 //! design"), and reads that may select bits outside a signal. `-G` sets a parameter of the top module
-//! to a constant expression. `--instances` first prints the module of every
+//! to a literal (`8`, `-3`, `4'hf`), taken as the parameter's declaration
+//! takes a value. `--instances` first prints the module of every
 //! instance as it is composed into its parent, children before parents.
 //! `--sized` prints the design instead with every implicit resize written
 //! out, as SystemVerilog in the explicit-width fragment (see the `sizing`
@@ -37,7 +38,6 @@
 //! z3, or in the arguments (each problem with the arguments gets a message
 //! of its own, then the usage). `-h`/`--help` prints the usage.
 
-use std::collections::BTreeMap;
 use std::process::ExitCode;
 use verilog::ast::{Error, Override, Span};
 use verilog::elab::Inst;
@@ -216,9 +216,7 @@ fn main() -> ExitCode {
             let (name, value) = p
                 .split_once('=')
                 .ok_or_else(|| err("expected NAME=VALUE".into()))?;
-            let value = constant::eval(value, &BTreeMap::new()).map_err(|f| match f {
-                constant::Failure::NotConstant(m) | constant::Failure::Error(m) => err(m),
-            })?;
+            let value = constant::parse(value).map_err(err)?;
             overrides.push(Override {
                 name: name.to_string(),
                 value,

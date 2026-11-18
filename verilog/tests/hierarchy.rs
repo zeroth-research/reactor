@@ -120,7 +120,7 @@ fn overrides_from_outside() {
     let d = frontend::parse_design(CHILD, "test.sv").unwrap();
     let w = Override {
         name: "W".into(),
-        value: constant::int_const(6),
+        value: constant::parse("6").unwrap(),
         span: Default::default(),
     };
     let inst = elab::elaborate(&d, "child", &[w]).unwrap();
@@ -495,20 +495,18 @@ endmodule
 fn rejected_parameters() {
     let h = "module m #(parameter int N = 8) (input logic [7:0] a, output logic [7:0] y);";
     let cases = [
+        // an integer constant expression is exact where it has no type
+        ("  localparam K = N / (N - 8);", "/ (", "division by zero"),
         (
-            "  localparam K = 8'd1 + 8'd2;",
-            "8'd1",
-            "`+` on the sized constant",
+            "  localparam K = N * 1000000000;",
+            "* 1",
+            "overflows 32 bits",
         ),
+        // a typed parameter is assigned its value, at its type
         (
             "  localparam int K = N / (N - 8);",
-            "N /",
-            "division by zero",
-        ),
-        (
-            "  localparam int K = N * 1000000000;",
-            "N *",
-            "overflows 32 bits",
+            "- 8",
+            "the divisor must be a nonzero constant",
         ),
         ("  localparam K = a;", "a;", "`a` is not a parameter"),
         ("  localparam N = 3;", "N =", "`N` already declared"),
@@ -518,7 +516,7 @@ fn rejected_parameters() {
         (
             "  assign y = a ** 8'd2;",
             "**",
-            "`**` only between integer constants",
+            "`**` only between constants",
         ),
         ("  assign y = {(N - 9){a}};", "(N - 9", "is negative"),
         (

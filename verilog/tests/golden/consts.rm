@@ -1,0 +1,45 @@
+module consts
+  external
+    a : bv8
+    b : bv40
+  interface
+    w : bv16
+    l : bv8
+    k : bv2
+    c : bv5
+    h : bv8
+    big : bv64
+    pow : bv64
+    least : bv64
+    negpow : bv40
+  atom controls w awaits a
+    init = update
+      %1 := ZEXT[16] X(a)
+      %2 := 16'd146
+      X(w) := ADD (%1, %2)
+  atom controls l awaits a
+    init = update
+      X(l) := NOT X(a)
+  atom controls k awaits a
+    init = update
+      X(k) := EXTRACT[1:0] X(a)
+  atom controls c awaits a
+    init = update
+      X(c) := EXTRACT[4:0] X(a)
+  atom controls h awaits a
+    init = update
+      %1 := 8'd225
+      X(h) := ADD (%1, X(a))
+  atom controls big
+    init = update
+      X(big) := 64'd4294967296
+  atom controls pow
+    init = update
+      X(pow) := 64'd2147483648
+  atom controls least
+    init = update
+      X(least) := 64'd18446744071562067968
+  atom controls negpow awaits b
+    init = update
+      %1 := 40'd1099511627749
+      X(negpow) := ADD (X(b), %1)

@@ -1806,6 +1806,12 @@ impl<'a> Builder<'a> {
                     (SvOp::ULt, SvOp::ULe, SvOp::UDiv, SvOp::URem)
                 };
                 let w = match op {
+                    BinOp::Pow => {
+                        return Err(Error::new(
+                            span,
+                            "internal error: `**` is folded by sizing, it has no operator",
+                        ));
+                    }
                     BinOp::BitAnd => self.emit(SvOp::And, &[wa, wb], s, span)?,
                     BinOp::BitOr => self.emit(SvOp::Or, &[wa, wb], s, span)?,
                     BinOp::BitXor => self.emit(SvOp::Xor, &[wa, wb], s, span)?,
