@@ -266,6 +266,20 @@ endmodule
         "d1",
         "combinational loop through instances: s1 -> s2 -> s1",
     );
+    // a register assigned with a blocking `=`, read at the same edge in
+    // another instance
+    rejects(
+        "module top(input logic clk, input logic [3:0] a, output logic [3:0] q, y);
+  logic [3:0] w;
+  always_ff @(posedge clk) w = a;
+  child u (.clk, .a(w), .q, .y);
+endmodule
+",
+        8 + 4,
+        "a;",
+        "`q` (clocked by `clk`) reads `a`, assigned with a blocking `=` at 3:28 in another \
+         `always_ff` block that runs at the same clock edge",
+    );
     // a register of one clock domain read in another, through instances
     rejects(
         "module top(input logic clk, clk2, input logic [3:0] a, output logic [3:0] q, y);

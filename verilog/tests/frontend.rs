@@ -2485,6 +2485,89 @@ fn rejected_blocking_ff() {
     }
 }
 
+const HEADER_RACE: &str =
+    "module m(input logic clk, input logic [7:0] a, output logic [7:0] c, y);";
+
+/// A signal assigned with a blocking `=` in one `always_ff` block and read
+/// by another block that runs at the same clock edge: simulators may run
+/// the two blocks in either order, so the read races with the assignment.
+#[test]
+fn rejected_blocking_ff_race() {
+    let race = |what: &str, at: &str, q: &str| {
+        format!(
+            "reads {what} assigned with a blocking `=` at {at} in another `always_ff` block \
+             that runs at the same clock edge: simulators may run the two blocks in either \
+             order, so the read could see the value from before or after the assignment (a \
+             race); assign `{q}` with `<=`"
+        )
+    };
+    let cases: Vec<(&str, usize, &str, String)> = vec![
+        (
+            "  always_ff @(posedge clk) c = c + a;\n  always_ff @(posedge clk) y <= c;",
+            3,
+            "c;",
+            format!("`y` (clocked by `clk`) {}", race("`c`,", "2:28", "c")),
+        ),
+        // the classic swap, both with `=`
+        (
+            "  always_ff @(posedge clk) c = y;\n  always_ff @(posedge clk) y = c;",
+            2,
+            "y;",
+            format!("`c` (clocked by `clk`) {}", race("`y`,", "3:28", "y")),
+        ),
+        // through combinational logic
+        (
+            "  logic [7:0] t;\n  assign t = c ^ a;\n  always_ff @(negedge clk) c = a;\n  \
+             always_ff @(negedge clk) if (t[0]) y <= a;",
+            5,
+            "t[0]",
+            race("`t`, which depends on `c`,", "4:28", "c"),
+        ),
+        // a copy of the clock has its edges at the same time
+        (
+            "  logic k;\n  assign k = clk;\n  always_ff @(posedge clk) c = a;\n  \
+             always_ff @(posedge k) y <= c;",
+            5,
+            "c;",
+            format!("`y` (clocked by `k`) {}", race("`c`,", "4:28", "c")),
+        ),
+        // a clock assigned with `=` changes while the blocks at its own
+        // edge run
+        (
+            "  logic s;\n  always_ff @(posedge clk) s = !s;\n  always_ff @(posedge clk) c = a;\n  \
+             always_ff @(posedge s) y <= c;",
+            5,
+            "c;",
+            format!("`y` (clocked by `s`) {}", race("`c`,", "4:28", "c")),
+        ),
+    ];
+    for (body, line, needle, msg) in &cases {
+        rejects(Some(HEADER_RACE), body, *line, needle, msg);
+    }
+}
+
+/// Reads of a signal assigned with a blocking `=` that cannot race: in
+/// the same block (after the `=` only through combinational logic, which
+/// is not updated while the block runs), or by a block that never runs at
+/// the same time as the assignment. A block on a clock derived by `<=`
+/// runs after all blocks of the root edge; it reads the value from before
+/// the edge, as for registers assigned with `<=` (see the timing
+/// assumptions of the translation).
+#[test]
+fn accepted_blocking_ff_reads() {
+    let cases = [
+        "  always_ff @(posedge clk) c = c + a;\n  always_ff @(negedge clk) y <= c;",
+        "  logic [7:0] t;\n  assign t = c + a;\n  always_ff @(posedge clk) begin c = a; y <= t; end",
+        "  logic s;\n  always_ff @(posedge clk) s <= !s;\n  always_ff @(posedge clk) c = a;\n  \
+         always_ff @(posedge s) y <= c;",
+        "  logic s;\n  always_ff @(posedge clk) s = !s;\n  always_ff @(posedge s) c = a;\n  \
+         always_ff @(negedge s) y <= c;",
+    ];
+    for body in cases {
+        translate_with(HEADER_RACE, body);
+    }
+}
+
 /// Reads with a variable index that may select bits outside their signal
 /// are accepted (those bits read 0) and listed as warnings, sorted.
 #[test]

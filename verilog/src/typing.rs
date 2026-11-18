@@ -181,7 +181,8 @@ pub fn env(m: &Module) -> Result<Env> {
 /// mean the same: each signal is assigned either only with `<=` or only
 /// with `=`, and nothing a `=` assigns is read later in the block (checked
 /// by [`definite`]; reads before it see the value before the edge, as with
-/// `<=`). Every block drives something. This is the
+/// `<=`; another block at the same clock edge may not read it either, see
+/// [`domains`]). Every block drives something. This is the
 /// rule of IEEE 1800-2017 for whole variables: a variable assigned in an
 /// `always_ff` "shall not be written to by any other process" (§9.2.2.4),
 /// and procedural and continuous assignments to the same variable must not
@@ -568,6 +569,14 @@ enum Source<'m> {
 /// only on registers on the same edge of the same clock: anything else
 /// would be sampled at a time unrelated to its changes. Blocks on the
 /// other edge never run at a reset, so the rule above suffices for them.
+///
+/// A blocking `=` in an `always_ff` means the same as `<=` within its own
+/// block (see [`check`]), but another block that runs at the same clock
+/// edge and reads the signal, directly or through combinational logic,
+/// races with it: IEEE 1800-2017 (§4.7) leaves the order of the two blocks
+/// open, so a simulator may give the reader the value before or after the
+/// assignment, while synthesis (and the translation) gives the value
+/// before. Such a read is rejected.
 pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
     let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
     // the instances with their paths, each instance before its children
@@ -855,7 +864,157 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
             }
         }
     }
+    blocking_races(&insts, &drivers, &comb, &canon)?;
     Ok(roots.into_values().collect())
+}
+
+/// An event that runs `always_ff` blocks, as a simulator sees it: a rising
+/// (`true`) or falling edge of a bit of a signal, by name, after following
+/// copies to the signal that makes the edge.
+type Event = (Name, usize, bool);
+
+/// The event `edge` of the clock `x` of instance `k`; adds to `with` the
+/// event and those it can happen together with in one step of a
+/// simulator: a clock assigned with a blocking `=` changes while the blocks
+/// at its own clock edge run (not after them, as with `<=`), so its edges
+/// belong to that event too. (A register with an asynchronous reset is
+/// assigned with `<=`, as its reset branch is.)
+#[allow(clippy::too_many_arguments)]
+fn event(
+    insts: &[(&Inst, String)],
+    drivers: &BTreeMap<Name, (usize, Name, Source<'_>)>,
+    blocking: &BTreeMap<Name, ((usize, usize), Span)>,
+    canon: &dyn Fn(usize, &str) -> Name,
+    k: usize,
+    x: &Name,
+    edge: Edge,
+    with: &mut BTreeSet<Event>,
+) -> Event {
+    let (mut x, mut bit) = (canon(k, x), None);
+    while let Some((d, _, source)) = drivers.get(&x) {
+        let next = match source {
+            Source::Item(Item::Assign { lhs, rhs, .. })
+                if matches!(lhs.kind, LvalueKind::Var(_)) =>
+            {
+                copy_bit(rhs)
+            }
+            Source::Conn(e, _) => copy_bit(e),
+            _ => None,
+        };
+        let Some((y, b)) = next else { break };
+        bit = b.or(bit);
+        x = canon(*d, y);
+    }
+    let e = (x, bit.unwrap_or(0), edge == Edge::Pos);
+    if with.insert(e.clone())
+        && let Some(((bk, bn), _)) = blocking.get(&e.0)
+        && let Item::AlwaysFf { clock, edge, .. } = &insts[*bk].0.module.items[*bn]
+    {
+        event(insts, drivers, blocking, canon, *bk, clock, *edge, with);
+    }
+    e
+}
+
+/// Rejects a read, in an `always_ff` block, of a signal that another
+/// `always_ff` block assigns with a blocking `=` at the same event (see
+/// [`domains`]), directly or through combinational logic. Two blocks run
+/// together if their clock edges can happen in the same simulator step
+/// ([`event`]); the two edges of one bit never do. Reads of `<=`
+/// registers are not affected: every block reads them before any of them
+/// changes, in simulation as in the translation.
+fn blocking_races(
+    insts: &[(&Inst, String)],
+    drivers: &BTreeMap<Name, (usize, Name, Source<'_>)>,
+    comb: &[(Name, Name)],
+    canon: &dyn Fn(usize, &str) -> Name,
+) -> Result<()> {
+    // the registers assigned with `=`: their block (instance, item) and the
+    // first such assignment
+    let mut blocking: BTreeMap<Name, ((usize, usize), Span)> = BTreeMap::new();
+    for (k, (i, _)) in insts.iter().enumerate() {
+        for (n, item) in i.module.items.iter().enumerate() {
+            if let Item::AlwaysFf { body, .. } = item {
+                let mut first = BTreeMap::new();
+                one_kind_of_assignment(body, item.block(), &mut first)?;
+                for (q, (span, b)) in first {
+                    if b {
+                        blocking.insert(canon(k, q), ((k, n), span));
+                    }
+                }
+            }
+        }
+    }
+    if blocking.is_empty() {
+        return Ok(());
+    }
+    // the `=` registers every signal depends on through combinational logic
+    let mut dep: BTreeMap<Name, BTreeSet<Name>> = blocking
+        .keys()
+        .map(|q| (q.clone(), BTreeSet::from([q.clone()])))
+        .collect();
+    loop {
+        let mut changed = false;
+        for (y, x) in comb {
+            let add = dep.get(x).cloned().unwrap_or_default();
+            let d = dep.entry(y.clone()).or_default();
+            let before = d.len();
+            d.extend(add);
+            changed |= d.len() != before;
+        }
+        if !changed {
+            break;
+        }
+    }
+    // the event of every block, with the events it can coincide with
+    let mut events: BTreeMap<(usize, usize), (Event, BTreeSet<Event>)> = BTreeMap::new();
+    for (k, (i, _)) in insts.iter().enumerate() {
+        for (n, item) in i.module.items.iter().enumerate() {
+            if let Item::AlwaysFf { clock, edge, .. } = item {
+                let mut with = BTreeSet::new();
+                let e = event(insts, drivers, &blocking, canon, k, clock, *edge, &mut with);
+                events.insert((k, n), (e, with));
+            }
+        }
+    }
+    let coincide = |(e1, w1): &(Event, BTreeSet<Event>), (e2, w2): &(Event, BTreeSet<Event>)| {
+        let opposite = e1.0 == e2.0 && e1.1 == e2.1 && e1.2 != e2.2;
+        !opposite && !w1.is_disjoint(w2)
+    };
+    for (k, (i, prefix)) in insts.iter().enumerate() {
+        for (n, item) in i.module.items.iter().enumerate() {
+            let Item::AlwaysFf { clock, .. } = item else {
+                continue;
+            };
+            let reads = &events[&(k, n)];
+            for (x, span) in item.reads() {
+                let Some(qs) = dep.get(&canon(k, x)) else {
+                    continue;
+                };
+                for q in qs {
+                    let (writer, at) = blocking[q];
+                    if writer == (k, n) || !coincide(&events[&writer], reads) {
+                        continue;
+                    }
+                    let block = insts[writer.0].0.module.items[writer.1].block();
+                    let what = if canon(k, x) == *q {
+                        format!("`{x}`,")
+                    } else {
+                        format!("`{x}`, which depends on `{q}`,")
+                    };
+                    let y = item.targets()[0];
+                    let msg = format!(
+                        "`{y}` (clocked by `{clock}`) reads {what} assigned with a blocking `=` \
+                         at {at} in another {block} block that runs at the same clock edge: \
+                         simulators may run the two blocks in either order, so the read could \
+                         see the value from before or after the assignment (a race); assign \
+                         `{q}` with `<=`"
+                    );
+                    return Err(elab::context(Error::new(span, msg), prefix));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Whether an edge `edge` of the clock `c` (by name) can be made by an
