@@ -812,6 +812,9 @@ impl Cx<'_> {
                                 m => return self.err(m, "min:typ:max expression not supported"),
                             }
                         }
+                        sv::ConstantParamExpression::Dollar(d) => {
+                            return self.err(d.as_ref(), "`$` not supported as a parameter value");
+                        }
                         e => return self.err(e, "type parameters not supported"),
                     };
                     (self.const_expression(e)?, self.span(e))
@@ -1131,6 +1134,10 @@ impl Cx<'_> {
                                 sv::MintypmaxExpression::Expression(x) => self.expr(x)?,
                                 m => return self.err(m, "min:typ:max expression not supported"),
                             },
+                            sv::ParamExpression::Dollar(d) => {
+                                return self
+                                    .err(d.as_ref(), "`$` not supported as a parameter value");
+                            }
                             e => return self.err(e, "type parameters not supported"),
                         };
                         // evaluated where the parameter is declared, at its type
@@ -2503,6 +2510,9 @@ impl Cx<'_> {
                 let (ty, _, e) = &c.nodes;
                 let e = self.const_expression(&e.nodes.1)?;
                 ExprKind::Cast(self.cast(ty, p)?, Box::new(e))
+            }
+            sv::ConstantPrimary::Dollar(_) => {
+                return self.err(p, "`$` not supported in constant expressions");
             }
             sv::ConstantPrimary::ConstantFunctionCall(c) => {
                 // a plain name may parse as a call without arguments
