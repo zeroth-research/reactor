@@ -46,7 +46,12 @@ and so is closed under taking tangents, as [`Any`] is.
 The sorts are defined here, and the operations on them in the modules of
 their theories, in [`crate::op`]: [`crate::op::real`],
 [`crate::op::int`], [`crate::op::bool`] and [`crate::op::word`].
+
+With the `pyo3` feature, each sort is also a Python class, in `py`.
 */
+
+#[cfg(feature = "pyo3")]
+pub mod py;
 
 use base::differentiable::{Differentiable, T};
 use derive_more::From;
@@ -56,7 +61,11 @@ use subenum::subenum;
 /// The sort of real matrices with the given `[rows, cols]` shape, graded by
 /// their `degree`: values of degree `d` are `d`-th order rates of change,
 /// and plain reals have degree 0.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, eq, hash, str, module = "reactor")
+)]
 pub struct Real {
     degree: u8,
     shape: [usize; 2],
@@ -107,7 +116,11 @@ impl Differentiable for Real {
 }
 
 /// The sort of integer matrices with the given `[rows, cols]` shape.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, eq, hash, str, module = "reactor")
+)]
 pub struct Int {
     shape: [usize; 2],
 }
@@ -140,7 +153,11 @@ impl Differentiable for Int {
 }
 
 /// The sort of boolean matrices with the given `[rows, cols]` shape.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, eq, hash, str, module = "reactor")
+)]
 pub struct Bool {
     shape: [usize; 2],
 }
@@ -174,7 +191,11 @@ impl Differentiable for Bool {
 
 /// The sort of matrices of `width`-bit words with the given `[rows, cols]`
 /// shape: entrywise, the SMT-LIB2 sort `(_ BitVec width)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, eq, hash, str, module = "reactor")
+)]
 pub struct Word {
     width: usize,
     shape: [usize; 2],
@@ -224,7 +245,11 @@ impl Differentiable for Word {
 
 /// The singleton sort, with exactly one value: the trivial tangent of
 /// discrete sorts. Its own tangent is itself.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, eq, hash, str, module = "reactor")
+)]
 pub struct Zero;
 
 impl fmt::Display for Zero {
@@ -243,7 +268,7 @@ impl Differentiable for Zero {
 
 /// The sorts of all theories: a value of `Any` is a sort of one of them.
 #[subenum(Prop, Reals, Ints, Nums, Words)]
-#[derive(Clone, Copy, PartialEq, Debug, Eq, From)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, From)]
 pub enum Any {
     #[subenum(Reals, Nums)]
     Real(Real),
