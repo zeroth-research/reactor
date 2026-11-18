@@ -130,7 +130,11 @@ pub fn lit(v: &BitVec) -> String {
 }
 
 /// The quoted symbol `|name|`. Panics if the name contains `|` or `\`,
-/// which a quoted symbol cannot.
+/// which a quoted symbol cannot. Neither can happen for the names this
+/// crate passes: ours are made of simple identifiers (the frontend rejects
+/// escaped identifiers) and the characters of generated names (`@`, `%`,
+/// `.`, `*`, `(`, `)`, `[`, `]`), and [`crate::yosys::parse`] rejects
+/// Yosys's names with either character.
 pub fn symbol(name: &str) -> String {
     assert!(
         !name.contains(['|', '\\']),

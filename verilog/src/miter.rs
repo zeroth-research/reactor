@@ -197,6 +197,12 @@ pub enum Verdict {
     Unknown,
 }
 
+/// The error for a register of a translation without a width (a
+/// translation not made by `lower`, or changed since).
+fn no_width(p: &str) -> String {
+    format!("register `{p}` has no width in the translation")
+}
+
 /// The output sample of every register of `t` in Yosys's translation
 /// `ys`, by path, or the differences between the two, one message each.
 ///
@@ -256,7 +262,10 @@ pub fn registers(t: &Translation, ys: &Smt2) -> Result<BTreeMap<Name, String>, V
     }
     let mut out = BTreeMap::new();
     for p in t.registers.iter().filter(|p| !t.initialized.contains(p)) {
-        let width = t.register_widths[p];
+        let Some(&width) = t.register_widths.get(p) else {
+            errors.push(no_width(p));
+            continue;
+        };
         let free: Vec<&str> = named
             .get(p.as_str())
             .into_iter()
@@ -301,6 +310,12 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         Ok(samples) => (samples, vec![]),
         Err(errors) => (BTreeMap::new(), errors),
     };
+    // (a translation from `lower` has the width of every register)
+    errors.extend(
+        (t.registers.iter())
+            .filter(|p| !t.register_widths.contains_key(*p))
+            .map(|p| no_width(p)),
+    );
     let mut value = |name: &str, state: &str| {
         let width = t.var(name).dtype().width();
         match ys.wires.get(name) {
@@ -381,7 +396,8 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         };
         names.filter_map(probe).collect::<Vec<Probe>>()
     };
-    let width = |p: &String| t.register_widths[p];
+    // a missing width is an error above
+    let width = |p: &String| t.register_widths.get(p).copied().unwrap_or_default();
     let initial = probes(
         &mut samples.iter().map(|(p, r)| (p, r.as_str(), width(p))),
         S,
@@ -911,7 +927,12 @@ pub fn replay(inst: &Inst, t: &Translation, cex: &Cex) -> Result<Replay, String>
     let forced: Valuation = match cex.phase {
         Phase::Init => Valuation::new(),
         Phase::Update => (t.initialized.iter())
-            .map(|p| Ok((*var(&naming[p])?, get_register(p)?)))
+            .map(|p| {
+                let name = naming
+                    .get(p)
+                    .ok_or_else(|| format!("register `{p}` is not a signal of the instance"))?;
+                Ok((*var(name)?, get_register(p)?))
+            })
             .collect::<Result<_, String>>()?,
     };
     let now = sim.step_forced(&extl(&cex.inputs)?, &forced)?;
