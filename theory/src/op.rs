@@ -24,10 +24,14 @@ arithmetic to its linear operations where the logic is linear:
 | [`NIA`] | [`int::NIA`], [`bool::Prop`] | `QF_NIA` |
 | [`LIA`] | [`int::LIA`], [`bool::Prop`] | `QF_LIA` |
 | [`BV`] | [`word::BV`], [`bool::Prop`] | `QF_BV` |
+
+With the `pyo3` feature, each operation is also a Python class, in `py`.
 */
 
 pub mod bool;
 pub mod int;
+#[cfg(feature = "pyo3")]
+pub mod py;
 pub mod real;
 pub mod word;
 

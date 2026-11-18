@@ -48,19 +48,35 @@ pub use crate::sort::Reals as Sort;
 
 /// A constant real matrix literal.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Const(pub crate::PyTensor);
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Add(pub usize, pub usize);
 
 /// Pointwise subtraction `x - y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Sub(pub usize, pub usize);
 
 /// Pointwise multiplication `x ⊙ y` of `[m, n]` matrices: the Hadamard
 /// product, not the matrix product [`MatMul`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Mul(pub usize, pub usize);
 
 /// Pointwise division `x / y` of `[m, n]` matrices: the Hadamard division
@@ -68,32 +84,60 @@ pub struct Mul(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(/ x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Div(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Linear(pub crate::PyTensor, pub crate::PyTensor);
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct ReLU(pub usize, pub usize);
 
 /// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Min(pub usize, pub usize);
 
 /// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Max(pub usize, pub usize);
 
 /// Transposition `xᵀ` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Transpose(pub usize, pub usize);
 
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the sizes given as `MatMul(m, n, k)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct MatMul(pub usize, pub usize, pub usize);
 
 /// Pointwise comparison `x < y` of `[m, n]` matrices, writing an `[m, n]`
@@ -101,6 +145,10 @@ pub struct MatMul(pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `(< x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Lt(pub usize, pub usize);
 
 /// Pointwise comparison `x ≤ y` of `[m, n]` matrices, writing an `[m, n]`
@@ -108,6 +156,10 @@ pub struct Lt(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(<= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Le(pub usize, pub usize);
 
 /// Pointwise comparison `x > y` of `[m, n]` matrices, writing an `[m, n]`
@@ -115,6 +167,10 @@ pub struct Le(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(> x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Gt(pub usize, pub usize);
 
 /// Pointwise comparison `x ≥ y` of `[m, n]` matrices, writing an `[m, n]`
@@ -122,6 +178,10 @@ pub struct Gt(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(>= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Ge(pub usize, pub usize);
 
 /// Pointwise comparison `x = y` of `[m, n]` matrices, writing an `[m, n]`
@@ -129,6 +189,10 @@ pub struct Ge(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Eq(pub usize, pub usize);
 
 /// Pointwise comparison `x ≠ y` of `[m, n]` matrices, writing an `[m, n]`
@@ -136,10 +200,18 @@ pub struct Eq(pub usize, pub usize);
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Ne(pub usize, pub usize);
 
 /// The identity `x ↦ x` on `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Id(pub usize, pub usize);
 
 /// If-then-else `if c then x else y` of `[m, n]` matrices, on a single
@@ -148,33 +220,57 @@ pub struct Id(pub usize, pub usize);
 /// SMT-LIB2: `(ite c x y)`, of the Core theory, with the same `c` for every
 /// entry.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Ite(pub usize, pub usize);
 
 /// The index of the first largest entry of `[m, n]` matrices, counted from
 /// `0` in row-major order, as a `[1, 1]` real matrix.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Argmax(pub usize, pub usize);
 
 /// An arbitrary real matrix of shape `[m, n]`, chosen nondeterministically.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Havoc(pub usize, pub usize);
 
 /// A real matrix of shape `[m, n]` of unknown meaning, named by the given
 /// symbol, as `Uninterpreted(symbol, m, n)`: e.g., the result of a call that
 /// the frontend cannot translate.
 #[derive(Clone, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Uninterpreted(pub String, pub usize, pub usize);
 
 /// The zero `[m, n]` matrix of the rates of change of degree `d`, as
 /// `Zero(m, n, d)`: with `d = 1`, the derivative of a constant. With
 /// `d = 0`, it is the zero matrix of plain reals.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct Zero(pub usize, pub usize, pub u8);
 
 /// Pointwise addition `x + y` of `[m, n]` matrices of the rates of change of
 /// degree `d`, as `TAdd(m, n, d)`. Addition is linear, so `TAdd(m, n, d + 1)`
 /// is the derivative of `TAdd(m, n, d)`, and `TAdd(m, n, 0)` is [`Add`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct TAdd(pub usize, pub usize, pub u8);
 
 /// Pointwise subtraction `x - y` of `[m, n]` matrices of the rates of
@@ -182,6 +278,10 @@ pub struct TAdd(pub usize, pub usize, pub u8);
 /// `TSub(m, n, d + 1)` is the derivative of `TSub(m, n, d)`, and
 /// `TSub(m, n, 0)` is [`Sub`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct TSub(pub usize, pub usize, pub u8);
 
 /// The affine map `x ↦ A·x + B` on the rates of change of degree `d`, as
@@ -189,6 +289,10 @@ pub struct TSub(pub usize, pub usize, pub u8);
 /// is [`Linear`]`(A, B)`. It adds `B`, as `Linear` did on rates in the old
 /// LRA, so the derivative of `TLinear(A, B, d)` is `TLinear(A, 0, d + 1)`.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct TLinear(pub crate::PyTensor, pub crate::PyTensor, pub u8);
 
 /// Transposition `xᵀ` of `[m, n]` matrices of the rates of change of degree
@@ -196,17 +300,29 @@ pub struct TLinear(pub crate::PyTensor, pub crate::PyTensor, pub u8);
 /// `TTranspose(m, n, d + 1)` is the derivative of `TTranspose(m, n, d)`,
 /// and `TTranspose(m, n, 0)` is [`Transpose`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct TTranspose(pub usize, pub usize, pub u8);
 
 /// If-then-else `if c then x else y` of `[m, n]` matrices of the rates of
 /// change of degree `d`, on a single (plain) boolean `c`, as
 /// `TIte(m, n, d)`; `TIte(m, n, 0)` is [`Ite`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct TIte(pub usize, pub usize, pub u8);
 
 /// The identity `x ↦ x` on `[m, n]` matrices of the rates of change of
 /// degree `d`, as `TId(m, n, d)`; `TId(m, n, 0)` is [`Id`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.real")
+)]
 pub struct TId(pub usize, pub usize, pub u8);
 
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,

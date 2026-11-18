@@ -36,26 +36,50 @@ pub use crate::sort::Prop as Sort;
 
 /// A constant boolean matrix literal.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct Const(pub crate::PyTensor);
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct And(pub usize, pub usize);
 
 /// Pointwise disjunction `x ∨ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct Or(pub usize, pub usize);
 
 /// Pointwise exclusive disjunction `x ⊕ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct Xor(pub usize, pub usize);
 
 /// Pointwise negation `¬x` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct Not(pub usize, pub usize);
 
 /// The identity `x ↦ x` on `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct Id(pub usize, pub usize);
 
 /// If-then-else `if c then x else y` of `[m, n]` matrices, on a single
@@ -64,21 +88,37 @@ pub struct Id(pub usize, pub usize);
 /// SMT-LIB2: `(ite c x y)`, of the Core theory, with the same `c` for every
 /// entry.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct Ite(pub usize, pub usize);
 
 /// An arbitrary boolean matrix of shape `[m, n]`, chosen nondeterministically.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct Havoc(pub usize, pub usize);
 
 /// A boolean matrix of shape `[m, n]` of unknown meaning, named by the given
 /// symbol, as `Uninterpreted(symbol, m, n)`: e.g., the result of a call that
 /// the frontend cannot translate.
 #[derive(Clone, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct Uninterpreted(pub String, pub usize, pub usize);
 
 /// The only value of the sort [`Zero`](crate::sort::Zero): the rate of
 /// change of discrete values.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.bool")
+)]
 pub struct Zero;
 
 /// The operations of propositional logic, the boolean operations of

@@ -70,6 +70,10 @@ pub use crate::sort::Words as Sort;
 ///
 /// SMT-LIB2: a literal `#b…` or `(_ bvN w)`.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Const(pub crate::PyTensor, pub usize);
 
 /// Pointwise concatenation `x ++ y` of a `u`-bit word `x`, the high bits
@@ -78,6 +82,10 @@ pub struct Const(pub crate::PyTensor, pub usize);
 ///
 /// SMT-LIB2: `(concat x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Concat(pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise extraction of the bits `i` down to `j`, both included, from
@@ -86,6 +94,10 @@ pub struct Concat(pub usize, pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `((_ extract i j) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Extract(pub usize, pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise concatenation of `i ≥ 1` copies of `w`-bit words, as
@@ -93,42 +105,70 @@ pub struct Extract(pub usize, pub usize, pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `((_ repeat i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Repeat(pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise negation `!x`, as `Not(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvnot x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Not(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise conjunction `x & y`, as `And(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct And(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise disjunction `x | y`, as `Or(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Or(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise exclusive disjunction `x ^ y`, as `Xor(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvxor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Xor(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise negated conjunction `!(x & y)`, as `Nand(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvnand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Nand(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise negated disjunction `!(x | y)`, as `Nor(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Nor(pub usize, pub usize, pub usize);
 
 /// Pointwise bitwise negated exclusive disjunction `!(x ^ y)`, as
@@ -136,6 +176,10 @@ pub struct Nor(pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `(bvxnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Xnor(pub usize, pub usize, pub usize);
 
 /// Pointwise two's-complement negation `-x`, modulo `2^w`, as
@@ -143,30 +187,50 @@ pub struct Xnor(pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `(bvneg x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Neg(pub usize, pub usize, pub usize);
 
 /// Pointwise addition `x + y`, modulo `2^w`, as `Add(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvadd x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Add(pub usize, pub usize, pub usize);
 
 /// Pointwise subtraction `x - y`, modulo `2^w`, as `Sub(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvsub x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Sub(pub usize, pub usize, pub usize);
 
 /// Pointwise multiplication `x * y`, modulo `2^w`, as `Mul(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvmul x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Mul(pub usize, pub usize, pub usize);
 
 /// Pointwise left shift `x << y`, filling with zeros, as `Shl(w, m, n)`.
 ///
 /// SMT-LIB2: `(bvshl x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Shl(pub usize, pub usize, pub usize);
 
 /// Pointwise rotation left by a constant `i` bits, as
@@ -174,6 +238,10 @@ pub struct Shl(pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `((_ rotate_left i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct RotateLeft(pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise rotation right by a constant `i` bits, as
@@ -181,22 +249,38 @@ pub struct RotateLeft(pub usize, pub usize, pub usize, pub usize);
 ///
 /// SMT-LIB2: `((_ rotate_right i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct RotateRight(pub usize, pub usize, pub usize, pub usize);
 
 /// Pointwise equality `x = y` of `w`-bit words, as `Eq(w, m, n)`.
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Eq(pub usize, pub usize, pub usize);
 
 /// Pointwise disequality `x ≠ y` of `w`-bit words, as `Ne(w, m, n)`.
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Ne(pub usize, pub usize, pub usize);
 
 /// The identity `x ↦ x` on `w`-bit words, as `Id(w, m, n)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Id(pub usize, pub usize, pub usize);
 
 /// If-then-else `if c then x else y` of `w`-bit words, on a single boolean
@@ -205,17 +289,29 @@ pub struct Id(pub usize, pub usize, pub usize);
 /// SMT-LIB2: `(ite c x y)`, of the Core theory, with the same `c` for every
 /// entry.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Ite(pub usize, pub usize, pub usize);
 
 /// An arbitrary matrix of `w`-bit words, chosen nondeterministically, as
 /// `Havoc(w, m, n)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Havoc(pub usize, pub usize, pub usize);
 
 /// A matrix of `w`-bit words of unknown meaning, named by the given symbol,
 /// as `Uninterpreted(symbol, w, m, n)`: e.g., the result of a call that the
 /// frontend cannot translate.
 #[derive(Clone, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, str, module = "reactor.op.word")
+)]
 pub struct Uninterpreted(pub String, pub usize, pub usize, pub usize);
 
 /// The operations of the theory of fixed-size bit-vectors, SMT-LIB2's
@@ -768,6 +864,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsdiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "SDiv", module = "reactor.op.word")
+    )]
     pub struct Div(pub usize, pub usize, pub usize);
 
     /// Pointwise remainder `x % y`, with the sign of `x`, as `Rem(w, m, n)`;
@@ -775,6 +875,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsrem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "SRem", module = "reactor.op.word")
+    )]
     pub struct Rem(pub usize, pub usize, pub usize);
 
     /// Pointwise modulo `x mod y`, with the sign of `y`, as `Mod(w, m, n)`;
@@ -782,6 +886,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsmod x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "SMod", module = "reactor.op.word")
+    )]
     pub struct Mod(pub usize, pub usize, pub usize);
 
     /// Pointwise arithmetic right shift `x >> y`, filling with the sign bit,
@@ -789,6 +897,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvashr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "AShr", module = "reactor.op.word")
+    )]
     pub struct Shr(pub usize, pub usize, pub usize);
 
     /// Pointwise extension of `w`-bit words by `i` copies of the sign bit,
@@ -796,30 +908,50 @@ pub mod signed {
     ///
     /// SMT-LIB2: `((_ sign_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "SignExtend", module = "reactor.op.word")
+    )]
     pub struct Extend(pub usize, pub usize, pub usize, pub usize);
 
     /// Pointwise signed comparison `x < y`, as `Lt(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvslt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "SLt", module = "reactor.op.word")
+    )]
     pub struct Lt(pub usize, pub usize, pub usize);
 
     /// Pointwise signed comparison `x ≤ y`, as `Le(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvsle x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "SLe", module = "reactor.op.word")
+    )]
     pub struct Le(pub usize, pub usize, pub usize);
 
     /// Pointwise signed comparison `x > y`, as `Gt(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvsgt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "SGt", module = "reactor.op.word")
+    )]
     pub struct Gt(pub usize, pub usize, pub usize);
 
     /// Pointwise signed comparison `x ≥ y`, as `Ge(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvsge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "SGe", module = "reactor.op.word")
+    )]
     pub struct Ge(pub usize, pub usize, pub usize);
 
     impl Boundary<Sort> for Div {
@@ -981,12 +1113,20 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvudiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "UDiv", module = "reactor.op.word")
+    )]
     pub struct Div(pub usize, pub usize, pub usize);
 
     /// Pointwise remainder `x % y`, as `Rem(w, m, n)`; `x % 0 = x`.
     ///
     /// SMT-LIB2: `(bvurem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "URem", module = "reactor.op.word")
+    )]
     pub struct Rem(pub usize, pub usize, pub usize);
 
     /// Pointwise logical right shift `x >> y`, filling with zeros, as
@@ -994,6 +1134,10 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvlshr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "LShr", module = "reactor.op.word")
+    )]
     pub struct Shr(pub usize, pub usize, pub usize);
 
     /// Pointwise extension of `w`-bit words by `i` zero bits, as
@@ -1001,30 +1145,50 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `((_ zero_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "ZeroExtend", module = "reactor.op.word")
+    )]
     pub struct Extend(pub usize, pub usize, pub usize, pub usize);
 
     /// Pointwise unsigned comparison `x < y`, as `Lt(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvult x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "ULt", module = "reactor.op.word")
+    )]
     pub struct Lt(pub usize, pub usize, pub usize);
 
     /// Pointwise unsigned comparison `x ≤ y`, as `Le(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvule x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "ULe", module = "reactor.op.word")
+    )]
     pub struct Le(pub usize, pub usize, pub usize);
 
     /// Pointwise unsigned comparison `x > y`, as `Gt(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvugt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "UGt", module = "reactor.op.word")
+    )]
     pub struct Gt(pub usize, pub usize, pub usize);
 
     /// Pointwise unsigned comparison `x ≥ y`, as `Ge(w, m, n)`.
     ///
     /// SMT-LIB2: `(bvuge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, str, name = "UGe", module = "reactor.op.word")
+    )]
     pub struct Ge(pub usize, pub usize, pub usize);
 
     impl Boundary<Sort> for Div {
