@@ -318,3 +318,51 @@ endmodule
     assert_eq!(names["u.x"], "u.x");
     assert_eq!(names["u.y"], "y");
 }
+
+/// `**` is folded at 32-bit `int`, which differs from IEEE 1800 (the base
+/// converted to the context type first) only for a negative base in an
+/// unsigned context wider than 32 bits: rejected there, accepted elsewhere.
+#[test]
+fn powers_of_negative_bases() {
+    let ok = |ports: &str, e: &str, expected: &str| assert_eq!(sized(ports, e), expected);
+    ok(
+        "input logic [39:0] a, output logic [39:0] y",
+        "a + 3 ** 2",
+        "(a + 40'd9)",
+    );
+    ok(
+        "input logic [31:0] a, output logic [31:0] y",
+        "a + (-3) ** 1",
+        "(a + 32'd4294967293)",
+    );
+    ok(
+        "input logic signed [39:0] a, output logic signed [39:0] y",
+        "a + (-3) ** 1",
+        "(a + 40'sd1099511627773)",
+    );
+    // all operands signed: a signed context, even with an unsigned target
+    ok(
+        "input logic [39:0] a, output logic [39:0] y",
+        "(-3) ** 1",
+        "40'sd1099511627773",
+    );
+    let cases = [
+        "  assign y = a + (-3) ** 1;",
+        "  assign y = a + ((-2) ** 3 + 1);",
+    ];
+    for body in cases {
+        let src =
+            format!("module m(input logic [39:0] a, output logic [39:0] y);\n{body}\nendmodule\n");
+        let err = elab::load(&src, "test.sv")
+            .and_then(|i| verilog::lower::lower_inst(&i))
+            .err()
+            .unwrap_or_else(|| panic!("accepted:\n{src}"));
+        assert!(
+            err.msg.contains("negative base") && err.msg.contains("40-bit unsigned"),
+            "{src}\n{err}"
+        );
+        let text = src.lines().nth(1).unwrap();
+        assert_eq!(err.span.line, 2, "{err}");
+        assert_eq!(err.span.col, text.find('-').unwrap() + 1, "{src}\n{err}");
+    }
+}

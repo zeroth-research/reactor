@@ -1,0 +1,36 @@
+module clkout
+  external
+    clk : bv1
+    a : bv4
+    q@init : bv4
+    d.s@init : bv1
+    d.c@init : bv2
+  interface
+    s : bv1
+    c : bv2
+    q : bv4
+  atom controls s reads clk, s awaits clk, d.s@init
+    init
+      X(s) := ID X(d.s@init)
+    update
+      %1 := NOT clk
+      d.clk@pos := AND (%1, X(clk))
+      %2 := NOT s
+      X(s) := ITE (d.clk@pos, %2, s)
+  atom controls q reads a, s, q awaits s, q@init
+    init
+      X(q) := ID X(q@init)
+    update
+      %1 := NOT X(s)
+      s@neg := AND (s, %1)
+      %2 := ADD (q, a)
+      X(q) := ITE (s@neg, %2, q)
+  atom controls c reads s, c awaits s, d.c@init
+    init
+      X(c) := ID X(d.c@init)
+    update
+      %1 := NOT s
+      d.s@pos := AND (%1, X(s))
+      %2 := 2'd1
+      %3 := ADD (c, %2)
+      X(c) := ITE (d.s@pos, %3, c)

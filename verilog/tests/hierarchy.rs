@@ -588,3 +588,150 @@ endmodule
     let t = translate(&src).unwrap();
     assert_eq!(t.reset_registers, ["u.q"]);
 }
+
+/// Translates `src` (numbered from line 1) and expects an error at the first
+/// occurrence of `needle` in line `line`, with a message containing `msg`.
+fn rejects_src(src: &str, line: usize, needle: &str, msg: &str) {
+    let err = match translate(src) {
+        Ok(_) => panic!("accepted:\n{src}"),
+        Err(e) => e,
+    };
+    assert!(err.msg.contains(msg), "{src}\n{err}\nexpected: {msg}");
+    let text = src.lines().nth(line - 1).unwrap();
+    let col = text
+        .find(needle)
+        .unwrap_or_else(|| panic!("`{needle}` not in `{text}`"))
+        + 1;
+    assert_eq!(
+        (err.span.line, err.span.col),
+        (line, col),
+        "{src}\n{err}\nexpected at `{needle}`"
+    );
+}
+
+/// A divider whose output `s` also clocks a register inside it.
+const DIV: &str = "module div(input logic clk, output logic s, output logic [1:0] c);
+  always_ff @(posedge clk) s <= !s;
+  always_ff @(posedge s) c <= c + 2'd1;
+endmodule
+(* blackbox *) module bb(output logic o); endmodule
+";
+
+#[test]
+fn outputs_used_as_clocks_drive() {
+    // the output is the only driver of `s` in the parent
+    let src = format!(
+        "module top(input logic clk, output logic s, output logic [1:0] c);
+  div u(.clk(clk), .s(s), .c(c));
+endmodule
+{DIV}"
+    );
+    let t = translate(&src).unwrap();
+    assert_eq!(t.clocks, ["clk"]);
+    // a second driver: an `assign`, a blackbox output, another output of
+    // the same instance
+    let cases = [
+        (
+            "  logic w;\n  div u(.clk(clk), .s(w), .c(c));\n  assign w = clk;",
+            3,
+            "w = clk",
+            "`w` already driven",
+        ),
+        (
+            "  logic w;\n  div u(.clk(clk), .s(w), .c(c));\n  bb b(.o(w));",
+            3,
+            "w)",
+            "`w` already driven",
+        ),
+    ];
+    for (body, line, needle, msg) in cases {
+        let src =
+            format!("module top(input logic clk, output logic [1:0] c);\n{body}\nendmodule\n{DIV}");
+        rejects_src(&src, line + 1, needle, msg);
+    }
+    // wired to an input of the parent
+    let src = format!(
+        "module top(input logic clk, input logic a, output logic [1:0] c);
+  div u(.clk(clk), .s(a), .c(c));
+endmodule
+{DIV}"
+    );
+    rejects_src(&src, 2, "a), .c", "input `a` is assigned");
+    // the output used as a clock must have 1 bit in the parent too
+    let src = format!(
+        "module top(input logic clk, output logic [1:0] w, output logic [1:0] c);
+  div u(.clk(clk), .s(w), .c(c));
+endmodule
+{DIV}"
+    );
+    rejects_src(&src, 2, "w), .c", "has 1 bits, `w` 2");
+}
+
+#[test]
+fn two_outputs_on_one_signal() {
+    let src = "module top(input logic clk, output logic w);
+  pair u(.clk(clk), .o1(w), .o2(w));
+endmodule
+module pair(input logic clk, output logic o1, output logic o2);
+  always_ff @(posedge clk) begin o1 <= !o1; o2 <= o1; end
+endmodule
+";
+    rejects_src(src, 2, "w));", "`w` already driven");
+}
+
+#[test]
+fn signing_without_range() {
+    // a parameter with a signing but no range is signed or unsigned as
+    // declared and has the width of its final value (IEEE 1800-2017
+    // §6.20.2), the value of an override too; the bits are kept
+    let src = "module top(input logic [7:0] a, output logic [15:0] y, output logic r);
+  c u(.a, .y, .r);
+  c #(.P(8'd200), .U(4'sd7), .Q(100)) v(.a, .y(), .r());
+endmodule
+module c #(parameter signed P = -3, parameter unsigned U = -3, parameter signed Q = 4'hc)
+  (input logic [7:0] a, output logic [15:0] y, output logic r);
+  localparam unsigned R = 8'sd5;
+  localparam signed S = 4'b1010;
+  assign y = a + P;
+  assign r = a > P;
+endmodule
+";
+    let inst = elab::load(src, "test.sv").unwrap();
+    let params = |i: &elab::Inst| -> Vec<String> {
+        i.module
+            .params
+            .iter()
+            .map(|p| format!("{} {} {}", p.name, p.ty, p.value.unsigned()))
+            .collect()
+    };
+    assert_eq!(
+        params(&inst.children[0].1),
+        [
+            "P logic signed [31:0] 4294967293",
+            "U logic [31:0] 4294967293",
+            "Q logic signed [3:0] 12",
+            "R logic [7:0] 5",
+            "S logic signed [3:0] 10",
+        ]
+    );
+    assert_eq!(
+        params(&inst.children[1].1),
+        [
+            "P logic signed [7:0] 200",
+            "U logic [3:0] 7",
+            "Q logic signed [31:0] 100",
+            "R logic [7:0] 5",
+            "S logic signed [3:0] 10",
+        ]
+    );
+    let text = verilog::sizing::print(&inst).unwrap();
+    // `P` is 32-bit -3 in `u` (the unsigned context makes it 2^32 - 3),
+    // 8-bit 200 in `v`
+    assert!(
+        text.contains("assign y = 16'((32'(unsigned'(a)) + 32'd4294967293));")
+            && text.contains("assign r = (32'(unsigned'(a)) > 32'd4294967293);")
+            && text.contains("assign r = (a > 8'd200);"),
+        "{text}"
+    );
+    translate(src).unwrap();
+}

@@ -133,6 +133,38 @@ fn rejected_expressions() {
             "'d1",
             "unsized literal `'d1` in a concatenation",
         ),
+        // an unsized literal that gives an item its width, inside an
+        // operator expression (IEEE 1800 §11.4.12, as iverilog reads it)
+        (
+            "  assign y = {1 + 1, a};",
+            "1 +",
+            "`(1 + 1)` in a concatenation has the width of the unsized literal `1`",
+        ),
+        (
+            "  assign y = {-1, a};",
+            "1,",
+            "has the width of the unsized literal `1`",
+        ),
+        (
+            "  localparam N = 3; assign y = {a, N - 1};",
+            "1}",
+            "has the width of the unsized literal `1`",
+        ),
+        (
+            "  localparam logic [3:0] M = 3; assign y = {a, M + 1};",
+            "1}",
+            "has the width of the unsized literal `1`",
+        ),
+        (
+            "  assign y = {a, (2 ** 3)};",
+            "2 **",
+            "unsized literal `(2 ** 3)` in a concatenation",
+        ),
+        (
+            "  assign y = {a, a[0] ? 'd1 : 8'd0};",
+            "'d1",
+            "has the width of the unsized literal `'d1`",
+        ),
         ("  assign y = 8'd256;", "8'd256", "does not fit"),
         (
             "  assign y = a ** a;",
@@ -1117,8 +1149,6 @@ fn accepted_sizing() {
         "  assign y = a / -8'd1 + a / 2 + a % (3 - 1);",
         "  assign y = {a, a};",
         "  assign o = a[i + 3'd1];",
-        // only a literal itself is no item of a concatenation
-        "  assign w = {a, 1 + 1};",
     ];
     for body in ok {
         translate_with(HEADER_SIZING, &drive_others(body));
@@ -1252,6 +1282,25 @@ fn rejected_targets() {
     let header = "module m(input logic clk, input logic [7:0] a, input logic [2:0] i, \
                   input logic signed [2:0] s, input logic e, output logic [7:0] y, q);";
     let cases: &[(&str, usize, &str, &str)] = &[
+        // indexed part-selects of width 0, in both kinds of target
+        (
+            "  assign y[0 +: 0] = 1'b0;\n  assign q = a;",
+            2,
+            "y[",
+            "select `y[0 +: 0]` of width 0",
+        ),
+        (
+            "  always_ff @(posedge clk) begin y <= a; y[2 -: 0] <= 1'b0; end\n  assign q = a;",
+            2,
+            "y[2",
+            "select `y[2 -: 0]` of width 0",
+        ),
+        (
+            "  always_comb begin y = a; y[i +: 0] = 1'b0; end\n  assign q = a;",
+            2,
+            "y[i",
+            "select `y[i +: 0]` of width 0",
+        ),
         (
             "  assign y[3:0] = a[3:0];\n  assign y[7:4] = a[7:4];\n  assign q = a;",
             2,
@@ -2464,4 +2513,132 @@ fn out_of_range_reads() {
         "  assign y = {a[s +: 5], a[s]};\n  assign q = a[{1'b0, s}];",
     );
     assert!(t.out_of_range.is_empty());
+}
+
+/// A derived clock whose register has an asynchronous reset from another
+/// domain: the reset sets the register at a time unrelated to its clock, so
+/// it makes an edge of the derived clock there (a falling one for reset
+/// value 0, a rising one for 1). Blocks on that edge would sample other
+/// domains at any time; blocks on the other edge never see it.
+#[test]
+fn derived_clocks_with_resets() {
+    const H: &str = "module m(input logic ca, input logic rb, input logic [3:0] a, \
+                     output logic s, output logic [3:0] q, output logic [3:0] y);";
+    let div = |v: &str| {
+        format!(
+            "  always_ff @(posedge ca or posedge rb) if (rb) s <= {v}; else s <= !s;\n  \
+             always_ff @(posedge ca) q <= q + a;\n"
+        )
+    };
+    let accepts = |body: String| {
+        let src = format!("{H}\n{body}endmodule\n");
+        frontend::parse(&src, "test.sv")
+            .and_then(|m| lower::lower(&m))
+            .unwrap_or_else(|e| panic!("{src}\n{e}"));
+    };
+    // reset to 0 makes falling edges only, reset to 1 rising ones only
+    accepts(format!("{}  always_ff @(posedge s) y <= q;\n", div("1'b0")));
+    accepts(format!("{}  always_ff @(negedge s) y <= q;\n", div("1'b1")));
+    let msg = "`y` (clocked by `s`, derived from `ca`) reads `q`, which depends on registers \
+               on other clocks or edges, but the asynchronous reset `rb` of `s` sets it to 0, a \
+               falling edge at a time unrelated to `ca`: crossings between unrelated clocks are \
+               not supported yet";
+    rejects(
+        Some(H),
+        &format!("{}  always_ff @(negedge s) y <= q;", div("1'b0")),
+        4,
+        "q;",
+        msg,
+    );
+    // unsized and fill values; through a copy
+    rejects(
+        Some(H),
+        &format!(
+            "{}  logic c;\n  assign c = s;\n  always_ff @(posedge c) y <= q;",
+            div("'1")
+        ),
+        6,
+        "q;",
+        "sets it to 1, a rising edge",
+    );
+    rejects(
+        Some(H),
+        &format!("{}  always_ff @(negedge s) y <= q;", div("0")),
+        4,
+        "q;",
+        "sets it to 0",
+    );
+    // a value that is not a plain constant counts as either edge
+    rejects(
+        Some(H),
+        &format!("{}  always_ff @(posedge s) y <= q;", div("!1'b1")),
+        4,
+        "q;",
+        "could make an edge at a time unrelated to `ca`",
+    );
+    // a bit of a multi-bit register: the bit of the reset value counts
+    const H2: &str = "module m(input logic ca, input logic rb, input logic [3:0] a, \
+                      output logic [1:0] n, output logic [3:0] q, output logic [3:0] y);";
+    let cnt = "  always_ff @(posedge ca or posedge rb) if (rb) n <= 2'b10; else n <= n + 2'd1;\n  \
+               always_ff @(posedge ca) q <= q + a;\n";
+    let src = format!(
+        "{H2}\n{cnt}  logic c;\n  assign c = n[1];\n  always_ff @(negedge c) y <= q;\nendmodule\n"
+    );
+    frontend::parse(&src, "test.sv")
+        .and_then(|m| lower::lower(&m))
+        .unwrap_or_else(|e| panic!("{src}\n{e}"));
+    rejects(
+        Some(H2),
+        &format!("{cnt}  logic c;\n  assign c = n[0];\n  always_ff @(negedge c) y <= q;"),
+        6,
+        "q;",
+        "the asynchronous reset `rb` of `n` sets bit 0 of it to 0",
+    );
+    // further up the chain: `t` is clocked by the rising edge of `s`, so
+    // the reset's falling edge does not move it, its rising edges do; `t`'s
+    // own block reads only `t` and is fine
+    let chain = |v: &str| {
+        format!(
+            "{}  logic t;\n  always_ff @(posedge s) t <= !t;\n  always_ff @(negedge t) y <= q;",
+            div(v)
+        )
+    };
+    accepts(format!("{}\n", chain("1'b0")));
+    rejects(
+        Some(H),
+        &chain("1'b1"),
+        6,
+        "q;",
+        "the asynchronous reset `rb` of `s`",
+    );
+    // a block on such an edge reading only inputs and registers on the
+    // same edge of the same clock
+    accepts(format!(
+        "{}  logic [3:0] z;\n  always_ff @(negedge s) z <= z + a;\n  \
+         always_ff @(negedge s) y <= z ^ a;\n",
+        div("1'b0")
+    ));
+    // a reset from the clock's own domain is no crossing
+    accepts(
+        "  logic r;\n  always_ff @(posedge ca) r <= a[0];\n  \
+         always_ff @(posedge ca or posedge r) if (r) s <= 1'b0; else s <= !s;\n  \
+         always_ff @(posedge ca) q <= q + a;\n  always_ff @(negedge s) y <= q;\n"
+            .to_string(),
+    );
+}
+
+/// Concatenation items whose width does not come from an unsized literal:
+/// parameters (they have a type), literals in self-determined places.
+#[test]
+fn sized_concatenation_items() {
+    for body in [
+        "  localparam N = 3; assign y = {a[3:0], 4'(N + N)};",
+        "  localparam N = 3; assign y = {a[6:0], a == 1};",
+        "  assign y = {a << 1};",
+        "  localparam logic [3:0] M = 3; assign y = {M, a[3:0]};",
+    ] {
+        translate(body);
+    }
+    let t = translate("  localparam N = 3; assign y = 8'({a, N});");
+    assert_eq!(t.module.atoms().len(), 1);
 }

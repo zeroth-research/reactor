@@ -539,8 +539,10 @@ fn registers_mismatch() {
         "{e:?}"
     );
 
-    // a register we lost: the miter would be unsound without the check,
-    // since every name the round uses is still a Yosys wire
+    // a register we lost: every name the round uses is still a Yosys wire,
+    // so without the check the miter would compare a translation that
+    // silently lacks a register (an untied `X(q@init)` would only make the
+    // queries easier to violate, not hide a difference)
     let (mut t, ys) = example("counter.sv");
     t.registers.clear();
     assert_eq!(

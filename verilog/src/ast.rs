@@ -808,6 +808,16 @@ pub enum ExprKind {
         text: String,
         ty: Ty,
         value: BitVec,
+        /// An unsized literal (`5`, `'hff`), or a `**` of one folded into
+        /// one constant: IEEE 1800 forbids it where its width would count,
+        /// as in a concatenation. A parameter has a type, so it is no
+        /// unsized constant.
+        is_unsized: bool,
+        /// A `**` of a negative base, folded at `int` (`(-3) ** 1`). IEEE
+        /// 1800 converts the base to the type of the context first, which
+        /// gives other bits in an unsigned context wider than 32 bits, so
+        /// sizing rejects it there.
+        negative_power: bool,
     },
     Var(Name),
     Unary(UnOp, Box<Expr>),
@@ -933,12 +943,12 @@ pub enum Cast {
 
 impl Select {
     /// The bits `(hi, lo)` the select picks if they do not depend on a
-    /// signal (`None` if `lo` would be negative).
+    /// signal (`None` if `lo` or `hi` would be negative, as for width 0).
     pub fn constant(&self) -> Option<Option<(usize, usize)>> {
         match self {
             Select::Bit(Index::Const(i)) => Some(Some((*i, *i))),
             Select::Part { hi, lo } => Some(Some((*hi, *lo))),
-            Select::Up(Index::Const(b), w) => Some(Some((b + w - 1, *b))),
+            Select::Up(Index::Const(b), w) => Some((b + w).checked_sub(1).map(|hi| (hi, *b))),
             Select::Down(Index::Const(b), w) => Some((b + 1).checked_sub(*w).map(|lo| (*b, lo))),
             Select::Bit(Index::Expr(_)) | Select::Up(..) | Select::Down(..) => None,
         }
