@@ -36,7 +36,8 @@ time:
 Each controlled variable `v` of our module then gives a [`Query`] per
 round: can `|X(v)|` differ from the wire `v`, in `|s|` after our init round,
 in `|s'|` after our update round? [`check`] asks all of them, in one z3
-run per round, each query between `push` and `pop`.
+run per round, each query between `push` and `pop`, after checking that
+the round's script without a query is satisfiable.
 
 ## What it shows
 
@@ -67,6 +68,16 @@ variables, and the ties make each external variable of ours equal to a
 Yosys wire. An output our translation dropped would never be compared, and
 a computed signal our translation made external would be tied to Yosys's
 computed value, hiding every behavior of ours where it takes another.
+
+It also rests on Yosys's side constraining no input: an `unsat` query
+says nothing about the inputs Yosys's predicates exclude, and if they
+exclude all (or the ties contradict them), every query is `unsat`. Two
+checks guard this. [`yosys::parse`] accepts Yosys's output only if every
+input and every fresh value of a blackbox output is built from declared
+symbols, each its own and none a register's, which the transition would
+constrain (see [`yosys`]), and
+[`check`] requires each round's script without a query, Yosys's
+predicates plus the ties, to be satisfiable before it reads the queries.
 
 The update round alone is not enough: it compares next values only in
 states a transition reaches. A combinational signal that differs only for
@@ -545,6 +556,12 @@ pub fn interfaces(
 /// answers anything but one `sat`, `unsat` or `unknown` per query (z3
 /// reports errors in its output and goes on).
 ///
+/// Before the queries, each run asks whether the round's script without a
+/// query is satisfiable: Yosys's predicates for the two states and the
+/// ties of the round. If it is not, every query is `unsat` whatever the
+/// two sides compute, so `check` fails unless z3 answers `sat` (also on
+/// `unknown`).
+///
 /// The rounds run separately so that their ties are at the outermost
 /// level, where z3 simplifies with them; asserted within a `push`, they
 /// can make a query much slower (`mac`: seconds instead of milliseconds).
@@ -552,12 +569,35 @@ pub fn check(z3: &Path, m: &Miter) -> Result<Vec<(Phase, Name, Verdict)>, String
     let mut verdicts = vec![];
     for phase in [Phase::Init, Phase::Update] {
         let queries: Vec<&Query> = m.queries.iter().filter(|q| q.phase == phase).collect();
-        let mut script = format!("{}{}", m.script, m.round(phase));
+        let mut script = format!("{}{}(check-sat)\n", m.script, m.round(phase));
         for q in &queries {
             script += &format!("(push 1)\n{}\n(check-sat)\n(pop 1)\n", q.differ());
         }
         let out = crate::z3::run(z3, &script)?;
-        let answers: Option<Vec<Verdict>> = out
+        let round = match phase {
+            Phase::Init => "init",
+            Phase::Update => "update",
+        };
+        match out.first().map(String::as_str) {
+            Some("sat") => {}
+            Some(base @ ("unsat" | "unknown")) => {
+                let found = match base {
+                    "unsat" => "have no solution (z3: unsat)",
+                    _ => "may have no solution (z3: unknown)",
+                };
+                return Err(format!(
+                    "in the {round} round, Yosys's constraints and the ties {found}, so every \
+                     query would be unsat: the comparison is not meaningful"
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "unexpected z3 output for the {round} round without a query:\n{}",
+                    out.join("\n")
+                ));
+            }
+        }
+        let answers: Option<Vec<Verdict>> = out[1..]
             .iter()
             .map(|line| match line.as_str() {
                 "unsat" => Some(Verdict::Equal),
@@ -575,7 +615,7 @@ pub fn check(z3: &Path, m: &Miter) -> Result<Vec<(Phase, Name, Verdict)>, String
                 return Err(format!(
                     "unexpected z3 output for {} queries:\n{}",
                     queries.len(),
-                    out.join("\n")
+                    out[1..].join("\n")
                 ));
             }
         }
@@ -699,13 +739,13 @@ fn model(text: &str) -> Option<Vec<BitVec>> {
         .collect()
 }
 
-enum Sexp {
+pub(crate) enum Sexp {
     Atom(String),
     List(Vec<Sexp>),
 }
 
 /// Parentheses, quoted symbols `|…|` and other atoms.
-fn tokens(text: &str) -> Vec<String> {
+pub(crate) fn tokens(text: &str) -> Vec<String> {
     let mut tokens = vec![];
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -739,7 +779,7 @@ fn tokens(text: &str) -> Vec<String> {
 }
 
 /// The expression starting at token `pos`, moving `pos` past it.
-fn sexp(tokens: &[String], pos: &mut usize) -> Option<Sexp> {
+pub(crate) fn sexp(tokens: &[String], pos: &mut usize) -> Option<Sexp> {
     let t = tokens.get(*pos)?;
     *pos += 1;
     match t.as_str() {
