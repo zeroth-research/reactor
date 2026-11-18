@@ -16,6 +16,7 @@ from reactor.lean.lowering.sorts import (
     dtype_to_lean_type,
     is_scalar_wire,
     flat_element_type,
+    mat_mk,
 )
 from reactor.lean.lowering.elements import flat_indices, flat_layout
 from reactor.lean.codegen.literals import (
@@ -100,9 +101,9 @@ def _argmax_expr(
     output type."""
     check_argmax_output(output_shape)
     if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
-        return f"(fun i j => ((argmax_1d {arg_expr}) i j : Int))"
+        return mat_mk(f"((argmax_1d {arg_expr}) i j : Int)", "i", "j")
     if len(input_shape) == 2:
-        return f"(fun i j => ((argmax {arg_expr}) i j : Int))"
+        return mat_mk(f"((argmax {arg_expr}) i j : Int)", "i", "j")
     raise ValueError(
         f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
     )
@@ -133,24 +134,24 @@ def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
 
     In the scalar encoding a 1x1 wire is bound to a bare `Bool`/`Int`, but
     the matrix-form emitters apply their operands to `0 0`. Wrapping as
-    `fun _ _ => x` makes that reduce back to `x` and typecheck.
+    `Mat.mk fun _ _ => x` makes that reduce back to `x` and typecheck.
     """
     lifted = dict(wire_expr)
     for w in term.read:
         if is_scalar_wire(w):
             # The ascription is load-bearing: `matVecAffine`'s batch
-            # dimension is not determined by `fun _ _ => x`, so an
+            # dimension is not determined by `Mat.mk fun _ _ => x`, so an
             # un-ascribed lift leaves `n` unsolved ("don't know how to
             # synthesize implicit argument `n`").
             ty = f"Mat {flat_element_type(w)} 1 1"
-            lifted[w.id] = f"((fun _ _ => {wire_expr[w.id]} : {ty}))"
+            lifted[w.id] = f"({mat_mk(wire_expr[w.id])} : {ty})"
     return lifted
 
 
 def _get_expr(term, wire_expr: dict[int, str]) -> str:
     """`Get`: element `[row][col]` of the read matrix, as a 1x1 one."""
     op = term.itype
-    return f"(fun _ _ => {wire_expr[term.read[0].id]} {op.row} {op.col})"
+    return mat_mk(f"{wire_expr[term.read[0].id]} {op.row} {op.col}")
 
 
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:

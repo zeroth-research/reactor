@@ -179,8 +179,8 @@ layer.
 | `Int` shape `[n]` | `(Mat Int 1 n)` | — |
 | `Int` shape `[m,n]` | `(Mat Int m n)` | — |
 
-All intermediate values are `Mat T m n` (Lean: `Fin m → Fin n → T`) even when
-scalar.  This keeps the algebra uniform.  Float-typed modules require
+All intermediate values are `Mat T m n` (Lean: Mathlib's
+`Matrix (Fin m) (Fin n) T`) even when scalar.  This keeps the algebra uniform.  Float-typed modules require
 `noncomputable` on all definitions because `Real` lacks decidable equality.
 
 **`product_accessor(pos, total)`** builds right-nested product accessors:
@@ -213,8 +213,8 @@ Created once per module; shared across all code generators.  It extracts:
 Lean function body as a string of `let` bindings followed by the output tuple:
 
 ```lean
-  let x0 : (Mat Bool 1 1) := (fun _ _ => decide (ctrl.1 0 0 < ctrl.2 0 0))
-  let x1 : (Mat Int 1 1) := (fun _ _ => (1 : Int))
+  let x0 : (Mat Bool 1 1) := (Mat.mk fun _ _ => decide (ctrl.1 0 0 < ctrl.2 0 0))
+  let x1 : (Mat Int 1 1) := (Mat.mk fun _ _ => (1 : Int))
   ...
   (x6, x5)
 ```
@@ -222,8 +222,11 @@ Lean function body as a string of `let` bindings followed by the output tuple:
 Each term is looked up in the op table's `mat` column
 (`lowering.ops.mat_emitter`, keyed by theory and variant name).  Operations
 produce `Mat T 1 1` values even for scalar results — conditions extract
-`0 0`, boolean ops wrap in `fun _ _ => ...`.  Non-scalar ops (`MatMul`,
-`Linear`, `ReLU`) use their native matrix forms.
+`0 0`, boolean ops wrap in `Mat.mk fun _ _ => ...`.  Non-scalar ops (`MatMul`,
+`Linear`, `ReLU`) use their native matrix forms.  Every matrix built from its
+entries is a `Mat.mk` (`lowering.sorts.mat_mk`), never a bare lambda: `Mat` is
+Mathlib's `Matrix`, and to `simp` and instance search a bare `fun i j => …` is
+a function, not a matrix.
 
 `ModuleToLean4.atom_to_lean_functional()` wraps the body into:
 
@@ -299,20 +302,23 @@ values, and a wider one to a `let` that rebuilds its `Mat` from the elements.
 functional encodings:
 
 ```lean
-theorem update_scalar_eq : ∀ ctrl extl_l extl_n,
-    update ctrl extl_l extl_n =
-    let r := Scalar.update ctrl extl_l extl_n
-    (fun _ _ => r.1, fun _ _ => r.2) := by
+@[simp] def pack (r : Int × Int) : (Mat Int 1 1) × (Mat Int 1 1) :=
+  ((Mat.mk fun _ _ => r.1), (Mat.mk fun _ _ => r.2))
+
+theorem update_scalar_eq : ∀ (ctrl : (Mat Int 1 1) × (Mat Int 1 1)) (extl_l : Unit) (extl_n : Unit),
+    update ctrl extl_l extl_n = Scalar.pack (Scalar.update (Scalar.unpack_ctrl ctrl) extl_l extl_n) := by
   intro ctrl extl_l extl_n
-  simp only [Scalar.update, update]
+  simp only [Scalar.pack, Scalar.update, update, Scalar.unpack_ctrl, Fin.cons_zero, Fin.cons_succ]
   try rfl
-  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])
-  try (funext i j; simp [Fin.fin_one_eq_zero])
+  try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)
+  ...
+  all_goals try simp [← Mat_1_1_eq]
 ```
 
-The reconstruction `fun _ _ => r.i` wraps each scalar output back into a
-`Mat T 1 1`.  The proof reduces via `Fin.fin_one_eq_zero` (every `i : Fin 1`
-equals `0`), making the two sides propositionally equal.
+`Scalar.pack` wraps each scalar output back into a `Mat T 1 1`, as
+`Mat.mk fun _ _ => r.i`, and `Scalar.unpack_*` reads a wire's elements out.
+The proof enumerates every index of every wire (`fin_cases`), or, for a 1×1
+wire, rewrites by `Fin.fin_one_eq_zero` (every `i : Fin 1` equals `0`).
 
 **Scalar encoding lives in its own file** (`<Name>Scalar.lean`), separate from
 the certificate.  It contains: functional `init`/`update`, `namespace Scalar`,
@@ -391,14 +397,18 @@ each obligation again, so a proof of it is complete in one file, and
 agree: a `Proofs.lean` that proves something else does not build, and the
 certificate trusts nothing in it.
 
-## Key Lemmas (in `Relational.Basic`)
+## Key Lemmas (in `Relational.Mat`)
 
 | Lemma | Effect |
 |-------|--------|
-| `MatAdd_apply`, `MatMul_apply` | Reduce matrix `+`, `*` to pointwise scalar ops |
+| `Mat.mk_apply` | Read an entry of a matrix built from its entries |
+| `add_Mat_apply`, `mul_Mat_apply`, `MatAdd_apply`, `MatMul_apply` | Reduce matrix `+`, `*` to pointwise scalar ops |
 | `Mat_1_1_lt_iff`, `_eq_iff`, `_le_iff`, `_ne_iff` | Collapse `(m : Mat T 1 1) 0 0 op n` to bare scalar comparison |
-| `ite_fun_apply` | Push `if` through function application |
+| `Mat_ite_apply` | Read an `if` between matrices at an entry |
 | `Fin.sum_univ_one/two/three` | Reduce finite sums |
+
+The lemmas that read an entry are pre-lemmas (`simp↓`), proved by `id rfl`;
+`Relational.Mat` says why.
 
 ---
 

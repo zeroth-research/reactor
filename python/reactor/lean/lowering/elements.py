@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from reactor import Wire
-from .sorts import flat_element_type, MatShape, wire_shape
+from .sorts import flat_element_type, mat_mk, MatShape, wire_shape
 
 
 def product_accessor(pos: int, total: int) -> str:
@@ -131,8 +131,8 @@ def flat_layout(wires: "list[Wire]") -> FlatLayout:
 def mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
     """Build a Lean ``Mat T m n`` expression from flat scalar slot strings.
 
-    1x1:       ``(fun _ _ => slots[0])``
-    otherwise: ``(fun i j => match i, j with | 0, 0 => s0 | ...)``
+    1x1:       ``(Mat.mk fun _ _ => slots[0])``
+    otherwise: ``(Mat.mk fun i j => match i, j with | 0, 0 => s0 | ...)``
 
     Matched on the indices rather than built from nested ``Fin.cons``. The
     equivalence theorems in the scalar encoding prove `pack (unpack x) = x`
@@ -145,7 +145,7 @@ def mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
     """
     if shape.is_scalar:
         assert len(slots) == 1
-        return f"(fun _ _ => {slots[0]})"
+        return mat_mk(slots[0])
     m, n = shape.m, shape.n
     assert len(slots) == m * n, f"expected {m * n} slots, got {len(slots)}"
     arms = " ".join(
@@ -153,4 +153,4 @@ def mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
     )
     # Catch-all for the same reason as `tensor_to_lean_def`: Lean cannot see
     # that `0..k-1` exhausts `Fin k` for larger k.
-    return f"(fun i j => match i, j with {arms} | _, _ => {slots[0]})"
+    return mat_mk(f"match i, j with {arms} | _, _ => {slots[0]}", "i", "j")

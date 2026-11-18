@@ -8,7 +8,7 @@ from __future__ import annotations
 from reactor import Module, Wire, X
 
 from ..core.errors import Refused
-from ..lowering.sorts import flat_element_type, wire_shape
+from ..lowering.sorts import flat_element_type, mat_mk, wire_shape
 from ..codegen.terms import build_tuple, product_type
 from .names import (
     LINTERS_OFF,
@@ -92,7 +92,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     )
     lines.append("")
     lines.append(
-        "def showMat {t : Type} (m n : Nat) (f : t → String) (mat : Fin m → Fin n → t)"
+        "def showMat {t : Type} (m n : Nat) (f : t → String) (mat : Mat t m n)"
         " : String :="
     )
     lines.append(
@@ -123,10 +123,8 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         lines.append(f"  for k in List.range {m * n} do")
         lines.append(f"    let v {bind} {parser} tokens[{offset} + k]!")
         lines.append(f"    arr{i} := arr{i}.push {push}")
-        lines.append(
-            f"  let {var} : Fin {m} → Fin {n} → {elem} :="
-            f" fun i j => arr{i}[i.val * {n} + j.val]!"
-        )
+        entry = f"arr{i}[i.val * {n} + j.val]!"
+        lines.append(f"  let {var} : Mat {elem} {m} {n} := {mat_mk(entry, 'i', 'j')}")
         offset += m * n
         parse_vars.append(var)
 

@@ -34,7 +34,7 @@ from typing import Callable, Union
 from reactor import Bool, Int, Real, BitVec
 
 from ..core.errors import Refused
-from .sorts import itype_name
+from .sorts import itype_name, mat_mk
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -69,7 +69,7 @@ class Inline:
 class ViaMat:
     """Scalar column only: there is no scalar form, the matrix one serves.
 
-    `translate_terms_scalar` lifts scalar-bound reads to `fun _ _ => x`
+    `translate_terms_scalar` lifts scalar-bound reads to `Mat.mk fun _ _ => x`
     and projects `0 0` off the result, which is right whenever the matrix
     form is elementwise or folds to a 1x1.
     """
@@ -169,21 +169,21 @@ OPS: tuple[Op, ...] = (
     Op(
         "Not",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => !({a[0]} 0 0))",
+        mat=lambda a: mat_mk(f"!({a[0]} 0 0)"),
         scalar=lambda a: f"(!{a[0]})",
         box="Box.not",
     ),
     Op(
         "And",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => ({a[0]} 0 0 && {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"({a[0]} 0 0 && {a[1]} 0 0)"),
         scalar=lambda a: f"({a[0]} && {a[1]})",
         box="Box.and",
     ),
     Op(
         "Or",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => ({a[0]} 0 0 || {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"({a[0]} 0 0 || {a[1]} 0 0)"),
         scalar=lambda a: f"({a[0]} || {a[1]})",
         box="Box.or",
     ),
@@ -199,7 +199,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Implies",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => (!({a[0]} 0 0) || {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"(!({a[0]} 0 0) || {a[1]} 0 0)"),
         scalar=lambda a: f"(!{a[0]} || {a[1]})",
         box="Box.implies",
     ),
@@ -222,28 +222,28 @@ OPS: tuple[Op, ...] = (
     Op(
         "Not",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => ~~~({a[0]} i j))",
+        mat=lambda a: mat_mk(f"~~~({a[0]} i j)", "i", "j"),
         scalar=lambda a: f"(~~~{a[0]})",
         box="Box.bvNot",
     ),
     Op(
         "And",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => ({a[0]} i j) &&& ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"({a[0]} i j) &&& ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} &&& {a[1]})",
         box="Box.bvAnd",
     ),
     Op(
         "Or",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => ({a[0]} i j) ||| ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"({a[0]} i j) ||| ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} ||| {a[1]})",
         box="Box.bvOr",
     ),
     Op(
         "Xor",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => ({a[0]} i j) ^^^ ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"({a[0]} i j) ^^^ ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} ^^^ {a[1]})",
         box="Box.bvXor",
     ),
@@ -282,7 +282,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Mul",
         LIA_LRA,
-        mat=lambda a: f"(fun i j => {a[0]} i j * {a[1]} i j)",
+        mat=lambda a: mat_mk(f"{a[0]} i j * {a[1]} i j", "i", "j"),
         scalar=lambda a: f"({a[0]} * {a[1]})",
         box="Box.hadamard",
     ),
@@ -292,7 +292,7 @@ OPS: tuple[Op, ...] = (
         Op(
             name,
             ("LIA",),
-            mat=lambda a, sym=sym: f"(fun i j => {a[0]} i j {sym} {a[1]} i j)",
+            mat=lambda a, sym=sym: mat_mk(f"{a[0]} i j {sym} {a[1]} i j", "i", "j"),
             scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
             box=box,
         )
@@ -320,14 +320,14 @@ OPS: tuple[Op, ...] = (
     Op(
         "UMod",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => BitVec.umod ({a[0]} i j) ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"BitVec.umod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"(BitVec.umod {a[0]} {a[1]})",
         box="Box.bvUMod",
     ),
     Op(
         "SMod",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => BitVec.smod ({a[0]} i j) ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"BitVec.smod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"(BitVec.smod {a[0]} {a[1]})",
         box="Box.bvSMod",
     ),
@@ -335,56 +335,56 @@ OPS: tuple[Op, ...] = (
     Op(
         "Lt",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[0]} 0 0 < {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 < {a[1]} 0 0)"),
         scalar=lambda a: f"(decide ({a[0]} < {a[1]}))",
         box="Box.lt",
     ),
     Op(
         "Le",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≤ {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 ≤ {a[1]} 0 0)"),
         scalar=lambda a: f"(decide ({a[0]} ≤ {a[1]}))",
         box="Box.le",
     ),
     Op(
         "Gt",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[1]} 0 0 < {a[0]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[1]} 0 0 < {a[0]} 0 0)"),
         scalar=lambda a: f"(decide ({a[1]} < {a[0]}))",
         box="Box.gt",
     ),
     Op(
         "Ge",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[1]} 0 0 ≤ {a[0]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[1]} 0 0 ≤ {a[0]} 0 0)"),
         scalar=lambda a: f"(decide ({a[1]} ≤ {a[0]}))",
         box="Box.ge",
     ),
     Op(
         "Eq",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[0]} 0 0 = {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 = {a[1]} 0 0)"),
         scalar=lambda a: f"(decide ({a[0]} = {a[1]}))",
         box="Box.eq",
     ),
     Op(
         "Ne",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≠ {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 ≠ {a[1]} 0 0)"),
         scalar=lambda a: f"(decide ({a[0]} ≠ {a[1]}))",
         box="Box.neq",
     ),
     Op(
         "Eq",
         BV_ONLY,
-        mat=lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0)",
+        mat=lambda a: mat_mk(f"if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0"),
         scalar=lambda a: f"(if {a[0]} = {a[1]} then 1 else 0)",
         box="Box.bvEq",
     ),
     Op(
         "Ne",
         BV_ONLY,
-        mat=lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1)",
+        mat=lambda a: mat_mk(f"if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1"),
         scalar=lambda a: f"(if {a[0]} = {a[1]} then 0 else 1)",
         box="Box.bvNe",
     ),
@@ -444,7 +444,7 @@ OPS: tuple[Op, ...] = (
         mat=lambda a: f"ReLu {a[0]}",
         # `ReLu` is a matrix op; on a scalar-bound wire it has to be the
         # bare `max 0 x`. Lifting the operand and projecting the result
-        # instead leaves `ReLu (fun _ _ => x) 0 0` with unconstrained
+        # instead leaves `ReLu (Mat.mk fun _ _ => x) 0 0` with unconstrained
         # dimensions, so this is not a `ViaMat` cell.
         scalar=lambda a: f"(Max.max 0 {a[0]})",
         box="Box.relu",
@@ -505,7 +505,7 @@ OPS: tuple[Op, ...] = (
         Op(
             name,
             ("Cast",),
-            mat=lambda a, one=one: f"(fun i j => {one(f'({a[0]} i j)')})",
+            mat=lambda a, one=one: mat_mk(one(f"({a[0]} i j)"), "i", "j"),
             scalar=lambda a, one=one: one(a[0]),
             box=box,
         )
@@ -558,7 +558,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "ToUnsigned",
         NONE,
-        mat=lambda a: f"(fun _ _ => Int.toNat ({a[0]} 0 0))",
+        mat=lambda a: mat_mk(f"Int.toNat ({a[0]} 0 0)"),
         scalar=lambda a: f"(Int.toNat {a[0]})",
         box=Unsupported("never had a Box"),
     ),
