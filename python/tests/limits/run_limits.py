@@ -71,7 +71,7 @@ from reactor.lean.project.lakefile import (  # noqa: E402
 
 # The reactor-lean checkout every project requires by path; the `verith`
 # runs below inherit it.
-os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "reactor-lean"))
+os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "ReactLib"))
 REACTOR_LEAN = reactor_lean_checkout()
 
 DEFAULT_TIMEOUT = 900

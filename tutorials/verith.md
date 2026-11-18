@@ -94,7 +94,7 @@ later one about 10 s, against an hour from cold.
 export REPO=$(cd .. && pwd)
 export OUT=/tmp/verith-tutorial.noindex       # keep the .noindex suffix on macOS
 export PROJ=Rea
-export REACTOR_LEAN=$(cd "$REPO/../reactor-lean" && pwd)   # a reactor-lean checkout
+export REACTOR_LEAN=$(cd "$REPO/../ReactLib" && pwd)       # a reactor-lean checkout
 
 mkdir -p "$OUT/shared_lake"
 ln -sfn "$REPO/python/tests/lean/.lake/packages" "$OUT/shared_lake/packages"
