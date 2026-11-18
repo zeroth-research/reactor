@@ -215,6 +215,7 @@ fn main() -> ExitCode {
             let err = |msg: String| Error::new(Span::default(), format!("-G {p}: {msg}"));
             let (name, value) = p
                 .split_once('=')
+                .filter(|(name, _)| !name.is_empty())
                 .ok_or_else(|| err("expected NAME=VALUE".into()))?;
             let value = constant::parse(value).map_err(err)?;
             overrides.push(Override {
