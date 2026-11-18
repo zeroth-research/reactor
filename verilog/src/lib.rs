@@ -20,7 +20,7 @@ where the edge of its clock happens (see [`lower`]).
   [`elab`] builds the tree of module instances, [`typing`] checks each
   module, [`sizing`] makes the implicit resizes of IEEE 1800 explicit,
   [`ast_interp`] runs a hierarchy.
-- [`lower`]: the translation of a hierarchy into a [`Module`]; [`print`]
+- [`lower`]: the translation of a hierarchy into a [`Module`]; [`print`](mod@print)
   prints modules with names.
 
 ## The boundary of a design: blackboxes
