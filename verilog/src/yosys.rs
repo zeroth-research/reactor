@@ -32,11 +32,14 @@ source names that it considers internal (`_zz_1_`, as SpinalHDL generates
 them). It runs before `flatten`, while every port of a child is still a
 port: afterwards it would also remove a child's output that the parent
 leaves unconnected. `check` reports problems of the netlist; [`run`] fails
-on conflicting drivers. The comparison relies on Yosys's transition
-accepting every input value, and a wire with two drivers breaks that: Yosys
-0.69 reads the target `{f, r[n]} = {e[2], e[0]}` backwards and drives the
-input bit `e[0]`, which in SMT-LIB defines the input as a function of other
-signals, so the comparison could find no difference where Yosys is wrong.
+on conflicting drivers (it passes `-e` so that Yosys stops at that
+warning, and also looks for the warning's text). The comparison relies on
+Yosys's transition accepting every input value, and a wire with two
+drivers breaks that: Yosys 0.69 reads the target `{f, r[n]} = {e[2], e[0]}`
+backwards and drives the input bit `e[0]`, which in SMT-LIB defines the
+input as a function of other signals, so the comparison could find no
+difference where Yosys is wrong. [`parse`] checks this on the output too,
+whatever the cause (see below).
 The other problems `check` reports do not hide differences: a used wire
 without a driver is free in every step (Yosys's side only gets more
 behaviors; a register bit that is never written, which for us keeps its
@@ -74,6 +77,18 @@ every state, and an accessor `(|T_n v| s)` for every port, register and wire
 as `cutpoint` makes them) is a function `|T#k|` of the state, after a
 comment `; yosys-smt2-anyseq T#k W CELL`. [`parse`] collects these five
 kinds into [`Smt2`] and ignores the others (`clock`, `witness`, …).
+
+The values Yosys leaves free in every step are uninterpreted functions of
+the state, declared with `declare-fun`; registers too, but the transition
+constrains them in the next state (`(|T#k| next_state)`), and wires are
+defined with `define-fun`. An input's accessor is such a symbol, or, when
+`write_smt2` declares the input in pieces or in another bit order, the
+pieces put together with `concat` and `extract` (and `(ite b #b1 #b0)` for
+a `Bool` piece). [`parse`] fails unless every input's accessor and every
+`$anyseq` symbol is built in this way from declared symbols that are no
+registers, each bit of them used only once: otherwise
+Yosys's predicates constrain an input (as a conflicting driver does), and
+a comparison would miss every difference outside the constraint.
 
 An accessor of width 1 returns `Bool`, wider ones `(_ BitVec W)`;
 [`Smt2::value`] always gives a bit vector, as our rounds use
@@ -121,8 +136,9 @@ with the default parameter values.
 */
 
 use crate::ast::Override;
+use crate::miter::{Sexp, sexp, tokens};
 use crate::smt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -190,25 +206,29 @@ pub fn run_files(
             o.name
         ));
     }
+    // `-e`: Yosys stops with an error instead of the warning
     let out = Command::new(bin)
-        .args(["-q", "-p", &script_files(files, top)?])
+        .args(["-q", "-e", CONFLICT, "-p", &script_files(files, top)?])
         .output()
         .map_err(|e| format!("{}: {e}", bin.display()))?;
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        let log = String::from_utf8_lossy(&out.stdout);
-        return Err(format!("yosys failed on {file}:\n{err}{log}"));
-    }
     let err = String::from_utf8_lossy(&out.stderr);
-    if err.contains("Warning: multiple conflicting drivers") {
+    // the warning's text, in case it does not stop Yosys
+    if err.contains(CONFLICT) {
         return Err(format!(
             "Yosys's netlist of {} has conflicting drivers, so a comparison with it would \
              not be meaningful:\n{err}",
             file
         ));
     }
+    if !out.status.success() {
+        let log = String::from_utf8_lossy(&out.stdout);
+        return Err(format!("yosys failed on {file}:\n{err}{log}"));
+    }
     parse(&String::from_utf8_lossy(&out.stdout))
 }
+
+/// Yosys's warning about a wire with several drivers.
+const CONFLICT: &str = "multiple conflicting drivers";
 
 /// What a Yosys register of a design after `clk2fflogic` samples (see the
 /// module docs).
@@ -294,8 +314,9 @@ impl Smt2 {
 }
 
 /// Parses the output of `write_smt2`. Fails if it has no top module or
-/// several modules (the design was not flattened), or if a name is listed
-/// twice with different widths.
+/// several modules (the design was not flattened), if a name is listed
+/// twice with different widths, or if an input or a fresh value is not
+/// free in every step (see the module docs).
 pub fn parse(text: &str) -> Result<Smt2, String> {
     let mut modules = Vec::new();
     let mut top = None;
@@ -346,6 +367,7 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
         ));
     }
     let [inputs, outputs, registers, wires, anyseq] = maps;
+    free(text, &top, &inputs, &anyseq)?;
     let initial = initial(text, &top)?;
     Ok(Smt2 {
         top,
@@ -357,6 +379,144 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
         anyseq,
         initial,
     })
+}
+
+/// Checks that Yosys's predicates constrain no input and no `$anyseq`
+/// value (see the module docs): each `$anyseq` symbol and every leaf of
+/// an input's accessor is declared with `declare-fun`, is no register (a
+/// symbol applied to `next_state`, which the transition constrains), and
+/// each of its bits is used once only, by one of them. The accessor of an
+/// input may only put such symbols together with `concat`, `extract`,
+/// `(ite b #b1 #b0)` and `(= x #b1)`, as `write_smt2` does for an input
+/// whose bits it declares in pieces or in another order.
+fn free(
+    text: &str,
+    top: &str,
+    inputs: &BTreeMap<String, usize>,
+    anyseq: &BTreeMap<String, usize>,
+) -> Result<(), String> {
+    let declared: BTreeMap<&str, usize> = (text.lines())
+        .filter_map(|l| {
+            let (symbol, rest) = l.strip_prefix("(declare-fun |")?.split_once('|')?;
+            let (_, sort) = rest.split_once(") ")?;
+            let width = match sort.split_once(')').map_or(sort, |(s, _)| s) {
+                s if s.starts_with("Bool") => 1,
+                s => s.strip_prefix("(_ BitVec ")?.parse().ok()?,
+            };
+            Some((symbol, width))
+        })
+        .collect();
+    let registers: BTreeSet<&str> = (text.match_indices("| next_state)"))
+        .filter_map(|(i, _)| {
+            let head = &text[..i];
+            Some(&head[head.rfind("(|")? + 2..])
+        })
+        .collect();
+    let mut used: BTreeSet<(String, usize)> = BTreeSet::new();
+    let mut fresh = |symbol: &str, bits: Option<(usize, usize)>| {
+        let Some(&width) = declared.get(symbol) else {
+            return false;
+        };
+        let (hi, lo) = bits.unwrap_or((width.saturating_sub(1), 0));
+        !registers.contains(symbol)
+            && hi < width
+            && (lo..=hi).all(|b| used.insert((symbol.to_string(), b)))
+    };
+    for symbol in anyseq.keys() {
+        if !fresh(symbol, None) {
+            return Err(format!(
+                "Yosys's fresh value `{symbol}` is not a declared symbol of its own, so a \
+                 comparison would not be meaningful"
+            ));
+        }
+    }
+    let state = smt::symbol(&format!("{top}_s"));
+    for name in inputs.keys() {
+        let head = format!(
+            "(define-fun {} ((state {state})) ",
+            smt::symbol(&format!("{top}_n {name}"))
+        );
+        let body = (text.lines())
+            .find(|l| l.starts_with(&head))
+            .and_then(|l| accessor_body(&l[head.len()..]));
+        let mut leaves = vec![];
+        let built = body.is_some_and(|b| leaves_of(&b, None, &mut leaves));
+        if !built || !leaves.iter().all(|(s, bits)| fresh(s, *bits)) {
+            return Err(format!(
+                "Yosys's input `{name}` is not free in every step: its accessor is not built \
+                 from declared symbols only, each bit used once, so a comparison would not \
+                 be meaningful"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The body of an accessor from the text after its parameters: the sort,
+/// the body and the closing parenthesis.
+fn accessor_body(rest: &str) -> Option<Sexp> {
+    let tokens = tokens(&format!("({rest}"));
+    let mut pos = 0;
+    match sexp(&tokens, &mut pos)? {
+        Sexp::List(items) if pos == tokens.len() => match <[Sexp; 2]>::try_from(items) {
+            Ok([_, body]) => Some(body),
+            Err(_) => None,
+        },
+        _ => None,
+    }
+}
+
+/// A leaf `(|S| state)` of an accessor: the symbol `S` and the bits
+/// `(hi, lo)` of it that are used, `None` for all.
+type Leaf = (String, Option<(usize, usize)>);
+
+/// Collects the leaves of `term` into `leaves`, of which only the bits
+/// `bits` (`(hi, lo)` of the value of `term`, `None` for all) are used, or
+/// returns false if `term` is not built from leaves with `concat`,
+/// `extract`, `(ite b #b1 #b0)` and `(= x #b1)`.
+fn leaves_of(term: &Sexp, bits: Option<(usize, usize)>, leaves: &mut Vec<Leaf>) -> bool {
+    let Sexp::List(items) = term else {
+        return false;
+    };
+    let atom = |s: &Sexp, a: &str| matches!(s, Sexp::Atom(t) if t == a);
+    let number = |s: &Sexp| match s {
+        Sexp::Atom(t) => t.parse::<usize>().ok(),
+        Sexp::List(_) => None,
+    };
+    match items.as_slice() {
+        [Sexp::Atom(f), arg] if atom(arg, "state") => {
+            match f.strip_prefix('|').and_then(|f| f.strip_suffix('|')) {
+                Some(symbol) => {
+                    leaves.push((symbol.to_string(), bits));
+                    true
+                }
+                None => false,
+            }
+        }
+        [f, a, b] if atom(f, "concat") && bits.is_none() => {
+            leaves_of(a, None, leaves) && leaves_of(b, None, leaves)
+        }
+        [f, b, one, zero] if atom(f, "ite") && atom(one, "#b1") && atom(zero, "#b0") => {
+            bits.is_none() && leaves_of(b, None, leaves)
+        }
+        [f, x, one] if atom(f, "=") && atom(one, "#b1") => {
+            bits.is_none() && leaves_of(x, None, leaves)
+        }
+        [Sexp::List(f), x] => match f.as_slice() {
+            [u, e, hi, lo] if atom(u, "_") && atom(e, "extract") => {
+                let (Some(hi), Some(lo)) = (number(hi), number(lo)) else {
+                    return false;
+                };
+                let bits = match bits {
+                    None => (hi, lo),
+                    Some((h, l)) => (lo + h, lo + l),
+                };
+                bits.0 >= bits.1 && bits.0 <= hi && leaves_of(x, Some(bits), leaves)
+            }
+            _ => false,
+        },
+        _ => false,
+    }
 }
 
 /// The conjuncts of `(|T_i| s)`, by the register each one names in its
