@@ -420,4 +420,18 @@ mod tests {
         assert!(BV::try_from(word(word::Havoc(8, 2, 3))).is_ok());
         assert!(Prop::try_from(boolean(bool::Havoc(2, 3))).is_ok());
     }
+
+    #[test]
+    fn uninterpreted_is_in_the_logics_of_its_theory() {
+        let op = word(word::Uninterpreted("f".to_string(), 8, 2, 3));
+        assert_eq!(op.dom(), Poly::unit());
+        let cod: Poly<sort::Any> = base::mono![sort::Word::new_unchecked(8, [2, 3]).into()].into();
+        assert_eq!(op.cod(), cod);
+
+        let f = || "f".to_string();
+        assert!(LRA::try_from(real(real::Uninterpreted(f(), 2, 3))).is_ok());
+        assert!(LIA::try_from(int(int::Uninterpreted(f(), 2, 3))).is_ok());
+        assert!(BV::try_from(word(word::Uninterpreted(f(), 8, 2, 3))).is_ok());
+        assert!(Prop::try_from(boolean(bool::Uninterpreted(f(), 2, 3))).is_ok());
+    }
 }

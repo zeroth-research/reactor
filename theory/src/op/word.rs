@@ -50,6 +50,7 @@ has, on words:
 - [`Id`] — the identity.
 - [`Ite`] — if-then-else, on a single boolean.
 - [`Havoc`] — an arbitrary matrix, chosen nondeterministically.
+- [`Uninterpreted`] — a named value of unknown meaning.
 */
 
 use crate::sort::{Bool, Word};
@@ -211,6 +212,12 @@ pub struct Ite(pub usize, pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Havoc(pub usize, pub usize, pub usize);
 
+/// A matrix of `w`-bit words of unknown meaning, named by the given symbol,
+/// as `Uninterpreted(symbol, w, m, n)`: e.g., the result of a call that the
+/// frontend cannot translate.
+#[derive(Clone, PartialEq, Debug, Eq)]
+pub struct Uninterpreted(pub String, pub usize, pub usize, pub usize);
+
 /// The operations of the theory of fixed-size bit-vectors, SMT-LIB2's
 /// `FixedSizeBitVectors`, with their boundary in [`Sort`]. Those of
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
@@ -257,6 +264,7 @@ pub enum BV {
     Id(Id),
     Ite(Ite),
     Havoc(Havoc),
+    Uninterpreted(Uninterpreted),
 }
 
 impl Boundary<Sort> for BV {
@@ -302,6 +310,7 @@ impl Boundary<Sort> for BV {
             BV::Id(op) => op.dom(),
             BV::Ite(op) => op.dom(),
             BV::Havoc(op) => op.dom(),
+            BV::Uninterpreted(op) => op.dom(),
         }
     }
 
@@ -347,6 +356,7 @@ impl Boundary<Sort> for BV {
             BV::Id(op) => op.cod(),
             BV::Ite(op) => op.cod(),
             BV::Havoc(op) => op.cod(),
+            BV::Uninterpreted(op) => op.cod(),
         }
     }
 }
@@ -589,6 +599,16 @@ impl Boundary<Sort> for Havoc {
     }
 }
 
+impl Boundary<Sort> for Uninterpreted {
+    fn dom(&self) -> Poly<Sort> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Word::new_unchecked(self.1, [self.2, self.3]).into()].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -724,6 +744,12 @@ impl fmt::Display for Ite {
 impl fmt::Display for Havoc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Havoc")
+    }
+}
+
+impl fmt::Display for Uninterpreted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Uninterpreted({})", self.0)
     }
 }
 
@@ -1214,6 +1240,13 @@ mod tests {
     }
 
     #[test]
+    fn uninterpreted_reads_nothing() {
+        let u = Uninterpreted("f".to_string(), 8, 2, 3);
+        assert_eq!(u.dom(), Poly::unit());
+        assert_eq!(u.cod(), one(w(8, [2, 3])));
+    }
+
+    #[test]
     fn ops_display_their_name_and_indices() {
         assert_eq!(Add(8, 1, 1).to_string(), "Add");
         assert_eq!(Ne(8, 1, 1).to_string(), "Ne");
@@ -1230,5 +1263,9 @@ mod tests {
         assert_eq!(Id(8, 1, 1).to_string(), "Id");
         assert_eq!(Ite(8, 1, 1).to_string(), "Ite");
         assert_eq!(Havoc(8, 1, 1).to_string(), "Havoc");
+        assert_eq!(
+            Uninterpreted("f".to_string(), 8, 1, 1).to_string(),
+            "Uninterpreted(f)"
+        );
     }
 }

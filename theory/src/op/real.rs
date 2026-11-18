@@ -20,6 +20,7 @@ information to compute its [`Boundary`]:
 - [`Ite`] — if-then-else, on a single boolean.
 - [`Argmax`] — the index of a largest entry.
 - [`Havoc`] — an arbitrary matrix, chosen nondeterministically.
+- [`Uninterpreted`] — a named value of unknown meaning.
 
 The comparisons are those of SMT-LIB2's `Reals` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
@@ -154,6 +155,12 @@ pub struct Argmax(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Havoc(pub usize, pub usize);
 
+/// A real matrix of shape `[m, n]` of unknown meaning, named by the given
+/// symbol, as `Uninterpreted(symbol, m, n)`: e.g., the result of a call that
+/// the frontend cannot translate.
+#[derive(Clone, PartialEq, Debug, Eq)]
+pub struct Uninterpreted(pub String, pub usize, pub usize);
+
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
 /// with their boundary in [`Sort`].
 ///
@@ -202,6 +209,8 @@ pub enum NRA {
     Argmax(Argmax),
     #[subenum(LRA)]
     Havoc(Havoc),
+    #[subenum(LRA)]
+    Uninterpreted(Uninterpreted),
 }
 
 impl Boundary<Sort> for NRA {
@@ -228,6 +237,7 @@ impl Boundary<Sort> for NRA {
             NRA::Ite(op) => op.dom(),
             NRA::Argmax(op) => op.dom().map(Sort::from),
             NRA::Havoc(op) => op.dom().map(Sort::from),
+            NRA::Uninterpreted(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -254,6 +264,7 @@ impl Boundary<Sort> for NRA {
             NRA::Ite(op) => op.cod(),
             NRA::Argmax(op) => op.cod().map(Sort::from),
             NRA::Havoc(op) => op.cod().map(Sort::from),
+            NRA::Uninterpreted(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -278,6 +289,7 @@ impl Boundary<Sort> for LRA {
             LRA::Ite(op) => op.dom(),
             LRA::Argmax(op) => op.dom().map(Sort::from),
             LRA::Havoc(op) => op.dom().map(Sort::from),
+            LRA::Uninterpreted(op) => op.dom().map(Sort::from),
         }
     }
 
@@ -301,6 +313,7 @@ impl Boundary<Sort> for LRA {
             LRA::Ite(op) => op.cod(),
             LRA::Argmax(op) => op.cod().map(Sort::from),
             LRA::Havoc(op) => op.cod().map(Sort::from),
+            LRA::Uninterpreted(op) => op.cod().map(Sort::from),
         }
     }
 }
@@ -525,6 +538,16 @@ impl Boundary<Real> for Havoc {
     }
 }
 
+impl Boundary<Real> for Uninterpreted {
+    fn dom(&self) -> Poly<Real> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new([self.1, self.2])].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -651,6 +674,12 @@ impl fmt::Display for Havoc {
     }
 }
 
+impl fmt::Display for Uninterpreted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Uninterpreted({})", self.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -724,6 +753,13 @@ mod tests {
     }
 
     #[test]
+    fn uninterpreted_reads_nothing() {
+        let u = Uninterpreted("f".to_string(), 2, 3);
+        assert_eq!(u.dom(), Poly::unit());
+        assert_eq!(u.cod(), one(Real::new([2, 3])));
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(Add(1, 1).to_string(), "Add");
         assert_eq!(Mul(1, 1).to_string(), "Mul");
@@ -734,6 +770,10 @@ mod tests {
         assert_eq!(Ite(1, 1).to_string(), "Ite");
         assert_eq!(Argmax(1, 1).to_string(), "Argmax");
         assert_eq!(Havoc(1, 1).to_string(), "Havoc");
+        assert_eq!(
+            Uninterpreted("f".to_string(), 1, 1).to_string(),
+            "Uninterpreted(f)"
+        );
     }
     #[test]
     fn comparisons_write_booleans() {

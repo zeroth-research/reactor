@@ -12,6 +12,7 @@ information to compute its [`Boundary`]:
 - [`Id`] — the identity.
 - [`Ite`] — if-then-else, on a single boolean.
 - [`Havoc`] — an arbitrary matrix, chosen nondeterministically.
+- [`Uninterpreted`] — a named value of unknown meaning.
 */
 
 use crate::sort::Bool;
@@ -56,6 +57,12 @@ pub struct Ite(pub usize, pub usize);
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 pub struct Havoc(pub usize, pub usize);
 
+/// A boolean matrix of shape `[m, n]` of unknown meaning, named by the given
+/// symbol, as `Uninterpreted(symbol, m, n)`: e.g., the result of a call that
+/// the frontend cannot translate.
+#[derive(Clone, PartialEq, Debug, Eq)]
+pub struct Uninterpreted(pub String, pub usize, pub usize);
+
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
 #[derive(Clone, Debug, From)]
@@ -68,6 +75,7 @@ pub enum Prop {
     Id(Id),
     Ite(Ite),
     Havoc(Havoc),
+    Uninterpreted(Uninterpreted),
 }
 
 impl Boundary<Bool> for Prop {
@@ -81,6 +89,7 @@ impl Boundary<Bool> for Prop {
             Prop::Id(op) => op.dom(),
             Prop::Ite(op) => op.dom(),
             Prop::Havoc(op) => op.dom(),
+            Prop::Uninterpreted(op) => op.dom(),
         }
     }
 
@@ -94,6 +103,7 @@ impl Boundary<Bool> for Prop {
             Prop::Id(op) => op.cod(),
             Prop::Ite(op) => op.cod(),
             Prop::Havoc(op) => op.cod(),
+            Prop::Uninterpreted(op) => op.cod(),
         }
     }
 }
@@ -181,6 +191,16 @@ impl Boundary<Bool> for Havoc {
     }
 }
 
+impl Boundary<Bool> for Uninterpreted {
+    fn dom(&self) -> Poly<Bool> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<Bool> {
+        mono![Bool::new([self.1, self.2])].into()
+    }
+}
+
 impl fmt::Display for Const {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -229,6 +249,12 @@ impl fmt::Display for Havoc {
     }
 }
 
+impl fmt::Display for Uninterpreted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Uninterpreted({})", self.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,11 +300,22 @@ mod tests {
     }
 
     #[test]
+    fn uninterpreted_reads_nothing() {
+        let u = Uninterpreted("f".to_string(), 2, 3);
+        assert_eq!(u.dom(), Poly::unit());
+        assert_eq!(u.cod(), one(Bool::new([2, 3])));
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(And(1, 1).to_string(), "And");
         assert_eq!(Not(1, 1).to_string(), "Not");
         assert_eq!(Id(1, 1).to_string(), "Id");
         assert_eq!(Ite(1, 1).to_string(), "Ite");
         assert_eq!(Havoc(1, 1).to_string(), "Havoc");
+        assert_eq!(
+            Uninterpreted("f".to_string(), 1, 1).to_string(),
+            "Uninterpreted(f)"
+        );
     }
 }
