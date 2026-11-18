@@ -33,7 +33,7 @@ The cascade is what it is because `decide` cannot close these goals (free
 variables), `split_ifs` before `simp` splits `(x == 0)` and `decide (x = 0)`
 into four branches, and the `Linear` cases need the certificate's own matrix
 simp set because `translate_terms_scalar` does not scalarise a `Linear` --
-it rebuilds the `Mat` and calls `matVecAffine`.
+it rebuilds the matrix and calls `matVecAffine`.
 """
 
 import re

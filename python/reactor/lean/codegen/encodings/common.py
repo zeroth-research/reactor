@@ -43,8 +43,8 @@ def effect_type(wire) -> str:
     """Codomain of a per-wire `effect_i`/`init_i`: its own flat element tuple.
 
     One component per element, so it can be compared to the matching slice of
-    the scalar encoding's state tuple. Typing it as the wire's `Mat` instead
-    put a `Mat Int 6 1` against an `Int x ... x Int`.
+    the scalar encoding's state tuple. Typing it as the wire's `Matrix` instead
+    put a `Matrix (Fin 6) (Fin 1) Int` against an `Int x ... x Int`.
     """
     return product_type_scalar([wire])
 
@@ -57,11 +57,11 @@ def scalar_bindings_with_recon(
     For each wire:
     - Scalar (flat_size == 1): binding is the bare accessor (e.g. ``"ctrl.1"``).
     - Non-scalar (flat_size > 1): binding is a fresh let-var reconstructing the
-      ``Mat T m n`` (for operations that need the full matrix); flat_slots also
+      ``Matrix (Fin m) (Fin n) T`` (for operations that need the full matrix); flat_slots also
       records the individual scalar accessor strings for argmax and similar.
 
     Returns ``(let_lines, bindings, flat_slots)`` where:
-    - ``let_lines`` should be prepended to the function body (Mat reconstructions)
+    - ``let_lines`` should be prepended to the function body (matrix reconstructions)
     - ``bindings`` maps wire_id → matrix var or scalar accessor
     - ``flat_slots`` maps wire_id → list of flat scalar accessor strings
     """
@@ -121,7 +121,7 @@ def _needed_recon(recon_lets: "list[str]", body: str) -> "list[str]":
 
 
 def prepend_recon(recon_lets: "list[str]", body: str) -> str:
-    """Prepend the Mat reconstruction let-lines this body needs."""
+    """Prepend the matrix reconstruction let-lines this body needs."""
     needed = _needed_recon(recon_lets, body)
     if needed:
         return "\n".join(needed) + "\n" + body

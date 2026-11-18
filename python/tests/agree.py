@@ -281,7 +281,7 @@ def disagreements_smt(module, *, seed: int = 0) -> list[str]:
 
 
 def _lean_value(wire, tensor) -> str:
-    """`tensor` as a Lean `Mat` literal of `wire`'s sort, in the form the
+    """`tensor` as a Lean `Matrix` literal of `wire`'s sort, in the form the
     encoding prints its own constants in
     (`lowering.elements.mat_from_scalars`)."""
     from reactor.lean.lowering.elements import mat_from_scalars

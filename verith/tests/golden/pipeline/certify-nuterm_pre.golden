@@ -80,13 +80,13 @@ set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
-def init_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
+def init_pre : ((Matrix (Fin 1) (Fin 1) Int)) × ((Matrix (Fin 1) (Fin 1) Int)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
 
-def update_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
+def update_pre : ((Matrix (Fin 1) (Fin 1) Int)) × ((Matrix (Fin 1) (Fin 1) Int)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
 
-def inv : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
+def inv : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
+def P : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
@@ -138,7 +138,7 @@ set_option maxHeartbeats 2000000
 -- Unfold the definitions and reduce the matrix arithmetic, on the goal
 -- only: on the hypotheses too it blows up exponentially.
 macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, MatAdd_apply, MatMul_apply, MatZero_apply, mul_Mat_apply, add_Mat_apply, ↓Mat.mk_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
+  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, zero_Matrix_apply, mul_Matrix_apply, add_Matrix_apply, ↓Matrix.mk_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
 
 -- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
 -- closers see the invariant's conditions.

@@ -100,7 +100,7 @@ def test_show_ctrl_destructures_in_declaration_order():
     assert "let (v0, v1) := v" in main
     assert "let (v1, v0) := v" not in main, "destructuring is reversed"
     # and the ctrl type ascription is in the same order
-    assert "showCtrl (v : (Mat Bool 1 1) × (Mat Int 1 1))" in main
+    assert "showCtrl (v : (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Int))" in main
 
 
 def test_parse_extl_builds_the_tuple_in_declaration_order():
@@ -141,11 +141,11 @@ def test_main_imports_a_module_that_exists():
 
 
 def test_bool_ctrl_is_shown_as_bool():
-    """`dtype_to_lean_type` always returns a `Mat ...`, so the old string
+    """`dtype_to_lean_type` always returns a `Matrix ...`, so the old string
     comparison against "Bool" never matched and every element became Int."""
     main = generate_main_lean("Rea", _heterogeneous_module(), "Rea")
-    assert "showMat 1 1 showBool v0" in main, "Bool ctrl is not shown as Bool"
-    assert "showMat 1 1 toString v1" in main, "Int ctrl is not shown as Int"
+    assert "showMatrix 1 1 showBool v0" in main, "Bool ctrl is not shown as Bool"
+    assert "showMatrix 1 1 toString v1" in main, "Int ctrl is not shown as Int"
 
 
 def test_bitvec_extl_is_parsed_as_bitvec():
@@ -159,7 +159,7 @@ def test_bitvec_extl_is_parsed_as_bitvec():
     main = generate_main_lean("Rea", module, "Rea")
     assert "Array (BitVec 8)" in main, "BitVec input parsed into an Int array"
     assert "BitVec.ofInt 8 v" in main, "BitVec input is not converted"
-    assert "Mat (BitVec 8) 1 1" in main
+    assert "Matrix (Fin 1) (Fin 1) (BitVec 8)" in main
     assert "Array Int" not in main
 
 
@@ -178,5 +178,5 @@ def test_real_io_is_refused_with_a_reason():
 def test_show_mat_is_generic_over_its_element():
     """The shower takes the element renderer, so it is not pinned to Int."""
     main = generate_main_lean("Rea", _heterogeneous_module(), "Rea")
-    assert "def showMat {t : Type} (m n : Nat) (f : t → String)" in main
+    assert "def showMatrix {t : Type} (m n : Nat) (f : t → String)" in main
     assert "(mat : Fin m → Fin n → Int)" not in main

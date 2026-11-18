@@ -67,7 +67,7 @@ class FlatLayout:
     this can do about that class of mistake is refuse to hand out the
     per-wire view by position: :meth:`span` takes the wire itself.
 
-    The row-major order is not a free choice. `smt.encode` packs `Mat t m n`
+    The row-major order is not a free choice. `smt.encode` packs an `m × n` matrix
     into a cvc5 tuple at index `i*n + j`, and a slot read back from that
     encoding is resolved through it, so a column-major walk here would
     describe a transposed module. `tests/test_lean_flat_layout.py` pins it.
@@ -105,7 +105,7 @@ class FlatLayout:
         return [f"{base}{product_accessor(k, self.total)}" for k in range(self.total)]
 
     def wire_accessor(self, base: str, slot: Slot) -> str:
-        """Read one slot out of a per-*wire* product of `Mat`s named `base`.
+        """Read one slot out of a per-*wire* product of matrices named `base`.
 
         The other direction from :meth:`flat_accessors`: `base` here is the
         functional state, so the element is a projection to the wire followed
@@ -133,10 +133,10 @@ def flat_layout(wires: "list[Wire]") -> FlatLayout:
 
 
 def mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
-    """Build a Lean ``Mat T m n`` expression from flat scalar slot strings.
+    """Build a Lean ``Matrix (Fin m) (Fin n) T`` expression from flat scalar slot strings.
 
-    1x1:       ``(Mat.mk fun _ _ => slots[0])``
-    otherwise: ``(Mat.mk fun i j => match i, j with | 0, 0 => s0 | ...)``
+    1x1:       ``(Matrix.mk fun _ _ => slots[0])``
+    otherwise: ``(Matrix.mk fun i j => match i, j with | 0, 0 => s0 | ...)``
 
     Matched on the indices rather than built from nested ``Fin.cons``. The
     equivalence theorems in the scalar encoding prove `pack (unpack x) = x`

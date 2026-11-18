@@ -843,7 +843,7 @@ def test_the_simp_set_unfolds_the_reductions():
     proofs = generate_proofs_lean(
         None, proof_scripts(LeanContext(_int_module())))
     simp_mat = [ln for ln in proofs.splitlines()
-                if "simp [" in ln and "MatAdd_apply" in ln]
+                if "simp [" in ln and "add_Matrix_apply" in ln]
     assert simp_mat, "the simp_mat macro moved"
     for name in ("matMin", "matMax", "argmax_1d", "argmax"):
         assert name in simp_mat[0], f"{name} is not in simp_mat"
@@ -900,6 +900,6 @@ def test_a_bool_module_unfolds_its_definitions_and_no_constants():
 
 
 def test_an_affine_module_reduces_its_matrix_products():
-    """`affineLinear` unfolds to `MatMul + b`, so the simp set carries
-    `MatMul_apply` to reduce the matrix obligations."""
-    assert "MatMul_apply" in _simp_macros(_affine_module())
+    """`affineLinear` unfolds to `A * x + b`, so the simp set carries
+    `mul_Matrix_apply` to reduce the matrix obligations."""
+    assert "mul_Matrix_apply" in _simp_macros(_affine_module())

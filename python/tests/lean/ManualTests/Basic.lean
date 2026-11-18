@@ -22,8 +22,8 @@ open Lean Elab Tactic
 -- In certificate files these are generated from the module; here we use
 -- a module-independent version that reduces standard matrix/arithmetic lemmas.
 macro "simp_mat" : tactic =>
-  `(tactic| simp [MatAdd_apply, MatMul_apply, MatZero_apply, Pi.add_apply,
-                  mul_Mat_apply, add_Mat_apply, Bool.or_eq_true, decide_eq_true_eq,
+  `(tactic| simp [zero_Matrix_apply, Pi.add_apply,
+                  mul_Matrix_apply, add_Matrix_apply, Bool.or_eq_true, decide_eq_true_eq,
                   Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue,
                   Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three])
 
@@ -31,7 +31,7 @@ macro "simp_defs" : tactic =>
   `(tactic| (simp only [] at *; try dsimp at *))
 
 macro "mat_collapse" : tactic =>
-  `(tactic| simp only [Mat_1_1_lt_iff, Mat_1_1_le_iff, Mat_1_1_eq_iff, Mat_1_1_ne_iff,
+  `(tactic| simp only [Matrix_1_1_lt_iff, Matrix_1_1_le_iff, Matrix_1_1_eq_iff, Matrix_1_1_ne_iff,
                         ite_fun_apply, decide_eq_true_eq, Bool.or_eq_true,
                         Bool.and_eq_true, Bool.not_eq_true'] at *)
 
@@ -41,7 +41,7 @@ macro "mat_collapse" : tactic =>
 
 example : True := by zeroth_hammer
 example (s : Int) : True := by zeroth_hammer
-example (s : Mat Int 1 1) : True := by zeroth_hammer
+example (s : Matrix (Fin 1) (Fin 1) Int) : True := by zeroth_hammer
 
 -- ──────────────────────────────────────────────────────────────
 -- Phase 1a: omega alone

@@ -18,7 +18,7 @@ from .test_lean_diagram import _make_matrix_module
 def _make_counter():
     """Counter module with a 3×1 vector state, transitions via LIA.Linear.
 
-    Python semantics (state = (x, y, z) as Mat Int 3 1, extl = (y0, z0)):
+    Python semantics (state = (x, y, z) as Matrix (Fin 3) (Fin 1) Int, extl = (y0, z0)):
         init(y0, z0) = (0, y0, z0)       = [[0,0],[1,0],[0,1]] · (y0, z0)
         update(x, y, z):
             if x < y or x < z: (x+1, y, z)   = I·s + (1,0,0)ᵀ

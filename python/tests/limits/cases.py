@@ -240,7 +240,7 @@ CASES = [
       note="Argmax in the transition — does argmax_1d reduce under the hammer?"),
     C(name="OpTranspose", group="ops", mod="m_transpose", expect="fail",
       P="s[0][0] == 1", inv="s[0][0] == 1", rank="0",
-      note="Transpose in the transition (MatTranspose / Box.transpose)"),
+      note="Transpose in the transition (Matrix.transpose / Box.transpose)"),
     C(name="OpUninterp", group="ops", mod="m_uninterp", expect="fail",
       P="(= s0 0)", inv="true", rank="0",
       note="an uninterpreted symbol — no Lean counterpart exists"),

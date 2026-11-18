@@ -8,7 +8,7 @@ next state to that body, and a conjunction over them (`TransRel` / `INIT`).
 
 They vary on three axes, and this module is parameterised on exactly those:
 
-1. **type builder** — what a state value is: a product of `Mat`s
+1. **type builder** — what a state value is: a product of `Matrix`es
    (`product_type`), one component per *element* (`product_type_scalar`),
    or an encoding's own per-slot element type.  :attr:`RelSyntax.slot_ty`
    is the half of it a slot needs.
@@ -108,7 +108,7 @@ def _eq_theorem(syn: RelSyntax, blk: RelBlock, i: int) -> "list[str]":
 
     `rfl` closes it whenever the two sides were produced by the same body
     producer over the same terms; the tactics after it are for the shapes
-    where a `Mat 1 1` meets a scalar and the equality is only propositional.
+    where a 1×1 `Matrix` meets a scalar and the equality is only propositional.
     """
     name = f"{blk.body_name}_{i}"
     lemmas = ", ".join([blk.ref, name, *syn.eq_simp])
