@@ -802,7 +802,11 @@ fn blame(z3: &Path, inst: &Inst, t: &Translation, m: &miter::Miter) -> Vec<Blame
     for (i, n) in m.inputs.iter().zip(&m.next_inputs) {
         m.script += &format!("(assert (distinct {} {}))\n", i.term, n.term);
     }
-    let m = &m;
+    blame_from(z3, inst, t, &m)
+}
+
+/// `blame` without making the inputs of `|s|` and `|s'|` differ.
+fn blame_from(z3: &Path, inst: &Inst, t: &Translation, m: &miter::Miter) -> Vec<Blame> {
     let mut blamed = vec![];
     for (phase, name, verdict) in miter::check(z3, m).unwrap() {
         let q = m
@@ -1166,6 +1170,183 @@ fn yosys_deviates_on_variable_index_writes() {
             ("init:z".into(), Side::Ours, None),
             ("z".into(), Side::Ours, None)
         ]
+    );
+}
+
+/// The variables on which the miter of `source` (top module `top`, written
+/// to `file`) finds the two sides different, with the side the replay
+/// attributes each difference to (see `blame`).
+fn deviation(tools: (&Path, &Path), file: &str, source: &str) -> Vec<Blame> {
+    deviation_with(tools, file, source, true)
+}
+
+/// `deviation`, with the inputs of `|s|` and `|s'|` made to differ or not
+/// (a reset that must stay inactive in both states cannot differ).
+fn deviation_with(
+    (yosys, z3): (&Path, &Path),
+    file: &str,
+    source: &str,
+    distinct: bool,
+) -> Vec<Blame> {
+    let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join(file);
+    std::fs::write(&path, source).unwrap();
+    let inst = elab::load(source, &path).unwrap();
+    let ys = yosys::run(yosys, &path, "top", &[]).unwrap();
+    let t = lower_inst(&inst).unwrap();
+    let m = miter::build(&t, &ys).unwrap();
+    if distinct {
+        blame(z3, &inst, &t, &m)
+    } else {
+        blame_from(z3, &inst, &t, &m)
+    }
+}
+
+/// The blame of a difference on each of `names` that the replay
+/// attributes to Yosys's side, decided without a latched variable.
+fn ours(names: &[&str]) -> Vec<Blame> {
+    names
+        .iter()
+        .map(|n| (n.to_string(), Side::Ours, None))
+        .collect()
+}
+
+/// A known bug of Yosys (0.69, its `proc` pass): in a clocked process,
+/// inside a branch of an `if` or `case`, a conditional nonblocking write
+/// followed by an unconditional one to the same bits keeps the conditional
+/// value: `if (r) begin if (e) q <= a; q <= b; end` becomes
+/// `q <= r ? (e ? a : b) : q`. By the standard the later write wins
+/// (§10.4.2: nonblocking updates take effect in the order executed), so `q`
+/// gets `b`; iverilog agrees. Yosys's own `write_verilog` netlist has the
+/// wrong multiplexer, so the bug is not in its SMT-LIB output. At the top
+/// level of the process, with blocking writes, and in `always_comb` Yosys is right. The
+/// miter finds it, and the replay sides with us. The examples avoid the
+/// pattern.
+#[test]
+fn yosys_proc_keeps_overwritten_nonblocking_writes() {
+    let Some((yosys, z3)) = tools() else { return };
+    let tools = (yosys.as_path(), z3.as_path());
+    for (file, source, expected, distinct) in [
+        (
+            "proc1.v",
+            "\
+module top(input clk, input r, input e, input a, input b, output reg q);
+  always @(posedge clk) if (r) begin if (e) q <= a; q <= b; end
+endmodule
+",
+            "q",
+            true,
+        ),
+        // a partial write under `if`, then a full one, in a `case` item
+        (
+            "proc2.sv",
+            "\
+module top(input logic clk, input logic c, input logic [1:0] j,
+           input logic [3:0] a, output logic [2:0] u);
+  always_ff @(posedge clk)
+    case (j) 0: begin if (c) u[2] <= a[0]; u <= a[3:1]; end endcase
+endmodule
+",
+            "u",
+            true,
+        ),
+        // a full write under `if`, then a partial one, in the `else` of an
+        // asynchronous reset
+        (
+            "proc3.sv",
+            "\
+module top(input logic clk, input logic rst, input logic en,
+           input logic [7:0] d, output logic [7:0] q);
+  always_ff @(posedge clk or posedge rst)
+    if (rst) q <= 8'd0; else begin if (en) q <= d; q[4:0] <= 5'd0; end
+endmodule
+",
+            "q",
+            false,
+        ),
+    ] {
+        assert_eq!(
+            deviation_with(tools, file, source, distinct),
+            ours(&[expected]),
+            "{file}"
+        );
+    }
+    // the same at the top level of the process: Yosys is right
+    let top = "\
+module top(input clk, input e, input a, input b, output reg q);
+  always @(posedge clk) begin if (e) q <= a; q <= b; end
+endmodule
+";
+    assert_eq!(deviation(tools, "proc4.v", top), []);
+}
+
+/// Two known bugs of Yosys (0.69) with size casts `N'(e)` (§6.24.1: the
+/// value `e` gives when assigned to an `N`-bit variable). Its parser reads
+/// `!2'(x)` as a cast to the size `!2`: over a constant that gives 0
+/// (`!2'(3'd4)` is 0 instead of `!2'b00` = 1), over a variable an error
+/// ("Static cast with zero or negative size"); a cast is a primary, so
+/// `!` applies to the cast. And it folds a constant operand at its own
+/// width: `16'(8'd200 + 8'd100)` is 44 instead of 300, while
+/// `16'(8'd200 + b)` with `b = 100` is 300. iverilog and slang agree with
+/// us. The miter finds both, and the replay sides with us.
+#[test]
+fn yosys_misreads_size_casts() {
+    let Some((yosys, z3)) = tools() else { return };
+    let source = "\
+module top(input logic [7:0] b, output logic y, output logic [15:0] z,
+           output logic y2, output logic [15:0] z2);
+  assign y = !2'(3'd4);
+  assign z = 16'(8'd200 + 8'd100);
+  assign y2 = !(2'(3'd4));
+  assign z2 = 16'(8'd200 + b);
+endmodule
+";
+    assert_eq!(
+        deviation((&yosys, &z3), "casts.sv", source),
+        ours(&["init:y", "init:z", "y", "z"])
+    );
+}
+
+/// A known bug of Yosys (0.69, its SMT-LIB output): a logical right shift
+/// `s >> i` of a signed operand by a wider amount extends `s` by its sign
+/// to the amount's width before shifting, so ones move into the result:
+/// a 1-bit `$signed(c) >> i` with `c = 1`, `i = 1` gives 1, a 4-bit
+/// `s >> k` with `s = 4'b1000`, an 8-bit `k = 4` gives 15. By the standard
+/// (§11.4.10) `>>` fills with zeros, so both give 0; iverilog, slang,
+/// Yosys's own `sat` and its `write_verilog` netlist agree. The miter
+/// finds it, and the replay sides with us.
+#[test]
+fn yosys_smt_shifts_signed_operands_wrongly() {
+    let Some((yosys, z3)) = tools() else { return };
+    let source = "\
+module top(input logic c, input logic [1:0] i, input logic signed [3:0] s,
+           input logic [7:0] k, output logic o, output logic [3:0] p);
+  assign o = $signed(c) >> i;
+  assign p = s >> k;
+endmodule
+";
+    assert_eq!(
+        deviation((&yosys, &z3), "shift.sv", source),
+        ours(&["init:o", "init:p", "o", "p"])
+    );
+}
+
+/// A known deviation of Yosys (0.69): it fills `'1` inside `$unsigned` to
+/// the width of the assignment around it (`$unsigned('1)` into 8 bits
+/// gives 255), although the argument of `$unsigned` is self-determined
+/// (§11.7), so `'1` has 1 bit and the result is 1; iverilog and slang
+/// agree with us, and Yosys itself sizes `$unsigned(a + b)` by its
+/// argument alone. The miter finds it, and the replay sides with us.
+#[test]
+fn yosys_fills_unsized_literals_in_unsigned() {
+    let Some((yosys, z3)) = tools() else { return };
+    let source = "\
+module top(output logic [7:0] y);
+  assign y = $unsigned('1);
+endmodule
+";
+    assert_eq!(
+        deviation((&yosys, &z3), "fill.sv", source),
+        ours(&["init:y", "y"])
     );
 }
 
