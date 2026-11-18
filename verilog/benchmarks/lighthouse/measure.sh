@@ -7,8 +7,9 @@
 # usage: measure.sh [--yosys] [DIR]   DIR = output of generate.sh (default ../sets/lighthouse)
 # Writes ../results/lighthouse.tsv and ../results/lighthouse.md. V2RM overrides the v2rm binary
 # (default ~/.cache/rm-target/release/v2rm). Acceptance runs one module after the other; the
-# Yosys checks run in parallel (so their times depend on the load) and take hours: the two
-# 128-entry FIFOs 15-25 min each, the whole top about two hours (almost all of it in z3).
+# Yosys checks run in parallel, at most JOBS at a time (default: the number of CPUs), so their
+# times depend on the load, and take hours: the two 128-entry FIFOs 15-25 min each, the whole
+# top about two hours (almost all of it in z3).
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 YOSYS=0; [ "${1:-}" = --yosys ] && { YOSYS=1; shift; }
@@ -18,7 +19,8 @@ export PATH="$HOME/tools/oss-cad-suite/bin:$PATH"
 RES=$HERE/../results
 "$HERE/generate.sh" --check "$DIR" || { echo "run $HERE/generate.sh first"; exit 1; }
 [ -x "$V2RM" ] || { echo "$V2RM missing"; exit 1; }
-DESIGN="$DIR/LighthouseTopLevel.v $DIR/ts4231Configurator.v $HERE/cells.v"
+DESIGN=("$DIR/LighthouseTopLevel.v" "$DIR/ts4231Configurator.v" "$HERE/cells.v")
+JOBS=${JOBS:-$(nproc)}
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # Every v2rm runs under GNU `timeout`, which puts itself into a process group of its own and, when
 # time is up or it gets SIGINT/SIGTERM, signals that whole group: v2rm and the z3 it runs.
@@ -51,16 +53,20 @@ check() {  # check MODULE FILES...: Yosys result and seconds into $TMP/MODULE.yo
   printf '\t%s\t%d' "$ys" $(( $(date +%s) - start )) > "$TMP/$m.yosys"
 }
 
-files() {  # the files read for MODULE
-  if [ "$1" = ts4231Configurator ]; then echo "$DIR/ts4231Configurator.v"; else echo $DESIGN; fi
+files() {  # the files read for MODULE, one per line
+  if [ "$1" = ts4231Configurator ]; then echo "$DIR/ts4231Configurator.v"
+  else printf '%s\n' "${DESIGN[@]}"; fi
 }
 
 # acceptance one after the other (times comparable), Yosys checks in parallel
 MODULES="$(sed -n 's/^module \([A-Za-z0-9_]*\).*/\1/p' "$DIR/LighthouseTopLevel.v") ts4231Configurator"
-for m in $MODULES; do accept "$m" $(files "$m"); done
+for m in $MODULES; do mapfile -t F < <(files "$m"); accept "$m" "${F[@]}"; done
 if [ $YOSYS = 1 ]; then
   for m in $MODULES; do
-    [ "$(cut -f2 "$TMP/$m.v2rm")" = OK ] && check "$m" $(files "$m") &
+    [ "$(cut -f2 "$TMP/$m.v2rm")" = OK ] || continue
+    while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n; done
+    mapfile -t F < <(files "$m")
+    check "$m" "${F[@]}" &
   done
   wait
 fi

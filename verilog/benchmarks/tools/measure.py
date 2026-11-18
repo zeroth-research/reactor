@@ -6,13 +6,13 @@ Usage (from anywhere; always run with -I, the sets are untrusted data):
     python3 -I tools/measure.py [--sets verilog-eval,sv-tests,ebmc,sby] [--jobs 8] [--limit N]
 
 For every selected case it runs
-  v2rm:   v2rm on the file as is (several files concatenated, v2rm takes one),
+  v2rm:   v2rm on the files as they are (several files are read as one design),
   yosys:  `v2rm --yosys` on it, if v2rm accepted it.
 Failures are classified by v2rm's first error, normalized (locations, names and numbers
 stripped) and mapped to a coarse bucket (BUCKETS below).
 
 Output in results/: <set>.tsv (one row per case), skipped-<set>.tsv (every file not
-measured, with the reason), SUMMARY.md. Generated inputs go to work/.
+measured, with the reason), SUMMARY.md. v2rm runs in work/.
 Nothing from the clones is executed: files are only read, and v2rm/yosys get paths.
 """
 
@@ -71,9 +71,6 @@ def sv_tests():
         if top_dir in ("uvm", "testbenches"):
             skipped.append((rel, f"`tests/{top_dir}/`: UVM / testbench infrastructure"))
             continue
-        if top_dir == "generic":
-            # files in tests/generic are no test cases with metadata of their own
-            pass
         text = f.read_text(errors="replace")
         meta = metadata(text)
         if "should_fail_because" in meta:
@@ -169,16 +166,6 @@ NOT_MEASURED = [
 
 # ---------------------------------------------------------------- running
 
-def prepare(case):
-    """The file v2rm reads for `case`: its only file, or its files concatenated."""
-    if len(case.files) == 1:
-        return case.files[0]
-    out = WORK / case.set / (case.id.replace("/", "__") + ".sv")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("".join(f.read_text(errors="replace") + "\n" for f in case.files))
-    return out
-
-
 def run(args, timeout):
     """v2rm with `args`, or None if it takes longer than `timeout` seconds. v2rm runs in a session
     of its own, so that a timeout kills its whole process group: its z3 runs too."""
@@ -199,18 +186,20 @@ def run(args, timeout):
 
 
 def accept(case):
-    path = prepare(case)
     top = ["--top", case.top] if case.top else []
-    p = run([*top, str(path)], TIMEOUT)
+    p = run([*top, *map(str, case.files)], TIMEOUT)
     if p is None:
-        return path, "TIMEOUT"
+        return "TIMEOUT"
     if p.returncode == 0:
-        return path, "OK"
+        return "OK"
     first = next((l for l in p.stderr.splitlines() if l.strip()), "(no message)")
     if p.returncode == 101 or "panicked" in p.stderr:
         panic = next((l for l in p.stderr.splitlines() if "panicked" in l), first)
-        return path, "PANIC " + panic
-    return path, where(path, first.replace(str(path), "", 1).lstrip(":"))
+        return "PANIC " + panic
+    # v2rm's errors start with the file they are in (`FILE:L:C: message`), the first file if
+    # they have no position
+    path = next((f for f in case.files if first.startswith(f"{f}:")), case.files[0])
+    return where(path, first.replace(str(path), "", 1).lstrip(":"))
 
 
 def where(path, msg):
@@ -237,9 +226,9 @@ def where(path, msg):
     return f"{msg} [at `{word}`]"
 
 
-def yosys(case, path):
+def yosys(case):
     top = ["--top", case.top] if case.top else []
-    p = run(["--yosys", f"-t:{QUERY_TIMEOUT_MS}", *top, str(path)], YOSYS_TIMEOUT)
+    p = run(["--yosys", f"-t:{QUERY_TIMEOUT_MS}", *top, *map(str, case.files)], YOSYS_TIMEOUT)
     if p is None:
         return "TIMEOUT"
     # exit status 0: every query equal; 1: a variable differs or z3 gave up on a query;
@@ -253,13 +242,14 @@ def yosys(case, path):
         return "Unknown"
     first = next((l for l in p.stderr.splitlines()
                   if l.strip() and ": warning: " not in l), "(no message)")
+    path = next((f for f in case.files if first.startswith(f"{f}:")), case.files[0])
     first = first.replace(str(path), "", 1).lstrip(": ")
     return "Error " + first.replace(str(SETS_DIR) + "/", "").replace(str(ROOT) + "/", "")
 
 
 def measure(case):
-    path, result = accept(case)
-    ys = yosys(case, path) if result == "OK" else "-"
+    result = accept(case)
+    ys = yosys(case) if result == "OK" else "-"
     return case, result, ys
 
 
@@ -331,9 +321,9 @@ def commit(repo):
     return p.stdout.strip()
 
 
-def table(counter, total, head):
+def table(counter, total, head, limit=None):
     rows = [f"| {head} | count | % |", "|---|---:|---:|"]
-    for k, n in counter.most_common():
+    for k, n in counter.most_common(limit):
         rows.append(f"| {k} | {n} | {100 * n / total:.0f} |")
     return "\n".join(rows)
 
@@ -366,8 +356,7 @@ def report(per_set, skipped_per_set):
         out += [f"### First error ({len(fails)} of {n} fail)", "",
                 table(Counter(bucket(m) for m in fails), n, "bucket"), ""]
         out += ["### Most frequent first errors (normalized, top 25)", "",
-                table(Counter(normalize(m) for m in fails[:]), n, "message"), ""]
-        out[-2] = "\n".join(out[-2].splitlines()[:27])
+                table(Counter(normalize(m) for m in fails), n, "message", 25), ""]
         bad = [r for r in rows if r[2] not in ("-", "Equal")]
         if bad:
             out += ["### Yosys check: not Equal", "", "| case | result |", "|---|---|"]
