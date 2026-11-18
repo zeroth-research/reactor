@@ -62,9 +62,13 @@ rebuild: clean build
 rs-build:
     {{ CARGO }} build {{ profile_flag }} {{ features_flag }}
 
-# Build the Rust workspace with all its targets and features
+# Build the Rust workspace with all its targets and features. Split like `rs-test`:
+# `pyo3-tch` forces pyo3's `extension-module`, so no binary links libpython, and
+# only `theory` (via its build.rs) links it into its test binaries — with
+# `--all-features` the other crates' test binaries would pull in `torch` and fail to link.
 rs-build-all:
-    {{ CARGO }} build --all-targets --all-features {{ profile_flag }}
+    {{ CARGO }} build --all-targets --features theory/pyo3 {{ profile_flag }}
+    {{ CARGO }} build --all-targets -p theory --features torch {{ profile_flag }}
 
 # Every Rust test binary transitively links libtorch (via `theory` -> `pyo3-tch` ->
 # `torch-sys`), so they all need libtorch; and on macOS the Python interpreter's symbols at runtime.
@@ -79,7 +83,8 @@ rs-test:
         export DYLD_FALLBACK_LIBRARY_PATH="$TORCH_LIB"
         export DYLD_INSERT_LIBRARIES="$(uv run python -c 'import sysconfig, os; base = sysconfig.get_config_var("PYTHONFRAMEWORKPREFIX") or sysconfig.get_config_var("LIBDIR"); print(os.path.join(base, sysconfig.get_config_var("LDLIBRARY")))')"
     else
-        export LD_LIBRARY_PATH="$TORCH_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        PY_LIB="$(uv run python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
+        export LD_LIBRARY_PATH="$TORCH_LIB:$PY_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     fi
     # Split by feature set: the `torch` feature is exclusive to `theory`, the rest of
     # the workspace is exercised with `theory/pyo3`.
