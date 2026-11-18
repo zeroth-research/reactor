@@ -58,10 +58,12 @@ from reactor.lean.lowering.elements import flat_layout
 # The lemmas `simp_mat` reduces matrix arithmetic with, after the
 # certificate's own definitions. The bridge's cascade uses the same set:
 # without it a `Linear` arrives as `matVecAffine 2 [[1, 0], [0, 1]] [0, 1]
-# (fun i j => match i, j with ...)` and no arithmetic prover can touch it.
+# (Mat.mk fun i j => match i, j with ...)` and no arithmetic prover can
+# touch it.
 MAT_SIMP: tuple[str, ...] = (
-    "MatAdd_apply", "MatMul_apply", "MatZero_apply", "Pi.add_apply",
-    "mul_Mat_apply", "add_Mat_apply", "Bool.or_eq_true", "decide_eq_true_eq",
+    "MatAdd_apply", "MatMul_apply", "MatZero_apply",
+    "mul_Mat_apply", "add_Mat_apply", "↓Mat.mk_apply", "Bool.or_eq_true",
+    "decide_eq_true_eq",
     "Fin.sum_univ_succ", "Fin.sum_univ_zero", "Fin.isValue", "Fin.sum_univ_one",
     "Fin.sum_univ_two", "Fin.sum_univ_three", "matVecAffine", "dotL",
     "List.ofFn_succ", "List.ofFn_zero",

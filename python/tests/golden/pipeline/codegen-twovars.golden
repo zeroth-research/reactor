@@ -85,12 +85,12 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
   · intro s hs
-    unfold lts at hs; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs
+    unfold lts at hs; simp only [ReactiveModule.toTS, ReactiveModule.TS_init] at hs
     obtain ⟨l, hpre, hl⟩ := hs
     rw [← hl]
     exact init_inv l hpre
   · intro s s' ⟨hs, l, hstep⟩
-    unfold lts at hstep; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
+    unfold lts at hstep; simp only [ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
     rw [← hstep.2]
     exact step_inv s l ⟨hstep.1, hs⟩
 
@@ -125,18 +125,18 @@ set_option linter.unnecessarySeqFocus false
 
 
 @[simp] def init (extl_n: Unit) : (Mat Int 1 1) × (Mat Int 1 1) :=
-  let x0 : (Mat Int 1 1) := (fun _ _ => (0 : Int))
-  let x1 : (Mat Int 1 1) := (fun _ _ => (10 : Int))
+  let x0 : (Mat Int 1 1) := (Mat.mk fun _ _ => (0 : Int))
+  let x1 : (Mat Int 1 1) := (Mat.mk fun _ _ => (10 : Int))
   let x2 : (Mat Int 1 1) := x0
   let x3 : (Mat Int 1 1) := x1
   (x2, x3)
 
 @[simp] def update (ctrl: (Mat Int 1 1) × (Mat Int 1 1)) (extl_l: Unit) (extl_n: Unit) : (Mat Int 1 1) × (Mat Int 1 1) :=
-  let x0 : (Mat Bool 1 1) := (fun _ _ => decide (ctrl.1 0 0 < ctrl.2 0 0))
-  let x1 : (Mat Int 1 1) := (fun _ _ => (1 : Int))
+  let x0 : (Mat Bool 1 1) := (Mat.mk fun _ _ => decide (ctrl.1 0 0 < ctrl.2 0 0))
+  let x1 : (Mat Int 1 1) := (Mat.mk fun _ _ => (1 : Int))
   let x2 : (Mat Int 1 1) := (ctrl.1 + x1)
-  let x3 : (Mat Int 1 1) := (fun _ _ => (0 : Int))
-  let x4 : (Mat Int 1 1) := (fun _ _ => (10 : Int))
+  let x3 : (Mat Int 1 1) := (Mat.mk fun _ _ => (0 : Int))
+  let x4 : (Mat Int 1 1) := (Mat.mk fun _ _ => (10 : Int))
   let x5 : (Mat Int 1 1) := (if x0 0 0 then x2 else x3)
   let x6 : (Mat Int 1 1) := (if x0 0 0 then ctrl.2 else x4)
   let x7 : (Mat Int 1 1) := x5
@@ -190,12 +190,12 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
   · intro s hs
-    unfold lts at hs; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs
+    unfold lts at hs; simp only [ReactiveModule.toTS, ReactiveModule.TS_init] at hs
     obtain ⟨l, hpre, hl⟩ := hs
     rw [← hl]
     exact init_inv l hpre
   · intro s s' ⟨hs, l, hstep⟩
-    unfold lts at hstep; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
+    unfold lts at hstep; simp only [ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
     rw [← hstep.2]
     exact step_inv s l ⟨hstep.1, hs⟩
 

@@ -34,7 +34,7 @@ open Lean Elab Tactic
 @[simp] def cd_init (_ : Unit) : Mat Int 1 1 := fun _ _ => 100
 
 @[simp] def cd_update (ctrl : Mat Int 1 1) (_ _ : Unit) : Mat Int 1 1 :=
-  if decide (ctrl 0 0 = 0) then fun _ _ => 100 else fun _ _ => ctrl 0 0 - 1
+  if decide (ctrl 0 0 = 0) then Mat.mk fun _ _ => 100 else Mat.mk fun _ _ => ctrl 0 0 - 1
 
 def cd_inv    : Mat Int 1 1 → Prop := fun s => s 0 0 ≥ 0 ∧ s 0 0 ≤ 100
 def cd_P      : Mat Int 1 1 → Prop := fun s => s 0 0 = 0
@@ -67,9 +67,9 @@ theorem cd_hrank (s : Mat Int 1 1) (e : Unit × Unit) (hi : cd_inv s) (hP : ¬cd
 -- ──────────────────────────────────────────────────────────────────────────────
 
 @[simp] def col_update (ctrl : Mat Int 1 1) (_ _ : Unit) : Mat Int 1 1 :=
-  if ctrl 0 0 = 1 then fun _ _ => 7
-  else if ctrl 0 0 > 4 then fun _ _ => ctrl 0 0 - 3
-  else if ctrl 0 0 > 1 then fun _ _ => ctrl 0 0 - 1
+  if ctrl 0 0 = 1 then Mat.mk fun _ _ => 7
+  else if ctrl 0 0 > 4 then Mat.mk fun _ _ => ctrl 0 0 - 3
+  else if ctrl 0 0 > 1 then Mat.mk fun _ _ => ctrl 0 0 - 1
   else ctrl
 
 def col_inv  : Mat Int 1 1 → Prop := fun s => s 0 0 ≥ 1 ∧ s 0 0 ≤ 8
@@ -98,8 +98,8 @@ theorem col_hrank (s : Mat Int 1 1) (e : Unit × Unit) (hi : col_inv s) (hP : ¬
 @[simp] def tv_update (ctrl : Mat Int 1 1 × Mat Int 1 1) (_ _ : Unit) :
     Mat Int 1 1 × Mat Int 1 1 :=
   if ctrl.1 0 0 < ctrl.2 0 0
-  then (fun _ _ => ctrl.1 0 0 + 1, ctrl.2)
-  else (fun _ _ => 0, fun _ _ => 10)
+  then (Mat.mk fun _ _ => ctrl.1 0 0 + 1, ctrl.2)
+  else (Mat.mk fun _ _ => 0, Mat.mk fun _ _ => 10)
 
 def tv_inv  : Mat Int 1 1 × Mat Int 1 1 → Prop :=
   fun s => s.1 0 0 ≥ 0 ∧ s.1 0 0 ≤ s.2 0 0 ∧ s.2 0 0 = 10

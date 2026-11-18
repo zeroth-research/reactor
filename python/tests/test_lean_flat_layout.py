@@ -197,7 +197,7 @@ def test_pack_places_each_slot_at_its_own_row_and_column(wires):
         mat = mat_from_scalars(slots, wire_shape(w), flat_element_type(w))
         arms = re.findall(r"\| (\d+), (\d+) => s(\d+)", mat)
         placed = {(int(r), int(c)): int(k) for r, c, k in arms}
-        if placed:  # a 1x1 wire has no `match`, just `fun _ _ =>`
+        if placed:  # a 1x1 wire has no `match`, just `Mat.mk fun _ _ =>`
             for k, (r, c) in enumerate(flat_indices(w)):
                 assert placed[(r, c)] == k, f"wire at offset {offset}"
         else:
