@@ -40,11 +40,12 @@ check() {  # check MODULE FILES...: Yosys result and seconds into $TMP/MODULE.yo
   local m=$1; shift
   local start=$(date +%s) s ys
   timeout 14400 "$V2RM" --yosys -t:$QUERY_MS --top "$m" "$@" >"$TMP/$m.ys" 2>&1; s=$?
+  # v2rm's exit status: 0 every query equal, 1 a variable differs or z3 gave up, 2 an error
   if [ $s = 124 ]; then ys=TIMEOUT
   elif [ $s = 0 ]; then ys="Equal ($(grep -o '[0-9]* of [0-9]* queries' "$TMP/$m.ys"))"
-  elif grep -q '^differs:' "$TMP/$m.ys"; then
+  elif [ $s = 1 ] && grep -q '^differs:' "$TMP/$m.ys"; then
     ys="Differs $(grep '^differs:' "$TMP/$m.ys" | cut -d'`' -f2 | tr '\n' ' ')"
-  elif grep -q '^unknown:' "$TMP/$m.ys"; then
+  elif [ $s = 1 ] && grep -q '^unknown:' "$TMP/$m.ys"; then
     ys="Unknown $(grep '^unknown:' "$TMP/$m.ys" | cut -d'`' -f2 | tr '\n' ' ')"
   else ys="Error $(grep -v ': warning: ' "$TMP/$m.ys" | tail -1 | sed "s|$DIR/||; s|$HERE/||")"; fi
   printf '\t%s\t%d' "$ys" $(( $(date +%s) - start )) > "$TMP/$m.yosys"
