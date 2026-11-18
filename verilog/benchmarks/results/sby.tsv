@@ -3,7 +3,7 @@ abstract/abstr.sby	demo	0:0: Define not found: demo_counter_abstr_mode	-	preproc
 abstract/props.sby	demo	0:0: Define not found: demo_counter_abstr_mode	-	preprocessor: define / include missing
 autotune/divider.sby	divider	OK	Equal	
 demos/fib.sby	fib	OK	Equal	
-demos/picorv32_axicheck.sby	testbench	3129:11: syntax error [at `restrict`]	-	assertions / properties
+demos/picorv32_axicheck.sby	testbench	84:11: syntax error [at `restrict`]	-	assertions / properties
 dft/data_diode.sby	top	256:5: syntax error [at `$overwrite_tag`]	-	simulation constructs (delays, system tasks)
 fifo/fifo.sby	fifo	37:21: expected a constant integer, got `MAX_DATA-1`: `MAXDATA` is not a parameter	-	other error
 fifo/golden/fifo.sby	fifo	30:13: expected a constant integer, got `ADDR_BITS`: `ADDRBITS` is not a parameter	-	other error
