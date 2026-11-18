@@ -197,6 +197,27 @@ fn parse_errors() {
         "{}",
         err(&two)
     );
+    // malformed comments: no width, a width that is no number
+    for line in ["; yosys-smt2-wire y\n", "; yosys-smt2-output y eight\n"] {
+        let text = format!("{SAMPLE}{line}");
+        assert_eq!(
+            err(&text),
+            format!("malformed Yosys comment: {}", line.trim_end())
+        );
+    }
+    // the initial-state predicate missing, cut short, or with a line
+    // that is no assertion of a sample's value
+    let no_init = SAMPLE.replace("(define-fun |top_i|", "(define-fun |top_j|");
+    assert_eq!(err(&no_init), "no `top_i` in the Yosys output");
+    let cut = &SAMPLE[..SAMPLE.find("\n))\n").unwrap() + 1];
+    let cut = format!("; yosys-smt2-topmod top\n{cut}");
+    assert_eq!(err(&cut), "`top_i` does not end in the Yosys output");
+    let odd = SAMPLE.replace(" ; $auto$clk2fflogic.cc:101:sample_data$/u.q#sampled$7", "");
+    assert!(
+        err(&odd).starts_with("unexpected Yosys line: "),
+        "{}",
+        err(&odd)
+    );
     let widths = format!("{SAMPLE}; yosys-smt2-wire y 4\n");
     assert!(
         err(&widths).contains("`y` with widths 8 and 4"),
