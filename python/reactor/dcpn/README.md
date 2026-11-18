@@ -209,7 +209,7 @@ transitions populate the net. Thus,
 - Initialize all slots at `⊥`, with zeroed or arbitrary colour blocks (will be overwritten by transition outputs).
 - `update`/`flow` dispatch by the token's resident place; inactive places have stuttering / zero flow behavior.
 - Transition events remove or produce tokens. Since the token modules have to await these events, transitions
-  take precedence over a resident update in that round.
+  take precedence over a resident place update in that round.
 
 ### Transitions
 
