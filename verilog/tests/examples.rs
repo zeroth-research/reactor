@@ -13,7 +13,11 @@
 //! there (see `simulator_differs`).
 //!
 //! `UPDATE_GOLDEN=1 cargo test -p verilog --test examples` rewrites the
-//! golden files in `tests/golden/`.
+//! golden files in `tests/golden/`. The comparisons with z3 and iverilog
+//! are skipped with a message if the tool is not found, and fail instead
+//! with `V2RM_REQUIRE_TOOLS=1` (see `common::missing`).
+
+mod common;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -188,7 +192,7 @@ fn sized_source() {
         assert_eq!(original, sized, "{}", path.display());
     }
     if bin.is_none() {
-        eprintln!("iverilog not found: sized sources not simulated");
+        common::missing("iverilog", "the simulation of the sized sources");
     }
 }
 
@@ -451,7 +455,7 @@ fn rm_matches_ast() {
 #[test]
 fn smt_matches_rm() {
     let Some(bin) = z3::find() else {
-        eprintln!("z3 not found: skipped");
+        common::missing("z3", "the whole test");
         return;
     };
     let mut rand = Rand(0x5851_f42d_4c95_7f2d);
@@ -700,19 +704,167 @@ fn hex_line(inst: &Inst, values: &Values) -> String {
         .join(" ")
 }
 
-/// Whether iverilog's output line `got` agrees with the expected `line`.
-/// With `x` (a design with reads that may select bits outside a signal),
-/// a hex digit that iverilog prints as x (wholly or partly unknown) agrees
-/// with any digit: iverilog gives such bits x, where we read 0.
-fn agrees(got: &str, line: &str, x: bool) -> bool {
-    if !x {
-        return got == line;
-    }
+/// Whether iverilog's output line `got` agrees with the expected `line`
+/// (both as [`hex_line`] prints them). In a signal whose entry of `x` is
+/// set (see [`may_be_x`]), a hex digit that iverilog prints as x (wholly
+/// or partly unknown) agrees with any digit: iverilog gives x to bits read
+/// outside a signal, where we read 0. Other signals must agree exactly.
+fn agrees(got: &str, line: &str, x: &[bool]) -> bool {
+    let got: Vec<&str> = got.split(' ').collect();
+    let line: Vec<&str> = line.split(' ').collect();
     got.len() == line.len()
-        && got
-            .chars()
-            .zip(line.chars())
-            .all(|(g, e)| g == e || matches!(g, 'x' | 'X'))
+        && got.iter().zip(&line).zip(x).all(|((g, e), &x)| {
+            g == e
+                || x && g.len() == e.len()
+                    && g.chars()
+                        .zip(e.chars())
+                        .all(|(g, e)| g == e || matches!(g, 'x' | 'X'))
+        })
+}
+
+/// For each signal of [`shown`], whether iverilog may give it x bits where
+/// we compute values: whether it depends, through any item (registers
+/// included, which keep an x once they latch it), on a read that may select
+/// bits outside a signal (the reads of `t.out_of_range`). Each such read is
+/// found by its position, in the instance its warning names. Dependence is
+/// syntactic, per assignment: its targets depend on the reads of its
+/// right-hand side, of the indices of its target and of the conditions and
+/// `case` selectors around it.
+fn may_be_x(inst: &Inst, t: &Translation) -> Vec<bool> {
+    use verilog::ast::{Span, Stmt, StmtKind};
+    let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
+    // the out-of-range reads: instance prefix and position
+    let mut unseen: BTreeSet<(String, Span)> = t
+        .out_of_range
+        .iter()
+        .map(|w| {
+            let prefix = match w.msg.rsplit_once(" (in instance `") {
+                Some((_, p)) => format!("{}.", p.trim_end_matches("`)")),
+                None => String::new(),
+            };
+            (prefix, w.span)
+        })
+        .collect();
+    let oor = unseen.clone();
+    // the assignments of a block: targets and reads (with positions)
+    type Dep<'a> = (Vec<&'a String>, Vec<(&'a String, Span)>);
+    fn deps<'a>(s: &'a Stmt, around: &mut Vec<(&'a String, Span)>, out: &mut Vec<Dep<'a>>) {
+        match &s.kind {
+            StmtKind::Block(ss) => ss.iter().for_each(|s| deps(s, around, out)),
+            StmtKind::If(c, a, b) => {
+                let n = around.len();
+                c.reads(around);
+                deps(a, around, out);
+                deps(b, around, out);
+                around.truncate(n);
+            }
+            StmtKind::Case {
+                sel,
+                items,
+                default,
+                ..
+            } => {
+                let n = around.len();
+                sel.reads(around);
+                for i in items {
+                    i.labels.iter().for_each(|l| l.reads(around));
+                }
+                for i in items {
+                    deps(&i.body, around, out);
+                }
+                if let Some(d) = default {
+                    deps(d, around, out);
+                }
+                around.truncate(n);
+            }
+            StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
+                let mut targets = Vec::new();
+                lhs.targets(&mut targets);
+                let mut reads = around.clone();
+                rhs.reads(&mut reads);
+                lhs.reads(&mut reads);
+                out.push((targets, reads));
+            }
+            StmtKind::Unknown { .. } => {}
+        }
+    }
+    // every assignment, by name; the targets of the ones with an
+    // out-of-range read
+    let mut edges: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    let mut x: BTreeSet<String> = BTreeSet::new();
+    let mut walk = vec![(inst, String::new())];
+    while let Some((i, prefix)) = walk.pop() {
+        let canon = |n: &str| naming[&format!("{prefix}{n}")].clone();
+        for item in &i.module.items {
+            let mut assignments: Vec<Dep> = Vec::new();
+            match item {
+                Item::Instance(u) => {
+                    for (c, _) in u.conns(Dir::Input).filter(|(_, f)| !f.blackbox) {
+                        let Some(e) = &c.actual else { continue };
+                        let mut reads = Vec::new();
+                        e.reads(&mut reads);
+                        let port = format!("{}.{}", u.name, c.port);
+                        let hit = reads
+                            .iter()
+                            .any(|(_, s)| oor.contains(&(prefix.clone(), *s)));
+                        if hit {
+                            x.insert(canon(&port));
+                        }
+                        let read = reads.iter().map(|(n, _)| canon(n)).collect();
+                        edges.push((vec![canon(&port)], read));
+                        for (_, s) in reads {
+                            unseen.remove(&(prefix.clone(), s));
+                        }
+                    }
+                    continue;
+                }
+                Item::Assign { lhs, rhs, .. } => {
+                    let mut targets = Vec::new();
+                    lhs.targets(&mut targets);
+                    let mut reads = Vec::new();
+                    rhs.reads(&mut reads);
+                    lhs.reads(&mut reads);
+                    assignments.push((targets, reads));
+                }
+                Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => {
+                    deps(body, &mut Vec::new(), &mut assignments)
+                }
+            }
+            for (targets, reads) in assignments {
+                let targets: Vec<String> = targets.into_iter().map(|q| canon(q)).collect();
+                if reads
+                    .iter()
+                    .any(|(_, s)| oor.contains(&(prefix.clone(), *s)))
+                {
+                    x.extend(targets.iter().cloned());
+                }
+                for (_, s) in &reads {
+                    unseen.remove(&(prefix.clone(), *s));
+                }
+                let read = reads.iter().map(|(n, _)| canon(n)).collect();
+                edges.push((targets, read));
+            }
+        }
+        for (u, child) in &i.children {
+            walk.push((child, format!("{prefix}{u}.")));
+        }
+    }
+    assert!(
+        unseen.is_empty(),
+        "out-of-range reads in no item: {unseen:?}"
+    );
+    loop {
+        let before = x.len();
+        for (targets, read) in &edges {
+            if read.iter().any(|r| x.contains(r)) {
+                x.extend(targets.iter().cloned());
+            }
+        }
+        if x.len() == before {
+            break;
+        }
+    }
+    shown(inst).iter().map(|s| x.contains(s)).collect()
 }
 
 /// Compiles and runs a testbench for the design at `path`, and returns
@@ -754,7 +906,7 @@ fn run_iverilog(bin: &Path, path: &Path, name: &str, tb: &str) -> Vec<String> {
 #[test]
 fn ast_matches_iverilog() {
     let Some(bin) = iverilog_bin() else {
-        eprintln!("iverilog not found: skipped");
+        common::missing("iverilog", "the whole test");
         return;
     };
     let mut rand = Rand(0x9e37_79b9_7f4a_7c15);
@@ -777,10 +929,10 @@ fn ast_matches_iverilog() {
         let tb = testbench(&inst, &t, &init, &rounds);
         let got = run_iverilog(&bin, &path, &m.name, &tb);
         assert_eq!(got.len(), expected.len(), "{}: {got:?}", path.display());
-        let x = !t.out_of_range.is_empty();
+        let x = may_be_x(&inst, &t);
         for (k, (g, e)) in got.iter().zip(&expected).enumerate() {
             assert!(
-                agrees(g, e, x),
+                agrees(g, e, &x),
                 "{}: round {k} = {:?}\n{g}\n{e}",
                 path.display(),
                 rounds[k]
@@ -797,7 +949,7 @@ fn ast_matches_iverilog() {
 #[test]
 fn rounds_match_cycles() {
     let Some(bin) = iverilog_bin() else {
-        eprintln!("iverilog not found: skipped");
+        common::missing("iverilog", "the whole test");
         return;
     };
     let mut rand = Rand(0x1405_7b7e_f767_814f);
@@ -827,10 +979,10 @@ fn rounds_match_cycles() {
             .collect();
         let tb = cycle_testbench(&inst, &t, &init, &vectors);
         let got = run_iverilog(&bin, &path, &format!("{}_cycles", m.name), &tb);
-        let x = !t.out_of_range.is_empty();
+        let x = may_be_x(&inst, &t);
         assert_eq!(got.len(), expected.len(), "{}", path.display());
         for (g, e) in got.iter().zip(&expected) {
-            assert!(agrees(g, e, x), "{}\n{g}\n{e}", path.display());
+            assert!(agrees(g, e, &x), "{}\n{g}\n{e}", path.display());
         }
         compared += 1;
     }
