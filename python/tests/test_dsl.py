@@ -1,14 +1,14 @@
 """Tests for `sugar.Module` — the subclass-a-Module DSL front-end.
 
-A `sugar.Module` subclass *is* a base Module: pass `theory` and the `ctrl`(/`extl`) wire
-pairs and override `init`/`update`, and the sequential module is built in the constructor.
+A `sugar.Module` subclass *is* a base Module: pass the `ctrl`(/`extl`) variables and
+override `init`/`update`, and the sequential module is built in the constructor.
 These tests build small modules and step them through `reactor.eval` (mirroring test_eval),
 plus check the ctrl/extl partition and the config surface.
 """
 
 import pytest
 
-from reactor import LIA, Module, Sort, Wire, sugar, Int, Var, Real, LRA, X as _X, d as _d, NonLinearError
+from reactor import Module, Wire, sugar, Int, Var, Real, X as _X, d as _d
 from reactor.sugar import ite, d, X
 from reactor.eval import eval_itype
 
@@ -67,14 +67,14 @@ class Counter(sugar.Module):
 
 
 def test_counter_is_a_closed_base_module():
-    m = Counter(theory=LIA, ctrl=(_pair(),))
+    m = Counter(ctrl=(_pair(),))
     assert isinstance(m, Module)
     assert m.closed()
 
 
 def test_counter_counts():
     x = _pair()
-    m = Counter(theory=LIA, ctrl=(x,))
+    m = Counter(ctrl=(x,))
     print(m)
     # (_x_lat, x_nxt) = x
     assert _trace(m, 5, _X(x)) == [0, 1, 2, 3, 4, 5]
@@ -93,7 +93,7 @@ class Bounded(sugar.Module):
 
 def test_multivar_ite_and_hold():
     cap, x = _pair(), _pair()
-    m = Bounded(theory=LIA, ctrl=(x, cap))
+    m = Bounded(ctrl=(x, cap))
     assert m.closed()
     assert _trace(m, 5, _X(x)) == [0, 1, 2, 3, 3, 3]
     assert _trace(m, 5, _X(cap)) == [3, 3, 3, 3, 3, 3]
@@ -112,7 +112,7 @@ class Gate(sugar.Module):
 
 def test_extl_is_external_and_module_is_open():
     x, y = _pair(), _pair()  # x controlled, y external
-    m = Gate(theory=LIA, ctrl=(x,), extl=(y,))
+    m = Gate(ctrl=(x,), extl=(y,))
     assert m.open()
     assert len(list(m.ctrl)) == 1
     assert len(list(m.extl)) == 1
@@ -129,7 +129,7 @@ def test_builds_from_wire_pairs_passed_directly():
         def update(self, ctrl):
             return ctrl + 1
 
-    m = C(theory=LIA, ctrl=(_pair(),))
+    m = C(ctrl=(_pair(),))
     assert m.closed()
 
 
@@ -138,8 +138,8 @@ def test_missing_config_raises():
         def update(self, ctrl):
             return ctrl
 
-    with pytest.raises(TypeError):
-        Bad()  # no theory / ctrl
+    with pytest.raises(ValueError, match="update expects"):
+        Bad()  # no ctrl
 
 
 def test_missing_init_raises():
@@ -151,7 +151,7 @@ def test_missing_init_raises():
     # not true anymore - this is a jump module
     # with pytest.raises(TypeError):
 
-    m = NoInit(theory=LIA, ctrl=(_pair(),))
+    m = NoInit(ctrl=(_pair(),))
     assert m.closed()
 
 
@@ -166,7 +166,7 @@ def test_subexpression_shared_across_returns():
             loop = x < y
             return ite(loop, x + 1, x), ite(loop, y, y - 1)
 
-    m = Shared(theory=LIA, ctrl=(_pair(), _pair()))
+    m = Shared(ctrl=(_pair(), _pair()))
     assert m.closed()
 
 
@@ -183,7 +183,7 @@ def test_simple_clock():
 
     x = Var(Real1)
     t = Var(Real1)
-    m = Simple(ctrl=(x,), extl=(t,), theory=LRA)
+    m = Simple(ctrl=(x,), extl=(t,))
 
 
 def test_differential_sugar_module():
@@ -199,7 +199,7 @@ def test_differential_sugar_module():
 
     x = Var(Real1)
     t = Var(Real1)
-    m = Drift(ctrl=(x,), extl=(t,), theory=LRA)
+    m = Drift(ctrl=(x,), extl=(t,))
 
     assert isinstance(m, Module)
     assert m.open()  # t is inferred external
@@ -229,7 +229,7 @@ def test_hybrid_sugar_module():
 
     x = Var(Real1)
     t = Var(Real1)
-    m = Clock(ctrl=(x,), extl=(t,), theory=LRA)
+    m = Clock(ctrl=(x,), extl=(t,))
 
     assert isinstance(m, Module)
     assert m.open()
@@ -245,23 +245,6 @@ def test_hybrid_sugar_module():
     assert _X(t) in a.update.read()
 
 
-def test_invalid_nonlinear():
-    class Simple(sugar.Module):
-        def init(self, t):
-            return 0
-
-        def update(self, x, t):
-            return ite(X(t) == 1, 0, x)
-
-        def delay(self, x, t):
-            return x * d(t)
-
-    x = Var(Real1)
-    t = Var(Real1)
-    with pytest.raises(NonLinearError):
-        Simple(ctrl=(x,), extl=(t,), theory=LRA)
-
-
 def test_useless_module():
     class Useless(sugar.Module):
         def init(self, i):
@@ -271,7 +254,7 @@ def test_useless_module():
             return ()
 
     i = Var(Real1)
-    m = Useless(ctrl=(), extl=(i,), theory=LRA)
+    m = Useless(ctrl=(), extl=(i,))
     assert m.closed()  # unused externals and no control -> closed module
     assert len(m.extl) + len(m.intf) + len(m.prvt) == 0
 
@@ -284,7 +267,7 @@ def test_private():
     i = Var(Real1)
     o = Var(Real1)
     x = Var(Real1)
-    m = DigitalDelay(ctrl=(x, o), extl=(i,), hide=frozenset([x]), theory=LRA)
+    m = DigitalDelay(ctrl=(x, o), extl=(i,), hide=frozenset([x]))
 
     assert i in m.extl
     assert o in m.intf
@@ -310,8 +293,8 @@ def test_compose_hiding_coupled_variables():
 
     # m1 controls x and y, reading the shared input w; m2 reads y and w
     # and controls z: y couples the two, w is external on both sides
-    m1 = Producer(theory=LIA, ctrl=(x, y), extl=(w,))
-    m2 = Consumer(theory=LIA, ctrl=(z,), extl=(y, w))
+    m1 = Producer(ctrl=(x, y), extl=(w,))
+    m2 = Consumer(ctrl=(z,), extl=(y, w))
 
     assert y in m1.intf and y in m2.extl
     assert w in m1.extl and w in m2.extl

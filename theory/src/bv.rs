@@ -18,7 +18,6 @@ in [`BV`] are:
 */
 
 use crate::*;
-#[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 
 use crate::bv::BV::{Havoc, Id};
@@ -55,7 +54,7 @@ impl fmt::Display for Sort {
 
 /// Theory of bitvector matrices. Operations on bitvectors follow the SMT-LIB2 semantics.
 #[derive(Clone, Debug, strum::Display)]
-#[cfg_attr(feature = "pyo3", pyclass(frozen))]
+#[pyclass(frozen)]
 pub enum BV {
     /// Create constant BV matrix from a given 2-D tensor
     #[strum(to_string = "{0}")]

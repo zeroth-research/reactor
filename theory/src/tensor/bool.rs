@@ -9,6 +9,8 @@ information to compute its [`Boundary`]:
 - [`And`], [`Or`], [`Xor`] — pointwise conjunction, disjunction and
   exclusive disjunction.
 - [`Not`] — pointwise negation.
+- [`Eq`](struct@Eq), [`Ne`] — pointwise equality and disequality.
+- [`Ite`] — the pointwise choice `if c then x else y`, by a boolean matrix `c`.
 */
 
 use super::sort::Bool;
@@ -16,6 +18,7 @@ use crate::Tensor;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
+use pyo3::prelude::*;
 use std::fmt;
 
 /// A constant boolean matrix literal, held in a tensor of type `T`.
@@ -24,23 +27,47 @@ pub struct Const<T>(pub T);
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct And(pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct And(pub [usize; 2]);
 
 /// Pointwise disjunction `x ∨ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Or(pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Or(pub [usize; 2]);
 
 /// Pointwise exclusive disjunction `x ⊕ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Xor(pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Xor(pub [usize; 2]);
 
 /// Pointwise negation `¬x` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Not(pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Not(pub [usize; 2]);
+
+/// Pointwise equality `x = y` of `[m, n]` matrices: the negation of their
+/// exclusive disjunction.
+///
+/// SMT-LIB2: `(= x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Eq(pub [usize; 2]);
+
+/// Pointwise disequality `x ≠ y` of `[m, n]` matrices: their exclusive
+/// disjunction.
+///
+/// SMT-LIB2: `(distinct x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Ne(pub [usize; 2]);
+
+/// Pointwise choice `if c then x else y` between `[m, n]` boolean matrices
+/// `x` and `y`, by the boolean matrix `c`, read first.
+///
+/// SMT-LIB2: `(ite c x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Ite(pub [usize; 2]);
 
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
@@ -51,6 +78,9 @@ pub enum Prop<T> {
     Or(Or),
     Xor(Xor),
     Not(Not),
+    Eq(Eq),
+    Ne(Ne),
+    Ite(Ite),
 }
 
 impl<T> Clone for Prop<T>
@@ -64,6 +94,9 @@ where
             Prop::Or(op) => Prop::Or(*op),
             Prop::Xor(op) => Prop::Xor(*op),
             Prop::Not(op) => Prop::Not(*op),
+            Prop::Eq(op) => Prop::Eq(*op),
+            Prop::Ne(op) => Prop::Ne(*op),
+            Prop::Ite(op) => Prop::Ite(*op),
         }
     }
 }
@@ -76,6 +109,9 @@ impl<T: fmt::Display> fmt::Display for Prop<T> {
             Prop::Or(op) => op.fmt(f),
             Prop::Xor(op) => op.fmt(f),
             Prop::Not(op) => op.fmt(f),
+            Prop::Eq(op) => op.fmt(f),
+            Prop::Ne(op) => op.fmt(f),
+            Prop::Ite(op) => op.fmt(f),
         }
     }
 }
@@ -88,6 +124,9 @@ impl<T: Tensor> Boundary<Bool> for Prop<T> {
             Prop::Or(op) => op.dom(),
             Prop::Xor(op) => op.dom(),
             Prop::Not(op) => op.dom(),
+            Prop::Eq(op) => op.dom(),
+            Prop::Ne(op) => op.dom(),
+            Prop::Ite(op) => op.dom(),
         }
     }
 
@@ -98,6 +137,9 @@ impl<T: Tensor> Boundary<Bool> for Prop<T> {
             Prop::Or(op) => op.cod(),
             Prop::Xor(op) => op.cod(),
             Prop::Not(op) => op.cod(),
+            Prop::Eq(op) => op.cod(),
+            Prop::Ne(op) => op.cod(),
+            Prop::Ite(op) => op.cod(),
         }
     }
 }
@@ -114,41 +156,61 @@ impl<T: Tensor> Boundary<Bool> for Const<T> {
 
 impl Boundary<Bool> for And {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new([self.0, self.1]); 2].into()
+        mono![Bool::new(self.0); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new([self.0, self.1])].into()
+        mono![Bool::new(self.0)].into()
     }
 }
 
 impl Boundary<Bool> for Or {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new([self.0, self.1]); 2].into()
+        mono![Bool::new(self.0); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new([self.0, self.1])].into()
+        mono![Bool::new(self.0)].into()
     }
 }
 
 impl Boundary<Bool> for Xor {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new([self.0, self.1]); 2].into()
+        mono![Bool::new(self.0); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new([self.0, self.1])].into()
+        mono![Bool::new(self.0)].into()
     }
 }
 
 impl Boundary<Bool> for Not {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new([self.0, self.1])].into()
+        mono![Bool::new(self.0)].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new([self.0, self.1])].into()
+        mono![Bool::new(self.0)].into()
+    }
+}
+
+impl Boundary<Bool> for Eq {
+    fn dom(&self) -> Poly<Bool> {
+        mono![Bool::new(self.0); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Bool> {
+        mono![Bool::new(self.0)].into()
+    }
+}
+
+impl Boundary<Bool> for Ne {
+    fn dom(&self) -> Poly<Bool> {
+        mono![Bool::new(self.0); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Bool> {
+        mono![Bool::new(self.0)].into()
     }
 }
 
@@ -182,11 +244,38 @@ impl fmt::Display for Not {
     }
 }
 
+impl fmt::Display for Eq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Eq")
+    }
+}
+
+impl fmt::Display for Ne {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ne")
+    }
+}
+
+impl Boundary<Bool> for Ite {
+    fn dom(&self) -> Poly<Bool> {
+        mono![Bool::new(self.0); 3].into()
+    }
+
+    fn cod(&self) -> Poly<Bool> {
+        mono![Bool::new(self.0)].into()
+    }
+}
+
+impl fmt::Display for Ite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ite")
+    }
+}
+
 /// Extracts an operation of propositional logic from a Python object,
 /// trying each operation in turn: those carrying no data through their own
 /// classes, and [`Const`] through the extraction that the tensor type `T`
 /// provides.
-#[cfg(feature = "pyo3")]
 impl<'py, T> pyo3::FromPyObject<'py> for Prop<T>
 where
     Const<T>: pyo3::FromPyObject<'py>,
@@ -206,6 +295,15 @@ where
         if let Ok(op) = ob.extract::<Not>() {
             return Ok(Prop::Not(op));
         }
+        if let Ok(op) = ob.extract::<Eq>() {
+            return Ok(Prop::Eq(op));
+        }
+        if let Ok(op) = ob.extract::<Ne>() {
+            return Ok(Prop::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<Ite>() {
+            return Ok(Prop::Ite(op));
+        }
         if let Ok(op) = ob.extract::<Const<T>>() {
             return Ok(Prop::Const(op));
         }
@@ -216,47 +314,138 @@ where
     }
 }
 
-/// The Python constructors of the operations carrying no tensor: each takes
-/// the sizes of the operation, positionally, in the order of its fields.
-#[cfg(feature = "pyo3")]
-mod py {
-    use super::*;
-    use pyo3::prelude::*;
-
-    #[pymethods]
-    impl And {
-        #[new]
-        #[pyo3(signature = (m, n, /))]
-        fn new(m: usize, n: usize) -> Self {
-            And(m, n)
-        }
+// The Python constructors of the operations carrying no tensor: each takes
+// its sizes positionally, in the order of its fields, the shape as a list.
+#[pymethods]
+impl And {
+    #[new]
+    #[pyo3(signature = (shape, /))]
+    fn new(shape: [usize; 2]) -> Self {
+        And(shape)
     }
 
-    #[pymethods]
-    impl Or {
-        #[new]
-        #[pyo3(signature = (m, n, /))]
-        fn new(m: usize, n: usize) -> Self {
-            Or(m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
     }
 
-    #[pymethods]
-    impl Xor {
-        #[new]
-        #[pyo3(signature = (m, n, /))]
-        fn new(m: usize, n: usize) -> Self {
-            Xor(m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.0
+    }
+}
+
+#[pymethods]
+impl Or {
+    #[new]
+    #[pyo3(signature = (shape, /))]
+    fn new(shape: [usize; 2]) -> Self {
+        Or(shape)
     }
 
-    #[pymethods]
-    impl Not {
-        #[new]
-        #[pyo3(signature = (m, n, /))]
-        fn new(m: usize, n: usize) -> Self {
-            Not(m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.0
+    }
+}
+
+#[pymethods]
+impl Xor {
+    #[new]
+    #[pyo3(signature = (shape, /))]
+    fn new(shape: [usize; 2]) -> Self {
+        Xor(shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.0
+    }
+}
+
+#[pymethods]
+impl Not {
+    #[new]
+    #[pyo3(signature = (shape, /))]
+    fn new(shape: [usize; 2]) -> Self {
+        Not(shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.0
+    }
+}
+
+#[pymethods]
+impl Eq {
+    #[new]
+    #[pyo3(signature = (shape, /))]
+    fn new(shape: [usize; 2]) -> Self {
+        Eq(shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.0
+    }
+}
+
+#[pymethods]
+impl Ne {
+    #[new]
+    #[pyo3(signature = (shape, /))]
+    fn new(shape: [usize; 2]) -> Self {
+        Ne(shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.0
+    }
+}
+
+#[pymethods]
+impl Ite {
+    #[new]
+    #[pyo3(signature = (shape, /))]
+    fn new(shape: [usize; 2]) -> Self {
+        Ite(shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.0
     }
 }
 
@@ -275,17 +464,23 @@ mod tests {
     #[test]
     fn pointwise_boundaries() {
         let b = Bool::new([2, 3]);
-        assert_eq!(And(2, 3).dom(), two(b));
-        assert_eq!(And(2, 3).cod(), one(b));
-        assert_eq!(Or(2, 3).dom(), two(b));
-        assert_eq!(Xor(2, 3).cod(), one(b));
-        assert_eq!(Not(2, 3).dom(), one(b));
-        assert_eq!(Not(2, 3).cod(), one(b));
+        assert_eq!(And([2, 3]).dom(), two(b));
+        assert_eq!(And([2, 3]).cod(), one(b));
+        assert_eq!(Or([2, 3]).dom(), two(b));
+        assert_eq!(Xor([2, 3]).cod(), one(b));
+        assert_eq!(Not([2, 3]).dom(), one(b));
+        assert_eq!(Not([2, 3]).cod(), one(b));
+        assert_eq!(Eq([2, 3]).dom(), two(b));
+        assert_eq!(Eq([2, 3]).cod(), one(b));
+        assert_eq!(Ne([2, 3]).dom(), two(b));
+        assert_eq!(Ne([2, 3]).cod(), one(b));
     }
 
     #[test]
     fn ops_display_their_name() {
-        assert_eq!(And(1, 1).to_string(), "And");
-        assert_eq!(Not(1, 1).to_string(), "Not");
+        assert_eq!(And([1, 1]).to_string(), "And");
+        assert_eq!(Not([1, 1]).to_string(), "Not");
+        assert_eq!(Eq([1, 1]).to_string(), "Eq");
+        assert_eq!(Ne([1, 1]).to_string(), "Ne");
     }
 }

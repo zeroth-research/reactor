@@ -3,13 +3,12 @@ use crate::lia::LIA;
 use crate::lra::LRA;
 use crate::{bv, lia, lra};
 use derive_more::From;
-#[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
 use subenum::subenum;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "pyo3", pyclass(frozen, eq, str))]
+#[pyclass(frozen, eq, str)]
 pub enum Sort {
     Bool([usize; 2]),
     Real([usize; 2]),
@@ -122,11 +121,7 @@ impl TryFrom<Sort> for lra::Sort {
 // (via the propagated derives) the `From` wraps of base-theory ops and the
 // `Display` impls.
 
-#[subenum(
-    Combinatorial(cfg_attr(feature = "pyo3", pyclass)),
-    Differential(cfg_attr(feature = "pyo3", pyclass)),
-    Sequential(cfg_attr(feature = "pyo3", pyclass))
-)]
+#[subenum(Combinatorial(pyclass), Differential(pyclass), Sequential(pyclass))]
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, From, strum::Display)]
 pub enum Any {
@@ -150,7 +145,6 @@ pub enum Any {
     BV(BV),
 }
 
-#[cfg(feature = "pyo3")]
 impl<'py> FromPyObject<'py> for Any {
     fn extract_bound(obj: &Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(a) = obj.extract::<LRA>() {
@@ -168,7 +162,6 @@ impl<'py> FromPyObject<'py> for Any {
     }
 }
 
-#[cfg(feature = "pyo3")]
 impl<'py> IntoPyObject<'py> for Any {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;

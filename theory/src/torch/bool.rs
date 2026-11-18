@@ -16,9 +16,9 @@ unsafe impl Sync for Const {}
 impl Const {
     /// Fails when `tensor` is not a `torch.Tensor` of boolean elements.
     #[new]
-    fn new(tensor: PyTensor) -> PyResult<Self> {
+    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
         if tensor.kind() != tch::Kind::Bool {
-            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            return Err(crate::Error(format!(
                 "expected a tensor of boolean elements, got {:?}",
                 tensor.kind()
             )));
@@ -29,6 +29,11 @@ impl Const {
     #[getter]
     fn tensor(&self) -> PyTensor {
         PyTensor(self.0.shallow_clone())
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("tensor",)
     }
 }
 
@@ -65,6 +70,9 @@ impl<'py> IntoPyObject<'py> for crate::tensor::bool::Prop<tch::Tensor> {
             Prop::Or(op) => op.into_pyobject(py).map(Bound::into_any),
             Prop::Xor(op) => op.into_pyobject(py).map(Bound::into_any),
             Prop::Not(op) => op.into_pyobject(py).map(Bound::into_any),
+            Prop::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
+            Prop::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
+            Prop::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }
 }

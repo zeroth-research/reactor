@@ -251,6 +251,7 @@ mod torch {
 /// that would be used if torch is not available or desired.
 #[cfg(not(feature = "torch"))]
 mod stub {
+    use pyo3::prelude::*;
     use std::fmt::{self, Display};
 
     #[derive(Clone, Debug)]
@@ -275,31 +276,26 @@ mod stub {
         }
     }
 
-    // With `pyo3` (but not `torch`) the op enums still derive `#[pyclass]`, whose
+    // Without `torch` the op enums still derive `#[pyclass]`, whose
     // getters/constructors require these conversions to exist. They are never
     // called — that path only runs from Python, which needs `torch`.
-    #[cfg(feature = "pyo3")]
-    mod py {
-        use super::PyTensor;
-        use pyo3::prelude::*;
 
-        // The conversions panic with this message if an attempt to use them is made
-        const MSG: &str = "PyTensor operations require the `torch` feature";
+    // The conversions panic with this message if an attempt to use them is made
+    const MSG: &str = "PyTensor operations require the `torch` feature";
 
-        impl<'py> IntoPyObject<'py> for PyTensor {
-            type Target = PyAny;
-            type Output = Bound<'py, PyAny>;
-            type Error = PyErr;
+    impl<'py> IntoPyObject<'py> for PyTensor {
+        type Target = PyAny;
+        type Output = Bound<'py, PyAny>;
+        type Error = PyErr;
 
-            fn into_pyobject(self, _py: Python<'py>) -> Result<Self::Output, Self::Error> {
-                unreachable!("{MSG}")
-            }
+        fn into_pyobject(self, _py: Python<'py>) -> Result<Self::Output, Self::Error> {
+            unreachable!("{MSG}")
         }
+    }
 
-        impl<'source> FromPyObject<'source> for PyTensor {
-            fn extract_bound(_ob: &Bound<'source, PyAny>) -> PyResult<Self> {
-                unreachable!("{MSG}")
-            }
+    impl<'source> FromPyObject<'source> for PyTensor {
+        fn extract_bound(_ob: &Bound<'source, PyAny>) -> PyResult<Self> {
+            unreachable!("{MSG}")
         }
     }
 }

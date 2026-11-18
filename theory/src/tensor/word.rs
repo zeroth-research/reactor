@@ -1,7 +1,7 @@
 /*!
 # Fixed-size bit-vectors
 
-Defines the sort [`Word`] of matrices of `w`-bit machine words, the local
+Defines the sort [`Word`] of matrices of `width`-bit machine words, the local
 sort [`Sort`] of the theory, holding words and the booleans that
 comparisons write, and one type per operation on them. Each operation is
 an operation of the SMT-LIB2 logic QF_BV, lifted pointwise to matrices:
@@ -10,15 +10,15 @@ same semantics, and its documentation gives the SMT-LIB2 term it
 computes on one entry.
 
 Every operation carries enough information to compute its [`Boundary`]:
-pointwise operations carry the width `w` and the shape `[m, n]` of their
-arguments, as `Op(w, m, n)`, and indexed operations put their indices
+pointwise operations carry the `width` and the shape `[m, n]` of their
+arguments, as `Op(width, m, n)`, and indexed operations put their indices
 first, as SMT-LIB2 does with `(_ op i)`. The operations whose meaning
 depends on signedness are in the submodules [`signed`], reading words in
 two's complement, and [`unsigned`], reading them in binary.
 
 | Operation | SMT-LIB2 | | Operation | SMT-LIB2 |
 |---|---|---|---|---|
-| [`Const`] | `#b…`, `(_ bvN w)` | | [`signed::Div`] | `bvsdiv` |
+| [`Const`] | `#b…`, `(_ bvN width)` | | [`signed::Div`] | `bvsdiv` |
 | [`Concat`] | `concat` | | [`signed::Rem`] | `bvsrem` |
 | [`Extract`] | `(_ extract i j)` | | [`signed::Mod`] | `bvsmod` |
 | [`Repeat`] | `(_ repeat i)` | | [`signed::Shr`] | `bvashr` |
@@ -35,12 +35,13 @@ two's complement, and [`unsigned`], reading them in binary.
 | [`Mul`] | `bvmul` | | [`unsigned::Le`] | `bvule` |
 | [`Shl`] | `bvshl` | | [`unsigned::Gt`] | `bvugt` |
 | [`RotateLeft`] | `(_ rotate_left i)` | | [`unsigned::Ge`] | `bvuge` |
-| [`RotateRight`] | `(_ rotate_right i)` | | | |
+| [`RotateRight`] | `(_ rotate_right i)` | | [`signed::Abs`] | — |
 | [`Eq`](struct@Eq) | `=` | | | |
 | [`Ne`] | `distinct` | | | |
+| [`Ite`] | `ite` | | | |
 
 `=` and `distinct` belong to the SMT-LIB2 Core theory, which every logic
-includes, at the sort `(_ BitVec w)`; all the others belong to the
+includes, at the sort `(_ BitVec width)`; all the others belong to the
 theory FixedSizeBitVectors or are defined by the logic QF_BV. The
 comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
 */
@@ -50,6 +51,7 @@ use crate::Tensor;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
+use pyo3::prelude::*;
 use std::fmt;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's
@@ -59,154 +61,162 @@ use std::fmt;
 /// theories.
 pub use super::sort::Words as Sort;
 
-/// A constant matrix literal of `w`-bit words, as `Const(tensor, w)`, held
+/// A constant matrix literal of `width`-bit words, as `Const(tensor, width)`, held
 /// in a tensor of type `T`.
 ///
-/// SMT-LIB2: a literal `#b…` or `(_ bvN w)`.
+/// SMT-LIB2: a literal `#b…` or `(_ bvN width)`.
 #[derive(Debug)]
 pub struct Const<T>(pub T, pub usize);
 
 /// Pointwise concatenation `x ++ y` of a `u`-bit word `x`, the high bits
 /// of the result, and a `v`-bit word `y`, its low bits, as
-/// `Concat(u, v, m, n)`; the result has `u + v` bits.
+/// `Concat(u, v, [m, n])`; the result has `u + v` bits.
 ///
 /// SMT-LIB2: `(concat x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Concat(pub usize, pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Concat(pub usize, pub usize, pub [usize; 2]);
 
 /// Pointwise extraction of the bits `i` down to `j`, both included, from
-/// `w`-bit words, as `Extract(i, j, w, m, n)`; it requires
-/// `j ≤ i < w`, and the result has `i - j + 1` bits.
+/// `width`-bit words, as `Extract(i, j, width, [m, n])`; it requires
+/// `j ≤ i < width`, and the result has `i - j + 1` bits.
 ///
 /// SMT-LIB2: `((_ extract i j) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Extract(pub usize, pub usize, pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Extract(pub usize, pub usize, pub usize, pub [usize; 2]);
 
-/// Pointwise concatenation of `i ≥ 1` copies of `w`-bit words, as
-/// `Repeat(i, w, m, n)`; the result has `i·w` bits.
+/// Pointwise concatenation of `i ≥ 1` copies of `width`-bit words, as
+/// `Repeat(i, width, [m, n])`; the result has `i·width` bits.
 ///
 /// SMT-LIB2: `((_ repeat i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Repeat(pub usize, pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Repeat(pub usize, pub usize, pub [usize; 2]);
 
-/// Pointwise bitwise negation `!x`, as `Not(w, m, n)`.
+/// Pointwise bitwise negation `!x`, as `Not(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvnot x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Not(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Not(pub usize, pub [usize; 2]);
 
-/// Pointwise bitwise conjunction `x & y`, as `And(w, m, n)`.
+/// Pointwise bitwise conjunction `x & y`, as `And(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct And(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct And(pub usize, pub [usize; 2]);
 
-/// Pointwise bitwise disjunction `x | y`, as `Or(w, m, n)`.
+/// Pointwise bitwise disjunction `x | y`, as `Or(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Or(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Or(pub usize, pub [usize; 2]);
 
-/// Pointwise bitwise exclusive disjunction `x ^ y`, as `Xor(w, m, n)`.
+/// Pointwise bitwise exclusive disjunction `x ^ y`, as `Xor(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvxor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Xor(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Xor(pub usize, pub [usize; 2]);
 
-/// Pointwise bitwise negated conjunction `!(x & y)`, as `Nand(w, m, n)`.
+/// Pointwise bitwise negated conjunction `!(x & y)`, as `Nand(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvnand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Nand(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Nand(pub usize, pub [usize; 2]);
 
-/// Pointwise bitwise negated disjunction `!(x | y)`, as `Nor(w, m, n)`.
+/// Pointwise bitwise negated disjunction `!(x | y)`, as `Nor(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Nor(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Nor(pub usize, pub [usize; 2]);
 
 /// Pointwise bitwise negated exclusive disjunction `!(x ^ y)`, as
-/// `Xnor(w, m, n)`.
+/// `Xnor(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvxnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Xnor(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Xnor(pub usize, pub [usize; 2]);
 
-/// Pointwise two's-complement negation `-x`, modulo `2^w`, as
-/// `Neg(w, m, n)`; the minimum signed word is its own negation.
+/// Pointwise two's-complement negation `-x`, modulo `2^width`, as
+/// `Neg(width, [m, n])`; the minimum signed word is its own negation.
 ///
 /// SMT-LIB2: `(bvneg x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Neg(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Neg(pub usize, pub [usize; 2]);
 
-/// Pointwise addition `x + y`, modulo `2^w`, as `Add(w, m, n)`.
+/// Pointwise choice `if c then x else y` between `[m, n]` matrices of `width`-bit
+/// words `x` and `y`, by the boolean matrix `c`, read first, as `Ite(width, [m, n])`.
+///
+/// SMT-LIB2: `(ite c x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Ite(pub usize, pub [usize; 2]);
+
+/// Pointwise addition `x + y`, modulo `2^width`, as `Add(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvadd x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Add(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Add(pub usize, pub [usize; 2]);
 
-/// Pointwise subtraction `x - y`, modulo `2^w`, as `Sub(w, m, n)`.
+/// Pointwise subtraction `x - y`, modulo `2^width`, as `Sub(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvsub x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Sub(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Sub(pub usize, pub [usize; 2]);
 
-/// Pointwise multiplication `x * y`, modulo `2^w`, as `Mul(w, m, n)`.
+/// Pointwise multiplication `x * y`, modulo `2^width`, as `Mul(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvmul x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Mul(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Mul(pub usize, pub [usize; 2]);
 
-/// Pointwise left shift `x << y`, filling with zeros, as `Shl(w, m, n)`.
+/// Pointwise left shift `x << y`, filling with zeros, as `Shl(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvshl x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Shl(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Shl(pub usize, pub [usize; 2]);
 
 /// Pointwise rotation left by a constant `i` bits, as
-/// `RotateLeft(i, w, m, n)`.
+/// `RotateLeft(i, width, [m, n])`.
 ///
 /// SMT-LIB2: `((_ rotate_left i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct RotateLeft(pub usize, pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct RotateLeft(pub usize, pub usize, pub [usize; 2]);
 
 /// Pointwise rotation right by a constant `i` bits, as
-/// `RotateRight(i, w, m, n)`.
+/// `RotateRight(i, width, [m, n])`.
 ///
 /// SMT-LIB2: `((_ rotate_right i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct RotateRight(pub usize, pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct RotateRight(pub usize, pub usize, pub [usize; 2]);
 
-/// Pointwise equality `x = y` of `w`-bit words, as `Eq(w, m, n)`.
+/// Pointwise equality `x = y` of `width`-bit words, as `Eq(width, [m, n])`.
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Eq(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Eq(pub usize, pub [usize; 2]);
 
-/// Pointwise disequality `x ≠ y` of `w`-bit words, as `Ne(w, m, n)`.
+/// Pointwise disequality `x ≠ y` of `width`-bit words, as `Ne(width, [m, n])`.
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
-pub struct Ne(pub usize, pub usize, pub usize);
+#[pyo3::pyclass(frozen, eq, str)]
+pub struct Ne(pub usize, pub [usize; 2]);
 
 /// The operations of the theory of fixed-size bit-vectors, SMT-LIB2's
 /// `FixedSizeBitVectors`, with their boundary in [`Sort`]. Those of
@@ -226,6 +236,7 @@ pub enum BV<T> {
     Nor(Nor),
     Xnor(Xnor),
     Neg(Neg),
+    Ite(Ite),
     Add(Add),
     Sub(Sub),
     Mul(Mul),
@@ -235,6 +246,7 @@ pub enum BV<T> {
     Eq(Eq),
     Ne(Ne),
     SDiv(signed::Div),
+    Abs(signed::Abs),
     SRem(signed::Rem),
     SMod(signed::Mod),
     AShr(signed::Shr),
@@ -271,6 +283,7 @@ where
             BV::Nor(op) => BV::Nor(*op),
             BV::Xnor(op) => BV::Xnor(*op),
             BV::Neg(op) => BV::Neg(*op),
+            BV::Ite(op) => BV::Ite(*op),
             BV::Add(op) => BV::Add(*op),
             BV::Sub(op) => BV::Sub(*op),
             BV::Mul(op) => BV::Mul(*op),
@@ -280,6 +293,7 @@ where
             BV::Eq(op) => BV::Eq(*op),
             BV::Ne(op) => BV::Ne(*op),
             BV::SDiv(op) => BV::SDiv(*op),
+            BV::Abs(op) => BV::Abs(*op),
             BV::SRem(op) => BV::SRem(*op),
             BV::SMod(op) => BV::SMod(*op),
             BV::AShr(op) => BV::AShr(*op),
@@ -315,6 +329,7 @@ impl<T: fmt::Display> fmt::Display for BV<T> {
             BV::Nor(op) => op.fmt(f),
             BV::Xnor(op) => op.fmt(f),
             BV::Neg(op) => op.fmt(f),
+            BV::Ite(op) => op.fmt(f),
             BV::Add(op) => op.fmt(f),
             BV::Sub(op) => op.fmt(f),
             BV::Mul(op) => op.fmt(f),
@@ -324,6 +339,7 @@ impl<T: fmt::Display> fmt::Display for BV<T> {
             BV::Eq(op) => op.fmt(f),
             BV::Ne(op) => op.fmt(f),
             BV::SDiv(op) => op.fmt(f),
+            BV::Abs(op) => op.fmt(f),
             BV::SRem(op) => op.fmt(f),
             BV::SMod(op) => op.fmt(f),
             BV::AShr(op) => op.fmt(f),
@@ -359,6 +375,7 @@ impl<T: Tensor> Boundary<Sort> for BV<T> {
             BV::Nor(op) => op.dom(),
             BV::Xnor(op) => op.dom(),
             BV::Neg(op) => op.dom(),
+            BV::Ite(op) => op.dom(),
             BV::Add(op) => op.dom(),
             BV::Sub(op) => op.dom(),
             BV::Mul(op) => op.dom(),
@@ -368,6 +385,7 @@ impl<T: Tensor> Boundary<Sort> for BV<T> {
             BV::Eq(op) => op.dom(),
             BV::Ne(op) => op.dom(),
             BV::SDiv(op) => op.dom(),
+            BV::Abs(op) => op.dom(),
             BV::SRem(op) => op.dom(),
             BV::SMod(op) => op.dom(),
             BV::AShr(op) => op.dom(),
@@ -401,6 +419,7 @@ impl<T: Tensor> Boundary<Sort> for BV<T> {
             BV::Nor(op) => op.cod(),
             BV::Xnor(op) => op.cod(),
             BV::Neg(op) => op.cod(),
+            BV::Ite(op) => op.cod(),
             BV::Add(op) => op.cod(),
             BV::Sub(op) => op.cod(),
             BV::Mul(op) => op.cod(),
@@ -410,6 +429,7 @@ impl<T: Tensor> Boundary<Sort> for BV<T> {
             BV::Eq(op) => op.cod(),
             BV::Ne(op) => op.cod(),
             BV::SDiv(op) => op.cod(),
+            BV::Abs(op) => op.cod(),
             BV::SRem(op) => op.cod(),
             BV::SMod(op) => op.cod(),
             BV::AShr(op) => op.cod(),
@@ -442,7 +462,7 @@ impl<T: Tensor> Boundary<Sort> for Const<T> {
 
 impl Boundary<Sort> for Concat {
     fn dom(&self) -> Poly<Sort> {
-        let shape = [self.2, self.3];
+        let shape = self.2;
         mono![
             Word::new_unchecked(self.0, shape).into(),
             Word::new_unchecked(self.1, shape).into()
@@ -451,187 +471,187 @@ impl Boundary<Sort> for Concat {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0 + self.1, [self.2, self.3]).into()].into()
+        mono![Word::new_unchecked(self.0 + self.1, self.2).into()].into()
     }
 }
 
 impl Boundary<Sort> for Extract {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.2, [self.3, self.4]).into()].into()
+        mono![Word::new_unchecked(self.2, self.3).into()].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0 - self.1 + 1, [self.3, self.4]).into()].into()
+        mono![Word::new_unchecked(self.0 - self.1 + 1, self.3).into()].into()
     }
 }
 
 impl Boundary<Sort> for Repeat {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.1, [self.2, self.3]).into()].into()
+        mono![Word::new_unchecked(self.1, self.2).into()].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0 * self.1, [self.2, self.3]).into()].into()
+        mono![Word::new_unchecked(self.0 * self.1, self.2).into()].into()
     }
 }
 
 impl Boundary<Sort> for Not {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for And {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Or {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Xor {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Nand {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Nor {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Xnor {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Neg {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Add {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Sub {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Mul {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Shl {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for RotateLeft {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.1, [self.2, self.3]).into()].into()
+        mono![Word::new_unchecked(self.1, self.2).into()].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.1, [self.2, self.3]).into()].into()
+        mono![Word::new_unchecked(self.1, self.2).into()].into()
     }
 }
 
 impl Boundary<Sort> for RotateRight {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.1, [self.2, self.3]).into()].into()
+        mono![Word::new_unchecked(self.1, self.2).into()].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.1, [self.2, self.3]).into()].into()
+        mono![Word::new_unchecked(self.1, self.2).into()].into()
     }
 }
 
 impl Boundary<Sort> for Eq {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new([self.1, self.2]).into()].into()
+        mono![Bool::new(self.1).into()].into()
     }
 }
 
 impl Boundary<Sort> for Ne {
     fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+        mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new([self.1, self.2]).into()].into()
+        mono![Bool::new(self.1).into()].into()
     }
 }
 
@@ -707,6 +727,27 @@ impl fmt::Display for Neg {
     }
 }
 
+impl Boundary<Sort> for Ite {
+    fn dom(&self) -> Poly<Sort> {
+        mono![
+            Bool::new(self.1).into(),
+            Word::new_unchecked(self.0, self.1).into(),
+            Word::new_unchecked(self.0, self.1).into()
+        ]
+        .into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Word::new_unchecked(self.0, self.1).into()].into()
+    }
+}
+
+impl fmt::Display for Ite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ite")
+    }
+}
+
 impl fmt::Display for Add {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Add")
@@ -764,168 +805,191 @@ pub mod signed {
     use base::mono;
     use std::fmt;
 
-    /// Pointwise division `x / y`, rounding towards zero, as `Div(w, m, n)`;
+    /// Pointwise division `x / y`, rounding towards zero, as `Div(width, [m, n])`;
     /// the minimum word divided by `-1` is itself, and `x / 0` is `1` if `x`
     /// is negative and `-1` otherwise.
     ///
     /// SMT-LIB2: `(bvsdiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SDiv"))]
-    pub struct Div(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Div(pub usize, pub [usize; 2]);
 
-    /// Pointwise remainder `x % y`, with the sign of `x`, as `Rem(w, m, n)`;
+    /// Pointwise absolute value of `width`-bit words read in two's complement, as
+    /// `Abs(width, [m, n])`: `Ite(x < 0, -x, x)`, so the minimum word is its own
+    /// absolute value.
+    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Abs(pub usize, pub [usize; 2]);
+
+    /// Pointwise remainder `x % y`, with the sign of `x`, as `Rem(width, [m, n])`;
     /// `x % 0 = x`.
     ///
     /// SMT-LIB2: `(bvsrem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SRem"))]
-    pub struct Rem(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Rem(pub usize, pub [usize; 2]);
 
-    /// Pointwise modulo `x mod y`, with the sign of `y`, as `Mod(w, m, n)`;
+    /// Pointwise modulo `x mod y`, with the sign of `y`, as `Mod(width, [m, n])`;
     /// `x mod 0 = x`.
     ///
     /// SMT-LIB2: `(bvsmod x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SMod"))]
-    pub struct Mod(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Mod(pub usize, pub [usize; 2]);
 
     /// Pointwise arithmetic right shift `x >> y`, filling with the sign bit,
-    /// as `Shr(w, m, n)`.
+    /// as `Shr(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvashr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "AShr"))]
-    pub struct Shr(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Shr(pub usize, pub [usize; 2]);
 
-    /// Pointwise extension of `w`-bit words by `i` copies of the sign bit,
-    /// as `Extend(i, w, m, n)`.
+    /// Pointwise extension of `width`-bit words by `i` copies of the sign bit,
+    /// as `Extend(i, width, [m, n])`.
     ///
     /// SMT-LIB2: `((_ sign_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SignExtend"))]
-    pub struct Extend(pub usize, pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Extend(pub usize, pub usize, pub [usize; 2]);
 
-    /// Pointwise signed comparison `x < y`, as `Lt(w, m, n)`.
+    /// Pointwise signed comparison `x < y`, as `Lt(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvslt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SLt"))]
-    pub struct Lt(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Lt(pub usize, pub [usize; 2]);
 
-    /// Pointwise signed comparison `x ≤ y`, as `Le(w, m, n)`.
+    /// Pointwise signed comparison `x ≤ y`, as `Le(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvsle x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SLe"))]
-    pub struct Le(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Le(pub usize, pub [usize; 2]);
 
-    /// Pointwise signed comparison `x > y`, as `Gt(w, m, n)`.
+    /// Pointwise signed comparison `x > y`, as `Gt(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvsgt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SGt"))]
-    pub struct Gt(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Gt(pub usize, pub [usize; 2]);
 
-    /// Pointwise signed comparison `x ≥ y`, as `Ge(w, m, n)`.
+    /// Pointwise signed comparison `x ≥ y`, as `Ge(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvsge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "SGe"))]
-    pub struct Ge(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Ge(pub usize, pub [usize; 2]);
 
     impl Boundary<Sort> for Div {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+            mono![Word::new_unchecked(self.0, self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Rem {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+            mono![Word::new_unchecked(self.0, self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Mod {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+            mono![Word::new_unchecked(self.0, self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Shr {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+            mono![Word::new_unchecked(self.0, self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Extend {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.1, [self.2, self.3]).into()].into()
+            mono![Word::new_unchecked(self.1, self.2).into()].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.1 + self.0, [self.2, self.3]).into()].into()
+            mono![Word::new_unchecked(self.1 + self.0, self.2).into()].into()
         }
     }
 
     impl Boundary<Sort> for Lt {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new([self.1, self.2]).into()].into()
+            mono![Bool::new(self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Le {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new([self.1, self.2]).into()].into()
+            mono![Bool::new(self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Gt {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new([self.1, self.2]).into()].into()
+            mono![Bool::new(self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Ge {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new([self.1, self.2]).into()].into()
+            mono![Bool::new(self.1).into()].into()
         }
     }
 
     impl fmt::Display for Div {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "SDiv")
+        }
+    }
+
+    impl Boundary<Sort> for Abs {
+        fn dom(&self) -> Poly<Sort> {
+            mono![Word::new_unchecked(self.0, self.1).into()].into()
+        }
+
+        fn cod(&self) -> Poly<Sort> {
+            mono![Word::new_unchecked(self.0, self.1).into()].into()
+        }
+    }
+
+    impl fmt::Display for Abs {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Abs")
         }
     }
 
@@ -987,142 +1051,142 @@ pub mod unsigned {
     use base::mono;
     use std::fmt;
 
-    /// Pointwise division `x / y`, rounding down, as `Div(w, m, n)`; `x / 0`
+    /// Pointwise division `x / y`, rounding down, as `Div(width, [m, n])`; `x / 0`
     /// is the word of all ones.
     ///
     /// SMT-LIB2: `(bvudiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "UDiv"))]
-    pub struct Div(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Div(pub usize, pub [usize; 2]);
 
-    /// Pointwise remainder `x % y`, as `Rem(w, m, n)`; `x % 0 = x`.
+    /// Pointwise remainder `x % y`, as `Rem(width, [m, n])`; `x % 0 = x`.
     ///
     /// SMT-LIB2: `(bvurem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "URem"))]
-    pub struct Rem(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Rem(pub usize, pub [usize; 2]);
 
     /// Pointwise logical right shift `x >> y`, filling with zeros, as
-    /// `Shr(w, m, n)`.
+    /// `Shr(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvlshr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "LShr"))]
-    pub struct Shr(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Shr(pub usize, pub [usize; 2]);
 
-    /// Pointwise extension of `w`-bit words by `i` zero bits, as
-    /// `Extend(i, w, m, n)`.
+    /// Pointwise extension of `width`-bit words by `i` zero bits, as
+    /// `Extend(i, width, [m, n])`.
     ///
     /// SMT-LIB2: `((_ zero_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "ZeroExtend"))]
-    pub struct Extend(pub usize, pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Extend(pub usize, pub usize, pub [usize; 2]);
 
-    /// Pointwise unsigned comparison `x < y`, as `Lt(w, m, n)`.
+    /// Pointwise unsigned comparison `x < y`, as `Lt(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvult x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "ULt"))]
-    pub struct Lt(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Lt(pub usize, pub [usize; 2]);
 
-    /// Pointwise unsigned comparison `x ≤ y`, as `Le(w, m, n)`.
+    /// Pointwise unsigned comparison `x ≤ y`, as `Le(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvule x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "ULe"))]
-    pub struct Le(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Le(pub usize, pub [usize; 2]);
 
-    /// Pointwise unsigned comparison `x > y`, as `Gt(w, m, n)`.
+    /// Pointwise unsigned comparison `x > y`, as `Gt(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvugt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "UGt"))]
-    pub struct Gt(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Gt(pub usize, pub [usize; 2]);
 
-    /// Pointwise unsigned comparison `x ≥ y`, as `Ge(w, m, n)`.
+    /// Pointwise unsigned comparison `x ≥ y`, as `Ge(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvuge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, name = "UGe"))]
-    pub struct Ge(pub usize, pub usize, pub usize);
+    #[pyo3::pyclass(frozen, eq, str)]
+    pub struct Ge(pub usize, pub [usize; 2]);
 
     impl Boundary<Sort> for Div {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+            mono![Word::new_unchecked(self.0, self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Rem {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+            mono![Word::new_unchecked(self.0, self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Shr {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into()].into()
+            mono![Word::new_unchecked(self.0, self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Extend {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.1, [self.2, self.3]).into()].into()
+            mono![Word::new_unchecked(self.1, self.2).into()].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.1 + self.0, [self.2, self.3]).into()].into()
+            mono![Word::new_unchecked(self.1 + self.0, self.2).into()].into()
         }
     }
 
     impl Boundary<Sort> for Lt {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new([self.1, self.2]).into()].into()
+            mono![Bool::new(self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Le {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new([self.1, self.2]).into()].into()
+            mono![Bool::new(self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Gt {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new([self.1, self.2]).into()].into()
+            mono![Bool::new(self.1).into()].into()
         }
     }
 
     impl Boundary<Sort> for Ge {
         fn dom(&self) -> Poly<Sort> {
-            mono![Word::new_unchecked(self.0, [self.1, self.2]).into(); 2].into()
+            mono![Word::new_unchecked(self.0, self.1).into(); 2].into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new([self.1, self.2]).into()].into()
+            mono![Bool::new(self.1).into()].into()
         }
     }
 
@@ -1179,7 +1243,6 @@ pub mod unsigned {
 /// trying each operation in turn: those carrying no data through their own
 /// classes, and [`Const`] through the extraction that the tensor type `T`
 /// provides.
-#[cfg(feature = "pyo3")]
 impl<'py, T> pyo3::FromPyObject<'py> for BV<T>
 where
     Const<T>: pyo3::FromPyObject<'py>,
@@ -1220,6 +1283,9 @@ where
         if let Ok(op) = ob.extract::<Neg>() {
             return Ok(BV::Neg(op));
         }
+        if let Ok(op) = ob.extract::<Ite>() {
+            return Ok(BV::Ite(op));
+        }
         if let Ok(op) = ob.extract::<Add>() {
             return Ok(BV::Add(op));
         }
@@ -1246,6 +1312,9 @@ where
         }
         if let Ok(op) = ob.extract::<signed::Div>() {
             return Ok(BV::SDiv(op));
+        }
+        if let Ok(op) = ob.extract::<signed::Abs>() {
+            return Ok(BV::Abs(op));
         }
         if let Ok(op) = ob.extract::<signed::Rem>() {
             return Ok(BV::SRem(op));
@@ -1305,335 +1374,957 @@ where
     }
 }
 
-/// The Python constructors of the operations carrying no tensor: each takes
-/// the sizes of the operation, positionally, in the order of its fields.
-#[cfg(feature = "pyo3")]
-mod py {
-    use super::*;
-    use pyo3::prelude::*;
-
-    #[pymethods]
-    impl Concat {
-        #[new]
-        #[pyo3(signature = (u, v, m, n, /))]
-        fn new(u: usize, v: usize, m: usize, n: usize) -> Self {
-            Concat(u, v, m, n)
-        }
+// The Python constructors of the operations carrying no tensor: each takes
+// its sizes positionally, in the order of its fields, the shape as a list.
+#[pymethods]
+impl Concat {
+    #[new]
+    #[pyo3(signature = (u, v, shape, /))]
+    fn new(u: usize, v: usize, shape: [usize; 2]) -> Self {
+        Concat(u, v, shape)
     }
 
-    #[pymethods]
-    impl Extract {
-        #[new]
-        #[pyo3(signature = (i, j, w, m, n, /))]
-        fn new(i: usize, j: usize, w: usize, m: usize, n: usize) -> Self {
-            Extract(i, j, w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("u", "v", "shape")
     }
 
-    #[pymethods]
-    impl Repeat {
-        #[new]
-        #[pyo3(signature = (i, w, m, n, /))]
-        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
-            Repeat(i, w, m, n)
-        }
+    #[getter]
+    fn u(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl Not {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Not(w, m, n)
-        }
+    #[getter]
+    fn v(&self) -> usize {
+        self.1
     }
 
-    #[pymethods]
-    impl And {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            And(w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.2
+    }
+}
+
+#[pymethods]
+impl Extract {
+    #[new]
+    #[pyo3(signature = (i, j, width, shape, /))]
+    fn new(i: usize, j: usize, width: usize, shape: [usize; 2]) -> Self {
+        Extract(i, j, width, shape)
     }
 
-    #[pymethods]
-    impl Or {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Or(w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
+        ("i", "j", "width", "shape")
     }
 
-    #[pymethods]
-    impl Xor {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Xor(w, m, n)
-        }
+    #[getter]
+    fn i(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl Nand {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Nand(w, m, n)
-        }
+    #[getter]
+    fn j(&self) -> usize {
+        self.1
     }
 
-    #[pymethods]
-    impl Nor {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Nor(w, m, n)
-        }
+    #[getter]
+    fn width(&self) -> usize {
+        self.2
     }
 
-    #[pymethods]
-    impl Xnor {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Xnor(w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.3
+    }
+}
+
+#[pymethods]
+impl Repeat {
+    #[new]
+    #[pyo3(signature = (i, width, shape, /))]
+    fn new(i: usize, width: usize, shape: [usize; 2]) -> Self {
+        Repeat(i, width, shape)
     }
 
-    #[pymethods]
-    impl Neg {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Neg(w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("i", "width", "shape")
     }
 
-    #[pymethods]
-    impl Add {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Add(w, m, n)
-        }
+    #[getter]
+    fn i(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl Sub {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Sub(w, m, n)
-        }
+    #[getter]
+    fn width(&self) -> usize {
+        self.1
     }
 
-    #[pymethods]
-    impl Mul {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Mul(w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.2
+    }
+}
+
+#[pymethods]
+impl Not {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Not(width, shape)
     }
 
-    #[pymethods]
-    impl Shl {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Shl(w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
     }
 
-    #[pymethods]
-    impl RotateLeft {
-        #[new]
-        #[pyo3(signature = (i, w, m, n, /))]
-        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
-            RotateLeft(i, w, m, n)
-        }
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl RotateRight {
-        #[new]
-        #[pyo3(signature = (i, w, m, n, /))]
-        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
-            RotateRight(i, w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl And {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        And(width, shape)
     }
 
-    #[pymethods]
-    impl Eq {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Eq(w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
     }
 
-    #[pymethods]
-    impl Ne {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            Ne(w, m, n)
-        }
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl signed::Div {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            signed::Div(w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Or {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Or(width, shape)
     }
 
-    #[pymethods]
-    impl signed::Rem {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            signed::Rem(w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
     }
 
-    #[pymethods]
-    impl signed::Mod {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            signed::Mod(w, m, n)
-        }
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl signed::Shr {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            signed::Shr(w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Xor {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Xor(width, shape)
     }
 
-    #[pymethods]
-    impl signed::Extend {
-        #[new]
-        #[pyo3(signature = (i, w, m, n, /))]
-        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
-            signed::Extend(i, w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
     }
 
-    #[pymethods]
-    impl signed::Lt {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            signed::Lt(w, m, n)
-        }
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl signed::Le {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            signed::Le(w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Nand {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Nand(width, shape)
     }
 
-    #[pymethods]
-    impl signed::Gt {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            signed::Gt(w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
     }
 
-    #[pymethods]
-    impl signed::Ge {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            signed::Ge(w, m, n)
-        }
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl unsigned::Div {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            unsigned::Div(w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Nor {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Nor(width, shape)
     }
 
-    #[pymethods]
-    impl unsigned::Rem {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            unsigned::Rem(w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
     }
 
-    #[pymethods]
-    impl unsigned::Shr {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            unsigned::Shr(w, m, n)
-        }
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl unsigned::Extend {
-        #[new]
-        #[pyo3(signature = (i, w, m, n, /))]
-        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
-            unsigned::Extend(i, w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Xnor {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Xnor(width, shape)
     }
 
-    #[pymethods]
-    impl unsigned::Lt {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            unsigned::Lt(w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
     }
 
-    #[pymethods]
-    impl unsigned::Le {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            unsigned::Le(w, m, n)
-        }
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
     }
 
-    #[pymethods]
-    impl unsigned::Gt {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            unsigned::Gt(w, m, n)
-        }
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Neg {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Neg(width, shape)
     }
 
-    #[pymethods]
-    impl unsigned::Ge {
-        #[new]
-        #[pyo3(signature = (w, m, n, /))]
-        fn new(w: usize, m: usize, n: usize) -> Self {
-            unsigned::Ge(w, m, n)
-        }
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Ite {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Ite(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Add {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Add(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Sub {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Sub(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Mul {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Mul(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Shl {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Shl(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl RotateLeft {
+    #[new]
+    #[pyo3(signature = (i, width, shape, /))]
+    fn new(i: usize, width: usize, shape: [usize; 2]) -> Self {
+        RotateLeft(i, width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("i", "width", "shape")
+    }
+
+    #[getter]
+    fn i(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.1
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.2
+    }
+}
+
+#[pymethods]
+impl RotateRight {
+    #[new]
+    #[pyo3(signature = (i, width, shape, /))]
+    fn new(i: usize, width: usize, shape: [usize; 2]) -> Self {
+        RotateRight(i, width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("i", "width", "shape")
+    }
+
+    #[getter]
+    fn i(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.1
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.2
+    }
+}
+
+#[pymethods]
+impl Eq {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Eq(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl Ne {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        Ne(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl signed::Div {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        signed::Div(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl signed::Abs {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        signed::Abs(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl signed::Rem {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        signed::Rem(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl signed::Mod {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        signed::Mod(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl signed::Shr {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        signed::Shr(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl signed::Extend {
+    #[new]
+    #[pyo3(signature = (i, width, shape, /))]
+    fn new(i: usize, width: usize, shape: [usize; 2]) -> Self {
+        signed::Extend(i, width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("i", "width", "shape")
+    }
+
+    #[getter]
+    fn i(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.1
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.2
+    }
+}
+
+#[pymethods]
+impl signed::Lt {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        signed::Lt(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl signed::Le {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        signed::Le(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl signed::Gt {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        signed::Gt(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl signed::Ge {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        signed::Ge(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl unsigned::Div {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        unsigned::Div(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl unsigned::Rem {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        unsigned::Rem(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl unsigned::Shr {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        unsigned::Shr(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl unsigned::Extend {
+    #[new]
+    #[pyo3(signature = (i, width, shape, /))]
+    fn new(i: usize, width: usize, shape: [usize; 2]) -> Self {
+        unsigned::Extend(i, width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("i", "width", "shape")
+    }
+
+    #[getter]
+    fn i(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.1
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.2
+    }
+}
+
+#[pymethods]
+impl unsigned::Lt {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        unsigned::Lt(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl unsigned::Le {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        unsigned::Le(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl unsigned::Gt {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        unsigned::Gt(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
+    }
+}
+
+#[pymethods]
+impl unsigned::Ge {
+    #[new]
+    #[pyo3(signature = (width, shape, /))]
+    fn new(width: usize, shape: [usize; 2]) -> Self {
+        unsigned::Ge(width, shape)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    #[getter]
+    fn width(&self) -> usize {
+        self.0
+    }
+
+    #[getter]
+    fn shape(&self) -> [usize; 2] {
+        self.1
     }
 }
 
@@ -1660,58 +2351,58 @@ mod tests {
     #[test]
     fn pointwise_boundaries_preserve_width() {
         let x = w(8, [2, 3]);
-        assert_eq!(Add(8, 2, 3).dom(), two(x));
-        assert_eq!(Add(8, 2, 3).cod(), one(x));
-        assert_eq!(Xnor(8, 2, 3).cod(), one(x));
-        assert_eq!(Neg(8, 2, 3).dom(), one(x));
-        assert_eq!(Not(8, 2, 3).cod(), one(x));
-        assert_eq!(RotateLeft(3, 8, 2, 3).dom(), one(x));
-        assert_eq!(RotateRight(3, 8, 2, 3).cod(), one(x));
-        assert_eq!(signed::Div(8, 2, 3).dom(), two(x));
-        assert_eq!(signed::Mod(8, 2, 3).cod(), one(x));
-        assert_eq!(unsigned::Rem(8, 2, 3).cod(), one(x));
-        assert_eq!(unsigned::Shr(8, 2, 3).dom(), two(x));
+        assert_eq!(Add(8, [2, 3]).dom(), two(x));
+        assert_eq!(Add(8, [2, 3]).cod(), one(x));
+        assert_eq!(Xnor(8, [2, 3]).cod(), one(x));
+        assert_eq!(Neg(8, [2, 3]).dom(), one(x));
+        assert_eq!(Not(8, [2, 3]).cod(), one(x));
+        assert_eq!(RotateLeft(3, 8, [2, 3]).dom(), one(x));
+        assert_eq!(RotateRight(3, 8, [2, 3]).cod(), one(x));
+        assert_eq!(signed::Div(8, [2, 3]).dom(), two(x));
+        assert_eq!(signed::Mod(8, [2, 3]).cod(), one(x));
+        assert_eq!(unsigned::Rem(8, [2, 3]).cod(), one(x));
+        assert_eq!(unsigned::Shr(8, [2, 3]).dom(), two(x));
     }
 
     #[test]
     fn comparisons_write_booleans() {
         let x = w(8, [2, 3]);
-        assert_eq!(Eq(8, 2, 3).dom(), two(x));
-        assert_eq!(Eq(8, 2, 3).cod(), one(b([2, 3])));
-        assert_eq!(Ne(8, 2, 3).cod(), one(b([2, 3])));
-        assert_eq!(signed::Lt(8, 2, 3).dom(), two(x));
-        assert_eq!(signed::Lt(8, 2, 3).cod(), one(b([2, 3])));
-        assert_eq!(unsigned::Ge(8, 2, 3).cod(), one(b([2, 3])));
+        assert_eq!(Eq(8, [2, 3]).dom(), two(x));
+        assert_eq!(Eq(8, [2, 3]).cod(), one(b([2, 3])));
+        assert_eq!(Ne(8, [2, 3]).cod(), one(b([2, 3])));
+        assert_eq!(signed::Lt(8, [2, 3]).dom(), two(x));
+        assert_eq!(signed::Lt(8, [2, 3]).cod(), one(b([2, 3])));
+        assert_eq!(unsigned::Ge(8, [2, 3]).cod(), one(b([2, 3])));
     }
 
     #[test]
     fn width_changing_boundaries() {
-        assert_eq!(Extract(7, 4, 16, 2, 3).dom(), one(w(16, [2, 3])));
-        assert_eq!(Extract(7, 4, 16, 2, 3).cod(), one(w(4, [2, 3])));
-        assert_eq!(Extract(0, 0, 8, 1, 1).cod(), one(w(1, [1, 1])));
+        assert_eq!(Extract(7, 4, 16, [2, 3]).dom(), one(w(16, [2, 3])));
+        assert_eq!(Extract(7, 4, 16, [2, 3]).cod(), one(w(4, [2, 3])));
+        assert_eq!(Extract(0, 0, 8, [1, 1]).cod(), one(w(1, [1, 1])));
 
         let dom: Poly<Sort> = mono![w(8, [2, 3]), w(4, [2, 3])].into();
-        assert_eq!(Concat(8, 4, 2, 3).dom(), dom);
-        assert_eq!(Concat(8, 4, 2, 3).cod(), one(w(12, [2, 3])));
+        assert_eq!(Concat(8, 4, [2, 3]).dom(), dom);
+        assert_eq!(Concat(8, 4, [2, 3]).cod(), one(w(12, [2, 3])));
 
-        assert_eq!(unsigned::Extend(8, 8, 2, 3).cod(), one(w(16, [2, 3])));
-        assert_eq!(signed::Extend(24, 8, 2, 3).cod(), one(w(32, [2, 3])));
-        assert_eq!(Repeat(3, 4, 2, 3).cod(), one(w(12, [2, 3])));
+        assert_eq!(unsigned::Extend(8, 8, [2, 3]).cod(), one(w(16, [2, 3])));
+        assert_eq!(signed::Extend(24, 8, [2, 3]).cod(), one(w(32, [2, 3])));
+        assert_eq!(Repeat(3, 4, [2, 3]).cod(), one(w(12, [2, 3])));
     }
 
     #[test]
     fn ops_display_their_name_and_indices() {
-        assert_eq!(Add(8, 1, 1).to_string(), "Add");
-        assert_eq!(Ne(8, 1, 1).to_string(), "Ne");
-        assert_eq!(Extract(7, 4, 8, 1, 1).to_string(), "Extract[7:4]");
-        assert_eq!(RotateLeft(3, 8, 1, 1).to_string(), "RotateLeft(3)");
-        assert_eq!(Repeat(2, 8, 1, 1).to_string(), "Repeat(2)");
-        assert_eq!(signed::Div(8, 1, 1).to_string(), "SDiv");
-        assert_eq!(unsigned::Div(8, 1, 1).to_string(), "UDiv");
-        assert_eq!(signed::Shr(8, 1, 1).to_string(), "AShr");
-        assert_eq!(unsigned::Shr(8, 1, 1).to_string(), "LShr");
-        assert_eq!(signed::Ge(8, 1, 1).to_string(), "SGe");
-        assert_eq!(signed::Extend(8, 8, 1, 1).to_string(), "SignExtend(8)");
-        assert_eq!(unsigned::Extend(8, 8, 1, 1).to_string(), "ZeroExtend(8)");
+        assert_eq!(Add(8, [1, 1]).to_string(), "Add");
+        assert_eq!(Ne(8, [1, 1]).to_string(), "Ne");
+        assert_eq!(Extract(7, 4, 8, [1, 1]).to_string(), "Extract[7:4]");
+        assert_eq!(RotateLeft(3, 8, [1, 1]).to_string(), "RotateLeft(3)");
+        assert_eq!(Repeat(2, 8, [1, 1]).to_string(), "Repeat(2)");
+        assert_eq!(signed::Div(8, [1, 1]).to_string(), "SDiv");
+        assert_eq!(unsigned::Div(8, [1, 1]).to_string(), "UDiv");
+        assert_eq!(signed::Shr(8, [1, 1]).to_string(), "AShr");
+        assert_eq!(unsigned::Shr(8, [1, 1]).to_string(), "LShr");
+        assert_eq!(signed::Ge(8, [1, 1]).to_string(), "SGe");
+        assert_eq!(signed::Extend(8, 8, [1, 1]).to_string(), "SignExtend(8)");
+        assert_eq!(unsigned::Extend(8, 8, [1, 1]).to_string(), "ZeroExtend(8)");
     }
 }

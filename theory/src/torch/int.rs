@@ -19,9 +19,9 @@ impl Linear {
     /// Fails when `a` and `b` are not `torch.Tensor`s of integer
     /// elements, of shapes `[m, n]` and `[m, k]`.
     #[new]
-    fn new(a: PyTensor, b: PyTensor) -> PyResult<Self> {
+    fn new(a: PyTensor, b: PyTensor) -> Result<Self, crate::Error> {
         if !super::is_integer(a.kind()) || !super::is_integer(b.kind()) {
-            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            return Err(crate::Error(format!(
                 "expected tensors of integer elements, got {:?} and {:?}",
                 a.kind(),
                 b.kind()
@@ -39,6 +39,11 @@ impl Linear {
     #[getter]
     fn b(&self) -> PyTensor {
         PyTensor(self.1.shallow_clone())
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("a", "b")
     }
 }
 
@@ -66,9 +71,9 @@ unsafe impl Sync for Const {}
 impl Const {
     /// Fails when `tensor` is not a `torch.Tensor` of integer elements.
     #[new]
-    fn new(tensor: PyTensor) -> PyResult<Self> {
+    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
         if !super::is_integer(tensor.kind()) {
-            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            return Err(crate::Error(format!(
                 "expected a tensor of integer elements, got {:?}",
                 tensor.kind()
             )));
@@ -79,6 +84,11 @@ impl Const {
     #[getter]
     fn tensor(&self) -> PyTensor {
         PyTensor(self.0.shallow_clone())
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("tensor",)
     }
 }
 
@@ -126,11 +136,13 @@ impl<'py> IntoPyObject<'py> for crate::tensor::int::NIA<tch::Tensor> {
             NIA::Mod(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Linear(op) => Linear(op.0, op.1).into_pyobject(py).map(Bound::into_any),
             NIA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Argmax(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Min(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Max(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Transpose(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::MatMul(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Lt(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Le(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Gt(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Ge(op) => op.into_pyobject(py).map(Bound::into_any),

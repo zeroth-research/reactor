@@ -53,11 +53,13 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             real.add_class::<theory::tensor::real::Mul>()?;
             real.add_class::<theory::tensor::real::Div>()?;
             real.add_class::<theory::tensor::real::ReLU>()?;
+            real.add_class::<theory::tensor::real::Argmax>()?;
             real.add_class::<theory::tensor::real::Min>()?;
             real.add_class::<theory::tensor::real::Max>()?;
             real.add_class::<theory::tensor::real::Transpose>()?;
             real.add_class::<theory::tensor::real::MatMul>()?;
             real.add_class::<theory::tensor::real::Lt>()?;
+            real.add_class::<theory::tensor::real::Ite>()?;
             real.add_class::<theory::tensor::real::Le>()?;
             real.add_class::<theory::tensor::real::Gt>()?;
             real.add_class::<theory::tensor::real::Ge>()?;
@@ -76,11 +78,13 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             int.add_class::<theory::tensor::int::Div>()?;
             int.add_class::<theory::tensor::int::Mod>()?;
             int.add_class::<theory::tensor::int::ReLU>()?;
+            int.add_class::<theory::tensor::int::Argmax>()?;
             int.add_class::<theory::tensor::int::Min>()?;
             int.add_class::<theory::tensor::int::Max>()?;
             int.add_class::<theory::tensor::int::Transpose>()?;
             int.add_class::<theory::tensor::int::MatMul>()?;
             int.add_class::<theory::tensor::int::Lt>()?;
+            int.add_class::<theory::tensor::int::Ite>()?;
             int.add_class::<theory::tensor::int::Le>()?;
             int.add_class::<theory::tensor::int::Gt>()?;
             int.add_class::<theory::tensor::int::Ge>()?;
@@ -96,6 +100,9 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             bool.add_class::<theory::tensor::bool::Or>()?;
             bool.add_class::<theory::tensor::bool::Xor>()?;
             bool.add_class::<theory::tensor::bool::Not>()?;
+            bool.add_class::<theory::tensor::bool::Eq>()?;
+            bool.add_class::<theory::tensor::bool::Ne>()?;
+            bool.add_class::<theory::tensor::bool::Ite>()?;
             tensor.add("bool", &bool)?;
             namespaces.push(("tensor.bool", bool));
         }
@@ -113,6 +120,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             word.add_class::<theory::tensor::word::Nor>()?;
             word.add_class::<theory::tensor::word::Xnor>()?;
             word.add_class::<theory::tensor::word::Neg>()?;
+            word.add_class::<theory::tensor::word::Ite>()?;
             word.add_class::<theory::tensor::word::Add>()?;
             word.add_class::<theory::tensor::word::Sub>()?;
             word.add_class::<theory::tensor::word::Mul>()?;
@@ -124,6 +132,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             {
                 let signed = PyModule::new(py, "signed")?;
                 signed.add_class::<theory::tensor::word::signed::Div>()?;
+                signed.add_class::<theory::tensor::word::signed::Abs>()?;
                 signed.add_class::<theory::tensor::word::signed::Rem>()?;
                 signed.add_class::<theory::tensor::word::signed::Mod>()?;
                 signed.add_class::<theory::tensor::word::signed::Shr>()?;

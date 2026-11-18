@@ -1,34 +1,89 @@
-from .reactor import Sort as _Sort
-from abc import ABC as _ABC
+"""The sorts, as defined by the bindings in ``reactor.tensor.sort``: ``Real``, ``Int``,
+``Bool`` and ``Word`` matrices, and the singleton ``Zero``. Each is built from its shape,
+``Real([rows, cols])``, with a width for words, ``Word(width, [rows, cols])``, and matches
+positionally the same way (``case Word(width, shape):``).
+"""
 
 import torch
 
+from .reactor import tensor as _tensor
+from .reactor.tensor.sort import Real, Int, Bool, Word, Zero
 
-class Sort(_ABC):
-    """Sort type. Variants are available as module-level names."""
-
-
-Sort.register(_Sort)
-
-# makes sorts available on the base namespace
-for _name in dir(_Sort):
-    if not _name.startswith('_'):
-        globals()[_name] = getattr(_Sort, _name)
 
 # Exhaustive on purpose: a new sort must be added here, never given a default.
 _KINDS = (
-    (_Sort.Bool, torch.bool, "boolean"),
-    (_Sort.Int, torch.int64, "integer"),
-    (_Sort.Real, torch.float32, "real"),
-    (_Sort.BitVec, torch.int64, "bit-vector"),
+    (Bool, torch.bool, "boolean"),
+    (Int, torch.int64, "integer"),
+    (Real, torch.float32, "real"),
+    (Word, torch.int64, "word"),
 )
+
+
+def shape(sort) -> list:
+    """The ``[rows, cols]`` shape of a sort."""
+    match sort:
+        case Real(s) | Int(s) | Bool(s) | Word(_, s):
+            return list(s)
+    raise TypeError(f"sort has no shape: {sort}")
+
+
+def with_shape(sort, new_shape) -> Real | Int | Bool | Word:
+    """The sort of the same family as ``sort`` (and width, for words), of another shape."""
+    match sort:
+        case Real(_):
+            return Real(new_shape)
+        case Int(_):
+            return Int(new_shape)
+        case Bool(_):
+            return Bool(new_shape)
+        case Word(w, _):
+            return Word(w, new_shape)
+    raise TypeError(f"sort has no shape: {sort}")
+
+
+def width(sort) -> int:
+    """The width of a word sort."""
+    match sort:
+        case Word(w, _):
+            return w
+    raise TypeError(f"not a word sort: {sort}")
+
+
+def family(sort) -> str:
+    """A key identifying a sort's family (with its width, for words), ignoring its shape:
+    two values may combine only if their families match."""
+    match sort:
+        case Real(_):
+            return "Real"
+        case Int(_):
+            return "Int"
+        case Bool(_):
+            return "Bool"
+        case Word(w, _):
+            return f"Word{w}"
+    raise TypeError(f"unknown sort: {sort}")
+
+
+def namespace(sort):
+    """The namespace of the operations on the family of ``sort``: ``reactor.tensor.real``
+    for ``Real``, ``.int`` for ``Int``, ``.bool`` for ``Bool`` and ``.word`` for ``Word``."""
+    match sort:
+        case Real(_):
+            return _tensor.real
+        case Int(_):
+            return _tensor.int
+        case Bool(_):
+            return _tensor.bool
+        case Word(_, _):
+            return _tensor.word
+    raise TypeError(f"no operations on {sort}")
 
 
 def tensor_for(value, sort):
     """``value`` as a tensor of the kind ``sort`` requires (``sort`` may be a family or an
     instance). A value the conversion would alter is rejected, never silently cast."""
-    for family, dtype, name in _KINDS:
-        if sort is family or isinstance(sort, family):
+    for fam, dtype, name in _KINDS:
+        if sort is fam or isinstance(sort, fam):
             break
     else:
         raise TypeError(f"no tensor representation for sort {sort!r}")
@@ -49,4 +104,4 @@ def tensor_for(value, sort):
 
 # Required, not boilerplate: without it `from .sort import *` in the package __init__
 # re-exports `torch`, replacing the `reactor.torch` submodule with the torch library.
-__all__ = ["Sort", "tensor_for"] + [n for n in dir(_Sort) if not n.startswith("_")]
+__all__ = ["Real", "Int", "Bool", "Word", "Zero", "tensor_for"]

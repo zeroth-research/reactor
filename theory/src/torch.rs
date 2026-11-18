@@ -52,10 +52,10 @@ fn is_integer(kind: tch::Kind) -> bool {
 
 /// Fails unless `a` and `b` are the matrices of an affine map `x ↦ A·x + B`:
 /// `A` of shape `[m, n]` and `B` of shape `[m, k]`.
-fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> PyResult<()> {
+fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> Result<(), crate::Error> {
     let (a, b) = (a.size(), b.size());
     if a.len() != 2 || b.len() != 2 || a[0] != b[0] {
-        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+        return Err(crate::Error(format!(
             "expected A of shape [m, n] and B of shape [m, k], got {a:?} and {b:?}"
         )));
     }
@@ -126,8 +126,8 @@ mod tests {
         let a = full(4, 2, 0.0, tch::Kind::Float);
         let b = full(4, 3, 0.0, tch::Kind::Float);
         let linear = tensor::real::Linear(a, b);
-        assert_eq!(linear.dom(), tensor::real::ReLU(2, 3).dom());
-        assert_eq!(linear.cod(), tensor::real::ReLU(4, 3).cod());
+        assert_eq!(linear.dom(), tensor::real::ReLU([2, 3]).dom());
+        assert_eq!(linear.cod(), tensor::real::ReLU([4, 3]).cod());
     }
 
     #[test]
@@ -164,7 +164,7 @@ mod tests {
             let op = constant
                 .extract::<tensor::real::Const<tch::Tensor>>()
                 .unwrap();
-            assert_eq!(op.cod(), tensor::real::ReLU(2, 3).cod());
+            assert_eq!(op.cod(), tensor::real::ReLU([2, 3]).cod());
 
             // the tensor is that of the constant
             let t = floats.extract::<PyTensor>().unwrap();
@@ -224,8 +224,8 @@ mod tests {
             let linear = class
                 .extract::<tensor::real::Linear<tch::Tensor>>()
                 .unwrap();
-            assert_eq!(linear.dom(), tensor::real::ReLU(2, 3).dom());
-            assert_eq!(linear.cod(), tensor::real::ReLU(4, 3).cod());
+            assert_eq!(linear.dom(), tensor::real::ReLU([2, 3]).dom());
+            assert_eq!(linear.cod(), tensor::real::ReLU([4, 3]).cod());
 
             // the tensors are those of the class
             let ta = a.extract::<PyTensor>().unwrap();

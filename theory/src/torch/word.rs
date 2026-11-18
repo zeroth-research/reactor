@@ -17,9 +17,9 @@ unsafe impl Sync for Const {}
 impl Const {
     /// Fails when `tensor` is not a `torch.Tensor` of integer elements.
     #[new]
-    fn new(tensor: PyTensor, width: usize) -> PyResult<Self> {
+    fn new(tensor: PyTensor, width: usize) -> Result<Self, crate::Error> {
         if !super::is_integer(tensor.kind()) {
-            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            return Err(crate::Error(format!(
                 "expected a tensor of integer elements, got {:?}",
                 tensor.kind()
             )));
@@ -35,6 +35,11 @@ impl Const {
     #[getter]
     fn width(&self) -> usize {
         self.1
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("tensor", "width")
     }
 }
 
@@ -81,6 +86,7 @@ impl<'py> IntoPyObject<'py> for crate::tensor::word::BV<tch::Tensor> {
             BV::Nor(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Xnor(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Neg(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Add(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
@@ -90,6 +96,7 @@ impl<'py> IntoPyObject<'py> for crate::tensor::word::BV<tch::Tensor> {
             BV::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::SDiv(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Abs(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::SRem(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::SMod(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::AShr(op) => op.into_pyobject(py).map(Bound::into_any),

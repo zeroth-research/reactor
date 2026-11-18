@@ -22,7 +22,6 @@ operations in [`LRA`] are:
 */
 
 use crate::*;
-#[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 use std::fmt;
 
@@ -58,7 +57,7 @@ impl fmt::Display for Sort {
 }
 
 #[derive(Clone, Debug, strum::Display)]
-#[cfg_attr(feature = "pyo3", pyclass(frozen))]
+#[pyclass(frozen)]
 pub enum LRA {
     // constant matrix literal; its sort (Real or Bool) is taken from the write wire
     #[strum(to_string = "{0}")]

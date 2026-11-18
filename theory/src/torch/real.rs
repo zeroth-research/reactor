@@ -18,9 +18,9 @@ impl Linear {
     /// Fails when `a` and `b` are not `torch.Tensor`s of floating-point
     /// elements, of shapes `[m, n]` and `[m, k]`.
     #[new]
-    fn new(a: PyTensor, b: PyTensor) -> PyResult<Self> {
+    fn new(a: PyTensor, b: PyTensor) -> Result<Self, crate::Error> {
         if !a.is_floating_point() || !b.is_floating_point() {
-            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            return Err(crate::Error(format!(
                 "expected tensors of floating-point elements, got {:?} and {:?}",
                 a.kind(),
                 b.kind()
@@ -38,6 +38,11 @@ impl Linear {
     #[getter]
     fn b(&self) -> PyTensor {
         PyTensor(self.1.shallow_clone())
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("a", "b")
     }
 }
 
@@ -66,9 +71,9 @@ impl Const {
     /// Fails when `tensor` is not a `torch.Tensor` of floating-point
     /// elements.
     #[new]
-    fn new(tensor: PyTensor) -> PyResult<Self> {
+    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
         if !tensor.is_floating_point() {
-            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            return Err(crate::Error(format!(
                 "expected a tensor of floating-point elements, got {:?}",
                 tensor.kind()
             )));
@@ -79,6 +84,11 @@ impl Const {
     #[getter]
     fn tensor(&self) -> PyTensor {
         PyTensor(self.0.shallow_clone())
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("tensor",)
     }
 }
 
@@ -125,11 +135,13 @@ impl<'py> IntoPyObject<'py> for crate::tensor::real::NRA<tch::Tensor> {
             NRA::Div(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Linear(op) => Linear(op.0, op.1).into_pyobject(py).map(Bound::into_any),
             NRA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Argmax(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Min(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Max(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Transpose(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::MatMul(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Lt(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Le(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Gt(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Ge(op) => op.into_pyobject(py).map(Bound::into_any),
