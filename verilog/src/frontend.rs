@@ -16,7 +16,8 @@ their context. Operators on constants are kept, so that
 [`sizing`](crate::sizing) evaluates them at the type of their context;
 only `$clog2` is folded here, into an `int`. A concatenation item must not take its
 width from an unsized literal (`{a, 1}`, `{a, N - 1}`; IEEE 1800 forbids
-it), see [`unsized_width`]. Instances keep their parameter
+it), reached through the operands that take the width of their context
+(the private `unsized_width`). Instances keep their parameter
 values and connections; [`elab`](crate::elab) elaborates the modules they
 name.
 
