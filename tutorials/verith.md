@@ -85,8 +85,8 @@ uv run certify --help      # both
 **One output directory for every command.** `reactor` regenerates
 `<OUT>/<PROJ>` in place — it never wipes the directory — so the project's
 `.lake` survives from one example to the next, and with it every `.olean` of
-Mathlib, cslib, lean-smt and `ZerothHammer`; reactor-lean's `Relational` is
-built once, in the checkout itself. Only `System/*` and `Certificate/*`
+Mathlib, cslib, lean-smt and `ZerothHammer`; reactor-lean's `Spec` and
+`Relational` are built once, in the checkout itself. Only `System/*` and `Certificate/*`
 recompile per example: the first `lake build` below costs about 15 s and each
 later one about 10 s, against an hour from cold.
 
@@ -105,10 +105,10 @@ Three things make that work:
 * `<OUT>/<PROJ>/.lake` is a symlink to one shared build directory whose
   `packages` points at the already-built packages of `python/tests/lean`.
   Build those once with `cd python/tests/lean && lake build`.
-* The Lean library the project is stated in, `Relational`, is not one of
-  those packages. It is a package of [reactor-lean], which the lakefile
-  requires from git; with `REACTOR_LEAN` set to a checkout of it, `reactor`
-  writes the lakefile to require the checkout by path instead.
+* The Lean libraries the project is stated in, `Spec` and `Relational`, are
+  not among those packages. They are packages of [reactor-lean], which the
+  lakefile requires from git; with `REACTOR_LEAN` set to a checkout of it,
+  `reactor` writes the lakefile to require the checkout by path instead.
 * Keep the `.noindex` suffix on `OUT` if you are on macOS. A build writes tens
   of thousands of `.olean` files; Spotlight indexing them has turned a 9 s
   build into a 928 s one, and a directory whose name ends in `.noindex` is
