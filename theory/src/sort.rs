@@ -272,6 +272,19 @@ impl Differentiable for Any {
     }
 }
 
+/// Each sort as it displays itself.
+impl fmt::Display for Any {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Any::Real(r) => r.fmt(f),
+            Any::Int(i) => i.fmt(f),
+            Any::Bool(b) => b.fmt(f),
+            Any::Word(w) => w.fmt(f),
+            Any::Zero(z) => z.fmt(f),
+        }
+    }
+}
+
 impl fmt::Display for Words {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -366,6 +379,20 @@ mod tests {
     #[should_panic(expected = "words have at least one bit")]
     fn word_new_unchecked_panics_on_zero_width() {
         Word::new_unchecked(0, [2, 3]);
+    }
+
+    #[test]
+    fn any_displays_its_sort() {
+        let r = Real::new([2, 3]);
+        assert_eq!(Any::from(r).to_string(), "Real(2, 3)");
+        assert_eq!(Any::from(T(r)).to_string(), "T^1(Real(2, 3))");
+        assert_eq!(Any::from(Int::new([2, 3])).to_string(), "Int(2, 3)");
+        assert_eq!(Any::from(Bool::new([2, 3])).to_string(), "Bool(2, 3)");
+        assert_eq!(
+            Any::from(Word::new_unchecked(8, [2, 3])).to_string(),
+            "Word<8>(2, 3)"
+        );
+        assert_eq!(Any::from(Zero).to_string(), "Zero");
     }
 
     #[test]
