@@ -1,7 +1,9 @@
 //! The tensors in Python, with the `pyo3` feature: a tensor converts from
-//! and into its Python object, a `torch.Tensor`, or, for a [`Builtin`], a
-//! list of rows.
+//! and into its Python object, a `torch.Tensor`, a `jax.Array`, or, for a
+//! [`Builtin`], a list of rows.
 
+#[cfg(feature = "jax")]
+use super::Jax;
 #[cfg(feature = "torch")]
 use super::Torch;
 use super::{Builtin, Error, Tensor, Value};
@@ -23,10 +25,13 @@ impl From<Error> for PyErr {
 
 /// The Python objects that convert into a tensor, for the errors.
 fn tensors() -> String {
-    let backends: Vec<&str> = [(cfg!(feature = "torch"), "a torch.Tensor")]
-        .into_iter()
-        .filter_map(|(enabled, object)| enabled.then_some(object))
-        .collect();
+    let backends: Vec<&str> = [
+        (cfg!(feature = "torch"), "a torch.Tensor"),
+        (cfg!(feature = "jax"), "a jax.Array"),
+    ]
+    .into_iter()
+    .filter_map(|(enabled, object)| enabled.then_some(object))
+    .collect();
     if backends.is_empty() {
         "a matrix: a list of rows".into()
     } else {
@@ -35,13 +40,17 @@ fn tensors() -> String {
 }
 
 impl<'py> FromPyObject<'py> for Tensor {
-    /// Fails unless `ob` is a matrix: a `torch.Tensor`, with the `torch`
-    /// feature, which the tensor shares, or a list of rows of numbers or
-    /// booleans, which it copies into a [`Builtin`].
+    /// Fails unless `ob` is a matrix: a `torch.Tensor` or a `jax.Array`,
+    /// with their features, which the tensor shares, or a list of rows of
+    /// numbers or booleans, which it copies into a [`Builtin`].
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         #[cfg(feature = "torch")]
         if let Some(t) = Torch::from_python(ob)? {
             return Ok(Tensor::Torch(t));
+        }
+        #[cfg(feature = "jax")]
+        if Jax::is_array(ob)? {
+            return Ok(Tensor::Jax(Jax::new(ob)?));
         }
         if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
             return Ok(Tensor::Builtin(ob.extract()?));
@@ -60,12 +69,14 @@ impl<'py> IntoPyObject<'py> for Tensor {
     type Error = PyErr;
 
     /// The Python object of the tensor: the one it shares for a torch
-    /// tensor, and a list of rows for a [`Builtin`].
+    /// tensor or a JAX array, and a list of rows for a [`Builtin`].
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self {
             Tensor::Builtin(t) => t.into_bound_py_any(py),
             #[cfg(feature = "torch")]
             Tensor::Torch(t) => t.into_pyobject(py),
+            #[cfg(feature = "jax")]
+            Tensor::Jax(t) => t.into_pyobject(py),
         }
     }
 }

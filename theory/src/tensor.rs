@@ -5,7 +5,8 @@ The matrices that the operations carrying data hold, the constants and the
 coefficients of the affine maps: a [`Tensor`] is one of
 
 - a [`Builtin`] matrix, held in Rust, in every build;
-- a `Torch` tensor, with the `torch` feature.
+- a `Torch` tensor, with the `torch` feature;
+- a `Jax` array, held as its Python object, with the `jax` feature.
 
 The operations of a module may hold tensors of different backends. A
 tensor gives its shape, the [`Kind`] of its elements, which the operations
@@ -18,16 +19,20 @@ it elsewhere would break when another crate turns on a feature; code
 elsewhere uses the methods of [`Tensor`] instead.
 
 With the `pyo3` feature, a tensor converts from and into its Python object:
-a `torch.Tensor`, or, for a [`Builtin`], a list of rows.
+a `torch.Tensor`, a `jax.Array`, or, for a [`Builtin`], a list of rows.
 */
 
 mod builtin;
+#[cfg(feature = "jax")]
+mod jax;
 #[cfg(feature = "pyo3")]
 mod py;
 #[cfg(feature = "torch")]
 mod torch;
 
 pub use builtin::Builtin;
+#[cfg(feature = "jax")]
+pub use jax::Jax;
 #[cfg(feature = "torch")]
 pub use torch::Torch;
 
@@ -41,6 +46,9 @@ pub enum Tensor {
     /// A torch tensor.
     #[cfg(feature = "torch")]
     Torch(Torch),
+    /// A JAX array.
+    #[cfg(feature = "jax")]
+    Jax(Jax),
 }
 
 impl Tensor {
@@ -50,6 +58,8 @@ impl Tensor {
             Tensor::Builtin(t) => t.shape(),
             #[cfg(feature = "torch")]
             Tensor::Torch(t) => t.shape(),
+            #[cfg(feature = "jax")]
+            Tensor::Jax(t) => t.shape(),
         }
     }
 
@@ -59,6 +69,8 @@ impl Tensor {
             Tensor::Builtin(t) => t.kind(),
             #[cfg(feature = "torch")]
             Tensor::Torch(t) => t.kind(),
+            #[cfg(feature = "jax")]
+            Tensor::Jax(t) => t.kind(),
         }
     }
 
@@ -101,12 +113,21 @@ impl From<Torch> for Tensor {
     }
 }
 
+#[cfg(feature = "jax")]
+impl From<Jax> for Tensor {
+    fn from(t: Jax) -> Self {
+        Tensor::Jax(t)
+    }
+}
+
 impl fmt::Display for Tensor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Tensor::Builtin(t) => t.fmt(f),
             #[cfg(feature = "torch")]
             Tensor::Torch(t) => t.fmt(f),
+            #[cfg(feature = "jax")]
+            Tensor::Jax(t) => t.fmt(f),
         }
     }
 }

@@ -14,8 +14,9 @@ derive_more = { version = "2.1.1", features = ["display", "from"] }
 [features]
 # `pyo3` makes the sorts and operations Python classes, with tensors held in
 # Rust, from and into lists of rows.
-# `torch` adds the torch tensors, which convert from and into `torch.Tensor`,
-# and links libtorch. It requires `pyo3`, and is kept separate so that the
-# Python bindings may leave torch out.
+# `torch` and `jax` add the tensors of their backends, which convert from and
+# into `torch.Tensor` and `jax.Array`; `torch` links libtorch. Both require
+# `pyo3`, and are kept separate so that either may be left out.
 pyo3 = ["dep:pyo3"]
 torch = ["pyo3", "dep:tch", "dep:pyo3-tch"]
+jax = ["pyo3"]

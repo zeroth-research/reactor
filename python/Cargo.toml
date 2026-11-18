@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 dataflow = { path = "../dataflow" }
 reactive = { path = "../reactive" }
-theory = { path = "../theory", features = ["torch"] }
+theory = { path = "../theory", features = ["torch", "jax"] }
 pyo3 = { version = "0.24" }
 tch = { features = ["python-extension"], version = "0.22" }
 pyo3-tch = { version = "0.22" }

@@ -5,8 +5,8 @@ Generated from the operations of `theory::op`; keep them in step with it.
 
 from typing import Any
 
-# A matrix that an operation holds: a `torch.Tensor`, whose storage it shares, or a
-# list of rows, which it copies.
+# A matrix that an operation holds: a `torch.Tensor` or a `jax.Array` (with JAX), whose
+# storage it shares, or a list of rows, which it copies.
 Matrix = Any
 
 
