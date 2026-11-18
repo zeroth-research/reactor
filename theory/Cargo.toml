@@ -10,10 +10,9 @@ tch = { version = "0.22", optional = true }
 pyo3-tch = { version = "0.22", optional = true }
 subenum = "1.2.0"
 derive_more = { version = "2.1.1", features = ["display", "from"] }
-strum = { version = "0.28.0", features = ["derive"] }
 
 [features]
-# `pyo3` the op enums into Python objects.
+# `pyo3` makes the sorts and operations Python classes.
 # `torch` additionally adds the tch/pyo3-tch backing for `PyTensor` (which links
 # libtorch) and requires `pyo3`. Kept separate so future features can turn on
 # the Python bindings without pulling in torch.

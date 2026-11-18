@@ -1,7 +1,6 @@
 use super::Wire;
 use std::borrow::Cow;
 use std::fmt;
-use theory::any;
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -89,59 +88,6 @@ impl<T, S> Term<T, S> {
         U: Into<T>,
     {
         Self::new_unchecked(term.itype.into(), term.write, term.read)
-    }
-
-    /// Re-types a term along a fallible theory cast (`U: TryInto<T>`),
-    /// failing exactly when the instruction does not belong to `T`.
-    ///
-    /// Only the instruction is converted; the wires are untouched, so a term
-    /// that was well-formed over `U` stays well-formed over `T` and no
-    /// re-validation is needed.
-    fn try_convert<U, E>(term: Term<U, S>) -> Result<Self, E>
-    where
-        U: TryInto<T, Error = E>,
-    {
-        let itype = term.itype.try_into()?;
-        Ok(Self::new_unchecked(itype, term.write, term.read))
-    }
-}
-
-impl From<Term<any::Combinatorial, any::Sort>> for Term<any::Any, any::Sort> {
-    fn from(term: Term<any::Combinatorial, any::Sort>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl From<Term<any::Sequential, any::Sort>> for Term<any::Any, any::Sort> {
-    fn from(term: Term<any::Sequential, any::Sort>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl From<Term<any::Differential, any::Sort>> for Term<any::Any, any::Sort> {
-    fn from(term: Term<any::Differential, any::Sort>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl TryFrom<Term<any::Any, any::Sort>> for Term<any::Combinatorial, any::Sort> {
-    type Error = String;
-    fn try_from(term: Term<any::Any, any::Sort>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
-    }
-}
-
-impl TryFrom<Term<any::Any, any::Sort>> for Term<any::Sequential, any::Sort> {
-    type Error = String;
-    fn try_from(term: Term<any::Any, any::Sort>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
-    }
-}
-
-impl TryFrom<Term<any::Any, any::Sort>> for Term<any::Differential, any::Sort> {
-    type Error = String;
-    fn try_from(term: Term<any::Any, any::Sort>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 
