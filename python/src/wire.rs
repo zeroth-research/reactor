@@ -1,16 +1,16 @@
 use pyo3::prelude::*;
-use theory::any::Sort;
+use theory::tensor::sort;
 
 #[pyclass(frozen, eq, hash, ord)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub(crate) struct Wire {
-    base: dataflow::diagram::Wire<Sort>,
+    base: dataflow::diagram::Wire<sort::Any>,
 }
 
 #[pymethods]
 impl Wire {
     #[new]
-    pub(crate) fn new(dtype: Sort) -> Self {
+    pub(crate) fn new(dtype: sort::Any) -> Self {
         let base = dataflow::diagram::Wire::new(dtype);
         Self { base }
     }
@@ -21,7 +21,7 @@ impl Wire {
     }
 
     #[getter]
-    fn dtype(&self) -> Sort {
+    fn dtype(&self) -> sort::Any {
         self.base.dtype().clone()
     }
 
@@ -31,13 +31,13 @@ impl Wire {
 }
 
 impl Wire {
-    pub(crate) fn base(&self) -> &dataflow::diagram::Wire<Sort> {
+    pub(crate) fn base(&self) -> &dataflow::diagram::Wire<sort::Any> {
         &self.base
     }
 }
 
-impl From<dataflow::diagram::Wire<Sort>> for Wire {
-    fn from(base: dataflow::diagram::Wire<Sort>) -> Self {
+impl From<dataflow::diagram::Wire<sort::Any>> for Wire {
+    fn from(base: dataflow::diagram::Wire<sort::Any>) -> Self {
         Self { base }
     }
 }

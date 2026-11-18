@@ -89,3 +89,52 @@ impl<'py> FromPyObject<'py> for crate::tensor::real::Const<tch::Tensor> {
         Ok(crate::tensor::real::Const(constant.0.shallow_clone()))
     }
 }
+
+/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
+/// so this takes a shallow clone of it, as libtorch counts its references.
+impl Clone for crate::tensor::real::Const<tch::Tensor> {
+    fn clone(&self) -> Self {
+        crate::tensor::real::Const(self.0.shallow_clone())
+    }
+}
+
+/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
+/// so this takes a shallow clone of it, as libtorch counts its references.
+impl Clone for crate::tensor::real::Linear<tch::Tensor> {
+    fn clone(&self) -> Self {
+        crate::tensor::real::Linear(self.0.shallow_clone(), self.1.shallow_clone())
+    }
+}
+
+/// Converts an operation of the theory into its Python class: the
+/// operations carrying tensors into the classes of this module, holding the
+/// same tensors, and the others into their own classes.
+impl<'py> IntoPyObject<'py> for crate::tensor::real::NRA<tch::Tensor> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        use crate::tensor::real::NRA;
+
+        match self {
+            NRA::Const(op) => Const(op.0).into_pyobject(py).map(Bound::into_any),
+            NRA::Add(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Div(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Linear(op) => Linear(op.0, op.1).into_pyobject(py).map(Bound::into_any),
+            NRA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Min(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Max(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Transpose(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::MatMul(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Lt(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Le(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Gt(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Ge(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
+        }
+    }
+}

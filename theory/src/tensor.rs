@@ -40,6 +40,7 @@ pub mod word;
 
 use base::boundary::{Boundary, Poly};
 use derive_more::From;
+use std::fmt;
 use subenum::subenum;
 
 /// A matrix of values, as held by the operations that carry data: the
@@ -52,7 +53,8 @@ pub trait Tensor {
 
 /// The operations of all theories: a value of `Any` is an operation of one
 /// of them, on the sorts in [`sort::Any`], with its data held in tensors of
-/// type `T`.
+/// type `T`; or one of the structural operations [`Havoc`], [`Skip`] and
+/// [`Zero`], which belong to no theory and so to no logic.
 ///
 /// `subenum` defines the logics that take whole theories: [`Prop`],
 /// propositional logic; [`NRA`] and [`NIA`], non-linear real and integer
@@ -61,8 +63,12 @@ pub trait Tensor {
 /// it. The linear logics [`LRA`] and [`LIA`] restrict a theory to its
 /// linear operations, which `subenum` cannot express, so they are defined
 /// on their own, with the same casts.
+///
+/// `Any` is cloneable when the constants and affine maps of its tensor type
+/// are: `Clone` is implemented by hand rather than derived, as a derive would
+/// require `T: Clone`, which tensor types such as `tch::Tensor` are not.
 #[subenum(NRA, NIA, Prop, BV)]
-#[derive(Clone, Debug, From)]
+#[derive(Debug, From)]
 pub enum Any<T> {
     #[subenum(NRA)]
     Real(real::NRA<T>),
@@ -72,11 +78,14 @@ pub enum Any<T> {
     Bool(bool::Prop<T>),
     #[subenum(BV)]
     Word(word::BV<T>),
+    Havoc(Havoc),
+    Skip(Skip),
+    Zero(Zero),
 }
 
 /// Linear real arithmetic: the linear operations of [`real`], with the
 /// boolean operations.
-#[derive(Clone, Debug, From)]
+#[derive(Debug, From)]
 pub enum LRA<T> {
     Real(real::LRA<T>),
     Bool(bool::Prop<T>),
@@ -84,10 +93,249 @@ pub enum LRA<T> {
 
 /// Linear integer arithmetic: the linear operations of [`int`], with the
 /// boolean operations.
-#[derive(Clone, Debug, From)]
+#[derive(Debug, From)]
 pub enum LIA<T> {
     Int(int::LIA<T>),
     Bool(bool::Prop<T>),
+}
+
+/// Writes an arbitrary value of the given sort, reading nothing: the
+/// nondeterministic choice of a value.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+pub struct Havoc(pub sort::Any);
+
+/// Writes the value it reads, of the given sort: the identity.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+pub struct Skip(pub sort::Any);
+
+/// Writes the zero of the given sort, reading nothing: the rate of change
+/// of a value that does not change.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+pub struct Zero(pub sort::Any);
+
+impl Boundary<sort::Any> for Havoc {
+    fn dom(&self) -> Poly<sort::Any> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<sort::Any> {
+        base::mono![self.0].into()
+    }
+}
+
+impl Boundary<sort::Any> for Skip {
+    fn dom(&self) -> Poly<sort::Any> {
+        base::mono![self.0].into()
+    }
+
+    fn cod(&self) -> Poly<sort::Any> {
+        base::mono![self.0].into()
+    }
+}
+
+impl Boundary<sort::Any> for Zero {
+    fn dom(&self) -> Poly<sort::Any> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<sort::Any> {
+        base::mono![self.0].into()
+    }
+}
+
+impl fmt::Display for Havoc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Havoc")
+    }
+}
+
+impl fmt::Display for Skip {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Skip")
+    }
+}
+
+impl fmt::Display for Zero {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Zero")
+    }
+}
+
+/// The Python constructors of the structural operations, from their sort.
+#[cfg(feature = "pyo3")]
+mod py {
+    use super::{Havoc, Skip, Zero, sort};
+    use pyo3::prelude::*;
+
+    #[pymethods]
+    impl Havoc {
+        #[new]
+        fn new(sort: sort::Any) -> Self {
+            Havoc(sort)
+        }
+
+        #[getter]
+        fn sort(&self) -> sort::Any {
+            self.0
+        }
+    }
+
+    #[pymethods]
+    impl Skip {
+        #[new]
+        fn new(sort: sort::Any) -> Self {
+            Skip(sort)
+        }
+
+        #[getter]
+        fn sort(&self) -> sort::Any {
+            self.0
+        }
+    }
+
+    #[pymethods]
+    impl Zero {
+        #[new]
+        fn new(sort: sort::Any) -> Self {
+            Zero(sort)
+        }
+
+        #[getter]
+        fn sort(&self) -> sort::Any {
+            self.0
+        }
+    }
+}
+
+impl<T> crate::Combinatorial<sort::Any> for Any<T> {
+    fn havoc(range: &sort::Any) -> Self {
+        Any::Havoc(Havoc(*range))
+    }
+}
+
+impl<T> crate::Sequential<sort::Any> for Any<T> {
+    fn skip(range: &sort::Any) -> Self {
+        Any::Skip(Skip(*range))
+    }
+}
+
+impl<T> crate::Differential<sort::Any> for Any<T> {
+    fn zero(range: &sort::Any) -> Self {
+        Any::Zero(Zero(*range))
+    }
+}
+
+impl<T> Clone for Any<T>
+where
+    real::NRA<T>: Clone,
+    int::NIA<T>: Clone,
+    bool::Prop<T>: Clone,
+    word::BV<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Any::Real(op) => Any::Real(op.clone()),
+            Any::Int(op) => Any::Int(op.clone()),
+            Any::Bool(op) => Any::Bool(op.clone()),
+            Any::Word(op) => Any::Word(op.clone()),
+            Any::Havoc(op) => Any::Havoc(*op),
+            Any::Skip(op) => Any::Skip(*op),
+            Any::Zero(op) => Any::Zero(*op),
+        }
+    }
+}
+
+impl<T> Clone for NRA<T>
+where
+    real::NRA<T>: Clone,
+    bool::Prop<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            NRA::Real(op) => NRA::Real(op.clone()),
+            NRA::Bool(op) => NRA::Bool(op.clone()),
+        }
+    }
+}
+
+impl<T> Clone for NIA<T>
+where
+    int::NIA<T>: Clone,
+    bool::Prop<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            NIA::Int(op) => NIA::Int(op.clone()),
+            NIA::Bool(op) => NIA::Bool(op.clone()),
+        }
+    }
+}
+
+impl<T> Clone for Prop<T>
+where
+    bool::Prop<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Prop::Bool(op) => Prop::Bool(op.clone()),
+        }
+    }
+}
+
+impl<T> Clone for BV<T>
+where
+    bool::Prop<T>: Clone,
+    word::BV<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            BV::Bool(op) => BV::Bool(op.clone()),
+            BV::Word(op) => BV::Word(op.clone()),
+        }
+    }
+}
+
+impl<T> Clone for LRA<T>
+where
+    real::LRA<T>: Clone,
+    bool::Prop<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            LRA::Real(op) => LRA::Real(op.clone()),
+            LRA::Bool(op) => LRA::Bool(op.clone()),
+        }
+    }
+}
+
+impl<T> Clone for LIA<T>
+where
+    int::LIA<T>: Clone,
+    bool::Prop<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            LIA::Int(op) => LIA::Int(op.clone()),
+            LIA::Bool(op) => LIA::Bool(op.clone()),
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for Any<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Any::Real(op) => op.fmt(f),
+            Any::Int(op) => op.fmt(f),
+            Any::Bool(op) => op.fmt(f),
+            Any::Word(op) => op.fmt(f),
+            Any::Havoc(op) => op.fmt(f),
+            Any::Skip(op) => op.fmt(f),
+            Any::Zero(op) => op.fmt(f),
+        }
+    }
 }
 
 impl<T: Tensor> Boundary<sort::Any> for Any<T> {
@@ -97,6 +345,9 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
             Any::Int(op) => op.dom().map(sort::Any::from),
             Any::Bool(op) => op.dom().map(sort::Any::from),
             Any::Word(op) => op.dom().map(sort::Any::from),
+            Any::Havoc(op) => op.dom(),
+            Any::Skip(op) => op.dom(),
+            Any::Zero(op) => op.dom(),
         }
     }
 
@@ -106,6 +357,9 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
             Any::Int(op) => op.cod().map(sort::Any::from),
             Any::Bool(op) => op.cod().map(sort::Any::from),
             Any::Word(op) => op.cod().map(sort::Any::from),
+            Any::Havoc(op) => op.cod(),
+            Any::Skip(op) => op.cod(),
+            Any::Zero(op) => op.cod(),
         }
     }
 }
@@ -136,6 +390,15 @@ where
         }
         if let Ok(op) = ob.extract::<word::BV<T>>() {
             return Ok(Any::Word(op));
+        }
+        if let Ok(op) = ob.extract::<Havoc>() {
+            return Ok(Any::Havoc(op));
+        }
+        if let Ok(op) = ob.extract::<Skip>() {
+            return Ok(Any::Skip(op));
+        }
+        if let Ok(op) = ob.extract::<Zero>() {
+            return Ok(Any::Zero(op));
         }
         Err(pyo3::exceptions::PyTypeError::new_err(format!(
             "expected an operation of real, integer, boolean or bit-vector \
@@ -256,6 +519,43 @@ mod tests {
     impl Tensor for Mat {
         fn shape(&self) -> [usize; 2] {
             self.0
+        }
+    }
+
+    // The operations carrying `Mat` are cloneable, as with `tch::Tensor`.
+    impl Clone for real::Const<Mat> {
+        fn clone(&self) -> Self {
+            real::Const(self.0.clone())
+        }
+    }
+
+    impl Clone for real::Linear<Mat> {
+        fn clone(&self) -> Self {
+            real::Linear(self.0.clone(), self.1.clone())
+        }
+    }
+
+    impl Clone for int::Const<Mat> {
+        fn clone(&self) -> Self {
+            int::Const(self.0.clone())
+        }
+    }
+
+    impl Clone for int::Linear<Mat> {
+        fn clone(&self) -> Self {
+            int::Linear(self.0.clone(), self.1.clone())
+        }
+    }
+
+    impl Clone for bool::Const<Mat> {
+        fn clone(&self) -> Self {
+            bool::Const(self.0.clone())
+        }
+    }
+
+    impl Clone for word::Const<Mat> {
+        fn clone(&self) -> Self {
+            word::Const(self.0.clone(), self.1)
         }
     }
 

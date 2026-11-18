@@ -39,3 +39,32 @@ impl<'py> FromPyObject<'py> for crate::tensor::bool::Const<tch::Tensor> {
         Ok(crate::tensor::bool::Const(constant.0.shallow_clone()))
     }
 }
+
+/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
+/// so this takes a shallow clone of it, as libtorch counts its references.
+impl Clone for crate::tensor::bool::Const<tch::Tensor> {
+    fn clone(&self) -> Self {
+        crate::tensor::bool::Const(self.0.shallow_clone())
+    }
+}
+
+/// Converts an operation of the theory into its Python class: the
+/// operations carrying tensors into the classes of this module, holding the
+/// same tensors, and the others into their own classes.
+impl<'py> IntoPyObject<'py> for crate::tensor::bool::Prop<tch::Tensor> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        use crate::tensor::bool::Prop;
+
+        match self {
+            Prop::Const(op) => Const(op.0).into_pyobject(py).map(Bound::into_any),
+            Prop::And(op) => op.into_pyobject(py).map(Bound::into_any),
+            Prop::Or(op) => op.into_pyobject(py).map(Bound::into_any),
+            Prop::Xor(op) => op.into_pyobject(py).map(Bound::into_any),
+            Prop::Not(op) => op.into_pyobject(py).map(Bound::into_any),
+        }
+    }
+}

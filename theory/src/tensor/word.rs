@@ -63,7 +63,7 @@ pub use super::sort::Words as Sort;
 /// in a tensor of type `T`.
 ///
 /// SMT-LIB2: a literal `#b…` or `(_ bvN w)`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Const<T>(pub T, pub usize);
 
 /// Pointwise concatenation `x ++ y` of a `u`-bit word `x`, the high bits
@@ -212,7 +212,7 @@ pub struct Ne(pub usize, pub usize, pub usize);
 /// `FixedSizeBitVectors`, with their boundary in [`Sort`]. Those of
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
 /// as `SDiv` for [`signed::Div`] and `UDiv` for [`unsigned::Div`].
-#[derive(Clone, Debug, From)]
+#[derive(Debug, From)]
 pub enum BV<T> {
     Const(Const<T>),
     Concat(Concat),
@@ -251,6 +251,97 @@ pub enum BV<T> {
     ULe(unsigned::Le),
     UGt(unsigned::Gt),
     UGe(unsigned::Ge),
+}
+
+impl<T> Clone for BV<T>
+where
+    Const<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            BV::Const(op) => BV::Const(op.clone()),
+            BV::Concat(op) => BV::Concat(*op),
+            BV::Extract(op) => BV::Extract(*op),
+            BV::Repeat(op) => BV::Repeat(*op),
+            BV::Not(op) => BV::Not(*op),
+            BV::And(op) => BV::And(*op),
+            BV::Or(op) => BV::Or(*op),
+            BV::Xor(op) => BV::Xor(*op),
+            BV::Nand(op) => BV::Nand(*op),
+            BV::Nor(op) => BV::Nor(*op),
+            BV::Xnor(op) => BV::Xnor(*op),
+            BV::Neg(op) => BV::Neg(*op),
+            BV::Add(op) => BV::Add(*op),
+            BV::Sub(op) => BV::Sub(*op),
+            BV::Mul(op) => BV::Mul(*op),
+            BV::Shl(op) => BV::Shl(*op),
+            BV::RotateLeft(op) => BV::RotateLeft(*op),
+            BV::RotateRight(op) => BV::RotateRight(*op),
+            BV::Eq(op) => BV::Eq(*op),
+            BV::Ne(op) => BV::Ne(*op),
+            BV::SDiv(op) => BV::SDiv(*op),
+            BV::SRem(op) => BV::SRem(*op),
+            BV::SMod(op) => BV::SMod(*op),
+            BV::AShr(op) => BV::AShr(*op),
+            BV::SignExtend(op) => BV::SignExtend(*op),
+            BV::SLt(op) => BV::SLt(*op),
+            BV::SLe(op) => BV::SLe(*op),
+            BV::SGt(op) => BV::SGt(*op),
+            BV::SGe(op) => BV::SGe(*op),
+            BV::UDiv(op) => BV::UDiv(*op),
+            BV::URem(op) => BV::URem(*op),
+            BV::LShr(op) => BV::LShr(*op),
+            BV::ZeroExtend(op) => BV::ZeroExtend(*op),
+            BV::ULt(op) => BV::ULt(*op),
+            BV::ULe(op) => BV::ULe(*op),
+            BV::UGt(op) => BV::UGt(*op),
+            BV::UGe(op) => BV::UGe(*op),
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for BV<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BV::Const(op) => op.fmt(f),
+            BV::Concat(op) => op.fmt(f),
+            BV::Extract(op) => op.fmt(f),
+            BV::Repeat(op) => op.fmt(f),
+            BV::Not(op) => op.fmt(f),
+            BV::And(op) => op.fmt(f),
+            BV::Or(op) => op.fmt(f),
+            BV::Xor(op) => op.fmt(f),
+            BV::Nand(op) => op.fmt(f),
+            BV::Nor(op) => op.fmt(f),
+            BV::Xnor(op) => op.fmt(f),
+            BV::Neg(op) => op.fmt(f),
+            BV::Add(op) => op.fmt(f),
+            BV::Sub(op) => op.fmt(f),
+            BV::Mul(op) => op.fmt(f),
+            BV::Shl(op) => op.fmt(f),
+            BV::RotateLeft(op) => op.fmt(f),
+            BV::RotateRight(op) => op.fmt(f),
+            BV::Eq(op) => op.fmt(f),
+            BV::Ne(op) => op.fmt(f),
+            BV::SDiv(op) => op.fmt(f),
+            BV::SRem(op) => op.fmt(f),
+            BV::SMod(op) => op.fmt(f),
+            BV::AShr(op) => op.fmt(f),
+            BV::SignExtend(op) => op.fmt(f),
+            BV::SLt(op) => op.fmt(f),
+            BV::SLe(op) => op.fmt(f),
+            BV::SGt(op) => op.fmt(f),
+            BV::SGe(op) => op.fmt(f),
+            BV::UDiv(op) => op.fmt(f),
+            BV::URem(op) => op.fmt(f),
+            BV::LShr(op) => op.fmt(f),
+            BV::ZeroExtend(op) => op.fmt(f),
+            BV::ULt(op) => op.fmt(f),
+            BV::ULe(op) => op.fmt(f),
+            BV::UGt(op) => op.fmt(f),
+            BV::UGe(op) => op.fmt(f),
+        }
+    }
 }
 
 impl<T: Tensor> Boundary<Sort> for BV<T> {
@@ -1211,6 +1302,338 @@ where
             "expected an operation of fixed-size bit-vectors, got {}",
             ob.get_type()
         )))
+    }
+}
+
+/// The Python constructors of the operations carrying no tensor: each takes
+/// the sizes of the operation, positionally, in the order of its fields.
+#[cfg(feature = "pyo3")]
+mod py {
+    use super::*;
+    use pyo3::prelude::*;
+
+    #[pymethods]
+    impl Concat {
+        #[new]
+        #[pyo3(signature = (u, v, m, n, /))]
+        fn new(u: usize, v: usize, m: usize, n: usize) -> Self {
+            Concat(u, v, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Extract {
+        #[new]
+        #[pyo3(signature = (i, j, w, m, n, /))]
+        fn new(i: usize, j: usize, w: usize, m: usize, n: usize) -> Self {
+            Extract(i, j, w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Repeat {
+        #[new]
+        #[pyo3(signature = (i, w, m, n, /))]
+        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
+            Repeat(i, w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Not {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Not(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl And {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            And(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Or {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Or(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Xor {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Xor(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Nand {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Nand(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Nor {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Nor(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Xnor {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Xnor(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Neg {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Neg(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Add {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Add(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Sub {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Sub(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Mul {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Mul(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Shl {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Shl(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl RotateLeft {
+        #[new]
+        #[pyo3(signature = (i, w, m, n, /))]
+        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
+            RotateLeft(i, w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl RotateRight {
+        #[new]
+        #[pyo3(signature = (i, w, m, n, /))]
+        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
+            RotateRight(i, w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Eq {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Eq(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Ne {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            Ne(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl signed::Div {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            signed::Div(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl signed::Rem {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            signed::Rem(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl signed::Mod {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            signed::Mod(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl signed::Shr {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            signed::Shr(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl signed::Extend {
+        #[new]
+        #[pyo3(signature = (i, w, m, n, /))]
+        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
+            signed::Extend(i, w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl signed::Lt {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            signed::Lt(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl signed::Le {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            signed::Le(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl signed::Gt {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            signed::Gt(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl signed::Ge {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            signed::Ge(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl unsigned::Div {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            unsigned::Div(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl unsigned::Rem {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            unsigned::Rem(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl unsigned::Shr {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            unsigned::Shr(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl unsigned::Extend {
+        #[new]
+        #[pyo3(signature = (i, w, m, n, /))]
+        fn new(i: usize, w: usize, m: usize, n: usize) -> Self {
+            unsigned::Extend(i, w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl unsigned::Lt {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            unsigned::Lt(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl unsigned::Le {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            unsigned::Le(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl unsigned::Gt {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            unsigned::Gt(w, m, n)
+        }
+    }
+
+    #[pymethods]
+    impl unsigned::Ge {
+        #[new]
+        #[pyo3(signature = (w, m, n, /))]
+        fn new(w: usize, m: usize, n: usize) -> Self {
+            unsigned::Ge(w, m, n)
+        }
     }
 }
 

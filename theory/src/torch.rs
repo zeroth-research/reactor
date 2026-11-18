@@ -62,6 +62,29 @@ fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> PyResult<()> {
     Ok(())
 }
 
+/// Converts an operation of any theory into its Python class, through the
+/// conversion of its theory; the structural operations are classes of their
+/// own.
+impl<'py> IntoPyObject<'py> for crate::tensor::Any<tch::Tensor> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        use crate::tensor::Any;
+
+        match self {
+            Any::Real(op) => op.into_pyobject(py),
+            Any::Int(op) => op.into_pyobject(py),
+            Any::Bool(op) => op.into_pyobject(py),
+            Any::Word(op) => op.into_pyobject(py),
+            Any::Havoc(op) => op.into_pyobject(py).map(Bound::into_any),
+            Any::Skip(op) => op.into_pyobject(py).map(Bound::into_any),
+            Any::Zero(op) => op.into_pyobject(py).map(Bound::into_any),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

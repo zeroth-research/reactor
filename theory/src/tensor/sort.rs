@@ -57,6 +57,7 @@ use subenum::subenum;
 /// their `degree`: values of degree `d` are `d`-th order rates of change,
 /// and plain reals have degree 0.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Real {
     degree: u8,
     shape: [usize; 2],
@@ -102,6 +103,7 @@ impl Differentiable for Real {
 
 /// The sort of integer matrices with the given `[rows, cols]` shape.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Int {
     shape: [usize; 2],
 }
@@ -135,6 +137,7 @@ impl Differentiable for Int {
 
 /// The sort of boolean matrices with the given `[rows, cols]` shape.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Bool {
     shape: [usize; 2],
 }
@@ -169,6 +172,7 @@ impl Differentiable for Bool {
 /// The sort of matrices of `width`-bit words with the given `[rows, cols]`
 /// shape: entrywise, the SMT-LIB2 sort `(_ BitVec width)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Word {
     width: usize,
     shape: [usize; 2],
@@ -219,6 +223,7 @@ impl Differentiable for Word {
 /// The singleton sort, with exactly one value: the trivial tangent of
 /// discrete sorts. Its own tangent is itself.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Zero;
 
 impl fmt::Display for Zero {
@@ -266,6 +271,18 @@ impl Differentiable for Any {
     }
 }
 
+impl fmt::Display for Any {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Any::Real(r) => r.fmt(f),
+            Any::Int(i) => i.fmt(f),
+            Any::Bool(b) => b.fmt(f),
+            Any::Word(w) => w.fmt(f),
+            Any::Zero(z) => z.fmt(f),
+        }
+    }
+}
+
 impl fmt::Display for Words {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -283,6 +300,129 @@ impl Differentiable for Words {
 
     fn tangent(self) -> Zero {
         Zero
+    }
+}
+
+/// The Python classes of the sorts: each sort is constructed from its
+/// shape, `Real(rows, cols)`, with `Word(width, rows, cols)` for words, and
+/// [`Any`] converts to and from them.
+#[cfg(feature = "pyo3")]
+mod py {
+    use super::*;
+    use pyo3::exceptions::{PyTypeError, PyValueError};
+    use pyo3::prelude::*;
+
+    #[pymethods]
+    impl Real {
+        #[new]
+        fn py_new(rows: usize, cols: usize) -> Self {
+            Real::new([rows, cols])
+        }
+
+        #[getter(shape)]
+        fn py_shape(&self) -> (usize, usize) {
+            (self.shape[0], self.shape[1])
+        }
+
+        #[getter(degree)]
+        fn py_degree(&self) -> u8 {
+            self.degree
+        }
+    }
+
+    #[pymethods]
+    impl Int {
+        #[new]
+        fn py_new(rows: usize, cols: usize) -> Self {
+            Int::new([rows, cols])
+        }
+
+        #[getter(shape)]
+        fn py_shape(&self) -> (usize, usize) {
+            (self.shape[0], self.shape[1])
+        }
+    }
+
+    #[pymethods]
+    impl Bool {
+        #[new]
+        fn py_new(rows: usize, cols: usize) -> Self {
+            Bool::new([rows, cols])
+        }
+
+        #[getter(shape)]
+        fn py_shape(&self) -> (usize, usize) {
+            (self.shape[0], self.shape[1])
+        }
+    }
+
+    #[pymethods]
+    impl Word {
+        /// Fails when `width` is zero.
+        #[new]
+        fn py_new(width: usize, rows: usize, cols: usize) -> PyResult<Self> {
+            Word::new(width, [rows, cols]).map_err(PyValueError::new_err)
+        }
+
+        #[getter(width)]
+        fn py_width(&self) -> usize {
+            self.width
+        }
+
+        #[getter(shape)]
+        fn py_shape(&self) -> (usize, usize) {
+            (self.shape[0], self.shape[1])
+        }
+    }
+
+    #[pymethods]
+    impl Zero {
+        #[new]
+        fn py_new() -> Self {
+            Zero
+        }
+    }
+
+    /// Extracts a sort of any theory from an instance of its class.
+    impl<'py> FromPyObject<'py> for Any {
+        fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+            if let Ok(s) = ob.extract::<Real>() {
+                return Ok(Any::Real(s));
+            }
+            if let Ok(s) = ob.extract::<Int>() {
+                return Ok(Any::Int(s));
+            }
+            if let Ok(s) = ob.extract::<Bool>() {
+                return Ok(Any::Bool(s));
+            }
+            if let Ok(s) = ob.extract::<Word>() {
+                return Ok(Any::Word(s));
+            }
+            if let Ok(s) = ob.extract::<Zero>() {
+                return Ok(Any::Zero(s));
+            }
+            Err(PyTypeError::new_err(format!(
+                "expected a sort: Real, Int, Bool, Word or Zero, got {}",
+                ob.get_type()
+            )))
+        }
+    }
+
+    /// Converts a sort into an instance of its class.
+    impl<'py> IntoPyObject<'py> for Any {
+        type Target = PyAny;
+        type Output = Bound<'py, PyAny>;
+        type Error = PyErr;
+
+        fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+            match self {
+                Any::Real(s) => s.into_pyobject(py).map(Bound::into_any),
+                Any::Int(s) => s.into_pyobject(py).map(Bound::into_any),
+                Any::Bool(s) => s.into_pyobject(py).map(Bound::into_any),
+                Any::Word(s) => s.into_pyobject(py).map(Bound::into_any),
+                Any::Zero(s) => s.into_pyobject(py).map(Bound::into_any),
+            }
+        }
     }
 }
 

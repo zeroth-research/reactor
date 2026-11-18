@@ -89,3 +89,53 @@ impl<'py> FromPyObject<'py> for crate::tensor::int::Const<tch::Tensor> {
         Ok(crate::tensor::int::Const(constant.0.shallow_clone()))
     }
 }
+
+/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
+/// so this takes a shallow clone of it, as libtorch counts its references.
+impl Clone for crate::tensor::int::Const<tch::Tensor> {
+    fn clone(&self) -> Self {
+        crate::tensor::int::Const(self.0.shallow_clone())
+    }
+}
+
+/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
+/// so this takes a shallow clone of it, as libtorch counts its references.
+impl Clone for crate::tensor::int::Linear<tch::Tensor> {
+    fn clone(&self) -> Self {
+        crate::tensor::int::Linear(self.0.shallow_clone(), self.1.shallow_clone())
+    }
+}
+
+/// Converts an operation of the theory into its Python class: the
+/// operations carrying tensors into the classes of this module, holding the
+/// same tensors, and the others into their own classes.
+impl<'py> IntoPyObject<'py> for crate::tensor::int::NIA<tch::Tensor> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        use crate::tensor::int::NIA;
+
+        match self {
+            NIA::Const(op) => Const(op.0).into_pyobject(py).map(Bound::into_any),
+            NIA::Add(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Div(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Mod(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Linear(op) => Linear(op.0, op.1).into_pyobject(py).map(Bound::into_any),
+            NIA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Min(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Max(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Transpose(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::MatMul(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Lt(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Le(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Gt(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Ge(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
+        }
+    }
+}

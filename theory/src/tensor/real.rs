@@ -38,7 +38,7 @@ use subenum::subenum;
 pub use super::sort::Reals as Sort;
 
 /// A constant real matrix literal, held in a tensor of type `T`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Const<T>(pub T);
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
@@ -66,7 +66,7 @@ pub struct Mul(pub usize, pub usize);
 pub struct Div(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Linear<T>(pub T, pub T);
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
@@ -151,7 +151,7 @@ pub struct Ne(pub usize, pub usize);
 /// `MatMul`, which multiply or divide two variables. It also generates the
 /// casts between them: `From` up to `NRA`, and `TryFrom` down from it.
 #[subenum(LRA)]
-#[derive(Clone, Debug, From)]
+#[derive(Debug, From)]
 pub enum NRA<T> {
     #[subenum(LRA)]
     Const(Const<T>),
@@ -184,6 +184,104 @@ pub enum NRA<T> {
     Eq(Eq),
     #[subenum(LRA)]
     Ne(Ne),
+}
+
+impl<T> Clone for NRA<T>
+where
+    Const<T>: Clone,
+    Linear<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            NRA::Const(op) => NRA::Const(op.clone()),
+            NRA::Add(op) => NRA::Add(*op),
+            NRA::Sub(op) => NRA::Sub(*op),
+            NRA::Mul(op) => NRA::Mul(*op),
+            NRA::Div(op) => NRA::Div(*op),
+            NRA::Linear(op) => NRA::Linear(op.clone()),
+            NRA::ReLU(op) => NRA::ReLU(*op),
+            NRA::Min(op) => NRA::Min(*op),
+            NRA::Max(op) => NRA::Max(*op),
+            NRA::Transpose(op) => NRA::Transpose(*op),
+            NRA::MatMul(op) => NRA::MatMul(*op),
+            NRA::Lt(op) => NRA::Lt(*op),
+            NRA::Le(op) => NRA::Le(*op),
+            NRA::Gt(op) => NRA::Gt(*op),
+            NRA::Ge(op) => NRA::Ge(*op),
+            NRA::Eq(op) => NRA::Eq(*op),
+            NRA::Ne(op) => NRA::Ne(*op),
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for NRA<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NRA::Const(op) => op.fmt(f),
+            NRA::Add(op) => op.fmt(f),
+            NRA::Sub(op) => op.fmt(f),
+            NRA::Mul(op) => op.fmt(f),
+            NRA::Div(op) => op.fmt(f),
+            NRA::Linear(op) => op.fmt(f),
+            NRA::ReLU(op) => op.fmt(f),
+            NRA::Min(op) => op.fmt(f),
+            NRA::Max(op) => op.fmt(f),
+            NRA::Transpose(op) => op.fmt(f),
+            NRA::MatMul(op) => op.fmt(f),
+            NRA::Lt(op) => op.fmt(f),
+            NRA::Le(op) => op.fmt(f),
+            NRA::Gt(op) => op.fmt(f),
+            NRA::Ge(op) => op.fmt(f),
+            NRA::Eq(op) => op.fmt(f),
+            NRA::Ne(op) => op.fmt(f),
+        }
+    }
+}
+
+impl<T> Clone for LRA<T>
+where
+    Const<T>: Clone,
+    Linear<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            LRA::Const(op) => LRA::Const(op.clone()),
+            LRA::Add(op) => LRA::Add(*op),
+            LRA::Sub(op) => LRA::Sub(*op),
+            LRA::Linear(op) => LRA::Linear(op.clone()),
+            LRA::ReLU(op) => LRA::ReLU(*op),
+            LRA::Min(op) => LRA::Min(*op),
+            LRA::Max(op) => LRA::Max(*op),
+            LRA::Transpose(op) => LRA::Transpose(*op),
+            LRA::Lt(op) => LRA::Lt(*op),
+            LRA::Le(op) => LRA::Le(*op),
+            LRA::Gt(op) => LRA::Gt(*op),
+            LRA::Ge(op) => LRA::Ge(*op),
+            LRA::Eq(op) => LRA::Eq(*op),
+            LRA::Ne(op) => LRA::Ne(*op),
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for LRA<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LRA::Const(op) => op.fmt(f),
+            LRA::Add(op) => op.fmt(f),
+            LRA::Sub(op) => op.fmt(f),
+            LRA::Linear(op) => op.fmt(f),
+            LRA::ReLU(op) => op.fmt(f),
+            LRA::Min(op) => op.fmt(f),
+            LRA::Max(op) => op.fmt(f),
+            LRA::Transpose(op) => op.fmt(f),
+            LRA::Lt(op) => op.fmt(f),
+            LRA::Le(op) => op.fmt(f),
+            LRA::Gt(op) => op.fmt(f),
+            LRA::Ge(op) => op.fmt(f),
+            LRA::Eq(op) => op.fmt(f),
+            LRA::Ne(op) => op.fmt(f),
+        }
+    }
 }
 
 impl<T: Tensor> Boundary<Sort> for NRA<T> {
@@ -617,6 +715,149 @@ where
             "expected an operation of real arithmetic, got {}",
             ob.get_type()
         )))
+    }
+}
+
+/// The Python constructors of the operations carrying no tensor: each takes
+/// the sizes of the operation, positionally, in the order of its fields.
+#[cfg(feature = "pyo3")]
+mod py {
+    use super::*;
+    use pyo3::prelude::*;
+
+    #[pymethods]
+    impl Add {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Add(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Sub {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Sub(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Mul {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Mul(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Div {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Div(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl ReLU {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            ReLU(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Min {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Min(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Max {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Max(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Transpose {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Transpose(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl MatMul {
+        #[new]
+        #[pyo3(signature = (m, n, k, /))]
+        fn new(m: usize, n: usize, k: usize) -> Self {
+            MatMul(m, n, k)
+        }
+    }
+
+    #[pymethods]
+    impl Lt {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Lt(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Le {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Le(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Gt {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Gt(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Ge {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Ge(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Eq {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Eq(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Ne {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Ne(m, n)
+        }
     }
 }
 

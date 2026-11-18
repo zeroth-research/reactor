@@ -19,7 +19,7 @@ use derive_more::From;
 use std::fmt;
 
 /// A constant boolean matrix literal, held in a tensor of type `T`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Const<T>(pub T);
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
@@ -44,13 +44,40 @@ pub struct Not(pub usize, pub usize);
 
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
-#[derive(Clone, Debug, From)]
+#[derive(Debug, From)]
 pub enum Prop<T> {
     Const(Const<T>),
     And(And),
     Or(Or),
     Xor(Xor),
     Not(Not),
+}
+
+impl<T> Clone for Prop<T>
+where
+    Const<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Prop::Const(op) => Prop::Const(op.clone()),
+            Prop::And(op) => Prop::And(*op),
+            Prop::Or(op) => Prop::Or(*op),
+            Prop::Xor(op) => Prop::Xor(*op),
+            Prop::Not(op) => Prop::Not(*op),
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for Prop<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Prop::Const(op) => op.fmt(f),
+            Prop::And(op) => op.fmt(f),
+            Prop::Or(op) => op.fmt(f),
+            Prop::Xor(op) => op.fmt(f),
+            Prop::Not(op) => op.fmt(f),
+        }
+    }
 }
 
 impl<T: Tensor> Boundary<Bool> for Prop<T> {
@@ -186,6 +213,50 @@ where
             "expected an operation of propositional logic, got {}",
             ob.get_type()
         )))
+    }
+}
+
+/// The Python constructors of the operations carrying no tensor: each takes
+/// the sizes of the operation, positionally, in the order of its fields.
+#[cfg(feature = "pyo3")]
+mod py {
+    use super::*;
+    use pyo3::prelude::*;
+
+    #[pymethods]
+    impl And {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            And(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Or {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Or(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Xor {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Xor(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Not {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Not(m, n)
+        }
     }
 }
 

@@ -40,7 +40,7 @@ use subenum::subenum;
 pub use super::sort::Ints as Sort;
 
 /// A constant integer matrix literal, held in a tensor of type `T`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Const<T>(pub T);
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
@@ -79,7 +79,7 @@ pub struct Div(pub usize, pub usize);
 pub struct Mod(pub usize, pub usize);
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Linear<T>(pub T, pub T);
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
@@ -164,7 +164,7 @@ pub struct Ne(pub usize, pub usize);
 /// and `MatMul`, which multiply or divide two variables. It also generates
 /// the casts between them: `From` up to `NIA`, and `TryFrom` down from it.
 #[subenum(LIA)]
-#[derive(Clone, Debug, From)]
+#[derive(Debug, From)]
 pub enum NIA<T> {
     #[subenum(LIA)]
     Const(Const<T>),
@@ -198,6 +198,106 @@ pub enum NIA<T> {
     Eq(Eq),
     #[subenum(LIA)]
     Ne(Ne),
+}
+
+impl<T> Clone for NIA<T>
+where
+    Const<T>: Clone,
+    Linear<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            NIA::Const(op) => NIA::Const(op.clone()),
+            NIA::Add(op) => NIA::Add(*op),
+            NIA::Sub(op) => NIA::Sub(*op),
+            NIA::Mul(op) => NIA::Mul(*op),
+            NIA::Div(op) => NIA::Div(*op),
+            NIA::Mod(op) => NIA::Mod(*op),
+            NIA::Linear(op) => NIA::Linear(op.clone()),
+            NIA::ReLU(op) => NIA::ReLU(*op),
+            NIA::Min(op) => NIA::Min(*op),
+            NIA::Max(op) => NIA::Max(*op),
+            NIA::Transpose(op) => NIA::Transpose(*op),
+            NIA::MatMul(op) => NIA::MatMul(*op),
+            NIA::Lt(op) => NIA::Lt(*op),
+            NIA::Le(op) => NIA::Le(*op),
+            NIA::Gt(op) => NIA::Gt(*op),
+            NIA::Ge(op) => NIA::Ge(*op),
+            NIA::Eq(op) => NIA::Eq(*op),
+            NIA::Ne(op) => NIA::Ne(*op),
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for NIA<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NIA::Const(op) => op.fmt(f),
+            NIA::Add(op) => op.fmt(f),
+            NIA::Sub(op) => op.fmt(f),
+            NIA::Mul(op) => op.fmt(f),
+            NIA::Div(op) => op.fmt(f),
+            NIA::Mod(op) => op.fmt(f),
+            NIA::Linear(op) => op.fmt(f),
+            NIA::ReLU(op) => op.fmt(f),
+            NIA::Min(op) => op.fmt(f),
+            NIA::Max(op) => op.fmt(f),
+            NIA::Transpose(op) => op.fmt(f),
+            NIA::MatMul(op) => op.fmt(f),
+            NIA::Lt(op) => op.fmt(f),
+            NIA::Le(op) => op.fmt(f),
+            NIA::Gt(op) => op.fmt(f),
+            NIA::Ge(op) => op.fmt(f),
+            NIA::Eq(op) => op.fmt(f),
+            NIA::Ne(op) => op.fmt(f),
+        }
+    }
+}
+
+impl<T> Clone for LIA<T>
+where
+    Const<T>: Clone,
+    Linear<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            LIA::Const(op) => LIA::Const(op.clone()),
+            LIA::Add(op) => LIA::Add(*op),
+            LIA::Sub(op) => LIA::Sub(*op),
+            LIA::Linear(op) => LIA::Linear(op.clone()),
+            LIA::ReLU(op) => LIA::ReLU(*op),
+            LIA::Min(op) => LIA::Min(*op),
+            LIA::Max(op) => LIA::Max(*op),
+            LIA::Transpose(op) => LIA::Transpose(*op),
+            LIA::Lt(op) => LIA::Lt(*op),
+            LIA::Le(op) => LIA::Le(*op),
+            LIA::Gt(op) => LIA::Gt(*op),
+            LIA::Ge(op) => LIA::Ge(*op),
+            LIA::Eq(op) => LIA::Eq(*op),
+            LIA::Ne(op) => LIA::Ne(*op),
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for LIA<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LIA::Const(op) => op.fmt(f),
+            LIA::Add(op) => op.fmt(f),
+            LIA::Sub(op) => op.fmt(f),
+            LIA::Linear(op) => op.fmt(f),
+            LIA::ReLU(op) => op.fmt(f),
+            LIA::Min(op) => op.fmt(f),
+            LIA::Max(op) => op.fmt(f),
+            LIA::Transpose(op) => op.fmt(f),
+            LIA::Lt(op) => op.fmt(f),
+            LIA::Le(op) => op.fmt(f),
+            LIA::Gt(op) => op.fmt(f),
+            LIA::Ge(op) => op.fmt(f),
+            LIA::Eq(op) => op.fmt(f),
+            LIA::Ne(op) => op.fmt(f),
+        }
+    }
 }
 
 impl<T: Tensor> Boundary<Sort> for NIA<T> {
@@ -652,6 +752,158 @@ where
             "expected an operation of integer arithmetic, got {}",
             ob.get_type()
         )))
+    }
+}
+
+/// The Python constructors of the operations carrying no tensor: each takes
+/// the sizes of the operation, positionally, in the order of its fields.
+#[cfg(feature = "pyo3")]
+mod py {
+    use super::*;
+    use pyo3::prelude::*;
+
+    #[pymethods]
+    impl Add {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Add(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Sub {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Sub(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Mul {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Mul(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Div {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Div(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Mod {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Mod(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl ReLU {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            ReLU(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Min {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Min(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Max {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Max(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Transpose {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Transpose(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl MatMul {
+        #[new]
+        #[pyo3(signature = (m, n, k, /))]
+        fn new(m: usize, n: usize, k: usize) -> Self {
+            MatMul(m, n, k)
+        }
+    }
+
+    #[pymethods]
+    impl Lt {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Lt(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Le {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Le(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Gt {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Gt(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Ge {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Ge(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Eq {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Eq(m, n)
+        }
+    }
+
+    #[pymethods]
+    impl Ne {
+        #[new]
+        #[pyo3(signature = (m, n, /))]
+        fn new(m: usize, n: usize) -> Self {
+            Ne(m, n)
+        }
     }
 }
 

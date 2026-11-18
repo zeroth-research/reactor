@@ -48,3 +48,64 @@ impl<'py> FromPyObject<'py> for crate::tensor::word::Const<tch::Tensor> {
         ))
     }
 }
+
+/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
+/// so this takes a shallow clone of it, as libtorch counts its references.
+impl Clone for crate::tensor::word::Const<tch::Tensor> {
+    fn clone(&self) -> Self {
+        crate::tensor::word::Const(self.0.shallow_clone(), self.1)
+    }
+}
+
+/// Converts an operation of the theory into its Python class: the
+/// operations carrying tensors into the classes of this module, holding the
+/// same tensors, and the others into their own classes.
+impl<'py> IntoPyObject<'py> for crate::tensor::word::BV<tch::Tensor> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        use crate::tensor::word::BV;
+
+        match self {
+            BV::Const(op) => Const(op.0, op.1).into_pyobject(py).map(Bound::into_any),
+            BV::Concat(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Extract(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Repeat(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Not(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::And(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Or(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Xor(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Nand(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Nor(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Xnor(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Neg(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Add(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Shl(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::RotateLeft(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::RotateRight(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::SDiv(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::SRem(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::SMod(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::AShr(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::SignExtend(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::SLt(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::SLe(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::SGt(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::SGe(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::UDiv(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::URem(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::LShr(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::ZeroExtend(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::ULt(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::ULe(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::UGt(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::UGe(op) => op.into_pyobject(py).map(Bound::into_any),
+        }
+    }
+}
