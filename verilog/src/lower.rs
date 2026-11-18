@@ -269,6 +269,10 @@ pub struct Translation {
     /// Every source signal, and `q@init` for every register `q` without an
     /// initial value, by name.
     pub vars: BTreeMap<Name, Var>,
+    /// The name in the module of every signal path of the design (see
+    /// [`Inst::naming`]): a port of an instance connected to a signal of the
+    /// parent of the same width is that signal (`u.clk` → `clk`).
+    pub paths: BTreeMap<Name, Name>,
     /// The input clocks of the whole design: the inputs of the top module
     /// that the `always_ff` blocks are clocked by, directly or through
     /// derived clocks, by name, sorted.
@@ -409,6 +413,7 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         name: m.name.clone(),
         module,
         vars: out.vars,
+        paths: naming.clone(),
         clocks,
         registers: out.registers,
         initialized: out.initialized,

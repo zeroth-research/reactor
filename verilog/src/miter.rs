@@ -61,6 +61,13 @@ wires in `|s|` and next inputs tied to `|s'|`. In both systems a register
 changes only in a round where its clock edge happens (latched level and
 new level), and reads the values just before it.
 
+This rests on the two sides having the same interface, which [`build`]
+checks ([`interfaces`]): the queries compare only our controlled
+variables, and the ties make each external variable of ours equal to a
+Yosys wire. An output our translation dropped would never be compared, and
+a computed signal our translation made external would be tied to Yosys's
+computed value, hiding every behavior of ours where it takes another.
+
 The update round alone is not enough: it compares next values only in
 states a transition reaches. A combinational signal that differs only for
 register values no transition produces (a register that is always set to
@@ -267,8 +274,9 @@ pub fn registers(t: &Translation, ys: &Smt2) -> Result<BTreeMap<Name, String>, V
 
 /// The miter of the rounds of `t` and the Yosys translation `ys` of the
 /// same design. Fails, listing them all, if the registers do not match
-/// ([`registers`]), or if a variable the rounds use is not a Yosys wire or
-/// has a different width there.
+/// ([`registers`]), if a variable the rounds use is not a Yosys wire or
+/// has a different width there, or if the inputs, outputs and signals of
+/// the two sides do not match ([`interfaces`]).
 pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
     let round = smt::round(t, Phase::Update);
     let first = smt::round(t, Phase::Init);
@@ -383,6 +391,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
             width: t.var(name).dtype().width(),
         })
         .collect();
+    errors.extend(interfaces(t, ys, &first, &round));
     let mut seen = BTreeSet::new();
     errors.retain(|e| seen.insert(e.clone()));
     if !errors.is_empty() {
@@ -402,6 +411,133 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         next_inputs,
         latched,
     })
+}
+
+/// The differences between the interfaces of `t` and of Yosys's
+/// translation `ys`, one message each; `first` and `round` are our init and
+/// update rounds. The queries compare only our controlled variables, and
+/// the ties make each of our external variables equal to a Yosys wire, so
+/// "all equal" means something only if:
+///
+/// - every external variable of ours (except the initial values `q@init`)
+///   is free on Yosys's side too: a Yosys input of the same width, or a
+///   signal driven by a blackbox, which Yosys gives a fresh value in every
+///   step ([`Smt2::free_value`]), a different one for each signal;
+///   otherwise a signal Yosys computes would be tied to one ours leaves
+///   free, and every behavior of ours outside Yosys's would go unseen;
+/// - every Yosys input is an external variable of ours, an input nothing
+///   reads, or a pin (an `inout` port, which Yosys lists as an input and an
+///   output, and we have no variable for);
+/// - every Yosys output except the pins is an interface variable of ours
+///   of the same width, queried in both rounds, and every interface
+///   variable of ours is a Yosys output: a dropped output is not compared;
+/// - every Yosys wire with a source name (no part of its path starts with
+///   `$`) is a Yosys input, or its path names ([`Translation::paths`]) a
+///   variable of ours of the same width or a signal connected to a
+///   blackbox output that nothing reads (which is no variable of ours):
+///   a dropped internal signal would not be compared either. The only
+///   source names that are no variables of ours are thus the inputs
+///   nothing reads, the pins, and those blackbox outputs.
+pub fn interfaces(
+    t: &Translation,
+    ys: &Smt2,
+    first: &smt::Round,
+    round: &smt::Round,
+) -> Vec<String> {
+    let mut errors = vec![];
+    let named = |set: &base::Interface<crate::Sort>| -> BTreeMap<&str, usize> {
+        (t.vars.iter())
+            .filter(|(_, v)| set.contains(v))
+            .map(|(n, v)| (n.as_str(), v.dtype().width()))
+            .collect()
+    };
+    let (extl, intf, ctrl) = (
+        named(t.module.extl()),
+        named(t.module.intf()),
+        named(t.module.ctrl()),
+    );
+    let pin = |n: &str| ys.inputs.contains_key(n) && ys.outputs.contains_key(n);
+    let mut anyseq: BTreeMap<&str, &str> = BTreeMap::new();
+    for (&name, &width) in &extl {
+        if name.ends_with("@init") {
+            continue;
+        }
+        let theirs = ys.wires.get(name).copied();
+        if let Some(w) = theirs.filter(|&w| w != width) {
+            errors.push(format!("`{name}` has width {width}, in Yosys {w}"));
+            continue;
+        }
+        if ys.inputs.contains_key(name) && !pin(name) {
+            continue;
+        }
+        let free = ys.free_value(name);
+        match free {
+            Some(symbol) if t.blackbox_outputs.iter().any(|b| b == name) => {
+                if let Some(other) = anyseq.insert(symbol, name) {
+                    errors.push(format!(
+                        "`{other}` and `{name}` are free in every round, in Yosys one value"
+                    ));
+                }
+            }
+            _ => errors.push(format!(
+                "`{name}` is free in every round, in Yosys {}",
+                match (theirs, free) {
+                    (None, _) => "not a wire",
+                    _ if pin(name) => "a pin",
+                    (_, Some(_)) => "the output of no blackbox of ours",
+                    _ => "neither an input nor a blackbox output",
+                }
+            )),
+        }
+    }
+    for name in ys.inputs.keys() {
+        if !extl.contains_key(name.as_str()) && !t.unread_inputs.contains(name) && !pin(name) {
+            errors.push(format!("Yosys input `{name}` is not an input of ours"));
+        }
+    }
+    let queried = |r: &smt::Round, n: &str| r.next.iter().any(|m| m == n);
+    for (name, &w) in &ys.outputs {
+        if pin(name) {
+            if extl.contains_key(name.as_str()) || ctrl.contains_key(name.as_str()) {
+                errors.push(format!("Yosys pin `{name}` is a variable of ours"));
+            }
+            continue;
+        }
+        match intf.get(name.as_str()) {
+            None => errors.push(format!("Yosys output `{name}` is not an output of ours")),
+            Some(&width) if width != w => {
+                errors.push(format!("`{name}` has width {width}, in Yosys {w}"));
+            }
+            Some(_) if !queried(first, name) || !queried(round, name) => {
+                errors.push(format!("output `{name}` is not compared in both rounds"));
+            }
+            Some(_) => {}
+        }
+    }
+    for name in intf.keys() {
+        if !ys.outputs.contains_key(*name) {
+            errors.push(format!("output `{name}` is not a Yosys output"));
+        }
+    }
+    let public = |n: &str| !n.split('.').any(|part| part.starts_with('$'));
+    for (path, &w) in ys.wires.iter().filter(|(n, _)| public(n)) {
+        if ys.inputs.contains_key(path) {
+            continue;
+        }
+        let Some(name) = t.paths.get(path) else {
+            errors.push(format!("Yosys wire `{path}` is no signal of ours"));
+            continue;
+        };
+        match extl.get(name.as_str()).or_else(|| ctrl.get(name.as_str())) {
+            Some(&width) if width != w => {
+                errors.push(format!("`{path}` has width {width}, in Yosys {w}"))
+            }
+            Some(_) => {}
+            None if t.blackbox_outputs.contains(name) => {}
+            None => errors.push(format!("Yosys wire `{path}` is not a variable of ours")),
+        }
+    }
+    errors
 }
 
 /// Asks every query of `m`, in one run of the z3 binary `z3` per round,
