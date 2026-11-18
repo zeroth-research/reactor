@@ -36,7 +36,7 @@ sorts of the theory, rather than in [`Real`]. So is the boundary of
 use crate::sort::{Bool, Real};
 use base::boundary::{Boundary, Poly};
 use base::mono;
-use derive_more::From;
+use derive_more::{Display, From};
 use std::fmt;
 use subenum::subenum;
 
@@ -216,7 +216,7 @@ pub struct TId(pub usize, pub usize, pub u8);
 /// `MatMul`, which multiply or divide two variables. It also generates the
 /// casts between them: `From` up to `NRA`, and `TryFrom` down from it.
 #[subenum(LRA)]
-#[derive(Clone, Debug, From)]
+#[derive(Clone, Debug, From, Display)]
 pub enum NRA {
     #[subenum(LRA)]
     Const(Const),

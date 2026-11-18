@@ -34,7 +34,7 @@ sorts of the theory, rather than in [`Int`]. So is the boundary of
 use crate::sort::{Bool, Int};
 use base::boundary::{Boundary, Poly};
 use base::mono;
-use derive_more::From;
+use derive_more::{Display, From};
 use std::fmt;
 use subenum::subenum;
 
@@ -180,7 +180,7 @@ pub struct Uninterpreted(pub String, pub usize, pub usize);
 /// and `MatMul`, which multiply or divide two variables. It also generates
 /// the casts between them: `From` up to `NIA`, and `TryFrom` down from it.
 #[subenum(LIA)]
-#[derive(Clone, Debug, From)]
+#[derive(Clone, Debug, From, Display)]
 pub enum NIA {
     #[subenum(LIA)]
     Const(Const),

@@ -25,7 +25,7 @@ the theory, rather than in [`Bool`].
 use crate::sort::Bool;
 use base::boundary::{Boundary, Poly};
 use base::mono;
-use derive_more::From;
+use derive_more::{Display, From};
 use std::fmt;
 
 /// The sorts of the theory: the booleans of SMT-LIB2's `Core` theory,
@@ -83,7 +83,7 @@ pub struct Zero;
 
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, and [`Zero`], with their boundary in [`Sort`].
-#[derive(Clone, Debug, From)]
+#[derive(Clone, Debug, From, Display)]
 pub enum Prop {
     Const(Const),
     And(And),

@@ -56,7 +56,7 @@ has, on words:
 use crate::sort::{Bool, Word};
 use base::boundary::{Boundary, Poly};
 use base::mono;
-use derive_more::From;
+use derive_more::{Display, From};
 use std::fmt;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's
@@ -222,7 +222,7 @@ pub struct Uninterpreted(pub String, pub usize, pub usize, pub usize);
 /// `FixedSizeBitVectors`, with their boundary in [`Sort`]. Those of
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
 /// as `SDiv` for [`signed::Div`] and `UDiv` for [`unsigned::Div`].
-#[derive(Clone, Debug, From)]
+#[derive(Clone, Debug, From, Display)]
 pub enum BV {
     Const(Const),
     Concat(Concat),

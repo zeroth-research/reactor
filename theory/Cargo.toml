@@ -9,7 +9,7 @@ pyo3 = { version = "0.24", optional = true }
 tch = { version = "0.22", optional = true }
 pyo3-tch = { version = "0.22", optional = true }
 subenum = "1.2.0"
-derive_more = { version = "2.1.1", features = ["from"] }
+derive_more = { version = "2.1.1", features = ["display", "from"] }
 strum = { version = "0.28.0", features = ["derive"] }
 
 [features]

@@ -34,7 +34,7 @@ pub mod word;
 use crate::sort;
 use crate::{Combinatorial, Differential, Sequential};
 use base::boundary::{Boundary, Poly};
-use derive_more::From;
+use derive_more::{Display, From};
 use subenum::subenum;
 
 /// The operations of all theories: a value of `Any` is an operation of one
@@ -48,7 +48,7 @@ use subenum::subenum;
 /// linear operations, which `subenum` cannot express, so they are defined
 /// on their own, with the same casts.
 #[subenum(NRA, NIA, Prop, BV)]
-#[derive(Clone, Debug, From)]
+#[derive(Clone, Debug, From, Display)]
 pub enum Any {
     #[subenum(NRA)]
     Real(real::NRA),
@@ -62,7 +62,7 @@ pub enum Any {
 
 /// Linear real arithmetic: the linear operations of [`real`], with the
 /// boolean operations.
-#[derive(Clone, Debug, From)]
+#[derive(Clone, Debug, From, Display)]
 pub enum LRA {
     Real(real::LRA),
     Bool(bool::Prop),
@@ -70,7 +70,7 @@ pub enum LRA {
 
 /// Linear integer arithmetic: the linear operations of [`int`], with the
 /// boolean operations.
-#[derive(Clone, Debug, From)]
+#[derive(Clone, Debug, From, Display)]
 pub enum LIA {
     Int(int::LIA),
     Bool(bool::Prop),
@@ -446,6 +446,27 @@ mod tests {
         let op = boolean(bool::Not(2, 3));
         let dom: Poly<sort::Any> = base::mono![sort::Bool::new([2, 3]).into()].into();
         assert_eq!(op.dom(), dom);
+    }
+
+    #[test]
+    fn operations_display_as_themselves_in_any_enum() {
+        assert_eq!(real(real::Add(2, 3)).to_string(), "Add");
+        assert_eq!(
+            int(int::Uninterpreted("f".into(), 2, 3)).to_string(),
+            "Uninterpreted(f)"
+        );
+        assert_eq!(boolean(bool::Zero).to_string(), "Zero");
+        assert_eq!(word(word::unsigned::Lt(8, 2, 3)).to_string(), "ULt");
+        assert_eq!(
+            word(word::Extract(7, 4, 8, 2, 3)).to_string(),
+            "Extract[7:4]"
+        );
+        assert_eq!(LRA::Real(real::TAdd(2, 3, 1).into()).to_string(), "TAdd");
+        assert_eq!(LIA::Bool(bool::Not(2, 3).into()).to_string(), "Not");
+        assert_eq!(
+            NRA::try_from(real(real::Mul(2, 3))).unwrap().to_string(),
+            "Mul"
+        );
     }
 
     #[test]
