@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{Atom, Module, Ops, example_counter, example_peterson1, example_tiny1, mk_op};
+use common::{Atom, Module, Ops, Ty, example_counter, example_peterson1, example_tiny1, mk_op};
 use dataflow::diagram::Term;
 use dataflow::diagram::Wire;
 use reactive::var::{Var, X, d};
@@ -14,8 +14,8 @@ use theory::{Combinatorial, Differential, Sequential};
 fn can_instantiate_partially_observable_module() {
     let (m, _) = example_counter().unwrap();
     let vars = m.obs().clone();
-    let mut obs: Vec<Var<&'static str>> = Vec::new();
-    let mut prvt: Vec<Var<&'static str>> = Vec::new();
+    let mut obs: Vec<Var<Ty>> = Vec::new();
+    let mut prvt: Vec<Var<Ty>> = Vec::new();
     for var in vars {
         if var.id() == 0 {
             prvt.push(var);
@@ -36,8 +36,8 @@ fn cannot_instantiate_external_unobservable_wire() {
     // the fourth observable is an external variable: making it private must
     // fail, privates have to be controlled
     let target = vars.iter().nth(3).unwrap().id();
-    let mut obs: Vec<Var<&'static str>> = Vec::new();
-    let mut prvt: Vec<Var<&'static str>> = Vec::new();
+    let mut obs: Vec<Var<Ty>> = Vec::new();
+    let mut prvt: Vec<Var<Ty>> = Vec::new();
     for var in vars {
         if var.id() == target {
             prvt.push(var);
@@ -62,24 +62,24 @@ fn can_compose_example_peterson1_with_empty_module() {
 
 #[test]
 fn can_instantiate_example_tiny1_0123() {
-    let x = Var::new("Tny");
-    let y = Var::new("Tny");
+    let x = Var::new(Ty("Tny"));
+    let y = Var::new(Ty("Tny"));
     let m = example_tiny1(x, y, true).unwrap();
     assert!(m.is_open());
 }
 
 #[test]
 fn can_instantiate_example_tiny1_2301() {
-    let x = Var::new("Tny");
-    let y = Var::new("Tny");
+    let x = Var::new(Ty("Tny"));
+    let y = Var::new(Ty("Tny"));
     let m = example_tiny1(y, x, true).unwrap();
     assert!(m.is_open());
 }
 
 #[test]
 fn can_compose_example_tiny1() {
-    let x = Var::new("x");
-    let y = Var::new("y");
+    let x = Var::new(Ty("x"));
+    let y = Var::new(Ty("y"));
     let m1 = example_tiny1(x, y, false).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
@@ -89,8 +89,8 @@ fn can_compose_example_tiny1() {
 
 #[test]
 fn cannot_compose_example_tiny1_with_cyclic_await() {
-    let x = Var::new("Tny");
-    let y = Var::new("Tny");
+    let x = Var::new(Ty("Tny"));
+    let y = Var::new(Ty("Tny"));
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, true).unwrap();
 
@@ -100,8 +100,8 @@ fn cannot_compose_example_tiny1_with_cyclic_await() {
 
 #[test]
 fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let x = Var::new("Tny");
-    let y = Var::new("Tny");
+    let x = Var::new(Ty("Tny"));
+    let y = Var::new(Ty("Tny"));
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
 
@@ -111,9 +111,9 @@ fn can_compose_example_tiny1_without_cyclic_await_and_overlapping_prvt() {
 
 #[test]
 fn can_compose_three_tiny1_without_cyclic_await_and_overlapping_prvt() {
-    let x = Var::new("Tny");
-    let y = Var::new("Tny");
-    let z = Var::new("Tny");
+    let x = Var::new(Ty("Tny"));
+    let y = Var::new(Ty("Tny"));
+    let z = Var::new(Ty("Tny"));
     let m1 = example_tiny1(x, y, true).unwrap();
     let m2 = example_tiny1(y, x, false).unwrap();
     let m3 = example_tiny1(y, z, false).unwrap();
@@ -130,16 +130,14 @@ fn compose_seq() {
     //
     //  M1 and M2 are compatible (disjoint interface variables and acyclic waiting dependencies),
     //  and we test that they are composable
-    let x = Var::new("real");
-    let y = Var::new("real");
-    let z = Var::new("real");
+    let x = Var::new(Ty("real"));
+    let y = Var::new(Ty("real"));
+    let z = Var::new(Ty("real"));
 
-    let assign: Vec<Term<Ops, &'static str>> =
-        [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, Ty>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
     let m1 = Module::combinatorial(&[x, y], assign).unwrap();
 
-    let assign: Vec<Term<Ops, &'static str>> =
-        [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, Ty>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
     let m2 = Module::combinatorial(&[x, z], assign).unwrap();
 
     Module::compose([m1, m2]).unwrap();
@@ -159,16 +157,14 @@ fn compose_seq() {
 /// must be controlled.
 #[test]
 fn compose_hiding() {
-    let x = &Var::new("real");
-    let y = &Var::new("real");
-    let z = &Var::new("real");
+    let x = &Var::new(Ty("real"));
+    let y = &Var::new(Ty("real"));
+    let z = &Var::new(Ty("real"));
 
-    let assign: Vec<Term<Ops, &'static str>> =
-        [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, Ty>> = [term!(mk_op("ID"), [X(x)], [X(y)]).unwrap()].to_vec();
     let m1 = Module::combinatorial([x, y], assign).unwrap();
 
-    let assign: Vec<Term<Ops, &'static str>> =
-        [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
+    let assign: Vec<Term<Ops, Ty>> = [term!(mk_op("ID"), [X(z)], [X(x)]).unwrap()].to_vec();
     let m2 = Module::combinatorial([x, z], assign).unwrap();
 
     // hiding the shared variable privatises it in the composite
@@ -200,9 +196,9 @@ fn compose_hiding() {
 /// ```
 #[test]
 fn constructor_then_hiding() {
-    let x = &Var::new("real");
-    let p = &Var::new("real");
-    let e = &Var::new("real");
+    let x = &Var::new(Ty("real"));
+    let p = &Var::new(Ty("real"));
+    let e = &Var::new(Ty("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -241,8 +237,8 @@ fn constructor_then_hiding() {
 /// erred while `[b, a]` slipped through to an inconsistent module.)
 #[test]
 fn local_coupling_is_order_independent() {
-    let v = Var::new("real");
-    let w = Var::new("real");
+    let v = Var::new(Ty("real"));
+    let w = Var::new(Ty("real"));
 
     let a_upd = term!(mk_op("A"), [X(v)]).unwrap();
     let a = Atom::jump([&v], [a_upd]).unwrap();
@@ -263,10 +259,10 @@ fn local_coupling_is_order_independent() {
 /// in one module and when two atomic modules are composed.
 #[test]
 fn cannot_share_local_wires() {
-    let x = Var::new("real");
-    let y = Var::new("real");
+    let x = Var::new(Ty("real"));
+    let y = Var::new(Ty("real"));
     // the shared temporary: both atoms compute through it
-    let tmp = Wire::new("real");
+    let tmp = Wire::new(Ty("real"));
 
     let init = [term!(mk_op("CONST"), [X(x)]).unwrap()];
     let update = [
@@ -294,12 +290,12 @@ fn cannot_share_local_wires() {
 
 #[test]
 fn compose_seq_2() {
-    let x = Var::new("real");
-    let y = Var::new("real");
-    let z = Var::new("real");
-    let y0 = Var::new("real");
-    let z0 = Var::new("real");
-    let inv = Var::new("real");
+    let x = Var::new(Ty("real"));
+    let y = Var::new(Ty("real"));
+    let z = Var::new(Ty("real"));
+    let y0 = Var::new(Ty("real"));
+    let z0 = Var::new(Ty("real"));
+    let inv = Var::new(Ty("real"));
 
     // class Module(smt.Module):
     //     def init(self, extl) -> None:
@@ -314,7 +310,7 @@ fn compose_seq_2() {
     //
     //         return xn, y, z
     //
-    let init: Vec<Term<Ops, &'static str>> = [
+    let init: Vec<Term<Ops, Ty>> = [
         term!(mk_op("Const(0)"), [X(x)]).unwrap(),
         term!(mk_op("Id"), [X(y)], [X(y0)]).unwrap(),
         term!(mk_op("Id"), [X(z)], [X(z0)]).unwrap(),
@@ -322,14 +318,14 @@ fn compose_seq_2() {
     .to_vec();
 
     let tmps = [
-        Wire::new("real"),
-        Wire::new("real"),
-        Wire::new("real"),
-        Wire::new("real"),
-        Wire::new("real"),
-        Wire::new("real"),
+        Wire::new(Ty("real")),
+        Wire::new(Ty("real")),
+        Wire::new(Ty("real")),
+        Wire::new(Ty("real")),
+        Wire::new(Ty("real")),
+        Wire::new(Ty("real")),
     ];
-    let update: Vec<Term<Ops, &'static str>> = [
+    let update: Vec<Term<Ops, Ty>> = [
         term!(mk_op("Lt"), [tmps[0]], [x, y]).unwrap(),
         term!(mk_op("Lt"), [tmps[1]], [x, z]).unwrap(),
         term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
@@ -353,8 +349,12 @@ fn compose_seq_2() {
     //     def update(self, inv, extl) -> None:
     //         x, y, z = extl
     //         return Or(X(x) <= X(y), X(x) <= X(z))
-    let tmps = [Wire::new("real"), Wire::new("real"), Wire::new("real")];
-    let assign: Vec<Term<Ops, &'static str>> = [
+    let tmps = [
+        Wire::new(Ty("real")),
+        Wire::new(Ty("real")),
+        Wire::new(Ty("real")),
+    ];
+    let assign: Vec<Term<Ops, Ty>> = [
         term!(mk_op("Le"), [tmps[0]], [X(x), X(y)]).unwrap(),
         term!(mk_op("Le"), [tmps[1]], [X(x), X(z)]).unwrap(),
         term!(mk_op("Or"), [tmps[2]], [tmps[0], tmps[1]]).unwrap(),
@@ -375,9 +375,9 @@ fn compose_seq_2() {
 
 #[test]
 fn more_controlled_than_external() {
-    let x = &Var::new("A");
-    let y = &Var::new("B");
-    let z = &Var::new("C");
+    let x = &Var::new(Ty("A"));
+    let y = &Var::new(Ty("B"));
+    let z = &Var::new(Ty("C"));
 
     let init = Term::constant(mk_op("A"), [X(y), X(z)]).unwrap();
     let update = Term::function(mk_op("A"), [X(y), X(z)], [*y, *z]).unwrap();
@@ -395,19 +395,19 @@ struct SeqOps(&'static str);
 #[derive(Clone, Copy)]
 struct DifOps(&'static str);
 
-impl Differential<&'static str> for DifOps {
-    fn zero(_range: &&'static str) -> Self {
+impl Differential<Ty> for DifOps {
+    fn zero(_range: &Ty) -> Self {
         Self("ZERO")
     }
 }
-impl Sequential<&'static str> for SeqOps {
-    fn skip(_range: &&'static str) -> Self {
+impl Sequential<Ty> for SeqOps {
+    fn skip(_range: &Ty) -> Self {
         Self("SKIP")
     }
 }
 
-impl Combinatorial<&'static str> for SeqOps {
-    fn havoc(_range: &&'static str) -> Self {
+impl Combinatorial<Ty> for SeqOps {
+    fn havoc(_range: &Ty) -> Self {
         Self("HAVOC")
     }
 }
@@ -437,9 +437,9 @@ impl fmt::Display for SeqOps {
 /// regressions — a leaked, dropped, or misclassified variable fails here.
 #[test]
 fn constructor_interfaces_are_exact() {
-    let x = &Var::new("real");
-    let p = &Var::new("real");
-    let e = &Var::new("real");
+    let x = &Var::new(Ty("real"));
+    let p = &Var::new(Ty("real"));
+    let e = &Var::new(Ty("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -457,9 +457,9 @@ fn constructor_interfaces_are_exact() {
 /// and enters `prvt`, while staying in `ctrl`; every other set is untouched.
 #[test]
 fn hiding_interfaces_are_exact() {
-    let x = &Var::new("real");
-    let p = &Var::new("real");
-    let e = &Var::new("real");
+    let x = &Var::new(Ty("real"));
+    let p = &Var::new(Ty("real"));
+    let e = &Var::new(Ty("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -480,9 +480,9 @@ fn hiding_interfaces_are_exact() {
 /// interface entry: the module equals the one built from the plain scope.
 #[test]
 fn duplicate_scope_variable_is_collapsed() {
-    let x = &Var::new("real");
-    let p = &Var::new("real");
-    let e = &Var::new("real");
+    let x = &Var::new(Ty("real"));
+    let p = &Var::new(Ty("real"));
+    let e = &Var::new(Ty("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -500,10 +500,10 @@ fn duplicate_scope_variable_is_collapsed() {
 /// the interfaces are inferred from the terms, not from the scope.
 #[test]
 fn unused_scope_variable_does_not_leak() {
-    let x = &Var::new("real");
-    let p = &Var::new("real");
-    let e = &Var::new("real");
-    let unused = &Var::new("real");
+    let x = &Var::new(Ty("real"));
+    let p = &Var::new(Ty("real"));
+    let e = &Var::new(Ty("real"));
+    let unused = &Var::new(Ty("real"));
 
     let init = Term::constant(mk_op("INIT"), [X(x), X(p)]).unwrap();
     let update = Term::function(mk_op("STEP"), [X(x), X(p)], [*p, *e]).unwrap();
@@ -520,16 +520,16 @@ fn unused_scope_variable_does_not_leak() {
 #[test]
 #[allow(non_snake_case)]
 fn heterogeneous_composition() {
-    let x = Var::new("A");
-    let y = Var::new("B");
-    let z = Var::new("C");
+    let x = Var::new(Ty("A"));
+    let y = Var::new(Ty("B"));
+    let z = Var::new(Ty("C"));
 
-    let init = Term::constant(SeqOps::havoc(&"A"), [X(x)]).unwrap();
-    let jump = Term::function(SeqOps::skip(&"A"), [X(x)], [x]).unwrap();
+    let init = Term::constant(SeqOps::havoc(&Ty("A")), [X(x)]).unwrap();
+    let jump = Term::function(SeqOps::skip(&Ty("A")), [X(x)], [x]).unwrap();
     let P = reactive::Module::sequential(&[x], [init], [jump]).unwrap();
 
-    let init = Term::constant(SeqOps::havoc(&"B"), [X(y)]).unwrap();
-    let flow = Term::constant(DifOps::zero(&"B"), [d(y)]).unwrap();
+    let init = Term::constant(SeqOps::havoc(&Ty("B")), [X(y)]).unwrap();
+    let flow = Term::constant(DifOps::zero(&Ty("B")), [d(y)]).unwrap();
     let Q = reactive::Module::differential(&[y], [init], [flow]).unwrap();
 
     let comb = Term::function(SeqOps("+"), [X(z)], [X(x), X(y)]).unwrap();

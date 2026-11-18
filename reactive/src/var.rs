@@ -1,3 +1,4 @@
+use base::differentiable::{Differentiable, T};
 use dataflow::diagram::Wire;
 use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
@@ -13,12 +14,15 @@ pub struct Var<S> {
     der: Wire<S>,
 }
 
-impl<S: Clone> Var<S> {
+impl<S: Differentiable<Tangent = S> + Clone> Var<S> {
+    /// A variable of sort `dtype`: its latched and next wires carry values
+    /// of `dtype`, and its derivative wire their rates of change, of the
+    /// tangent sort `T(dtype)`.
     pub fn new(dtype: S) -> Self {
         Self {
             ltc: Wire::new(dtype.clone()),
             nxt: Wire::new(dtype.clone()),
-            der: Wire::new(dtype),
+            der: Wire::new(T(dtype)),
         }
     }
 }

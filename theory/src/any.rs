@@ -2,6 +2,7 @@ use crate::bv::BV;
 use crate::lia::LIA;
 use crate::lra::LRA;
 use crate::{bv, lia, lra};
+use base::differentiable::Differentiable;
 use derive_more::From;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
@@ -33,6 +34,16 @@ impl fmt::Display for Sort {
                 write!(f, "Bv{}([{},{}])", bw, shape[0], shape[1])
             }
         }
+    }
+}
+
+/// The sort of a derivative wire is its variable's own sort: these sorts do
+/// not tell values from their rates of change.
+impl Differentiable for Sort {
+    type Tangent = Sort;
+
+    fn tangent(self) -> Sort {
+        self
     }
 }
 

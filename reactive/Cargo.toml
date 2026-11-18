@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+base = { path = "../base" }
 dataflow = { path = "../dataflow" }
 theory = { path = "../theory" }
