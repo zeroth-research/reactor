@@ -3,8 +3,8 @@
 
 use super::{Cx, Result, system_call};
 use crate::ast::{
-    Array, Elem, Elems, Error, Expr, ExprKind, Index, Init, Item, Lvalue, LvalueKind, Module,
-    Name, Rom, Select, SignalId, Span, Stmt, StmtKind,
+    Array, Elem, Elems, Error, Expr, ExprKind, Index, Init, Item, Lvalue, LvalueKind, Module, Name,
+    Rom, Select, SignalId, Span, Stmt, StmtKind,
 };
 use crate::value::BitVec;
 use num_bigint::BigUint;
@@ -222,11 +222,10 @@ pub(super) fn resolve(m: &mut Module, loads: Vec<Load>) -> Result<()> {
         .iter()
         .map(|a| (a.name.clone(), a.clone()))
         .collect();
-    m.decls
-        .retain(|d| match arrays.get(&d.id.base) {
-            Some(a) => a.rom.is_none(),
-            None => true,
-        });
+    m.decls.retain(|d| match arrays.get(&d.id.base) {
+        Some(a) => a.rom.is_none(),
+        None => true,
+    });
     let r = Resolver { arrays: &arrays };
     for item in &mut m.items {
         match item {

@@ -1074,4 +1074,3 @@ fn planted_bugs() {
         "mutants found equivalent (left), listed (right)"
     );
 }
-

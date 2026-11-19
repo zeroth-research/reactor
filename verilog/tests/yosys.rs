@@ -2023,7 +2023,8 @@ fn yosys_reads_the_text_we_read() {
 /// So `v2rm --yosys` refuses such a design up front (status 2, before
 /// Yosys runs), with every never-written range. A register written in
 /// parts gets no warning, nor does one with a variable-index write, which
-/// counts as writing every bit (Yosys keeps such a register whole).
+/// counts as writing every bit (Yosys keeps such a register whole). Arrays:
+/// [`unwritten_bits_of_array_elements_compared`].
 #[test]
 fn cli_yosys_refuses_unwritten_register_bits() {
     let tmp = TempDir::new("yosys");
@@ -2073,4 +2074,34 @@ fn cli_yosys_refuses_unwritten_register_bits() {
             .unwrap_err()
             .starts_with("cannot compare with Yosys: ")
     );
+}
+
+/// An element of an array with bits that no assignment writes (a
+/// byte-enable write, `mem[addr][2 +: 2] <= …`) is warned about like a
+/// register, but compared with Yosys: Yosys keeps one flip-flop of the
+/// full width per element, whose unwritten bits keep their value, as ours.
+#[test]
+fn unwritten_bits_of_array_elements_compared() {
+    let tmp = TempDir::new("yosys");
+    let path = tmp.write(
+        "partial_mem.sv",
+        "module partial_mem(input logic clk, input logic we, input logic [1:0] addr,\n\
+         \x20                  input logic [3:0] wdata, output logic [3:0] rdata);\n\
+         \x20 logic [3:0] mem [0:3];\n\
+         \x20 always_ff @(posedge clk) if (we) mem[addr][2 +: 2] <= wdata[2 +: 2];\n\
+         \x20 assign rdata = mem[addr];\n\
+         endmodule\n",
+    );
+    let (_, t) = load(&path);
+    let never: Vec<String> = t.unwritten.iter().map(|u| u.never_written()).collect();
+    let expected: Vec<String> = (0..4)
+        .map(|k| format!("bits 1:0 of register `mem[{k}]` are never written"))
+        .collect();
+    assert_eq!(never, expected);
+    assert_eq!(miter::comparable(&t), Ok(()));
+    let Some((yosys, z3)) = tools() else { return };
+    let (_, _, m) = miter_of(&yosys, &path);
+    for (phase, name, verdict) in miter::check(&z3, &m).unwrap() {
+        assert_eq!(verdict, Verdict::Equal, "`{name}` in {phase:?}");
+    }
 }

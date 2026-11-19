@@ -96,7 +96,8 @@ reaches. Such bits are listed in [`Translation::unwritten`] and the CLI
 warns about each range of them. (Yosys gives them no flip-flop: it splits
 the register into flip-flops for the written bits and leaves the others
 undriven, so the comparison with Yosys refuses such designs. A register
-with a variable-index write stays one flip-flop in Yosys.)
+with a variable-index write stays one flip-flop in Yosys, and so does an
+element of an array, so those are compared.)
 
 Reading values just before the edge is what hardware does under two
 timing assumptions, which this semantics makes and does not check:

@@ -3,9 +3,9 @@
 use super::arrays::resolve;
 use super::{Cx, LARGEST, Result, VARIABLE_TARGET, has_tokens};
 use crate::ast::{
-    Array, Conn, Const, Decl, Dir, Elem, Elems, Error, Expr, ExprKind, Formal,
-    Index, Init, Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select,
-    SignalId, Span, Ty,
+    Array, Conn, Const, Decl, Dir, Elem, Elems, Error, Expr, ExprKind, Formal, Index, Init,
+    Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, SignalId,
+    Span, Ty,
 };
 use crate::constant::{self, Failure};
 use std::collections::{BTreeMap, BTreeSet};
@@ -841,7 +841,8 @@ impl Cx<'_> {
         let name = self.identifier(id)?;
         let span = self.span(id);
         let Some(size) = self.array_size(id, &dims)? else {
-            m.decls.push(Decl::new(SignalId::signal(name.clone()), ty, span));
+            m.decls
+                .push(Decl::new(SignalId::signal(name.clone()), ty, span));
             match value {
                 // `wire y = e;` is `assign y = e;`
                 Some(e) if net => {
@@ -865,7 +866,8 @@ impl Cx<'_> {
             );
         }
         for k in 0..size {
-            m.decls.push(Decl::new(SignalId::element(name.clone(), k), ty, span));
+            m.decls
+                .push(Decl::new(SignalId::element(name.clone(), k), ty, span));
         }
         self.state.arrays.push(Array {
             name,

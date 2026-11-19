@@ -347,7 +347,10 @@ impl Inst {
             let m = &inst.module;
             for d in m.ports.iter().map(|p| &p.decl).chain(&m.decls) {
                 let signal = path.signal(&d.name);
-                let name = ports.get(&d.name).cloned().unwrap_or_else(|| signal.clone());
+                let name = ports
+                    .get(&d.name)
+                    .cloned()
+                    .unwrap_or_else(|| signal.clone());
                 map.insert(signal.clone(), name.clone());
                 out.push((signal, name));
             }
