@@ -39,7 +39,11 @@ rewrites in lowering, so that tests can compare it with the translated
 module. Each module is checked with [`typing::checked`] like for the
 translation (so the interpreter runs only modules the translation
 accepts), but the interpreter runs the module as written
-([`Checked::source`]) and never looks at its sized form.
+([`Checked::source`]) and never looks at its sized form. It also finds
+the bits an assignment target writes, the signals an item drives and the
+reset branch of a block by itself, not with the helpers lowering uses
+(`typing::pieces`, `Item::targets`, `Stmt::reset_values`), so that a
+mistake in one of those makes the two disagree.
 
 The element `m[i]` of an array is the signal `m[k]` with `k` the value of
 `i` (typing makes sure it is an address when read); an assignment to an
@@ -67,8 +71,8 @@ such designs (as `v2rm` does).
 */
 
 use crate::ast::{
-    BinOp, Cast, Dir, Edge, Elems, Error, ErrorKind, Expr, ExprKind, Index, Item, Name, Select,
-    Stmt, StmtKind, Ty, UnOp,
+    BinOp, Cast, Dir, Edge, Elems, Error, ErrorKind, Expr, ExprKind, Index, Item, Lvalue,
+    LvalueKind, Name, Select, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst, Path};
 use crate::typing::{self, Checked};
@@ -247,14 +251,14 @@ impl<'m> Interp<'m> {
                     let reset = reset.as_ref().map(|r| (names[&r.name].clone(), r.edge));
                     self.blocks
                         .push((c, item, names[clock].clone(), *edge, reset));
-                    for q in item.targets() {
+                    for q in targets(item) {
                         let path = prefix.signal(q);
                         self.registers.push((path, names[q].clone(), env[q].ty));
                         self.driver.insert(names[q].clone(), (c, Driver::Ff(b)));
                     }
                 }
                 Item::Assign { .. } | Item::AlwaysComb { .. } => {
-                    for y in item.targets() {
+                    for y in targets(item) {
                         self.driver
                             .insert(names[y].clone(), (c, Driver::Item(item)));
                     }
@@ -381,72 +385,119 @@ impl<'m> Interp<'m> {
             // a dead store of x (typing): every path assigns the bits again
             StmtKind::Unknown { .. } => Ok(()),
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                let checked = &self.ctxs[c].checked;
-                let env = checked.env();
-                let width = typing::pieces(checked, lhs).iter().map(|p| p.width()).sum();
-                let v = self.assigned(c, rhs, width, scope(comb, out, &none), values, active)?;
-                // the variable indices, evaluated before anything is written
-                let pieces = typing::pieces(checked, lhs);
-                let mut indices = Vec::new();
-                for p in &pieces {
-                    let index = match p.variable {
-                        Some(var) => {
-                            let i =
-                                self.own(c, var.index, scope(comb, out, &none), values, active)?;
-                            Some(BigInt::from(i.unsigned().clone()) - var.below)
-                        }
-                        None => None,
-                    };
-                    // the element the index picks, if it is an address
-                    let target = match p.elem {
-                        Some(e) => {
-                            let k =
-                                self.own(c, e.index, scope(comb, out, &none), values, active)?;
-                            k.unsigned()
-                                .to_usize()
-                                .and_then(|k| e.elems.get(k))
-                                .cloned()
-                        }
-                        None => Some(p.name.clone()),
-                    };
-                    indices.push((index, target));
-                }
-                // the pieces take the bits of `v` from the top down
-                let mut top = v.width();
-                for (p, (index, target)) in pieces.iter().zip(indices) {
-                    let bits = slice(&v, top - 1, top - p.width());
-                    top -= p.width();
-                    let Some(name) = target else {
+                let scope = scope(comb, out, &none);
+                // the places, with their indices evaluated before anything
+                // is written
+                let mut places = Vec::new();
+                self.places(c, lhs, scope, values, active, &mut places)?;
+                let width = places.iter().map(|p| p.width).sum();
+                let v = self.assigned(c, rhs, width, scope, values, active)?;
+                let env = self.ctxs[c].checked.env();
+                // the places take the bits of `v` from the top down
+                let mut top = width;
+                for p in places {
+                    let bits = slice(&v, top - 1, top - p.width);
+                    top -= p.width;
+                    let Some(name) = &p.target else {
                         continue;
                     };
                     // the other bits of a register keep their value; those
                     // of an `always_comb` signal are assigned before they
                     // are read (typing), so any value does
-                    let old = match out.get(&name) {
-                        Some(old) => old.clone(),
-                        None if comb => BitVec::zero(env[&name].ty.width),
-                        None => values[&self.ctxs[c].names[&name]].clone(),
+                    let w = env[name].ty.width;
+                    let new = if p.whole(w) {
+                        bits
+                    } else {
+                        let old = match out.get(name) {
+                            Some(old) => old.clone(),
+                            None if comb => BitVec::zero(w),
+                            None => values[&self.ctxs[c].names[name]].clone(),
+                        };
+                        put(&old, &p.lo, &bits)
                     };
-                    let new = match index {
-                        None => write(&old, p.lo, &bits),
-                        // bit by bit from the lowest one at `lo`, skipping
-                        // those outside the signal
-                        Some(lo) => {
-                            let mut new = old;
-                            for k in 0..p.width() {
-                                let at = &lo + k;
-                                if let Some(at) = at.to_usize().filter(|at| *at < new.width()) {
-                                    new = write(&new, at, &slice(&bits, k, k));
-                                }
-                            }
-                            new
-                        }
-                    };
-                    out.insert(name, new);
+                    out.insert(name.clone(), new);
                 }
                 Ok(())
             }
         }
+    }
+
+    /// Adds the places the assignment target `l` writes to `out`, the one
+    /// taking the high bits of the value first, with the indices in it
+    /// evaluated (reads see `scope` first, as in [`Self::value`]).
+    fn places(
+        &self,
+        c: usize,
+        l: &Lvalue,
+        scope: &Values,
+        values: &mut Overlay,
+        active: &mut BTreeSet<Name>,
+        out: &mut Vec<Place>,
+    ) -> Result<(), String> {
+        let env = self.ctxs[c].checked.env();
+        let whole = |y: &Name| (BigInt::zero(), env[y].ty.width);
+        let (target, (lo, width)) = match &l.kind {
+            LvalueKind::Var(y) => (Some(y.clone()), whole(y)),
+            LvalueKind::Select(y, sel) => {
+                (Some(y.clone()), self.range(c, sel, scope, values, active)?)
+            }
+            LvalueKind::Elem(e) => {
+                let Elems::Signals(ys) = &e.elems else {
+                    unreachable!("a ROM is not written")
+                };
+                let bits = match &e.sel {
+                    Some(sel) => self.range(c, sel, scope, values, active)?,
+                    None => whole(&ys[0]),
+                };
+                // the element the index picks, if it is an address
+                let k = self.index(c, &e.index, scope, values, active)?;
+                (k.to_usize().and_then(|k| ys.get(k)).cloned(), bits)
+            }
+            LvalueKind::Concat(ls) => {
+                for l in ls {
+                    self.places(c, l, scope, values, active, out)?;
+                }
+                return Ok(());
+            }
+        };
+        out.push(Place { target, lo, width });
+        Ok(())
+    }
+
+    /// The bits a select picks: its lowest bit (below 0 or above the top
+    /// bit of the signal for some values of a variable index) and its
+    /// width.
+    fn range(
+        &self,
+        c: usize,
+        sel: &Select,
+        scope: &Values,
+        values: &mut Overlay,
+        active: &mut BTreeSet<Name>,
+    ) -> Result<(BigInt, usize), String> {
+        Ok(match sel {
+            Select::Bit(i) => (self.index(c, i, scope, values, active)?, 1),
+            Select::Part { hi, lo } => (BigInt::from(*lo), (hi + 1).saturating_sub(*lo)),
+            Select::Up(i, w) => (self.index(c, i, scope, values, active)?, *w),
+            Select::Down(i, w) => (self.index(c, i, scope, values, active)? - (w - 1), *w),
+        })
+    }
+
+    /// The value of an index, unsigned.
+    fn index(
+        &self,
+        c: usize,
+        i: &Index,
+        scope: &Values,
+        values: &mut Overlay,
+        active: &mut BTreeSet<Name>,
+    ) -> Result<BigInt, String> {
+        Ok(match i {
+            Index::Const(k) => BigInt::from(*k),
+            Index::Expr(e) => {
+                BigInt::from(self.own(c, e, scope, values, active)?.unsigned().clone())
+            }
+        })
     }
 
     /// The value of a signal (by name), computed on demand from its
@@ -476,22 +527,21 @@ impl<'m> Interp<'m> {
                 values.insert(name.to_string(), v);
             }
             Driver::Item(Item::Assign { lhs, rhs, .. }) => {
-                let width = typing::pieces(&ctx.checked, lhs)
-                    .iter()
-                    .map(|p| p.width())
-                    .sum();
+                let mut places = Vec::new();
+                self.places(c, lhs, &Values::new(), values, active, &mut places)?;
+                let width = places.iter().map(|p| p.width).sum();
                 let v = self.assigned(c, rhs, width, &Values::new(), values, active)?;
-                // an `assign` drives whole signals (typing)
-                let mut top = v.width();
-                for p in typing::pieces(&ctx.checked, lhs) {
-                    let bits = slice(&v, top - 1, top - p.width());
-                    top -= p.width();
-                    let y = &ctx.names[&p.name];
-                    let old = values
-                        .get(y)
-                        .cloned()
-                        .unwrap_or_else(|| BitVec::zero(ctx.checked.env()[&p.name].ty.width));
-                    values.insert(y.clone(), write(&old, p.lo, &bits));
+                // an `assign` drives whole signals (typing), by constant
+                // selects
+                let mut top = width;
+                for p in places {
+                    let bits = slice(&v, top - 1, top - p.width);
+                    top -= p.width;
+                    let y = p.target.expect("a signal");
+                    let name = &ctx.names[&y];
+                    let w = ctx.checked.env()[&y].ty.width;
+                    let old = values.get(name).cloned().unwrap_or_else(|| BitVec::zero(w));
+                    values.insert(name.clone(), put(&old, &p.lo, &bits));
                 }
             }
             Driver::Ff(b) => {
@@ -507,15 +557,14 @@ impl<'m> Interp<'m> {
                 };
                 let mut out = Values::new();
                 if reset_active {
-                    for (q, e) in item.body().unwrap().reset_values() {
-                        let width = self.ctxs[*c].checked.env()[q].ty.width;
-                        let v = self.assigned(*c, e, width, &Values::new(), values, active)?;
-                        out.insert(q.clone(), v);
-                    }
+                    // the branch assigns constants to whole registers
+                    // (typing), so it reads nothing
+                    let branch = reset_branch(item.body().unwrap());
+                    self.exec(*c, branch, false, values, active, &mut out)?;
                 }
                 let Some(prev) = self.prev.as_ref() else {
                     // the first round: no edge
-                    for q in item.targets() {
+                    for q in targets(item) {
                         let y = &self.ctxs[*c].names[q];
                         let v = out.remove(q).unwrap_or_else(|| self.init[y].clone());
                         values.insert(y.clone(), v);
@@ -543,14 +592,14 @@ impl<'m> Interp<'m> {
                         out.entry(q).or_insert(v);
                     }
                 }
-                for q in item.targets() {
+                for q in targets(item) {
                     let y = &self.ctxs[*c].names[q];
                     let v = out.remove(q).unwrap_or_else(|| prev[y].clone());
                     values.insert(y.clone(), v);
                 }
             }
             Driver::Item(item) => {
-                let targets = item.targets();
+                let targets = targets(item);
                 for y in &targets {
                     active.insert(ctx.names[*y].clone());
                 }
@@ -772,17 +821,11 @@ impl<'m> Interp<'m> {
         values: &mut Overlay,
         active: &mut BTreeSet<Name>,
     ) -> Result<BitVec, String> {
-        let w = sel.width();
-        let Some(i) = sel.index() else {
-            let lo = sel.constant().flatten().expect("constant").1;
+        let (lo, w) = self.range(c, sel, scope, values, active)?;
+        if let Some(lo) = lo.to_usize().filter(|lo| lo + w <= v.width()) {
             return Ok(slice(v, lo + w - 1, lo));
-        };
+        }
         // bit by bit; bits outside `v` read 0
-        let i = BigInt::from(self.own(c, i, scope, values, active)?.unsigned().clone());
-        let lo = match sel {
-            Select::Down(..) => i - (w - 1),
-            _ => i,
-        };
         let mut out = BigUint::from(0u8);
         for k in 0..w {
             let at = &lo + k;
@@ -852,6 +895,98 @@ fn write(v: &BitVec, lo: usize, bits: &BitVec) -> BitVec {
     let mask = ones(bits.width()) << lo;
     let kept = v.unsigned() & (ones(v.width()) ^ mask);
     BitVec::wrap(v.width(), kept | (bits.unsigned() << lo))
+}
+
+/// `v` with the bits from `lo` upwards replaced by `bits`, those of them
+/// inside `v`.
+fn put(v: &BitVec, lo: &BigInt, bits: &BitVec) -> BitVec {
+    match lo.to_usize() {
+        Some(lo) if lo + bits.width() <= v.width() => write(v, lo, bits),
+        // bit by bit from the lowest one at `lo`, skipping those outside
+        _ => {
+            let mut new = v.clone();
+            for k in 0..bits.width() {
+                if let Some(at) = (lo + k).to_usize().filter(|at| *at < v.width()) {
+                    new = write(&new, at, &slice(bits, k, k));
+                }
+            }
+            new
+        }
+    }
+}
+
+/// Where an assignment writes some of the bits of its value: `width` bits
+/// of the signal `target` from bit `lo` upwards, those of them inside the
+/// signal; nowhere if `target` is `None` (an element at an index that is
+/// no address).
+struct Place {
+    target: Option<Name>,
+    lo: BigInt,
+    width: usize,
+}
+
+impl Place {
+    /// Whether the place is all of a signal of `width` bits.
+    fn whole(&self, width: usize) -> bool {
+        self.lo.is_zero() && self.width == width
+    }
+}
+
+/// The signals an `assign`, `always_comb` or `always_ff` item assigns,
+/// each once, in the order of their first assignment (every element of
+/// an array written at a variable index).
+fn targets(item: &Item) -> Vec<&Name> {
+    fn lvalue<'a>(l: &'a Lvalue, out: &mut Vec<&'a Name>) {
+        let mut add = |y: &'a Name| {
+            if !out.contains(&y) {
+                out.push(y);
+            }
+        };
+        match &l.kind {
+            LvalueKind::Var(y) | LvalueKind::Select(y, _) => add(y),
+            LvalueKind::Elem(e) => match &e.elems {
+                Elems::Signals(ys) => ys.iter().for_each(add),
+                Elems::Consts(..) | Elems::Unresolved => {}
+            },
+            LvalueKind::Concat(ls) => ls.iter().for_each(|l| lvalue(l, out)),
+        }
+    }
+    fn stmt<'a>(s: &'a Stmt, out: &mut Vec<&'a Name>) {
+        match &s.kind {
+            StmtKind::NonBlocking { lhs, .. }
+            | StmtKind::Blocking { lhs, .. }
+            | StmtKind::Unknown { lhs, .. } => lvalue(lhs, out),
+            StmtKind::Block(ss) => ss.iter().for_each(|s| stmt(s, out)),
+            StmtKind::If(_, a, b) => {
+                stmt(a, out);
+                stmt(b, out);
+            }
+            StmtKind::Case { items, default, .. } => {
+                items.iter().for_each(|i| stmt(&i.body, out));
+                if let Some(d) = default {
+                    stmt(d, out);
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    match item {
+        Item::Assign { lhs, .. } => lvalue(lhs, &mut out),
+        Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => stmt(body, &mut out),
+        Item::Instance(_) => {}
+    }
+    out
+}
+
+/// The reset branch of the body of an `always_ff` block with an
+/// asynchronous reset: the `then` branch of the `if` the body consists of
+/// (possibly inside `begin … end`; typing makes sure there is one).
+fn reset_branch(body: &Stmt) -> &Stmt {
+    match &body.kind {
+        StmtKind::If(_, then, _) => then,
+        StmtKind::Block(ss) if ss.len() == 1 => reset_branch(&ss[0]),
+        _ => unreachable!("the body of a block with a reset is an `if`"),
+    }
 }
 
 fn bit(b: bool) -> BitVec {
