@@ -25,7 +25,7 @@ from reactor_lean.project.lakefile import (
 )
 from reactor_lean.project.templates import TEMPLATES_DIR, PROJECT_TEMPLATES_DIR
 
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def test_the_templates_hold_no_lean_sources():

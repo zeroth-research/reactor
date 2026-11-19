@@ -160,7 +160,7 @@ def test_a_native_run_loads_no_solver(tmp_path):
     import subprocess
     import sys
 
-    fixture = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures" / "counter.py"
+    fixture = Path(__file__).resolve().parent / "fixtures" / "counter.py"
     argv = [
         "reactor", str(fixture), "--buchi", "(= (X @intf.0) 0)",
         "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",

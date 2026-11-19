@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
-PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
-FIXTURE_DIR = PYTHON_TESTS / "fixtures"
+TESTS = Path(__file__).resolve().parent
+FIXTURE_DIR = TESTS / "fixtures"
 # Where `uv run certify` finds the command.
 VERITH_ROOT = Path(__file__).resolve().parents[1]
 
@@ -791,7 +791,7 @@ def test_an_input_whose_format_cannot_be_told_is_refused(capsys):
     assert "cannot tell the format of model.txt" in capsys.readouterr().err
 
 
-SMV_FIXTURES = PYTHON_TESTS / "smv_fixtures"
+SMV_FIXTURES = TESTS / "smv_fixtures"
 
 
 def test_d_is_only_meaningful_for_python_input(capsys):

@@ -23,7 +23,7 @@ from verith.fbk_proveit.engine import ProveItError, property_to_bool_lean, resol
 from verith.fbk_proveit.na import NAUnsupported, atom_to_lean_na, check_na_supported
 
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
-FIXTURE_DIR = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 def run_certify(*args) -> subprocess.CompletedProcess:

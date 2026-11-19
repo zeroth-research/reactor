@@ -341,7 +341,7 @@ def test_generated_executable_builds_and_runs(
 
     import importlib
 
-    sys.path.insert(0, str(_LEAN_DIR.resolve().parents[2] / "python" / "tests" / "fixtures"))
+    sys.path.insert(0, str(_LEAN_DIR.resolve().parent / "fixtures"))
     try:
         module_def = importlib.import_module(fixture).module()
     finally:

@@ -5,7 +5,7 @@ The route transcripts (`verith/scripts/route_transcripts.py`) and the goldens
 `System/*.lean` encodings, the `--cert-file` certificate of a bare module, or
 the fbk-proveit NA model and bridge. This writes those, so a codegen refactor
 is checked the same way: record at the commit before and after, then
-`diff -r`. Run from `python/`:
+`diff -r`. Run from `lean/`:
 
     uv run python scripts/encoding_snapshots.py OUTDIR
 
@@ -24,11 +24,11 @@ import sys
 import traceback
 from pathlib import Path
 
-PY = Path(__file__).resolve().parents[1]
+TESTS = Path(__file__).resolve().parents[1] / "tests"
 FIXTURES = [
-    *sorted((PY / "tests" / "fixtures").glob("*.py")),
-    *sorted((PY.parent / "lean" / "tests" / "limits" / "mods").glob("m_*.py")),
-    *sorted((PY / "tests" / "smv_fixtures").glob("*.smv")),
+    *sorted((TESTS / "fixtures").glob("*.py")),
+    *sorted((TESTS / "limits" / "mods").glob("m_*.py")),
+    *sorted((TESTS / "smv_fixtures").glob("*.smv")),
 ]
 
 

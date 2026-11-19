@@ -32,9 +32,8 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# `reactor`'s tests, in the `python/` project beside this one: the CLI
-# fixtures and the limit matrix.
-PYTHON_TESTS = HERE.parents[2] / "python" / "tests"
+# The CLI fixtures, which a probe names as `TESTS/<name>`.
+FIXTURES = HERE.parent / "fixtures"
 sys.path.insert(0, str(HERE))
 
 from probes import PROBES, REJECTED  # noqa: E402
@@ -75,7 +74,7 @@ def module_path(mod: str, mods_dir) -> Path:
     a probe can name either set.
     """
     if mod.startswith("TESTS/"):
-        return PYTHON_TESTS / "fixtures" / f"{mod.split('/', 1)[1]}.py"
+        return FIXTURES / f"{mod.split('/', 1)[1]}.py"
     return Path(mods_dir) / f"{mod}.py"
 
 

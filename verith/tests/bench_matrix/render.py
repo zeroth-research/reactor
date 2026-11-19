@@ -81,7 +81,7 @@ SUITE_BLURB = {
             "fail translation."
         ),
         source=(
-            "The limit matrix, <code>tests/limits/cases.py</code>. Its 77 cases vary the "
+            "The limit matrix, <code>lean/tests/limits/cases.py</code>. Its 77 cases vary the "
             "<em>supplied</em> <code>--invariant</code> and <code>--ranking</code> over a "
             "much smaller set of questions, and no <code>--infer</code> route reads a "
             "supplied predicate, so the cases collapse onto their (module, property, "
@@ -694,9 +694,9 @@ def warnings_section(warns: list, w) -> None:
 
 
 # The directories benchmark files live in, in the order the page lists them.
-DIR_ORDER = ["tests/fixtures", "tests/limits/mods", "benchmarks/svcomp/dsl",
-             "tests/bench_matrix/hybrid", "tests/bench_matrix/petri",
-             "tests/bench_matrix"]
+DIR_ORDER = ["../verith/tests/fixtures", "../lean/tests/limits/mods",
+             "benchmarks/svcomp/dsl", "../verith/tests/bench_matrix/hybrid",
+             "../verith/tests/bench_matrix/petri", "../verith/tests/bench_matrix"]
 SVCOMP_DSL = PY / "benchmarks" / "svcomp" / "dsl"
 
 

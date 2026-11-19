@@ -29,7 +29,7 @@ from verith.fbk_proveit.na import atom_to_lean_na, check_na_supported, slot_acce
 from verith.proofs.scripts import proof_scripts
 
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 # As `reactor`'s `test_lean_flat_layout.py` has them: one wire list per case,
 # the last three the ones no fixture has -- a genuinely 2-D wire, and a mixed

@@ -44,7 +44,7 @@ from reactor_lean.inputs.python import load_module
 pytest.importorskip("cvc5")
 
 GOLDEN = Path(__file__).parent / "golden" / "pipeline"
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
 
 

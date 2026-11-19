@@ -44,10 +44,9 @@ from pathlib import Path
 
 SP = Path(__file__).resolve().parent        # verith/tests/bench_matrix
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
-PY = VR.parent / "python"                   # python/: reactor and its tests
 LEAN_TESTS = VR.parent / "lean" / "tests"    # reactor_lean's tests: the limit matrix, tests/lean
 MODS = LEAN_TESTS / "limits" / "mods"
-FIXTURES = PY / "tests" / "fixtures"
+FIXTURES = VR / "tests" / "fixtures"
 SVCOMP_ADAPTER = SP / "svcomp_mod.py"
 HYBRID = SP / "hybrid"
 PETRI = SP / "petri"

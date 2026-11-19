@@ -24,8 +24,7 @@ from reactor.eval import execute_init, execute_update
 from reactor_lean.lowering.sorts import wire_shape
 
 TESTS = Path(__file__).parent
-# The module corpus beside the limit matrix's is `reactor`'s own.
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = TESTS / "fixtures"
 
 RUNS = 6            # runs per module
 ROUNDS = 5          # rounds per run after the initial one

@@ -155,8 +155,8 @@ def command(row, route, out: Path) -> list[str]:
 
 def rel(p: Path) -> str:
     """A module path as it is written from `python/`, which is where a run
-    is: `tests/limits/...` for reactor's fixtures, `../verith/tests/...` for
-    the adapters beside this file."""
+    is: `../lean/tests/limits/...` for the limit matrix, `../verith/tests/...`
+    for the CLI fixtures and the adapters beside this file."""
     return os.path.relpath(Path(p).resolve(), PY)
 
 
