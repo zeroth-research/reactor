@@ -52,6 +52,18 @@ def test_lia_is_int():
     assert isinstance(e, Int) and isinstance(i, Int)
 
 
+class BiaslessNet(Net):
+    """Net with a first layer without bias."""
+
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(2, 3, bias=False)
+
+
+def test_layers_without_bias_add_a_zero_column():
+    assert _sorts(Module(BiaslessNet())) == _sorts(Module(Net()))
+
+
 def test_bv_unsupported_for_nn():
     # BV has no Transpose/Linear ops, so a neural module can't compile to it (yet).
     with pytest.raises(NotImplementedError, match="does not support neural modules"):

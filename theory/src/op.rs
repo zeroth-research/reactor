@@ -83,24 +83,35 @@ pub enum LIA {
     Bool(bool::Prop),
 }
 
-impl Boundary<sort::Any> for Any {
-    fn dom(&self) -> Poly<sort::Any> {
-        match self {
-            Any::Real(op) => op.dom().map(sort::Any::from),
-            Any::Int(op) => op.dom().map(sort::Any::from),
-            Any::Bool(op) => op.dom().map(sort::Any::from),
-            Any::Word(op) => op.dom().map(sort::Any::from),
-        }
-    }
+/// Implements [`Boundary`] on the sorts of all theories for enums of
+/// operations, `$logic { $variant, .. }`: the boundary of an operation is
+/// that of the operation of its theory, which its variant holds.
+macro_rules! boundary {
+    ($($logic:ident { $($variant:ident),+ })+) => {$(
+        impl Boundary<sort::Any> for $logic {
+            fn dom(&self) -> Poly<sort::Any> {
+                match self {
+                    $($logic::$variant(op) => op.dom().map(sort::Any::from),)+
+                }
+            }
 
-    fn cod(&self) -> Poly<sort::Any> {
-        match self {
-            Any::Real(op) => op.cod().map(sort::Any::from),
-            Any::Int(op) => op.cod().map(sort::Any::from),
-            Any::Bool(op) => op.cod().map(sort::Any::from),
-            Any::Word(op) => op.cod().map(sort::Any::from),
+            fn cod(&self) -> Poly<sort::Any> {
+                match self {
+                    $($logic::$variant(op) => op.cod().map(sort::Any::from),)+
+                }
+            }
         }
-    }
+    )+};
+}
+
+boundary! {
+    Any { Real, Int, Bool, Word }
+    NRA { Real, Bool }
+    NIA { Int, Bool }
+    Prop { Bool }
+    BV { Bool, Word }
+    LRA { Real, Bool }
+    LIA { Int, Bool }
 }
 
 impl From<LRA> for Any {

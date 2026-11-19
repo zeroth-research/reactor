@@ -1,7 +1,8 @@
 use super::Term;
 use super::Wire;
+use base::boundary::Boundary;
 use std::collections::BTreeSet;
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::vec;
 use theory::{Combinatorial, Differential, Sequential};
 
@@ -135,8 +136,8 @@ where
 
 impl<F, S> Block<F, S>
 where
-    F: Differential<S>,
-    S: Clone + Debug,
+    F: Differential<S> + Boundary<S> + fmt::Display,
+    S: Clone + Debug + PartialEq + fmt::Display,
 {
     /// Builds a block of one `ZERO` term per write wire, so that theories can
     /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
@@ -149,8 +150,8 @@ where
 
 impl<J, S> Block<J, S>
 where
-    J: Sequential<S>,
-    S: Clone + Debug,
+    J: Sequential<S> + Boundary<S> + fmt::Display,
+    S: Clone + Debug + PartialEq + fmt::Display,
 {
     /// Builds a block of one `SKIP` term per `(write, read)` wire pair, so
     /// that theories can keep `SKIP` at a fixed arity and each pair is an
@@ -174,8 +175,8 @@ where
 
 impl<I, S> Block<I, S>
 where
-    I: Combinatorial<S>,
-    S: Clone + Debug,
+    I: Combinatorial<S> + Boundary<S> + fmt::Display,
+    S: Clone + Debug + PartialEq + fmt::Display,
 {
     /// Builds a block of one `HAVOC` term per write wire
     pub fn havoc<W: IntoIterator<Item = Wire<S>>>(write: W) -> Result<Self, String> {

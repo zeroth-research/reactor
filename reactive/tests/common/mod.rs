@@ -2,6 +2,7 @@
 //! uninterpreted `Ops` theory and the example modules built over it.
 #![allow(dead_code)]
 
+use base::boundary::{Boundary, Mono, Poly};
 use base::differentiable::Differentiable;
 use dataflow::diagram::Term;
 use dataflow::diagram::Wire;
@@ -15,6 +16,10 @@ use theory::{Combinatorial, Differential, Sequential};
 /// tests do not tell values from their rates of change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Ty(pub &'static str);
+
+/// The sorts most tests use.
+pub const REAL: Ty = Ty("real");
+pub const BOOL: Ty = Ty("bool");
 
 impl Differentiable for Ty {
     type Tangent = Ty;
@@ -30,40 +35,66 @@ impl Display for Ty {
     }
 }
 
+/// An uninterpreted operation: its name, and the sorts of the wires it
+/// writes and reads, in order, which make its boundary.
 #[derive(Clone, Debug)]
-#[allow(unused)]
-pub struct Ops(pub &'static str);
+pub struct Ops {
+    name: &'static str,
+    write: Vec<Ty>,
+    read: Vec<Ty>,
+}
+
+/// The uninterpreted operation `name` that writes wires of the sorts
+/// `write` and reads wires of the sorts `read`, in order, as a term of it
+/// lists them: `term!(mk_op(name, write, read), [..], [..])`.
+pub fn mk_op<const W: usize, const R: usize>(
+    name: &'static str,
+    write: [Ty; W],
+    read: [Ty; R],
+) -> Ops {
+    Ops {
+        name,
+        write: write.into(),
+        read: read.into(),
+    }
+}
+
+impl Boundary<Ty> for Ops {
+    fn dom(&self) -> Poly<Ty> {
+        self.read.iter().copied().collect::<Mono<Ty>>().into()
+    }
+
+    fn cod(&self) -> Poly<Ty> {
+        self.write.iter().copied().collect::<Mono<Ty>>().into()
+    }
+}
 
 impl Combinatorial<Ty> for Ops {
-    fn havoc(_range: &Ty) -> Self {
-        Ops("HAVOC")
+    fn havoc(range: &Ty) -> Self {
+        mk_op("HAVOC", [*range], [])
     }
 }
 
 impl Sequential<Ty> for Ops {
-    fn skip(_range: &Ty) -> Self {
-        Ops("SKIP")
+    fn skip(range: &Ty) -> Self {
+        mk_op("SKIP", [*range], [*range])
     }
 }
 
 impl Differential<Ty> for Ops {
-    fn zero(_range: &Ty) -> Self {
-        Ops("ZERO")
+    fn zero(range: &Ty) -> Self {
+        mk_op("ZERO", [*range], [])
     }
 }
 
 impl Display for Ops {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.name)
     }
 }
 
 pub type Module = reactive::Module<Ops, Ops, Ops, Ty>;
 pub type Atom = reactive::Atom<Ops, Ops, Ops, Ty>;
-
-pub fn mk_op(name: &'static str) -> Ops {
-    Ops(name)
-}
 
 #[macro_export]
 macro_rules! term {
@@ -78,43 +109,52 @@ macro_rules! term {
 
 #[allow(clippy::vec_init_then_push)]
 pub fn example_counter() -> Result<(Module, HashMap<Var<Ty>, String>), String> {
-    let x = Var::new(Ty("real"));
-    let y = Var::new(Ty("real"));
-    let z = Var::new(Ty("real"));
-    let y0 = Var::new(Ty("real"));
-    let z0 = Var::new(Ty("real"));
+    let x = Var::new(REAL);
+    let y = Var::new(REAL);
+    let z = Var::new(REAL);
+    let y0 = Var::new(REAL);
+    let z0 = Var::new(REAL);
 
     let mut init: Vec<Term<Ops, Ty>> = Vec::new();
 
-    let tmp1 = Wire::new(Ty("real"));
-    init.push(term!(mk_op("ZERO"), [tmp1])?);
+    let tmp1 = Wire::new(REAL);
+    init.push(term!(mk_op("ZERO", [REAL], []), [tmp1])?);
 
-    let tmp2 = Wire::new(Ty("bool"));
-    let tmp3 = Wire::new(Ty("bool"));
-    init.push(term!(mk_op("ID"), [X(x)], [tmp1])?);
-    init.push(term!(mk_op("ABS"), [tmp2], [X(y0)])?);
-    init.push(term!(mk_op("ID"), [X(y)], [tmp2])?);
-    init.push(term!(mk_op("ABS"), [tmp3], [X(z0)])?);
-    init.push(term!(mk_op("ID"), [X(z)], [tmp3])?);
+    let tmp2 = Wire::new(REAL);
+    let tmp3 = Wire::new(REAL);
+    init.push(term!(mk_op("ID", [REAL], [REAL]), [X(x)], [tmp1])?);
+    init.push(term!(mk_op("ABS", [REAL], [REAL]), [tmp2], [X(y0)])?);
+    init.push(term!(mk_op("ID", [REAL], [REAL]), [X(y)], [tmp2])?);
+    init.push(term!(mk_op("ABS", [REAL], [REAL]), [tmp3], [X(z0)])?);
+    init.push(term!(mk_op("ID", [REAL], [REAL]), [X(z)], [tmp3])?);
 
     let mut update: Vec<Term<Ops, Ty>> = Vec::new();
 
-    let tmp4 = Wire::new(Ty("bool"));
-    let tmp5 = Wire::new(Ty("bool"));
-    let tmp6 = Wire::new(Ty("bool"));
-    update.push(term!(mk_op("ZERO"), [tmp1])?);
-    update.push(term!(mk_op("LEQ"), [tmp4], [x, y])?);
-    update.push(term!(mk_op("LEQ"), [tmp5], [x, z])?);
-    update.push(term!(mk_op("OR"), [tmp6], [tmp4, tmp5])?);
+    let tmp4 = Wire::new(BOOL);
+    let tmp5 = Wire::new(BOOL);
+    let tmp6 = Wire::new(BOOL);
+    update.push(term!(mk_op("ZERO", [REAL], []), [tmp1])?);
+    update.push(term!(mk_op("LEQ", [BOOL], [REAL, REAL]), [tmp4], [x, y])?);
+    update.push(term!(mk_op("LEQ", [BOOL], [REAL, REAL]), [tmp5], [x, z])?);
+    update.push(term!(
+        mk_op("OR", [BOOL], [BOOL, BOOL]),
+        [tmp6],
+        [tmp4, tmp5]
+    )?);
 
-    let tmp7 = Wire::new(Ty("real"));
-    let tmp8 = Wire::new(Ty("real"));
-    update.push(term!(mk_op("ONE"), [tmp7])?);
-    update.push(term!(mk_op("ADD"), [tmp8], [*x, tmp7])?);
+    let tmp7 = Wire::new(REAL);
+    let tmp8 = Wire::new(REAL);
+    update.push(term!(mk_op("ONE", [REAL], []), [tmp7])?);
+    update.push(term!(
+        mk_op("ADD", [REAL], [REAL, REAL]),
+        [tmp8],
+        [*x, tmp7]
+    )?);
 
-    update.push(term!(mk_op("ITE"), [X(x)], [tmp6, tmp8, tmp1])?);
-    update.push(term!(mk_op("ID"), [X(y)], [y0])?);
-    update.push(term!(mk_op("ID"), [X(z)], [z0])?);
+    let ite = mk_op("ITE", [REAL], [BOOL, REAL, REAL]);
+    update.push(term!(ite, [X(x)], [tmp6, tmp8, tmp1])?);
+    update.push(term!(mk_op("ID", [REAL], [REAL]), [X(y)], [y0])?);
+    update.push(term!(mk_op("ID", [REAL], [REAL]), [X(z)], [z0])?);
 
     let obs = [x, y, z, y0, z0];
 
@@ -132,45 +172,59 @@ pub fn example_counter() -> Result<(Module, HashMap<Var<Ty>, String>), String> {
 pub fn example_peterson1() -> Result<Module, String> {
     let stype = Ty("{outCS, reqCS, inCS}");
     let pc1 = Var::new(stype);
-    let x1 = Var::new(Ty("bool"));
+    let x1 = Var::new(BOOL);
     let pc2 = Var::new(stype);
-    let x2 = Var::new(Ty("bool"));
+    let x2 = Var::new(BOOL);
+
+    // the program counter's values, and its comparison
+    let pc = |name| mk_op(name, [stype], []);
+    let eq = || mk_op("EQ", [BOOL], [stype, stype]);
+    let tt = || mk_op("CONST(true)", [BOOL], []);
 
     let mut init: Vec<Term<Ops, Ty>> = Vec::new();
-    init.push(term!(mk_op("CONST(outCS)"), [X(pc1)]).unwrap());
-    init.push(term!(mk_op("CONST(true)"), [X(x1)]).unwrap());
+    init.push(term!(pc("CONST(outCS)"), [X(pc1)]).unwrap());
+    init.push(term!(tt(), [X(x1)]).unwrap());
 
     let mut update: Vec<Term<Ops, Ty>> = Vec::new();
     let out_cs = Wire::new(stype);
-    let cond1 = Wire::new(Ty("bool"));
-    update.push(term!(mk_op("CONST(outCS)"), [out_cs]).unwrap());
-    update.push(term!(mk_op("EQ"), [cond1], [out_cs, *pc1]).unwrap());
+    let cond1 = Wire::new(BOOL);
+    update.push(term!(pc("CONST(outCS)"), [out_cs]).unwrap());
+    update.push(term!(eq(), [cond1], [out_cs, *pc1]).unwrap());
 
     let req_cs = Wire::new(stype);
-    let cond2 = Wire::new(Ty("bool"));
-    update.push(term!(mk_op("CONST(reqCS)"), [req_cs]).unwrap());
-    let tmp11 = Wire::new(Ty("bool"));
-    update.push(term!(mk_op("EQ"), [tmp11], [req_cs, *pc1]).unwrap());
+    let cond2 = Wire::new(BOOL);
+    update.push(term!(pc("CONST(reqCS)"), [req_cs]).unwrap());
+    let tmp11 = Wire::new(BOOL);
+    update.push(term!(eq(), [tmp11], [req_cs, *pc1]).unwrap());
 
-    let tmp12 = Wire::new(Ty("bool"));
-    let tmp13 = Wire::new(Ty("bool"));
-    let tmp14 = Wire::new(Ty("bool"));
-    update.push(term!(mk_op("EQ"), [tmp12], [out_cs, *pc2]).unwrap());
-    update.push(term!(mk_op("NEQ"), [tmp13], [x1, x2]).unwrap());
-    update.push(term!(mk_op("OR"), [tmp14], [tmp12, tmp13]).unwrap());
-    update.push(term!(mk_op("AND"), [cond2], [tmp14, tmp11]).unwrap());
+    let tmp12 = Wire::new(BOOL);
+    let tmp13 = Wire::new(BOOL);
+    let tmp14 = Wire::new(BOOL);
+    update.push(term!(eq(), [tmp12], [out_cs, *pc2]).unwrap());
+    update.push(term!(mk_op("NEQ", [BOOL], [BOOL, BOOL]), [tmp13], [x1, x2]).unwrap());
+    update.push(term!(mk_op("OR", [BOOL], [BOOL, BOOL]), [tmp14], [tmp12, tmp13]).unwrap());
+    update.push(term!(mk_op("AND", [BOOL], [BOOL, BOOL]), [cond2], [tmp14, tmp11]).unwrap());
 
     let in_cs = Wire::new(stype);
-    let cond3 = Wire::new(Ty("bool"));
-    update.push(term!(mk_op("CONST(inCS)"), [in_cs]).unwrap());
-    update.push(term!(mk_op("EQ"), [cond3], [in_cs, *pc1]).unwrap());
+    let cond3 = Wire::new(BOOL);
+    update.push(term!(pc("CONST(inCS)"), [in_cs]).unwrap());
+    update.push(term!(eq(), [cond3], [in_cs, *pc1]).unwrap());
 
-    let const_true = Wire::new(Ty("bool"));
-    update.push(term!(mk_op("CONST(true)"), [const_true]).unwrap());
+    let const_true = Wire::new(BOOL);
+    update.push(term!(tt(), [const_true]).unwrap());
 
+    // four cases, each a guard and the values of the program counter and of
+    // the flag it selects
+    let case = mk_op(
+        "CASE",
+        [stype, BOOL],
+        [
+            BOOL, stype, BOOL, BOOL, stype, BOOL, BOOL, stype, BOOL, BOOL, stype, BOOL,
+        ],
+    );
     update.push(
         term!(
-            mk_op("CASE"),
+            case,
             [X(pc1), X(x1)],
             [
                 cond1, req_cs, *x2, cond2, in_cs, *x1, cond3, out_cs, *x1, const_true, *pc1, *x1,
@@ -184,28 +238,30 @@ pub fn example_peterson1() -> Result<Module, String> {
 }
 
 pub fn example_tiny1(external: Var<Ty>, interface: Var<Ty>, wait: bool) -> Result<Module, String> {
-    let private = Var::new(Ty("Tny"));
-    let temp = Wire::new(Ty("Tny"));
+    let tny = Ty("Tny");
+    let (extl, intf) = (*external.dtype(), *interface.dtype());
+    let private = Var::new(tny);
+    let temp = Wire::new(tny);
 
-    let cons = Term::constant(mk_op("CONST"), [temp]).unwrap();
+    let cons = Term::constant(mk_op("CONST", [tny], []), [temp]).unwrap();
 
     let update = if wait {
         Term::function(
-            mk_op("AWAIT"),
+            mk_op("AWAIT", [intf, tny], [extl, tny, tny]),
             [X(interface), X(private)],
             [X(external), *private, temp],
         )
         .unwrap()
     } else {
         Term::function(
-            mk_op("SEQ"),
+            mk_op("SEQ", [intf, tny], [extl, tny, tny]),
             [X(interface), X(private)],
             [*external, *private, temp],
         )
         .unwrap()
     };
 
-    let init = Term::constant(mk_op("INIT"), [X(interface), X(private)]).unwrap();
+    let init = Term::constant(mk_op("INIT", [intf, tny], []), [X(interface), X(private)]).unwrap();
 
     let vars = [external, interface, private];
     let _obs = [external, interface];

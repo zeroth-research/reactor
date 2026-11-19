@@ -2113,7 +2113,7 @@ class MethodVisitor(ast.NodeVisitor):
                 bias = (
                     layer.bias.unsqueeze(1)
                     if layer.bias is not None
-                    else torch.zeros(out_features, 0)
+                    else torch.zeros(out_features, 1, dtype=layer.weight.dtype)
                 )
                 ts = self.builder.linear(input_val, layer.weight, bias)
                 self.terms.extend(ts)

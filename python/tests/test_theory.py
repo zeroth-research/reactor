@@ -95,6 +95,23 @@ def test_terms_reject_what_is_not_an_operation():
         Term.constant(Real([1, 1]), [Wire(Real([1, 1]))])
 
 
+def test_terms_read_and_write_the_sorts_of_their_operation():
+    r, b = Real([2, 3]), Bool([2, 3])
+    Term(op.real.Add(2, 3), [Wire(r)], [Wire(r), Wire(r)])
+    with pytest.raises(Exception, match=r"expected Add to read Real\(2, 3\) ⊗ Real\(2, 3\), "
+                                        r"got Bool\(2, 3\) ⊗ Bool\(2, 3\)"):
+        Term(op.real.Add(2, 3), [Wire(r)], [Wire(b), Wire(b)])
+    with pytest.raises(Exception, match="expected Add to read"):
+        Term(op.real.Add(2, 3), [Wire(r)], [Wire(r)])
+    with pytest.raises(Exception, match=r"expected \[\[1\]\] to write Real\(1, 1\), got Real\(7, 7\)"):
+        Term.constant(op.real.Const(torch.tensor([[1.0]])), [Wire(Real([7, 7]))])
+    # a rate of change is not a value
+    x = Var(Real([2, 3]))
+    with pytest.raises(Exception, match=r"got T\^1\(Real\(2, 3\)\) ⊗ T\^1\(Real\(2, 3\)\)"):
+        Term(op.real.Add(2, 3), [Wire(r)], [d(x), d(x)])
+    Term(op.real.TAdd(2, 3, 1), [Wire(Real([2, 3], 1))], [d(x), d(x)])
+
+
 def test_operations_compare_by_value():
     assert op.real.Add(2, 3) == op.real.Add(2, 3) and op.real.Add(2, 3) != op.real.Add(3, 2)
     assert op.word.SDiv(8, 1, 1) != op.word.UDiv(8, 1, 1)

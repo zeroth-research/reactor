@@ -1,4 +1,5 @@
 use super::Wire;
+use base::boundary::{Boundary, Mono, Poly};
 use std::borrow::Cow;
 use std::fmt;
 
@@ -39,11 +40,47 @@ impl<T, S> Term<T, S> {
 }
 
 //============================================================
+// Type-checking
+//============================================================
+
+/// Fails unless a term of the instruction `itype` may read the wires `read`
+/// and write the wires `write`: unless they are of the sorts of its domain
+/// and of its codomain, in order. [`Term::function`] and [`Term::constant`]
+/// check the terms they build.
+pub fn check<T, S>(itype: &T, read: &[Wire<S>], write: &[Wire<S>]) -> Result<(), String>
+where
+    T: Boundary<S> + fmt::Display,
+    S: Clone + PartialEq + fmt::Display,
+{
+    let sorts = |wires: &[Wire<S>]| -> Poly<S> {
+        wires
+            .iter()
+            .map(|w| w.dtype().clone())
+            .collect::<Mono<S>>()
+            .into()
+    };
+    let (dom, read) = (itype.dom(), sorts(read));
+    if read != dom {
+        return Err(format!("expected {itype} to read {dom}, got {read}"));
+    }
+    let (cod, write) = (itype.cod(), sorts(write));
+    if write != cod {
+        return Err(format!("expected {itype} to write {cod}, got {write}"));
+    }
+    Ok(())
+}
+
+//============================================================
 // Public constructors
 //============================================================
 
-impl<T, S> Term<T, S> {
-    /// Fails if the term reads a wire it also writes.
+impl<T, S> Term<T, S>
+where
+    T: Boundary<S> + fmt::Display,
+    S: Clone + PartialEq + fmt::Display,
+{
+    /// Fails if the term reads a wire it also writes, or unless its wires
+    /// are of the sorts of `itype` (see [`check`]).
     pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, String>
     where
         D: Into<Wire<S>>,
@@ -57,18 +94,20 @@ impl<T, S> Term<T, S> {
         if read.iter().any(|i| write.iter().any(|j| i == j)) {
             return Err("Term reads and writes the same wire".into());
         }
+        check(&itype, &read, &write)?;
 
         Ok(Self::new_unchecked(itype, write, read))
     }
 
-    /// Never fails for now (a term that reads nothing cannot read a wire it
-    /// writes), but returns a `Result` so that it may fail in the future.
+    /// Fails unless `itype` reads nothing and writes wires of the sorts of
+    /// `write` (see [`check`]).
     pub fn constant<D, W>(itype: T, write: W) -> Result<Self, String>
     where
         D: Into<Wire<S>>,
         W: IntoIterator<Item = D>,
     {
         let write: Vec<Wire<S>> = write.into_iter().map(Into::into).collect();
+        check(&itype, &[], &write)?;
         Ok(Self::new_unchecked(itype, write, Vec::new()))
     }
 }
@@ -175,5 +214,47 @@ where
             term: self,
             name: move |w: &Wire<S>| name(w).into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use theory::op::{Any, real};
+    use theory::sort;
+
+    fn wire(sort: impl Into<sort::Any>) -> Wire<sort::Any> {
+        Wire::new(sort.into())
+    }
+
+    #[test]
+    fn terms_read_and_write_the_sorts_of_their_operation() {
+        let add = || Any::Real(real::Add(2, 3).into());
+        let (r, b) = (sort::Real::new([2, 3]), sort::Bool::new([2, 3]));
+        assert!(Term::function(add(), [wire(r)], [wire(r), wire(r)]).is_ok());
+        assert_eq!(
+            Term::function(add(), [wire(r)], [wire(b), wire(b)]).unwrap_err(),
+            "expected Add to read Real(2, 3) ⊗ Real(2, 3), got Bool(2, 3) ⊗ Bool(2, 3)"
+        );
+        assert!(Term::function(add(), [wire(r)], [wire(r)]).is_err());
+        assert_eq!(
+            Term::function(add(), [wire(sort::Int::new([2, 3]))], [wire(r), wire(r)]).unwrap_err(),
+            "expected Add to write Real(2, 3), got Int(2, 3)"
+        );
+    }
+
+    #[test]
+    fn constants_read_nothing_and_write_their_sort() {
+        let havoc = || Any::Real(real::Havoc(1, 2).into());
+        let r = sort::Real::new([1, 2]);
+        assert!(Term::constant(havoc(), [wire(r)]).is_ok());
+        assert_eq!(
+            Term::constant(havoc(), [wire(sort::Real::new([2, 1]))]).unwrap_err(),
+            "expected Havoc to write Real(1, 2), got Real(2, 1)"
+        );
+        assert_eq!(
+            Term::function(havoc(), [wire(r)], [wire(r)]).unwrap_err(),
+            "expected Havoc to read I, got Real(1, 2)"
+        );
     }
 }

@@ -5,14 +5,12 @@ from gymnasium import spaces
 
 
 def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result: list[Wire]):
-    # `Uninterpreted` is single-read-or-single-write; emit one Term per wire
-    # so the multi-arity "method" is modeled as a bag of independent
-    # uninterpreted reads / writes.
+    # The "method" is modeled as a bag of independent uninterpreted values, one
+    # `Uninterpreted` constant per written (real, 1x1) wire. Its reads have no
+    # term: no operation reads a wire and writes none.
     terms = []
-    for r in read.values():
-        terms.append(Term(op.int.Uninterpreted("method", 1, 1), [], [r]))
     for w in list(write.values()) + list(result):
-        terms.append(Term.constant(op.int.Uninterpreted("method", 1, 1), [w]))
+        terms.append(Term.constant(op.real.Uninterpreted("method", 1, 1), [w]))
     return terms
 
 
