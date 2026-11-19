@@ -3,14 +3,14 @@
 use super::arrays::resolve;
 use super::{Cx, LARGEST, Result, VARIABLE_TARGET, has_tokens};
 use crate::ast::{
-    Array, Conn, Const, Decl, Dir, Elem, Elems, Error, ErrorKind, Expr, ExprKind, Formal,
+    Array, Conn, Const, Decl, Dir, Elem, Elems, Error, Expr, ExprKind, Formal,
     Index, Init, Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select,
     SignalId, Span, Ty,
 };
 use crate::constant::{self, Failure};
 use std::collections::{BTreeMap, BTreeSet};
 use sv_parser as sv;
-use sv_parser::RefNodes;
+use sv_parser::{Iter, RefNode, RefNodes};
 
 /// If `text` is a literal that is x in every bit (`'x`, `4'bxxxx`, `1'hx`,
 /// in parentheses or not), its size: `None` if unsized.
@@ -49,8 +49,31 @@ enum ParamTy {
     Signing(bool),
 }
 
+/// Whether the module item is a `parameter` or `localparam` declaration,
+/// the only items a blackbox may have.
+fn is_parameter_declaration(item: &sv::NonPortModuleItem) -> bool {
+    let sv::NonPortModuleItem::ModuleOrGenerateItem(item) = item else {
+        return false;
+    };
+    let sv::ModuleOrGenerateItem::ModuleItem(item) = item.as_ref() else {
+        return false;
+    };
+    let sv::ModuleCommonItem::ModuleOrGenerateItemDeclaration(d) = &item.nodes.1 else {
+        return false;
+    };
+    matches!(
+        d.as_ref(),
+        sv::ModuleOrGenerateItemDeclaration::PackageOrGenerateItemDeclaration(d)
+            if matches!(
+                d.as_ref(),
+                sv::PackageOrGenerateItemDeclaration::LocalParameterDeclaration(_)
+                    | sv::PackageOrGenerateItemDeclaration::ParameterDeclaration(_)
+            )
+    )
+}
+
 impl Cx<'_> {
-    pub(super) fn module(&self, m: &sv::ModuleDeclarationAnsi) -> Result<Module> {
+    pub(super) fn module(&mut self, m: &sv::ModuleDeclarationAnsi) -> Result<Module> {
         let (header, timeunits, items, _, _) = &m.nodes;
         let (attrs, _, lifetime, name, imports, params, ports, _) = &header.nodes;
         let blackbox = self.module_attributes(attrs)?;
@@ -92,13 +115,7 @@ impl Cx<'_> {
         // with a parameter port list, a `parameter` in the body is local
         let body_overridable = params.is_none();
         for item in items {
-            let before = (module.items.len(), module.decls.len());
-            let loads = self.loads.borrow().len() + self.inits.borrow().len();
-            self.module_item(item, &mut module, body_overridable)?;
-            let after = (module.items.len(), module.decls.len());
-            let loaded = self.loads.borrow().len() + self.inits.borrow().len();
-            if blackbox && (before != after || loads != loaded || !self.arrays.borrow().is_empty())
-            {
+            if blackbox && !is_parameter_declaration(item) {
                 return self.err(
                     item,
                     format!(
@@ -108,14 +125,15 @@ impl Cx<'_> {
                     ),
                 );
             }
+            self.module_item(item, &mut module, body_overridable)?;
         }
-        module.arrays = self.arrays.take();
-        module.inits = self.inits.take();
+        module.arrays = std::mem::take(&mut self.state.arrays);
+        module.inits = std::mem::take(&mut self.state.inits);
         self.unknown_values(&module)?;
-        resolve(&mut module, self.loads.take())?;
+        resolve(&mut module, std::mem::take(&mut self.state.loads))?;
         constants(&mut module);
         for o in self.overrides {
-            if !self.used.borrow().contains(&o.name) {
+            if !self.state.used.contains(&o.name) {
                 let msg = if module.params.iter().any(|p| p.name == o.name) {
                     format!("parameter `{}` of `{}` is local", o.name, module.name)
                 } else {
@@ -145,33 +163,37 @@ impl Cx<'_> {
     /// parameter, since the values given to the parameters of a blackbox
     /// are not used.
     fn blackbox_port(
-        &self,
+        &mut self,
         p: &sv::AnsiPortDeclaration,
         prev: Option<(Option<Dir>, Ty)>,
         module: &str,
     ) -> Result<(Option<Dir>, Decl)> {
-        let params = self.params.take();
-        let without = self.port(p, prev);
-        self.params.replace(params);
-        match without {
-            Ok(port) => Ok(port),
-            Err(e) => match self.port(p, prev) {
-                Ok((_, decl)) => Err(Error {
-                    kind: ErrorKind::User,
-                    msg: format!(
-                        "the width of port `{}` of the blackbox `{module}` depends on a \
-                         parameter: the widths of blackbox ports must be constants",
-                        decl.name
-                    ),
-                    ..e
-                }),
-                Err(e) => Err(e),
-            },
+        let (dir, decl) = self.port(p, prev)?;
+        // the first parameter named in the declaration, other than by the
+        // port's own name
+        let param = Iter::new(p.into()).find_map(|n| match n {
+            RefNode::SimpleIdentifier(x) => {
+                let span = self.span(x);
+                let name = self.text(x);
+                (span != decl.span && self.state.params.contains_key(&name)).then_some(span)
+            }
+            _ => None,
+        });
+        match param {
+            Some(span) => Err(Error::new(
+                span,
+                format!(
+                    "the width of port `{}` of the blackbox `{module}` depends on a \
+                     parameter: the widths of blackbox ports must be constants",
+                    decl.name
+                ),
+            )),
+            None => Ok((dir, decl)),
         }
     }
 
     /// `#(parameter N = 8, localparam M = N + 1, …)` or `#(N = 8, …)`.
-    fn parameter_port_list(&self, l: &sv::ParameterPortList, m: &mut Module) -> Result<()> {
+    fn parameter_port_list(&mut self, l: &sv::ParameterPortList, m: &mut Module) -> Result<()> {
         match l {
             sv::ParameterPortList::Assignment(a) => {
                 let (first, rest) = &a.nodes.1.nodes.1;
@@ -192,7 +214,7 @@ impl Cx<'_> {
     }
 
     fn parameter_port_declaration(
-        &self,
+        &mut self,
         d: &sv::ParameterPortDeclaration,
         m: &mut Module,
     ) -> Result<()> {
@@ -218,7 +240,7 @@ impl Cx<'_> {
     }
 
     fn parameter_declaration(
-        &self,
+        &mut self,
         p: &sv::ParameterDeclaration,
         overridable: bool,
         m: &mut Module,
@@ -268,7 +290,7 @@ impl Cx<'_> {
     /// overridable parameter takes the value of the instance if it gives
     /// one.
     fn param_assignments(
-        &self,
+        &mut self,
         ty: ParamTy,
         list: &sv::ListOfParamAssignments,
         overridable: bool,
@@ -285,7 +307,7 @@ impl Cx<'_> {
             let given = self.overrides.iter().find(|o| o.name == name);
             let (value, at) = match (given, default) {
                 (Some(o), _) if overridable => {
-                    self.used.borrow_mut().insert(name.clone());
+                    self.state.used.insert(name.clone());
                     (o.value.clone(), o.span)
                 }
                 (_, Some((_, e))) => {
@@ -342,7 +364,7 @@ impl Cx<'_> {
                 }
             };
             let ty = value.ty;
-            self.params.borrow_mut().insert(name.clone(), value.clone());
+            self.state.params.insert(name.clone(), value.clone());
             m.params.push(Param {
                 name,
                 ty,
@@ -358,7 +380,7 @@ impl Cx<'_> {
     /// Direction and type are inherited from the previous port (`prev`)
     /// where omitted (`input logic [7:0] a, b`).
     pub(super) fn port(
-        &self,
+        &mut self,
         p: &sv::AnsiPortDeclaration,
         prev: Option<(Option<Dir>, Ty)>,
     ) -> Result<(Option<Dir>, Decl)> {
@@ -433,7 +455,7 @@ impl Cx<'_> {
             let span = self.span(id);
             let text = self.text(value);
             match unknown_value(&text) {
-                Some(size) => self.unknown.borrow_mut().push((name.clone(), size, span)),
+                Some(size) => self.state.unknown.push((name.clone(), size, span)),
                 None => {
                     // an initial value, like one in a declaration
                     let e = self.const_expression(value)?;
@@ -445,7 +467,7 @@ impl Cx<'_> {
                     }
                     let value = e;
                     let id = SignalId::signal(name.clone());
-                    self.inits.borrow_mut().push(Init::new(id, value, span));
+                    self.state.inits.push(Init::new(id, value, span));
                 }
             }
         }
@@ -545,7 +567,7 @@ impl Cx<'_> {
     /// An item of the module body; `overridable` says whether a
     /// `parameter` there can be set by instances.
     fn module_item(
-        &self,
+        &mut self,
         item: &sv::NonPortModuleItem,
         m: &mut Module,
         overridable: bool,
@@ -725,7 +747,7 @@ impl Cx<'_> {
     }
 
     pub(super) fn declaration(
-        &self,
+        &mut self,
         d: &sv::PackageOrGenerateItemDeclaration,
         m: &mut Module,
         overridable: bool,
@@ -808,7 +830,7 @@ impl Cx<'_> {
     /// dimensions `dims` (an array) and the value `value` (a net's is an
     /// `assign`, a variable's an initial value).
     fn declare(
-        &self,
+        &mut self,
         m: &mut Module,
         id: &sv::Identifier,
         ty: Ty,
@@ -845,7 +867,7 @@ impl Cx<'_> {
         for k in 0..size {
             m.decls.push(Decl::new(SignalId::element(name.clone(), k), ty, span));
         }
-        self.arrays.borrow_mut().push(Array {
+        self.state.arrays.push(Array {
             name,
             ty,
             size,
@@ -917,7 +939,7 @@ impl Cx<'_> {
                 array: id,
                 index: i,
                 sel,
-                elems: Elems::Signals(Vec::new()),
+                elems: Elems::Unresolved,
             };
             let kind = LvalueKind::Elem(Box::new(elem));
             return Ok(Lvalue { kind, span });
@@ -938,7 +960,7 @@ impl Cx<'_> {
     /// `initial` with blocking assignments of initial values, `q = c;` or
     /// `m[3] = c;`, and `$readmemb("file", m);` or `$readmemh(…)` calls
     /// (one statement, or several in `begin … end`).
-    pub(super) fn initial(&self, i: &sv::InitialConstruct) -> Result<()> {
+    pub(super) fn initial(&mut self, i: &sv::InitialConstruct) -> Result<()> {
         let only = "`initial` may only give signals initial values (`q = 8'd0;`) and load \
                     arrays from files (`$readmemb(\"file\", m);`)";
         let (_, s) = &i.nodes;
@@ -985,7 +1007,7 @@ impl Cx<'_> {
     }
 
     /// `q = c;` or `m[3] = c;` in `initial`.
-    fn initial_assignment(&self, a: &sv::BlockingAssignment, only: &str) -> Result<()> {
+    fn initial_assignment(&mut self, a: &sv::BlockingAssignment, only: &str) -> Result<()> {
         let sv::BlockingAssignment::OperatorAssignment(a) = a else {
             return self.not_supported(a, only);
         };
@@ -1018,12 +1040,12 @@ impl Cx<'_> {
     }
 
     /// The initial value `e` of `target` at `span`.
-    fn initializer(&self, target: SignalId, span: Span, e: &sv::Expression) -> Result<()> {
+    fn initializer(&mut self, target: SignalId, span: Span, e: &sv::Expression) -> Result<()> {
         match unknown_value(&self.text(e)) {
-            Some(size) => self.unknown.borrow_mut().push((target.name(), size, span)),
+            Some(size) => self.state.unknown.push((target.name(), size, span)),
             None => {
                 let value = self.expr(e)?;
-                self.inits.borrow_mut().push(Init::new(target, value, span));
+                self.state.inits.push(Init::new(target, value, span));
             }
         }
         Ok(())
@@ -1035,7 +1057,7 @@ impl Cx<'_> {
     fn unknown_values(&self, m: &Module) -> Result<()> {
         let signals = m.ports.iter().map(|p| &p.decl).chain(&m.decls);
         let widths: BTreeMap<&Name, usize> = signals.map(|d| (&d.name, d.ty.width)).collect();
-        for (y, size, span) in self.unknown.borrow().iter() {
+        for (y, size, span) in self.state.unknown.iter() {
             if let (Some(n), Some(w)) = (size, widths.get(y))
                 && n < w
             {
@@ -1049,7 +1071,7 @@ impl Cx<'_> {
                 ));
             }
         }
-        let unknown = self.unknown.borrow();
+        let unknown = &self.state.unknown;
         let mut all: Vec<(&Name, Span)> = (m.inits.iter().map(|i| (&i.target, i.span)))
             .chain(unknown.iter().map(|(y, _, span)| (y, *span)))
             .collect();

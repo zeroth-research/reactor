@@ -195,6 +195,7 @@ pub(crate) fn elem_type(env: &Env, e: &Elem) -> Ty {
     match &e.elems {
         Elems::Signals(ys) => env[&ys[0]].ty,
         Elems::Consts(ty, _) => *ty,
+        Elems::Unresolved => unreachable!("the frontend resolves every element"),
     }
 }
 

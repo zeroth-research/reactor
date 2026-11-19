@@ -1,8 +1,7 @@
 //! Source files, the parsed design and positions in it.
 
-use super::{Cx, Result};
+use super::{Cx, ModuleBuilder, Result};
 use crate::ast::{Error, ErrorKind, Module, Name, Override, Span, Warning};
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use sv_parser as sv;
@@ -286,14 +285,9 @@ impl Design {
         Cx {
             tree: &self.tree,
             lines: &self.lines,
-            params: RefCell::new(BTreeMap::new()),
             overrides,
-            used: RefCell::new(BTreeSet::new()),
             dir: &self.files[k].dir,
-            arrays: RefCell::new(Vec::new()),
-            inits: RefCell::new(Vec::new()),
-            unknown: RefCell::new(Vec::new()),
-            loads: RefCell::new(Vec::new()),
+            state: ModuleBuilder::default(),
         }
     }
 

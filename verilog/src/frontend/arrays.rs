@@ -384,7 +384,7 @@ impl Resolver<'_> {
 impl Cx<'_> {
     /// Whether `x` is an array declared so far.
     pub(super) fn is_array(&self, x: &str) -> bool {
-        self.arrays.borrow().iter().any(|a| a.name == x)
+        self.state.arrays.iter().any(|a| a.name == x)
     }
 
     /// The message for an array `m` used other than by one element.
@@ -413,7 +413,7 @@ impl Cx<'_> {
             array: m,
             index: i,
             sel,
-            elems: Elems::Signals(Vec::new()),
+            elems: Elems::Unresolved,
         })
     }
 
@@ -461,7 +461,7 @@ impl Cx<'_> {
     /// A call `$readmemb("file", m);` or `$readmemh(…)` in an `initial`
     /// (anything else is rejected with `only`): reads the file and records
     /// the words for the array `m`.
-    pub(super) fn load(&self, c: &sv::SubroutineCallStatement, only: &str) -> Result<()> {
+    pub(super) fn load(&mut self, c: &sv::SubroutineCallStatement, only: &str) -> Result<()> {
         let sv::SubroutineCallStatement::SubroutineCall(c) = c else {
             return self.not_supported(c, only);
         };
@@ -505,11 +505,11 @@ impl Cx<'_> {
             }
         };
         let m_text = self.text(m);
-        let arrays = self.arrays.borrow();
+        let arrays = &self.state.arrays;
         let Some(array) = arrays.iter().find(|a| a.name == m_text) else {
             return self.err(m, format!("`{m_text}` is not an array declared before"));
         };
-        if let Some(l) = self.loads.borrow().iter().find(|l| l.array == m_text) {
+        if let Some(l) = self.state.loads.iter().find(|l| l.array == m_text) {
             return self.not_supported(&c.0, format!("`{m_text}` is already loaded at {}", l.span));
         }
         let path = self.dir.join(&file_name);
@@ -521,7 +521,7 @@ impl Cx<'_> {
         })?;
         let values = readmem(&text, binary, array)
             .map_err(|msg| Error::new(span, format!("{}: {msg}", path.display())))?;
-        self.loads.borrow_mut().push(Load {
+        self.state.loads.push(Load {
             array: m_text,
             binary,
             file: file_name,
