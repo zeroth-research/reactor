@@ -355,10 +355,7 @@ impl<'a> Builder<'a> {
     /// Names `w` as the next intermediate value of `y` in `always_comb`,
     /// unless it is not local or already has a name.
     fn name(&mut self, y: &Name, w: Wire) {
-        if !self.latched
-            && !self.names.contains_key(&w)
-            && self.writer.contains_key(&w)
-        {
+        if !self.latched && !self.names.contains_key(&w) && self.writer.contains_key(&w) {
             let k = self.versions.entry(y.clone()).or_insert(0);
             *k += 1;
             self.names.insert(w, format!("{y}@{k}"));

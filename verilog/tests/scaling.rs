@@ -23,8 +23,8 @@ use std::time::Instant;
 
 use common::{Gen, Rand, rm_matches_ast};
 use verilog::ast_interp::Interp;
-use verilog::{elab, frontend, typing};
 use verilog::lower::lower_inst;
+use verilog::{elab, frontend, typing};
 
 /// A state machine with `n` states: each state goes to the next one or
 /// back to the first, by an input bit; one output per state range.

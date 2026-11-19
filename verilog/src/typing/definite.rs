@@ -80,9 +80,7 @@ pub(super) fn definite(env: &Env, item: &Item) -> Result<()> {
     d.stmt(body, &mut st)?;
     for y in &targets {
         let n = env[*y].ty.width;
-        let missing: Vec<usize> = (0..n)
-            .filter(|b| !st.done.contains(y, *b))
-            .collect();
+        let missing: Vec<usize> = (0..n).filter(|b| !st.done.contains(y, *b)).collect();
         if let Some(e) = st.live_x(y, &missing, n, Until::End) {
             return Err(e);
         }
@@ -356,9 +354,7 @@ impl Definite<'_> {
                 continue;
             }
             let n = self.env[x].ty.width;
-            let missing: Vec<usize> = (lo..=hi)
-                .filter(|b| !st.done.contains(x, *b))
-                .collect();
+            let missing: Vec<usize> = (lo..=hi).filter(|b| !st.done.contains(x, *b)).collect();
             if let Some(e) = st.live_x(x, &missing, n, Until::Read(span)) {
                 return Err(e);
             }
@@ -474,9 +470,7 @@ impl Definite<'_> {
             let mut missing = Vec::new();
             for y in e.elems {
                 let n = self.env[y].ty.width;
-                let bits: Vec<usize> = (0..n)
-                    .filter(|b| !st.done.contains(y, *b))
-                    .collect();
+                let bits: Vec<usize> = (0..n).filter(|b| !st.done.contains(y, *b)).collect();
                 if let Some(e) = st.live_x(y, &bits, n, Until::Keeping(lhs)) {
                     return Err(e);
                 }
@@ -505,9 +499,7 @@ impl Definite<'_> {
         }
         // a variable index assigns no bit for sure and keeps the other bits
         let n = self.env[&p.name].ty.width;
-        let missing: Vec<usize> = (0..n)
-            .filter(|b| !st.done.contains(&p.name, *b))
-            .collect();
+        let missing: Vec<usize> = (0..n).filter(|b| !st.done.contains(&p.name, *b)).collect();
         if let Some(e) = st.live_x(&p.name, &missing, n, Until::Keeping(lhs)) {
             return Err(e);
         }
@@ -571,7 +563,9 @@ impl Definite<'_> {
             outs.push(st.clone());
         }
         let (first, rest) = outs.split_first().expect("a path");
-        let all = rest.iter().fold(first.done.clone(), |a, o| a.union(&o.done));
+        let all = rest
+            .iter()
+            .fold(first.done.clone(), |a, o| a.union(&o.done));
         let every = rest
             .iter()
             .fold(first.done.clone(), |a, o| a.intersection(&o.done));
