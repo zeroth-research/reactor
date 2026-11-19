@@ -76,6 +76,33 @@ type Block<'m> = (usize, &'m Item, Name, Edge, Option<(Name, Edge)>);
 /// A value for each of some signals.
 pub type Values = BTreeMap<Name, BitVec>;
 
+/// The values of the signals computed so far (`now`), over a map that is
+/// only read (`below`, if any): the body of an `always_ff` block runs on
+/// the values of the previous round, which it reads without copying them.
+#[derive(Default)]
+struct Overlay<'v> {
+    below: Option<&'v Values>,
+    now: Values,
+}
+
+impl Overlay<'_> {
+    fn get(&self, x: &str) -> Option<&BitVec> {
+        self.now.get(x).or_else(|| self.below?.get(x))
+    }
+
+    fn insert(&mut self, x: Name, v: BitVec) {
+        self.now.insert(x, v);
+    }
+}
+
+impl std::ops::Index<&str> for Overlay<'_> {
+    type Output = BitVec;
+
+    fn index(&self, x: &str) -> &BitVec {
+        self.get(x).unwrap_or_else(|| panic!("no value for `{x}`"))
+    }
+}
+
 pub struct Interp<'m> {
     /// One context per instance, the top module's first.
     ctxs: Vec<Ctx<'m>>,
@@ -152,7 +179,7 @@ impl<'m> Interp<'m> {
                     e,
                     width,
                     &Values::new(),
-                    &mut Values::new(),
+                    &mut Overlay::default(),
                     &mut BTreeSet::new(),
                 )
                 .map_err(|msg| Error::new(e.span, msg))?;
@@ -268,7 +295,7 @@ impl<'m> Interp<'m> {
     /// clocks included. Returns the value of every signal in this round,
     /// by name.
     pub fn step(&mut self, inputs: &Values) -> Result<Values, String> {
-        let mut values = Values::new();
+        let mut values = Overlay::default();
         for (name, ty) in &self.inputs {
             let v = inputs
                 .get(name)
@@ -282,8 +309,8 @@ impl<'m> Interp<'m> {
         for name in self.signals.keys() {
             self.signal(name, &mut values, &mut active)?;
         }
-        self.prev = Some(values.clone());
-        Ok(values)
+        self.prev = Some(values.now.clone());
+        Ok(values.now)
     }
 
     /// Executes a statement of an `always_ff` block (`comb` false) or an
@@ -295,18 +322,22 @@ impl<'m> Interp<'m> {
         c: usize,
         s: &Stmt,
         comb: bool,
-        values: &mut Values,
+        values: &mut Overlay,
         active: &mut BTreeSet<Name>,
         out: &mut Values,
     ) -> Result<(), String> {
+        // the values reads see before the round's: in `always_comb`, those
+        // the block assigned so far
         let none = Values::new();
-        let scope = |out: &Values| if comb { out.clone() } else { none.clone() };
+        fn scope<'a>(comb: bool, out: &'a Values, none: &'a Values) -> &'a Values {
+            if comb { out } else { none }
+        }
         match &s.kind {
             StmtKind::Block(stmts) => stmts
                 .iter()
                 .try_for_each(|s| self.exec(c, s, comb, values, active, out)),
             StmtKind::If(cond, a, b) => {
-                let v = self.own(c, cond, &scope(out), values, active)?;
+                let v = self.own(c, cond, scope(comb, out, &none), values, active)?;
                 let branch = if v.is_zero() { b } else { a };
                 self.exec(c, branch, comb, values, active, out)
             }
@@ -316,7 +347,7 @@ impl<'m> Interp<'m> {
                 default,
                 ..
             } => {
-                let scope = scope(out);
+                let scope = scope(comb, out, &none);
                 // the selector and the labels are evaluated at one type
                 let mut t = self.det(c, sel);
                 for l in items.iter().flat_map(|i| &i.labels) {
@@ -326,10 +357,10 @@ impl<'m> Interp<'m> {
                         signed: t.signed && tl.signed,
                     };
                 }
-                let v = self.value(c, sel, t, &scope, values, active)?;
+                let v = self.value(c, sel, t, scope, values, active)?;
                 for item in items {
                     for l in &item.labels {
-                        if self.value(c, l, t, &scope, values, active)? == v {
+                        if self.value(c, l, t, scope, values, active)? == v {
                             return self.exec(c, &item.body, comb, values, active, out);
                         }
                     }
@@ -345,14 +376,15 @@ impl<'m> Interp<'m> {
                 let checked = &self.ctxs[c].checked;
                 let env = checked.env();
                 let width = typing::pieces(checked, lhs).iter().map(|p| p.width()).sum();
-                let v = self.assigned(c, rhs, width, &scope(out), values, active)?;
+                let v = self.assigned(c, rhs, width, scope(comb, out, &none), values, active)?;
                 // the variable indices, evaluated before anything is written
                 let pieces = typing::pieces(checked, lhs);
                 let mut indices = Vec::new();
                 for p in &pieces {
                     let index = match p.variable {
                         Some(var) => {
-                            let i = self.own(c, var.index, &scope(out), values, active)?;
+                            let i =
+                                self.own(c, var.index, scope(comb, out, &none), values, active)?;
                             Some(BigInt::from(i.unsigned().clone()) - var.below)
                         }
                         None => None,
@@ -360,7 +392,8 @@ impl<'m> Interp<'m> {
                     // the element the index picks, if it is an address
                     let target = match p.elem {
                         Some(e) => {
-                            let k = self.own(c, e.index, &scope(out), values, active)?;
+                            let k =
+                                self.own(c, e.index, scope(comb, out, &none), values, active)?;
                             k.unsigned()
                                 .to_usize()
                                 .and_then(|k| e.elems.get(k))
@@ -413,7 +446,7 @@ impl<'m> Interp<'m> {
     fn signal(
         &self,
         name: &str,
-        values: &mut Values,
+        values: &mut Overlay,
         active: &mut BTreeSet<Name>,
     ) -> Result<BitVec, String> {
         if let Some(v) = values.get(name) {
@@ -491,7 +524,10 @@ impl<'m> Interp<'m> {
                 if fires {
                     // on the values just before the edge; the reset
                     // values win
-                    let mut old = prev.clone();
+                    let mut old = Overlay {
+                        below: Some(prev),
+                        now: Values::new(),
+                    };
                     let body = item.body().unwrap();
                     let mut run = Values::new();
                     self.exec(*c, body, false, &mut old, &mut BTreeSet::new(), &mut run)?;
@@ -580,7 +616,7 @@ impl<'m> Interp<'m> {
         e: &Expr,
         width: usize,
         scope: &Values,
-        values: &mut Values,
+        values: &mut Overlay,
         active: &mut BTreeSet<Name>,
     ) -> Result<BitVec, String> {
         let own = self.det(c, e);
@@ -598,7 +634,7 @@ impl<'m> Interp<'m> {
         c: usize,
         e: &Expr,
         scope: &Values,
-        values: &mut Values,
+        values: &mut Overlay,
         active: &mut BTreeSet<Name>,
     ) -> Result<BitVec, String> {
         let t = self.det(c, e);
@@ -617,11 +653,11 @@ impl<'m> Interp<'m> {
         e: &Expr,
         t: Ty,
         scope: &Values,
-        values: &mut Values,
+        values: &mut Overlay,
         active: &mut BTreeSet<Name>,
     ) -> Result<BitVec, String> {
         let ctx = &self.ctxs[c];
-        let sig = |x: &Name, values: &mut Values, active: &mut BTreeSet<Name>| match scope.get(x) {
+        let sig = |x: &Name, values: &mut Overlay, active: &mut BTreeSet<Name>| match scope.get(x) {
             Some(v) => Ok(v.clone()),
             None => self.signal(&ctx.names[x], values, active),
         };
@@ -725,7 +761,7 @@ impl<'m> Interp<'m> {
         v: &BitVec,
         sel: &Select,
         scope: &Values,
-        values: &mut Values,
+        values: &mut Overlay,
         active: &mut BTreeSet<Name>,
     ) -> Result<BitVec, String> {
         let w = sel.width();
@@ -759,7 +795,7 @@ impl<'m> Interp<'m> {
         c: usize,
         es: &[Expr],
         scope: &Values,
-        values: &mut Values,
+        values: &mut Overlay,
         active: &mut BTreeSet<Name>,
     ) -> Result<BitVec, String> {
         let mut acc: Option<BitVec> = None;
