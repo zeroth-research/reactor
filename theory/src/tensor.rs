@@ -4,9 +4,10 @@
 The matrices that the operations carrying data hold, the constants and the
 coefficients of the affine maps: a [`Tensor`] is one of
 
-- a [`Builtin`] matrix, held in Rust, in every build;
-- a `Torch` tensor, with the `torch` feature;
-- a `Jax` array, held as its Python object, with the `jax` feature.
+- a [`VecTensor`], held in Rust as nested `Vec`s, in every build;
+- a `TorchTensor`, a torch tensor, with the `torch` feature;
+- a `JaxTensor`, a JAX array held as its Python object, with the `jax`
+  feature.
 
 The operations of a module may hold tensors of different backends. A
 tensor gives its shape, the [`Kind`] of its elements, which the operations
@@ -19,22 +20,22 @@ it elsewhere would break when another crate turns on a feature; code
 elsewhere uses the methods of [`Tensor`] instead.
 
 With the `pyo3` feature, a tensor converts from and into its Python object:
-a `torch.Tensor`, a `jax.Array`, or, for a [`Builtin`], a list of rows.
+a `torch.Tensor`, a `jax.Array`, or, for a [`VecTensor`], a list of rows.
 */
 
-mod builtin;
 #[cfg(feature = "jax")]
 mod jax;
 #[cfg(feature = "pyo3")]
 mod py;
 #[cfg(feature = "torch")]
 mod torch;
+mod vec;
 
-pub use builtin::Builtin;
 #[cfg(feature = "jax")]
-pub use jax::Jax;
+pub use jax::JaxTensor;
 #[cfg(feature = "torch")]
-pub use torch::Torch;
+pub use torch::TorchTensor;
+pub use vec::VecTensor;
 
 use std::fmt;
 
@@ -42,20 +43,20 @@ use std::fmt;
 #[derive(Clone, Debug)]
 pub enum Tensor {
     /// A matrix held in Rust.
-    Builtin(Builtin),
+    Vec(VecTensor),
     /// A torch tensor.
     #[cfg(feature = "torch")]
-    Torch(Torch),
+    Torch(TorchTensor),
     /// A JAX array.
     #[cfg(feature = "jax")]
-    Jax(Jax),
+    Jax(JaxTensor),
 }
 
 impl Tensor {
     /// The `[rows, cols]` shape of the matrix.
     pub fn shape(&self) -> [usize; 2] {
         match self {
-            Tensor::Builtin(t) => t.shape(),
+            Tensor::Vec(t) => t.shape(),
             #[cfg(feature = "torch")]
             Tensor::Torch(t) => t.shape(),
             #[cfg(feature = "jax")]
@@ -66,7 +67,7 @@ impl Tensor {
     /// The kind of the elements.
     pub fn kind(&self) -> Kind {
         match self {
-            Tensor::Builtin(t) => t.kind(),
+            Tensor::Vec(t) => t.kind(),
             #[cfg(feature = "torch")]
             Tensor::Torch(t) => t.kind(),
             #[cfg(feature = "jax")]
@@ -100,22 +101,22 @@ pub fn expect_affine(a: &Tensor, b: &Tensor, kind: Kind) -> Result<(), Error> {
     Ok(())
 }
 
-impl From<Builtin> for Tensor {
-    fn from(t: Builtin) -> Self {
-        Tensor::Builtin(t)
+impl From<VecTensor> for Tensor {
+    fn from(t: VecTensor) -> Self {
+        Tensor::Vec(t)
     }
 }
 
 #[cfg(feature = "torch")]
-impl From<Torch> for Tensor {
-    fn from(t: Torch) -> Self {
+impl From<TorchTensor> for Tensor {
+    fn from(t: TorchTensor) -> Self {
         Tensor::Torch(t)
     }
 }
 
 #[cfg(feature = "jax")]
-impl From<Jax> for Tensor {
-    fn from(t: Jax) -> Self {
+impl From<JaxTensor> for Tensor {
+    fn from(t: JaxTensor) -> Self {
         Tensor::Jax(t)
     }
 }
@@ -123,7 +124,7 @@ impl From<Jax> for Tensor {
 impl fmt::Display for Tensor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Tensor::Builtin(t) => t.fmt(f),
+            Tensor::Vec(t) => t.fmt(f),
             #[cfg(feature = "torch")]
             Tensor::Torch(t) => t.fmt(f),
             #[cfg(feature = "jax")]
@@ -159,6 +160,12 @@ impl fmt::Display for Kind {
 pub enum Error {
     /// The tensor, of the given shape, is not a matrix.
     NotAMatrix(Vec<usize>),
+    /// The rows, of the given `lengths`, are not those of a matrix of
+    /// `shape`.
+    Rows {
+        shape: [usize; 2],
+        lengths: Vec<usize>,
+    },
     /// The elements are of the kind `got`, where `expected` is required.
     Kind { expected: Kind, got: Kind },
     /// `A` and `B` are not of the shapes `[m, n]` and `[m, k]` of an affine
@@ -172,6 +179,10 @@ impl fmt::Display for Error {
             Error::NotAMatrix(shape) => {
                 write!(f, "expected a matrix, got a tensor of shape {shape:?}")
             }
+            Error::Rows { shape, lengths } => write!(
+                f,
+                "expected the rows of a matrix of shape {shape:?}, got rows of lengths {lengths:?}"
+            ),
             Error::Kind { expected, got } => {
                 write!(
                     f,
@@ -256,7 +267,9 @@ mod tests {
 
     #[test]
     fn tensors_check_the_kind_of_their_elements() {
-        let floats: Tensor = Builtin::floats([2, 3], vec![0.0; 6]).into();
+        let floats: Tensor = VecTensor::floats([2, 3], vec![vec![0.0; 3]; 2])
+            .unwrap()
+            .into();
         assert_eq!(floats.kind(), Kind::Float);
         assert!(floats.expect_kind(Kind::Float).is_ok());
         assert_eq!(
@@ -270,14 +283,14 @@ mod tests {
 
     #[test]
     fn affine_maps_take_a_and_b_of_the_same_rows() {
-        let a: Tensor = Builtin::ints([4, 2], vec![0; 8]).into();
-        let b: Tensor = Builtin::ints([4, 3], vec![0; 12]).into();
+        let a: Tensor = VecTensor::ints([4, 2], vec![vec![0; 2]; 4]).unwrap().into();
+        let b: Tensor = VecTensor::ints([4, 3], vec![vec![0; 3]; 4]).unwrap().into();
         assert!(expect_affine(&a, &b, Kind::Int).is_ok());
         assert!(matches!(
             expect_affine(&a, &b, Kind::Float),
             Err(Error::Kind { .. })
         ));
-        let c: Tensor = Builtin::ints([3, 3], vec![0; 9]).into();
+        let c: Tensor = VecTensor::ints([3, 3], vec![vec![0; 3]; 3]).unwrap().into();
         assert_eq!(
             expect_affine(&a, &c, Kind::Int),
             Err(Error::Affine {

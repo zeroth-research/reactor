@@ -138,7 +138,7 @@ def test_lists_of_rows_are_matrices_held_as_lists():
     assert repr(op.real.Const([[1.5, 2]])) == "real.Const([[1.5, 2.0]])"
     with pytest.raises(TypeError, match="floating-point"):
         op.real.Const([[1, 2]])
-    with pytest.raises(ValueError, match="equal length"):
+    with pytest.raises(ValueError, match=r"rows of lengths \[1, 2\]"):
         op.int.Const([[1], [2, 3]])
     (value,) = eval_itype(op.int.Const([[4]]), [])
     assert torch.equal(value, torch.tensor([[4]]))

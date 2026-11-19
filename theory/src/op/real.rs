@@ -1157,9 +1157,17 @@ mod tests {
 
     #[test]
     fn tlinear_is_linear_on_rates() {
-        use crate::tensor::Builtin;
-        let a = || -> Tensor { Builtin::floats([4, 2], vec![0.0; 8]).into() };
-        let b = || -> Tensor { Builtin::floats([4, 3], vec![0.0; 12]).into() };
+        use crate::tensor::VecTensor;
+        let a = || -> Tensor {
+            VecTensor::floats([4, 2], vec![vec![0.0; 2]; 4])
+                .unwrap()
+                .into()
+        };
+        let b = || -> Tensor {
+            VecTensor::floats([4, 3], vec![vec![0.0; 3]; 4])
+                .unwrap()
+                .into()
+        };
         let t = TLinear(a(), b(), 1);
         assert_eq!(t.dom(), one(T(Real::new([2, 3]))));
         assert_eq!(t.cod(), one(T(Real::new([4, 3]))));

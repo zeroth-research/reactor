@@ -1,6 +1,7 @@
 //! The JAX arrays, with the `jax` feature.
 
-use super::{Builtin, Error, Kind};
+use super::{Error, Kind, VecTensor};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::PyAnyMethods;
 use std::fmt;
@@ -9,14 +10,14 @@ use std::sync::Arc;
 /// A JAX array holding a matrix, held as its Python `jax.Array`, which is
 /// immutable: its shape and kind are read once, when it is held.
 #[derive(Clone, Debug)]
-pub struct Jax {
+pub struct JaxTensor {
     // An `Arc`, as a `Py` is `Clone` only with the GIL held.
     array: Arc<Py<PyAny>>,
     shape: [usize; 2],
     kind: Kind,
 }
 
-impl Jax {
+impl JaxTensor {
     /// Whether `ob` is a `jax.Array`; never unless `jax` is imported, as no
     /// array of it can exist then, nor if `jax` has no `Array`, as when its
     /// import is blocked.
@@ -34,7 +35,7 @@ impl Jax {
         let [rows, cols] = shape[..] else {
             return Err(Error::NotAMatrix(shape).into());
         };
-        Ok(Jax {
+        Ok(JaxTensor {
             array: Arc::new(ob.clone().unbind()),
             shape: [rows, cols],
             kind: kind(ob)?,
@@ -56,9 +57,20 @@ impl Jax {
         self.array.bind(py).clone()
     }
 
-    /// A copy of the matrix in Rust.
-    pub fn to_builtin(&self, py: Python<'_>) -> PyResult<Builtin> {
-        self.array(py).call_method0("tolist")?.extract()
+    /// A copy of the matrix in Rust, which fails unless its elements are
+    /// booleans, integers or floating-point numbers.
+    pub fn to_vec_tensor(&self, py: Python<'_>) -> PyResult<VecTensor> {
+        let rows = self.array(py).call_method0("tolist")?;
+        let tensor = match self.kind {
+            Kind::Bool => VecTensor::bools(self.shape, rows.extract()?),
+            Kind::Int => VecTensor::ints(self.shape, rows.extract()?),
+            Kind::Float => VecTensor::floats(self.shape, rows.extract()?),
+            Kind::Other(_) => {
+                let message = format!("a VecTensor holds no {} elements", self.kind);
+                return Err(PyTypeError::new_err(message));
+            }
+        };
+        Ok(tensor?)
     }
 }
 
@@ -81,7 +93,7 @@ fn kind(ob: &Bound<'_, PyAny>) -> PyResult<Kind> {
     })
 }
 
-impl<'py> IntoPyObject<'py> for Jax {
+impl<'py> IntoPyObject<'py> for JaxTensor {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
@@ -92,10 +104,10 @@ impl<'py> IntoPyObject<'py> for Jax {
     }
 }
 
-impl fmt::Display for Jax {
-    /// Displays as a [`Builtin`] copy of the array, which needs the GIL.
+impl fmt::Display for JaxTensor {
+    /// Displays as a [`VecTensor`] copy of the array, which needs the GIL.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match Python::with_gil(|py| self.to_builtin(py)) {
+        match Python::with_gil(|py| self.to_vec_tensor(py)) {
             Ok(matrix) => matrix.fmt(f),
             Err(_) => write!(f, "<jax.Array of {}>", self.kind),
         }

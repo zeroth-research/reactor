@@ -338,7 +338,7 @@ impl<'py> IntoPyObject<'py> for Any {
 #[cfg(all(test, feature = "torch"))]
 mod torch_tests {
     use super::*;
-    use crate::tensor::Torch;
+    use crate::tensor::TorchTensor;
     use base::boundary::Boundary;
     use pyo3_tch::tch;
 
@@ -362,7 +362,7 @@ mod torch_tests {
 
     /// The Python `torch.Tensor` of `tensor`, sharing it.
     fn python<'py>(py: Python<'py>, tensor: tch::Tensor) -> Bound<'py, PyAny> {
-        Torch::new(tensor).unwrap().into_pyobject(py).unwrap()
+        TorchTensor::new(tensor).unwrap().into_pyobject(py).unwrap()
     }
 
     /// The storage of a torch tensor.
@@ -375,8 +375,8 @@ mod torch_tests {
 
     #[test]
     fn torch_tensors_back_the_operations() {
-        let a = Torch::new(full(4, 2, 0.0, tch::Kind::Float)).unwrap();
-        let b = Torch::new(full(4, 3, 0.0, tch::Kind::Float)).unwrap();
+        let a = TorchTensor::new(full(4, 2, 0.0, tch::Kind::Float)).unwrap();
+        let b = TorchTensor::new(full(4, 3, 0.0, tch::Kind::Float)).unwrap();
         assert_eq!(a.shape(), [4, 2]);
         // `A` of shape `[4, 2]` and `B` of shape `[4, 3]` map `[2, 3]` to `[4, 3]`
         let linear = real::Linear::new(a.into(), b.into()).unwrap();

@@ -39,25 +39,25 @@ use std::fmt;
 /// one and back sharing its storage, so that a change to the tensor in
 /// Python, as training makes, shows in the operations holding it.
 #[derive(Debug)]
-pub struct Torch(tch::Tensor);
+pub struct TorchTensor(tch::Tensor);
 
 // SAFETY: libtorch makes a tensor safe to share between threads, counting
 // its references atomically, and the conversions from and into Python hold
 // the GIL.
-unsafe impl Sync for Torch {}
+unsafe impl Sync for TorchTensor {}
 
-impl Clone for Torch {
+impl Clone for TorchTensor {
     /// Shares the storage of the tensor.
     fn clone(&self) -> Self {
-        Torch(self.0.shallow_clone())
+        TorchTensor(self.0.shallow_clone())
     }
 }
 
-impl Torch {
+impl TorchTensor {
     /// The matrix `tensor`, which fails unless it has two dimensions.
     pub fn new(tensor: tch::Tensor) -> Result<Self, Error> {
         match tensor.size()[..] {
-            [_, _] => Ok(Torch(tensor)),
+            [_, _] => Ok(TorchTensor(tensor)),
             ref size => Err(Error::NotAMatrix(
                 size.iter().map(|&d| d as usize).collect(),
             )),
@@ -72,7 +72,7 @@ impl Torch {
     /// The `[rows, cols]` shape of the matrix.
     pub fn shape(&self) -> [usize; 2] {
         let [rows, cols] = self.0.size()[..] else {
-            unreachable!("a `Torch` holds a matrix")
+            unreachable!("a `TorchTensor` holds a matrix")
         };
         [rows as usize, cols as usize]
     }
@@ -109,12 +109,12 @@ impl Torch {
         // SAFETY: `ob` is a live Python object, and the GIL is held.
         let tensor = unsafe { tch::Tensor::pyobject_unpack(ptr) }.map_err(wrap_tch_err)?;
         tensor
-            .map(|t| Torch::new(t).map_err(PyErr::from))
+            .map(|t| TorchTensor::new(t).map_err(PyErr::from))
             .transpose()
     }
 }
 
-impl<'py> IntoPyObject<'py> for Torch {
+impl<'py> IntoPyObject<'py> for TorchTensor {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
@@ -127,7 +127,7 @@ impl<'py> IntoPyObject<'py> for Torch {
     }
 }
 
-impl fmt::Display for Torch {
+impl fmt::Display for TorchTensor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind() {
             Kind::Other(name) => write!(f, "<tensor of {name}>"),
@@ -140,8 +140,8 @@ impl fmt::Display for Torch {
 mod tests {
     use super::*;
 
-    fn torch(tensor: tch::Tensor) -> Torch {
-        Torch::new(tensor).unwrap()
+    fn torch(tensor: tch::Tensor) -> TorchTensor {
+        TorchTensor::new(tensor).unwrap()
     }
 
     #[test]
@@ -169,6 +169,6 @@ mod tests {
         let t = tch::Tensor::zeros([2, 3], (tch::Kind::Int, tch::Device::Cpu));
         assert_eq!(torch(t).kind(), Kind::Int);
         let t = tch::Tensor::zeros([4], (tch::Kind::Float, tch::Device::Cpu));
-        assert_eq!(Torch::new(t).unwrap_err(), Error::NotAMatrix(vec![4]));
+        assert_eq!(TorchTensor::new(t).unwrap_err(), Error::NotAMatrix(vec![4]));
     }
 }

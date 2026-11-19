@@ -478,11 +478,14 @@ mod tests {
 
     #[test]
     fn data_operations_take_their_shape_from_their_tensors() {
+        use crate::tensor::VecTensor;
         let floats = |[m, n]: [usize; 2]| -> crate::Tensor {
-            crate::tensor::Builtin::floats([m, n], vec![0.0; m * n]).into()
+            VecTensor::floats([m, n], vec![vec![0.0; n]; m])
+                .unwrap()
+                .into()
         };
         let ints = |[m, n]: [usize; 2]| -> crate::Tensor {
-            crate::tensor::Builtin::ints([m, n], vec![0; m * n]).into()
+            VecTensor::ints([m, n], vec![vec![0; n]; m]).unwrap().into()
         };
         let c = real(real::Const(floats([2, 3])));
         assert_eq!(c.dom(), Poly::unit());
@@ -507,12 +510,15 @@ mod tests {
 
     #[test]
     fn data_operations_check_the_kind_and_shape_of_their_tensors() {
-        use crate::tensor::{Builtin, Error, Kind};
+        use crate::tensor::{Error, Kind, VecTensor};
         let floats = |[m, n]: [usize; 2]| -> crate::Tensor {
-            Builtin::floats([m, n], vec![0.0; m * n]).into()
+            VecTensor::floats([m, n], vec![vec![0.0; n]; m])
+                .unwrap()
+                .into()
         };
-        let ints =
-            |[m, n]: [usize; 2]| -> crate::Tensor { Builtin::ints([m, n], vec![0; m * n]).into() };
+        let ints = |[m, n]: [usize; 2]| -> crate::Tensor {
+            VecTensor::ints([m, n], vec![vec![0; n]; m]).unwrap().into()
+        };
 
         assert!(real::Const::new(floats([2, 3])).is_ok());
         assert_eq!(
