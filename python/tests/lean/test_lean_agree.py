@@ -33,7 +33,7 @@ _PER_FILE = 8
 
 
 def _build_relational() -> None:
-    built = subprocess.run(["lake", "build", "Relational.Box"], cwd=_LEAN_DIR,
+    built = subprocess.run(["lake", "build", "Relational.Circ"], cwd=_LEAN_DIR,
                            capture_output=True, text=True, timeout=1800)
     assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
 
@@ -56,7 +56,7 @@ def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
         chunk = scripts[k:k + _PER_FILE]
         body = "\n".join(t for _, t, _ in chunk)
         path = tmp_path / f"agree{k // _PER_FILE}.lean"
-        path.write_text("import Relational.Box\n" + body)
+        path.write_text("import Relational.Circ\n" + body)
         files.append((path, chunk))
 
     def lean(path: Path) -> str:

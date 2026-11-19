@@ -51,7 +51,7 @@ Wrote scalar-relational encoding: <OUT>/CertScalarRel.lean
 
 === Cert.lean
 import Relational.Basic
-import Relational.Box
+import Relational.Circ
 import Mathlib.Algebra.BigOperators.Fin
 import ZerothHammer
 
