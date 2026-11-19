@@ -2818,5 +2818,59 @@ fn first_error_in_source_order() {
     );
     let err = common::translate(&src).err().expect("rejected");
     assert!(err.msg.contains("(a latch)"), "{err}");
-    assert_eq!(err.span.line, 2, "{err}");
+    assert_eq!(err.span.unwrap().line, 2, "{err}");
+}
+
+/// Every error says what it is about the design: wrong, outside the
+/// accepted subset, or a bug of the translation; unlocated errors have no
+/// position.
+#[test]
+fn error_kinds() {
+    use verilog::ast::ErrorKind::{Unsupported, User};
+    let ff = |body: &str| format!("{HEADER_FF}\n{body}\nendmodule\n");
+    let comb = |body: &str| format!("{HEADER}\n{body}\nendmodule\n");
+    let cases = [
+        // wrong designs, and rules imposed on purpose
+        (comb("  assign y = b;"), User),
+        (comb("  assign y = a;\n  assign y = a;"), User),
+        (comb("  always_comb if (a[0]) y = a;"), User),
+        (
+            ff("  always_ff @(posedge clk) y = a;\n  always_ff @(posedge clk) y <= y;"),
+            User,
+        ),
+        (comb("  localparam P = 1 / 0;\n  assign y = a;"), User),
+        // outside the subset
+        (
+            comb("  always_comb casez (a) 8'b1???????: y = a; default: y = 0; endcase"),
+            Unsupported,
+        ),
+        (comb("  assign y = a / a;"), Unsupported),
+        (comb("  assign y = 8'bx;"), Unsupported),
+        (
+            comb("  localparam P = 65536 * 65536;\n  assign y = a;"),
+            Unsupported,
+        ),
+        (
+            comb("  wire [7:0] w;\n  assign w[a[2:0]] = 1'b1;\n  assign y = w;"),
+            Unsupported,
+        ),
+    ];
+    for (src, kind) in cases {
+        let err = common::translate(&src).err().expect("rejected");
+        assert_eq!(err.kind, kind, "{src}\n{err}");
+        assert!(err.span.is_some(), "{src}\n{err}");
+    }
+    // the top module is a blackbox: no place in the design
+    let src = "(* blackbox *)\nmodule b(input logic a);\nendmodule\n";
+    let d = frontend::parse_design(src, "test.sv").unwrap();
+    let err = elab::elaborate(&d, "b", &[]).unwrap_err();
+    assert_eq!((err.kind, err.span), (User, None));
+    assert_eq!(
+        err.to_string(),
+        "`b` is a blackbox: it cannot be the top module"
+    );
+    assert_eq!(
+        err.in_file("test.sv").to_string(),
+        "test.sv: `b` is a blackbox: it cannot be the top module"
+    );
 }

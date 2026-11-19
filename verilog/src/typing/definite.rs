@@ -3,7 +3,9 @@
 
 use super::fragment::{Piece, pieces_in};
 use super::{Env, Result};
-use crate::ast::{self, Error, Expr, ExprKind, Item, Lvalue, Name, Select, Span, Stmt, StmtKind};
+use crate::ast::{
+    BlockKind, Error, Expr, ExprKind, Item, Lvalue, Name, Select, Span, Stmt, StmtKind,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The bits `bits` (descending or not) of the signal `y` of width `width`,
@@ -71,7 +73,7 @@ pub(super) fn definite(env: &Env, item: &Item) -> Result<()> {
         env,
         targets: &targets,
         comb,
-        block: item.block(),
+        block: item.kind().expect("a block"),
         partial: BTreeMap::new(),
     };
     let mut st = State::default();
@@ -81,7 +83,7 @@ pub(super) fn definite(env: &Env, item: &Item) -> Result<()> {
         let missing: Vec<usize> = (0..n)
             .filter(|b| !st.done.contains(&((*y).clone(), *b)))
             .collect();
-        if let Some(e) = st.live_x(y, &missing, n, "before the end of the block") {
+        if let Some(e) = st.live_x(y, &missing, n, Until::End) {
             return Err(e);
         }
         if missing.is_empty() || !comb {
@@ -129,7 +131,7 @@ struct State {
 impl State {
     /// The error for the bits of `y` among `missing` (of `n`) that hold an
     /// x, if any; `when` says what comes before they are assigned again.
-    fn live_x(&self, y: &Name, missing: &[usize], n: usize, when: &str) -> Option<Error> {
+    fn live_x(&self, y: &Name, missing: &[usize], n: usize, when: Until) -> Option<Error> {
         let bits: Vec<usize> = missing
             .iter()
             .copied()
@@ -148,13 +150,38 @@ impl State {
     }
 }
 
+/// What an x reaches before it is assigned again, for the message about a
+/// live x.
+#[derive(Clone, Copy)]
+enum Until<'a> {
+    /// The end of the block.
+    End,
+    /// A read, at this position.
+    Read(Span),
+    /// An assignment to this target with a variable index, which keeps the
+    /// bits it does not assign.
+    Keeping(&'a Lvalue),
+}
+
+impl std::fmt::Display for Until<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Until::End => write!(f, "before the end of the block"),
+            Until::Read(span) => write!(f, "before it is read at {span}"),
+            Until::Keeping(lhs) => {
+                write!(f, "before `{lhs}`, which keeps the bits it does not assign")
+            }
+        }
+    }
+}
+
 /// Checks that every signal assigned in the `always_ff` body `s` is
 /// assigned either only with `=` or only with `<=`; `first` maps each
 /// signal seen so far to its first assignment (span, blocking); `block` is
-/// the kind of block as written ([`Item::block`]).
+/// the kind of block as written.
 pub(super) fn one_kind_of_assignment<'s>(
     s: &'s Stmt,
-    block: &str,
+    block: BlockKind,
     first: &mut BTreeMap<&'s Name, (Span, bool)>,
 ) -> Result<()> {
     let (lhs, blocking) = match &s.kind {
@@ -179,7 +206,7 @@ pub(super) fn one_kind_of_assignment<'s>(
                 format!(
                     "`{y}` is assigned with `{this}` here and with `{other}` at {at}: in {}, \
                      assign each signal either only with `<=` or only with `=`",
-                    ast::with_article(block)
+                    block.with_article()
                 ),
             ));
         }
@@ -191,7 +218,11 @@ pub(super) fn one_kind_of_assignment<'s>(
 /// blocking `=` before it may have assigned: a `=` is accepted there only
 /// where it means the same as `<=`, so its new value must never be read in
 /// the block.
-fn blocked_reads(reads: &[(&Name, usize, usize, Span)], st: &State, block: &str) -> Result<()> {
+fn blocked_reads(
+    reads: &[(&Name, usize, usize, Span)],
+    st: &State,
+    block: BlockKind,
+) -> Result<()> {
     for (x, hi, lo, span) in reads {
         let Some(at) = (*lo..=*hi)
             .filter_map(|b| st.blocked.get(&((*x).clone(), b)))
@@ -206,11 +237,33 @@ fn blocked_reads(reads: &[(&Name, usize, usize, Span)], st: &State, block: &str)
                  assigned it: in {}, `=` is accepted only where it means \
                  the same as `<=` (nothing it assigns is read later in the block); \
                  use `<=`",
-                ast::with_article(block)
+                block.with_article()
             ),
         ));
     }
     Ok(())
+}
+
+/// A statement with several paths, where a latch can start.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Branching {
+    If,
+    Case,
+    /// A `case` without `default`: it has a path on which no label matches.
+    CaseWithoutDefault,
+}
+
+/// `` `if` ``, `` `case` ``, …, for the message about a latch.
+impl std::fmt::Display for Branching {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Branching::If => "`if`",
+            Branching::Case => "`case`",
+            Branching::CaseWithoutDefault => {
+                "`case` (without `default`, nothing is assigned when no label matches)"
+            }
+        })
+    }
 }
 
 struct Definite<'t> {
@@ -218,11 +271,11 @@ struct Definite<'t> {
     targets: &'t [&'t Name],
     /// An `always_comb` (else an `always_ff`, where only x is checked).
     comb: bool,
-    /// The kind of block as written ([`Item::block`]).
-    block: &'static str,
+    /// The kind of block as written.
+    block: BlockKind,
     /// For each target, the first `if` or `case` after which some of its
-    /// bits are assigned on some paths only, with a description.
-    partial: BTreeMap<Name, (Span, &'static str)>,
+    /// bits are assigned on some paths only.
+    partial: BTreeMap<Name, (Span, Branching)>,
 }
 
 impl Definite<'_> {
@@ -242,7 +295,7 @@ impl Definite<'_> {
             let missing: Vec<usize> = (lo..=hi)
                 .filter(|b| !st.done.contains(&(x.clone(), *b)))
                 .collect();
-            if let Some(e) = st.live_x(x, &missing, n, &format!("before it is read at {span}")) {
+            if let Some(e) = st.live_x(x, &missing, n, Until::Read(span)) {
                 return Err(e);
             }
             if !missing.is_empty() {
@@ -267,7 +320,7 @@ impl Definite<'_> {
             StmtKind::If(c, a, b) => {
                 self.reads(c, st)?;
                 let branches = [a.as_ref(), b.as_ref()];
-                self.merge(&branches, false, st, s.span, "`if`")
+                self.merge(&branches, false, st, s.span, Branching::If)
             }
             StmtKind::Case {
                 sel,
@@ -283,9 +336,9 @@ impl Definite<'_> {
                 let why = match default {
                     Some(d) => {
                         branches.push(d);
-                        "`case`"
+                        Branching::Case
                     }
-                    None => "`case` (without `default`, nothing is assigned when no label matches)",
+                    None => Branching::CaseWithoutDefault,
                 };
                 self.merge(&branches, default.is_none(), st, s.span, why)
             }
@@ -360,8 +413,7 @@ impl Definite<'_> {
                 let bits: Vec<usize> = (0..n)
                     .filter(|b| !st.done.contains(&(y.clone(), *b)))
                     .collect();
-                let when = format!("before `{lhs}`, which keeps the bits it does not assign");
-                if let Some(e) = st.live_x(y, &bits, n, &when) {
+                if let Some(e) = st.live_x(y, &bits, n, Until::Keeping(lhs)) {
                     return Err(e);
                 }
                 if !bits.is_empty() {
@@ -392,8 +444,7 @@ impl Definite<'_> {
         let missing: Vec<usize> = (0..n)
             .filter(|b| !st.done.contains(&(p.name.clone(), *b)))
             .collect();
-        let when = format!("before `{lhs}`, which keeps the bits it does not assign");
-        if let Some(e) = st.live_x(&p.name, &missing, n, &when) {
+        if let Some(e) = st.live_x(&p.name, &missing, n, Until::Keeping(lhs)) {
             return Err(e);
         }
         if !missing.is_empty() {
@@ -444,7 +495,7 @@ impl Definite<'_> {
         fallthrough: bool,
         st: &mut State,
         span: Span,
-        why: &'static str,
+        why: Branching,
     ) -> Result<()> {
         let mut outs = Vec::new();
         for b in branches {

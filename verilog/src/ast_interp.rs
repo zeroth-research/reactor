@@ -59,8 +59,8 @@ without an initializer.
 */
 
 use crate::ast::{
-    BinOp, Cast, Dir, Edge, Elems, Error, Expr, ExprKind, Index, Item, Name, Select, Span, Stmt,
-    StmtKind, Ty, UnOp,
+    BinOp, Cast, Dir, Edge, Elems, Error, ErrorKind, Expr, ExprKind, Index, Item, Name, Select,
+    Stmt, StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
 use crate::typing::{self, Checked};
@@ -140,7 +140,7 @@ impl<'m> Interp<'m> {
             }
         }
         it.add(inst, "", &naming)?;
-        let err = |msg: String| Error::new(Span::default(), msg);
+        let err = |msg: String| Error::unlocated(ErrorKind::User, msg);
         for (name, c, e) in &it.initialized {
             let width = it.signals[name].width;
             let v = it

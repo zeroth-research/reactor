@@ -192,12 +192,12 @@ chapter-21/21.6--test.sv		19:2: `initial` may only give signals initial values (
 chapter-21/21.6--value.sv		18:1: type `integer` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 chapter-22/22.3--resetall_basic.sv		16:1: unsupported: Description [at ``resetall`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 chapter-22/22.3--resetall_multiple.sv		16:1: unsupported: Description [at ``resetall`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
-chapter-22/22.4--check_included_definitions.sv		0:0: Include error	-	preprocessor: define / include missing
-chapter-22/22.4--include_basic.sv		0:0: Include error	-	preprocessor: define / include missing
-chapter-22/22.4--include_basic_rpath.sv		0:0: Include error	-	preprocessor: define / include missing
-chapter-22/22.4--include_from_other_directory.sv		0:0: Include error	-	preprocessor: define / include missing
-chapter-22/22.4--include_via_define.sv		0:0: Include error	-	preprocessor: define / include missing
-chapter-22/22.4--include_with_comment.sv		0:0: Include error	-	preprocessor: define / include missing
+chapter-22/22.4--check_included_definitions.sv		Include error	-	preprocessor: define / include missing
+chapter-22/22.4--include_basic.sv		Include error	-	preprocessor: define / include missing
+chapter-22/22.4--include_basic_rpath.sv		Include error	-	preprocessor: define / include missing
+chapter-22/22.4--include_from_other_directory.sv		Include error	-	preprocessor: define / include missing
+chapter-22/22.4--include_via_define.sv		Include error	-	preprocessor: define / include missing
+chapter-22/22.4--include_with_comment.sv		Include error	-	preprocessor: define / include missing
 chapter-22/22.5.1--define_and_resetall.sv		17:1: unsupported: Description [at ``resetall`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 chapter-23/23.2--module-definition.sv		OK	Equal	
 chapter-23/23.2--module-label.sv		OK	Equal	
@@ -222,7 +222,7 @@ chapter-5/5.6.1--escaped-identifiers.sv		17:7: escaped identifiers not supported
 chapter-5/5.6.1--nonescaped-access.sv		18:7: escaped identifiers not supported	-	other unsupported construct
 chapter-5/5.6.3--system-functions.sv		22:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 chapter-5/5.6.4--compiler-directives-begin-keywords.sv		18:7: `logic` is never driven	-	design rejected by a checking rule (latch, loop, drivers)
-chapter-5/5.6.4--compiler-directives-celldefine.sv		0:0: several top modules (`cd`, `ncd`): choose one	-	top-module selection
+chapter-5/5.6.4--compiler-directives-celldefine.sv		several top modules (`cd`, `ncd`): choose one	-	top-module selection
 chapter-5/5.6.4--compiler-directives-debug-line.sv		OK	Equal	
 chapter-5/5.6.4--compiler-directives-debug.sv		18:10: unsupported: Description [at `endmodule`]	-	other unsupported syntax
 chapter-5/5.6.4--compiler-directives-default-nettype.sv		OK	Equal	

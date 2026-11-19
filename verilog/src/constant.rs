@@ -28,7 +28,7 @@ everywhere: `[W-1:0]` with `parameter [4:0] W` subtracts at 32 unsigned
 bits.
 */
 
-use crate::ast::{BinOp, Const, Error, Expr, ExprKind, Name, Ty, UnOp};
+use crate::ast::{BinOp, Const, Error, ErrorKind, Expr, ExprKind, Name, Span, Ty, UnOp};
 use crate::sizing::Sizer;
 use crate::typing::Env;
 use crate::value::BitVec;
@@ -44,6 +44,36 @@ pub(crate) enum Failure {
     /// The expression is a constant expression whose evaluation fails
     /// (overflow, division by zero, …).
     Error(Error),
+}
+
+/// Why a literal or an integer constant expression has no value: the
+/// message, and whether the constant is wrong or merely outside what the
+/// translation handles (an integer that overflows 32 bits, x digits).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Problem {
+    pub kind: ErrorKind,
+    pub msg: String,
+}
+
+impl Problem {
+    fn user(msg: String) -> Self {
+        Problem {
+            kind: ErrorKind::User,
+            msg,
+        }
+    }
+
+    fn unsupported(msg: String) -> Self {
+        Problem {
+            kind: ErrorKind::Unsupported,
+            msg,
+        }
+    }
+
+    /// The error at `span`.
+    pub fn at(self, span: Span) -> Error {
+        Error::new(span, self.msg).of_kind(self.kind)
+    }
 }
 
 /// A literal: sized (`8'hff`), an unsized decimal (`255`), which is an
@@ -64,29 +94,29 @@ pub(crate) const X_HINT: &str = "values are 2-state; x is accepted only as the w
 /// decimal digits, or an unsized based literal `'[s]<b|o|d|h>digits`. x/z
 /// digits are rejected (values are 2-state), and so are values that do
 /// not fit in the width (32 bits for unsized literals).
-pub(crate) fn literal(text: &str) -> Result<Literal, String> {
+pub(crate) fn literal(text: &str) -> Result<Literal, Problem> {
     let decimal = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
     let Some((size, rest)) = text.split_once('\'') else {
         if !decimal(text) {
-            return Err(format!("malformed literal `{text}`"));
+            return Err(Problem::user(format!("malformed literal `{text}`")));
         }
         let value: i64 = text
             .parse()
             .ok()
             .filter(|v| *v <= i32::MAX as i64)
-            .ok_or_else(|| format!("integer `{text}` too large"))?;
+            .ok_or_else(|| Problem::unsupported(format!("integer `{text}` too large")))?;
         return Ok(Literal::Int(value));
     };
     let width: usize = if size.is_empty() {
         32
     } else if !decimal(size) {
-        return Err(format!("malformed literal `{text}`"));
+        return Err(Problem::user(format!("malformed literal `{text}`")));
     } else {
         size.parse()
-            .map_err(|_| format!("literal size `{size}` too large"))?
+            .map_err(|_| Problem::unsupported(format!("literal size `{size}` too large")))?
     };
     if width == 0 {
-        return Err(format!("literal `{text}` of width 0"));
+        return Err(Problem::user(format!("literal `{text}` of width 0")));
     }
     let (signed, rest) = match rest.strip_prefix(['s', 'S']) {
         Some(rest) => (true, rest),
@@ -98,18 +128,18 @@ pub(crate) fn literal(text: &str) -> Result<Literal, String> {
         Some('o') => 8,
         Some('d') => 10,
         Some('h') => 16,
-        _ => return Err(format!("malformed literal `{text}`")),
+        _ => return Err(Problem::user(format!("malformed literal `{text}`"))),
     };
     let digits = chars.as_str();
     if digits.contains(['x', 'X', 'z', 'Z', '?']) {
-        return Err(format!(
+        return Err(Problem::unsupported(format!(
             "literal `{text}` with x/z digits not supported ({X_HINT})"
-        ));
+        )));
     }
     let value = BigUint::parse_bytes(digits.as_bytes(), radix)
-        .ok_or_else(|| format!("malformed literal `{text}`"))?;
+        .ok_or_else(|| Problem::user(format!("malformed literal `{text}`")))?;
     let value = BitVec::new(width, value)
-        .ok_or_else(|| format!("literal `{text}` does not fit in {width} bits"))?;
+        .ok_or_else(|| Problem::user(format!("literal `{text}` does not fit in {width} bits")))?;
     let ty = Ty { width, signed };
     Ok(if size.is_empty() {
         Literal::Unsized(ty, value)
@@ -131,21 +161,21 @@ pub(crate) fn int_const(v: i64) -> Const {
 /// the remainder has the sign of the dividend, as in IEEE 1800; a negative
 /// exponent gives 0 except for the bases 1 and -1, and is an error for the
 /// base 0 (the result is x).
-pub(crate) fn int_op(op: BinOp, a: i64, b: i64) -> Result<i64, String> {
+pub(crate) fn int_op(op: BinOp, a: i64, b: i64) -> Result<i64, Problem> {
     let r = match op {
         BinOp::Add => a + b,
         BinOp::Sub => a - b,
         BinOp::Mul => a * b,
         BinOp::Div | BinOp::Mod if b == 0 => {
-            return Err(format!("division by zero in `{a} {op} {b}`"));
+            return Err(Problem::user(format!("division by zero in `{a} {op} {b}`")));
         }
         BinOp::Div => a / b,
         BinOp::Mod => a % b,
         BinOp::Pow if b < 0 => match a {
             0 => {
-                return Err(format!(
+                return Err(Problem::user(format!(
                     "`{a} ** {b}`: 0 to a negative power has no value (it is x)"
-                ));
+                )));
             }
             1 => 1,
             -1 if b % 2 == 0 => 1,
@@ -158,12 +188,12 @@ pub(crate) fn int_op(op: BinOp, a: i64, b: i64) -> Result<i64, String> {
             .unwrap_or(i64::MAX),
         op => unreachable!("integer operator {op}"),
     };
-    fits(r).ok_or_else(|| format!("`{a} {op} {b}` overflows 32 bits"))
+    fits(r).ok_or_else(|| Problem::unsupported(format!("`{a} {op} {b}` overflows 32 bits")))
 }
 
 /// `-a` on integers.
-pub(crate) fn int_neg(a: i64) -> Result<i64, String> {
-    fits(-a).ok_or_else(|| format!("`-({a})` overflows 32 bits"))
+pub(crate) fn int_neg(a: i64) -> Result<i64, Problem> {
+    fits(-a).ok_or_else(|| Problem::unsupported(format!("`-({a})` overflows 32 bits")))
 }
 
 fn fits(v: i64) -> Option<i64> {
@@ -175,12 +205,12 @@ fn fits(v: i64) -> Option<i64> {
 /// `$clog2(c)`: the number of bits needed for the values `0 .. n-1`, the
 /// least `k` with `2^k ≥ n` (0 for `n` ≤ 1), for `n` the value of `c`; a
 /// negative `int` is an error.
-pub(crate) fn clog2(c: &Const) -> Result<i64, String> {
+pub(crate) fn clog2(c: &Const) -> Result<i64, Problem> {
     if c.ty.signed && c.value.signed().is_negative() {
-        return Err(format!(
+        return Err(Problem::user(format!(
             "`$clog2` of the negative value {}",
             c.value.signed()
-        ));
+        )));
     }
     let n = c.value.unsigned();
     let k = if *n <= BigUint::from(1u8) {
@@ -203,7 +233,7 @@ pub(crate) fn signal(e: &Expr) -> Option<&Name> {
 /// module documentation): `None` if it is not one, an error message if an
 /// intermediate result does not fit in an `int`, or for a division by
 /// zero.
-pub fn exact(e: &Expr) -> Option<Result<i64, String>> {
+pub fn exact(e: &Expr) -> Option<Result<i64, Problem>> {
     match &e.kind {
         ExprKind::Const { ty, value, .. } if *ty == Ty::INT => {
             Some(Ok(value.signed().to_i64().expect("32 bits")))
@@ -228,7 +258,7 @@ pub(crate) fn value(e: &Expr) -> Result<Const, Failure> {
     constant(e)?;
     match exact(e) {
         Some(Ok(v)) => Ok(int_const(v)),
-        Some(Err(msg)) => Err(Failure::Error(Error::new(e.span, msg))),
+        Some(Err(p)) => Err(Failure::Error(p.at(e.span))),
         None => sized(e, None),
     }
 }
@@ -251,8 +281,12 @@ pub(crate) fn int(e: &Expr) -> Result<i64, Failure> {
     } else {
         c.value.unsigned().clone().into()
     };
-    n.to_i64()
-        .ok_or_else(|| Failure::Error(Error::new(e.span, format!("`{e}` is too large ({n})"))))
+    n.to_i64().ok_or_else(|| {
+        Failure::Error(Error::unsupported(
+            e.span,
+            format!("`{e}` is too large ({n})"),
+        ))
+    })
 }
 
 /// A value for a parameter given from outside (`v2rm -G N=V`): a literal,
@@ -274,7 +308,7 @@ pub fn parse(text: &str) -> Result<Expr, String> {
         Ok(Literal::Int(v)) => (Ty::INT, BitVec::from_signed(32, v)),
         Ok(Literal::Sized(ty, value) | Literal::Unsized(ty, value)) if !negative => (ty, value),
         Ok(_) => return Err(format!("`{text}`: only an unsized decimal can have a sign")),
-        Err(m) => return Err(m),
+        Err(p) => return Err(p.msg),
     };
     Ok(Expr {
         kind: ExprKind::Const {
@@ -307,7 +341,7 @@ fn sized(e: &Expr, width: Option<usize>) -> Result<Const, Failure> {
     .map_err(Failure::Error)?;
     match sized.kind {
         ExprKind::Const { ty, value, .. } | ExprKind::Lit { ty, value } => Ok(Const { ty, value }),
-        _ => Err(Failure::Error(Error::new(
+        _ => Err(Failure::Error(Error::internal(
             e.span,
             format!("internal error: the constant expression `{e}` is not folded"),
         ))),
@@ -353,7 +387,10 @@ mod tests {
         assert!(literal("2147483648").is_err());
         assert!(literal("'hx").is_err());
         for text in ["", "abc", "1a", "4x'h3", "'", "8'"] {
-            assert_eq!(literal(text), Err(format!("malformed literal `{text}`")));
+            assert_eq!(
+                literal(text).map_err(|p| p.msg),
+                Err(format!("malformed literal `{text}`"))
+            );
         }
         let Ok(Literal::Sized(ty, v)) = literal("4'sb1010") else {
             panic!()

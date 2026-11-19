@@ -33,7 +33,9 @@ instantiating module drives it. The ports of a blackbox are no signals and
 have no paths: the signals connected to its outputs are free values.
 */
 
-use crate::ast::{Dir, Error, ExprKind, Formal, Instance, Item, Module, Name, Override, Span};
+use crate::ast::{
+    Dir, Error, ErrorKind, ExprKind, Formal, Instance, Item, Message, Module, Name, Override, Span,
+};
 use crate::frontend::{self, Design};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -66,8 +68,8 @@ pub fn load(source: &str, path: impl AsRef<Path>) -> Result<Inst> {
 /// `overrides`, and all instances below it.
 pub fn elaborate(d: &Design, top: &str, overrides: &[Override]) -> Result<Inst> {
     if d.is_blackbox(top) {
-        return Err(Error::new(
-            Span::default(),
+        return Err(Error::unlocated(
+            ErrorKind::User,
             format!("`{top}` is a blackbox: it cannot be the top module"),
         ));
     }
@@ -85,12 +87,12 @@ fn connected(inst: &Inst) -> bool {
 }
 
 /// Adds the path of the instance to an error from inside it.
-pub(crate) fn context(e: Error, path: &str) -> Error {
+pub(crate) fn context<M: Message>(e: M, path: &str) -> M {
     if path.is_empty() {
         e
     } else {
         let path = path.trim_end_matches('.');
-        Error::new(e.span, format!("{} (in instance `{path}`)", e.msg))
+        Message::map_msg(e, |msg| format!("{msg} (in instance `{path}`)"))
     }
 }
 
@@ -106,9 +108,11 @@ fn connect_pins(
     seen: &mut BTreeSet<Name>,
 ) -> Result<()> {
     let err = |span: Span, msg: String| Err(Error::new(span, msg));
+    // `inout` ports are accepted only as pins of blackboxes
+    let unsupported_err = |span: Span, msg: String| Err(Error::unsupported(span, msg));
     let child_pins = &child.module.pins;
     if let (false, Some(p)) = (child.module.blackbox, child_pins.first()) {
-        return err(
+        return unsupported_err(
             i.span,
             format!(
                 "`{}` has an `inout` port `{}`: only blackboxes and the top module may \
@@ -143,7 +147,7 @@ fn connect_pins(
                 }
             }
             _ => {
-                return err(
+                return unsupported_err(
                     e.span,
                     format!(
                         "`inout` port `{}` of `{}` must be connected to an `inout` port of \
@@ -246,7 +250,8 @@ fn inst(
             );
         }
         if stack.contains(&i.module) {
-            return err(i.span, format!("recursive instantiation of `{}`", i.module));
+            let msg = format!("recursive instantiation of `{}`", i.module);
+            return Err(context(Error::unsupported(i.span, msg), prefix));
         }
         let path = format!("{prefix}{}.", i.name);
         let child = inst(d, &i.module, &i.params, &path, stack)?;

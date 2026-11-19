@@ -333,7 +333,7 @@ endmodule
         err.msg.contains("combinational loop through instances"),
         "{err}"
     );
-    assert_eq!(err.span.line, 4, "{err}");
+    assert_eq!(err.span.unwrap().line, 4, "{err}");
     // an output fed back into an input of the same instance
     let src = format!("{}{CHILD}", top("  child u (.clk, .a(y), .q, .y);"));
     let err = translate(&src).err().expect("rejected");
@@ -353,7 +353,7 @@ endmodule
     let err = translate(src).err().expect("rejected");
     assert!(err.msg.contains("recursive instantiation of `r`"), "{err}");
     assert!(err.msg.contains("(in instance `u`)"), "{err}");
-    assert_eq!((err.span.line, err.span.col), (5, 5));
+    assert_eq!((err.span.unwrap().line, err.span.unwrap().col), (5, 5));
     // two tops, duplicate modules
     let src = "module a(input logic x, output logic y); assign y = x; endmodule
 module b(input logic x, output logic y); assign y = x; endmodule
@@ -368,7 +368,7 @@ module a(input logic x, output logic y); assign y = ~x; endmodule
         err.msg.contains("module `a` already declared at 1:8"),
         "{err}"
     );
-    assert_eq!(err.span.line, 2);
+    assert_eq!(err.span.unwrap().line, 2);
 }
 
 /// Translates a single module with header `header` and body `body`, and

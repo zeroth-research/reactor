@@ -2,7 +2,8 @@
 
 use super::{Env, Result, check, explicit};
 use crate::ast::{
-    Cast, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Select, Stmt, StmtKind,
+    Cast, ErrorKind, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Select, Stmt,
+    StmtKind,
 };
 use crate::elab::Inst;
 use crate::sizing::{self, Sizer};
@@ -58,8 +59,10 @@ pub fn checked(inst: &Inst) -> Result<Checked<'_>> {
         source: m,
         sized,
     };
-    explicit(&c)
-        .map_err(|e| Error::new(e.span, format!("internal error: sizing left `{}`", e.msg)))?;
+    explicit(&c).map_err(|e| {
+        e.of_kind(ErrorKind::Internal)
+            .map_msg(|m| format!("internal error: sizing left `{m}`"))
+    })?;
     debug_assert!(
         sized_invariants(&c),
         "sizing broke an invariant of `{}`",

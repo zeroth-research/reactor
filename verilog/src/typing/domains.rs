@@ -3,7 +3,9 @@
 
 use super::Result;
 use super::definite::one_kind_of_assignment;
-use crate::ast::{Dir, Edge, Error, Expr, ExprKind, Index, Item, LvalueKind, Name, Select, Span};
+use crate::ast::{
+    Dir, Edge, Error, ErrorKind, Expr, ExprKind, Index, Item, LvalueKind, Name, Select, Span,
+};
 use crate::elab::{self, Inst};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -196,7 +198,8 @@ impl<'i> Hierarchy<'i> {
         let mut chain: Vec<Name> = Vec::new();
         loop {
             if chain.contains(&x) {
-                return Err(err(format!("internal error: {what} loop through `{x}`")));
+                return Err(err(format!("internal error: {what} loop through `{x}`"))
+                    .of_kind(ErrorKind::Internal));
             }
             let Some((d, path, source)) = self.drivers.get(&x) else {
                 return match self.free.get(&x) {
@@ -207,7 +210,8 @@ impl<'i> Hierarchy<'i> {
                          must be 1-bit inputs (or blackbox outputs)",
                         self.free[&x]
                     ))),
-                    None => Err(err(format!("internal error: `{x}` has no driver"))),
+                    None => Err(err(format!("internal error: `{x}` has no driver"))
+                        .of_kind(ErrorKind::Internal)),
                 };
             };
             // the next signal on the chain, a name in instance `d`
@@ -239,7 +243,7 @@ impl<'i> Hierarchy<'i> {
                 } else {
                     "gated clocks are not supported"
                 };
-                return Err(err(format!("{msg}: {why}")));
+                return Err(err(format!("{msg}: {why}")).of_kind(ErrorKind::Unsupported));
             };
             chain.push(x);
             x = self.canon(*d, y);
@@ -367,7 +371,7 @@ fn crossings(
                  by `{other}`{derived}: crossings between unrelated clocks are not supported yet",
                 clocked(roots, &c)
             );
-            return Err(elab::context(Error::new(span, msg), &h.insts[k].1));
+            return Err(elab::context(Error::unsupported(span, msg), &h.insts[k].1));
         }
     }
     Ok(())
@@ -422,7 +426,7 @@ fn reset_edge_reads(
                  between unrelated clocks are not supported yet",
                 clocked(roots, &c)
             );
-            return Err(elab::context(Error::new(span, msg), &h.insts[k].1));
+            return Err(elab::context(Error::unsupported(span, msg), &h.insts[k].1));
         }
     }
     Ok(())
@@ -487,7 +491,7 @@ fn blocking_races(h: &Hierarchy, comb: &[(Name, Name)]) -> Result<()> {
         for (n, item) in i.module.items.iter().enumerate() {
             if let Item::AlwaysFf { body, .. } = item {
                 let mut first = BTreeMap::new();
-                one_kind_of_assignment(body, item.block(), &mut first)?;
+                one_kind_of_assignment(body, item.kind().expect("a block"), &mut first)?;
                 for (q, (span, b)) in first {
                     if b {
                         blocking.insert(h.canon(k, q), ((k, n), span));

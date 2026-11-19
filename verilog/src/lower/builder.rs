@@ -4,7 +4,7 @@ use super::segments::{Seg, Value, as_wire, coalesce, cuts, split, whole};
 use super::{Result, internal};
 use crate::ast::{
     BinOp, Edge, Elem, Elems, Error, Expr, ExprKind, Index, Lvalue, LvalueKind, Name, Reset,
-    Select, Span, Stmt, StmtKind, Ty, UnOp,
+    Select, Span, Stmt, StmtKind, Ty, UnOp, Warning,
 };
 use crate::typing;
 use crate::value::BitVec;
@@ -56,7 +56,7 @@ pub(super) struct Builder<'a> {
     renamed: HashMap<Wire, Wire>,
     /// The reads with a variable index that may select bits outside their
     /// signal (those bits read 0), as warnings.
-    pub(super) out_of_range: Vec<Error>,
+    pub(super) out_of_range: Vec<Warning>,
 }
 
 impl<'a> Builder<'a> {
@@ -316,7 +316,7 @@ impl<'a> Builder<'a> {
         for seg in coalesce(picked) {
             let (w, wlo) = seg
                 .src
-                .ok_or_else(|| internal(span, "read of unassigned bits".into()))?;
+                .ok_or_else(|| internal(Some(span), "read of unassigned bits".into()))?;
             parts.push(self.bits(w, wlo + seg.width - 1, wlo, span)?);
         }
         self.concat_wires(parts, span)
@@ -517,7 +517,7 @@ impl<'a> Builder<'a> {
                 } else {
                     Term::function(op, [dest], t.read().iter().copied())
                 };
-                self.terms[i] = term.map_err(|e| internal(span, e))?;
+                self.terms[i] = term.map_err(|e| internal(Some(span), e))?;
                 self.renamed.insert(w, dest);
                 self.names.remove(&w);
             }
@@ -546,7 +546,7 @@ impl<'a> Builder<'a> {
         } else {
             Term::function(op, [dest], reads.iter().copied())
         };
-        self.terms.push(term.map_err(|e| internal(span, e))?);
+        self.terms.push(term.map_err(|e| internal(Some(span), e))?);
         Ok(dest)
     }
 
@@ -626,7 +626,7 @@ impl<'a> Builder<'a> {
                 // extended as the type it is resized to says
                 Ok((self.resize(wa, *t, t.signed, span)?, *t))
             }
-            ExprKind::Fill(_) => Err(Error::new(span, "internal error: `'0`/`'1` not sized")),
+            ExprKind::Fill(_) => Err(Error::internal(span, "internal error: `'0`/`'1` not sized")),
             ExprKind::Cast(c, a) => {
                 let (wa, ta) = self.expr(a)?;
                 let t = typing::cast(*c, ta, typing::context_free(a), span)?;
@@ -683,7 +683,7 @@ impl<'a> Builder<'a> {
         };
         let w = match op {
             BinOp::Pow => {
-                return Err(Error::new(
+                return Err(Error::internal(
                     span,
                     "internal error: `**` is folded by sizing, it has no operator",
                 ));

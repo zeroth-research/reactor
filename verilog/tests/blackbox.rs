@@ -397,7 +397,7 @@ fn several_files() {
     let err = elab::elaborate(&d, "top", &[])
         .and_then(|inst| lower_inst(&inst).map(|_| ()))
         .unwrap_err();
-    let (file, span) = d.locate(err.span);
+    let (file, span) = d.locate(err.span.unwrap());
     assert_eq!(file, paths[1]);
     assert_eq!((span.line, span.col), (2, 14), "{err}");
     // a module declared in two files
@@ -458,7 +458,10 @@ fn positions_in_messages_of_later_files() {
     );
     let err = error(&paths);
     assert_eq!(err.file.as_ref(), Some(&paths[1]));
-    assert_eq!(err.to_string(), "4:10: `y` already driven at 3:10");
+    assert_eq!(
+        err.to_string(),
+        format!("{}:4:10: `y` already driven at 3:10", paths[1].display())
+    );
     // the error in the first file, the gate in the second
     let (_tmp, paths) = files(
         "mentions-other",
@@ -479,8 +482,9 @@ fn positions_in_messages_of_later_files() {
     assert_eq!(
         err.to_string(),
         format!(
-            "4:23: the clock `g` comes from `u.g`, computed combinationally at {}:3:10: gated \
+            "{}:4:23: the clock `g` comes from `u.g`, computed combinationally at {}:3:10: gated \
              clocks are not supported",
+            paths[0].display(),
             paths[1].display()
         )
     );

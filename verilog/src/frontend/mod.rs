@@ -213,18 +213,28 @@ impl Cx<'_> {
         Err(Error::new(self.span(node), msg))
     }
 
+    /// Rejects the node as outside the subset ([`ErrorKind::Unsupported`]),
+    /// with the message `msg`.
+    fn not_supported<'a, T>(
+        &self,
+        node: impl Into<RefNodes<'a>>,
+        msg: impl Into<String>,
+    ) -> Result<T> {
+        Err(Error::unsupported(self.span(node), msg))
+    }
+
     /// Rejects the node as outside the subset, naming its syntactic kind.
     fn unsupported<'a, T>(&self, node: impl Into<RefNode<'a>>) -> Result<T> {
         let node: RefNode = node.into();
         let span = self.span(RefNodes(vec![node.clone()]));
-        Err(Error::new(span, format!("unsupported: {node}")))
+        Err(Error::unsupported(span, format!("unsupported: {node}")))
     }
 
     /// Rejects the node if it contains tokens, i.e. if the optional syntax
     /// `what` is present.
     fn absent<'a>(&self, node: impl Into<RefNodes<'a>> + Copy, what: &str) -> Result<()> {
         if has_tokens(node) {
-            self.err(node, format!("{what} not supported"))
+            self.not_supported(node, format!("{what} not supported"))
         } else {
             Ok(())
         }
@@ -241,7 +251,7 @@ impl Cx<'_> {
         for a in attrs {
             for spec in a.nodes.1.contents() {
                 if self.text(&spec.nodes.0) != name {
-                    return self.err(
+                    return self.not_supported(
                         spec,
                         format!("attribute `{}` not supported", self.text(spec)),
                     );
@@ -263,7 +273,7 @@ impl Cx<'_> {
         self.absent(label, "block name")?;
         self.absent(end_label, "block name")?;
         if let Some(d) = decls.first() {
-            return self.err(d, declarations);
+            return self.not_supported(d, declarations);
         }
         Ok(stmts)
     }
@@ -272,7 +282,7 @@ impl Cx<'_> {
         match id {
             sv::Identifier::SimpleIdentifier(_) => Ok(self.text(id)),
             sv::Identifier::EscapedIdentifier(_) => {
-                self.err(id, "escaped identifiers not supported")
+                self.not_supported(id, "escaped identifiers not supported")
             }
         }
     }

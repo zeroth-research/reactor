@@ -249,7 +249,7 @@ translation that drives the external variables of the blackbox outputs.
 [`SvOp`]: crate::SvOp
 */
 
-use crate::ast::{self, Dir, Error, Expr, ExprKind, Name, Span, Ty};
+use crate::ast::{self, Dir, Error, ErrorKind, Expr, ExprKind, Name, Span, Ty, Warning};
 use crate::elab::Inst;
 use crate::typing;
 use crate::value::BitVec;
@@ -300,12 +300,12 @@ pub struct Translation {
     /// signal, located (with the instance path), sorted by position:
     /// those bits read 0, which for a 4-state signal is one choice for the
     /// standard's x (see [`typing::may_leave`]).
-    pub out_of_range: Vec<Error>,
+    pub out_of_range: Vec<Warning>,
     /// One located warning per instance of a blackbox (with the instance
     /// path), in order: the signals on its outputs take any value in every
     /// round and nothing reads its inputs, since its behaviour is not part
     /// of the design (see the module docs, "Blackboxes and pins").
-    pub blackboxes: Vec<Error>,
+    pub blackboxes: Vec<Warning>,
     /// Names of wires local to an atom: the intermediate values `y@1`,
     /// `y@2`, … of the signals of `always_comb` blocks, and the edge tests
     /// `clk@pos`, `clk@neg` of `always_ff` blocks (`clk@pos#2` for the
@@ -450,6 +450,11 @@ fn title(m: &ast::Module) -> String {
     }
 }
 
-fn internal(span: Span, e: String) -> Error {
-    Error::new(span, format!("internal error: {e}"))
+/// A bug of the translation, noticed at `span` if it concerns one place.
+fn internal(span: Option<Span>, e: String) -> Error {
+    let msg = format!("internal error: {e}");
+    match span {
+        Some(span) => Error::internal(span, msg),
+        None => Error::unlocated(ErrorKind::Internal, msg),
+    }
 }

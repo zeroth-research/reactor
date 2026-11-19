@@ -399,7 +399,7 @@ impl<'e> Sizer<'e> {
                 }
                 let sized = fold(node(ExprKind::Binary(*op, Box::new(a), Box::new(b))), t)?;
                 if let ExprKind::Binary(BinOp::Pow, ..) = sized.kind {
-                    return Err(Error::new(
+                    return Err(Error::unsupported(
                         span,
                         format!(
                             "`**` only between constants (`{e}`): the translation has no \
@@ -492,7 +492,7 @@ impl<'e> Sizer<'e> {
             }
             ExprKind::Cast(c, a) => node(ExprKind::Cast(*c, boxed(self.synth(a))?)),
             ExprKind::Cond(..) | ExprKind::Fill(_) | ExprKind::Resize(..) => {
-                return Err(Error::new(
+                return Err(Error::internal(
                     span,
                     format!("internal error: `{e}` sized as an atomic expression"),
                 ));
@@ -602,7 +602,7 @@ fn constant(e: &Expr) -> Option<&BitVec> {
 fn fold(e: Expr, t: Ty) -> Result<Expr> {
     let value = match &e.kind {
         ExprKind::Unary(op, a) => match constant(a) {
-            Some(a) => unary(*op, a, t)?,
+            Some(a) => unary(*op, a, t).map_err(|m| Error::internal(e.span, m))?,
             None => return Ok(e),
         },
         ExprKind::Binary(BinOp::Pow, a, b) => match (constant(a), constant(b)) {
@@ -611,7 +611,9 @@ fn fold(e: Expr, t: Ty) -> Result<Expr> {
             _ => return Ok(e),
         },
         ExprKind::Binary(op, a, b) => match (constant(a), constant(b)) {
-            (Some(va), Some(vb)) => binary(*op, va, operand_signed(a), vb, t)?,
+            (Some(va), Some(vb)) => {
+                binary(*op, va, operand_signed(a), vb, t).map_err(|m| Error::internal(e.span, m))?
+            }
             _ => return Ok(e),
         },
         ExprKind::Cond(c, a, b) => match (constant(c), constant(a), constant(b)) {
@@ -648,13 +650,15 @@ fn operand_signed(e: &Expr) -> bool {
     }
 }
 
-fn eval(op: SvOp, args: &[&BitVec]) -> Result<BitVec> {
+/// The value of `op` on constants; an error (a bug: sizing checks the
+/// divisors first) without its position, which the caller adds.
+fn eval(op: SvOp, args: &[&BitVec]) -> std::result::Result<BitVec, String> {
     let args: Vec<BitVec> = args.iter().map(|v| (*v).clone()).collect();
-    value::eval(&op, &args).map_err(|m| Error::new(Span::default(), m))
+    value::eval(&op, &args)
 }
 
 /// A sized unary operator on a constant, the result of type `t`.
-fn unary(op: UnOp, a: &BitVec, t: Ty) -> Result<BitVec> {
+fn unary(op: UnOp, a: &BitVec, t: Ty) -> std::result::Result<BitVec, String> {
     let not = |v: BitVec| eval(SvOp::Not, &[&v]);
     match op {
         UnOp::Plus => Ok(a.clone()),
@@ -673,7 +677,13 @@ fn unary(op: UnOp, a: &BitVec, t: Ty) -> Result<BitVec> {
 
 /// A sized binary operator on constants: `signed` is the signedness of the
 /// left operand (both have the same type except for shift amounts).
-fn binary(op: BinOp, a: &BitVec, signed: bool, b: &BitVec, t: Ty) -> Result<BitVec> {
+fn binary(
+    op: BinOp,
+    a: &BitVec,
+    signed: bool,
+    b: &BitVec,
+    t: Ty,
+) -> std::result::Result<BitVec, String> {
     use BinOp::*;
     let not = |v: BitVec| eval(SvOp::Not, &[&v]);
     let truth = |v: &BitVec| eval(SvOp::RedOr, &[v]);

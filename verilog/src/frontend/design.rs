@@ -1,7 +1,7 @@
 //! Source files, the parsed design and positions in it.
 
 use super::{Cx, Result};
-use crate::ast::{Error, Module, Name, Override, Span};
+use crate::ast::{Error, ErrorKind, Module, Name, Override, Span, Warning};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -35,9 +35,8 @@ fn read_sources<P: AsRef<Path>>(paths: &[P]) -> Result<Vec<(String, PathBuf)>> {
     let mut sources = Vec::new();
     for path in paths {
         let path = path.as_ref();
-        let source = std::fs::read_to_string(path).map_err(|e| {
-            Error::new(Span::default(), format!("{}: {e}", path.display())).in_file(path)
-        })?;
+        let source = std::fs::read_to_string(path)
+            .map_err(|e| Error::unlocated(ErrorKind::User, e.to_string()).in_file(path))?;
         sources.push((source, path.to_path_buf()));
     }
     Ok(sources)
@@ -55,7 +54,7 @@ pub fn depends_on_macro<P: AsRef<Path>>(paths: &[P], name: &str) -> Result<bool>
     let sources = read_sources(paths)?;
     let first = sources
         .first()
-        .ok_or_else(|| Error::new(Span::default(), "no source file"))?
+        .ok_or_else(|| Error::unlocated(ErrorKind::User, "no source file"))?
         .1
         .clone();
     let (text, _) = join_sources(sources);
@@ -65,7 +64,8 @@ pub fn depends_on_macro<P: AsRef<Path>>(paths: &[P], name: &str) -> Result<bool>
             .map(|(t, _)| t.text().to_string())
     };
     let mut defines = predefined();
-    let ours = preprocess(&defines).map_err(|e| Error::new(Span::default(), e.to_string()))?;
+    let ours =
+        preprocess(&defines).map_err(|e| Error::unlocated(ErrorKind::User, e.to_string()))?;
     defines.insert(name.to_string(), Some(define(name, "1")));
     Ok(preprocess(&defines).map_or(true, |theirs| theirs != ours))
 }
@@ -111,7 +111,7 @@ pub fn parse_design(source: &str, path: impl AsRef<Path>) -> Result<Design> {
 /// Parses the sources, each with its path, as one text.
 fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
     let Some((_, first)) = sources.first() else {
-        return Err(Error::new(Span::default(), "no source file"));
+        return Err(Error::unlocated(ErrorKind::User, "no source file"));
     };
     let first = first.clone();
     let defines = predefined();
@@ -126,7 +126,7 @@ fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
             sv::Error::Parse(Some((_, offset))) => {
                 located(Error::new(at(&lines, offset), "syntax error"))
             }
-            e => Error::new(Span::default(), e.to_string()),
+            e => Error::unlocated(ErrorKind::User, e.to_string()),
         },
     )?;
     let d = Design { tree, lines, files };
@@ -151,12 +151,17 @@ fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
 /// [`Design::locate`]). The positions its message mentions (`at L:C`, see
 /// [`mentions_in`]) are given in their files too.
 fn locate_in(files: &[SourceFile], e: Error) -> Error {
-    if e.span == Span::default() {
+    let Some(span) = e.span else {
         return e;
-    }
-    let (f, span) = file_of(files, e.span);
+    };
+    let (f, span) = file_of(files, span);
     let msg = mentions_in(files, &f.path, &e.msg);
-    Error { span, msg, ..e }.in_file(&f.path)
+    Error {
+        span: Some(span),
+        msg,
+        ..e
+    }
+    .in_file(&f.path)
 }
 
 /// The file of a position of the design, with the position in that file.
@@ -240,7 +245,7 @@ impl Design {
     pub fn locate(&self, span: Span) -> (PathBuf, Span) {
         let e = locate_in(&self.files, Error::new(span, ""));
         let path = e.file.unwrap_or_else(|| self.files[0].path.clone());
-        (path, e.span)
+        (path, e.span.unwrap_or(span))
     }
 
     /// The error with its position in its file, and the file, if the
@@ -250,6 +255,22 @@ impl Design {
             locate_in(&self.files, e)
         } else {
             e
+        }
+    }
+
+    /// [`Design::located`] for a warning.
+    pub fn located_warning(&self, w: Warning) -> Warning {
+        let e = Error {
+            kind: ErrorKind::User,
+            span: Some(w.span),
+            msg: w.msg,
+            file: w.file,
+        };
+        let e = self.located(e);
+        Warning {
+            span: e.span.unwrap_or(w.span),
+            msg: e.msg,
+            file: e.file,
         }
     }
 
@@ -285,7 +306,7 @@ impl Design {
                 RefNode::SourceText(x) => Some(x),
                 _ => None,
             })
-            .ok_or_else(|| Error::new(Span::default(), "empty source"))?;
+            .ok_or_else(|| Error::unlocated(ErrorKind::User, "empty source"))?;
         let (_, timeunits, descriptions) = &st.nodes;
         cx.absent(timeunits, "timeunits declaration")?;
         let mut modules = Vec::new();
@@ -294,7 +315,7 @@ impl Design {
                 sv::Description::ModuleDeclaration(m) => match m.as_ref() {
                     sv::ModuleDeclaration::Ansi(m) => modules.push(m.as_ref()),
                     sv::ModuleDeclaration::Nonansi(_) => {
-                        return cx.err(m.as_ref(), "non-ANSI port list not supported");
+                        return cx.not_supported(m.as_ref(), "non-ANSI port list not supported");
                     }
                     m => return cx.unsupported(m),
                 },
@@ -302,7 +323,7 @@ impl Design {
             }
         }
         if modules.is_empty() {
-            return Err(Error::new(Span::default(), "no module"));
+            return Err(Error::unlocated(ErrorKind::User, "no module"));
         }
         Ok(modules)
     }
@@ -355,13 +376,13 @@ impl Design {
             .collect();
         match tops.as_slice() {
             [top] => Ok(top.clone()),
-            [] => Err(Error::new(
-                Span::default(),
+            [] => Err(Error::unlocated(
+                ErrorKind::Unsupported,
                 "no top module: every module is instantiated (recursive instantiation \
                  is not supported)",
             )),
-            _ => Err(Error::new(
-                Span::default(),
+            _ => Err(Error::unlocated(
+                ErrorKind::User,
                 format!(
                     "several top modules ({}): choose one",
                     tops.iter()
@@ -379,7 +400,7 @@ impl Design {
     pub fn module(&self, name: &str, overrides: &[Override]) -> Result<Module> {
         let m = self
             .find(name)
-            .ok_or_else(|| Error::new(Span::default(), format!("no module `{name}`")))?;
+            .ok_or_else(|| Error::unlocated(ErrorKind::User, format!("no module `{name}`")))?;
         let line = self.cx(&[], 0).span(m).line;
         self.cx(overrides, line).module(m)
     }

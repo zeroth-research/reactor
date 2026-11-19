@@ -242,7 +242,7 @@ verilog/class/parameterized_class1.sv		1:1: unsupported: Description [at `class`
 verilog/class/specialized_class1.sv		1:1: unsupported: Description [at `class`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/class/virtual_class1.sv		1:1: unsupported: Description [at `virtual`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/clocking/clocking1.sv		3:3: unsupported: ModuleOrGenerateItemDeclaration [at `clocking`]	-	assertions / properties
-verilog/comments/eof-in-comment1.v		0:0: no module	-	top-module selection
+verilog/comments/eof-in-comment1.v		no module	-	top-module selection
 verilog/config/basic_config1.sv#top	top	11:24: syntax error [at `instance`]	-	parse error (sv-parser)
 verilog/const/const1.sv		4:3: `const` not supported [at `const`]	-	other unsupported construct
 verilog/const/const2.sv		4:3: `const` not supported [at `const`]	-	other unsupported construct
@@ -543,7 +543,7 @@ verilog/modules/missing_connection1.v		7:15: positional port connections not sup
 verilog/modules/module_instance_identifier1.v		11:15: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
 verilog/modules/module_name_space1.sv		2:1: unsupported: Description [at `parameter`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/modules/module_not_found1.v#main	main	3:35: no module `some_module_that_does_not_exist` (for a vendor cell or another module defined outside the design, declare a stub with its ports, marked `(* blackbox *)`: its outputs are then free in every time step)	-	top-module selection
-verilog/modules/multiple_top_level_modules1.sv		0:0: several top modules (`moduleA`, `moduleB`): choose one	-	top-module selection
+verilog/modules/multiple_top_level_modules1.sv		several top modules (`moduleA`, `moduleB`): choose one	-	top-module selection
 verilog/modules/named_parameter_assignment1.sv#main	main	16:1: unsupported: Description [at `typedef`]	-	types, packages, interfaces, classes (`typedef`, `struct`, …)
 verilog/modules/named_port_connection1.sv		8:24: port `a` connected twice	-	other error
 verilog/modules/named_port_connection2.sv		12:21: syntax error [at `my_module`]	-	parse error (sv-parser)
@@ -703,23 +703,23 @@ verilog/preprocessor/define_inactive1.sv		12:3: unsupported: ModuleCommonItem [a
 verilog/preprocessor/ifdef1.v		4:14: syntax error [at `syntax`]	-	parse error (sv-parser)
 verilog/preprocessor/ifdef2.v		4:14: syntax error [at `syntax`]	-	parse error (sv-parser)
 verilog/preprocessor/ifdef_include1.sv		OK	Equal	
-verilog/preprocessor/subdir/in_subdir.v		0:0: Include error	-	preprocessor: define / include missing
-verilog/preprocessor/incdir1.v		0:0: Include error	-	preprocessor: define / include missing
-verilog/preprocessor/include1.v		0:0: Include error	-	preprocessor: define / include missing
-verilog/preprocessor/include3.v		0:0: Include error	-	preprocessor: define / include missing
+verilog/preprocessor/subdir/in_subdir.v		Include error	-	preprocessor: define / include missing
+verilog/preprocessor/incdir1.v		Include error	-	preprocessor: define / include missing
+verilog/preprocessor/include1.v		Include error	-	preprocessor: define / include missing
+verilog/preprocessor/include3.v		Include error	-	preprocessor: define / include missing
 verilog/preprocessor/macro_arg_commas1.sv		7:3: type `integer` not supported	-	other data/net types (`int`, `integer`, `real`, nets…)
 verilog/preprocessor/macro_redefine1.sv		7:14: positional parameter values not supported, write `#(.N(…))`	-	port / parameter syntax (non-ANSI, positional)
 verilog/preprocessor/multi-line-define2.v		4:14: syntax error [at `syntax`]	-	parse error (sv-parser)
 verilog/preprocessor/multi-line-define3.v		4:14: syntax error [at `syntax`]	-	parse error (sv-parser)
-verilog/preprocessor/not_found1.v		0:0: Include error	-	preprocessor: define / include missing
-verilog/preprocessor/not_found2.v		0:0: Include error	-	preprocessor: define / include missing
-verilog/preprocessor/cmdline_define1.v		0:0: Define not found: ELSE	-	preprocessor: define / include missing
-verilog/preprocessor/cmdline_define2.v		0:0: Define not found: SOME_NAME	-	preprocessor: define / include missing
-verilog/preprocessor/plus_define3.v		0:0: no module	-	top-module selection
+verilog/preprocessor/not_found1.v		Include error	-	preprocessor: define / include missing
+verilog/preprocessor/not_found2.v		Include error	-	preprocessor: define / include missing
+verilog/preprocessor/cmdline_define1.v		Define not found: ELSE	-	preprocessor: define / include missing
+verilog/preprocessor/cmdline_define2.v		Define not found: SOME_NAME	-	preprocessor: define / include missing
+verilog/preprocessor/plus_define3.v		no module	-	top-module selection
 verilog/preprocessor/pragma1.sv		OK	Error yosys failed on hw-cbmc/regression/verilog/preprocessor/pragma1.sv:	
 verilog/preprocessor/string_continuation1.sv		8:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
 verilog/preprocessor/string_continuation2.sv		8:11: `initial` may only give signals initial values (`q = 8'd0;`) and load arrays from files (`$readmemb("file", m);`)	-	initializers / `initial` blocks
-verilog/preprocessor/string_continuation3.sv		0:0: Define not found: no_such_directive	-	preprocessor: define / include missing
+verilog/preprocessor/string_continuation3.sv		Define not found: no_such_directive	-	preprocessor: define / include missing
 verilog/preprocessor/stringify1.sv		12:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 verilog/primitive_gates/multiple_instances1.sv		5:3: unsupported: ModuleOrGenerateItem [at `and`]	-	gate primitives (`and`, `nor`, …)
 verilog/primitive_gates/nand1.sv		6:3: unsupported: ModuleOrGenerateItem [at `nand`]	-	gate primitives (`and`, `nor`, …)
@@ -912,7 +912,7 @@ ebmc/BDD/BDD2.sv#main	main	11:3: unsupported: ModuleCommonItem [at `assert`]	-	a
 ebmc/BDD/BDD3.sv#main	main	11:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/BDD/BDD_SVA1.sv		14:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/BDD/temporal_assumption1.sv		9:3: unsupported: ModuleCommonItem [at `assume`]	-	assertions / properties
-ebmc/CLI/json-modules.v		0:0: several top modules (`foo`, `bar`): choose one	-	top-module selection
+ebmc/CLI/json-modules.v		several top modules (`foo`, `bar`): choose one	-	top-module selection
 ebmc/CLI/json-properties.v		3:17: syntax error [at `assert`]	-	assertions / properties
 ebmc/CLI/multiple-properties1.sv		2:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
 ebmc/CLI/property-not-found1.sv		3:3: unsupported: ModuleCommonItem [at `assert`]	-	assertions / properties
