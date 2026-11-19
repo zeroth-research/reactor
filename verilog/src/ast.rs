@@ -316,10 +316,25 @@ impl Module {
 /// hardware that keeps initial values (FPGAs).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Init {
+    /// The register, as a signal or an element of an array.
+    pub id: SignalId,
+    /// The name of the register (`id` as text).
     pub target: Name,
     pub value: Expr,
     /// The position of the target.
     pub span: Span,
+}
+
+impl Init {
+    pub fn new(id: SignalId, value: Expr, span: Span) -> Self {
+        let target = id.name();
+        Self {
+            id,
+            target,
+            value,
+            span,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -334,11 +349,72 @@ pub struct Port {
     pub decl: Decl,
 }
 
+/// A declared signal, or an element of an array (see [`Array`]).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Decl {
+    pub id: SignalId,
+    /// The name of the signal (`id` as text), which the other parts of a
+    /// module refer to it by.
     pub name: Name,
     pub ty: Ty,
     pub span: Span,
+}
+
+impl Decl {
+    pub fn new(id: SignalId, ty: Ty, span: Span) -> Self {
+        let name = id.name();
+        Self { id, name, ty, span }
+    }
+
+    /// Whether the signal is an element of an array.
+    pub fn is_element(&self) -> bool {
+        self.id.index.is_some()
+    }
+}
+
+/// What a signal is: a declared signal `x` (`index` is `None`) or the
+/// element `m[3]` of the array `m` (`base` is `m`, `index` the address).
+///
+/// Its name ([`SignalId::name`], also its `Display`) is `x` or `m[3]`.
+/// Element names never collide with declared names, since `[` cannot occur
+/// in a SystemVerilog identifier (escaped identifiers, which could contain
+/// it, are rejected by the frontend).
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct SignalId {
+    pub base: Name,
+    pub index: Option<usize>,
+}
+
+impl SignalId {
+    /// The declared signal `x`.
+    pub fn signal(x: impl Into<Name>) -> Self {
+        Self {
+            base: x.into(),
+            index: None,
+        }
+    }
+
+    /// The element at `address` of the array `m`.
+    pub fn element(m: impl Into<Name>, address: usize) -> Self {
+        Self {
+            base: m.into(),
+            index: Some(address),
+        }
+    }
+
+    /// The name of the signal: `x` or `m[3]`.
+    pub fn name(&self) -> Name {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for SignalId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.index {
+            None => write!(f, "{}", self.base),
+            Some(k) => write!(f, "{}[{k}]", self.base),
+        }
+    }
 }
 
 /// An unpacked array `logic [7:0] m [0:N-1]` (also `[N-1:0]` or `[N]`):
@@ -368,16 +444,6 @@ pub struct Rom {
     pub span: Span,
 }
 
-/// The array an element signal `m[3]` belongs to (`m`), or the name itself
-/// for any other signal.
-pub fn array_of(name: &str) -> &str {
-    name.split('[').next().unwrap_or(name)
-}
-
-/// The name of the element at `address` of the array `m`: `m[3]`.
-pub fn element(m: &str, address: usize) -> Name {
-    format!("{m}[{address}]")
-}
 
 /// `parameter` or `localparam`, with its value.
 #[derive(Clone, PartialEq, Eq, Debug)]

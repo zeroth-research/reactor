@@ -3,8 +3,8 @@
 
 use super::{Cx, Result, system_call};
 use crate::ast::{
-    self, Array, Elem, Elems, Error, Expr, ExprKind, Index, Init, Item, Lvalue, LvalueKind, Module,
-    Name, Rom, Select, Span, Stmt, StmtKind,
+    Array, Elem, Elems, Error, Expr, ExprKind, Index, Init, Item, Lvalue, LvalueKind, Module,
+    Name, Rom, Select, SignalId, Span, Stmt, StmtKind,
 };
 use crate::value::BitVec;
 use num_bigint::BigUint;
@@ -133,8 +133,8 @@ fn apply_load(m: &mut Module, load: Load, written: &BTreeSet<Name>) -> Result<()
     if written.contains(&a.name) {
         for (k, v) in load.values.into_iter().enumerate() {
             let Some(value) = v else { continue };
-            let target = ast::element(&a.name, k);
-            if let Some(i) = m.inits.iter().find(|i| i.target == target) {
+            let target = SignalId::element(a.name.clone(), k);
+            if let Some(i) = m.inits.iter().find(|i| i.id == target) {
                 return Err(Error::new(
                     i.span,
                     format!("`{target}` already has an initial value at {}", load.span),
@@ -144,11 +144,7 @@ fn apply_load(m: &mut Module, load: Load, written: &BTreeSet<Name>) -> Result<()
                 kind: ExprKind::Lit { ty: a.ty, value },
                 span: load.span,
             };
-            m.inits.push(Init {
-                target,
-                value,
-                span: load.span,
-            });
+            m.inits.push(Init::new(target, value, load.span));
         }
         return Ok(());
     }
@@ -159,7 +155,7 @@ fn apply_load(m: &mut Module, load: Load, written: &BTreeSet<Name>) -> Result<()
                 "{}: no value for `{}` (every element of an array that is never written \
                  needs one: it is a ROM)",
                 load.path.display(),
-                ast::element(&a.name, k)
+                SignalId::element(a.name.clone(), k)
             ),
         ));
     }
@@ -176,11 +172,15 @@ fn apply_load(m: &mut Module, load: Load, written: &BTreeSet<Name>) -> Result<()
 /// array, and not of a ROM.
 fn element_inits(m: &Module) -> Result<()> {
     for i in &m.inits {
-        let Some((name, k)) = i.target.split_once('[') else {
+        let SignalId {
+            base: name,
+            index: Some(k),
+        } = &i.id
+        else {
             continue;
         };
-        let a = m.arrays.iter().find(|a| a.name == name).expect("an array");
-        let k: usize = k.trim_end_matches(']').parse().expect("an address");
+        let k = *k;
+        let a = m.arrays.iter().find(|a| a.name == *name).expect("an array");
         if k >= a.size {
             return Err(Error::new(
                 i.span,
@@ -223,7 +223,7 @@ pub(super) fn resolve(m: &mut Module, loads: Vec<Load>) -> Result<()> {
         .map(|a| (a.name.clone(), a.clone()))
         .collect();
     m.decls
-        .retain(|d| match arrays.get(ast::array_of(&d.name)) {
+        .retain(|d| match arrays.get(&d.id.base) {
             Some(a) => a.rom.is_none(),
             None => true,
         });
@@ -322,9 +322,10 @@ impl Resolver<'_> {
                 e.elems = Elems::Consts(a.ty, r.values.clone());
                 Ok(None)
             }
-            (None, Index::Const(k)) => Ok(Some(ast::element(&a.name, *k))),
+            (None, Index::Const(k)) => Ok(Some(SignalId::element(a.name.clone(), *k).name())),
             (None, Index::Expr(_)) => {
-                e.elems = Elems::Signals((0..a.size).map(|k| ast::element(&a.name, k)).collect());
+                let elements = (0..a.size).map(|k| SignalId::element(a.name.clone(), k).name());
+                e.elems = Elems::Signals(elements.collect());
                 Ok(None)
             }
         }

@@ -2,7 +2,7 @@
 
 use super::definite::{bits_text, definite, one_kind_of_assignment};
 use super::fragment::{constant_select, nonzero_width, pieces_in};
-use super::{Env, Result, env, lookup};
+use super::{Env, Result, array_of, env, lookup};
 use crate::ast::{
     self, BlockKind, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Module, Name, Span,
     Stmt, StmtKind, Ty, Written,
@@ -68,7 +68,7 @@ pub fn check(m: &Module) -> Result<Env> {
     for (i, item) in m.items.iter().enumerate() {
         match item {
             Item::Assign { lhs, rhs, span } => {
-                lvalue(lhs, &mut |y, span| drive(&env, &mut driver, y, span, i))?;
+                lvalue(&env, lhs, &mut |y, span| drive(&env, &mut driver, y, span, i))?;
                 target_names(&env, lhs)?;
                 names(&env, rhs)?;
                 drives_whole(&env, item, lhs, *span)?;
@@ -109,7 +109,7 @@ pub fn check(m: &Module) -> Result<Env> {
                 drives_something(item)?;
                 match written {
                     Written::List(list) => event_list(&env, m, item, list)?,
-                    Written::Star => star_reads(item)?,
+                    Written::Star => star_reads(&env, item)?,
                     Written::Keyword => {}
                 }
                 definite(&env, item)?;
@@ -342,14 +342,14 @@ fn initial_value(
             format!("`{y}` is an input: only signals of the module have initial values"),
         ));
     }
-    let array = ast::array_of(y);
+    let array = &init.id.base;
     let first = driver
         .iter()
-        .find(|(x, _)| ast::array_of(x) == array)
+        .find(|(x, _)| array_of(env, x) == array)
         .map(|(_, d)| *d);
     let (span, i) = match first {
         Some(d) => d,
-        None if array != y => {
+        None if init.id.index.is_some() => {
             return Err(Error::new(
                 init.span,
                 format!(
@@ -388,10 +388,10 @@ fn drive(
         return Err(Error::new(span, format!("input `{lhs}` is assigned")));
     }
     // all elements of an array have one driver
-    let array = ast::array_of(lhs);
+    let array = array_of(env, lhs);
     let key = driver
         .keys()
-        .find(|y| ast::array_of(y) == array)
+        .find(|y| array_of(env, y) == array)
         .cloned()
         .unwrap_or_else(|| lhs.clone());
     match driver.get(&key) {
@@ -436,11 +436,11 @@ fn event_list(env: &Env, m: &Module, item: &Item, list: &[(Name, Span)]) -> Resu
     let targets: BTreeSet<&str> = item
         .targets()
         .into_iter()
-        .map(|y| ast::array_of(y))
+        .map(|y| array_of(env, y))
         .collect();
     for (x, span) in item.reads() {
         let listed = |x: &str| list.iter().any(|(l, _)| l == x);
-        if targets.contains(ast::array_of(x)) || listed(x) || listed(ast::array_of(x)) {
+        if targets.contains(array_of(env, x)) || listed(x) || listed(array_of(env, x)) {
             continue;
         }
         return Err(Error::new(
@@ -451,7 +451,7 @@ fn event_list(env: &Env, m: &Module, item: &Item, list: &[(Name, Span)]) -> Resu
                  ignores the list, so the two would disagree; add `{}` to the list or write \
                  `always @*`",
                 item.span(),
-                ast::array_of(x)
+                array_of(env, x)
             ),
         ));
     }
@@ -463,16 +463,16 @@ fn event_list(env: &Env, m: &Module, item: &Item, list: &[(Name, Span)]) -> Resu
 /// changes, and not at time 0, so a block reading none never runs and its
 /// targets stay x, while a combinational block computes them in every time
 /// step.
-fn star_reads(item: &Item) -> Result<()> {
+fn star_reads(env: &Env, item: &Item) -> Result<()> {
     let targets: BTreeSet<&str> = item
         .targets()
         .into_iter()
-        .map(|y| ast::array_of(y))
+        .map(|y| array_of(env, y))
         .collect();
     if item
         .reads()
         .iter()
-        .any(|(x, _)| !targets.contains(ast::array_of(x)))
+        .any(|(x, _)| !targets.contains(array_of(env, x)))
     {
         return Ok(());
     }
@@ -587,7 +587,7 @@ fn stmt(
             }
             match &s.kind {
                 StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                    lvalue(lhs, drive)?;
+                    lvalue(env, lhs, drive)?;
                     target_names(env, lhs)?;
                     names(env, rhs)
                 }
@@ -609,7 +609,7 @@ fn unknown(
     size: Option<usize>,
     drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>,
 ) -> Result<()> {
-    let w = lvalue(lhs, drive)?;
+    let w = lvalue(env, lhs, drive)?;
     target_names(env, lhs)?;
     if pieces_in(env, lhs)
         .iter()
@@ -660,8 +660,13 @@ pub(super) fn names(env: &Env, e: &Expr) -> Result<()> {
 /// with `drive`, and returns its width. A bit may be assigned only once in
 /// one target, so a select with a variable index must be the only piece of
 /// its signal (the frontend accepts variable indices in blocks only).
-fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Result<usize> {
+fn lvalue(
+    env: &Env,
+    l: &Lvalue,
+    drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>,
+) -> Result<usize> {
     fn walk(
+        env: &Env,
         l: &Lvalue,
         drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>,
         seen: &mut BTreeSet<(Name, usize)>,
@@ -669,7 +674,7 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
     ) -> Result<usize> {
         let (y, hi, lo) = match &l.kind {
             LvalueKind::Concat(ls) => {
-                return ls.iter().map(|l| walk(l, drive, seen, variable)).sum();
+                return ls.iter().map(|l| walk(env, l, drive, seen, variable)).sum();
             }
             LvalueKind::Elem(e) => {
                 let mut ty = None;
@@ -701,7 +706,7 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
                 };
                 let array = &e.array;
                 if !variable.insert(array.clone())
-                    || seen.iter().any(|(x, _)| ast::array_of(x) == array)
+                    || seen.iter().any(|(x, _)| array_of(env, x) == array)
                 {
                     return Err(overlap(l, array));
                 }
@@ -729,8 +734,8 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
                 (y, hi, lo)
             }
         };
-        if variable.contains(ast::array_of(y)) {
-            return Err(overlap(l, ast::array_of(y)));
+        if variable.contains(array_of(env, y)) {
+            return Err(overlap(l, array_of(env, y)));
         }
         for b in lo..=hi {
             if !seen.insert((y.clone(), b)) {
@@ -751,5 +756,5 @@ fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Resul
             ),
         )
     }
-    walk(l, drive, &mut BTreeSet::new(), &mut BTreeSet::new())
+    walk(env, l, drive, &mut BTreeSet::new(), &mut BTreeSet::new())
 }

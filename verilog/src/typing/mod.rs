@@ -104,7 +104,7 @@ assignment has no effect. (A live x would be a don't-care, which synthesis
 may resolve to any value; that is not modelled.)
 */
 
-use crate::ast::{Dir, Error, Module, Name, Span, Ty};
+use crate::ast::{Dir, Error, Module, Name, SignalId, Span, Ty};
 use std::collections::BTreeMap;
 
 mod check;
@@ -129,8 +129,10 @@ pub(crate) use fragment::{
 type Result<T> = std::result::Result<T, Error>;
 
 /// What a name refers to.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Sig {
+    /// The signal, or the element of an array, the name denotes.
+    pub id: SignalId,
     pub ty: Ty,
     /// `None` for an internal signal.
     pub dir: Option<Dir>,
@@ -148,24 +150,26 @@ pub fn env(m: &Module) -> Result<Env> {
     let arrays = m.arrays.iter().map(|a| (&a.name, a.span, None));
     let ports = m.ports.iter().map(|p| (&p.decl, Some(p.dir)));
     let decls = m.decls.iter().map(|d| (d, None));
-    let sigs = ports.chain(decls).map(|(d, dir)| {
+    // the elements of an array are named after it, so only its name counts
+    let sigs = ports.chain(decls).filter(|(d, _)| !d.is_element());
+    let sigs = sigs.map(|(d, dir)| {
         let sig = Sig {
+            id: d.id.clone(),
             ty: d.ty,
             dir,
             span: d.span,
         };
         (&d.name, d.span, Some(sig))
     });
-    // the elements of an array are named after it, so only its name counts
-    let sigs = sigs.filter(|(name, ..)| !name.contains('['));
     let elements = m
         .ports
         .iter()
         .map(|p| &p.decl)
         .chain(&m.decls)
-        .filter(|d| d.name.contains('['))
+        .filter(|d| d.is_element())
         .map(|d| {
             let sig = Sig {
+                id: d.id.clone(),
                 ty: d.ty,
                 dir: None,
                 span: d.span,
@@ -192,6 +196,21 @@ pub fn env(m: &Module) -> Result<Env> {
     }
     env.extend(elements);
     Ok(env)
+}
+
+/// The array that the element `x` belongs to, or `x` itself for any other
+/// name.
+pub(crate) fn array_of<'e>(env: &'e Env, x: &'e str) -> &'e str {
+    match env.get(x) {
+        Some(Sig {
+            id: SignalId {
+                base,
+                index: Some(_),
+            },
+            ..
+        }) => base,
+        _ => x,
+    }
 }
 
 pub(crate) fn lookup<'e>(env: &'e Env, name: &str, span: Span) -> Result<&'e Sig> {
