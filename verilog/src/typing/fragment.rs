@@ -188,12 +188,7 @@ pub fn element(e: &Elem, index: Option<Ty>, span: Span) -> Result<()> {
         return Ok(());
     };
     let name = e.name();
-    if i.signed {
-        return Err(Error::new(
-            span,
-            format!("the index of `{name}` must be unsigned"),
-        ));
-    }
+    unsigned_index(&name, i, span)?;
     let fits = u32::try_from(i.width)
         .ok()
         .and_then(|w| 1usize.checked_shl(w))
@@ -218,23 +213,23 @@ pub fn element(e: &Elem, index: Option<Ty>, span: Span) -> Result<()> {
 /// assignment target: it must be unsigned; any value is fine (an index that
 /// is no address writes nothing).
 pub fn target_element(e: &Elem, index: Ty, span: Span) -> Result<()> {
-    if index.signed {
-        return Err(Error::new(
-            span,
-            format!("the index of `{}` must be unsigned", e.name()),
-        ));
-    }
-    Ok(())
+    unsigned_index(&e.name(), index, span)
 }
 
 /// Checks the type `index` of the variable index of a select in an
 /// assignment target `x[…]`: it must be unsigned (a negative index would
 /// write nothing; not supported).
 pub fn target_index(x: &str, sel: &Select, index: Ty, span: Span) -> Result<()> {
+    unsigned_index(&format!("{x}{sel}"), index, span)
+}
+
+/// Checks that the variable index of `what` (a select or an element), of
+/// type `index`, is unsigned.
+fn unsigned_index(what: &str, index: Ty, span: Span) -> Result<()> {
     if index.signed {
         return Err(Error::new(
             span,
-            format!("the index of `{x}{sel}` must be unsigned"),
+            format!("the index of `{what}` must be unsigned"),
         ));
     }
     Ok(())
@@ -301,7 +296,7 @@ pub fn expr(env: &Env, e: &Expr) -> Result<Ty> {
 }
 
 /// Checks that the divisor of `/` or `%` is a nonzero constant.
-pub(super) fn divisor(b: &Expr) -> Result<()> {
+pub(crate) fn divisor(b: &Expr) -> Result<()> {
     match &b.kind {
         ExprKind::Lit { value, .. } | ExprKind::Const { value, .. } if !value.is_zero() => Ok(()),
         _ => Err(Error::new(
@@ -341,12 +336,7 @@ pub fn select(x: &str, t: Ty, sel: &Select, index: Option<Ty>, span: Span) -> Re
         constant_select(x, t, sel, span)?;
         return Ok(Ty::unsigned(width));
     };
-    if i.signed {
-        return Err(Error::new(
-            span,
-            format!("the index of `{x}{sel}` must be unsigned"),
-        ));
-    }
+    unsigned_index(&format!("{x}{sel}"), i, span)?;
     if width > t.width {
         return Err(Error::new(
             span,

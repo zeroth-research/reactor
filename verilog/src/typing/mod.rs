@@ -115,6 +115,7 @@ pub use fragment::{
     element, explicit, expr, label, leave_warning, may_leave, pieces, repl, select, target_element,
     target_index, unary,
 };
+pub(crate) use fragment::divisor;
 
 type Result<T> = std::result::Result<T, Error>;
 

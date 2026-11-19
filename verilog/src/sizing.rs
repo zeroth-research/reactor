@@ -394,7 +394,7 @@ impl<'e> Sizer<'e> {
                     _ => self.synth(b)?,
                 };
                 if matches!(op, BinOp::Div | BinOp::Mod) {
-                    divisor(&b)?;
+                    typing::divisor(&b)?;
                 }
                 let sized = fold(node(ExprKind::Binary(*op, Box::new(a), Box::new(b))), t)?;
                 if let ExprKind::Binary(BinOp::Pow, ..) = sized.kind {
@@ -593,18 +593,6 @@ fn constant(e: &Expr) -> Option<&BitVec> {
     match &e.kind {
         ExprKind::Lit { value, .. } | ExprKind::Const { value, .. } => Some(value),
         _ => None,
-    }
-}
-
-/// The divisor of `/` and `%`, sized: a nonzero constant.
-fn divisor(b: &Expr) -> Result<()> {
-    match constant(b) {
-        Some(v) if !v.is_zero() => Ok(()),
-        _ => Err(Error::new(
-            b.span,
-            "the divisor must be a nonzero constant (2-state values have no result for a \
-             division by zero)",
-        )),
     }
 }
 
