@@ -114,7 +114,7 @@ end
 
 === standalone
 import Relational.Basic
-import Relational.Box
+import Relational.Circ
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false

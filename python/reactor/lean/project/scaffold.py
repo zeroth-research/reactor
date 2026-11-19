@@ -62,9 +62,9 @@ ENCODINGS: tuple[Encoding, ...] = (
     # `--cert-file` route gets its own copy inlined into the standalone
     # certificate by `generate_standalone_cert_lean`, so it is not written
     # again there; `Circ` has no consumer on that route at all.
-    Encoding("", "Functional encoding", "Relational.Box", (),
+    Encoding("", "Functional encoding", "Relational.Circ", (),
              ModuleToLean4.to_lean_functional, cert_file=False),
-    Encoding("Circ", "Circuit encoding", "Relational.Box", ("",),
+    Encoding("Circ", "Circuit encoding", "Relational.Circ", ("",),
              ModuleToLean4.to_lean_circ, cert_file=False),
     Encoding("Rel", "Matrix-domain relational encoding", "Relational.Basic", ("",),
              ModuleToLean4.to_lean_mat_rel),

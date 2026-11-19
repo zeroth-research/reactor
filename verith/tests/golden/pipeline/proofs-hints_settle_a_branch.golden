@@ -101,7 +101,7 @@ theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) �
 
 === standalone
 import Relational.Basic
-import Relational.Box
+import Relational.Circ
 import Mathlib.Algebra.BigOperators.Fin
 import ZerothHammer
 

@@ -1,7 +1,7 @@
 """The circuit encoding is the functional one, proved.
 
 `System/Circ.lean` states a module's `init` and `update` again as a diagram
-of `Relational.Box` combinators, one per op (the op table's `box` column),
+of `Box` combinators (`Relational.Circ`), one per op (the op table's `box` column),
 and proves each equal to the functional encoding's (`init_circ_eq`,
 `update_circ_eq`). Here that file is compiled, below the functional encoding
 it quotes, for every module of the corpus `test_lean_agree.py` runs: a `Box`
@@ -40,7 +40,7 @@ _KNOWN = {
 
 
 def _build_relational() -> None:
-    built = subprocess.run(["lake", "build", "Relational.Box"], cwd=_LEAN_DIR,
+    built = subprocess.run(["lake", "build", "Relational.Circ"], cwd=_LEAN_DIR,
                            capture_output=True, text=True, timeout=1800)
     assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
 
@@ -58,7 +58,7 @@ def _unproved(names: list[str], tmp_path: Path) -> "tuple[dict[str, str], int]":
                 raise
             continue
         path = tmp_path / f"circ{k}.lean"
-        path.write_text(f"-- {name}\nimport Relational.Box\n\n{LINTERS_OFF}\n\n{body}\n")
+        path.write_text(f"-- {name}\nimport Relational.Circ\n\n{LINTERS_OFF}\n\n{body}\n")
         files.append((name, path))
 
     def lean(path: Path) -> str:
