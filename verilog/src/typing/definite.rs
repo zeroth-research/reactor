@@ -6,7 +6,7 @@ use super::{Env, Result};
 use crate::ast::{
     BlockKind, Error, Expr, ExprKind, Item, Lvalue, Name, Select, Span, Stmt, StmtKind,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// The bits `bits` (descending or not) of the signal `y` of width `width`,
 /// as SystemVerilog: `` `y` `` for all of them, else `` `y[7:4]`, `y[1]` ``.
@@ -81,7 +81,7 @@ pub(super) fn definite(env: &Env, item: &Item) -> Result<()> {
     for y in &targets {
         let n = env[*y].ty.width;
         let missing: Vec<usize> = (0..n)
-            .filter(|b| !st.done.contains(&((*y).clone(), *b)))
+            .filter(|b| !st.done.contains(y, *b))
             .collect();
         if let Some(e) = st.live_x(y, &missing, n, Until::End) {
             return Err(e);
@@ -112,8 +112,72 @@ pub(super) fn definite(env: &Env, item: &Item) -> Result<()> {
     Ok(())
 }
 
-/// Bits of signals.
-type Bits = BTreeSet<(Name, usize)>;
+/// A set of bits of signals: for each signal, a bit set (bit `b` is bit
+/// `b % 64` of word `b / 64`).
+#[derive(Clone, Default)]
+struct Bits(BTreeMap<Name, Vec<u64>>);
+
+impl Bits {
+    fn contains(&self, y: &str, b: usize) -> bool {
+        let word = self.0.get(y).and_then(|ws| ws.get(b / 64));
+        word.is_some_and(|w| w >> (b % 64) & 1 == 1)
+    }
+
+    fn insert(&mut self, y: &Name, b: usize) {
+        if !self.0.contains_key(y) {
+            self.0.insert(y.clone(), Vec::new());
+        }
+        let ws = self.0.get_mut(y).expect("just added");
+        if ws.len() <= b / 64 {
+            ws.resize(b / 64 + 1, 0);
+        }
+        ws[b / 64] |= 1 << (b % 64);
+    }
+
+    fn remove(&mut self, y: &str, b: usize) {
+        if let Some(w) = self.0.get_mut(y).and_then(|ws| ws.get_mut(b / 64)) {
+            *w &= !(1 << (b % 64));
+        }
+    }
+
+    /// The bits in both sets.
+    fn intersection(&self, other: &Bits) -> Bits {
+        let mut out = BTreeMap::new();
+        for (y, a) in &self.0 {
+            if let Some(b) = other.0.get(y) {
+                out.insert(y.clone(), a.iter().zip(b).map(|(a, b)| a & b).collect());
+            }
+        }
+        Bits(out)
+    }
+
+    /// The bits in either set.
+    fn union(&self, other: &Bits) -> Bits {
+        let mut out = self.0.clone();
+        for (y, b) in &other.0 {
+            let a = out.entry(y.clone()).or_default();
+            if a.len() < b.len() {
+                a.resize(b.len(), 0);
+            }
+            for (a, b) in a.iter_mut().zip(b) {
+                *a |= b;
+            }
+        }
+        Bits(out)
+    }
+
+    /// The signals with a bit in `self` that is not in `other`, in order.
+    fn not_within<'b>(&'b self, other: &'b Bits) -> impl Iterator<Item = &'b Name> {
+        self.0.iter().filter_map(move |(y, a)| {
+            let b = other.0.get(y).map_or(&[][..], |b| b.as_slice());
+            let word = |k: usize| b.get(k).copied().unwrap_or(0);
+            a.iter()
+                .enumerate()
+                .any(|(k, a)| a & !word(k) != 0)
+                .then_some(y)
+        })
+    }
+}
 
 /// What the paths to a point of a block have assigned.
 #[derive(Clone, Default)]
@@ -293,7 +357,7 @@ impl Definite<'_> {
             }
             let n = self.env[x].ty.width;
             let missing: Vec<usize> = (lo..=hi)
-                .filter(|b| !st.done.contains(&(x.clone(), *b)))
+                .filter(|b| !st.done.contains(x, *b))
                 .collect();
             if let Some(e) = st.live_x(x, &missing, n, Until::Read(span)) {
                 return Err(e);
@@ -346,7 +410,7 @@ impl Definite<'_> {
                 for p in pieces_in(self.env, lhs) {
                     for b in p.lo..=p.hi {
                         let bit = (p.name.clone(), b);
-                        st.done.remove(&bit);
+                        st.done.remove(&p.name, b);
                         st.x.insert(bit, s.span);
                     }
                 }
@@ -389,7 +453,7 @@ impl Definite<'_> {
                 for b in p.lo..=p.hi {
                     let bit = (p.name.clone(), b);
                     st.x.remove(&bit);
-                    st.done.insert(bit);
+                    st.done.insert(&p.name, b);
                 }
             } else if self.comb {
                 self.kept(lhs, &p, st)?;
@@ -411,7 +475,7 @@ impl Definite<'_> {
             for y in e.elems {
                 let n = self.env[y].ty.width;
                 let bits: Vec<usize> = (0..n)
-                    .filter(|b| !st.done.contains(&(y.clone(), *b)))
+                    .filter(|b| !st.done.contains(y, *b))
                     .collect();
                 if let Some(e) = st.live_x(y, &bits, n, Until::Keeping(lhs)) {
                     return Err(e);
@@ -442,7 +506,7 @@ impl Definite<'_> {
         // a variable index assigns no bit for sure and keeps the other bits
         let n = self.env[&p.name].ty.width;
         let missing: Vec<usize> = (0..n)
-            .filter(|b| !st.done.contains(&(p.name.clone(), *b)))
+            .filter(|b| !st.done.contains(&p.name, *b))
             .collect();
         if let Some(e) = st.live_x(&p.name, &missing, n, Until::Keeping(lhs)) {
             return Err(e);
@@ -506,13 +570,12 @@ impl Definite<'_> {
         if fallthrough {
             outs.push(st.clone());
         }
-        let all: Bits = outs.iter().flat_map(|o| &o.done).cloned().collect();
-        let every: Bits = all
+        let (first, rest) = outs.split_first().expect("a path");
+        let all = rest.iter().fold(first.done.clone(), |a, o| a.union(&o.done));
+        let every = rest
             .iter()
-            .filter(|x| outs.iter().all(|o| o.done.contains(*x)))
-            .cloned()
-            .collect();
-        for (x, _) in all.difference(&every) {
+            .fold(first.done.clone(), |a, o| a.intersection(&o.done));
+        for x in all.not_within(&every) {
             self.partial.entry(x.clone()).or_insert((span, why));
         }
         let mut x = BTreeMap::new();
