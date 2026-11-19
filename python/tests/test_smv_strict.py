@@ -248,14 +248,6 @@ def test_a_model_without_words_is_lia():
     assert [s["x"] for s in trace] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0]
 
 
-def test_mod10_has_a_lean_form():
-    from reactor_lean.codegen.context import LeanContext
-    from reactor_lean.codegen.terms import lean_gaps
-
-    module, _ = parse_smv((FIXTURES / "mod10.smv").read_text(), strict=True)
-    assert lean_gaps(LeanContext(module)) == []
-
-
 def test_lia_operators():
     text = """MODULE main
 VAR x : integer;

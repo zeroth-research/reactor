@@ -27,7 +27,7 @@ import pytest
 
 from reactor_lean.codegen.encodings import ModuleToLean4
 from reactor_lean.project.names import LINTERS_OFF
-from tests.agree import CORPUS
+from agree import CORPUS
 
 _LEAN_DIR = Path(__file__).parent
 

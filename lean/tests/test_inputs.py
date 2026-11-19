@@ -7,7 +7,7 @@ import pytest
 from reactor import Module
 from reactor_lean import inputs
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
 
 
 def test_a_python_file_loads_through_its_adapter():
@@ -42,7 +42,7 @@ def test_the_project_keeps_the_input_under_its_formats_suffix(tmp_path):
     assert not (project / "dbg" / "system.py").exists()
 
 
-SMV = Path(__file__).parent / "smv_fixtures"
+SMV = Path(__file__).resolve().parents[2] / "python" / "tests" / "smv_fixtures"
 
 
 def test_an_smv_model_loads_with_its_names():

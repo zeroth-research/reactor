@@ -8,7 +8,7 @@ from pathlib import Path
 # The projects the tests generate require ReactLib's packages by path
 # from the checkout beside this repository, when there is one, so a test
 # that builds one builds it against the Lean libraries as they are on disk.
-# (As `python/tests/conftest.py` does for `reactor`'s own tests.)
+# (As `lean/tests/conftest.py` does for `reactor_lean`'s tests.)
 _REACTLIB = Path(__file__).resolve().parents[3] / "ReactLib"
 if "REACTLIB" not in os.environ and _REACTLIB.is_dir():
     os.environ["REACTLIB"] = str(_REACTLIB)

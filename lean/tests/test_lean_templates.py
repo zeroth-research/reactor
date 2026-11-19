@@ -25,7 +25,7 @@ from reactor_lean.project.lakefile import (
 )
 from reactor_lean.project.templates import TEMPLATES_DIR, PROJECT_TEMPLATES_DIR
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
 
 
 def test_the_templates_hold_no_lean_sources():
@@ -157,7 +157,7 @@ def _counter_ctx():
     from reactor_lean.codegen.context import LeanContext
     from reactor_lean.inputs.python import load_module
 
-    fixture = Path(__file__).parent / "fixtures" / "counter.py"
+    fixture = FIXTURES / "counter.py"
     return LeanContext(load_module(fixture))
 
 

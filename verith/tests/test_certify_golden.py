@@ -5,7 +5,7 @@ inferred -- stdout, the certificate files, `artifacts/` -- compared with the
 snapshots under `tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to
 rewrite them, and only for a change to the output that is intended. The
 same runs without the proofs are `reactor`'s, pinned the same way in
-`python/tests/test_pipeline_golden.py`, as is the codegen they share.
+`lean/tests/test_pipeline_golden.py`, as is the codegen they share.
 
 No run reaches an LLM: `make_client` is replaced in both modules that build
 one, and the `ai-cegis` run has every predicate fixed, so it never asks.

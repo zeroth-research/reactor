@@ -27,7 +27,7 @@ from pathlib import Path
 PY = Path(__file__).resolve().parents[1]
 FIXTURES = [
     *sorted((PY / "tests" / "fixtures").glob("*.py")),
-    *sorted((PY / "tests" / "limits" / "mods").glob("m_*.py")),
+    *sorted((PY.parent / "lean" / "tests" / "limits" / "mods").glob("m_*.py")),
     *sorted((PY / "tests" / "smv_fixtures").glob("*.smv")),
 ]
 

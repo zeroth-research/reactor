@@ -24,6 +24,8 @@ from reactor.eval import execute_init, execute_update
 from reactor_lean.lowering.sorts import wire_shape
 
 TESTS = Path(__file__).parent
+# The module corpus beside the limit matrix's is `reactor`'s own.
+FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
 
 RUNS = 6            # runs per module
 ROUNDS = 5          # rounds per run after the initial one
@@ -47,7 +49,7 @@ def _corpus() -> dict:
     out = {}
     for p in sorted((TESTS / "limits" / "mods").glob("m_*.py")):
         out[f"limits/{p.stem}"] = (lambda p=p: _load(p))
-    for p in sorted((TESTS / "fixtures").glob("*.py")):
+    for p in sorted(FIXTURES.glob("*.py")):
         if "def module(" in p.read_text():
             out[f"fixtures/{p.stem}"] = (lambda p=p: _load(p))
     try:

@@ -41,9 +41,6 @@ module-name = "reactor.reactor"
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
-    # The tests of `reactor_lean` (`../lean`), and the `reactor` command they
-    # run, are still here.
-    "reactor-lean",
 ]
 tutorials = [
     "ipykernel>=6.0",
@@ -51,9 +48,6 @@ tutorials = [
     "notebook>=7.0",
     "pygame>=2.5",
 ]
-
-[tool.uv.sources]
-reactor-lean = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "../docs/examples"]

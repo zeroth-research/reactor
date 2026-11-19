@@ -4,7 +4,7 @@ prints and writes."""
 import subprocess
 from pathlib import Path
 
-# Root of the python package (where pyproject.toml lives).
+# Root of the `lean` project (where its pyproject.toml lives).
 PKG_ROOT = Path(__file__).parent.parent
 
 

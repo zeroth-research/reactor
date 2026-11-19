@@ -1,7 +1,7 @@
 """The proofs `verith.proofs` writes, pinned byte for byte.
 
 For a fixed set of modules and certificates -- the ones whose definitions
-`reactor`'s `python/tests/test_pipeline_golden.py` pins -- the proofs as
+`reactor`'s `lean/tests/test_pipeline_golden.py` pins -- the proofs as
 `Certificate/Proofs.lean` holds them and as a `--cert-file` certificate
 inlines them, compared with the snapshots under `tests/golden/pipeline/`;
 set `REACTOR_UPDATE_GOLDEN=1` to rewrite them, and only for a change to the
@@ -53,7 +53,7 @@ def _fixture(name: str) -> Module:
 
 
 def _vector_counter() -> Module:
-    """3x1 state over a 2x1 input, as `python/tests/lean/conftest.py`
+    """3x1 state over a 2x1 input, as `lean/tests/lean/conftest.py`
     builds it."""
     state = Var(Int([3, 1]))
     extl = Var(Int([2, 1]))

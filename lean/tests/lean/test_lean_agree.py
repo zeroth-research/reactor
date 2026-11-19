@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.agree import CORPUS, Skip, lean_script, runs
+from agree import CORPUS, Skip, lean_script, runs
 
 _LEAN_DIR = Path(__file__).parent
 _RUNS = 2

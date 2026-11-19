@@ -24,7 +24,7 @@ to do about the failures is in [`TODO.md`](../../../TODO.md).
 ## Running it
 
 ```bash
-cd python
+cd lean
 uv run python tests/limits/run_limits.py                 # all cases
 uv run python tests/limits/run_limits.py Countdown NN2Deep5
 uv run python tests/limits/run_regress.py                # only baseline.json's cases, diffs verdicts
@@ -54,7 +54,7 @@ finds nothing verdicts `NO-CERT` rather than `GEN-FAIL` — that is the
 measurement, not a defect.
 
 Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs
-`python/tests/lean/.lake` already built (Mathlib, cslib, lean-smt; the first
+`lean/tests/lean/.lake` already built (Mathlib, cslib, lean-smt; the first
 `(cd tests/lean && lake build)` takes about an hour cold): every
 generated project symlinks its `.lake` to one shared build dir whose
 `packages` the runner points there, so Relational / LeanAI / ZerothHammer are

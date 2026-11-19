@@ -16,7 +16,7 @@ It holds three packages:
 | `nuterm` | the learner `--infer nuterm` trains, with its own command (`python -m nuterm`) and Lean library |
 
 All three are built on `reactor`, and `reactor` imports none of them
-(`python/tests/test_layering.py`, `tests/test_layering.py`). What a route
+(`lean/tests/test_layering.py`, `tests/test_layering.py`). What a route
 needs of a project `reactor` generates -- the encodings it reads, the
 lakefile entries it adds, the files it owns -- it declares as data on its
 row, and the commands here hand that to `reactor`.
@@ -398,7 +398,7 @@ uv run certify m_step2.py --safety "(not (= (X @intf.0) 1))" --infer ai-cegis \
 # [CEGIS] all obligations UNSAT — accepted        -- and no LLM call was made
 ```
 
-What each is for, measured on the `python/tests/limits` fixtures:
+What each is for, measured on the `lean/tests/limits` fixtures:
 
 | | `--infer smt-linear` | `--infer sygus` |
 |---|---|---|
@@ -516,7 +516,7 @@ decimal as happily, so the certificate carries one spelling whoever proved
 it.
 
 ```bash
-uv run certify ../python/tests/limits/mods/m_lra_lin.py --buchi "(= (X @intf.0) 0.0)" \
+uv run certify ../lean/tests/limits/mods/m_lra_lin.py --buchi "(= (X @intf.0) 0.0)" \
     --infer houdini --houdini-solver vampire --vampire ~/vampire/vampire \
     -o out/ -p Rea
 # [houdini] solver: vampire
@@ -567,7 +567,7 @@ So the questions are kept to two where they can be:
 * `--buchi` is **two**: an inductive invariant, then a ranking function that
   drops on *that* invariant, with its coefficients already numbers. The
   joint question is four holes for a one-component module and answered
-  nothing at all over `python/tests/limits`; the split derives `m_countdown` and
+  nothing at all over `lean/tests/limits`; the split derives `m_countdown` and
   `m_deep` — invariant in about a second, rank in about eight. The rank
   obligation is `rank(s) > 0` where the property fails and `rank(s') <
   rank(s)`, which implies the clamped `Int.toNat` form `rule_buchi` asks
@@ -611,7 +611,7 @@ portfolio strategy is tuned to find a refutation; what is wanted here is the
 **Both namings, and the whole budget declared to each.** Vampire introduces
 a Tseitin definition for each subformula it judges worth naming, and on a
 conjecture with holes that is decisive in *both* directions: over
-`python/tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
+`lean/tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
 `--naming 0` does not, `--naming 0` answers `m_relu` where naming does not,
 and they agree on `m_countdown`, `m_deep` and `m_min`. So both are asked,
 each on a share of what is left of the run.
@@ -633,7 +633,7 @@ lrs`, `--theory_instantiation all`, `--unification_with_abstraction
 one_side_interpreted` — and none moved either.
 
 So in practice this route derives a certificate for a **one-component Int**
-module — eight of seventeen `python/tests/limits` safety and Büchi pairs, two of
+module — eight of seventeen `lean/tests/limits` safety and Büchi pairs, two of
 them Büchi — and refuses past that pointing at `--infer houdini`, which
 searches a wider module by proposing facts and proving them. It reads scalar `Int` state
 only: Vampire reads reals, but the templates here are integer intervals and
@@ -649,7 +649,7 @@ that is reported as not found. This is not Houdini: nothing is filtered and
 nothing is proposed; it is the one check that the derivation is honest.
 
 ```bash
-uv run certify ../python/tests/limits/mods/m_countdown.py --safety "(<= (X @intf.0) 100)" \
+uv run certify ../lean/tests/limits/mods/m_countdown.py --safety "(<= (X @intf.0) 100)" \
     --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
 # [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
 # [vampire] template intervals: 2 holes, 409 chars
@@ -808,7 +808,7 @@ The route needs that checkout on the same toolchain as the generated
 projects, **v4.34.0**. It is kept there by matching `project/lakefile.py`'s
 package set exactly (`cslib v4.34.0`, `smt db545be…`, Mathlib inherited
 through cslib), which lets one already-built `.lake/packages` — e.g.
-`python/tests/lean`'s — serve both.
+`lean/tests/lean`'s — serve both.
 
 The port from v4.28.0 needed, on the `smt` path this route uses, the move
 of `Mathlib.Logic.Basic` to `Mathlib.Basic.Logic.Basic` and one `simp at ih`

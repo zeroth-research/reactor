@@ -24,7 +24,7 @@ pytest.importorskip("cvc5")
 from reactor_lean.inputs.python import load_module
 from verith.common.encoding import Encoding
 
-MODS = Path(__file__).resolve().parents[2] / "python" / "tests" / "limits" / "mods"
+MODS = Path(__file__).resolve().parents[2] / "lean" / "tests" / "limits" / "mods"
 
 
 def _frames_holding(enc) -> list:

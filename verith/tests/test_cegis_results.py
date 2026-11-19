@@ -332,7 +332,7 @@ def test_a_module_cvc5_cannot_encode_is_refused_before_anything_is_asked(monkeyp
     prompts = []
     monkeypatch.setattr(cegis, "make_client",
                         lambda base_url, model: lambda s, u: prompts.append(u))
-    module = load_module(Path(__file__).resolve().parents[2] / "python"
+    module = load_module(Path(__file__).resolve().parents[2] / "lean"
                          / "tests" / "limits" / "mods" / "m_transpose.py")
     with pytest.raises(Refused, match="operator in it has no encoding"):
         AiCegisEngine("", module, budget_s=1).infer(

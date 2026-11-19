@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 
 from reactor_lean.inputs import ClaimError, Names, load, to_internal, to_surface
-from tests.reactor_cli import reactor
+from reactor_cli import reactor
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
 
 NAMED = Names(("x", None), ("u",))
 POSITIONAL = Names((None, None), (None,))

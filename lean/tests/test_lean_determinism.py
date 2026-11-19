@@ -16,16 +16,18 @@ from pathlib import Path
 import pytest
 
 TESTS = Path(dirname(__file__))
+MODS = TESTS / "limits" / "mods"
+FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
 
 # Every module whose update block writes two or more ctrl wires under one
 # branch: the shape that made the merge order observable.
 CASES = [
-    ("limits/mods", "m_lex"),
-    ("limits/mods", "m_nonlin"),
-    ("limits/mods", "m_twovars"),
-    ("fixtures", "svcomp_gcd"),
-    ("fixtures", "svcomp_nested"),
-    ("fixtures", "svcomp_twovars"),
+    (MODS, "m_lex"),
+    (MODS, "m_nonlin"),
+    (MODS, "m_twovars"),
+    (FIXTURES, "svcomp_gcd"),
+    (FIXTURES, "svcomp_nested"),
+    (FIXTURES, "svcomp_twovars"),
 ]
 
 ENCODINGS = ["to_lean_functional", "to_lean_scalar", "to_lean_circ", "to_lean_rel"]
@@ -47,7 +49,7 @@ print(json.dumps(out))
 
 
 def _digests(seed):
-    cases = [[str(TESTS / pkg), name] for pkg, name in CASES]
+    cases = [[str(pkg), name] for pkg, name in CASES]
     proc = subprocess.run(
         [sys.executable, "-c", _SCRIPT, json.dumps([cases, ENCODINGS])],
         capture_output=True,
