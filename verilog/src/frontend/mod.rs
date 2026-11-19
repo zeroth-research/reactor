@@ -166,6 +166,34 @@ fn has_tokens<'a>(node: impl Into<RefNodes<'a>>) -> bool {
     Iter::new(node.into()).any(|n| matches!(n, RefNode::Locate(_)))
 }
 
+/// The name and the arguments of a call of a system task or function with
+/// positional arguments only (`$f(a, b)`, also with empty arguments
+/// `$f(a, , b)`), if it is one.
+fn system_call(
+    call: &sv::SystemTfCall,
+) -> Option<(&sv::SystemTfIdentifier, Vec<&Option<sv::Expression>>)> {
+    match call {
+        sv::SystemTfCall::ArgOptionl(a) => {
+            let (name, args) = &a.nodes;
+            match args.as_ref().map(|a| &a.nodes.1) {
+                Some(sv::ListOfArguments::Ordered(a)) if a.nodes.1.is_empty() => {
+                    Some((name, a.nodes.0.contents()))
+                }
+                _ => None,
+            }
+        }
+        sv::SystemTfCall::ArgExpression(a) => {
+            let (name, args) = &a.nodes;
+            let (args, clocking) = &args.nodes.1;
+            if clocking.is_some() {
+                return None;
+            }
+            Some((name, args.contents()))
+        }
+        sv::SystemTfCall::ArgDataType(_) => None,
+    }
+}
+
 impl Cx<'_> {
     /// The position of the first token of the node.
     fn span<'a>(&self, node: impl Into<RefNodes<'a>>) -> Span {
@@ -201,6 +229,44 @@ impl Cx<'_> {
         } else {
             Ok(())
         }
+    }
+
+    /// Checks the attributes `attrs`, of which only `name` is accepted:
+    /// rejects any other, and passes each `name` to `each` in order.
+    fn attributes(
+        &self,
+        attrs: &[sv::AttributeInstance],
+        name: &str,
+        mut each: impl FnMut(&sv::AttrSpec) -> Result<()>,
+    ) -> Result<()> {
+        for a in attrs {
+            for spec in a.nodes.1.contents() {
+                if self.text(&spec.nodes.0) != name {
+                    return self.err(
+                        spec,
+                        format!("attribute `{}` not supported", self.text(spec)),
+                    );
+                }
+                each(spec)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The statements of `begin … end`: no block name, and no declarations
+    /// (rejected with `declarations`).
+    fn seq_block<'b>(
+        &self,
+        b: &'b sv::SeqBlock,
+        declarations: &str,
+    ) -> Result<&'b [sv::StatementOrNull]> {
+        let (_, label, decls, stmts, _, end_label) = &b.nodes;
+        self.absent(label, "block name")?;
+        self.absent(end_label, "block name")?;
+        if let Some(d) = decls.first() {
+            return self.err(d, declarations);
+        }
+        Ok(stmts)
     }
 
     fn identifier(&self, id: &sv::Identifier) -> Result<String> {

@@ -350,12 +350,7 @@ impl Cx<'_> {
                 return Ok(acc);
             }
             sv::StatementItem::SeqBlock(b) => {
-                let (_, label, decls, stmts, _, end_label) = &b.nodes;
-                self.absent(label, "block name")?;
-                self.absent(end_label, "block name")?;
-                if let Some(d) = decls.first() {
-                    return self.err(d, "declarations in blocks not supported");
-                }
+                let stmts = self.seq_block(b, "declarations in blocks not supported")?;
                 StmtKind::Block(stmts.iter().map(|s| self.stmt(s)).collect::<Result<_>>()?)
             }
             sv::StatementItem::CaseStatement(c) => match c.as_ref() {
@@ -434,29 +429,21 @@ impl Cx<'_> {
         item: &sv::StatementItem,
     ) -> Result<Option<Span>> {
         let mut parallel = None;
-        for a in attrs {
-            for spec in a.nodes.1.contents() {
-                let (name, value) = &spec.nodes;
-                if self.text(name) != "parallel_case" {
-                    return self.err(
-                        spec,
-                        format!("attribute `{}` not supported", self.text(spec)),
-                    );
-                }
-                if let Some((_, v)) = value {
-                    return self.err(v, "`parallel_case` takes no value");
-                }
-                let is_case = matches!(
-                    item,
-                    sv::StatementItem::CaseStatement(c)
-                        if matches!(c.as_ref(), sv::CaseStatement::Normal(_))
-                );
-                if !is_case {
-                    return self.err(spec, "`parallel_case` is only supported on a `case`");
-                }
-                parallel = Some(self.span(spec));
+        self.attributes(attrs, "parallel_case", |spec| {
+            if let Some((_, v)) = &spec.nodes.1 {
+                return self.err(v, "`parallel_case` takes no value");
             }
-        }
+            let is_case = matches!(
+                item,
+                sv::StatementItem::CaseStatement(c)
+                    if matches!(c.as_ref(), sv::CaseStatement::Normal(_))
+            );
+            if !is_case {
+                return self.err(spec, "`parallel_case` is only supported on a `case`");
+            }
+            parallel = Some(self.span(spec));
+            Ok(())
+        })?;
         Ok(parallel)
     }
 
