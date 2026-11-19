@@ -22,5 +22,6 @@ pyo3 = ["dep:pyo3", "dep:cfg_eval"]
 torch = ["pyo3", "dep:tch", "dep:pyo3-tch"]
 # `jax` adds the `jax.Array` backing (the `jax` module), which needs no more
 # than the bindings. Each backing has its own Python classes of the
-# operations carrying tensors.
+# operations carrying tensors. Both together add a third backing, of either
+# tensor (the `mixed` module).
 jax = ["pyo3"]

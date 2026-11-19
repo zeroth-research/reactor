@@ -1,5 +1,7 @@
 #[cfg(feature = "jax")]
 pub mod jax;
+#[cfg(all(feature = "torch", feature = "jax"))]
+pub mod mixed;
 pub mod tensor;
 #[cfg(feature = "torch")]
 pub mod torch;

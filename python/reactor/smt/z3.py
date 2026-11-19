@@ -15,6 +15,7 @@ import operator
 
 from ..reactor import tensor
 from ..reactor import jax as _jax
+from ..reactor import mixed as _mixed
 
 
 def fresh(dtype, prefix):
@@ -52,11 +53,11 @@ def interpret(itype):
             return lambda: _zeros(dtype)
 
         # constants
-        case tensor.bool.Const(t) | _jax.bool.Const(t):
+        case tensor.bool.Const(t) | _jax.bool.Const(t) | _mixed.bool.Const(t):
             return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(as_numpy(t))
-        case tensor.real.Const(t) | _jax.real.Const(t):
+        case tensor.real.Const(t) | _jax.real.Const(t) | _mixed.real.Const(t):
             return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(as_numpy(t))
-        case tensor.int.Const(t) | _jax.int.Const(t):
+        case tensor.int.Const(t) | _jax.int.Const(t) | _mixed.int.Const(t):
             return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(as_numpy(t))
 
         # arithmetic
@@ -73,9 +74,11 @@ def interpret(itype):
         case tensor.real.MatMul(_) | tensor.int.MatMul(_):
             return lambda x, y: x @ y
         case tensor.real.Linear(weight, bias) | tensor.int.Linear(weight, bias) | \
-                _jax.real.Linear(weight, bias) | _jax.int.Linear(weight, bias):
+                _jax.real.Linear(weight, bias) | _jax.int.Linear(weight, bias) | \
+                _mixed.real.Linear(weight, bias) | _mixed.int.Linear(weight, bias):
             return lambda x: as_numpy(weight) @ x + as_numpy(bias)
-        case tensor.real.Scale(c) | tensor.int.Scale(c) | _jax.real.Scale(c) | _jax.int.Scale(c):
+        case tensor.real.Scale(c) | tensor.int.Scale(c) | _jax.real.Scale(c) | _jax.int.Scale(c) | \
+                _mixed.real.Scale(c) | _mixed.int.Scale(c):
             return lambda x: as_numpy(c) * x
 
         # comparisons (produce Bool)

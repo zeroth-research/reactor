@@ -45,7 +45,7 @@ impl crate::Tensor for tch::Tensor {
 }
 
 /// Whether `kind` is an integer element kind.
-fn is_integer(kind: tch::Kind) -> bool {
+pub(crate) fn is_integer(kind: tch::Kind) -> bool {
     matches!(
         kind,
         tch::Kind::Uint8 | tch::Kind::Int8 | tch::Kind::Int16 | tch::Kind::Int | tch::Kind::Int64
@@ -55,7 +55,7 @@ fn is_integer(kind: tch::Kind) -> bool {
 /// Fails unless `tensor` is a matrix, a tensor of two dimensions: the
 /// constants are built from matrices only, so that [`crate::Tensor::shape`]
 /// never panics on their tensors.
-fn check_matrix(tensor: &tch::Tensor) -> Result<(), crate::Error> {
+pub(crate) fn check_matrix(tensor: &tch::Tensor) -> Result<(), crate::Error> {
     if tensor.dim() != 2 {
         return Err(crate::Error(format!(
             "expected a matrix, got a tensor of shape {:?}",

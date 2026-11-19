@@ -2,7 +2,8 @@
 
 Dispatch is by `match` on the operation's class, binding its sizes positionally
 (`case word.Extract(i, j, w, _):`). The tensors that the operations hold may be torch
-tensors, or JAX arrays (the operations of `reactor.jax`), taken as torch tensors. Values are tensors: booleans as `torch.bool`,
+tensors, or JAX arrays (the operations of `reactor.jax`, and of `reactor.mixed`, which
+holds either), taken as torch tensors. Values are tensors: booleans as `torch.bool`,
 reals as floating point, integers and words as `int64`. A word of width `w` is stored
 as its unsigned value in `[0, 2^w)`; the signed operations read it in two's complement,
 and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2.
@@ -16,6 +17,7 @@ from .sort import Real, Int, Bool, Word, shape as _shape
 
 from .reactor import tensor
 from .reactor import jax as _jax
+from .reactor import mixed as _mixed
 
 
 def _wrap(t, w):
@@ -127,12 +129,16 @@ def eval_itype(itype, read, out_sort=None):
 
         # --- constants and affine maps (tensors carried by the op) ---
         case (tensor.real.Const(t) | tensor.int.Const(t) | tensor.bool.Const(t) | tensor.word.Const(t, _)
-              | _jax.real.Const(t) | _jax.int.Const(t) | _jax.bool.Const(t) | _jax.word.Const(t, _)):
+              | _jax.real.Const(t) | _jax.int.Const(t) | _jax.bool.Const(t) | _jax.word.Const(t, _)
+              | _mixed.real.Const(t) | _mixed.int.Const(t) | _mixed.bool.Const(t)
+              | _mixed.word.Const(t, _)):
             return [_held(t).clone()]
         case (tensor.real.Linear(a, b) | tensor.int.Linear(a, b)
-              | _jax.real.Linear(a, b) | _jax.int.Linear(a, b)):
+              | _jax.real.Linear(a, b) | _jax.int.Linear(a, b)
+              | _mixed.real.Linear(a, b) | _mixed.int.Linear(a, b)):
             return [_held(a) @ r[0] + _held(b)]
-        case tensor.real.Scale(c) | tensor.int.Scale(c) | _jax.real.Scale(c) | _jax.int.Scale(c):
+        case (tensor.real.Scale(c) | tensor.int.Scale(c) | _jax.real.Scale(c) | _jax.int.Scale(c)
+              | _mixed.real.Scale(c) | _mixed.int.Scale(c)):
             return [_held(c) * r[0]]
 
         # --- choice ---

@@ -15,8 +15,9 @@ and affine maps there (`tensor.real.Const(t)`, `tensor.real.Scale(c)`,
 `tensor.real.Linear(a, b)`) hold `torch.Tensor`s, as do the operations of `Term`, `Atom`
 and `Module`. The namespace `jax` holds their counterparts over `jax.Array`s: the classes
 `jax.Term`, `jax.Atom` and `jax.Module`, and the constants, products and affine maps
-`jax.real.Const`, `jax.real.Scale`, `jax.real.Linear`, and so on; the operations holding
-no tensors are those of `tensor`. Those are
+`jax.real.Const`, `jax.real.Scale`, `jax.real.Linear`, and so on; the namespace `mixed`
+holds those over either, a module of them holding torch tensors and JAX arrays alike. The
+operations holding no tensors are those of `tensor`. Those are
 typed loosely here, as `Sort` and `Op`: a stub file cannot describe the nested
 namespaces of a single extension module. A `Var` bundles the latched, next (`X(v)`),
 and derivative (`d(v)`) wires of a state variable and stands for its latched wire
@@ -38,6 +39,9 @@ type Op = Any
 tensor: ModuleType
 # The namespace of the terms, atoms, modules and operations over JAX arrays.
 jax: ModuleType
+# The namespace of the terms, atoms, modules and operations over torch tensors and JAX
+# arrays alike.
+mixed: ModuleType
 
 
 class Wire:

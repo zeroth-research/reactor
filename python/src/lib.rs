@@ -9,6 +9,7 @@ use std::fmt::Write;
 
 mod atom;
 mod jax;
+mod mixed;
 mod module;
 mod term;
 mod torch;
@@ -35,7 +36,8 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // and for the sorts. The operations carrying tensors come from
     // `theory::torch`, the others from `theory::tensor`. The terms, atoms and
     // modules at the top hold torch tensors; those holding JAX arrays are in
-    // the namespace `jax`, with the operations carrying them.
+    // the namespace `jax`, and those holding either in `mixed`, each with the
+    // operations carrying their tensors.
     let mut namespaces = Vec::new();
     {
         let tensor = PyModule::new(py, "tensor")?;
@@ -213,6 +215,42 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         }
         m.add("jax", &jax)?;
         namespaces.push(("jax", jax));
+    }
+    {
+        let mixed = PyModule::new(py, "mixed")?;
+        mixed.add_class::<mixed::Term>()?;
+        mixed.add_class::<mixed::Atom>()?;
+        mixed.add_class::<mixed::Module>()?;
+        {
+            let real = PyModule::new(py, "real")?;
+            real.add_class::<theory::mixed::real::Const>()?;
+            real.add_class::<theory::mixed::real::Scale>()?;
+            real.add_class::<theory::mixed::real::Linear>()?;
+            mixed.add("real", &real)?;
+            namespaces.push(("mixed.real", real));
+        }
+        {
+            let int = PyModule::new(py, "int")?;
+            int.add_class::<theory::mixed::int::Const>()?;
+            int.add_class::<theory::mixed::int::Scale>()?;
+            int.add_class::<theory::mixed::int::Linear>()?;
+            mixed.add("int", &int)?;
+            namespaces.push(("mixed.int", int));
+        }
+        {
+            let bool = PyModule::new(py, "bool")?;
+            bool.add_class::<theory::mixed::bool::Const>()?;
+            mixed.add("bool", &bool)?;
+            namespaces.push(("mixed.bool", bool));
+        }
+        {
+            let word = PyModule::new(py, "word")?;
+            word.add_class::<theory::mixed::word::Const>()?;
+            mixed.add("word", &word)?;
+            namespaces.push(("mixed.word", word));
+        }
+        m.add("mixed", &mixed)?;
+        namespaces.push(("mixed", mixed));
     }
 
     // Each namespace takes its dotted name, and is entered in `sys.modules`
