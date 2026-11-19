@@ -316,7 +316,7 @@ pub(super) fn pin_uses(m: &Module) -> Result<()> {
 /// an `always_comb` or an instance is computed in every time step, so an
 /// initial value would have no effect (the frontend has made initialized
 /// signals that nothing drives constants already, see
-/// [`Module::constants`]).
+/// [`frontend::constants`](crate::frontend::constants)).
 pub(super) fn initial_value(
     env: &Env,
     m: &Module,

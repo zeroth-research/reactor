@@ -119,6 +119,7 @@ mod design;
 mod expr;
 mod stmt;
 
+pub(crate) use decl::constants;
 pub use design::{
     Design, depends_on_macro, parse, parse_design, parse_design_file, parse_design_files,
     parse_file,
