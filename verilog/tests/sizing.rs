@@ -3,6 +3,9 @@
 //! example designs, which the AST semantics and the translated module must
 //! give; and the sized form of expressions, rule by rule.
 
+mod common;
+
+use common::values;
 use std::collections::BTreeMap;
 use std::path::Path;
 use verilog::ast::Item;
@@ -114,17 +117,6 @@ const VECTORS: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
-/// `name=hex …` as values of the signals' widths.
-fn values(text: &str, width: impl Fn(&str) -> usize) -> Values {
-    text.split_whitespace()
-        .map(|kv| {
-            let (k, v) = kv.split_once('=').unwrap();
-            let n = num_bigint::BigUint::parse_bytes(v.as_bytes(), 16).unwrap();
-            (k.to_string(), BitVec::new(width(k), n).unwrap())
-        })
-        .collect()
-}
-
 #[test]
 fn vectors() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
@@ -133,7 +125,11 @@ fn vectors() {
         let t = lower_inst(&inst).unwrap();
         let env = typing::check(&inst.module).unwrap();
         let width = |x: &str| env[x].ty.width;
-        let init: Values = registers(&inst);
+        // every register without an initial value at 0
+        let init: Values = common::uninitialized(&inst)
+            .into_iter()
+            .map(|(q, ty)| (q, BitVec::zero(ty.width)))
+            .collect();
         for (inputs, expected) in rounds.iter() {
             let inputs = values(inputs, width);
             let expected = values(expected, width);
@@ -164,28 +160,6 @@ fn vectors() {
             }
         }
     }
-}
-
-/// Every register without an initial value at 0, by path.
-fn registers(inst: &elab::Inst) -> Values {
-    let mut out = Values::new();
-    let mut walk = vec![(inst, String::new())];
-    while let Some((i, prefix)) = walk.pop() {
-        let env = typing::check(&i.module).unwrap();
-        let inits: Vec<&String> = i.module.inits.iter().map(|i| &i.target).collect();
-        for q in i
-            .module
-            .registers()
-            .into_iter()
-            .filter(|q| !inits.contains(q))
-        {
-            out.insert(format!("{prefix}{q}"), BitVec::zero(env[q].ty.width));
-        }
-        for (u, c) in &i.children {
-            walk.push((c, format!("{prefix}{u}.")));
-        }
-    }
-    out
 }
 
 /// The sized right-hand side of `assign y = <e>;` in a module with the

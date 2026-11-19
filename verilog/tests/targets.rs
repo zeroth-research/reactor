@@ -6,6 +6,9 @@
 //! iverilog when written; the AST semantics and the translated module must
 //! give them.
 
+mod common;
+
+use common::values;
 use std::collections::BTreeMap;
 use verilog::ast_interp::{Interp, Values};
 use verilog::lower::lower_inst;
@@ -24,16 +27,6 @@ const VECTORS: &[(&str, &str)] = &[
     ("n=9 a=00 e=7", "z=80 r=00 f=1"),
     ("n=6 a=ff e=2", "z=af r=bf f=0"),
 ];
-
-fn values(text: &str, width: impl Fn(&str) -> usize) -> Values {
-    text.split_whitespace()
-        .map(|kv| {
-            let (k, v) = kv.split_once('=').unwrap();
-            let n = num_bigint::BigUint::parse_bytes(v.as_bytes(), 16).unwrap();
-            (k.to_string(), BitVec::new(width(k), n).unwrap())
-        })
-        .collect()
-}
 
 #[test]
 fn deviating_shapes() {
