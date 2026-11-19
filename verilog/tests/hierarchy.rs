@@ -1,14 +1,12 @@
 //! Parameters, module instances and their errors.
 
-use verilog::ast::{Error, Override};
-use verilog::elab;
-use verilog::lower::{Translation, lower_inst};
-use verilog::{constant, frontend};
+mod common;
 
-fn translate(src: &str) -> Result<Translation, Error> {
-    let inst = elab::load(src, "test.sv")?;
-    lower_inst(&inst)
-}
+use common::{accepted, translate};
+use verilog::ast::Override;
+use verilog::elab;
+use verilog::lower::lower_inst;
+use verilog::{constant, frontend};
 
 /// A register and a combinational path, for instantiating.
 const CHILD: &str = "
@@ -26,57 +24,38 @@ endmodule
 /// `CHILD`, and expects an error at the first occurrence of `needle` in line
 /// `line` of `top`, with a message containing `msg`.
 fn rejects(top: &str, line: usize, needle: &str, msg: &str) {
-    let src = format!("{top}{CHILD}");
-    let err = match translate(&src) {
-        Ok(_) => panic!("accepted:\n{src}"),
-        Err(e) => e,
-    };
-    assert!(err.msg.contains(msg), "{src}\n{err}\nexpected: {msg}");
-    let text = src.lines().nth(line - 1).unwrap();
-    let col = text
-        .find(needle)
-        .unwrap_or_else(|| panic!("`{needle}` not in `{text}`"))
-        + 1;
-    assert_eq!(
-        (err.span.line, err.span.col),
-        (line, col),
-        "{src}\n{err}\nexpected at `{needle}`"
-    );
+    common::rejects(&format!("{top}{CHILD}"), line, needle, msg);
 }
 
 /// A top module with the usual ports and `body`.
 fn top(body: &str) -> String {
-    format!(
-        "module top(input logic clk, input logic [3:0] a, output logic [3:0] q, y);\n{body}\nendmodule\n"
-    )
+    let ports = "input logic clk, input logic [3:0] a, output logic [3:0] q, y";
+    common::module("top", ports, body)
 }
 
 #[test]
 fn accepted_instances() {
     // shorthand connections, an omitted output, parameter values
-    let t = translate(&format!(
+    let t = accepted(&format!(
         "{}{CHILD}",
         top("  child #(.K(4'd3)) u (.clk, .a, .q, .y);")
-    ))
-    .unwrap();
+    ));
     let printed = t.print();
     assert!(printed.contains("u.q@init : bv4"), "{printed}");
     assert!(printed.contains("4'd3"), "{printed}");
     assert_eq!(t.registers, ["u.q"]);
     // `y` of the instance is unconnected: a private signal `u.y`
-    let t = translate(&format!(
+    let t = accepted(&format!(
         "{}{CHILD}",
         top("  child u (.clk, .a, .q);\n  assign y = q;")
-    ))
-    .unwrap();
+    ));
     let printed = t.print();
     assert!(printed.contains("  private\n    u.y : bv4"), "{printed}");
     // an input connected to an expression gets its own signal
-    let t = translate(&format!(
+    let t = accepted(&format!(
         "{}{CHILD}",
         top("  child u (.clk, .a(~a), .q, .y);")
-    ))
-    .unwrap();
+    ));
     let printed = t.print();
     assert!(printed.contains("X(u.a) := NOT X(a)"), "{printed}");
 }
@@ -87,14 +66,13 @@ fn accepted_instances() {
 fn accepted_derived_clocks() {
     // `u` runs on a divided clock, `v` on the input clock reads `u`'s
     // register
-    let t = translate(&format!(
+    let t = accepted(&format!(
         "{}{CHILD}",
         top(
             "  logic s;\n  logic [3:0] w;\n  always_ff @(posedge clk) s <= !s;\n  \
              child u (.clk(s), .a, .q(w), .y);\n  child v (.clk, .a(w), .q, .y());"
         )
-    ))
-    .unwrap();
+    ));
     assert_eq!(t.clocks, ["clk"]);
     // the divider is an instance; its output, a bit of it and a copy are
     // clocks of the parent
@@ -111,7 +89,7 @@ module div(input logic c, output logic s, output logic [1:0] n);
   always_ff @(posedge c) begin s <= !s; n <= n + 2'd1; end
 endmodule
 ";
-    let t = translate(&format!("{src}{CHILD}")).unwrap();
+    let t = accepted(&format!("{src}{CHILD}"));
     assert_eq!(t.clocks, ["clk"]);
 }
 
@@ -316,11 +294,10 @@ fn initial_values_and_instances() {
     );
     // an initialized signal connected to an input of an instance only is
     // a constant; registers of instances keep their initial values
-    let t = translate(&format!(
+    let t = accepted(&format!(
         "{}{CHILD}",
         top("  logic [3:0] k = 4'd6;\n  child u (.clk, .a(k), .q, .y);")
-    ))
-    .unwrap();
+    ));
     assert!(t.print().contains("X(k) := 4'd6"), "{}", t.print());
     let src = "module top(input logic clk, output logic [3:0] q);
   sub u (.clk, .q);
@@ -397,22 +374,7 @@ module a(input logic x, output logic y); assign y = ~x; endmodule
 /// Translates a single module with header `header` and body `body`, and
 /// expects an error at `needle` in line `line`.
 fn rejects_module(header: &str, body: &str, line: usize, needle: &str, msg: &str) {
-    let src = format!("{header}\n{body}\nendmodule\n");
-    let err = match translate(&src) {
-        Ok(_) => panic!("accepted:\n{src}"),
-        Err(e) => e,
-    };
-    assert!(err.msg.contains(msg), "{src}\n{err}\nexpected: {msg}");
-    let text = src.lines().nth(line - 1).unwrap();
-    let col = text
-        .find(needle)
-        .unwrap_or_else(|| panic!("`{needle}` not in `{text}`"))
-        + 1;
-    assert_eq!(
-        (err.span.line, err.span.col),
-        (line, col),
-        "{src}\n{err}\nexpected at `{needle}`"
-    );
+    common::rejects(&format!("{header}\n{body}\nendmodule\n"), line, needle, msg);
 }
 
 #[test]
@@ -447,7 +409,7 @@ endmodule
             .map(|(a, b)| (a.to_string(), b.to_string()))
             .collect::<Vec<_>>()
     );
-    translate(src).unwrap();
+    accepted(src);
 }
 
 /// Typed parameters take their values as in an assignment, and integer
@@ -488,7 +450,7 @@ endmodule
             .map(|(a, b)| (a.to_string(), b.to_string()))
             .collect::<Vec<_>>()
     );
-    translate(src).unwrap();
+    accepted(src);
 }
 
 #[test]
@@ -554,11 +516,10 @@ fn rejected_parameters() {
 fn instance_modules() {
     // every instance keeps its module before composition, children first,
     // titled with its parameter values and printed with the design's names
-    let t = translate(&format!(
+    let t = accepted(&format!(
         "{}{CHILD}",
         top("  child #(.K(4'd3)) u (.clk, .a(~a), .q, .y);")
-    ))
-    .unwrap();
+    ));
     let titles: Vec<&str> = t.instances.iter().map(|p| p.title.as_str()).collect();
     assert_eq!(titles, ["child #(.W(4), .K(4'd3))"]);
     let printed = t.print_part(&t.instances[0]);
@@ -607,28 +568,8 @@ endmodule
     );
     // through a name it is fine
     let src = src.replace(".rst(!rst_n)", ".rst(rst_n)");
-    let t = translate(&src).unwrap();
+    let t = accepted(&src);
     assert_eq!(t.reset_registers, ["u.q"]);
-}
-
-/// Translates `src` (numbered from line 1) and expects an error at the first
-/// occurrence of `needle` in line `line`, with a message containing `msg`.
-fn rejects_src(src: &str, line: usize, needle: &str, msg: &str) {
-    let err = match translate(src) {
-        Ok(_) => panic!("accepted:\n{src}"),
-        Err(e) => e,
-    };
-    assert!(err.msg.contains(msg), "{src}\n{err}\nexpected: {msg}");
-    let text = src.lines().nth(line - 1).unwrap();
-    let col = text
-        .find(needle)
-        .unwrap_or_else(|| panic!("`{needle}` not in `{text}`"))
-        + 1;
-    assert_eq!(
-        (err.span.line, err.span.col),
-        (line, col),
-        "{src}\n{err}\nexpected at `{needle}`"
-    );
 }
 
 /// A divider whose output `s` also clocks a register inside it.
@@ -648,7 +589,7 @@ fn outputs_used_as_clocks_drive() {
 endmodule
 {DIV}"
     );
-    let t = translate(&src).unwrap();
+    let t = accepted(&src);
     assert_eq!(t.clocks, ["clk"]);
     // a second driver: an `assign`, a blackbox output, another output of
     // the same instance
@@ -669,7 +610,7 @@ endmodule
     for (body, line, needle, msg) in cases {
         let src =
             format!("module top(input logic clk, output logic [1:0] c);\n{body}\nendmodule\n{DIV}");
-        rejects_src(&src, line + 1, needle, msg);
+        common::rejects(&src, line + 1, needle, msg);
     }
     // wired to an input of the parent
     let src = format!(
@@ -678,7 +619,7 @@ endmodule
 endmodule
 {DIV}"
     );
-    rejects_src(&src, 2, "a), .c", "input `a` is assigned");
+    common::rejects(&src, 2, "a), .c", "input `a` is assigned");
     // the output used as a clock must have 1 bit in the parent too
     let src = format!(
         "module top(input logic clk, output logic [1:0] w, output logic [1:0] c);
@@ -686,7 +627,7 @@ endmodule
 endmodule
 {DIV}"
     );
-    rejects_src(&src, 2, "w), .c", "has 1 bits, `w` 2");
+    common::rejects(&src, 2, "w), .c", "has 1 bits, `w` 2");
 }
 
 #[test]
@@ -698,7 +639,7 @@ module pair(input logic clk, output logic o1, output logic o2);
   always_ff @(posedge clk) begin o1 <= !o1; o2 <= o1; end
 endmodule
 ";
-    rejects_src(src, 2, "w));", "`w` already driven");
+    common::rejects(src, 2, "w));", "`w` already driven");
 }
 
 #[test]
@@ -755,5 +696,5 @@ endmodule
             && text.contains("assign r = (a > 8'd200);"),
         "{text}"
     );
-    translate(src).unwrap();
+    accepted(src);
 }
