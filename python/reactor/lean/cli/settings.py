@@ -33,6 +33,7 @@ class Settings:
 
     cert_file: str | None = None
     artifacts: str = "use"              # "use" | "ignore" | "reset"
+    parser: str = "cvc5"                # a `parse.PARSERS` name
 
     # No --safety/--buchi, and the input's format can state its own
     # property: the checks that need the claim wait until it is read

@@ -46,7 +46,7 @@ def parse_args(argv: "list[str] | None" = None, *,
     adapter = input_adapter(parser, args)
     check_input_options(parser, args, adapter)
 
-    settings = Settings(**settings_fields(args, adapter))
+    settings = Settings(**settings_fields(args, adapter), parser=args.parser)
     settings.claim_deferred = claim_deferred(settings, adapter, defer_claim)
     check_outputs(parser, settings)
     return settings

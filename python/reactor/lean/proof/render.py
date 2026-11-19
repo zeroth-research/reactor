@@ -27,6 +27,7 @@ from reactor.lean.project.templates import render
 if TYPE_CHECKING:
     from reactor import Module
 
+    from reactor.lean.parse.native import NativePredicates
     from reactor.lean.smt.queries import ModuleQueries
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -66,36 +67,46 @@ class LeanCertificate:
 
 
 def render_certificate(
-    q: "ModuleQueries", *, share: bool = True,
+    q: "ModuleQueries | NativePredicates", *, share: bool = True,
     verbatim: LeanAnswer | None = None,
 ) -> LeanCertificate:
     """The one place certificate predicates are printed as Lean.
 
-    `share=False` prints repeated subterms in full instead of `let`-binding
-    them, which Lean reads the same once `simp` has zeta-reduced the
-    `let`s; it is for reading a definition, not for proving with it.
-    `verbatim` is an answer that is Lean already; its `inv` and `ranking`
-    are taken as they are.
+    `q` is what a parser read: cvc5's terms (`smt.queries.ModuleQueries`),
+    printed by `from_smt`, or reactor's (`parse.native.NativePredicates`),
+    printed by `from_ir` -- which loads no solver. `share=False` prints
+    repeated subterms in full instead of `let`-binding them, which Lean
+    reads the same once `simp` has zeta-reduced the `let`s; it is for
+    reading a definition, not for proving with it. `verbatim` is an answer
+    that is Lean already; its `inv` and `ranking` are taken as they are.
     """
-    from .from_smt import smt_to_lean, smt_to_lean_nat
+    from ..parse.native import NativePredicates
 
-    msmt = q.msmt
+    # The printer goes with the terms. Imported here: `from_smt` loads cvc5.
+    if isinstance(q, NativePredicates):
+        from .from_ir import ir_to_lean as prop
+        from .from_ir import ir_to_lean_nat as nat
+    else:
+        from .from_smt import smt_to_lean as prop
+        from .from_smt import smt_to_lean_nat as nat
+
+    wires = q.wires
 
     def translate(term, mode: str) -> str | None:
         if term is None:
             return None
         if mode in ("property", "invariant"):
-            return smt_to_lean(term, msmt.ctrl_next, param_name="s", share=share)
+            return prop(term, wires.ctrl_next, param_name="s", share=share)
         if mode == "ranking":
-            return smt_to_lean_nat(term, msmt.ctrl_next, param_name="s", share=share)
+            return nat(term, wires.ctrl_next, param_name="s", share=share)
         # preconditions
-        return smt_to_lean(
+        return prop(
             term,
             state_wires=[],
             param_name="e",
             extra=[
-                ("e", "e.2", msmt.extl_next),
-                ("el", "e.1", msmt.extl_latched),
+                ("e", "e.2", wires.extl_next),
+                ("el", "e.1", wires.extl_latched),
             ],
             share=share,
         )
@@ -103,10 +114,10 @@ def render_certificate(
     def named(term, role: str) -> str | None:
         """`translate`, with the predicate's role on any refusal.
 
-        The translator walks a cvc5 term and knows nothing of where it came
-        from; `--pre (= s0 0)` parses and then fails on a name preconditions
-        do not bind, and "Unknown free variable `s0`" alone does not say
-        which of five sources asked for it.
+        The printer walks a term and knows nothing of where it came from;
+        `--pre (= s0 0)` parses and then fails on a name preconditions do
+        not bind, and "Unknown free variable `s0`" alone does not say which
+        of five sources asked for it.
         """
         try:
             return translate(term, role)

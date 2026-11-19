@@ -10,6 +10,10 @@ from reactor.lean.codegen.boxes import (
 )
 from reactor.lean.codegen.context import LeanContext
 
+# The heartbeat budget of `init_circ_eq` and `update_circ_eq`; see where they
+# are stated.
+_CIRC_HEARTBEATS = 4000000
+
 # Simp lemmas for reducing a single circuit layer
 _LAYER_SIMP = [
     "Box.par",
@@ -35,11 +39,15 @@ _LAYER_SIMP = [
     "Box.not",
     "Box.and",
     "Box.or",
+    "Box.implies",
     "Box.ite",
     "Box.add",
     "Box.sub",
     "Box.mul",
     "Box.neg",
+    "Box.hadamard",
+    "Box.div",
+    "Box.mod",
     "Box.lt",
     "Box.le",
     "Box.gt",
@@ -51,11 +59,18 @@ _LAYER_SIMP = [
     "Box.nnLinear",
     "Box.linear",
     "Box.relu",
+    "Box.get",
+    "Box.intToReal",
+    "Box.realToInt",
+    "Box.bvToInt",
+    "Box.bitToBool",
+    "Box.boolToBit",
     "Box.argmax_1d",
     "Box.argmax",
     "ite_pair",
-    "Mat_1_1_lt_iff",
-    "Mat_1_1_le_iff",
+    "Matrix_1_1_lt_iff",
+    "Matrix_1_1_le_iff",
+    "↓Matrix.mk_apply",
 ]
 
 
@@ -218,8 +233,10 @@ def to_lean_equiv_theorems(
         # BUILD-FAIL, whatever the certificate, for a module that is otherwise
         # fine.
         # The same budget `scalar.py` raises for the same reason, and per
-        # theorem rather than file-wide.
-        lines.append("set_option maxHeartbeats 2000000 in")
+        # theorem rather than file-wide. Twice `scalar.py`'s: the dining
+        # philosophers' `update_circ_eq` took 1M-2M heartbeats while the matrix type
+        # was a function type and 2M-4M since it is Mathlib's `Matrix`.
+        lines.append(f"set_option maxHeartbeats {_CIRC_HEARTBEATS} in")
         lines.append("set_option maxRecDepth 100000 in")
         lines.append(f"theorem init_circ_eq : ∀ {init_binder},")
         lines.append(f"    Circ.init.fn {lhs_input} =")
@@ -249,7 +266,7 @@ def to_lean_equiv_theorems(
         )
         rhs_output = native_to_vt("r", n_ctrl)
 
-        lines.append("set_option maxHeartbeats 2000000 in")
+        lines.append(f"set_option maxHeartbeats {_CIRC_HEARTBEATS} in")
         lines.append("set_option maxRecDepth 100000 in")
         lines.append(f"theorem update_circ_eq : ∀ {update_binders},")
         lines.append(f"    Circ.update.fn {lhs_input} =")

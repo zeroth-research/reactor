@@ -77,10 +77,11 @@ The Lean library the project is stated in is not part of it: the lakefile
 requires two packages of [reactor-lean][reactor-lean], each in its own
 directory of that repository.
 
-| Package | Modules | Contents |
-|---------|---------|----------|
-| `Relational` | `Relational.Mat`, `.Box`, `.LTL`, `.Basic` | matrices, ReactiveModule, LTL, the proof rules (`rule_globally`, `rule_buchi`) |
-| `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
+| Package | Library | Modules | Contents |
+|---------|---------|---------|----------|
+| `ReactLib` | `Spec` | `Spec.LTL` | LTL formulas and their semantics |
+| | `Relational` | `Relational.Mat`, `.Box`, `.Basic` | matrices, ReactiveModule, the proof rules (`rule_globally`, `rule_buchi`) |
+| `LeanAI` | `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
 
 By default they are git requires at `project/lakefile.py`'s
 `REACTOR_LEAN_REV`. With `REACTOR_LEAN` set to a reactor-lean checkout they
@@ -88,7 +89,7 @@ are path requires on it instead, which is how to change the library and the
 generator together; `reactor` refuses a `REACTOR_LEAN` that is not a
 checkout before it writes anything. The tests set it to the checkout beside
 this repository when there is one, and `tests/lean`'s lakefile requires
-`Relational` from there.
+`ReactLib` from there.
 
 [reactor-lean]: https://github.com/zeroth-research/reactor-lean
 
@@ -99,16 +100,26 @@ The certificate in `Data.lean` is the one given by `--invariant` and
 the relational and scalar encodings beside it, and the run ends there.
 [What gets generated](#what-gets-generated) has the details.
 
-### 5. Lean certificate (`proof/render.py`, `smt/queries.py`, `proof/from_smt.py`)
+### 5. Lean certificate (`proof/render.py`, `parse/`, `smt/queries.py`, `proof/from_smt.py`, `proof/from_ir.py`)
 
 These steps turn the given predicates into the certificate, before stage 4:
 
-- `predicate_terms` parses the predicates once, into cvc5 terms over the
-  module's encoding.
+- The predicates are parsed once, by the parser `--parser` names:
+  - `cvc5`, the default: `predicate_terms` reads them into cvc5 terms over
+    the module's encoding.
+  - `native`: `parse.native.read_predicates` reads them into reactor's own
+    terms, the IR the module is written in, over the module's wires. It
+    loads no solver.
+
+  Both read the Python predicate syntax first and SMT-LIB for the rest.
 - That parse is printed as Lean by `render_certificate`, into a
-  `LeanCertificate`: the definitions in `Data.lean`. `Certificate.lean` is
-  the same text for every certificate of a safety property, and for every
-  certificate of a Büchi one.
+  `LeanCertificate`: the definitions in `Data.lean`. `from_smt` prints
+  cvc5's terms and `from_ir` reactor's, in the same words. Two spellings
+  differ, each the same Lean term: an Int numeral compared with a Real is
+  `(2 : Real)` from reactor's terms and `(2 : Int)` from cvc5's, and a
+  nested `and`, `or`, `+` or `*` is printed flat from reactor's terms.
+  `Certificate.lean` is the same text for every certificate of a safety
+  property, and for every certificate of a Büchi one.
 
 ### 6. The proofs
 
@@ -182,9 +193,10 @@ layer.
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) |
 | `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
+| `parse/` | Reading a predicate's text, never importing cvc5: `dsl` (the Python predicate syntax, walked over whichever terms a parser hands it), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the native parser: `NativeParser`, `read_predicates`); `PARSERS` names the two a run picks from |
 | `smt/` | The module in cvc5, which the certificate's predicates are read against: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `queries` (`ModuleQueries`, the claim and certificate parsed, and `predicate_terms`), `terms` (walks over terms) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
-| `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, `ProofScripts`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean) |
+| `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, `ProofScripts`, the project's `certificate_files` and the `--cert-file` one), `from_smt` (a cvc5 term printed as Lean), `from_ir` (a `parse.Formula` printed as Lean, in the same words) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`, `smv`), and `names`, which translates a claim's names to the internal ones and back |
 | `cli/` | The command line: `parser` (the flags, one `add_*` per group), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
 | `pipeline/` | `uv run reactor`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, `artifacts/`, the certificate rendered), `outputs` (the project, `--cert-file`) |
@@ -197,13 +209,13 @@ layer.
 
 | Python DType | Lean type (default) | Lean type (`simple_types=True`) |
 |---|---|---|
-| `Bool` (scalar) | `(Mat Bool 1 1)` | `Bool` |
-| `Int` (scalar) | `(Mat Int 1 1)` | `Int` |
-| `Float` (scalar) | `(Mat Real 1 1)` | `Real` |
-| `Int` shape `[n]` | `(Mat Int 1 n)` | — |
-| `Int` shape `[m,n]` | `(Mat Int m n)` | — |
+| `Bool` (scalar) | `(Matrix (Fin 1) (Fin 1) Bool)` | `Bool` |
+| `Int` (scalar) | `(Matrix (Fin 1) (Fin 1) Int)` | `Int` |
+| `Float` (scalar) | `(Matrix (Fin 1) (Fin 1) Real)` | `Real` |
+| `Int` shape `[n]` | `(Matrix (Fin 1) (Fin n) Int)` | — |
+| `Int` shape `[m,n]` | `(Matrix (Fin m) (Fin n) Int)` | — |
 
-All intermediate values are `Mat T m n` (Lean: `Fin m → Fin n → T`) even when
+All intermediate values are Mathlib's `Matrix (Fin m) (Fin n) T`, even when
 scalar.  This keeps the algebra uniform.  Float-typed modules require
 `noncomputable` on all definitions because `Real` lacks decidable equality.
 
@@ -237,22 +249,26 @@ Created once per module; shared across all code generators.  It extracts:
 Lean function body as a string of `let` bindings followed by the output tuple:
 
 ```lean
-  let x0 : (Mat Bool 1 1) := (fun _ _ => decide (ctrl.1 0 0 < ctrl.2 0 0))
-  let x1 : (Mat Int 1 1) := (fun _ _ => (1 : Int))
+  let x0 : (Matrix (Fin 1) (Fin 1) Bool) := (Matrix.mk fun _ _ => decide (ctrl.1 0 0 < ctrl.2 0 0))
+  let x1 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (1 : Int))
   ...
   (x6, x5)
 ```
 
 Each term is looked up in the op table's `mat` column
 (`lowering.ops.mat_emitter`, keyed by theory and variant name).  Operations
-produce `Mat T 1 1` values even for scalar results — conditions extract
-`0 0`, boolean ops wrap in `fun _ _ => ...`.  Non-scalar ops (`MatMul`,
-`Linear`, `ReLU`) use their native matrix forms.
+produce 1×1 `Matrix` values even for scalar results — conditions extract
+`0 0`, boolean ops wrap in `Matrix.mk fun _ _ => ...`.  Non-scalar ops
+(`MatMul`, as Mathlib's `*`, `Linear`, `ReLU`) use their native matrix
+forms.  Every matrix built from its entries is a `Matrix.mk`
+(`lowering.sorts.mat_mk`), never a bare lambda: to `simp` and instance
+search a bare `fun i j => …` is a function, not a matrix.  `Matrix.mk` is
+ReactLib's, not Mathlib's (`Relational.Mat` says why).
 
 `ModuleToLean4.atom_to_lean_functional()` wraps the body into:
 
 ```lean
-@[simp] def init (extl_n: Unit) : (Mat Int 1 1) × (Mat Int 1 1) := ...
+@[simp] def init (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) := ...
 @[simp] def update (ctrl: ...) (extl_l: ...) (extl_n: ...) : ... := ...
 ```
 
@@ -294,11 +310,11 @@ plumbing lemmas.
 ## Encoding 3 — Scalar (`codegen/terms.py`, `codegen/encodings/scalar.py`)
 
 `translate_terms_scalar` is like `translate_terms_lean` but uses bare scalar types
-(`Bool`, `Int`, `Real`) instead of `Mat T 1 1` for all 1×1 wires:
+(`Bool`, `Int`, `Real`) instead of 1×1 matrices for all 1×1 wires:
 
 ```lean
 namespace Scalar
-@[simp] def update (ctrl: (Mat Int 1 1) × (Mat Int 1 1)) ... : Int × Int :=
+@[simp] def update (ctrl: (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)) ... : Int × Int :=
   let x0 : Bool := (decide (ctrl.1 0 0 < ctrl.2 0 0))
   let x1 : Int  := (1 : Int)
   let x2 : Int  := (ctrl.1 0 0 + x1)
@@ -308,7 +324,7 @@ end Scalar
 ```
 
 Key differences from functional:
-- Input parameter types are **unchanged** — they still accept `Mat T m n`.
+- Input parameter types are **unchanged** — they still accept `Matrix (Fin m) (Fin n) T`.
 - Input scalars are pre-extracted at the call site via `ctrl.1 0 0`.
 - All intermediate `let` bindings use `Bool`/`Int`/`Real` directly.
 - Output type is a product of bare scalars (e.g. `Int × Int`).
@@ -317,26 +333,29 @@ Key differences from functional:
 
 `codegen.encodings.common.scalar_bindings_with_recon` builds the input bindings: a
 one-element wire is bound to its bare accessor, so downstream ops receive bare
-values, and a wider one to a `let` that rebuilds its `Mat` from the elements.
+values, and a wider one to a `let` that rebuilds its matrix from the elements.
 
 **Equivalence theorems** (`to_lean_scalar_equiv`) connect the scalar and
 functional encodings:
 
 ```lean
-theorem update_scalar_eq : ∀ ctrl extl_l extl_n,
-    update ctrl extl_l extl_n =
-    let r := Scalar.update ctrl extl_l extl_n
-    (fun _ _ => r.1, fun _ _ => r.2) := by
+@[simp] def pack (r : Int × Int) : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) :=
+  ((Matrix.mk fun _ _ => r.1), (Matrix.mk fun _ _ => r.2))
+
+theorem update_scalar_eq : ∀ (ctrl : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)) (extl_l : Unit) (extl_n : Unit),
+    update ctrl extl_l extl_n = Scalar.pack (Scalar.update (Scalar.unpack_ctrl ctrl) extl_l extl_n) := by
   intro ctrl extl_l extl_n
-  simp only [Scalar.update, update]
+  simp only [Scalar.pack, Scalar.update, update, Scalar.unpack_ctrl, Fin.cons_zero, Fin.cons_succ]
   try rfl
-  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])
-  try (funext i j; simp [Fin.fin_one_eq_zero])
+  try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)
+  ...
+  all_goals try simp [← Matrix_1_1_eq]
 ```
 
-The reconstruction `fun _ _ => r.i` wraps each scalar output back into a
-`Mat T 1 1`.  The proof reduces via `Fin.fin_one_eq_zero` (every `i : Fin 1`
-equals `0`), making the two sides propositionally equal.
+`Scalar.pack` wraps each scalar output back into a 1×1 matrix, as
+`Matrix.mk fun _ _ => r.i`, and `Scalar.unpack_*` reads a wire's elements out.
+The proof enumerates every index of every wire (`fin_cases`), or, for a 1×1
+wire, rewrites by `Fin.fin_one_eq_zero` (every `i : Fin 1` equals `0`).
 
 **Scalar encoding lives in its own file** (`<Name>Scalar.lean`), separate from
 the certificate.  It contains: functional `init`/`update`, `namespace Scalar`,
@@ -440,14 +459,19 @@ the project's `Data.lean`, `Module.lean`, `Proofs.lean` and
 
 ---
 
-## Key Lemmas (in `Relational.Basic`)
+## Key Lemmas (in `Relational.Mat`)
 
 | Lemma | Effect |
 |-------|--------|
-| `MatAdd_apply`, `MatMul_apply` | Reduce matrix `+`, `*` to pointwise scalar ops |
-| `Mat_1_1_lt_iff`, `_eq_iff`, `_le_iff`, `_ne_iff` | Collapse `(m : Mat T 1 1) 0 0 op n` to bare scalar comparison |
-| `ite_fun_apply` | Push `if` through function application |
+| `Matrix.mk_apply` | Read an entry of a matrix built from its entries |
+| `add_Matrix_apply`, `sub_Matrix_apply`, `neg_Matrix_apply`, `mul_Matrix_apply`, `zero_Matrix_apply`, `transpose_Matrix_apply` | Reduce Mathlib's `+`, `-`, `*`, `0`, `Matrix.transpose` to pointwise scalar ops |
+| `Matrix_1_1_lt_iff`, `_eq_iff`, `_le_iff`, `_ne_iff` | Collapse `(m : Matrix (Fin 1) (Fin 1) T) 0 0 op n` to bare scalar comparison |
+| `Matrix_ite_apply` | Read an `if` between matrices at an entry |
 | `Fin.sum_univ_one/two/three` | Reduce finite sums |
+
+The lemmas that read an entry are pre-lemmas (`simp↓`), proved by `id rfl`;
+`Relational.Mat` says why. Mathlib's own `Matrix.add_apply` and the like are
+`rfl` lemmas, which a `dsimp` over generated matrices has to leave out.
 
 ---
 

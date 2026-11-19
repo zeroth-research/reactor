@@ -79,9 +79,9 @@ def test_twobitcounter_has_inlined_scalars():
     m = _make_twobitcounter()
     lean = ModuleToLean4(m).to_lean()
 
-    # Scalar Bool constants are inlined as Mat-typed literals, not top-level defs
+    # Scalar Bool constants are inlined as Matrix-typed literals, not top-level defs
     assert "def c0" not in lean
-    assert "let x0 : (Mat Bool 1 1) := (fun _ _ => false)" in lean
+    assert "let x0 : (Matrix (Fin 1) (Fin 1) Bool) := (Matrix.mk fun _ _ => false)" in lean
 
 
 def test_twobitcounter_update_has_let_bindings():
@@ -106,7 +106,7 @@ def test_twobitcounter_init_signature():
     lean = ModuleToLean4(m).to_lean()
 
     assert (
-        "def init (extl_n: (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)" in lean
+        "def init (extl_n: (Matrix (Fin 1) (Fin 1) Bool)) : (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)" in lean
     )
 
 
@@ -115,7 +115,7 @@ def test_twobitcounter_update_signature():
     lean = ModuleToLean4(m).to_lean()
 
     assert (
-        "def update (ctrl: (Mat Bool 1 1) × (Mat Bool 1 1)) (extl_l: (Mat Bool 1 1)) (extl_n: (Mat Bool 1 1)) : (Mat Bool 1 1) × (Mat Bool 1 1)"
+        "def update (ctrl: (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)) (extl_l: (Matrix (Fin 1) (Fin 1) Bool)) (extl_n: (Matrix (Fin 1) (Fin 1) Bool)) : (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)"
         in lean
     )
 
@@ -146,8 +146,8 @@ def test_matrix_module_has_matrix_types():
     # The state (3×1) and external input (2×1) matrix types appear in the
     # signatures / let-bindings. A and B are baked into the Linear op and
     # rendered as inline literals, so their types are not annotated here.
-    assert "Mat Int 3 1" in lean
-    assert "Mat Int 2 1" in lean
+    assert "Matrix (Fin 3) (Fin 1) Int" in lean
+    assert "Matrix (Fin 2) (Fin 1) Int" in lean
 
 
 def test_matrix_module_uses_matvecaffine():
@@ -167,7 +167,7 @@ def test_matrix_init_signature():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    assert "def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1)" in lean
+    assert "def init (extl_n: (Matrix (Fin 2) (Fin 1) Int)) : (Matrix (Fin 3) (Fin 1) Int)" in lean
 
 
 def test_matrix_update_signature():
@@ -175,7 +175,7 @@ def test_matrix_update_signature():
     lean = ModuleToLean4(m).to_lean()
 
     assert (
-        "def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1)"
+        "def update (ctrl: (Matrix (Fin 3) (Fin 1) Int)) (extl_l: (Matrix (Fin 2) (Fin 1) Int)) (extl_n: (Matrix (Fin 2) (Fin 1) Int)) : (Matrix (Fin 3) (Fin 1) Int)"
         in lean
     )
 
@@ -198,7 +198,7 @@ def test_main_lean_matrix_module():
     src = generate_main_lean("Rea", m, "ReactiveModule")
 
     assert "parseIntOrFail" in src
-    assert "showMat" in src
+    assert "showMatrix" in src
     assert "parseExtl" in src
     assert "showCtrl" in src
     assert "def main" in src
@@ -209,16 +209,16 @@ def test_main_lean_bool_signatures():
     src = generate_main_lean("Rea", m, "ReactiveModule")
 
     # parseExtl returns Bool, showCtrl takes Bool × Bool
-    assert "Mat Bool 1 1" in src
-    assert "(Mat Bool 1 1) × (Mat Bool 1 1)" in src
+    assert "Matrix (Fin 1) (Fin 1) Bool" in src
+    assert "(Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)" in src
 
 
 def test_main_lean_matrix_signatures():
     m = _make_matrix_module()
     src = generate_main_lean("Rea", m, "ReactiveModule")
 
-    assert "Mat Int 2 1" in src
-    assert "Mat Int 3 1" in src
+    assert "Matrix (Fin 2) (Fin 1) Int" in src
+    assert "Matrix (Fin 3) (Fin 1) Int" in src
 
 
 # ── Certificate generation ───────────────────────────────────────────
@@ -236,8 +236,8 @@ def test_certificate_bool_has_rm():
     from, which carry the module's."""
     cert = _cert_for(_make_twobitcounter)
     assert "} : ReactiveModule _ _)" in cert
-    assert "(Mat Bool 1 1)" in cert
-    assert "(Mat Bool 1 1) × (Mat Bool 1 1)" in cert
+    assert "(Matrix (Fin 1) (Fin 1) Bool)" in cert
+    assert "(Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)" in cert
 
 
 def test_certificate_bool_rm_uses_plain_functions():
@@ -266,8 +266,8 @@ def test_data_lean_has_sorry_when_no_property():
 def test_certificate_matrix_has_rm():
     cert = _cert_for(_make_matrix_module)
     assert "} : ReactiveModule _ _)" in cert
-    assert "Mat Int 2 1" in cert
-    assert "Mat Int 3 1" in cert
+    assert "Matrix (Fin 2) (Fin 1) Int" in cert
+    assert "Matrix (Fin 3) (Fin 1) Int" in cert
 
 
 def test_certificate_has_hrank():
@@ -338,7 +338,7 @@ def test_rel_encoding_emits_its_equivalence_theorems():
         "theorem InitCond_func_eq",
         "theorem TransRel_func_eq",
         "rw [TransRel_scalar_eq, update_scalar_eq]",
-        "simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]",
+        "simp only [Scalar.pack, Scalar.unpack_ctrl, ← Matrix_1_1_eq, Prod.eta]",
     ):
         assert expected in lean, f"missing from the Rel encoding: {expected!r}"
 
@@ -359,9 +359,9 @@ def test_scalar_encoding_emits_a_scalar_relu():
 
     It used to take the `_LEAN_OP` matrix fallback, which lifts the operand
     but never projects the result: `let x : Int := ReLu (fun _ _ => y)`
-    ascribes `Mat ℤ ?m ?n` to `Int`. Asserting only that the operand was
+    ascribes `Matrix (Fin ?m) (Fin ?n) ℤ` to `Int`. Asserting only that the operand was
     lifted (as this test once did) passes on exactly that output, so the
-    check has to be that no `Mat`-valued form survives at all — lifting the
+    check has to be that no `Matrix`-valued form survives at all — lifting the
     operand and projecting the result is not a fix either, since `ReLu`'s
     dimensions are then unconstrained ("typeclass instance problem is
     stuck").
@@ -381,7 +381,7 @@ def test_scalar_encoding_emits_a_scalar_relu():
 
 
 def test_scalar_encoding_extracts_a_scalar_from_linear():
-    """`matVecAffine` yields a `Mat`, but a 1x1 write wire is ascribed `Int`."""
+    """`matVecAffine` yields a `Matrix`, but a 1x1 write wire is ascribed `Int`."""
     s = Var(Int([1, 1]))
     module = Module.sequential(
         [s],
@@ -391,10 +391,10 @@ def test_scalar_encoding_extracts_a_scalar_from_linear():
     lean = ModuleToLean4(module).to_lean_scalar()
     line = next(l for l in lean.splitlines() if "matVecAffine" in l)
     assert line.strip().endswith("0 0)"), f"result not extracted: {line.strip()}"
-    # Ascribed, not a bare `fun _ _ => ctrl`: `matVecAffine`'s batch
+    # Ascribed, not a bare `Matrix.mk fun _ _ => ctrl`: `matVecAffine`'s batch
     # dimension is not determined by the lambda, and an un-ascribed lift
     # leaves `n` unsolved wherever the surrounding term does not pin it.
-    assert "(fun _ _ => ctrl : Mat Int 1 1)" in line, (
+    assert "((Matrix.mk fun _ _ => ctrl) : Matrix (Fin 1) (Fin 1) Int)" in line, (
         f"operand not lifted with its type: {line.strip()}"
     )
     assert ": Int :=" in line, "a 1x1 write wire should stay scalar-typed"
@@ -422,7 +422,7 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
     ite = [l for l in lean.splitlines() if "if " in l]
     assert ite, "no Ite emitted"
     for line in ite:
-        assert "(fun _ _ =>" in line, f"scalar operand not lifted: {line.strip()}"
+        assert "(Matrix.mk fun _ _ =>" in line, f"scalar operand not lifted: {line.strip()}"
 
 
 # ──────────────────────────────────────────────────────────────

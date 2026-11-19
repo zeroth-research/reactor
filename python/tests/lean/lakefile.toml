@@ -38,7 +38,8 @@
  git = "https://github.com/ufmg-smite/lean-smt.git"
  rev = "db545bebe2de1e06dc2df62a6ff6c20e5736bfc0"
 
- # `Relational.*`, from the reactor-lean checkout beside this repository.
+ # `Relational.*` and `Spec.*`, from the reactor-lean checkout beside this
+ # repository.
  [[require]]
- name = "Relational"
- path = "../../../../reactor-lean/Relational"
+ name = "ReactLib"
+ path = "../../../../ReactLib/ReactLib"

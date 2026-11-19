@@ -8,7 +8,7 @@ from __future__ import annotations
 from reactor import Module, Wire, X
 
 from ..core.errors import Refused
-from ..lowering.sorts import flat_element_type, wire_shape
+from ..lowering.sorts import flat_element_type, mat_mk, wire_shape
 from ..codegen.terms import build_tuple, product_type
 from .names import (
     LINTERS_OFF,
@@ -92,7 +92,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     )
     lines.append("")
     lines.append(
-        "def showMat {t : Type} (m n : Nat) (f : t → String) (mat : Fin m → Fin n → t)"
+        "def showMatrix {t : Type} (m n : Nat) (f : t → String) (mat : Matrix (Fin m) (Fin n) t)"
         " : String :="
     )
     lines.append(
@@ -123,10 +123,8 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         lines.append(f"  for k in List.range {m * n} do")
         lines.append(f"    let v {bind} {parser} tokens[{offset} + k]!")
         lines.append(f"    arr{i} := arr{i}.push {push}")
-        lines.append(
-            f"  let {var} : Fin {m} → Fin {n} → {elem} :="
-            f" fun i j => arr{i}[i.val * {n} + j.val]!"
-        )
+        entry = f"arr{i}[i.val * {n} + j.val]!"
+        lines.append(f"  let {var} : Matrix (Fin {m}) (Fin {n}) {elem} := {mat_mk(entry, 'i', 'j')}")
         offset += m * n
         parse_vars.append(var)
 
@@ -143,10 +141,10 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     for i in range(len(ctrl_next)):
         destr_vars.append(f"v{i}")
     # Same order here: v{i} must bind ctrl_next[i], since the formatters
-    # below pick showBool/toString/showMat from that wire's type.
+    # below pick showBool/toString/showMatrix from that wire's type.
     lines.append(f"  let {build_tuple(destr_vars)} := v")
 
-    # Format each variable. `dtype_to_lean_type` always returns a `Mat ...`
+    # Format each variable. `dtype_to_lean_type` always returns a `Matrix ...`
     # here, so dispatch on the element sort instead: comparing that string
     # against "Bool"/"Int" never matched and pinned every element to Int.
     show_parts: list[str] = []
@@ -154,7 +152,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         elem = flat_element_type(w)
         var = f"v{i}"
         m, n = wire_shape(w).m, wire_shape(w).n
-        show_parts.append(f"showMat {m} {n} {_elem_shower(elem, w)} {var}")
+        show_parts.append(f"showMatrix {m} {n} {_elem_shower(elem, w)} {var}")
 
     if len(show_parts) == 1:
         lines.append(f"  {show_parts[0]}")

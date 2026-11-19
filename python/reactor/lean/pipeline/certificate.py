@@ -14,6 +14,8 @@ from ..codegen.context import LeanContext
 from ..codegen.terms import lean_gaps
 from ..core.certificate import Certificate, Claim, LeanAnswer
 from ..core.errors import Refused
+from ..parse import PARSERS
+from ..parse.native import read_predicates
 from ..proof.render import LeanCertificate, render_certificate
 from ..smt.queries import predicate_terms
 
@@ -83,15 +85,29 @@ def workspace(project_dir: Path, module, claim: "Claim | None", *,
 
 
 def render(smt, claim: "Claim | None", cert: Certificate = Certificate(), *,
-           verbatim: "LeanAnswer | None" = None) -> "LeanCertificate | None":
-    """The certificate as codegen takes it: the predicates parsed once and
-    printed as Lean. `None` without a claim: a bare run asks cvc5 nothing.
-    `smt` is the module, its encoding or a factory for one; `verbatim` is
-    an answer that is Lean already."""
+           verbatim: "LeanAnswer | None" = None,
+           parser: str = PARSERS[0]) -> "LeanCertificate | None":
+    """The certificate as codegen takes it: the predicates parsed once, by
+    `parser` (one of `parse.PARSERS`), and printed as Lean. `None` without
+    a claim: a bare run parses nothing. `smt` is the module, its encoding
+    or a factory for one; `verbatim` is an answer that is Lean already."""
     if claim is None:
         return None
-    return render_certificate(predicate_terms(smt, claim, cert),
-                              verbatim=verbatim)
+    if parser == "native":
+        q = read_predicates(_module_of(smt), claim, cert)
+    elif parser == "cvc5":
+        q = predicate_terms(smt, claim, cert)
+    else:
+        raise ValueError(f"no parser {parser!r}: one of {', '.join(PARSERS)}")
+    return render_certificate(q, verbatim=verbatim)
+
+
+def _module_of(smt):
+    """The module `render`'s `smt` is, or is the encoding of."""
+    module = getattr(smt, "module", None)
+    if module is not None:
+        return module
+    return smt().module if callable(smt) else smt
 
 
 def lean_context(module) -> LeanContext:

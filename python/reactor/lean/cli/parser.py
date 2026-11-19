@@ -11,6 +11,7 @@ import argparse
 
 from ..artifacts import ARTIFACTS_DIR
 from ..inputs import ADAPTERS
+from ..parse import PARSERS
 
 
 _EPILOG = """\
@@ -59,7 +60,25 @@ def build_parser() -> argparse.ArgumentParser:
     add_input(parser)
     add_claim(parser)
     add_outputs(parser)
+    add_parser_choice(parser)
     return parser
+
+
+def add_parser_choice(parser: argparse.ArgumentParser) -> None:
+    """What the claim's and the certificate's predicates are read with."""
+    parser.add_argument(
+        "--parser",
+        default=PARSERS[0],
+        choices=PARSERS,
+        help=(
+            "What reads the predicates: `cvc5` (the default) into cvc5's "
+            "terms, or `native`, reactor's own parser, into reactor's terms "
+            "-- with no solver. Both read the same text and print the same "
+            "certificate, but for two spellings of one Lean term: `(2 : Real)` "
+            "for cvc5's `(2 : Int)` where a Real is compared, and `(a ∧ b ∧ c)` "
+            "however the conjunction was nested."
+        ),
+    )
 
 
 def add_input(parser: argparse.ArgumentParser, *, project: bool = True,

@@ -5,7 +5,7 @@ and four backends turn that name into something they can emit:
 
 | column   | backend                          | a cell holds                 |
 |----------|----------------------------------|------------------------------|
-| `mat`    | `codegen.terms.translate_terms_lean`        | args -> Lean expr (on `Mat`) |
+| `mat`    | `codegen.terms.translate_terms_lean`        | args -> Lean expr (on `Matrix`) |
 | `scalar` | `codegen.terms.translate_terms_scalar` | args -> Lean expr (bare)     |
 | `box`    | `codegen.boxes.translate_terms_circ`     | a `Box` combinator name      |
 | `smt`    | `smt.encode.translate_terms`     | `SmtOp` -> `cvc5.Term`       |
@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING, Callable, Union
 from reactor import Bool, Int, Real, BitVec
 
 from ..core.errors import Refused
-from .sorts import itype_name
+from .sorts import itype_name, mat_mk
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, cvc5 is not imported here
     import cvc5
@@ -87,7 +87,7 @@ class Inline:
 class ViaMat:
     """Scalar column only: there is no scalar form, the matrix one serves.
 
-    `translate_terms_scalar` lifts scalar-bound reads to `fun _ _ => x`
+    `translate_terms_scalar` lifts scalar-bound reads to `Matrix.mk fun _ _ => x`
     and projects `0 0` off the result, which is right whenever the matrix
     form is elementwise or folds to a 1x1.
     """
@@ -105,9 +105,11 @@ SmtCell = Union[Callable[["SmtOp"], "cvc5.Term"], Unsupported]
 #  Rows
 # ══════════════════════════════════════════════════════════════════════
 
-THEORIES = ("LIA", "LRA", "BV")
+# `Cast` is no theory of its own sorts: it is what crosses between the
+# other three's (`theory/src/cast.rs`), and has rows of its own only.
+THEORIES = ("LIA", "LRA", "BV", "Cast")
 
-ALL = THEORIES
+ALL = ("LIA", "LRA", "BV")
 LIA_LRA = ("LIA", "LRA")
 BV_ONLY = ("BV",)
 # No theory defines these any more; the emitters are kept until it is
@@ -182,8 +184,12 @@ def _smt_xor(op: SmtOp) -> cvc5.Term:
     return op.elementwise(op.binop(kind), *op.args)
 
 
+def _smt_implies(op: SmtOp) -> cvc5.Term:
+    return op.elementwise(op.binop(op.K.IMPLIES), *op.args)
+
+
 def _smt_ite(op: SmtOp) -> cvc5.Term:
-    # cond is Mat Bool 1 1 (LIA/LRA) or Mat BV<1> 1 1 (BV); extract its
+    # cond is a 1×1 matrix of Bool (LIA/LRA) or of BV<1> (BV); extract its
     # scalar, coercing a BV<1> condition to a genuine Bool via `!= 0`.
     cond = op.scalar(0)
     cond_dtype = op.term.read[0].dtype
@@ -205,6 +211,23 @@ def _smt_sub(op: SmtOp) -> cvc5.Term:
 def _smt_mul(op: SmtOp) -> cvc5.Term:
     kind = op.K.BITVECTOR_MULT if op.is_bv else op.K.MULT
     return op.elementwise(op.binop(kind), *op.args)
+
+
+def _smt_int_divmod(op: SmtOp) -> cvc5.Term:
+    """Euclidean, as SMT-LIB's `div`/`mod` are; SMT-LIB leaves the zero
+    divisor open and the theory has Lean's answer there (0, and the
+    dividend), so that case is spelled out. Not the `_TOTAL` kinds: they
+    print as cvc5's own syntax, and these terms are written out as SMT-LIB
+    for other solvers too."""
+    div = op.name == "Div"
+    kind = op.K.INTS_DIVISION if div else op.K.INTS_MODULUS
+    zero = op.integer(0)
+
+    def one(a, b):
+        return op.mk(op.K.ITE, op.mk(op.K.EQUAL, b, zero),
+                     zero if div else a, op.mk(kind, a, b))
+
+    return op.elementwise(one, *op.args)
 
 
 def _smt_neg(op: SmtOp) -> cvc5.Term:
@@ -316,6 +339,25 @@ def _smt_argmax(op: SmtOp) -> cvc5.Term:
     return op.pack([idx])
 
 
+def _smt_get(op: SmtOp) -> cvc5.Term:
+    return op.pack([op.scalar(0, op.term.itype.row, op.term.itype.col)])
+
+
+def _smt_cast(op: SmtOp) -> cvc5.Term:
+    def one(a):
+        if op.name == "IntToReal":
+            return op.mk(op.K.TO_REAL, a)
+        if op.name == "RealToInt":
+            return op.mk(op.K.TO_INTEGER, a)
+        if op.name == "BVToInt":
+            return op.mk(op.K.BITVECTOR_UBV_TO_INT, a)
+        if op.name == "BitToBool":
+            return op.mk(op.K.EQUAL, a, op.bitvector(1, 1))
+        return op.mk(op.K.ITE, a, op.bitvector(1, 1), op.bitvector(1, 0))
+
+    return op.elementwise(one, op.args[0])
+
+
 def _smt_tensor_get(op: SmtOp) -> cvc5.Term:
     return op.pack([op.scalar(0)])
 
@@ -394,13 +436,13 @@ OPS: tuple[Op, ...] = (
         )
     ),
     # ── Boolean forms (LIA/LRA) ───────────────────────────────────────
-    # Operands and results are all `Mat _ 1 1`, so the matrix forms extract
+    # Operands and results are all 1×1 matrices, so the matrix forms extract
     # position `0 0`. FIXME: element-wise ops should be defined over the
     # whole matrix, to match Rust.
     Op(
         "Not",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => !({a[0]} 0 0))",
+        mat=lambda a: mat_mk(f"!({a[0]} 0 0)"),
         scalar=lambda a: f"(!{a[0]})",
         box="Box.not",
         smt=_smt_not,
@@ -408,7 +450,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "And",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => ({a[0]} 0 0 && {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"({a[0]} 0 0 && {a[1]} 0 0)"),
         scalar=lambda a: f"({a[0]} && {a[1]})",
         box="Box.and",
         smt=_smt_and,
@@ -416,7 +458,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Or",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => ({a[0]} 0 0 || {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"({a[0]} 0 0 || {a[1]} 0 0)"),
         scalar=lambda a: f"({a[0]} || {a[1]})",
         box="Box.or",
         smt=_smt_or,
@@ -430,6 +472,14 @@ OPS: tuple[Op, ...] = (
         scalar=_SEE_MAT,
         box=_SEE_MAT,
         smt=_smt_xor,
+    ),
+    Op(
+        "Implies",
+        LIA_LRA,
+        mat=lambda a: mat_mk(f"(!({a[0]} 0 0) || {a[1]} 0 0)"),
+        scalar=lambda a: f"(!{a[0]} || {a[1]})",
+        box="Box.implies",
+        smt=_smt_implies,
     ),
     Op(
         "Ite",
@@ -446,12 +496,12 @@ OPS: tuple[Op, ...] = (
     # which does not elaborate). These use BitVec's own operators and
     # compare a 1-bit value against 1 directly, rather than converting
     # through `BV.BVToBool`. `Box.and`/`not`/`or` are likewise fixed to
-    # `Mat Bool 1 1` — see the note beside the `bv*` boxes in
-    # `Relational.Box`.
+    # `Matrix (Fin 1) (Fin 1) Bool` — see the note beside the `bv*` boxes in
+    # `Relational.Circ`.
     Op(
         "Not",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => ~~~({a[0]} i j))",
+        mat=lambda a: mat_mk(f"~~~({a[0]} i j)", "i", "j"),
         scalar=lambda a: f"(~~~{a[0]})",
         box="Box.bvNot",
         smt=_smt_not,
@@ -459,7 +509,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "And",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => ({a[0]} i j) &&& ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"({a[0]} i j) &&& ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} &&& {a[1]})",
         box="Box.bvAnd",
         smt=_smt_and,
@@ -467,7 +517,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Or",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => ({a[0]} i j) ||| ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"({a[0]} i j) ||| ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} ||| {a[1]})",
         box="Box.bvOr",
         smt=_smt_or,
@@ -475,7 +525,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Xor",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => ({a[0]} i j) ^^^ ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"({a[0]} i j) ^^^ ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} ^^^ {a[1]})",
         box="Box.bvXor",
         smt=_smt_xor,
@@ -513,9 +563,33 @@ OPS: tuple[Op, ...] = (
         box="Box.mul",
         smt=_smt_mul,
     ),
+    # `*` on two `Matrix`es is their matrix product (Mathlib's), so the
+    # elementwise product is spelled out element by element, and its Box is
+    # `Box.hadamard` rather than `Box.mul`.
+    Op(
+        "Mul",
+        LIA_LRA,
+        mat=lambda a: mat_mk(f"{a[0]} i j * {a[1]} i j", "i", "j"),
+        scalar=lambda a: f"({a[0]} * {a[1]})",
+        box="Box.hadamard",
+        smt=_smt_mul,
+    ),
+    # Lean's `/` and `%` on `Int` are Euclidean, as SMT-LIB's `div` and
+    # `mod` are, and by zero give what the theory gives (0, the dividend).
+    *(
+        Op(
+            name,
+            ("LIA",),
+            mat=lambda a, sym=sym: mat_mk(f"{a[0]} i j {sym} {a[1]} i j", "i", "j"),
+            scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
+            box=box,
+            smt=_smt_int_divmod,
+        )
+        for name, sym, box in (("Div", "/", "Box.div"), ("Mod", "%", "Box.mod"))
+    ),
     Op(
         "Neg",
-        BV_ONLY,
+        ALL,
         mat=lambda a: f"(-{a[0]})",
         scalar=lambda a: f"(-{a[0]})",
         box="Box.neg",
@@ -526,7 +600,7 @@ OPS: tuple[Op, ...] = (
         BV_ONLY,
         mat=_bv_only_in_smt(
             "The matrix form would be `BitVec.udiv`, the Box a new "
-            "`Box.bvUDiv` in `Relational.Box`."
+            "`Box.bvUDiv` in `Relational.Circ`."
         ),
         scalar=_SEE_MAT,
         box=_SEE_MAT,
@@ -537,7 +611,7 @@ OPS: tuple[Op, ...] = (
         BV_ONLY,
         mat=_bv_only_in_smt(
             "The matrix form would be `BitVec.sdiv`, the Box a new "
-            "`Box.bvSDiv` in `Relational.Box`."
+            "`Box.bvSDiv` in `Relational.Circ`."
         ),
         scalar=_SEE_MAT,
         box=_SEE_MAT,
@@ -546,7 +620,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "UMod",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => BitVec.umod ({a[0]} i j) ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"BitVec.umod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"(BitVec.umod {a[0]} {a[1]})",
         box="Box.bvUMod",
         smt=_smt_bv_divmod,
@@ -554,7 +628,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "SMod",
         BV_ONLY,
-        mat=lambda a: f"(fun i j => BitVec.smod ({a[0]} i j) ({a[1]} i j))",
+        mat=lambda a: mat_mk(f"BitVec.smod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"(BitVec.smod {a[0]} {a[1]})",
         box="Box.bvSMod",
         smt=_smt_bv_divmod,
@@ -563,7 +637,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Lt",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[0]} 0 0 < {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 < {a[1]} 0 0)"),
         scalar=lambda a: f"(decide ({a[0]} < {a[1]}))",
         box="Box.lt",
         smt=_smt_compare,
@@ -571,7 +645,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Le",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≤ {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 ≤ {a[1]} 0 0)"),
         scalar=lambda a: f"(decide ({a[0]} ≤ {a[1]}))",
         box="Box.le",
         smt=_smt_compare,
@@ -579,7 +653,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Gt",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[1]} 0 0 < {a[0]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[1]} 0 0 < {a[0]} 0 0)"),
         scalar=lambda a: f"(decide ({a[1]} < {a[0]}))",
         box="Box.gt",
         smt=_smt_compare,
@@ -587,7 +661,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Ge",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[1]} 0 0 ≤ {a[0]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[1]} 0 0 ≤ {a[0]} 0 0)"),
         scalar=lambda a: f"(decide ({a[1]} ≤ {a[0]}))",
         box="Box.ge",
         smt=_smt_compare,
@@ -595,7 +669,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Eq",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[0]} 0 0 = {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 = {a[1]} 0 0)"),
         scalar=lambda a: f"(decide ({a[0]} = {a[1]}))",
         box="Box.eq",
         smt=_smt_compare,
@@ -603,7 +677,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Ne",
         LIA_LRA,
-        mat=lambda a: f"(fun _ _ => decide ({a[0]} 0 0 ≠ {a[1]} 0 0))",
+        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 ≠ {a[1]} 0 0)"),
         scalar=lambda a: f"(decide ({a[0]} ≠ {a[1]}))",
         box="Box.neq",
         smt=_smt_compare,
@@ -611,7 +685,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Eq",
         BV_ONLY,
-        mat=lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0)",
+        mat=lambda a: mat_mk(f"if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0"),
         scalar=lambda a: f"(if {a[0]} = {a[1]} then 1 else 0)",
         box="Box.bvEq",
         smt=_smt_compare,
@@ -619,7 +693,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "Ne",
         BV_ONLY,
-        mat=lambda a: f"(fun _ _ => if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1)",
+        mat=lambda a: mat_mk(f"if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1"),
         scalar=lambda a: f"(if {a[0]} = {a[1]} then 0 else 1)",
         box="Box.bvNe",
         smt=_smt_compare,
@@ -633,7 +707,7 @@ OPS: tuple[Op, ...] = (
             mat=_bv_only_in_smt(
                 "The matrix form would compare with `BitVec`'s own "
                 "ordering and reify the answer as a 1-bit value, the Box a "
-                "new `Box.bv*` in `Relational.Box`."
+                "new `Box.bv*` in `Relational.Circ`."
             ),
             scalar=_SEE_MAT,
             box=_SEE_MAT,
@@ -643,7 +717,7 @@ OPS: tuple[Op, ...] = (
     ),
     # ── reductions and matrix ops ─────────────────────────────────────
     # `Min`/`Max` are unary reductions — one read wire of any shape, a
-    # `Mat t 1 1` written — folded row-major from element (0,0).
+    # 1×1 matrix written — folded row-major from element (0,0).
     Op(
         "Min",
         LIA_LRA,
@@ -663,16 +737,25 @@ OPS: tuple[Op, ...] = (
     Op(
         "MatMul",
         BV_ONLY,
-        mat=lambda a: f"MatMul {a[0]} {a[1]}",
+        mat=lambda a: f"({a[0]} * {a[1]})",
         scalar=lambda a: f"({a[0]} * {a[1]})",
         box="Box.mul",
         smt=_smt_matmul,
     ),
+    # `Get`'s element is baked into the op, as `Linear`'s matrices are.
+    Op(
+        "Get",
+        ALL,
+        mat=Inline("codegen.terms._get_expr"),
+        scalar=Inline("codegen.terms._get_expr, or the element's flat slot"),
+        box=Inline("codegen.boxes._get_box"),
+        smt=_smt_get,
+    ),
     Op(
         "Transpose",
         LIA_LRA,
-        mat=lambda a: f"(MatTranspose {a[0]})",
-        scalar=ViaMat("`MatTranspose` is a matrix rearrangement"),
+        mat=lambda a: f"(Matrix.transpose {a[0]})",
+        scalar=ViaMat("`Matrix.transpose` is a matrix rearrangement"),
         box="Box.transpose",
         smt=Unsupported(
             "no cvc5 term. A transpose is a permutation of the flat tuple "
@@ -686,7 +769,7 @@ OPS: tuple[Op, ...] = (
         mat=lambda a: f"ReLu {a[0]}",
         # `ReLu` is a matrix op; on a scalar-bound wire it has to be the
         # bare `max 0 x`. Lifting the operand and projecting the result
-        # instead leaves `ReLu (fun _ _ => x) 0 0` with unconstrained
+        # instead leaves `ReLu (Matrix.mk fun _ _ => x) 0 0` with unconstrained
         # dimensions, so this is not a `ViaMat` cell.
         scalar=lambda a: f"(Max.max 0 {a[0]})",
         box="Box.relu",
@@ -751,6 +834,25 @@ OPS: tuple[Op, ...] = (
             ),
         )
     ),
+    # ── casts between the theories' sorts ─────────────────────────────
+    *(
+        Op(
+            name,
+            ("Cast",),
+            mat=lambda a, one=one: mat_mk(one(f"({a[0]} i j)"), "i", "j"),
+            scalar=lambda a, one=one: one(a[0]),
+            box=box,
+            smt=_smt_cast,
+        )
+        for name, one, box in (
+            ("IntToReal", lambda x: f"(({x} : Int) : Real)", "Box.intToReal"),
+            ("RealToInt", lambda x: f"⌊{x}⌋", "Box.realToInt"),
+            ("BVToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)",
+             "Box.bvToInt"),
+            ("BitToBool", lambda x: f"(decide ({x} = 1))", "Box.bitToBool"),
+            ("BoolToBit", lambda x: f"(if {x} then 1 else 0)", "Box.boolToBit"),
+        )
+    ),
     # ── nondeterminism and symbols ────────────────────────────────────
     *(
         Op(
@@ -794,7 +896,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "ToUnsigned",
         NONE,
-        mat=lambda a: f"(fun _ _ => Int.toNat ({a[0]} 0 0))",
+        mat=lambda a: mat_mk(f"Int.toNat ({a[0]} 0 0)"),
         scalar=lambda a: f"(Int.toNat {a[0]})",
         box=Unsupported("never had a Box"),
         smt=_smt_to_unsigned,
@@ -821,9 +923,10 @@ del _op, _theory, _key
 
 
 def theory_of(itype) -> str:
-    """The theory an op came from: "LIA", "LRA" or "BV".
+    """The theory an op came from: "LIA", "LRA", "BV" or "Cast".
 
-    PyO3 exports the variants as `LIA_Add`, `LRA_Real`, `BV_MatMul`; an op
+    PyO3 exports the variants as `LIA_Add`, `LRA_Real`, `BV_MatMul`,
+    `Cast_BVToInt`; an op
     with no such prefix belongs to no theory and gets "".
     """
     name = type(itype).__name__
@@ -905,7 +1008,7 @@ def _lean_emitter(itype, row: Op, cell, column: str):
 
 
 def mat_emitter(itype) -> Callable[[list[str]], str]:
-    """The `Mat`-form Lean emitter, or a `ValueError` carrying the reason."""
+    """The `Matrix`-form Lean emitter, or a `ValueError` carrying the reason."""
     row = op_for(itype)
     return _lean_emitter(itype, row, row.mat, "matrix form")
 

@@ -1,6 +1,6 @@
 """One flattening, one owner — and the shapes the fixtures barely reach.
 
-Everything below `Mat` turns a list of wires into a flat tuple of scalar
+Everything below `Matrix` turns a list of wires into a flat tuple of scalar
 elements and then reads it back: `Scalar.unpack_ctrl` and `Scalar.pack`, the
 `ScalarRel` slices, the NA model's `var_k`, the bridge's `toSlots`, and
 cvc5's own tuple in `smt.encode`. Those were seven independent walks over the
@@ -142,7 +142,7 @@ def _tuple_parts(body: str, n: int) -> "list[str]":
     """Split `build_tuple`'s output back into its `n` components.
 
     `n` has to be told, not inferred: `build_tuple` of one element is that
-    element, so a single `Mat` reconstruction is indistinguishable from a
+    element, so a single matrix reconstruction is indistinguishable from a
     tuple by its parentheses alone. The split is depth-aware for the same
     reason — a reconstruction's `match i, j with` arms are full of commas.
     """
@@ -177,7 +177,7 @@ def test_pack_rebuilds_each_wire_from_its_own_span(wires):
     for w, part in zip(wires, parts):
         offset, size = layout.span(w)
         read = _flat_positions(re.findall(r"s(?:\.[12])*", part), "s", layout.total)
-        # A `Mat` arm per element, in the layout's order, over this wire's
+        # A `Matrix` arm per element, in the layout's order, over this wire's
         # span alone -- plus `mat_from_scalars`' catch-all, which repeats the
         # first slot.
         assert read[:size] == list(range(offset, offset + size))
@@ -197,7 +197,7 @@ def test_pack_places_each_slot_at_its_own_row_and_column(wires):
         mat = mat_from_scalars(slots, wire_shape(w), flat_element_type(w))
         arms = re.findall(r"\| (\d+), (\d+) => s(\d+)", mat)
         placed = {(int(r), int(c)): int(k) for r, c, k in arms}
-        if placed:  # a 1x1 wire has no `match`, just `fun _ _ =>`
+        if placed:  # a 1x1 wire has no `match`, just `Matrix.mk fun _ _ =>`
             for k, (r, c) in enumerate(flat_indices(w)):
                 assert placed[(r, c)] == k, f"wire at offset {offset}"
         else:
@@ -260,7 +260,7 @@ def test_every_sort_is_two_dimensional_so_one_reading_suffices():
             Int(shape)
     row = Wire(Int([1, 3]))
     assert (wire_shape(row).m, wire_shape(row).n) == (1, 3)
-    assert dtype_to_lean_type(row) == "(Mat Int 1 3)"
+    assert dtype_to_lean_type(row) == "(Matrix (Fin 1) (Fin 3) Int)"
     assert flat_indices(row) == [(0, 0), (0, 1), (0, 2)]
     lemma = "\n".join(_recon_lemma_lines(row))
-    assert "recon_int_1_3" in lemma and "(Mat Int 1 3)" in lemma
+    assert "recon_int_1_3" in lemma and "(Matrix (Fin 1) (Fin 3) Int)" in lemma

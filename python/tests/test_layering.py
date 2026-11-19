@@ -40,19 +40,21 @@ LAYERS: dict[str, frozenset[str]] = {
     "lowering": frozenset({"core"}),
     "artifacts": frozenset({"core"}),
     "codegen": frozenset({"core", "lowering"}),
-    "smt": frozenset({"core", "lowering", "artifacts"}),
+    # Reading a predicate's text: the parsers, cvc5's aside.
+    "parse": frozenset({"core", "lowering"}),
+    "smt": frozenset({"core", "lowering", "artifacts", "parse"}),
     # The project on disk. It writes the certificate's files as the text it
     # is handed, so it sits below `proof`, which renders them.
     "project": frozenset({"core", "lowering", "codegen"}),
-    "proof": frozenset({"core", "lowering", "codegen", "smt", "project"}),
+    "proof": frozenset({"core", "lowering", "codegen", "smt", "project", "parse"}),
     # The input formats; one encodes a module through `smt` as it reads it.
     "inputs": frozenset({"core", "smt"}),
     # The command line: read off the input formats' rows.
-    "cli": frozenset({"core", "artifacts", "smt", "inputs"}),
+    "cli": frozenset({"core", "artifacts", "smt", "inputs", "parse"}),
     # `uv run reactor`: every stage, in order.
     "pipeline": frozenset({
         "core", "lowering", "artifacts", "codegen", "smt", "project", "proof",
-        "inputs", "cli"}),
+        "inputs", "cli", "parse"}),
 }
 
 
