@@ -3,8 +3,8 @@
 
 [`checked`] runs every check of a module in order and gives a [`Checked`]
 module, which the later phases (lowering, the reference interpreter,
-printing the sized source) take: [`check`], then sizing, then
-[`definite`] and [`explicit`].
+printing the sized source) take: [`check`] (with the definite-assignment
+rules of the blocks), then sizing, then [`explicit`].
 
 [`check`] resolves names and checks that every signal has exactly one
 driver, that assignments fit their kind of block, and the clocks and
@@ -79,7 +79,7 @@ register. A signal with an initial value that nothing drives is a constant
 (the frontend has made it an `assign` of the value).
 
 An `always_comb` block must also be free of latches and of reads of stale
-values ([`definite`]): every signal it drives is assigned on every path
+values (checked by [`check`]): every signal it drives is assigned on every path
 through the block, and read only after it has been assigned on every path
 to the read.
 (A simulator gives such a read the value from the block's previous run,
@@ -99,7 +99,7 @@ targets would stay x.
 Values are 2-state: an x is accepted only as a dead store, `y = 'x;` in an
 `always_comb` or `q <= 'x;` in an `always_ff` (a literal that is x in every
 bit, to a target with constant indices), whose bits every path assigns
-again before they are read or the block ends ([`definite`]). Such an
+again before they are read or the block ends (checked by [`check`]). Such an
 assignment has no effect. (A live x would be a don't-care, which synthesis
 may resolve to any value; that is not modelled.)
 */
@@ -117,7 +117,6 @@ mod fragment;
 // lowering and sizing are not
 pub use check::check;
 pub use checked::{Checked, checked};
-pub use definite::definite;
 pub use domains::domains;
 pub use fragment::{
     ElemIndex, Piece, Variable, binary, cond, context_free, element, explicit, explicit_source,

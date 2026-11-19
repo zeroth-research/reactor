@@ -1,6 +1,6 @@
 //! A module that passed every check, sized: [`checked`] and [`Checked`].
 
-use super::{Env, Result, check, definite, explicit};
+use super::{Env, Result, check, explicit};
 use crate::ast::{
     Cast, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Select, Stmt, StmtKind,
 };
@@ -37,11 +37,11 @@ impl<'m> Checked<'m> {
     }
 }
 
-/// Checks the module of the elaborated instance `inst` ([`check`]),
-/// sizes it ([`sizing`](crate::sizing)), checks its blocks for latches,
-/// stale reads and live x ([`definite`]) and checks that the sized module
-/// is in the explicit-width fragment ([`explicit`]; a failure there is an
-/// internal error). Errors are positions in the module, without the path
+/// Checks the module of the elaborated instance `inst` ([`check`], which
+/// also checks its blocks for latches, stale reads and live x, each block
+/// in source order), sizes it ([`sizing`](crate::sizing)) and checks that
+/// the sized module is in the explicit-width fragment ([`explicit`]; a
+/// failure there is an internal error). Errors are positions in the module, without the path
 /// of the instance.
 pub fn checked(inst: &Inst) -> Result<Checked<'_>> {
     let m = &inst.module;
@@ -58,7 +58,6 @@ pub fn checked(inst: &Inst) -> Result<Checked<'_>> {
         source: m,
         sized,
     };
-    definite(&c)?;
     explicit(&c)
         .map_err(|e| Error::new(e.span, format!("internal error: sizing left `{}`", e.msg)))?;
     debug_assert!(

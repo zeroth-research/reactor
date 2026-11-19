@@ -2557,7 +2557,13 @@ fn rejected_own_clock_reads() {
         ),
     ];
     for (body, line, needle, msg) in cases {
-        rejects(Some(HEADER_FF), body, line, needle, &format!("{msg}: {race}"));
+        rejects(
+            Some(HEADER_FF),
+            body,
+            line,
+            needle,
+            &format!("{msg}: {race}"),
+        );
     }
     // other blocks may read a clock as data: a block on another clock, and
     // the block of the clock a derived clock comes from (the derived clock
@@ -2800,4 +2806,17 @@ fn sized_concatenation_items() {
     }
     let t = translate("  localparam N = 3; assign y = 8'({a, N});");
     assert_eq!(t.module.atoms().len(), 1);
+}
+
+/// A design with several errors is reported by its first one in source
+/// order, whichever rule it breaks: a latch in a block before an undeclared
+/// name in a later item.
+#[test]
+fn first_error_in_source_order() {
+    let src = format!(
+        "{HEADER}\n  always_comb if (a[0]) y = a;\n  logic [7:0] z;\n  assign z = b;\nendmodule\n"
+    );
+    let err = common::translate(&src).err().expect("rejected");
+    assert!(err.msg.contains("(a latch)"), "{err}");
+    assert_eq!(err.span.line, 2, "{err}");
 }

@@ -547,7 +547,7 @@ pub enum StmtKind {
     /// that is x in every bit, of `size` bits (`None` if unsized). Values
     /// are 2-state, so it is accepted only as a dead store: every path
     /// assigns the bits again before they are read or the block ends
-    /// ([`definite`](crate::typing::definite)). It has no effect.
+    /// ([`check`](crate::typing::check)). It has no effect.
     Unknown {
         lhs: Lvalue,
         blocking: bool,
