@@ -37,7 +37,7 @@ use num_traits::{Signed, ToPrimitive};
 
 /// Why a constant expression is not evaluated.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Failure {
+pub(crate) enum Failure {
     /// The expression is no constant expression: it reads a signal; the
     /// reason is a message.
     NotConstant(String),
@@ -50,21 +50,21 @@ pub enum Failure {
 /// integer, or unsized based (`'hff`, `'sd5`), which has 32 bits and is
 /// unsigned unless marked `s` (then it is an integer too).
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Literal {
+pub(crate) enum Literal {
     Sized(Ty, BitVec),
     Int(i64),
     Unsized(Ty, BitVec),
 }
 
 /// Why a literal with x or z digits is rejected, and where x is accepted.
-pub const X_HINT: &str = "values are 2-state; x is accepted only as the whole value of an \
+pub(crate) const X_HINT: &str = "values are 2-state; x is accepted only as the whole value of an \
     assignment in a block that every path overwrites, e.g. `y = 'x;` before a `case`";
 
 /// Parses a literal without whitespace and `_`: `N'[s]<b|o|d|h>digits` or
 /// decimal digits, or an unsized based literal `'[s]<b|o|d|h>digits`. x/z
 /// digits are rejected (values are 2-state), and so are values that do
 /// not fit in the width (32 bits for unsized literals).
-pub fn literal(text: &str) -> Result<Literal, String> {
+pub(crate) fn literal(text: &str) -> Result<Literal, String> {
     let decimal = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
     let Some((size, rest)) = text.split_once('\'') else {
         if !decimal(text) {
@@ -119,16 +119,11 @@ pub fn literal(text: &str) -> Result<Literal, String> {
 }
 
 /// The integer constant `v`.
-pub fn int_const(v: i64) -> Const {
+pub(crate) fn int_const(v: i64) -> Const {
     Const {
         ty: Ty::INT,
         value: BitVec::from_signed(32, v),
     }
-}
-
-/// The value of an integer constant, `None` for a vector constant.
-pub fn as_int(c: &Const) -> Option<i64> {
-    (c.ty == Ty::INT).then(|| c.value.signed().to_i64().expect("32 bits"))
 }
 
 /// `a op b` on integers, for `op` one of `+ - * / % **`: exact, and an
@@ -136,7 +131,7 @@ pub fn as_int(c: &Const) -> Option<i64> {
 /// the remainder has the sign of the dividend, as in IEEE 1800; a negative
 /// exponent gives 0 except for the bases 1 and -1, and is an error for the
 /// base 0 (the result is x).
-pub fn int_op(op: BinOp, a: i64, b: i64) -> Result<i64, String> {
+pub(crate) fn int_op(op: BinOp, a: i64, b: i64) -> Result<i64, String> {
     let r = match op {
         BinOp::Add => a + b,
         BinOp::Sub => a - b,
@@ -167,7 +162,7 @@ pub fn int_op(op: BinOp, a: i64, b: i64) -> Result<i64, String> {
 }
 
 /// `-a` on integers.
-pub fn int_neg(a: i64) -> Result<i64, String> {
+pub(crate) fn int_neg(a: i64) -> Result<i64, String> {
     fits(-a).ok_or_else(|| format!("`-({a})` overflows 32 bits"))
 }
 
@@ -180,7 +175,7 @@ fn fits(v: i64) -> Option<i64> {
 /// `$clog2(c)`: the number of bits needed for the values `0 .. n-1`, the
 /// least `k` with `2^k ≥ n` (0 for `n` ≤ 1), for `n` the value of `c`; a
 /// negative `int` is an error.
-pub fn clog2(c: &Const) -> Result<i64, String> {
+pub(crate) fn clog2(c: &Const) -> Result<i64, String> {
     if c.ty.signed && c.value.signed().is_negative() {
         return Err(format!(
             "`$clog2` of the negative value {}",
@@ -198,7 +193,7 @@ pub fn clog2(c: &Const) -> Result<i64, String> {
 
 /// The first signal (or array) that `e` reads, if any: then `e` is no
 /// constant expression.
-pub fn signal(e: &Expr) -> Option<&Name> {
+pub(crate) fn signal(e: &Expr) -> Option<&Name> {
     let mut reads = Vec::new();
     e.reads(&mut reads);
     reads.first().map(|(x, _)| *x)
@@ -229,7 +224,7 @@ pub fn exact(e: &Expr) -> Option<Result<i64, String>> {
 
 /// The value of the constant expression `e` at its own type: exact for an
 /// integer constant expression, else as IEEE 1800 evaluates it.
-pub fn value(e: &Expr) -> Result<Const, Failure> {
+pub(crate) fn value(e: &Expr) -> Result<Const, Failure> {
     constant(e)?;
     match exact(e) {
         Some(Ok(v)) => Ok(int_const(v)),
@@ -241,7 +236,7 @@ pub fn value(e: &Expr) -> Result<Const, Failure> {
 /// The value of the constant expression `e` as assigned to a value of type
 /// `ty` (a typed parameter): evaluated at the larger of both widths, then
 /// truncated, as IEEE 1800 assigns.
-pub fn assigned(e: &Expr, ty: Ty) -> Result<Const, Failure> {
+pub(crate) fn assigned(e: &Expr, ty: Ty) -> Result<Const, Failure> {
     constant(e)?;
     let c = sized(e, Some(ty.width))?;
     Ok(Const { ty, value: c.value })
@@ -249,7 +244,7 @@ pub fn assigned(e: &Expr, ty: Ty) -> Result<Const, Failure> {
 
 /// The value of the constant expression `e` as an integer (see [`value`]),
 /// read as signed or unsigned as its type says.
-pub fn int(e: &Expr) -> Result<i64, Failure> {
+pub(crate) fn int(e: &Expr) -> Result<i64, Failure> {
     let c = value(e)?;
     let n: BigInt = if c.ty.signed {
         c.value.signed()

@@ -457,10 +457,7 @@ impl Out<'_> {
 /// A combinational loop through the atoms of several modules (each of them
 /// free of loops), with the position of the instance of the first module
 /// on it that is not the first of `modules`.
-pub(super) fn instance_loop(
-    modules: &[(Module, Span)],
-    vars: &BTreeMap<Name, Var>,
-) -> Option<(Span, String)> {
+fn instance_loop(modules: &[(Module, Span)], vars: &BTreeMap<Name, Var>) -> Option<(Span, String)> {
     let atoms: Vec<(&Atom, Span)> = modules
         .iter()
         .flat_map(|(m, span)| m.atoms().iter().map(move |a| (a, *span)))

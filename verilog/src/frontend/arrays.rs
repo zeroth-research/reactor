@@ -15,14 +15,14 @@ use sv_parser as sv;
 /// An array loaded by `$readmemb` or `$readmemh`: the contents of a ROM, or
 /// the initial values of the elements of a written array.
 pub(super) struct Load {
-    pub(super) array: Name,
-    pub(super) binary: bool,
+    array: Name,
+    binary: bool,
     /// The file name as written, and the file read.
-    pub(super) file: String,
-    pub(super) path: PathBuf,
+    file: String,
+    path: PathBuf,
     /// The value of each element, if the file gives one.
-    pub(super) values: Vec<Option<BitVec>>,
-    pub(super) span: Span,
+    values: Vec<Option<BitVec>>,
+    span: Span,
 }
 
 /// The words of a file read by `$readmemb` (`binary`) or `$readmemh` for
@@ -247,7 +247,7 @@ pub(super) fn resolve(m: &mut Module, loads: Vec<Load>) -> Result<()> {
     Ok(())
 }
 
-pub(super) struct Resolver<'a> {
+struct Resolver<'a> {
     arrays: &'a BTreeMap<Name, Array>,
 }
 

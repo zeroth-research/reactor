@@ -107,11 +107,11 @@ pub fn definite(env: &Env, item: &Item) -> Result<()> {
 }
 
 /// Bits of signals.
-pub(super) type Bits = BTreeSet<(Name, usize)>;
+type Bits = BTreeSet<(Name, usize)>;
 
 /// What the paths to a point of a block have assigned.
 #[derive(Clone, Default)]
-pub(super) struct State {
+struct State {
     /// The bits assigned on every path.
     done: Bits,
     /// The bits assigned x and not assigned again on some path, with the
@@ -187,11 +187,7 @@ pub(super) fn one_kind_of_assignment<'s>(
 /// blocking `=` before it may have assigned: a `=` is accepted there only
 /// where it means the same as `<=`, so its new value must never be read in
 /// the block.
-pub(super) fn blocked_reads(
-    reads: &[(&Name, usize, usize, Span)],
-    st: &State,
-    block: &str,
-) -> Result<()> {
+fn blocked_reads(reads: &[(&Name, usize, usize, Span)], st: &State, block: &str) -> Result<()> {
     for (x, hi, lo, span) in reads {
         let Some(at) = (*lo..=*hi)
             .filter_map(|b| st.blocked.get(&((*x).clone(), b)))
@@ -213,7 +209,7 @@ pub(super) fn blocked_reads(
     Ok(())
 }
 
-pub(super) struct Definite<'t> {
+struct Definite<'t> {
     env: &'t Env,
     targets: &'t [&'t Name],
     /// An `always_comb` (else an `always_ff`, where only x is checked).
@@ -487,7 +483,7 @@ impl Definite<'_> {
 
 /// The reads in `e` with the bits `(hi, lo)` each may read; a variable
 /// index may read any bit.
-pub(super) fn bit_reads<'e>(env: &Env, e: &'e Expr, out: &mut Vec<(&'e Name, usize, usize, Span)>) {
+fn bit_reads<'e>(env: &Env, e: &'e Expr, out: &mut Vec<(&'e Name, usize, usize, Span)>) {
     match &e.kind {
         ExprKind::Lit { .. } | ExprKind::Const { .. } | ExprKind::Fill(_) => {}
         ExprKind::Var(x) => out.push((x, env[x].ty.width - 1, 0, e.span)),

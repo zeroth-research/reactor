@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// or the expression connected to an input of an instance (in the
 /// instantiating one).
 #[derive(Clone, Copy)]
-pub(super) enum Source<'m> {
+enum Source<'m> {
     Item(&'m Item),
     Conn(&'m Expr, Span),
 }
@@ -107,7 +107,7 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
 }
 
 /// A hierarchy as [`domains`] sees it.
-pub(super) struct Hierarchy<'i> {
+struct Hierarchy<'i> {
     /// The instances with their paths, each instance before its children.
     pub(super) insts: Vec<(&'i Inst, String)>,
     /// The name of every signal path (see [`Inst::naming`]).
@@ -176,7 +176,7 @@ impl<'i> Hierarchy<'i> {
     }
 
     /// The name of the signal `x` of instance `k`.
-    pub(super) fn canon(&self, k: usize, x: &str) -> Name {
+    fn canon(&self, k: usize, x: &str) -> Name {
         self.naming[&format!("{}{x}", self.insts[k].1)].clone()
     }
 
@@ -188,7 +188,7 @@ impl<'i> Hierarchy<'i> {
 
     /// The root of the clock `c` of instance `k`, used at `span`; for a
     /// reset (`reset`), the input or register at the end of the chain.
-    pub(super) fn root(&self, k: usize, c: &Name, span: Span, reset: bool) -> Result<Name> {
+    fn root(&self, k: usize, c: &Name, span: Span, reset: bool) -> Result<Name> {
         let err = |msg: String| elab::context(Error::new(span, msg), &self.insts[k].1);
         let what = if reset { "reset" } else { "clock" };
         let mut x = self.canon(k, c);
@@ -280,7 +280,7 @@ impl<'i> Hierarchy<'i> {
     }
 
     /// What every combinational signal reads, by name: pairs (signal, read).
-    pub(super) fn comb_reads(&self) -> Vec<(Name, Name)> {
+    fn comb_reads(&self) -> Vec<(Name, Name)> {
         let mut comb: Vec<(Name, Name)> = Vec::new();
         for (k, item) in self.blocks() {
             match item {
@@ -312,10 +312,7 @@ impl<'i> Hierarchy<'i> {
 /// Extends the sets of `sets` along the combinational reads `comb` (pairs
 /// (signal, read)) until nothing changes: afterwards a signal's set holds
 /// those of everything it depends on through combinational logic.
-pub(super) fn propagate<T: Ord + Clone>(
-    comb: &[(Name, Name)],
-    sets: &mut BTreeMap<Name, BTreeSet<T>>,
-) {
+fn propagate<T: Ord + Clone>(comb: &[(Name, Name)], sets: &mut BTreeMap<Name, BTreeSet<T>>) {
     loop {
         let mut changed = false;
         for (y, x) in comb {
@@ -434,7 +431,7 @@ fn reset_edge_reads(
 /// An event that runs `always_ff` blocks, as a simulator sees it: a rising
 /// (`true`) or falling edge of a bit of a signal, by name, after following
 /// copies to the signal that makes the edge.
-pub(super) type Event = (Name, usize, bool);
+type Event = (Name, usize, bool);
 
 /// The event `edge` of the clock `x` of instance `k`; adds to `with` the
 /// event and those it can happen together with in one step of a
@@ -442,7 +439,7 @@ pub(super) type Event = (Name, usize, bool);
 /// at its own clock edge run (not after them, as with `<=`), so its edges
 /// belong to that event too. (A register with an asynchronous reset is
 /// assigned with `<=`, as its reset branch is.)
-pub(super) fn event(
+fn event(
     h: &Hierarchy,
     blocking: &BTreeMap<Name, ((usize, usize), Span)>,
     k: usize,
@@ -482,7 +479,7 @@ pub(super) fn event(
 /// ([`event`]); the two edges of one bit never do. Reads of `<=`
 /// registers are not affected: every block reads them before any of them
 /// changes, in simulation as in the translation.
-pub(super) fn blocking_races(h: &Hierarchy, comb: &[(Name, Name)]) -> Result<()> {
+fn blocking_races(h: &Hierarchy, comb: &[(Name, Name)]) -> Result<()> {
     // the registers assigned with `=`: their block (instance, item) and the
     // first such assignment
     let mut blocking: BTreeMap<Name, ((usize, usize), Span)> = BTreeMap::new();
@@ -563,7 +560,7 @@ pub(super) fn blocking_races(h: &Hierarchy, comb: &[(Name, Name)]) -> Result<()>
 /// Rejects a read, in an `always_ff` block, of a signal on the chain of
 /// its own clock (see [`domains`]), directly or through combinational
 /// logic.
-pub(super) fn own_clock_reads(h: &Hierarchy, comb: &[(Name, Name)]) -> Result<()> {
+fn own_clock_reads(h: &Hierarchy, comb: &[(Name, Name)]) -> Result<()> {
     // the chain of every block's clock, by name, from the clock to its root
     let mut chains: BTreeMap<(usize, usize), Vec<Name>> = BTreeMap::new();
     for (k, (i, _)) in h.insts.iter().enumerate() {
@@ -643,7 +640,7 @@ pub(super) fn own_clock_reads(h: &Hierarchy, comb: &[(Name, Name)]) -> Result<()
 /// reset to 0 makes a falling edge, a reset to 1 a rising one, and a reset
 /// value that is not a plain constant is taken to make either. Past a
 /// register, any edge of its clock that it runs at moves it.
-pub(super) fn reset_edge(
+fn reset_edge(
     h: &Hierarchy,
     dom: &BTreeMap<Name, BTreeSet<Name>>,
     c: &Name,
@@ -711,7 +708,7 @@ pub(super) fn reset_edge(
 /// Bit `bit` (0 if not given) of the reset value `v`, assigned to the
 /// register, if `v` is a literal, a parameter or `'0`/`'1`: extended by its
 /// own signedness, as an assignment does.
-pub(super) fn reset_bit(v: &Expr, bit: Option<usize>) -> Option<bool> {
+fn reset_bit(v: &Expr, bit: Option<usize>) -> Option<bool> {
     let k = bit.unwrap_or(0);
     match &v.kind {
         ExprKind::Lit { ty, value } | ExprKind::Const { ty, value, .. } => Some(if k < ty.width {
@@ -731,7 +728,7 @@ pub(super) fn copy(e: &Expr) -> Option<&Name> {
 }
 
 /// [`copy`], with the bit for a bit select.
-pub(super) fn copy_bit(e: &Expr) -> Option<(&Name, Option<usize>)> {
+fn copy_bit(e: &Expr) -> Option<(&Name, Option<usize>)> {
     match &e.kind {
         ExprKind::Var(x) => Some((x, None)),
         ExprKind::Select(x, Select::Bit(Index::Const(b))) => Some((x, Some(*b))),

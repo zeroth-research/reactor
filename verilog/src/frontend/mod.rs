@@ -120,10 +120,8 @@ mod expr;
 mod stmt;
 
 pub(crate) use decl::constants;
-pub use design::{
-    Design, depends_on_macro, parse, parse_design, parse_design_file, parse_design_files,
-    parse_file,
-};
+pub(crate) use design::parse_design_file;
+pub use design::{Design, depends_on_macro, parse, parse_design, parse_design_files};
 
 use arrays::Load;
 use design::at;

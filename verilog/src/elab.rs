@@ -75,7 +75,7 @@ pub fn elaborate(d: &Design, top: &str, overrides: &[Override]) -> Result<Inst> 
 }
 
 /// Adds the path of the instance to an error from inside it.
-pub fn context(e: Error, path: &str) -> Error {
+pub(crate) fn context(e: Error, path: &str) -> Error {
     if path.is_empty() {
         e
     } else {

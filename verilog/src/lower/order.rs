@@ -41,7 +41,7 @@ pub(super) fn await_order<'m>(mut pending: Vec<Pending<'m>>) -> Result<Vec<&'m I
 
 /// An error naming a cycle among items none of which is ready, and a block
 /// through which the cycle passes only because the block is one atom.
-pub(super) fn combinational_loop(pending: &[Pending]) -> Error {
+fn combinational_loop(pending: &[Pending]) -> Error {
     // every item awaits some other pending item: walk until one repeats,
     // recording the signal by which each item is entered
     let mut path: Vec<(usize, Option<&Name>)> = vec![(0, None)];
@@ -124,7 +124,7 @@ pub(super) fn dependencies(body: &Stmt) -> BTreeMap<Name, BTreeSet<Name>> {
 
 /// Updates `deps` (the current dependencies of the signals assigned so
 /// far) by `s`, run under conditions depending on `ctrl`.
-pub(super) fn depend(s: &Stmt, ctrl: &BTreeSet<Name>, deps: &mut BTreeMap<Name, BTreeSet<Name>>) {
+fn depend(s: &Stmt, ctrl: &BTreeSet<Name>, deps: &mut BTreeMap<Name, BTreeSet<Name>>) {
     let resolve = |e: &Expr, deps: &BTreeMap<Name, BTreeSet<Name>>| {
         let mut reads = Vec::new();
         e.reads(&mut reads);

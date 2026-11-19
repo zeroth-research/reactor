@@ -123,7 +123,10 @@ mod tests {
         let v = coalesce(vec![seg(4, Some((a, 4))), seg(4, Some((a, 0)))]);
         assert_eq!(as_wire(&v), Some(a));
         // unassigned bits join too
-        assert_eq!(coalesce(vec![seg(2, None), seg(3, None)]), vec![seg(5, None)]);
+        assert_eq!(
+            coalesce(vec![seg(2, None), seg(3, None)]),
+            vec![seg(5, None)]
+        );
         // a[3:0] a[7:4] (swapped halves) and bits of different wires stay apart
         let swapped = vec![seg(4, Some((a, 0))), seg(4, Some((a, 4)))];
         assert_eq!(coalesce(swapped.clone()), swapped);
