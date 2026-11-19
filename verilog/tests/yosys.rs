@@ -1338,6 +1338,30 @@ endmodule
     );
 }
 
+/// A known deviation of Yosys (0.69): it evaluates the override of a typed
+/// parameter in the parent at the override expression's own width and only
+/// then converts it, so `.W(4'd15 + 4'd1)` wraps to 0 before it reaches the
+/// 8-bit `W`. By the standard an override value is converted to the
+/// parameter's type (§23.10), that is, assigned to it (§11.8.3), so the
+/// expression is sized in the 8-bit context and gives 16; iverilog and
+/// slang agree with us. The miter finds it, and the replay sides with us.
+#[test]
+fn yosys_sizes_parameter_overrides_by_themselves() {
+    let Some((yosys, z3)) = tools() else { return };
+    let source = "\
+module child #(parameter logic [7:0] W = 8'd1) (output logic [7:0] y);
+  assign y = W;
+endmodule
+module top(output logic [7:0] y);
+  child #(.W(4'd15 + 4'd1)) u(.y(y));
+endmodule
+";
+    assert_eq!(
+        deviation((&yosys, &z3), "override.sv", source),
+        ours(&["init:y", "y"])
+    );
+}
+
 /// Yosys's netlist of `tests/varwrites.sv` drives the input bit `e[0]`
 /// (see above), so its accessor of `e` is no longer built from declared
 /// symbols only. Run without the guards of `yosys::run` (the option that
