@@ -32,6 +32,16 @@
 //! replay that cannot be made is reported under its query, and the other
 //! queries are still reported.
 //!
+//! v2rm runs on a thread with a stack of 1 GiB (reserved, used only as
+//! deep as the recursion goes): the parser recurses once per operand of a
+//! chain of binary operators and per level of parentheses, with about
+//! 10 KB of stack each, so the 8 MB of the main thread end at about 800
+//! operands in one expression. With 1 GiB the limit is about 100 000
+//! operands, far beyond what the parser handles in reasonable time (its
+//! time grows with the square of the length of a chain: 10 000 operands
+//! take minutes). Should the thread not start (a limit on virtual
+//! memory), v2rm runs on the main thread.
+//!
 //! Exit status: 0 when the module was printed, or under `--yosys` when
 //! every query is equal; 1 under `--yosys` when a variable differs or z3
 //! gave up on a query; 2 on an error in the design, in running Yosys or
@@ -179,7 +189,21 @@ fn options(args: impl IntoIterator<Item = String>) -> Result<Option<Options>, Ve
     }
 }
 
+/// The stack of the thread v2rm runs on (see the module docs).
+const STACK: usize = 1 << 30;
+
 fn main() -> ExitCode {
+    let thread = std::thread::Builder::new()
+        .name("v2rm".to_string())
+        .stack_size(STACK)
+        .spawn(run);
+    match thread {
+        Ok(t) => t.join().unwrap_or_else(|e| std::panic::resume_unwind(e)),
+        Err(_) => run(),
+    }
+}
+
+fn run() -> ExitCode {
     let Options {
         top,
         params,

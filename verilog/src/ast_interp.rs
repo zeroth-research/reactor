@@ -55,6 +55,14 @@ input connected to another expression is computed from it on demand.
 Register initial values are given by path (`u.q`), for the registers
 without an initializer.
 
+Computing a signal on demand recurses into the signals it reads, so the
+stack grows with the longest chain of combinational signals (one `assign`
+reading the previous one, about 1 KB of stack per signal in a release
+build) and with the depth of expressions: a chain of a few thousand
+signals needs more than the 2 MB of a spawned thread or the 8 MB of the
+main thread; run the interpreter on a thread with a larger stack for
+such designs (as `v2rm` does).
+
 [`SvOp`]: crate::SvOp
 */
 
