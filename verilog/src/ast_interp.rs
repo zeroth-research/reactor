@@ -62,7 +62,7 @@ use crate::ast::{
     BinOp, Cast, Dir, Edge, Elems, Error, ErrorKind, Expr, ExprKind, Index, Item, Name, Select,
     Stmt, StmtKind, Ty, UnOp,
 };
-use crate::elab::{self, Inst};
+use crate::elab::{self, Inst, Path};
 use crate::typing::{self, Checked};
 use crate::value::BitVec;
 use num_bigint::{BigInt, BigUint};
@@ -139,7 +139,10 @@ impl<'m> Interp<'m> {
                 it.inputs.push((p.decl.name.clone(), p.decl.ty));
             }
         }
-        it.add(inst, "", &naming)?;
+        // the ports of a blackbox are no signals, and it has no instances
+        for (path, i) in inst.iter().filter(|(_, i)| !i.module.blackbox) {
+            it.add(i, &path, &naming)?;
+        }
         let err = |msg: String| Error::unlocated(ErrorKind::User, msg);
         for (name, c, e) in &it.initialized {
             let width = it.signals[name].width;
@@ -179,11 +182,11 @@ impl<'m> Interp<'m> {
         Ok(it)
     }
 
-    /// Adds the instance at path `prefix` and those below it.
+    /// Adds the instance at path `prefix` (not those below it).
     fn add(
         &mut self,
         inst: &'m Inst,
-        prefix: &str,
+        prefix: &Path,
         naming: &BTreeMap<Name, Name>,
     ) -> Result<(), Error> {
         let checked = typing::checked(inst).map_err(|e| elab::context(e, prefix))?;
@@ -191,7 +194,7 @@ impl<'m> Interp<'m> {
         let c = self.ctxs.len();
         let names: BTreeMap<Name, Name> = env
             .keys()
-            .map(|x| (x.clone(), naming[&format!("{prefix}{x}")].clone()))
+            .map(|x| (x.clone(), naming[&prefix.signal(x)].clone()))
             .collect();
         for (x, sig) in env {
             self.signals.insert(names[x].clone(), sig.ty);
@@ -210,7 +213,7 @@ impl<'m> Interp<'m> {
                     self.blocks
                         .push((c, item, names[clock].clone(), *edge, reset));
                     for q in item.targets() {
-                        let path = format!("{prefix}{q}");
+                        let path = prefix.signal(q);
                         self.registers.push((path, names[q].clone(), env[q].ty));
                         self.driver.insert(names[q].clone(), (c, Driver::Ff(b)));
                     }
@@ -237,7 +240,7 @@ impl<'m> Interp<'m> {
                         if let Some(e) = &conn.actual
                             && conn.shared().is_none()
                         {
-                            let name = naming[&format!("{prefix}{}.{}", i.name, conn.port)].clone();
+                            let name = naming[&prefix.child(&i.name).signal(&conn.port)].clone();
                             self.signals.insert(name.clone(), f.ty);
                             self.driver.insert(name, (c, Driver::Conn(e)));
                         }
@@ -246,9 +249,6 @@ impl<'m> Interp<'m> {
             }
         }
         self.ctxs.push(Ctx { checked, names });
-        for (u, child) in inst.children.iter().filter(|(_, c)| !c.module.blackbox) {
-            self.add(child, &format!("{prefix}{u}."), naming)?;
-        }
         Ok(())
     }
 

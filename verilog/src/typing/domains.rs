@@ -6,7 +6,7 @@ use super::definite::one_kind_of_assignment;
 use crate::ast::{
     Dir, Edge, Error, ErrorKind, Expr, ExprKind, Index, Item, LvalueKind, Name, Select, Span,
 };
-use crate::elab::{self, Inst};
+use crate::elab::{self, Inst, Path};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// What drives a signal, as [`domains`] sees it: an item of an instance,
@@ -111,10 +111,12 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
 /// A hierarchy as [`domains`] sees it.
 struct Hierarchy<'i> {
     /// The instances with their paths, each instance before its children.
-    pub(super) insts: Vec<(&'i Inst, String)>,
+    pub(super) insts: Vec<(&'i Inst, Path)>,
     /// The name of every signal path (see [`Inst::naming`]).
     naming: BTreeMap<Name, Name>,
-    /// The driver of every signal, by name, with its instance and its path.
+    /// The driver of every signal, by name, with its instance and its name
+    /// there (`u.a` for the input `a` of the instance `u` connected to an
+    /// expression).
     pub(super) drivers: BTreeMap<Name, (usize, Name, Source<'i>)>,
     /// The inputs of the top module and the outputs of blackboxes: free
     /// values, by name, with their widths.
@@ -124,14 +126,7 @@ struct Hierarchy<'i> {
 impl<'i> Hierarchy<'i> {
     fn new(inst: &'i Inst) -> Self {
         let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
-        let mut insts: Vec<(&Inst, String)> = Vec::new();
-        let mut walk = vec![(inst, String::new())];
-        while let Some((i, prefix)) = walk.pop() {
-            for (u, child) in i.children.iter().rev() {
-                walk.push((child, format!("{prefix}{u}.")));
-            }
-            insts.push((i, prefix));
-        }
+        let insts = inst.iter().map(|(path, i)| (i, path)).collect();
         let mut h = Hierarchy {
             insts,
             naming,
@@ -147,17 +142,17 @@ impl<'i> Hierarchy<'i> {
                                 && c.shared().is_none()
                                 && !f.blackbox
                             {
-                                let path = format!("{prefix}{}.{}", u.name, c.port);
+                                let local = format!("{}.{}", u.name, c.port);
+                                let name = h.naming[&prefix.signal(&local)].clone();
                                 let source = Source::Conn(e, c.span);
-                                h.drivers.insert(h.naming[&path].clone(), (k, path, source));
+                                h.drivers.insert(name, (k, local, source));
                             }
                         }
                     }
                     _ => {
                         for y in item.targets() {
-                            let path = format!("{prefix}{y}");
                             h.drivers
-                                .insert(h.canon(k, y), (k, path, Source::Item(item)));
+                                .insert(h.canon(k, y), (k, y.clone(), Source::Item(item)));
                         }
                     }
                 }
@@ -179,7 +174,7 @@ impl<'i> Hierarchy<'i> {
 
     /// The name of the signal `x` of instance `k`.
     fn canon(&self, k: usize, x: &str) -> Name {
-        self.naming[&format!("{}{x}", self.insts[k].1)].clone()
+        self.naming[&self.insts[k].1.signal(x)].clone()
     }
 
     /// The items of every instance, with the instance's number.
@@ -201,7 +196,7 @@ impl<'i> Hierarchy<'i> {
                 return Err(err(format!("internal error: {what} loop through `{x}`"))
                     .of_kind(ErrorKind::Internal));
             }
-            let Some((d, path, source)) = self.drivers.get(&x) else {
+            let Some((d, local, source)) = self.drivers.get(&x) else {
                 return match self.free.get(&x) {
                     Some(1) => Ok(x),
                     Some(_) if reset => Ok(x),
@@ -234,6 +229,7 @@ impl<'i> Hierarchy<'i> {
                 let msg = if chain.is_empty() && *d == k {
                     format!("the {what} `{c}` is computed combinationally")
                 } else {
+                    let path = self.insts[*d].1.signal(local);
                     format!(
                         "the {what} `{c}` comes from `{path}`, computed combinationally at {at}"
                     )
@@ -652,7 +648,7 @@ fn reset_edge(
     r: &Name,
 ) -> Result<Option<String>> {
     let (mut x, mut want, mut bit) = (c.clone(), edge, None);
-    while let Some((d, path, source)) = h.drivers.get(&x) {
+    while let Some((d, local, source)) = h.drivers.get(&x) {
         let next = match source {
             Source::Item(Item::AlwaysFf {
                 clock,
@@ -661,7 +657,6 @@ fn reset_edge(
                 body,
                 ..
             }) => {
-                let local = &path[h.insts[*d].1.len()..];
                 let value = body.reset_values().into_iter().find(|(q, _)| *q == local);
                 if let (Some(rst), Some((_, v))) = (reset, value) {
                     // the domain of the reset: the root of its register's
@@ -686,6 +681,7 @@ fn reset_edge(
                             }
                             (None, _) => format!("sets {of} to `{v}`, which could make an edge"),
                         };
+                        let path = h.insts[*d].1.signal(local);
                         return Ok(Some(format!(
                             "the asynchronous reset `{}` of `{path}` {what}",
                             rst.name

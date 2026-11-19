@@ -7,7 +7,7 @@ use crate::ast::{
     self, Dir, Edge, Error, ErrorKind, Expr, Instance, Item, Lvalue, LvalueKind, Name, Reset, Span,
     Warning,
 };
-use crate::elab::{self, Inst};
+use crate::elab::{self, Inst, Path};
 use crate::typing;
 use crate::{Atom, Module, Sort, SvOp, Var, Wire};
 use base::var::X;
@@ -45,10 +45,10 @@ impl Out<'_> {
     }
 }
 
-/// Translates the instance at path `prefix` (`""` or ending in `.`): its
+/// Translates the instance at path `prefix`: its
 /// own items become atoms, its instances modules, which are composed with
 /// the signals of the module hidden.
-pub(super) fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
+pub(super) fn lower_rec(inst: &Inst, prefix: &Path, out: &mut Out) -> Result<Module> {
     let ctx = |e: Error| elab::context(e, prefix);
     let checked = typing::checked(inst).map_err(ctx)?;
     // every implicit resize made explicit, so that the terms below need
@@ -133,7 +133,7 @@ fn declare(
     env: &typing::Env,
     connections: &[Item],
     inits: &BTreeMap<&Name, &Expr>,
-    prefix: &str,
+    prefix: &Path,
     out: &mut Out,
 ) -> BTreeMap<Name, Var> {
     // in declaration order, so that variable ids (and printing) follow it
@@ -143,11 +143,11 @@ fn declare(
         .map(|d| d.name.clone())
         .chain(connections.iter().flat_map(|c| c.targets()).cloned());
     for x in locals.collect::<Vec<_>>() {
-        let name = out.naming[&format!("{prefix}{x}")].clone();
+        let name = out.naming[&prefix.signal(&x)].clone();
         vars.insert(x.clone(), out.var(&name, env[&x].ty.width));
     }
     for q in m.registers() {
-        let path = format!("{prefix}{q}");
+        let path = prefix.signal(q);
         if inits.contains_key(q) {
             out.initialized.push(path.clone());
         } else {
@@ -157,7 +157,7 @@ fn declare(
         out.registers.push(path);
     }
     for (q, _) in m.items.iter().filter_map(reset_of).flat_map(|(_, v)| v) {
-        out.reset_registers.push(format!("{prefix}{q}"));
+        out.reset_registers.push(prefix.signal(q));
     }
     vars
 }
@@ -168,12 +168,12 @@ fn declare(
 fn pending<'m>(
     items: impl Iterator<Item = &'m Item>,
     inits: &BTreeMap<&Name, &Expr>,
-    prefix: &str,
+    prefix: &Path,
     naming: &BTreeMap<Name, Name>,
 ) -> Vec<Pending<'m>> {
     let canon = |x: &Name| {
         naming
-            .get(&format!("{prefix}{x}"))
+            .get(&prefix.signal(x))
             .cloned()
             .unwrap_or_else(|| x.clone())
     };
@@ -233,7 +233,7 @@ struct Atoms<'a> {
     vars: &'a BTreeMap<Name, Var>,
     /// The initial values of registers (the others have `q@init`).
     inits: &'a BTreeMap<&'a Name, &'a Expr>,
-    prefix: &'a str,
+    prefix: &'a Path,
 }
 
 impl<'a> Atoms<'a> {
@@ -346,7 +346,7 @@ fn compose(
     atoms: Vec<Atom>,
     vars: &BTreeMap<Name, Var>,
     connections: &[Item],
-    prefix: &str,
+    prefix: &Path,
     out: &mut Out,
 ) -> Result<Module> {
     let ctx = |e: Error| elab::context(e, prefix);
@@ -379,10 +379,10 @@ fn compose(
             out.blackboxes.push(elab::context(warning, prefix));
             continue;
         }
-        let path = format!("{prefix}{u}.");
+        let path = prefix.child(u);
         let module = lower_rec(child, &path, out)?;
         out.instances.push(Part {
-            path: format!("{prefix}{u}"),
+            path: path.clone(),
             title: title(&child.module),
             module: module.clone(),
         });
@@ -394,7 +394,7 @@ fn compose(
                 .iter()
                 .any(|c| c.port == p.decl.name && c.actual.is_some());
             if !connected {
-                hidden.insert(out.vars[&format!("{path}{}", p.decl.name)]);
+                hidden.insert(out.vars[&path.signal(&p.decl.name)]);
             }
         }
     }
@@ -414,12 +414,12 @@ fn compose(
 fn blackbox_warning(
     i: &Instance,
     child: &Inst,
-    prefix: &str,
+    prefix: &Path,
     naming: &BTreeMap<Name, Name>,
 ) -> Warning {
     let free: Vec<String> = (i.conns(Dir::Output))
         .filter_map(|(c, _)| c.shared())
-        .map(|y| format!("`{}`", naming[&format!("{prefix}{y}")]))
+        .map(|y| format!("`{}`", naming[&prefix.signal(y)]))
         .collect();
     let mut what = match free.as_slice() {
         [] => Vec::new(),
@@ -446,9 +446,9 @@ fn blackbox_warning(
 impl Out<'_> {
     /// Adds the names of intermediate values of an atom of the instance at
     /// `prefix`.
-    fn add_names(&mut self, prefix: &str, names: HashMap<Wire, Name>) {
+    fn add_names(&mut self, prefix: &Path, names: HashMap<Wire, Name>) {
         self.wire_names
-            .extend(names.into_iter().map(|(w, n)| (w, format!("{prefix}{n}"))));
+            .extend(names.into_iter().map(|(w, n)| (w, prefix.signal(&n))));
     }
 }
 

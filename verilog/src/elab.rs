@@ -38,7 +38,6 @@ use crate::ast::{
 };
 use crate::frontend::{self, Design};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -50,16 +49,55 @@ pub struct Inst {
     pub children: Vec<(Name, Inst)>,
 }
 
+/// The path of an instance in the hierarchy: empty for the top module, `u`
+/// for its instance `u`, `u.v` for the instance `v` of `u`. The signal `x`
+/// of the instance has the path `u.v.x` ([`Path::signal`]).
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Path {
+    /// `""` or the names of the instances, each followed by `.`.
+    prefix: String,
+}
+
+impl Path {
+    /// The path of the top module.
+    pub fn top() -> Self {
+        Self::default()
+    }
+
+    pub fn is_top(&self) -> bool {
+        self.prefix.is_empty()
+    }
+
+    /// The path of the instance `u` of this instance.
+    pub fn child(&self, u: &str) -> Self {
+        Self {
+            prefix: format!("{}{u}.", self.prefix),
+        }
+    }
+
+    /// The path of the signal (or port) `x` of this instance: `u.v.x`.
+    pub fn signal(&self, x: &str) -> Name {
+        format!("{}{x}", self.prefix)
+    }
+}
+
+/// `u.v`, empty for the top module.
+impl std::fmt::Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.prefix.trim_end_matches('.'))
+    }
+}
+
 /// Parses a file and elaborates its top module with the default parameter
 /// values.
-pub fn load_file(path: impl AsRef<Path>) -> Result<Inst> {
+pub fn load_file(path: impl AsRef<std::path::Path>) -> Result<Inst> {
     let d = frontend::parse_design_file(path)?;
     elaborate(&d, &d.top()?, &[])
 }
 
 /// Parses `source` and elaborates its top module with the default
 /// parameter values.
-pub fn load(source: &str, path: impl AsRef<Path>) -> Result<Inst> {
+pub fn load(source: &str, path: impl AsRef<std::path::Path>) -> Result<Inst> {
     let d = frontend::parse_design(source, path)?;
     elaborate(&d, &d.top()?, &[])
 }
@@ -73,7 +111,7 @@ pub fn elaborate(d: &Design, top: &str, overrides: &[Override]) -> Result<Inst> 
             format!("`{top}` is a blackbox: it cannot be the top module"),
         ));
     }
-    let top = inst(d, top, overrides, "", &mut Vec::new())?;
+    let top = inst(d, top, overrides, &Path::top(), &mut Vec::new())?;
     debug_assert!(connected(&top), "a connection without its port");
     Ok(top)
 }
@@ -87,11 +125,10 @@ fn connected(inst: &Inst) -> bool {
 }
 
 /// Adds the path of the instance to an error from inside it.
-pub(crate) fn context<M: Message>(e: M, path: &str) -> M {
-    if path.is_empty() {
+pub(crate) fn context<M: Message>(e: M, path: &Path) -> M {
+    if path.is_top() {
         e
     } else {
-        let path = path.trim_end_matches('.');
         Message::map_msg(e, |msg| format!("{msg} (in instance `{path}`)"))
     }
 }
@@ -213,13 +250,13 @@ fn connect(
     Ok(())
 }
 
-/// Elaborates the module `name` at `prefix` (`""` or a path ending in
-/// `.`); `stack` holds the modules instantiating it.
+/// Elaborates the module `name` at `prefix`; `stack` holds the modules
+/// instantiating it.
 fn inst(
     d: &Design,
     name: &str,
     overrides: &[Override],
-    prefix: &str,
+    prefix: &Path,
     stack: &mut Vec<Name>,
 ) -> Result<Inst> {
     let mut module = d.module(name, overrides).map_err(|e| context(e, prefix))?;
@@ -253,8 +290,7 @@ fn inst(
             let msg = format!("recursive instantiation of `{}`", i.module);
             return Err(context(Error::unsupported(i.span, msg), prefix));
         }
-        let path = format!("{prefix}{}.", i.name);
-        let child = inst(d, &i.module, &i.params, &path, stack)?;
+        let child = inst(d, &i.module, &i.params, &prefix.child(&i.name), stack)?;
         connect(i, &child, &widths, &pins, &module_name).map_err(|e| context(e, prefix))?;
         children.push((i.name.clone(), child));
     }
@@ -282,44 +318,50 @@ impl Inst {
         }
     }
 
+    /// Every instance of the hierarchy with its path, the top module first,
+    /// each module before its instances, the instances in source order.
+    pub fn iter(&self) -> impl Iterator<Item = (Path, &Inst)> {
+        let mut stack = vec![(Path::top(), self)];
+        std::iter::from_fn(move || {
+            let (path, inst) = stack.pop()?;
+            for (u, child) in inst.children.iter().rev() {
+                stack.push((path.child(u), child));
+            }
+            Some((path, inst))
+        })
+    }
+
     /// The name in the translated module of every signal path, in order:
     /// the signals of a module (ports, internal signals) before those of
     /// its instances.
     pub fn naming(&self) -> Vec<(Name, Name)> {
         let mut out = Vec::new();
         let mut map = BTreeMap::new();
-        self.walk("", &BTreeMap::new(), &mut out, &mut map);
-        out
-    }
-
-    fn walk(
-        &self,
-        prefix: &str,
-        given: &BTreeMap<Name, Name>,
-        out: &mut Vec<(Name, Name)>,
-        map: &mut BTreeMap<Name, Name>,
-    ) {
-        let m = &self.module;
-        let decls = m.ports.iter().map(|p| &p.decl).chain(&m.decls);
-        for d in decls {
-            let path = format!("{prefix}{}", d.name);
-            let name = given.get(&d.name).cloned().unwrap_or_else(|| path.clone());
-            map.insert(path.clone(), name.clone());
-            out.push((path, name));
-        }
+        // the names given to the ports of each instance by its parent
+        let mut given: BTreeMap<Path, BTreeMap<Name, Name>> = BTreeMap::new();
         // the ports of a blackbox are no signals of the design: its
-        // outputs are the signals they are connected to
-        for (u, child) in self.children.iter().filter(|(_, c)| !c.module.blackbox) {
-            let i = m.instances().find(|i| i.name == *u).expect("an instance");
-            let mut connected = BTreeMap::new();
-            for c in &i.conns {
-                if let Some(y) = c.shared() {
-                    let name = map[&format!("{prefix}{y}")].clone();
-                    connected.insert(c.port.clone(), name);
-                }
+        // outputs are the signals they are connected to (and a blackbox
+        // has no instances)
+        for (path, inst) in self.iter().filter(|(_, i)| !i.module.blackbox) {
+            let ports = given.remove(&path).unwrap_or_default();
+            let m = &inst.module;
+            for d in m.ports.iter().map(|p| &p.decl).chain(&m.decls) {
+                let signal = path.signal(&d.name);
+                let name = ports.get(&d.name).cloned().unwrap_or_else(|| signal.clone());
+                map.insert(signal.clone(), name.clone());
+                out.push((signal, name));
             }
-            child.walk(&format!("{prefix}{u}."), &connected, out, map);
+            for i in m.instances() {
+                let mut connected = BTreeMap::new();
+                for c in &i.conns {
+                    if let Some(y) = c.shared() {
+                        connected.insert(c.port.clone(), map[&path.signal(y)].clone());
+                    }
+                }
+                given.insert(path.child(&i.name), connected);
+            }
         }
+        out
     }
 
     /// The signals connected to outputs of blackboxes, by name (see
@@ -327,17 +369,13 @@ impl Inst {
     pub fn blackbox_outputs(&self) -> Vec<Name> {
         let naming: BTreeMap<Name, Name> = self.naming().into_iter().collect();
         let mut out = Vec::new();
-        let mut walk = vec![(self, String::new())];
-        while let Some((i, prefix)) = walk.pop() {
+        for (path, i) in self.iter() {
             for u in i.module.instances() {
                 for (c, _) in u.conns(Dir::Output).filter(|(_, f)| f.blackbox) {
                     if let Some(y) = c.shared() {
-                        out.push(naming[&format!("{prefix}{y}")].clone());
+                        out.push(naming[&path.signal(y)].clone());
                     }
                 }
-            }
-            for (u, child) in i.children.iter().rev() {
-                walk.push((child, format!("{prefix}{u}.")));
             }
         }
         out
@@ -346,43 +384,23 @@ impl Inst {
     /// The paths of the registers, in order (a module's before its
     /// instances').
     pub fn registers(&self) -> Vec<Name> {
-        let mut out = Vec::new();
-        self.walk_registers("", &mut out);
-        out
-    }
-
-    fn walk_registers(&self, prefix: &str, out: &mut Vec<Name>) {
-        out.extend(
-            self.module
-                .registers()
-                .into_iter()
-                .map(|q| format!("{prefix}{q}")),
-        );
-        for (u, child) in &self.children {
-            child.walk_registers(&format!("{prefix}{u}."), out);
-        }
+        let registers = |(path, i): (Path, &Inst)| {
+            let qs = i.module.registers().into_iter();
+            qs.map(|q| path.signal(q)).collect::<Vec<_>>()
+        };
+        self.iter().flat_map(registers).collect()
     }
 
     /// The paths of the registers with an initial value, in order (a
     /// module's before its instances').
     pub fn initialized(&self) -> Vec<Name> {
-        let mut out = Vec::new();
-        self.walk_initialized("", &mut out);
-        out
-    }
-
-    fn walk_initialized(&self, prefix: &str, out: &mut Vec<Name>) {
-        let m = &self.module;
-        let inits: BTreeSet<&Name> = m.inits.iter().map(|i| &i.target).collect();
-        out.extend(
-            m.registers()
-                .into_iter()
-                .filter(|q| inits.contains(q))
-                .map(|q| format!("{prefix}{q}")),
-        );
-        for (u, child) in &self.children {
-            child.walk_initialized(&format!("{prefix}{u}."), out);
-        }
+        let initialized = |(path, i): (Path, &Inst)| {
+            let m = &i.module;
+            let inits: BTreeSet<&Name> = m.inits.iter().map(|i| &i.target).collect();
+            let qs = m.registers().into_iter().filter(|q| inits.contains(q));
+            qs.map(|q| path.signal(q)).collect::<Vec<_>>()
+        };
+        self.iter().flat_map(initialized).collect()
     }
 
     /// Drops the initial values of all registers, so that they start with
