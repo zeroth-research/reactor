@@ -67,6 +67,45 @@ signals needs more than the 2 MB of a spawned thread or the 8 MB of the
 main thread; run the interpreter on a thread with a larger stack for
 such designs (as `v2rm` does).
 
+## The timing model
+
+The rounds, edges, the values blocks read at an edge and the asynchronous
+resets above are those of the translation, written down in [`crate::lower`]
+("Time and clocks", "Asynchronous resets") together with their timing
+assumptions; this interpreter implements the same model directly, so the
+model itself is checked only against iverilog (below).
+
+## Which check covers which pass (the oracle map)
+
+What the interpreter shares with the translation, a comparison of the two
+cannot see: the parser and its re-association of operators
+([`crate::frontend`]), constant evaluation ([`crate::constant`]),
+elaboration and naming ([`crate::elab`]), acceptance by
+[`typing::check`] (and [`typing::checked`]), the connection helpers
+`Instance::conns`/`Conn::shared`, and the timing model. Independent of each
+other are sizing against this interpreter's own two-phase width rules,
+[`SvOp`] and [`crate::value`] against its arithmetic, symbolic against
+direct execution, and (since it splits them itself) assignment targets,
+driven signals and reset branches.
+
+| check (where) | compares | covers |
+|---|---|---|
+| golden (`tests/examples.rs` `golden`, `sized_source`) | the printed module and the `--sized` source of every example against files | changes of [`crate::lower`], [`crate::print`], [`crate::sizing`]: regressions only, not correctness |
+| RM-vs-AST (`rm_matches_ast` in `tests/examples.rs`, `tests/scaling.rs`) | [`crate::rm_sim`] on the translated module against this interpreter on the source, random registers and input traces | [`crate::sizing`], [`crate::lower`], [`crate::value`]/[`SvOp`], [`crate::rm_sim`]; not the shared passes above |
+| SMT-vs-RM (`smt_matches_rm` in `tests/examples.rs`) | the rounds as SMT-LIB ([`crate::smt`]) in z3 against [`crate::rm_sim`] | [`crate::smt`] |
+| AST-vs-iverilog (`ast_matches_iverilog`, and the sized source simulated like the original in `sized_source`) | this interpreter against iverilog round by round on random traces (x tolerated only where an out-of-range read reaches) | the frontend, elaboration, acceptance as far as accepted designs go, this interpreter and the timing model, on `examples/` only, minus designs where a simulator schedules derived clocks otherwise ([`crate::iverilog::simulator_differs`]); sizing on its own |
+| cycles-vs-iverilog (`rounds_match_cycles`) | iverilog pulsing one clock per cycle against rounds with a toggling clock | that the round semantics is the usual cycle model, for designs with one rising-edge clock |
+| the miter ([`crate::miter`]; `tests/yosys.rs`, `v2rm --yosys`, the benchmarks and the case study) | our translation against Yosys's in SMT-LIB, for every state and input of the init round and one step | the whole pipeline from the parser to [`crate::smt`], against Yosys's independent frontend, on every design it runs on; a difference is replayed here and in iverilog ([`crate::miter::second_opinion`]) |
+| mutants (`tests/planted.rs`, ignored by default) | every mutant of every example against the original, by the miter both ways and by random simulation | the power of the miter and of the replay: that they notice changed designs and blame the right side |
+| accepted snippets (`common::accepted` in `tests/frontend.rs`, `hierarchy.rs`, `blackbox.rs`) | every design those tests accept, through RM-vs-AST and the miter | the same passes as those two checks, on the constructs the frontend tests name |
+| scaling (`tests/scaling.rs`) | RM-vs-AST on generated large designs, timed per phase | performance of every pass, and RM-vs-AST at sizes the examples do not reach |
+
+So the frontend, elaboration and [`typing::check`] are covered only by
+iverilog (on `examples/`, and on each counterexample of `v2rm --yosys`)
+and by Yosys (through the miter): RM-vs-AST runs them once for both sides.
+Whether a rejection is right (a design the subset should accept) is
+covered by no oracle, only by the negative tests of each rule.
+
 [`SvOp`]: crate::SvOp
 */
 

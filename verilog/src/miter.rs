@@ -104,6 +104,18 @@ of the source is its own, and says which side it agrees with
 ([`Opinion`]): when Yosys and iverilog agree against us, the source likely
 means what they say (or both deviate from the standard alike, as some
 known deviations do: the opinion is evidence, not a verdict).
+
+## Among the other checks
+
+The miter is the only check that runs the whole pipeline, from the
+parser to the SMT-LIB rounds, against a translation with a frontend of its
+own, and on any design (the examples, the accepted snippets of the tests,
+the benchmarks, the case study); together with iverilog it is all that
+covers the frontend, elaboration and the checks of `typing`, which the
+reference interpreter shares with the translation. The planted-bug suite
+checks the miter itself. The map of every check and the passes it
+covers is in the docs of [`ast_interp`](crate::ast_interp) ("Which check
+covers which pass").
 */
 
 use crate::ast::Name;
