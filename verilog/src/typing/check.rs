@@ -71,25 +71,7 @@ pub fn check(m: &Module) -> Result<Env> {
                 lvalue(lhs, &mut |y, span| drive(&env, &mut driver, y, span, i))?;
                 target_names(&env, lhs)?;
                 names(&env, rhs)?;
-                for y in item.targets() {
-                    let n = env[y].ty.width;
-                    let bits: BTreeSet<usize> = pieces(&env, lhs)
-                        .into_iter()
-                        .filter(|p| p.name == *y)
-                        .flat_map(|p| p.lo..=p.hi)
-                        .collect();
-                    if bits.len() < n {
-                        let missing: Vec<usize> = (0..n).filter(|b| !bits.contains(b)).collect();
-                        return Err(Error::new(
-                            *span,
-                            format!(
-                                "this `assign` leaves {} undriven: an `assign` drives whole \
-                                 signals (drive `{y}` with one `assign` of a concatenation)",
-                                bits_text(y, &missing, n)
-                            ),
-                        ));
-                    }
-                }
+                drives_whole(&env, item, lhs, *span)?;
             }
             Item::AlwaysFf {
                 clock: c,
@@ -129,76 +111,7 @@ pub fn check(m: &Module) -> Result<Env> {
                 }
                 definite(&env, item)?;
             }
-            Item::Instance(inst) => {
-                // the signals the outputs of this instance drive so far
-                let mut outputs: BTreeMap<&Name, Span> = BTreeMap::new();
-                for c in &inst.conns {
-                    let f = c.formal.ok_or_else(|| {
-                        Error::new(c.span, "internal error: instance not elaborated")
-                    })?;
-                    let port = format!("port `{}` of `{}`", c.port, inst.name);
-                    match (&c.actual, f.dir) {
-                        (Some(e), Dir::Input) if f.clock => match &e.kind {
-                            ExprKind::Var(x) => clocks.push((x, e.span)),
-                            _ => {
-                                return Err(Error::new(
-                                    e.span,
-                                    format!("the clock {port} must be connected to a clock input"),
-                                ));
-                            }
-                        },
-                        (Some(e), Dir::Input) => names(&env, e)?,
-                        (Some(e), Dir::Output) => {
-                            let ExprKind::Var(y) = &e.kind else {
-                                return Err(Error::new(
-                                    e.span,
-                                    format!(
-                                        "output {port} must be connected to a signal name \
-                                         (or left unconnected with `.{}()`)",
-                                        c.port
-                                    ),
-                                ));
-                            };
-                            // `drive` lets one item assign a signal several
-                            // times (as a block may); two outputs of one
-                            // instance are two drivers
-                            if let Some(prev) = outputs.insert(y, e.span) {
-                                return Err(Error::new(
-                                    e.span,
-                                    format!("`{y}` already driven at {prev}"),
-                                ));
-                            }
-                            let t = drive(&env, &mut driver, y, e.span, i)?;
-                            // an output the child also uses as a clock is a
-                            // clock here too (a derived one)
-                            if f.clock {
-                                clocks.push((y, e.span));
-                            }
-                            // a blackbox output acts like an input of the
-                            // module, so no output of it
-                            if f.blackbox && env[y].dir == Some(Dir::Output) {
-                                return Err(Error::new(
-                                    e.span,
-                                    format!(
-                                        "`{y}` is an output of `{}`, but port `{}` of the \
-                                         blackbox `{}` gives a free value in every time \
-                                         step, like an input: connect an internal signal \
-                                         and `assign` it to `{y}`",
-                                        m.name, c.port, inst.name
-                                    ),
-                                ));
-                            }
-                            if t.width != f.ty.width {
-                                return Err(Error::new(
-                                    e.span,
-                                    format!("{port} has {} bits, `{y}` {}", f.ty.width, t.width),
-                                ));
-                            }
-                        }
-                        (None, _) => {}
-                    }
-                }
-            }
+            Item::Instance(inst) => connections(&env, m, inst, i, &mut driver, &mut clocks)?,
         }
     }
     for init in &m.inits {
@@ -221,6 +134,113 @@ pub fn check(m: &Module) -> Result<Env> {
         }
     }
     Ok(env)
+}
+
+/// Every signal an `assign` drives is driven whole: the `assign` `item`
+/// with the target `lhs` drives every bit of it.
+fn drives_whole(env: &Env, item: &Item, lhs: &Lvalue, span: Span) -> Result<()> {
+    for y in item.targets() {
+        let n = env[y].ty.width;
+        let bits: BTreeSet<usize> = pieces(env, lhs)
+            .into_iter()
+            .filter(|p| p.name == *y)
+            .flat_map(|p| p.lo..=p.hi)
+            .collect();
+        if bits.len() < n {
+            let missing: Vec<usize> = (0..n).filter(|b| !bits.contains(b)).collect();
+            return Err(Error::new(
+                span,
+                format!(
+                    "this `assign` leaves {} undriven: an `assign` drives whole \
+                     signals (drive `{y}` with one `assign` of a concatenation)",
+                    bits_text(y, &missing, n)
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Checks the connections of the instance `inst`, item `i` of `m`: records
+/// the signals its outputs drive in `driver`, and in `clocks` the signals
+/// used as clocks.
+fn connections<'m>(
+    env: &Env,
+    m: &'m Module,
+    inst: &'m ast::Instance,
+    i: usize,
+    driver: &mut BTreeMap<Name, (Span, usize)>,
+    clocks: &mut Vec<(&'m Name, Span)>,
+) -> Result<()> {
+    // the signals the outputs of this instance drive so far
+    let mut outputs: BTreeMap<&Name, Span> = BTreeMap::new();
+    for c in &inst.conns {
+        let f = c
+            .formal
+            .ok_or_else(|| Error::new(c.span, "internal error: instance not elaborated"))?;
+        let port = format!("port `{}` of `{}`", c.port, inst.name);
+        match (&c.actual, f.dir) {
+            (Some(e), Dir::Input) if f.clock => match &e.kind {
+                ExprKind::Var(x) => clocks.push((x, e.span)),
+                _ => {
+                    return Err(Error::new(
+                        e.span,
+                        format!("the clock {port} must be connected to a clock input"),
+                    ));
+                }
+            },
+            (Some(e), Dir::Input) => names(env, e)?,
+            (Some(e), Dir::Output) => {
+                let ExprKind::Var(y) = &e.kind else {
+                    return Err(Error::new(
+                        e.span,
+                        format!(
+                            "output {port} must be connected to a signal name \
+                             (or left unconnected with `.{}()`)",
+                            c.port
+                        ),
+                    ));
+                };
+                // `drive` lets one item assign a signal several
+                // times (as a block may); two outputs of one
+                // instance are two drivers
+                if let Some(prev) = outputs.insert(y, e.span) {
+                    return Err(Error::new(
+                        e.span,
+                        format!("`{y}` already driven at {prev}"),
+                    ));
+                }
+                let t = drive(env, driver, y, e.span, i)?;
+                // an output the child also uses as a clock is a
+                // clock here too (a derived one)
+                if f.clock {
+                    clocks.push((y, e.span));
+                }
+                // a blackbox output acts like an input of the
+                // module, so no output of it
+                if f.blackbox && env[y].dir == Some(Dir::Output) {
+                    return Err(Error::new(
+                        e.span,
+                        format!(
+                            "`{y}` is an output of `{}`, but port `{}` of the \
+                             blackbox `{}` gives a free value in every time \
+                             step, like an input: connect an internal signal \
+                             and `assign` it to `{y}`",
+                            m.name, c.port, inst.name
+                        ),
+                    ));
+                }
+                if t.width != f.ty.width {
+                    return Err(Error::new(
+                        e.span,
+                        format!("{port} has {} bits, `{y}` {}", f.ty.width, t.width),
+                    ));
+                }
+            }
+            (None, _) => {}
+        }
+    }
+    Ok(())
 }
 
 /// Rejects every use of a pin (an `inout` port) other than a connection
