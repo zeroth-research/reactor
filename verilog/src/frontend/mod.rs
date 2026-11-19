@@ -94,6 +94,17 @@ re-associates it with the precedence table of IEEE 1800-2017, Table 11-2
 (`prec` in `frontend/expr.rs`). Parenthesized subexpressions are separate nodes and are
 not affected.
 
+## Stack depth
+
+`sv-parser` recurses once per operand of a chain of binary operators (and
+per level of parentheses), with about 10 KB of stack per level in a
+release build: the 8 MB of a main thread end at about 800 operands in one
+expression, the 2 MB of a spawned thread at about 200, and the process
+aborts with a stack overflow. Parse long expressions on a thread with a
+larger stack (`v2rm` uses 1 GiB). The passes after parsing recurse over
+the expression tree too, with about a tenth of that per level, so the
+parser is what bounds the depth.
+
 [`ast::Module`]: crate::ast::Module
 [`ast::Module::blackbox`]: crate::ast::Module::blackbox
 [`ast::Module::pins`]: crate::ast::Module::pins
