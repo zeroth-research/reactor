@@ -95,11 +95,21 @@ on our module and in the reference interpreter
 [`ast_interp`](crate::ast_interp) on the source, and says which side the
 reference agrees with ([`Side`]), also telling a wrong SMT text of our
 round apart from a wrong module.
+
+The reference interpreter shares the frontend with the translation (the
+parser, elaboration, the checks of `typing`), so where the frontend reads
+the source wrongly, the replay sides with us although we are wrong.
+[`second_opinion`] therefore also runs the step in iverilog, whose reading
+of the source is its own, and says which side it agrees with
+([`Opinion`]): when Yosys and iverilog agree against us, the source likely
+means what they say (or both deviate from the standard alike, as some
+known deviations do: the opinion is evidence, not a verdict).
 */
 
 use crate::ast::Name;
 use crate::ast_interp::{Interp, Values};
 use crate::elab::Inst;
+use crate::iverilog;
 use crate::lower::Translation;
 use crate::rm_sim::{Sim, Valuation};
 use crate::smt::{self, Phase, Round};
@@ -1040,6 +1050,105 @@ pub fn replay(inst: &Inst, t: &Translation, cex: &Cex) -> Result<Replay, String>
         side: Side::OurSmt,
         via: None,
     })
+}
+
+/// What iverilog computes for the step of a [`Cex`]: a second reference
+/// next to [`ast_interp`](crate::ast_interp), independent of everything in
+/// this crate, the frontend included (see [`second_opinion`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Opinion {
+    /// The variable compared: the queried one, or the latched one of
+    /// [`Replay::via`] (then in `|s|`).
+    pub name: Name,
+    /// Its value in iverilog; `None` if iverilog gives it x or z bits.
+    pub iverilog: Option<BitVec>,
+    /// The side iverilog agrees with: [`Side::Ours`] (our module's value),
+    /// [`Side::Theirs`] (Yosys's) or [`Side::Neither`]; `None` without a
+    /// value.
+    pub side: Option<Side>,
+}
+
+/// Runs the step of `cex` in iverilog (on the design `files`, whose
+/// hierarchy is `inst`, lowered to `t`; `bin` is the directory of
+/// iverilog, see [`iverilog::find`]), as [`replay`] runs it in the
+/// interpreters: from the registers of `cex` (by hierarchical assignment,
+/// see [`iverilog::testbench`]), the inputs of `|s|` in the first round
+/// and those of `|s'|` in the second (none for the init round). Compares
+/// the value the replay decided on (the queried variable, or the latched
+/// one of [`Replay::via`]) with our module's and Yosys's.
+///
+/// `Ok(None)` if there is nothing to decide: our module and Yosys give the
+/// same value ([`Side::OurSmt`]). An error if iverilog fails, or if its
+/// scheduling may differ from the round semantics on this design
+/// ([`iverilog::simulator_differs`]).
+pub fn second_opinion(
+    bin: &Path,
+    files: &[&Path],
+    inst: &Inst,
+    t: &Translation,
+    cex: &Cex,
+    replay: &Replay,
+) -> Result<Option<Opinion>, String> {
+    let (name, round, ours, theirs) = match &replay.via {
+        Some(v) => (&v.name, 0, &v.rm_sim, &v.theirs),
+        None => {
+            let last = match cex.phase {
+                Phase::Init => 0,
+                Phase::Update => 1,
+            };
+            (&cex.name, last, &replay.rm_sim, &cex.theirs)
+        }
+    };
+    if replay.side == Side::OurSmt || ours == theirs {
+        return Ok(None);
+    }
+    if let Some(why) = iverilog::simulator_differs(inst) {
+        return Err(format!(
+            "iverilog may schedule this design otherwise than the round semantics: {why}"
+        ));
+    }
+    let rounds = match cex.phase {
+        Phase::Init => vec![cex.inputs.clone()],
+        Phase::Update => vec![cex.inputs.clone(), cex.next_inputs.clone()],
+    };
+    let values = iverilog::run(bin, files, inst, t, &cex.registers, &rounds)?;
+    let value = values[round]
+        .get(name)
+        .ok_or_else(|| format!("iverilog printed no value of `{name}`"))?
+        .as_ref()
+        .map(|n| BitVec::wrap(ours.width(), n.clone()));
+    let side = value.as_ref().map(|v| {
+        if v == ours {
+            Side::Ours
+        } else if v == theirs {
+            Side::Theirs
+        } else {
+            Side::Neither
+        }
+    });
+    Ok(Some(Opinion {
+        name: name.clone(),
+        iverilog: value,
+        side,
+    }))
+}
+
+impl fmt::Display for Opinion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Some(v) = &self.iverilog else {
+            return write!(
+                f,
+                "iverilog gives `{}` x bits: no second opinion",
+                self.name
+            );
+        };
+        write!(f, "iverilog gives `{}` {v}: ", self.name)?;
+        match self.side {
+            Some(Side::Theirs) => write!(f, "Yosys and iverilog agree against us"),
+            Some(Side::Ours) => write!(f, "iverilog agrees with ours"),
+            _ => write!(f, "iverilog agrees with neither"),
+        }
+    }
 }
 
 /// `name = value, …`

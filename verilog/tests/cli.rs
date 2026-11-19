@@ -93,6 +93,10 @@ fn wrong_arguments() {
             &["--yosys", "-t:x", "examples/counter.sv"],
             &["`-t:x`: the time limit must be a positive number of milliseconds"],
         ),
+        (
+            &["--no-iverilog", "examples/counter.sv"],
+            &["`--no-iverilog` is about the replay of `--yosys`, it needs `--yosys`"],
+        ),
         (&["-x", "examples/counter.sv"], &["unknown option `-x`"]),
         (&[], &["no input file"]),
     ];

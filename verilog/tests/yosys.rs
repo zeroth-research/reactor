@@ -14,7 +14,7 @@ use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, lower_inst};
 use verilog::miter::{self, Side, Verdict};
 use verilog::smt::Phase;
-use verilog::{BitVec, constant, yosys, z3};
+use verilog::{BitVec, constant, iverilog, yosys, z3};
 
 /// The top ports in direction `dir`, with their widths.
 /// The ports of the top module with direction `dir` and its pins (`inout`
@@ -1688,6 +1688,164 @@ fn cli_yosys_differs() {
         "{stdout}"
     );
     assert_eq!(spoiled[1..], all[1..], "{stdout}");
+}
+
+/// iverilog as a second reference on known deviations of Yosys: on a port
+/// expression sized by itself, iverilog does what Yosys does, so the two
+/// agree against us (the standard and the AST semantics side with us); on
+/// the signed shift and the overwritten nonblocking write (a register, in
+/// the update round), iverilog agrees with us.
+#[test]
+fn second_opinion_on_deviations() {
+    let Some((yosys, z3)) = tools() else { return };
+    let Some(bin) = iverilog::find() else {
+        common::missing("iverilog", "the whole test");
+        return;
+    };
+    let opinions = |file: &str, source: &str| -> Vec<(String, Option<Side>)> {
+        let tmp = TempDir::new("opinion");
+        let path = tmp.join(file);
+        std::fs::write(&path, source).unwrap();
+        let inst = elab::load(source, &path).unwrap();
+        let ys = yosys::run(&yosys, &[&path], "top", &[]).unwrap();
+        let t = lower_inst(&inst).unwrap();
+        let m = miter::build(&t, &ys).unwrap();
+        let mut out = vec![];
+        for (phase, name, verdict) in miter::check(&z3, &m).unwrap() {
+            if verdict == Verdict::Equal {
+                continue;
+            }
+            let q = m
+                .queries
+                .iter()
+                .find(|q| q.phase == phase && q.name == name);
+            let cex = miter::counterexample(&z3, &m, q.unwrap()).unwrap();
+            let r = miter::replay(&inst, &t, &cex).unwrap();
+            assert_eq!(r.side, Side::Ours, "{cex}\n{r}");
+            let o = miter::second_opinion(&bin, &[&path], &inst, &t, &cex, &r)
+                .unwrap()
+                .unwrap();
+            eprintln!("{cex}\n  {r}\n  {o}");
+            assert_eq!(o.name, name);
+            let label = match phase {
+                Phase::Init => format!("init:{name}"),
+                Phase::Update => name,
+            };
+            out.push((label, o.side));
+        }
+        out
+    };
+    let portwidth = "\
+module child (input logic signed [7:0] a, output logic [7:0] y);
+  assign y = a;
+endmodule
+module top (input logic signed [3:0] x, output logic [7:0] z);
+  child v (.a(x + 4'sd1), .y(z));
+endmodule
+";
+    let theirs = Some(Side::Theirs);
+    assert_eq!(
+        opinions("portwidth.sv", portwidth),
+        [
+            ("init:v.a".into(), theirs),
+            ("init:z".into(), theirs),
+            ("v.a".into(), theirs),
+            ("z".into(), theirs)
+        ]
+    );
+    let shift = "\
+module top(input logic c, input logic [1:0] i, output logic o);
+  assign o = $signed(c) >> i;
+endmodule
+";
+    let ours = Some(Side::Ours);
+    assert_eq!(
+        opinions("shift.sv", shift),
+        [("init:o".into(), ours), ("o".into(), ours)]
+    );
+    let proc = "\
+module top(input clk, input r, input e, input a, input b, output reg q);
+  always @(posedge clk) if (r) begin if (e) q <= a; q <= b; end
+endmodule
+";
+    assert_eq!(opinions("proc1.v", proc), [("q".into(), ours)]);
+}
+
+/// `v2rm --yosys` prints iverilog's opinion under each replay, not with
+/// `--no-iverilog`; an iverilog that fails gives a message in the block
+/// of each query, and the comparison is reported all the same.
+#[cfg(unix)]
+#[test]
+fn cli_second_opinion() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(_) = tools() else { return };
+    let Some(_) = iverilog::find() else {
+        common::missing("iverilog", "the whole test");
+        return;
+    };
+    let tmp = TempDir::new("yosys");
+    let design = tmp.join("portwidth.sv");
+    std::fs::write(
+        &design,
+        "module child (input logic signed [7:0] a, output logic [7:0] y);\n  \
+         assign y = a;\nendmodule\n\
+         module top (input logic signed [3:0] x, output logic [7:0] z);\n  \
+         child v (.a(x + 4'sd1), .y(z));\nendmodule\n",
+    )
+    .unwrap();
+    let v2rm = |flags: &[&str], bin: Option<&Path>| {
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_v2rm"));
+        cmd.arg("--yosys").args(flags).arg(&design);
+        if let Some(bin) = bin {
+            cmd.env("IVERILOG_BIN", bin);
+        }
+        let out = cmd.output().unwrap();
+        let text = |b: Vec<u8>| String::from_utf8(b).unwrap();
+        (
+            out.status.code().unwrap(),
+            text(out.stdout),
+            text(out.stderr),
+        )
+    };
+    let (code, stdout, stderr) = v2rm(&[], None);
+    assert_eq!(code, 1, "{stdout}{stderr}");
+    assert_eq!(
+        stdout
+            .matches("Yosys and iverilog agree against us")
+            .count(),
+        4,
+        "{stdout}"
+    );
+    let (code, without, stderr) = v2rm(&["--no-iverilog"], None);
+    assert_eq!(code, 1, "{without}{stderr}");
+    assert!(
+        !without.contains("iverilog") && !stderr.contains("iverilog"),
+        "{without}{stderr}"
+    );
+    let kept: Vec<&str> = stdout.lines().filter(|l| !l.contains("iverilog")).collect();
+    assert_eq!(kept, without.lines().collect::<Vec<_>>());
+    // an iverilog that does not compile anything
+    let broken = tmp.join("broken");
+    std::fs::create_dir_all(&broken).unwrap();
+    let stub = broken.join("iverilog");
+    std::fs::write(&stub, "#!/bin/sh\necho 'no license' >&2\nexit 3\n").unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (code, failed, stderr) = v2rm(&[], Some(&broken));
+    assert_eq!(code, 1, "{failed}{stderr}");
+    assert_eq!(
+        failed
+            .matches("  no second opinion: iverilog failed:\n    no license\n")
+            .count(),
+        4,
+        "{failed}"
+    );
+    assert!(
+        failed.ends_with(
+            "0 of 4 queries equal (every controlled variable, in the init \
+                              and the update round)\n"
+        ),
+        "{failed}"
+    );
 }
 
 /// The comparison warns when Yosys is not the version the format of its
