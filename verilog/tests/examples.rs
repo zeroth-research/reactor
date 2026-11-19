@@ -21,15 +21,15 @@ mod common;
 
 use common::{Gen, Rand, TempDir, design_inputs, examples, load, seed, stem};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 use verilog::ast::{Dir, Edge, Item};
 use verilog::ast_interp::{Interp, Values};
 use verilog::elab::{self, Inst};
+use verilog::iverilog::{cycle_testbench, hex_line, shown, simulator_differs, testbench};
 use verilog::lower::{Translation, init_name};
 use verilog::rm_sim::{Sim, Valuation};
 use verilog::smt::{self, Phase};
-use verilog::{BitVec, sizing, typing, z3};
+use verilog::{BitVec, iverilog, sizing, typing, z3};
 
 /// The number of atoms of a hierarchy: one per item, and one per input
 /// connected to an expression other than a name (blackboxes have none).
@@ -77,7 +77,7 @@ fn sized_source() {
     let update = std::env::var_os("UPDATE_GOLDEN").is_some();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
     let tmp = TempDir::new("sized");
-    let bin = iverilog_bin();
+    let bin = iverilog::find();
     for path in examples() {
         let (inst, t) = load(&path);
         let mut rand = Rand(seed(0x51ed_270b_27a4_c19f, &stem(&path)));
@@ -115,11 +115,8 @@ fn sized_source() {
         let clocking = Gen::nth(rand.below(3));
         let rounds = rand.trace(&inst, &t.clocks, clocking, 100);
         let tb = testbench(&inst, &t, &init, &rounds);
-        let name = &inst.module.name;
-        // own file names: other tests run iverilog on the examples at the
-        // same time
-        let original = run_iverilog(bin, &path, &format!("{name}_original"), &tb);
-        let sized = run_iverilog(bin, &file, &format!("{name}_sized"), &tb);
+        let original = run_iverilog(bin, &path, &tb);
+        let sized = run_iverilog(bin, &file, &tb);
         assert_eq!(original.len(), rounds.len(), "{}", path.display());
         assert_eq!(original, sized, "{}", path.display());
     }
@@ -311,153 +308,6 @@ fn equal(t: &Translation, names: &[String], values: &Valuation, sym: fn(&str) ->
     format!("(and true {})", eqs.join(" "))
 }
 
-fn iverilog_bin() -> Option<PathBuf> {
-    let candidates = [
-        std::env::var_os("IVERILOG_BIN").map(PathBuf::from),
-        std::env::var_os("HOME").map(|h| Path::new(&h).join("tools/oss-cad-suite/bin")),
-    ];
-    let found = candidates
-        .into_iter()
-        .flatten()
-        .find(|dir| dir.join("iverilog").exists());
-    found.or_else(|| {
-        let ok = Command::new("iverilog").arg("-V").output().is_ok();
-        ok.then(PathBuf::new)
-    })
-}
-
-/// The declarations of a testbench for the top module of `inst`: the
-/// ports and the instance `dut`; the inputs in `start` start with these
-/// values (before time 0, so their first assignment makes no edge).
-fn tb_header(inst: &Inst, start: &Values) -> String {
-    let m = &inst.module;
-    let mut tb = String::from("module tb;\n");
-    for p in &m.ports {
-        let kind = if p.dir == Dir::Input { "logic" } else { "wire" };
-        let x = &p.decl.name;
-        let value = match start.get(x) {
-            Some(v) => format!(" = {}'h{:x}", v.width(), v.unsigned()),
-            None => String::new(),
-        };
-        tb += &format!("  {kind} [{}:0] {x}{value};\n", p.decl.ty.width - 1);
-    }
-    let conns: Vec<String> = m
-        .ports
-        .iter()
-        .map(|p| format!(".{0}({0})", p.decl.name))
-        .collect();
-    tb += &format!("  {} dut({});\n  initial begin\n", m.name, conns.join(", "));
-    tb
-}
-
-/// `    name = value;` for each of `values` (inputs of the design) whose
-/// name `pick` accepts, with `name` as the testbench writes it (see
-/// [`design_inputs`]).
-fn tb_set(inst: &Inst, values: &Values, pick: impl Fn(&str) -> bool) -> String {
-    let paths: BTreeMap<String, String> = design_inputs(inst)
-        .into_iter()
-        .map(|(name, _, path)| (name, path))
-        .collect();
-    let mut out = String::new();
-    for (name, value) in values.iter().filter(|(n, _)| pick(n)) {
-        let path = &paths[name];
-        out += &format!("    {path} = {}'h{:x};\n", value.width(), value.unsigned());
-    }
-    out
-}
-
-/// `    dut.q = value;` for every register.
-fn tb_init(init: &Values) -> String {
-    let mut out = String::new();
-    for (q, value) in init {
-        out += &format!("    dut.{q} = {}'h{:x};\n", value.width(), value.unsigned());
-    }
-    out
-}
-
-/// Sets the registers to `init` twice: setting a register may make an edge
-/// of a clock derived from it (from x), whose block then overwrites
-/// registers, so they are set again once those updates are done (no edge
-/// the second time); except the registers with an asynchronous reset,
-/// which a reset that is a register may have reset (their clocks are
-/// inputs in the examples).
-fn tb_init_twice(t: &Translation, init: &Values) -> String {
-    let mut again = init.clone();
-    again.retain(|q, _| !t.reset_registers.contains(q));
-    format!("{}    #1;\n{}", tb_init(init), tb_init(&again))
-}
-
-/// `$display` of the signals compared, in hex.
-fn tb_display(inst: &Inst) -> String {
-    let shown: Vec<String> = shown(inst).iter().map(|x| format!("dut.{x}")).collect();
-    let format = vec!["%h"; shown.len()].join(" ");
-    format!("$display(\"{format}\", {});\n", shown.join(", "))
-}
-
-/// A testbench that runs `rounds` (a value for every input, clocks
-/// included) and prints all signals but the inputs in hex, one line per
-/// round.
-///
-/// A round sets the clocks, waits, then sets the other inputs, waits and
-/// prints. So the blocks whose edge happens sample the values of the
-/// previous round, as registers read latched values (data inputs meet
-/// setup and hold), and no assignment races with an edge. The first round
-/// then sets the registers to `init`, by hierarchical assignment
-/// (`dut.q = …`; iverilog accepts this although the standard forbids
-/// writing an `always_ff` variable from another process), overriding
-/// whatever an edge from x of a derived clock did (input clocks start at
-/// their level in the first round, so that registers with an initial value
-/// see no edge from x either), and
-/// only then sets the other inputs: an asynchronous reset active in the
-/// first round then resets its registers (its change from x is an edge
-/// of the reset). `t.reset_registers` are set only once: an edge from x
-/// of a reset that is a register can have reset them already.
-fn testbench(inst: &Inst, t: &Translation, init: &Values, rounds: &[Values]) -> String {
-    let is_clock = |n: &str| t.clocks.iter().any(|c| c == n);
-    let mut start = rounds.first().cloned().unwrap_or_default();
-    start.retain(|n, _| is_clock(n));
-    let mut tb = tb_header(inst, &start);
-    for (k, v) in rounds.iter().enumerate() {
-        tb += &tb_set(inst, v, is_clock);
-        tb += "    #1;\n";
-        if k == 0 {
-            tb += &tb_init_twice(t, init);
-        }
-        tb += &tb_set(inst, v, |n| !is_clock(n));
-        tb += &format!("    #1 {}", tb_display(inst));
-    }
-    tb += "    $finish;\n  end\nendmodule\n";
-    tb
-}
-
-/// A testbench of the cycle model: it sets the registers to `init` (as
-/// [`tb_init_twice`] says), then for each of `vectors` (a value for every
-/// input but the clock of `t`, if any) sets the inputs, prints all signals but the inputs in hex (one
-/// line per vector) and pulses the clock. The clock starts at 0, since a
-/// change from x to 1 would be a rising edge.
-fn cycle_testbench(inst: &Inst, t: &Translation, init: &Values, vectors: &[Values]) -> String {
-    let clk = t.clocks.first().map(String::as_str);
-    let level = |b: u8| {
-        let v = Values::from([(clk.unwrap().to_string(), BitVec::new(1, b).unwrap())]);
-        tb_set(inst, &v, |_| true)
-    };
-    let mut tb = tb_header(inst, &Values::new());
-    if clk.is_some() {
-        tb += &level(0);
-    }
-    tb += &tb_init_twice(t, init);
-    for v in vectors {
-        tb += &tb_set(inst, v, |n| Some(n) != clk);
-        tb += &format!("    #1 {}", tb_display(inst));
-        match clk {
-            Some(_) => tb += &format!("{}    #1\n{}", level(1), level(0)),
-            None => tb += "    #1;\n",
-        }
-    }
-    tb += "    $finish;\n  end\nendmodule\n";
-    tb
-}
-
 /// One cycle of the cycle model in the AST semantics, with the clock
 /// `clk` as a generator: a round with the clock at 0, whose values are
 /// those of the cycle, then a round with the clock at 1, the rising edge.
@@ -468,36 +318,6 @@ fn cycle(interp: &mut Interp, clk: &str, inputs: &Values) -> Values {
     v.insert(clk.to_string(), BitVec::new(1, 1u8).unwrap());
     interp.step(&v).unwrap();
     values
-}
-
-/// The signals compared with iverilog: all but the inputs of the design
-/// (see [`design_inputs`]), by name (which is a hierarchical name, see
-/// `elab`).
-fn shown(inst: &Inst) -> Vec<String> {
-    let inputs: BTreeSet<String> = design_inputs(inst)
-        .into_iter()
-        .map(|(name, ..)| name)
-        .collect();
-    let mut out: Vec<String> = Vec::new();
-    for (_, name) in inst.naming() {
-        if !inputs.contains(&name) && !out.contains(&name) {
-            out.push(name);
-        }
-    }
-    out
-}
-
-/// The signals compared with iverilog in `values`, as one line of hex
-/// numbers.
-fn hex_line(inst: &Inst, values: &Values) -> String {
-    shown(inst)
-        .into_iter()
-        .map(|x| {
-            let v = &values[&x];
-            format!("{:0w$x}", v.unsigned(), w = v.width().div_ceil(4))
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
 }
 
 /// Whether iverilog's output line `got` agrees with the expected `line`
@@ -665,34 +485,8 @@ fn may_be_x(inst: &Inst, t: &Translation) -> Vec<bool> {
 
 /// Compiles and runs a testbench for the design at `path`, and returns
 /// its output lines.
-fn run_iverilog(bin: &Path, path: &Path, name: &str, tb: &str) -> Vec<String> {
-    let tmp = TempDir::new("iverilog");
-    let file = tmp.join(format!("tb_{name}.sv"));
-    let out = tmp.join(format!("tb_{name}.vvp"));
-    std::fs::write(&file, tb).unwrap();
-    let compile = Command::new(bin.join("iverilog"))
-        .args(["-g2012", "-o"])
-        .args([&out, &file, &path.to_path_buf()])
-        .output()
-        .unwrap();
-    assert!(
-        compile.status.success(),
-        "{}",
-        String::from_utf8_lossy(&compile.stderr)
-    );
-    // `$readmemb`/`$readmemh` files are found next to the design
-    let run = Command::new(bin.join("vvp"))
-        .args(["-n"])
-        .arg(&out)
-        .current_dir(path.parent().unwrap())
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8_lossy(&run.stdout);
-    stdout
-        .lines()
-        .filter(|l| !l.contains("$finish"))
-        .map(String::from)
-        .collect()
+fn run_iverilog(bin: &Path, path: &Path, tb: &str) -> Vec<String> {
+    iverilog::simulate(bin, &[path], tb).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 /// The AST semantics agree with iverilog on random traces, round by round.
@@ -700,7 +494,7 @@ fn run_iverilog(bin: &Path, path: &Path, name: &str, tb: &str) -> Vec<String> {
 /// `~/tools/oss-cad-suite/bin` or the `PATH`.
 #[test]
 fn ast_matches_iverilog() {
-    let Some(bin) = iverilog_bin() else {
+    let Some(bin) = iverilog::find() else {
         common::missing("iverilog", "the whole test");
         return;
     };
@@ -713,7 +507,6 @@ fn ast_matches_iverilog() {
             skipped.push(stem(&path));
             continue;
         }
-        let m = &inst.module;
         let init = rand.registers(&inst);
         let clocking = Gen::nth(rand.below(3));
         let rounds = rand.trace(&inst, &t.clocks, clocking, 300);
@@ -723,7 +516,7 @@ fn ast_matches_iverilog() {
             .map(|v| hex_line(&inst, &interp.step(v).unwrap()))
             .collect();
         let tb = testbench(&inst, &t, &init, &rounds);
-        let got = run_iverilog(&bin, &path, &m.name, &tb);
+        let got = run_iverilog(&bin, &path, &tb);
         assert_eq!(got.len(), expected.len(), "{}: {got:?}", path.display());
         let x = may_be_x(&inst, &t);
         for (k, (g, e)) in got.iter().zip(&expected).enumerate() {
@@ -744,7 +537,7 @@ fn ast_matches_iverilog() {
 /// rounds where the clock is 0. Skipped like [`ast_matches_iverilog`].
 #[test]
 fn rounds_match_cycles() {
-    let Some(bin) = iverilog_bin() else {
+    let Some(bin) = iverilog::find() else {
         common::missing("iverilog", "the whole test");
         return;
     };
@@ -755,7 +548,6 @@ fn rounds_match_cycles() {
         if t.clocks.len() > 1 || negedge(&inst) || simulator_differs(&inst).is_some() {
             continue;
         }
-        let m = &inst.module;
         let clk = t.clocks.first().map(String::as_str);
         let init = rand.registers(&inst);
         let vectors: Vec<Values> = (0..200)
@@ -774,7 +566,7 @@ fn rounds_match_cycles() {
             })
             .collect();
         let tb = cycle_testbench(&inst, &t, &init, &vectors);
-        let got = run_iverilog(&bin, &path, &format!("{}_cycles", m.name), &tb);
+        let got = run_iverilog(&bin, &path, &tb);
         let x = may_be_x(&inst, &t);
         assert_eq!(got.len(), expected.len(), "{}", path.display());
         for (g, e) in got.iter().zip(&expected) {
@@ -812,93 +604,6 @@ fn clocking(inst: &Inst) -> BTreeMap<String, (String, Option<String>)> {
         }
     }
     out
-}
-
-/// Why iverilog may disagree with the round semantics on a design, if it
-/// may. A simulator runs the blocks of a derived clock after the updates
-/// that make its edge, so they read the new values of the registers
-/// updated in the same time step (and the new level of their clock),
-/// where the round semantics reads the values from before the edge, as
-/// hardware meeting its hold times does. Found statically: a block whose
-/// clock is not an input of the top module reads a signal that depends on
-/// a register of another clock (one of its clock's own chain included).
-fn simulator_differs(inst: &Inst) -> Option<String> {
-    let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
-    // the clock of every register, what every combinational signal reads,
-    // and every block with its clock and reads, by name
-    let mut clock: BTreeMap<String, String> = BTreeMap::new();
-    let mut comb: Vec<(String, String)> = Vec::new();
-    let mut blocks: Vec<(String, String, Vec<String>)> = Vec::new();
-    let mut walk = vec![(inst, String::new())];
-    while let Some((i, prefix)) = walk.pop() {
-        let canon = |x: &str| naming[&format!("{prefix}{x}")].clone();
-        for item in &i.module.items {
-            let reads = || item.reads().into_iter().map(|(x, _)| canon(x));
-            match item {
-                Item::AlwaysFf { clock: c, .. } => {
-                    for q in item.targets() {
-                        clock.insert(canon(q), canon(c));
-                    }
-                    let q = canon(item.targets()[0]);
-                    blocks.push((q, canon(c), reads().collect()));
-                }
-                Item::Assign { .. } | Item::AlwaysComb { .. } => {
-                    for y in item.targets() {
-                        comb.extend(reads().map(|x| (canon(y), x)));
-                    }
-                }
-                Item::Instance(u) => {
-                    for (c, _) in u.conns(Dir::Input).filter(|(_, f)| !f.blackbox) {
-                        let Some(e) = &c.actual else { continue };
-                        let mut reads = Vec::new();
-                        e.reads(&mut reads);
-                        let y = canon(&format!("{}.{}", u.name, c.port));
-                        comb.extend(reads.into_iter().map(|(x, _)| (y.clone(), canon(x))));
-                    }
-                }
-            }
-        }
-        for (u, child) in &i.children {
-            walk.push((child, format!("{prefix}{u}.")));
-        }
-    }
-    // the registers each signal depends on
-    let mut deps: BTreeMap<String, BTreeSet<String>> = clock
-        .keys()
-        .map(|q| (q.clone(), BTreeSet::from([q.clone()])))
-        .collect();
-    loop {
-        let mut changed = false;
-        for (y, x) in &comb {
-            let add = deps.get(x).cloned().unwrap_or_default();
-            let d = deps.entry(y.clone()).or_default();
-            let before = d.len();
-            d.extend(add);
-            changed |= d.len() != before;
-        }
-        if !changed {
-            break;
-        }
-    }
-    let inputs: BTreeSet<String> = design_inputs(inst)
-        .into_iter()
-        .map(|(name, ..)| name)
-        .collect();
-    for (q, c, reads) in blocks {
-        if inputs.contains(&c) {
-            continue;
-        }
-        for x in reads {
-            if let Some(r) = deps.get(&x).into_iter().flatten().find(|r| clock[*r] != c) {
-                return Some(format!(
-                    "`{q}` (clocked by the derived clock `{c}`) reads `{x}`, which depends on \
-                     `{r}` (clocked by `{}`)",
-                    clock[r]
-                ));
-            }
-        }
-    }
-    None
 }
 
 /// The examples iverilog is expected to disagree with (see

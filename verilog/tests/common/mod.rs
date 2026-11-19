@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use num_bigint::BigUint;
-use verilog::ast::{Dir, Edge, Error, Item, Ty};
+use verilog::ast::{Edge, Error, Item, Ty};
 use verilog::ast_interp::{Interp, Values};
 use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, init_name, lower_inst};
@@ -232,33 +232,7 @@ pub fn values(text: &str, width: impl Fn(&str) -> usize) -> Values {
         .collect()
 }
 
-/// The inputs of a design, with their types and their names in a
-/// testbench: the inputs of the top module, then the signals connected to
-/// outputs of blackboxes, which take any value in every round as inputs
-/// do (written in a testbench through the output of the blackbox stub,
-/// `dut.g.clk_out`, a variable that only the testbench assigns).
-pub fn design_inputs(inst: &Inst) -> Vec<(String, Ty, String)> {
-    let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
-    let mut out: Vec<(String, Ty, String)> = (inst.module.ports.iter())
-        .filter(|p| p.dir == Dir::Input)
-        .map(|p| (p.decl.name.clone(), p.decl.ty, p.decl.name.clone()))
-        .collect();
-    let mut walk = vec![(inst, String::new())];
-    while let Some((i, prefix)) = walk.pop() {
-        for u in i.module.instances() {
-            for (c, f) in u.conns(Dir::Output).filter(|(_, f)| f.blackbox) {
-                if let Some(y) = c.shared() {
-                    let name = naming[&format!("{prefix}{y}")].clone();
-                    out.push((name, f.ty, format!("dut.{prefix}{}.{}", u.name, c.port)));
-                }
-            }
-        }
-        for (u, child) in i.children.iter().rev() {
-            walk.push((child, format!("{prefix}{u}.")));
-        }
-    }
-    out
-}
+pub use verilog::iverilog::design_inputs;
 
 /// The asynchronous resets of the hierarchy, by name (see
 /// `Inst::naming`), with their edges (`posedge` for an active-high reset).

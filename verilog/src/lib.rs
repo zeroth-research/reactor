@@ -14,7 +14,8 @@ where the edge of its clock happens (see [`lower`]).
   runs the solver on it; [`yosys`] translates a design into SMT-LIB
   independently, for comparison, and [`miter`] checks that both agree on
   the init round and on one time step, replaying counterexamples in both
-  interpreters.
+  interpreters; [`iverilog`] simulates a design in Icarus Verilog, an
+  oracle independent of everything here.
 - [`ast`]: the abstract syntax of the accepted subset; [`frontend`] parses
   into it (evaluating [`constant`] expressions such as parameter values),
   [`elab`] builds the tree of module instances, [`typing`] checks each
@@ -79,6 +80,7 @@ pub mod ast_interp;
 pub mod constant;
 pub mod elab;
 pub mod frontend;
+pub mod iverilog;
 pub mod lower;
 pub mod miter;
 pub mod print;
@@ -99,6 +101,33 @@ pub type Atom = base::Atom<SvOp, SvOp, SvOp>;
 pub type Term = base::Term<SvOp>;
 pub type Var = base::Var<Sort>;
 pub type Wire = base::Wire<Sort>;
+
+/// A new empty directory in the system's temporary directory, named
+/// after `label`, removed with everything in it when dropped.
+pub(crate) struct EmptyDir(pub(crate) std::path::PathBuf);
+
+impl EmptyDir {
+    pub(crate) fn new(label: &str) -> std::io::Result<Self> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        loop {
+            let k = NEXT.fetch_add(1, Ordering::Relaxed);
+            let name = format!("{label}-{}-{k}", std::process::id());
+            let path = std::env::temp_dir().join(name);
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(Self(path)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
+        }
+    }
+}
+
+impl Drop for EmptyDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 /// The binary of the tool `name`: the path in the environment variable
 /// `var`, else `~/tools/oss-cad-suite/bin/NAME`, else `name` on the `PATH`
