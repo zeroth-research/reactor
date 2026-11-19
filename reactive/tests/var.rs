@@ -65,16 +65,15 @@ fn variable_casts_to_its_wires() {
 #[test]
 fn variables_pass_into_term_constructors() {
     use crate::Term;
-    use theory::lra::{LRA, Sort};
 
-    let x = Var::new(Sort::Real([1, 1]));
+    let x = Var::new("real");
 
     // a variable stands for its latched wire in a term position
-    let t = Term::constant(LRA::AnyReal([1, 1]), [x]).unwrap();
+    let t = Term::constant("HAVOC", [x]).unwrap();
     assert_eq!(t.write().iter().next().map(Wire::id), Some(x.id()));
 
     // and its views pass as well: x' = x
-    let t = Term::function(LRA::Id(), [X(x)], [x]).unwrap();
+    let t = Term::function("ID", [X(x)], [x]).unwrap();
     assert_eq!(t.write().iter().next().map(Wire::id), Some(X(x).id()));
     assert_eq!(t.read().iter().next().map(Wire::id), Some(x.id()));
 }

@@ -99,36 +99,32 @@ fn atom_with_invalid_read() {
 #[test]
 fn differential_drifting_clocks() {
     use std::collections::HashSet;
-    use theory::lra::{LRA, Sort};
 
-    // Real scalars: 1x1 matrices.
-    let scalar = Sort::Real([1, 1]);
     // The input clock, and the two clocks drifting relative to it.
-    let t = Var::new(scalar);
-    let x = Var::new(scalar);
-    let y = Var::new(scalar);
+    let t = Var::new("real");
+    let x = Var::new("real");
+    let y = Var::new("real");
 
     // delay: the derivatives, both driven by the input's derivative `d(t)`.
     let delay = [
-        // dx = 2 dt, synthesised tensor-free as dt + dt
-        Term::function(LRA::Add(), [d(x)], [d(t), d(t)]).unwrap(),
+        // dx = 2 dt, as dt + dt
+        Term::function(mk_op("ADD"), [d(x)], [d(t), d(t)]).unwrap(),
         // dy = 1 dt
-        Term::function(LRA::Id(), [d(y)], [d(t)]).unwrap(),
+        Term::function(mk_op("ID"), [d(y)], [d(t)]).unwrap(),
     ];
 
     // init: the initial derivatives are left unconstrained (Havoc). Every
     // controlled wire must be written by the init block too.
     let init = [
-        Term::constant(LRA::AnyReal([1, 1]), [X(x)]).unwrap(),
-        Term::constant(LRA::AnyReal([1, 1]), [X(y)]).unwrap(),
+        Term::constant(mk_op("HAVOC"), [X(x)]).unwrap(),
+        Term::constant(mk_op("HAVOC"), [X(y)]).unwrap(),
     ];
 
     // The atom writes only d(x) and d(y), so `t` is inferred external.
     let obs = &[x, y, t];
 
-    let module: reactive::Module<LRA, LRA, LRA, Sort> =
-        reactive::Module::differential(obs, init, delay)
-            .expect("differential module should be well-formed");
+    let module =
+        Module::differential(obs, init, delay).expect("differential module should be well-formed");
 
     // An open module: the input clock is external.
     assert!(module.is_open());

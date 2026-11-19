@@ -27,9 +27,9 @@ arithmetic to its linear operations where the logic is linear:
 
 The operations that carry data, the constants and the coefficients of the
 affine maps, hold it in matrices of a type `T` implementing [`Tensor`], over
-which every operation, theory enum and logic is generic. [`PyTensor`](crate::PyTensor) is
-the tensor that converts to and from Python `torch.Tensor` objects with the
-`torch` feature, and a placeholder without it.
+which every operation, theory enum and logic is generic. With the `torch`
+feature, `tch::Tensor` implements it, converting to and from Python
+`torch.Tensor` objects (see the `torch` module).
 */
 
 pub mod bool;
