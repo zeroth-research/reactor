@@ -336,7 +336,7 @@ fn yosys_check(
     }
     let z3 = z3::find().ok_or("z3 not found (set $Z3_BIN)")?;
     let files: Vec<&std::path::Path> = paths.iter().map(|p| p.as_ref()).collect();
-    let ys = yosys::run_files(&yosys, &files, &t.name, overrides)?;
+    let ys = yosys::run(&yosys, &files, &t.name, overrides)?;
     let mut m = miter::build(t, &ys)?;
     m.timeout = timeout;
     let verdicts = miter::check(&z3, &m)?;

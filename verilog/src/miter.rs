@@ -335,7 +335,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
 
     // the init round in an initial state `|s|`: the initial values are
     // the output samples of the registers
-    let mut init = format!("(assert {})\n", ys.initial(S));
+    let mut init = format!("(assert {})\n", ys.is_initial(S));
     init += &first.text;
     init += "; the ties\n";
     for name in &first.inputs {

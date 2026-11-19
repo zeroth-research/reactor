@@ -473,7 +473,7 @@ pub fn miter_equal(
     path: &Path,
     t: &Translation,
 ) -> Result<(), String> {
-    let ys = yosys::run(yosys, path, &t.name, &[]).map_err(|e| format!("Yosys: {e}"))?;
+    let ys = yosys::run(yosys, &[path], &t.name, &[]).map_err(|e| format!("Yosys: {e}"))?;
     let m = miter::build(t, &ys)?;
     let differ: Vec<String> = miter::check(z3, &m)?
         .into_iter()

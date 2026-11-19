@@ -75,8 +75,8 @@ fn parse_comments() {
         "(ite (|top_n a b| s) #b1 #b0)"
     );
     assert_eq!(s.value("z", "s"), None);
-    assert_eq!(s.initial("s"), "(|top_i| s)");
-    assert_eq!(s.initial.len(), 3);
+    assert_eq!(s.is_initial("s"), "(|top_i| s)");
+    assert_eq!(s.init_conjuncts.len(), 3);
     let edge = "$auto$clk2fflogic.cc:87:sample_control_edge$/clk#sampled$9";
     let data = "$auto$clk2fflogic.cc:101:sample_data$/u.q#sampled$7";
     let output = "$auto$clk2fflogic.cc:101:sample_data$/u.q#sampled$5";
@@ -98,7 +98,7 @@ fn free_values_of_blackboxes() {
     for name in ["bbtop.sv", "bbchild.sv"] {
         let path = examples().into_iter().find(|p| p.ends_with(name)).unwrap();
         let (_, t) = load(&path);
-        let ys = yosys::run(&bin, &path, &t.name, &[]).unwrap();
+        let ys = yosys::run(&bin, &[&path], &t.name, &[]).unwrap();
         let mut symbols = std::collections::BTreeSet::new();
         for wire in ys.wires.keys() {
             let free = ys.free_value(wire);
@@ -280,7 +280,7 @@ fn overrides_rejected() {
         value: constant::parse("4").unwrap(),
         span: Default::default(),
     };
-    let e = yosys::run(Path::new("no-yosys"), Path::new("x.sv"), "top", &[o]).unwrap_err();
+    let e = yosys::run(Path::new("no-yosys"), &[Path::new("x.sv")], "top", &[o]).unwrap_err();
     assert!(e.contains("parameter overrides are not supported"), "{e}");
 }
 
@@ -302,7 +302,7 @@ fn names_match_examples() {
     }
     for path in examples() {
         let (inst, t) = load(&path);
-        let ys = yosys::run(&bin, &path, &t.name, &[])
+        let ys = yosys::run(&bin, &[&path], &t.name, &[])
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let at = |what| format!("{}: {what}", path.display());
         assert_eq!(ys.top, t.name, "{}", at("top"));
@@ -342,7 +342,7 @@ fn names_match_examples() {
 fn miter_of(yosys: &Path, path: &Path) -> (Translation, yosys::Smt2, miter::Miter) {
     let (_, t) = load(path);
     let ys =
-        yosys::run(yosys, path, &t.name, &[]).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        yosys::run(yosys, &[path], &t.name, &[]).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let m = miter::build(&t, &ys).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     (t, ys, m)
 }
@@ -425,7 +425,7 @@ endmodule
         std::fs::write(&path, source).unwrap();
         let inst = elab::load(source, &path).unwrap();
         let t = lower_inst(&inst).unwrap();
-        let ys = yosys::run(&yosys, &path, top, &[]).unwrap();
+        let ys = yosys::run(&yosys, &[&path], top, &[]).unwrap();
         assert!(!ys.text.contains("Array"), "{top}: Yosys wrote a memory");
         let m = miter::build(&t, &ys).unwrap();
         let verdicts = miter::check(&z3, &m).unwrap();
@@ -539,7 +539,7 @@ endmodule
     let tmp = TempDir::new("yosys");
     let path = tmp.join("interfaces.sv");
     std::fs::write(&path, original).unwrap();
-    let ys = yosys::run(&yosys, &path, "cnt", &[]).unwrap();
+    let ys = yosys::run(&yosys, &[&path], "cnt", &[]).unwrap();
     let ours = |source: &str| lower_inst(&elab::load(source, &path).unwrap()).unwrap();
     let m = miter::build(&ours(original), &ys).unwrap();
     let verdicts = miter::check(&z3, &m).unwrap();
@@ -637,7 +637,7 @@ fn registers_match_examples() {
     };
     for path in examples() {
         let (inst, t) = load(&path);
-        let ys = yosys::run(&yosys, &path, &t.name, &[])
+        let ys = yosys::run(&yosys, &[&path], &t.name, &[])
             .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let samples =
             miter::registers(&t, &ys).unwrap_or_else(|e| panic!("{}: {e:?}", path.display()));
@@ -668,7 +668,7 @@ fn registers_mismatch() {
     let example = |name: &str| {
         let path = examples().into_iter().find(|p| p.ends_with(name)).unwrap();
         let (_, t) = load(&path);
-        let ys = yosys::run(&yosys, &path, &t.name, &[]).unwrap();
+        let ys = yosys::run(&yosys, &[&path], &t.name, &[]).unwrap();
         (t, ys)
     };
     let output = |ys: &yosys::Smt2, p: &str| -> String {
@@ -713,7 +713,7 @@ fn registers_mismatch() {
     assert_eq!(named.len(), 2);
     let mut other = ys.clone();
     for r in named {
-        other.initial.remove(r);
+        other.init_conjuncts.remove(r);
     }
     let e = miter::registers(&t, &other).unwrap_err();
     assert_eq!(e.len(), 1);
@@ -847,7 +847,7 @@ fn counterexample_ours_wrong() {
         assert!(source.contains(from));
         let edited = elab::load(&source.replace(from, to), &path).unwrap();
         let t = lower_inst(&edited).unwrap();
-        let ys = yosys::run(&yosys, &path, &t.name, &[]).unwrap();
+        let ys = yosys::run(&yosys, &[&path], &t.name, &[]).unwrap();
         let m = miter::build(&t, &ys).unwrap();
         let blamed = blame(&z3, &inst, &t, &m);
         let names: Vec<&str> = blamed.iter().map(|(n, ..)| n.as_str()).collect();
@@ -908,7 +908,7 @@ fn counterexample_theirs_wrong() {
             .find(|p| p.ends_with(example))
             .unwrap();
         let (inst, t) = load(&path);
-        let mut ys = yosys::run(&yosys, &path, &t.name, &[]).unwrap();
+        let mut ys = yosys::run(&yosys, &[&path], &t.name, &[]).unwrap();
         assert_eq!(ys.text.matches(from).count(), 1, "{example}: {from}");
         ys.text = ys.text.replace(from, to);
         let m = miter::build(&t, &ys).unwrap();
@@ -944,7 +944,7 @@ endmodule
     let path = tmp.join("gap.sv");
     std::fs::write(&path, source).unwrap();
     let inst = elab::load(source, &path).unwrap();
-    let ys = yosys::run(&yosys, &path, "gap", &[]).unwrap();
+    let ys = yosys::run(&yosys, &[&path], "gap", &[]).unwrap();
     let t = lower_inst(&inst).unwrap();
     let m = miter::build(&t, &ys).unwrap();
     assert_eq!(blame(&z3, &inst, &t, &m), []);
@@ -990,7 +990,7 @@ endmodule
     let path = dir.join("boot.sv");
     std::fs::write(&path, source).unwrap();
     let inst = elab::load(source, &path).unwrap();
-    let ys = yosys::run(&yosys, &path, "boot", &[]).unwrap();
+    let ys = yosys::run(&yosys, &[&path], "boot", &[]).unwrap();
     let t = lower_inst(&inst).unwrap();
     assert_eq!(t.initialized, ["p", "r"]);
     let samples = miter::registers(&t, &ys).unwrap();
@@ -1011,7 +1011,7 @@ endmodule
     // Yosys without it: the init query finds it
     let theirs = dir.join("boot_free.sv");
     std::fs::write(&theirs, &free).unwrap();
-    let ys_free = yosys::run(&yosys, &theirs, "boot", &[]).unwrap();
+    let ys_free = yosys::run(&yosys, &[&theirs], "boot", &[]).unwrap();
     let t = lower_inst(&inst).unwrap();
     let m = miter::build(&t, &ys_free).unwrap();
     assert_eq!(
@@ -1054,7 +1054,7 @@ endmodule
     let path = tmp.join("wide.sv");
     std::fs::write(&path, source).unwrap();
     let inst = elab::load(source, &path).unwrap();
-    let ys = yosys::run(&yosys, &path, "wide", &[]).unwrap();
+    let ys = yosys::run(&yosys, &[&path], "wide", &[]).unwrap();
     let t = lower_inst(&inst).unwrap();
     let m = miter::build(&t, &ys).unwrap();
     assert_eq!(
@@ -1098,7 +1098,7 @@ endmodule
     let path = tmp.join("portwidth.sv");
     std::fs::write(&path, source).unwrap();
     let inst = elab::load(source, &path).unwrap();
-    let ys = yosys::run(&yosys, &path, "top", &[]).unwrap();
+    let ys = yosys::run(&yosys, &[&path], "top", &[]).unwrap();
     let t = lower_inst(&inst).unwrap();
     let m = miter::build(&t, &ys).unwrap();
     assert_eq!(
@@ -1130,7 +1130,7 @@ fn yosys_deviates_on_variable_index_writes() {
     let tmp = TempDir::new("yosys");
     let path = tmp.join("dev.sv");
     std::fs::write(&path, design).unwrap();
-    let err = yosys::run(&yosys, &path, "dev", &[]).unwrap_err();
+    let err = yosys::run(&yosys, &[&path], "dev", &[]).unwrap_err();
     assert!(
         err.starts_with(&format!(
             "Yosys's netlist of {} has conflicting drivers, so a comparison with it would not \
@@ -1148,7 +1148,7 @@ fn yosys_deviates_on_variable_index_writes() {
     let path = tmp.join("down.sv");
     std::fs::write(&path, &design).unwrap();
     let inst = elab::load(&design, &path).unwrap();
-    let ys = yosys::run(&yosys, &path, "dev", &[]).unwrap();
+    let ys = yosys::run(&yosys, &[&path], "dev", &[]).unwrap();
     let t = lower_inst(&inst).unwrap();
     let m = miter::build(&t, &ys).unwrap();
     assert_eq!(
@@ -1179,7 +1179,7 @@ fn deviation_with(
     let path = tmp.join(file);
     std::fs::write(&path, source).unwrap();
     let inst = elab::load(source, &path).unwrap();
-    let ys = yosys::run(yosys, &path, "top", &[]).unwrap();
+    let ys = yosys::run(yosys, &[&path], "top", &[]).unwrap();
     let t = lower_inst(&inst).unwrap();
     let m = miter::build(&t, &ys).unwrap();
     if distinct {
@@ -1354,7 +1354,7 @@ fn yosys_inputs_must_be_free() {
     let path = tmp.join("driven.sv");
     std::fs::write(&path, include_str!("varwrites.sv")).unwrap();
     let out = std::process::Command::new(&bin)
-        .args(["-q", "-p", &yosys::script(&path, "dev").unwrap()])
+        .args(["-q", "-p", &yosys::script(&[&path], "dev").unwrap()])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -1365,7 +1365,7 @@ fn yosys_inputs_must_be_free() {
          symbols only, each bit used once, so a comparison would not be meaningful"
     );
     // through `run`, Yosys itself stops
-    let err = yosys::run(&bin, &path, "dev", &[]).unwrap_err();
+    let err = yosys::run(&bin, &[&path], "dev", &[]).unwrap_err();
     assert!(err.contains("conflicting drivers"), "{err}");
 }
 
@@ -1456,7 +1456,7 @@ fn counterexample_both_wrong() {
     let source = std::fs::read_to_string(&path).unwrap();
     let edited = elab::load(&source.replace("q + 8'd1", "q - 8'd1"), &path).unwrap();
     let t = lower_inst(&edited).unwrap();
-    let mut ys = yosys::run(&yosys, &path, &t.name, &[]).unwrap();
+    let mut ys = yosys::run(&yosys, &[&path], &t.name, &[]).unwrap();
     assert_eq!(ys.text.matches("(bvadd ").count(), 1);
     ys.text = ys.text.replace("(bvadd ", "(bvmul ");
     let m = miter::build(&t, &ys).unwrap();
@@ -1545,7 +1545,7 @@ fn mismatched_translations_are_errors() {
     assert!(e.contains("is not a signal of the instance"), "{e}");
     let Some((yosys, _)) = tools() else { return };
     let (_, mut t) = load(&path("counter.sv"));
-    let ys = yosys::run(&yosys, &path("counter.sv"), &t.name, &[]).unwrap();
+    let ys = yosys::run(&yosys, &[&path("counter.sv")], &t.name, &[]).unwrap();
     let q = t.registers[0].clone();
     t.register_widths.remove(&q);
     let e = miter::build(&t, &ys).err().unwrap();
