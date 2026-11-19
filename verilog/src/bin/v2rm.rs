@@ -32,15 +32,20 @@
 //! replay that cannot be made is reported under its query, and the other
 //! queries are still reported.
 //!
-//! v2rm runs on a thread with a stack of 1 GiB (reserved, used only as
-//! deep as the recursion goes): the parser recurses once per operand of a
-//! chain of binary operators and per level of parentheses, with about
-//! 10 KB of stack each, so the 8 MB of the main thread end at about 800
-//! operands in one expression. With 1 GiB the limit is about 100 000
-//! operands, far beyond what the parser handles in reasonable time (its
-//! time grows with the square of the length of a chain: 10 000 operands
-//! take minutes). Should the thread not start (a limit on virtual
-//! memory), v2rm runs on the main thread.
+//! The parser recurses once per operand of a chain of binary operators and
+//! per level of parentheses, with about 10 KB of stack each, so the 8 MB of
+//! the main thread end at about 800 operands in one expression. When a
+//! file may hold such an expression (more than 400 characters that can
+//! start an operator or open a parenthesis between two semicolons), and
+//! always under `--yosys` (whose replay recurses along chains of
+//! combinational signals), v2rm runs on a thread with a stack of 1 GiB
+//! (reserved, used only as deep as the recursion goes). There the limit is
+//! about 100 000 operands, far beyond what the parser handles in
+//! reasonable time and memory (both grow with the square of the length of
+//! a chain: 10 000 operands take minutes and gigabytes). Not always: on a
+//! thread other than the main one the parser runs about 8 % slower. Should
+//! the thread not start (a limit on virtual memory), v2rm runs on the main
+//! thread. A macro that expands into a deep expression is not foreseen.
 //!
 //! Exit status: 0 when the module was printed, or under `--yosys` when
 //! every query is equal; 1 under `--yosys` when a variable differs or z3
@@ -92,6 +97,7 @@ impl Mode {
 }
 
 /// The command line, checked.
+#[derive(Clone)]
 struct Options {
     top: Option<String>,
     params: Vec<String>,
@@ -193,25 +199,7 @@ fn options(args: impl IntoIterator<Item = String>) -> Result<Option<Options>, Ve
 const STACK: usize = 1 << 30;
 
 fn main() -> ExitCode {
-    let thread = std::thread::Builder::new()
-        .name("v2rm".to_string())
-        .stack_size(STACK)
-        .spawn(run);
-    match thread {
-        Ok(t) => t.join().unwrap_or_else(|e| std::panic::resume_unwind(e)),
-        Err(_) => run(),
-    }
-}
-
-fn run() -> ExitCode {
-    let Options {
-        top,
-        params,
-        paths,
-        mode,
-        ignore,
-        timeout,
-    } = match options(std::env::args().skip(1)) {
+    let o = match options(std::env::args().skip(1)) {
         Ok(Some(o)) => o,
         Ok(None) => {
             println!("{USAGE}");
@@ -225,6 +213,45 @@ fn run() -> ExitCode {
             return ExitCode::from(ERROR);
         }
     };
+    if o.mode != Mode::Yosys && !deep(&o.paths) {
+        return run(o);
+    }
+    let thread = std::thread::Builder::new()
+        .name("v2rm".to_string())
+        .stack_size(STACK);
+    let copy = o.clone();
+    match thread.spawn(move || run(o)) {
+        Ok(t) => t.join().unwrap_or_else(|e| std::panic::resume_unwind(e)),
+        // on the main thread, if the thread does not start
+        Err(_) => run(copy),
+    }
+}
+
+/// Whether the files may hold an expression nested deeper than the main
+/// thread's stack allows the parser (see the module docs): some text
+/// between two semicolons has more than 400 characters that can start an
+/// operator or open a parenthesis. An upper bound on the depth of the
+/// expressions written out (not of those a macro expands into); a file
+/// that cannot be read counts as shallow (reading it fails later).
+fn deep(paths: &[String]) -> bool {
+    paths.iter().any(|p| {
+        let text = std::fs::read(p).unwrap_or_default();
+        text.split(|&b| b == b';').any(|stretch| {
+            let ops = stretch.iter().filter(|&&b| b"+-*/%&|^~!<>=?(".contains(&b));
+            ops.count() > 400
+        })
+    })
+}
+
+fn run(o: Options) -> ExitCode {
+    let Options {
+        top,
+        params,
+        paths,
+        mode,
+        ignore,
+        timeout,
+    } = o;
     let path = paths[0].clone();
     // the design, once parsed, to locate errors in their files
     let mut design = None;
