@@ -244,7 +244,7 @@ fn inst(
         children.push((i.name.clone(), child));
     }
     // with the ports known, the signals connected to instances too
-    module.constants();
+    frontend::constants(&mut module);
     stack.pop();
     Ok(Inst { module, children })
 }

@@ -3,11 +3,12 @@
 use super::arrays::{Load, readmem, resolve};
 use super::{Cx, LARGEST, Result, VARIABLE_TARGET, has_tokens, system_call};
 use crate::ast::{
-    self, Array, Conn, Const, Decl, Dir, Elem, Elems, Error, Expr, ExprKind, Index, Init, Instance,
-    Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, Span, Ty,
+    self, Array, Conn, Const, Decl, Dir, Elem, Elems, Error, Expr, ExprKind, Formal, Index, Init,
+    Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, Span, Ty,
+    array_of,
 };
 use crate::constant::{self, Failure};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use sv_parser as sv;
 use sv_parser::RefNodes;
 
@@ -112,7 +113,7 @@ impl Cx<'_> {
         module.inits = self.inits.take();
         self.unknown_values(&module)?;
         resolve(&mut module, self.loads.take())?;
-        module.constants();
+        constants(&mut module);
         for o in self.overrides {
             if !self.used.borrow().contains(&o.name) {
                 let msg = if module.params.iter().any(|p| p.name == o.name) {
@@ -1128,5 +1129,63 @@ impl Cx<'_> {
             }
         }
         Ok(())
+    }
+}
+
+/// Makes every initialized signal that nothing drives a constant: its
+/// initializer becomes an `assign` of the value (`logic [15:0] c =
+/// 16'h392b;` and nothing writes `c`). A signal connected to an
+/// instance whose ports are not known yet is left alone, as are values
+/// that read signals, the elements of arrays (an array that is never written is a ROM, loaded
+/// from a file) and inputs; [`typing::check`](crate::typing::check)
+/// rejects what remains on a signal that is no register. Applying it
+/// again changes nothing.
+pub(crate) fn constants(m: &mut Module) {
+    let mut driven: BTreeSet<Name> = BTreeSet::new();
+    for item in &m.items {
+        match item {
+            // an output drives its actual; with the ports not known
+            // yet, any connected name may be driven
+            Item::Instance(i) => {
+                for c in &i.conns {
+                    if let (
+                        Some(ExprKind::Var(y)),
+                        None
+                        | Some(Formal {
+                            dir: Dir::Output, ..
+                        }),
+                    ) = (c.actual.as_ref().map(|e| &e.kind), &c.formal)
+                    {
+                        driven.insert(y.clone());
+                    }
+                }
+            }
+            _ => driven.extend(item.targets().into_iter().map(|y| array_of(y).to_string())),
+        }
+    }
+    let inputs: BTreeSet<&Name> = (m.ports.iter())
+        .filter(|p| p.dir == Dir::Input)
+        .map(|p| &p.decl.name)
+        .collect();
+    let (constants, inits): (Vec<Init>, Vec<Init>) =
+        std::mem::take(&mut m.inits).into_iter().partition(|i| {
+            let mut reads = Vec::new();
+            i.value.reads(&mut reads);
+            reads.is_empty()
+                && !i.target.contains('[')
+                && !driven.contains(&i.target)
+                && !inputs.contains(&i.target)
+        });
+    m.inits = inits;
+    for i in constants {
+        let lhs = Lvalue {
+            kind: LvalueKind::Var(i.target),
+            span: i.span,
+        };
+        m.items.push(Item::Assign {
+            lhs,
+            rhs: i.value,
+            span: i.span,
+        });
     }
 }
