@@ -243,15 +243,7 @@ impl<'a> Builder<'a> {
         let n = self.env[y].ty.width;
         let m = n + below;
         let old = self.read_own(y, n - 1, 0, span)?;
-        let bits = if wlo == 0 && width == w.dtype().width() {
-            w
-        } else {
-            let op = SvOp::Extract {
-                hi: wlo + width - 1,
-                lo: wlo,
-            };
-            self.emit(op, &[w], Sort(width), span)?
-        };
+        let bits = self.bits(w, wlo + width - 1, wlo, span)?;
         let ones = BitVec::wrap(m, (BigUint::one() << width) - BigUint::one());
         let ones = self.emit(SvOp::Lit(ones), &[], Sort(m), span)?;
         let mask = self.emit(SvOp::Shl, &[ones, i], Sort(m), span)?;
@@ -325,23 +317,9 @@ impl<'a> Builder<'a> {
             let (w, wlo) = seg
                 .src
                 .ok_or_else(|| internal(span, "read of unassigned bits".into()))?;
-            let part = if wlo == 0 && seg.width == w.dtype().width() {
-                w
-            } else {
-                let op = SvOp::Extract {
-                    hi: wlo + seg.width - 1,
-                    lo: wlo,
-                };
-                self.emit(op, &[w], Sort(seg.width), span)?
-            };
-            parts.push(part);
+            parts.push(self.bits(w, wlo + seg.width - 1, wlo, span)?);
         }
-        let mut acc = parts.pop().expect("a part");
-        while let Some(part) = parts.pop() {
-            let sort = Sort(part.dtype().width() + acc.dtype().width());
-            acc = self.emit(SvOp::Concat, &[part, acc], sort, span)?;
-        }
-        Ok(acc)
+        self.concat_wires(parts, span)
     }
 
     /// The wire holding the bits `hi` down to `lo` of the signal `y` of the
@@ -639,12 +617,7 @@ impl<'a> Builder<'a> {
             ExprKind::Repl(n, es) => {
                 let (w, ts) = self.concat(es, span)?;
                 let t = typing::repl(*n, typing::concat(&ts));
-                let mut acc = w;
-                for _ in 1..*n {
-                    let sort = Sort(w.dtype().width() + acc.dtype().width());
-                    acc = self.emit(SvOp::Concat, &[w, acc], sort, span)?;
-                }
-                Ok((acc, t))
+                Ok((self.concat_wires(vec![w; *n], span)?, t))
             }
             ExprKind::Elem(el) => self.elem(el, span),
             ExprKind::Select(x, sel) => self.select(x, sel, span),
@@ -770,12 +743,7 @@ impl<'a> Builder<'a> {
                     level.push(self.element(&el.elems, k, span)?);
                 }
                 for b in 0..ti.width {
-                    let bit = if ti.width == 1 {
-                        wi
-                    } else {
-                        let op = SvOp::Extract { hi: b, lo: b };
-                        self.emit(op, &[wi], Sort(1), span)?
-                    };
+                    let bit = self.bits(wi, b, b, span)?;
                     let mut next = Vec::new();
                     for pair in level.chunks(2) {
                         let reads = [bit, pair[1], pair[0]];
@@ -805,11 +773,8 @@ impl<'a> Builder<'a> {
             None => {
                 let (hi, lo) = sel.constant().flatten().expect("constant");
                 match self.read(x, Some((hi, lo)), span)? {
-                    (w, Some((hi, lo))) if lo > 0 || hi + 1 < tx.width => {
-                        let op = SvOp::Extract { hi, lo };
-                        self.emit(op, &[w], Sort(t.width), span)?
-                    }
-                    (w, _) => w,
+                    (w, Some((hi, lo))) => self.bits(w, hi, lo, span)?,
+                    (w, None) => w,
                 }
             }
             Some((wi, ti)) => {
@@ -826,16 +791,30 @@ impl<'a> Builder<'a> {
         let s = Sort(t.width);
         match t.width.cmp(&w.dtype().width()) {
             Ordering::Equal => Ok(w),
-            Ordering::Less => {
-                let op = SvOp::Extract {
-                    hi: t.width - 1,
-                    lo: 0,
-                };
-                self.emit(op, &[w], s, span)
-            }
+            Ordering::Less => self.bits(w, t.width - 1, 0, span),
             Ordering::Greater if signed => self.emit(SvOp::SExt(t.width), &[w], s, span),
             Ordering::Greater => self.emit(SvOp::ZExt(t.width), &[w], s, span),
         }
+    }
+
+    /// The wire holding the bits `hi` down to `lo` of `w`: `w` itself if
+    /// they are all of it.
+    fn bits(&mut self, w: Wire, hi: usize, lo: usize, span: Span) -> Result<Wire> {
+        if lo == 0 && hi + 1 == w.dtype().width() {
+            return Ok(w);
+        }
+        self.emit(SvOp::Extract { hi, lo }, &[w], Sort(hi + 1 - lo), span)
+    }
+
+    /// The wire holding the concatenation of `parts` (the first the high
+    /// bits), as nested binary `Concat`s `{p1, {p2, …}}`.
+    fn concat_wires(&mut self, mut parts: Vec<Wire>, span: Span) -> Result<Wire> {
+        let mut acc = parts.pop().expect("a part");
+        while let Some(part) = parts.pop() {
+            let sort = Sort(part.dtype().width() + acc.dtype().width());
+            acc = self.emit(SvOp::Concat, &[part, acc], sort, span)?;
+        }
+        Ok(acc)
     }
 
     /// The wire holding the element at `address` of an array with the
@@ -868,11 +847,7 @@ impl<'a> Builder<'a> {
         let w = match index {
             None => {
                 let (hi, lo) = sel.constant().flatten().expect("constant");
-                if lo > 0 || hi + 1 < tx.width {
-                    self.emit(SvOp::Extract { hi, lo }, &[wx], Sort(t.width), span)?
-                } else {
-                    wx
-                }
+                self.bits(wx, hi, lo, span)?
             }
             Some(index) => self.shifted_select(wx, tx, name, sel, index, span)?,
         };
@@ -927,11 +902,6 @@ impl<'a> Builder<'a> {
             parts.push(w);
             ts.push(t);
         }
-        let mut acc = parts.pop().expect("an item");
-        while let Some(part) = parts.pop() {
-            let sort = Sort(part.dtype().width() + acc.dtype().width());
-            acc = self.emit(SvOp::Concat, &[part, acc], sort, span)?;
-        }
-        Ok((acc, ts))
+        Ok((self.concat_wires(parts, span)?, ts))
     }
 }
