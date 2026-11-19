@@ -1848,8 +1848,8 @@ fn cli_second_opinion() {
     );
 }
 
-/// The comparison warns when Yosys is not the version the format of its
-/// output was checked with (here a stand-in that reports another version
+/// The comparison warns when Yosys is not the version the naming pattern of
+/// its flip-flops was checked with (here a stand-in that reports another version
 /// and otherwise runs the real Yosys), and compares all the same.
 #[cfg(unix)]
 #[test]
@@ -1906,7 +1906,7 @@ fn cli_warns_on_other_yosys_versions() {
     let (ok, stdout, stderr) = v2rm(&stub);
     assert!(ok && stdout.contains("4 of 4 queries equal"), "{stdout}");
     assert!(
-        stderr.starts_with("examples/counter.sv: warning: Yosys 0.70: the comparison relies on"),
+        stderr.starts_with("examples/counter.sv: warning: Yosys 0.70: the comparison recognises"),
         "{stderr}"
     );
 }

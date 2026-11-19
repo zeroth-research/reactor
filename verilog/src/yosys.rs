@@ -138,9 +138,12 @@ step, the reset samples to 0 (inactive) and the data input samples to 0; it cons
 by `(= (bvand q #b0…) #b0…)` (always true) or not at all. A data input
 sample can carry the name of a register (`/s1#sampled` above) with its
 width, so names alone do not tell the output sample of a register; see
-[`miter::registers`](crate::miter::registers). The names contain line
-numbers of Yosys's source: the format was checked with Yosys 0.69+173
-([`CHECKED_VERSION`]; `v2rm --yosys` warns with any other version).
+[`miter::registers`](crate::miter::registers). That is the only place
+that depends on Yosys's internal names: it recognises the samples by the
+patterns above (`N` and `K` are wildcards), checked with Yosys 0.69+173
+([`CHECKED_VERSION`]). `v2rm --yosys` warns with any other version; if that
+version names the samples differently, the comparison refuses the design
+instead of giving a wrong result.
 
 ## Limits
 
@@ -162,9 +165,9 @@ pub fn find() -> Option<PathBuf> {
     crate::find_tool("YOSYS_BIN", "yosys", "-V")
 }
 
-/// The Yosys version the format of its output (names of registers and
-/// samples, the initial-state predicate, see the module docs) was checked
-/// with. Another version may name or build them differently.
+/// The Yosys version the naming pattern of the flip-flop samples of
+/// `clk2fflogic` (see the module docs) was checked with. Another version
+/// may name them differently; then the comparison refuses the design.
 pub const CHECKED_VERSION: &str = "0.69+173";
 
 /// The version of the Yosys binary `bin`, as `yosys -V` gives it (`0.69+173`
@@ -193,19 +196,19 @@ pub fn parse_version(text: &str) -> Option<String> {
 }
 
 /// A warning if `version` (of [`version`]) is not [`CHECKED_VERSION`], or
-/// could not be found.
+/// could not be found. The comparison runs all the same: a version that
+/// names the flip-flop samples differently makes it refuse the design, it
+/// cannot make it report a wrong result.
 pub fn version_warning(version: &Result<String, String>) -> Option<String> {
-    let checked = "the comparison relies on the names Yosys gives registers and their \
-                   samples, a format checked only with Yosys";
+    let checked = format!(
+        "the comparison recognises Yosys's flip-flops by a naming pattern checked only \
+         with Yosys {CHECKED_VERSION}; if this version names them differently, the \
+         comparison refuses the design instead of giving a wrong result"
+    );
     match version {
         Ok(v) if v == CHECKED_VERSION => None,
-        Ok(v) => Some(format!(
-            "Yosys {v}: {checked} {CHECKED_VERSION}; another version may give other names, \
-             or build the samples differently"
-        )),
-        Err(e) => Some(format!(
-            "the Yosys version is unknown ({e}): {checked} {CHECKED_VERSION}"
-        )),
+        Ok(v) => Some(format!("Yosys {v}: {checked}")),
+        Err(e) => Some(format!("the Yosys version is unknown ({e}): {checked}")),
     }
 }
 
