@@ -85,7 +85,7 @@ uv run certify --help      # both
 **One output directory for every command.** `reactor` regenerates
 `<OUT>/<PROJ>` in place — it never wipes the directory — so the project's
 `.lake` survives from one example to the next, and with it every `.olean` of
-Mathlib, cslib, lean-smt and `ZerothHammer`; reactor-lean's `ReactLib` is
+Mathlib, cslib, lean-smt and `ZerothHammer`; the `ReactLib` package is
 built once, in the checkout itself. Only `System/*` and `Certificate/*`
 recompile per example: the first `lake build` below costs about 15 s and each
 later one about 10 s, against an hour from cold.
@@ -94,7 +94,7 @@ later one about 10 s, against an hour from cold.
 export REPO=$(cd .. && pwd)
 export OUT=/tmp/verith-tutorial.noindex       # keep the .noindex suffix on macOS
 export PROJ=Rea
-export REACTOR_LEAN=$(cd "$REPO/../ReactLib" && pwd)       # a reactor-lean checkout
+export REACTLIB=$(cd "$REPO/../ReactLib" && pwd)       # a ReactLib checkout
 
 mkdir -p "$OUT/shared_lake"
 ln -sfn "$REPO/python/tests/lean/.lake/packages" "$OUT/shared_lake/packages"
@@ -107,7 +107,7 @@ Three things make that work:
   Build those once with `cd python/tests/lean && lake build`.
 * The Lean libraries the project is stated in, `Spec` and `Relational`, are
   not among those packages. They make up the `ReactLib` package of
-  [reactor-lean], which the lakefile requires from git; with `REACTOR_LEAN`
+  [ReactLib], which the lakefile requires from git; with `REACTLIB`
   set to a checkout of it, `reactor` writes the lakefile to require the
   checkout by path instead.
 * Keep the `.noindex` suffix on `OUT` if you are on macOS. A build writes tens
@@ -115,7 +115,7 @@ Three things make that work:
   build into a 928 s one, and a directory whose name ends in `.noindex` is
   skipped.
 
-[reactor-lean]: https://github.com/zeroth-research/reactor-lean
+[ReactLib]: https://github.com/zeroth-research/ReactLib
 
 One shared build directory takes **one writer** — don't run two of these
 sessions, or `tests/limits/run_limits.py`, against the same `OUT` at the same
@@ -126,7 +126,7 @@ builds serve each other's oleans, and the symptom is
 Building the certificate is `lake build Certificate` in the generated project.
 `certify --build-cert` (or `verith --build-cert`) does it in one flag, which
 is what you would type at a terminal — but it runs `lake update` first, and
-that re-queries every dependency's git remote. Writing the warm manifest instead, with reactor-lean's
+that re-queries every dependency's git remote. Writing the warm manifest instead, with ReactLib's
 packages entered as path dependencies on the checkout, keeps every example
 below off the network:
 
@@ -136,9 +136,9 @@ lake_cert() {                                  # build the certificate of $OUT/$
   uv run python -c '
 import json, sys, torch
 from pathlib import Path
-from reactor.lean.project.lakefile import reactor_lean_checkout, with_reactor_lean
+from reactor.lean.project.lakefile import reactlib_checkout, with_reactlib
 warm = json.loads(Path(sys.argv[1]).read_text())
-Path(sys.argv[2]).write_text(json.dumps(with_reactor_lean(warm, reactor_lean_checkout())))
+Path(sys.argv[2]).write_text(json.dumps(with_reactlib(warm, reactlib_checkout())))
 ' "$REPO/python/tests/lean/lake-manifest.json" "$OUT/$PROJ/lake-manifest.json"
   (cd "$OUT/$PROJ" && lake build Certificate)
 }

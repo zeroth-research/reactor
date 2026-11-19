@@ -70,7 +70,7 @@ import sys
 
 from ..cli import parse_args
 from ..core.errors import Refused
-from ..project.lakefile import reactor_lean_checkout
+from ..project.lakefile import reactlib_checkout
 from .certificate import lean_context, record_predicates, render, workspace
 from .claim import claim_from_flags, load, stated_claim
 from .outputs import generate, standalone
@@ -80,11 +80,11 @@ def main():
     argv = sys.argv[1:]
     settings = parse_args(argv)
 
-    # `$REACTOR_LEAN` is a checkout the project's lakefile will require, so
+    # `$REACTLIB` is a checkout the project's lakefile will require, so
     # a bad one is refused here, before any of the project is written.
     if not settings.cert_file:
         try:
-            reactor_lean_checkout()
+            reactlib_checkout()
         except Refused as e:
             raise SystemExit(f"error: {e}") from e
 

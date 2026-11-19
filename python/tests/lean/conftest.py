@@ -1,7 +1,7 @@
 """
 Session-scoped fixtures that prepare the tests/lean/ lake project before any
 test in this directory runs. The Lean library the files import,
-``Relational.*``, is reactor-lean's: the lakefile requires it by path from
+``Relational.*``, is ReactLib's: the lakefile requires it by path from
 the checkout beside this repository.
 
 ``generate_lean_files`` generates:

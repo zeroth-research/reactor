@@ -1,6 +1,6 @@
 """The project's lakefile: the dependencies every project requires
-(Mathlib, Cslib, lean-smt, and reactor-lean's `ReactLib` and `LeanAI`) at
-the revisions it pins, and what a caller adds to them
+(Mathlib, Cslib, lean-smt, and the ReactLib repository's `ReactLib` and
+`LeanAI`) at the revisions it pins, and what a caller adds to them
 (`LakefileParts`).
 """
 
@@ -20,19 +20,19 @@ CSLIB_REV = MATHLIB_REV
 LEAN_TOOLCHAIN = f"leanprover/lean4:{MATHLIB_REV}"
 
 # The Lean libraries the generated files import come in two Lake packages,
-# each in its own directory of the reactor-lean repository, which is also
+# each in its own directory of the ReactLib repository, which is also
 # what each package is named: `ReactLib`, whose libraries are
 # `Relational.*`, which the encodings and the certificate are stated in,
 # and `Spec.*`, the LTL their proof rules are stated in; and `LeanAI`, the
 # `ai_solve` tactic.
-REACTOR_LEAN_URL = "https://github.com/zeroth-research/reactor-lean"
+REACTLIB_URL = "https://github.com/zeroth-research/ReactLib"
 # A commit rather than a branch, so a project cannot drift from the
 # generator that wrote it.
-REACTOR_LEAN_REV = "ea0275282ed90fa606f469db3e893f36dec35550"
-REACTOR_LEAN_PACKAGES = ("ReactLib", "LeanAI")
-# A reactor-lean checkout to require by path instead of from git, to work on
+REACTLIB_REV = "ea0275282ed90fa606f469db3e893f36dec35550"
+REACTLIB_PACKAGES = ("ReactLib", "LeanAI")
+# A ReactLib checkout to require by path instead of from git, to work on
 # the libraries and the generator together.
-REACTOR_LEAN_ENV = "REACTOR_LEAN"
+REACTLIB_ENV = "REACTLIB"
 
 
 @dataclass(frozen=True)
@@ -73,57 +73,58 @@ class LakefileParts:
                              self.requires + other.requires)
 
 
-def reactor_lean_checkout() -> Path | None:
-    """`$REACTOR_LEAN` as a reactor-lean checkout, or None when it is unset.
+def reactlib_checkout() -> Path | None:
+    """`$REACTLIB` as a ReactLib checkout, or None when it is unset.
 
     Refused when it is set to something that is not a checkout: the
     lakefile would require packages that are not there, and lake would say
     so only at build time, long after the project was written.
     """
-    value = os.environ.get(REACTOR_LEAN_ENV)
+    value = os.environ.get(REACTLIB_ENV)
     if not value:
         return None
     root = Path(value).expanduser().resolve()
-    missing = [f"{p}/lakefile.toml" for p in REACTOR_LEAN_PACKAGES
+    missing = [f"{p}/lakefile.toml" for p in REACTLIB_PACKAGES
                if not (root / p / "lakefile.toml").is_file()]
     if missing:
         raise Refused(
-            f"${REACTOR_LEAN_ENV}: {root} is not a reactor-lean checkout: "
+            f"${REACTLIB_ENV}: {root} is not a ReactLib checkout: "
             f"it has no {', '.join(missing)}",
             setup=True,
         )
     return root
 
 
-_REACTOR_LEAN_COMMENTS = {
+_REACTLIB_COMMENTS = {
     "ReactLib": (
-        "reactor-lean's `ReactLib`: `Relational.*`, what the encodings and the "
-        "certificate are stated in, and `Spec.*`, the LTL of its proof rules.\n"
-        f"Set ${REACTOR_LEAN_ENV} to a reactor-lean checkout to require its "
+        "ReactLib's `ReactLib` package: `Relational.*`, what the encodings and "
+        "the certificate are stated in, and `Spec.*`, the LTL of its proof "
+        "rules.\n"
+        f"Set ${REACTLIB_ENV} to a ReactLib checkout to require its "
         "packages by path."
     ),
-    "LeanAI": "reactor-lean's `LeanAI`: the `ai_solve` tactic.",
+    "LeanAI": "ReactLib's `LeanAI`: the `ai_solve` tactic.",
 }
 
 
-def reactor_lean_requires() -> tuple[Require, ...]:
-    """The requires on reactor-lean's packages: by path from
-    `$REACTOR_LEAN` when it is set, from git at `REACTOR_LEAN_REV`
+def reactlib_requires() -> tuple[Require, ...]:
+    """The requires on ReactLib's packages: by path from
+    `$REACTLIB` when it is set, from git at `REACTLIB_REV`
     otherwise."""
-    checkout = reactor_lean_checkout()
+    checkout = reactlib_checkout()
     if checkout is not None:
         return tuple(Require(p, path=str(checkout / p),
-                             comment=_REACTOR_LEAN_COMMENTS[p])
-                     for p in REACTOR_LEAN_PACKAGES)
+                             comment=_REACTLIB_COMMENTS[p])
+                     for p in REACTLIB_PACKAGES)
     return tuple(
-        Require(p, git=REACTOR_LEAN_URL, rev=REACTOR_LEAN_REV, sub_dir=p,
-                comment=_REACTOR_LEAN_COMMENTS[p])
-        for p in REACTOR_LEAN_PACKAGES
+        Require(p, git=REACTLIB_URL, rev=REACTLIB_REV, sub_dir=p,
+                comment=_REACTLIB_COMMENTS[p])
+        for p in REACTLIB_PACKAGES
     )
 
 
-def with_reactor_lean(manifest: dict, checkout: Path) -> dict:
-    """`manifest` (a parsed `lake-manifest.json`) with reactor-lean's
+def with_reactlib(manifest: dict, checkout: Path) -> dict:
+    """`manifest` (a parsed `lake-manifest.json`) with ReactLib's
     packages entered as path dependencies on `checkout`.
 
     `lake build` materializes a path dependency from the manifest's `dir`,
@@ -136,10 +137,10 @@ def with_reactor_lean(manifest: dict, checkout: Path) -> dict:
         {"type": "path", "scope": "", "name": p,
          "manifestFile": "lake-manifest.json", "inherited": False,
          "dir": str(checkout / p), "configFile": "lakefile.toml"}
-        for p in REACTOR_LEAN_PACKAGES
+        for p in REACTLIB_PACKAGES
     ]
     rest = [e for e in manifest["packages"]
-            if e["name"] not in REACTOR_LEAN_PACKAGES]
+            if e["name"] not in REACTLIB_PACKAGES]
     return {**manifest, "packages": rest + entries}
 
 
@@ -159,5 +160,5 @@ def generate_lakefile(
         executable=executable,
         cslib_rev=CSLIB_REV,
         parts=parts,
-        requires=reactor_lean_requires() + parts.requires,
+        requires=reactlib_requires() + parts.requires,
     )
