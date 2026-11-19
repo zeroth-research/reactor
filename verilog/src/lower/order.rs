@@ -3,7 +3,7 @@
 use super::Result;
 use super::builder::lvalue_targets;
 use crate::ast::{Error, Expr, Item, Name, Reset, Span, Stmt, StmtKind};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// An item before sorting, with the signals it controls and those it
 /// awaits.
@@ -26,17 +26,54 @@ impl Pending<'_> {
 }
 
 /// Sorts the items so that each comes after the items controlling what it
-/// awaits, keeping the source order where possible; a cycle is an error.
-pub(super) fn await_order<'m>(mut pending: Vec<Pending<'m>>) -> Result<Vec<&'m Item>> {
-    let mut sorted = Vec::new();
-    while !pending.is_empty() {
-        let ready = |a: &Pending| !pending.iter().any(|b| a.awaits_from(b).is_some());
-        match pending.iter().position(ready) {
-            Some(i) => sorted.push(pending.remove(i).item),
-            None => return Err(combinational_loop(&pending)),
+/// awaits, keeping the source order where possible: the next item is
+/// always the first one (in source order) whose awaited signals are all
+/// controlled by items already sorted. A cycle is an error.
+pub(super) fn await_order<'m>(pending: Vec<Pending<'m>>) -> Result<Vec<&'m Item>> {
+    // the items controlling each signal
+    let mut controllers: HashMap<&Name, Vec<usize>> = HashMap::new();
+    for (i, p) in pending.iter().enumerate() {
+        for x in &p.ctrl {
+            controllers.entry(x).or_default().push(i);
         }
     }
-    Ok(sorted)
+    // for each item, the number of items it waits for that are not sorted
+    // yet (itself among them if it awaits what it controls), and the items
+    // that wait for it
+    let mut waiting: Vec<usize> = vec![0; pending.len()];
+    let mut waited_by: Vec<Vec<usize>> = vec![Vec::new(); pending.len()];
+    for (a, p) in pending.iter().enumerate() {
+        let before: BTreeSet<usize> = (p.awaits.iter())
+            .filter_map(|x| controllers.get(x))
+            .flatten()
+            .copied()
+            .collect();
+        waiting[a] = before.len();
+        for b in before {
+            waited_by[b].push(a);
+        }
+    }
+    let mut ready: BTreeSet<usize> = (0..pending.len()).filter(|&a| waiting[a] == 0).collect();
+    let mut sorted = Vec::with_capacity(pending.len());
+    while let Some(b) = ready.pop_first() {
+        sorted.push(b);
+        for &a in &waited_by[b] {
+            waiting[a] -= 1;
+            if waiting[a] == 0 {
+                ready.insert(a);
+            }
+        }
+    }
+    if sorted.len() < pending.len() {
+        // the items not sorted, in source order
+        let done: BTreeSet<usize> = sorted.into_iter().collect();
+        let rest: Vec<Pending> = (pending.into_iter().enumerate())
+            .filter(|(i, _)| !done.contains(i))
+            .map(|(_, p)| p)
+            .collect();
+        return Err(combinational_loop(&rest));
+    }
+    Ok(sorted.into_iter().map(|i| pending[i].item).collect())
 }
 
 /// An error naming a cycle among items none of which is ready, and a block

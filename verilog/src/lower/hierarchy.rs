@@ -478,40 +478,52 @@ fn instance_loop(
             .find(|v| atoms[b].0.ctrl().contains(v))
             .copied()
     };
-    // depth-first search for a cycle
+    // the atoms each atom awaits, in the order of `atoms`
+    let mut controllers: HashMap<Var, Vec<usize>> = HashMap::new();
+    for (b, (atom, _)) in atoms.iter().enumerate() {
+        for v in atom.ctrl() {
+            controllers.entry(*v).or_default().push(b);
+        }
+    }
+    let awaited: Vec<Vec<usize>> = (atoms.iter())
+        .map(|(atom, _)| {
+            let bs: BTreeSet<usize> = (atom.wait().iter())
+                .filter_map(|v| controllers.get(v))
+                .flatten()
+                .copied()
+                .collect();
+            bs.into_iter().collect()
+        })
+        .collect();
+    // depth-first search for a cycle, with an explicit stack: each entry
+    // is an atom on the current path and the number of the atoms it
+    // awaits visited so far
     let n = atoms.len();
-    let mut state = vec![0u8; n]; // 0 new, 1 on the stack, 2 done
-    let mut stack: Vec<usize> = Vec::new();
-    fn dfs(
-        a: usize,
-        n: usize,
-        via: &dyn Fn(usize, usize) -> Option<Var>,
-        state: &mut [u8],
-        stack: &mut Vec<usize>,
-    ) -> Option<Vec<usize>> {
+    let mut state = vec![0u8; n]; // 0 new, 1 on the path, 2 done
+    let dfs = |a: usize, state: &mut [u8]| -> Option<Vec<usize>> {
+        let mut path: Vec<(usize, usize)> = vec![(a, 0)];
         state[a] = 1;
-        stack.push(a);
-        for b in 0..n {
-            if via(a, b).is_none() {
+        while let Some((a, k)) = path.last_mut() {
+            let Some(&b) = awaited[*a].get(*k) else {
+                state[*a] = 2;
+                path.pop();
                 continue;
-            }
+            };
+            *k += 1;
             if state[b] == 1 {
-                let start = stack.iter().position(|&x| x == b).unwrap();
-                return Some(stack[start..].to_vec());
+                let start = path.iter().position(|&(x, _)| x == b).unwrap();
+                return Some(path[start..].iter().map(|&(x, _)| x).collect());
             }
-            if state[b] == 0
-                && let Some(c) = dfs(b, n, via, state, stack)
-            {
-                return Some(c);
+            if state[b] == 0 {
+                state[b] = 1;
+                path.push((b, 0));
             }
         }
-        stack.pop();
-        state[a] = 2;
         None
-    }
+    };
     for a in 0..n {
         if state[a] == 0
-            && let Some(cycle) = dfs(a, n, &via, &mut state, &mut stack)
+            && let Some(cycle) = dfs(a, &mut state)
         {
             // each atom awaits the next: the data flows backwards
             let mut signals: Vec<&str> = (0..cycle.len())

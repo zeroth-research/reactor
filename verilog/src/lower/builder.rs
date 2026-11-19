@@ -13,7 +13,7 @@ use base::var::X;
 use num_bigint::BigUint;
 use num_traits::One;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// Adds the signals of a target to `targets`, and those it assigns as a
 /// whole to `whole`.
@@ -38,6 +38,10 @@ pub(super) struct Builder<'a> {
     env: &'a typing::Env,
     vars: &'a BTreeMap<Name, Var>,
     pub(super) terms: Vec<Term>,
+    /// For each wire a term writes, the index of that term.
+    writer: HashMap<Wire, usize>,
+    /// The wires some term reads.
+    read: HashSet<Wire>,
     /// The signals the atom reads or writes.
     pub(super) used: BTreeSet<Name>,
     /// Whether signals are read latched (`*x`, in `always_ff`) or awaited
@@ -47,6 +51,9 @@ pub(super) struct Builder<'a> {
     /// the edge in `always_ff`; in `always_comb`, the current value, with
     /// unassigned segments for bits that may not be assigned yet.
     cur: Vec<(Name, Value)>,
+    /// The index of each signal of the block in [`cur`](Self::cur) (the
+    /// same in every map of the block's run).
+    index: HashMap<Name, usize>,
     /// The names of the intermediate values in `always_comb`.
     pub(super) names: HashMap<Wire, Name>,
     /// The number of intermediate values named so far, per signal.
@@ -65,9 +72,12 @@ impl<'a> Builder<'a> {
             env,
             vars,
             terms: Vec::new(),
+            writer: HashMap::new(),
+            read: HashSet::new(),
             used: BTreeSet::new(),
             latched,
             cur: Vec::new(),
+            index: HashMap::new(),
             names: HashMap::new(),
             versions: BTreeMap::new(),
             renamed: HashMap::new(),
@@ -79,6 +89,9 @@ impl<'a> Builder<'a> {
     /// `init(y)`, or all bits unassigned.
     pub(super) fn start(&mut self, targets: &[&Name], init: impl Fn(&Name) -> Option<Wire>) {
         self.used.extend(targets.iter().map(|y| (*y).clone()));
+        self.index = (targets.iter().enumerate())
+            .map(|(i, y)| ((*y).clone(), i))
+            .collect();
         self.cur = targets
             .iter()
             .map(|y| {
@@ -276,7 +289,7 @@ impl<'a> Builder<'a> {
     /// Makes the bits `hi` down to `lo` of the signal `y` hold the bits of
     /// `w` from `wlo` upwards.
     fn write(&mut self, y: &Name, hi: usize, lo: usize, w: Wire, wlo: usize) {
-        let i = self.cur.iter().position(|(x, _)| x == y).expect("a target");
+        let i = self.index[y];
         let value = &self.cur[i].1;
         let cut = split(value, &BTreeSet::from([lo, hi + 1]));
         let mut out = Vec::new();
@@ -326,7 +339,7 @@ impl<'a> Builder<'a> {
     /// block. If they are a concatenation of several wires, it becomes
     /// their value, so that it is built only once.
     fn read_own(&mut self, y: &Name, hi: usize, lo: usize, span: Span) -> Result<Wire> {
-        let i = self.cur.iter().position(|(x, _)| x == y).expect("a target");
+        let i = self.index[y];
         let value = self.cur[i].1.clone();
         let w = self.build(&value, hi, lo, span)?;
         if self
@@ -344,7 +357,7 @@ impl<'a> Builder<'a> {
     fn name(&mut self, y: &Name, w: Wire) {
         if !self.latched
             && !self.names.contains_key(&w)
-            && self.terms.iter().any(|t| t.write() == [w])
+            && self.writer.contains_key(&w)
         {
             let k = self.versions.entry(y.clone()).or_insert(0);
             *k += 1;
@@ -416,6 +429,7 @@ impl<'a> Builder<'a> {
         // all final values are built before any wire is renamed, since one
         // may be built from bits of another
         let mut finals = Vec::new();
+        self.index.clear();
         for (y, value) in std::mem::take(&mut self.cur) {
             let width = self.env[&y].ty.width;
             finals.push((self.build(&value, width - 1, 0, span)?, y));
@@ -457,6 +471,7 @@ impl<'a> Builder<'a> {
         span: Span,
     ) -> Result<()> {
         let mut finals = Vec::new();
+        self.index.clear();
         for (q, value) in std::mem::take(&mut self.cur) {
             let width = self.env[&q].ty.width;
             finals.push((self.build(&value, width - 1, 0, span)?, q, width));
@@ -491,7 +506,7 @@ impl<'a> Builder<'a> {
             Edge::Neg => {
                 let low = Wire::scalar(Sort(1));
                 let term = Term::function(SvOp::Not, [low], [level]);
-                self.terms.push(term.expect("a 1-bit reset"));
+                self.push(term.expect("a 1-bit reset"));
                 low
             }
         }
@@ -506,10 +521,8 @@ impl<'a> Builder<'a> {
             self.emit_to(SvOp::Id, &[r], dest, span)?;
             return Ok(());
         }
-        let writer = self.terms.iter().position(|t| t.write() == [w]);
-        let read = self.terms.iter().any(|t| t.read().contains(&w));
-        match writer {
-            Some(i) if !read => {
+        match self.writer.get(&w).copied() {
+            Some(i) if !self.read.contains(&w) => {
                 let t = &self.terms[i];
                 let op = t.itype().clone();
                 let term = if t.read().is_empty() {
@@ -518,6 +531,8 @@ impl<'a> Builder<'a> {
                     Term::function(op, [dest], t.read().iter().copied())
                 };
                 self.terms[i] = term.map_err(|e| internal(Some(span), e))?;
+                self.writer.remove(&w);
+                self.writer.entry(dest).or_insert(i);
                 self.renamed.insert(w, dest);
                 self.names.remove(&w);
             }
@@ -546,8 +561,17 @@ impl<'a> Builder<'a> {
         } else {
             Term::function(op, [dest], reads.iter().copied())
         };
-        self.terms.push(term.map_err(|e| internal(Some(span), e))?);
+        self.push(term.map_err(|e| internal(Some(span), e))?);
         Ok(dest)
+    }
+
+    /// Adds `term`, recording the wires it writes and reads.
+    fn push(&mut self, term: Term) {
+        for &w in term.write() {
+            self.writer.entry(w).or_insert(self.terms.len());
+        }
+        self.read.extend(term.read().iter().copied());
+        self.terms.push(term);
     }
 
     /// The wire holding whether `w` (of type `t`) is non-zero.
@@ -569,7 +593,7 @@ impl<'a> Builder<'a> {
     ) -> Result<(Wire, Option<(usize, usize)>)> {
         self.used.insert(x.clone());
         let var = self.vars[x];
-        let own = self.cur.iter().any(|(y, _)| y == x);
+        let own = self.index.contains_key(x);
         if self.latched {
             return Ok((*var, bits));
         }
