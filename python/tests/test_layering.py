@@ -2,17 +2,17 @@
 
 The package is layered. `LAYERS` names the modules of each layer and the
 layers it may import besides itself, and a module imports nothing else of
-`reactor.lean`. An import under `if TYPE_CHECKING:` is exempt: it names a type
+`reactor_lean`. An import under `if TYPE_CHECKING:` is exempt: it names a type
 for the reader and loads nothing.
 
 The inference routes are not here: they are the `verith` package, in the
 `verith/` project beside this one, which is built on this package and has
 layering rules of its own (`verith/tests/test_layering.py`). Nothing in
-`reactor.lean` imports it, nor the `certify` command or the `nuterm`
+`reactor_lean` imports it, nor the `certify` command or the `nuterm`
 learner beside it.
 
 And a name with a leading underscore is its module's own: no module of
-`reactor.lean` imports one from another, nor reads one off an imported module.
+`reactor_lean` imports one from another, nor reads one off an imported module.
 A name another module needs is part of its module's interface, and is
 spelled without the underscore.
 """
@@ -26,13 +26,13 @@ from typing import NamedTuple
 
 import pytest
 
-LEAN = Path(__file__).parent.parent / "reactor" / "lean"
+LEAN = Path(__file__).parents[2] / "lean" / "python" / "reactor_lean"
 
 # Every module of the package: the SMT layer the routes are built from, and
 # the Lean code generators.
 PACKAGE = sorted(LEAN.rglob("*.py"))
 
-# Each layer is the package `reactor.lean.<layer>` and everything under it, and
+# Each layer is the package `reactor_lean.<layer>` and everything under it, and
 # maps to the layers it may import besides itself. A module no layer names
 # is not checked, but a checked module may import it only through a layer.
 LAYERS: dict[str, frozenset[str]] = {
@@ -65,19 +65,19 @@ def _tree(path: Path) -> ast.Module:
 
 
 def _module(path: Path) -> str:
-    """`path` as a dotted module name: `reactor.lean.smt.encode`."""
+    """`path` as a dotted module name: `reactor_lean.smt.encode`."""
     parts = path.relative_to(LEAN.parent).with_suffix("").parts
     if parts[-1] == "__init__":
         parts = parts[:-1]
-    return ".".join(["reactor", *parts])
+    return ".".join(parts)
 
 
 MODULES = {_module(p) for p in PACKAGE}
 
 
 def _package(path: Path) -> list[str]:
-    """`path`'s package as a dotted list: `["reactor", "lean", "smt"]`."""
-    return ["reactor", *path.parent.relative_to(LEAN.parent).parts]
+    """`path`'s package as a dotted list: `["reactor_lean", "smt"]`."""
+    return list(path.parent.relative_to(LEAN.parent).parts)
 
 
 class Import(NamedTuple):
@@ -90,8 +90,8 @@ class Import(NamedTuple):
 
     @property
     def target(self) -> str:
-        """The module this import loads: `from reactor.lean.core import errors`
-        loads `reactor.lean.core.errors`, and so does `from reactor.lean.core.errors
+        """The module this import loads: `from reactor_lean.core import errors`
+        loads `reactor_lean.core.errors`, and so does `from reactor_lean.core.errors
         import Refused`."""
         if self.name and f"{self.module}.{self.name}" in MODULES:
             return f"{self.module}.{self.name}"
@@ -141,8 +141,8 @@ def _imports(path: Path):
 
 def _layer(module: str) -> str | None:
     parts = module.split(".")
-    if parts[:2] == ["reactor", "lean"] and len(parts) > 2 and parts[2] in LAYERS:
-        return parts[2]
+    if parts[0] == "reactor_lean" and len(parts) > 1 and parts[1] in LAYERS:
+        return parts[1]
     return None
 
 
@@ -161,7 +161,7 @@ LAYERED = [p for p in PACKAGE if _layer(_module(p))]
 def test_every_module_a_layer_names_exists(layer):
     """A package moved or renamed takes its layer entry with it; a stale
     entry would check nothing."""
-    assert f"reactor.lean.{layer}" in MODULES
+    assert f"reactor_lean.{layer}" in MODULES
     assert LAYERS[layer] <= set(LAYERS), sorted(LAYERS[layer] - set(LAYERS))
 
 
@@ -171,7 +171,7 @@ def test_a_layer_imports_only_the_layers_below_it(path):
     allowed = {me} | LAYERS[me]
     bad = []
     for i in _imports(path):
-        if i.typing or not i.target.startswith("reactor.lean."):
+        if i.typing or not i.target.startswith("reactor_lean."):
             continue
         layer = _layer(i.target)
         if layer not in allowed:

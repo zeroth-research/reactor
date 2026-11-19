@@ -8,21 +8,21 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from reactor.lean.lowering.sorts import (
+from reactor_lean.lowering.sorts import (
     dtype_shape,
     dtype_to_lean_type,
     itype_name,
     is_constant_name,
 )
-from reactor.lean.lowering.elements import product_accessor
-from reactor.lean.codegen.literals import (
+from reactor_lean.lowering.elements import product_accessor
+from reactor_lean.codegen.literals import (
     ConstantRegistry,
     constant_expr,
     linear_list_literals,
 )
 
-from reactor.lean.codegen.terms import check_argmax_output
-from reactor.lean.lowering.ops import box_for
+from reactor_lean.codegen.terms import check_argmax_output
+from reactor_lean.lowering.ops import box_for
 
 from dataclasses import dataclass
 

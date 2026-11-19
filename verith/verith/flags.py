@@ -2,7 +2,7 @@
 
 Shared by the two commands that run a route and write the proofs: `verith`
 (:mod:`verith.cli`) and `certify`. Each builds its command line from
-`reactor.lean.cli`'s groups and adds these: `add_routes` for the flags,
+`reactor_lean.cli`'s groups and adds these: `add_routes` for the flags,
 then, once parsed, `resolve_aliases`, `check_route_options`, `route_fields`,
 `check_route` and `resolve_route`, in that order. Every rule reads a field
 of the route's row, so none of them knows a route by name.
@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import argparse
 
-from reactor.lean.cli.checks import check_row_options
-from reactor.lean.core.options import given
-from reactor.lean.core.errors import Refused
+from reactor_lean.cli.checks import check_row_options
+from reactor_lean.core.options import given
+from reactor_lean.core.errors import Refused
 from .common.limits import DEFAULT_CALL_MS, DEFAULT_PHASE_MS, SmtBudget
 
 from . import (
@@ -144,7 +144,7 @@ def check_route(parser: argparse.ArgumentParser, settings) -> None:
     """Every rule about inference, read off the route's row.
 
     `settings` is the command's own: the claim's fields, named as
-    `reactor.lean.cli.Settings` names them, and `route`, `route_opts`."""
+    `reactor_lean.cli.Settings` names them, and `route`, `route_opts`."""
     route = settings.route
     if not settings.prp:
         # Naming the kinds this route has rather than both of them: a route

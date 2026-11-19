@@ -3,7 +3,7 @@
 A reactive module in, a Lean 4 certificate project out, with the
 certificate inferred by the route `--infer` selects and proved: the command
 `uv run verith` was before `reactor` and `verith` were split apart, and the
-same command line. It runs `reactor`'s stages (`reactor.lean.pipeline`),
+same command line. It runs `reactor`'s stages (`reactor_lean.pipeline`),
 `verith`'s route (`verith.run`) and `verith`'s proofs (`verith.proofs`) in
 one process, so the route is handed the project as it is generated, and
 the certificate is rewritten from its answer, with its proofs
@@ -22,18 +22,18 @@ from __future__ import annotations
 
 import sys
 
-from reactor.lean.core.errors import Refused
-from reactor.lean.project.lakefile import reactlib_checkout
-from reactor.lean.project.scaffold import write_files
-from reactor.lean.pipeline.certificate import (
+from reactor_lean.core.errors import Refused
+from reactor_lean.project.lakefile import reactlib_checkout
+from reactor_lean.project.scaffold import write_files
+from reactor_lean.pipeline.certificate import (
     lean_context,
     record_predicates,
     render,
     workspace,
 )
-from reactor.lean.pipeline.claim import claim_from_flags, load, stated_claim
-from reactor.lean.pipeline.outputs import generate, standalone
-from reactor.lean.proof.render import SORRY
+from reactor_lean.pipeline.claim import claim_from_flags, load, stated_claim
+from reactor_lean.pipeline.outputs import generate, standalone
+from reactor_lean.proof.render import SORRY
 from verith import ProjectHandle
 from verith.common.encoding import lazy
 from verith.io import declared

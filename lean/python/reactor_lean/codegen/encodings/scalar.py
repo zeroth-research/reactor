@@ -1,6 +1,6 @@
 """Scalar encoding translation."""
 
-from reactor.lean.codegen.terms import (
+from reactor_lean.codegen.terms import (
     elem_ty_slug,
     product_type,
     product_type_scalar,
@@ -8,15 +8,15 @@ from reactor.lean.codegen.terms import (
     build_tuple,
     argmax_scalar_name,
 )
-from reactor.lean.lowering.sorts import (
+from reactor_lean.lowering.sorts import (
     dtype_to_lean_type,
     flat_element_type,
     itype_name,
     wire_shape,
 )
-from reactor.lean.lowering.elements import flat_size, mat_from_scalars, flat_layout
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.codegen.encodings.common import (
+from reactor_lean.lowering.elements import flat_size, mat_from_scalars, flat_layout
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.codegen.encodings.common import (
     prepend_recon,
     scalar_bindings_with_recon,
     has_block,

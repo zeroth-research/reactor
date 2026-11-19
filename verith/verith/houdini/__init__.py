@@ -11,7 +11,7 @@ the certificate to what the proofs used. `engine` runs them in that order.
 
 from __future__ import annotations
 
-from reactor.lean.core.options import Opt
+from reactor_lean.core.options import Opt
 # Constants only -- neither module imports cvc5, so naming the defaults in
 # the row costs a bare run nothing.
 from ..common.solvers import DEFAULT_TIMEOUT

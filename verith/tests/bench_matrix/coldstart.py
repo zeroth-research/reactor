@@ -48,7 +48,7 @@ MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
 
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
-from reactor.lean.project.lakefile import (  # noqa: E402
+from reactor_lean.project.lakefile import (  # noqa: E402
     REACTLIB_ENV, reactlib_checkout, with_reactlib,
 )
 

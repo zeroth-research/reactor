@@ -2,11 +2,11 @@
 
 import torch
 from reactor import Wire, Term, Module, LIA as it, Bool, Int, Var, X
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.project.scaffold import create_project
-from reactor.lean.pipeline.certificate import render
-from reactor.lean.proof.render import certificate_files
-from reactor.lean.core.certificate import Certificate, Claim
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.project.scaffold import create_project
+from reactor_lean.pipeline.certificate import render
+from reactor_lean.proof.render import certificate_files
+from reactor_lean.core.certificate import Certificate, Claim
 
 from os.path import dirname
 from pathlib import Path

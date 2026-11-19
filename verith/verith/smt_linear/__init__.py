@@ -8,7 +8,7 @@ counterexample-guided loop.
 
 from __future__ import annotations
 
-from reactor.lean.core.options import Opt
+from reactor_lean.core.options import Opt
 from ..io import InferInput, InferResult
 from ..resume import resumable_inv, taking_inv
 from ..route import InferRoute

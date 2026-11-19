@@ -112,8 +112,8 @@ the certificate carries one spelling whoever proved it.
 from __future__ import annotations
 
 from ..common.record import GaveUp, announce, found_certificate
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.core.errors import Refused
 from ..common.claim import SynthContext, sorts_where
 from ..common.obligations import Candidate, Obligations
 from ..common.smtlib import conjunction_smt

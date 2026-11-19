@@ -8,7 +8,7 @@ import re
 import time
 from dataclasses import dataclass
 
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.errors import Refused
 from ..common.vampire import run_vampire
 
 

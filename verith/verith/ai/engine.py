@@ -5,8 +5,8 @@ The model is reached through :mod:`..common.llm`.
 
 import re
 
-from reactor.lean.core.certificate import Claim, LeanAnswer
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Claim, LeanAnswer
+from reactor_lean.core.errors import Refused
 from ..common.llm import (
     DEFAULT_MODEL, describe_preconditions, make_client, reply_fields,
     source_block,

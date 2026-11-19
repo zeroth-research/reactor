@@ -1,6 +1,6 @@
 """The op table: every variant covered, every gap named.
 
-`reactor/lean/ops.py` holds one row per op variant and one column per backend
+`reactor_lean/lowering/ops.py` holds one row per op variant and one column per backend
 (`mat`, `scalar`, `box`, `smt`). These tests are the other half of that: they
 check the table against what `LIA`/`LRA`/`BV` actually expose, in both
 directions.
@@ -21,12 +21,12 @@ backends do with it — an emitter, or the reason there is none.
 import torch
 import pytest
 from reactor import Wire, Term, Module, Bool, Int, BitVec, LIA, LRA, BV, Cast, Var, X
-from reactor.lean import ModuleToLean4
-from reactor.lean.lowering.sorts import itype_name
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.codegen.terms import lean_gaps
-from reactor.lean.lowering import ops
-from reactor.lean.lowering.ops import (
+from reactor_lean import ModuleToLean4
+from reactor_lean.lowering.sorts import itype_name
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.codegen.terms import lean_gaps
+from reactor_lean.lowering import ops
+from reactor_lean.lowering.ops import (
     COLUMNS,
     OPS,
     Inline,
@@ -64,7 +64,7 @@ def test_every_variant_has_a_row(theory_name):
     missing = _variant_names(_THEORIES[theory_name]) - covered
     assert not missing, (
         f"{theory_name} exposes {sorted(missing)} with no row in "
-        "reactor/lean/ops.py. Add one, saying for each of "
+        "reactor_lean/lowering/ops.py. Add one, saying for each of "
         f"{list(COLUMNS)} either an emitter or `Unsupported(<why not>)`."
     )
 
@@ -220,12 +220,12 @@ def test_the_coverage_gaps_are_the_known_ones():
         "the coverage matrix moved: "
         f"new gaps {sorted(gaps - _KNOWN_GAPS)}, "
         f"closed gaps {sorted(_KNOWN_GAPS - gaps)}. "
-        "Run `python -m reactor.lean.lowering.ops` to see the whole matrix."
+        "Run `python -m reactor_lean.lowering.ops` to see the whole matrix."
     )
 
 
 def test_the_matrix_prints():
-    """`python -m reactor.lean.lowering.ops` is how the table is meant to be
+    """`python -m reactor_lean.lowering.ops` is how the table is meant to be
     read."""
     text = ops.format_matrix()
     assert "ULt" in text and "gaps:" in text
@@ -253,7 +253,7 @@ def _bv_ult_module() -> Module:
 def test_an_op_only_cvc5_has_still_encodes_for_cvc5():
     import cvc5
 
-    from reactor.lean.smt.module import ModuleSMT
+    from reactor_lean.smt.module import ModuleSMT
 
     msmt = ModuleSMT(tm=cvc5.TermManager(), module=_bv_ult_module())
     state = msmt.update_state(

@@ -5,8 +5,8 @@ which is what the printer's accessor maps are keyed by."""
 
 from __future__ import annotations
 
-from reactor.lean.lowering.elements import flat_layout
-from reactor.lean.lowering.sorts import wire_shape
+from reactor_lean.lowering.elements import flat_layout
+from reactor_lean.lowering.sorts import wire_shape
 
 
 def scalar_element(tm, term, shape, i: int, j: int):

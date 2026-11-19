@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sim                                                      # noqa: E402
 from suites import SUITES                                       # noqa: E402
 
-from reactor.lean.inputs.python import load_module
+from reactor_lean.inputs.python import load_module
 
 ROWS = [r for name in ("hybrid", "petri") for r in SUITES[name]()]
 

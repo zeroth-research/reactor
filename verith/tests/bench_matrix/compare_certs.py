@@ -93,8 +93,8 @@ sys.path.insert(0, str(SP))
 
 from suites import all_rows, column_of                          # noqa: E402
 
-from reactor.lean.core.certificate import Claim                         # noqa: E402
-from reactor.lean.inputs.python import load_module                # noqa: E402
+from reactor_lean.core.certificate import Claim                         # noqa: E402
+from reactor_lean.inputs.python import load_module                # noqa: E402
 from verith.common.claim import SynthContext                      # noqa: E402
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))

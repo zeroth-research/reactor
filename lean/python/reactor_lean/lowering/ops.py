@@ -28,7 +28,7 @@ about every column. A cell is either an emitter or one of
 * `Unsupported(...)` — no emitter, and the reason it is missing rather than
   forgotten. That reason is what the caller is told.
 
-`python -m reactor.lean.lowering.ops` prints the matrix, gaps and all.
+`python -m reactor_lean.lowering.ops` prints the matrix, gaps and all.
 `tests/test_lean_ops.py` checks it against `LIA`/`LRA`/`BV` in both
 directions, so a variant added to a theory fails the suite until it has a
 row, and a row no theory backs fails it too.
@@ -944,7 +944,7 @@ def op_for(itype) -> Op:
     if row is None:
         raise ValueError(
             f"no op-table row for {theory or '<no theory>'}.{name}; "
-            "add one in reactor/lean/ops.py"
+            "add one in reactor_lean/lowering/ops.py"
         )
     return row
 

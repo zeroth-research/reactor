@@ -1,4 +1,4 @@
-"""Tests for the module -> cvc5 encoder (`reactor.lean.smt.encode`).
+"""Tests for the module -> cvc5 encoder (`reactor_lean.smt.encode`).
 
 `Min` / `Max` are unary *reductions* in the theory: one read wire of any
 shape, a `Mat t 1 1` written, matching `Relational.Mat.matMin` / `matMax` and the
@@ -16,7 +16,7 @@ import pytest
 import torch
 
 from reactor import Module, Term, Wire, Var, X, LIA, Int
-from reactor.lean.smt.module import ModuleSMT
+from reactor_lean.smt.module import ModuleSMT
 
 _TM = cvc5.TermManager()
 _KEEP: list = []
@@ -83,7 +83,7 @@ def test_a_bitvector_matrix_product_is_bitvector_arithmetic():
     from cvc5's arithmetic `MULT` it was refused outright -- "expecting an
     arithmetic subterm" -- so no module with one had an SMT encoding."""
     from reactor import BV, BitVec
-    from reactor.lean.smt.encode import _matmul, MatShape
+    from reactor_lean.smt.encode import _matmul, MatShape
 
     tm = cvc5.TermManager()
     bv = lambda v: tm.mkBitVector(4, v)

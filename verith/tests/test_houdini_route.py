@@ -28,9 +28,9 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.core.certificate import Claim
-from reactor.lean.core.errors import Refused
-from reactor.lean.inputs.python import load_module
+from reactor_lean.core.certificate import Claim
+from reactor_lean.core.errors import Refused
+from reactor_lean.inputs.python import load_module
 from verith.houdini.solvers import SolverSpec
 
 # The fixtures are `reactor`'s, in the `python/` project beside this one.

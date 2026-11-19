@@ -17,8 +17,8 @@ import torch
 from reactor import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
 from reactor.analyzer import convert_method
 from reactor.sugar import ite
-from reactor.lean.core.certificate import Claim
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Claim
+from reactor_lean.core.errors import Refused
 from verith.nuterm.engine import (
     NutermEngine,
     _parse_property,
@@ -127,8 +127,8 @@ def test_the_route_leaves_its_answer_where_the_next_run_resumes_from(tmp_path):
     model again."""
     from types import SimpleNamespace
 
-    from reactor.lean.artifacts import ArtifactStore
-    from reactor.lean.core.certificate import Certificate
+    from reactor_lean.artifacts import ArtifactStore
+    from reactor_lean.core.certificate import Certificate
     from verith import FIXABLE
     from verith.nuterm import ROUTE
 

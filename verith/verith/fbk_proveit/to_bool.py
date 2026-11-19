@@ -11,9 +11,9 @@ from __future__ import annotations
 import cvc5
 from cvc5 import Kind
 
-from reactor.lean.core.errors import Refused
-from reactor.lean.codegen.literals import lean_int
-from reactor.lean.smt.terms import selector_index
+from reactor_lean.core.errors import Refused
+from reactor_lean.codegen.literals import lean_int
+from reactor_lean.smt.terms import selector_index
 
 
 # `lean2vmt`'s `exprToSMT` reads `decide`'s *instance* argument, not its

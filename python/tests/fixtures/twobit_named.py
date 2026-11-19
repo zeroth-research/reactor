@@ -3,7 +3,7 @@
 generate the same project."""
 import torch
 from reactor import Wire, Term, Module, Bool, LIA, Var, X
-from reactor.lean.inputs import Named
+from reactor_lean.inputs import Named
 
 
 def module() -> Named:

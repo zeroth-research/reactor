@@ -1,6 +1,6 @@
 """The `uv run reactor` command line: the flags, and what combinations mean.
 
-Apart from the pipeline (:mod:`reactor.lean.pipeline`) so that the pipeline
+Apart from the pipeline (:mod:`reactor_lean.pipeline`) so that the pipeline
 and the argument grammar are two things.  What the pipeline gets back is
 :class:`Settings` -- validated, with the property and its kind already
 decided -- rather than an `argparse.Namespace` to re-derive facts from.

@@ -6,7 +6,7 @@ as the SMT-LIB script cvc5 writes for it (`script_for`).
 from __future__ import annotations
 
 
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.errors import Refused
 from ..common import obligations as obl
 from ..common.obligations import Obligations, ranked as ranked_query
 from ..common.smtlib import decimals, script

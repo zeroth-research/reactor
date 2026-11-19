@@ -1,4 +1,4 @@
-"""`reactor.lean.project.names` is what the project is written under: every
+"""`reactor_lean.project.names` is what the project is written under: every
 module the generated Lean imports from the project is a file the project
 has. (The fbk-proveit bridge's imports are checked with the route, in
 `verith/tests/test_fbk_layout.py`.)"""
@@ -6,11 +6,11 @@ has. (The fbk-proveit bridge's imports are checked with the route, in
 import re
 from pathlib import Path
 
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.inputs.python import load_module
-from reactor.lean.project.names import CERT_LIB, SYSTEM_LAYOUT
-from reactor.lean.project.scaffold import create_project
-from reactor.lean.proof.render import certificate_files
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.inputs.python import load_module
+from reactor_lean.project.names import CERT_LIB, SYSTEM_LAYOUT
+from reactor_lean.project.scaffold import create_project
+from reactor_lean.proof.render import certificate_files
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -52,7 +52,7 @@ def test_a_certificate_file_this_run_does_not_write_is_removed(tmp_path):
     there -- an inference route's `Equivalence.lean`, say -- would be built
     against this run's module. Generating the project again removes it,
     without knowing which route wrote it."""
-    from reactor.lean.pipeline.outputs import stale_certificate_files
+    from reactor_lean.pipeline.outputs import stale_certificate_files
 
     module = load_module(FIXTURES / "counter.py")
     files = certificate_files(LeanContext(module))

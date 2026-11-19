@@ -64,8 +64,8 @@ WORK.mkdir(parents=True, exist_ok=True)
 
 sys.path.insert(0, str(SP))
 from cases import CASES  # noqa: E402
-from reactor.lean.inputs import to_surface  # noqa: E402
-from reactor.lean.project.lakefile import (  # noqa: E402
+from reactor_lean.inputs import to_surface  # noqa: E402
+from reactor_lean.project.lakefile import (  # noqa: E402
     REACTLIB_ENV, reactlib_checkout, with_reactlib,
 )
 

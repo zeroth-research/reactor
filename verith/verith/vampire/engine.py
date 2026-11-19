@@ -160,8 +160,8 @@ nothing is proposed, it is the one check that the derivation is honest.
 from __future__ import annotations
 
 
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.core.errors import PredicateRefused, Refused
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.core.errors import PredicateRefused, Refused
 from ..common.solvers import DEFAULT_TIMEOUT, Cvc5Solver
 from ..common.obligations import Candidate, Obligations
 from ..common.record import GaveUp, announce, found_certificate

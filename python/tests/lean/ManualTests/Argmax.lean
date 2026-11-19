@@ -5,7 +5,7 @@ import Relational.Mat
 
 Pins the semantics of `Relational.Mat.argmax_1d` and `Relational.Mat.argmax` to
 `torch.argmax`, the runtime reference that the SMT encoder in
-`reactor/lean/smt/encode.py` also follows. The Python-side half of this is
+`reactor_lean/smt/encode.py` also follows. The Python-side half of this is
 `tests/test_lean_argmax.py`.
 
 Two conventions matter, and both definitions used to get them wrong:

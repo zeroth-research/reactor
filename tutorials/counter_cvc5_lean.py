@@ -26,8 +26,8 @@ from pathlib import Path
 import torch
 
 from reactor import Wire, Term, Module, IType as it, Bool, Int
-from reactor.lean.project import create_project
-from reactor.lean.cert import CertificateData
+from reactor_lean.project import create_project
+from reactor_lean.cert import CertificateData
 
 
 # ---------------------------------------------------------------------------

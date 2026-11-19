@@ -7,19 +7,19 @@ relational encoding has, and `common` what the scalar ones share.
 
 from functools import cached_property
 
-from reactor.lean.codegen.context import LeanContext
+from reactor_lean.codegen.context import LeanContext
 from reactor import Module
 
-from reactor.lean.codegen.encodings.functional import atom_to_lean_functional, constants_block
-from reactor.lean.codegen.encodings.circuit import (
+from reactor_lean.codegen.encodings.functional import atom_to_lean_functional, constants_block
+from reactor_lean.codegen.encodings.circuit import (
     atom_to_lean_circuit as _atom_to_lean_circuit,
     to_lean_equiv_theorems as _to_lean_equiv_theorems,
 )
-from reactor.lean.codegen.encodings.scalar import (
+from reactor_lean.codegen.encodings.scalar import (
     atom_to_lean_scalar as _atom_to_lean_scalar,
     to_lean_scalar_equiv as _to_lean_scalar_equiv,
 )
-from reactor.lean.codegen.encodings.relational import (
+from reactor_lean.codegen.encodings.relational import (
     atom_to_lean_rel as _atom_to_lean_rel,
     atom_to_lean_mat_rel as _atom_to_lean_mat_rel,
 )

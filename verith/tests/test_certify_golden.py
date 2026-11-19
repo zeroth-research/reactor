@@ -123,7 +123,7 @@ ENCODINGS = {
 
 
 def _has_vampire() -> bool:
-    from reactor.lean.core.errors import Refused
+    from reactor_lean.core.errors import Refused
     from verith.common.vampire import resolve_vampire
 
     try:
@@ -246,7 +246,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
 
 def _count_encodings(monkeypatch) -> list:
     """Counts each `ModuleSMT` built from here on, in a one-element list."""
-    from reactor.lean.smt.module import ModuleSMT
+    from reactor_lean.smt.module import ModuleSMT
 
     built = [0]
     post_init = ModuleSMT.__post_init__

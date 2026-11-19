@@ -18,10 +18,10 @@ from __future__ import annotations
 import shlex
 from typing import TYPE_CHECKING
 
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.core.errors import Refused
-from reactor.lean.pipeline.certificate import record_predicates, render
-from reactor.lean.project.lakefile import LakefileParts
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.core.errors import Refused
+from reactor_lean.pipeline.certificate import record_predicates, render
+from reactor_lean.project.lakefile import LakefileParts
 
 from .common.record import GaveUp, note
 from .io import InferInput, InferResult, ProjectHandle
@@ -29,8 +29,8 @@ from .proofs import LAKEFILE, hint_budget, pre_check, prove
 from .route import InferRoute
 
 if TYPE_CHECKING:
-    from reactor.lean.inputs import Names
-    from reactor.lean.proof.render import LeanCertificate
+    from reactor_lean.inputs import Names
+    from reactor_lean.proof.render import LeanCertificate
 
 
 def refused(route: "InferRoute | None", error: Exception) -> SystemExit:
@@ -172,7 +172,7 @@ def route_precheck(settings, module, claim: "Claim | None", smt):
 def show_certificate(cert: Certificate, names: "Names") -> None:
     """A certificate in the input's names, as `--invariant` and
     `--ranking` take it: what one run found, the next can be given."""
-    from reactor.lean.inputs import to_surface
+    from reactor_lean.inputs import to_surface
 
     shown = [(flag, text) for flag, text in (("--invariant", cert.inv),
                                              ("--ranking", cert.ranking))

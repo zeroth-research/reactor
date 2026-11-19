@@ -29,18 +29,18 @@ import pytest
 import torch
 
 from reactor import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
-from reactor.lean.lowering.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
-from reactor.lean.lowering.elements import (
+from reactor_lean.lowering.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
+from reactor_lean.lowering.elements import (
     product_accessor,
     flat_indices,
     flat_size,
     mat_from_scalars,
     flat_layout,
 )
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.codegen.terms import product_type_scalar
-from reactor.lean.codegen.encodings.common import scalar_bindings_with_recon
-from reactor.lean.codegen.encodings.scalar import _pack_body, _unpack_body
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.codegen.terms import product_type_scalar
+from reactor_lean.codegen.encodings.common import scalar_bindings_with_recon
+from reactor_lean.codegen.encodings.scalar import _pack_body, _unpack_body
 
 # One wire list per case. The last three are the ones no fixture has: a
 # genuinely 2-D wire, and a mixed list where the wire index and the slot
@@ -253,7 +253,7 @@ def test_every_sort_is_two_dimensional_so_one_reading_suffices():
     else: the Sort constructor refuses a 0-D, 1-D or 3-D shape, so there is
     no other case for an encoding to read differently. A 1xn wire's Lean
     type, element order, rebuilt matrix and recon lemma all agree on it."""
-    from reactor.lean.codegen.encodings.scalar import _recon_lemma_lines
+    from reactor_lean.codegen.encodings.scalar import _recon_lemma_lines
 
     for shape in ([], [3], [2, 3, 4]):
         with pytest.raises(ValueError):

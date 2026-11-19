@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.core.certificate import Claim
-from reactor.lean.inputs.python import load_module
+from reactor_lean.core.certificate import Claim
+from reactor_lean.inputs.python import load_module
 
 pytest.importorskip("cvc5")
 

@@ -1,14 +1,14 @@
 """Circuit (Box algebra) translation."""
 
-from reactor.lean.codegen.terms import product_type
-from reactor.lean.codegen.boxes import (
+from reactor_lean.codegen.terms import product_type
+from reactor_lean.codegen.boxes import (
     CircLayer,
     ty_list,
     native_to_vt,
     natives_to_vt,
     translate_terms_circ,
 )
-from reactor.lean.codegen.context import LeanContext
+from reactor_lean.codegen.context import LeanContext
 
 # The heartbeat budget of `init_circ_eq` and `update_circ_eq`; see where they
 # are stated.

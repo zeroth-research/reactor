@@ -26,12 +26,12 @@ import torch
 
 from reactor import Module, Wire, Term, LIA, LRA, Int, Real, Bool, Var, X
 from reactor.analyzer import convert_method
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.pipeline.certificate import render
-from reactor.lean.proof.render import generate_standalone_cert_lean
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.project.names import LINTERS_OFF
-from reactor.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.pipeline.certificate import render
+from reactor_lean.proof.render import generate_standalone_cert_lean
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.project.names import LINTERS_OFF
+from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 
 _LEAN_DIR = Path(__file__).parent
 _CERTS_DIR = _LEAN_DIR / "Certs"
@@ -431,7 +431,7 @@ def generate_lean_files() -> None:
     # System/Scalar.lean). The `_scalar_eq` theorems only elaborate if the
     # flattening lines up, and no certificate carries a Scalar section, so
     # this is the only thing that compiles them.
-    from reactor.lean.codegen.encodings import ModuleToLean4
+    from reactor_lean.codegen.encodings import ModuleToLean4
 
     for name, make_module in _SCALAR_ENC_SPECS:
         t = ModuleToLean4(make_module())
@@ -484,7 +484,7 @@ def generate_lean_files() -> None:
     # `lake update` per case.
     #
     # The route is `verith`'s, as above: without it there are no bridges.
-    from reactor.lean.proof.render import generate_data_lean
+    from reactor_lean.proof.render import generate_data_lean
     try:
         from verith.fbk_proveit.engine import property_to_bool_lean
         from verith.fbk_proveit.na import atom_to_lean_na

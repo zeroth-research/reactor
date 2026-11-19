@@ -192,7 +192,7 @@ def test_a_refusal_names_only_the_flag_that_was_given():
     from types import SimpleNamespace
 
     from verith.run import refused
-    from reactor.lean.core.errors import Refused
+    from reactor_lean.core.errors import Refused
 
     def said(route) -> str:
         return refused(route, Refused("why")).code
@@ -289,9 +289,9 @@ def test_pre_check_checks_the_inferred_certificate():
 def test_only_what_the_route_inferred_is_recorded_as_inferred(tmp_path):
     """A route infers the invariant and the ranking function, never the
     property: that is the question it was asked."""
-    from reactor.lean.pipeline import certificate as certify
-    from reactor.lean.artifacts import ArtifactStore
-    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor_lean.pipeline import certificate as certify
+    from reactor_lean.artifacts import ArtifactStore
+    from reactor_lean.core.certificate import Certificate, Claim
 
     def recorded(store) -> dict[str, str]:
         return {a.role: a.what for a in store.list() if a.indexed}
@@ -674,7 +674,7 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
     """The parse-time gate cannot see what `--infer` came back with: an LLM
     that answers nothing usable leaves `inv` or `ranking` unset, and building
     that would report a proof of `sorry`."""
-    from reactor.lean.proof.render import LeanCertificate
+    from reactor_lean.proof.render import LeanCertificate
     from verith import proofs as outputs
 
     def lean(**defs):

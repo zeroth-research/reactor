@@ -1,5 +1,5 @@
 """The claim and the certificate read against the module
-(`reactor.lean.smt.queries`), and printed as Lean from that one parse.
+(`reactor_lean.smt.queries`), and printed as Lean from that one parse.
 """
 
 import pytest
@@ -7,10 +7,10 @@ import torch
 
 from reactor import Module, Var, X, LIA, Int
 from reactor.analyzer import convert_method
-from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-from reactor.lean.core.errors import Refused
-from reactor.lean.proof.render import render_certificate
-from reactor.lean.smt.queries import predicate_terms
+from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.core.errors import Refused
+from reactor_lean.proof.render import render_certificate
+from reactor_lean.smt.queries import predicate_terms
 
 pytest.importorskip("cvc5")
 

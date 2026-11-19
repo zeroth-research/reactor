@@ -1,4 +1,4 @@
-"""Tests for the predicate printers: `reactor.lean.proof.from_smt`, which
+"""Tests for the predicate printers: `reactor_lean.proof.from_smt`, which
 prints what the cvc5 parser read, and `from_ir`, which prints what the native
 parser read. Each test runs under both parsers (`parser`), and holds both to
 the same text.
@@ -17,11 +17,11 @@ import pytest
 import torch
 
 from reactor import Module, Term, Var, X, LIA, LRA, Int, Real
-from reactor.lean.proof.render import LeanCertificate
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.core.errors import PredicateRefused
-from reactor.lean.parse import PARSERS
-from reactor.lean.pipeline.certificate import render
+from reactor_lean.proof.render import LeanCertificate
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.core.errors import PredicateRefused
+from reactor_lean.parse import PARSERS
+from reactor_lean.pipeline.certificate import render
 
 PARSER = PARSERS[0]
 
@@ -162,11 +162,11 @@ def _ranking(parser: str, smt: str):
     """`smt` read as a ranking by `parser`: the term, the state wires, and
     the printer that prints it."""
     if parser == "cvc5":
-        from reactor.lean.proof.from_smt import smt_to_lean_nat as nat
-        from reactor.lean.smt.queries import predicate_terms as read
+        from reactor_lean.proof.from_smt import smt_to_lean_nat as nat
+        from reactor_lean.smt.queries import predicate_terms as read
     else:
-        from reactor.lean.parse.native import read_predicates as read
-        from reactor.lean.proof.from_ir import ir_to_lean_nat as nat
+        from reactor_lean.parse.native import read_predicates as read
+        from reactor_lean.proof.from_ir import ir_to_lean_nat as nat
     q = read(_int_module(), Claim(), Certificate(ranking=smt))
     return q.ranking, q.wires.ctrl_next, nat
 

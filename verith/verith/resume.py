@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from reactor.lean.artifacts import Artifact
+from reactor_lean.artifacts import Artifact
 from .io import InferInput
 
 

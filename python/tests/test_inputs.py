@@ -1,11 +1,11 @@
-"""The input adapters: `reactor.lean.inputs`."""
+"""The input adapters: `reactor_lean.inputs`."""
 
 from pathlib import Path
 
 import pytest
 
 from reactor import Module
-from reactor.lean import inputs
+from reactor_lean import inputs
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -30,9 +30,9 @@ def test_an_unknown_format_is_refused_with_the_known_ones():
 def test_the_project_keeps_the_input_under_its_formats_suffix(tmp_path):
     """`dbg/` holds the input the module was read from, named for its
     format rather than assumed to be Python."""
-    from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.project.scaffold import create_project
-    from reactor.lean.proof.render import certificate_files
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.project.scaffold import create_project
+    from reactor_lean.proof.render import certificate_files
 
     module = inputs.load(FIXTURES / "counter.py").module
     source = inputs.SourceText("smv", tmp_path / "m.txt", "MODULE main\n", ".smv")
@@ -69,8 +69,8 @@ def test_an_input_option_its_format_requires_has_to_be_given():
     import argparse
     from dataclasses import replace
 
-    from reactor.lean.cli.checks import check_input_options
-    from reactor.lean.core.options import Opt
+    from reactor_lean.cli.checks import check_input_options
+    from reactor_lean.core.options import Opt
 
     smv = replace(inputs.adapter_by_name("smv"),
                   options=(Opt(("--needed",), {}, required=True),))

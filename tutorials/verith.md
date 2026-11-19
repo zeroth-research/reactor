@@ -37,7 +37,7 @@ Properties, invariants, ranking functions and preconditions are all written as
 * `(X @intf.0)`, `(X @intf.1)`, … — the controlled (state) wires after the round, in the order the module declares them
 * `(X @extl.0)`, … — the external inputs read in the round; `@extl.0`, … — the ones read in the round before
 * components of a vector wire take a tuple selector: `((_ tuple.select 1) (X @extl.0))`
-* a module file that names its variables (`reactor.lean.inputs.Named`) can be written in those names: `(X x)` is `x` after the round, a bare `x` is an input of the round before
+* a module file that names its variables (`reactor_lean.inputs.Named`) can be written in those names: `(X x)` is `x` after the round, a bare `x` is an input of the round before
 
 Inside certificates, SMT queries, Lean and the artifacts the same wires are
 called `s0, s1, …`, `e0, …` and `el0, …`; the outputs below show that
@@ -136,7 +136,7 @@ lake_cert() {                                  # build the certificate of $OUT/$
   uv run python -c '
 import json, sys, torch
 from pathlib import Path
-from reactor.lean.project.lakefile import reactlib_checkout, with_reactlib
+from reactor_lean.project.lakefile import reactlib_checkout, with_reactlib
 warm = json.loads(Path(sys.argv[1]).read_text())
 Path(sys.argv[2]).write_text(json.dumps(with_reactlib(warm, reactlib_checkout())))
 ' "$REPO/python/tests/lean/lake-manifest.json" "$OUT/$PROJ/lake-manifest.json"
@@ -1368,6 +1368,6 @@ but `-o`, `-p` and `-x`, and everything from `--pre-check` on but
 | `--hammer-file PATH` | — | write `ZerothHammer.lean`, the tactics the proofs call, alone |
 
 Related reading: [`verith_gym.md`](verith_gym.md) for a gymnasium environment
-worked through in integer arithmetic, `python/reactor/lean/README.md` for
+worked through in integer arithmetic, `lean/python/reactor_lean/README.md` for
 the pipeline's own documentation, and `verith/README.md` for the routes,
 the proofs and the `verith` command.

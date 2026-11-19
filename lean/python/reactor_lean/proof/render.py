@@ -14,21 +14,21 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from reactor.lean.codegen.encodings import ModuleToLean4
-from reactor.lean.codegen.terms import extl_native_type, product_type
-from reactor.lean.core.certificate import LeanAnswer
-from reactor.lean.core.errors import PredicateRefused, Refused
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.project.names import (
+from reactor_lean.codegen.encodings import ModuleToLean4
+from reactor_lean.codegen.terms import extl_native_type, product_type
+from reactor_lean.core.certificate import LeanAnswer
+from reactor_lean.core.errors import PredicateRefused, Refused
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.project.names import (
     CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
 )
-from reactor.lean.project.templates import render
+from reactor_lean.project.templates import render
 
 if TYPE_CHECKING:
     from reactor import Module
 
-    from reactor.lean.parse.native import NativePredicates
-    from reactor.lean.smt.queries import ModuleQueries
+    from reactor_lean.parse.native import NativePredicates
+    from reactor_lean.smt.queries import ModuleQueries
 
 # ══════════════════════════════════════════════════════════════════════════
 # The certificate as Lean
