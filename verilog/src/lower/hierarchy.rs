@@ -7,8 +7,8 @@ use crate::ast::{
     self, Dir, Edge, Error, Expr, Instance, Item, Lvalue, LvalueKind, Name, Reset, Span,
 };
 use crate::elab::{self, Inst};
+use crate::typing;
 use crate::{Atom, Module, Sort, SvOp, Var, Wire};
-use crate::{sizing, typing};
 use base::var::X;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -49,17 +49,11 @@ impl Out<'_> {
 /// the signals of the module hidden.
 pub(super) fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Module> {
     let ctx = |e: Error| elab::context(e, prefix);
-    let mut env = typing::check(&inst.module).map_err(ctx)?;
+    let checked = typing::checked(inst).map_err(ctx)?;
     // every implicit resize made explicit, so that the terms below need
     // operands of equal types only
-    let sized = sizing::module(&inst.module, &env).map_err(ctx)?;
-    typing::explicit(&env, &sized).map_err(|e| {
-        ctx(Error::new(
-            e.span,
-            format!("internal error: sizing left `{}`", e.msg),
-        ))
-    })?;
-    let m = &sized;
+    let m = checked.sized();
+    let mut env = checked.env().clone();
     // the initial values of registers (the others have `q@init`)
     let inits: BTreeMap<&Name, &Expr> = m.inits.iter().map(|i| (&i.target, &i.value)).collect();
     let connections = connections(m, &mut env);

@@ -1,7 +1,7 @@
 //! The explicit-width fragment: the typing rule of each expression form, selects, the pieces of
 //! a target ([`explicit`], [`pieces`]).
 
-use super::{Env, Result, lookup};
+use super::{Checked, Env, Result, lookup};
 use crate::ast::{
     BinOp, Cast, Dir, Elem, Elems, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Module, Name,
     Select, Span, Stmt, StmtKind, Ty, UnOp,
@@ -12,8 +12,21 @@ use crate::ast::{
 /// every `?:`, the selector and labels of every `case` have equal types,
 /// every assignment (also to an input port) copies a value of the target's
 /// width, and casts only narrow or keep the width of an operator
-/// expression ([`expr`]).
-pub fn explicit(env: &Env, m: &Module) -> Result<()> {
+/// expression ([`expr`]). [`checked`](super::checked) runs it on every
+/// sized module.
+pub fn explicit(c: &Checked) -> Result<()> {
+    fragment(c.env(), c.sized())
+}
+
+/// [`explicit`] for the module as written: whether it needs no implicit
+/// resize at all (as the sized source printed by
+/// [`sizing::print`](crate::sizing::print), read back).
+pub fn explicit_source(c: &Checked) -> Result<()> {
+    fragment(c.env(), c.source())
+}
+
+/// [`explicit`] for the module `m` with the signals `env`.
+fn fragment(env: &Env, m: &Module) -> Result<()> {
     fn stmt(env: &Env, s: &Stmt) -> Result<()> {
         match &s.kind {
             StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| stmt(env, s)),
@@ -38,7 +51,7 @@ pub fn explicit(env: &Env, m: &Module) -> Result<()> {
                 default.as_deref().map_or(Ok(()), |d| stmt(env, d))
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                for p in pieces(env, lhs) {
+                for p in pieces_in(env, lhs) {
                     if let Some(v) = p.variable {
                         expr(env, v.index)?;
                     }
@@ -72,7 +85,7 @@ pub fn explicit(env: &Env, m: &Module) -> Result<()> {
 
 /// The width of a checked assignment target.
 pub(super) fn width(env: &Env, l: &Lvalue) -> usize {
-    pieces(env, l).iter().map(Piece::width).sum()
+    pieces_in(env, l).iter().map(Piece::width).sum()
 }
 
 /// A part of a checked assignment target: the bits `hi` down to `lo` of a
@@ -114,9 +127,15 @@ impl Piece<'_> {
     }
 }
 
-/// The parts of a checked assignment target, the one receiving the high
-/// bits of the value first.
-pub fn pieces<'l>(env: &Env, l: &'l Lvalue) -> Vec<Piece<'l>> {
+/// The parts of an assignment target of the checked module `c`, the one
+/// receiving the high bits of the value first.
+pub fn pieces<'l>(c: &Checked, l: &'l Lvalue) -> Vec<Piece<'l>> {
+    pieces_in(c.env(), l)
+}
+
+/// [`pieces`] over the signals `env`, for a target whose names and
+/// constant selects have been checked.
+pub(crate) fn pieces_in<'l>(env: &Env, l: &'l Lvalue) -> Vec<Piece<'l>> {
     // the bits of a select of a signal of width `n`
     fn bits(sel: Option<&Select>, n: usize) -> (usize, usize, Option<Variable<'_>>) {
         let Some(sel) = sel else {
@@ -167,7 +186,7 @@ pub fn pieces<'l>(env: &Env, l: &'l Lvalue) -> Vec<Piece<'l>> {
                 elem: Some(ElemIndex { index, elems }),
             }]
         }
-        LvalueKind::Concat(ls) => ls.iter().flat_map(|l| pieces(env, l)).collect(),
+        LvalueKind::Concat(ls) => ls.iter().flat_map(|l| pieces_in(env, l)).collect(),
     }
 }
 

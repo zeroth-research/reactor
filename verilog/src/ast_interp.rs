@@ -36,7 +36,10 @@ an assignment evaluates its right-hand side at the larger of both widths
 and truncates). This is independent of [`sizing`](crate::sizing) (which
 rewrites the expression by bidirectional rules), of [`SvOp`] and of the
 rewrites in lowering, so that tests can compare it with the translated
-module.
+module. Each module is checked with [`typing::checked`] like for the
+translation (so the interpreter runs only modules the translation
+accepts), but the interpreter runs the module as written
+([`Checked::source`]) and never looks at its sized form.
 
 The element `m[i]` of an array is the signal `m[k]` with `k` the value of
 `i` (typing makes sure it is an address when read); an assignment to an
@@ -60,7 +63,7 @@ use crate::ast::{
     StmtKind, Ty, UnOp,
 };
 use crate::elab::{self, Inst};
-use crate::typing::{self, Env};
+use crate::typing::{self, Checked};
 use crate::value::BitVec;
 use num_bigint::{BigInt, BigUint};
 use num_traits::{One, ToPrimitive, Zero};
@@ -75,7 +78,7 @@ pub type Values = BTreeMap<Name, BitVec>;
 
 pub struct Interp<'m> {
     /// One context per instance, the top module's first.
-    ctxs: Vec<Ctx>,
+    ctxs: Vec<Ctx<'m>>,
     /// The driver of each signal driven by an `assign`, an `always_comb`
     /// or an instance connection, with the instance it is in.
     driver: BTreeMap<Name, (usize, Driver<'m>)>,
@@ -96,8 +99,10 @@ pub struct Interp<'m> {
 }
 
 /// The signals of an instance.
-struct Ctx {
-    env: Env,
+struct Ctx<'m> {
+    /// The checked module; the interpreter runs the module as written
+    /// ([`Checked::source`]), never the sized one.
+    checked: Checked<'m>,
     /// The name of each signal of the instance (see [`Inst::naming`]).
     names: BTreeMap<Name, Name>,
 }
@@ -181,14 +186,14 @@ impl<'m> Interp<'m> {
         prefix: &str,
         naming: &BTreeMap<Name, Name>,
     ) -> Result<(), Error> {
-        let m = &inst.module;
-        let env = typing::check(m).map_err(|e| elab::context(e, prefix))?;
+        let checked = typing::checked(inst).map_err(|e| elab::context(e, prefix))?;
+        let (m, env) = (checked.source(), checked.env());
         let c = self.ctxs.len();
         let names: BTreeMap<Name, Name> = env
             .keys()
             .map(|x| (x.clone(), naming[&format!("{prefix}{x}")].clone()))
             .collect();
-        for (x, sig) in &env {
+        for (x, sig) in env {
             self.signals.insert(names[x].clone(), sig.ty);
         }
         for i in &m.inits {
@@ -240,7 +245,7 @@ impl<'m> Interp<'m> {
                 }
             }
         }
-        self.ctxs.push(Ctx { env, names });
+        self.ctxs.push(Ctx { checked, names });
         for (u, child) in inst.children.iter().filter(|(_, c)| !c.module.blackbox) {
             self.add(child, &format!("{prefix}{u}."), naming)?;
         }
@@ -337,11 +342,12 @@ impl<'m> Interp<'m> {
             // a dead store of x (typing): every path assigns the bits again
             StmtKind::Unknown { .. } => Ok(()),
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                let env = &self.ctxs[c].env;
-                let width = typing::pieces(env, lhs).iter().map(|p| p.width()).sum();
+                let checked = &self.ctxs[c].checked;
+                let env = checked.env();
+                let width = typing::pieces(checked, lhs).iter().map(|p| p.width()).sum();
                 let v = self.assigned(c, rhs, width, &scope(out), values, active)?;
                 // the variable indices, evaluated before anything is written
-                let pieces = typing::pieces(env, lhs);
+                let pieces = typing::pieces(checked, lhs);
                 let mut indices = Vec::new();
                 for p in &pieces {
                     let index = match p.variable {
@@ -429,21 +435,21 @@ impl<'m> Interp<'m> {
                 values.insert(name.to_string(), v);
             }
             Driver::Item(Item::Assign { lhs, rhs, .. }) => {
-                let width = typing::pieces(&ctx.env, lhs)
+                let width = typing::pieces(&ctx.checked, lhs)
                     .iter()
                     .map(|p| p.width())
                     .sum();
                 let v = self.assigned(c, rhs, width, &Values::new(), values, active)?;
                 // an `assign` drives whole signals (typing)
                 let mut top = v.width();
-                for p in typing::pieces(&ctx.env, lhs) {
+                for p in typing::pieces(&ctx.checked, lhs) {
                     let bits = slice(&v, top - 1, top - p.width());
                     top -= p.width();
                     let y = &ctx.names[&p.name];
                     let old = values
                         .get(y)
                         .cloned()
-                        .unwrap_or_else(|| BitVec::zero(ctx.env[&p.name].ty.width));
+                        .unwrap_or_else(|| BitVec::zero(ctx.checked.env()[&p.name].ty.width));
                     values.insert(y.clone(), write(&old, p.lo, &bits));
                 }
             }
@@ -461,7 +467,7 @@ impl<'m> Interp<'m> {
                 let mut out = Values::new();
                 if reset_active {
                     for (q, e) in item.body().unwrap().reset_values() {
-                        let width = self.ctxs[*c].env[q].ty.width;
+                        let width = self.ctxs[*c].checked.env()[q].ty.width;
                         let v = self.assigned(*c, e, width, &Values::new(), values, active)?;
                         out.insert(q.clone(), v);
                     }
@@ -522,7 +528,7 @@ impl<'m> Interp<'m> {
     /// The self-determined type of `e`: IEEE 1800 Table 11-21 for the
     /// width, §11.8.1 for the signedness.
     fn det(&self, c: usize, e: &Expr) -> Ty {
-        let env = &self.ctxs[c].env;
+        let env = self.ctxs[c].checked.env();
         let both = |a: Ty, b: Ty| Ty {
             width: a.width.max(b.width),
             signed: a.signed && b.signed,

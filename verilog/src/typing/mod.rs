@@ -1,6 +1,11 @@
 /*!
 # Well-formedness and the explicit-width fragment
 
+[`checked`] runs every check of a module in order and gives a [`Checked`]
+module, which the later phases (lowering, the reference interpreter,
+printing the sized source) take: [`check`], then sizing, then
+[`definite`] and [`explicit`].
+
 [`check`] resolves names and checks that every signal has exactly one
 driver, that assignments fit their kind of block, and the clocks and
 resets of each module. The widths and signedness of expressions are left
@@ -103,6 +108,7 @@ use crate::ast::{Dir, Error, Module, Name, Span, Ty};
 use std::collections::BTreeMap;
 
 mod check;
+mod checked;
 mod definite;
 mod domains;
 mod fragment;
@@ -110,14 +116,15 @@ mod fragment;
 // the rules the documentation refers to are public, the other helpers of
 // lowering and sizing are not
 pub use check::check;
+pub use checked::{Checked, checked};
 pub use definite::definite;
 pub use domains::domains;
 pub use fragment::{
-    ElemIndex, Piece, Variable, binary, cond, context_free, element, explicit, expr, may_leave,
-    pieces, select, unary,
+    ElemIndex, Piece, Variable, binary, cond, context_free, element, explicit, explicit_source,
+    expr, may_leave, pieces, select, unary,
 };
 pub(crate) use fragment::{
-    cast, concat, divisor, elem_type, leave_warning, repl, target_element, target_index,
+    cast, concat, divisor, elem_type, leave_warning, pieces_in, repl, target_element, target_index,
 };
 
 type Result<T> = std::result::Result<T, Error>;

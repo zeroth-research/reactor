@@ -71,7 +71,17 @@ pub fn elaborate(d: &Design, top: &str, overrides: &[Override]) -> Result<Inst> 
             format!("`{top}` is a blackbox: it cannot be the top module"),
         ));
     }
-    inst(d, top, overrides, "", &mut Vec::new())
+    let top = inst(d, top, overrides, "", &mut Vec::new())?;
+    debug_assert!(connected(&top), "a connection without its port");
+    Ok(top)
+}
+
+/// Whether every connection of every instance in the hierarchy has its
+/// [`Formal`] (what elaboration fills in).
+fn connected(inst: &Inst) -> bool {
+    let module = inst.module.instances();
+    module.flat_map(|i| &i.conns).all(|c| c.formal.is_some())
+        && inst.children.iter().all(|(_, c)| connected(c))
 }
 
 /// Adds the path of the instance to an error from inside it.
