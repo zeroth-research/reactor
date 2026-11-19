@@ -329,15 +329,15 @@ def test_generated_executable_builds_and_runs(
     import sys
     import tempfile
 
-    from reactor.lean.project.lakefile import reactor_lean_checkout, with_reactor_lean
+    from reactor.lean.project.lakefile import reactlib_checkout, with_reactlib
 
     packages = _LEAN_DIR / ".lake" / "packages"
     manifest = _LEAN_DIR / "lake-manifest.json"
     if not packages.is_dir() or not manifest.is_file():
         pytest.skip("tests/lean packages not built; run the other slow tests first")
-    checkout = reactor_lean_checkout()
+    checkout = reactlib_checkout()
     if checkout is None:
-        pytest.skip("no reactor-lean checkout: set $REACTOR_LEAN")
+        pytest.skip("no ReactLib checkout: set $REACTLIB")
 
     import importlib
 
@@ -359,9 +359,9 @@ def test_generated_executable_builds_and_runs(
         (project / ".lake").mkdir(exist_ok=True)
         (project / ".lake" / "packages").symlink_to(packages)
         # This project's `dir`s are relative to it; the generated one
-        # requires reactor-lean by path too, and needs them as its own.
+        # requires ReactLib by path too, and needs them as its own.
         (project / "lake-manifest.json").write_text(json.dumps(
-            with_reactor_lean(json.loads(manifest.read_text()), checkout)))
+            with_reactlib(json.loads(manifest.read_text()), checkout)))
 
         build = subprocess.run(
             ["lake", "build", "main"],

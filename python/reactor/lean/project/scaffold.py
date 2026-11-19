@@ -1,5 +1,5 @@
 """The project on disk, written by `create_project`: its directories, the
-lakefile (which requires the Lean libraries from reactor-lean) and
+lakefile (which requires the Lean libraries from ReactLib) and
 toolchain, the module's encodings (`ENCODINGS`), and the certificate's
 files, which it is handed as text (`proof.render.certificate_files`) and
 writes as they are.

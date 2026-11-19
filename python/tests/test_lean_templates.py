@@ -2,7 +2,7 @@
 
 `templates/` holds the Jinja templates of the generated project's files and
 no Lean sources: the library those files import -- `Relational.*`, and
-`LeanAI` -- is reactor-lean's, and the project's lakefile requires it. A
+`LeanAI` -- is ReactLib's, and the project's lakefile requires it. A
 `.lean` file left under `templates/` would be read by nothing, so editing it
 would silently do nothing, which is what the first two tests exist to
 prevent. (`templates/` once carried two byte-identical sets of the Core
@@ -16,12 +16,12 @@ import pytest
 
 from reactor.lean.core.errors import Refused
 from reactor.lean.project.lakefile import (
-    REACTOR_LEAN_ENV,
-    REACTOR_LEAN_PACKAGES,
-    REACTOR_LEAN_URL,
+    REACTLIB_ENV,
+    REACTLIB_PACKAGES,
+    REACTLIB_URL,
     generate_lakefile,
-    reactor_lean_checkout,
-    with_reactor_lean,
+    reactlib_checkout,
+    with_reactlib,
 )
 from reactor.lean.project.templates import TEMPLATES_DIR, PROJECT_TEMPLATES_DIR
 
@@ -29,12 +29,12 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_the_templates_hold_no_lean_sources():
-    """The Lean library is reactor-lean's; a copy here can never be emitted."""
+    """The Lean library is ReactLib's; a copy here can never be emitted."""
     stray = sorted(str(p.relative_to(TEMPLATES_DIR))
                    for p in TEMPLATES_DIR.rglob("*.lean"))
     assert not stray, (
         "these are read by nothing, so editing them has no effect -- the "
-        f"Lean library the project imports is in reactor-lean: {stray}"
+        f"Lean library the project imports is in ReactLib: {stray}"
     )
 
 
@@ -51,11 +51,11 @@ def test_every_project_template_is_rendered():
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  The lakefile requires reactor-lean: from git, or from $REACTOR_LEAN
+#  The lakefile requires ReactLib: from git, or from $REACTLIB
 # ══════════════════════════════════════════════════════════════════════
 
 def _checkout(root: Path) -> Path:
-    for p in REACTOR_LEAN_PACKAGES:
+    for p in REACTLIB_PACKAGES:
         (root / p).mkdir(parents=True)
         (root / p / "lakefile.toml").write_text("")
     return root
@@ -70,38 +70,38 @@ def _require(lakefile: str, name: str) -> str:
 
 def test_the_lakefile_requires_each_package_from_its_directory_of_the_repo(
         monkeypatch):
-    monkeypatch.delenv(REACTOR_LEAN_ENV, raising=False)
+    monkeypatch.delenv(REACTLIB_ENV, raising=False)
     lakefile = generate_lakefile("P")
-    for p in REACTOR_LEAN_PACKAGES:
+    for p in REACTLIB_PACKAGES:
         req = _require(lakefile, p)
-        assert f'git = "{REACTOR_LEAN_URL}"' in req
+        assert f'git = "{REACTLIB_URL}"' in req
         assert f'subDir = "{p}"' in req
         assert "path =" not in req
 
 
-def test_reactor_lean_set_requires_the_checkout_by_path(monkeypatch, tmp_path):
+def test_reactlib_set_requires_the_checkout_by_path(monkeypatch, tmp_path):
     root = _checkout(tmp_path / "rl")
-    monkeypatch.setenv(REACTOR_LEAN_ENV, str(root))
+    monkeypatch.setenv(REACTLIB_ENV, str(root))
     lakefile = generate_lakefile("P")
-    for p in REACTOR_LEAN_PACKAGES:
+    for p in REACTLIB_PACKAGES:
         assert _require(lakefile, p) == f'path = "{root.resolve() / p}"'
-    assert REACTOR_LEAN_URL not in lakefile
+    assert REACTLIB_URL not in lakefile
 
 
-def test_a_reactor_lean_that_is_not_a_checkout_is_refused_before_the_project(
+def test_a_reactlib_that_is_not_a_checkout_is_refused_before_the_project(
         monkeypatch, tmp_path):
     """Otherwise the lakefile points at nothing, and lake says so only when
     it is asked to build, long after the project was written."""
     from reactor.lean.pipeline import main
 
-    monkeypatch.setenv(REACTOR_LEAN_ENV, str(tmp_path))
-    with pytest.raises(Refused, match="is not a reactor-lean checkout"):
-        reactor_lean_checkout()
+    monkeypatch.setenv(REACTLIB_ENV, str(tmp_path))
+    with pytest.raises(Refused, match="is not a ReactLib checkout"):
+        reactlib_checkout()
     out = tmp_path / "out"
     monkeypatch.setattr("sys.argv", [
         "reactor", str(FIXTURES / "counter.py"),
         "--safety", "(>= (X @intf.0) 0)", "-o", str(out), "-p", "P"])
-    with pytest.raises(SystemExit, match="is not a reactor-lean checkout"):
+    with pytest.raises(SystemExit, match="is not a ReactLib checkout"):
         main()
     assert not out.exists()
 
@@ -112,11 +112,11 @@ def test_a_copied_manifest_gets_the_checkout_as_its_own(tmp_path):
     root = _checkout(tmp_path / "rl")
     stale = {"name": "ReactLib", "type": "path", "dir": "../../elsewhere"}
     kept = {"name": "cslib", "type": "git"}
-    out = with_reactor_lean({"version": "1.1.0", "packages": [kept, stale]}, root)
+    out = with_reactlib({"version": "1.1.0", "packages": [kept, stale]}, root)
     assert out["version"] == "1.1.0"
     assert out["packages"][0] == kept
     dirs = {e["name"]: e["dir"] for e in out["packages"] if e["type"] == "path"}
-    assert dirs == {p: str(root / p) for p in REACTOR_LEAN_PACKAGES}
+    assert dirs == {p: str(root / p) for p in REACTLIB_PACKAGES}
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -127,9 +127,9 @@ REDUCTIONS = ("matMin", "matMax", "argmax_1d", "argmax")
 
 
 def _mat_source() -> str:
-    checkout = reactor_lean_checkout()
+    checkout = reactlib_checkout()
     if checkout is None:
-        pytest.skip(f"no reactor-lean checkout: set ${REACTOR_LEAN_ENV}")
+        pytest.skip(f"no ReactLib checkout: set ${REACTLIB_ENV}")
     return (checkout / "ReactLib" / "Relational" / "Mat.lean").read_text()
 
 

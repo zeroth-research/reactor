@@ -27,7 +27,7 @@ just pytest tests/lean/ -m slow           # slow: also runs lake build
 just pytest tests/lean/ && lake build ZerothHammerTests
 ```
 
-`Relational.*` comes from the reactor-lean checkout beside this repository,
+`Relational.*` comes from the ReactLib checkout beside this repository,
 which the lakefile requires by path.
 
 The first `lake build` downloads Mathlib and may take several minutes.

@@ -74,7 +74,7 @@ NAME/
 ```
 
 The Lean library the project is stated in is not part of it: the lakefile
-requires two packages of [reactor-lean][reactor-lean], each in its own
+requires two packages of [ReactLib][ReactLib], each in its own
 directory of that repository.
 
 | Package | Library | Modules | Contents |
@@ -84,14 +84,14 @@ directory of that repository.
 | `LeanAI` | `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
 
 By default they are git requires at `project/lakefile.py`'s
-`REACTOR_LEAN_REV`. With `REACTOR_LEAN` set to a reactor-lean checkout they
+`REACTLIB_REV`. With `REACTLIB` set to a ReactLib checkout they
 are path requires on it instead, which is how to change the library and the
-generator together; `reactor` refuses a `REACTOR_LEAN` that is not a
+generator together; `reactor` refuses a `REACTLIB` that is not a
 checkout before it writes anything. The tests set it to the checkout beside
 this repository when there is one, and `tests/lean`'s lakefile requires
 `ReactLib` from there.
 
-[reactor-lean]: https://github.com/zeroth-research/reactor-lean
+[ReactLib]: https://github.com/zeroth-research/ReactLib
 
 The certificate in `Data.lean` is the one given by `--invariant` and
 `--ranking`; with none given, its predicates are `sorry`.
