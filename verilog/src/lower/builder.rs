@@ -3,8 +3,8 @@
 use super::segments::{Seg, Value, as_wire, coalesce, cuts, split, whole};
 use super::{Result, internal};
 use crate::ast::{
-    BinOp, Edge, Elems, Error, Expr, ExprKind, Index, Lvalue, LvalueKind, Name, Reset, Select,
-    Span, Stmt, StmtKind, Ty, UnOp,
+    BinOp, Edge, Elem, Elems, Error, Expr, ExprKind, Index, Lvalue, LvalueKind, Name, Reset,
+    Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
 use crate::typing;
 use crate::value::BitVec;
@@ -615,85 +615,13 @@ impl<'a> Builder<'a> {
                 Ok((self.read(x, None, span)?.0, t))
             }
             ExprKind::Unary(op, a) => {
-                let (wa, ta) = self.expr(a)?;
-                let t = typing::unary(*op, ta);
-                let s = Sort(t.width);
-                let w = match op {
-                    UnOp::Plus => wa,
-                    UnOp::BitNot => self.emit(SvOp::Not, &[wa], s, span)?,
-                    UnOp::Neg => self.emit(SvOp::Neg, &[wa], s, span)?,
-                    UnOp::LogNot => {
-                        let b = self.truth(wa, ta, span)?;
-                        self.emit(SvOp::Not, &[b], s, span)?
-                    }
-                    UnOp::RedAnd => self.emit(SvOp::RedAnd, &[wa], s, span)?,
-                    UnOp::RedOr => self.emit(SvOp::RedOr, &[wa], s, span)?,
-                    UnOp::RedXor => self.emit(SvOp::RedXor, &[wa], s, span)?,
-                    UnOp::RedNand | UnOp::RedNor | UnOp::RedXnor => {
-                        let red = match op {
-                            UnOp::RedNand => SvOp::RedAnd,
-                            UnOp::RedNor => SvOp::RedOr,
-                            _ => SvOp::RedXor,
-                        };
-                        let r = self.emit(red, &[wa], s, span)?;
-                        self.emit(SvOp::Not, &[r], s, span)?
-                    }
-                };
-                Ok((w, t))
+                let a = self.expr(a)?;
+                self.unary(*op, a, span)
             }
             ExprKind::Binary(op, a, b) => {
-                let (wa, ta) = self.expr(a)?;
-                let (wb, tb) = self.expr(b)?;
-                let t = typing::binary(*op, ta, tb, span)?;
-                let s = Sort(t.width);
-                let (lt, le, div, rem) = if ta.signed {
-                    (SvOp::SLt, SvOp::SLe, SvOp::SDiv, SvOp::SRem)
-                } else {
-                    (SvOp::ULt, SvOp::ULe, SvOp::UDiv, SvOp::URem)
-                };
-                let w = match op {
-                    BinOp::Pow => {
-                        return Err(Error::new(
-                            span,
-                            "internal error: `**` is folded by sizing, it has no operator",
-                        ));
-                    }
-                    BinOp::BitAnd => self.emit(SvOp::And, &[wa, wb], s, span)?,
-                    BinOp::BitOr => self.emit(SvOp::Or, &[wa, wb], s, span)?,
-                    BinOp::BitXor => self.emit(SvOp::Xor, &[wa, wb], s, span)?,
-                    BinOp::BitXnor => {
-                        let x = self.emit(SvOp::Xor, &[wa, wb], s, span)?;
-                        self.emit(SvOp::Not, &[x], s, span)?
-                    }
-                    BinOp::Add => self.emit(SvOp::Add, &[wa, wb], s, span)?,
-                    BinOp::Sub => self.emit(SvOp::Sub, &[wa, wb], s, span)?,
-                    BinOp::Mul => self.emit(SvOp::Mul, &[wa, wb], s, span)?,
-                    BinOp::Div => self.emit(div, &[wa, wb], s, span)?,
-                    BinOp::Mod => self.emit(rem, &[wa, wb], s, span)?,
-                    BinOp::Eq | BinOp::CaseEq => self.emit(SvOp::Eq, &[wa, wb], s, span)?,
-                    BinOp::Ne | BinOp::CaseNe => self.emit(SvOp::Ne, &[wa, wb], s, span)?,
-                    BinOp::Lt => self.emit(lt, &[wa, wb], s, span)?,
-                    BinOp::Le => self.emit(le, &[wa, wb], s, span)?,
-                    BinOp::Gt => self.emit(lt, &[wb, wa], s, span)?,
-                    BinOp::Ge => self.emit(le, &[wb, wa], s, span)?,
-                    BinOp::LogAnd | BinOp::LogOr => {
-                        let x = self.truth(wa, ta, span)?;
-                        let y = self.truth(wb, tb, span)?;
-                        let op = if *op == BinOp::LogAnd {
-                            SvOp::And
-                        } else {
-                            SvOp::Or
-                        };
-                        self.emit(op, &[x, y], s, span)?
-                    }
-                    BinOp::Shl | BinOp::AShl => self.emit(SvOp::Shl, &[wa, wb], s, span)?,
-                    BinOp::Shr => self.emit(SvOp::LShr, &[wa, wb], s, span)?,
-                    BinOp::AShr => {
-                        let op = if ta.signed { SvOp::AShr } else { SvOp::LShr };
-                        self.emit(op, &[wa, wb], s, span)?
-                    }
-                };
-                Ok((w, t))
+                let a = self.expr(a)?;
+                let b = self.expr(b)?;
+                self.binary(*op, a, b, span)
             }
             ExprKind::Cond(c, a, b) => {
                 let (wc, tc) = self.expr(c)?;
@@ -718,107 +646,195 @@ impl<'a> Builder<'a> {
                 }
                 Ok((acc, t))
             }
-            ExprKind::Elem(el) => {
-                let t = typing::elem_type(self.env, el);
-                let w = match &el.index {
-                    Index::Const(k) => self.element(&el.elems, *k, span)?,
-                    Index::Expr(i) => {
-                        let (wi, ti) = self.expr(i)?;
-                        typing::element(el, Some(ti), span)?;
-                        // pairs of neighbours picked by bit 0, pairs of
-                        // these by bit 1, …
-                        let mut level = Vec::new();
-                        for k in 0..1usize << ti.width {
-                            level.push(self.element(&el.elems, k, span)?);
-                        }
-                        for b in 0..ti.width {
-                            let bit = if ti.width == 1 {
-                                wi
-                            } else {
-                                let op = SvOp::Extract { hi: b, lo: b };
-                                self.emit(op, &[wi], Sort(1), span)?
-                            };
-                            let mut next = Vec::new();
-                            for pair in level.chunks(2) {
-                                let reads = [bit, pair[1], pair[0]];
-                                next.push(self.emit(SvOp::Ite, &reads, Sort(t.width), span)?);
-                            }
-                            level = next;
-                        }
-                        level[0]
-                    }
-                };
-                match &el.sel {
-                    None => Ok((w, t)),
-                    Some(sel) => self.pick(w, t, &el.name(), sel, span),
-                }
-            }
-            ExprKind::Select(x, sel) => {
-                let tx = typing::lookup(self.env, x, span)?.ty;
-                let index = match sel.index() {
-                    Some(i) => Some(self.expr(i)?),
-                    None => None,
-                };
-                let t = typing::select(x, tx, sel, index.map(|i| i.1), span)?;
-                let w = match index {
-                    None => {
-                        let (hi, lo) = sel.constant().flatten().expect("constant");
-                        match self.read(x, Some((hi, lo)), span)? {
-                            (w, Some((hi, lo))) if lo > 0 || hi + 1 < tx.width => {
-                                let op = SvOp::Extract { hi, lo };
-                                self.emit(op, &[w], Sort(t.width), span)?
-                            }
-                            (w, _) => w,
-                        }
-                    }
-                    Some((wi, ti)) => {
-                        let (wx, _) = self.read(x, None, span)?;
-                        self.shifted_select(wx, tx, x, sel, (wi, ti), span)?
-                    }
-                };
-                Ok((w, t))
-            }
+            ExprKind::Elem(el) => self.elem(el, span),
+            ExprKind::Select(x, sel) => self.select(x, sel, span),
             ExprKind::Resize(t, a) => {
-                let (wa, ta) = self.expr(a)?;
-                let s = Sort(t.width);
-                let w = match t.width.cmp(&ta.width) {
-                    Ordering::Equal => wa,
-                    Ordering::Less => {
-                        let op = SvOp::Extract {
-                            hi: t.width - 1,
-                            lo: 0,
-                        };
-                        self.emit(op, &[wa], s, span)?
-                    }
-                    // extended as the type it is resized to says
-                    Ordering::Greater if t.signed => {
-                        self.emit(SvOp::SExt(t.width), &[wa], s, span)?
-                    }
-                    Ordering::Greater => self.emit(SvOp::ZExt(t.width), &[wa], s, span)?,
-                };
-                Ok((w, *t))
+                let (wa, _) = self.expr(a)?;
+                // extended as the type it is resized to says
+                Ok((self.resize(wa, *t, t.signed, span)?, *t))
             }
             ExprKind::Fill(_) => Err(Error::new(span, "internal error: `'0`/`'1` not sized")),
             ExprKind::Cast(c, a) => {
                 let (wa, ta) = self.expr(a)?;
                 let t = typing::cast(*c, ta, typing::context_free(a), span)?;
-                let s = Sort(t.width);
-                let w = match t.width.cmp(&ta.width) {
-                    Ordering::Equal => wa,
-                    Ordering::Less => {
-                        let op = SvOp::Extract {
-                            hi: t.width - 1,
-                            lo: 0,
-                        };
-                        self.emit(op, &[wa], s, span)?
-                    }
-                    Ordering::Greater if ta.signed => {
-                        self.emit(SvOp::SExt(t.width), &[wa], s, span)?
-                    }
-                    Ordering::Greater => self.emit(SvOp::ZExt(t.width), &[wa], s, span)?,
-                };
-                Ok((w, t))
+                // extended as the operand's type says
+                Ok((self.resize(wa, t, ta.signed, span)?, t))
             }
+        }
+    }
+
+    /// The wire holding `op` applied to the operand `(wa, ta)` (wire and
+    /// type), and its type.
+    fn unary(&mut self, op: UnOp, (wa, ta): (Wire, Ty), span: Span) -> Result<(Wire, Ty)> {
+        let t = typing::unary(op, ta);
+        let s = Sort(t.width);
+        let w = match op {
+            UnOp::Plus => wa,
+            UnOp::BitNot => self.emit(SvOp::Not, &[wa], s, span)?,
+            UnOp::Neg => self.emit(SvOp::Neg, &[wa], s, span)?,
+            UnOp::LogNot => {
+                let b = self.truth(wa, ta, span)?;
+                self.emit(SvOp::Not, &[b], s, span)?
+            }
+            UnOp::RedAnd => self.emit(SvOp::RedAnd, &[wa], s, span)?,
+            UnOp::RedOr => self.emit(SvOp::RedOr, &[wa], s, span)?,
+            UnOp::RedXor => self.emit(SvOp::RedXor, &[wa], s, span)?,
+            UnOp::RedNand | UnOp::RedNor | UnOp::RedXnor => {
+                let red = match op {
+                    UnOp::RedNand => SvOp::RedAnd,
+                    UnOp::RedNor => SvOp::RedOr,
+                    _ => SvOp::RedXor,
+                };
+                let r = self.emit(red, &[wa], s, span)?;
+                self.emit(SvOp::Not, &[r], s, span)?
+            }
+        };
+        Ok((w, t))
+    }
+
+    /// The wire holding `op` applied to the operands `(wa, ta)` and
+    /// `(wb, tb)` (wires and types), and its type.
+    fn binary(
+        &mut self,
+        op: BinOp,
+        (wa, ta): (Wire, Ty),
+        (wb, tb): (Wire, Ty),
+        span: Span,
+    ) -> Result<(Wire, Ty)> {
+        let t = typing::binary(op, ta, tb, span)?;
+        let s = Sort(t.width);
+        let (lt, le, div, rem) = if ta.signed {
+            (SvOp::SLt, SvOp::SLe, SvOp::SDiv, SvOp::SRem)
+        } else {
+            (SvOp::ULt, SvOp::ULe, SvOp::UDiv, SvOp::URem)
+        };
+        let w = match op {
+            BinOp::Pow => {
+                return Err(Error::new(
+                    span,
+                    "internal error: `**` is folded by sizing, it has no operator",
+                ));
+            }
+            BinOp::BitAnd => self.emit(SvOp::And, &[wa, wb], s, span)?,
+            BinOp::BitOr => self.emit(SvOp::Or, &[wa, wb], s, span)?,
+            BinOp::BitXor => self.emit(SvOp::Xor, &[wa, wb], s, span)?,
+            BinOp::BitXnor => {
+                let x = self.emit(SvOp::Xor, &[wa, wb], s, span)?;
+                self.emit(SvOp::Not, &[x], s, span)?
+            }
+            BinOp::Add => self.emit(SvOp::Add, &[wa, wb], s, span)?,
+            BinOp::Sub => self.emit(SvOp::Sub, &[wa, wb], s, span)?,
+            BinOp::Mul => self.emit(SvOp::Mul, &[wa, wb], s, span)?,
+            BinOp::Div => self.emit(div, &[wa, wb], s, span)?,
+            BinOp::Mod => self.emit(rem, &[wa, wb], s, span)?,
+            BinOp::Eq | BinOp::CaseEq => self.emit(SvOp::Eq, &[wa, wb], s, span)?,
+            BinOp::Ne | BinOp::CaseNe => self.emit(SvOp::Ne, &[wa, wb], s, span)?,
+            BinOp::Lt => self.emit(lt, &[wa, wb], s, span)?,
+            BinOp::Le => self.emit(le, &[wa, wb], s, span)?,
+            BinOp::Gt => self.emit(lt, &[wb, wa], s, span)?,
+            BinOp::Ge => self.emit(le, &[wb, wa], s, span)?,
+            BinOp::LogAnd | BinOp::LogOr => {
+                let x = self.truth(wa, ta, span)?;
+                let y = self.truth(wb, tb, span)?;
+                let op = if op == BinOp::LogAnd {
+                    SvOp::And
+                } else {
+                    SvOp::Or
+                };
+                self.emit(op, &[x, y], s, span)?
+            }
+            BinOp::Shl | BinOp::AShl => self.emit(SvOp::Shl, &[wa, wb], s, span)?,
+            BinOp::Shr => self.emit(SvOp::LShr, &[wa, wb], s, span)?,
+            BinOp::AShr => {
+                let op = if ta.signed { SvOp::AShr } else { SvOp::LShr };
+                self.emit(op, &[wa, wb], s, span)?
+            }
+        };
+        Ok((w, t))
+    }
+
+    /// The wire holding the element read `el` (and the bits it selects of
+    /// the element), and its type. With a variable index, a tree of `Ite`s
+    /// picks among all elements.
+    fn elem(&mut self, el: &Elem, span: Span) -> Result<(Wire, Ty)> {
+        let t = typing::elem_type(self.env, el);
+        let w = match &el.index {
+            Index::Const(k) => self.element(&el.elems, *k, span)?,
+            Index::Expr(i) => {
+                let (wi, ti) = self.expr(i)?;
+                typing::element(el, Some(ti), span)?;
+                // pairs of neighbours picked by bit 0, pairs of
+                // these by bit 1, …
+                let mut level = Vec::new();
+                for k in 0..1usize << ti.width {
+                    level.push(self.element(&el.elems, k, span)?);
+                }
+                for b in 0..ti.width {
+                    let bit = if ti.width == 1 {
+                        wi
+                    } else {
+                        let op = SvOp::Extract { hi: b, lo: b };
+                        self.emit(op, &[wi], Sort(1), span)?
+                    };
+                    let mut next = Vec::new();
+                    for pair in level.chunks(2) {
+                        let reads = [bit, pair[1], pair[0]];
+                        next.push(self.emit(SvOp::Ite, &reads, Sort(t.width), span)?);
+                    }
+                    level = next;
+                }
+                level[0]
+            }
+        };
+        match &el.sel {
+            None => Ok((w, t)),
+            Some(sel) => self.pick(w, t, &el.name(), sel, span),
+        }
+    }
+
+    /// The wire holding the bits that `sel` selects from the signal `x`,
+    /// and their type.
+    fn select(&mut self, x: &Name, sel: &Select, span: Span) -> Result<(Wire, Ty)> {
+        let tx = typing::lookup(self.env, x, span)?.ty;
+        let index = match sel.index() {
+            Some(i) => Some(self.expr(i)?),
+            None => None,
+        };
+        let t = typing::select(x, tx, sel, index.map(|i| i.1), span)?;
+        let w = match index {
+            None => {
+                let (hi, lo) = sel.constant().flatten().expect("constant");
+                match self.read(x, Some((hi, lo)), span)? {
+                    (w, Some((hi, lo))) if lo > 0 || hi + 1 < tx.width => {
+                        let op = SvOp::Extract { hi, lo };
+                        self.emit(op, &[w], Sort(t.width), span)?
+                    }
+                    (w, _) => w,
+                }
+            }
+            Some((wi, ti)) => {
+                let (wx, _) = self.read(x, None, span)?;
+                self.shifted_select(wx, tx, x, sel, (wi, ti), span)?
+            }
+        };
+        Ok((w, t))
+    }
+
+    /// The wire `w` resized to the width of `t`: its low bits, or extended
+    /// with copies of its top bit if `signed`, else with zeros.
+    fn resize(&mut self, w: Wire, t: Ty, signed: bool, span: Span) -> Result<Wire> {
+        let s = Sort(t.width);
+        match t.width.cmp(&w.dtype().width()) {
+            Ordering::Equal => Ok(w),
+            Ordering::Less => {
+                let op = SvOp::Extract {
+                    hi: t.width - 1,
+                    lo: 0,
+                };
+                self.emit(op, &[w], s, span)
+            }
+            Ordering::Greater if signed => self.emit(SvOp::SExt(t.width), &[w], s, span),
+            Ordering::Greater => self.emit(SvOp::ZExt(t.width), &[w], s, span),
         }
     }
 
