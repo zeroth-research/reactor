@@ -1,14 +1,11 @@
 //! Blackboxes (modules marked `(* blackbox *)`), `inout` pins and designs
 //! of several files.
 
-use verilog::ast::Error;
-use verilog::elab;
-use verilog::lower::{Translation, lower_inst};
+mod common;
 
-fn translate(src: &str) -> Result<Translation, Error> {
-    let inst = elab::load(src, "test.sv")?;
-    lower_inst(&inst)
-}
+use common::{TempDir, accepted, rejects, translate};
+use verilog::elab;
+use verilog::lower::lower_inst;
 
 /// Stubs used by the cases below.
 const STUBS: &str = "
@@ -23,30 +20,8 @@ endmodule
 /// A top module `top` with `body` (numbered from line 2), followed by the
 /// stubs.
 fn top(body: &str) -> String {
-    format!(
-        "module top(input logic clk, input logic [3:0] a, inout p, output logic [3:0] y);\n\
-         {body}\nendmodule\n{STUBS}"
-    )
-}
-
-/// Expects an error at the first occurrence of `needle` in line `line` of
-/// `src`, with a message containing `msg`.
-fn rejects(src: &str, line: usize, needle: &str, msg: &str) {
-    let err = match translate(src) {
-        Ok(_) => panic!("accepted:\n{src}"),
-        Err(e) => e,
-    };
-    assert!(err.msg.contains(msg), "{src}\n{err}\nexpected: {msg}");
-    let text = src.lines().nth(line - 1).unwrap();
-    let col = text
-        .find(needle)
-        .unwrap_or_else(|| panic!("`{needle}` not in `{text}`"))
-        + 1;
-    assert_eq!(
-        (err.span.line, err.span.col),
-        (line, col),
-        "{src}\n{err}\nexpected at `{needle}`"
-    );
+    let ports = "input logic clk, input logic [3:0] a, inout p, output logic [3:0] y";
+    format!("{}{STUBS}", common::module("top", ports, body))
 }
 
 #[test]
@@ -55,7 +30,7 @@ fn accepted_blackboxes() {
     let src = top("  logic c, d, u;\n  gen g (.i(clk), .o(c), .w());\n  \
          pad #(.KIND(6'd3)) x (.pin(p), .d(a[0] ^ u), .q(d));\n  \
          always_ff @(posedge c) u <= d;\n  assign y = {3'b000, u};");
-    let t = translate(&src).unwrap();
+    let t = accepted(&src);
     let printed = t.print();
     // the outputs of the blackboxes are external, like inputs
     assert!(
@@ -91,7 +66,7 @@ fn accepted_blackboxes() {
          logic [7:0] w;\n  gen g (.i(clk), .o(), .w(w));\n  \
          always_ff @(posedge clk) y <= w;\nendmodule\n{STUBS}"
     );
-    let t = translate(&src).unwrap();
+    let t = accepted(&src);
     let printed = t.print();
     assert!(
         printed.contains("  external\n    clk : bv1\n    s.w : bv8\n"),
@@ -107,7 +82,7 @@ fn accepted_blackboxes() {
         "{}(* blackbox *)\nmodule led (output logic on);\nendmodule\n",
         top("  led l (.on());\n  assign y = a;")
     );
-    let t = translate(&src).unwrap();
+    let t = accepted(&src);
     assert_eq!(
         t.blackboxes[0].msg,
         "`l` is an instance of the blackbox `led`, whose behaviour is not modelled"
@@ -117,10 +92,10 @@ fn accepted_blackboxes() {
         "  logic r;\n  logic [7:0] w;\n  gen g (.i(clk), .o(r), .w(w));\n  \
          always_ff @(posedge clk or posedge r)\n    if (r) y <= 4'd0; else y <= w[3:0];",
     );
-    translate(&src).unwrap();
+    accepted(&src);
     // an unused pin, a blackbox without connected outputs
     let src = top("  pad x (.pin(), .d(clk), .q());\n  assign y = a;");
-    translate(&src).unwrap();
+    accepted(&src);
 }
 
 #[test]
@@ -347,26 +322,26 @@ fn rejected_blackboxes() {
     assert!(err.msg.contains("several top modules (`a`, `b`)"), "{err}");
 }
 
-/// Writes `files` (name, text) into a fresh directory and returns their
-/// paths.
-fn files(test: &str, files: &[(&str, &str)]) -> Vec<std::path::PathBuf> {
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("blackbox-{test}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    files
+/// Writes `files` (name, text) into a fresh directory and returns it
+/// (removed when dropped) and the files' paths.
+fn files(test: &str, files: &[(&str, &str)]) -> (TempDir, Vec<std::path::PathBuf>) {
+    let tmp = TempDir::new(&format!("blackbox-{test}"));
+    let paths = files
         .iter()
         .map(|(name, text)| {
-            let path = dir.join(name);
+            let path = tmp.join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, text).unwrap();
             path
         })
-        .collect()
+        .collect();
+    (tmp, paths)
 }
 
 #[test]
 fn several_files() {
     // the design in one file, the stubs and a ROM in another directory
-    let paths = files(
+    let (_tmp, paths) = files(
         "several",
         &[
             (
@@ -405,7 +380,7 @@ fn several_files() {
     assert!(t.print().contains("8'd165"), "{}", t.print());
 
     // an error in the second file is located there
-    let paths = files(
+    let (_tmp, paths) = files(
         "located",
         &[
             (
@@ -426,7 +401,7 @@ fn several_files() {
     assert_eq!(file, paths[1]);
     assert_eq!((span.line, span.col), (2, 14), "{err}");
     // a module declared in two files
-    let paths = files(
+    let (_tmp, paths) = files(
         "twice",
         &[
             ("a.sv", "module m(input logic i);\nendmodule\n"),
@@ -467,7 +442,7 @@ fn positions_in_messages_of_later_files() {
         d.located(err)
     };
     // both positions in the second file
-    let paths = files(
+    let (_tmp, paths) = files(
         "mentions",
         &[
             (
@@ -485,7 +460,7 @@ fn positions_in_messages_of_later_files() {
     assert_eq!(err.file.as_ref(), Some(&paths[1]));
     assert_eq!(err.to_string(), "4:10: `y` already driven at 3:10");
     // the error in the first file, the gate in the second
-    let paths = files(
+    let (_tmp, paths) = files(
         "mentions-other",
         &[
             (

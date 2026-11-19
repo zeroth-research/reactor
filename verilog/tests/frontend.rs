@@ -1,6 +1,9 @@
 //! The frontend and typing: operator precedence, ports, and a located error
 //! for every rejected construct.
 
+mod common;
+
+use common::{Check, TempDir, accepted};
 use verilog::ast::{Dir, Edge, Item, Ty};
 use verilog::lower::Translation;
 use verilog::{elab, frontend, lower};
@@ -89,21 +92,7 @@ const HEADER: &str = "module m(input logic [7:0] a, output logic [7:0] y);";
 /// `needle` in line `line`, with a message containing `msg`.
 fn rejects(header: Option<&str>, body: &str, line: usize, needle: &str, msg: &str) {
     let src = format!("{}\n{body}\nendmodule\n", header.unwrap_or(HEADER));
-    let err = match frontend::parse(&src, "test.sv").and_then(|m| lower::lower(&m)) {
-        Ok(_) => panic!("accepted:\n{src}"),
-        Err(e) => e,
-    };
-    let text = src.lines().nth(line - 1).unwrap();
-    let col = text
-        .find(needle)
-        .unwrap_or_else(|| panic!("`{needle}` not in `{text}`"))
-        + 1;
-    assert!(err.msg.contains(msg), "{src}\n{err}\nexpected: {msg}");
-    assert_eq!(
-        (err.span.line, err.span.col),
-        (line, col),
-        "{src}\n{err}\nexpected at `{needle}`"
-    );
+    common::rejects(&src, line, needle, msg);
 }
 
 #[test]
@@ -290,9 +279,7 @@ const HEADER_FF: &str = "module m(input logic clk, input logic [7:0] a, output l
 
 fn translate_ff(body: &str) -> Translation {
     let src = format!("{HEADER_FF}\n{body}\nendmodule\n");
-    frontend::parse(&src, "test.sv")
-        .and_then(|m| lower::lower(&m))
-        .unwrap_or_else(|e| panic!("{src}\n{e}"))
+    accepted(&src)
 }
 
 /// `else if` chains nest to the right; a missing `else` is empty.
@@ -354,9 +341,7 @@ fn accepted_clocks() {
     // not read
     let src = "module m(input logic clk, input logic [7:0] a, output logic [7:0] y, t);\n  \
                assign t = clk ? a : y;\n  always_ff @(negedge clk) y <= a;\nendmodule\n";
-    let t = frontend::parse(src, "test.sv")
-        .and_then(|m| lower::lower(&m))
-        .unwrap();
+    let t = accepted(src);
     assert_eq!(t.clocks, ["clk"]);
     // two unrelated clocks, each register reading inputs and its own
     // domain only; an `assign` may combine both domains
@@ -365,18 +350,14 @@ fn accepted_clocks() {
         "{two}\n  always_ff @(posedge ca) y <= y + a;\n  always_ff @(negedge cb) z <= z + a;\n  \
          assign s = y + z;\nendmodule\n"
     );
-    let t = frontend::parse(&src, "test.sv")
-        .and_then(|m| lower::lower(&m))
-        .unwrap();
+    let t = accepted(&src);
     assert_eq!(t.clocks, ["ca", "cb"]);
     // a clock that is only read as data is no clock
     let src = format!(
         "{two}\n  always_ff @(posedge ca) y <= a;\n  always_ff @(posedge ca) z <= cb ? a : z;\n  \
          assign s = a;\nendmodule\n"
     );
-    let t = frontend::parse(&src, "test.sv")
-        .and_then(|m| lower::lower(&m))
-        .unwrap();
+    let t = accepted(&src);
     assert_eq!(t.clocks, ["ca"]);
 }
 
@@ -529,8 +510,14 @@ fn accepted_plain_always() {
         ),
     ];
     for (plain, written) in cases {
+        // the written form is compared with Yosys in any case
+        let check = if plain.contains("always @(m,") {
+            Check::NotYosys("Yosys rejects an array name in an event list")
+        } else {
+            Check::All
+        };
         assert_eq!(
-            translate_with(HEADER_PLAIN, plain).print(),
+            translate_checked(HEADER_PLAIN, plain, check).print(),
             translate_with(&canonical, written).print(),
             "{plain}"
         );
@@ -928,9 +915,7 @@ fn case_statements() {
 
 fn translate(body: &str) -> Translation {
     let src = format!("{HEADER}\n{body}\nendmodule\n");
-    frontend::parse(&src, "test.sv")
-        .and_then(|m| lower::lower(&m))
-        .unwrap_or_else(|e| panic!("{src}\n{e}"))
+    accepted(&src)
 }
 
 #[test]
@@ -1123,11 +1108,20 @@ const HEADER_SIZING: &str = "module m(input logic [7:0] a, input logic signed [7
      output logic [7:0] y, output logic [15:0] w, output logic o);";
 
 fn translate_with(header: &str, body: &str) -> Translation {
-    let src = format!("{header}\n{body}\nendmodule\n");
-    frontend::parse(&src, "test.sv")
-        .and_then(|m| lower::lower(&m))
-        .unwrap_or_else(|e| panic!("{src}\n{e}"))
+    translate_checked(header, body, Check::All)
 }
+
+/// [`translate_with`], with the checks `check` of the translation.
+fn translate_checked(header: &str, body: &str, check: Check) -> Translation {
+    let src = format!("{header}\n{body}\nendmodule\n");
+    common::accepted_with(&src, check)
+}
+
+/// Yosys gives the bits of a register that no assignment writes no
+/// flip-flop (they are undriven) and splits the rest into several, where
+/// we keep the whole register; the miter compares one flip-flop per
+/// register.
+const UNWRITTEN_BITS: Check = Check::NotYosys("bits of a register that no assignment writes");
 
 #[test]
 fn accepted_sizing() {
@@ -1240,10 +1234,11 @@ fn accepted_targets() {
     assert_eq!(t.module.atoms().len(), 3);
     translate_with(header, "  assign {y[7:4], y[3:0], q, c, d} = {a, a, a};");
     // in always_ff, unassigned bits keep their value
-    translate_with(
+    translate_checked(
         header,
         "  always_ff @(posedge clk) begin q[0] <= e; if (e) q[7:4] <= a[3:0]; end\n\
          \x20 assign {y, c, d} = {a, a};",
+        UNWRITTEN_BITS,
     );
     // in always_comb, every bit is assigned before it is read
     translate_with(
@@ -1267,19 +1262,23 @@ fn accepted_variable_targets() {
                   input logic [5:0] k, input logic e, output logic [7:0] y, q, \
                   output logic c, output logic [6:0] d);";
     let others = "\n  assign {c, d} = a;";
-    translate_with(
+    translate_checked(
         header,
         &format!(
             "  always_ff @(posedge clk) begin q[i] <= e; q[k +: 3] <= a[2:0]; \
              q[k -: 5] <= a[4:0]; q[i + 1] <= e; end\n\
              \x20 always_comb begin y = a; y[i] = e; y[y[2:0]] = 1'b0; end{others}"
         ),
+        // see `yosys_deviates_on_variable_index_writes` in `tests/yosys.rs`
+        Check::NotYosys("Yosys also writes the bits below bit 0 of a `-:` select"),
     );
     // a select of another signal in a concatenation, and a whole-width one
-    translate_with(
+    translate_checked(
         header,
         "  always_ff @(posedge clk) {c, q[i +: 2], d[k]} <= {e, a[1:0], e};\n\
          \x20 always_comb begin y = 8'd0; if (e) y[k[0] +: 8] = a; end",
+        // see `tests/targets.rs`: Yosys drives the input `e` from a shift
+        Check::NotYosys("Yosys misreads a variable-index select in a concatenation target"),
     );
     // after a full assignment on every path
     translate_with(
@@ -1454,9 +1453,7 @@ const HEADER_RST: &str = "module m(input logic clk, input logic rst, input logic
 
 fn translate_rst(body: &str) -> Translation {
     let src = format!("{HEADER_RST}\n{body}\nendmodule\n");
-    frontend::parse(&src, "test.sv")
-        .and_then(|m| lower::lower(&m))
-        .unwrap_or_else(|e| panic!("{src}\n{e}"))
+    accepted(&src)
 }
 
 /// The names of the variables the only register atom of `t` awaits,
@@ -1637,16 +1634,13 @@ const HEADER_ARRAY: &str = "module m(input logic clk, input logic [7:0] a, input
                             input logic [1:0] j, input logic signed [1:0] s, output logic [7:0] y);";
 
 /// A file with `text` for `$readmemb`/`$readmemh`, by absolute path.
-fn mem_file(name: &str, text: &str) -> String {
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("readmem");
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(name);
-    std::fs::write(&path, text).unwrap();
-    path.to_string_lossy().into_owned()
+fn mem_file(dir: &TempDir, name: &str, text: &str) -> String {
+    dir.write(name, text).to_string_lossy().into_owned()
 }
 
 #[test]
 fn accepted_arrays() {
+    let dir = TempDir::new("readmem");
     // the three forms of the range, parameters in it and in indices,
     // selects of elements, reads of the block's own elements
     let t = translate_with(
@@ -1664,22 +1658,27 @@ fn accepted_arrays() {
     }
     // a ROM: no variables for its elements; addresses are hexadecimal
     let file = mem_file(
+        &dir,
         "accepted.mem",
         "// header\n@1 0f /* skip */ 1_0\n@3\n3 4 5 6 7 8 9 a b c d e f\n@10 aa @0\nff\n",
     );
-    let t = translate_with(
+    let t = translate_checked(
         HEADER_ARRAY,
         &format!(
             "  logic [7:0] t [17];\n  initial begin\n    $readmemh(\"{file}\", t);\n  end\n\
              \x20 assign y = t[j[0]] + t[16];"
         ),
+        // Yosys 0.69 loses the values before an address that goes back
+        // (`@0` after `@10`: `t[0]` is 0); iverilog agrees with us
+        Check::NotYosys("Yosys drops the values before a backward address in a memory file"),
     );
     assert!(!t.vars.keys().any(|k| k.starts_with("t[")));
 }
 
 #[test]
 fn rejected_arrays() {
-    let ok = mem_file("ok.mem", "1\n10\n11\n100\n");
+    let dir = TempDir::new("readmem");
+    let ok = mem_file(&dir, "ok.mem", "1\n10\n11\n100\n");
     let cases: Vec<(String, usize, &str, &str)> = vec![
         (
             "  logic [7:0] t [4];\n  assign y = t;".into(),
@@ -1797,7 +1796,7 @@ fn rejected_arrays() {
         (
             format!(
                 "  logic [7:0] t [4];\n  initial $readmemb(\"{}\", t);\n  assign y = t[1];",
-                mem_file("xz.mem", "0\n1\n1x\n0\n")
+                mem_file(&dir, "xz.mem", "0\n1\n1x\n0\n")
             ),
             3,
             "$readmemb",
@@ -1806,7 +1805,7 @@ fn rejected_arrays() {
         (
             format!(
                 "  logic [7:0] t [4];\n  initial $readmemb(\"{}\", t);\n  assign y = t[1];",
-                mem_file("few.mem", "0\n1\n\n10\n")
+                mem_file(&dir, "few.mem", "0\n1\n\n10\n")
             ),
             3,
             "$readmemb",
@@ -1816,7 +1815,7 @@ fn rejected_arrays() {
         (
             format!(
                 "  logic [7:0] t [4];\n  initial $readmemh(\"{}\", t);\n  assign y = t[1];",
-                mem_file("many.mem", "0 1 2\n3 4\n")
+                mem_file(&dir, "many.mem", "0 1 2\n3 4\n")
             ),
             3,
             "$readmemh",
@@ -1825,7 +1824,7 @@ fn rejected_arrays() {
         (
             format!(
                 "  logic [7:0] t [4];\n  initial $readmemh(\"{}\", t);\n  assign y = t[1];",
-                mem_file("wide.mem", "0 1 2 1ff\n")
+                mem_file(&dir, "wide.mem", "0 1 2 1ff\n")
             ),
             3,
             "$readmemh",
@@ -1909,6 +1908,7 @@ fn init_of(t: &Translation, q: &str) -> String {
 
 #[test]
 fn accepted_initial_values() {
+    let dir = TempDir::new("readmem");
     // declaration, `initial`, both in `begin … end`, sized as assignments
     // (`-1` is extended by its sign); `x` everywhere is no initial value
     let t = translate_ff(
@@ -1962,7 +1962,7 @@ fn accepted_initial_values() {
     assert_eq!(t.module.atoms().len(), 2);
     // a RAM preloaded from a file (address 2 left out) and given element
     // values; with initial values ignored, every element is free
-    let file = mem_file("preload.mem", "1 10\n@3 11\n");
+    let file = mem_file(&dir, "preload.mem", "1 10\n@3 11\n");
     let body = format!(
         "  logic [1:0] t [4];\n  logic [7:0] v [2];\n  initial $readmemb(\"{file}\", t);\n  \
          initial v[1] = 8'd7;\n  \
@@ -1981,6 +1981,7 @@ fn accepted_initial_values() {
 
 #[test]
 fn rejected_initial_values() {
+    let dir = TempDir::new("readmem");
     let cases: &[(&str, usize, &str, &str)] = &[
         (
             "  logic [7:0] t = 8'd1;\n  assign t = a;\n  assign y = t;",
@@ -2061,8 +2062,8 @@ fn rejected_initial_values() {
     for (body, line, needle, msg) in cases {
         rejects(Some(HEADER_FF), body, *line, needle, msg);
     }
-    let ok = mem_file("init.mem", "1 2 3 4\n");
-    let few = mem_file("init_few.mem", "1 2\n");
+    let ok = mem_file(&dir, "init.mem", "1 2 3 4\n");
+    let few = mem_file(&dir, "init_few.mem", "1 2\n");
     let cases: Vec<(String, usize, &str, &str)> = vec![
         (
             "  logic [7:0] t [4] = '{8'd0, 8'd1, 8'd2, 8'd3};\n  assign y = t[j];".into(),
@@ -2567,9 +2568,7 @@ fn rejected_own_clock_reads() {
          always_ff @(posedge cb) begin s <= !s; z <= s ? a : z; end\n  \
          always_ff @(posedge s) w <= a;\nendmodule\n"
     );
-    frontend::parse(&src, "test.sv")
-        .and_then(|m| lower::lower(&m))
-        .unwrap_or_else(|e| panic!("{src}\n{e}"));
+    accepted(&src);
 }
 
 #[test]
@@ -2696,9 +2695,7 @@ fn derived_clocks_with_resets() {
     };
     let accepts = |body: String| {
         let src = format!("{H}\n{body}endmodule\n");
-        frontend::parse(&src, "test.sv")
-            .and_then(|m| lower::lower(&m))
-            .unwrap_or_else(|e| panic!("{src}\n{e}"));
+        accepted(&src);
     };
     // reset to 0 makes falling edges only, reset to 1 rising ones only
     accepts(format!("{}  always_ff @(posedge s) y <= q;\n", div("1'b0")));
@@ -2748,9 +2745,7 @@ fn derived_clocks_with_resets() {
     let src = format!(
         "{H2}\n{cnt}  logic c;\n  assign c = n[1];\n  always_ff @(negedge c) y <= q;\nendmodule\n"
     );
-    frontend::parse(&src, "test.sv")
-        .and_then(|m| lower::lower(&m))
-        .unwrap_or_else(|e| panic!("{src}\n{e}"));
+    accepted(&src);
     rejects(
         Some(H2),
         &format!("{cnt}  logic c;\n  assign c = n[0];\n  always_ff @(negedge c) y <= q;"),
