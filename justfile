@@ -101,12 +101,37 @@ rs-fmt-fix:
 # Python (py-)
 # -------------------------------------------------
 
+# Spot is built from its tarball. Its installer has two macOS bugs: it probes
+# `install_name_tool --version`, which Apple's tool answers with exit code 1, so a shim
+# answers it for the one build (uv caches the wheel afterwards); and it leaves the
+# installed libraries linked by the absolute paths of the build directory, so they are
+# relinked here through `@rpath` and `@loader_path`.
+
+# Install the Python dependencies, all groups, without the `zrth` package itself
+py-sync:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    shim=$(mktemp -d)
+    trap 'rm -rf "$shim"' EXIT
+    printf '#!/bin/sh\n[ "$1" = "--version" ] && exit 0\nexec xcrun install_name_tool "$@"\n' > "$shim/install_name_tool"
+    chmod +x "$shim/install_name_tool"
+    cd python && PATH="$shim:$PATH" uv sync --all-groups --no-install-project
+    [ "$(uname)" = Darwin ] || exit 0
+    lib="$(uv run --no-sync python -c 'import sys; print(sys.prefix)')/lib"
+    for f in "$lib"/libspot*.dylib "$lib"/libbddx*.dylib; do
+        [ -L "$f" ] && continue
+        install_name_tool -id "@rpath/$(basename "$f")" "$f"
+        for dep in $(otool -L "$f" | awk 'NR > 1 && $1 ~ /^\// && $1 ~ /libspot|libbddx/ {print $1}'); do
+            install_name_tool -change "$dep" "@loader_path/$(basename "$dep")" "$f"
+        done
+    done
+
 # Build the Python crate (maturin builds the workspace crates it depends on itself)
 py-build:
     cd python && uv run maturin develop
 
 # Build Python (from scratch) with all possible bindings
-py-rebuild: clean rs-build-all py-build
+py-rebuild: py-sync clean rs-build-all py-build
     #DISABLED: build the `torch` crate and make sure it uses the libtorch that will
     #DISABLED:  be used also by the `python` crate
     #DISABLED: cd python && uv sync --no-build-package zrth --no-install-project
