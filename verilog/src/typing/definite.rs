@@ -1,7 +1,7 @@
 //! Definite assignment: no read of a bit before it is written in a block, no latch, no live x
 //! ([`definite`]).
 
-use super::fragment::pieces;
+use super::fragment::{Piece, pieces};
 use super::{Env, Result};
 use crate::ast::{self, Error, Expr, ExprKind, Item, Lvalue, Name, Select, Span, Stmt, StmtKind};
 use std::collections::{BTreeMap, BTreeSet};
@@ -303,98 +303,114 @@ impl Definite<'_> {
                 Ok(())
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                self.reads(rhs, st)?;
-                let pieces = pieces(self.env, lhs);
-                for p in &pieces {
-                    if let Some(v) = p.variable {
-                        self.reads(v.index, st)?;
-                    }
-                    if let Some(e) = p.elem {
-                        self.reads(e.index, st)?;
-                    }
-                }
-                if matches!(s.kind, StmtKind::Blocking { .. }) && !self.comb {
-                    self.block(lhs, s.span, st);
-                }
-                for p in pieces {
-                    if p.variable.is_none() && p.elem.is_none() {
-                        for b in p.lo..=p.hi {
-                            let bit = (p.name.clone(), b);
-                            st.x.remove(&bit);
-                            st.done.insert(bit);
-                        }
-                        continue;
-                    }
-                    if !self.comb {
-                        // in an always_ff a variable index keeps the other
-                        // bits, x included
-                        continue;
-                    }
-                    if let Some(e) = p.elem {
-                        // a variable element index assigns no element for
-                        // sure and keeps the others
-                        let mut missing = Vec::new();
-                        for y in e.elems {
-                            let n = self.env[y].ty.width;
-                            let bits: Vec<usize> = (0..n)
-                                .filter(|b| !st.done.contains(&(y.clone(), *b)))
-                                .collect();
-                            let when =
-                                format!("before `{lhs}`, which keeps the bits it does not assign");
-                            if let Some(e) = st.live_x(y, &bits, n, &when) {
-                                return Err(e);
-                            }
-                            if !bits.is_empty() {
-                                missing.push(bits_text(y, &bits, n));
-                            }
-                        }
-                        if !missing.is_empty() {
-                            let some = if missing.len() > 3 {
-                                format!("{}, …", missing[..3].join(", "))
-                            } else {
-                                missing.join(", ")
-                            };
-                            return Err(Error::new(
-                                lhs.span,
-                                format!(
-                                    "`{lhs}` has a variable index, so it assigns no element for \
-                                     sure and keeps the others, but {some} may not be assigned \
-                                     yet (a latch): assign every element of `{}` before it on \
-                                     every path",
-                                    p.name
-                                ),
-                            ));
-                        }
-                        continue;
-                    }
-                    // a variable index assigns no bit for sure and keeps
-                    // the other bits
-                    let n = self.env[&p.name].ty.width;
-                    let missing: Vec<usize> = (0..n)
-                        .filter(|b| !st.done.contains(&(p.name.clone(), *b)))
-                        .collect();
-                    let when = format!("before `{lhs}`, which keeps the bits it does not assign");
-                    if let Some(e) = st.live_x(&p.name, &missing, n, &when) {
-                        return Err(e);
-                    }
-                    if !missing.is_empty() {
-                        return Err(Error::new(
-                            lhs.span,
-                            format!(
-                                "`{lhs}` has a variable index, so it assigns no bit for sure \
-                                 and keeps the others, but {} may not be assigned yet \
-                                 (a latch): assign all of `{}` before it on every path, \
-                                 e.g. `{} = '0;`",
-                                bits_text(&p.name, &missing, n),
-                                p.name,
-                                p.name
-                            ),
-                        ));
-                    }
-                }
-                Ok(())
+                let blocking = matches!(s.kind, StmtKind::Blocking { .. });
+                self.assign(lhs, rhs, blocking, s.span, st)
             }
         }
+    }
+
+    /// An assignment of `rhs` to `lhs` at `span`, with `=` if `blocking`.
+    fn assign(
+        &mut self,
+        lhs: &Lvalue,
+        rhs: &Expr,
+        blocking: bool,
+        span: Span,
+        st: &mut State,
+    ) -> Result<()> {
+        self.reads(rhs, st)?;
+        let pieces = pieces(self.env, lhs);
+        for p in &pieces {
+            if let Some(v) = p.variable {
+                self.reads(v.index, st)?;
+            }
+            if let Some(e) = p.elem {
+                self.reads(e.index, st)?;
+            }
+        }
+        if blocking && !self.comb {
+            self.block(lhs, span, st);
+        }
+        for p in pieces {
+            if p.variable.is_none() && p.elem.is_none() {
+                for b in p.lo..=p.hi {
+                    let bit = (p.name.clone(), b);
+                    st.x.remove(&bit);
+                    st.done.insert(bit);
+                }
+            } else if self.comb {
+                self.kept(lhs, &p, st)?;
+            }
+            // in an always_ff a variable index keeps the other bits, x
+            // included
+        }
+        Ok(())
+    }
+
+    /// In an `always_comb`, the piece `p` of `lhs` with a variable index
+    /// assigns no bit (or element) for sure and keeps the others, so all
+    /// of them must be assigned before.
+    fn kept(&self, lhs: &Lvalue, p: &Piece, st: &State) -> Result<()> {
+        if let Some(e) = p.elem {
+            // a variable element index assigns no element for sure and
+            // keeps the others
+            let mut missing = Vec::new();
+            for y in e.elems {
+                let n = self.env[y].ty.width;
+                let bits: Vec<usize> = (0..n)
+                    .filter(|b| !st.done.contains(&(y.clone(), *b)))
+                    .collect();
+                let when = format!("before `{lhs}`, which keeps the bits it does not assign");
+                if let Some(e) = st.live_x(y, &bits, n, &when) {
+                    return Err(e);
+                }
+                if !bits.is_empty() {
+                    missing.push(bits_text(y, &bits, n));
+                }
+            }
+            if !missing.is_empty() {
+                let some = if missing.len() > 3 {
+                    format!("{}, …", missing[..3].join(", "))
+                } else {
+                    missing.join(", ")
+                };
+                return Err(Error::new(
+                    lhs.span,
+                    format!(
+                        "`{lhs}` has a variable index, so it assigns no element for \
+                         sure and keeps the others, but {some} may not be assigned \
+                         yet (a latch): assign every element of `{}` before it on \
+                         every path",
+                        p.name
+                    ),
+                ));
+            }
+            return Ok(());
+        }
+        // a variable index assigns no bit for sure and keeps the other bits
+        let n = self.env[&p.name].ty.width;
+        let missing: Vec<usize> = (0..n)
+            .filter(|b| !st.done.contains(&(p.name.clone(), *b)))
+            .collect();
+        let when = format!("before `{lhs}`, which keeps the bits it does not assign");
+        if let Some(e) = st.live_x(&p.name, &missing, n, &when) {
+            return Err(e);
+        }
+        if !missing.is_empty() {
+            return Err(Error::new(
+                lhs.span,
+                format!(
+                    "`{lhs}` has a variable index, so it assigns no bit for sure \
+                     and keeps the others, but {} may not be assigned yet \
+                     (a latch): assign all of `{}` before it on every path, \
+                     e.g. `{} = '0;`",
+                    bits_text(&p.name, &missing, n),
+                    p.name,
+                    p.name
+                ),
+            ));
+        }
+        Ok(())
     }
 
     /// Adds to `st` the bits that the blocking assignment to `lhs` at
