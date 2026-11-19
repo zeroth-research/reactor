@@ -263,7 +263,8 @@ pub fn run<P: AsRef<Path>>(
         .iter()
         .map(|f| std::path::absolute(f).map_err(|e| format!("{}: {e}", f.as_ref().display())))
         .collect::<Result<Vec<_>, _>>()?;
-    let dir = EmptyDir::new().map_err(|e| format!("a directory for Yosys: {e}"))?;
+    let dir =
+        crate::EmptyDir::new("v2rm-yosys").map_err(|e| format!("a directory for Yosys: {e}"))?;
     // `-e`: Yosys stops with an error instead of the warning
     let out = Command::new(bin)
         .args(["-q", "-e", CONFLICT, "-p", &script(&absolute, top)?])
@@ -285,33 +286,6 @@ pub fn run<P: AsRef<Path>>(
         return Err(format!("yosys failed on {file}:\n{err}{log}"));
     }
     parse(&String::from_utf8_lossy(&out.stdout))
-}
-
-/// A new empty directory in the system's temporary directory, removed with
-/// everything in it when dropped.
-struct EmptyDir(PathBuf);
-
-impl EmptyDir {
-    fn new() -> std::io::Result<Self> {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static NEXT: AtomicUsize = AtomicUsize::new(0);
-        loop {
-            let k = NEXT.fetch_add(1, Ordering::Relaxed);
-            let name = format!("v2rm-yosys-{}-{k}", std::process::id());
-            let path = std::env::temp_dir().join(name);
-            match std::fs::create_dir(&path) {
-                Ok(()) => return Ok(Self(path)),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(e),
-            }
-        }
-    }
-}
-
-impl Drop for EmptyDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
 }
 
 /// Yosys's warning about a wire with several drivers.
