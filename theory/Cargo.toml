@@ -20,3 +20,7 @@ pyo3 = ["dep:pyo3", "dep:cfg_eval"]
 # `torch` adds the `tch::Tensor` backing of `tensor` (the `torch`
 # module), which links libtorch and needs the bindings.
 torch = ["pyo3", "dep:tch", "dep:pyo3-tch"]
+# `jax` adds the `jax.Array` backing (the `jax` module), which needs no more
+# than the bindings. Each backing has its own Python classes of the
+# operations carrying tensors.
+jax = ["pyo3"]

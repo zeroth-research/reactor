@@ -8,28 +8,24 @@ use std::fmt::Debug;
 use std::fmt::Write;
 
 mod atom;
+mod jax;
 mod module;
 mod term;
+mod torch;
 mod var;
 mod wire;
 
-use crate::atom::Atom;
-use crate::module::Module;
-use crate::term::Term;
 use crate::var::Var;
 use crate::wire::Wire;
 use theory::tensor::sort;
-
-/// The operations of all theories, with their tensors held as `tch::Tensor`s.
-pub(crate) type Any = theory::tensor::Any<tch::Tensor>;
 
 #[pymodule]
 fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Wire>()?;
     m.add_class::<Var>()?;
-    m.add_class::<Atom>()?;
-    m.add_class::<Term>()?;
-    m.add_class::<Module>()?;
+    m.add_class::<torch::Atom>()?;
+    m.add_class::<torch::Term>()?;
+    m.add_class::<torch::Module>()?;
 
     m.add_function(wrap_pyfunction!(var::x, m)?)?;
     m.add_function(wrap_pyfunction!(var::d, m)?)?;
@@ -37,7 +33,9 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // The operations and sorts, in namespaces mirroring the `theory` crate:
     // `tensor` holds the structural operations, with a namespace per theory
     // and for the sorts. The operations carrying tensors come from
-    // `theory::torch`, the others from `theory::tensor`.
+    // `theory::torch`, the others from `theory::tensor`. The terms, atoms and
+    // modules at the top hold torch tensors; those holding JAX arrays are in
+    // the namespace `jax`, with the operations carrying them.
     let mut namespaces = Vec::new();
     {
         let tensor = PyModule::new(py, "tensor")?;
@@ -180,6 +178,43 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         namespaces.push(("tensor", tensor));
     }
 
+    {
+        let jax = PyModule::new(py, "jax")?;
+        jax.add_class::<jax::Term>()?;
+        jax.add_class::<jax::Atom>()?;
+        jax.add_class::<jax::Module>()?;
+        {
+            let real = PyModule::new(py, "real")?;
+            real.add_class::<theory::jax::real::Const>()?;
+            real.add_class::<theory::jax::real::Scale>()?;
+            real.add_class::<theory::jax::real::Linear>()?;
+            jax.add("real", &real)?;
+            namespaces.push(("jax.real", real));
+        }
+        {
+            let int = PyModule::new(py, "int")?;
+            int.add_class::<theory::jax::int::Const>()?;
+            int.add_class::<theory::jax::int::Scale>()?;
+            int.add_class::<theory::jax::int::Linear>()?;
+            jax.add("int", &int)?;
+            namespaces.push(("jax.int", int));
+        }
+        {
+            let bool = PyModule::new(py, "bool")?;
+            bool.add_class::<theory::jax::bool::Const>()?;
+            jax.add("bool", &bool)?;
+            namespaces.push(("jax.bool", bool));
+        }
+        {
+            let word = PyModule::new(py, "word")?;
+            word.add_class::<theory::jax::word::Const>()?;
+            jax.add("word", &word)?;
+            namespaces.push(("jax.word", word));
+        }
+        m.add("jax", &jax)?;
+        namespaces.push(("jax", jax));
+    }
+
     // Each namespace takes its dotted name, and is entered in `sys.modules`
     // under it, so that it can be imported by it, as
     // `import reactor.reactor.tensor.real`, not only reached as an attribute.
@@ -212,20 +247,6 @@ fn try_var_iter_cloned(
     let seq = try_iter_borrow::<Var>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
     let seq = seq.map(|r| *r.base());
-    Ok(seq)
-}
-
-fn try_term_iter_cloned<T>(
-    seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<T, sort::Any>>>
-where
-    dataflow::diagram::Term<Any, sort::Any>: TryInto<dataflow::diagram::Term<T, sort::Any>>,
-    <dataflow::diagram::Term<Any, sort::Any> as TryInto<dataflow::diagram::Term<T, sort::Any>>>::Error: Debug,
-{
-    // TODO: make base take result iterator to avoid unwrap
-    let seq = try_iter_borrow::<Term>(seq)?;
-    let seq = seq.into_iter().map(Result::unwrap);
-    let seq = seq.map(|r| r.base().clone().try_into().unwrap());
     Ok(seq)
 }
 

@@ -8,11 +8,13 @@ translated yet (their ops fall through to a clear error).
 import z3 as _z3
 import torch
 from ..reactor.tensor import Havoc, Skip, Zero
+from ..arrays import as_numpy
 from ..sort import Real, Int, Bool
 import numpy as _np
 import operator
 
 from ..reactor import tensor
+from ..reactor import jax as _jax
 
 
 def fresh(dtype, prefix):
@@ -50,12 +52,12 @@ def interpret(itype):
             return lambda: _zeros(dtype)
 
         # constants
-        case tensor.bool.Const(t):
-            return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(t.detach().numpy())
-        case tensor.real.Const(t):
-            return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(t.detach().numpy())
-        case tensor.int.Const(t):
-            return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(t.detach().numpy())
+        case tensor.bool.Const(t) | _jax.bool.Const(t):
+            return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(as_numpy(t))
+        case tensor.real.Const(t) | _jax.real.Const(t):
+            return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(as_numpy(t))
+        case tensor.int.Const(t) | _jax.int.Const(t):
+            return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(as_numpy(t))
 
         # arithmetic
         case tensor.real.Sub(_) | tensor.int.Sub(_):
@@ -70,10 +72,11 @@ def interpret(itype):
             return _np.frompyfunc(operator.mod, 2, 1)
         case tensor.real.MatMul(_) | tensor.int.MatMul(_):
             return lambda x, y: x @ y
-        case tensor.real.Linear(weight, bias) | tensor.int.Linear(weight, bias):
-            return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
-        case tensor.real.Scale(c) | tensor.int.Scale(c):
-            return lambda x: c.detach().numpy() * x
+        case tensor.real.Linear(weight, bias) | tensor.int.Linear(weight, bias) | \
+                _jax.real.Linear(weight, bias) | _jax.int.Linear(weight, bias):
+            return lambda x: as_numpy(weight) @ x + as_numpy(bias)
+        case tensor.real.Scale(c) | tensor.int.Scale(c) | _jax.real.Scale(c) | _jax.int.Scale(c):
+            return lambda x: as_numpy(c) * x
 
         # comparisons (produce Bool)
         case tensor.real.Eq(_) | tensor.int.Eq(_) | tensor.bool.Eq(_):

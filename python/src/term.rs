@@ -1,157 +1,187 @@
-use crate::wire::Wire;
-use crate::*;
-use pyo3::exceptions::{PyException, PyIndexError};
-use theory::tensor::sort;
+//! The Python class `Term`, and the sequences of its wires: defined by
+//! [`term_classes`] in the module of each tensor type, over its operations.
 
-#[pyclass(frozen)]
-pub(crate) struct Term {
-    base: dataflow::diagram::Term<Any, sort::Any>,
-}
-
-// SAFETY: the operations of the term may hold `tch::Tensor`s, which are not
-// `Sync`, as libtorch tensors are pointers. Nothing here mutates them: they
-// are only read and shallow-cloned, and libtorch counts the references to a
-// tensor atomically, as for the classes of `theory::torch`.
-unsafe impl Sync for Term {}
-
-#[pymethods]
-impl Term {
-    #[staticmethod]
-    fn function(
-        itype: &Bound<'_, PyAny>,
-        write: &Bound<'_, PyAny>,
-        read: &Bound<'_, PyAny>,
-    ) -> PyResult<Self> {
-        let itype: Any = itype.extract()?;
-        let write = try_wire_iter_cloned(write)?;
-        let read = try_wire_iter_cloned(read)?;
-
-        match dataflow::diagram::Term::function(itype, write, read) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
+/// Defines, in the module that invokes it, the Python class `Term` of the
+/// terms over the operations `Any` of that module, as [`dataflow::diagram::Term`],
+/// with the sequences of their wires; `$package` names the module in errors.
+/// The module brings into scope the names that the classes use.
+macro_rules! term_classes {
+    ($package:literal) => {
+        #[pyclass(frozen)]
+        pub(crate) struct Term {
+            base: dataflow::diagram::Term<Any, sort::Any>,
         }
-    }
 
-    #[staticmethod]
-    fn constant(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let itype: Any = itype.extract()?;
-        let write = try_wire_iter_cloned(write)?;
+        // SAFETY: the operations of the term may hold `tch::Tensor`s, which are not
+        // `Sync`, as libtorch tensors are pointers. Nothing here mutates them: they
+        // are only read and shallow-cloned, and libtorch counts the references to a
+        // tensor atomically, as for the classes of `theory::torch`. Operations
+        // holding other tensors, which are `Sync`, need none of this.
+        unsafe impl Sync for Term {}
 
-        match dataflow::diagram::Term::constant(itype, write) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
+        #[pymethods]
+        impl Term {
+            #[staticmethod]
+            fn function(
+                itype: &Bound<'_, PyAny>,
+                write: &Bound<'_, PyAny>,
+                read: &Bound<'_, PyAny>,
+            ) -> PyResult<Self> {
+                let itype: Any = itype.extract()?;
+                let write = try_wire_iter_cloned(write)?;
+                let read = try_wire_iter_cloned(read)?;
 
-    #[new]
-    #[pyo3(signature = (itype, write, read = None))]
-    fn new(
-        itype: &Bound<'_, PyAny>,
-        write: &Bound<'_, PyAny>,
-        read: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Self> {
-        match read {
-            Some(read) => Self::function(itype, write, read),
-            None => Self::constant(itype, write),
-        }
-    }
-
-    #[getter]
-    fn write(slf: PyRef<'_, Self>) -> PyResult<TermInterface> {
-        Self::interface(slf, TermInterfaceType::Write)
-    }
-
-    #[getter]
-    fn read(slf: PyRef<'_, Self>) -> PyResult<TermInterface> {
-        Self::interface(slf, TermInterfaceType::Read)
-    }
-
-    #[getter]
-    fn itype(&self) -> Any {
-        self.base.itype().clone()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{:?}", self.base)
-    }
-}
-
-impl Term {
-    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Any, sort::Any> {
-        &self.base
-    }
-
-    fn interface(slf: PyRef<'_, Self>, titype: TermInterfaceType) -> PyResult<TermInterface> {
-        let py = slf.py();
-        Ok(TermInterface {
-            term: slf.into_pyobject(py)?.unbind(),
-            interface: titype,
-        })
-    }
-}
-
-impl From<dataflow::diagram::Term<Any, sort::Any>> for Term {
-    fn from(base: dataflow::diagram::Term<Any, sort::Any>) -> Self {
-        Self { base }
-    }
-}
-
-#[derive(Clone)]
-pub(crate) enum TermInterfaceType {
-    Read,
-    Write,
-}
-#[pyclass(sequence)]
-struct TermInterface {
-    term: Py<Term>,
-    interface: TermInterfaceType,
-}
-
-impl TermInterface {
-    fn base(&self) -> &[dataflow::diagram::Wire<sort::Any>] {
-        let base = &self.term.get().base;
-        match self.interface {
-            TermInterfaceType::Read => base.read(),
-            TermInterfaceType::Write => base.write(),
-        }
-    }
-}
-
-#[pymethods]
-impl TermInterface {
-    fn __repr__(&self) -> String {
-        wires_untyped_to_repr(self.base())
-    }
-
-    fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
-        let other = match try_iter_borrow::<Wire>(other) {
-            Ok(other) => other,
-            Err(_) => return false,
-        };
-
-        let mut this = self.base().iter();
-        let mut other = other.into_iter();
-        loop {
-            match (this.next(), other.next()) {
-                (Some(this), Some(Ok(other))) => {
-                    if this != other.base() {
-                        return false;
-                    }
+                match dataflow::diagram::Term::function(itype, write, read) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
                 }
-                (None, None) => return true,
-                _ => return false,
+            }
+
+            #[staticmethod]
+            fn constant(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>) -> PyResult<Self> {
+                let itype: Any = itype.extract()?;
+                let write = try_wire_iter_cloned(write)?;
+
+                match dataflow::diagram::Term::constant(itype, write) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[new]
+            #[pyo3(signature = (itype, write, read = None))]
+            fn new(
+                itype: &Bound<'_, PyAny>,
+                write: &Bound<'_, PyAny>,
+                read: Option<&Bound<'_, PyAny>>,
+            ) -> PyResult<Self> {
+                match read {
+                    Some(read) => Self::function(itype, write, read),
+                    None => Self::constant(itype, write),
+                }
+            }
+
+            #[getter]
+            fn write(slf: PyRef<'_, Self>) -> PyResult<TermInterface> {
+                Self::interface(slf, TermInterfaceType::Write)
+            }
+
+            #[getter]
+            fn read(slf: PyRef<'_, Self>) -> PyResult<TermInterface> {
+                Self::interface(slf, TermInterfaceType::Read)
+            }
+
+            #[getter]
+            fn itype(&self) -> Any {
+                self.base.itype().clone()
+            }
+
+            fn __repr__(&self) -> String {
+                format!("{:?}", self.base)
             }
         }
-    }
 
-    fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        self.base()
-            .get(index)
-            .map(|w| w.clone().into())
-            .ok_or(PyIndexError::new_err("index out of bounds"))
-    }
+        impl Term {
+            pub(crate) fn base(&self) -> &dataflow::diagram::Term<Any, sort::Any> {
+                &self.base
+            }
 
-    fn __len__(&self) -> usize {
-        self.base().len()
-    }
+            fn interface(
+                slf: PyRef<'_, Self>,
+                titype: TermInterfaceType,
+            ) -> PyResult<TermInterface> {
+                let py = slf.py();
+                Ok(TermInterface {
+                    term: slf.into_pyobject(py)?.unbind(),
+                    interface: titype,
+                })
+            }
+        }
+
+        impl From<dataflow::diagram::Term<Any, sort::Any>> for Term {
+            fn from(base: dataflow::diagram::Term<Any, sort::Any>) -> Self {
+                Self { base }
+            }
+        }
+
+        #[derive(Clone)]
+        pub(crate) enum TermInterfaceType {
+            Read,
+            Write,
+        }
+        #[pyclass(sequence)]
+        struct TermInterface {
+            term: Py<Term>,
+            interface: TermInterfaceType,
+        }
+
+        impl TermInterface {
+            fn base(&self) -> &[dataflow::diagram::Wire<sort::Any>] {
+                let base = &self.term.get().base;
+                match self.interface {
+                    TermInterfaceType::Read => base.read(),
+                    TermInterfaceType::Write => base.write(),
+                }
+            }
+        }
+
+        #[pymethods]
+        impl TermInterface {
+            fn __repr__(&self) -> String {
+                wires_untyped_to_repr(self.base())
+            }
+
+            fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
+                let other = match try_iter_borrow::<Wire>(other) {
+                    Ok(other) => other,
+                    Err(_) => return false,
+                };
+
+                let mut this = self.base().iter();
+                let mut other = other.into_iter();
+                loop {
+                    match (this.next(), other.next()) {
+                        (Some(this), Some(Ok(other))) => {
+                            if this != other.base() {
+                                return false;
+                            }
+                        }
+                        (None, None) => return true,
+                        _ => return false,
+                    }
+                }
+            }
+
+            fn __getitem__(&self, index: usize) -> PyResult<Wire> {
+                self.base()
+                    .get(index)
+                    .map(|w| w.clone().into())
+                    .ok_or(PyIndexError::new_err("index out of bounds"))
+            }
+
+            fn __len__(&self) -> usize {
+                self.base().len()
+            }
+        }
+
+        /// The terms of `seq`, cloned; fails unless each is a [`Term`] of the
+        /// operations of this module.
+        fn try_term_iter_cloned(
+            seq: &Bound<'_, PyAny>,
+        ) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<Any, sort::Any>>> {
+            let terms = try_iter_borrow::<Term>(seq)?
+                .map(|term| match term {
+                    Ok(term) => Ok(term.base().clone()),
+                    Err(_) => Err(PyTypeError::new_err(concat!(
+                        "expected the terms of `",
+                        $package,
+                        "`"
+                    ))),
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            Ok(terms.into_iter())
+        }
+    };
 }
+
+pub(crate) use term_classes;

@@ -1,7 +1,8 @@
 """Torch interpreter for terms.
 
 Dispatch is by `match` on the operation's class, binding its sizes positionally
-(`case word.Extract(i, j, w, _):`). Values are tensors: booleans as `torch.bool`,
+(`case word.Extract(i, j, w, _):`). The tensors that the operations hold may be torch
+tensors, or JAX arrays (the operations of `reactor.jax`), taken as torch tensors. Values are tensors: booleans as `torch.bool`,
 reals as floating point, integers and words as `int64`. A word of width `w` is stored
 as its unsigned value in `[0, 2^w)`; the signed operations read it in two's complement,
 and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2.
@@ -10,9 +11,11 @@ and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2
 import torch
 
 from .reactor.tensor import Havoc, Skip, Zero
+from .arrays import as_torch
 from .sort import Real, Int, Bool, Word, shape as _shape
 
 from .reactor import tensor
+from .reactor import jax as _jax
 
 
 def _wrap(t, w):
@@ -23,6 +26,15 @@ def _wrap(t, w):
 def _signed(t, w):
     """The words `t` of width `w` read in two's complement."""
     return torch.where(t >= (1 << (w - 1)), t - (1 << w), t) if w < 64 else t
+
+
+def _held(t):
+    """A tensor that an operation holds, as a value: a JAX array is taken as a torch
+    tensor, and integers widen to `int64`, as JAX makes `int32` ones by default."""
+    t = as_torch(t)
+    if t.dtype is torch.bool or t.is_floating_point():
+        return t
+    return t.to(torch.int64)
 
 
 def _zeros(sort):
@@ -114,12 +126,14 @@ def eval_itype(itype, read, out_sort=None):
             return [_zeros(sort)]
 
         # --- constants and affine maps (tensors carried by the op) ---
-        case tensor.real.Const(t) | tensor.int.Const(t) | tensor.bool.Const(t) | tensor.word.Const(t, _):
-            return [t.clone()]
-        case tensor.real.Linear(a, b) | tensor.int.Linear(a, b):
-            return [a @ r[0] + b]
-        case tensor.real.Scale(c) | tensor.int.Scale(c):
-            return [c * r[0]]
+        case (tensor.real.Const(t) | tensor.int.Const(t) | tensor.bool.Const(t) | tensor.word.Const(t, _)
+              | _jax.real.Const(t) | _jax.int.Const(t) | _jax.bool.Const(t) | _jax.word.Const(t, _)):
+            return [_held(t).clone()]
+        case (tensor.real.Linear(a, b) | tensor.int.Linear(a, b)
+              | _jax.real.Linear(a, b) | _jax.int.Linear(a, b)):
+            return [_held(a) @ r[0] + _held(b)]
+        case tensor.real.Scale(c) | tensor.int.Scale(c) | _jax.real.Scale(c) | _jax.int.Scale(c):
+            return [_held(c) * r[0]]
 
         # --- choice ---
         case tensor.real.Ite(_) | tensor.int.Ite(_) | tensor.bool.Ite(_) | tensor.word.Ite(_, _):

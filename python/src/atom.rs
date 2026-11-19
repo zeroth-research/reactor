@@ -1,443 +1,453 @@
-use crate::Any;
-use crate::term::{Term, TermInterfaceType};
-use crate::var::Var;
-use crate::wire::Wire;
-use crate::{try_iter_borrow, try_term_iter_cloned, try_var_iter_cloned, wires_untyped_to_repr};
-use pyo3::exceptions::{PyException, PyIndexError};
-use pyo3::prelude::*;
-use std::borrow::Cow;
-use std::collections::HashMap;
-use theory::tensor::sort;
+//! The Python class `Atom`, and the sequences of its variables, blocks and
+//! wires: defined by [`atom_classes`] in the module of each tensor type,
+//! over its operations.
 
-#[pyclass(frozen)]
-pub(crate) struct Atom {
-    base: reactive::Atom<Any, Any, Any, sort::Any>,
-}
-
-// SAFETY: the operations of the atom may hold `tch::Tensor`s, which are not
-// `Sync`, as libtorch tensors are pointers. Nothing here mutates them: they
-// are only read and shallow-cloned, and libtorch counts the references to a
-// tensor atomically, as for the classes of `theory::torch`.
-unsafe impl Sync for Atom {}
-
-impl From<reactive::Atom<Any, Any, Any, sort::Any>> for Atom {
-    fn from(base: reactive::Atom<Any, Any, Any, sort::Any>) -> Self {
-        Self { base }
-    }
-}
-
-#[pymethods]
-impl Atom {
-    #[new]
-    #[pyo3(signature = (vars, init = None, delay = None, update = None))]
-    fn new(
-        vars: &Bound<'_, PyAny>,
-        init: Option<&Bound<'_, PyAny>>,
-        delay: Option<&Bound<'_, PyAny>>,
-        update: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Self> {
-        match (init, delay, update) {
-            (Some(init), None, Some(update)) => Self::sequential(vars, init, update),
-            (Some(init), Some(delay), None) => Self::differential(vars, init, delay),
-            (Some(init), Some(delay), Some(update)) => Self::hybrid(vars, init, update, delay),
-            (None, None, Some(update)) => Self::jump(vars, update),
-            (None, Some(delay), Some(update)) => Self::uninitialized(vars, update, delay),
-            (Some(init), None, None) => Self::constant(vars, init),
-            (None, Some(delay), None) => Self::flow(vars, delay),
-            (None, None, None) => Self::hold(vars),
+/// Defines, in the module that invokes it, the Python class `Atom` of the
+/// atoms over the operations `Any` of that module, as [`reactive::Atom`],
+/// with the sequences of their variables, blocks and wires, from the
+/// [`Term`](crate::term::term_classes)s of that module. The module brings
+/// into scope the names that the classes use.
+macro_rules! atom_classes {
+    () => {
+        #[pyclass(frozen)]
+        pub(crate) struct Atom {
+            base: reactive::Atom<Any, Any, Any, sort::Any>,
         }
-    }
 
-    #[staticmethod]
-    fn sequential(
-        vars: &Bound<'_, PyAny>,
-        init: &Bound<'_, PyAny>,
-        update: &Bound<'_, PyAny>,
-    ) -> PyResult<Self> {
-        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let init = try_term_iter_cloned(&init)?;
-        let update = try_term_iter_cloned(&update)?;
+        // SAFETY: the operations of the atom may hold `tch::Tensor`s, which are not
+        // `Sync`, as libtorch tensors are pointers. Nothing here mutates them: they
+        // are only read and shallow-cloned, and libtorch counts the references to a
+        // tensor atomically, as for the classes of `theory::torch`. Operations
+        // holding other tensors, which are `Sync`, need none of this.
+        unsafe impl Sync for Atom {}
 
-        match reactive::Atom::sequential(vars.iter(), init, update) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
-
-    #[staticmethod]
-    fn differential(
-        vars: &Bound<'_, PyAny>,
-        init: &Bound<'_, PyAny>,
-        delay: &Bound<'_, PyAny>,
-    ) -> PyResult<Self> {
-        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let init = try_term_iter_cloned(&init)?;
-        let delay = try_term_iter_cloned(&delay)?;
-
-        match reactive::Atom::differential(vars.iter(), init, delay) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
-
-    #[staticmethod]
-    fn hybrid(
-        vars: &Bound<'_, PyAny>,
-        init: &Bound<'_, PyAny>,
-        update: &Bound<'_, PyAny>,
-        delay: &Bound<'_, PyAny>,
-    ) -> PyResult<Self> {
-        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let init = try_term_iter_cloned(&init)?;
-        let update = try_term_iter_cloned(&update)?;
-        let delay = try_term_iter_cloned(&delay)?;
-
-        match reactive::Atom::hybrid(vars.iter(), init, update, delay) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
-
-    #[staticmethod]
-    fn jump(vars: &Bound<'_, PyAny>, update: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let update = try_term_iter_cloned(&update)?;
-
-        match reactive::Atom::jump(vars.iter(), update) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
-
-    #[staticmethod]
-    fn uninitialized(
-        vars: &Bound<'_, PyAny>,
-        update: &Bound<'_, PyAny>,
-        delay: &Bound<'_, PyAny>,
-    ) -> PyResult<Self> {
-        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let update = try_term_iter_cloned(&update)?;
-        let delay = try_term_iter_cloned(&delay)?;
-
-        match reactive::Atom::uninitialized(vars.iter(), update, delay) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
-
-    #[staticmethod]
-    fn constant(vars: &Bound<'_, PyAny>, init: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let init = try_term_iter_cloned(&init)?;
-
-        match reactive::Atom::constant(vars.iter(), init) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
-
-    #[staticmethod]
-    fn hold(vars: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-
-        match reactive::Atom::hold(vars.iter()) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
-
-    #[staticmethod]
-    fn flow(vars: &Bound<'_, PyAny>, delay: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let delay = try_term_iter_cloned(&delay)?;
-
-        match reactive::Atom::flow(vars.iter(), delay) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
-
-    #[staticmethod]
-    fn combinatorial(vars: &Bound<'_, PyAny>, assign: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let assign = try_term_iter_cloned::<Any>(&assign)?;
-
-        match reactive::Atom::combinatorial(vars.iter(), assign) {
-            Ok(base) => Ok(base.into()),
-            Err(msg) => Err(PyException::new_err(msg)),
-        }
-    }
-
-    #[getter]
-    fn read(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
-        Self::interface(slf, AtomInterfaceType::Read)
-    }
-
-    #[getter]
-    fn ctrl(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
-        Self::interface(slf, AtomInterfaceType::Ctrl)
-    }
-
-    #[getter]
-    fn wait(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
-        Self::interface(slf, AtomInterfaceType::Await)
-    }
-
-    #[getter]
-    fn init(slf: Bound<'_, Self>) -> AtomBlock {
-        AtomBlock {
-            atom: slf.unbind(),
-            block: BlockType::Init,
-        }
-    }
-
-    #[getter]
-    fn update(slf: Bound<'_, Self>) -> AtomBlock {
-        AtomBlock {
-            atom: slf.unbind(),
-            block: BlockType::Update,
-        }
-    }
-
-    #[getter]
-    fn delay(slf: Bound<'_, Self>) -> AtomBlock {
-        AtomBlock {
-            atom: slf.unbind(),
-            block: BlockType::Delay,
-        }
-    }
-
-    /// Renders the atom with variables named by `names`; variables
-    /// without an entry print as `#{id}`. Don't rely on the fallback - it may change anytime
-    fn show(&self, names: HashMap<Var, String>) -> String {
-        self.base
-            .with_varnames(|v| match names.get(v) {
-                Some(name) => Cow::Borrowed(name.as_str()),
-                None => Cow::Owned(format!("#{}", v.id())),
-            })
-            .to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{:?}", self.base)
-    }
-}
-
-impl Atom {
-    pub(crate) fn base(&self) -> &reactive::Atom<Any, Any, Any, sort::Any> {
-        &self.base
-    }
-
-    fn interface(slf: PyRef<'_, Self>, interface: AtomInterfaceType) -> PyResult<AtomInterface> {
-        let py = slf.py();
-        let atom = slf.into_pyobject(py)?.unbind();
-        Ok(AtomInterface { atom, interface })
-    }
-}
-
-#[derive(Clone)]
-enum AtomInterfaceType {
-    Read,
-    Ctrl,
-    Await,
-}
-
-#[pyclass(sequence)]
-struct AtomInterface {
-    atom: Py<Atom>,
-    interface: AtomInterfaceType,
-}
-
-impl AtomInterface {
-    fn base(&self) -> &reactive::Interface<sort::Any> {
-        let atom = &self.atom.get().base;
-        match self.interface {
-            AtomInterfaceType::Read => atom.read(),
-            AtomInterfaceType::Await => atom.wait(),
-            AtomInterfaceType::Ctrl => atom.ctrl(),
-        }
-    }
-}
-#[pymethods]
-impl AtomInterface {
-    fn __repr__(&self) -> String {
-        wires_untyped_to_repr(self.base())
-    }
-
-    fn __getitem__(&self, index: usize) -> PyResult<Var> {
-        self.base()
-            .nth(index)
-            .map(|v| Var::from(*v))
-            .ok_or(PyIndexError::new_err("index out of bounds"))
-    }
-
-    fn __len__(&self) -> usize {
-        self.base().len()
-    }
-
-    fn __eq__<'py>(&self, other: &Bound<'py, PyAny>) -> bool {
-        let other = match try_iter_borrow::<Var>(other) {
-            Ok(other) => other,
-            Err(_) => return false,
-        };
-
-        let mut this = self.base().iter();
-        let mut other = other.into_iter();
-        loop {
-            match (this.next(), other.next()) {
-                (Some(this), Some(Ok(other))) => {
-                    if this != other.base() {
-                        return false;
-                    }
-                }
-                (None, None) => return true,
-                _ => return false,
+        impl From<reactive::Atom<Any, Any, Any, sort::Any>> for Atom {
+            fn from(base: reactive::Atom<Any, Any, Any, sort::Any>) -> Self {
+                Self { base }
             }
         }
-    }
 
-    fn __contains__(&self, item: &Bound<'_, PyAny>) -> bool {
-        if let Ok(var) = item.extract::<PyRef<Var>>() {
-            return self.base().contains(var.base());
-        }
-        //also checking containment of any wire (latched, next, derived)
-        if let Ok(wire) = item.extract::<PyRef<Wire>>() {
-            return self.base().var(wire.base()).is_some();
-        }
-        false
-    }
-}
-
-#[derive(Clone)]
-enum BlockType {
-    Init,
-    Update,
-    Delay,
-}
-
-#[pyclass(sequence, frozen)]
-pub(crate) struct AtomBlock {
-    atom: Py<Atom>,
-    block: BlockType,
-}
-
-// impl AtomBlock {
-//     fn base(&self) -> &dataflow::diagram::Block<Sequential, sort::Any> {
-//         let atom = &self.atom.get().base;
-//         match self.block {
-//             BlockType::Init => atom.init(),
-//             BlockType::Update => atom.update(),
-//             BlockType::Delay => atom.delay(),
-//         }
-//     }
-// }
-
-#[pymethods]
-impl AtomBlock {
-    // requires display in base - do you need that now?
-    // fn __str__(&self) -> String {
-    //     self.base().to_string()
-    // }
-
-    fn __repr__(&self) -> String {
-        let atom = &self.atom.get().base;
-        match self.block {
-            BlockType::Init => format!("{:?}", atom.init()),
-            BlockType::Update => format!("{:?}", atom.update()),
-            BlockType::Delay => format!("{:?}", atom.delay()),
-        }
-    }
-
-    fn read(slf: Bound<'_, Self>) -> AtomBlockInterface {
-        AtomBlockInterface {
-            block: slf.unbind(),
-            interface: TermInterfaceType::Read,
-        }
-    }
-
-    fn write(slf: Bound<'_, Self>) -> AtomBlockInterface {
-        AtomBlockInterface {
-            block: slf.unbind(),
-            interface: TermInterfaceType::Write,
-        }
-    }
-
-    fn __getitem__(&self, index: usize) -> PyResult<Term> {
-        let atom = &self.atom.get().base;
-        let item: Option<dataflow::diagram::Term<Any, sort::Any>> = match self.block {
-            BlockType::Init => atom.init().get(index).cloned(),
-            BlockType::Update => atom.update().get(index).cloned(),
-            BlockType::Delay => atom.delay().get(index).cloned(),
-        };
-        item.map(Into::into)
-            .ok_or(PyIndexError::new_err("index out of bounds"))
-    }
-
-    fn __len__(&self) -> usize {
-        let atom = &self.atom.get().base;
-        match self.block {
-            BlockType::Init => atom.init().len(),
-            BlockType::Update => atom.update().len(),
-            BlockType::Delay => atom.delay().len(),
-        }
-    }
-}
-
-#[pyclass(sequence)]
-struct AtomBlockInterface {
-    block: Py<AtomBlock>,
-    interface: TermInterfaceType,
-}
-
-impl AtomBlockInterface {
-    fn base(&self) -> &[dataflow::diagram::Wire<sort::Any>] {
-        let atom = &self.block.get().atom.get().base;
-        match (&self.block.get().block, &self.interface) {
-            (BlockType::Init, TermInterfaceType::Read) => atom.init().read(),
-            (BlockType::Init, TermInterfaceType::Write) => atom.init().write(),
-            (BlockType::Update, TermInterfaceType::Read) => atom.update().read(),
-            (BlockType::Update, TermInterfaceType::Write) => atom.update().write(),
-            (BlockType::Delay, TermInterfaceType::Read) => atom.delay().read(),
-            (BlockType::Delay, TermInterfaceType::Write) => atom.delay().write(),
-        }
-    }
-}
-
-#[pymethods]
-impl AtomBlockInterface {
-    fn __repr__(&self) -> String {
-        wires_untyped_to_repr(self.base())
-    }
-
-    fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
-        let other = match try_iter_borrow::<Wire>(other) {
-            Ok(other) => other,
-            Err(_) => return false,
-        };
-
-        let mut this = self.base().iter();
-        let mut other = other.into_iter();
-        loop {
-            match (this.next(), other.next()) {
-                (Some(this), Some(Ok(other))) => {
-                    if this != other.base() {
-                        return false;
+        #[pymethods]
+        impl Atom {
+            #[new]
+            #[pyo3(signature = (vars, init = None, delay = None, update = None))]
+            fn new(
+                vars: &Bound<'_, PyAny>,
+                init: Option<&Bound<'_, PyAny>>,
+                delay: Option<&Bound<'_, PyAny>>,
+                update: Option<&Bound<'_, PyAny>>,
+            ) -> PyResult<Self> {
+                match (init, delay, update) {
+                    (Some(init), None, Some(update)) => Self::sequential(vars, init, update),
+                    (Some(init), Some(delay), None) => Self::differential(vars, init, delay),
+                    (Some(init), Some(delay), Some(update)) => {
+                        Self::hybrid(vars, init, update, delay)
                     }
+                    (None, None, Some(update)) => Self::jump(vars, update),
+                    (None, Some(delay), Some(update)) => Self::uninitialized(vars, update, delay),
+                    (Some(init), None, None) => Self::constant(vars, init),
+                    (None, Some(delay), None) => Self::flow(vars, delay),
+                    (None, None, None) => Self::hold(vars),
                 }
-                (None, None) => return true,
-                _ => return false,
+            }
+
+            #[staticmethod]
+            fn sequential(
+                vars: &Bound<'_, PyAny>,
+                init: &Bound<'_, PyAny>,
+                update: &Bound<'_, PyAny>,
+            ) -> PyResult<Self> {
+                let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+                let init = try_term_iter_cloned(&init)?;
+                let update = try_term_iter_cloned(&update)?;
+
+                match reactive::Atom::sequential(vars.iter(), init, update) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[staticmethod]
+            fn differential(
+                vars: &Bound<'_, PyAny>,
+                init: &Bound<'_, PyAny>,
+                delay: &Bound<'_, PyAny>,
+            ) -> PyResult<Self> {
+                let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+                let init = try_term_iter_cloned(&init)?;
+                let delay = try_term_iter_cloned(&delay)?;
+
+                match reactive::Atom::differential(vars.iter(), init, delay) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[staticmethod]
+            fn hybrid(
+                vars: &Bound<'_, PyAny>,
+                init: &Bound<'_, PyAny>,
+                update: &Bound<'_, PyAny>,
+                delay: &Bound<'_, PyAny>,
+            ) -> PyResult<Self> {
+                let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+                let init = try_term_iter_cloned(&init)?;
+                let update = try_term_iter_cloned(&update)?;
+                let delay = try_term_iter_cloned(&delay)?;
+
+                match reactive::Atom::hybrid(vars.iter(), init, update, delay) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[staticmethod]
+            fn jump(vars: &Bound<'_, PyAny>, update: &Bound<'_, PyAny>) -> PyResult<Self> {
+                let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+                let update = try_term_iter_cloned(&update)?;
+
+                match reactive::Atom::jump(vars.iter(), update) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[staticmethod]
+            fn uninitialized(
+                vars: &Bound<'_, PyAny>,
+                update: &Bound<'_, PyAny>,
+                delay: &Bound<'_, PyAny>,
+            ) -> PyResult<Self> {
+                let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+                let update = try_term_iter_cloned(&update)?;
+                let delay = try_term_iter_cloned(&delay)?;
+
+                match reactive::Atom::uninitialized(vars.iter(), update, delay) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[staticmethod]
+            fn constant(vars: &Bound<'_, PyAny>, init: &Bound<'_, PyAny>) -> PyResult<Self> {
+                let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+                let init = try_term_iter_cloned(&init)?;
+
+                match reactive::Atom::constant(vars.iter(), init) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[staticmethod]
+            fn hold(vars: &Bound<'_, PyAny>) -> PyResult<Self> {
+                let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+
+                match reactive::Atom::hold(vars.iter()) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[staticmethod]
+            fn flow(vars: &Bound<'_, PyAny>, delay: &Bound<'_, PyAny>) -> PyResult<Self> {
+                let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+                let delay = try_term_iter_cloned(&delay)?;
+
+                match reactive::Atom::flow(vars.iter(), delay) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[staticmethod]
+            fn combinatorial(vars: &Bound<'_, PyAny>, assign: &Bound<'_, PyAny>) -> PyResult<Self> {
+                let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
+                let assign = try_term_iter_cloned(&assign)?;
+
+                match reactive::Atom::combinatorial(vars.iter(), assign) {
+                    Ok(base) => Ok(base.into()),
+                    Err(msg) => Err(PyException::new_err(msg)),
+                }
+            }
+
+            #[getter]
+            fn read(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
+                Self::interface(slf, AtomInterfaceType::Read)
+            }
+
+            #[getter]
+            fn ctrl(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
+                Self::interface(slf, AtomInterfaceType::Ctrl)
+            }
+
+            #[getter]
+            fn wait(slf: PyRef<'_, Self>) -> PyResult<AtomInterface> {
+                Self::interface(slf, AtomInterfaceType::Await)
+            }
+
+            #[getter]
+            fn init(slf: Bound<'_, Self>) -> AtomBlock {
+                AtomBlock {
+                    atom: slf.unbind(),
+                    block: BlockType::Init,
+                }
+            }
+
+            #[getter]
+            fn update(slf: Bound<'_, Self>) -> AtomBlock {
+                AtomBlock {
+                    atom: slf.unbind(),
+                    block: BlockType::Update,
+                }
+            }
+
+            #[getter]
+            fn delay(slf: Bound<'_, Self>) -> AtomBlock {
+                AtomBlock {
+                    atom: slf.unbind(),
+                    block: BlockType::Delay,
+                }
+            }
+
+            /// Renders the atom with variables named by `names`; variables
+            /// without an entry print as `#{id}`. Don't rely on the fallback - it may change anytime
+            fn show(&self, names: HashMap<Var, String>) -> String {
+                self.base
+                    .with_varnames(|v| match names.get(v) {
+                        Some(name) => Cow::Borrowed(name.as_str()),
+                        None => Cow::Owned(format!("#{}", v.id())),
+                    })
+                    .to_string()
+            }
+
+            fn __repr__(&self) -> String {
+                format!("{:?}", self.base)
             }
         }
-    }
 
-    fn __getitem__(&self, index: usize) -> PyResult<Wire> {
-        self.base()
-            .get(index)
-            .map(|w| w.clone().into())
-            .ok_or(PyIndexError::new_err("index out of bounds"))
-    }
+        impl Atom {
+            pub(crate) fn base(&self) -> &reactive::Atom<Any, Any, Any, sort::Any> {
+                &self.base
+            }
 
-    fn __len__(&self) -> usize {
-        self.base().len()
-    }
+            fn interface(
+                slf: PyRef<'_, Self>,
+                interface: AtomInterfaceType,
+            ) -> PyResult<AtomInterface> {
+                let py = slf.py();
+                let atom = slf.into_pyobject(py)?.unbind();
+                Ok(AtomInterface { atom, interface })
+            }
+        }
+
+        #[derive(Clone)]
+        enum AtomInterfaceType {
+            Read,
+            Ctrl,
+            Await,
+        }
+
+        #[pyclass(sequence)]
+        struct AtomInterface {
+            atom: Py<Atom>,
+            interface: AtomInterfaceType,
+        }
+
+        impl AtomInterface {
+            fn base(&self) -> &reactive::Interface<sort::Any> {
+                let atom = &self.atom.get().base;
+                match self.interface {
+                    AtomInterfaceType::Read => atom.read(),
+                    AtomInterfaceType::Await => atom.wait(),
+                    AtomInterfaceType::Ctrl => atom.ctrl(),
+                }
+            }
+        }
+        #[pymethods]
+        impl AtomInterface {
+            fn __repr__(&self) -> String {
+                wires_untyped_to_repr(self.base())
+            }
+
+            fn __getitem__(&self, index: usize) -> PyResult<Var> {
+                self.base()
+                    .nth(index)
+                    .map(|v| Var::from(*v))
+                    .ok_or(PyIndexError::new_err("index out of bounds"))
+            }
+
+            fn __len__(&self) -> usize {
+                self.base().len()
+            }
+
+            fn __eq__<'py>(&self, other: &Bound<'py, PyAny>) -> bool {
+                let other = match try_iter_borrow::<Var>(other) {
+                    Ok(other) => other,
+                    Err(_) => return false,
+                };
+
+                let mut this = self.base().iter();
+                let mut other = other.into_iter();
+                loop {
+                    match (this.next(), other.next()) {
+                        (Some(this), Some(Ok(other))) => {
+                            if this != other.base() {
+                                return false;
+                            }
+                        }
+                        (None, None) => return true,
+                        _ => return false,
+                    }
+                }
+            }
+
+            fn __contains__(&self, item: &Bound<'_, PyAny>) -> bool {
+                if let Ok(var) = item.extract::<PyRef<Var>>() {
+                    return self.base().contains(var.base());
+                }
+                //also checking containment of any wire (latched, next, derived)
+                if let Ok(wire) = item.extract::<PyRef<Wire>>() {
+                    return self.base().var(wire.base()).is_some();
+                }
+                false
+            }
+        }
+
+        #[derive(Clone)]
+        enum BlockType {
+            Init,
+            Update,
+            Delay,
+        }
+
+        #[pyclass(sequence, frozen)]
+        pub(crate) struct AtomBlock {
+            atom: Py<Atom>,
+            block: BlockType,
+        }
+
+        // impl AtomBlock {
+        //     fn base(&self) -> &dataflow::diagram::Block<Sequential, sort::Any> {
+        //         let atom = &self.atom.get().base;
+        //         match self.block {
+        //             BlockType::Init => atom.init(),
+        //             BlockType::Update => atom.update(),
+        //             BlockType::Delay => atom.delay(),
+        //         }
+        //     }
+        // }
+
+        #[pymethods]
+        impl AtomBlock {
+            // requires display in base - do you need that now?
+            // fn __str__(&self) -> String {
+            //     self.base().to_string()
+            // }
+
+            fn __repr__(&self) -> String {
+                let atom = &self.atom.get().base;
+                match self.block {
+                    BlockType::Init => format!("{:?}", atom.init()),
+                    BlockType::Update => format!("{:?}", atom.update()),
+                    BlockType::Delay => format!("{:?}", atom.delay()),
+                }
+            }
+
+            fn read(slf: Bound<'_, Self>) -> AtomBlockInterface {
+                AtomBlockInterface {
+                    block: slf.unbind(),
+                    interface: TermInterfaceType::Read,
+                }
+            }
+
+            fn write(slf: Bound<'_, Self>) -> AtomBlockInterface {
+                AtomBlockInterface {
+                    block: slf.unbind(),
+                    interface: TermInterfaceType::Write,
+                }
+            }
+
+            fn __getitem__(&self, index: usize) -> PyResult<Term> {
+                let atom = &self.atom.get().base;
+                let item: Option<dataflow::diagram::Term<Any, sort::Any>> = match self.block {
+                    BlockType::Init => atom.init().get(index).cloned(),
+                    BlockType::Update => atom.update().get(index).cloned(),
+                    BlockType::Delay => atom.delay().get(index).cloned(),
+                };
+                item.map(Into::into)
+                    .ok_or(PyIndexError::new_err("index out of bounds"))
+            }
+
+            fn __len__(&self) -> usize {
+                let atom = &self.atom.get().base;
+                match self.block {
+                    BlockType::Init => atom.init().len(),
+                    BlockType::Update => atom.update().len(),
+                    BlockType::Delay => atom.delay().len(),
+                }
+            }
+        }
+
+        #[pyclass(sequence)]
+        struct AtomBlockInterface {
+            block: Py<AtomBlock>,
+            interface: TermInterfaceType,
+        }
+
+        impl AtomBlockInterface {
+            fn base(&self) -> &[dataflow::diagram::Wire<sort::Any>] {
+                let atom = &self.block.get().atom.get().base;
+                match (&self.block.get().block, &self.interface) {
+                    (BlockType::Init, TermInterfaceType::Read) => atom.init().read(),
+                    (BlockType::Init, TermInterfaceType::Write) => atom.init().write(),
+                    (BlockType::Update, TermInterfaceType::Read) => atom.update().read(),
+                    (BlockType::Update, TermInterfaceType::Write) => atom.update().write(),
+                    (BlockType::Delay, TermInterfaceType::Read) => atom.delay().read(),
+                    (BlockType::Delay, TermInterfaceType::Write) => atom.delay().write(),
+                }
+            }
+        }
+
+        #[pymethods]
+        impl AtomBlockInterface {
+            fn __repr__(&self) -> String {
+                wires_untyped_to_repr(self.base())
+            }
+
+            fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
+                let other = match try_iter_borrow::<Wire>(other) {
+                    Ok(other) => other,
+                    Err(_) => return false,
+                };
+
+                let mut this = self.base().iter();
+                let mut other = other.into_iter();
+                loop {
+                    match (this.next(), other.next()) {
+                        (Some(this), Some(Ok(other))) => {
+                            if this != other.base() {
+                                return false;
+                            }
+                        }
+                        (None, None) => return true,
+                        _ => return false,
+                    }
+                }
+            }
+
+            fn __getitem__(&self, index: usize) -> PyResult<Wire> {
+                self.base()
+                    .get(index)
+                    .map(|w| w.clone().into())
+                    .ok_or(PyIndexError::new_err("index out of bounds"))
+            }
+
+            fn __len__(&self) -> usize {
+                self.base().len()
+            }
+        }
+    };
 }
+
+pub(crate) use atom_classes;

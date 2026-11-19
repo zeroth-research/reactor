@@ -1,12 +1,15 @@
 from .reactor import *
 import sys as _sys
 
-# The namespaces of the operations and sorts, `reactor.tensor` and those within it, are
-# importable by their names in this package too (`import reactor.tensor.real`), not only
-# by those in the extension module (`reactor.reactor.tensor.real`).
+# The namespaces of the operations and sorts, `reactor.tensor` and those within it, and
+# of the terms, atoms, modules and operations holding JAX arrays, `reactor.jax` and those
+# within it, are importable by their names in this package too (`import
+# reactor.tensor.real`), not only by those in the extension module
+# (`reactor.reactor.tensor.real`).
 for _name, _module in list(_sys.modules.items()):
-    if _name.startswith(__name__ + ".reactor.tensor"):
-        _sys.modules[__name__ + _name[len(__name__ + ".reactor"):]] = _module
+    for _namespace in ("tensor", "jax"):
+        if _name.startswith(f"{__name__}.reactor.{_namespace}"):
+            _sys.modules[__name__ + _name[len(__name__ + ".reactor"):]] = _module
 
 from .builder import TermBuilder, TheoryError, builder_for
 from .gym import Env

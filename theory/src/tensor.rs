@@ -29,7 +29,8 @@ The operations that carry data, the constants and the coefficients of the
 affine maps, hold it in matrices of a type `T` implementing [`Tensor`], over
 which every operation, theory enum and logic is generic. With the `torch`
 feature, `tch::Tensor` implements it, converting to and from Python
-`torch.Tensor` objects (see the `torch` module).
+`torch.Tensor` objects (see the `torch` module); with the `jax` feature,
+`jax::Array` does, holding a Python `jax.Array` (see the `jax` module).
 */
 
 pub mod bool;

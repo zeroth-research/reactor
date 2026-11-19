@@ -82,7 +82,7 @@ rs-build:
 # `--all-features` the other crates' test binaries would pull in `torch` and fail to link.
 rs-build-all:
     {{ CARGO }} build --all-targets {{ profile_flag }}
-    {{ CARGO }} build --all-targets -p theory --features torch {{ profile_flag }}
+    {{ CARGO }} build --all-targets -p theory --features torch,jax {{ profile_flag }}
 
 # The test binaries of `theory` with `torch` link libpython and libtorch (without
 # features the workspace uses no pyo3). `uv run` does not set up the dynamic-linker path, so we
@@ -105,10 +105,11 @@ rs-test:
     else
         export LD_LIBRARY_PATH="$TORCH_LIB:$PY_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     fi
-    # Split by feature set: the `torch` feature is exclusive to `theory`, the rest of
-    # the workspace is exercised without it.
+    # Split by feature set: the `torch` and `jax` features are exclusive to `theory`, the
+    # rest of the workspace is exercised without them. The JAX tests need JAX (the `jax`
+    # dependency group), and test nothing without it.
     {{ CARGO }} test {{ profile_flag }}
-    {{ CARGO }} test -p theory --features torch {{ profile_flag }}
+    {{ CARGO }} test -p theory --features torch,jax {{ profile_flag }}
 
 # Run clippy on the workspace on all targets and with all features (warnings are errors)
 rs-clippy:

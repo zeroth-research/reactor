@@ -10,7 +10,13 @@ and the namespace `tensor` of the operations and sorts, mirroring the `theory` c
 `tensor.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`) hold the
 operations of each theory, sized by their shapes (`tensor.real.Add([m, n])`), and
 `tensor.sort` the sorts (`Real([rows, cols])`, `Word(width, [rows, cols])`, and the
-rates of change `Real([rows, cols], degree=d)`). Those are
+rates of change `Real([rows, cols], degree=d)`). The constants, products with a constant
+and affine maps there (`tensor.real.Const(t)`, `tensor.real.Scale(c)`,
+`tensor.real.Linear(a, b)`) hold `torch.Tensor`s, as do the operations of `Term`, `Atom`
+and `Module`. The namespace `jax` holds their counterparts over `jax.Array`s: the classes
+`jax.Term`, `jax.Atom` and `jax.Module`, and the constants, products and affine maps
+`jax.real.Const`, `jax.real.Scale`, `jax.real.Linear`, and so on; the operations holding
+no tensors are those of `tensor`. Those are
 typed loosely here, as `Sort` and `Op`: a stub file cannot describe the nested
 namespaces of a single extension module. A `Var` bundles the latched, next (`X(v)`),
 and derivative (`d(v)`) wires of a state variable and stands for its latched wire
@@ -30,6 +36,8 @@ type Op = Any
 
 # The namespace of the operations and sorts.
 tensor: ModuleType
+# The namespace of the terms, atoms, modules and operations over JAX arrays.
+jax: ModuleType
 
 
 class Wire:
