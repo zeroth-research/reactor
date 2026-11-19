@@ -2,7 +2,8 @@
 //! designs that grow in one direction each: a wide state machine (one
 //! `case` with many labels), a long chain of `assign`s (written in reverse
 //! order, so the await order must sort all of them), a deep hierarchy of
-//! distinct modules, a wide hierarchy of instances of one module, and one
+//! distinct modules, a wide hierarchy of instances of one module, a block
+//! assigning parts of a wide signal in many branches, and one
 //! expression with very many operands (the depth of the expression tree).
 //!
 //! Each design is translated, then run for a few rounds by the AST
@@ -53,17 +54,23 @@ fn fsm(n: usize) -> String {
     s
 }
 
-/// `n` wires, each one more than the previous, assigned in reverse order.
+/// `n` wires, each one more than the previous, assigned in reverse order,
+/// from a register (so each wire is in the register's clock domain).
 fn chain(n: usize) -> String {
-    let mut s = String::from("module top(input logic [7:0] a, output logic [7:0] y);\n");
+    let mut s = String::from(
+        "module top(input logic clk, input logic [7:0] a, output logic [7:0] y);\n\
+         logic [7:0] q;\n",
+    );
     for k in 0..=n {
         let _ = writeln!(s, "logic [7:0] w{k};");
     }
     for k in (1..=n).rev() {
         let _ = writeln!(s, "assign w{k} = w{} + 8'd1;", k - 1);
     }
-    s.push_str("assign w0 = a;\nassign y = w");
-    let _ = writeln!(s, "{n};\nendmodule");
+    let _ = writeln!(
+        s,
+        "assign w0 = a ^ q;\nalways_ff @(posedge clk) q <= w{n};\nassign y = w{n};\nendmodule"
+    );
     s
 }
 
@@ -106,6 +113,29 @@ fn wide(n: usize) -> String {
         let _ = writeln!(s, "stage u{k}(.clk(clk), .a(w{k}), .y(w{}));", k + 1);
     }
     let _ = writeln!(s, "assign y = w{n};\nendmodule");
+    s
+}
+
+/// A `case` with `n` labels assigning parts of a signal of `16 n` bits
+/// (the checks of a block follow every bit).
+fn bits(n: usize) -> String {
+    let w = 16 * n;
+    let mut s = format!(
+        "module top(input logic [7:0] s, input logic [{}:0] a, output logic [{}:0] y);\n\
+         always_comb begin\n  y = a;\n  case (s)\n",
+        w - 1,
+        w - 1
+    );
+    for k in 0..n {
+        let _ = writeln!(
+            s,
+            "    8'd{}: begin y[{}:{}] = a[15:0]; y[0] = 1'b1; end",
+            k % 256,
+            16 * k + 15,
+            16 * k
+        );
+    }
+    s.push_str("    default: y = ~a;\n  endcase\nend\nendmodule\n");
     s
 }
 
@@ -174,15 +204,16 @@ fn scale() -> usize {
 /// Runs every design at the given sizes, on a thread with a stack of
 /// `stack` bytes: the parser recurses once per operand of an operator
 /// chain, with about 10 KB per level.
-fn run(sizes: [usize; 5], stack: usize) {
+fn run(sizes: [usize; 6], stack: usize) {
     std::thread::Builder::new()
         .stack_size(stack)
         .spawn(move || {
-            let [f, c, d, w, e] = sizes;
+            let [f, c, d, w, b, e] = sizes;
             measure("fsm", f, &fsm(f));
             measure("chain", c, &chain(c));
             measure("deep", d, &deep(d));
             measure("wide", w, &wide(w));
+            measure("bits", b, &bits(b));
             measure("expr", e, &expr(e));
         })
         .unwrap()
@@ -195,7 +226,7 @@ fn run(sizes: [usize; 5], stack: usize) {
 #[test]
 fn scaling() {
     let k = scale();
-    run([32 * k, 100 * k, 10 * k, 20 * k, 200 * k], 1 << 30);
+    run([32 * k, 100 * k, 10 * k, 20 * k, 16 * k, 200 * k], 1 << 30);
 }
 
 /// Large sizes (run in a release build:
@@ -203,5 +234,5 @@ fn scaling() {
 #[test]
 #[ignore = "large designs; slow in a debug build"]
 fn scaling_large() {
-    run([1000, 2000, 200, 500, 10_000], 1 << 30);
+    run([1000, 2000, 200, 500, 256, 10_000], 1 << 30);
 }
