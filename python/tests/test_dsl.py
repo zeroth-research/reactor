@@ -213,6 +213,25 @@ def test_differential_sugar_module():
     assert len(a.update) == 1
 
 
+def test_differential_sugar_module_with_a_literal_rate():
+    """A literal returned by the delay is a rate of change: it takes the tangent sort
+    of the derivative wire it drives, `Real1` of degree 1, not the variable's own."""
+
+    class Clock(sugar.Module):
+        def init(self):
+            return 0
+
+        def delay(self, x):
+            return 1.0  # dx = 1
+
+    x = Var(Real1)
+    m = Clock(ctrl=(x,))
+
+    a = m.atoms[0]
+    assert _d(x) in a.delay.write()
+    assert [w.dtype for w in a.delay.write()] == [Real([1, 1], 1)] * len(a.delay.write())
+
+
 def test_hybrid_sugar_module():
     """init + update + delay builds a hybrid module: all three blocks are
     explicit, mixing a discrete reset with continuous drift."""

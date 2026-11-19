@@ -1,4 +1,5 @@
 use crate::Module;
+use base::boundary::Boundary;
 use dataflow::diagram::Wire;
 use dataflow::diagram::{Block, Term};
 use std::borrow::Cow;
@@ -456,10 +457,10 @@ where
 
 impl<I, J, F, S> Atom<I, J, F, S>
 where
-    I: Combinatorial<S>,
-    J: Sequential<S>,
-    F: Differential<S>,
-    S: Clone + Debug,
+    I: Combinatorial<S> + Boundary<S> + fmt::Display,
+    J: Sequential<S> + Boundary<S> + fmt::Display,
+    F: Differential<S> + Boundary<S> + fmt::Display,
+    S: Clone + Debug + PartialEq + fmt::Display,
 {
     /// Constructs a **sequential atom**: behaviour that evolves over discrete
     /// time steps.
@@ -996,10 +997,10 @@ where
 
 impl<I, J, F, S> Module<I, J, F, S>
 where
-    I: Combinatorial<S>,
-    J: Sequential<S>,
-    F: Differential<S>,
-    S: Clone + Debug,
+    I: Combinatorial<S> + Boundary<S> + fmt::Display,
+    J: Sequential<S> + Boundary<S> + fmt::Display,
+    F: Differential<S> + Boundary<S> + fmt::Display,
+    S: Clone + Debug + PartialEq + fmt::Display,
 {
     /// Constructs a **sequential module**: behaviour that evolves over
     /// discrete time steps.

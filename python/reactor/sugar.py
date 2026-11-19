@@ -130,8 +130,11 @@ def _build_delay_block(cls, ctrl, extl) -> list:
         if len(vals) != len(ctrl):
             raise ValueError(f"delay expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
-            e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
-            terms.append(_Term(_Skip(var.dtype), [base_d(var)], [e.wire]))
+            # the derivative wire carries rates of change, of the tangent of var's sort,
+            # and so does a literal rate: `1.0` is of degree 1 for a real var
+            rate = base_d(var)
+            e = val if isinstance(val, Expr) else expr(val, sort=rate.dtype)
+            terms.append(_Term(_Skip(rate.dtype), [rate], [e.wire]))
         return terms
 
 

@@ -33,6 +33,19 @@ def test_term_new():
     Term.constant(tensor.int.Const(torch.tensor([[3, 2, 1]])), [Wire(Int([1, 3]))])
 
 
+def test_terms_read_and_write_the_sorts_of_their_operation():
+    r, b = Real([2, 3]), Bool([2, 3])
+    Term(tensor.real.Add([2, 3]), [Wire(r)], [Wire(r), Wire(r)])
+    with pytest.raises(Exception, match=r"expected Add to read Real\(2, 3\) ⊗ Real\(2, 3\), "
+                                        r"got Bool\(2, 3\) ⊗ Bool\(2, 3\)"):
+        Term(tensor.real.Add([2, 3]), [Wire(r)], [Wire(b), Wire(b)])
+    with pytest.raises(Exception, match="expected Add to read"):
+        Term(tensor.real.Add([2, 3]), [Wire(r)], [Wire(r)])
+    # a constant writes the sort of its tensor's shape
+    with pytest.raises(Exception, match=r"to write Real\(1, 1\), got Real\(7, 7\)"):
+        Term.constant(tensor.real.Const(torch.tensor([[1.0]])), [Wire(Real([7, 7]))])
+
+
 def test_var_derefs_to_wire():
     v = Var(Real([2, 3]))
 
@@ -142,7 +155,7 @@ def _stateful_blocks():
     p = Var(Real([1, 1]))
     init = [Term(tensor.real.Const(zero), [X(x)]), Term(tensor.real.Const(zero), [X(p)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [x]), Term(Skip(Real([1, 1])), [X(p)], [p])]
-    delay = [Term(Zero(Real([1, 1])), [d(x)]), Term(Zero(Real([1, 1])), [d(p)])]
+    delay = [Term(Zero(Real([1, 1], 1)), [d(x)]), Term(Zero(Real([1, 1], 1)), [d(p)])]
     return x, p, init, update, delay
 
 
@@ -452,7 +465,7 @@ def test_heterogeneous_composition():
     P = Module.sequential([x], init, update)
 
     init = [Term(tensor.real.Const(zero), [X(y)])]
-    flow = [Term(Zero(Real([1, 1])), [d(y)])]
+    flow = [Term(Zero(Real([1, 1], 1)), [d(y)])]
     Q = Module.differential([y], init, flow)
 
     comb = [Term(tensor.real.Add([1, 1]), [X(z)], [X(x), X(y)])]
