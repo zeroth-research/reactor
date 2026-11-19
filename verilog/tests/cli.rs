@@ -305,3 +305,21 @@ fn warnings_and_errors() {
         );
     }
 }
+
+/// An expression with more operands than the parser can take on the main
+/// thread's stack is translated on a thread with a larger stack (it
+/// aborted with a stack overflow before).
+#[test]
+fn deep_expression() {
+    let mut src =
+        String::from("module deep(input logic [7:0] a, output logic [7:0] y);\nassign y = a");
+    for _ in 0..1200 {
+        src.push_str(" + a");
+    }
+    src.push_str(";\nendmodule\n");
+    let tmp = TempDir::new("cli");
+    let path = tmp.write("deep.sv", &src);
+    let (status, out, err) = v2rm(&[path.to_str().unwrap()]);
+    assert_eq!(status, 0, "{err}");
+    assert!(out.starts_with("module deep"), "{out}");
+}
