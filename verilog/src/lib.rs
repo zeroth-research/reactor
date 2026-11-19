@@ -53,6 +53,21 @@ is reported as a warning ([`lower::Translation::blackboxes`]), with the
 signals it leaves free, so the abstraction is never silent; a missing module
 is an error whose message points to stubs. See [`lower`] ("Blackboxes and
 pins") for the translation and [`elab`] for the rules on connections.
+
+## Tests
+
+`cargo test -p verilog` runs the quick tests (under a minute). The
+planted-bug suite (`tests/planted.rs`: every mutant of every example,
+compared by the miter in both directions) takes about two minutes and is
+marked `#[ignore]`; the full run includes it:
+
+```text
+cargo test -p verilog -- --include-ignored
+```
+
+The comparisons with Yosys, z3 and iverilog are skipped with a message if
+a tool is not found; with `V2RM_REQUIRE_TOOLS=1` they fail instead.
+`UPDATE_GOLDEN=1` rewrites the golden files of `tests/examples.rs`.
 */
 
 // rustdoc needs it to check auto traits of `frontend::Design`, which holds

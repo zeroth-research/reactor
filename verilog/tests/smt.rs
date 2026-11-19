@@ -9,27 +9,14 @@
 
 mod common;
 
-use num_bigint::BigUint;
+use common::{Rand, TempDir};
 use std::path::Path;
 use verilog::smt::Phase;
 use verilog::value::eval;
 use verilog::{BitVec, Sort, SvOp, elab, lower, smt, z3};
 
-struct Rand(u64);
-
+/// Draws for the cases of the ops, beyond the shared values.
 impl Rand {
-    fn next(&mut self) -> u64 {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        self.0 >> 16
-    }
-
-    fn below(&mut self, n: usize) -> usize {
-        (self.next() % n as u64) as usize
-    }
-
     /// A width, mostly small, sometimes around 32, 64 and 128 bits.
     fn width(&mut self) -> usize {
         const WIDE: [usize; 9] = [16, 31, 32, 33, 63, 64, 65, 100, 130];
@@ -37,27 +24,6 @@ impl Rand {
             WIDE[self.below(WIDE.len())]
         } else {
             1 + self.below(9)
-        }
-    }
-
-    /// A value of the given width, biased towards the edge cases 0, 1, all
-    /// ones, the most negative and the largest signed value, and small
-    /// values.
-    fn bits(&mut self, width: usize) -> BitVec {
-        match self.below(10) {
-            0 => BitVec::zero(width),
-            1 => BitVec::wrap(width, 1u8),
-            2 => BitVec::from_signed(width, -1),
-            3 => BitVec::wrap(width, BigUint::from(1u8) << (width - 1)),
-            4 => BitVec::wrap(width, (BigUint::from(1u8) << (width - 1)) - 1u8),
-            5 => BitVec::wrap(width, self.below(4)),
-            _ => {
-                let mut v = BigUint::from(0u8);
-                for _ in 0..width.div_ceil(48) {
-                    v = (v << 48) | BigUint::from(self.next());
-                }
-                BitVec::wrap(width, v)
-            }
         }
     }
 
@@ -446,7 +412,8 @@ fn round_nest() {
 #[test]
 fn z3_stopping_early_is_reported() {
     use std::os::unix::fs::PermissionsExt;
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("z3-stub");
+    let tmp = TempDir::new("smt");
+    let dir = tmp.join("z3-stub");
     std::fs::create_dir_all(&dir).unwrap();
     let stub = |name: &str, body: &str| {
         let path = dir.join(name);

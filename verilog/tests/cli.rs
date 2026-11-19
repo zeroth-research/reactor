@@ -1,6 +1,9 @@
 //! The command line of `v2rm`: what each option prints, exit statuses and
 //! the messages for wrong arguments. (`--yosys` is tested in `yosys.rs`.)
 
+mod common;
+
+use common::TempDir;
 use verilog::smt::{self, Phase};
 use verilog::{elab, lower};
 
@@ -274,7 +277,8 @@ fn warnings_and_errors() {
         stderr.starts_with("examples/oorread.sv:12:14: warning: `v[(15 - c)]` may select bits"),
         "{stderr}"
     );
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("cli");
+    let tmp = TempDir::new("cli");
+    let dir = tmp.join("cli");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("bad.sv");
     std::fs::write(

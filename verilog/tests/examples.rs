@@ -19,85 +19,17 @@
 
 mod common;
 
+use common::{Gen, Rand, TempDir, design_inputs, examples, load, seed, stem};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use verilog::ast::{Dir, Edge, Item, Ty};
+use verilog::ast::{Dir, Edge, Item};
 use verilog::ast_interp::{Interp, Values};
 use verilog::elab::{self, Inst};
-use verilog::lower::{Translation, init_name, lower_inst};
+use verilog::lower::{Translation, init_name};
 use verilog::rm_sim::{Sim, Valuation};
 use verilog::smt::{self, Phase};
 use verilog::{BitVec, sizing, typing, z3};
-
-fn examples() -> Vec<PathBuf> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "sv"))
-        .collect();
-    paths.sort();
-    assert!(!paths.is_empty());
-    paths
-}
-
-fn stem(path: &Path) -> String {
-    path.file_stem().unwrap().to_string_lossy().into_owned()
-}
-
-fn load(path: &Path) -> (Inst, Translation) {
-    let inst = elab::load_file(path).unwrap_or_else(|e| panic!("{}:{e}", path.display()));
-    let t = lower_inst(&inst).unwrap_or_else(|e| panic!("{}:{e}", path.display()));
-    (inst, t)
-}
-
-/// The registers of a hierarchy without an initial value, by path, with
-/// their types.
-fn registers(inst: &Inst) -> Vec<(String, Ty)> {
-    let initialized = inst.initialized();
-    inst.registers()
-        .into_iter()
-        .filter(|p| !initialized.contains(p))
-        .map(|path| {
-            let (prefix, q) = match path.rsplit_once('.') {
-                Some((p, q)) => (format!("{p}."), q.to_string()),
-                None => (String::new(), path.clone()),
-            };
-            let env = typing::env(&inst.at(&prefix).module).unwrap();
-            let ty = env[&q].ty;
-            (path, ty)
-        })
-        .collect()
-}
-
-/// The inputs of a design, with their types and their names in a
-/// testbench: the inputs of the top module, then the signals connected to
-/// outputs of blackboxes, which take any value in every round as inputs
-/// do (written in a testbench through the output of the blackbox stub,
-/// `dut.g.clk_out`, a variable that only the testbench assigns).
-fn design_inputs(inst: &Inst) -> Vec<(String, Ty, String)> {
-    let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
-    let mut out: Vec<(String, Ty, String)> = (inst.module.ports.iter())
-        .filter(|p| p.dir == Dir::Input)
-        .map(|p| (p.decl.name.clone(), p.decl.ty, p.decl.name.clone()))
-        .collect();
-    let mut walk = vec![(inst, String::new())];
-    while let Some((i, prefix)) = walk.pop() {
-        for u in i.module.instances() {
-            for (c, f) in u.conns(Dir::Output).filter(|(_, f)| f.blackbox) {
-                if let Some(y) = c.shared() {
-                    let name = naming[&format!("{prefix}{y}")].clone();
-                    out.push((name, f.ty, format!("dut.{prefix}{}.{}", u.name, c.port)));
-                }
-            }
-        }
-        for (u, child) in i.children.iter().rev() {
-            walk.push((child, format!("{prefix}{u}.")));
-        }
-    }
-    out
-}
 
 /// The number of atoms of a hierarchy: one per item, and one per input
 /// connected to an expression other than a name (blackboxes have none).
@@ -144,12 +76,11 @@ fn golden() {
 fn sized_source() {
     let update = std::env::var_os("UPDATE_GOLDEN").is_some();
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
-    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sized");
-    std::fs::create_dir_all(&tmp).unwrap();
+    let tmp = TempDir::new("sized");
     let bin = iverilog_bin();
-    let mut rand = Rand(0x51ed_270b_27a4_c19f);
-    for (n, path) in examples().into_iter().enumerate() {
+    for path in examples() {
         let (inst, t) = load(&path);
+        let mut rand = Rand(seed(0x51ed_270b_27a4_c19f, &stem(&path)));
         let printed = sizing::print(&inst).unwrap();
         let golden = dir.join(format!("{}.sized.sv", stem(&path)));
         if update {
@@ -181,7 +112,8 @@ fn sized_source() {
             continue;
         }
         let init = rand.registers(&inst);
-        let rounds = rand.trace(&inst, &t.clocks, Gen::nth(n), 100);
+        let clocking = Gen::nth(rand.below(3));
+        let rounds = rand.trace(&inst, &t.clocks, clocking, 100);
         let tb = testbench(&inst, &t, &init, &rounds);
         let name = &inst.module.name;
         // own file names: other tests run iverilog on the examples at the
@@ -291,159 +223,23 @@ fn structure() {
     assert_eq!(t.registers, ["acc", "overflow"]);
 }
 
-/// A pseudo-random generator (64-bit LCG).
-struct Rand(u64);
-
-impl Rand {
-    fn next(&mut self) -> u64 {
-        self.0 = self
-            .0
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        self.0 >> 16
-    }
-
-    /// A value of the given width, biased towards the edge cases 0, 1 and
-    /// all ones, and a few small values, to hit equalities and carries.
-    fn bits(&mut self, width: usize) -> BitVec {
-        let ones = (1u128 << width) - 1;
-        let v = match self.next() % 8 {
-            0 => 0,
-            1 => 1,
-            2 => ones,
-            3 => (self.next() % 4) as u128,
-            _ => ((self.next() as u128) << 64 | self.next() as u128) & ones,
-        };
-        BitVec::new(width, v & ones).unwrap()
-    }
-
-    /// A value for every input of the design (see [`design_inputs`]),
-    /// clocks included.
-    fn inputs(&mut self, inst: &Inst) -> Values {
-        design_inputs(inst)
-            .into_iter()
-            .map(|(name, ty, _)| (name, self.bits(ty.width)))
-            .collect()
-    }
-
-    /// `rounds` values for every input of the top of `inst`, with the
-    /// clocks `clocks` driven as `gen` says. With a generator, the inputs
-    /// that are asynchronous resets are active in the first two rounds and
-    /// then in one round of eight on average (random values would keep
-    /// them active half the time).
-    fn trace(
-        &mut self,
-        inst: &Inst,
-        clocks: &[String],
-        clocking: Gen,
-        rounds: usize,
-    ) -> Vec<Values> {
-        let resets = resets(inst);
-        // per clock: its period (in rounds per level) and first level
-        let shapes: Vec<(usize, u64)> = clocks
-            .iter()
-            .map(|_| {
-                let period = match clocking {
-                    Gen::Toggle => 1,
-                    _ => 1 + (self.next() % 3) as usize,
-                };
-                (period, self.next() % 2)
-            })
-            .collect();
-        (0..rounds)
-            .map(|k| {
-                let mut v = self.inputs(inst);
-                if clocking != Gen::Random {
-                    for (c, (period, first)) in clocks.iter().zip(&shapes) {
-                        let level = (first + (k / period) as u64) % 2;
-                        v.insert(c.clone(), BitVec::new(1, level as u128).unwrap());
-                    }
-                    for (r, edge) in &resets {
-                        if let Some(w) = v.get(r).map(BitVec::width) {
-                            let active = k < 2 || self.next().is_multiple_of(8);
-                            let level = active == (*edge == Edge::Pos);
-                            v.insert(r.clone(), BitVec::new(w, level as u128).unwrap());
-                        }
-                    }
-                }
-                v
-            })
-            .collect()
-    }
-
-    /// A value for every register, by path.
-    fn registers(&mut self, inst: &Inst) -> Values {
-        registers(inst)
-            .into_iter()
-            .map(|(q, ty)| (q, self.bits(ty.width)))
-            .collect()
-    }
-}
-
-/// How a trace drives the clocks.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Gen {
-    /// A random level in every round, like every other input.
-    Random,
-    /// Every clock toggles in every round, all at once.
-    Toggle,
-    /// Every clock toggles with its own period of 1 to 3 rounds.
-    Periods,
-}
-
-impl Gen {
-    /// The generators, in turn.
-    fn nth(k: usize) -> Self {
-        [Gen::Random, Gen::Toggle, Gen::Periods][k % 3]
-    }
-}
-
 /// The translated module computes the same values as the AST semantics,
 /// from the same initial register values (given to `q@init` in the first
 /// round, and random values without effect in later rounds), with clocks
 /// at random levels or driven by generators (resets then in pulses).
 #[test]
 fn rm_matches_ast() {
-    let mut rand = Rand(0x2545_f491_4f6c_dd1d);
-    for path in examples() {
-        let (inst, t) = load(&path);
-        for run in 0..12 {
-            let init = rand.registers(&inst);
-            let mut interp = Interp::new(&inst, &init).unwrap();
-            let mut sim = Sim::new(&t.module);
-            let trace = rand.trace(&inst, &t.clocks, Gen::nth(run), 100);
-            for (k, inputs) in trace.iter().enumerate() {
-                let expected = interp.step(inputs).unwrap();
-                let regs = if k == 0 {
-                    init.clone()
-                } else {
-                    rand.registers(&inst)
-                };
-                let extl: Valuation = inputs
-                    .iter()
-                    .map(|(n, v)| (t.var(n), v.clone()))
-                    .chain(regs.iter().map(|(q, v)| (t.var(&init_name(q)), v.clone())))
-                    .filter(|(var, _)| t.module.extl().contains(var))
-                    .collect();
-                let got = sim.step(&extl).unwrap();
-                let mut compared = 0;
-                for (var, value) in &got {
-                    let name = t.name(var);
-                    if name.contains('@') {
-                        continue;
-                    }
-                    assert_eq!(
-                        value,
-                        &expected[name],
-                        "{}: `{name}` in round {k} from {init:?} with inputs {inputs:?}",
-                        path.display()
-                    );
-                    compared += 1;
-                }
-                assert_eq!(compared, expected.len() - t.unread_inputs.len());
-            }
+    let paths = examples();
+    std::thread::scope(|scope| {
+        for path in &paths {
+            scope.spawn(move || {
+                let (inst, t) = load(path);
+                let mut rand = Rand(seed(0x2545_f491_4f6c_dd1d, &stem(path)));
+                let label = path.display().to_string();
+                common::rm_matches_ast(&label, (&inst, &t), &mut rand, 12, 100);
+            });
         }
-    }
+    });
 }
 
 /// The SMT-LIB rounds define the next values `rm_sim` computes: on random
@@ -458,9 +254,9 @@ fn smt_matches_rm() {
         common::missing("z3", "the whole test");
         return;
     };
-    let mut rand = Rand(0x5851_f42d_4c95_7f2d);
     for path in examples() {
         let (_, t) = load(&path);
+        let mut rand = Rand(seed(0x5851_f42d_4c95_7f2d, &stem(&path)));
         let m = &t.module;
         let rounds = [Phase::Init, Phase::Update].map(|phase| smt::round(&t, phase));
         let mut controlled: Vec<&str> = m.ctrl().iter().map(|v| t.name(v)).collect();
@@ -870,8 +666,7 @@ fn may_be_x(inst: &Inst, t: &Translation) -> Vec<bool> {
 /// Compiles and runs a testbench for the design at `path`, and returns
 /// its output lines.
 fn run_iverilog(bin: &Path, path: &Path, name: &str, tb: &str) -> Vec<String> {
-    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("iverilog");
-    std::fs::create_dir_all(&tmp).unwrap();
+    let tmp = TempDir::new("iverilog");
     let file = tmp.join(format!("tb_{name}.sv"));
     let out = tmp.join(format!("tb_{name}.vvp"));
     std::fs::write(&file, tb).unwrap();
@@ -909,10 +704,10 @@ fn ast_matches_iverilog() {
         common::missing("iverilog", "the whole test");
         return;
     };
-    let mut rand = Rand(0x9e37_79b9_7f4a_7c15);
     let mut skipped = Vec::new();
-    for (n, path) in examples().into_iter().enumerate() {
+    for path in examples() {
         let (inst, t) = load(&path);
+        let mut rand = Rand(seed(0x9e37_79b9_7f4a_7c15, &stem(&path)));
         if let Some(why) = simulator_differs(&inst) {
             eprintln!("{}: not compared with iverilog: {why}", path.display());
             skipped.push(stem(&path));
@@ -920,7 +715,8 @@ fn ast_matches_iverilog() {
         }
         let m = &inst.module;
         let init = rand.registers(&inst);
-        let rounds = rand.trace(&inst, &t.clocks, Gen::nth(n), 300);
+        let clocking = Gen::nth(rand.below(3));
+        let rounds = rand.trace(&inst, &t.clocks, clocking, 300);
         let mut interp = Interp::new(&inst, &init).unwrap();
         let expected: Vec<String> = rounds
             .iter()
@@ -952,10 +748,10 @@ fn rounds_match_cycles() {
         common::missing("iverilog", "the whole test");
         return;
     };
-    let mut rand = Rand(0x1405_7b7e_f767_814f);
     let mut compared = 0;
     for path in examples() {
         let (inst, t) = load(&path);
+        let mut rand = Rand(seed(0x1405_7b7e_f767_814f, &stem(&path)));
         if t.clocks.len() > 1 || negedge(&inst) || simulator_differs(&inst).is_some() {
             continue;
         }
@@ -987,25 +783,6 @@ fn rounds_match_cycles() {
         compared += 1;
     }
     assert!(compared > 20, "{compared}");
-}
-
-/// The asynchronous resets of the hierarchy, by name (see
-/// `Inst::naming`), with their edges (`posedge` for an active-high reset).
-fn resets(inst: &Inst) -> BTreeMap<String, Edge> {
-    let naming: BTreeMap<String, String> = inst.naming().into_iter().collect();
-    let mut out = BTreeMap::new();
-    let mut walk = vec![(inst, String::new())];
-    while let Some((i, prefix)) = walk.pop() {
-        for item in &i.module.items {
-            if let Item::AlwaysFf { reset: Some(r), .. } = item {
-                out.insert(naming[&format!("{prefix}{}", r.name)].clone(), r.edge);
-            }
-        }
-        for (u, child) in &i.children {
-            walk.push((child, format!("{prefix}{u}.")));
-        }
-    }
-    out
 }
 
 /// The clock and the asynchronous reset (if the block resets a register)
