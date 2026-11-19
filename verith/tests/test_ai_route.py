@@ -69,24 +69,24 @@ def test_both_llm_routes_read_the_last_answer_line_of_each_field():
 
 # --- what the model is told about the state (no model) ---
 
-ONE_WIRE_INIT = "@[simp] def init (extl_n: Unit) : (Mat Int 1 1) :=\n  x0\n"
-THREE_WIRE_INIT = ("@[simp] def init (extl_n: (Mat Int 1 1) × (Mat Int 1 1)) : "
-                   "(Mat Int 1 1) × (Mat Int 1 1) × (Mat Int 1 1) :=\n  x0\n")
+ONE_WIRE_INIT = "@[simp] def init (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) :=\n  x0\n"
+THREE_WIRE_INIT = ("@[simp] def init (extl_n: (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)) : "
+                   "(Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) :=\n  x0\n")
 
 
 def test_a_one_component_state_is_named_as_the_matrix_itself():
-    """`s.1` on a single `Mat` is a projection out of a function, which Lean
+    """`s.1` on a single `Matrix` is a projection out of a function, which Lean
     refuses; the message has to say this state has no `.1`."""
     from verith.ai.engine import _state_type_line
     line = _state_type_line(ONE_WIRE_INIT)
-    assert "`(Mat Int 1 1)`" in line
+    assert "`(Matrix (Fin 1) (Fin 1) Int)`" in line
     assert "`s 0 0`" in line
 
 
 def test_a_tuple_state_is_named_with_its_whole_type():
     from verith.ai.engine import _state_type_line
     line = _state_type_line(THREE_WIRE_INIT)
-    assert "`(Mat Int 1 1) × (Mat Int 1 1) × (Mat Int 1 1)`" in line
+    assert "`(Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)`" in line
     assert "tuple" in line
 
 
@@ -108,7 +108,7 @@ def test_a_real_valued_state_is_named_too():
     functional = ModuleToLean4(module).to_lean_functional()
     assert "noncomputable def init" in functional
     line = _state_type_line(functional)
-    assert "`(Mat Real 1 1)`" in line
+    assert "`(Matrix (Fin 1) (Fin 1) Real)`" in line
     assert "`s 0 0`" in line
 
 

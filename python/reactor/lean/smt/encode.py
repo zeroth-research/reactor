@@ -5,10 +5,10 @@ helpers for matrix-shaped state components.
 
 Matrix representation
 ---------------------
-`Mat t m n` is encoded as a flat cvc5 tuple of `m*n` values, row-major
+An `m × n` `Matrix` is encoded as a flat cvc5 tuple of `m*n` values, row-major
 (element `[i][j]` at index `i*n + j`). When `m = n = 1`, the tuple
 collapses to the scalar sort `t` — this matches the common Lean use of
-`Mat t 1 1` for scalar values.
+a 1×1 `Matrix` for scalar values.
 
 What this module owns is that representation. *Which* term each op builds
 is the `smt` column of the op table in `lowering/ops.py`, one cell per variant;
@@ -182,7 +182,7 @@ def _argmax_flat(
     x: cvc5.Term,
     shape: MatShape,
 ) -> cvc5.Term:
-    """Scalar Int: row-major flat index of the max element of a `Mat t m n`.
+    """Scalar Int: row-major flat index of the max element of an `m × n` matrix.
 
     Matches `torch.argmax`, which flattens before searching and yields the
     single index `i * n + j` rather than an `[i, j]` pair. The comparison is
@@ -214,7 +214,7 @@ def _reduce_flat(
     shape: MatShape,
     take_min: bool,
 ) -> cvc5.Term:
-    """Scalar: the min/max element of a `Mat t m n`, folded row-major.
+    """Scalar: the min/max element of an `m × n` matrix, folded row-major.
 
     `Min`/`Max` are *unary reductions* in the theory -- one read wire of any
     shape, a `Mat t 1 1` written -- exactly like `Argmax`, and `Relational.Mat`

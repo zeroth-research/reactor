@@ -3,7 +3,7 @@
 The printer of what the native parser reads (`parse.native`). It states what
 `from_smt` states of the same predicate read by cvc5, in the same words: one
 parameter `s`, a left-nested tuple whose components are reached by `.1`,
-`.2.1`, ... with a scalar taken out of its `Mat t 1 1` by `0 0`; an `ite`
+`.2.1`, ... with a scalar taken out of its 1×1 `Matrix` by `0 0`; an `ite`
 that is a `min` or a `max` printed as one; an arithmetic subterm read more
 than once `let`-bound, when that makes the text shorter; and a refusal for
 what has no Lean form, as `Refused`.

@@ -92,7 +92,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     )
     lines.append("")
     lines.append(
-        "def showMat {t : Type} (m n : Nat) (f : t → String) (mat : Mat t m n)"
+        "def showMatrix {t : Type} (m n : Nat) (f : t → String) (mat : Matrix (Fin m) (Fin n) t)"
         " : String :="
     )
     lines.append(
@@ -124,7 +124,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         lines.append(f"    let v {bind} {parser} tokens[{offset} + k]!")
         lines.append(f"    arr{i} := arr{i}.push {push}")
         entry = f"arr{i}[i.val * {n} + j.val]!"
-        lines.append(f"  let {var} : Mat {elem} {m} {n} := {mat_mk(entry, 'i', 'j')}")
+        lines.append(f"  let {var} : Matrix (Fin {m}) (Fin {n}) {elem} := {mat_mk(entry, 'i', 'j')}")
         offset += m * n
         parse_vars.append(var)
 
@@ -141,10 +141,10 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     for i in range(len(ctrl_next)):
         destr_vars.append(f"v{i}")
     # Same order here: v{i} must bind ctrl_next[i], since the formatters
-    # below pick showBool/toString/showMat from that wire's type.
+    # below pick showBool/toString/showMatrix from that wire's type.
     lines.append(f"  let {build_tuple(destr_vars)} := v")
 
-    # Format each variable. `dtype_to_lean_type` always returns a `Mat ...`
+    # Format each variable. `dtype_to_lean_type` always returns a `Matrix ...`
     # here, so dispatch on the element sort instead: comparing that string
     # against "Bool"/"Int" never matched and pinned every element to Int.
     show_parts: list[str] = []
@@ -152,7 +152,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
         elem = flat_element_type(w)
         var = f"v{i}"
         m, n = wire_shape(w).m, wire_shape(w).n
-        show_parts.append(f"showMat {m} {n} {_elem_shower(elem, w)} {var}")
+        show_parts.append(f"showMatrix {m} {n} {_elem_shower(elem, w)} {var}")
 
     if len(show_parts) == 1:
         lines.append(f"  {show_parts[0]}")

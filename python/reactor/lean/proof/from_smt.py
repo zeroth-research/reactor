@@ -3,7 +3,7 @@
 Given a cvc5 `Term` over declared state consts `s0..sN-1`, emit a Lean
 expression referring to a single `s` parameter (a left-nested state
 tuple), using `.1, .2.1, .2.2.1, ...` to project each component and
-`_ 0 0` to extract the scalar from a `Mat t 1 1` wrapper.
+`_ 0 0` to extract the scalar from a 1×1 `Matrix`.
 """
 
 from __future__ import annotations

@@ -110,7 +110,7 @@ def test_a_copied_manifest_gets_the_checkout_as_its_own(tmp_path):
     """`lake build` reads a path dependency's `dir` from the manifest, not
     the lakefile, so a manifest copied from elsewhere must be repointed."""
     root = _checkout(tmp_path / "rl")
-    stale = {"name": "Relational", "type": "path", "dir": "../../elsewhere"}
+    stale = {"name": "ReactLib", "type": "path", "dir": "../../elsewhere"}
     kept = {"name": "cslib", "type": "git"}
     out = with_reactor_lean({"version": "1.1.0", "packages": [kept, stale]}, root)
     assert out["version"] == "1.1.0"
@@ -130,7 +130,7 @@ def _mat_source() -> str:
     checkout = reactor_lean_checkout()
     if checkout is None:
         pytest.skip(f"no reactor-lean checkout: set ${REACTOR_LEAN_ENV}")
-    return (checkout / "Relational" / "Relational" / "Mat.lean").read_text()
+    return (checkout / "ReactLib" / "Relational" / "Mat.lean").read_text()
 
 
 def test_the_reductions_enumerate_with_ofFn_not_finRange():

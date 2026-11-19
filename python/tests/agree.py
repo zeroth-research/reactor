@@ -281,7 +281,7 @@ def disagreements_smt(module, *, seed: int = 0) -> list[str]:
 
 
 def _lean_value(wire, tensor) -> str:
-    """`tensor` as a Lean `Mat` literal of `wire`'s sort, in the form the
+    """`tensor` as a Lean `Matrix` literal of `wire`'s sort, in the form the
     encoding prints its own constants in
     (`lowering.elements.mat_from_scalars`)."""
     from reactor.lean.lowering.elements import mat_from_scalars
@@ -303,7 +303,7 @@ def _lean_shown(wire, element: str) -> str:
 def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     """Lean that `#eval`s `module`'s functional encoding on `rounds`, and
     the line each `#eval` should print. The text imports nothing: a file
-    of several states `import Relational.Box` once, above them all.
+    of several states `import Relational.Circ` once, above them all.
 
     Each round is a `def` in namespace `ns` -- `init` at the round's awaited
     inputs, or `update` at the reference's state before it -- and one

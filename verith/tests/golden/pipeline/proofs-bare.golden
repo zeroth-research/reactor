@@ -19,7 +19,7 @@ set_option maxHeartbeats 2000000
 -- Unfold the definitions and reduce the matrix arithmetic, on the goal
 -- only: on the hypotheses too it blows up exponentially.
 macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, MatAdd_apply, MatMul_apply, MatZero_apply, mul_Mat_apply, add_Mat_apply, ↓Mat.mk_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
+  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, zero_Matrix_apply, mul_Matrix_apply, add_Matrix_apply, ↓Matrix.mk_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
 
 -- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
 -- closers see the invariant's conditions.
@@ -90,7 +90,7 @@ theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) �
 
 === standalone
 import Relational.Basic
-import Relational.Box
+import Relational.Circ
 import Mathlib.Algebra.BigOperators.Fin
 import ZerothHammer
 
@@ -105,19 +105,19 @@ set_option maxHeartbeats 2000000
 
 
 
-@[simp] def init (extl_n: Unit) : (Mat Int 1 1) :=
-  let x0 : (Mat Int 1 1) := (Mat.mk fun _ _ => (0 : Int))
-  let x1 : (Mat Int 1 1) := x0
+@[simp] def init (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) :=
+  let x0 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (0 : Int))
+  let x1 : (Matrix (Fin 1) (Fin 1) Int) := x0
   x1
 
-@[simp] def update (ctrl: (Mat Int 1 1)) (extl_l: Unit) (extl_n: Unit) : (Mat Int 1 1) :=
-  let x0 : (Mat Int 1 1) := (Mat.mk fun _ _ => (1 : Int))
-  let x1 : (Mat Int 1 1) := (ctrl + x0)
-  let x2 : (Mat Int 1 1) := (Mat.mk fun _ _ => (10 : Int))
-  let x3 : (Mat Bool 1 1) := (Mat.mk fun _ _ => decide (x1 0 0 = x2 0 0))
-  let x4 : (Mat Int 1 1) := (Mat.mk fun _ _ => (0 : Int))
-  let x5 : (Mat Int 1 1) := (if x3 0 0 then x4 else x1)
-  let x6 : (Mat Int 1 1) := x5
+@[simp] def update (ctrl: (Matrix (Fin 1) (Fin 1) Int)) (extl_l: Unit) (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) :=
+  let x0 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (1 : Int))
+  let x1 : (Matrix (Fin 1) (Fin 1) Int) := (ctrl + x0)
+  let x2 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (10 : Int))
+  let x3 : (Matrix (Fin 1) (Fin 1) Bool) := (Matrix.mk fun _ _ => decide (x1 0 0 = x2 0 0))
+  let x4 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (0 : Int))
+  let x5 : (Matrix (Fin 1) (Fin 1) Int) := (if x3 0 0 then x4 else x1)
+  let x6 : (Matrix (Fin 1) (Fin 1) Int) := x5
   x6
 
 
@@ -125,13 +125,13 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv (s : (Mat Int 1 1)) : Prop := True
+def inv (s : (Matrix (Fin 1) (Fin 1) Int)) : Prop := True
 
-def P (s : (Mat Int 1 1)) : Prop := sorry
+def P (s : (Matrix (Fin 1) (Fin 1) Int)) : Prop := sorry
 
 instance : DecidablePred P := sorry
 
-def ranking (s : (Mat Int 1 1)) : Nat := sorry
+def ranking (s : (Matrix (Fin 1) (Fin 1) Int)) : Nat := sorry
 
 noncomputable section
 
@@ -152,7 +152,7 @@ end
 -- Unfold the definitions and reduce the matrix arithmetic, on the goal
 -- only: on the hypotheses too it blows up exponentially.
 macro "simp_mat" : tactic =>
-  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, MatAdd_apply, MatMul_apply, MatZero_apply, mul_Mat_apply, add_Mat_apply, ↓Mat.mk_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
+  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, zero_Matrix_apply, mul_Matrix_apply, add_Matrix_apply, ↓Matrix.mk_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
 
 -- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
 -- closers see the invariant's conditions.

@@ -52,7 +52,7 @@ def _domain(ctx: LeanContext, ty) -> _Domain:
     """The binders of a relational encoding, in one type builder.
 
     `ty` is the only thing the matrix and scalar domains disagree about here:
-    `product_type` gives each wire its own `Mat`, `product_type_scalar` one
+    `product_type` gives each wire its own `Matrix`, `product_type_scalar` one
     component per element. Both answer "Unit" for an empty group, so a module
     with no external inputs still gets the binder written out rather than
     dropped — the call sites are built from the same lists.
@@ -163,7 +163,7 @@ def _pack_roundtrip(var: str) -> "list[str]":
     """
     return [
         f"    have hpack : {var} = Scalar.pack (Scalar.unpack_ctrl {var}) := by",
-        "      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Mat_1_1_eq, Prod.eta]",
+        "      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Matrix_1_1_eq, Prod.eta]",
         "      try rfl",
         "      try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
         "      try (funext i j <;> fin_cases i <;> fin_cases j <;> simp)",

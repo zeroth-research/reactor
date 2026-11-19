@@ -220,77 +220,77 @@ example (p q : Prop) (hp : p) (hpq : p → q) : q := by aesop
 example (p q r : Prop) (h : p ∧ q) (hqr : q → r) : p ∧ r := by aesop
 
 -- ============================================================
--- Mat Int n m examples
+-- Matrix (Fin n) (Fin m) Int examples
 --
--- Generated certificates use `Mat Int n m` as the state type.
+-- Generated certificates use `Matrix (Fin n) (Fin m) Int` as the state type.
 -- `simp_mat` reduces matrix arithmetic to bare scalar `Int`
--- arithmetic using `MatAdd_apply`, `MatMul_apply`, `Fin.sum_univ_*`
+-- arithmetic using `add_Matrix_apply`, `mul_Matrix_apply`, `Fin.sum_univ_*`
 -- etc., leaving goals that the arithmetic tactics above can close.
 --
 -- These examples show the reduction and what the hammer sees
 -- after `simp_mat` fires.
 -- ============================================================
 
--- Phase 0 — Mat: trivially True invariant on a matrix state
--- inv = fun (_ : Mat Int 1 1) => True
-example (s : Mat Int 1 1) : True := by trivial
+-- Phase 0 — Matrix: trivially True invariant on a matrix state
+-- inv = fun (_ : Matrix (Fin 1) (Fin 1) Int) => True
+example (s : Matrix (Fin 1) (Fin 1) Int) : True := by trivial
 
--- Phase 1a — Mat: after simp_mat fires, goal is bare Int omega
+-- Phase 1a — Matrix: after simp_mat fires, goal is bare Int omega
 -- inv = fun s => s 0 0 ≥ 0, step decrements only when positive
 -- After simp_mat: x 0 0 - 1 ≥ 0 given x 0 0 > 0
-example (x : Mat Int 1 1) (hinv : x 0 0 ≥ 0) (hP : ¬(x 0 0 ≤ 0)) :
+example (x : Matrix (Fin 1) (Fin 1) Int) (hinv : x 0 0 ≥ 0) (hP : ¬(x 0 0 ≤ 0)) :
     x 0 0 - 1 ≥ 0 := by omega
 
--- Phase 1b — Mat: toNat ranking on a 1×1 matrix state
+-- Phase 1b — Matrix: toNat ranking on a 1×1 matrix state
 -- ranking = fun s => (s 0 0).toNat
 -- After simp_mat reduces update (x - 1) to a scalar expression,
 -- hrank becomes: (x 0 0 - 1).toNat < (x 0 0).toNat
-example (x : Mat Int 1 1) (hinv : x 0 0 ≥ 0) (hP : ¬(x 0 0 ≤ 0)) :
+example (x : Matrix (Fin 1) (Fin 1) Int) (hinv : x 0 0 ≥ 0) (hP : ¬(x 0 0 ≤ 0)) :
     (x 0 0 - 1).toNat < (x 0 0).toNat := by
   norm_cast   -- Phase 1b
   omega
 
--- Phase 1b — Mat 2×1: multi-component state, toNat ranking
+-- Phase 1b — 2×1 Matrix: multi-component state, toNat ranking
 -- ranking = fun s => (s 0 0 + s 1 0).toNat  (sum of components)
 -- After simp_mat reduces the update, the goal is a bare scalar toNat inequality.
-example (x : Mat Int 2 1)
+example (x : Matrix (Fin 2) (Fin 1) Int)
     (h0 : 0 < x 0 0) (h1 : x 1 0 ≥ 0) :
     (x 0 0 - 1 + x 1 0).toNat < (x 0 0 + x 1 0).toNat := by
   norm_cast
   omega
 
--- Phase 2 — Mat: push Not on a negated matrix predicate
+-- Phase 2 — Matrix: push Not on a negated matrix predicate
 -- inv has shape ¬(s 0 0 > upper_bound)
 -- After intro, hypothesis is ¬(x 0 0 > 10); push Not rewrites it
-example (x : Mat Int 1 1) (h : ¬(x 0 0 > 10)) : x 0 0 ≤ 10 := by
+example (x : Matrix (Fin 1) (Fin 1) Int) (h : ¬(x 0 0 > 10)) : x 0 0 ≤ 10 := by
   push Not at h; exact h
 
--- Phase 3 — Mat: conditional update with matrix state
+-- Phase 3 — Matrix: conditional update with matrix state
 -- update = if x 0 0 > 0 then x 0 0 - 1 else x 0 0
 -- inv = fun s => s 0 0 ≥ 0
-example (x : Mat Int 1 1) (hinv : x 0 0 ≥ 0) :
+example (x : Matrix (Fin 1) (Fin 1) Int) (hinv : x 0 0 ≥ 0) :
     (if x 0 0 > 0 then x 0 0 - 1 else x 0 0) ≥ 0 := by
   split <;> omega   -- Phase 3: split + omega at each leaf
 
--- Phase 3 — Mat: two-variable state, branching invariant
+-- Phase 3 — Matrix: two-variable state, branching invariant
 -- s 0 0 counts up, s 1 0 stays; inv = 0 ≤ s 0 0 ∧ 0 ≤ s 1 0
-example (x : Mat Int 2 1) (hinv : x 0 0 ≥ 0 ∧ x 1 0 ≥ 0) (b : Bool) :
+example (x : Matrix (Fin 2) (Fin 1) Int) (hinv : x 0 0 ≥ 0 ∧ x 1 0 ≥ 0) (b : Bool) :
     (if b then x 0 0 + 1 else x 0 0) ≥ 0 ∧ x 1 0 ≥ 0 := by
   obtain ⟨h0, h1⟩ := hinv
   split <;> omega
 
--- Phase 5 — Mat: Mat_1_1 collapse + split_ifs on matrix comparison
--- mat_collapse rewrites `a < b : Mat Int 1 1` to `a 0 0 < b 0 0`
+-- Phase 5 — Matrix: Matrix_1_1 collapse + split_ifs on matrix comparison
+-- mat_collapse rewrites `a < b : Matrix (Fin 1) (Fin 1) Int` to `a 0 0 < b 0 0`
 -- then split_ifs + omega closes the ranking obligation
-example (x y : Mat Int 1 1) (h : x 0 0 > y 0 0) : y 0 0 < x 0 0 := by
-  -- mat_collapse step: Mat_1_1_lt_iff rewrites the iff, then omega
+example (x y : Matrix (Fin 1) (Fin 1) Int) (h : x 0 0 > y 0 0) : y 0 0 < x 0 0 := by
+  -- mat_collapse step: Matrix_1_1_lt_iff rewrites the iff, then omega
   rw [show x 0 0 > y 0 0 ↔ y 0 0 < x 0 0 from Iff.rfl] at h
   exact h
 
--- Phase 5 — Mat: toNat ranking with conditional, full pipeline
+-- Phase 5 — Matrix: toNat ranking with conditional, full pipeline
 -- ranking = fun s => (if s 0 0 > 0 then s 0 0 else 0).toNat
 -- After mat_collapse + split_ifs, each branch is Int arithmetic
-example (x : Mat Int 1 1) (hinv : x 0 0 ≥ 0) (hP : x 0 0 ≠ 0) :
+example (x : Matrix (Fin 1) (Fin 1) Int) (hinv : x 0 0 ≥ 0) (hP : x 0 0 ≠ 0) :
     (if x 0 0 - 1 > 0 then x 0 0 - 1 else (0 : Int)).toNat <
     (if x 0 0 > 0 then x 0 0 else (0 : Int)).toNat := by
   split_ifs <;> norm_cast <;> omega

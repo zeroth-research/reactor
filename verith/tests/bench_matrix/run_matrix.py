@@ -58,7 +58,7 @@ from reactor.lean.inputs import to_surface  # noqa: E402
 
 # The reactor-lean checkout every project requires by path, so a pass
 # measures the libraries on disk; the `verith` runs below inherit it.
-os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "reactor-lean"))
+os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "ReactLib"))
 REACTOR_LEAN = reactor_lean_checkout()
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))

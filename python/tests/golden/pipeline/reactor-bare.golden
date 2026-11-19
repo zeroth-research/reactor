@@ -54,13 +54,13 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv (s : (Mat Int 1 1)) : Prop := True
+def inv (s : (Matrix (Fin 1) (Fin 1) Int)) : Prop := True
 
-def P (s : (Mat Int 1 1)) : Prop := sorry
+def P (s : (Matrix (Fin 1) (Fin 1) Int)) : Prop := sorry
 
 instance : DecidablePred P := sorry
 
-def ranking (s : (Mat Int 1 1)) : Nat := sorry
+def ranking (s : (Matrix (Fin 1) (Fin 1) Int)) : Nat := sorry
 
 === Certificate/Module.lean
 import Relational.Basic

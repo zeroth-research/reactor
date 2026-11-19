@@ -169,11 +169,11 @@ def test_the_fbk_bridge_simp_set_agrees_with_the_certificate_s():
     ctx = LeanContext(load_module(FIXTURES / "counter.py"))
     cert = generate_proofs_lean(None, proof_scripts(ctx))
     simp_mat = [ln for ln in cert.splitlines()
-                if "simp [" in ln and "MatAdd_apply" in ln]
+                if "simp [" in ln and "add_Matrix_apply" in ln]
     assert simp_mat, "the certificate's simp_mat macro moved"
     bridge = atom_to_lean_fbk_bridge(ctx, na_module="NA",
                                      bodies=check_na_supported(ctx))
-    cascade = [ln for ln in bridge.splitlines() if "MatAdd_apply" in ln]
+    cascade = [ln for ln in bridge.splitlines() if "add_Matrix_apply" in ln]
     assert cascade, "the bridge's cascade has no matrix simp set"
     for name in REDUCTIONS:
         assert name in simp_mat[0], f"{name} is not in simp_mat"

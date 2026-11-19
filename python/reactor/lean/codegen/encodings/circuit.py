@@ -68,9 +68,9 @@ _LAYER_SIMP = [
     "Box.argmax_1d",
     "Box.argmax",
     "ite_pair",
-    "Mat_1_1_lt_iff",
-    "Mat_1_1_le_iff",
-    "↓Mat.mk_apply",
+    "Matrix_1_1_lt_iff",
+    "Matrix_1_1_le_iff",
+    "↓Matrix.mk_apply",
 ]
 
 
@@ -234,7 +234,7 @@ def to_lean_equiv_theorems(
         # fine.
         # The same budget `scalar.py` raises for the same reason, and per
         # theorem rather than file-wide. Twice `scalar.py`'s: the dining
-        # philosophers' `update_circ_eq` took 1M-2M heartbeats while `Mat`
+        # philosophers' `update_circ_eq` took 1M-2M heartbeats while the matrix type
         # was a function type and 2M-4M since it is Mathlib's `Matrix`.
         lines.append(f"set_option maxHeartbeats {_CIRC_HEARTBEATS} in")
         lines.append("set_option maxRecDepth 100000 in")

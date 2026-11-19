@@ -208,7 +208,7 @@ elab_rules : tactic
         return
       catch _ => pure ()
       -- Phase 5: full pipeline for ranking proofs
-      -- Unfold defs in hypotheses → reduce matrices → collapse Mat 1 1 to scalar
+      -- Unfold defs in hypotheses → reduce matrices → collapse 1×1 matrices to scalars
       -- → split all ite → omega / linarith / norm_cast
       try evalTactic (← `(tactic| simp_defs)) catch _ => pure ()
       if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
@@ -225,7 +225,7 @@ elab_rules : tactic
       if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
       try evalTactic (← `(tactic| all_goals native_decide)) catch _ => pure ()
       if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return
-      -- Reduce matrices and collapse Mat 1 1 to bare scalar arithmetic
+      -- Reduce matrices and collapse 1×1 matrices to bare scalar arithmetic
       try evalTactic (← `(tactic| simp_mat)) catch _ => pure ()
       try evalTactic (← `(tactic| mat_collapse)) catch _ => pure ()
       if (← Lean.Elab.Tactic.getUnsolvedGoals).isEmpty then return

@@ -417,7 +417,7 @@ def test_relational_encoding_builds(generate_lean_files, name):
 
     `effect_i` is per ctrl *wire*; the state tuple it is related to is per
     *element*. Projecting component `i` of that tuple therefore put a
-    `Mat Int 6 1` against an `Int x ... x Int` for any multi-element wire, and
+    `Matrix (Fin 6) (Fin 1) Int` against an `Int x ... x Int` for any multi-element wire, and
     `Mixed` is the case where the offsets differ too. The chain that has teeth
     here is `TransRel_scalar_eq` into `TransRel_func_eq`: it ties the sliced
     relation back to the functional `update` through `pack`/`unpack`, so a

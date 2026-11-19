@@ -33,7 +33,7 @@ The cascade is what it is because `decide` cannot close these goals (free
 variables), `split_ifs` before `simp` splits `(x == 0)` and `decide (x = 0)`
 into four branches, and the `Linear` cases need the certificate's own matrix
 simp set because `translate_terms_scalar` does not scalarise a `Linear` --
-it rebuilds the `Mat` and calls `matVecAffine`.
+it rebuilds the matrix and calls `matVecAffine`.
 """
 
 import re
@@ -356,7 +356,7 @@ def atom_to_lean_fbk_bridge(
         "    certificate `proveit.py` installed is the one step this file",
         "    does not take: it is `main_theorem` there, in",
         "    `lean-ltl-certifying`'s LTL vocabulary rather than",
-        "    `Relational.LTL`'s, and translating between the two is a fixed",
+        "    `Spec.LTL`'s, and translating between the two is a fixed",
         "    piece of work that does not vary per module. -/",
         "theorem module_safety",
         "    (hM : ∀ ts μs, MTS.ωTrace ts μs →",
