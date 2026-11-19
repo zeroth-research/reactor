@@ -97,7 +97,7 @@ def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     Generate a top-level Lean definition for a constant tensor.
 
     E.g.:
-        @[simp, reducible] def A : (Mat Int 3 2) := Mat.mk fun i j =>
+        @[simp, reducible] def A : (Matrix (Fin 3) (Fin 2) Int) := Matrix.mk fun i j =>
           match i, j with
           | 0, 0 => 0 | 0, 1 => 1
           ...
@@ -119,11 +119,11 @@ def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
     if shape.is_scalar:
         val = lean_literal(wire.dtype, tensor.item())
         ty = dtype_to_lean_type(wire)
-        assert "Mat" in ty and " 1 1" in ty, ty
+        assert ty.startswith("(Matrix (Fin 1) (Fin 1) "), ty
         return f"@[simp, reducible] {noncomp}def {name} : {ty} := {mat_mk(val)}\n"
 
     # Matrix constant
-    lines = [f"@[simp, reducible] {noncomp}def {name} : {dtype_to_lean_type(wire)} := Mat.mk fun i j =>"]
+    lines = [f"@[simp, reducible] {noncomp}def {name} : {dtype_to_lean_type(wire)} := Matrix.mk fun i j =>"]
     lines.append("  match i, j with")
 
     data = tensor.reshape(shape.m, shape.n)
@@ -141,12 +141,12 @@ def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
 
 
 def tensor_to_lean_inline(tensor, wire: Wire) -> str:
-    """Return an inline `Mat _ 1 1` literal for a scalar tensor."""
+    """Return an inline 1×1 matrix literal for a scalar tensor."""
     return mat_mk(lean_literal(wire.dtype, tensor.item()))
 
 
 def tensor_to_lean_scalar(tensor, wire: Wire) -> str:
-    """Return a bare scalar literal (no Mat wrapper) for a scalar tensor."""
+    """Return a bare scalar literal (no matrix around it) for a scalar tensor."""
     return lean_literal(wire.dtype, tensor.item())
 
 

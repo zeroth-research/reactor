@@ -5,7 +5,7 @@ and four backends turn that name into something they can emit:
 
 | column   | backend                          | a cell holds                 |
 |----------|----------------------------------|------------------------------|
-| `mat`    | `codegen.terms.translate_terms_lean`        | args -> Lean expr (on `Mat`) |
+| `mat`    | `codegen.terms.translate_terms_lean`        | args -> Lean expr (on `Matrix`) |
 | `scalar` | `codegen.terms.translate_terms_scalar` | args -> Lean expr (bare)     |
 | `box`    | `codegen.boxes.translate_terms_circ`     | a `Box` combinator name      |
 
@@ -69,7 +69,7 @@ class Inline:
 class ViaMat:
     """Scalar column only: there is no scalar form, the matrix one serves.
 
-    `translate_terms_scalar` lifts scalar-bound reads to `Mat.mk fun _ _ => x`
+    `translate_terms_scalar` lifts scalar-bound reads to `Matrix.mk fun _ _ => x`
     and projects `0 0` off the result, which is right whenever the matrix
     form is elementwise or folds to a 1x1.
     """
@@ -163,7 +163,7 @@ OPS: tuple[Op, ...] = (
         )
     ),
     # ── Boolean forms (LIA/LRA) ───────────────────────────────────────
-    # Operands and results are all `Mat _ 1 1`, so the matrix forms extract
+    # Operands and results are all 1×1 matrices, so the matrix forms extract
     # position `0 0`. FIXME: element-wise ops should be defined over the
     # whole matrix, to match Rust.
     Op(
@@ -217,8 +217,8 @@ OPS: tuple[Op, ...] = (
     # which does not elaborate). These use BitVec's own operators and
     # compare a 1-bit value against 1 directly, rather than converting
     # through `BV.BVToBool`. `Box.and`/`not`/`or` are likewise fixed to
-    # `Mat Bool 1 1` — see the note beside the `bv*` boxes in
-    # `Relational.Box`.
+    # `Matrix (Fin 1) (Fin 1) Bool` — see the note beside the `bv*` boxes in
+    # `Relational.Circ`.
     Op(
         "Not",
         BV_ONLY,
@@ -276,7 +276,7 @@ OPS: tuple[Op, ...] = (
         scalar=lambda a: f"({a[0]} * {a[1]})",
         box="Box.mul",
     ),
-    # `*` on two `Mat`s is their matrix product (`Relational.Mat`), so the
+    # `*` on two `Matrix`es is their matrix product (Mathlib's), so the
     # elementwise product is spelled out element by element, and its Box is
     # `Box.hadamard` rather than `Box.mul`.
     Op(
@@ -401,7 +401,7 @@ OPS: tuple[Op, ...] = (
     ),
     # ── reductions and matrix ops ─────────────────────────────────────
     # `Min`/`Max` are unary reductions — one read wire of any shape, a
-    # `Mat t 1 1` written — folded row-major from element (0,0).
+    # 1×1 matrix written — folded row-major from element (0,0).
     Op(
         "Min",
         LIA_LRA,
@@ -419,7 +419,7 @@ OPS: tuple[Op, ...] = (
     Op(
         "MatMul",
         BV_ONLY,
-        mat=lambda a: f"MatMul {a[0]} {a[1]}",
+        mat=lambda a: f"({a[0]} * {a[1]})",
         scalar=lambda a: f"({a[0]} * {a[1]})",
         box="Box.mul",
     ),
@@ -434,8 +434,8 @@ OPS: tuple[Op, ...] = (
     Op(
         "Transpose",
         LIA_LRA,
-        mat=lambda a: f"(MatTranspose {a[0]})",
-        scalar=ViaMat("`MatTranspose` is a matrix rearrangement"),
+        mat=lambda a: f"(Matrix.transpose {a[0]})",
+        scalar=ViaMat("`Matrix.transpose` is a matrix rearrangement"),
         box="Box.transpose",
     ),
     Op(
@@ -444,7 +444,7 @@ OPS: tuple[Op, ...] = (
         mat=lambda a: f"ReLu {a[0]}",
         # `ReLu` is a matrix op; on a scalar-bound wire it has to be the
         # bare `max 0 x`. Lifting the operand and projecting the result
-        # instead leaves `ReLu (Mat.mk fun _ _ => x) 0 0` with unconstrained
+        # instead leaves `ReLu (Matrix.mk fun _ _ => x) 0 0` with unconstrained
         # dimensions, so this is not a `ViaMat` cell.
         scalar=lambda a: f"(Max.max 0 {a[0]})",
         box="Box.relu",
@@ -669,7 +669,7 @@ def _lean_emitter(itype, row: Op, cell, column: str):
 
 
 def mat_emitter(itype) -> Callable[[list[str]], str]:
-    """The `Mat`-form Lean emitter, or a `ValueError` carrying the reason."""
+    """The `Matrix`-form Lean emitter, or a `ValueError` carrying the reason."""
     row = op_for(itype)
     return _lean_emitter(itype, row, row.mat, "matrix form")
 

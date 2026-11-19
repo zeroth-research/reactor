@@ -21,7 +21,7 @@ def dtype_shape(dt) -> list:
 
 @dataclass(frozen=True)
 class MatShape:
-    """A wire's shape as the `(m, n)` of the `Mat` it is: the one reading
+    """A wire's shape as the `(m, n)` of the matrix it is: the one reading
     every encoding uses."""
 
     m: int
@@ -37,7 +37,7 @@ class MatShape:
 
 
 def sort_shape(sort) -> MatShape:
-    """`sort`'s shape as the `(m, n)` of the `Mat` it is. A Sort's shape is
+    """`sort`'s shape as the `(m, n)` of the matrix it is. A Sort's shape is
     always two-dimensional -- the constructor refuses any other -- so this
     is the shape itself, and every encoding reads it here rather than
     guessing at a 0-D or 1-D one that cannot occur."""
@@ -70,29 +70,36 @@ def lean_elem_type(sort: Sort) -> str:
     raise ValueError(f"Unsupported Sort for Lean conversion: {sort}")
 
 
+def lean_matrix_type(elem: str, m: int | str, n: int | str) -> str:
+    """The Lean type of an `m × n` matrix of `elem`s: Mathlib's `Matrix`,
+    indexed by `Fin`, parenthesized."""
+    return f"(Matrix (Fin {m}) (Fin {n}) {elem})"
+
+
 def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
-    """Map a Wire's Sort to its Lean type, `(Mat t m n)`; with `simple_types`, a
-    1×1 wire is its bare element type `t`."""
+    """Map a Wire's Sort to its Lean type, `(Matrix (Fin m) (Fin n) t)`;
+    with `simple_types`, a 1×1 wire is its bare element type `t`."""
 
     dt = wire.dtype
     ty = lean_elem_type(dt)
     shape = sort_shape(dt)
-    if shape.is_scalar:
-        return ty if simple_types else f"(Mat {ty} 1 1)"
-    return f"(Mat {ty} {shape.m} {shape.n})"
+    if shape.is_scalar and simple_types:
+        return ty
+    return lean_matrix_type(ty, shape.m, shape.n)
 
 
 def mat_mk(entry: str, i: str = "_", j: str = "_") -> str:
-    """The Lean matrix whose entry `(i, j)` is `entry`: `(Mat.mk fun i j => entry)`.
+    """The Lean matrix whose entry `(i, j)` is `entry`:
+    `(Matrix.mk fun i j => entry)`.
 
     The codegen writes every matrix it builds from its entries as a
-    `Mat.mk`, never as a bare `fun i j => ...`: `Mat` is Mathlib's
-    `Matrix`, which `simp` and instance search do not see through, so to
-    them a bare lambda is a function and no `Matrix` lemma or instance
-    applies to it. Its size is not in the term, so the expression needs an
-    expected type, which every emitted `let` and definition gives it.
+    `Matrix.mk` (ReactLib's), never as a bare `fun i j => ...`: `simp` and
+    instance search do not see through Mathlib's `Matrix`, so to them a
+    bare lambda is a function and no `Matrix` lemma or instance applies to
+    it. Its size is not in the term, so the expression needs an expected
+    type, which every emitted `let` and definition gives it.
     """
-    return f"(Mat.mk fun {i} {j} => {entry})"
+    return f"(Matrix.mk fun {i} {j} => {entry})"
 
 
 def itype_name(itype) -> str:
@@ -135,10 +142,10 @@ def is_scalar_wire(wire: Wire) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Flat-scalar helpers — support multi-element (Mat T 1 n) wires in the
+# Flat-scalar helpers — support multi-element (1 × n matrix) wires in the
 # scalar / relational encoding by expanding each wire into n scalars.
 # ---------------------------------------------------------------------------
 
 def flat_element_type(wire: Wire) -> str:
-    """Base Lean scalar type for one element of the wire (no Mat wrapper)."""
+    """Base Lean scalar type for one element of the wire (no matrix around it)."""
     return lean_elem_type(wire.dtype)

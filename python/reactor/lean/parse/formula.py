@@ -8,7 +8,7 @@ awaited in it and latched before it -- and the wire its value is on.
 is built once, which is what lets the printer share it.
 
 Every term but a matrix variable's is a scalar: `Get` reads one element of
-a matrix wire, and whatever reads it after that reads a `Mat _ 1 1`.
+a matrix wire, and whatever reads it after that reads a 1×1 `Matrix`.
 """
 
 from __future__ import annotations

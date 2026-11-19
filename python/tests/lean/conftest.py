@@ -426,7 +426,7 @@ def generate_lean_files() -> None:
     for name, make_module in _SCALAR_ENC_SPECS:
         t = ModuleToLean4(make_module())
         (_CERTS_DIR / f"ScalarEnc{name}.lean").write_text(
-            f"import Relational.Mat\nimport Relational.Box\n\n{LINTERS_OFF}\n\n"
+            f"import Relational.Mat\nimport Relational.Circ\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_functional()
             + "\n\n"
             + t.to_lean_scalar()
@@ -453,7 +453,7 @@ def generate_lean_files() -> None:
         d = _CERTS_DIR / f"RelEnc{name}"
         d.mkdir(exist_ok=True)
         (d / "Base.lean").write_text(
-            f"import Relational.Mat\nimport Relational.Box\n\n{LINTERS_OFF}\n\n"
+            f"import Relational.Mat\nimport Relational.Circ\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_functional() + "\n"
         )
         (d / "Scalar.lean").write_text(
@@ -505,7 +505,7 @@ def generate_lean_files() -> None:
         cert = render(module, Claim(prp=prop, kind="safety"))
         (_CERTS_DIR / f"Bridge{name}.lean").write_text(
             "\n".join([
-                "import Relational.Basic", "import Relational.Box", "import Relational.Mat",
+                "import Relational.Basic", "import Relational.Circ", "import Relational.Mat",
                 "", LINTERS_OFF, "",
                 t.to_lean_functional(), "",
                 t.to_lean_scalar(), "",

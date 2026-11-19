@@ -74,10 +74,11 @@ The Lean library the project is stated in is not part of it: the lakefile
 requires two packages of [reactor-lean][reactor-lean], each in its own
 directory of that repository.
 
-| Package | Modules | Contents |
-|---------|---------|----------|
-| `Relational` | `Relational.Mat`, `.Box`, `.LTL`, `.Basic` | matrices, ReactiveModule, LTL, the proof rules (`rule_globally`, `rule_buchi`) |
-| `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
+| Package | Library | Modules | Contents |
+|---------|---------|---------|----------|
+| `ReactLib` | `Spec` | `Spec.LTL` | LTL formulas and their semantics |
+| | `Relational` | `Relational.Mat`, `.Box`, `.Basic` | matrices, ReactiveModule, the proof rules (`rule_globally`, `rule_buchi`) |
+| `LeanAI` | `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
 
 By default they are git requires at `project/lakefile.py`'s
 `REACTOR_LEAN_REV`. With `REACTOR_LEAN` set to a reactor-lean checkout they
@@ -85,7 +86,7 @@ are path requires on it instead, which is how to change the library and the
 generator together; `reactor` refuses a `REACTOR_LEAN` that is not a
 checkout before it writes anything. The tests set it to the checkout beside
 this repository when there is one, and `tests/lean`'s lakefile requires
-`Relational` from there.
+`ReactLib` from there.
 
 [reactor-lean]: https://github.com/zeroth-research/reactor-lean
 
@@ -173,14 +174,14 @@ layer.
 
 | Python DType | Lean type (default) | Lean type (`simple_types=True`) |
 |---|---|---|
-| `Bool` (scalar) | `(Mat Bool 1 1)` | `Bool` |
-| `Int` (scalar) | `(Mat Int 1 1)` | `Int` |
-| `Float` (scalar) | `(Mat Real 1 1)` | `Real` |
-| `Int` shape `[n]` | `(Mat Int 1 n)` | — |
-| `Int` shape `[m,n]` | `(Mat Int m n)` | — |
+| `Bool` (scalar) | `(Matrix (Fin 1) (Fin 1) Bool)` | `Bool` |
+| `Int` (scalar) | `(Matrix (Fin 1) (Fin 1) Int)` | `Int` |
+| `Float` (scalar) | `(Matrix (Fin 1) (Fin 1) Real)` | `Real` |
+| `Int` shape `[n]` | `(Matrix (Fin 1) (Fin n) Int)` | — |
+| `Int` shape `[m,n]` | `(Matrix (Fin m) (Fin n) Int)` | — |
 
-All intermediate values are `Mat T m n` (Lean: Mathlib's
-`Matrix (Fin m) (Fin n) T`) even when scalar.  This keeps the algebra uniform.  Float-typed modules require
+All intermediate values are Mathlib's `Matrix (Fin m) (Fin n) T`, even when
+scalar.  This keeps the algebra uniform.  Float-typed modules require
 `noncomputable` on all definitions because `Real` lacks decidable equality.
 
 **`product_accessor(pos, total)`** builds right-nested product accessors:
@@ -213,25 +214,26 @@ Created once per module; shared across all code generators.  It extracts:
 Lean function body as a string of `let` bindings followed by the output tuple:
 
 ```lean
-  let x0 : (Mat Bool 1 1) := (Mat.mk fun _ _ => decide (ctrl.1 0 0 < ctrl.2 0 0))
-  let x1 : (Mat Int 1 1) := (Mat.mk fun _ _ => (1 : Int))
+  let x0 : (Matrix (Fin 1) (Fin 1) Bool) := (Matrix.mk fun _ _ => decide (ctrl.1 0 0 < ctrl.2 0 0))
+  let x1 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (1 : Int))
   ...
   (x6, x5)
 ```
 
 Each term is looked up in the op table's `mat` column
 (`lowering.ops.mat_emitter`, keyed by theory and variant name).  Operations
-produce `Mat T 1 1` values even for scalar results — conditions extract
-`0 0`, boolean ops wrap in `Mat.mk fun _ _ => ...`.  Non-scalar ops (`MatMul`,
-`Linear`, `ReLU`) use their native matrix forms.  Every matrix built from its
-entries is a `Mat.mk` (`lowering.sorts.mat_mk`), never a bare lambda: `Mat` is
-Mathlib's `Matrix`, and to `simp` and instance search a bare `fun i j => …` is
-a function, not a matrix.
+produce 1×1 `Matrix` values even for scalar results — conditions extract
+`0 0`, boolean ops wrap in `Matrix.mk fun _ _ => ...`.  Non-scalar ops
+(`MatMul`, as Mathlib's `*`, `Linear`, `ReLU`) use their native matrix
+forms.  Every matrix built from its entries is a `Matrix.mk`
+(`lowering.sorts.mat_mk`), never a bare lambda: to `simp` and instance
+search a bare `fun i j => …` is a function, not a matrix.  `Matrix.mk` is
+ReactLib's, not Mathlib's (`Relational.Mat` says why).
 
 `ModuleToLean4.atom_to_lean_functional()` wraps the body into:
 
 ```lean
-@[simp] def init (extl_n: Unit) : (Mat Int 1 1) × (Mat Int 1 1) := ...
+@[simp] def init (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) := ...
 @[simp] def update (ctrl: ...) (extl_l: ...) (extl_n: ...) : ... := ...
 ```
 
@@ -273,11 +275,11 @@ plumbing lemmas.
 ## Encoding 3 — Scalar (`codegen/terms.py`, `codegen/encodings/scalar.py`)
 
 `translate_terms_scalar` is like `translate_terms_lean` but uses bare scalar types
-(`Bool`, `Int`, `Real`) instead of `Mat T 1 1` for all 1×1 wires:
+(`Bool`, `Int`, `Real`) instead of 1×1 matrices for all 1×1 wires:
 
 ```lean
 namespace Scalar
-@[simp] def update (ctrl: (Mat Int 1 1) × (Mat Int 1 1)) ... : Int × Int :=
+@[simp] def update (ctrl: (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)) ... : Int × Int :=
   let x0 : Bool := (decide (ctrl.1 0 0 < ctrl.2 0 0))
   let x1 : Int  := (1 : Int)
   let x2 : Int  := (ctrl.1 0 0 + x1)
@@ -287,7 +289,7 @@ end Scalar
 ```
 
 Key differences from functional:
-- Input parameter types are **unchanged** — they still accept `Mat T m n`.
+- Input parameter types are **unchanged** — they still accept `Matrix (Fin m) (Fin n) T`.
 - Input scalars are pre-extracted at the call site via `ctrl.1 0 0`.
 - All intermediate `let` bindings use `Bool`/`Int`/`Real` directly.
 - Output type is a product of bare scalars (e.g. `Int × Int`).
@@ -296,27 +298,27 @@ Key differences from functional:
 
 `codegen.encodings.common.scalar_bindings_with_recon` builds the input bindings: a
 one-element wire is bound to its bare accessor, so downstream ops receive bare
-values, and a wider one to a `let` that rebuilds its `Mat` from the elements.
+values, and a wider one to a `let` that rebuilds its matrix from the elements.
 
 **Equivalence theorems** (`to_lean_scalar_equiv`) connect the scalar and
 functional encodings:
 
 ```lean
-@[simp] def pack (r : Int × Int) : (Mat Int 1 1) × (Mat Int 1 1) :=
-  ((Mat.mk fun _ _ => r.1), (Mat.mk fun _ _ => r.2))
+@[simp] def pack (r : Int × Int) : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) :=
+  ((Matrix.mk fun _ _ => r.1), (Matrix.mk fun _ _ => r.2))
 
-theorem update_scalar_eq : ∀ (ctrl : (Mat Int 1 1) × (Mat Int 1 1)) (extl_l : Unit) (extl_n : Unit),
+theorem update_scalar_eq : ∀ (ctrl : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)) (extl_l : Unit) (extl_n : Unit),
     update ctrl extl_l extl_n = Scalar.pack (Scalar.update (Scalar.unpack_ctrl ctrl) extl_l extl_n) := by
   intro ctrl extl_l extl_n
   simp only [Scalar.pack, Scalar.update, update, Scalar.unpack_ctrl, Fin.cons_zero, Fin.cons_succ]
   try rfl
   try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)
   ...
-  all_goals try simp [← Mat_1_1_eq]
+  all_goals try simp [← Matrix_1_1_eq]
 ```
 
-`Scalar.pack` wraps each scalar output back into a `Mat T 1 1`, as
-`Mat.mk fun _ _ => r.i`, and `Scalar.unpack_*` reads a wire's elements out.
+`Scalar.pack` wraps each scalar output back into a 1×1 matrix, as
+`Matrix.mk fun _ _ => r.i`, and `Scalar.unpack_*` reads a wire's elements out.
 The proof enumerates every index of every wire (`fin_cases`), or, for a 1×1
 wire, rewrites by `Fin.fin_one_eq_zero` (every `i : Fin 1` equals `0`).
 
@@ -401,14 +403,15 @@ certificate trusts nothing in it.
 
 | Lemma | Effect |
 |-------|--------|
-| `Mat.mk_apply` | Read an entry of a matrix built from its entries |
-| `add_Mat_apply`, `mul_Mat_apply`, `MatAdd_apply`, `MatMul_apply` | Reduce matrix `+`, `*` to pointwise scalar ops |
-| `Mat_1_1_lt_iff`, `_eq_iff`, `_le_iff`, `_ne_iff` | Collapse `(m : Mat T 1 1) 0 0 op n` to bare scalar comparison |
-| `Mat_ite_apply` | Read an `if` between matrices at an entry |
+| `Matrix.mk_apply` | Read an entry of a matrix built from its entries |
+| `add_Matrix_apply`, `sub_Matrix_apply`, `neg_Matrix_apply`, `mul_Matrix_apply`, `zero_Matrix_apply`, `transpose_Matrix_apply` | Reduce Mathlib's `+`, `-`, `*`, `0`, `Matrix.transpose` to pointwise scalar ops |
+| `Matrix_1_1_lt_iff`, `_eq_iff`, `_le_iff`, `_ne_iff` | Collapse `(m : Matrix (Fin 1) (Fin 1) T) 0 0 op n` to bare scalar comparison |
+| `Matrix_ite_apply` | Read an `if` between matrices at an entry |
 | `Fin.sum_univ_one/two/three` | Reduce finite sums |
 
 The lemmas that read an entry are pre-lemmas (`simp↓`), proved by `id rfl`;
-`Relational.Mat` says why.
+`Relational.Mat` says why. Mathlib's own `Matrix.add_apply` and the like are
+`rfl` lemmas, which a `dsimp` over generated matrices has to leave out.
 
 ---
 

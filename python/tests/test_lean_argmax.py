@@ -13,7 +13,7 @@ Two historical bugs, one per Lean definition:
   the same fold, so `argmax1d_scalar_n_eq` stayed provable while both sides
   were wrong.
 * `argmax` had the same mis-seeding *and* returned the wrong kind of answer:
-  the `[i, j]` pair of the maximum packed as `Mat Nat 1 2`, where torch
+  the `[i, j]` pair of the maximum packed as a 1×2 `Nat` matrix, where torch
   flattens row-major and returns the single index `i * n + j`.
 """
 
@@ -101,11 +101,11 @@ def test_argmax_emits_for_multi_row_input(encoding):
 
 
 def test_multi_row_input_selects_the_general_variant():
-    """1-row input uses argmax_1d; more rows use argmax (a `Mat _ 1 1` either way)."""
+    """1-row input uses argmax_1d; more rows use argmax (a 1×1 `Matrix` either way)."""
     one_row = ModuleToLean4(_argmax_module([1, 4], [1, 1])).to_lean_functional()
     many_row = ModuleToLean4(_argmax_module([3, 4], [1, 1])).to_lean_functional()
     assert "argmax_1d" in one_row
-    assert "(Mat Int 1 1) := (Mat.mk fun i j => ((argmax ctrl" in many_row, (
+    assert "(Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun i j => ((argmax ctrl" in many_row, (
         "multi-row Argmax should use the general variant with a 1x1 result"
     )
 
@@ -115,7 +115,7 @@ def test_theory_rejects_wider_argmax_output(out_shape):
     """Argmax yields one index, so the theory admits only a [1, 1] output.
 
     A vector output would have to mean per-column argmax, which nothing
-    implements. This used to be accepted and then emitted a `Mat _ 1 1` body
+    implements. This used to be accepted and then emitted a 1×1 `Matrix` body
     ascribed to the wider wire, which does not elaborate.
     """
     s = Var(Int([3, 4]))
@@ -128,7 +128,7 @@ def test_codegen_guard_still_states_the_one_index_contract():
     """Defence in depth behind the theory check, which now catches this first.
 
     Kept so the contract is stated where the Lean is emitted: both variants
-    produce a `Mat _ 1 1`, so a wider wire cannot be served.
+    produce a 1×1 `Matrix`, so a wider wire cannot be served.
     """
     from reactor.lean.codegen.terms import check_argmax_output
 

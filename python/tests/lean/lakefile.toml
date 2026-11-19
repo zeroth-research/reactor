@@ -33,7 +33,8 @@
  scope = "leanprover"
  rev = "v4.34.0"
 
- # `Relational.*`, from the reactor-lean checkout beside this repository.
+ # `Relational.*` and `Spec.*`, from the reactor-lean checkout beside this
+ # repository.
  [[require]]
- name = "Relational"
- path = "../../../../reactor-lean/Relational"
+ name = "ReactLib"
+ path = "../../../../ReactLib/ReactLib"

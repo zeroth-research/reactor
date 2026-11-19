@@ -16,7 +16,7 @@ Two conventions matter, and both definitions used to get them wrong:
   reported index 0.
 
 `argmax` additionally returns the wrong *kind* of answer: it reported the
-`[i, j]` pair of the maximum, packed as `Mat Nat 1 2`, where torch flattens
+`[i, j]` pair of the maximum, packed as a 1×2 `Nat` matrix, where torch flattens
 row-major and returns the single index `i * n + j`.
 
 Run via pytest:
@@ -24,10 +24,10 @@ Run via pytest:
     just test-lean                 # slow: runs lake build
 -/
 
-private def row2 (a b : Int) : Mat Int 1 2 :=
+private def row2 (a b : Int) : Matrix (Fin 1) (Fin 2) Int :=
   fun _ j => if j = 0 then a else b
 
-private def row3 (a b c : Int) : Mat Int 1 3 :=
+private def row3 (a b c : Int) : Matrix (Fin 1) (Fin 3) Int :=
   fun _ j => if j = 0 then a else if j = 1 then b else c
 
 -- Plain maxima, in each position.
@@ -54,7 +54,7 @@ example : argmax_1d (row2 (-1) 0) 0 0 = 1 := by decide
 -- 2-D argmax: a single row-major flat index, as torch returns.
 -- ──────────────────────────────────────────────────────────────
 
-private def mat23 (a b c d e f : Int) : Mat Int 2 3 :=
+private def mat23 (a b c d e f : Int) : Matrix (Fin 2) (Fin 3) Int :=
   fun i j =>
     if i = 0 then (if j = 0 then a else if j = 1 then b else c)
     else (if j = 0 then d else if j = 1 then e else f)

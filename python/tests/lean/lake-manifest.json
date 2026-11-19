@@ -5,10 +5,10 @@
   {
    "type": "path",
    "scope": "",
-   "name": "Relational",
+   "name": "ReactLib",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../../../reactor-lean/Relational",
+   "dir": "../../../../ReactLib/ReactLib",
    "configFile": "lakefile.toml"
   },
   {

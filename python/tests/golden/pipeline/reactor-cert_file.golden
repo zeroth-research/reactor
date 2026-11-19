@@ -42,7 +42,7 @@ Wrote scalar-relational encoding: <OUT>/CertScalarRel.lean
 
 === Cert.lean
 import Relational.Basic
-import Relational.Box
+import Relational.Circ
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -52,19 +52,19 @@ set_option linter.unnecessarySeqFocus false
 
 
 
-@[simp] def init (extl_n: Unit) : (Mat Int 1 1) :=
-  let x0 : (Mat Int 1 1) := (Mat.mk fun _ _ => (0 : Int))
-  let x1 : (Mat Int 1 1) := x0
+@[simp] def init (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) :=
+  let x0 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (0 : Int))
+  let x1 : (Matrix (Fin 1) (Fin 1) Int) := x0
   x1
 
-@[simp] def update (ctrl: (Mat Int 1 1)) (extl_l: Unit) (extl_n: Unit) : (Mat Int 1 1) :=
-  let x0 : (Mat Int 1 1) := (Mat.mk fun _ _ => (1 : Int))
-  let x1 : (Mat Int 1 1) := (ctrl + x0)
-  let x2 : (Mat Int 1 1) := (Mat.mk fun _ _ => (10 : Int))
-  let x3 : (Mat Bool 1 1) := (Mat.mk fun _ _ => decide (x1 0 0 = x2 0 0))
-  let x4 : (Mat Int 1 1) := (Mat.mk fun _ _ => (0 : Int))
-  let x5 : (Mat Int 1 1) := (if x3 0 0 then x4 else x1)
-  let x6 : (Mat Int 1 1) := x5
+@[simp] def update (ctrl: (Matrix (Fin 1) (Fin 1) Int)) (extl_l: Unit) (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) :=
+  let x0 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (1 : Int))
+  let x1 : (Matrix (Fin 1) (Fin 1) Int) := (ctrl + x0)
+  let x2 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (10 : Int))
+  let x3 : (Matrix (Fin 1) (Fin 1) Bool) := (Matrix.mk fun _ _ => decide (x1 0 0 = x2 0 0))
+  let x4 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (0 : Int))
+  let x5 : (Matrix (Fin 1) (Fin 1) Int) := (if x3 0 0 then x4 else x1)
+  let x6 : (Matrix (Fin 1) (Fin 1) Int) := x5
   x6
 
 
@@ -72,13 +72,13 @@ def init_pre (e : (Unit) × (Unit)) : Prop := True
 
 def update_pre (e : (Unit) × (Unit)) : Prop := True
 
-def inv : (Mat Int 1 1) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (9 : Int)))
+def inv : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (9 : Int)))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) = (0 : Int))
+def P : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => ((s 0 0) = (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
-def ranking : (Mat Int 1 1) → Nat := fun s => (((if ((s 0 0) = (0 : Int)) then (0 : Int) else ((10 : Int) - (s 0 0))) : Int)).toNat
+def ranking : (Matrix (Fin 1) (Fin 1) Int) → Nat := fun s => (((if ((s 0 0) = (0 : Int)) then (0 : Int) else ((10 : Int) - (s 0 0))) : Int)).toNat
 
 noncomputable section
 

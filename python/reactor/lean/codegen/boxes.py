@@ -88,7 +88,7 @@ def _argmax_box(
 ) -> str:
     """Pick the Box variant of argmax based on input shape.
 
-    Both variants have codomain `[Mat Int 1 1]` -- one flat index, per
+    Both variants have codomain `[Matrix (Fin 1) (Fin 1) Int]` -- one flat index, per
     `torch.argmax` -- so a wider output wire is rejected here rather than
     producing a Box whose codomain does not match the wire it feeds."""
     check_argmax_output(output_shape)

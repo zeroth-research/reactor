@@ -53,13 +53,13 @@ set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
 set_option linter.unnecessarySeqFocus false
 
-def init_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
+def init_pre : ((Matrix (Fin 1) (Fin 1) Int)) × ((Matrix (Fin 1) (Fin 1) Int)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
 
-def update_pre : ((Mat Int 1 1)) × ((Mat Int 1 1)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
+def update_pre : ((Matrix (Fin 1) (Fin 1) Int)) × ((Matrix (Fin 1) (Fin 1) Int)) → Prop := fun e => ((e.2 0 0) ≥ (0 : Int))
 
-def inv : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
+def inv : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
 
-def P : (Mat Int 1 1) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
+def P : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => ((s 0 0) ≥ (0 : Int))
 
 instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
 
