@@ -102,7 +102,7 @@ use crate::ast_interp::{Interp, Values};
 use crate::elab::Inst;
 use crate::lower::Translation;
 use crate::rm_sim::{Sim, Valuation};
-use crate::smt::{self, Phase};
+use crate::smt::{self, Phase, Round};
 use crate::yosys::{self, Sample, Smt2};
 use crate::{BitVec, Var};
 use num_bigint::BigUint;
@@ -129,22 +129,28 @@ pub struct Miter {
     /// One query per controlled variable and round: the init round's
     /// first, each in the order of the round.
     pub queries: Vec<Query>,
-    /// The values a [`counterexample`] reads from a model: every register
-    /// in `|s|`, by path, as the output sample our init round starts from
-    /// (`initial`) and as the wire, the value after the step (`registers`);
-    /// every input in `|s|` and in `|s'|` (Yosys wires); every latched
-    /// value `|*v|` of our update round. A counterexample of the init round
-    /// reads `initial` and `inputs`, one of the update round the others.
-    pub initial: Vec<Probe>,
-    pub registers: Vec<Probe>,
-    pub inputs: Vec<Probe>,
-    pub next_inputs: Vec<Probe>,
-    pub latched: Vec<Probe>,
+    /// The values a [`counterexample`] reads from a model.
+    pub probes: Probes,
     /// The time z3 may take for each single query in [`check`] and
     /// [`counterexample`] (and for the check without a query that comes
     /// first in each round); none if `None`, as [`build`] leaves it. A
     /// query that runs out of time is [`Verdict::Unknown`].
     pub timeout: Option<Duration>,
+}
+
+/// The values a [`counterexample`] reads from a model: every register in
+/// `|s|`, by path, as the output sample our init round starts from
+/// (`initial`) and as the wire, the value after the step (`registers`);
+/// every input in `|s|` and in `|s'|` (Yosys wires); every latched value
+/// `|*v|` of our update round. A counterexample of the init round reads
+/// `initial` and `inputs`, one of the update round the others.
+#[derive(Clone, Debug)]
+pub struct Probes {
+    pub initial: Vec<Probe>,
+    pub registers: Vec<Probe>,
+    pub inputs: Vec<Probe>,
+    pub next_inputs: Vec<Probe>,
+    pub latched: Vec<Probe>,
 }
 
 /// A named value in the script, as a bit-vector term.
@@ -316,20 +322,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
             .filter(|p| !t.register_widths.contains_key(*p))
             .map(|p| no_width(p)),
     );
-    let mut value = |name: &str, state: &str| {
-        let width = t.var(name).dtype().width();
-        match ys.wires.get(name) {
-            Some(&w) if w == width => ys.value(name, state),
-            Some(&w) => {
-                errors.push(format!("`{name}` has width {width}, in Yosys {w}"));
-                None
-            }
-            None => {
-                errors.push(format!("`{name}` is not a Yosys wire"));
-                None
-            }
-        }
-    };
+    let mut ties = Ties { t, ys, errors };
 
     let mut script = String::from("(set-logic QF_UFBV)\n");
     script += &ys.text;
@@ -349,7 +342,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         let theirs = match name.strip_suffix("@init") {
             // a missing register is reported by `registers`
             Some(path) => samples.get(path).and_then(|r| ys.value(r, S)),
-            None => value(name, S),
+            None => ties.value(name, S),
         };
         if let Some(theirs) = theirs {
             init += &format!("(assert (= {} {theirs}))\n", smt::next_symbol(name));
@@ -360,7 +353,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
     let latched = round.latched.iter().map(|n| (n, smt::latched_symbol(n), S));
     let inputs = round.inputs.iter().map(|n| (n, smt::next_symbol(n), NEXT));
     for (name, ours, state) in latched.chain(inputs) {
-        if let Some(theirs) = value(name, state) {
+        if let Some(theirs) = ties.value(name, state) {
             update += &format!("(assert (= {ours} {theirs}))\n");
         }
     }
@@ -370,7 +363,7 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         (Phase::Update, &round.next, NEXT),
     ] {
         for name in names {
-            if let Some(theirs) = value(name, state) {
+            if let Some(theirs) = ties.value(name, state) {
                 queries.push(Query {
                     phase,
                     name: name.clone(),
@@ -380,50 +373,8 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
             }
         }
     }
-    // what a counterexample reads: the registers by path (their output
-    // samples, or their wires) and the inputs
-    let mut probes = |names: &mut dyn Iterator<Item = (&String, &str, usize)>, state: &str| {
-        let probe = |(name, wire, width): (&String, &str, usize)| match ys.value(wire, state) {
-            Some(term) => Some(Probe {
-                name: name.clone(),
-                term,
-                width,
-            }),
-            None => {
-                errors.push(format!("`{wire}` is not a Yosys wire"));
-                None
-            }
-        };
-        names.filter_map(probe).collect::<Vec<Probe>>()
-    };
-    // a missing width is an error above
-    let width = |p: &String| t.register_widths.get(p).copied().unwrap_or_default();
-    let initial = probes(
-        &mut samples.iter().map(|(p, r)| (p, r.as_str(), width(p))),
-        S,
-    );
-    let registers = probes(
-        &mut t.registers.iter().map(|p| (p, p.as_str(), width(p))),
-        S,
-    );
-    // the outputs of blackboxes are inputs of the design, Yosys's wires
-    // with a free value in every step (from `cutpoint`)
-    let free: Vec<(String, usize)> = (t.blackbox_outputs.iter())
-        .filter(|n| !ys.inputs.contains_key(*n))
-        .map(|n| (n.clone(), ys.wires.get(n).copied().unwrap_or_default()))
-        .collect();
-    let all = || (ys.inputs.iter()).chain(free.iter().map(|(n, w)| (n, w)));
-    let inputs = probes(&mut all().map(|(n, w)| (n, n.as_str(), *w)), S);
-    let next_inputs = probes(&mut all().map(|(n, w)| (n, n.as_str(), *w)), NEXT);
-    let latched = round
-        .latched
-        .iter()
-        .map(|name| Probe {
-            name: name.clone(),
-            term: smt::latched_symbol(name),
-            width: t.var(name).dtype().width(),
-        })
-        .collect();
+    let probes = ties.probes(&samples, &round);
+    let mut errors = ties.errors;
     errors.extend(interfaces(t, ys, &first, &round));
     let mut seen = BTreeSet::new();
     errors.retain(|e| seen.insert(e.clone()));
@@ -438,13 +389,93 @@ pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
         init,
         update,
         queries,
-        initial,
-        registers,
-        inputs,
-        next_inputs,
-        latched,
+        probes,
         timeout: None,
     })
+}
+
+/// Yosys's terms for the names of a translation, collecting what does not
+/// match on the way.
+struct Ties<'a> {
+    t: &'a Translation,
+    ys: &'a Smt2,
+    errors: Vec<String>,
+}
+
+impl Ties<'_> {
+    /// Yosys's term for the value of our variable `name` in `state`, if it
+    /// has a wire of that name and width.
+    fn value(&mut self, name: &str, state: &str) -> Option<String> {
+        let width = self.t.var(name).dtype().width();
+        match self.ys.wires.get(name) {
+            Some(&w) if w == width => self.ys.value(name, state),
+            Some(&w) => {
+                self.errors
+                    .push(format!("`{name}` has width {width}, in Yosys {w}"));
+                None
+            }
+            None => {
+                self.errors.push(format!("`{name}` is not a Yosys wire"));
+                None
+            }
+        }
+    }
+
+    /// The probes of `names` (name, Yosys wire, width) in `state`.
+    fn read<'n>(
+        &mut self,
+        names: impl Iterator<Item = (&'n String, &'n str, usize)>,
+        state: &str,
+    ) -> Vec<Probe> {
+        let mut probes = Vec::new();
+        for (name, wire, width) in names {
+            match self.ys.value(wire, state) {
+                Some(term) => probes.push(Probe {
+                    name: name.clone(),
+                    term,
+                    width,
+                }),
+                None => self.errors.push(format!("`{wire}` is not a Yosys wire")),
+            }
+        }
+        probes
+    }
+
+    /// What a counterexample reads: the registers by path (their output
+    /// `samples`, or their wires), the inputs, and the latched values of
+    /// our update `round`.
+    fn probes(&mut self, samples: &BTreeMap<Name, String>, round: &Round) -> Probes {
+        let (t, ys) = (self.t, self.ys);
+        // a missing width is an error of `build`
+        let width = |p: &String| t.register_widths.get(p).copied().unwrap_or_default();
+        let initial = self.read(samples.iter().map(|(p, r)| (p, r.as_str(), width(p))), S);
+        let registers = self.read(t.registers.iter().map(|p| (p, p.as_str(), width(p))), S);
+        // the outputs of blackboxes are inputs of the design, Yosys's wires
+        // with a free value in every step (from `cutpoint`)
+        let free: Vec<(String, usize)> = (t.blackbox_outputs.iter())
+            .filter(|n| !ys.inputs.contains_key(*n))
+            .map(|n| (n.clone(), ys.wires.get(n).copied().unwrap_or_default()))
+            .collect();
+        let all = || (ys.inputs.iter()).chain(free.iter().map(|(n, w)| (n, w)));
+        let inputs = self.read(all().map(|(n, w)| (n, n.as_str(), *w)), S);
+        let next_inputs = self.read(all().map(|(n, w)| (n, n.as_str(), *w)), NEXT);
+        let latched = round
+            .latched
+            .iter()
+            .map(|name| Probe {
+                name: name.clone(),
+                term: smt::latched_symbol(name),
+                width: t.var(name).dtype().width(),
+            })
+            .collect();
+        Probes {
+            initial,
+            registers,
+            inputs,
+            next_inputs,
+            latched,
+        }
+    }
 }
 
 /// The differences between the interfaces of `t` and of Yosys's
@@ -682,10 +713,14 @@ pub struct Cex {
 pub fn counterexample(z3: &Path, m: &Miter, q: &Query) -> Result<Cex, String> {
     let none = vec![];
     let (registers, next_inputs, latched) = match q.phase {
-        Phase::Init => (&m.initial, &none, &none),
-        Phase::Update => (&m.registers, &m.next_inputs, &m.latched),
+        Phase::Init => (&m.probes.initial, &none, &none),
+        Phase::Update => (
+            &m.probes.registers,
+            &m.probes.next_inputs,
+            &m.probes.latched,
+        ),
     };
-    let groups = [registers, &m.inputs, next_inputs, latched];
+    let groups = [registers, &m.probes.inputs, next_inputs, latched];
     let probes = groups.iter().flat_map(|g| g.iter());
     let terms: Vec<&str> = probes
         .clone()
@@ -729,7 +764,7 @@ pub fn counterexample(z3: &Path, m: &Miter, q: &Query) -> Result<Cex, String> {
             .collect()
     };
     let registers = take(registers)?;
-    let inputs = take(&m.inputs)?;
+    let inputs = take(&m.probes.inputs)?;
     let next_inputs = take(next_inputs)?;
     let latched = take(latched)?;
     let ours = values.next().expect("counted");
