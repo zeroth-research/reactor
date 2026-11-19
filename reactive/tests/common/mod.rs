@@ -1,6 +1,10 @@
-//! Helpers shared by the `atom` and `module` integration tests: the
-//! uninterpreted `Ops` theory and the example modules built over it.
+//! Helpers shared by the integration tests: the uninterpreted `Ops` theory
+//! and the example modules built over it, for the `atom` and `module`
+//! tests; and [`matrix::Matrix`], the tensor of the tests over
+//! `theory::tensor`.
 #![allow(dead_code)]
+
+pub mod matrix;
 
 use base::boundary::{Boundary, Mono, Poly};
 use base::differentiable::Differentiable;

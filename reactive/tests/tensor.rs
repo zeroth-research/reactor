@@ -1,53 +1,16 @@
-//! Operations and atoms over a tensor type of this test's own: the
-//! operations of `theory::tensor` are generic over `theory::Tensor`, so any
-//! representation of matrices can back them, here with no torch.
+//! Operations and atoms over a tensor type of the tests' own,
+//! [`Matrix`]: the operations of `theory::tensor` are generic over
+//! `theory::Tensor`, so any representation of matrices can back them, here
+//! with no torch.
+
+mod common;
 
 use base::boundary::{Boundary, Poly};
 use base::differentiable::T;
+use common::matrix::Matrix;
 use dataflow::diagram::{Block, Term, Wire};
 use reactive::var::{Var, X, d};
-use std::fmt;
 use theory::tensor::{Havoc, Skip, Zero, real, sort};
-
-/// A real matrix, its entries stored row by row.
-#[derive(Debug)]
-struct Matrix {
-    shape: [usize; 2],
-    entries: Vec<f64>,
-}
-
-impl Matrix {
-    /// The matrix of the given rows.
-    fn new<const M: usize, const N: usize>(rows: [[f64; N]; M]) -> Self {
-        Matrix {
-            shape: [M, N],
-            entries: rows.into_iter().flatten().collect(),
-        }
-    }
-}
-
-impl theory::Tensor for Matrix {
-    fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-}
-
-/// Prints the rows, as `[[1, 0], [0, 1]]`. The terms require it: a term
-/// that fails to type-check names its operation, a constant by its tensor.
-impl fmt::Display for Matrix {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let [_, cols] = self.shape;
-        let rows: Vec<String> = self
-            .entries
-            .chunks(cols.max(1))
-            .map(|row| {
-                let row: Vec<String> = row.iter().map(f64::to_string).collect();
-                format!("[{}]", row.join(", "))
-            })
-            .collect();
-        write!(f, "[{}]", rows.join(", "))
-    }
-}
 
 /// The operations of all theories, holding their data in `Matrix`es.
 type Op = theory::tensor::Any<Matrix>;
