@@ -41,10 +41,9 @@ import sys
 import time
 from pathlib import Path
 
-SP = Path(__file__).parent                  # lean/tests/limits
-LEAN = SP.parent.parent                     # lean/
-REPO = LEAN.parent
-WARM = LEAN / "tests" / "lean"              # the already-built Mathlib
+SP = Path(__file__).parent                  # verith/tests/limits
+REPO = SP.parent.parent.parent
+WARM = REPO / "lean" / "tests" / "lean"     # the already-built Mathlib
 MODS = SP / "mods"
 
 # Generated projects and their shared build dir are build artifacts, so they
@@ -91,8 +90,8 @@ def load_cases() -> list:
     if SUITE == "limits":
         cases = list(CASES)
     elif SUITE == "fbk":
-        # The fbk probe table is the route's, in the `verith/` project.
-        sys.path.insert(0, str(REPO / "verith" / "tests" / "fbk"))
+        # The fbk probe table is the route's, beside this directory.
+        sys.path.insert(0, str(SP.parent / "fbk"))
         from probes import PROBES                        # noqa: PLC0415
         cases = [dict(name=n, group="fbk", mod=m, S=prop, expect=e)
                  for n, m, prop, e in PROBES]

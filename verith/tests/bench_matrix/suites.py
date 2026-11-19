@@ -44,8 +44,7 @@ from pathlib import Path
 
 SP = Path(__file__).resolve().parent        # verith/tests/bench_matrix
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
-LEAN_TESTS = VR.parent / "lean" / "tests"    # reactor_lean's tests: the limit matrix, tests/lean
-MODS = LEAN_TESTS / "limits" / "mods"
+MODS = VR / "tests" / "limits" / "mods"
 FIXTURES = VR / "tests" / "fixtures"
 SVCOMP_ADAPTER = SP / "svcomp_mod.py"
 HYBRID = SP / "hybrid"
@@ -113,7 +112,7 @@ def _module_path(mod: str) -> Path:
 def limits_rows() -> list[Row]:
     """The limit matrix, collapsed onto the question an inferring route sees."""
     problems: dict = {}
-    for c in table(LEAN_TESTS / "limits" / "cases.py", "CASES"):
+    for c in table(VR / "tests" / "limits" / "cases.py", "CASES"):
         if not c.get("P"):
             continue                    # no property: nothing to infer against
         problems.setdefault((c["mod"], c["P"], c.get("pre") or ""), []).append(c)

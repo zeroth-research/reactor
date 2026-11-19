@@ -398,7 +398,7 @@ uv run certify m_step2.py --safety "(not (= (X @intf.0) 1))" --infer ai-cegis \
 # [CEGIS] all obligations UNSAT — accepted        -- and no LLM call was made
 ```
 
-What each is for, measured on the `lean/tests/limits` fixtures:
+What each is for, measured on the `tests/limits` fixtures:
 
 | | `--infer smt-linear` | `--infer sygus` |
 |---|---|---|
@@ -516,7 +516,7 @@ decimal as happily, so the certificate carries one spelling whoever proved
 it.
 
 ```bash
-uv run certify ../lean/tests/limits/mods/m_lra_lin.py --buchi "(= (X @intf.0) 0.0)" \
+uv run certify tests/limits/mods/m_lra_lin.py --buchi "(= (X @intf.0) 0.0)" \
     --infer houdini --houdini-solver vampire --vampire ~/vampire/vampire \
     -o out/ -p Rea
 # [houdini] solver: vampire
@@ -567,7 +567,7 @@ So the questions are kept to two where they can be:
 * `--buchi` is **two**: an inductive invariant, then a ranking function that
   drops on *that* invariant, with its coefficients already numbers. The
   joint question is four holes for a one-component module and answered
-  nothing at all over `lean/tests/limits`; the split derives `m_countdown` and
+  nothing at all over `tests/limits`; the split derives `m_countdown` and
   `m_deep` — invariant in about a second, rank in about eight. The rank
   obligation is `rank(s) > 0` where the property fails and `rank(s') <
   rank(s)`, which implies the clamped `Int.toNat` form `rule_buchi` asks
@@ -611,7 +611,7 @@ portfolio strategy is tuned to find a refutation; what is wanted here is the
 **Both namings, and the whole budget declared to each.** Vampire introduces
 a Tseitin definition for each subformula it judges worth naming, and on a
 conjecture with holes that is decisive in *both* directions: over
-`lean/tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
+`tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
 `--naming 0` does not, `--naming 0` answers `m_relu` where naming does not,
 and they agree on `m_countdown`, `m_deep` and `m_min`. So both are asked,
 each on a share of what is left of the run.
@@ -633,7 +633,7 @@ lrs`, `--theory_instantiation all`, `--unification_with_abstraction
 one_side_interpreted` — and none moved either.
 
 So in practice this route derives a certificate for a **one-component Int**
-module — eight of seventeen `lean/tests/limits` safety and Büchi pairs, two of
+module — eight of seventeen `tests/limits` safety and Büchi pairs, two of
 them Büchi — and refuses past that pointing at `--infer houdini`, which
 searches a wider module by proposing facts and proving them. It reads scalar `Int` state
 only: Vampire reads reals, but the templates here are integer intervals and
@@ -649,7 +649,7 @@ that is reported as not found. This is not Houdini: nothing is filtered and
 nothing is proposed; it is the one check that the derivation is honest.
 
 ```bash
-uv run certify ../lean/tests/limits/mods/m_countdown.py --safety "(<= (X @intf.0) 100)" \
+uv run certify tests/limits/mods/m_countdown.py --safety "(<= (X @intf.0) 100)" \
     --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
 # [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
 # [vampire] template intervals: 2 holes, 409 chars
@@ -907,7 +907,7 @@ flag fails there rather than in generated code.
 `just vr-test` (`uv run pytest -m 'not slow'` from `verith/`) runs
 `tests/` and `nuterm/tests/`; `just test-lean` adds the `slow` ones, which
 build Lean. The modules they run on are their own (`tests/fixtures/`,
-`tests/smv_fixtures/`) and the limit matrix's (`../lean/tests/limits/mods/`).
+`tests/smv_fixtures/`, `tests/limits/mods/`).
 `tests/bench_matrix/` measures every route on every benchmark
 ([README](tests/bench_matrix/README.md)), `tests/fbk/` sweeps the
 `fbk-proveit` route ([README](tests/fbk/README.md)), and

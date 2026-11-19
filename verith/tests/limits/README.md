@@ -24,7 +24,7 @@ to do about the failures is in [`TODO.md`](../../../TODO.md).
 ## Running it
 
 ```bash
-cd lean
+cd verith
 uv run python tests/limits/run_limits.py                 # all cases
 uv run python tests/limits/run_limits.py Countdown NN2Deep5
 uv run python tests/limits/run_regress.py                # only baseline.json's cases, diffs verdicts
@@ -39,7 +39,7 @@ VERITH_SUITE=fbk VERITH_ROUTE=nuterm uv run python tests/limits/run_limits.py
 ```
 
 `VERITH_SUITE` picks the case table — `limits` (this one) or `fbk`
-([`verith/tests/fbk/probes.py`](../../../verith/tests/fbk/probes.py), whose probes are `--safety`
+([`tests/fbk/probes.py`](../fbk/probes.py), whose probes are `--safety`
 properties over the same modules). `VERITH_ROUTE` picks where the certificate
 comes from — `supplied` (the matrix's own `inv`/`rank`) or `nuterm`
 (`--infer nuterm`, which drops them). A non-default suite or route writes
@@ -55,7 +55,7 @@ measurement, not a defect.
 
 Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs
 `lean/tests/lean/.lake` already built (Mathlib, cslib, lean-smt; the first
-`(cd tests/lean && lake build)` takes about an hour cold): every
+`(cd ../lean/tests/lean && lake build)` takes about an hour cold): every
 generated project symlinks its `.lake` to one shared build dir whose
 `packages` the runner points there, so Relational / LeanAI / ZerothHammer are
 compiled once and only `System/*` and `Certificate/*` recompile per case.
@@ -102,7 +102,7 @@ anything surprising before believing it.
 
 ```
 cases.py         the matrix: one C(...) per case, plus the net builders
-mods/            37 module fixtures (m_countdown.py, m_max.py, m_relu_net.py, …)
+mods/            28 module fixtures (m_countdown.py, m_max.py, m_relu_net.py, …)
 run_limits.py    generate + build every case, print and record verdicts
 run_regress.py   run only the names in a baseline, diff verdicts, flag both directions
 baseline.json    the verdicts this README's numbers were measured at

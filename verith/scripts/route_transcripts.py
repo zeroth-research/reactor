@@ -34,7 +34,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 TESTS = REPO / "verith" / "tests"
 FIX = TESTS / "fixtures"
-MODS = REPO / "lean" / "tests" / "limits" / "mods"
+MODS = TESTS / "limits" / "mods"
 HYBRID = TESTS / "bench_matrix" / "hybrid"
 SMV = TESTS / "smv_fixtures"
 

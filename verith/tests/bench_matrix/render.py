@@ -31,7 +31,6 @@ from pygments.util import ClassNotFound
 SP = Path(__file__).resolve().parent
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
 PY = VR.parent / "python"                   # python/: reactor and its tests
-LEAN_TESTS = VR.parent / "lean" / "tests"    # reactor_lean's tests: the limit matrix, tests/lean
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
 sys.path.insert(0, str(SP))
@@ -81,7 +80,7 @@ SUITE_BLURB = {
             "fail translation."
         ),
         source=(
-            "The limit matrix, <code>lean/tests/limits/cases.py</code>. Its 77 cases vary the "
+            "The limit matrix, <code>tests/limits/cases.py</code>. Its 77 cases vary the "
             "<em>supplied</em> <code>--invariant</code> and <code>--ranking</code> over a "
             "much smaller set of questions, and no <code>--infer</code> route reads a "
             "supplied predicate, so the cases collapse onto their (module, property, "
@@ -694,7 +693,7 @@ def warnings_section(warns: list, w) -> None:
 
 
 # The directories benchmark files live in, in the order the page lists them.
-DIR_ORDER = ["../verith/tests/fixtures", "../lean/tests/limits/mods",
+DIR_ORDER = ["../verith/tests/fixtures", "../verith/tests/limits/mods",
              "benchmarks/svcomp/dsl", "../verith/tests/bench_matrix/hybrid",
              "../verith/tests/bench_matrix/petri", "../verith/tests/bench_matrix"]
 SVCOMP_DSL = PY / "benchmarks" / "svcomp" / "dsl"
@@ -906,7 +905,7 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None,
 
 # Where a path in the page's prose is relative to: the prose is written from
 # `python/`, with a few names local to this directory or the limit matrix's.
-LINK_BASES = [PY, PY.parent, SP, LEAN_TESTS / "limits", WORK]
+LINK_BASES = [PY, PY.parent, SP, VR / "tests" / "limits", WORK]
 # Embedded so the popup works from a copied page and without a server; larger
 # or non-text files are linked, not embedded.
 EMBED_SUFFIXES = {".py", ".md", ".lean", ".toml", ".txt", ".j2"}

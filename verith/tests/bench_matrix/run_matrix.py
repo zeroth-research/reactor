@@ -42,10 +42,9 @@ from pathlib import Path
 SP = Path(__file__).resolve().parent
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
 PY = VR.parent / "python"                   # python/: reactor and its tests
-LEAN_TESTS = VR.parent / "lean" / "tests"    # reactor_lean's tests: the limit matrix, tests/lean
 REPO = PY.parent
-WARM = LEAN_TESTS / "lean"                       # the already-built Mathlib
-MANIFEST = LEAN_TESTS / "limits" / "lake-manifest.json"
+WARM = VR.parent / "lean" / "tests" / "lean"     # the already-built Mathlib
+MANIFEST = VR / "tests" / "limits" / "lake-manifest.json"
 
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
@@ -155,8 +154,8 @@ def command(row, route, out: Path) -> list[str]:
 
 def rel(p: Path) -> str:
     """A module path as it is written from `python/`, which is where a run
-    is: `../lean/tests/limits/...` for the limit matrix, `../verith/tests/...`
-    for the CLI fixtures and the adapters beside this file."""
+    is: `../verith/tests/...` for the limit matrix, the CLI fixtures and the
+    adapters beside this file."""
     return os.path.relpath(Path(p).resolve(), PY)
 
 

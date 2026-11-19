@@ -153,8 +153,6 @@ compare; every difference must be one the change means.
 
 - [`TODO.md`](../../../TODO.md): what is still to do, known defects
   included.
-- [`tests/limits/`](../../tests/limits/README.md): the limit matrix of
-  generated projects built with lake, with its runners and baseline.
 
 The rest of this file is the reference, starting from the IR.
 
