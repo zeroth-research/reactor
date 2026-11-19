@@ -2016,3 +2016,61 @@ fn yosys_reads_the_text_we_read() {
         "{stdout}{stderr}"
     );
 }
+
+/// Bits of a register that no assignment writes keep their power-on value
+/// and are warned about; Yosys gives them no flip-flop and splits the rest
+/// of the register into several, which the register check cannot pair up.
+/// So `v2rm --yosys` refuses such a design up front (status 2, before
+/// Yosys runs), with every never-written range. A register written in
+/// parts gets no warning, nor does one with a variable-index write, which
+/// counts as writing every bit (Yosys keeps such a register whole).
+#[test]
+fn cli_yosys_refuses_unwritten_register_bits() {
+    let tmp = TempDir::new("yosys");
+    let path = tmp.write(
+        "unwritten.sv",
+        "module sub(input logic clk, input logic e, input logic [7:0] a, output logic [7:0] q);\n\
+         \x20 always_ff @(posedge clk) begin q[0] <= e; if (e) q[7:4] <= a[3:0]; end\n\
+         endmodule\n\
+         module top(input logic clk, input logic e, input logic [1:0] i, input logic [7:0] a,\n\
+         \x20          output logic [7:0] q, r, s, v);\n\
+         \x20 sub u(.clk(clk), .e(e), .a(a), .q(q));\n\
+         \x20 always_ff @(posedge clk) begin r[0] <= e; r[7] <= e; s[3:0] <= a[3:0]; s[7:4] <= a[7:4]; end\n\
+         \x20 always_ff @(posedge clk) v[i] <= e;\n\
+         endmodule\n",
+    );
+    let file = path.to_str().unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_v2rm"))
+        .args(["--yosys", file])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert_eq!(out.status.code(), Some(2), "{stderr}");
+    assert_eq!(
+        stderr,
+        format!(
+            "{file}:7:3: warning: bits 6:1 of register `r` are never written; they keep their \
+             power-on value\n\
+             {file}:2:3: warning: bits 3:1 of register `q` are never written; they keep their \
+             power-on value (in instance `u`)\n\
+             {file}: cannot compare with Yosys: bits 6:1 of register `r` are never written, \
+             bits 3:1 of register `q` are never written (in instance `u`); Yosys splits such a \
+             register into flip-flops for the written bits only and leaves the others undriven\n"
+        )
+    );
+    assert!(out.stdout.is_empty());
+
+    // what the refusal avoids: Yosys's flip-flops do not pair up with ours
+    let Some(yosys) = yosys::find() else {
+        common::missing("yosys", "the register check of Yosys's split register");
+        return;
+    };
+    let (_, t) = load(&path);
+    let ys = yosys::run(&yosys, &[&path], &t.name, &[]).unwrap();
+    assert!(miter::registers(&t, &ys).is_err());
+    assert!(
+        miter::build(&t, &ys)
+            .unwrap_err()
+            .starts_with("cannot compare with Yosys: ")
+    );
+}

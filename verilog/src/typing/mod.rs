@@ -117,6 +117,7 @@ mod fragment;
 // lowering and sizing are not
 pub use check::check;
 pub use checked::{Checked, checked};
+pub use definite::Unwritten;
 pub use domains::domains;
 pub use fragment::{
     ElemIndex, Piece, Variable, binary, cond, context_free, element, explicit, explicit_source,

@@ -1117,10 +1117,10 @@ fn translate_checked(header: &str, body: &str, check: Check) -> Translation {
     common::accepted_with(&src, check)
 }
 
-/// Yosys gives the bits of a register that no assignment writes no
-/// flip-flop (they are undriven) and splits the rest into several, where
-/// we keep the whole register; the miter compares one flip-flop per
-/// register.
+/// Bits of a register that no assignment writes keep their power-on value
+/// (with a warning). Yosys gives them no flip-flop (they are undriven) and
+/// splits the rest into several, where we keep the whole register; the
+/// miter compares one flip-flop per register, so it refuses such designs.
 const UNWRITTEN_BITS: Check = Check::NotYosys("bits of a register that no assignment writes");
 
 #[test]
@@ -1233,13 +1233,30 @@ fn accepted_targets() {
     );
     assert_eq!(t.module.atoms().len(), 3);
     translate_with(header, "  assign {y[7:4], y[3:0], q, c, d} = {a, a, a};");
-    // in always_ff, unassigned bits keep their value
-    translate_checked(
+    // in always_ff, unassigned bits keep their value, and bits never
+    // assigned their power-on value
+    let t = translate_checked(
         header,
         "  always_ff @(posedge clk) begin q[0] <= e; if (e) q[7:4] <= a[3:0]; end\n\
          \x20 assign {y, c, d} = {a, a};",
         UNWRITTEN_BITS,
     );
+    let warnings: Vec<String> = t
+        .unwritten
+        .iter()
+        .map(|u| u.warning().to_string())
+        .collect();
+    assert_eq!(
+        warnings,
+        ["2:3: bits 3:1 of register `q` are never written; they keep their power-on value"]
+    );
+    // written in parts, on different paths: every bit is written somewhere
+    let t = translate_with(
+        header,
+        "  always_ff @(posedge clk) if (e) q[3:0] <= a[3:0]; else q[7:4] <= a[7:4];\n\
+         \x20 assign {y, c, d} = {a, a};",
+    );
+    assert!(t.unwritten.is_empty());
     // in always_comb, every bit is assigned before it is read
     translate_with(
         header,

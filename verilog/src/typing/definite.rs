@@ -1,10 +1,11 @@
 //! Definite assignment: no read of a bit before it is written in a block, no latch, no live x
-//! (`definite`, run by [`check`](super::check)).
+//! (`definite`, run by [`check`](super::check)); and the bits of registers that no assignment
+//! writes ([`unwritten`], run by [`checked`](super::checked)).
 
 use super::fragment::{Piece, pieces_in};
 use super::{Env, Result};
 use crate::ast::{
-    BlockKind, Error, Expr, ExprKind, Item, Lvalue, Name, Select, Span, Stmt, StmtKind,
+    BlockKind, Error, Expr, ExprKind, Item, Lvalue, Name, Select, Span, Stmt, StmtKind, Warning,
 };
 use std::collections::BTreeMap;
 
@@ -634,6 +635,118 @@ fn bit_reads<'e>(env: &Env, e: &'e Expr, out: &mut Vec<(&'e Name, usize, usize, 
         }
         ExprKind::Concat(es) | ExprKind::Repl(_, es) => {
             es.iter().for_each(|e| bit_reads(env, e, out));
+        }
+    }
+}
+
+/// Bits of a register that no assignment of its `always_ff` block writes,
+/// on any path: they keep their power-on value (the initial value, or any
+/// value) forever. One per maximal range of such bits
+/// ([`Checked::unwritten`](super::Checked::unwritten)).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Unwritten {
+    /// The register (a signal or an element of an array).
+    pub register: Name,
+    pub hi: usize,
+    pub lo: usize,
+    /// The width of the register.
+    pub width: usize,
+    /// The block that drives the register.
+    pub span: Span,
+}
+
+impl Unwritten {
+    /// `` bits 3:1 of register `q` are never written ``, `` bit 3 of … is … ``,
+    /// or `` register `q` is never written `` if no bit is written.
+    pub fn never_written(&self) -> String {
+        let q = &self.register;
+        if self.hi + 1 - self.lo == self.width {
+            format!("register `{q}` is never written")
+        } else if self.hi == self.lo {
+            format!("bit {} of register `{q}` is never written", self.hi)
+        } else {
+            format!(
+                "bits {}:{} of register `{q}` are never written",
+                self.hi, self.lo
+            )
+        }
+    }
+
+    /// The warning at the block: the bits keep their power-on value.
+    pub fn warning(&self) -> Warning {
+        let keep = if self.hi == self.lo || self.hi + 1 - self.lo == self.width {
+            "it keeps its power-on value"
+        } else {
+            "they keep their power-on value"
+        };
+        Warning::new(self.span, format!("{}; {keep}", self.never_written()))
+    }
+}
+
+/// The bits of the registers of the `always_ff` block `item` of a sized
+/// module (with the signals `env`) that no assignment writes on any path,
+/// by register in the order of [`Item::targets`], each register's ranges
+/// from the top bit down. An assignment with a variable index counts as
+/// writing every bit of its signal (every element of its array), also
+/// those that no value of a narrow index reaches: so the bits found are
+/// the ones Yosys gives no flip-flop. An assignment of x writes nothing
+/// (it is a dead store, assigned again).
+pub(super) fn unwritten(env: &Env, item: &Item) -> Vec<Unwritten> {
+    let Item::AlwaysFf { body, .. } = item else {
+        return Vec::new();
+    };
+    let mut written = Bits::default();
+    let mut stack = vec![body];
+    while let Some(s) = stack.pop() {
+        match &s.kind {
+            StmtKind::NonBlocking { lhs, .. } | StmtKind::Blocking { lhs, .. } => {
+                for p in pieces_in(env, lhs) {
+                    reachable(env, &p, &mut written);
+                }
+            }
+            _ => stack.extend(s.children()),
+        }
+    }
+    let mut out = Vec::new();
+    for y in item.targets() {
+        let width = env[y].ty.width;
+        let missing: Vec<usize> = (0..width)
+            .rev()
+            .filter(|b| !written.contains(y, *b))
+            .collect();
+        // maximal ranges, from the top
+        let mut ranges: Vec<(usize, usize)> = Vec::new();
+        for b in missing {
+            match ranges.last_mut() {
+                Some((_, lo)) if *lo == b + 1 => *lo = b,
+                _ => ranges.push((b, b)),
+            }
+        }
+        out.extend(ranges.into_iter().map(|(hi, lo)| Unwritten {
+            register: y.clone(),
+            hi,
+            lo,
+            width,
+            span: item.span(),
+        }));
+    }
+    out
+}
+
+/// Adds to `written` the bits the piece `p` may write: with a variable
+/// index, every bit of its signal (or of every element of its array).
+fn reachable(env: &Env, p: &Piece, written: &mut Bits) {
+    let names: Vec<&Name> = match p.elem {
+        Some(e) => e.elems.iter().collect(),
+        None => vec![&p.name],
+    };
+    for y in names {
+        let (hi, lo) = match p.variable {
+            None => (p.hi, p.lo),
+            Some(_) => (env[y].ty.width - 1, 0),
+        };
+        for b in lo..=hi {
+            written.insert(y, b);
         }
     }
 }

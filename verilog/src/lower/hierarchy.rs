@@ -2,7 +2,7 @@
 
 use super::builder::Builder;
 use super::order::{Pending, await_order, dependencies, reset_of};
-use super::{Part, Result, init_name, internal, literal, title};
+use super::{Part, Result, UnwrittenBits, init_name, internal, literal, title};
 use crate::ast::{
     self, Dir, Edge, Error, ErrorKind, Expr, Instance, Item, Lvalue, LvalueKind, Name, Reset, Span,
     Warning,
@@ -39,6 +39,8 @@ pub(super) struct Out<'n, 'i> {
     pub(super) out_of_range: Vec<Warning>,
     /// The instances of blackboxes, as warnings.
     pub(super) blackboxes: Vec<Warning>,
+    /// The bits of registers that no assignment writes, by instance.
+    pub(super) unwritten: Vec<UnwrittenBits>,
 }
 
 impl<'i> Out<'_, 'i> {
@@ -75,6 +77,11 @@ pub(super) fn lower_rec<'i>(
 ) -> Result<Module> {
     let ctx = |e: Error| elab::context(e, prefix);
     let checked = out.checked(inst).map_err(ctx)?;
+    out.unwritten
+        .extend(checked.unwritten().iter().map(|bits| UnwrittenBits {
+            instance: prefix.clone(),
+            bits: bits.clone(),
+        }));
     // every implicit resize made explicit, so that the terms below need
     // operands of equal types only
     let m = checked.sized();
