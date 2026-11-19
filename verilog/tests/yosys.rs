@@ -780,7 +780,7 @@ type Blame = (String, Side, Option<String>);
 /// replay that mixes them up gives other values.
 fn blame(z3: &Path, inst: &Inst, t: &Translation, m: &miter::Miter) -> Vec<Blame> {
     let mut m = m.clone();
-    for (i, n) in m.inputs.iter().zip(&m.next_inputs) {
+    for (i, n) in m.probes.inputs.iter().zip(&m.probes.next_inputs) {
         m.script += &format!("(assert (distinct {} {}))\n", i.term, n.term);
     }
     blame_from(z3, inst, t, &m)
@@ -1392,7 +1392,7 @@ fn miter_requires_satisfiable_base() {
     );
     // ties that contradict each other in the update round only
     let mut contradict = m.clone();
-    let en = m.inputs.iter().find(|p| p.name == "en").unwrap();
+    let en = m.probes.inputs.iter().find(|p| p.name == "en").unwrap();
     contradict.update += &format!("(assert (distinct {0} {0}))\n", en.term);
     let err = miter::check(&z3, &contradict).unwrap_err();
     assert!(err.starts_with("in the update round, "), "{err}");
