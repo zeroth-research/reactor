@@ -228,6 +228,31 @@ blocks and atoms. The check runs on names, not paths: a port connected to
 a signal name is that signal. A loop through instances is found on the
 atoms of the composed modules and reported with the signals on it.
 
+## Names
+
+Every variable and named wire has a name made of source identifiers and
+characters that a SystemVerilog identifier cannot contain, so generated
+names never collide with source names nor with each other:
+
+- `.` separates instance names in paths (`u.v.x`) and names the variable
+  `u.a` of an input of the instance `u` connected to an expression;
+- `[k]` names the element at address `k` of an array (`m[3]`, see
+  [`ast::SignalId`]);
+- `@` starts a suffix: `q@init` (the initial value of a register), `y@1`,
+  `y@2`, … (intermediate values in a block), `clk@pos`, `clk@neg` (edge
+  tests); the suffixes differ from each other (`init`, digits, `pos`,
+  `neg`), so these names differ for every signal;
+- `#k` numbers the second and later edge tests of one clock edge in a
+  module (`clk@pos#2`);
+- `%k` names, in printed modules and SMT-LIB text only, the wires local to
+  an atom that have no name.
+
+An identifier may contain none of these characters (`$` is allowed in
+identifiers, and is not used). Escaped identifiers (`\a.b `) may contain
+any of them, and the frontend rejects them; this is what keeps the names
+apart. Accepting them would need a mangling of their text, or typed names
+that become text only on output.
+
 ## Blackboxes and pins
 
 A blackbox (a module marked `(* blackbox *)`, with ports and parameters but
