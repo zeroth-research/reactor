@@ -1,3 +1,4 @@
+% vim: ts=2:sw=2:expandtab
 \documentclass[11pt]{article}
 
 \usepackage[T1]{fontenc}
@@ -7,18 +8,190 @@
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{hyperref}
 
-\title{Semantics of Coloured Petri Nets}
-\author{}
+\theoremstyle{definition}
+\newcommand{\Nat}{\mathbb{N}}
+\newcommand{\Real}{\mathbb{R}}
+\newcommand{\Int}{\mathbb{Z}}
+\newcommand{\DCPN}[1]{\texorpdfstring{\textup{DCPN}\ensuremath{_{#1}}}{DCPN#1}}
+
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+
+\title{Semantics of Coloured Petri Nets in SDCPN sense}
+\author{Igor Konnov, Thomas Pani}
 \date{\today}
 
 \begin{document}
 
 \maketitle
 
-\section{Introduction}
+\begin{abstract}
+Coloured Petri nets were introduced by Jensen~\cite{Jensen1981}; see Jensen and
+Kristensen~\cite{JensenKristensen2009} for a modern presentation. DCPNs and SDCPNs were introduced by
+Everdij and Blom~\cite{EverdijBlom2005,EverdijBlom2006}. Even though both carry the word
+``colored'' in their name, the behavior of colored tokens differs in (S)DCPNs
+from the original semantics of CPNs. The purpose of this document is to capture
+the semantics of the CPN fragment of DCPNs. This is needed to reason about
+the small model theorem and further translation to reactive modules.
+\end{abstract}
 
-Coloured Petri nets~\cite{JensenKristensen2009}.
+\section{\DCPN{0}}
 
+In this section, we define \DCPN{0}, the most minimalistic fragment of DCPNs
+that still makes sense:
+
+\begin{itemize}
+  \item Colors are unified, that is, in every place, a token has its color
+    from~$\Real^k$ for a fixed~$k \ge 1$.
+
+  \item There are only ordinary arcs, no enabling or inhibitor arcs.
+
+  \item There are no delay transitions.
+
+  \item Firing is deterministic: a transition produces exactly one token along
+    each of its output arcs, and the colours of the produced tokens are an
+    affine function of the colours of the consumed tokens.
+
+  \item Guarded transitions have their guards over linear-integer arithmetic.
+
+  \item Token color functions are constants, that is, flows are linear.
+    Moreover, there is a global discretized clock, and the token colors
+    change according to the change of this clock.
+\end{itemize}
+
+We specialize the definition of DCPNs by Everdij and
+Blom~\cite[Sec.~3.1]{EverdijBlom2005} to this fragment. We keep their tuple
+structure and notation: calligraphic letters denote the elements of the tuple,
+whereas $P$, $T$, and $A$ denote individual places, transitions, and arcs,
+respectively.
+
+\begin{definition}[\DCPN{0}]\label{def:dcpn0}
+  Fix $k \in \Nat$ to be the color dimension, different from~0.
+  A \emph{\DCPN{0}} is a tuple
+  $(\mathcal{P}, \mathcal{T}, \mathcal{A}, \mathcal{N}, \mathcal{S},
+    \mathcal{C}, \mathcal{V}, \mathcal{G}, \mathcal{D}, \mathcal{F},
+    \mathcal{I})$,
+  together with the rules R0--R4 of~\cite{EverdijBlom2005}, whose elements
+  are restricted as follows:
+
+  \begin{enumerate}
+    \item $\mathcal{P}$ is a finite set of places.
+
+    \item $\mathcal{T}$ is a finite set of transitions with $\mathcal{T} \cap
+      \mathcal{P} = \emptyset$. In general, it is partitioned into guard
+      transitions $\mathcal{T}_G$, delay transitions $\mathcal{T}_D$, and
+      immediate transitions $\mathcal{T}_I$. In this definition, $\mathcal{T}_D
+      = \emptyset$. Hence, $\mathcal{T} = \mathcal{T}_G \cup \mathcal{T}_I$.
+
+    \item $\mathcal{A}$ is a finite set of arcs with $\mathcal{A} \cap
+      \mathcal{P} = \mathcal{A} \cap \mathcal{T} = \emptyset$.  In general, it
+      is partitioned into ordinary arcs $\mathcal{A}_O$, enabling arcs
+      $\mathcal{A}_E$, and inhibitor arcs $\mathcal{A}_I$. In this definition,
+      $\mathcal{A}_E = \mathcal{A}_I = \emptyset$. Hence, $\mathcal{A} =
+      \mathcal{A}_O$.
+
+    \item $\mathcal{N} : \mathcal{A} \to
+      (\mathcal{P} \times \mathcal{T}) \cup (\mathcal{T} \times \mathcal{P})$
+      is a node function. For an arc $A$, we write $P(A)$ and $T(A)$ for the
+      place and the transition of $\mathcal{N}(A)$, respectively. For a
+      transition $T$, the sets $\mathcal{A}_{\mathit{in}}(T)$ and
+      $\mathcal{A}_{\mathit{out}}(T)$ of its input and output arcs are defined
+      as in~\cite{EverdijBlom2005}. Since all arcs are ordinary,
+      $\mathcal{A}_{\mathit{in},O}(T) = \mathcal{A}_{\mathit{in},OE}(T)
+        = \mathcal{A}_{\mathit{in}}(T)$. Note that
+      $\mathcal{N}$ need not be injective, that is, a place and a transition
+      may be connected by several arcs.
+
+    \item $\mathcal{S} = \{\Real^k\}$ is the set of colour types. In this
+      definition, there is only one colour type --- the set of real
+      vectors~$\Real^k$.
+
+    \item $\mathcal{C} : \mathcal{P} \to \mathcal{S}$ is the colour function.
+      In our case, it is trivially defined as $\mathcal{C}(P) = \Real^k$ for
+      every $P \in \mathcal{P}$.  For a transition $T$ with input arcs
+      $\mathcal{A}_{\mathit{in}}(T) = \{A_1, \dots, A_m\}$, we write
+      $\mathcal{C}(P(\mathcal{A}_{\mathit{in}}(T))) = \mathcal{C}(P(A_1))
+      \times \dots \times \mathcal{C}(P(A_m)) = \Real^{k \cdot m}$, and
+      similarly for $\mathcal{C}(P(\mathcal{A}_{\mathit{out}}(T)))$.
+      If $m = 0$, this product is empty. Unlike~\cite{EverdijBlom2005}, who
+      set $\Real^0 = \emptyset$, we let $\Real^0 = \{()\}$ be the
+      singleton set containing the empty tuple. Hence, the firing measure
+      $\mathcal{F}_T$ of a transition without input arcs is a single
+      probability measure, and such a transition can fire.
+
+    \item $\mathcal{V}$ is the set of token colour functions. For each
+      place $P \in \mathcal{P}$, it contains a constant
+      function $\mathcal{V}_P : \Real^k \to \Real^k$, that is,
+      $\mathcal{V}_P(c) = v_P$ for all $c \in \Real^k$ and some fixed
+      $v_P \in \Real^k$. Constant functions are trivially locally
+      Lipschitz continuous.
+
+    \item $\mathcal{G}$ is the set of transition guards. For each
+      $T \in \mathcal{T}_G$, it contains a guard
+      $\mathcal{G}_T : \mathcal{C}(P(\mathcal{A}_{\mathit{in}}(T)))
+        \to \{\mathit{True}, \mathit{False}\}$
+      with $\mathcal{G}_T(c) = \mathit{True}$ iff $c \models \varphi_T$,
+      where $\varphi_T$ is a quantifier-free formula of linear arithmetic
+      with integer coefficients over the colour components of the input
+      tokens.\footnote{%
+        Everdij and Blom~\cite{EverdijBlom2005} define
+        $\mathcal{G}_T(c) = \mathit{True}$ iff $c \in \partial O_T$, that is,
+        $c$ lies on the boundary of an open set~$O_T$. Since the colours
+        evolve continuously, a guard transition fires at the moment when its
+        input colours reach this boundary. In contrast, our guard holds for
+        every colour that satisfies~$\varphi_T$, which matches the predicate
+        transitions of Petrinaut, which fire in every simulation step in which
+        their predicate holds. Under a discretized clock, the boundary
+        semantics would be fragile: a colour may jump over the boundary
+        between two clock ticks, for example, from~$4$ to~$6$ over the
+        boundary~$5$, and the transition would never fire.}
+      If $T$ has no input arcs, then
+      $\mathcal{C}(P(\mathcal{A}_{\mathit{in}}(T))) = \Real^0 = \{()\}$,
+      the formula $\varphi_T$ has no free variables, and $\mathcal{G}_T$ is
+      constant.
+
+    \item $\mathcal{D} = \emptyset$, since there are no delay transitions.
+
+    \item $\mathcal{F}$ is the set of firing measures. In general, for each
+      $T \in \mathcal{T}$, it contains a map $\mathcal{F}_T$ from
+      $\mathcal{C}(P(\mathcal{A}_{\mathit{in}}(T)))$ into the set of
+      probability measures on
+      $\{0, 1\}^{|\mathcal{A}_{\mathit{out}}(T)|}
+        \times \mathcal{C}(P(\mathcal{A}_{\mathit{out}}(T)))$.
+      A sample $(f, a)$ selects the output arcs that receive a token ($f$)
+      and the colours of the produced tokens ($a$).
+      In this definition, firing is deterministic. Let $T$ have $m$ input arcs
+      and $n$ output arcs. Then there is an affine function
+      $\pi_T(c) = M_T\, c + b_T$ with $M_T \in \Int^{kn \times km}$
+      and $b_T \in \Int^{kn}$ such that
+      $\mathcal{F}_T(c) = \delta_{(\mathbf{1}, \pi_T(c))}$ for all
+      $c \in \Real^{km}$. Here, $\delta_x$ is the Dirac measure at~$x$, and
+      $\mathbf{1} = (1, \dots, 1) \in \{0, 1\}^n$, that is, $T$ produces
+      a token along each of its output arcs. If $m = 0$, then
+      $\pi_T$ is the constant~$b_T$.
+
+    \item $\mathcal{I} : \mathcal{P} \to \mathcal{C}(P)_{\mathit{ms}}$ is the
+      initialisation function, where $\mathcal{C}(P)_{\mathit{ms}}$ is the set
+      of all multisets over $\mathcal{C}(P) = \Real^k$.
+  \end{enumerate}
+\end{definition}
+
+The rules R0--R4 resolve competing enablings and are therefore part of the
+execution semantics, which we define later. Since $\mathcal{T}_D = \emptyset$,
+rule R0 reduces to immediate transitions having priority over guard
+transitions. Likewise, the global discretized clock only affects executions:
+Definition~\ref{def:dcpn0} merely fixes that, while a token resides in a
+place~$P$, its colour changes at the constant rate~$v_P$.
+
+\begin{remark}
+  Everdij and Blom define $\mathcal{C}(P(\mathcal{A}_{\mathit{in},OE}(T)))$
+  as a product over the \emph{places} connected to~$T$, whereas their
+  execution consumes one token per \emph{arc}. We take the product over arcs,
+  so that a transition with two arcs from the same place reads the colours of
+  two distinct tokens.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
 \bibliographystyle{plain}
 \bibliography{references}
 
