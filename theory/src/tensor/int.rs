@@ -33,6 +33,7 @@ use crate::Tensor;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
+#[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
 use subenum::subenum;
@@ -63,14 +64,14 @@ impl<T> Const<T> {
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Add {
     shape: [usize; 2],
 }
 
 /// Pointwise subtraction `x - y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Sub {
     shape: [usize; 2],
 }
@@ -78,7 +79,7 @@ pub struct Sub {
 /// Pointwise multiplication `x ⊙ y` of `[m, n]` matrices: the Hadamard
 /// product, not the matrix product [`MatMul`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Mul {
     shape: [usize; 2],
 }
@@ -90,7 +91,7 @@ pub struct Mul {
 ///
 /// SMT-LIB2: `(div x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Div {
     shape: [usize; 2],
 }
@@ -101,7 +102,7 @@ pub struct Div {
 ///
 /// SMT-LIB2: `(mod x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Mod {
     shape: [usize; 2],
 }
@@ -137,7 +138,7 @@ impl<T> Linear<T> {
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct ReLU {
     shape: [usize; 2],
 }
@@ -145,28 +146,28 @@ pub struct ReLU {
 /// The index of a maximal entry of an `[m, n]` integer matrix, counting its
 /// entries row by row, written as a `[1, 1]` matrix of the same sort.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Argmax {
     shape: [usize; 2],
 }
 
 /// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Min {
     shape: [usize; 2],
 }
 
 /// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Max {
     shape: [usize; 2],
 }
 
 /// Transposition `xᵀ` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Transpose {
     shape: [usize; 2],
 }
@@ -174,7 +175,7 @@ pub struct Transpose {
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the sizes given as `MatMul([m, n], [n, k])`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct MatMul {
     lhs: [usize; 2],
     rhs: [usize; 2],
@@ -185,7 +186,7 @@ pub struct MatMul {
 ///
 /// SMT-LIB2: `(< x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Lt {
     shape: [usize; 2],
 }
@@ -195,7 +196,7 @@ pub struct Lt {
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Ite {
     shape: [usize; 2],
 }
@@ -205,7 +206,7 @@ pub struct Ite {
 ///
 /// SMT-LIB2: `(<= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Le {
     shape: [usize; 2],
 }
@@ -215,7 +216,7 @@ pub struct Le {
 ///
 /// SMT-LIB2: `(> x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Gt {
     shape: [usize; 2],
 }
@@ -225,7 +226,7 @@ pub struct Gt {
 ///
 /// SMT-LIB2: `(>= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Ge {
     shape: [usize; 2],
 }
@@ -235,7 +236,7 @@ pub struct Ge {
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Eq {
     shape: [usize; 2],
 }
@@ -245,7 +246,7 @@ pub struct Eq {
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Ne {
     shape: [usize; 2],
 }
@@ -835,6 +836,7 @@ impl fmt::Display for Ne {
 /// each operation in turn: those carrying no data through their own
 /// classes, and [`Const`] and [`Linear`] through the extraction that the
 /// tensor type `T` provides.
+#[cfg(feature = "pyo3")]
 impl<'py, T> pyo3::FromPyObject<'py> for NIA<T>
 where
     Const<T>: pyo3::FromPyObject<'py>,
@@ -912,201 +914,211 @@ where
 
 // The Python constructors of the operations carrying no tensor: each takes
 // its sizes positionally, in the order of its fields, the shape as a list.
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Add {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Add { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Sub {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Sub { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Mul {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Mul { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Div {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Div { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Mod {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Mod { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl ReLU {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         ReLU { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Argmax {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Argmax { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Min {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Min { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Max {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Max { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Transpose {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Transpose { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl MatMul {
     /// Fails unless the columns of `lhs` are the rows of `rhs`.
-    #[new]
-    #[pyo3(signature = (lhs, rhs, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (lhs, rhs, /)))]
     pub fn new(lhs: [usize; 2], rhs: [usize; 2]) -> Result<Self, crate::Error> {
         if lhs[1] != rhs[0] {
             return Err(crate::Error(format!(
@@ -1116,150 +1128,158 @@ impl MatMul {
         Ok(MatMul { lhs, rhs })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("lhs", "rhs")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn lhs(&self) -> [usize; 2] {
         self.lhs
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn rhs(&self) -> [usize; 2] {
         self.rhs
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Lt {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Lt { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ite {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Ite { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Le {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Le { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Gt {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Gt { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ge {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Ge { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Eq {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Eq { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ne {
-    #[new]
-    #[pyo3(signature = (shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Ne { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }

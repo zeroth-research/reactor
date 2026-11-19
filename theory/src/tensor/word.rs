@@ -51,6 +51,7 @@ use crate::Tensor;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
+#[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
 
@@ -96,7 +97,7 @@ impl<T> Const<T> {
 ///
 /// SMT-LIB2: `(concat x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Concat {
     u: usize,
     v: usize,
@@ -109,7 +110,7 @@ pub struct Concat {
 ///
 /// SMT-LIB2: `((_ extract i j) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Extract {
     i: usize,
     j: usize,
@@ -122,7 +123,7 @@ pub struct Extract {
 ///
 /// SMT-LIB2: `((_ repeat i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Repeat {
     i: usize,
     width: usize,
@@ -133,7 +134,7 @@ pub struct Repeat {
 ///
 /// SMT-LIB2: `(bvnot x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Not {
     width: usize,
     shape: [usize; 2],
@@ -143,7 +144,7 @@ pub struct Not {
 ///
 /// SMT-LIB2: `(bvand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct And {
     width: usize,
     shape: [usize; 2],
@@ -153,7 +154,7 @@ pub struct And {
 ///
 /// SMT-LIB2: `(bvor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Or {
     width: usize,
     shape: [usize; 2],
@@ -163,7 +164,7 @@ pub struct Or {
 ///
 /// SMT-LIB2: `(bvxor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Xor {
     width: usize,
     shape: [usize; 2],
@@ -173,7 +174,7 @@ pub struct Xor {
 ///
 /// SMT-LIB2: `(bvnand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Nand {
     width: usize,
     shape: [usize; 2],
@@ -183,7 +184,7 @@ pub struct Nand {
 ///
 /// SMT-LIB2: `(bvnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Nor {
     width: usize,
     shape: [usize; 2],
@@ -194,7 +195,7 @@ pub struct Nor {
 ///
 /// SMT-LIB2: `(bvxnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Xnor {
     width: usize,
     shape: [usize; 2],
@@ -205,7 +206,7 @@ pub struct Xnor {
 ///
 /// SMT-LIB2: `(bvneg x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Neg {
     width: usize,
     shape: [usize; 2],
@@ -216,7 +217,7 @@ pub struct Neg {
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Ite {
     width: usize,
     shape: [usize; 2],
@@ -226,7 +227,7 @@ pub struct Ite {
 ///
 /// SMT-LIB2: `(bvadd x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Add {
     width: usize,
     shape: [usize; 2],
@@ -236,7 +237,7 @@ pub struct Add {
 ///
 /// SMT-LIB2: `(bvsub x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Sub {
     width: usize,
     shape: [usize; 2],
@@ -246,7 +247,7 @@ pub struct Sub {
 ///
 /// SMT-LIB2: `(bvmul x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Mul {
     width: usize,
     shape: [usize; 2],
@@ -256,7 +257,7 @@ pub struct Mul {
 ///
 /// SMT-LIB2: `(bvshl x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Shl {
     width: usize,
     shape: [usize; 2],
@@ -267,7 +268,7 @@ pub struct Shl {
 ///
 /// SMT-LIB2: `((_ rotate_left i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct RotateLeft {
     i: usize,
     width: usize,
@@ -279,7 +280,7 @@ pub struct RotateLeft {
 ///
 /// SMT-LIB2: `((_ rotate_right i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct RotateRight {
     i: usize,
     width: usize,
@@ -290,7 +291,7 @@ pub struct RotateRight {
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Eq {
     width: usize,
     shape: [usize; 2],
@@ -300,7 +301,7 @@ pub struct Eq {
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Ne {
     width: usize,
     shape: [usize; 2],
@@ -892,6 +893,7 @@ pub mod signed {
     use crate::tensor::sort::check_width;
     use base::boundary::{Boundary, Poly};
     use base::mono;
+    #[cfg(feature = "pyo3")]
     use pyo3::prelude::*;
     use std::fmt;
 
@@ -901,7 +903,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsdiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Div {
         width: usize,
         shape: [usize; 2],
@@ -911,7 +913,7 @@ pub mod signed {
     /// `Abs(width, [m, n])`: `Ite(x < 0, -x, x)`, so the minimum word is its own
     /// absolute value.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Abs {
         width: usize,
         shape: [usize; 2],
@@ -922,7 +924,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsrem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Rem {
         width: usize,
         shape: [usize; 2],
@@ -933,7 +935,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsmod x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Mod {
         width: usize,
         shape: [usize; 2],
@@ -944,7 +946,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvashr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Shr {
         width: usize,
         shape: [usize; 2],
@@ -955,7 +957,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `((_ sign_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Extend {
         i: usize,
         width: usize,
@@ -966,7 +968,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvslt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Lt {
         width: usize,
         shape: [usize; 2],
@@ -976,7 +978,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsle x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Le {
         width: usize,
         shape: [usize; 2],
@@ -986,7 +988,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsgt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Gt {
         width: usize,
         shape: [usize; 2],
@@ -996,7 +998,7 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Ge {
         width: usize,
         shape: [usize; 2],
@@ -1162,256 +1164,266 @@ pub mod signed {
         }
     }
     // The Python constructors and getters of the operations.
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Div {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Div { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Abs {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Abs { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Rem {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Rem { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Mod {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Mod { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Shr {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Shr { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Extend {
-        #[new]
-        #[pyo3(signature = (i, width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (i, width, shape, /)))]
         pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Extend { i, width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str, &'static str) {
             ("i", "width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn i(&self) -> usize {
             self.i
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Lt {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Lt { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Le {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Le { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Gt {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Gt { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Ge {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Ge { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
@@ -1426,6 +1438,7 @@ pub mod unsigned {
     use crate::tensor::sort::check_width;
     use base::boundary::{Boundary, Poly};
     use base::mono;
+    #[cfg(feature = "pyo3")]
     use pyo3::prelude::*;
     use std::fmt;
 
@@ -1434,7 +1447,7 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvudiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Div {
         width: usize,
         shape: [usize; 2],
@@ -1444,7 +1457,7 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvurem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Rem {
         width: usize,
         shape: [usize; 2],
@@ -1455,7 +1468,7 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvlshr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Shr {
         width: usize,
         shape: [usize; 2],
@@ -1466,7 +1479,7 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `((_ zero_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Extend {
         i: usize,
         width: usize,
@@ -1477,7 +1490,7 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvult x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Lt {
         width: usize,
         shape: [usize; 2],
@@ -1487,7 +1500,7 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvule x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Le {
         width: usize,
         shape: [usize; 2],
@@ -1497,7 +1510,7 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvugt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Gt {
         width: usize,
         shape: [usize; 2],
@@ -1507,7 +1520,7 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvuge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[pyo3::pyclass(frozen, eq, str)]
+    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
     pub struct Ge {
         width: usize,
         shape: [usize; 2],
@@ -1641,206 +1654,214 @@ pub mod unsigned {
         }
     }
     // The Python constructors and getters of the operations.
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Div {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Div { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Rem {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Rem { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Shr {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Shr { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Extend {
-        #[new]
-        #[pyo3(signature = (i, width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (i, width, shape, /)))]
         pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Extend { i, width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str, &'static str) {
             ("i", "width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn i(&self) -> usize {
             self.i
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Lt {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Lt { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Le {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Le { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Gt {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Gt { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
     }
 
-    #[pymethods]
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Ge {
-        #[new]
-        #[pyo3(signature = (width, shape, /))]
+        #[cfg_attr(feature = "pyo3", new)]
+        #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
         pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
             Ok(Ge { width, shape })
         }
 
+        #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
             ("width", "shape")
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn width(&self) -> usize {
             self.width
         }
 
-        #[getter]
+        #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
         }
@@ -1851,6 +1872,7 @@ pub mod unsigned {
 /// trying each operation in turn: those carrying no data through their own
 /// classes, and [`Const`] through the extraction that the tensor type `T`
 /// provides.
+#[cfg(feature = "pyo3")]
 impl<'py, T> pyo3::FromPyObject<'py> for BV<T>
 where
     Const<T>: pyo3::FromPyObject<'py>,
@@ -1984,43 +2006,44 @@ where
 
 // The Python constructors of the operations carrying no tensor: each takes
 // its sizes positionally, in the order of its fields, the shape as a list.
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Concat {
     /// Fails unless `u` and `v` are positive.
-    #[new]
-    #[pyo3(signature = (u, v, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (u, v, shape, /)))]
     pub fn new(u: usize, v: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(u)?;
         check_width(v)?;
         Ok(Concat { u, v, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str) {
         ("u", "v", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn u(&self) -> usize {
         self.u
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn v(&self) -> usize {
         self.v
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Extract {
     /// Fails unless `j ≤ i < width`.
-    #[new]
-    #[pyo3(signature = (i, j, width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (i, j, width, shape, /)))]
     pub fn new(i: usize, j: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         if !(j <= i && i < width) {
             return Err(crate::Error(format!(
@@ -2030,37 +2053,38 @@ impl Extract {
         Ok(Extract { i, j, width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
         ("i", "j", "width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn i(&self) -> usize {
         self.i
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn j(&self) -> usize {
         self.j
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Repeat {
     /// Fails unless `i` and `width` are positive.
-    #[new]
-    #[pyo3(signature = (i, width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (i, width, shape, /)))]
     pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         if i == 0 {
             return Err(crate::Error("cannot repeat a word zero times".to_string()));
@@ -2069,457 +2093,475 @@ impl Repeat {
         Ok(Repeat { i, width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str) {
         ("i", "width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn i(&self) -> usize {
         self.i
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Not {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Not { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl And {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(And { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Or {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Or { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Xor {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Xor { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Nand {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Nand { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Nor {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Nor { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Xnor {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Xnor { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Neg {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Neg { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ite {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Ite { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Add {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Add { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Sub {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Sub { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Mul {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Mul { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Shl {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Shl { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl RotateLeft {
-    #[new]
-    #[pyo3(signature = (i, width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (i, width, shape, /)))]
     pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(RotateLeft { i, width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str) {
         ("i", "width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn i(&self) -> usize {
         self.i
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl RotateRight {
-    #[new]
-    #[pyo3(signature = (i, width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (i, width, shape, /)))]
     pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(RotateRight { i, width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str) {
         ("i", "width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn i(&self) -> usize {
         self.i
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Eq {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Eq { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ne {
-    #[new]
-    #[pyo3(signature = (width, shape, /))]
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (width, shape, /)))]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Ne { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn width(&self) -> usize {
         self.width
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
     }

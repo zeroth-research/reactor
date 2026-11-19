@@ -5,13 +5,18 @@ edition = "2024"
 
 [dependencies]
 base = { path = "../base" }
-pyo3 = "0.24"
+pyo3 = { version = "0.24", optional = true }
+cfg_eval = { version = "0.1.2", features = ["items"], optional = true }
 tch = { version = "0.22", optional = true }
 pyo3-tch = { version = "0.22", optional = true }
 subenum = "1.2.0"
 derive_more = { version = "2.1.1", features = ["from"] }
 
 [features]
-# The Python bindings, via pyo3, are always built. `torch` adds the
-# `tch::Tensor` backing of `tensor` (the `torch` module), which links libtorch.
-torch = ["dep:tch", "dep:pyo3-tch"]
+# `pyo3` builds the Python bindings. Their `#[pymethods]` blocks are also the
+# Rust API, so they stay compiled without it, their pyo3 attributes behind
+# `cfg_attr`: `cfg_eval` expands those before `#[pymethods]` reads them.
+pyo3 = ["dep:pyo3", "dep:cfg_eval"]
+# `torch` adds the `tch::Tensor` backing of `tensor` (the `torch`
+# module), which links libtorch and needs the bindings.
+torch = ["pyo3", "dep:tch", "dep:pyo3-tch"]

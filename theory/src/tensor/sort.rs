@@ -53,13 +53,14 @@ use derive_more::From;
 use std::fmt;
 use subenum::subenum;
 
+#[cfg(feature = "pyo3")]
 use pyo3::{exceptions::PyTypeError, prelude::*};
 
 /// The sort of real matrices with the given `[rows, cols]` shape, graded by
 /// their `degree`: values of degree `d` are `d`-th order rates of change,
 /// and plain reals have degree 0.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str, get_all)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, get_all))]
 pub struct Real {
     degree: u8,
     shape: [usize; 2],
@@ -76,14 +77,15 @@ impl Real {
 }
 
 /// Python matches a `Real` by `shape`.
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Real {
     /// Plain real matrices of the given shape, of degree 0.
-    #[new]
+    #[cfg_attr(feature = "pyo3", new)]
     pub fn new(shape: [usize; 2]) -> Self {
         Real { degree: 0, shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
@@ -115,7 +117,7 @@ impl Differentiable for Real {
 
 /// The sort of integer matrices with the given `[rows, cols]` shape.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str, get_all)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, get_all))]
 pub struct Int {
     shape: [usize; 2],
 }
@@ -127,13 +129,14 @@ impl Int {
 }
 
 /// Python matches an `Int` by `shape`.
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Int {
-    #[new]
+    #[cfg_attr(feature = "pyo3", new)]
     pub fn new(shape: [usize; 2]) -> Self {
         Int { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
@@ -159,7 +162,7 @@ impl Differentiable for Int {
 
 /// The sort of boolean matrices with the given `[rows, cols]` shape.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str, get_all)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, get_all))]
 pub struct Bool {
     shape: [usize; 2],
 }
@@ -171,13 +174,14 @@ impl Bool {
 }
 
 /// Python matches a `Bool` by `shape`.
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Bool {
-    #[new]
+    #[cfg_attr(feature = "pyo3", new)]
     pub fn new(shape: [usize; 2]) -> Self {
         Bool { shape }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
@@ -204,7 +208,7 @@ impl Differentiable for Bool {
 /// The sort of matrices of `width`-bit words with the given `[rows, cols]`
 /// shape: entrywise, the SMT-LIB2 sort `(_ BitVec width)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str, get_all)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, get_all))]
 pub struct Word {
     width: usize,
     shape: [usize; 2],
@@ -236,16 +240,17 @@ impl Word {
 }
 
 /// Python matches a `Word` by `width` and `shape`.
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Word {
     /// Matrices of `width`-bit words; as in SMT-LIB2, `width` must be
     /// positive, or this returns an error.
-    #[new]
+    #[cfg_attr(feature = "pyo3", new)]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
         Ok(Word { width, shape })
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
@@ -272,12 +277,12 @@ impl Differentiable for Word {
 /// The singleton sort, with exactly one value: the trivial tangent of
 /// discrete sorts. Its own tangent is itself.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Default)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Zero;
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Zero {
-    #[new]
+    #[cfg_attr(feature = "pyo3", new)]
     pub fn new() -> Self {
         Zero
     }
@@ -361,6 +366,7 @@ impl Differentiable for Words {
 }
 
 /// Extracts a sort of any theory from an instance of its class.
+#[cfg(feature = "pyo3")]
 impl<'py> FromPyObject<'py> for Any {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<Real>() {
@@ -386,6 +392,7 @@ impl<'py> FromPyObject<'py> for Any {
 }
 
 /// Converts a sort into an instance of its class.
+#[cfg(feature = "pyo3")]
 impl<'py> IntoPyObject<'py> for Any {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;

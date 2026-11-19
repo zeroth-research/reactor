@@ -17,6 +17,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+#[cfg(feature = "pyo3")]
 impl From<Error> for pyo3::PyErr {
     fn from(e: Error) -> Self {
         pyo3::exceptions::PyValueError::new_err(e.0)

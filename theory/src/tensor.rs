@@ -40,6 +40,7 @@ pub mod word;
 
 use base::boundary::{Boundary, Poly};
 use derive_more::From;
+#[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
 use subenum::subenum;
@@ -103,14 +104,14 @@ pub enum LIA<T> {
 /// Writes an arbitrary value of the given sort, reading nothing: the
 /// nondeterministic choice of a value.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Havoc {
     sort: sort::Any,
 }
 
 /// Writes the value it reads, of the given sort: the identity.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Skip {
     sort: sort::Any,
 }
@@ -118,7 +119,7 @@ pub struct Skip {
 /// Writes the zero of the given sort, reading nothing: the rate of change
 /// of a value that does not change.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[pyo3::pyclass(frozen, eq, str)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
 pub struct Zero {
     sort: sort::Any,
 }
@@ -183,55 +184,58 @@ impl fmt::Display for Zero {
 }
 
 // The Python constructors of the structural operations, from their sort.
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Havoc {
-    #[new]
+    #[cfg_attr(feature = "pyo3", new)]
     pub fn new(sort: sort::Any) -> Self {
         Havoc { sort }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("sort",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn sort(&self) -> sort::Any {
         self.sort
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Skip {
-    #[new]
+    #[cfg_attr(feature = "pyo3", new)]
     pub fn new(sort: sort::Any) -> Self {
         Skip { sort }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("sort",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn sort(&self) -> sort::Any {
         self.sort
     }
 }
 
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Zero {
-    #[new]
+    #[cfg_attr(feature = "pyo3", new)]
     pub fn new(sort: sort::Any) -> Self {
         Zero { sort }
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("sort",)
     }
 
-    #[getter]
+    #[cfg_attr(feature = "pyo3", getter)]
     pub fn sort(&self) -> sort::Any {
         self.sort
     }
@@ -395,6 +399,7 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
 /// theory in turn through its own extraction: real, integer, boolean, and
 /// then bit-vector operations. The operations of each theory are distinct
 /// Python classes, so at most one theory accepts a given object.
+#[cfg(feature = "pyo3")]
 impl<'py, T> pyo3::FromPyObject<'py> for Any<T>
 where
     real::NRA<T>: pyo3::FromPyObject<'py>,

@@ -84,8 +84,8 @@ rs-build-all:
     {{ CARGO }} build --all-targets {{ profile_flag }}
     {{ CARGO }} build --all-targets -p theory --features torch {{ profile_flag }}
 
-# The Rust test binaries link libpython (`theory` requires pyo3), and those of `theory`
-# with `torch` also libtorch. `uv run` does not set up the dynamic-linker path, so we
+# The test binaries of `theory` with `torch` link libpython and libtorch (without
+# features the workspace uses no pyo3). `uv run` does not set up the dynamic-linker path, so we
 # add both libdirs to it here, per-OS. Only a search path: on macOS, injecting libpython
 # with DYLD_INSERT_LIBRARIES would also reach the build scripts' `python -c "import torch"`
 # (torch-sys, theory), whose interpreter then crashes with a second libpython.
