@@ -128,12 +128,19 @@ fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
             e => Error::unlocated(ErrorKind::User, e.to_string()),
         },
     )?;
-    let d = Design { tree, lines, files };
+    let mut d = Design {
+        tree,
+        lines,
+        files,
+        modules: Vec::new(),
+        by_name: HashMap::new(),
+    };
     let mut seen: BTreeMap<Name, Span> = BTreeMap::new();
     let cx = d.cx(&[], 0);
-    for m in d.decls().map_err(|e| d.located(e))? {
+    let mut modules = Vec::new();
+    for (k, m) in d.decls().map_err(|e| d.located(e))? {
         let (attrs, _, _, id, ..) = &m.nodes.0.nodes;
-        cx.module_attributes(attrs).map_err(|e| d.located(e))?;
+        let blackbox = cx.module_attributes(attrs).map_err(|e| d.located(e))?;
         let name = cx.identifier(&id.nodes.0).map_err(|e| d.located(e))?;
         if let Some(prev) = seen.insert(name.clone(), cx.span(id)) {
             let e = Error::new(
@@ -142,7 +149,13 @@ fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
             );
             return Err(d.located(e));
         }
+        // the name as `find` compares it
+        modules.push((cx.text(id), k, blackbox));
     }
+    d.by_name = (modules.iter().enumerate())
+        .map(|(i, (name, ..))| (name.clone(), i))
+        .collect();
+    d.modules = modules;
     Ok(d)
 }
 
@@ -227,6 +240,13 @@ pub struct Design {
     tree: SyntaxTree,
     lines: Vec<usize>,
     files: Vec<SourceFile>,
+    /// The modules in source order: name, index among the descriptions of
+    /// the source text, and whether it is marked `(* blackbox *)`. The
+    /// declarations are checked when the design is parsed, so finding one
+    /// later cannot fail.
+    modules: Vec<(Name, usize, bool)>,
+    /// The index of each module in `modules`, by name.
+    by_name: HashMap<Name, usize>,
 }
 
 /// A source file of a [`Design`].
@@ -291,9 +311,8 @@ impl Design {
         }
     }
 
-    /// The module declarations, in source order.
-    fn decls(&self) -> Result<Vec<&sv::ModuleDeclarationAnsi>> {
-        let cx = self.cx(&[], 0);
+    /// The descriptions of the source text.
+    fn descriptions(&self) -> Result<&[sv::Description]> {
         let st = (&self.tree)
             .into_iter()
             .find_map(|n| match n {
@@ -301,13 +320,21 @@ impl Design {
                 _ => None,
             })
             .ok_or_else(|| Error::unlocated(ErrorKind::User, "empty source"))?;
+        let cx = self.cx(&[], 0);
         let (_, timeunits, descriptions) = &st.nodes;
         cx.absent(timeunits, "timeunits declaration")?;
+        Ok(descriptions)
+    }
+
+    /// The module declarations, in source order, each with its index among
+    /// the descriptions.
+    fn decls(&self) -> Result<Vec<(usize, &sv::ModuleDeclarationAnsi)>> {
+        let cx = self.cx(&[], 0);
         let mut modules = Vec::new();
-        for d in descriptions {
+        for (k, d) in self.descriptions()?.iter().enumerate() {
             match d {
                 sv::Description::ModuleDeclaration(m) => match m.as_ref() {
-                    sv::ModuleDeclaration::Ansi(m) => modules.push(m.as_ref()),
+                    sv::ModuleDeclaration::Ansi(m) => modules.push((k, m.as_ref())),
                     sv::ModuleDeclaration::Nonansi(_) => {
                         return cx.not_supported(m.as_ref(), "non-ANSI port list not supported");
                     }
@@ -322,41 +349,39 @@ impl Design {
         Ok(modules)
     }
 
+    /// The declaration of the module `name`, if there is one.
     fn find(&self, name: &str) -> Option<&sv::ModuleDeclarationAnsi> {
-        let cx = self.cx(&[], 0);
-        let decls = self.decls().ok()?;
-        decls
-            .into_iter()
-            .find(|m| cx.text(&m.nodes.0.nodes.3) == name)
+        let &(_, k, _) = &self.modules[*self.by_name.get(name)?];
+        let descriptions = self.descriptions().expect("checked when parsed");
+        match &descriptions[k] {
+            sv::Description::ModuleDeclaration(m) => match m.as_ref() {
+                sv::ModuleDeclaration::Ansi(m) => Some(m.as_ref()),
+                _ => unreachable!("checked when parsed"),
+            },
+            _ => unreachable!("checked when parsed"),
+        }
     }
 
     /// The names of the modules, in source order.
     pub fn names(&self) -> Vec<Name> {
-        let cx = self.cx(&[], 0);
-        let decls = self.decls().unwrap_or_default();
-        decls
-            .into_iter()
-            .map(|m| cx.text(&m.nodes.0.nodes.3))
-            .collect()
+        self.modules.iter().map(|(name, ..)| name.clone()).collect()
     }
 
     /// Whether the file declares the module `name`.
     pub fn has(&self, name: &str) -> bool {
-        self.find(name).is_some()
+        self.by_name.contains_key(name)
     }
 
     /// Whether the module `name` is marked `(* blackbox *)`.
     pub fn is_blackbox(&self, name: &str) -> bool {
-        let cx = self.cx(&[], 0);
-        self.find(name)
-            .is_some_and(|m| cx.module_attributes(&m.nodes.0.nodes.0) == Ok(true))
+        (self.by_name.get(name)).is_some_and(|&i| self.modules[i].2)
     }
 
     /// The top module: the one no module instantiates (blackboxes aside).
     pub fn top(&self) -> Result<Name> {
         let cx = self.cx(&[], 0);
         let mut instantiated = BTreeSet::new();
-        for m in self.decls()? {
+        for (_, m) in self.decls()? {
             for n in Iter::new(m.into()) {
                 if let RefNode::ModuleInstantiation(i) = n {
                     instantiated.insert(cx.text(&i.nodes.0));
