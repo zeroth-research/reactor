@@ -1,3 +1,0 @@
-/.lake
-# the root .gitignore ignores `*.lean`; this package's sources are tracked
-!*.lean
