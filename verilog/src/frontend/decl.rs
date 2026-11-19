@@ -1,7 +1,7 @@
 //! Modules, parameters, ports, declarations, instances and initial values.
 
-use super::arrays::{Load, readmem, resolve};
-use super::{Cx, LARGEST, Result, VARIABLE_TARGET, has_tokens, system_call};
+use super::arrays::resolve;
+use super::{Cx, LARGEST, Result, VARIABLE_TARGET, has_tokens};
 use crate::ast::{
     self, Array, Conn, Const, Decl, Dir, Elem, Elems, Error, Expr, ExprKind, Formal, Index, Init,
     Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, Span, Ty,
@@ -740,59 +740,6 @@ impl Cx<'_> {
             }
             _ => {}
         }
-        // (name, type, unpacked dimensions, value, whether a net)
-        let mut add = |id: &sv::Identifier,
-                       ty: Ty,
-                       dims: Vec<&sv::UnpackedDimension>,
-                       value: Option<&sv::Expression>,
-                       net: bool|
-         -> Result<()> {
-            let name = self.identifier(id)?;
-            let span = self.span(id);
-            let Some(size) = self.array_size(id, &dims)? else {
-                m.decls.push(Decl {
-                    name: name.clone(),
-                    ty,
-                    span,
-                });
-                match value {
-                    // `wire y = e;` is `assign y = e;`
-                    Some(e) if net => {
-                        let lhs = Lvalue {
-                            kind: LvalueKind::Var(name),
-                            span,
-                        };
-                        let rhs = self.expr(e)?;
-                        m.items.push(Item::Assign { lhs, rhs, span });
-                    }
-                    Some(e) => self.initializer(name, span, e)?,
-                    None => {}
-                }
-                return Ok(());
-            };
-            if let Some(e) = value {
-                return self.err(
-                    e,
-                    "initial values of whole arrays not supported (load the array from a file \
-                     with `$readmemb` or `$readmemh`)",
-                );
-            }
-            for k in 0..size {
-                m.decls.push(Decl {
-                    name: ast::element(&name, k),
-                    ty,
-                    span,
-                });
-            }
-            self.arrays.borrow_mut().push(Array {
-                name,
-                ty,
-                size,
-                span,
-                rom: None,
-            });
-            Ok(())
-        };
         match d {
             sv::PackageOrGenerateItemDeclaration::NetDeclaration(n) => match n.as_ref() {
                 sv::NetDeclaration::NetType(n) => {
@@ -805,7 +752,7 @@ impl Cx<'_> {
                     for a in list.nodes.0.contents() {
                         let (id, dims, init) = &a.nodes;
                         let value = init.as_ref().map(|(_, e)| e);
-                        add(&id.nodes.0, ty, dims.iter().collect(), value, true)?;
+                        self.declare(m, &id.nodes.0, ty, dims.iter().collect(), value, true)?;
                     }
                     Ok(())
                 }
@@ -837,7 +784,7 @@ impl Cx<'_> {
                                     }
                                 }
                                 let value = init.as_ref().map(|(_, e)| e);
-                                add(&id.nodes.0, ty, unpacked, value, false)?;
+                                self.declare(m, &id.nodes.0, ty, unpacked, value, false)?;
                             }
                             a => return self.unsupported(a),
                         }
@@ -849,6 +796,65 @@ impl Cx<'_> {
             sv::PackageOrGenerateItemDeclaration::Empty(_) => Ok(()),
             d => self.unsupported(d),
         }
+    }
+
+    /// Declares the signal `id` of type `ty` in `m`, with the unpacked
+    /// dimensions `dims` (an array) and the value `value` (a net's is an
+    /// `assign`, a variable's an initial value).
+    fn declare(
+        &self,
+        m: &mut Module,
+        id: &sv::Identifier,
+        ty: Ty,
+        dims: Vec<&sv::UnpackedDimension>,
+        value: Option<&sv::Expression>,
+        net: bool,
+    ) -> Result<()> {
+        let name = self.identifier(id)?;
+        let span = self.span(id);
+        let Some(size) = self.array_size(id, &dims)? else {
+            m.decls.push(Decl {
+                name: name.clone(),
+                ty,
+                span,
+            });
+            match value {
+                // `wire y = e;` is `assign y = e;`
+                Some(e) if net => {
+                    let lhs = Lvalue {
+                        kind: LvalueKind::Var(name),
+                        span,
+                    };
+                    let rhs = self.expr(e)?;
+                    m.items.push(Item::Assign { lhs, rhs, span });
+                }
+                Some(e) => self.initializer(name, span, e)?,
+                None => {}
+            }
+            return Ok(());
+        };
+        if let Some(e) = value {
+            return self.err(
+                e,
+                "initial values of whole arrays not supported (load the array from a file \
+                 with `$readmemb` or `$readmemh`)",
+            );
+        }
+        for k in 0..size {
+            m.decls.push(Decl {
+                name: ast::element(&name, k),
+                ty,
+                span,
+            });
+        }
+        self.arrays.borrow_mut().push(Array {
+            name,
+            ty,
+            size,
+            span,
+            rom: None,
+        });
+        Ok(())
     }
 
     /// The target of `assign`: like [`variable_lvalue`](Self::variable_lvalue),
@@ -962,10 +968,9 @@ impl Cx<'_> {
             let (label, attrs, item) = &s.nodes;
             self.absent(label, "statement label")?;
             self.absent(attrs, "attribute")?;
-            let c = match item {
+            match item {
                 sv::StatementItem::BlockingAssignment(a) => {
                     self.initial_assignment(&a.0, only)?;
-                    continue;
                 }
                 sv::StatementItem::NonblockingAssignment(_) => {
                     return self.err(
@@ -974,73 +979,9 @@ impl Cx<'_> {
                          not `<=`",
                     );
                 }
-                sv::StatementItem::SubroutineCallStatement(c) => c,
+                sv::StatementItem::SubroutineCallStatement(c) => self.load(c, only)?,
                 _ => return self.err(s, only),
-            };
-            let sv::SubroutineCallStatement::SubroutineCall(c) = c.as_ref() else {
-                return self.err(c.as_ref(), only);
-            };
-            let sv::SubroutineCall::SystemTfCall(call) = &c.0 else {
-                return self.err(&c.0, only);
-            };
-            let Some((name, args)) = system_call(call) else {
-                return self.err(&c.0, only);
-            };
-            let task = self.text(name);
-            let binary = match task.as_str() {
-                "$readmemb" => true,
-                "$readmemh" => false,
-                _ => return self.err(&c.0, only),
-            };
-            let span = self.span(&c.0);
-            let (file, m) = match args.as_slice() {
-                [Some(f), Some(m)] => (f, m),
-                [_, _, _, ..] => {
-                    return self.err(
-                        &c.0,
-                        format!("`{task}` with start and end addresses not supported"),
-                    );
-                }
-                _ => return self.err(&c.0, format!("`{task}` takes a file name and an array")),
-            };
-            let file_text = self.text(file);
-            let file_name = match file {
-                sv::Expression::Primary(p)
-                    if matches!(
-                        p.as_ref(),
-                        sv::Primary::PrimaryLiteral(l)
-                            if matches!(l.as_ref(), sv::PrimaryLiteral::StringLiteral(_))
-                    ) && !file_text.contains('\\') =>
-                {
-                    file_text.trim_matches('"').to_string()
-                }
-                f => return self.err(f, format!("the file of `{task}` must be a string literal")),
-            };
-            let m_text = self.text(m);
-            let arrays = self.arrays.borrow();
-            let Some(array) = arrays.iter().find(|a| a.name == m_text) else {
-                return self.err(m, format!("`{m_text}` is not an array declared before"));
-            };
-            if let Some(l) = self.loads.borrow().iter().find(|l| l.array == m_text) {
-                return self.err(&c.0, format!("`{m_text}` is already loaded at {}", l.span));
             }
-            let path = self.dir.join(&file_name);
-            let text = std::fs::read_to_string(&path).map_err(|e| {
-                Error::new(
-                    self.span(file),
-                    format!("cannot read `{}`: {e}", path.display()),
-                )
-            })?;
-            let values = readmem(&text, binary, array)
-                .map_err(|msg| Error::new(span, format!("{}: {msg}", path.display())))?;
-            self.loads.borrow_mut().push(Load {
-                array: m_text,
-                binary,
-                file: file_name,
-                path,
-                values,
-                span,
-            });
         }
         Ok(())
     }

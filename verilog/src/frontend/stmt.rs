@@ -8,6 +8,64 @@ use crate::ast::{
 };
 use sv_parser as sv;
 
+/// The clock and the asynchronous reset of a block with the two events `a`
+/// and `b` and the body `body`: the reset is the event the body's single
+/// `if` tests, with the polarity of its edge.
+fn clock_and_reset(
+    a: &(Name, Edge, Span),
+    b: &(Name, Edge, Span),
+    body: &Stmt,
+) -> Result<((Name, Edge, Span), Reset)> {
+    if a.0 == b.0 {
+        return Err(Error::new(
+            b.2,
+            format!("`{}` appears twice in the event list", b.0),
+        ));
+    }
+    let (name, low, cond_span) = reset_test(body).ok_or_else(|| {
+        Error::new(
+            body.span,
+            "a block with two events needs an asynchronous reset: its body must \
+             be a single `if` testing one of the events, `if (rst)` for \
+             `posedge rst` or `if (!rst_n)` for `negedge rst_n`",
+        )
+    })?;
+    let (r, c) = if *name == a.0 {
+        (a, b)
+    } else if *name == b.0 {
+        (b, a)
+    } else {
+        return Err(Error::new(
+            cond_span,
+            format!(
+                "a block with two events needs an asynchronous reset: its `if` \
+                 must test `{}` or `{}`",
+                a.0, b.0
+            ),
+        ));
+    };
+    if low != (r.1 == Edge::Neg) {
+        let test = if r.1 == Edge::Neg {
+            format!("!{}", r.0)
+        } else {
+            r.0.to_string()
+        };
+        return Err(Error::new(
+            cond_span,
+            format!(
+                "the block resets on `{} {}`, so its `if` must test `{test}`",
+                r.1, r.0
+            ),
+        ));
+    }
+    let reset = Reset {
+        name: r.0.clone(),
+        edge: r.1,
+        span: r.2,
+    };
+    Ok((c.clone(), reset))
+}
+
 /// What the `if` of a block with an asynchronous reset tests: the body is a
 /// single `if` (possibly inside `begin … end`) whose condition is `x`, `!x`
 /// or `~x` for a name `x`. Gives `x`, whether it is negated, and the
@@ -112,54 +170,8 @@ impl Cx<'_> {
         let (clock, edge, clock_span, reset) = match &events[..] {
             [(name, edge, span)] => (name.clone(), *edge, *span, None),
             [a, b] => {
-                if a.0 == b.0 {
-                    return Err(Error::new(
-                        b.2,
-                        format!("`{}` appears twice in the event list", b.0),
-                    ));
-                }
-                let (name, low, cond_span) = reset_test(&body).ok_or_else(|| {
-                    Error::new(
-                        body.span,
-                        "a block with two events needs an asynchronous reset: its body must \
-                         be a single `if` testing one of the events, `if (rst)` for \
-                         `posedge rst` or `if (!rst_n)` for `negedge rst_n`",
-                    )
-                })?;
-                let (r, c) = if *name == a.0 {
-                    (a, b)
-                } else if *name == b.0 {
-                    (b, a)
-                } else {
-                    return Err(Error::new(
-                        cond_span,
-                        format!(
-                            "a block with two events needs an asynchronous reset: its `if` \
-                             must test `{}` or `{}`",
-                            a.0, b.0
-                        ),
-                    ));
-                };
-                if low != (r.1 == Edge::Neg) {
-                    let test = if r.1 == Edge::Neg {
-                        format!("!{}", r.0)
-                    } else {
-                        r.0.to_string()
-                    };
-                    return Err(Error::new(
-                        cond_span,
-                        format!(
-                            "the block resets on `{} {}`, so its `if` must test `{test}`",
-                            r.1, r.0
-                        ),
-                    ));
-                }
-                let reset = Reset {
-                    name: r.0.clone(),
-                    edge: r.1,
-                    span: r.2,
-                };
-                (c.0.clone(), c.1, c.2, Some(reset))
+                let ((clock, edge, span), reset) = clock_and_reset(a, b, &body)?;
+                (clock, edge, span, Some(reset))
             }
             _ => unreachable!("one or two events"),
         };
