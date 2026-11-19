@@ -75,7 +75,7 @@ use crate::ast::{
     BinOp, CaseItem, Cast, Dir, Elem, Error, Expr, ExprKind, Index, Item, Lvalue, LvalueKind,
     Module, Name, Select, Span, Stmt, StmtKind, Ty, UnOp,
 };
-use crate::elab::{self, Inst};
+use crate::elab::{self, Inst, Path};
 use crate::theory::SvOp;
 use crate::typing::{self, Checked, Env};
 use crate::value::{self, BitVec};
@@ -755,7 +755,7 @@ pub fn print(inst: &Inst) -> Result<String> {
     let mut p = Printer {
         modules: Vec::new(),
     };
-    p.inst(inst, "")?;
+    p.inst(inst, &Path::top())?;
     Ok(p.modules.into_iter().map(|(_, text)| text).collect())
 }
 
@@ -767,11 +767,11 @@ struct Printer {
 impl Printer {
     /// Prints the instance at path `prefix` and those below it, and gives
     /// the name its module is printed under.
-    fn inst(&mut self, inst: &Inst, prefix: &str) -> Result<Name> {
+    fn inst(&mut self, inst: &Inst, prefix: &Path) -> Result<Name> {
         let m = &inst.module;
         let mut names = BTreeMap::new();
         for (u, child) in &inst.children {
-            names.insert(u.clone(), self.inst(child, &format!("{prefix}{u}."))?);
+            names.insert(u.clone(), self.inst(child, &prefix.child(u))?);
         }
         let checked = typing::checked(inst).map_err(|e| elab::context(e, prefix))?;
         let body = body(&checked, &names);

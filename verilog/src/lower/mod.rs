@@ -250,7 +250,7 @@ translation that drives the external variables of the blackbox outputs.
 */
 
 use crate::ast::{self, Dir, Error, ErrorKind, Expr, ExprKind, Name, Span, Ty, Warning};
-use crate::elab::Inst;
+use crate::elab::{Inst, Path};
 use crate::typing;
 use crate::value::BitVec;
 use crate::{Module, Var, Wire};
@@ -271,7 +271,7 @@ pub struct Translation {
     pub module: Module,
     /// Every source signal, and `q@init` for every register `q` without an
     /// initial value, by name.
-    pub vars: BTreeMap<Name, Var>,
+    pub vars: Vars,
     /// The name in the module of every signal path of the design (see
     /// [`Inst::naming`]): a port of an instance connected to a signal of the
     /// parent of the same width is that signal (`u.clk` → `clk`).
@@ -317,10 +317,49 @@ pub struct Translation {
     pub instances: Vec<Part>,
 }
 
+/// The variables of a translation by name (a map from names to variables,
+/// which it derefs to), and the name of each variable.
+#[derive(Clone, Default)]
+pub struct Vars {
+    by_name: BTreeMap<Name, Var>,
+    names: HashMap<Var, Name>,
+}
+
+impl Vars {
+    /// The name of `var`, if it is one of the variables.
+    pub fn name(&self, var: &Var) -> Option<&str> {
+        self.names.get(var).map(String::as_str)
+    }
+}
+
+impl From<BTreeMap<Name, Var>> for Vars {
+    fn from(by_name: BTreeMap<Name, Var>) -> Self {
+        let names = by_name.iter().map(|(n, v)| (*v, n.clone())).collect();
+        Self { by_name, names }
+    }
+}
+
+impl std::ops::Deref for Vars {
+    type Target = BTreeMap<Name, Var>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.by_name
+    }
+}
+
+impl<'v> IntoIterator for &'v Vars {
+    type Item = (&'v Name, &'v Var);
+    type IntoIter = std::collections::btree_map::Iter<'v, Name, Var>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.by_name.iter()
+    }
+}
+
 /// The module of an instance, as it is composed into its parent.
 pub struct Part {
     /// The instance path, e.g. `u.v`.
-    pub path: Name,
+    pub path: Path,
     /// The module name with all overridable parameter values, as in an
     /// instantiation: `stage #(.W(4))`.
     pub title: String,
@@ -346,10 +385,7 @@ pub fn init_name(q: &str) -> Name {
 impl Translation {
     /// The name of a variable of the module.
     pub fn name(&self, var: &Var) -> &str {
-        self.vars
-            .iter()
-            .find(|(_, v)| *v == var)
-            .map_or("?", |(n, _)| n.as_str())
+        self.vars.name(var).unwrap_or("?")
     }
 
     /// The variable of a signal; panics if there is none.
@@ -398,7 +434,7 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
         out_of_range: Vec::new(),
         blackboxes: Vec::new(),
     };
-    let module = lower_rec(inst, "", &mut out)?;
+    let module = lower_rec(inst, &Path::top(), &mut out)?;
     out.out_of_range
         .sort_by(|a, b| (a.span, &a.msg).cmp(&(b.span, &b.msg)));
     out.out_of_range.dedup();
@@ -415,7 +451,7 @@ pub fn lower_inst(inst: &Inst) -> Result<Translation> {
     Ok(Translation {
         name: m.name.clone(),
         module,
-        vars: out.vars,
+        vars: out.vars.into(),
         paths: naming.clone(),
         clocks,
         registers: out.registers,
