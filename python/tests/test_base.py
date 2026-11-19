@@ -46,6 +46,21 @@ def test_terms_read_and_write_the_sorts_of_their_operation():
         Term.constant(tensor.real.Const(torch.tensor([[1.0]])), [Wire(Real([7, 7]))])
 
 
+def test_derivatives_are_of_the_tangent_sort():
+    # a real variable's derivative carries its rates of change, one degree higher
+    x = Var(Real([2, 3]))
+    assert x.dtype == X(x).dtype == Real([2, 3])
+    assert d(x).dtype == Real([2, 3], 1) != Real([2, 3])
+    assert d(x).dtype.degree == 1
+    # a discrete variable's derivative is of the singleton sort `Zero`
+    assert d(Var(Bool([2, 3]))).dtype == tensor.sort.Zero()
+    # so a zero rate of change of the value sort is rejected on it
+    Term.constant(Zero(Real([2, 3], 1)), [d(x)])
+    with pytest.raises(Exception, match=r"expected Zero to write Real\(2, 3\), "
+                                        r"got T\^1\(Real\(2, 3\)\)"):
+        Term.constant(Zero(Real([2, 3])), [d(x)])
+
+
 def test_var_derefs_to_wire():
     v = Var(Real([2, 3]))
 

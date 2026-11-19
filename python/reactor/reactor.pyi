@@ -9,7 +9,8 @@ and the namespace `tensor` of the operations and sorts, mirroring the `theory` c
 `tensor` holds the structural operations `Havoc`, `Skip` and `Zero`, and the namespaces
 `tensor.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`) hold the
 operations of each theory, sized by their shapes (`tensor.real.Add([m, n])`), and
-`tensor.sort` the sorts (`Real([rows, cols])`, `Word(width, [rows, cols])`). Those are
+`tensor.sort` the sorts (`Real([rows, cols])`, `Word(width, [rows, cols])`, and the
+rates of change `Real([rows, cols], degree=d)`). Those are
 typed loosely here, as `Sort` and `Op`: a stub file cannot describe the nested
 namespaces of a single extension module. A `Var` bundles the latched, next (`X(v)`),
 and derivative (`d(v)`) wires of a state variable and stands for its latched wire
@@ -101,7 +102,8 @@ def X(var: Var) -> Wire:
 
 
 def d(var: Var) -> Wire:
-    """The variable's derivative wire."""
+    """The variable's derivative wire, of the tangent of its sort: `Real(shape, degree=1)`
+    for `Real(shape)`, and `Zero()` for the discrete sorts."""
     ...
 
 

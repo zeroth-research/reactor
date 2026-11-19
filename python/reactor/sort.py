@@ -1,7 +1,9 @@
 """The sorts, as defined by the bindings in ``reactor.tensor.sort``: ``Real``, ``Int``,
 ``Bool`` and ``Word`` matrices, and the singleton ``Zero``. Each is built from its shape,
 ``Real([rows, cols])``, with a width for words, ``Word(width, [rows, cols])``, and matches
-positionally the same way (``case Word(width, shape):``).
+positionally the same way (``case Word(width, shape):``). The rates of change of reals have
+a degree too, ``Real([rows, cols], degree=1)`` for the derivative of a ``Real([rows, cols])``
+variable, read as ``.degree``; the derivative of a discrete variable is ``Zero()``.
 """
 
 import torch

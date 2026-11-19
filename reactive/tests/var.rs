@@ -80,3 +80,30 @@ fn variables_pass_into_term_constructors() {
     assert_eq!(t.write().iter().next().map(Wire::id), Some(X(x).id()));
     assert_eq!(t.read().iter().next().map(Wire::id), Some(x.id()));
 }
+
+/// The latched and next wires carry values of the variable's sort, and the
+/// derivative wire their rates of change, of its tangent sort: one degree
+/// higher for reals, and the singleton `Zero` for discrete sorts.
+#[test]
+fn derivative_wire_has_the_tangent_sort() {
+    use theory::tensor::sort::{Any, Bool, Int, Real, Word, Zero};
+
+    let r: Any = Real::new([2, 3]).into();
+    let x = Var::new(r);
+    assert_eq!((*x.dtype(), *X(x).dtype()), (r, r));
+    let Any::Real(dx) = *d(x).dtype() else {
+        panic!("the rate of change of a real is a real");
+    };
+    assert_eq!((dx.shape(), dx.degree()), ([2, 3], 1));
+
+    let discrete: [Any; 3] = [
+        Bool::new([2, 3]).into(),
+        Int::new([2, 3]).into(),
+        Word::new_unchecked(8, [2, 3]).into(),
+    ];
+    for s in discrete {
+        let x = Var::new(s);
+        assert_eq!((*x.dtype(), *X(x).dtype()), (s, s));
+        assert_eq!(*d(x).dtype(), Any::Zero(Zero));
+    }
+}

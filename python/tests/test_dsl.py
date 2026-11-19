@@ -9,6 +9,8 @@ plus check the ctrl/extl partition and the config surface.
 import pytest
 
 from reactor import Module, Wire, sugar, Int, Var, Real, X as _X, d as _d, TheoryError
+from reactor import tensor
+from reactor.tensor import Skip
 from reactor.sugar import ite, d, X
 from reactor.eval import eval_itype
 
@@ -211,6 +213,8 @@ def test_differential_sugar_module():
     assert _d(x) in a.delay.write()
     assert _X(x) in a.update.write()
     assert len(a.update) == 1
+    # the rates of change add up with the addition of reals of degree 1
+    assert [term.itype for term in a.delay] == [tensor.real.Add([1, 1], 1), Skip(Real([1, 1], 1))]
 
 
 def test_differential_sugar_module_with_a_literal_rate():
@@ -262,6 +266,12 @@ def test_hybrid_sugar_module():
     assert _d(x) in a.delay.write()
     # the update reads the reset guard from the input's next value
     assert _X(t) in a.update.read()
+    # a constant scales a rate of change, which keeps its degree
+    match [term.itype for term in a.delay]:
+        case [tensor.real.Scale(scale), Skip(rate)]:
+            assert scale.tolist() == [[1.0]] and rate == Real([1, 1], 1)
+        case ops:
+            pytest.fail(f"unexpected delay {ops}")
 
 
 def test_useless_module():

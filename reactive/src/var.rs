@@ -15,6 +15,9 @@ pub struct Var<S> {
 }
 
 impl<S: Clone + Differentiable<Tangent = S>> Var<S> {
+    /// A variable of sort `dtype`: its latched and next wires carry values
+    /// of `dtype`, and its derivative wire their rates of change, of the
+    /// tangent sort `T(dtype)`.
     pub fn new(dtype: S) -> Self {
         Self {
             ltc: Wire::new(dtype.clone()),
