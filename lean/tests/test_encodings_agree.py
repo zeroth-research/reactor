@@ -29,7 +29,7 @@ import pytest
 
 pytest.importorskip("cvc5")
 
-from tests.agree import CORPUS, Skip, disagreements_smt  # noqa: E402
+from agree import CORPUS, Skip, disagreements_smt  # noqa: E402
 
 
 @pytest.mark.parametrize("name", sorted(CORPUS))

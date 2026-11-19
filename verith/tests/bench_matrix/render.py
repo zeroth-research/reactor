@@ -31,6 +31,7 @@ from pygments.util import ClassNotFound
 SP = Path(__file__).resolve().parent
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
 PY = VR.parent / "python"                   # python/: reactor and its tests
+LEAN_TESTS = VR.parent / "lean" / "tests"    # reactor_lean's tests: the limit matrix, tests/lean
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
 sys.path.insert(0, str(SP))
@@ -905,7 +906,7 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None,
 
 # Where a path in the page's prose is relative to: the prose is written from
 # `python/`, with a few names local to this directory or the limit matrix's.
-LINK_BASES = [PY, PY.parent, SP, PY / "tests" / "limits", WORK]
+LINK_BASES = [PY, PY.parent, SP, LEAN_TESTS / "limits", WORK]
 # Embedded so the popup works from a copied page and without a server; larger
 # or non-text files are linked, not embedded.
 EMBED_SUFFIXES = {".py", ".md", ".lean", ".toml", ".txt", ".j2"}

@@ -834,7 +834,7 @@ def test_a_branchy_transition_gets_the_higher_budget():
 
 def test_the_simp_set_unfolds_the_reductions():
     """`matMin`, `matMax` and the argmaxes unfold to a `List.ofFn` fold that
-    `simp_mat` computes (`python/tests/test_lean_templates.py` holds the
+    `simp_mat` computes (`lean/tests/test_lean_templates.py` holds the
     library to that); computing the fold is no use if the definition never
     opens."""
     from reactor_lean.proof.render import generate_proofs_lean

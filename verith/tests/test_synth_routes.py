@@ -27,7 +27,7 @@ from verith.resume import resumable_inv, ruled_out, taking_inv
 
 # The fixtures are `reactor`'s, in the `python/` project beside this one.
 PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
-MODS = PYTHON_TESTS / "limits" / "mods"
+MODS = Path(__file__).resolve().parents[2] / "lean" / "tests" / "limits" / "mods"
 
 
 def module_of(name: str):

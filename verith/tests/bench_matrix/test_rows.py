@@ -121,7 +121,7 @@ def test_every_module_has_a_refutable_row():
 # cannot tell them apart and answers `fails` to both.
 # ══════════════════════════════════════════════════════════════════════════
 
-COUNTDOWN = (Path(__file__).resolve().parents[3] / "python" / "tests" / "limits"
+COUNTDOWN = (Path(__file__).resolve().parents[3] / "lean" / "tests" / "limits"
              / "mods" / "m_countdown.py")
 
 

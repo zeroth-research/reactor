@@ -25,7 +25,7 @@ Both halves are here on purpose, because they fail independently:
   `linarith failed` in someone's certificate.
 
 Run via pytest:
-    just py-test tests/lean/       # fast: only checks generated files exist
+    just lean-test tests/lean/     # fast: only checks generated files exist
     just test-lean                 # slow: runs lake build
 -/
 

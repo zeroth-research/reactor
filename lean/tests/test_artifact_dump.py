@@ -16,8 +16,8 @@ import pytest
 
 from reactor_lean.artifacts import ArtifactStore
 
-PY_DIR = Path(__file__).parent.parent
-MODULE = PY_DIR / "tests" / "limits" / "mods" / "m_countdown.py"
+LEAN_DIR = Path(__file__).parent.parent
+MODULE = LEAN_DIR / "tests" / "limits" / "mods" / "m_countdown.py"
 
 pytest.importorskip("cvc5")
 
@@ -87,7 +87,7 @@ def _reactor(out: Path, *args) -> str:
         ["uv", "run", "reactor", str(MODULE), "--buchi", "(= (X @intf.0) 0)",
          "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))", "--ranking", "(X @intf.0)",
          *args, "-o", str(out), "-p", "Rea"],
-        cwd=PY_DIR, capture_output=True, text=True,
+        cwd=LEAN_DIR, capture_output=True, text=True,
     )
     assert r.returncode == 0, r.stdout + r.stderr
     return r.stdout

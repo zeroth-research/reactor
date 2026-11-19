@@ -5,7 +5,7 @@
 
 Every project gets `.lake` symlinked to a single shared build dir whose
 `packages` points at the already-built Mathlib/cslib/lean-smt of
-python/tests/lean. ZerothHammer is byte-identical across projects, and
+lean/tests/lean. ZerothHammer is byte-identical across projects, and
 ReactLib's packages are path requires on one checkout
 (`$REACTLIB`, by default the one beside this repository), so they are
 built once and hit the cache afterwards; only System/* and Certificate/*
@@ -41,10 +41,10 @@ import sys
 import time
 from pathlib import Path
 
-SP = Path(__file__).parent                  # python/tests/limits
-PY = SP.parent.parent                       # python/
-REPO = PY.parent
-WARM = PY / "tests" / "lean"                # the already-built Mathlib
+SP = Path(__file__).parent                  # lean/tests/limits
+LEAN = SP.parent.parent                     # lean/
+REPO = LEAN.parent
+WARM = LEAN / "tests" / "lean"              # the already-built Mathlib
 MODS = SP / "mods"
 
 # Generated projects and their shared build dir are build artifacts, so they
@@ -92,7 +92,7 @@ def load_cases() -> list:
         cases = list(CASES)
     elif SUITE == "fbk":
         # The fbk probe table is the route's, in the `verith/` project.
-        sys.path.insert(0, str(PY.parent / "verith" / "tests" / "fbk"))
+        sys.path.insert(0, str(REPO / "verith" / "tests" / "fbk"))
         from probes import PROBES                        # noqa: PLC0415
         cases = [dict(name=n, group="fbk", mod=m, S=prop, expect=e)
                  for n, m, prop, e in PROBES]
@@ -117,7 +117,7 @@ def load_cases() -> list:
 
 def module_path(mod: str) -> Path:
     if mod.startswith("TESTS/"):
-        return PY / "tests" / "fixtures" / f"{mod.split('/', 1)[1]}.py"
+        return REPO / "python" / "tests" / "fixtures" / f"{mod.split('/', 1)[1]}.py"
     return MODS / f"{mod}.py"
 
 
@@ -150,7 +150,7 @@ def run_verith(case) -> dict:
     cmd += os.environ.get("VERITH_EXTRA", "").split()
     t0 = time.time()
     try:
-        r = subprocess.run(cmd, cwd=PY, capture_output=True, text=True, timeout=600)
+        r = subprocess.run(cmd, cwd=REPO / "verith", capture_output=True, text=True, timeout=600)
     except subprocess.TimeoutExpired:
         return dict(ok=False, secs=time.time() - t0, err="verith timed out (600s)")
     if r.returncode != 0:

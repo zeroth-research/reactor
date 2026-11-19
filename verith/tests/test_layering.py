@@ -7,7 +7,7 @@ routes (`verith.cli`, `verith.flags`, `verith.run`) also read the input
 formats and `reactor`'s own command line, whose flags they share. `certify`
 is the one module that runs `reactor` and a route together; nothing in
 `verith` imports it. (`reactor_lean` imports none of the three:
-`python/tests/test_layering.py`.) An import under `if TYPE_CHECKING:` is
+`lean/tests/test_layering.py`.) An import under `if TYPE_CHECKING:` is
 exempt: it names a type for the reader and loads nothing.
 
 A route is a package of `verith`: its row in `__init__.py` and its engine

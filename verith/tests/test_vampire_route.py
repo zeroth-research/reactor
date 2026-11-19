@@ -34,7 +34,7 @@ from reactor_lean.inputs.python import load_module
 
 # The fixtures are `reactor`'s, in the `python/` project beside this one.
 PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
-LIMITS = PYTHON_TESTS / "limits" / "mods"
+LIMITS = Path(__file__).resolve().parents[2] / "lean" / "tests" / "limits" / "mods"
 FIXTURES = PYTHON_TESTS / "fixtures"
 
 

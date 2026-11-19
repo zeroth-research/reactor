@@ -33,7 +33,7 @@ from pathlib import Path
 
 PY = Path(__file__).resolve().parents[2] / "python"
 FIX = PY / "tests" / "fixtures"
-MODS = PY / "tests" / "limits" / "mods"
+MODS = PY.parent / "lean" / "tests" / "limits" / "mods"
 HYBRID = Path(__file__).resolve().parents[1] / "tests" / "bench_matrix" / "hybrid"
 SMV = PY / "tests" / "smv_fixtures"
 

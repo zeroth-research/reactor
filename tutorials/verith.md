@@ -64,18 +64,19 @@ of a project `reactor` generated (section 2), or searches for one with
 `--ranking` take. `certify` is both in one run: `reactor`'s flags,
 `verith`'s, one project. From section 3 on, every command is `certify`.
 
-Every module used below is a fixture that already lives in `python/tests/`, so
-nothing has to be written first.
+Every module used below is a fixture that already lives in `python/tests/` or
+`lean/tests/`, so nothing has to be written first.
 
 ---
 
 ## 1. Setup
 
 `uv run reactor`, `uv run verith` and `uv run certify` are not installed
-globally; they run out of the checkout. All commands below are run from `python/`:
+globally; they run out of the checkout. All commands below are run from
+`verith/`, whose environment has all three:
 
 ```bash
-cd <checkout>/python
+cd <checkout>/verith
 uv sync                    # builds reactor via maturin and installs dependencies
 uv run reactor --help
 uv run verith --help       # --infer with every route's flags, and the proofs'
@@ -97,14 +98,14 @@ export PROJ=Rea
 export REACTLIB=$(cd "$REPO/../ReactLib" && pwd)       # a ReactLib checkout
 
 mkdir -p "$OUT/shared_lake"
-ln -sfn "$REPO/python/tests/lean/.lake/packages" "$OUT/shared_lake/packages"
+ln -sfn "$REPO/lean/tests/lean/.lake/packages" "$OUT/shared_lake/packages"
 ```
 
 Three things make that work:
 
 * `<OUT>/<PROJ>/.lake` is a symlink to one shared build directory whose
-  `packages` points at the already-built packages of `python/tests/lean`.
-  Build those once with `cd python/tests/lean && lake build`.
+  `packages` points at the already-built packages of `lean/tests/lean`.
+  Build those once with `cd lean/tests/lean && lake build`.
 * The Lean libraries the project is stated in, `Spec` and `Relational`, are
   not among those packages. They make up the `ReactLib` package of
   [ReactLib], which the lakefile requires from git; with `REACTLIB`
@@ -118,7 +119,7 @@ Three things make that work:
 [ReactLib]: https://github.com/zeroth-research/ReactLib
 
 One shared build directory takes **one writer** — don't run two of these
-sessions, or `tests/limits/run_limits.py`, against the same `OUT` at the same
+sessions, or `../lean/tests/limits/run_limits.py`, against the same `OUT` at the same
 time. Module names are identical in every generated project, so concurrent
 builds serve each other's oleans, and the symptom is
 `unknown constant 'hrank'`, which reads exactly like a codegen bug.
@@ -139,7 +140,7 @@ from pathlib import Path
 from reactor_lean.project.lakefile import reactlib_checkout, with_reactlib
 warm = json.loads(Path(sys.argv[1]).read_text())
 Path(sys.argv[2]).write_text(json.dumps(with_reactlib(warm, reactlib_checkout())))
-' "$REPO/python/tests/lean/lake-manifest.json" "$OUT/$PROJ/lake-manifest.json"
+' "$REPO/lean/tests/lean/lake-manifest.json" "$OUT/$PROJ/lake-manifest.json"
   (cd "$OUT/$PROJ" && lake build Certificate)
 }
 ```
@@ -172,14 +173,14 @@ export PYTHONPATH=~/zeroth/fbk/mathsat/python  # vmt2lean.py does `from mathsat 
 
 ## 2. Safety: a module written in the Python API
 
-`tests/limits/mods/m_countdown.py` is the smallest interesting module in the
+`../lean/tests/limits/mods/m_countdown.py` is the smallest interesting module in the
 repository: one integer state wire that counts down from 100 and wraps back to
 100 at zero. It uses the **analyzer** front end — `convert_method` reads the
 bytecode of two plain Python functions and turns them into the module's `init`
 and `update` term lists.
 
 ```bash
-cat tests/limits/mods/m_countdown.py
+cat ../lean/tests/limits/mods/m_countdown.py
 ```
 
 ```python
@@ -211,7 +212,7 @@ Generated with no property at all, `reactor` prints the module it read and the
 files it wrote. This is the one run shown in full:
 
 ```bash
-uv run reactor tests/limits/mods/m_countdown.py -o "$OUT" -p "$PROJ"
+uv run reactor ../lean/tests/limits/mods/m_countdown.py -o "$OUT" -p "$PROJ"
 ```
 
 ```
@@ -301,7 +302,7 @@ Given the property and the invariant, `reactor` writes the certificate's
 definitions and states its obligations — and proves none of them:
 
 ```bash
-uv run reactor tests/limits/mods/m_countdown.py \
+uv run reactor ../lean/tests/limits/mods/m_countdown.py \
     --safety    '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     -o "$OUT" -p "$PROJ" | says
@@ -328,7 +329,7 @@ build` takes tens of seconds and still cannot tell a wrong certificate from
 tactics that are merely too weak.
 
 ```bash
-uv run verith tests/limits/mods/m_countdown.py \
+uv run verith ../lean/tests/limits/mods/m_countdown.py \
     --safety    '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --project "$OUT/$PROJ" --pre-check cvc5 | says
@@ -428,7 +429,7 @@ Build completed successfully (3486 jobs).
 
 ## 3. Büchi: the same idea, plus a ranking function
 
-`tests/fixtures/counter.py` counts *up*: 0, 1, …, 9, then back to 0. "The
+`../python/tests/fixtures/counter.py` counts *up*: 0, 1, …, 9, then back to 0. "The
 counter is at zero infinitely often" is a liveness property, `G (F (s0 = 0))`,
 and it goes under `--buchi`.
 
@@ -443,7 +444,7 @@ From here on one command does both steps: `certify` generates the project as
 `reactor` does and proves it as `verith` does, in one run.
 
 ```bash
-uv run certify tests/fixtures/counter.py \
+uv run certify ../python/tests/fixtures/counter.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))' \
     --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \
@@ -503,12 +504,11 @@ Build completed successfully (3486 jobs).
 Nothing above is specific to hand-written modules. `reactor.gym.Env` extracts a
 module from a plain `gymnasium.Env` by symbolically analyzing its `reset` and
 `step` methods, and the result is a module file like any other.
-`tests/fixtures/simple_env.py` wraps `SimpleEnv` — a three-cell chain where
-the agent walks left or right and the goal is cell 2:
+`../python/tests/fixtures/simple_env.py` defines `SimpleEnv` — a three-cell chain
+where the agent walks left or right and the goal is cell 2 — and wraps it:
 
 ```bash
-cat tests/fixtures/simple_env.py
-sed -n '/class SimpleEnv/,/class TwoBitCounterEnv/p' tests/gym/environments.py
+cat ../python/tests/fixtures/simple_env.py
 ```
 
 ```python
@@ -517,9 +517,38 @@ sed -n '/class SimpleEnv/,/class TwoBitCounterEnv/p' tests/gym/environments.py
 Chain environment: state ∈ {0,1,2}, action moves left/right.
 Property: state reaches 2 infinitely often.
 """
+import gymnasium as gym
+from gymnasium import spaces
+
 from reactor.gym import Env
 from reactor import Module, Real
-from tests.gym.environments import SimpleEnv
+
+
+class SimpleEnv(gym.Env):
+    """Chain env: state moves left/right; reward 1 at goal (state == 2)."""
+
+    def __init__(self):
+        super().__init__()
+        self.action_space = spaces.Discrete(2)
+        self.observation_space = spaces.Discrete(2)
+
+    def _get_observation(self):
+        return 1 if self.state == 2 else 0
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.state = 0
+        return self._get_observation(), {}
+
+    def step(self, q_values):
+        action = q_values.argmax().item()
+        if action == 1:
+            self.state = min(self.state + 1, 2)
+        else:
+            self.state = max(self.state - 1, 0)
+        reward = 1.0 if self.state == 2 else 0.0
+        terminated = self._get_observation() == 1
+        return self._get_observation(), reward, terminated, False, {}
 
 
 def module() -> Module:
@@ -540,7 +569,7 @@ bare, with no property, and read it (the same dump is written to
 `dbg/system.txt`, so a later run need not reprint it):
 
 ```bash
-uv run reactor tests/fixtures/simple_env.py -o "$OUT" -p "$PROJ" | head -24
+uv run reactor ../python/tests/fixtures/simple_env.py -o "$OUT" -p "$PROJ" | head -24
 ```
 
 ```
@@ -593,7 +622,7 @@ than `0` and `2`.
 since `step` clamps with `min` and `max`:
 
 ```bash
-uv run certify tests/fixtures/simple_env.py \
+uv run certify ../python/tests/fixtures/simple_env.py \
     --safety    '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
     --invariant '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -645,7 +674,7 @@ still true and the ranking function is still fine; the invariant is not
 inductive, because the counter runs to 9:
 
 ```bash
-uv run certify tests/fixtures/counter.py \
+uv run certify ../python/tests/fixtures/counter.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \
@@ -669,13 +698,13 @@ seconds failing to prove it.
 
 ### 5b. A missing precondition
 
-`tests/limits/mods/m_relu_input.py` decrements by an *input*: the environment
+`../lean/tests/limits/mods/m_relu_input.py` decrements by an *input*: the environment
 chooses how much to subtract, and the module clamps at zero. Nothing about the
 module alone makes the counter go down — an environment that offers `0` every
 round leaves it where it is:
 
 ```bash
-uv run certify tests/limits/mods/m_relu_input.py \
+uv run certify ../lean/tests/limits/mods/m_relu_input.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(X @intf.0)' \
@@ -696,7 +725,7 @@ wires. It is added to `init_pre` and `update_pre` alike, and every obligation
 may then assume it:
 
 ```bash
-uv run certify tests/limits/mods/m_relu_input.py \
+uv run certify ../lean/tests/limits/mods/m_relu_input.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(X @intf.0)' \
@@ -736,7 +765,7 @@ trip and never reaches Lean.
 It needs `ANTHROPIC_API_KEY` and `uv sync --extra ai` for the default backend.
 
 ```bash
-uv run certify tests/limits/mods/m_countdown.py \
+uv run certify ../lean/tests/limits/mods/m_countdown.py \
     --buchi '(= (X @intf.0) 0)' \
     --infer -o "$OUT" -p "$PROJ" | says            # no --invariant, no --ranking
 
@@ -777,7 +806,7 @@ For a local model or another provider, add `--base-url` (and `--model`); the
 only extra dependency is the `openai` client, `uv sync --extra ai-local`:
 
 ```bash
-uv run certify tests/limits/mods/m_countdown.py --buchi '(= (X @intf.0) 0)' --infer \
+uv run certify ../lean/tests/limits/mods/m_countdown.py --buchi '(= (X @intf.0) 0)' --infer \
     --model qwen3-coder --base-url http://localhost:11434/v1 \
     -o "$OUT" -p "$PROJ"
 ```
@@ -808,7 +837,7 @@ and a transition that reads no nondeterministic input — anything else it
 refuses by name rather than approximating.
 
 ```bash
-uv run certify tests/limits/mods/m_countdown.py \
+uv run certify ../lean/tests/limits/mods/m_countdown.py \
     --buchi '(= (X @intf.0) 0)' \
     --infer nuterm \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -859,7 +888,7 @@ relations and program constants cannot say so. The route says that rather than
 guessing:
 
 ```bash
-uv run certify tests/limits/mods/m_step2.py \
+uv run certify ../lean/tests/limits/mods/m_step2.py \
     --buchi '(= (X @intf.0) 0)' --infer nuterm -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -875,7 +904,7 @@ error: --infer: no ranking function was certified. The rank is a non-negative su
 The LLM has no lattice, so a congruence costs it nothing to propose:
 
 ```bash
-uv run certify tests/limits/mods/m_step2.py \
+uv run certify ../lean/tests/limits/mods/m_step2.py \
     --buchi '(= (X @intf.0) 0)' --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
 
@@ -930,7 +959,7 @@ say when they **fail**, which is 8a, and what the next route does with that,
 which is 8b.
 
 ```bash
-uv run certify tests/limits/mods/m_countdown.py \
+uv run certify ../lean/tests/limits/mods/m_countdown.py \
     --safety '(<= (X @intf.0) 100)' \
     --infer smt-linear \
     --artifacts reset \
@@ -976,7 +1005,7 @@ Ask for something that is not there. `m_toward5` walks toward 5 from both
 sides, so a rank has to *branch* — and no linear function branches:
 
 ```bash
-uv run certify tests/limits/mods/m_toward5.py \
+uv run certify ../lean/tests/limits/mods/m_toward5.py \
     --buchi     '(= (X @intf.0) 5)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))' \
     --infer smt-linear -o "$OUT" -p "$PROJ" | says
@@ -1014,7 +1043,7 @@ even, and no conjunction of linear inequalities can say that either.
 none, at every width up to `--linear-rows`:
 
 ```bash
-uv run certify tests/limits/mods/m_step2.py \
+uv run certify ../lean/tests/limits/mods/m_step2.py \
     --safety '(not (= (X @intf.0) 1))' \
     --infer smt-linear --artifacts reset -o "$OUT" -p "$PROJ" | says
 ```
@@ -1033,7 +1062,7 @@ the `k` the program itself mentions — which is exactly the atom the first
 route proved it did not have:
 
 ```bash
-uv run certify tests/limits/mods/m_step2.py \
+uv run certify ../lean/tests/limits/mods/m_step2.py \
     --safety '(not (= (X @intf.0) 1))' \
     --infer sygus --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 
@@ -1083,7 +1112,7 @@ given** — and for a safety property that is the whole certificate, so the run
 below closes it without an LLM call even though `ai-cegis` is an LLM route:
 
 ```bash
-uv run certify tests/limits/mods/m_step2.py \
+uv run certify ../lean/tests/limits/mods/m_step2.py \
     --safety '(not (= (X @intf.0) 1))' \
     --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
 ```
@@ -1116,12 +1145,12 @@ prompt as established facts — so the attempt that would have gone on a linear
 ranking function goes somewhere else instead:
 
 ```bash
-uv run certify tests/limits/mods/m_toward5.py \
+uv run certify ../lean/tests/limits/mods/m_toward5.py \
     --buchi     '(= (X @intf.0) 5)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))' \
     --infer smt-linear --artifacts reset -o "$OUT" -p "$PROJ" | says
 
-uv run certify tests/limits/mods/m_toward5.py \
+uv run certify ../lean/tests/limits/mods/m_toward5.py \
     --buchi     '(= (X @intf.0) 5)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 10))' \
     --infer ai-cegis --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -1165,7 +1194,7 @@ integer template then covers a mixed state instead of one template per sort.
 walks up or down:
 
 ```bash
-uv run certify tests/limits/mods/m_boolint.py \
+uv run certify ../lean/tests/limits/mods/m_boolint.py \
     --safety '(and (>= (X @intf.1) 0) (<= (X @intf.1) 5))' \
     --infer smt-linear --artifacts reset \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -1276,7 +1305,7 @@ refused on this route.
 It needs `ic3ia`, MathSAT's Python bindings and the checkout (section 1):
 
 ```bash
-uv run certify tests/limits/mods/m_countdown.py \
+uv run certify ../lean/tests/limits/mods/m_countdown.py \
     --safety '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' \
     --fbk-proveit "$PROVEIT" --ic3ia "$IC3IA" -o "$OUT" -p "$PROJ" | says
 

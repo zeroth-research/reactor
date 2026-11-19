@@ -3,7 +3,7 @@
 
     uv run python tests/fbk/run_fbk_limits.py --ltl <dir> [--ic3ia P]
 
-`python/tests/limits/cases.py` gives every case an `--invariant` that verith's own
+`lean/tests/limits/cases.py` gives every case an `--invariant` that verith's own
 route proves inductive.  Handed to `--safety` instead, each becomes a safety
 property for ic3ia to rediscover an invariant for -- so this sweep asks the
 same 77 cases the limit matrix asks, through the other certification route.
@@ -31,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 # The limit matrix is `reactor`'s, in the `python/` project beside this one.
-LIMITS = HERE.parents[2] / "python" / "tests" / "limits"
+LIMITS = HERE.parents[2] / "lean" / "tests" / "limits"
 sys.path.insert(0, str(LIMITS))
 
 from cases import CASES  # noqa: E402

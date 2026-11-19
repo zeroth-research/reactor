@@ -6,9 +6,11 @@ import pytest
 
 from reactor_lean import inputs
 from reactor.smv import SMVRefused, parse_smv, read_smv
-from tests.reactor_cli import reactor
+from reactor_cli import reactor
 
-SMV = Path(__file__).parent / "smv_fixtures"
+# `reactor`'s module corpus.
+CORPUS = Path(__file__).resolve().parents[2] / "python" / "tests"
+SMV = CORPUS / "smv_fixtures"
 MOD10 = (SMV / "mod10.smv").read_text()
 
 
@@ -79,7 +81,15 @@ def test_an_ambiguous_claim_is_refused(tmp_path, args, why):
 
 
 def test_spec_is_only_meaningful_for_smv_input(tmp_path):
-    r = reactor(str(Path(__file__).parent / "fixtures" / "counter.py"),
+    r = reactor(str(CORPUS / "fixtures" / "counter.py"),
                "--spec", "1", "-o", str(tmp_path))
     assert r.returncode != 0
     assert "--spec is only meaningful for smv input" in r.stderr
+
+
+def test_mod10_has_a_lean_form():
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.codegen.terms import lean_gaps
+
+    module, _ = parse_smv(MOD10, strict=True)
+    assert lean_gaps(LeanContext(module)) == []

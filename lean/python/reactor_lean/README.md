@@ -139,8 +139,8 @@ compare; every difference must be one the change means.
 
 - **Goldens**: `tests/test_pipeline_golden.py`; `REACTOR_UPDATE_GOLDEN=1`
   rewrites them.
-- **Suites**: `just py-test` (`uv run pytest -m 'not slow' -q` from
-  `python/`), and `just test-lean` for the lake builds after any change to
+- **Suites**: `just lean-test` (`uv run pytest -m 'not slow' -q` from
+  `lean/`), and `just test-lean` for the lake builds after any change to
   the generated Lean.
 - **Encodings against the module**: after a change to an encoder or to the
   op table, `tests/test_encodings_agree.py` (the SMT encoding, two seconds)
@@ -518,7 +518,7 @@ assignment to a variable, fairness constraints, an integer type in a model
 with words, `*` of two non-constants and `/`/`mod` in LIA, and a `case` whose
 last condition is not `TRUE`. An input (`IVAR`) is read in the round it labels,
 and `INVAR x = e` / `x := e` hold in every state. Claims use the model's
-variable names: `uv run reactor tests/smv_fixtures/mod10.smv --safety "(<= (X x) 9)"`.
+variable names: `uv run reactor ../python/tests/smv_fixtures/mod10.smv --safety "(<= (X x) 9)"`.
 
 A model's own specification is the claim when no `--safety`/`--buchi` is
 given: `INVARSPEC p` and `LTLSPEC G p` are `--safety p`, `LTLSPEC G F p` is
