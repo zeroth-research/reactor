@@ -225,7 +225,8 @@ Everdij and Blom define execution semantics over timestamps. In this sense,
 they define executions somewhat similar to big-step semantics. In this section,
 we define executions via individual transitions, closer to how it is done in
 timed and hybrid automata. First, we define what it means to fire a single
-transition in a step. Steps operate on intermediate configurations. A
+transition, which we call a \emph{firing}. Firings operate on intermediate
+configurations. A
 maximal sequence of transitions is organized into a \emph{round}. A round
 finishes with a clock tick.
 
@@ -256,13 +257,13 @@ $\mathcal{G}_T(\cvec) = \mathit{True}$. The tokens produced by firing~$T$ on~$\c
 are $\mathit{out}_T(\cvec) = \mset{(P(A'_1), \pi_T^1(\cvec)), \dots,
 (P(A'_n), \pi_T^n(\cvec))}$.
 
-\paragraph{Firing steps.}
+\paragraph{Firings.}
 Within a round, we split the marking into two multisets: the multiset~$\bfm$
 of the tokens of the snapshot that have not been consumed yet, and the
 multiset~$\bfDelta$ of the tokens produced so far. Transitions consume tokens
 only from~$\bfm$.
 
-\begin{definition}[Firing step]\label{def:firing-step}
+\begin{definition}[Firing]\label{def:firing}
   For multisets $\bfm$, $\bfDelta$, $\bfm'$, $\bfDelta'$, a
   transition~$T$, and a tuple $\cvec \in \Real^{km}$, we write
   $\langle \bfm, \bfDelta \rangle \xrightarrow{T, \cvec}
@@ -288,15 +289,15 @@ round, and every token of the snapshot is consumed at most once.
   For markings $\bfm$ and~$\bfm'$, we write $\bfm \Rightarrow \bfm'$ iff
   there are multisets $\bfm''$ and~$\bfDelta''$ such that
   $\langle \bfm, \mset{} \rangle \rightarrow^* \langle \bfm'', \bfDelta''
-  \rangle$, no firing step is possible from
+  \rangle$, no firing is possible from
   $\langle \bfm'', \bfDelta'' \rangle$, and
   $\bfm' = \bfm'' + \bfDelta''$.
 \end{definition}
 
 That is, a round fires transitions until none is enabled by the remaining
-tokens of the snapshot. Since every transition has an input arc, every step
+tokens of the snapshot. Since every transition has an input arc, every firing
 removes at least one token from the finite first component, so every sequence
-of firing steps is finite. Hence, for every
+of firings is finite. Hence, for every
 marking~$\bfm$, there is a marking~$\bfm'$ with $\bfm \Rightarrow \bfm'$.
 
 \begin{definition}[Clock tick]\label{def:tick}
@@ -316,7 +317,7 @@ marking~$\bfm$, there is a marking~$\bfm'$ with $\bfm \Rightarrow \bfm'$.
 \end{definition}
 
 The rules R0--R4 of~\cite{EverdijBlom2005} are reflected as follows. Rule~R0
-is condition~2 of Definition~\ref{def:firing-step}. Rules R1 and~R3 follow from
+is condition~2 of Definition~\ref{def:firing}. Rules R1 and~R3 follow from
 maximality: all bindings in the snapshot that enable transitions and share no tokens
 fire in the same round, that is, at the same clock value. Rules R2 and~R4
 follow from consuming each token of the snapshot at most once: of several bindings
