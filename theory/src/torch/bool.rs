@@ -41,7 +41,7 @@ impl<'py> FromPyObject<'py> for crate::tensor::bool::Const<tch::Tensor> {
     /// Fails when `ob` is not a [`Const`].
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let constant = ob.downcast::<Const>()?.get();
-        Ok(crate::tensor::bool::Const(constant.0.shallow_clone()))
+        Ok(crate::tensor::bool::Const::new(constant.0.shallow_clone()))
     }
 }
 
@@ -49,7 +49,7 @@ impl<'py> FromPyObject<'py> for crate::tensor::bool::Const<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::bool::Const<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::bool::Const(self.0.shallow_clone())
+        crate::tensor::bool::Const::new(self.tensor().shallow_clone())
     }
 }
 
@@ -65,7 +65,9 @@ impl<'py> IntoPyObject<'py> for crate::tensor::bool::Prop<tch::Tensor> {
         use crate::tensor::bool::Prop;
 
         match self {
-            Prop::Const(op) => Const(op.0).into_pyobject(py).map(Bound::into_any),
+            Prop::Const(op) => Const(op.tensor().shallow_clone())
+                .into_pyobject(py)
+                .map(Bound::into_any),
             Prop::And(op) => op.into_pyobject(py).map(Bound::into_any),
             Prop::Or(op) => op.into_pyobject(py).map(Bound::into_any),
             Prop::Xor(op) => op.into_pyobject(py).map(Bound::into_any),

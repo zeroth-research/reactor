@@ -43,23 +43,43 @@ pub use super::sort::Reals as Sort;
 
 /// A constant real matrix literal, held in a tensor of type `T`.
 #[derive(Debug)]
-pub struct Const<T>(pub T);
+pub struct Const<T> {
+    tensor: T,
+}
+
+impl<T> Const<T> {
+    /// The constant held in `tensor`.
+    pub fn new(tensor: T) -> Self {
+        Const { tensor }
+    }
+
+    /// The tensor holding the constant.
+    pub fn tensor(&self) -> &T {
+        &self.tensor
+    }
+}
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Add(pub [usize; 2]);
+pub struct Add {
+    shape: [usize; 2],
+}
 
 /// Pointwise subtraction `x - y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Sub(pub [usize; 2]);
+pub struct Sub {
+    shape: [usize; 2],
+}
 
 /// Pointwise multiplication `x ⊙ y` of `[m, n]` matrices: the Hadamard
 /// product, not the matrix product [`MatMul`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Mul(pub [usize; 2]);
+pub struct Mul {
+    shape: [usize; 2],
+}
 
 /// Pointwise division `x / y` of `[m, n]` matrices: the Hadamard division
 /// `x ⊘ y`. As in SMT-LIB2, `x / 0` is unspecified.
@@ -67,44 +87,83 @@ pub struct Mul(pub [usize; 2]);
 /// SMT-LIB2: `(/ x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Div(pub [usize; 2]);
+pub struct Div {
+    shape: [usize; 2],
+}
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
 #[derive(Debug)]
-pub struct Linear<T>(pub T, pub T);
+pub struct Linear<T> {
+    a: T,
+    b: T,
+}
+
+impl<T: Tensor> Linear<T> {
+    /// The affine map `x ↦ A·x + B`; fails unless `a` and `b` are of shapes
+    /// `[m, n]` and `[m, k]`.
+    pub fn new(a: T, b: T) -> Result<Self, crate::Error> {
+        super::check_affine(a.shape(), b.shape())?;
+        Ok(Linear { a, b })
+    }
+}
+
+impl<T> Linear<T> {
+    /// The tensor of `A`.
+    pub fn a(&self) -> &T {
+        &self.a
+    }
+
+    /// The tensor of `B`.
+    pub fn b(&self) -> &T {
+        &self.b
+    }
+}
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct ReLU(pub [usize; 2]);
+pub struct ReLU {
+    shape: [usize; 2],
+}
 
 /// The index of a maximal entry of an `[m, n]` real matrix, counting its
 /// entries row by row, written as a `[1, 1]` matrix of the same sort.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Argmax(pub [usize; 2]);
+pub struct Argmax {
+    shape: [usize; 2],
+}
 
 /// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Min(pub [usize; 2]);
+pub struct Min {
+    shape: [usize; 2],
+}
 
 /// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Max(pub [usize; 2]);
+pub struct Max {
+    shape: [usize; 2],
+}
 
 /// Transposition `xᵀ` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Transpose(pub [usize; 2]);
+pub struct Transpose {
+    shape: [usize; 2],
+}
 
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the sizes given as `MatMul([m, n], [n, k])`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct MatMul(pub [usize; 2], pub [usize; 2]);
+pub struct MatMul {
+    lhs: [usize; 2],
+    rhs: [usize; 2],
+}
 
 /// Pointwise comparison `x < y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
@@ -112,7 +171,9 @@ pub struct MatMul(pub [usize; 2], pub [usize; 2]);
 /// SMT-LIB2: `(< x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Lt(pub [usize; 2]);
+pub struct Lt {
+    shape: [usize; 2],
+}
 
 /// Pointwise choice `if c then x else y` between `[m, n]` real matrices `x` and `y`,
 /// by the boolean matrix `c`, read first.
@@ -120,7 +181,9 @@ pub struct Lt(pub [usize; 2]);
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Ite(pub [usize; 2]);
+pub struct Ite {
+    shape: [usize; 2],
+}
 
 /// Pointwise comparison `x ≤ y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
@@ -128,7 +191,9 @@ pub struct Ite(pub [usize; 2]);
 /// SMT-LIB2: `(<= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Le(pub [usize; 2]);
+pub struct Le {
+    shape: [usize; 2],
+}
 
 /// Pointwise comparison `x > y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
@@ -136,7 +201,9 @@ pub struct Le(pub [usize; 2]);
 /// SMT-LIB2: `(> x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Gt(pub [usize; 2]);
+pub struct Gt {
+    shape: [usize; 2],
+}
 
 /// Pointwise comparison `x ≥ y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
@@ -144,7 +211,9 @@ pub struct Gt(pub [usize; 2]);
 /// SMT-LIB2: `(>= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Ge(pub [usize; 2]);
+pub struct Ge {
+    shape: [usize; 2],
+}
 
 /// Pointwise comparison `x = y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
@@ -152,7 +221,9 @@ pub struct Ge(pub [usize; 2]);
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Eq(pub [usize; 2]);
+pub struct Eq {
+    shape: [usize; 2],
+}
 
 /// Pointwise comparison `x ≠ y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
@@ -160,7 +231,9 @@ pub struct Eq(pub [usize; 2]);
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Ne(pub [usize; 2]);
+pub struct Ne {
+    shape: [usize; 2],
+}
 
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
 /// with their boundary in [`Sort`].
@@ -413,47 +486,47 @@ impl<T: Tensor> Boundary<Real> for Const<T> {
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.0.shape())].into()
+        mono![Real::new(self.tensor.shape())].into()
     }
 }
 
 impl Boundary<Real> for Add {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0); 2].into()
+        mono![Real::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 }
 
 impl Boundary<Real> for Sub {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0); 2].into()
+        mono![Real::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 }
 
 impl Boundary<Real> for Mul {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0); 2].into()
+        mono![Real::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 }
 
 impl Boundary<Real> for Div {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0); 2].into()
+        mono![Real::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 }
 
@@ -461,137 +534,137 @@ impl Boundary<Real> for Div {
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
 impl<T: Tensor> Boundary<Real> for Linear<T> {
     fn dom(&self) -> Poly<Real> {
-        let [_, n] = self.0.shape();
-        let [_, k] = self.1.shape();
+        let [_, n] = self.a.shape();
+        let [_, k] = self.b.shape();
         mono![Real::new([n, k])].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.1.shape())].into()
+        mono![Real::new(self.b.shape())].into()
     }
 }
 
 impl Boundary<Real> for ReLU {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 }
 
 impl Boundary<Real> for Min {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0); 2].into()
+        mono![Real::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 }
 
 impl Boundary<Real> for Max {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0); 2].into()
+        mono![Real::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 }
 
 /// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
 impl Boundary<Real> for Transpose {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.0[1], self.0[0]])].into()
+        mono![Real::new([self.shape[1], self.shape[0]])].into()
     }
 }
 
 /// Takes matrices of shapes `[m, n]` and `[n, k]` to one of shape `[m, k]`.
 impl Boundary<Real> for MatMul {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0), Real::new(self.1)].into()
+        mono![Real::new(self.lhs), Real::new(self.rhs)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.0[0], self.1[1]])].into()
+        mono![Real::new([self.lhs[0], self.rhs[1]])].into()
     }
 }
 
 impl Boundary<Sort> for Lt {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.0).into(); 2].into()
+        mono![Real::new(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.0).into()].into()
+        mono![Bool::new(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Le {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.0).into(); 2].into()
+        mono![Real::new(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.0).into()].into()
+        mono![Bool::new(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Gt {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.0).into(); 2].into()
+        mono![Real::new(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.0).into()].into()
+        mono![Bool::new(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Ge {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.0).into(); 2].into()
+        mono![Real::new(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.0).into()].into()
+        mono![Bool::new(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Eq {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.0).into(); 2].into()
+        mono![Real::new(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.0).into()].into()
+        mono![Bool::new(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Ne {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.0).into(); 2].into()
+        mono![Real::new(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.0).into()].into()
+        mono![Bool::new(self.shape).into()].into()
     }
 }
 
 impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.tensor)
     }
 }
 
 impl<T: fmt::Display> fmt::Display for Linear<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Linear({}, {})", self.0, self.1)
+        write!(f, "Linear({}, {})", self.a, self.b)
     }
 }
 
@@ -627,7 +700,7 @@ impl fmt::Display for ReLU {
 
 impl Boundary<Real> for Argmax {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.0)].into()
+        mono![Real::new(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
@@ -674,15 +747,15 @@ impl fmt::Display for Lt {
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
         mono![
-            Bool::new(self.0).into(),
-            Real::new(self.0).into(),
-            Real::new(self.0).into()
+            Bool::new(self.shape).into(),
+            Real::new(self.shape).into(),
+            Real::new(self.shape).into()
         ]
         .into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Real::new(self.0).into()].into()
+        mono![Real::new(self.shape).into()].into()
     }
 }
 
@@ -804,8 +877,8 @@ where
 impl Add {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Add(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Add { shape }
     }
 
     #[classattr]
@@ -814,8 +887,8 @@ impl Add {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -823,8 +896,8 @@ impl Add {
 impl Sub {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Sub(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Sub { shape }
     }
 
     #[classattr]
@@ -833,8 +906,8 @@ impl Sub {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -842,8 +915,8 @@ impl Sub {
 impl Mul {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Mul(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Mul { shape }
     }
 
     #[classattr]
@@ -852,8 +925,8 @@ impl Mul {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -861,8 +934,8 @@ impl Mul {
 impl Div {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Div(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Div { shape }
     }
 
     #[classattr]
@@ -871,8 +944,8 @@ impl Div {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -880,8 +953,8 @@ impl Div {
 impl ReLU {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        ReLU(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        ReLU { shape }
     }
 
     #[classattr]
@@ -890,8 +963,8 @@ impl ReLU {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -899,8 +972,8 @@ impl ReLU {
 impl Argmax {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Argmax(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Argmax { shape }
     }
 
     #[classattr]
@@ -909,8 +982,8 @@ impl Argmax {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -918,8 +991,8 @@ impl Argmax {
 impl Min {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Min(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Min { shape }
     }
 
     #[classattr]
@@ -928,8 +1001,8 @@ impl Min {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -937,8 +1010,8 @@ impl Min {
 impl Max {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Max(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Max { shape }
     }
 
     #[classattr]
@@ -947,8 +1020,8 @@ impl Max {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -956,8 +1029,8 @@ impl Max {
 impl Transpose {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Transpose(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Transpose { shape }
     }
 
     #[classattr]
@@ -966,8 +1039,8 @@ impl Transpose {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -976,13 +1049,13 @@ impl MatMul {
     /// Fails unless the columns of `lhs` are the rows of `rhs`.
     #[new]
     #[pyo3(signature = (lhs, rhs, /))]
-    fn new(lhs: [usize; 2], rhs: [usize; 2]) -> Result<Self, crate::Error> {
+    pub fn new(lhs: [usize; 2], rhs: [usize; 2]) -> Result<Self, crate::Error> {
         if lhs[1] != rhs[0] {
             return Err(crate::Error(format!(
                 "cannot multiply a {lhs:?} matrix by a {rhs:?} matrix"
             )));
         }
-        Ok(MatMul(lhs, rhs))
+        Ok(MatMul { lhs, rhs })
     }
 
     #[classattr]
@@ -991,13 +1064,13 @@ impl MatMul {
     }
 
     #[getter]
-    fn lhs(&self) -> [usize; 2] {
-        self.0
+    pub fn lhs(&self) -> [usize; 2] {
+        self.lhs
     }
 
     #[getter]
-    fn rhs(&self) -> [usize; 2] {
-        self.1
+    pub fn rhs(&self) -> [usize; 2] {
+        self.rhs
     }
 }
 
@@ -1005,8 +1078,8 @@ impl MatMul {
 impl Lt {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Lt(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Lt { shape }
     }
 
     #[classattr]
@@ -1015,8 +1088,8 @@ impl Lt {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -1024,8 +1097,8 @@ impl Lt {
 impl Ite {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Ite(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ite { shape }
     }
 
     #[classattr]
@@ -1034,8 +1107,8 @@ impl Ite {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -1043,8 +1116,8 @@ impl Ite {
 impl Le {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Le(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Le { shape }
     }
 
     #[classattr]
@@ -1053,8 +1126,8 @@ impl Le {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -1062,8 +1135,8 @@ impl Le {
 impl Gt {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Gt(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Gt { shape }
     }
 
     #[classattr]
@@ -1072,8 +1145,8 @@ impl Gt {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -1081,8 +1154,8 @@ impl Gt {
 impl Ge {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Ge(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ge { shape }
     }
 
     #[classattr]
@@ -1091,8 +1164,8 @@ impl Ge {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -1100,8 +1173,8 @@ impl Ge {
 impl Eq {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Eq(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Eq { shape }
     }
 
     #[classattr]
@@ -1110,8 +1183,8 @@ impl Eq {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -1119,8 +1192,8 @@ impl Eq {
 impl Ne {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Ne(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ne { shape }
     }
 
     #[classattr]
@@ -1129,7 +1202,7 @@ impl Ne {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }

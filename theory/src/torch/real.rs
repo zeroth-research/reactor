@@ -50,10 +50,10 @@ impl<'py> FromPyObject<'py> for crate::tensor::real::Linear<tch::Tensor> {
     /// Fails when `ob` is not a [`Linear`].
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let linear = ob.downcast::<Linear>()?.get();
-        Ok(crate::tensor::real::Linear(
+        Ok(crate::tensor::real::Linear::new(
             linear.0.shallow_clone(),
             linear.1.shallow_clone(),
-        ))
+        )?)
     }
 }
 
@@ -96,7 +96,7 @@ impl<'py> FromPyObject<'py> for crate::tensor::real::Const<tch::Tensor> {
     /// Fails when `ob` is not a [`Const`].
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let constant = ob.downcast::<Const>()?.get();
-        Ok(crate::tensor::real::Const(constant.0.shallow_clone()))
+        Ok(crate::tensor::real::Const::new(constant.0.shallow_clone()))
     }
 }
 
@@ -104,7 +104,7 @@ impl<'py> FromPyObject<'py> for crate::tensor::real::Const<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::real::Const<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::real::Const(self.0.shallow_clone())
+        crate::tensor::real::Const::new(self.tensor().shallow_clone())
     }
 }
 
@@ -112,7 +112,8 @@ impl Clone for crate::tensor::real::Const<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::real::Linear<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::real::Linear(self.0.shallow_clone(), self.1.shallow_clone())
+        crate::tensor::real::Linear::new(self.a().shallow_clone(), self.b().shallow_clone())
+            .expect("a clone has the shapes of the original")
     }
 }
 
@@ -128,12 +129,16 @@ impl<'py> IntoPyObject<'py> for crate::tensor::real::NRA<tch::Tensor> {
         use crate::tensor::real::NRA;
 
         match self {
-            NRA::Const(op) => Const(op.0).into_pyobject(py).map(Bound::into_any),
+            NRA::Const(op) => Const(op.tensor().shallow_clone())
+                .into_pyobject(py)
+                .map(Bound::into_any),
             NRA::Add(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Div(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Linear(op) => Linear(op.0, op.1).into_pyobject(py).map(Bound::into_any),
+            NRA::Linear(op) => Linear(op.a().shallow_clone(), op.b().shallow_clone())
+                .into_pyobject(py)
+                .map(Bound::into_any),
             NRA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Argmax(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Min(op) => op.into_pyobject(py).map(Bound::into_any),

@@ -15,9 +15,11 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// Fails when `tensor` is not a `torch.Tensor` of integer elements.
+    /// Fails when `tensor` is not a `torch.Tensor` of integer elements, or
+    /// `width` is zero.
     #[new]
     fn new(tensor: PyTensor, width: usize) -> Result<Self, crate::Error> {
+        crate::tensor::sort::check_width(width)?;
         if !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
                 "expected a tensor of integer elements, got {:?}",
@@ -47,10 +49,10 @@ impl<'py> FromPyObject<'py> for crate::tensor::word::Const<tch::Tensor> {
     /// Fails when `ob` is not a [`Const`].
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let constant = ob.downcast::<Const>()?.get();
-        Ok(crate::tensor::word::Const(
+        Ok(crate::tensor::word::Const::new(
             constant.0.shallow_clone(),
             constant.1,
-        ))
+        )?)
     }
 }
 
@@ -58,7 +60,8 @@ impl<'py> FromPyObject<'py> for crate::tensor::word::Const<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::word::Const<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::word::Const(self.0.shallow_clone(), self.1)
+        crate::tensor::word::Const::new(self.tensor().shallow_clone(), self.width())
+            .expect("a clone has the width of the original")
     }
 }
 
@@ -74,7 +77,9 @@ impl<'py> IntoPyObject<'py> for crate::tensor::word::BV<tch::Tensor> {
         use crate::tensor::word::BV;
 
         match self {
-            BV::Const(op) => Const(op.0, op.1).into_pyobject(py).map(Bound::into_any),
+            BV::Const(op) => Const(op.tensor().shallow_clone(), op.width())
+                .into_pyobject(py)
+                .map(Bound::into_any),
             BV::Concat(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Extract(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Repeat(op) => op.into_pyobject(py).map(Bound::into_any),

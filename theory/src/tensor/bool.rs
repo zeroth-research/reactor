@@ -23,27 +23,49 @@ use std::fmt;
 
 /// A constant boolean matrix literal, held in a tensor of type `T`.
 #[derive(Debug)]
-pub struct Const<T>(pub T);
+pub struct Const<T> {
+    tensor: T,
+}
+
+impl<T> Const<T> {
+    /// The constant held in `tensor`.
+    pub fn new(tensor: T) -> Self {
+        Const { tensor }
+    }
+
+    /// The tensor holding the constant.
+    pub fn tensor(&self) -> &T {
+        &self.tensor
+    }
+}
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct And(pub [usize; 2]);
+pub struct And {
+    shape: [usize; 2],
+}
 
 /// Pointwise disjunction `x ∨ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Or(pub [usize; 2]);
+pub struct Or {
+    shape: [usize; 2],
+}
 
 /// Pointwise exclusive disjunction `x ⊕ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Xor(pub [usize; 2]);
+pub struct Xor {
+    shape: [usize; 2],
+}
 
 /// Pointwise negation `¬x` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Not(pub [usize; 2]);
+pub struct Not {
+    shape: [usize; 2],
+}
 
 /// Pointwise equality `x = y` of `[m, n]` matrices: the negation of their
 /// exclusive disjunction.
@@ -51,7 +73,9 @@ pub struct Not(pub [usize; 2]);
 /// SMT-LIB2: `(= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Eq(pub [usize; 2]);
+pub struct Eq {
+    shape: [usize; 2],
+}
 
 /// Pointwise disequality `x ≠ y` of `[m, n]` matrices: their exclusive
 /// disjunction.
@@ -59,7 +83,9 @@ pub struct Eq(pub [usize; 2]);
 /// SMT-LIB2: `(distinct x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Ne(pub [usize; 2]);
+pub struct Ne {
+    shape: [usize; 2],
+}
 
 /// Pointwise choice `if c then x else y` between `[m, n]` boolean matrices
 /// `x` and `y`, by the boolean matrix `c`, read first.
@@ -67,7 +93,9 @@ pub struct Ne(pub [usize; 2]);
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Ite(pub [usize; 2]);
+pub struct Ite {
+    shape: [usize; 2],
+}
 
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
@@ -150,73 +178,73 @@ impl<T: Tensor> Boundary<Bool> for Const<T> {
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0.shape())].into()
+        mono![Bool::new(self.tensor.shape())].into()
     }
 }
 
 impl Boundary<Bool> for And {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0); 2].into()
+        mono![Bool::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0)].into()
+        mono![Bool::new(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Or {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0); 2].into()
+        mono![Bool::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0)].into()
+        mono![Bool::new(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Xor {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0); 2].into()
+        mono![Bool::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0)].into()
+        mono![Bool::new(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Not {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0)].into()
+        mono![Bool::new(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0)].into()
+        mono![Bool::new(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Eq {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0); 2].into()
+        mono![Bool::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0)].into()
+        mono![Bool::new(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Ne {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0); 2].into()
+        mono![Bool::new(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0)].into()
+        mono![Bool::new(self.shape)].into()
     }
 }
 
 impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.tensor)
     }
 }
 
@@ -258,11 +286,11 @@ impl fmt::Display for Ne {
 
 impl Boundary<Bool> for Ite {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0); 3].into()
+        mono![Bool::new(self.shape); 3].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.0)].into()
+        mono![Bool::new(self.shape)].into()
     }
 }
 
@@ -320,8 +348,8 @@ where
 impl And {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        And(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        And { shape }
     }
 
     #[classattr]
@@ -330,8 +358,8 @@ impl And {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -339,8 +367,8 @@ impl And {
 impl Or {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Or(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Or { shape }
     }
 
     #[classattr]
@@ -349,8 +377,8 @@ impl Or {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -358,8 +386,8 @@ impl Or {
 impl Xor {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Xor(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Xor { shape }
     }
 
     #[classattr]
@@ -368,8 +396,8 @@ impl Xor {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -377,8 +405,8 @@ impl Xor {
 impl Not {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Not(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Not { shape }
     }
 
     #[classattr]
@@ -387,8 +415,8 @@ impl Not {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -396,8 +424,8 @@ impl Not {
 impl Eq {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Eq(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Eq { shape }
     }
 
     #[classattr]
@@ -406,8 +434,8 @@ impl Eq {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -415,8 +443,8 @@ impl Eq {
 impl Ne {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Ne(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ne { shape }
     }
 
     #[classattr]
@@ -425,8 +453,8 @@ impl Ne {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }
 
@@ -434,8 +462,8 @@ impl Ne {
 impl Ite {
     #[new]
     #[pyo3(signature = (shape, /))]
-    fn new(shape: [usize; 2]) -> Self {
-        Ite(shape)
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ite { shape }
     }
 
     #[classattr]
@@ -444,7 +472,7 @@ impl Ite {
     }
 
     #[getter]
-    fn shape(&self) -> [usize; 2] {
-        self.0
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
     }
 }

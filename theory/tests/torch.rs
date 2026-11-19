@@ -41,9 +41,9 @@ fn torch_tensors_back_the_operations() {
     // `A` of shape `[4, 2]` and `B` of shape `[4, 3]` map `[2, 3]` to `[4, 3]`
     let a = full(4, 2, 0.0, tch::Kind::Float);
     let b = full(4, 3, 0.0, tch::Kind::Float);
-    let linear = tensor::real::Linear(a, b);
-    assert_eq!(linear.dom(), tensor::real::ReLU([2, 3]).dom());
-    assert_eq!(linear.cod(), tensor::real::ReLU([4, 3]).cod());
+    let linear = tensor::real::Linear::new(a, b).unwrap();
+    assert_eq!(linear.dom(), tensor::real::ReLU::new([2, 3]).dom());
+    assert_eq!(linear.cod(), tensor::real::ReLU::new([4, 3]).cod());
 }
 
 #[test]
@@ -80,11 +80,11 @@ fn constants_extract_from_the_class_of_their_theory() {
         let op = constant
             .extract::<tensor::real::Const<tch::Tensor>>()
             .unwrap();
-        assert_eq!(op.cod(), tensor::real::ReLU([2, 3]).cod());
+        assert_eq!(op.cod(), tensor::real::ReLU::new([2, 3]).cod());
 
         // the tensor is that of the constant
         let t = floats.extract::<PyTensor>().unwrap();
-        assert_eq!(op.0.data_ptr(), t.data_ptr());
+        assert_eq!(op.tensor().data_ptr(), t.data_ptr());
 
         // the class decides the theory, not the tensor
         assert!(
@@ -103,7 +103,7 @@ fn constants_extract_from_the_class_of_their_theory() {
         let op = constant
             .extract::<tensor::word::Const<tch::Tensor>>()
             .unwrap();
-        assert_eq!(op.1, 8);
+        assert_eq!(op.width(), 8);
     });
 }
 
@@ -140,12 +140,12 @@ fn linear_maps_extract_from_the_class_of_their_theory() {
         let linear = class
             .extract::<tensor::real::Linear<tch::Tensor>>()
             .unwrap();
-        assert_eq!(linear.dom(), tensor::real::ReLU([2, 3]).dom());
-        assert_eq!(linear.cod(), tensor::real::ReLU([4, 3]).cod());
+        assert_eq!(linear.dom(), tensor::real::ReLU::new([2, 3]).dom());
+        assert_eq!(linear.cod(), tensor::real::ReLU::new([4, 3]).cod());
 
         // the tensors are those of the class
         let ta = a.extract::<PyTensor>().unwrap();
-        assert_eq!(linear.0.data_ptr(), ta.data_ptr());
+        assert_eq!(linear.a().data_ptr(), ta.data_ptr());
 
         // the class decides the theory
         assert!(class.extract::<tensor::int::Linear<tch::Tensor>>().is_err());
@@ -188,23 +188,32 @@ fn any_extracts_the_operations_of_each_theory() {
 
     prepare_python_with_torch();
     Python::with_gil(|py| {
-        let real_add = Bound::new(py, real::Add([2, 3])).unwrap();
+        let real_add = Bound::new(py, real::Add::new([2, 3])).unwrap();
         let op = real_add.extract::<Any<tch::Tensor>>().unwrap();
-        assert!(matches!(op, Any::Real(real::NRA::Add(real::Add([2, 3])))));
+        assert!(matches!(
+            op,
+            Any::Real(real::NRA::Add(op)) if op == real::Add::new([2, 3])
+        ));
 
-        let int_add = Bound::new(py, int::Add([2, 3])).unwrap();
+        let int_add = Bound::new(py, int::Add::new([2, 3])).unwrap();
         let op = int_add.extract::<Any<tch::Tensor>>().unwrap();
-        assert!(matches!(op, Any::Int(int::NIA::Add(int::Add([2, 3])))));
+        assert!(matches!(
+            op,
+            Any::Int(int::NIA::Add(op)) if op == int::Add::new([2, 3])
+        ));
 
-        let and = Bound::new(py, bool::And([2, 3])).unwrap();
+        let and = Bound::new(py, bool::And::new([2, 3])).unwrap();
         let op = and.extract::<Any<tch::Tensor>>().unwrap();
-        assert!(matches!(op, Any::Bool(bool::Prop::And(bool::And([2, 3])))));
+        assert!(matches!(
+            op,
+            Any::Bool(bool::Prop::And(op)) if op == bool::And::new([2, 3])
+        ));
 
-        let sdiv = Bound::new(py, word::signed::Div(8, [2, 3])).unwrap();
+        let sdiv = Bound::new(py, word::signed::Div::new(8, [2, 3]).unwrap()).unwrap();
         let op = sdiv.extract::<Any<tch::Tensor>>().unwrap();
         assert!(matches!(
             op,
-            Any::Word(word::BV::SDiv(word::signed::Div(8, [2, 3])))
+            Any::Word(word::BV::SDiv(op)) if op == word::signed::Div::new(8, [2, 3]).unwrap()
         ));
 
         let not_an_operation = 42i64.into_pyobject(py).unwrap();
@@ -218,15 +227,15 @@ fn each_theory_extracts_its_own_operations_only() {
 
     prepare_python_with_torch();
     Python::with_gil(|py| {
-        let real_mul = Bound::new(py, real::Mul([2, 3])).unwrap();
+        let real_mul = Bound::new(py, real::Mul::new([2, 3])).unwrap();
         assert!(real_mul.extract::<real::NRA<tch::Tensor>>().is_ok());
         assert!(real_mul.extract::<int::NIA<tch::Tensor>>().is_err());
 
-        let int_mod = Bound::new(py, int::Mod([2, 3])).unwrap();
+        let int_mod = Bound::new(py, int::Mod::new([2, 3])).unwrap();
         assert!(int_mod.extract::<int::NIA<tch::Tensor>>().is_ok());
 
         // `Not` is a different class in propositional logic and in QF_BV
-        let not = Bound::new(py, bool::Not([2, 3])).unwrap();
+        let not = Bound::new(py, bool::Not::new([2, 3])).unwrap();
         assert!(not.extract::<bool::Prop<tch::Tensor>>().is_ok());
         assert!(not.extract::<word::BV<tch::Tensor>>().is_err());
     });

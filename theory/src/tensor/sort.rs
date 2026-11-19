@@ -210,6 +210,15 @@ pub struct Word {
     shape: [usize; 2],
 }
 
+/// Fails unless `width` is positive: as in SMT-LIB2, words have at least one
+/// bit.
+pub(crate) fn check_width(width: usize) -> Result<(), crate::Error> {
+    if width == 0 {
+        return Err(crate::Error("words have at least one bit".to_string()));
+    }
+    Ok(())
+}
+
 impl Word {
     /// Matrices of `width`-bit words, as [`Word::new`], but panics if
     /// `width` is zero.
@@ -233,9 +242,7 @@ impl Word {
     /// positive, or this returns an error.
     #[new]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        if width == 0 {
-            return Err(crate::Error("words have at least one bit".to_string()));
-        }
+        check_width(width)?;
         Ok(Word { width, shape })
     }
 

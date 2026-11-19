@@ -104,18 +104,35 @@ pub enum LIA<T> {
 /// nondeterministic choice of a value.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Havoc(pub sort::Any);
+pub struct Havoc {
+    sort: sort::Any,
+}
 
 /// Writes the value it reads, of the given sort: the identity.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Skip(pub sort::Any);
+pub struct Skip {
+    sort: sort::Any,
+}
 
 /// Writes the zero of the given sort, reading nothing: the rate of change
 /// of a value that does not change.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[pyo3::pyclass(frozen, eq, str)]
-pub struct Zero(pub sort::Any);
+pub struct Zero {
+    sort: sort::Any,
+}
+
+/// Fails unless `a` and `b` are the shapes `[m, n]` and `[m, k]` of the
+/// matrices `A` and `B` of an affine map `x ↦ A·x + B`.
+pub(crate) fn check_affine(a: [usize; 2], b: [usize; 2]) -> Result<(), crate::Error> {
+    if a[0] != b[0] {
+        return Err(crate::Error(format!(
+            "expected A of shape [m, n] and B of shape [m, k], got {a:?} and {b:?}"
+        )));
+    }
+    Ok(())
+}
 
 impl Boundary<sort::Any> for Havoc {
     fn dom(&self) -> Poly<sort::Any> {
@@ -123,17 +140,17 @@ impl Boundary<sort::Any> for Havoc {
     }
 
     fn cod(&self) -> Poly<sort::Any> {
-        base::mono![self.0].into()
+        base::mono![self.sort].into()
     }
 }
 
 impl Boundary<sort::Any> for Skip {
     fn dom(&self) -> Poly<sort::Any> {
-        base::mono![self.0].into()
+        base::mono![self.sort].into()
     }
 
     fn cod(&self) -> Poly<sort::Any> {
-        base::mono![self.0].into()
+        base::mono![self.sort].into()
     }
 }
 
@@ -143,7 +160,7 @@ impl Boundary<sort::Any> for Zero {
     }
 
     fn cod(&self) -> Poly<sort::Any> {
-        base::mono![self.0].into()
+        base::mono![self.sort].into()
     }
 }
 
@@ -169,8 +186,8 @@ impl fmt::Display for Zero {
 #[pymethods]
 impl Havoc {
     #[new]
-    fn new(sort: sort::Any) -> Self {
-        Havoc(sort)
+    pub fn new(sort: sort::Any) -> Self {
+        Havoc { sort }
     }
 
     #[classattr]
@@ -179,16 +196,16 @@ impl Havoc {
     }
 
     #[getter]
-    fn sort(&self) -> sort::Any {
-        self.0
+    pub fn sort(&self) -> sort::Any {
+        self.sort
     }
 }
 
 #[pymethods]
 impl Skip {
     #[new]
-    fn new(sort: sort::Any) -> Self {
-        Skip(sort)
+    pub fn new(sort: sort::Any) -> Self {
+        Skip { sort }
     }
 
     #[classattr]
@@ -197,16 +214,16 @@ impl Skip {
     }
 
     #[getter]
-    fn sort(&self) -> sort::Any {
-        self.0
+    pub fn sort(&self) -> sort::Any {
+        self.sort
     }
 }
 
 #[pymethods]
 impl Zero {
     #[new]
-    fn new(sort: sort::Any) -> Self {
-        Zero(sort)
+    pub fn new(sort: sort::Any) -> Self {
+        Zero { sort }
     }
 
     #[classattr]
@@ -215,26 +232,26 @@ impl Zero {
     }
 
     #[getter]
-    fn sort(&self) -> sort::Any {
-        self.0
+    pub fn sort(&self) -> sort::Any {
+        self.sort
     }
 }
 
 impl<T> crate::Combinatorial<sort::Any> for Any<T> {
     fn havoc(range: &sort::Any) -> Self {
-        Any::Havoc(Havoc(*range))
+        Any::Havoc(Havoc::new(*range))
     }
 }
 
 impl<T> crate::Sequential<sort::Any> for Any<T> {
     fn skip(range: &sort::Any) -> Self {
-        Any::Skip(Skip(*range))
+        Any::Skip(Skip::new(*range))
     }
 }
 
 impl<T> crate::Differential<sort::Any> for Any<T> {
     fn zero(range: &sort::Any) -> Self {
-        Any::Zero(Zero(*range))
+        Any::Zero(Zero::new(*range))
     }
 }
 

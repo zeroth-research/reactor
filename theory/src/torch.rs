@@ -54,12 +54,13 @@ fn is_integer(kind: tch::Kind) -> bool {
 /// `A` of shape `[m, n]` and `B` of shape `[m, k]`.
 fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> Result<(), crate::Error> {
     let (a, b) = (a.size(), b.size());
-    if a.len() != 2 || b.len() != 2 || a[0] != b[0] {
+    if a.len() != 2 || b.len() != 2 {
         return Err(crate::Error(format!(
             "expected A of shape [m, n] and B of shape [m, k], got {a:?} and {b:?}"
         )));
     }
-    Ok(())
+    let shape = |s: &[i64]| [s[0] as usize, s[1] as usize];
+    crate::tensor::check_affine(shape(&a), shape(&b))
 }
 
 /// Converts an operation of any theory into its Python class, through the
