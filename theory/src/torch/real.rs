@@ -68,10 +68,11 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// Fails when `tensor` is not a `torch.Tensor` of floating-point
-    /// elements.
+    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
+    /// floating-point elements.
     #[new]
     fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+        super::check_matrix(&tensor)?;
         if !tensor.is_floating_point() {
             return Err(crate::Error(format!(
                 "expected a tensor of floating-point elements, got {:?}",

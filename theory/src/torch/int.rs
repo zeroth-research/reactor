@@ -69,9 +69,11 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// Fails when `tensor` is not a `torch.Tensor` of integer elements.
+    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
+    /// integer elements.
     #[new]
     fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+        super::check_matrix(&tensor)?;
         if !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
                 "expected a tensor of integer elements, got {:?}",

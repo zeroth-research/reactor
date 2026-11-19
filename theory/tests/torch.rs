@@ -240,3 +240,27 @@ fn each_theory_extracts_its_own_operations_only() {
         assert!(not.extract::<word::BV<tch::Tensor>>().is_err());
     });
 }
+
+#[test]
+fn constants_are_built_from_matrices_only() {
+    prepare_python_with_torch();
+    Python::with_gil(|py| {
+        let tensor =
+            |size: &[i64], kind| python(py, tch::Tensor::zeros(size, (kind, tch::Device::Cpu)));
+        let real = py.get_type::<real::Const>();
+        let int = py.get_type::<int::Const>();
+        let boolean = py.get_type::<bool::Const>();
+        let word = py.get_type::<word::Const>();
+
+        for size in [&[][..], &[3], &[2, 2, 2]] {
+            assert!(real.call1((tensor(size, tch::Kind::Float),)).is_err());
+            assert!(int.call1((tensor(size, tch::Kind::Int64),)).is_err());
+            assert!(boolean.call1((tensor(size, tch::Kind::Bool),)).is_err());
+            assert!(word.call1((tensor(size, tch::Kind::Int64), 8)).is_err());
+        }
+
+        // matrices may be empty
+        assert!(real.call1((tensor(&[0, 3], tch::Kind::Float),)).is_ok());
+        assert!(word.call1((tensor(&[2, 0], tch::Kind::Int64), 8)).is_ok());
+    });
+}

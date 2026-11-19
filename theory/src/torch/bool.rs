@@ -14,9 +14,11 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// Fails when `tensor` is not a `torch.Tensor` of boolean elements.
+    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
+    /// boolean elements.
     #[new]
     fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+        super::check_matrix(&tensor)?;
         if tensor.kind() != tch::Kind::Bool {
             return Err(crate::Error(format!(
                 "expected a tensor of boolean elements, got {:?}",

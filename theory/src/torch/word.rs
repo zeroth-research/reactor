@@ -15,10 +15,11 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// Fails when `tensor` is not a `torch.Tensor` of integer elements, or
-    /// `width` is zero.
+    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
+    /// integer elements, or `width` is zero.
     #[new]
     fn new(tensor: PyTensor, width: usize) -> Result<Self, crate::Error> {
+        super::check_matrix(&tensor)?;
         crate::tensor::sort::check_width(width)?;
         if !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(

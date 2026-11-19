@@ -50,6 +50,19 @@ fn is_integer(kind: tch::Kind) -> bool {
     )
 }
 
+/// Fails unless `tensor` is a matrix, a tensor of two dimensions: the
+/// constants are built from matrices only, so that [`crate::Tensor::shape`]
+/// never panics on their tensors.
+fn check_matrix(tensor: &tch::Tensor) -> Result<(), crate::Error> {
+    if tensor.dim() != 2 {
+        return Err(crate::Error(format!(
+            "expected a matrix, got a tensor of shape {:?}",
+            tensor.size()
+        )));
+    }
+    Ok(())
+}
+
 /// Fails unless `a` and `b` are the matrices of an affine map `x ↦ A·x + B`:
 /// `A` of shape `[m, n]` and `B` of shape `[m, k]`.
 fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> Result<(), crate::Error> {
