@@ -28,14 +28,15 @@ FEATURES := ""
 # a bare toolchain.
 CARGO := "uv run cargo"
 
-# The uv venv lives in cargo's target dir, as `<target-dir>/.venv`. The target dir is
-# asked to plain cargo (not `uv run`, which would create a venv first) from the repo
-# root and exported as an absolute path: a relative CARGO_TARGET_DIR (e.g.
-# `target-linux`, to keep per-OS builds apart in a shared checkout) then means the same
-# dir in recipes that `cd` elsewhere. An explicit UV_PROJECT_ENVIRONMENT still wins.
+# The uv venv is uv's default `.venv` in the repo root; a machine sharing the checkout
+# with another OS points UV_PROJECT_ENVIRONMENT elsewhere in its own environment.
+#
+# The target dir is asked to plain cargo (not `uv run`, which would create a venv
+# first) from the repo root and exported as an absolute path: a relative
+# CARGO_TARGET_DIR (e.g. `target-linux`, to keep per-OS builds apart in a shared
+# checkout) then means the same dir in recipes that `cd` elsewhere.
 TARGET_DIR := `cargo metadata --no-deps --format-version 1 --offline | sed 's/.*"target_directory":"\([^"]*\)".*/\1/'`
 export CARGO_TARGET_DIR := TARGET_DIR
-export UV_PROJECT_ENVIRONMENT := env("UV_PROJECT_ENVIRONMENT", TARGET_DIR / ".venv")
 # Bytecode goes in the target dir too, not in `__pycache__` next to the sources: a .pyc
 # records its source's absolute path, so one written by another host of a shared
 # checkout breaks `inspect.getsource` here. Pytest's rewritten test modules honour it too.
@@ -60,7 +61,7 @@ test: rs-test py-test nb-test
 # `cargo clean` needs no torch, and running it under `uv run` would trigger a
 # sync that can fail — cleaning the repo works fine outside the virtual env.
 
-# Clean the current build: the cargo target dir, including the `.venv` in it
+# Clean the current build (the cargo target dir)
 clean:
     cargo clean
 
