@@ -272,6 +272,29 @@ fn rejected_blackboxes() {
         "logic",
         "the blackbox `m` has a body",
     );
+    // any item other than a parameter is a body, even one that declares
+    // nothing (an x initial value means none)
+    rejects(
+        &stub("(input logic i, output logic q)", "  initial q = 'x;\n"),
+        8,
+        "initial",
+        "the blackbox `m` has a body",
+    );
+    // nor may a local parameter set a port width
+    rejects(
+        &stub(
+            "#(localparam int W = 1) (input logic i, output logic [W:0] q)",
+            "",
+        ),
+        7,
+        "W:0]",
+        "the width of port `q` of the blackbox `m` depends on a parameter",
+    );
+    // parameters in the body are no body
+    accepted(&stub(
+        "(input logic i, output logic q)",
+        "  localparam int W = 1;\n  parameter P = 2;\n",
+    ));
     rejects(
         &stub(
             "#(parameter int W = 1) (input logic i, output logic [W-1:0] q)",

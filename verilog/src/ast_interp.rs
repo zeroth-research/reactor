@@ -554,6 +554,7 @@ impl<'m> Interp<'m> {
                 (Some(sel), _) => Ty::unsigned(sel.width()),
                 (None, Elems::Signals(ys)) => env[&ys[0]].ty,
                 (None, Elems::Consts(ty, _)) => *ty,
+                (None, Elems::Unresolved) => unreachable!("the frontend resolves every element"),
             },
             ExprKind::Cast(Cast::Size(n), a) => Ty {
                 width: *n,
@@ -695,6 +696,7 @@ impl<'m> Interp<'m> {
                 let v = match &el.elems {
                     Elems::Signals(ys) => sig(&ys[k], values, active)?,
                     Elems::Consts(_, vs) => vs[k].clone(),
+                    Elems::Unresolved => unreachable!("the frontend resolves every element"),
                 };
                 match &el.sel {
                     None => v,

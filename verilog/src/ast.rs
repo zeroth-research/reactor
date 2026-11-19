@@ -1045,6 +1045,10 @@ pub enum Elems {
     Signals(Vec<Name>),
     /// The contents of a ROM, all of the type `Ty`.
     Consts(Ty, Vec<BitVec>),
+    /// Not known yet: whether an array is a ROM is known only at the end
+    /// of its module, when the frontend resolves every element; no
+    /// elements until then.
+    Unresolved,
 }
 
 impl Elem {
@@ -1053,6 +1057,7 @@ impl Elem {
         match &self.elems {
             Elems::Signals(ys) => ys.len(),
             Elems::Consts(_, vs) => vs.len(),
+            Elems::Unresolved => 0,
         }
     }
 
@@ -1060,7 +1065,7 @@ impl Elem {
     pub fn signals(&self) -> Vec<&Name> {
         match &self.elems {
             Elems::Signals(ys) => ys.iter().collect(),
-            Elems::Consts(..) => Vec::new(),
+            Elems::Consts(..) | Elems::Unresolved => Vec::new(),
         }
     }
 

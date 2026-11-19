@@ -826,6 +826,7 @@ impl<'a> Builder<'a> {
                 let op = SvOp::Lit(values[address].clone());
                 self.emit(op, &[], Sort(ty.width), span)
             }
+            Elems::Unresolved => unreachable!("the frontend resolves every element"),
         }
     }
 

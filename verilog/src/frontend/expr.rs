@@ -281,7 +281,7 @@ impl Cx<'_> {
 
     /// A parameter `id` as a constant, or else the signal `id`.
     pub(super) fn name(&self, id: Name, span: Span) -> Expr {
-        let kind = match self.params.borrow().get(&id) {
+        let kind = match self.state.params.get(&id) {
             Some(c) => ExprKind::Const {
                 text: id,
                 ty: c.ty,
@@ -308,7 +308,7 @@ impl Cx<'_> {
                         span,
                     });
                 }
-                let param = self.params.borrow().contains_key(&id);
+                let param = self.state.params.contains_key(&id);
                 match (self.select(select)?, param) {
                     (None, _) => return Ok(self.name(id, span)),
                     (Some(_), true) => {
@@ -438,7 +438,7 @@ impl Cx<'_> {
         p: &sv::ConstantPrimary,
     ) -> Result<Expr> {
         let selected = !self.text(select).is_empty();
-        if selected && self.params.borrow().contains_key(&id) {
+        if selected && self.state.params.contains_key(&id) {
             return self.not_supported(p, format!("select of parameter `{id}` not supported"));
         }
         Ok(self.name(id, self.span(p)))
@@ -462,7 +462,7 @@ impl Cx<'_> {
             sv::CastingType::Signing(_) => Cast::Unsigned,
             // `W'(e)` parses as a cast to a type named `W`
             sv::CastingType::SimpleType(t)
-                if self.params.borrow().contains_key(&self.text(t.as_ref())) =>
+                if self.state.params.contains_key(&self.text(t.as_ref())) =>
             {
                 let size = self.name(self.text(t.as_ref()), self.span(t.as_ref()));
                 let n = self.int_of(t.as_ref(), &size)?;

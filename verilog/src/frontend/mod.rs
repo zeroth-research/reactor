@@ -107,7 +107,6 @@ not affected.
 */
 
 use crate::ast::{Array, Const, Error, Init, Name, Override, Span};
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use sv_parser as sv;
@@ -136,27 +135,41 @@ const LARGEST: usize = 1 << 16;
 const VARIABLE_TARGET: &str = "a continuous assignment needs a constant select: an `assign` \
      drives fixed bits (assign the bit in an `always_comb` instead)";
 
+/// The context of reading one module: the syntax tree with its positions,
+/// the parameter values the instance gives, and what has been read of the
+/// module so far ([`ModuleBuilder`]), which the methods that read
+/// declarations add to through `&mut self`.
 struct Cx<'t> {
     tree: &'t SyntaxTree,
     lines: &'t [usize],
-    /// The parameters declared so far, with their values.
-    params: RefCell<BTreeMap<Name, Const>>,
     /// The parameter values given by the instance.
     overrides: &'t [Override],
-    /// The overrides used so far.
-    used: RefCell<BTreeSet<Name>>,
     /// The directory of the source file.
     dir: &'t Path,
+    state: ModuleBuilder,
+}
+
+/// What has been read of a module so far, apart from the [`Module`] itself:
+/// what later declarations and expressions refer to, and what is complete
+/// only at the end of the module.
+///
+/// [`Module`]: crate::ast::Module
+#[derive(Default)]
+struct ModuleBuilder {
+    /// The parameters declared so far, with their values.
+    params: BTreeMap<Name, Const>,
+    /// The overrides used so far.
+    used: BTreeSet<Name>,
     /// The arrays declared so far.
-    arrays: RefCell<Vec<Array>>,
+    arrays: Vec<Array>,
     /// The initial values so far.
-    inits: RefCell<Vec<Init>>,
+    inits: Vec<Init>,
     /// The initial values that are x in every bit, so no initial values:
     /// the target, the size of the literal (none if unsized) and the
     /// position of the target.
-    unknown: RefCell<Vec<(Name, Option<usize>, Span)>>,
+    unknown: Vec<(Name, Option<usize>, Span)>,
     /// The arrays loaded from files so far.
-    loads: RefCell<Vec<Load>>,
+    loads: Vec<Load>,
 }
 
 /// Whether the node contains any token; optional syntax that is absent or
