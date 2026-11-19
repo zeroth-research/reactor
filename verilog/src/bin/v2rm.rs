@@ -215,7 +215,11 @@ fn main() -> ExitCode {
         if ignore {
             inst.ignore_initializers();
         }
-        let t = lower::lower_inst(&inst)?;
+        let t = if mode == Mode::Instances {
+            lower::lower_with_instances(&inst)?
+        } else {
+            lower::lower_inst(&inst)?
+        };
         Ok::<_, Error>((inst, t, overrides))
     })();
     // `FILE:L:C: message`, with the file of the error (the first file if

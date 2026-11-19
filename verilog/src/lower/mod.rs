@@ -339,6 +339,8 @@ pub struct Translation {
     pub wire_names: HashMap<Wire, Name>,
     /// The module of every instance before it is composed into its parent,
     /// children before their parent; with the names of the whole design.
+    /// Only [`lower_with_instances`] fills it in (a copy of every module
+    /// costs time and memory in a deep hierarchy).
     pub instances: Vec<Part>,
 }
 
@@ -446,9 +448,23 @@ pub fn lower(m: &ast::Module) -> Result<Translation> {
 
 /// Checks and translates an elaborated hierarchy.
 pub fn lower_inst(inst: &Inst) -> Result<Translation> {
+    translate(inst, false)
+}
+
+/// [`lower_inst`], also keeping the module of every instance before it is
+/// composed ([`Translation::instances`]).
+pub fn lower_with_instances(inst: &Inst) -> Result<Translation> {
+    translate(inst, true)
+}
+
+/// Checks and translates an elaborated hierarchy, with the module of every
+/// instance if `parts`.
+fn translate(inst: &Inst, parts: bool) -> Result<Translation> {
     let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
     let mut out = Out {
         naming: &naming,
+        checked: HashMap::new(),
+        parts,
         vars: BTreeMap::new(),
         registers: Vec::new(),
         initialized: Vec::new(),

@@ -8,15 +8,19 @@ use crate::ast::{
     Warning,
 };
 use crate::elab::{self, Inst, Path};
-use crate::typing;
+use crate::typing::{self, Checked};
 use crate::{Atom, Module, Sort, SvOp, Var, Wire};
 use base::var::X;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::rc::Rc;
 
 /// What the translation of a hierarchy collects.
-pub(super) struct Out<'n> {
+pub(super) struct Out<'n, 'i> {
     /// The name of every signal path (see [`Inst::naming`]).
     pub(super) naming: &'n BTreeMap<Name, Name>,
+    /// The checked modules so far, by module name: instances of a module
+    /// with the same parameter values have equal modules, checked once.
+    pub(super) checked: HashMap<Name, Vec<Rc<Checked<'i>>>>,
     /// The variables by name.
     pub(super) vars: BTreeMap<Name, Var>,
     /// The paths of the registers.
@@ -28,6 +32,8 @@ pub(super) struct Out<'n> {
     /// The paths of the registers with an asynchronous reset.
     pub(super) reset_registers: Vec<Name>,
     pub(super) wire_names: HashMap<Wire, Name>,
+    /// Whether the module of every instance is kept in `instances`.
+    pub(super) parts: bool,
     pub(super) instances: Vec<Part>,
     /// The reads that may select bits outside their signal, as warnings.
     pub(super) out_of_range: Vec<Warning>,
@@ -35,7 +41,21 @@ pub(super) struct Out<'n> {
     pub(super) blackboxes: Vec<Warning>,
 }
 
-impl Out<'_> {
+impl<'i> Out<'_, 'i> {
+    /// The checked module of `inst` ([`typing::checked`]), checked on its
+    /// first instance only.
+    fn checked(&mut self, inst: &'i Inst) -> Result<Rc<Checked<'i>>> {
+        let m = &inst.module;
+        let same = self.checked.get(&m.name).into_iter().flatten();
+        if let Some(c) = same.into_iter().find(|c| c.source() == m) {
+            return Ok(c.clone());
+        }
+        let c = Rc::new(typing::checked(inst)?);
+        let entry = self.checked.entry(m.name.clone()).or_default();
+        entry.push(c.clone());
+        Ok(c)
+    }
+
     /// The variable named `name`, made on first use.
     fn var(&mut self, name: &str, width: usize) -> Var {
         *self
@@ -48,9 +68,9 @@ impl Out<'_> {
 /// Translates the instance at path `prefix`: its
 /// own items become atoms, its instances modules, which are composed with
 /// the signals of the module hidden.
-pub(super) fn lower_rec(inst: &Inst, prefix: &Path, out: &mut Out) -> Result<Module> {
+pub(super) fn lower_rec<'i>(inst: &'i Inst, prefix: &Path, out: &mut Out<'_, 'i>) -> Result<Module> {
     let ctx = |e: Error| elab::context(e, prefix);
-    let checked = typing::checked(inst).map_err(ctx)?;
+    let checked = out.checked(inst).map_err(ctx)?;
     // every implicit resize made explicit, so that the terms below need
     // operands of equal types only
     let m = checked.sized();
@@ -341,14 +361,14 @@ impl<'a> Atoms<'a> {
 
 /// The module of an instance with children: its own `atoms` composed with
 /// the modules of its children, with the signals of the module hidden.
-fn compose(
-    inst: &Inst,
+fn compose<'i>(
+    inst: &'i Inst,
     m: &ast::Module,
     atoms: Vec<Atom>,
     vars: &BTreeMap<Name, Var>,
     connections: &[Item],
     prefix: &Path,
-    out: &mut Out,
+    out: &mut Out<'_, 'i>,
 ) -> Result<Module> {
     let ctx = |e: Error| elab::context(e, prefix);
     // the module's own atoms observe everything, since its instances may
@@ -382,11 +402,13 @@ fn compose(
         }
         let path = prefix.child(u);
         let module = lower_rec(child, &path, out)?;
-        out.instances.push(Part {
-            path: path.clone(),
-            title: title(&child.module),
-            module: module.clone(),
-        });
+        if out.parts {
+            out.instances.push(Part {
+                path: path.clone(),
+                title: title(&child.module),
+                module: module.clone(),
+            });
+        }
         modules.push((module, Some(i.span)));
         // unconnected outputs are signals of the instance only
         for p in child.module.ports.iter().filter(|p| p.dir == Dir::Output) {
@@ -444,7 +466,7 @@ fn blackbox_warning(
     Warning::new(i.span, msg)
 }
 
-impl Out<'_> {
+impl Out<'_, '_> {
     /// Adds the names of intermediate values of an atom of the instance at
     /// `prefix`.
     fn add_names(&mut self, prefix: &Path, names: HashMap<Wire, Name>) {

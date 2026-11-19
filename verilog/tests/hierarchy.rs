@@ -5,7 +5,7 @@ mod common;
 use common::{accepted, translate};
 use verilog::ast::Override;
 use verilog::elab;
-use verilog::lower::lower_inst;
+use verilog::lower::{lower_inst, lower_with_instances};
 use verilog::{constant, frontend};
 
 /// A register and a combinational path, for instantiating.
@@ -516,10 +516,13 @@ fn rejected_parameters() {
 fn instance_modules() {
     // every instance keeps its module before composition, children first,
     // titled with its parameter values and printed with the design's names
-    let t = accepted(&format!(
+    let src = format!(
         "{}{CHILD}",
         top("  child #(.K(4'd3)) u (.clk, .a(~a), .q, .y);")
-    ));
+    );
+    accepted(&src);
+    let inst = elab::load(&src, "test.sv").unwrap();
+    let t = lower_with_instances(&inst).unwrap();
     let titles: Vec<&str> = t.instances.iter().map(|p| p.title.as_str()).collect();
     assert_eq!(titles, ["child #(.W(4), .K(4'd3))"]);
     let printed = t.print_part(&t.instances[0]);
