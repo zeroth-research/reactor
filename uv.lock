@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12, <3.14"
 
 [manifest]
@@ -1803,6 +1803,12 @@ wheels = [
 ]
 
 [[package]]
+name = "spot"
+version = "2.16.3"
+source = { url = "https://www.lrde.epita.fr/dload/spot/spot-2.16.3.tar.gz" }
+sdist = { hash = "sha256:c17eb7f3d7634c8b4e1587ab37303a118805bbf5740bdd28e90589db3c7d2034" }
+
+[[package]]
 name = "stack-data"
 version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2099,6 +2105,7 @@ dependencies = [
     { name = "maturin" },
     { name = "numpy" },
     { name = "pysmt" },
+    { name = "spot" },
     { name = "textual" },
     { name = "torch" },
     { name = "websockets" },
@@ -2124,6 +2131,7 @@ requires-dist = [
     { name = "maturin", specifier = "==1.9" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pysmt", specifier = ">=0.9.6" },
+    { name = "spot", url = "https://www.lrde.epita.fr/dload/spot/spot-2.16.3.tar.gz" },
     { name = "textual", specifier = ">=8.0.0" },
     { name = "torch", specifier = "==2.9.0" },
     { name = "websockets", specifier = ">=15.0" },

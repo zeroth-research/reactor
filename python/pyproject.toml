@@ -19,6 +19,7 @@ dependencies = [
     "maturin==1.9",
     # for toy and smt crates
     "pysmt>=0.9.6",
+    "spot @ https://www.lrde.epita.fr/dload/spot/spot-2.16.3.tar.gz",
     # for torch crate
     "textual>=8.0.0",
     "torch==2.9.0",
