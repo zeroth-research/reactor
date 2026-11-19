@@ -1,0 +1,407 @@
+=== exit 0
+=== stdout
+module
+  interface
+    #N : Int([1,1])
+  atom controls #N reads #N
+  init
+    #N := [[0]] 
+    X(#N) := Id #N
+  delay
+    d(#N) := ZERO 
+  update
+    #N := [[1]] 
+    #N := Add (#N, #N)
+    #N := [[10]] 
+    #N := Eq (#N, #N)
+    #N := [[0]] 
+    #N := Ite (#N, #N, #N)
+    X(#N) := Id #N
+
+.. --buchi, in internal names: (= s0 0)
+.. --invariant, in internal names: (and (>= s0 0) (<= s0 9))
+.. --ranking, in internal names: (ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)
+   wrote artifact property.smt (encoded)
+   wrote artifact inv.smt (encoded)
+   wrote artifact ranking.smt (encoded)
+.. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
+   wrote artifact system.smt2 (encoded)
+   wrote artifact obligation-init_inv.smt2 (encoded)
+   wrote artifact obligation-step_inv.smt2 (encoded)
+   wrote artifact obligation-hrank.smt2 (encoded)
+   init_inv  holds N ms
+   step_inv  holds N ms
+   hrank     holds N ms
+.. SMT-informed tactics (cvc5): <=5000 ms per query, <=20000 ms total
+   inv forces `((s 0 0) ≤ (200 : Int))` to be true
+.. Generating lean code
+Created project directory: `<OUT>/G`
+Wrote system.txt
+Wrote system.py
+Wrote <OUT>/G/lakefile.toml
+Wrote <OUT>/G/lean-toolchain
+Wrote root module <OUT>/G/System.lean
+++ Generated <OUT>/G/System/System.lean ++
+++ Generated <OUT>/G/System/Circ.lean ++
+++ Generated <OUT>/G/System/Rel.lean ++
+++ Generated <OUT>/G/System/Scalar.lean ++
+++ Generated <OUT>/G/System/ScalarRel.lean ++
+Wrote <OUT>/G/Certificate/Data.lean
+Wrote <OUT>/G/Certificate/Module.lean
+Wrote <OUT>/G/Certificate/Proofs.lean
+Wrote <OUT>/G/Certificate/Certificate.lean
+
+DONE: Project created at: <OUT>/G
+Wrote <OUT>/G/ZerothHammer.lean
+
+Project ready at: <OUT>/G
+
+=== stderr
+
+=== Certificate/Data.lean
+import Relational.Basic
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+def init_pre (e : (Unit) × (Unit)) : Prop := True
+
+def update_pre (e : (Unit) × (Unit)) : Prop := True
+
+def inv : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => (((s 0 0) ≥ (0 : Int)) ∧ ((s 0 0) ≤ (9 : Int)))
+
+def P : (Matrix (Fin 1) (Fin 1) Int) → Prop := fun s => ((s 0 0) = (0 : Int))
+
+instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsimp; infer_instance
+
+def ranking : (Matrix (Fin 1) (Fin 1) Int) → Nat := fun s => (((if ((s 0 0) ≤ (200 : Int)) then (if ((s 0 0) = (0 : Int)) then (0 : Int) else ((10 : Int) - (s 0 0))) else (999 : Int)) : Int)).toNat
+
+=== Certificate/Module.lean
+import Relational.Basic
+import System.System
+import Certificate.Data
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+noncomputable section
+
+def RM := ({
+    init := fun e => init e.2
+    update := fun x e => update x e.1 e.2
+    init_pre := init_pre
+    update_pre := update_pre
+} : ReactiveModule _ _)
+
+def lts := RM.toTS
+
+end
+
+=== Certificate/Proofs.lean
+import Relational.Basic
+import Certificate.Module
+import Mathlib.Algebra.BigOperators.Fin
+import ZerothHammer
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+set_option maxRecDepth 13500
+set_option maxHeartbeats 2000000
+
+-- state: Bool+Int, 1 slot(s), 9 term(s)
+-- predicates: branching, conjunctive, linear, 2 branch point(s)
+-- cvc5: inv forces `((s 0 0) ≤ (200 : Int))` to be true
+
+-- Unfold the definitions and reduce the matrix arithmetic, on the goal
+-- only: on the hypotheses too it blows up exponentially.
+macro "simp_mat" : tactic =>
+  `(tactic| simp [RM, init, update, inv, init_pre, update_pre, P, ranking, zero_Matrix_apply, mul_Matrix_apply, add_Matrix_apply, ↓Matrix.mk_apply, Bool.or_eq_true, decide_eq_true_eq, Fin.sum_univ_succ, Fin.sum_univ_zero, Fin.isValue, Fin.sum_univ_one, Fin.sum_univ_two, Fin.sum_univ_three, matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero, matMin, matMax, argmax_1d, argmax])
+
+-- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
+-- closers see the invariant's conditions.
+macro "simp_defs" : tactic =>
+  `(tactic| (simp only [RM, init, update, inv, init_pre, update_pre, P, ranking] at *; try dsimp [-Matrix.add_apply, -Matrix.sub_apply, -Matrix.neg_apply, -Matrix.zero_apply, -Matrix.transpose_apply] at *))
+
+theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  intro s hpre
+  try simp_mat
+  try simp_defs
+  all_goals (((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
+      | omega
+      | contradiction
+      | linarith
+      | (norm_cast; omega)
+      | (norm_num; done)
+      | (constructor <;> first | omega | linarith)
+      | tauto
+      | (simp_all; done)
+      | (simp_all; omega)
+      | (simp_all; linarith)
+      | (split_ifs at * <;> simp_all <;> omega)
+      | lia
+      | fail "none of the 12 closers proved this goal"))
+
+theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+  intro s e ⟨hpre, hinv⟩
+  try simp_defs
+  try
+    have hf0 : ((s 0 0) ≤ (200 : Int)) := ?_
+    swap
+    · first | omega | linarith | norm_num
+    try simp only [ite_eq_left hf0]
+  try simp_mat
+  all_goals (((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
+      | omega
+      | contradiction
+      | linarith
+      | (norm_cast; omega)
+      | (norm_num; done)
+      | (constructor <;> first | omega | linarith)
+      | tauto
+      | (simp_all; done)
+      | (simp_all; omega)
+      | (simp_all; linarith)
+      | (split_ifs at * <;> simp_all <;> omega)
+      | lia
+      | fail "none of the 12 closers proved this goal"))
+
+theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+    ranking s' < ranking s := by
+  intro s s' ⟨hi, hP, htr⟩
+  unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
+  obtain ⟨l, hpre, heq⟩ := htr
+  rw [← heq]
+  clear heq
+  try simp_defs
+  try
+    have hf0 : ((s 0 0) ≤ (200 : Int)) := ?_
+    swap
+    · first | omega | linarith | norm_num
+    try simp only [ite_eq_left hf0]
+  try simp_mat
+  all_goals (((try split_ifs) <;> (try casesm* _ ∧ _) <;> (try simp only [not_and_or] at *) <;> (try simp only [← ne_eq, ne_iff_lt_or_gt] at *) <;> (try casesm* _ ∧ _, _ ∨ _)) <;> (first
+      | omega
+      | contradiction
+      | linarith
+      | (norm_cast; omega)
+      | (norm_num; done)
+      | (constructor <;> first | omega | linarith)
+      | tauto
+      | (simp_all; done)
+      | (simp_all; omega)
+      | (simp_all; linarith)
+      | (split_ifs at * <;> simp_all <;> omega)
+      | lia
+      | fail "none of the 12 closers proved this goal"))
+
+=== Certificate/Certificate.lean
+import Relational.Basic
+import Certificate.Module
+import Certificate.Proofs
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
+set_option linter.unnecessarySeqFocus false
+
+noncomputable section
+
+theorem init_inv : ∀ s, RM.init_pre s → inv (RM.init s) := by
+  exact init_inv_proof
+
+theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
+  exact step_inv_proof
+
+theorem hinv' : lts.StateSet_isInductiveInitial inv := by
+  constructor
+  · intro s hs
+    unfold lts at hs; simp only [ReactiveModule.toTS, ReactiveModule.TS_init] at hs
+    obtain ⟨l, hpre, hl⟩ := hs
+    rw [← hl]
+    exact init_inv l hpre
+  · intro s s' ⟨hs, l, hstep⟩
+    unfold lts at hstep; simp only [ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
+    rw [← hstep.2]
+    exact step_inv s l ⟨hstep.1, hs⟩
+
+theorem hinv : lts.StateSet_isInvariant inv := by
+  apply TS.StateSet_ind_init_is_inv lts
+  exact hinv'
+
+theorem hrank : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
+    ranking s' < ranking s := by
+  exact hrank_proof
+
+def buchi := rule_buchi
+  lts
+  P
+  inv
+  hinv
+  ranking
+  hrank
+
+end
+
+=== artifacts/index.json
+[
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt-src",
+    "module_digest": "<digest>",
+    "name": "property.smt",
+    "producer": "",
+    "prp": "(= s0 0)",
+    "role": "property",
+    "seq": 1,
+    "status": "encoded",
+    "what": "The property this run was asked to prove, as it was given to `--safety` / `--buchi`.",
+    "why": ""
+  },
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt-src",
+    "module_digest": "<digest>",
+    "name": "inv.smt",
+    "producer": "",
+    "prp": "(= s0 0)",
+    "role": "inv",
+    "seq": 2,
+    "status": "encoded",
+    "what": "The invariant the certificate is generated from.",
+    "why": ""
+  },
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt-src",
+    "module_digest": "<digest>",
+    "name": "ranking.smt",
+    "producer": "",
+    "prp": "(= s0 0)",
+    "role": "ranking",
+    "seq": 3,
+    "status": "encoded",
+    "what": "The ranking function the certificate is generated from.",
+    "why": ""
+  },
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt",
+    "module_digest": "<digest>",
+    "name": "system.smt2",
+    "producer": "",
+    "prp": "(= s0 0)",
+    "role": "system",
+    "seq": 4,
+    "status": "encoded",
+    "what": "The whole problem as cvc5 encoded it. `init<i>` is state component `i` after tick 0 and `next<i>` the same component after one round, over the latched state `s*` and the inputs `el*` / `en*` latched and awaited; `P`, `inv` and `ranking` are the certificate's predicates over that state. No assertion -- this file is what the obligations beside it are stated against, and what to apply to a state by hand.",
+    "why": ""
+  },
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt",
+    "module_digest": "<digest>",
+    "name": "obligation-init_inv.smt2",
+    "producer": "",
+    "prp": "(= s0 0)",
+    "role": "obligation",
+    "seq": 5,
+    "status": "proved",
+    "what": "`init_pre e -> inv (init e)`: the invariant holds in the state the module starts in.",
+    "why": ""
+  },
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt",
+    "module_digest": "<digest>",
+    "name": "obligation-step_inv.smt2",
+    "producer": "",
+    "prp": "(= s0 0)",
+    "role": "obligation",
+    "seq": 6,
+    "status": "proved",
+    "what": "`inv s /\\ update_pre e -> inv (update s e)`: every round preserves the invariant.",
+    "why": ""
+  },
+  {
+    "derived_from": [],
+    "kind": "buchi",
+    "language": "smt",
+    "module_digest": "<digest>",
+    "name": "obligation-hrank.smt2",
+    "producer": "",
+    "prp": "(= s0 0)",
+    "role": "obligation",
+    "seq": 7,
+    "status": "proved",
+    "what": "`inv s /\\ ~P s /\\ update_pre e -> ranking (update s e) < ranking s`: the ranking function drops on every round the property does not hold.",
+    "why": ""
+  }
+]
+
+=== lean_libs
+Certificate
+System
+ZerothHammer
+
+=== ZerothHammer.lean
+present
+
+=== artifacts/inv.smt
+(and (>= s0 0) (<= s0 9))
+=== artifacts/obligation-hrank.smt2
+(set-logic ALL)
+
+(declare-fun r_s0 () Int)
+
+(assert (let ((_let_1 (= r_s0 0))) (let ((_let_2 (ite (<= r_s0 200) (ite _let_1 0 (- 10 r_s0)) 999))) (let ((_let_3 (+ r_s0 1))) (let ((_let_4 (ite (= _let_3 10) 0 _let_3))) (let ((_let_5 (ite (<= _let_4 200) (ite (= _let_4 0) 0 (- 10 _let_4)) 999))) (and (and (>= r_s0 0) (<= r_s0 9)) (not _let_1) (not (< (ite (>= _let_5 0) _let_5 0) (ite (>= _let_2 0) _let_2 0))))))))))
+
+(check-sat)
+
+=== artifacts/obligation-init_inv.smt2
+(set-logic ALL)
+
+(assert (not (and (>= 0 0) (<= 0 9))))
+
+(check-sat)
+
+=== artifacts/obligation-step_inv.smt2
+(set-logic ALL)
+
+(declare-fun p_s0 () Int)
+
+(assert (let ((_let_1 (+ p_s0 1))) (let ((_let_2 (ite (= _let_1 10) 0 _let_1))) (and (and (>= p_s0 0) (<= p_s0 9)) (not (and (>= _let_2 0) (<= _let_2 9)))))))
+
+(check-sat)
+
+=== artifacts/property.smt
+(= s0 0)
+=== artifacts/ranking.smt
+(ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999)
+=== artifacts/system.smt2
+(set-logic ALL)
+
+(define-fun init0 () Int 0)
+(define-fun next0 ((s0 Int)) Int (let ((_let_1 (+ s0 1))) (ite (= _let_1 10) 0 _let_1)))
+(define-fun P ((s0 Int)) Bool (= s0 0))
+(define-fun inv ((s0 Int)) Bool (and (>= s0 0) (<= s0 9)))
+(define-fun ranking ((s0 Int)) Int (ite (<= s0 200) (ite (= s0 0) 0 (- 10 s0)) 999))
+
+
+(check-sat)

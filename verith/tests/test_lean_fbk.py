@@ -570,9 +570,22 @@ def test_start_maps_last_takes_the_models_decides_apart_before_unfolding():
     )
     start = src[src.index("theorem start_maps"):src.index("theorem step_maps")]
     arms = [ln for ln in start.splitlines() if ln.startswith("    | ")]
-    assert arms[-1].startswith(
+    assert arms[-2].startswith(
         "    | (simp only [Definition.INIT, Definition.PRE")
-    assert "decide_eq_true_eq" in arms[-1] and arms[-1].endswith("<;> omega)")
+    assert "decide_eq_true_eq" in arms[-2] and arms[-2].endswith("<;> omega)")
+
+
+def test_a_proof_none_of_whose_arms_closed_says_so():
+    """`first` reports the arm it tried last, whose complaint ("simp_all
+    made no progress") read as the reason; the last arm is a `fail` that
+    gives the real one."""
+    from verith.fbk_proveit.bridge import _cascade
+
+    lines = _cascade("Definition.INIT", model="Definition.INIT")
+    assert lines[0] == "  first"
+    assert lines[-1] == ('    | fail "none of the 8 arms of this proof closed '
+                         'its goal"')
+    assert len(lines) == 1 + 8 + 1
 
 
 def test_real_state_aborts():
@@ -937,7 +950,7 @@ def test_the_bridge_closes_goals_only_with_tactics_it_imports():
 
 
 def test_the_bridge_is_not_imported_by_the_certificate_root():
-    """The bridge speaks `Relational.LTL` and the certificate speaks
+    """The bridge speaks `Spec.LTL` and the certificate speaks
     `LTLCertifying`, and both declare a top-level `LTLFormula`: one module
     importing the two is rejected before it is elaborated. Lake reaches the
     bridge through the `Certificate` lean_lib's glob instead."""
@@ -1210,11 +1223,11 @@ def test_a_checkout_that_is_not_one_fails_before_the_project_exists(tmp_path):
 
 def test_a_check_and_a_property_share_one_encoding(monkeypatch):
     """The slot bodies, the `--pre` and the `--safety` property are all read
-    on the run's one `ModuleEncoding`; none of them builds a term manager of
+    on the run's one `Encoding`; none of them builds a term manager of
     its own."""
     from verith.fbk_proveit.engine import check_module
-    from reactor.lean.smt.encoding import ModuleEncoding
     from reactor.lean.smt.module import ModuleSMT
+    from verith.common.encoding import Encoding
 
     built = [0]
     post_init = ModuleSMT.__post_init__
@@ -1226,7 +1239,7 @@ def test_a_check_and_a_property_share_one_encoding(monkeypatch):
     monkeypatch.setattr(ModuleSMT, "__post_init__", counted)
 
     module = _input_start()
-    encoding = ModuleEncoding(module)
+    encoding = Encoding(module)
     checked = check_module(module, True, "(>= e0 5)", encoding)
     prop = property_to_bool_lean(module, "(>= s0 0)", encoding=encoding)
 

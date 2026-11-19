@@ -674,11 +674,11 @@ def test_build_cert_checks_the_predicates_it_was_promised(monkeypatch):
     """The parse-time gate cannot see what `--infer` came back with: an LLM
     that answers nothing usable leaves `inv` or `ranking` unset, and building
     that would report a proof of `sorry`."""
-    from reactor.lean.pipeline import outputs
-    from reactor.lean.proof.render import LeanCertificate, LeanPredicates
+    from reactor.lean.proof.render import LeanCertificate
+    from verith import proofs as outputs
 
     def lean(**defs):
-        return LeanCertificate(LeanPredicates(**defs))
+        return LeanCertificate(**defs)
 
     built: list[Path] = []
     monkeypatch.setattr(outputs, "build_certificate", built.append)
@@ -705,7 +705,7 @@ def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(
     """`zeroth_hammer` leaves a `sorry` where it cannot close an obligation,
     and lake reports that as a warning and exits 0 — so a plain exit code
     would make "built" mean nothing."""
-    from reactor.lean.project import build as project
+    from verith.proofs import build as project
 
     logs: dict[str, tuple[int, str]] = {}
     monkeypatch.setattr(
@@ -745,7 +745,7 @@ def test_a_kernel_error_after_another_one_is_not_reported_twice(
     and reads like a codegen bug rather than a proof that did not close.
     Every occurrence of it in the matrix follows an earlier error.
     """
-    from reactor.lean.project import build as project
+    from verith.proofs import build as project
 
     logs: dict[str, tuple[int, str]] = {}
     monkeypatch.setattr(project, "stream", lambda cmd, *, cwd: logs[cmd[1]])

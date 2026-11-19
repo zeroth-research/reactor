@@ -51,10 +51,8 @@ from itertools import product
 import z3
 from cvc5 import Kind
 
-from reactor.lean.smt.script import declarations
-from ..common.smtlib import conjunction_smt, decimals, smt_lit
-from ..common.terms import literals
-from reactor.lean.smt.terms import free_constants
+from ..common.smtlib import conjunction_smt, decimals, declarations, smt_lit
+from ..common.terms import free_constants, literals
 
 # A mode is a valuation of the Bool columns, so the modes are exponential in
 # them; past this many, the split is not worth the queries.

@@ -1,6 +1,6 @@
 import Mathlib.Algebra.BigOperators.Fin
 import Relational.Basic
-import Relational.Box
+import Relational.Circ
 import ZerothHammer
 
 /-!
@@ -14,9 +14,9 @@ without `sorry`.  Add new experiments freely; remove or fix anything that breaks
 ## Context
 
 Generated certificate files (`Certs/*.lean`) define module-specific macros:
-- `simp_mat`  — unfolds RM/init/update/inv/ranking + reduces Mat arithmetic
+- `simp_mat`  — unfolds RM/init/update/inv/ranking + reduces matrix arithmetic
 - `simp_defs` — unfolds definitions everywhere (`at *`), cheaply
-- `mat_collapse` — collapses `Mat 1 1` comparisons to scalar form
+- `mat_collapse` — collapses 1×1 matrix comparisons to scalar form
 
 `zeroth_hammer` is defined in `ZerothHammer.lean` and calls these macros by name.
 **Important**: `zeroth_hammer` resolves `simp_mat`/`simp_defs`/`mat_collapse` against
@@ -31,19 +31,19 @@ open Lean Elab Tactic
 -- Countdown module
 -- ──────────────────────────────────────────────────────────────────────────────
 
-@[simp] def cd_init (_ : Unit) : Mat Int 1 1 := fun _ _ => 100
+@[simp] def cd_init (_ : Unit) : Matrix (Fin 1) (Fin 1) Int := fun _ _ => 100
 
-@[simp] def cd_update (ctrl : Mat Int 1 1) (_ _ : Unit) : Mat Int 1 1 :=
-  if decide (ctrl 0 0 = 0) then fun _ _ => 100 else fun _ _ => ctrl 0 0 - 1
+@[simp] def cd_update (ctrl : Matrix (Fin 1) (Fin 1) Int) (_ _ : Unit) : Matrix (Fin 1) (Fin 1) Int :=
+  if decide (ctrl 0 0 = 0) then Matrix.mk fun _ _ => 100 else Matrix.mk fun _ _ => ctrl 0 0 - 1
 
-def cd_inv    : Mat Int 1 1 → Prop := fun s => s 0 0 ≥ 0 ∧ s 0 0 ≤ 100
-def cd_P      : Mat Int 1 1 → Prop := fun s => s 0 0 = 0
-def cd_rank   : Mat Int 1 1 → Nat  := fun s => (if s 0 0 = 0 then (0 : Int) else s 0 0).toNat
+def cd_inv    : Matrix (Fin 1) (Fin 1) Int → Prop := fun s => s 0 0 ≥ 0 ∧ s 0 0 ≤ 100
+def cd_P      : Matrix (Fin 1) (Fin 1) Int → Prop := fun s => s 0 0 = 0
+def cd_rank   : Matrix (Fin 1) (Fin 1) Int → Nat  := fun s => (if s 0 0 = 0 then (0 : Int) else s 0 0).toNat
 
 macro "cd_simp_mat" : tactic =>
   `(tactic| simp [cd_init, cd_update, cd_inv, cd_P, cd_rank,
       Bool.or_eq_true, decide_eq_true_eq, ite_fun_apply, Pi.sub_apply,
-      Fin.isValue, Mat_1_1_le_iff, Mat_1_1_eq_iff])
+      Fin.isValue, Matrix_1_1_le_iff, Matrix_1_1_eq_iff])
 
 macro "cd_simp_defs" : tactic =>
   `(tactic| (simp only [cd_init, cd_update, cd_inv, cd_P, cd_rank] at *; try dsimp at *))
@@ -53,12 +53,12 @@ theorem cd_init_inv (e : Unit × Unit) : cd_inv (cd_init e.2) := by
   cd_simp_mat
 
 -- inv is preserved by update
-theorem cd_step_inv (s : Mat Int 1 1) (e : Unit × Unit) (h : cd_inv s) :
+theorem cd_step_inv (s : Matrix (Fin 1) (Fin 1) Int) (e : Unit × Unit) (h : cd_inv s) :
     cd_inv (cd_update s e.1 e.2) := by
   cd_simp_defs; cd_simp_mat; split_ifs <;> omega
 
 -- ranking decreases when ¬P
-theorem cd_hrank (s : Mat Int 1 1) (e : Unit × Unit) (hi : cd_inv s) (hP : ¬cd_P s) :
+theorem cd_hrank (s : Matrix (Fin 1) (Fin 1) Int) (e : Unit × Unit) (hi : cd_inv s) (hP : ¬cd_P s) :
     cd_rank (cd_update s e.1 e.2) < cd_rank s := by
   cd_simp_defs; cd_simp_mat; split_ifs <;> first | omega | (norm_cast; omega)
 
@@ -66,15 +66,15 @@ theorem cd_hrank (s : Mat Int 1 1) (e : Unit × Unit) (hi : cd_inv s) (hP : ¬cd
 -- Collatz module (bounded: state ∈ [1,8])
 -- ──────────────────────────────────────────────────────────────────────────────
 
-@[simp] def col_update (ctrl : Mat Int 1 1) (_ _ : Unit) : Mat Int 1 1 :=
-  if ctrl 0 0 = 1 then fun _ _ => 7
-  else if ctrl 0 0 > 4 then fun _ _ => ctrl 0 0 - 3
-  else if ctrl 0 0 > 1 then fun _ _ => ctrl 0 0 - 1
+@[simp] def col_update (ctrl : Matrix (Fin 1) (Fin 1) Int) (_ _ : Unit) : Matrix (Fin 1) (Fin 1) Int :=
+  if ctrl 0 0 = 1 then Matrix.mk fun _ _ => 7
+  else if ctrl 0 0 > 4 then Matrix.mk fun _ _ => ctrl 0 0 - 3
+  else if ctrl 0 0 > 1 then Matrix.mk fun _ _ => ctrl 0 0 - 1
   else ctrl
 
-def col_inv  : Mat Int 1 1 → Prop := fun s => s 0 0 ≥ 1 ∧ s 0 0 ≤ 8
-def col_P    : Mat Int 1 1 → Prop := fun s => s 0 0 = 1
-def col_rank : Mat Int 1 1 → Nat  := fun s => (if s 0 0 = 1 then (0 : Int) else s 0 0 - 1).toNat
+def col_inv  : Matrix (Fin 1) (Fin 1) Int → Prop := fun s => s 0 0 ≥ 1 ∧ s 0 0 ≤ 8
+def col_P    : Matrix (Fin 1) (Fin 1) Int → Prop := fun s => s 0 0 = 1
+def col_rank : Matrix (Fin 1) (Fin 1) Int → Nat  := fun s => (if s 0 0 = 1 then (0 : Int) else s 0 0 - 1).toNat
 
 macro "col_simp_mat" : tactic =>
   `(tactic| simp [col_update, col_inv, col_P, col_rank,
@@ -83,28 +83,28 @@ macro "col_simp_mat" : tactic =>
 macro "col_simp_defs" : tactic =>
   `(tactic| (simp only [col_update, col_inv, col_P, col_rank] at *; try dsimp at *))
 
-theorem col_step_inv (s : Mat Int 1 1) (e : Unit × Unit) (h : col_inv s) :
+theorem col_step_inv (s : Matrix (Fin 1) (Fin 1) Int) (e : Unit × Unit) (h : col_inv s) :
     col_inv (col_update s e.1 e.2) := by
   col_simp_defs; col_simp_mat; split_ifs <;> omega
 
-theorem col_hrank (s : Mat Int 1 1) (e : Unit × Unit) (hi : col_inv s) (hP : ¬col_P s) :
+theorem col_hrank (s : Matrix (Fin 1) (Fin 1) Int) (e : Unit × Unit) (hi : col_inv s) (hP : ¬col_P s) :
     col_rank (col_update s e.1 e.2) < col_rank s := by
   col_simp_defs; col_simp_mat; split_ifs <;> first | omega | (norm_cast; omega)
 
 -- ──────────────────────────────────────────────────────────────────────────────
--- TwoVars module: two Mat Int 1 1 components as product type
+-- TwoVars module: two Matrix (Fin 1) (Fin 1) Int components as product type
 -- ──────────────────────────────────────────────────────────────────────────────
 
-@[simp] def tv_update (ctrl : Mat Int 1 1 × Mat Int 1 1) (_ _ : Unit) :
-    Mat Int 1 1 × Mat Int 1 1 :=
+@[simp] def tv_update (ctrl : Matrix (Fin 1) (Fin 1) Int × Matrix (Fin 1) (Fin 1) Int) (_ _ : Unit) :
+    Matrix (Fin 1) (Fin 1) Int × Matrix (Fin 1) (Fin 1) Int :=
   if ctrl.1 0 0 < ctrl.2 0 0
-  then (fun _ _ => ctrl.1 0 0 + 1, ctrl.2)
-  else (fun _ _ => 0, fun _ _ => 10)
+  then (Matrix.mk fun _ _ => ctrl.1 0 0 + 1, ctrl.2)
+  else (Matrix.mk fun _ _ => 0, Matrix.mk fun _ _ => 10)
 
-def tv_inv  : Mat Int 1 1 × Mat Int 1 1 → Prop :=
+def tv_inv  : Matrix (Fin 1) (Fin 1) Int × Matrix (Fin 1) (Fin 1) Int → Prop :=
   fun s => s.1 0 0 ≥ 0 ∧ s.1 0 0 ≤ s.2 0 0 ∧ s.2 0 0 = 10
-def tv_P    : Mat Int 1 1 × Mat Int 1 1 → Prop := fun s => s.1 0 0 = s.2 0 0
-def tv_rank : Mat Int 1 1 × Mat Int 1 1 → Nat  :=
+def tv_P    : Matrix (Fin 1) (Fin 1) Int × Matrix (Fin 1) (Fin 1) Int → Prop := fun s => s.1 0 0 = s.2 0 0
+def tv_rank : Matrix (Fin 1) (Fin 1) Int × Matrix (Fin 1) (Fin 1) Int → Nat  :=
   fun s => (if s.1 0 0 = s.2 0 0 then (0 : Int) else s.2 0 0 - s.1 0 0).toNat
 
 macro "tv_simp_mat" : tactic =>
@@ -114,11 +114,11 @@ macro "tv_simp_mat" : tactic =>
 macro "tv_simp_defs" : tactic =>
   `(tactic| (simp only [tv_update, tv_inv, tv_P, tv_rank] at *; try dsimp at *))
 
-theorem tv_step_inv (s : Mat Int 1 1 × Mat Int 1 1) (e : Unit × Unit) (h : tv_inv s) :
+theorem tv_step_inv (s : Matrix (Fin 1) (Fin 1) Int × Matrix (Fin 1) (Fin 1) Int) (e : Unit × Unit) (h : tv_inv s) :
     tv_inv (tv_update s e.1 e.2) := by
   tv_simp_defs; tv_simp_mat; split_ifs <;> omega
 
-theorem tv_hrank (s : Mat Int 1 1 × Mat Int 1 1) (e : Unit × Unit)
+theorem tv_hrank (s : Matrix (Fin 1) (Fin 1) Int × Matrix (Fin 1) (Fin 1) Int) (e : Unit × Unit)
     (hi : tv_inv s) (hP : ¬tv_P s) :
     tv_rank (tv_update s e.1 e.2) < tv_rank s := by
   tv_simp_defs; tv_simp_mat; split_ifs <;> first | omega | (norm_cast; omega)
@@ -131,41 +131,41 @@ theorem tv_hrank (s : Mat Int 1 1 × Mat Int 1 1) (e : Unit × Unit)
 -- the old ML form `x · A` would be ill-typed here — and the pinned value
 -- distinguishes `A · x` (= 13) from any transposed variant.
 
-def acA : Mat Int 2 2 := fun i j =>
+def acA : Matrix (Fin 2) (Fin 2) Int := fun i j =>
   if i = 0 then (if j = 0 then 1 else 2) else (if j = 0 then 0 else 1)
-def acx : Mat Int 2 1 := fun i _ => if i = 0 then 3 else 5
+def acx : Matrix (Fin 2) (Fin 1) Int := fun i _ => if i = 0 then 3 else 5
 
 theorem affineLinear_is_left_mul :
-    affineLinear acA acx MatZero = (fun i _ => if i = 0 then (13 : Int) else 5) := by
+    affineLinear acA acx 0 = (fun i _ => if i = 0 then (13 : Int) else 5) := by
   funext i j
   fin_cases i <;> fin_cases j <;>
-    simp [affineLinear, MatMul, MatZero, acA, acx, Fin.sum_univ_two] <;> decide
+    simp [affineLinear, acA, acx, Fin.sum_univ_two] <;> decide
 
 -- Constant matrices (ConstInt) are emitted as `match`-based literals: opaque to
 -- split_ifs, and still reducing under simp. This guards that the match form both
 -- computes correctly and reduces.
-def mmA : Mat Int 2 2 := fun i j =>
+def mmA : Matrix (Fin 2) (Fin 2) Int := fun i j =>
   match i, j with
   | 0, 0 => 1 | 0, 1 => 2
   | 1, 0 => 0 | 1, 1 => 1
 
 theorem affineLinear_match_reduces :
-    affineLinear mmA acx MatZero = (fun i _ => if i = 0 then (13 : Int) else 5) := by
+    affineLinear mmA acx 0 = (fun i _ => if i = 0 then (13 : Int) else 5) := by
   funext i j
   fin_cases i <;> fin_cases j <;>
-    simp [affineLinear, MatMul, MatZero, mmA, acx, Fin.sum_univ_two] <;> decide
+    simp [affineLinear, mmA, acx, Fin.sum_univ_two] <;> decide
 
 -- Correspondence check: the pre-contracted output equals `affineLinear A x b`.
 -- A = [[1,0,2],[0,3,0]] (2×3), b = [5,0]ᵀ. Pre-contraction drops the zero
 -- entries, so row 0 = x0 + 2·x2 + 5 and row 1 = 3·x1.
-def ceqA : Mat Int 2 3 := fun i j =>
+def ceqA : Matrix (Fin 2) (Fin 3) Int := fun i j =>
   match i, j with
   | 0, 0 => 1 | 0, 1 => 0 | 0, 2 => 2
   | 1, 0 => 0 | 1, 1 => 3 | 1, 2 => 0
   | _, _ => 0
-def ceqb : Mat Int 2 1 := fun i _ => match i with | 0 => 5 | _ => 0
+def ceqb : Matrix (Fin 2) (Fin 1) Int := fun i _ => match i with | 0 => 5 | _ => 0
 
-theorem precontract_eq_affineLinear (x : Mat Int 3 1) :
+theorem precontract_eq_affineLinear (x : Matrix (Fin 3) (Fin 1) Int) :
     (fun (i : Fin 2) (j : Fin 1) =>
       ((match i, j with
         | 0, 0 => (x 0 0) + ((2) * (x 2 0)) + 5
@@ -174,7 +174,7 @@ theorem precontract_eq_affineLinear (x : Mat Int 3 1) :
       = affineLinear ceqA x ceqb := by
   funext i j
   fin_cases i <;> fin_cases j <;>
-    simp [affineLinear, MatMul, ceqA, ceqb, Fin.sum_univ_succ, Fin.sum_univ_zero] <;> ring
+    simp [affineLinear, ceqA, ceqb, Fin.sum_univ_succ, Fin.sum_univ_zero] <;> ring
 
 -- Verbatim codegen output for the LIA.Linear matrix module: the reflected form
 -- over list literals — matVecAffine on the native path, Box.linear on the Circ
@@ -182,18 +182,18 @@ theorem precontract_eq_affineLinear (x : Mat Int 3 1) :
 namespace GenLinearCompileCheck
 open Box
 
-@[simp] def init (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 3 1) := (matVecAffine 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int) extl_n)
+@[simp] def init (extl_n: (Matrix (Fin 2) (Fin 1) Int)) : (Matrix (Fin 3) (Fin 1) Int) :=
+  let x0 : (Matrix (Fin 3) (Fin 1) Int) := (matVecAffine 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int) extl_n)
   x0
 
-@[simp] def update (ctrl: (Mat Int 3 1)) (extl_l: (Mat Int 2 1)) (extl_n: (Mat Int 2 1)) : (Mat Int 3 1) :=
-  let x0 : (Mat Int 3 1) := (matVecAffine 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int) ctrl)
+@[simp] def update (ctrl: (Matrix (Fin 3) (Fin 1) Int)) (extl_l: (Matrix (Fin 2) (Fin 1) Int)) (extl_n: (Matrix (Fin 2) (Fin 1) Int)) : (Matrix (Fin 3) (Fin 1) Int) :=
+  let x0 : (Matrix (Fin 3) (Fin 1) Int) := (matVecAffine 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int) ctrl)
   x0
 
-@[simp] def init_l1 : Box [(Mat Int 2 1)] [(Mat Int 3 1)] :=
+@[simp] def init_l1 : Box [(Matrix (Fin 2) (Fin 1) Int)] [(Matrix (Fin 3) (Fin 1) Int)] :=
   (Box.linear 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int))
 
-@[simp] def update_l2 : Box [(Mat Int 3 1)] [(Mat Int 3 1)] :=
+@[simp] def update_l2 : Box [(Matrix (Fin 3) (Fin 1) Int)] [(Matrix (Fin 3) (Fin 1) Int)] :=
   (Box.linear 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int))
 
 end GenLinearCompileCheck
@@ -201,11 +201,11 @@ end GenLinearCompileCheck
 
 -- matVecAffine handles full matrices (batch > 1): it contracts each column, and
 -- the generic correspondence holds for any batch width (here 2).
-example (x : Mat Int 2 2) :
+example (x : Matrix (Fin 2) (Fin 2) Int) :
     matVecAffine 2 [[1, 0], [0, 3]] [5, 0] x 0 1 = x 0 1 + 5 := by
   simp [matVecAffine, dotL, List.ofFn_succ, List.ofFn_zero]
 
-example (x : Mat Int 2 2) :
+example (x : Matrix (Fin 2) (Fin 2) Int) :
     matVecAffine 2 [[1, 0], [0, 3]] [5, 0] x
       = affineLinear (matrixOf 2 2 [[1, 0], [0, 3]]) x (colOf 2 2 [5, 0]) :=
   matVecAffine_eq 2 2 2 _ _ x (by decide)
@@ -227,9 +227,9 @@ The theory checks them as one read to a single-element write (its own
 `min_ok` asserts `int(4,1) -> int(1,1)`), so `matMin`/`matMax` fold the whole
 matrix rather than combining two operands elementwise. -/
 
-private def mmRow : Mat Int 1 3 := fun _ j => if j = 0 then 3 else if j = 1 then 1 else 2
-private def mmCol : Mat Int 3 1 := fun i _ => if i = 0 then 7 else if i = 1 then 4 else 9
-private def mmOne : Mat Int 1 1 := fun _ _ => 5
+private def mmRow : Matrix (Fin 1) (Fin 3) Int := fun _ j => if j = 0 then 3 else if j = 1 then 1 else 2
+private def mmCol : Matrix (Fin 3) (Fin 1) Int := fun i _ => if i = 0 then 7 else if i = 1 then 4 else 9
+private def mmOne : Matrix (Fin 1) (Fin 1) Int := fun _ _ => 5
 
 example : (matMin mmRow) 0 0 = 1 := by decide
 example : (matMax mmRow) 0 0 = 3 := by decide

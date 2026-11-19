@@ -71,7 +71,7 @@ from reactor.lean.project.lakefile import (  # noqa: E402
 
 # The reactor-lean checkout every project requires by path; the `verith`
 # runs below inherit it.
-os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "reactor-lean"))
+os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "ReactLib"))
 REACTOR_LEAN = reactor_lean_checkout()
 
 DEFAULT_TIMEOUT = 900
@@ -125,10 +125,10 @@ def run_verith(case) -> dict:
     out = PROJECTS / case["name"]
     if out.exists():
         shutil.rmtree(out)
-    # `reactor` generates the project from the case's own predicates; the
-    # nuterm column infers them, which is `certify`'s (the `verith/` project).
-    cmd = ["uv", "run", "certify" if ROUTE == "nuterm" else "reactor",
-           str(module_path(case["mod"]))]
+    # `certify` (the `verith/` project) generates the project and proves it:
+    # from the case's own predicates, or, in the nuterm column, from the
+    # ones it infers. `reactor` alone leaves every obligation `sorry`.
+    cmd = ["uv", "run", "certify", str(module_path(case["mod"]))]
     if case.get("P"):
         # A limit-matrix property is a Buchi one: `P` comes with a ranking.
         cmd += ["--buchi", to_surface(case["P"])]

@@ -123,8 +123,7 @@ This prints the extracted module (wires and SSA terms) and creates
 ```
 out/ChainCert/
 ├── lakefile.toml, lean-toolchain    # Lean package pinned to a toolchain
-├── Core/                            # library: Mat, Box, LTL, ReactiveModule
-├── ZerothHammer.lean                # the zeroth_hammer proof-search tactic
+├── Core/                            # library: matrices, Box, LTL, ReactiveModule
 ├── System.lean                      # root import
 ├── System/
 │   ├── System.lean                  # functional encoding of init/update
@@ -153,12 +152,12 @@ truncated), then private wires. For `ChainEnv`:
 
 | On the command line | Internal | Wire | Lean type |
 |---------|------|------|-----------|
-| `(X @intf.0)` | `s0` | observation | `Mat Real 1 1` |
-| `(X @intf.1)` | `s1` | reward | `Mat Real 1 1` |
-| `(X @intf.2)` | `s2` | terminated | `Mat Bool 1 1` |
-| `(X @intf.3)` | `s3` | truncated | `Mat Bool 1 1` |
-| `(X @intf.4)` | `s4` | `self.state` (private) | `Mat Real 1 1` |
-| `(X @extl.0)` / `@extl.0` | `e0` / `el0` | action (one-hot, width 2) | `Mat Real 1 2` |
+| `(X @intf.0)` | `s0` | observation | `Matrix (Fin 1) (Fin 1) Real` |
+| `(X @intf.1)` | `s1` | reward | `Matrix (Fin 1) (Fin 1) Real` |
+| `(X @intf.2)` | `s2` | terminated | `Matrix (Fin 1) (Fin 1) Bool` |
+| `(X @intf.3)` | `s3` | truncated | `Matrix (Fin 1) (Fin 1) Bool` |
+| `(X @intf.4)` | `s4` | `self.state` (private) | `Matrix (Fin 1) (Fin 1) Real` |
+| `(X @extl.0)` / `@extl.0` | `e0` / `el0` | action (one-hot, width 2) | `Matrix (Fin 1) (Fin 2) Real` |
 
 When in doubt, read `dbg/system.txt`: the `interface` and `private` sections
 list the wire pairs in exactly this order, and the state tuple in
@@ -195,7 +194,7 @@ The SMT-LIB predicates are compiled into Lean in `Certificate/Data.lean` (state
 components appear as nested product accessors — `s4` becomes `s.2.2.2.2`):
 
 ```lean
-def inv : (Mat Real 1 1) × (Mat Real 1 1) × (Mat Bool 1 1) × (Mat Bool 1 1) × (Mat Real 1 1) → Prop :=
+def inv : (Matrix (Fin 1) (Fin 1) Real) × (Matrix (Fin 1) (Fin 1) Real) × (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Real) → Prop :=
   fun s => (((s.2.2.2.2 0 0) ≥ 0.0) ∧ ((s.2.2.2.2 0 0) ≤ 2.0))
 
 def P : ... → Prop := fun s => (((s.2.2.2.2 0 0) ≥ 0.0) ∧ ((s.2.2.2.2 0 0) ≤ 2.0))
@@ -204,8 +203,11 @@ def P : ... → Prop := fun s => (((s.2.2.2.2 0 0) ≥ 0.0) ∧ ((s.2.2.2.2 0 0)
 (a `--buchi` certificate would also carry a `def ranking : ... → Nat`; a
 safety one defines none.)
 
-`Certificate/Certificate.lean` states the obligations and tries to discharge
-them with generated tactic scripts:
+`Certificate/Certificate.lean` states the obligations, and takes each one's
+proof from `Certificate/Proofs.lean`. `reactor` proves them there by
+`sorry`; `verith --project out/ChainCert` (or `certify` in place of
+`reactor`) writes generated tactic scripts instead, with the
+`ZerothHammer.lean` tactics they call:
 
 - `init_inv` — every initial state satisfies `inv`,
 - `step_inv` — `inv` is preserved by `update` (inductiveness),
@@ -295,7 +297,7 @@ def module() -> Module:
 
 The wire layout is the same as before — `s0` observation, `s1` reward,
 `s2` terminated, `s3` truncated, `s4` the private `self.state` — except that
-every numeric wire is now `Mat Int 1 1`, and the action is a plain integer
+every numeric wire is now `Matrix (Fin 1) (Fin 1) Int`, and the action is a plain integer
 external (`(X @extl.0)`/`@extl.0`, no tuple selectors).
 
 This time we prove a genuine **liveness** property: *the state returns to 0
@@ -317,7 +319,7 @@ a precondition, since a zero action freezes the state forever:
   to `s4 = 0`, where `P` holds and no further decrease is required).
 
 ```bash
-uv run reactor cycle_env.py \
+uv run certify cycle_env.py \
     --buchi          "(= (X @intf.4) 0)" \
     --pre       "(>= @extl.0 1)" \
     --invariant "(and (>= (X @intf.4) 0) (<= (X @intf.4) 3))" \
@@ -384,10 +386,10 @@ Two encoding constraints shape the Python:
   `Linear` op with the convention `Y = A·X`, where `A` must be a constant.
 - The rotation matrix is written **inline** so the analyzer bakes it as a
   constant term (an `np.array` literal); in Lean it appears as a constant
-  `Mat Int 4 4` inside an `affineLinear` application.
+  `Matrix (Fin 4) (Fin 4) Int` inside an `affineLinear` application.
 
 The state tuple now contains real matrices: `s0` (observation) and `s4`
-(`self.state`) are `Mat Int 4 1`. In SMT-LIB, their components are
+(`self.state`) are `Matrix (Fin 4) (Fin 1) Int`. In SMT-LIB, their components are
 addressed with tuple selectors — `((_ tuple.select k) (X @intf.4))` is row `k` (in
 Lean: `s.2.2.2.2 k 0`). The liveness certificate is the same "returns to
 position 0" statement, but the invariant now says *the state vector is
@@ -395,7 +397,7 @@ one-hot*, and the ranking is a linear functional over the components —
 weights 3, 2, 1 count the steps remaining until the wrap:
 
 ```bash
-uv run reactor matcycle_env.py \
+uv run certify matcycle_env.py \
     --buchi   '(= ((_ tuple.select 0) (X @intf.4)) 1)' \
     --pre '(>= @extl.0 1)' \
     --invariant '(and (>= ((_ tuple.select 0) (X @intf.4)) 0) (<= ((_ tuple.select 0) (X @intf.4)) 1)
@@ -566,9 +568,11 @@ writes `ChainCert.lean` (init/update + certificate) plus `ChainCertRel.lean`,
 `ChainCertScalar.lean`, and `ChainCertScalarRel.lean` (alternative encodings
 with equivalence theorems). Pass the invariant too — and, under `--buchi`, the
 ranking — without them those certificate fields are emitted as `sorry`
-placeholders and the proof obligations cannot close. To check the files, add them as `lean_lib`
-entries in a lake project that also contains the `Core` library and
-`ZerothHammer.lean` (copy both from any `reactor`-generated project).
+placeholders and the proof obligations cannot close. `reactor` proves each
+obligation by `sorry`; `certify` in its place writes the proofs too, and
+`certify --hammer-file PATH` writes the `ZerothHammer.lean` they call. To
+check the files, add them as `lean_lib` entries in a lake project that also
+contains the `Core` library and that `ZerothHammer.lean`.
 
 ### Key flags
 

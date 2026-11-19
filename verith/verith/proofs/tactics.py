@@ -38,8 +38,10 @@ So the plan is read off the obligations instead:
   to discharge a branch that is contradictory purely because the state has
   finitely many inhabitants.
 
-`plan_for` returns a `TacticPlan`; `Certificate.lean.j2` renders it as two
-macros, `cert_prep` and `cert_close`, which the three proofs then share.
+`plan_for` returns a `TacticPlan`; `scripts.lean.j2` writes it out as the
+proof of each obligation in `Certificate/Proofs.lean`. Each step is Lean text
+over the state `s`, which every one of those proofs binds; a step the shape
+does not call for is empty, and the proof leaves it out.
 """
 
 from __future__ import annotations
@@ -49,8 +51,37 @@ from dataclasses import dataclass, field
 
 from reactor import Bool, Int, Real, BitVec
 
-from ..lowering.sorts import itype_name, wire_shape
-from ..lowering.elements import flat_layout
+from reactor.lean.lowering.sorts import itype_name, wire_shape
+from reactor.lean.lowering.elements import flat_layout
+
+
+# The lemmas `simp_mat` reduces matrix arithmetic with, after the
+# certificate's own definitions. The bridge's cascade uses the same set:
+# without it a `Linear` arrives as `matVecAffine 2 [[1, 0], [0, 1]] [0, 1]
+# (Matrix.mk fun i j => match i, j with ...)` and no arithmetic prover can
+# touch it.
+MAT_SIMP: tuple[str, ...] = (
+    "zero_Matrix_apply", "mul_Matrix_apply", "add_Matrix_apply",
+    "↓Matrix.mk_apply", "Bool.or_eq_true",
+    "decide_eq_true_eq",
+    "Fin.sum_univ_succ", "Fin.sum_univ_zero", "Fin.isValue", "Fin.sum_univ_one",
+    "Fin.sum_univ_two", "Fin.sum_univ_three", "matVecAffine", "dotL",
+    "List.ofFn_succ", "List.ofFn_zero",
+    # The three reductions unfold to a `List.ofFn` fold that the two lemmas
+    # above then compute; without the defs here the fold never opens.
+    "matMin", "matMax", "argmax_1d", "argmax",
+)
+
+# Mathlib's lemmas for reading an entry of a matrix operation, which
+# `simp_defs`' `dsimp` leaves out. They are proved by `rfl`, so `dsimp`
+# rewrites with them in place: inside a `decide` the proposition changes and
+# its `Decidable` instance keeps stating the old terms, and the `if` that
+# `decide` guards can no longer be split (`Relational.Mat` says why).
+# `MAT_SIMP`'s own entry lemmas are not `rfl` ones.
+DSIMP_ERASE: tuple[str, ...] = (
+    "Matrix.add_apply", "Matrix.sub_apply", "Matrix.neg_apply",
+    "Matrix.zero_apply", "Matrix.transpose_apply",
+)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -70,6 +101,9 @@ class Features:
     # (accessor, lemma) per state element that ranges over exactly two values,
     # empty if any element does not. See `_two_valued_slots`.
     two_valued: list[tuple[str, str]] = field(default_factory=list)
+
+    # The invariant lists the states it allows (`facts._pins`).
+    pins: bool = False
 
     # `min`/`max`/`ite` occurrences in the predicates. Each is a case: omega
     # splits `min`/`max` internally, `split_ifs` fans an `ite` out, and
@@ -93,6 +127,9 @@ class Features:
     has_or: bool = False
     has_eq: bool = False
     has_floor: bool = False
+    # A ceiling, `⌈x⌉` or `⌈x⌉₊`, or a floor into `ℕ`, `⌊x⌋₊`. Only a Lean
+    # answer writes one: SMT-LIB's `to_int` is the floor, printed `⌊x⌋`.
+    has_ceil: bool = False
     nonlinear: bool = False
     # The distinct `⌊·⌋` arguments the predicates take a floor of, as Lean
     # text over the state binder. A floored rank is the only thing that puts
@@ -260,7 +297,7 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
                  floors: tuple = ()) -> Features:
     """Read the shape of `ctx`'s module and its certificate predicates.
 
-    `facts` is `proof.facts.PredicateFacts` when the predicates came from
+    `facts` is `facts.PredicateFacts` when the predicates came from
     SMT-LIB and cvc5 could parse them: the same questions answered against
     the terms rather than against the printed Lean. It is `None` for
     predicates compiled from Python IR, and then everything below falls back
@@ -285,12 +322,14 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
     # text is read only where no term stands behind it -- a Lean answer
     # (`verbatim`), or every predicate when there are no facts at all.
     scanned = verbatim if facts is not None else pred_text
-    # Floors come printed from the terms (`floors`, over `($v)` already).
+    # Floors come printed from the terms (`floors`), over `s` as the text is.
     f.floor_args = tuple(dict.fromkeys(
         (*(floors if facts is not None else ()),
-         *(_rebind(a) for a in floor_arguments(scanned)))
+         *floor_arguments(scanned))
     ))
     f.has_floor = bool(f.floor_args)
+    f.has_ceil = ("⌈" in scanned or "⌋₊" in scanned
+                  or bool(re.search(r"\b(?:Nat|Int)\.(?:ceil|floor)\b", scanned)))
     # The transition branches if it has an `Ite`, and a ReLU/Min/Max reduces
     # to a branch in the goal even though the term itself is not an `Ite`.
     f.has_ite = bool(_BRANCHING_OPS & f.ops) or "if " in scanned
@@ -311,6 +350,7 @@ def features_for(ctx, pred_text: str, facts=None, verbatim: str = "",
         f.has_ite = f.has_ite or facts.has_ite
         f.n_branch = text_branch + facts.n_branch
         f.n_conditions = text_branch + facts.n_conditions
+        f.pins = facts.pins
     if f.finite_state:
         f.two_valued = _two_valued_slots(ctx)
     return f
@@ -328,7 +368,7 @@ class TacticPlan:
     max_rec_depth: int
     max_heartbeats: int
     features: Features
-    # `proof.facts.SolverHints` when `--smt-tactics=cvc5` ran and cvc5 had
+    # `facts.SolverHints` when `--smt-tactics=cvc5` ran and cvc5 had
     # something to add; `None` otherwise, and every property below degrades
     # to the tactic the plan would have emitted without it.
     hints: object | None = None
@@ -341,28 +381,17 @@ class TacticPlan:
         return " <;> ".join(f"(try {p})" for p in self.prep)
 
     @property
-    def close_tactic(self) -> str:
-        return "first | " + " | ".join(self.closers)
-
-    @property
-    def close_binds_state(self) -> bool:
-        """Whether `cert_close` takes the obligation's state binder, as
-        `cert_facts` does: when a closer names the state, as a product hint
-        does (`nlinarith [mul_self_nonneg (($v) 0 0 - 1)]`). Read off the
-        closers themselves, so a closer that comes to name the state takes
-        the binder with it rather than reading a hygienic `s✝`. Every other
-        plan's `cert_close` stays the macro it always was."""
-        return "$v" in self.close_tactic
-
-    @property
-    def close_call(self) -> str:
-        """`cert_close` as an obligation calls it: with its state `s` when
-        the macro binds one."""
-        return "cert_close s" if self.close_binds_state else "cert_close"
+    def close_failure(self) -> str:
+        """What the last arm after the closers fails with: that none of them
+        proved the goal. `first` reports the error of the arm it tried last,
+        so without that arm a goal no closer proved read as that closer's
+        complaint -- "`split_ifs` failed: no if-then-else conditions to
+        split" -- about a tactic that was never the problem."""
+        return f"none of the {len(self.closers)} closers proved this goal"
 
     @property
     def state_case_tactic(self) -> str:
-        """Enumerate the state, as the body of a macro over its binder `$v`.
+        """Enumerate the state `s`.
 
         `decide` is in the closer list for a finite state but can never fire
         while the state is a free variable -- it evaluates closed
@@ -375,12 +404,26 @@ class TacticPlan:
 
         Splitting each element into its two values first makes every later
         goal closed, which is what the rest of the plan was already built
-        for. `skip` when the state is not finite, or is too wide to fan out.
+        for.
+
+        An invariant that lists the states it allows makes an `Int` state
+        as finite: split on it and `simp_all` puts each listed value in for
+        the state, and every `if` the transition and the rank branch on is
+        decided. Split by `cert_prep` instead -- after `split_ifs` has fanned
+        the conditions out over a state it does not know -- the closers ran
+        over every branch, and `svcomp_collatz_bounded`'s `hrank` (a rank
+        that compares the step's own `if` with four values) spent its
+        2000000 heartbeats doing it. All or nothing: a case `simp_all` does
+        not close leaves the goal as it was, for the plan to take.
+
+        Empty otherwise.
         """
         if not self.features.two_valued:
-            return "skip"
+            if self.features.pins:
+                return "((casesm* _ ∨ _) <;> simp_all) <;> done"
+            return ""
         steps = [
-            f"rcases {lemma} (($v){acc}) with h{k} | h{k}"
+            f"rcases {lemma} (s{acc}) with h{k} | h{k}"
             for k, (acc, lemma) in enumerate(self.features.two_valued)
         ]
         names = ", ".join(f"h{k}" for k in range(len(self.features.two_valued)))
@@ -389,7 +432,7 @@ class TacticPlan:
 
     @property
     def floor_tactic(self) -> str:
-        """Bridge each `⌊x⌋` to a bound on `x`, as the body of a macro over `$v`.
+        """Bridge each `⌊x⌋` to a bound on `x`.
 
         `linarith` reads `⌊x⌋` as an opaque `Int` atom, and the hypotheses
         that would pin it are about the `Real` `x`, so it cannot cross:
@@ -405,10 +448,10 @@ class TacticPlan:
         the failure lands in the build rather than falling through to the
         next step. `rcases` has no side condition to get wrong.
 
-        `skip` when nothing is floored, which is every integer module.
+        Empty when nothing is floored, which is every integer module.
         """
         if not self.features.floor_args:
-            return "skip"
+            return ""
         steps = []
         for k, a in enumerate(self.features.floor_args):
             steps.append(
@@ -425,34 +468,38 @@ class TacticPlan:
         `split_ifs` fans a goal out into 2^k over k conditions and each
         branch then pays for the whole prep chain. A condition cvc5 decided
         under `inv` need not be split at all: prove it once and rewrite the
-        `if` away. Every step is wrapped in `try`, so a `have` the tactics
-        cannot reproduce -- cvc5 is the stronger prover -- costs nothing
-        and leaves the `split_ifs` route intact.
+        `if` away. Each condition is a `try` of its own, so a `have` the
+        tactics cannot reproduce -- cvc5 is the stronger prover -- costs
+        nothing and leaves the `split_ifs` route intact.
+
+        That needs the condition proved as a goal of the proof's own:
+        `have` with a `?_` leaves it second, behind the goal, hence `swap`.
+        Proved under a nested `by` instead, a failure was logged rather
+        than raised, so `try` never saw it and the build failed. And the
+        rewrite is a line of its own: written after that `by` on one line,
+        it was parsed into it, where it rewrote nothing.
 
         The condition is rendered by the same walker that printed the
-        definition, so `if_pos` matches on the nose -- but only until
+        definition, so `ite_eq_left` matches on the nose -- but only until
         something rewrites the goal. Hence the call site: after `simp_defs`,
         which unfolds `inv` so the `have` is provable at all, and before
         `simp_mat`, which is where the arithmetic starts moving.
         """
         determined = getattr(self.hints, "determined", None)
         if not determined:
-            return "skip"
+            return ""
         steps = []
         for k, (text, value) in enumerate(determined):
             prop = text if value else f"¬ ({text})"
-            lemma = "if_pos" if value else "if_neg"
+            lemma = "ite_eq_left" if value else "ite_eq_right"
             steps.append(
-                f"try (have hf{k} : {prop} := by "
-                f"(first | omega | linarith | norm_num); "
-                f"try simp only [{lemma} hf{k}])"
+                f"try\n"
+                f"  have hf{k} : {prop} := ?_\n"
+                f"  swap\n"
+                f"  · first | omega | linarith | norm_num\n"
+                f"  try simp only [{lemma} hf{k}]"
             )
-        # One line, whatever the length. A `;`-separated tactic sequence
-        # inside a `(tactic| ...)` quotation does not survive being broken
-        # across lines: Lean reports `unexpected token 'try'; expected ')'`
-        # at the end of the first one. Only shows up from two conditions on,
-        # which is why a single-condition case built happily.
-        return "; ".join(steps)
+        return "\n".join(steps)
 
     @property
     def clear_tactic(self) -> str:
@@ -464,13 +511,18 @@ class TacticPlan:
         `step_inv` and `hrank` only: both bind `update_pre`, which is what
         the cores were taken over. `init_inv`'s `hpre` is `init_pre`, a
         different predicate that nothing here has looked at.
+
+        Not under `try`: both proofs bind `hpre` and nothing depends on it,
+        so it cannot fail. It was a `try` inside a hygienic macro once,
+        which could not see the proof's `hpre`, and the `try` hid that it
+        cleared nothing. Empty when nothing is to be cleared.
         """
         if getattr(self.hints, "pre_unused", False):
-            return "try clear hpre"
-        return "skip"
+            return "clear hpre"
+        return ""
 
     def why(self) -> str:
-        """One line per decision, emitted as a comment above the macros."""
+        """One line per decision, emitted as a comment above the proofs."""
         f = self.features
         bits = [
             f"state: {'+'.join(sorted(f.theories)) or 'none'}"
@@ -488,20 +540,13 @@ class TacticPlan:
                 f"state is finite and narrow: enumerating "
                 f"{len(f.two_valued)} two-valued element(s) before the closers"
             )
+        elif f.pins:
+            bits.append("the invariant lists its states: trying each before "
+                        "the closers")
         out = "\n".join(f"-- {b}" for b in bits)
         if self.hints is not None and self.hints.any:
             out += "\n" + self.hints.why()
         return out
-
-
-def _rebind(arg: str) -> str:
-    """`arg`'s state binder rewritten to a macro's own `$v`.
-
-    The printer names the certificate's parameter `s` (`smt_to_lean`'s
-    `param_name`), and the obligation's binder is whatever the proof calls
-    it, so the text cannot reference `s` directly from inside a macro.
-    """
-    return re.sub(r"\bs\b", "($v)", arg)
 
 
 def floor_arguments(pred_text: str) -> tuple[str, ...]:
@@ -583,14 +628,22 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
     # ── closers: cheapest first, and only what this state can use ──
     # `linarith` stays in every plan regardless of theory. It is cheap, and
     # gating it on Real cost two integer certificates that were closing on it
-    # — an integer goal that omega cannot phrase (a `Mat`-valued comparison
+    # — an integer goal that omega cannot phrase (a `Matrix`-valued comparison
     # simp left behind, say) is still ordinary linear arithmetic.
     closers: list[str] = []
-    # Nearly free, and a branch whose hypotheses are already contradictory is
-    # common once `split_ifs` has fanned the transition out.
-    closers.append("contradiction")
+    # `omega` first where it is in play, then `contradiction`. A branch whose
+    # hypotheses are already contradictory is common once `split_ifs` has
+    # fanned the transition out, and `omega` refutes an arithmetic one as
+    # well; `contradiction` is for the rest (`b = true` beside `b = false`).
+    # It is not free the other way round: it reduces every hypothesis with
+    # `whnf` looking for an empty type or a decidably false proposition, and
+    # an `Int` comparison over the unfolded transition reduces a long way.
+    # Measured on a 6-slot Petri net's `step_inv`: `split_ifs` leaves 7680
+    # goals, and with `contradiction` first they spent the 2000000
+    # heartbeats; with `omega` first the certificate builds in 40 s.
     if f.has_int:
         closers.append("omega")
+    closers.append("contradiction")
     if f.has_bitvec:
         # A bitvector read as the number it holds -- `BitVec.toNat`, which
         # a linear predicate weighs a BitVec component by -- is arithmetic no
@@ -667,6 +720,41 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
         # `cousot9`'s `s0 * (max s2 0 + 1) + max s1 0`.
         closers.append("(simp only [max_def, min_def] at *; split_ifs at * "
                        "<;> (repeat' apply And.intro) <;> nlinarith)")
+
+    # ── last resorts ──
+    # Each closer below was added for goals every closer above gave up on,
+    # and comes after all of them: a goal one of those proves never reaches
+    # these, so a proof that builds today builds the same way. A finite
+    # state keeps `decide` last instead.
+    if f.has_real and f.has_ceil:
+        # `lra_close`, with `⌈x⌉₊` and `⌊x⌋₊` taken to `ℤ` and the ceilings
+        # bounded as the floors are: `lra_close` reads `⌈x⌉₊` as an atom. A
+        # Lean answer's `Nat.ceil ((12 - h) * 2 / 3)` for `m_watertank`'s
+        # refills, which falls by one a tick.
+        closers.append("lra_close_ceil")
+    if f.has_real and f.has_floor:
+        # `lra_close` with each floor split at `0`, so that `0 < ⌊x⌋` is
+        # `1 ≤ ⌊x⌋`: the integrality `linarith` cannot see in `ℝ`.
+        # `m_lra_half`'s certificate that `2 * x` is a whole number.
+        closers.append("lra_close_frac")
+    if f.nonlinear and f.has_int and not f.finite_state:
+        # A product under a ranking's `Int.toNat`: `nlinarith` reads
+        # `(a * b).toNat` as an atom, and omega refuses the product. Moved
+        # to `ℤ` with each `toNat` a `max`, and the `max` split, the
+        # products cancel and `nlinarith` finishes.
+        # `LeikeHeizmann-TACAS2014-Fig1`'s `(x*2 + (1 - y)*(2 - y)).toNat`,
+        # and `speedpldi3`'s `(n - i).toNat * (m + 1).toNat`.
+        closers.append("(zify; simp only [Int.toNat_eq_max, max_def, min_def] at *; "
+                       "split_ifs at * <;> (repeat' apply And.intro) <;> nlinarith)")
+    if f.has_int and not f.finite_state:
+        # `omega` does not implement the dark and grey shadows, so it gives
+        # up on an integer problem whose rational relaxation is feasible:
+        # `a + 2*b + c + 2*d ≤ 2` beside `a + b + c + 2*d ≥ 1` and the rest
+        # of a Petri net's place invariant, where only integrality rules
+        # out `d = -1/2`. `lia` (cutsat) decides linear integer arithmetic:
+        # `petri/philo/forks`'s `step_inv` builds with it and did not
+        # without.
+        closers.append("lia")
 
     # `decide` goes last: on a finite state it settles goals nothing else
     # can, but it is the most expensive thing in the plan.

@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass
 
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.script import script
+from ..common.smtlib import script
 from ..common.smtlib import decimals
 from ..common.obligations import Question
 from ..common.solvers import DEFAULT_TIMEOUT, Answer, Cvc5Solver, Solver, Verdict

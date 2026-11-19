@@ -8,10 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
-
-from .names import (
-    CERT_LIB,
-)
+from reactor.lean.project.names import CERT_LIB
 
 
 class LakeBuildError(RuntimeError):

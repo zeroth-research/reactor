@@ -22,7 +22,7 @@ The Lean4 module has:
 - `update (s : CtrlNative × ExtlNative) : CtrlNative` — computes the next state
 
 This encodes an infinite loop: initialize state, then repeatedly update.
-`CtrlNative` is the type `init` returns in the source. With one state component it *is* that component, a matrix `Mat t 1 1 := Fin 1 → Fin 1 → t`, and its value is `s 0 0` — there is no `.1`. With several it is a tuple of them nested to the right, `A × (B × C)`: `s.1 0 0`, `s.2.1 0 0`, and the last one without a trailing `.1`, `s.2.2 0 0`.
+`CtrlNative` is the type `init` returns in the source. With one state component it *is* that component, a 1×1 matrix `Matrix (Fin 1) (Fin 1) t` (Mathlib's), and its value is `s 0 0` — there is no `.1`. With several it is a tuple of them nested to the right, `A × (B × C)`: `s.1 0 0`, `s.2.1 0 0`, and the last one without a trailing `.1`, `s.2.2 0 0`.
 
 The module may have PRECONDITIONS on its inputs:
 - `init_pre`: constraint on the inputs to `init`
@@ -54,7 +54,7 @@ Use `∧`, `∨`, `¬` for logical connectives and `≤`, `<`, `=` for compariso
 IMPORTANT — Lean 4 lambda syntax: write `fun s => expr` (NOT the Lean 3 form \
 `λ s, expr` or `fun s, expr`). Do not use a comma after the binder.
 
-Every state component is a matrix `Mat t 1 1`, so a scalar is always read with \
+Every state component is a matrix `Matrix (Fin 1) (Fin 1) t`, so a scalar is always read with \
 `0 0` after it: `s 0 0` for a one-component state, `s.1 0 0` for the first of \
 several. The ranking function *MUST* return `Nat`.
 """
@@ -66,7 +66,7 @@ You are a formal verification auditor. You will be given:
 3. Preconditions on inputs (init_pre, update_pre) — assume these always hold
 4. A proposed invariant and ranking function
 
-`CtrlNative` is the type `init` returns in the source. With one state component it *is* that component, a matrix `Mat t 1 1 := Fin 1 → Fin 1 → t`, and its value is `s 0 0` — there is no `.1`. With several it is a tuple of them nested to the right, `A × (B × C)`: `s.1 0 0`, `s.2.1 0 0`, and the last one without a trailing `.1`, `s.2.2 0 0`.
+`CtrlNative` is the type `init` returns in the source. With one state component it *is* that component, a 1×1 matrix `Matrix (Fin 1) (Fin 1) t` (Mathlib's), and its value is `s 0 0` — there is no `.1`. With several it is a tuple of them nested to the right, `A × (B × C)`: `s.1 0 0`, `s.2.1 0 0`, and the last one without a trailing `.1`, `s.2.2 0 0`.
 
 Your job is to rigorously check whether the invariant and ranking function \
 are correct. Specifically, check ALL of the following:

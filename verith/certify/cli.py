@@ -1,9 +1,11 @@
-"""The `uv run certify` command line: `reactor`'s flags and `--infer`.
+"""The `uv run certify` command line: `reactor`'s flags, `--infer` and
+the proofs' flags.
 
 `reactor`'s groups, checks and fields (`reactor.lean.cli`), with the
-routes' flags and rules (`verith.flags`) in the places today's command
-line has them. What the pipeline gets back is :class:`Settings`:
-`reactor`'s, and the route the run selected.
+routes' and the proofs' flags and rules (`verith.flags`) in the places
+today's command line has them. What the pipeline gets back is
+:class:`Settings`: `reactor`'s, the route the run selected, and what is
+asked of the proofs.
 """
 
 from __future__ import annotations
@@ -15,24 +17,22 @@ from reactor.lean.cli import Settings as ReactorSettings
 from reactor.lean.cli import claim_deferred, settings_fields
 from reactor.lean.cli.checks import (
     check_blanks,
-    check_budget,
     check_claim_flags,
     check_input_options,
     check_outputs,
     input_adapter,
 )
-from reactor.lean.cli.parser import (
-    add_budget,
-    add_claim,
-    add_input,
-    add_outputs,
-    add_smt_checks,
-)
+from reactor.lean.cli.parser import add_claim, add_input, add_outputs
+from verith.common.limits import SmtBudget
 from verith import InferRoute
 from verith.flags import (
+    add_proofs,
     add_routes,
+    check_budget,
+    check_build,
     check_route,
     check_route_options,
+    proof_fields,
     resolve_aliases,
     resolve_route,
     route_fields,
@@ -101,13 +101,20 @@ examples:
 
 @dataclass
 class Settings(ReactorSettings):
-    """`reactor`'s settings, and the inference route: which one (`route`),
-    its options (`route_opts`) and what it resolved at parse time
-    (`route_config`)."""
+    """`reactor`'s settings; the inference route: which one (`route`), its
+    options (`route_opts`) and what it resolved at parse time
+    (`route_config`); and what cvc5 is asked about the certificate, under
+    what budget, and whether it is built."""
 
     route: InferRoute | None = None
     route_opts: dict = field(default_factory=dict)
     route_config: object | None = None
+
+    hammer_file: str | None = None
+    build_cert: bool = False
+    pre_check: str = "none"
+    smt_tactics: str = "none"
+    budget: SmtBudget = field(default_factory=SmtBudget)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -127,12 +134,16 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    add_input(parser)
+    add_input(parser, optional="Optional when --hammer-file is used alone.")
     add_claim(parser)
     add_routes(parser)
     add_outputs(parser)
-    add_smt_checks(parser)
-    add_budget(parser)
+    parser.add_argument(
+        "--hammer-file",
+        default=None,
+        help="Write a standalone ZerothHammer.lean to this path.",
+    )
+    add_proofs(parser)
     return parser
 
 
@@ -154,16 +165,39 @@ def parse_args(argv: "list[str] | None" = None, *,
     route = selected_route(args)
     check_route_options(parser, args, route)
 
-    settings = Settings(**settings_fields(args, adapter),
-                        **route_fields(args, route))
+    settings = Settings(
+        **settings_fields(args, adapter),
+        **route_fields(args, route),
+        **proof_fields(args),
+        hammer_file=args.hammer_file,
+    )
     settings.claim_deferred = claim_deferred(settings, adapter, defer_claim)
     if route is not None and not settings.claim_deferred:
         check_route(parser, settings)
     check_no_project(parser, settings)
 
-    check_outputs(parser, settings, finds_certificate=route is not None)
+    check_outputs(parser, settings,
+                  one_file=(("--hammer-file", settings.hammer_file),))
+    check_hammer_file(parser, settings)
+    check_build(parser, settings)
     resolve_route(parser, settings)
     return settings
+
+
+def check_hammer_file(parser: argparse.ArgumentParser,
+                      settings: Settings) -> None:
+    """`--hammer-file` and `--cert-file` each write one file and return:
+    neither builds a project, and `--hammer-file` alone needs no module.
+    (That neither has an `artifacts/` is `check_outputs`'s to say.)"""
+    which = ("--cert-file" if settings.cert_file
+             else "--hammer-file" if settings.hammer_file else None)
+    if settings.build_cert and which:
+        parser.error(
+            f"--build-cert is incompatible with {which}: that writes a "
+            "file and generates no project to build"
+        )
+    if not settings.module_file and not settings.hammer_file:
+        parser.error("module_file is required (unless --hammer-file is used alone)")
 
 
 def check_no_project(parser: argparse.ArgumentParser,

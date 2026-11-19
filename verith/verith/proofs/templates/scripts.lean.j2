@@ -1,0 +1,82 @@
+{#- The proofs `scripts.proof_scripts` hands `Certificate/Proofs.lean`, which
+    states each obligation and takes its proof from here: the budgets the
+    proofs run under, what they share, and one macro per obligation, its
+    tactic proof -- the lines after the `_proof` theorem's `:= by`. Each
+    binds the state as `s`, which the plan's hints and floors are printed
+    over, and runs only the steps the plan reads off the shape of the module
+    and of the certificate, with only the closers this state can use,
+    cheapest first (`tactics.py`). Where no refutation needed the
+    precondition, `step_inv` and `hrank` drop it: their `hpre` is
+    `update_pre`, which is what cvc5 was asked about.
+
+    The budgets are read off the module's shape too. A `--cert-file`
+    certificate sets them before its inlined module, so the module and the
+    definitions are elaborated under them as well. -#}
+{% macro options() %}
+set_option maxRecDepth {{ plan.max_rec_depth }}
+set_option maxHeartbeats {{ plan.max_heartbeats }}
+{% endmacro %}
+{% macro preamble() %}
+{{ plan.why() }}
+
+-- Unfold the definitions and reduce the matrix arithmetic, on the goal
+-- only: on the hypotheses too it blows up exponentially.
+macro "simp_mat" : tactic =>
+  `(tactic| simp [{{ all_defs }}, {{ mat_simp }}])
+
+-- Unfold the definitions everywhere (cheap: no matrix arithmetic), so the
+-- closers see the invariant's conditions.
+macro "simp_defs" : tactic =>
+  `(tactic| (simp only [{{ all_defs }}] at *; try dsimp [{{ dsimp_erase }}] at *))
+{% endmacro %}
+{% macro steps() %}
+try simp_defs
+{% if plan.facts_tactic %}
+{{ plan.facts_tactic }}
+{% endif %}
+{% if plan.floor_tactic %}
+try ({{ plan.floor_tactic }})
+{% endif %}
+try simp_mat
+{% if plan.state_case_tactic %}
+try ({{ plan.state_case_tactic }})
+{% endif %}
+{% endmacro %}
+{% macro close() %}
+all_goals ({% if plan.prep %}({{ plan.prep_tactic }}) <;> {% endif %}(first
+{% for closer in plan.closers %}
+    | {{ closer }}
+{% endfor %}
+    | fail "{{ plan.close_failure }}"))
+{% endmacro %}
+{% macro init_inv() %}
+intro s hpre
+try simp_mat
+try simp_defs
+{{ close() | trim }}
+{% endmacro %}
+{% macro step_inv() %}
+intro s e ⟨hpre, hinv⟩
+{% if plan.clear_tactic %}
+{{ plan.clear_tactic }}
+{% endif %}
+{{ steps() | trim }}
+{{ close() | trim }}
+{% endmacro %}
+{% macro inv_imp_P() %}
+intro s hi
+{{ steps() | trim }}
+{{ close() | trim }}
+{% endmacro %}
+{% macro hrank() %}
+intro s s' ⟨hi, hP, htr⟩
+unfold lts at htr; simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at htr
+obtain ⟨l, hpre, heq⟩ := htr
+rw [← heq]
+clear heq
+{% if plan.clear_tactic %}
+{{ plan.clear_tactic }}
+{% endif %}
+{{ steps() | trim }}
+{{ close() | trim }}
+{% endmacro %}

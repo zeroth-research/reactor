@@ -12,7 +12,8 @@ exempt: it names a type for the reader and loads nothing.
 
 A route is a package of `verith`: its row in `__init__.py` and its engine
 beside it. No route imports another; what two share lives in
-`verith.common` or under `reactor.lean.smt`. A route's row imports its
+`verith.common` or under `reactor.lean.smt`. `verith.proofs`, which proves
+what a route found, is no route either. A route's row imports its
 engine inside the function that runs it, so `verith --help` loads no engine.
 
 And a name with a leading underscore is its module's own: no module here
@@ -137,9 +138,11 @@ def _reactor_layer(module: str) -> str | None:
     return None
 
 
-# Every route: a package of `verith` other than `common`.
+# Every route: a package of `verith` other than what the routes share
+# (`common`) and what proves their answers (`proofs`).
 ROUTE_DIRS = sorted(d for d in VERITH.iterdir()
-                    if (d / "__init__.py").exists() and d.name != "common")
+                    if (d / "__init__.py").exists()
+                    and d.name not in ("common", "proofs"))
 ROUTES = {d.name for d in ROUTE_DIRS}
 
 

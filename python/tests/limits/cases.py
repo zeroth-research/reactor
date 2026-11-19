@@ -1,6 +1,7 @@
-"""Case matrix for the `uv run reactor` limit probe.
+"""Case matrix for the limit probe.
 
-Each case is one full Lean project: `reactor ... -o projects/<name> -p Rea`,
+Each case is one full Lean project, generated and proved: `certify ... -o
+projects/<name> -p Rea`,
 then `lake build` against a shared `.lake` (Mathlib + Relational + ZerothHammer
 already built), so only System/* and Certificate/* recompile.
 
@@ -239,7 +240,7 @@ CASES = [
       note="Argmax in the transition — does argmax_1d reduce under the hammer?"),
     C(name="OpTranspose", group="ops", mod="m_transpose", expect="fail",
       P="s[0][0] == 1", inv="s[0][0] == 1", rank="0",
-      note="Transpose in the transition (MatTranspose / Box.transpose)"),
+      note="Transpose in the transition (Matrix.transpose / Box.transpose)"),
     C(name="OpUninterp", group="ops", mod="m_uninterp", expect="fail",
       P="(= s0 0)", inv="true", rank="0",
       note="an uninterpreted symbol — no Lean counterpart exists"),

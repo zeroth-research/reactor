@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cvc5
 
 from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.smt.precheck import predicate_terms
+from reactor.lean.smt.queries import predicate_terms
 
 CASES = [
     ("m_countdown", "(>= s0 1)"),
@@ -40,9 +40,9 @@ def abduce(modname: str, inv: str) -> str:
     el = q.msmt.fresh_extl_l("a_el")
     en = q.msmt.fresh_extl_n("a_en")
     nxt = q.msmt.update_state(s, el, en)
-    solver.assertFormula(q.enc.at(q.inv, s))
+    solver.assertFormula(q.inv.substitute(q.state_vars, s))
     try:
-        return str(solver.getAbduct(q.enc.at(q.inv, nxt)))
+        return str(solver.getAbduct(q.inv.substitute(q.state_vars, nxt)))
     except Exception as e:
         return f"<{type(e).__name__}: {str(e)[:70]}>"
 

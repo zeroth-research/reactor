@@ -33,7 +33,7 @@ The cascade is what it is because `decide` cannot close these goals (free
 variables), `split_ifs` before `simp` splits `(x == 0)` and `decide (x = 0)`
 into four branches, and the `Linear` cases need the certificate's own matrix
 simp set because `translate_terms_scalar` does not scalarise a `Linear` --
-it rebuilds the `Mat` and calls `matVecAffine`.
+it rebuilds the matrix and calls `matVecAffine`.
 """
 
 import re
@@ -42,9 +42,10 @@ from reactor.lean.lowering.elements import flat_layout
 from reactor.lean.codegen.context import LeanContext
 from reactor.lean.codegen.terms import extl_native_type, product_type, product_type_scalar
 from reactor.lean.project.names import (
-    CERT_LIB, DATA, LINTERS_OFF, MAT_SIMP, SYSTEM_LAYOUT, rm_def,
+    CERT_LIB, DATA, LINTERS_OFF, SYSTEM_LAYOUT, rm_def,
 )
 from reactor.lean.codegen.encodings.common import scalar_eq_name
+from ..proofs.tactics import MAT_SIMP
 from .na import SlotBodies, check_na_shape, check_na_supported
 
 
@@ -99,18 +100,22 @@ def _cascade(defs: str, extra: str = "", *, from_hyps: bool = False,
     plain = f"{defs}{extra}"
     mat = f"{defs}, {', '.join(MAT_SIMP)}{extra}"
     s = "simp_all" if from_hyps else "simp"
-    return [
-        "  first",
-        "    | rfl",
-        f"    | ({s} [{plain}]; done)",
-        f"    | ({s} [{plain}]; omega)",
-        f"    | ({s} [{mat}]; done)",
-        f"    | ({s} [{mat}]; omega)",
-        f"    | ({s} [{mat}]; split_ifs <;> omega)",
-        f"    | (simp [{mat}]; simp_all)",
-        *([f"    | (simp only [{model}, {_DECIDED}] at *; {s} [{plain}] <;> omega)"]
+    arms = [
+        "rfl",
+        f"({s} [{plain}]; done)",
+        f"({s} [{plain}]; omega)",
+        f"({s} [{mat}]; done)",
+        f"({s} [{mat}]; omega)",
+        f"({s} [{mat}]; split_ifs <;> omega)",
+        f"(simp [{mat}]; simp_all)",
+        *([f"(simp only [{model}, {_DECIDED}] at *; {s} [{plain}] <;> omega)"]
           if model else []),
     ]
+    # Last, an arm that only says none of them closed the goal: `first`
+    # reports the error of the arm it tried last, which read as that arm's
+    # own complaint ("simp_all made no progress") about a goal none closed.
+    why = f"none of the {len(arms)} arms of this proof closed its goal"
+    return ["  first", *(f"    | {a}" for a in arms), f'    | fail "{why}"']
 
 
 def atom_to_lean_fbk_bridge(
@@ -351,7 +356,7 @@ def atom_to_lean_fbk_bridge(
         "    certificate `proveit.py` installed is the one step this file",
         "    does not take: it is `main_theorem` there, in",
         "    `lean-ltl-certifying`'s LTL vocabulary rather than",
-        "    `Relational.LTL`'s, and translating between the two is a fixed",
+        "    `Spec.LTL`'s, and translating between the two is a fixed",
         "    piece of work that does not vary per module. -/",
         "theorem module_safety",
         "    (hM : ∀ ts μs, MTS.ωTrace ts μs →",

@@ -50,7 +50,7 @@ sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
-from reactor.lean.project.build import without_cascades
+from verith.proofs.build import without_cascades
 from reactor.lean.project.lakefile import (  # noqa: E402
     REACTOR_LEAN_ENV, reactor_lean_checkout, with_reactor_lean,
 )
@@ -58,7 +58,7 @@ from reactor.lean.inputs import to_surface  # noqa: E402
 
 # The reactor-lean checkout every project requires by path, so a pass
 # measures the libraries on disk; the `verith` runs below inherit it.
-os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "reactor-lean"))
+os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "ReactLib"))
 REACTOR_LEAN = reactor_lean_checkout()
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
@@ -427,7 +427,8 @@ _NO_LEAN = re.compile(r"has no Lean form")
 # What a certificate is made of. Everything else a project builds -- the five
 # encodings under `System/`, `Relational`, the hammer -- is the module, and a failure
 # there is not the certificate's.
-_CERT_FILES = {"Certificate.lean", "Data.lean", "Equivalence.lean"}
+_CERT_FILES = {"Certificate.lean", "Data.lean", "Module.lean", "Proofs.lean",
+               "Equivalence.lean"}
 
 
 def failed_outside_certificate(bld) -> bool:

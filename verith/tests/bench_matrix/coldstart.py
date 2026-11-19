@@ -54,7 +54,7 @@ from reactor.lean.project.lakefile import (  # noqa: E402
 
 # The reactor-lean checkout the project requires by path; the `verith`
 # runs below inherit it.
-os.environ.setdefault(REACTOR_LEAN_ENV, str(PY.parent.parent / "reactor-lean"))
+os.environ.setdefault(REACTOR_LEAN_ENV, str(PY.parent.parent / "ReactLib"))
 REACTOR_LEAN = reactor_lean_checkout()
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 RESULTS = WORK / "results.json"

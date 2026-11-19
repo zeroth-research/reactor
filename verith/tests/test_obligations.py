@@ -28,13 +28,13 @@ def _module(name: str):
 
 def _clamps():
     """`(name, tm, clamp)` for each clamp `hrank` is stated with."""
-    from reactor.lean.smt.obligations import clamp
-    from reactor.lean.smt.precheck import ModuleQueries
+    from reactor.lean.smt.queries import ModuleQueries
+    from verith.common.obligations import clamp
 
     claim = Claim(prp="(= s0 0)")
     q = ModuleQueries(_module("m_countdown"), claim,
                       Certificate("(>= s0 0)", "s0"))
-    return [("smt.obligations", q.tm, lambda t: clamp(q.tm, t))]
+    return [("common.obligations", q.tm, lambda t: clamp(q.tm, t))]
 
 
 @pytest.mark.parametrize("positive", [1, 0], ids=["r>=1", "r>0"])
@@ -59,10 +59,10 @@ def test_bound_is_fresh_as_variables_a_quantifier_can_close():
     """`fresh` makes constants, which a model assigns. A quantifier needs
     variables of the same sorts, which `--infer smt-linear` used to make on
     its own; `bound` is them."""
-    from reactor.lean.smt.encoding import ModuleEncoding
+    from verith.common.encoding import Encoding
     from verith.common.obligations import bound as bound_vars
 
-    enc = ModuleEncoding(_module("m_relu_input"))
+    enc = Encoding(_module("m_relu_input"))
     bound, fresh = bound_vars(enc, "q_"), enc.fresh("c_")
     assert [len(vs) for vs in bound] == [1, 1, 1]
     for vs, consts in zip(bound, fresh):
@@ -75,10 +75,10 @@ def test_the_round_as_relations_closes_its_inputs():
     wants them: the inputs are closed existentially, and the precondition
     restricts which of them may be used. `m_relu_input` is `x0 = 5`, `x' =
     relu(x - e)`, with `e` read the round it is awaited."""
-    from reactor.lean.smt.encoding import ModuleEncoding
     from verith.common import obligations as obl
+    from verith.common.encoding import Encoding
 
-    enc = ModuleEncoding(_module("m_relu_input"))
+    enc = Encoding(_module("m_relu_input"))
 
     def state(k):
         return [enc.tm.mkInteger(k)]

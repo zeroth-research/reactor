@@ -1,4 +1,4 @@
-"""`uv run verith`: infer a module's certificate and print it.
+"""`uv run verith`: infer a module's certificate, and prove it.
 
 A module and a claim in, the invariant -- and, for a Buchi property, the
 ranking function -- out, in the input's names and in the form `reactor`'s
@@ -6,19 +6,20 @@ ranking function -- out, in the input's names and in the form `reactor`'s
 
     uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer houdini
 
-The module, the claim and the SMT budget are read with the same flags
-`reactor` reads them with (`reactor.lean.cli`), and the route with the
-flags `certify` takes (`verith.flags`), so a command line moves between the
-three by adding or dropping flags.
+The module and the claim are read with the same flags `reactor` reads them
+with (`reactor.lean.cli`), and the route, the SMT budget and what is asked
+of the proofs with the flags `certify` takes (`verith.flags`), so a command
+line moves between the three by adding or dropping flags.
 
-A route whose row reads or writes the generated project -- the LLM routes
-prompt on its Lean, `fbk-proveit` installs a certificate in it -- needs one,
-generated from the same module: `--project DIR` names it. With a project the
-route also reads and writes its `artifacts/`, so a run continues where the
-last one in that project left off. A route that answers with whole files
-writes them there; nothing else of the project is rewritten. To have the
-certificate rewritten from the answer, run `certify`, or pass what this
-printed to `reactor`.
+`--project DIR` names a project `reactor` generated from the same module,
+whose obligations it left proved by `sorry`. With one, the certificate --
+the one the route found, or without `--infer` the one --invariant and
+--ranking give -- is written into it with its proofs (`Certificate/`, and
+the hammer the proofs call), and `--build-cert` builds it. A route whose
+row reads or writes the project -- the LLM routes prompt on its Lean,
+`fbk-proveit` installs a certificate of its own in it -- needs one. With a
+project the route also reads and writes its `artifacts/`, so a run
+continues where the last one in that project left off.
 
 `--json` prints the answer as one JSON object on stdout, and everything the
 route logs on stderr.
@@ -39,12 +40,11 @@ from reactor.lean.artifacts import ARTIFACTS_DIR
 from reactor.lean.cli import claim_deferred
 from reactor.lean.cli.checks import (
     check_blanks,
-    check_budget,
     check_claim_flags,
     check_input_options,
     input_adapter,
 )
-from reactor.lean.cli.parser import add_budget, add_claim, add_input
+from reactor.lean.cli.parser import add_claim, add_input
 from reactor.lean.core.certificate import Claim
 from reactor.lean.core.errors import Refused
 from reactor.lean.pipeline.certificate import (
@@ -53,22 +53,34 @@ from reactor.lean.pipeline.certificate import (
     workspace,
 )
 from reactor.lean.pipeline.claim import claim_from_flags, load, stated_claim
+from reactor.lean.project.lakefile import LakefileParts
 from reactor.lean.project.scaffold import write_lakefile
-from reactor.lean.smt.encoding import lazy
-from reactor.lean.smt.limits import SmtBudget
 
+from .common.encoding import lazy
+from .common.limits import SmtBudget
 from .flags import (
+    add_proofs,
     add_routes,
+    check_budget,
     check_route,
     check_route_options,
+    proof_fields,
     resolve_aliases,
     resolve_route,
     route_fields,
     selected_route,
+    supplied_complete,
 )
-from .io import InferResult, ProjectHandle
+from .io import InferResult, ProjectHandle, declared
+from .proofs import build_cert
 from .route import InferRoute
-from .run import route_precheck, run_route, show_certificate
+from .run import (
+    lakefile_parts,
+    regenerate,
+    route_precheck,
+    run_route,
+    show_certificate,
+)
 
 
 _EPILOG = """\
@@ -82,17 +94,21 @@ examples:
   # the answer as JSON on stdout, the route's log on stderr
   uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer smt-linear --json
 
-  # an LLM route prompts on the generated Lean, so it needs the project
+  # an LLM route prompts on the generated Lean, so it needs the project;
+  # the certificate it finds is written into it, with its proofs
   uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" -o out/ -p MyProject
   uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer ai-cegis \\
       --project out/MyProject
 
-  # what verith printed is what reactor takes
+  # no --infer: prove the certificate given, ask cvc5 first, and build it
   uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" \\
-      --invariant '...' --ranking '...' --build-cert -o out/ -p MyProject
+      --invariant '...' --ranking '...' -o out/ -p MyProject
+  uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" \\
+      --invariant '...' --ranking '...' --project out/MyProject \\
+      --pre-check cvc5 --smt-tactics cvc5 --build-cert
 
-`certify` runs reactor and verith in one go: it takes reactor's flags and
---infer, and rewrites the project's certificate from the answer.
+`certify` runs reactor and verith in one go: it takes reactor's flags,
+--infer and the proofs' flags.
 """
 
 
@@ -123,6 +139,10 @@ class Settings:
     artifacts: str = "use"              # "use" | "ignore" | "reset"
     json: bool = False
 
+    pre_check: str = "none"
+    smt_tactics: str = "none"
+    build_cert: bool = False
+
     claim_deferred: bool = False
 
     @property
@@ -143,15 +163,17 @@ def build_parser() -> argparse.ArgumentParser:
             "Infer the certificate of a reactive module's property -- the "
             "invariant, plus the ranking function a --buchi property also "
             "needs -- and print it as reactor's --invariant and --ranking "
-            "take it. The module and the claim are read as reactor reads "
-            "them; --infer selects how the certificate is searched for."
+            "take it; and prove it, in the project --project names. The "
+            "module and the claim are read as reactor reads them; --infer "
+            "selects how the certificate is searched for, and without it "
+            "the certificate is the one --invariant and --ranking give."
         ),
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    add_input(parser, project=False, required=True)
+    add_input(parser, project=False)
     add_claim(parser)
-    add_routes(parser, required=True)
+    add_routes(parser)
     parser.add_argument(
         "--project",
         default=None,
@@ -159,8 +181,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "A Lean project `reactor` (or `certify`) generated from the same "
             "module: the project directory, `-o DIR -p NAME`'s DIR/NAME. "
-            "Required by a route that reads or writes the project; with one, "
-            f"every route reads and writes its `{ARTIFACTS_DIR}/`."
+            "The certificate is written into it with its proofs. Required "
+            "by a route that reads or writes the project; with one, every "
+            f"route reads and writes its `{ARTIFACTS_DIR}/`."
         ),
     )
     parser.add_argument(
@@ -182,7 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
             "log on stderr."
         ),
     )
-    add_budget(parser)
+    add_proofs(parser)
     return parser
 
 
@@ -216,29 +239,50 @@ def parse_args(argv: "list[str] | None" = None, *,
         pre=args.pre,
         invariant=args.invariant,
         ranking=args.ranking,
-        budget=SmtBudget(per_call_ms=args.smt_timeout,
-                         phase_ms=args.smt_budget),
         project=Path(args.project) if args.project else None,
         artifacts=args.artifacts,
         json=args.json,
+        **proof_fields(args),
         **route_fields(args, route),
     )
     settings.claim_deferred = claim_deferred(settings, adapter, defer_claim)
 
     check_project(parser, settings)
     if not settings.claim_deferred:
-        check_route(parser, settings)
+        if route is not None:
+            check_route(parser, settings)
+        else:
+            # Which also leaves --build-cert nothing to refuse: the
+            # certificate given is complete.
+            check_given(parser, settings)
     resolve_route(parser, settings)
     return settings
 
 
+def check_given(parser: argparse.ArgumentParser, settings: Settings) -> None:
+    """Without --infer, the certificate is the one given, and the run has
+    something to do with it: prove it in --project, or ask cvc5 about it."""
+    if settings.project is None and settings.pre_check == "none":
+        parser.error(
+            "nothing to do: pass --infer to search for a certificate, "
+            "--project to prove the one --invariant and --ranking give, or "
+            "--pre-check cvc5 to ask cvc5 about it"
+        )
+    if not supplied_complete(settings):
+        parser.error(
+            "without --infer, the certificate is the one given: pass "
+            "--safety with --invariant, or --buchi with --invariant and "
+            "--ranking"
+        )
+
+
 def check_project(parser: argparse.ArgumentParser, settings: Settings) -> None:
     """`--project` names a generated project, and a route that reads or
-    writes one is given it."""
+    writes one, or a flag about the proofs written into one, is given it."""
     route, project = settings.route, settings.project
     if project is None:
-        needs = [w for w, given in (("reads", route.reads),
-                                    ("writes", route.owns)) if given]
+        needs = [w for w, given in (("reads", route and route.reads),
+                                    ("writes", route and route.owns)) if given]
         if needs:
             parser.error(
                 f"--infer {route.name} {' and '.join(needs)} the generated "
@@ -251,6 +295,13 @@ def check_project(parser: argparse.ArgumentParser, settings: Settings) -> None:
                 f"--artifacts {settings.artifacts} is about --project's "
                 f"`{ARTIFACTS_DIR}/`, and no --project was given"
             )
+        for flag, given in (("--smt-tactics", settings.smt_tactics != "none"),
+                            ("--build-cert", settings.build_cert)):
+            if given:
+                parser.error(
+                    f"{flag} is about the proofs written into --project, "
+                    f"and no --project was given"
+                )
         return
     if not (project / "lakefile.toml").is_file():
         parser.error(
@@ -261,24 +312,20 @@ def check_project(parser: argparse.ArgumentParser, settings: Settings) -> None:
 
 def project_handle(settings: Settings, module,
                    claim: Claim) -> ProjectHandle:
-    """The project the route is handed: `--project`, or none.
+    """The project the route is handed and the proofs are written into:
+    `--project`, or none.
 
     The project has to be about this module -- a route reads its Lean and
-    writes files that import it -- and `dbg/system.txt` is the module it was
-    generated from, as `str(module)` renders it (which is also what
-    `artifacts/` tells modules apart by), compared up to the numbering of
-    its wires (`same_module`).
+    writes files that import it, and the proofs are of its obligations --
+    and `dbg/system.txt` is the module it was generated from, as
+    `str(module)` renders it (which is also what `artifacts/` tells modules
+    apart by), compared up to the numbering of its wires (`same_module`).
     """
     route = settings.route
-    declared = dict(
-        reads=frozenset(route.reads),
-        owns=route.owns,
-        resumes=frozenset(route.reads_artifacts),
-    )
     project = settings.project
     if project is None:
         return ProjectHandle(dir=None, name="", ctx=None, artifacts=None,
-                             **declared)
+                             **declared(route))
 
     stamp = project / "dbg" / "system.txt"
     if not stamp.is_file() or not same_module(stamp.read_text(), str(module)):
@@ -292,21 +339,23 @@ def project_handle(settings: Settings, module,
     except Refused as e:                # about the module, not the route
         raise SystemExit(f"error: {e}") from e
     store = workspace(project, module, claim, kind=settings.kind,
-                      mode=settings.artifacts, producer=route.name)
-    # The lakefile a project is generated with carries no route's
-    # libraries or requires; one this route needs is added now, before
-    # the route writes the files that need it.
-    if route.lakefile is not None:
+                      mode=settings.artifacts,
+                      producer=route.name if route else "")
+    # The lakefile `reactor` generates carries no route's libraries or
+    # requires, nor the hammer the proofs call; what this run needs is
+    # added now, before the route writes the files that need it.
+    parts = lakefile_parts(route, settings.route_config, project.name)
+    if parts != LakefileParts():
         try:
             write_lakefile(
                 project, project.name,
                 executable=(project / "Main.lean").exists(),
-                parts=route.lakefile(settings.route_config, project.name),
+                parts=parts,
             )
         except Refused as e:            # a `$REACTOR_LEAN` that is no checkout
             raise SystemExit(f"error: {e}") from e
     return ProjectHandle(dir=project, name=project.name, ctx=ctx,
-                         artifacts=store, **declared)
+                         artifacts=store, **declared(route))
 
 
 def same_module(a: str, b: str) -> bool:
@@ -338,10 +387,11 @@ def answer_json(settings: Settings, result: InferResult,
     def surface(text: "str | None") -> "str | None":
         return inputs.to_surface(text, names) if text else None
 
+    route = settings.route
     return {
-        "route": settings.route.name,
+        "route": route.name if route else None,
         "kind": settings.kind,
-        "returns": settings.route.returns,
+        "returns": route.returns if route else None,
         "invariant": surface(cert.inv),
         "ranking": surface(cert.ranking),
         "smt": {"inv": cert.inv, "ranking": cert.ranking},
@@ -382,9 +432,10 @@ def main(argv: "list[str] | None" = None) -> None:
 
 
 def infer(settings: Settings, argv: list[str]):
-    """Run the route the command line selects. Returns the settings (with
-    the claim the input states, if it states one), the route's answer and
-    the names it is shown in."""
+    """Run the route the command line selects, if it selects one, and prove
+    the certificate: the route's, or the one given. Returns the settings
+    (with the claim the input states, if it states one), the answer and the
+    names it is shown in."""
     problem = load(settings)
     settings = stated_claim(settings, problem, argv, reparse=parse_args)
     module = problem.module
@@ -398,11 +449,14 @@ def infer(settings: Settings, argv: list[str]):
     # what it found after. Without a project there is nowhere to.
     record_predicates(handle.artifacts, claim, given)
 
-    print(f".. Inferring the certificate with --infer {route.name}")
-    result = run_route(settings, module, handle, claim, given, prechecked,
-                       smt=smt)
-    handle.write_files(result.files)
-    record_predicates(handle.artifacts, claim, result.cert, inferred=True)
-    if not settings.json:
+    result = InferResult(cert=given)
+    if route is not None:
+        print(f".. Inferring the certificate with --infer {route.name}")
+        result = run_route(settings, module, handle, claim, given, prechecked,
+                           smt=smt)
+    lean_cert = regenerate(settings, smt, handle, claim, result)
+    if route is not None and not settings.json:
         show_answer(settings, result, problem.names)
+    if settings.build_cert:
+        build_cert(handle.dir, lean_cert)
     return settings, result, problem.names

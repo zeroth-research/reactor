@@ -1,7 +1,9 @@
-"""Tests for the bounded cvc5 query layer (`reactor.lean.smt.precheck`).
+"""Tests for what the proofs ask cvc5: the obligations (`proofs.precheck`),
+the predicates' shape and hints (`proofs.facts`), and the budget every
+query is held to (`common.limits`).
 
 The contract this file pins down is not "cvc5 gets the right answer" so much
-as "nothing here can break generation": every query is bounded, and every
+as "nothing here can break the run": every query is bounded, and every
 way a query can go wrong -- timeout, incompleteness, an unencodable module,
 a cvc5 exception -- comes back as `UNKNOWN` rather than an exception.
 """
@@ -16,9 +18,10 @@ from reactor import Module, Term, Var, Wire, X, LIA, Int
 from reactor.analyzer import convert_method
 from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor.lean.core.errors import Refused
-from reactor.lean.smt.limits import SmtBudget
-from reactor.lean.smt.precheck import Status, pre_check, predicate_terms
-from reactor.lean.proof.facts import predicate_facts, solver_hints
+from verith.common.encoding import predicate_terms
+from verith.common.limits import SmtBudget
+from verith.proofs.facts import predicate_facts, solver_hints
+from verith.proofs.precheck import Status, check_obligations, pre_check
 
 
 def countdown() -> Module:
@@ -46,8 +49,26 @@ GOOD = Certificate(inv="(and (>= s0 0) (<= s0 100))", ranking="s0")
 
 def _status(cert, name):
     q = predicate_terms(countdown(), CLAIM, cert)
-    by_name = {v.name: v for v in q.check_obligations(SmtBudget())}
+    by_name = {v.name: v for v in check_obligations(q, SmtBudget())}
     return by_name[name]
+
+
+# ── the budget ───────────────────────────────────────────────────────
+
+
+def test_the_per_call_limit_is_the_smaller_of_the_two():
+    b = SmtBudget(per_call_ms=250, phase_ms=100000)
+    assert b.next_call_ms() == 250
+    b = SmtBudget(per_call_ms=100000, phase_ms=250)
+    assert b.next_call_ms() <= 250
+
+
+def test_a_phase_can_be_refilled():
+    b = SmtBudget(per_call_ms=10, phase_ms=0)
+    assert b.exhausted
+    b.phase_ms = 5000
+    b.start_phase()
+    assert not b.exhausted
 
 
 # ── verdicts ─────────────────────────────────────────────────────────
@@ -76,7 +97,7 @@ def test_a_non_inductive_invariant_is_refuted_at_the_step():
 def test_obligations_needing_absent_predicates_are_not_checked():
     """No ranking and no property, so only the two invariant obligations."""
     q = predicate_terms(countdown(), Claim(), Certificate(inv=GOOD.inv))
-    assert [v.name for v in q.check_obligations(SmtBudget())] == [
+    assert [v.name for v in check_obligations(q, SmtBudget())] == [
         "init_inv",
         "step_inv",
     ]
@@ -84,7 +105,7 @@ def test_obligations_needing_absent_predicates_are_not_checked():
 
 def test_no_invariant_means_nothing_to_check():
     q = predicate_terms(countdown(), CLAIM)
-    assert q.check_obligations(SmtBudget()) == []
+    assert check_obligations(q, SmtBudget()) == []
 
 
 # ── which third obligation ───────────────────────────────────────────
@@ -97,7 +118,7 @@ SAFE = Certificate(inv="(and (>= s0 0) (<= s0 100))")
 def test_a_safety_certificate_is_checked_against_rule_globally():
     """`G P` needs `inv -> P`, and has no ranking function to rank."""
     q = predicate_terms(countdown(), SAFE_CLAIM, SAFE)
-    verdicts = q.check_obligations(SmtBudget())
+    verdicts = check_obligations(q, SmtBudget())
     assert [v.name for v in verdicts] == ["init_inv", "step_inv", "inv_imp_P"]
     assert {v.status for v in verdicts} == {Status.HOLDS}
 
@@ -107,7 +128,7 @@ def test_an_invariant_too_weak_for_the_property_is_refuted():
     -- which a Buchi certificate would not care about at all."""
     claim = Claim(prp="(<= s0 50)", kind="safety")
     q = predicate_terms(countdown(), claim, SAFE)
-    by_name = {v.name: v for v in q.check_obligations(SmtBudget())}
+    by_name = {v.name: v for v in check_obligations(q, SmtBudget())}
     assert by_name["init_inv"].status is Status.HOLDS
     assert by_name["step_inv"].status is Status.HOLDS
     assert by_name["inv_imp_P"].status is Status.REFUTED
@@ -117,7 +138,7 @@ def test_an_invariant_too_weak_for_the_property_is_refuted():
 def test_a_safety_certificate_never_states_hrank():
     """Even handed a ranking function, `G P` has no obligation about it."""
     q = predicate_terms(countdown(), SAFE_CLAIM, replace(SAFE, ranking="s0"))
-    names = [v.name for v in q.check_obligations(SmtBudget())]
+    names = [v.name for v in check_obligations(q, SmtBudget())]
     assert "hrank" not in names and "inv_imp_P" in names
 
 
@@ -126,33 +147,12 @@ def test_a_safety_certificate_never_states_hrank():
 
 def test_a_spent_phase_budget_yields_unknown_not_an_exception():
     q = predicate_terms(countdown(), CLAIM, GOOD)
-    verdicts = q.check_obligations(SmtBudget(per_call_ms=5000, phase_ms=0))
+    verdicts = check_obligations(q, SmtBudget(per_call_ms=5000, phase_ms=0))
     assert {v.status for v in verdicts} == {Status.UNKNOWN}
     assert all("budget" in v.detail for v in verdicts)
 
 
-def test_the_per_call_limit_is_the_smaller_of_the_two():
-    b = SmtBudget(per_call_ms=250, phase_ms=100000)
-    assert b.next_call_ms() == 250
-    b = SmtBudget(per_call_ms=100000, phase_ms=250)
-    assert b.next_call_ms() <= 250
-
-
-def test_a_phase_can_be_refilled():
-    b = SmtBudget(per_call_ms=10, phase_ms=0)
-    assert b.exhausted
-    b.phase_ms = 5000
-    b.start_phase()
-    assert not b.exhausted
-
-
 # ── a failure is said where it is ────────────────────────────────────
-
-
-def test_an_unparseable_predicate_is_refused_by_the_flag_it_came_from():
-    bad = Certificate(inv="(this is not smt")
-    with pytest.raises(Refused, match="--invariant: cannot read"):
-        predicate_terms(countdown(), Claim(), bad)
 
 
 def test_an_unencodable_transition_fails_only_the_obligations_it_is_in():
@@ -167,7 +167,7 @@ def test_an_unencodable_transition_fails_only_the_obligations_it_is_in():
         [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])],
     )
     q = predicate_terms(module, CLAIM, GOOD)
-    by_name = {v.name: v for v in q.check_obligations(SmtBudget())}
+    by_name = {v.name: v for v in check_obligations(q, SmtBudget())}
     # Encoding is lazy, so the failure lands on exactly the obligations that
     # touch the untranslatable transition -- `init` does not.
     assert by_name["step_inv"].status is Status.UNKNOWN
@@ -321,7 +321,7 @@ def test_floors_are_read_off_a_shared_term_once():
     """What a floor applies to is collected over the term's DAG: walked as
     a tree, sixty doublings of one `to_int` are 2^60 visits of it."""
     from cvc5 import Kind
-    from reactor.lean.proof.facts import _floor_args
+    from verith.proofs.facts import _floor_args
 
     tm = cvc5.TermManager()
     x = tm.mkConst(tm.getRealSort(), "x")
@@ -376,14 +376,15 @@ def test_the_hint_layer_shapes_the_obligation_the_kind_states():
     """The plan is read off the obligations the certificate actually has,
     so a safety certificate contributes `inv_imp_P` where a Buchi one
     contributes `hrank`."""
-    from reactor.lean.proof.facts import _obligation_labels
+    from verith.common.obligations import frame
+    from verith.proofs.facts import _obligation_labels
 
     buchi = predicate_terms(countdown(), CLAIM, GOOD)
-    assert [name for name, _ in _obligation_labels(buchi, buchi.frame("h_"))
+    assert [name for name, _ in _obligation_labels(buchi, frame(buchi, "h_"))
             ] == ["step_inv", "hrank"]
 
     safe = predicate_terms(countdown(), SAFE_CLAIM, SAFE)
-    assert [name for name, _ in _obligation_labels(safe, safe.frame("h_"))
+    assert [name for name, _ in _obligation_labels(safe, frame(safe, "h_"))
             ] == ["step_inv", "inv_imp_P"]
 
 
@@ -401,14 +402,15 @@ def test_an_undetermined_condition_is_left_to_split_ifs():
     assert h.determined == []
 
 
-def test_conditions_are_rendered_against_the_macro_binder():
-    """They are spliced into a tactic, so they read the obligation's state."""
-    from reactor.lean.proof.render import print_hints
+def test_conditions_are_rendered_against_the_proofs_state_binder():
+    """They are spliced into a proof, so they read the obligation's state,
+    which every proof in `Proofs.lean` binds as `s`."""
+    from verith.proofs.scripts import print_hints
 
     q = predicate_terms(countdown(), CLAIM,
                             replace(GOOD, ranking="(ite (>= s0 0) s0 1)"))
     printed = print_hints(solver_hints(q, SmtBudget()), q.msmt.ctrl_next)
-    assert "($v)" in printed.determined[0][0]
+    assert "s 0 0" in printed.determined[0][0]
     assert "≥" in printed.determined[0][0]
 
 
@@ -445,34 +447,3 @@ def test_a_spent_budget_yields_no_hints_rather_than_an_exception():
 
 def test_hints_survive_a_module_cvc5_cannot_encode():
     assert solver_hints(None, SmtBudget()).any is False
-
-
-def test_translation_can_be_asked_not_to_share():
-    """`share=False` prints every subterm in full -- for reading; the
-    certificate itself is printed shared, hints or not (`proof.render.prepare`).
-    """
-    from reactor.lean.proof.render import render_certificate
-    from reactor.lean.smt.precheck import predicate_terms
-
-    q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(4)))
-    shared = render_certificate(q, share=True).ranking
-    plain = render_certificate(q, share=False).ranking
-    assert "let " in shared
-    assert "let " not in plain
-
-
-def test_a_lean_answer_is_printed_as_it_was_given():
-    """`--infer ai`'s reply is Lean already; the property beside it is not."""
-    from reactor.lean.proof.render import render_certificate
-    from reactor.lean.smt.precheck import predicate_terms
-
-    defs = render_certificate(predicate_terms(countdown(), CLAIM), verbatim=LEAN)
-    assert (defs.inv, defs.ranking) == (LEAN.inv, LEAN.ranking)
-    assert defs.prp == "fun s => ((s 0 0) = (0 : Int))"
-
-
-def test_a_predicate_that_does_not_parse_is_refused_by_its_flag():
-    from reactor.lean.smt.precheck import predicate_terms
-
-    with pytest.raises(Refused, match="--ranking"):
-        predicate_terms(countdown(), CLAIM, Certificate(ranking="(+ s0"))

@@ -3,7 +3,8 @@
 `tlimit` alone stops neither `checkSynth` nor a quantified `checkSat`;
 `tlimit-per` stops both. Every solver built here gets the pair.
 
-cvc5 is imported only when a solver is built: `cli` imports this module.
+cvc5 is imported only when a solver is built: `verith.flags` imports this
+module, and `verith --help` loads no solver.
 """
 
 from __future__ import annotations
