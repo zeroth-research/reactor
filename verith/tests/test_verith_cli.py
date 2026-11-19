@@ -17,7 +17,7 @@ import pytest
 pytest.importorskip("cvc5")
 
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 COUNTDOWN = FIXTURES / "svcomp_countdown.py"
 COUNTER = FIXTURES / "counter.py"
 BUCHI = ["--buchi", "(= (X @intf.0) 0)"]

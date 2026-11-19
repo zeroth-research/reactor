@@ -26,8 +26,8 @@ from reactor_lean.inputs.python import load_module
 from verith.resume import resumable_inv, ruled_out, taking_inv
 
 # The fixtures are `reactor`'s, in the `python/` project beside this one.
-PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
 MODS = Path(__file__).resolve().parents[2] / "lean" / "tests" / "limits" / "mods"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def module_of(name: str):
@@ -931,7 +931,7 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
 
 def _fixture(name: str):
     """One `tests/fixtures` module, loaded by path."""
-    return load_module(PYTHON_TESTS / "fixtures" / f"{name}.py")
+    return load_module(FIXTURES / f"{name}.py")
 
 
 @pytest.mark.parametrize("prp", ["(= s0 0)", "s[0][0] == 0", "(s[0][0] == 0)"])

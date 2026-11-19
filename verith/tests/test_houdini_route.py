@@ -34,9 +34,8 @@ from reactor_lean.inputs.python import load_module
 from verith.houdini.solvers import SolverSpec
 
 # The fixtures are `reactor`'s, in the `python/` project beside this one.
-PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
 LIMITS = Path(__file__).resolve().parents[2] / "lean" / "tests" / "limits" / "mods"
-FIXTURES = PYTHON_TESTS / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 HYBRID = Path(__file__).parent / "bench_matrix" / "hybrid"
 
 

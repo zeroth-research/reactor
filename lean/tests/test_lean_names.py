@@ -12,7 +12,7 @@ from reactor_lean.project.names import CERT_LIB, SYSTEM_LAYOUT
 from reactor_lean.project.scaffold import create_project
 from reactor_lean.proof.render import certificate_files
 
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def _own_imports(text: str) -> list[str]:

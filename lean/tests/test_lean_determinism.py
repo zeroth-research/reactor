@@ -17,7 +17,7 @@ import pytest
 
 TESTS = Path(dirname(__file__))
 MODS = TESTS / "limits" / "mods"
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 # Every module whose update block writes two or more ctrl wires under one
 # branch: the shape that made the merge order observable.

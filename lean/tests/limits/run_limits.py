@@ -117,7 +117,7 @@ def load_cases() -> list:
 
 def module_path(mod: str) -> Path:
     if mod.startswith("TESTS/"):
-        return REPO / "python" / "tests" / "fixtures" / f"{mod.split('/', 1)[1]}.py"
+        return SP.parent / "fixtures" / f"{mod.split('/', 1)[1]}.py"
     return MODS / f"{mod}.py"
 
 

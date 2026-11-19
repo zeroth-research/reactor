@@ -64,7 +64,7 @@ of a project `reactor` generated (section 2), or searches for one with
 `--ranking` take. `certify` is both in one run: `reactor`'s flags,
 `verith`'s, one project. From section 3 on, every command is `certify`.
 
-Every module used below is a fixture that already lives in `python/tests/` or
+Every module used below is a fixture that already lives in `verith/tests/` or
 `lean/tests/`, so nothing has to be written first.
 
 ---
@@ -429,7 +429,7 @@ Build completed successfully (3486 jobs).
 
 ## 3. Büchi: the same idea, plus a ranking function
 
-`../python/tests/fixtures/counter.py` counts *up*: 0, 1, …, 9, then back to 0. "The
+`tests/fixtures/counter.py` counts *up*: 0, 1, …, 9, then back to 0. "The
 counter is at zero infinitely often" is a liveness property, `G (F (s0 = 0))`,
 and it goes under `--buchi`.
 
@@ -444,7 +444,7 @@ From here on one command does both steps: `certify` generates the project as
 `reactor` does and proves it as `verith` does, in one run.
 
 ```bash
-uv run certify ../python/tests/fixtures/counter.py \
+uv run certify tests/fixtures/counter.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))' \
     --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \
@@ -504,11 +504,11 @@ Build completed successfully (3486 jobs).
 Nothing above is specific to hand-written modules. `reactor.gym.Env` extracts a
 module from a plain `gymnasium.Env` by symbolically analyzing its `reset` and
 `step` methods, and the result is a module file like any other.
-`../python/tests/fixtures/simple_env.py` defines `SimpleEnv` — a three-cell chain
+`tests/fixtures/simple_env.py` defines `SimpleEnv` — a three-cell chain
 where the agent walks left or right and the goal is cell 2 — and wraps it:
 
 ```bash
-cat ../python/tests/fixtures/simple_env.py
+cat tests/fixtures/simple_env.py
 ```
 
 ```python
@@ -569,7 +569,7 @@ bare, with no property, and read it (the same dump is written to
 `dbg/system.txt`, so a later run need not reprint it):
 
 ```bash
-uv run reactor ../python/tests/fixtures/simple_env.py -o "$OUT" -p "$PROJ" | head -24
+uv run reactor tests/fixtures/simple_env.py -o "$OUT" -p "$PROJ" | head -24
 ```
 
 ```
@@ -622,7 +622,7 @@ than `0` and `2`.
 since `step` clamps with `min` and `max`:
 
 ```bash
-uv run certify ../python/tests/fixtures/simple_env.py \
+uv run certify tests/fixtures/simple_env.py \
     --safety    '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
     --invariant '(and (>= (X @intf.0) 0.0) (<= (X @intf.0) 2.0))' \
     --pre-check cvc5 -o "$OUT" -p "$PROJ" | says
@@ -674,7 +674,7 @@ still true and the ranking function is still fine; the invariant is not
 inductive, because the counter runs to 9:
 
 ```bash
-uv run certify ../python/tests/fixtures/counter.py \
+uv run certify tests/fixtures/counter.py \
     --buchi     '(= (X @intf.0) 0)' \
     --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 5))' \
     --ranking   '(ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0)))' \

@@ -518,7 +518,7 @@ assignment to a variable, fairness constraints, an integer type in a model
 with words, `*` of two non-constants and `/`/`mod` in LIA, and a `case` whose
 last condition is not `TRUE`. An input (`IVAR`) is read in the round it labels,
 and `INVAR x = e` / `x := e` hold in every state. Claims use the model's
-variable names: `uv run reactor ../python/tests/smv_fixtures/mod10.smv --safety "(<= (X x) 9)"`.
+variable names: `uv run reactor tests/smv_fixtures/mod10.smv --safety "(<= (X x) 9)"`.
 
 A model's own specification is the claim when no `--safety`/`--buchi` is
 given: `INVARSPEC p` and `LTLSPEC G p` are `--safety p`, `LTLSPEC G F p` is

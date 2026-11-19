@@ -112,7 +112,7 @@ probes/          runnable evidence for the cvc5 work (abduction, SyGuS)
 
 A case is
 `C(name=, group=, mod=, expect=, P=, inv=, rank=, pre=, note=)`. `mod` names a
-file in `mods/`, or `TESTS/x` for `python/tests/fixtures/x.py`. `expect` is
+file in `mods/`, or `TESTS/x` for `../fixtures/x.py`. `expect` is
 `ok` / `fail` / `?` — what the case is *meant* to show, so a surprise is
 visible. `P`, `inv`, `rank` and `pre` are SMT-LIB 2 expressions over `s0..sN-1`
 (state) and `e0…` / `el0…` (inputs), in internal names; `run_limits.py` turns

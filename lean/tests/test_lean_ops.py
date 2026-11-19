@@ -448,7 +448,7 @@ def _twobit():
     import sys
     from pathlib import Path
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"))
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures"))
     try:
         import twobit
     finally:

@@ -41,7 +41,7 @@ in. Its source is [`figures/pipeline.tex`](figures/pipeline.tex).
 cd verith
 
 # infer, and print what was found
-uv run verith ../python/tests/fixtures/svcomp_countdown.py \
+uv run verith tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" --infer houdini
 # .. The certificate, in the input's names:
 #    --invariant '(<= 0 (X @intf.0))'
@@ -49,17 +49,17 @@ uv run verith ../python/tests/fixtures/svcomp_countdown.py \
 
 # ... hand it to reactor, which writes the project with every obligation
 # `sorry`, and to verith again, which proves them and builds the project
-uv run reactor ../python/tests/fixtures/svcomp_countdown.py \
+uv run reactor tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" \
     --invariant '(<= 0 (X @intf.0))' --ranking '(X @intf.0)' \
     -o out/ -p Countdown
-uv run verith ../python/tests/fixtures/svcomp_countdown.py \
+uv run verith tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" \
     --invariant '(<= 0 (X @intf.0))' --ranking '(X @intf.0)' \
     --project out/Countdown --build-cert
 
 # or all of it in one run
-uv run certify ../python/tests/fixtures/svcomp_countdown.py \
+uv run certify tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" --infer houdini --build-cert -o out/ -p Countdown
 ```
 
@@ -906,8 +906,8 @@ flag fails there rather than in generated code.
 
 `just vr-test` (`uv run pytest -m 'not slow'` from `verith/`) runs
 `tests/` and `nuterm/tests/`; `just test-lean` adds the `slow` ones, which
-build Lean. The modules they run on are `reactor`'s fixtures, read from
-`python/tests/` (`fixtures/`, `smv_fixtures/`, `limits/mods/`).
+build Lean. The modules they run on are their own (`tests/fixtures/`,
+`tests/smv_fixtures/`) and the limit matrix's (`../lean/tests/limits/mods/`).
 `tests/bench_matrix/` measures every route on every benchmark
 ([README](tests/bench_matrix/README.md)), `tests/fbk/` sweeps the
 `fbk-proveit` route ([README](tests/fbk/README.md)), and
@@ -923,8 +923,9 @@ commit before it and after it, and compare:
   external tools. Record on a quiet machine, and re-run a `vampire_*` case
   alone before reading a difference in it as a change: under load its
   templates run out of their shared deadline.
-- **Encoding snapshots**: `scripts/encoding_snapshots.py OUTDIR` writes what
-  the transcripts do not cover: the `System/*.lean` encodings, the bare
-  `--cert-file` certificate, and the NA model and bridge, per fixture.
+- **Encoding snapshots**: `uv run python scripts/encoding_snapshots.py OUTDIR`
+  from `../lean/` writes what the transcripts do not cover: the
+  `System/*.lean` encodings, the bare `--cert-file` certificate, and the NA
+  model and bridge, per fixture.
 - **Goldens**: `tests/test_certify_golden.py`; `REACTOR_UPDATE_GOLDEN=1`
   rewrites them. Set `VAMPIRE` to the binary for the Vampire tests.

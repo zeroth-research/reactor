@@ -20,7 +20,7 @@ import pytest
 pytest.importorskip("cvc5")
 
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 _DRIVER = r"""
 import gc
