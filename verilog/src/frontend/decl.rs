@@ -1,7 +1,7 @@
 //! Modules, parameters, ports, declarations, instances and initial values.
 
 use super::arrays::{Load, readmem, resolve};
-use super::{Cx, LARGEST, Result, VARIABLE_TARGET, has_tokens};
+use super::{Cx, LARGEST, Result, VARIABLE_TARGET, has_tokens, system_call};
 use crate::ast::{
     self, Array, Conn, Const, Decl, Dir, Elem, Elems, Error, Expr, ExprKind, Index, Init, Instance,
     Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, Span, Ty,
@@ -130,21 +130,13 @@ impl Cx<'_> {
     /// Whether it is there.
     pub(super) fn module_attributes(&self, attrs: &[sv::AttributeInstance]) -> Result<bool> {
         let mut blackbox = false;
-        for a in attrs {
-            for spec in a.nodes.1.contents() {
-                let (name, value) = &spec.nodes;
-                if self.text(name) != "blackbox" {
-                    return self.err(
-                        spec,
-                        format!("attribute `{}` not supported", self.text(spec)),
-                    );
-                }
-                if value.is_some() {
-                    return self.err(spec, "`blackbox` takes no value");
-                }
-                blackbox = true;
+        self.attributes(attrs, "blackbox", |spec| {
+            if spec.nodes.1.is_some() {
+                return self.err(spec, "`blackbox` takes no value");
             }
-        }
+            blackbox = true;
+            Ok(())
+        })?;
         Ok(blackbox)
     }
 
@@ -948,12 +940,7 @@ impl Cx<'_> {
         let stmts: Vec<&sv::Statement> = match s {
             sv::StatementOrNull::Statement(s) => match &s.nodes.2 {
                 sv::StatementItem::SeqBlock(b) => {
-                    let (_, label, decls, stmts, _, end_label) = &b.nodes;
-                    self.absent(label, "block name")?;
-                    self.absent(end_label, "block name")?;
-                    if let Some(d) = decls.first() {
-                        return self.err(d, only);
-                    }
+                    let stmts = self.seq_block(b, only)?;
                     let mut out = Vec::new();
                     for s in stmts {
                         match s {
@@ -995,25 +982,8 @@ impl Cx<'_> {
             let sv::SubroutineCall::SystemTfCall(call) = &c.0 else {
                 return self.err(&c.0, only);
             };
-            let (name, args) = match call.as_ref() {
-                sv::SystemTfCall::ArgOptionl(a) => {
-                    let (name, args) = &a.nodes;
-                    match args.as_ref().map(|a| &a.nodes.1) {
-                        Some(sv::ListOfArguments::Ordered(a)) if a.nodes.1.is_empty() => {
-                            (name, a.nodes.0.contents())
-                        }
-                        _ => return self.err(&c.0, only),
-                    }
-                }
-                sv::SystemTfCall::ArgExpression(a) => {
-                    let (name, args) = &a.nodes;
-                    let (args, clocking) = &args.nodes.1;
-                    if clocking.is_some() {
-                        return self.err(&c.0, only);
-                    }
-                    (name, args.contents())
-                }
-                sv::SystemTfCall::ArgDataType(_) => return self.err(&c.0, only),
+            let Some((name, args)) = system_call(call) else {
+                return self.err(&c.0, only);
             };
             let task = self.text(name);
             let binary = match task.as_str() {

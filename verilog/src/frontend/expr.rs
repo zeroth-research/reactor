@@ -1,6 +1,6 @@
 //! Expressions: operator chains re-associated by precedence, operands, selects, literals.
 
-use super::{Cx, Result};
+use super::{Cx, Result, system_call};
 use crate::ast::{BinOp, Cast, Error, Expr, ExprKind, Index, Name, Select, Span, Ty, UnOp};
 use crate::constant::{self, Failure, Literal, X_HINT};
 use crate::value::BitVec;
@@ -510,26 +510,8 @@ impl Cx<'_> {
         let sv::SubroutineCall::SystemTfCall(call) = c else {
             return unsupported();
         };
-        let (name, args) = match call.as_ref() {
-            sv::SystemTfCall::ArgOptionl(a) => {
-                let (name, args) = &a.nodes;
-                let args = match args.as_ref().map(|a| &a.nodes.1) {
-                    Some(sv::ListOfArguments::Ordered(a)) if a.nodes.1.is_empty() => {
-                        a.nodes.0.contents()
-                    }
-                    _ => return unsupported(),
-                };
-                (name, args)
-            }
-            sv::SystemTfCall::ArgExpression(a) => {
-                let (name, args) = &a.nodes;
-                let (args, clocking) = &args.nodes.1;
-                if clocking.is_some() {
-                    return unsupported();
-                }
-                (name, args.contents())
-            }
-            sv::SystemTfCall::ArgDataType(_) => return unsupported(),
+        let Some((name, args)) = system_call(call) else {
+            return unsupported();
         };
         let name = self.text(name);
         let [Some(e)] = args.as_slice() else {
