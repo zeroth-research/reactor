@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.core.errors import Refused
-from reactor.lean.project.lakefile import (
+from reactor_lean.core.errors import Refused
+from reactor_lean.project.lakefile import (
     REACTLIB_ENV,
     REACTLIB_PACKAGES,
     REACTLIB_URL,
@@ -23,7 +23,7 @@ from reactor.lean.project.lakefile import (
     reactlib_checkout,
     with_reactlib,
 )
-from reactor.lean.project.templates import TEMPLATES_DIR, PROJECT_TEMPLATES_DIR
+from reactor_lean.project.templates import TEMPLATES_DIR, PROJECT_TEMPLATES_DIR
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -92,7 +92,7 @@ def test_a_reactlib_that_is_not_a_checkout_is_refused_before_the_project(
         monkeypatch, tmp_path):
     """Otherwise the lakefile points at nothing, and lake says so only when
     it is asked to build, long after the project was written."""
-    from reactor.lean.pipeline import main
+    from reactor_lean.pipeline import main
 
     monkeypatch.setenv(REACTLIB_ENV, str(tmp_path))
     with pytest.raises(Refused, match="is not a ReactLib checkout"):
@@ -154,8 +154,8 @@ def test_the_reductions_enumerate_with_ofFn_not_finRange():
 
 
 def _counter_ctx():
-    from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.inputs.python import load_module
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.inputs.python import load_module
 
     fixture = Path(__file__).parent / "fixtures" / "counter.py"
     return LeanContext(load_module(fixture))
@@ -167,14 +167,14 @@ def test_the_certificate_is_one_text_for_each_kind_of_property():
     rewritten -- by `reactor` or by anything else -- without the
     certificate, or `Module.lean`. Unproved, `Proofs.lean` states the
     obligations of the property's kind and nothing else."""
-    from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.core.certificate import Certificate, Claim
-    from reactor.lean.inputs.python import load_module
-    from reactor.lean.project.names import (
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.core.certificate import Certificate, Claim
+    from reactor_lean.inputs.python import load_module
+    from reactor_lean.project.names import (
         CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
     )
-    from reactor.lean.pipeline.certificate import render
-    from reactor.lean.proof.render import certificate_files
+    from reactor_lean.pipeline.certificate import render
+    from reactor_lean.proof.render import certificate_files
 
     counter = load_module(FIXTURES / "counter.py")
     twobit = load_module(FIXTURES / "twobit.py")
@@ -206,10 +206,10 @@ def test_each_obligation_is_stated_alike_in_both_files():
     """`Certificate.lean` takes each obligation's proof from `Proofs.lean`
     with `exact`, which checks the statements agree; they are written to,
     so that the check is a formality rather than a unification."""
-    from reactor.lean.core.certificate import Claim
-    from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
-    from reactor.lean.pipeline.certificate import render
-    from reactor.lean.proof.render import certificate_files
+    from reactor_lean.core.certificate import Claim
+    from reactor_lean.project.names import CERTIFICATE, PROOFS, cert_file
+    from reactor_lean.pipeline.certificate import render
+    from reactor_lean.proof.render import certificate_files
 
     ctx = _counter_ctx()
     for kind, names in (("buchi", ("init_inv", "step_inv", "hrank")),

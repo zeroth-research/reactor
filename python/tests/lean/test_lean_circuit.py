@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.codegen.encodings import ModuleToLean4
-from reactor.lean.project.names import LINTERS_OFF
+from reactor_lean.codegen.encodings import ModuleToLean4
+from reactor_lean.project.names import LINTERS_OFF
 from tests.agree import CORPUS
 
 _LEAN_DIR = Path(__file__).parent
@@ -92,7 +92,7 @@ def test_each_circuit_is_proved_to_be_its_functional_encoding(tmp_path):
 def test_a_wrong_box_is_caught(tmp_path, monkeypatch):
     """The check can fail: with `Sub`'s `Box` adding, the countdown's
     circuit counts up, and its `update` is no longer the functional one."""
-    from reactor.lean.lowering import ops
+    from reactor_lean.lowering import ops
 
     for key, row in list(ops._BY_KEY.items()):
         if key[1] == "Sub":

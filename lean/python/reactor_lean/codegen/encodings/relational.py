@@ -15,17 +15,17 @@ types differ by.
 
 from dataclasses import dataclass
 
-from reactor.lean.codegen.terms import (
+from reactor_lean.codegen.terms import (
     product_type,
     product_type_scalar,
     translate_terms_lean,
     translate_terms_scalar,
     reachable_terms,
 )
-from reactor.lean.lowering.sorts import dtype_to_lean_type
-from reactor.lean.lowering.elements import product_accessor, flat_layout
-from reactor.lean.codegen.context import LeanContext, bind_wires
-from reactor.lean.codegen.encodings.common import (
+from reactor_lean.lowering.sorts import dtype_to_lean_type
+from reactor_lean.lowering.elements import product_accessor, flat_layout
+from reactor_lean.codegen.context import LeanContext, bind_wires
+from reactor_lean.codegen.encodings.common import (
     has_block,
     scalar_eq_name,
     scalar_bindings_with_recon,
@@ -33,7 +33,7 @@ from reactor.lean.codegen.encodings.common import (
     flat_slice,
     effect_type,
 )
-from reactor.lean.codegen.encodings.skeleton import RelBlock, RelSyntax, emit_rel_block
+from reactor_lean.codegen.encodings.skeleton import RelBlock, RelSyntax, emit_rel_block
 
 
 @dataclass(frozen=True)

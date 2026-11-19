@@ -8,7 +8,7 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
-from reactor.lean.lowering.sorts import (
+from reactor_lean.lowering.sorts import (
     dtype_shape,
     is_scalar_shape,
     itype_name,
@@ -18,15 +18,15 @@ from reactor.lean.lowering.sorts import (
     flat_element_type,
     mat_mk,
 )
-from reactor.lean.lowering.elements import flat_indices, flat_layout
-from reactor.lean.codegen.literals import (
+from reactor_lean.lowering.elements import flat_indices, flat_layout
+from reactor_lean.codegen.literals import (
     ConstantRegistry,
     constant_expr,
     linear_list_literals,
     tensor_to_lean_scalar,
     tensor_to_lean_inline,
 )
-from reactor.lean.lowering.ops import lean_gap, mat_emitter, scalar_emitter
+from reactor_lean.lowering.ops import lean_gap, mat_emitter, scalar_emitter
 
 from reactor import Wire
 

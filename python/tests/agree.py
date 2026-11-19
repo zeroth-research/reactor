@@ -21,7 +21,7 @@ import torch
 
 from reactor import Bool, BitVec, Int, Real, X
 from reactor.eval import execute_init, execute_update
-from reactor.lean.lowering.sorts import wire_shape
+from reactor_lean.lowering.sorts import wire_shape
 
 TESTS = Path(__file__).parent
 
@@ -42,7 +42,7 @@ def _corpus() -> dict:
     """Name -> a function building the module: loaded the way `verith`
     loads a Python input, so a fixture returning a `Named` module is the
     module it names."""
-    from reactor.lean.inputs.python import load_module as _load
+    from reactor_lean.inputs.python import load_module as _load
 
     out = {}
     for p in sorted((TESTS / "limits" / "mods").glob("m_*.py")):
@@ -227,8 +227,8 @@ def disagreements_smt(module, *, seed: int = 0) -> list[str]:
     cvc5's rewriter at the same state and inputs, lands somewhere else."""
     import cvc5
 
-    from reactor.lean.smt.encode import tensor_const
-    from reactor.lean.smt.module import ModuleSMT, keep_alive
+    from reactor_lean.smt.encode import tensor_const
+    from reactor_lean.smt.module import ModuleSMT, keep_alive
 
     rounds = runs(module, seed=seed)
     tm = cvc5.TermManager()
@@ -284,9 +284,9 @@ def _lean_value(wire, tensor) -> str:
     """`tensor` as a Lean `Matrix` literal of `wire`'s sort, in the form the
     encoding prints its own constants in
     (`lowering.elements.mat_from_scalars`)."""
-    from reactor.lean.lowering.elements import mat_from_scalars
-    from reactor.lean.codegen.literals import lean_literal
-    from reactor.lean.lowering.sorts import flat_element_type
+    from reactor_lean.lowering.elements import mat_from_scalars
+    from reactor_lean.codegen.literals import lean_literal
+    from reactor_lean.lowering.sorts import flat_element_type
 
     elems = [lean_literal(wire.dtype, v) for v in flat(wire, tensor)]
     return mat_from_scalars(elems, wire_shape(wire), flat_element_type(wire))
@@ -311,10 +311,10 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     row-major. Raises `Skip` for a module Lean cannot run: a Real is
     noncomputable, and a module with no Lean form has nothing to run.
     """
-    from reactor.lean.lowering.elements import flat_layout
-    from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.codegen.terms import build_tuple, lean_gaps
-    from reactor.lean.codegen.encodings import ModuleToLean4
+    from reactor_lean.lowering.elements import flat_layout
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.codegen.terms import build_tuple, lean_gaps
+    from reactor_lean.codegen.encodings import ModuleToLean4
 
     wires = list(module.ctrl) + list(module.extl)
     if any(isinstance(w.dtype, Real) for w in wires):

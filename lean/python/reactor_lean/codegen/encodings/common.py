@@ -1,8 +1,8 @@
 """Shared helpers used by multiple translate sub-modules."""
 
-from reactor.lean.lowering.sorts import dtype_to_lean_type, flat_element_type, wire_shape
-from reactor.lean.lowering.elements import FlatLayout, product_accessor, mat_from_scalars, flat_layout
-from reactor.lean.codegen.terms import build_tuple, product_type_scalar
+from reactor_lean.lowering.sorts import dtype_to_lean_type, flat_element_type, wire_shape
+from reactor_lean.lowering.elements import FlatLayout, product_accessor, mat_from_scalars, flat_layout
+from reactor_lean.codegen.terms import build_tuple, product_type_scalar
 
 
 def has_block(ctx, block: str) -> bool:

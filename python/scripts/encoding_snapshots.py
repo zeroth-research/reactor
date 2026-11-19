@@ -46,12 +46,12 @@ def _write(out: Path, name: str, produce) -> None:
 
 
 def snapshot(path: Path, out: Path) -> None:
-    from reactor.lean import inputs
-    from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.codegen.terms import lean_gaps
-    from reactor.lean.project.scaffold import ENCODINGS
-    from reactor.lean.proof.render import generate_standalone_cert_lean
-    from reactor.lean.codegen.encodings import ModuleToLean4
+    from reactor_lean import inputs
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.codegen.terms import lean_gaps
+    from reactor_lean.project.scaffold import ENCODINGS
+    from reactor_lean.proof.render import generate_standalone_cert_lean
+    from reactor_lean.codegen.encodings import ModuleToLean4
 
     out.mkdir(parents=True, exist_ok=True)
     try:

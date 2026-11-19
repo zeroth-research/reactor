@@ -15,10 +15,10 @@ import pytest
 import torch
 
 from reactor import BV, LIA, LRA, BitVec, Bool, Int, Module, Real, Term, Var, X
-from reactor.lean.core.errors import Unreadable
-from reactor.lean.lowering.sorts import itype_name
-from reactor.lean.parse.formula import family
-from reactor.lean.parse.smtlib import Scope, read_smtlib
+from reactor_lean.core.errors import Unreadable
+from reactor_lean.lowering.sorts import itype_name
+from reactor_lean.parse.formula import family
+from reactor_lean.parse.smtlib import Scope, read_smtlib
 
 
 def _mixed() -> Module:
@@ -117,9 +117,9 @@ AGREED = [
 @pytest.mark.parametrize("src", AGREED)
 def test_the_native_reading_is_cvc5s(src):
     cvc5 = pytest.importorskip("cvc5")
-    from reactor.lean.smt.encode import translate_terms
-    from reactor.lean.smt.module import ModuleSMT
-    from reactor.lean.smt.predicates import PredicateParser, parse_predicate
+    from reactor_lean.smt.encode import translate_terms
+    from reactor_lean.smt.module import ModuleSMT
+    from reactor_lean.smt.predicates import PredicateParser, parse_predicate
 
     tm = cvc5.TermManager()
     env = PredicateParser(ModuleSMT(tm=tm, module=MODULE))
@@ -207,7 +207,7 @@ def test_what_it_cannot_read_it_says_why(src, why):
 def test_reading_loads_no_solver():
     """The point of the native parser: reading a predicate imports no cvc5."""
     code = ("import sys, torch\n"
-            "from reactor.lean.parse import smtlib\n"
+            "from reactor_lean.parse import smtlib\n"
             "print('cvc5' in sys.modules)")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True,
                          text=True, check=True).stdout

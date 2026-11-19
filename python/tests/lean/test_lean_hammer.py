@@ -329,7 +329,7 @@ def test_generated_executable_builds_and_runs(
     import sys
     import tempfile
 
-    from reactor.lean.project.lakefile import reactlib_checkout, with_reactlib
+    from reactor_lean.project.lakefile import reactlib_checkout, with_reactlib
 
     packages = _LEAN_DIR / ".lake" / "packages"
     manifest = _LEAN_DIR / "lake-manifest.json"
@@ -346,9 +346,9 @@ def test_generated_executable_builds_and_runs(
         module_def = importlib.import_module(fixture).module()
     finally:
         sys.path.pop(0)
-    from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.project.scaffold import create_project
-    from reactor.lean.proof.render import certificate_files
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.project.scaffold import create_project
+    from reactor_lean.proof.render import certificate_files
 
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)

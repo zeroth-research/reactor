@@ -18,9 +18,9 @@ import pytest
 
 pytest.importorskip("cvc5")
 
-from reactor.lean.core.errors import PredicateRefused
-from reactor.lean.inputs.python import load_module
-from reactor.lean.smt.encoding import ModuleEncoding
+from reactor_lean.core.errors import PredicateRefused
+from reactor_lean.inputs.python import load_module
+from reactor_lean.smt.encoding import ModuleEncoding
 
 MODS = Path(__file__).parent / "limits" / "mods"
 

@@ -11,7 +11,7 @@ nothing else in the project depends on but the certificate's `exact`s.
 Quick start
 -----------
 A *module file* is a Python file that defines a ``module()`` function (or
-class) returning a :class:`reactor.Module` (or a ``reactor.lean.inputs.Named``
+class) returning a :class:`reactor.Module` (or a ``reactor_lean.inputs.Named``
 one, for claims in its own names), or another format ``--format`` lists.
 
 Generate a bare Lean project (all certificate fields left as ``sorry``)::
@@ -30,7 +30,7 @@ contains::
 
 A claim is written in the module's own terms: ``(X x)`` is the value of ``x``
 after the round.  Names like ``x`` come from a module file that returns
-``reactor.lean.inputs.Named(module, {"x": var})``, and ``(X @intf.0)`` names
+``reactor_lean.inputs.Named(module, {"x": var})``, and ``(X @intf.0)`` names
 interface variable 0 by position, which works for any module.
 
 Supply the certificate's predicates::

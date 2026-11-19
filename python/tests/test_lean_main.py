@@ -10,8 +10,8 @@ import torch
 import pytest
 
 from reactor import Term, Module, Int, Bool, BitVec, Real, LIA, LRA, BV, Var, X
-from reactor.lean.project.main_lean import generate_main_lean
-from reactor.lean.codegen.encodings import ModuleToLean4
+from reactor_lean.project.main_lean import generate_main_lean
+from reactor_lean.codegen.encodings import ModuleToLean4
 
 
 def _module_with_extl():

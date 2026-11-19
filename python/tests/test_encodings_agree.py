@@ -47,7 +47,7 @@ def test_a_wrong_emitter_is_caught(monkeypatch):
     proves nothing about the encodings that pass it."""
     import dataclasses
 
-    from reactor.lean.smt import encode as smt_encode
+    from reactor_lean.smt import encode as smt_encode
 
     real = smt_encode.smt_emitter
 

@@ -40,7 +40,7 @@ def verith(capsys, *argv) -> tuple[int, str, str]:
 
 def reactor(monkeypatch, capsys, *argv) -> str:
     """`reactor *argv`, in process; its stdout."""
-    from reactor.lean.pipeline import main
+    from reactor_lean.pipeline import main
 
     monkeypatch.setattr(sys, "argv", ["reactor", *map(str, argv)])
     main()

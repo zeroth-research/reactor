@@ -11,11 +11,11 @@ from pathlib import Path
 import cvc5
 import pytest
 
-from reactor.lean.smt.module import ModuleSMT
-from reactor.lean.inputs.python import load_module
-from reactor.lean.core.errors import Unreadable
-from reactor.lean.parse.dsl import NotPredicate, evaluate
-from reactor.lean.smt.predicates import (
+from reactor_lean.smt.module import ModuleSMT
+from reactor_lean.inputs.python import load_module
+from reactor_lean.core.errors import Unreadable
+from reactor_lean.parse.dsl import NotPredicate, evaluate
+from reactor_lean.smt.predicates import (
     PredicateParser,
     _pyeval_namespace,
     parse_predicate,
@@ -127,7 +127,7 @@ def test_the_dsl_says_what_is_wrong_with_a_predicate_in_it(src, why):
 
 def test_a_fault_in_the_dsl_itself_is_not_a_parse_error(monkeypatch):
     """A bug raises as itself instead of reading as "could not parse"."""
-    import reactor.lean.smt.predicates as predicates
+    import reactor_lean.smt.predicates as predicates
 
     def broken(src, ns):
         raise AttributeError("a bug")
@@ -141,9 +141,9 @@ def test_nor_is_it_refused_as_the_claim(monkeypatch):
     """One layer up, `ModuleEncoding.parse` and `predicate_terms` caught
     everything, so the same bug printed as `--buchi: cannot read ...` and
     lost its traceback."""
-    import reactor.lean.smt.predicates as predicates
-    from reactor.lean.core.certificate import Claim
-    from reactor.lean.smt.queries import predicate_terms
+    import reactor_lean.smt.predicates as predicates
+    from reactor_lean.core.certificate import Claim
+    from reactor_lean.smt.queries import predicate_terms
 
     def broken(src, ns):
         raise AttributeError("a bug")

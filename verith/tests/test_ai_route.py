@@ -4,7 +4,7 @@ import os
 import subprocess
 import pytest
 
-from reactor.lean.core.certificate import Claim, LeanAnswer
+from reactor_lean.core.certificate import Claim, LeanAnswer
 from verith.ai.engine import AiEngine
 
 COUNTER_SOURCE = """\
@@ -97,7 +97,7 @@ def test_a_real_valued_state_is_named_too():
 
     from reactor import LRA, Module, Real, Term, Var, X
     from verith.ai.engine import _state_type_line
-    from reactor.lean.codegen.encodings import ModuleToLean4
+    from reactor_lean.codegen.encodings import ModuleToLean4
 
     s = Var(Real([1, 1]))
     module = Module.sequential(

@@ -1,7 +1,7 @@
 """The `uv run certify` command line: `reactor`'s flags, `--infer` and
 the proofs' flags.
 
-`reactor`'s groups, checks and fields (`reactor.lean.cli`), with the
+`reactor`'s groups, checks and fields (`reactor_lean.cli`), with the
 routes' and the proofs' flags and rules (`verith.flags`) in the places
 today's command line has them. What the pipeline gets back is
 :class:`Settings`: `reactor`'s, the route the run selected, and what is
@@ -13,16 +13,16 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 
-from reactor.lean.cli import Settings as ReactorSettings
-from reactor.lean.cli import claim_deferred, settings_fields
-from reactor.lean.cli.checks import (
+from reactor_lean.cli import Settings as ReactorSettings
+from reactor_lean.cli import claim_deferred, settings_fields
+from reactor_lean.cli.checks import (
     check_blanks,
     check_claim_flags,
     check_input_options,
     check_outputs,
     input_adapter,
 )
-from reactor.lean.cli.parser import add_claim, add_input, add_outputs
+from reactor_lean.cli.parser import add_claim, add_input, add_outputs
 from verith.common.limits import SmtBudget
 from verith import InferRoute
 from verith.flags import (
@@ -150,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
 def parse_args(argv: "list[str] | None" = None, *,
                defer_claim: bool = True) -> Settings:
     """The command line as `Settings`; `defer_claim` as in
-    `reactor.lean.cli.parse_args`."""
+    `reactor_lean.cli.parse_args`."""
     parser = build_parser()
     args = parser.parse_args(argv)
 

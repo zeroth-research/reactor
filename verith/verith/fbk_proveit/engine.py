@@ -46,10 +46,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.core.certificate import Claim
-from reactor.lean.core.errors import Refused
-from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.core.certificate import Claim
+from reactor_lean.core.errors import Refused
+from reactor_lean.project.names import CERTIFICATE, PROOFS, cert_file
 from . import EQUIVALENCE, PROVEIT_DIR
 from ..proofs.build import stream
 from .na import (
@@ -369,7 +369,7 @@ def property_to_bool_lean(module, property_smt: str, encoding=None,
     `LeanContext`, or one built here). `encoding` is the run's
     `Encoding`, which the property is read on.
     """
-    from reactor.lean.codegen.context import LeanContext
+    from reactor_lean.codegen.context import LeanContext
     from ..common.encoding import Encoding
     from .to_bool import smt_to_lean_bool
     from .na import slot_accessors

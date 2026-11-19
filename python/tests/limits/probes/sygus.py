@@ -24,8 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cvc5
 from cvc5 import Kind
 
-from reactor.lean.smt.module import ModuleSMT
-from reactor.lean.smt.predicates import PredicateParser, parse_predicate
+from reactor_lean.smt.module import ModuleSMT
+from reactor_lean.smt.predicates import PredicateParser, parse_predicate
 
 CASES = [
     ("m_countdown", "(= s0 0)", "(and (>= s0 0) (<= s0 100))"),

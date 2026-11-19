@@ -24,8 +24,8 @@ import pytest
 import torch
 
 from reactor import Int, Term, Module, LIA, Var, X
-from reactor.lean import ModuleToLean4
-from reactor.lean.smt.encode import _argmax_flat, MatShape, elem_sort
+from reactor_lean import ModuleToLean4
+from reactor_lean.smt.encode import _argmax_flat, MatShape, elem_sort
 
 
 # (row, expected) — expected is torch's answer, computed below to keep the
@@ -174,7 +174,7 @@ def test_codegen_guard_still_states_the_one_index_contract():
     Kept so the contract is stated where the Lean is emitted: both variants
     produce a 1×1 `Matrix`, so a wider wire cannot be served.
     """
-    from reactor.lean.codegen.terms import check_argmax_output
+    from reactor_lean.codegen.terms import check_argmax_output
 
     check_argmax_output([1, 1])  # the only shape argmax can fill
     check_argmax_output(None)  # opt out
@@ -189,7 +189,7 @@ def test_scalar_argmax_variants_are_named_per_element_type():
     Naming by `n` alone emitted two `def argmax1d_scalar_4` and two `_eq`
     theorems into one file for an Int and a Real Argmax of equal width.
     """
-    from reactor.lean.codegen.terms import argmax_scalar_name
+    from reactor_lean.codegen.terms import argmax_scalar_name
 
     names = {
         argmax_scalar_name(ety, 4)
@@ -206,7 +206,7 @@ def test_scalar_argmax_variants_are_named_per_element_type():
 def test_same_width_variants_emit_distinct_definitions():
     """Two element types at one width must not produce one name twice."""
     import re
-    from reactor.lean.codegen.encodings.scalar import _argmax_scalar_def_lines
+    from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 
     src = "\n".join(
         _argmax_scalar_def_lines("Int", 4) + _argmax_scalar_def_lines("Real", 4)

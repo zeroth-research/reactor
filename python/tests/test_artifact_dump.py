@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.artifacts import ArtifactStore
+from reactor_lean.artifacts import ArtifactStore
 
 PY_DIR = Path(__file__).parent.parent
 MODULE = PY_DIR / "tests" / "limits" / "mods" / "m_countdown.py"

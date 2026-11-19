@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean import inputs
+from reactor_lean import inputs
 from reactor.smv import SMVRefused, parse_smv, read_smv
 from tests.reactor_cli import reactor
 

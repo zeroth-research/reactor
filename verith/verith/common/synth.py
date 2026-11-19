@@ -52,10 +52,10 @@ from typing import TYPE_CHECKING
 
 from .claim import SynthContext, reading_kind
 from .record import GaveUp, found
-from reactor.lean.smt.encode import tuple_select
+from reactor_lean.smt.encode import tuple_select
 from .smtlib import decimals, smt_lit
 from .terms import free_constants, literals
-from reactor.lean.smt.terms import nodes
+from reactor_lean.smt.terms import nodes
 
 from cvc5 import Kind
 

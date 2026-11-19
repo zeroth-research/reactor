@@ -1,6 +1,6 @@
 # `verith` — inferring the certificate, and proving it
 
-`reactor` (the [`python/`](../python/reactor/lean/README.md) project) turns a reactive module and a
+`reactor` (the [`lean/`](../lean/python/reactor_lean/README.md) project) turns a reactive module and a
 property into a Lean project whose `lake build` checks a proof of the
 property, given the proof's certificate: an inductive invariant, and for a
 Büchi property a ranking function. `reactor` states the obligations and
@@ -244,7 +244,7 @@ new one.
 
 ### Flags
 
-`certify` takes every flag of `reactor`'s ([Key flags](../python/reactor/lean/README.md#key-flags));
+`certify` takes every flag of `reactor`'s ([Key flags](../lean/python/reactor_lean/README.md#key-flags));
 `verith` takes its input, claim and `--artifacts` flags, and neither the
 project's (`-o`, `-p`, `-x`) nor `--cert-file`. Besides those they take the
 proofs' flags ([The proofs](#the-proofs-verithproofs)), and:

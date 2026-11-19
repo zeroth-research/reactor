@@ -17,10 +17,10 @@ import pytest
 import torch
 
 from reactor import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-from reactor.lean.inputs.python import load_module
-from reactor.lean.proof.render import (
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.inputs.python import load_module
+from reactor_lean.proof.render import (
     generate_proofs_lean,
     generate_standalone_cert_lean,
     render_certificate,

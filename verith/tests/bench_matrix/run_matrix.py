@@ -51,10 +51,10 @@ sys.path.insert(0, str(VR))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
 from verith.proofs.build import without_cascades
-from reactor.lean.project.lakefile import (  # noqa: E402
+from reactor_lean.project.lakefile import (  # noqa: E402
     REACTLIB_ENV, reactlib_checkout, with_reactlib,
 )
-from reactor.lean.inputs import to_surface  # noqa: E402
+from reactor_lean.inputs import to_surface  # noqa: E402
 
 # The ReactLib checkout every project requires by path, so a pass
 # measures the libraries on disk; the `verith` runs below inherit it.

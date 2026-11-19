@@ -1,10 +1,10 @@
-"""Claims in the reactive module's own terms: `reactor.lean.inputs.names`."""
+"""Claims in the reactive module's own terms: `reactor_lean.inputs.names`."""
 
 from pathlib import Path
 
 import pytest
 
-from reactor.lean.inputs import ClaimError, Names, load, to_internal, to_surface
+from reactor_lean.inputs import ClaimError, Names, load, to_internal, to_surface
 from tests.reactor_cli import reactor
 
 FIXTURES = Path(__file__).parent / "fixtures"

@@ -123,6 +123,7 @@ Crates are structured as follows.
 ```sh
  - base      # core data-structures
  - python    # Python API to access the crates
+ - lean      # Reactive modules to Lean 4: the `reactor` command (`lean/python/reactor_lean`)
  - tutorials # Tutorials and use cases
  ```
 

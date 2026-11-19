@@ -13,15 +13,15 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.core.errors import PredicateRefused, Unreadable
-from reactor.lean.inputs.python import load_module
-from reactor.lean.lowering.sorts import itype_name
-from reactor.lean.parse import dsl
-from reactor.lean.parse.formula import Builder
-from reactor.lean.parse.native import (
+from reactor_lean.core.errors import PredicateRefused, Unreadable
+from reactor_lean.inputs.python import load_module
+from reactor_lean.lowering.sorts import itype_name
+from reactor_lean.parse import dsl
+from reactor_lean.parse.formula import Builder
+from reactor_lean.parse.native import (
     ModuleWires, NativeParser, namespace, parse_predicate,
 )
-from reactor.lean.parse.smtlib import Elaborator
+from reactor_lean.parse.smtlib import Elaborator
 
 MODS = Path(__file__).parent / "limits" / "mods"
 
@@ -117,7 +117,7 @@ def test_the_syntax_says_what_is_wrong_with_a_predicate_in_it(src, why):
 
 
 def test_a_fault_in_the_syntax_itself_is_not_a_parse_error(monkeypatch):
-    import reactor.lean.parse.native as native
+    import reactor_lean.parse.native as native
 
     def broken(src, ns):
         raise AttributeError("a bug")
@@ -168,7 +168,7 @@ def test_a_native_run_loads_no_solver(tmp_path):
         "-o", str(tmp_path), "-p", "G", "--parser", "native",
     ]
     code = ("import sys, torch\n"
-            "from reactor.lean.pipeline import main\n"
+            "from reactor_lean.pipeline import main\n"
             f"sys.argv = {argv!r}\n"
             "main()\n"
             "print('cvc5' in sys.modules)")

@@ -13,14 +13,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from reactor.lean.smt.terms import min_max_of, nodes, state_dependent
+from reactor_lean.smt.terms import min_max_of, nodes, state_dependent
 
 from ..common import obligations as ob
 from ..common.encoding import solver_for
 from ..common.terms import ite_conditions
 
 if TYPE_CHECKING:
-    from reactor.lean.smt.queries import ModuleQueries
+    from reactor_lean.smt.queries import ModuleQueries
 
     from ..common.limits import SmtBudget
 

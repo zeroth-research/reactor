@@ -1,10 +1,10 @@
-"""The certificate types (`reactor.lean.core.certificate`)."""
+"""The certificate types (`reactor_lean.core.certificate`)."""
 
 from dataclasses import FrozenInstanceError
 
 import pytest
 
-from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
 
 
 def test_the_types_are_values():

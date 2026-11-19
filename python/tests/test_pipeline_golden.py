@@ -28,18 +28,18 @@ import pytest
 import torch
 
 from reactor import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from reactor.lean.proof.render import (
+from reactor_lean.proof.render import (
     generate_certificate_lean,
     generate_data_lean,
     generate_module_lean,
     generate_proofs_lean,
     generate_standalone_cert_lean,
 )
-from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-from reactor.lean.parse import PARSERS
-from reactor.lean.pipeline.certificate import render
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.inputs.python import load_module
+from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.parse import PARSERS
+from reactor_lean.pipeline.certificate import render
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.inputs.python import load_module
 
 pytest.importorskip("cvc5")
 
@@ -260,7 +260,7 @@ def _index(path: Path) -> str:
 
 
 def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
-    from reactor.lean.pipeline import main
+    from reactor_lean.pipeline import main
 
     out = tmp_path / "out"
     argv = [a.replace("{out}", str(out)) for a in args]
@@ -305,7 +305,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
 
 def _count_encodings(monkeypatch) -> list:
     """Counts each `ModuleSMT` built from here on, in a one-element list."""
-    from reactor.lean.smt.module import ModuleSMT
+    from reactor_lean.smt.module import ModuleSMT
 
     built = [0]
     post_init = ModuleSMT.__post_init__

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.errors import Refused
 from ..common.claim import SynthContext
 from ..common.obligations import bound
 from ..common.limits import bounded_solver, call_ms

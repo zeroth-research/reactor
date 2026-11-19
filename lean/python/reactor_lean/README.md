@@ -1,4 +1,4 @@
-# `reactor/lean` — Lean 4 Certificate Generation
+# `reactor_lean` — Lean 4 Certificate Generation
 
 `uv run reactor` takes a reactive module and a property of it, and ends with a
 Lean project in which `lake build` checks a proof of the property. The proof
@@ -189,7 +189,7 @@ layer.
 
 | Package | What it holds |
 |------|------|
-| `core/` | The vocabulary every layer is written in, importing nothing of `reactor.lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares) |
+| `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares) |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) |
 | `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
@@ -505,7 +505,7 @@ def module() -> Module:
 ```
 
 To write claims in the module's own names (`--safety "(<= (X x) 9)"`), return
-`reactor.lean.inputs.Named(module, {"x": state})` instead of the bare module.
+`reactor_lean.inputs.Named(module, {"x": state})` instead of the bare module.
 
 ### SMV input (`--format smv`, `.smv`)
 
@@ -650,8 +650,8 @@ Python-DSL aliases `s`, `e`, `el`) are refused there.
 
 An interface variable's latched value cannot be named yet. A name like `x`
 comes from an input that provides one (a module file returning
-`reactor.lean.inputs.Named(module, {"x": var})`); `@intf.N` works for any
-module. `reactor.lean.inputs.to_surface(text)` turns internal text into this
+`reactor_lean.inputs.Named(module, {"x": var})`); `@intf.N` works for any
+module. `reactor_lean.inputs.to_surface(text)` turns internal text into this
 spelling. A run prints one `.. --FLAG, in internal names: ...` line
 per claim flag it was given. Everything past the command line (`Claim`,
 `Certificate`, SMT, Lean, `artifacts/`) still uses the internal names below.
@@ -671,7 +671,7 @@ and a cell for each of `mat`, `scalar`, `box` and `smt`.  A cell is an
 emitter, or `ViaMat`/`Inline`/`Unsupported` saying why it is not one —
 `Unsupported`'s reason is what the caller is told when it hits the gap.
 
-`python -m reactor.lean.lowering.ops` prints the whole matrix and every gap in it.
+`python -m reactor_lean.lowering.ops` prints the whole matrix and every gap in it.
 `tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
 directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.

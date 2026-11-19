@@ -3,9 +3,9 @@
 import pytest
 import torch
 from reactor import Wire, Term, Module, Sort as dt, LIA as it, Bool, Int
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.project.scaffold import create_project
-from reactor.lean.proof.render import certificate_files
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.project.scaffold import create_project
+from reactor_lean.proof.render import certificate_files
 
 from reactor.expr import Expr, Bool as BoolConst
 

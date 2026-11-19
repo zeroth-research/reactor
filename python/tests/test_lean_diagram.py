@@ -3,11 +3,11 @@
 import pytest
 import torch
 from reactor import Wire, Term, Module, Bool, Int, LIA, Var, X
-from reactor.lean import ModuleToLean4
-from reactor.lean.lowering.sorts import itype_name
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.proof.render import certificate_files
-from reactor.lean.project.main_lean import generate_main_lean
+from reactor_lean import ModuleToLean4
+from reactor_lean.lowering.sorts import itype_name
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.proof.render import certificate_files
+from reactor_lean.project.main_lean import generate_main_lean
 
 
 def test_itype_name_strips_prefix():
@@ -256,7 +256,7 @@ def test_certificate_bool_has_theorems():
 
 
 def test_data_lean_has_sorry_when_no_property():
-    from reactor.lean.proof.render import generate_data_lean
+    from reactor_lean.proof.render import generate_data_lean
     m = _make_twobitcounter()
     ctx = LeanContext(m)
     data = generate_data_lean(ctx)
@@ -495,7 +495,7 @@ def test_effect_gets_only_the_reconstructions_it_uses():
 
 def test_recon_filter_keeps_order_and_transitive_uses():
     """The filter is order-preserving and reaches a fixed point."""
-    from reactor.lean.codegen.encodings.common import _needed_recon
+    from reactor_lean.codegen.encodings.common import _needed_recon
 
     lets = [
         "  let _m0 : T := f extl_l",
@@ -533,8 +533,8 @@ def test_stateless_module_defines_init_and_update_as_unit():
 
 def test_unbound_block_output_raises():
     """An output no term writes and no input binds has no Lean value."""
-    from reactor.lean.codegen.literals import ConstantRegistry
-    from reactor.lean.codegen.terms import translate_terms_lean, translate_terms_scalar
+    from reactor_lean.codegen.literals import ConstantRegistry
+    from reactor_lean.codegen.terms import translate_terms_lean, translate_terms_scalar
 
     out = [Wire(Int([1, 1]))]
     with pytest.raises(ValueError, match="written by no term"):
@@ -558,8 +558,8 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
     than silently dropping the theorems or the argmax lemmas."""
     from pathlib import Path
 
-    from reactor.lean.codegen.encodings import ModuleToLean4
-    from reactor.lean.inputs.python import load_module
+    from reactor_lean.codegen.encodings import ModuleToLean4
+    from reactor_lean.inputs.python import load_module
 
     module = load_module(Path(__file__).parent / "limits" / "mods" / f"{mod}.py")
 
