@@ -1,7 +1,7 @@
 //! Arrays: element selects, `$readmemb`/`$readmemh`, and resolving element accesses once all
 //! declarations are known.
 
-use super::{Cx, Result};
+use super::{Cx, Result, system_call};
 use crate::ast::{
     self, Array, Elem, Elems, Error, Expr, ExprKind, Index, Init, Item, Lvalue, LvalueKind, Module,
     Name, Rom, Select, Span, Stmt, StmtKind,
@@ -95,15 +95,9 @@ pub(super) fn readmem(
     Ok(values)
 }
 
-/// Resolves the elements of arrays in `m` once all of its items are known
-/// (an array is a ROM if `initial` loads it and nothing writes it, possibly
-/// after its uses): a ROM's elements are its contents, every one given by
-/// the file; the element `m[3]` of any other array is the signal `m[3]`,
-/// and `m[i]` with a variable index any of its element signals. A file
-/// loaded into a written array gives initial values to its elements.
-pub(super) fn resolve(m: &mut Module, loads: Vec<Load>) -> Result<()> {
-    // the arrays assigned anywhere (before resolving, every access to an
-    // array is an element)
+/// The arrays assigned anywhere in `m` (before resolving, every access to
+/// an array is an element).
+fn written_arrays(m: &Module) -> BTreeSet<Name> {
     let mut written = BTreeSet::new();
     for item in &m.items {
         let mut targets = Vec::new();
@@ -124,52 +118,63 @@ pub(super) fn resolve(m: &mut Module, loads: Vec<Load>) -> Result<()> {
             }
         }
     }
-    for load in loads {
-        let a = m
-            .arrays
-            .iter_mut()
-            .find(|a| a.name == load.array)
-            .expect("a declared array");
-        if written.contains(&a.name) {
-            for (k, v) in load.values.into_iter().enumerate() {
-                let Some(value) = v else { continue };
-                let target = ast::element(&a.name, k);
-                if let Some(i) = m.inits.iter().find(|i| i.target == target) {
-                    return Err(Error::new(
-                        i.span,
-                        format!("`{target}` already has an initial value at {}", load.span),
-                    ));
-                }
-                let value = Expr {
-                    kind: ExprKind::Lit { ty: a.ty, value },
-                    span: load.span,
-                };
-                m.inits.push(Init {
-                    target,
-                    value,
-                    span: load.span,
-                });
+    written
+}
+
+/// Applies the file `load` to its array of `m`: initial values of the
+/// elements if the array is among the `written` ones, else its contents
+/// as a ROM.
+fn apply_load(m: &mut Module, load: Load, written: &BTreeSet<Name>) -> Result<()> {
+    let a = m
+        .arrays
+        .iter_mut()
+        .find(|a| a.name == load.array)
+        .expect("a declared array");
+    if written.contains(&a.name) {
+        for (k, v) in load.values.into_iter().enumerate() {
+            let Some(value) = v else { continue };
+            let target = ast::element(&a.name, k);
+            if let Some(i) = m.inits.iter().find(|i| i.target == target) {
+                return Err(Error::new(
+                    i.span,
+                    format!("`{target}` already has an initial value at {}", load.span),
+                ));
             }
-            continue;
+            let value = Expr {
+                kind: ExprKind::Lit { ty: a.ty, value },
+                span: load.span,
+            };
+            m.inits.push(Init {
+                target,
+                value,
+                span: load.span,
+            });
         }
-        if let Some(k) = load.values.iter().position(Option::is_none) {
-            return Err(Error::new(
-                load.span,
-                format!(
-                    "{}: no value for `{}` (every element of an array that is never written \
-                     needs one: it is a ROM)",
-                    load.path.display(),
-                    ast::element(&a.name, k)
-                ),
-            ));
-        }
-        a.rom = Some(Rom {
-            binary: load.binary,
-            file: load.file,
-            values: load.values.into_iter().flatten().collect(),
-            span: load.span,
-        });
+        return Ok(());
     }
+    if let Some(k) = load.values.iter().position(Option::is_none) {
+        return Err(Error::new(
+            load.span,
+            format!(
+                "{}: no value for `{}` (every element of an array that is never written \
+                 needs one: it is a ROM)",
+                load.path.display(),
+                ast::element(&a.name, k)
+            ),
+        ));
+    }
+    a.rom = Some(Rom {
+        binary: load.binary,
+        file: load.file,
+        values: load.values.into_iter().flatten().collect(),
+        span: load.span,
+    });
+    Ok(())
+}
+
+/// Checks the initial values of elements of arrays in `m`: inside the
+/// array, and not of a ROM.
+fn element_inits(m: &Module) -> Result<()> {
     for i in &m.inits {
         let Some((name, k)) = i.target.split_once('[') else {
             continue;
@@ -197,6 +202,21 @@ pub(super) fn resolve(m: &mut Module, loads: Vec<Load>) -> Result<()> {
             ));
         }
     }
+    Ok(())
+}
+
+/// Resolves the elements of arrays in `m` once all of its items are known
+/// (an array is a ROM if `initial` loads it and nothing writes it, possibly
+/// after its uses): a ROM's elements are its contents, every one given by
+/// the file; the element `m[3]` of any other array is the signal `m[3]`,
+/// and `m[i]` with a variable index any of its element signals. A file
+/// loaded into a written array gives initial values to its elements.
+pub(super) fn resolve(m: &mut Module, loads: Vec<Load>) -> Result<()> {
+    let written = written_arrays(m);
+    for load in loads {
+        apply_load(m, load, &written)?;
+    }
+    element_inits(m)?;
     let arrays: BTreeMap<Name, Array> = m
         .arrays
         .iter()
@@ -432,5 +452,78 @@ impl Cx<'_> {
             return self.err(id, "an array needs at least one element");
         }
         Ok(Some(size))
+    }
+}
+
+impl Cx<'_> {
+    /// A call `$readmemb("file", m);` or `$readmemh(…)` in an `initial`
+    /// (anything else is rejected with `only`): reads the file and records
+    /// the words for the array `m`.
+    pub(super) fn load(&self, c: &sv::SubroutineCallStatement, only: &str) -> Result<()> {
+        let sv::SubroutineCallStatement::SubroutineCall(c) = c else {
+            return self.err(c, only);
+        };
+        let sv::SubroutineCall::SystemTfCall(call) = &c.0 else {
+            return self.err(&c.0, only);
+        };
+        let Some((name, args)) = system_call(call) else {
+            return self.err(&c.0, only);
+        };
+        let task = self.text(name);
+        let binary = match task.as_str() {
+            "$readmemb" => true,
+            "$readmemh" => false,
+            _ => return self.err(&c.0, only),
+        };
+        let span = self.span(&c.0);
+        let (file, m) = match args.as_slice() {
+            [Some(f), Some(m)] => (f, m),
+            [_, _, _, ..] => {
+                return self.err(
+                    &c.0,
+                    format!("`{task}` with start and end addresses not supported"),
+                );
+            }
+            _ => return self.err(&c.0, format!("`{task}` takes a file name and an array")),
+        };
+        let file_text = self.text(file);
+        let file_name = match file {
+            sv::Expression::Primary(p)
+                if matches!(
+                    p.as_ref(),
+                    sv::Primary::PrimaryLiteral(l)
+                        if matches!(l.as_ref(), sv::PrimaryLiteral::StringLiteral(_))
+                ) && !file_text.contains('\\') =>
+            {
+                file_text.trim_matches('"').to_string()
+            }
+            f => return self.err(f, format!("the file of `{task}` must be a string literal")),
+        };
+        let m_text = self.text(m);
+        let arrays = self.arrays.borrow();
+        let Some(array) = arrays.iter().find(|a| a.name == m_text) else {
+            return self.err(m, format!("`{m_text}` is not an array declared before"));
+        };
+        if let Some(l) = self.loads.borrow().iter().find(|l| l.array == m_text) {
+            return self.err(&c.0, format!("`{m_text}` is already loaded at {}", l.span));
+        }
+        let path = self.dir.join(&file_name);
+        let text = std::fs::read_to_string(&path).map_err(|e| {
+            Error::new(
+                self.span(file),
+                format!("cannot read `{}`: {e}", path.display()),
+            )
+        })?;
+        let values = readmem(&text, binary, array)
+            .map_err(|msg| Error::new(span, format!("{}: {msg}", path.display())))?;
+        self.loads.borrow_mut().push(Load {
+            array: m_text,
+            binary,
+            file: file_name,
+            path,
+            values,
+            span,
+        });
+        Ok(())
     }
 }
