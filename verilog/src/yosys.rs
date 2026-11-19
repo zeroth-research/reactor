@@ -209,18 +209,13 @@ pub fn version_warning(version: &Result<String, String>) -> Option<String> {
     }
 }
 
-/// The Yosys script translating the module `top` of `file` (with all
-/// instances below it) into SMT-LIB on standard output. Fails on a path
-/// Yosys cannot read inside a script (one with `"` or a line break).
-pub fn script(file: &Path, top: &str) -> Result<String, String> {
-    script_files(&[file], top)
-}
-
-/// [`script`] for a design of several files.
-pub fn script_files(files: &[&Path], top: &str) -> Result<String, String> {
+/// The Yosys script translating the module `top` of the design in `files`
+/// (with all instances below it) into SMT-LIB on standard output. Fails on
+/// a path Yosys cannot read inside a script (one with `"` or a line break).
+pub fn script<P: AsRef<Path>>(files: &[P], top: &str) -> Result<String, String> {
     let mut quoted = Vec::new();
     for file in files {
-        let file = file.to_string_lossy();
+        let file = file.as_ref().to_string_lossy();
         if file.contains(['"', '\n', '\r']) {
             return Err(format!("{file}: path not usable in a Yosys script"));
         }
@@ -234,25 +229,20 @@ pub fn script_files(files: &[&Path], top: &str) -> Result<String, String> {
     ))
 }
 
-/// Runs the Yosys binary `bin` on the module `top` of `file` and parses
-/// its output. Fails if Yosys cannot be started, reports an error or a
-/// wire with conflicting drivers (see the module docs), `overrides` is not
-/// empty (not supported yet), or the design depends on the macro `YOSYS`
-/// (see the module docs).
-pub fn run(bin: &Path, file: &Path, top: &str, overrides: &[Override]) -> Result<Smt2, String> {
-    run_files(bin, &[file], top, overrides)
-}
-
-/// [`run`] for a design of several files.
-pub fn run_files(
+/// Runs the Yosys binary `bin` on the module `top` of the design in
+/// `files` and parses its output. Fails if Yosys cannot be started,
+/// reports an error or a wire with conflicting drivers (see the module
+/// docs), `overrides` is not empty (not supported yet), or the design
+/// depends on the macro `YOSYS` (see the module docs).
+pub fn run<P: AsRef<Path>>(
     bin: &Path,
-    files: &[&Path],
+    files: &[P],
     top: &str,
     overrides: &[Override],
 ) -> Result<Smt2, String> {
     let file = files
         .iter()
-        .map(|f| f.display().to_string())
+        .map(|f| f.as_ref().display().to_string())
         .collect::<Vec<_>>()
         .join(" ");
     if let Some(o) = overrides.first() {
@@ -271,13 +261,12 @@ pub fn run_files(
     // absolute paths, for Yosys runs in an empty directory of its own
     let absolute = files
         .iter()
-        .map(|f| std::path::absolute(f).map_err(|e| format!("{}: {e}", f.display())))
+        .map(|f| std::path::absolute(f).map_err(|e| format!("{}: {e}", f.as_ref().display())))
         .collect::<Result<Vec<_>, _>>()?;
-    let absolute: Vec<&Path> = absolute.iter().map(PathBuf::as_path).collect();
     let dir = EmptyDir::new().map_err(|e| format!("a directory for Yosys: {e}"))?;
     // `-e`: Yosys stops with an error instead of the warning
     let out = Command::new(bin)
-        .args(["-q", "-e", CONFLICT, "-p", &script_files(&absolute, top)?])
+        .args(["-q", "-e", CONFLICT, "-p", &script(&absolute, top)?])
         .current_dir(&dir.0)
         .output()
         .map_err(|e| format!("{}: {e}", bin.display()))?;
@@ -382,7 +371,7 @@ pub struct Smt2 {
     pub anyseq: BTreeMap<String, usize>,
     /// The conjuncts of the initial-state predicate `|T_i|`, by the
     /// register each constrains.
-    pub initial: BTreeMap<String, String>,
+    pub init_conjuncts: BTreeMap<String, String>,
 }
 
 impl Smt2 {
@@ -390,7 +379,7 @@ impl Smt2 {
     /// conjunct for it, or `(= (bvand (… state) #b0…0) #b0…0)`, which
     /// always holds.
     pub fn free_initially(&self, name: &str) -> bool {
-        let Some(expr) = self.initial.get(name) else {
+        let Some(expr) = self.init_conjuncts.get(name) else {
             return true;
         };
         let zeros =
@@ -481,7 +470,7 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
     }
     let [inputs, outputs, registers, wires, anyseq] = maps;
     free(text, &top, &inputs, &anyseq)?;
-    let initial = initial(text, &top)?;
+    let init_conjuncts = init_conjuncts(text, &top)?;
     Ok(Smt2 {
         top,
         text: text.to_string(),
@@ -490,7 +479,7 @@ pub fn parse(text: &str) -> Result<Smt2, String> {
         registers,
         wires,
         anyseq,
-        initial,
+        init_conjuncts,
     })
 }
 
@@ -634,7 +623,7 @@ fn leaves_of(term: &Sexp, bits: Option<(usize, usize)>, leaves: &mut Vec<Leaf>) 
 
 /// The conjuncts of `(|T_i| s)`, by the register each one names in its
 /// comment.
-fn initial(text: &str, top: &str) -> Result<BTreeMap<String, String>, String> {
+fn init_conjuncts(text: &str, top: &str) -> Result<BTreeMap<String, String>, String> {
     let head = format!("(define-fun {} ((state ", smt::symbol(&format!("{top}_i")));
     let mut lines = text.lines().skip_while(|l| !l.starts_with(&head));
     let Some(first) = lines.next() else {
@@ -701,7 +690,7 @@ impl Smt2 {
     }
 
     /// `(|T_i| s)`: `s` is an initial state.
-    pub fn initial(&self, s: &str) -> String {
+    pub fn is_initial(&self, s: &str) -> String {
         format!("({} {s})", smt::symbol(&format!("{}_i", self.top)))
     }
 

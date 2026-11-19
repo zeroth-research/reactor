@@ -152,7 +152,7 @@ fn plant(
         path.file_name().unwrap().to_string_lossy()
     ));
     std::fs::write(&file, &m.source).unwrap();
-    let theirs = yosys::run(yosys, &file, &t.name, &[]).map_err(|e| format!("Yosys: {e}"))?;
+    let theirs = yosys::run(yosys, &[&file], &t.name, &[]).map_err(|e| format!("Yosys: {e}"))?;
 
     let a = direction(z3, inst, &ours, ys, Side::Theirs).map_err(|e| format!("in ours: {e}"))?;
     let b = direction(z3, inst, t, &theirs, Side::Ours).map_err(|e| format!("in Yosys's: {e}"))?;
@@ -1007,7 +1007,7 @@ type Outcomes = (Vec<String>, Vec<(String, String)>, usize, usize);
 fn plant_all((yosys, z3): (&Path, &Path), dir: &Path, path: &Path) -> Outcomes {
     let mut rand = Rand(seed(0x1405_7b7e_f767_814f, &stem(path)));
     let (inst, t) = load(path);
-    let ys = yosys::run(yosys, path, &t.name, &[]).unwrap();
+    let ys = yosys::run(yosys, &[path], &t.name, &[]).unwrap();
     let example = path.file_name().unwrap().to_string_lossy().to_string();
     let source = std::fs::read_to_string(path).unwrap();
     let mut out: Outcomes = Default::default();
