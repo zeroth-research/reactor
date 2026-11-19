@@ -10,13 +10,13 @@ use sv_parser::RefNodes;
 /// An expression of the grammar, or a constant expression, which the
 /// grammar keeps apart; both become an [`Expr`].
 #[derive(Clone, Copy)]
-pub(super) enum Node<'a> {
+enum Node<'a> {
     Expr(&'a sv::Expression),
     Const(&'a sv::ConstantExpression),
 }
 
 /// Applies the operator `op` to the last two expressions of `out`.
-pub(super) fn reduce(out: &mut Vec<Expr>, op: Op) {
+fn reduce(out: &mut Vec<Expr>, op: Op) {
     let b = Box::new(out.pop().expect("operand"));
     let a = Box::new(out.pop().expect("operand"));
     let (kind, span) = match op {
@@ -29,7 +29,7 @@ pub(super) fn reduce(out: &mut Vec<Expr>, op: Op) {
 /// An operator of a flattened chain: a binary operator, or `? then :` of a
 /// conditional, which acts as a right-associative binary operator between
 /// condition and else branch.
-pub(super) enum Op {
+enum Op {
     Bin(BinOp, Span),
     Cond(Expr, Span),
 }
@@ -183,12 +183,7 @@ impl Cx<'_> {
 
     /// Flattens a chain of binary operators and conditionals into its
     /// operands and operators, in source order.
-    pub(super) fn flatten(
-        &self,
-        e: Node,
-        operands: &mut Vec<Expr>,
-        ops: &mut Vec<Op>,
-    ) -> Result<()> {
+    fn flatten(&self, e: Node, operands: &mut Vec<Expr>, ops: &mut Vec<Op>) -> Result<()> {
         match e {
             Node::Expr(sv::Expression::Binary(b)) => {
                 let (l, op, attrs, r) = &b.nodes;
@@ -230,7 +225,7 @@ impl Cx<'_> {
     }
 
     /// An expression that is not a binary operation or a conditional.
-    pub(super) fn operand(&self, e: Node) -> Result<Expr> {
+    fn operand(&self, e: Node) -> Result<Expr> {
         match e {
             Node::Expr(sv::Expression::Primary(p)) => self.primary(p),
             Node::Expr(sv::Expression::Unary(u)) => {
@@ -256,7 +251,7 @@ impl Cx<'_> {
     /// `op p`, with `operand` building `p`. `-2147483648` is the least
     /// `int`: the literal 2147483648 is no `int` by itself, but negated at
     /// once it is one constant.
-    pub(super) fn unary<'a>(
+    fn unary<'a>(
         &self,
         op: &sv::UnaryOperator,
         attrs: &'a Vec<sv::AttributeInstance>,
@@ -298,7 +293,7 @@ impl Cx<'_> {
         Expr { kind, span }
     }
 
-    pub(super) fn primary(&self, p: &sv::Primary) -> Result<Expr> {
+    fn primary(&self, p: &sv::Primary) -> Result<Expr> {
         let span = self.span(p);
         let kind = match p {
             sv::Primary::PrimaryLiteral(l) => return self.primary_literal(l, p),
@@ -356,7 +351,7 @@ impl Cx<'_> {
     }
 
     /// A primary of a constant expression; see [`Cx::const_expression`].
-    pub(super) fn const_primary(&self, p: &sv::ConstantPrimary) -> Result<Expr> {
+    fn const_primary(&self, p: &sv::ConstantPrimary) -> Result<Expr> {
         let span = self.span(p);
         let kind = match p {
             sv::ConstantPrimary::PrimaryLiteral(l) => return self.primary_literal(l, p),
@@ -435,7 +430,7 @@ impl Cx<'_> {
 
     /// The name `id` with the select `select` in a constant expression: a
     /// parameter, or a signal, which [`constant::value`] rejects.
-    pub(super) fn const_name(
+    fn const_name(
         &self,
         id: Name,
         select: &sv::ConstantSelect,
@@ -544,7 +539,7 @@ impl Cx<'_> {
     }
 
     /// A literal of a primary `p`: a number, `'0` or `'1`.
-    pub(super) fn primary_literal<'a>(
+    fn primary_literal<'a>(
         &self,
         l: &sv::PrimaryLiteral,
         p: impl Into<RefNodes<'a>> + Copy,
@@ -603,7 +598,7 @@ impl Cx<'_> {
 
     /// Builds the tree of a flattened chain by precedence (shunting-yard).
     /// Binary operators associate to the left, `?:` to the right.
-    pub(super) fn reassociate(&self, operands: Vec<Expr>, ops: Vec<Op>) -> Expr {
+    fn reassociate(&self, operands: Vec<Expr>, ops: Vec<Op>) -> Expr {
         let mut operands = operands.into_iter();
         let mut out = vec![operands.next().expect("operand")];
         let mut stack: Vec<Op> = Vec::new();
@@ -627,7 +622,7 @@ impl Cx<'_> {
         out.pop().unwrap()
     }
 
-    pub(super) fn unop(&self, op: &sv::UnaryOperator) -> Result<UnOp> {
+    fn unop(&self, op: &sv::UnaryOperator) -> Result<UnOp> {
         use UnOp::*;
         Ok(match self.text(op).as_str() {
             "~" => BitNot,
@@ -644,7 +639,7 @@ impl Cx<'_> {
         })
     }
 
-    pub(super) fn binop(&self, op: &sv::BinaryOperator) -> Result<Op> {
+    fn binop(&self, op: &sv::BinaryOperator) -> Result<Op> {
         use BinOp::*;
         let span = self.span(op);
         Ok(Op::Bin(

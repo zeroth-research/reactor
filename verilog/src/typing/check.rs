@@ -247,7 +247,7 @@ fn connections<'m>(
 /// to a pin of a blackbox (those are no longer among the connections, see
 /// [`Instance::pins`](crate::ast::Instance::pins)): a pin is outside the
 /// translated design, so nothing in it reads or drives a pin.
-pub(super) fn pin_uses(m: &Module) -> Result<()> {
+fn pin_uses(m: &Module) -> Result<()> {
     if m.pins.is_empty() {
         return Ok(());
     }
@@ -317,7 +317,7 @@ pub(super) fn pin_uses(m: &Module) -> Result<()> {
 /// initial value would have no effect (the frontend has made initialized
 /// signals that nothing drives constants already, see
 /// [`frontend::constants`](crate::frontend::constants)).
-pub(super) fn initial_value(
+fn initial_value(
     env: &Env,
     m: &Module,
     driver: &BTreeMap<Name, (Span, usize)>,
@@ -373,7 +373,7 @@ pub(super) fn initial_value(
 }
 
 /// Records `item` as the driver of `lhs` and returns the type of `lhs`.
-pub(super) fn drive(
+fn drive(
     env: &Env,
     driver: &mut BTreeMap<Name, (Span, usize)>,
     lhs: &Name,
@@ -412,7 +412,7 @@ pub(super) fn drive(
 
 /// The kind of block a statement is in.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum Proc {
+enum Proc {
     Ff,
     /// A combinational block, with its kind as written ([`Item::block`]).
     Comb(&'static str),
@@ -424,7 +424,7 @@ pub(super) enum Proc {
 /// its elements). Then the block means `always @*`. A simulator runs the
 /// block only when a listed signal changes, while synthesis ignores the
 /// list, so with a missing signal the two would disagree.
-pub(super) fn event_list(env: &Env, m: &Module, item: &Item, list: &[(Name, Span)]) -> Result<()> {
+fn event_list(env: &Env, m: &Module, item: &Item, list: &[(Name, Span)]) -> Result<()> {
     for (x, span) in list {
         if !m.arrays.iter().any(|a| a.name == *x) {
             lookup(env, x, *span)?;
@@ -460,7 +460,7 @@ pub(super) fn event_list(env: &Env, m: &Module, item: &Item, list: &[(Name, Span
 /// changes, and not at time 0, so a block reading none never runs and its
 /// targets stay x, while a combinational block computes them in every time
 /// step.
-pub(super) fn star_reads(item: &Item) -> Result<()> {
+fn star_reads(item: &Item) -> Result<()> {
     let targets: BTreeSet<&str> = item
         .targets()
         .into_iter()
@@ -489,7 +489,7 @@ pub(super) fn star_reads(item: &Item) -> Result<()> {
 /// to whole registers, each register at most once. The reset sets these
 /// registers to these values whenever it is active, so a value must not
 /// depend on the time of the reset.
-pub(super) fn reset_branch<'s>(s: &'s Stmt, seen: &mut BTreeSet<&'s Name>) -> Result<()> {
+fn reset_branch<'s>(s: &'s Stmt, seen: &mut BTreeSet<&'s Name>) -> Result<()> {
     match &s.kind {
         StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| reset_branch(s, seen)),
         StmtKind::NonBlocking { lhs, rhs } => {
@@ -519,7 +519,7 @@ pub(super) fn reset_branch<'s>(s: &'s Stmt, seen: &mut BTreeSet<&'s Name>) -> Re
     }
 }
 
-pub(super) fn drives_something(item: &Item) -> Result<()> {
+fn drives_something(item: &Item) -> Result<()> {
     if item.targets().is_empty() {
         return Err(Error::new(
             item.span(),
@@ -531,7 +531,7 @@ pub(super) fn drives_something(item: &Item) -> Result<()> {
 
 /// Checks a statement of a block of kind `proc`; `drive` checks the target
 /// of an assignment and returns its type.
-pub(super) fn stmt(
+fn stmt(
     env: &Env,
     s: &Stmt,
     proc: Proc,
@@ -600,7 +600,7 @@ pub(super) fn stmt(
 /// the target has no variable index; and a sized literal narrower than its
 /// target would be extended with zeros, so its x would cover only some
 /// bits.
-pub(super) fn unknown(
+fn unknown(
     env: &Env,
     lhs: &Lvalue,
     size: Option<usize>,
@@ -636,7 +636,7 @@ pub(super) fn unknown(
 }
 
 /// Checks that every signal the indices of a target read is declared.
-pub(super) fn target_names(env: &Env, l: &Lvalue) -> Result<()> {
+fn target_names(env: &Env, l: &Lvalue) -> Result<()> {
     let mut reads = Vec::new();
     l.reads(&mut reads);
     reads
@@ -657,10 +657,7 @@ pub(super) fn names(env: &Env, e: &Expr) -> Result<()> {
 /// with `drive`, and returns its width. A bit may be assigned only once in
 /// one target, so a select with a variable index must be the only piece of
 /// its signal (the frontend accepts variable indices in blocks only).
-pub(super) fn lvalue(
-    l: &Lvalue,
-    drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>,
-) -> Result<usize> {
+fn lvalue(l: &Lvalue, drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>) -> Result<usize> {
     fn walk(
         l: &Lvalue,
         drive: &mut dyn FnMut(&Name, Span) -> Result<Ty>,

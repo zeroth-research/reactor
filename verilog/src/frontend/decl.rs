@@ -38,7 +38,7 @@ pub(super) fn unknown_value(text: &str) -> Option<Option<usize>> {
 
 /// The declared type of a value parameter.
 #[derive(Clone, Copy)]
-pub(super) enum ParamTy {
+enum ParamTy {
     /// None (`parameter N = 8`): the type of the final value.
     OfValue,
     /// A data type or a range (`parameter int N`, `parameter [3:0] K`).
@@ -144,7 +144,7 @@ impl Cx<'_> {
     /// A port of the blackbox `module`: its width must not depend on a
     /// parameter, since the values given to the parameters of a blackbox
     /// are not used.
-    pub(super) fn blackbox_port(
+    fn blackbox_port(
         &self,
         p: &sv::AnsiPortDeclaration,
         prev: Option<(Option<Dir>, Ty)>,
@@ -170,11 +170,7 @@ impl Cx<'_> {
     }
 
     /// `#(parameter N = 8, localparam M = N + 1, …)` or `#(N = 8, …)`.
-    pub(super) fn parameter_port_list(
-        &self,
-        l: &sv::ParameterPortList,
-        m: &mut Module,
-    ) -> Result<()> {
+    fn parameter_port_list(&self, l: &sv::ParameterPortList, m: &mut Module) -> Result<()> {
         match l {
             sv::ParameterPortList::Assignment(a) => {
                 let (first, rest) = &a.nodes.1.nodes.1;
@@ -194,7 +190,7 @@ impl Cx<'_> {
         }
     }
 
-    pub(super) fn parameter_port_declaration(
+    fn parameter_port_declaration(
         &self,
         d: &sv::ParameterPortDeclaration,
         m: &mut Module,
@@ -220,7 +216,7 @@ impl Cx<'_> {
         }
     }
 
-    pub(super) fn parameter_declaration(
+    fn parameter_declaration(
         &self,
         p: &sv::ParameterDeclaration,
         overridable: bool,
@@ -237,7 +233,7 @@ impl Cx<'_> {
     }
 
     /// The declared type of a parameter (see [`ParamTy`]).
-    pub(super) fn param_type(&self, t: &sv::DataTypeOrImplicit) -> Result<ParamTy> {
+    fn param_type(&self, t: &sv::DataTypeOrImplicit) -> Result<ParamTy> {
         match t {
             sv::DataTypeOrImplicit::DataType(t) => self.param_data_type(t).map(ParamTy::Typed),
             sv::DataTypeOrImplicit::ImplicitDataType(t) => match &t.nodes {
@@ -251,7 +247,7 @@ impl Cx<'_> {
     }
 
     /// `int`, or a vector type.
-    pub(super) fn param_data_type(&self, t: &sv::DataType) -> Result<Ty> {
+    fn param_data_type(&self, t: &sv::DataType) -> Result<Ty> {
         match t {
             sv::DataType::Atom(a) => match &a.nodes {
                 (sv::IntegerAtomType::Int(_), None) => Ok(Ty::INT),
@@ -270,7 +266,7 @@ impl Cx<'_> {
     /// `N = v, M = w, …` of a parameter declaration with type `ty`. An
     /// overridable parameter takes the value of the instance if it gives
     /// one.
-    pub(super) fn param_assignments(
+    fn param_assignments(
         &self,
         ty: ParamTy,
         list: &sv::ListOfParamAssignments,
@@ -452,14 +448,14 @@ impl Cx<'_> {
         Ok((dir, decl))
     }
 
-    pub(super) fn net_type(&self, net: &sv::NetType) -> Result<()> {
+    fn net_type(&self, net: &sv::NetType) -> Result<()> {
         match net {
             sv::NetType::Wire(_) => Ok(()),
             n => self.err(n, format!("net type `{}` not supported", self.text(n))),
         }
     }
 
-    pub(super) fn data_type_or_implicit(&self, t: &sv::DataTypeOrImplicit) -> Result<Ty> {
+    fn data_type_or_implicit(&self, t: &sv::DataTypeOrImplicit) -> Result<Ty> {
         match t {
             sv::DataTypeOrImplicit::DataType(t) => self.data_type(t),
             sv::DataTypeOrImplicit::ImplicitDataType(t) => {
@@ -469,7 +465,7 @@ impl Cx<'_> {
         }
     }
 
-    pub(super) fn data_type(&self, t: &sv::DataType) -> Result<Ty> {
+    fn data_type(&self, t: &sv::DataType) -> Result<Ty> {
         match t {
             sv::DataType::Vector(v) => {
                 let (kind, signing, dims) = &v.nodes;
@@ -541,7 +537,7 @@ impl Cx<'_> {
 
     /// An item of the module body; `overridable` says whether a
     /// `parameter` there can be set by instances.
-    pub(super) fn module_item(
+    fn module_item(
         &self,
         item: &sv::NonPortModuleItem,
         m: &mut Module,
@@ -859,7 +855,7 @@ impl Cx<'_> {
 
     /// The target of `assign`: like [`variable_lvalue`](Self::variable_lvalue),
     /// with constant selects only.
-    pub(super) fn net_lvalue(&self, lv: &sv::NetLvalue) -> Result<Lvalue> {
+    fn net_lvalue(&self, lv: &sv::NetLvalue) -> Result<Lvalue> {
         let span = self.span(lv);
         let lv = match lv {
             sv::NetLvalue::Identifier(lv) => lv,
@@ -987,7 +983,7 @@ impl Cx<'_> {
     }
 
     /// `q = c;` or `m[3] = c;` in `initial`.
-    pub(super) fn initial_assignment(&self, a: &sv::BlockingAssignment, only: &str) -> Result<()> {
+    fn initial_assignment(&self, a: &sv::BlockingAssignment, only: &str) -> Result<()> {
         let sv::BlockingAssignment::OperatorAssignment(a) = a else {
             return self.err(a, only);
         };
@@ -1020,7 +1016,7 @@ impl Cx<'_> {
     }
 
     /// The initial value `e` of `target` at `span`.
-    pub(super) fn initializer(&self, target: Name, span: Span, e: &sv::Expression) -> Result<()> {
+    fn initializer(&self, target: Name, span: Span, e: &sv::Expression) -> Result<()> {
         match unknown_value(&self.text(e)) {
             Some(size) => self.unknown.borrow_mut().push((target, size, span)),
             None => {
@@ -1038,7 +1034,7 @@ impl Cx<'_> {
     /// Checks the initial values that are x in every bit: an x literal
     /// narrower than its signal is extended with zeros, so it would say
     /// that some bits are 0; and no signal has two initial values.
-    pub(super) fn unknown_values(&self, m: &Module) -> Result<()> {
+    fn unknown_values(&self, m: &Module) -> Result<()> {
         let signals = m.ports.iter().map(|p| &p.decl).chain(&m.decls);
         let widths: BTreeMap<&Name, usize> = signals.map(|d| (&d.name, d.ty.width)).collect();
         for (y, size, span) in self.unknown.borrow().iter() {

@@ -70,7 +70,7 @@ fn clock_and_reset(
 /// single `if` (possibly inside `begin … end`) whose condition is `x`, `!x`
 /// or `~x` for a name `x`. Gives `x`, whether it is negated, and the
 /// position of the condition.
-pub(super) fn reset_test(body: &Stmt) -> Option<(&Name, bool, Span)> {
+fn reset_test(body: &Stmt) -> Option<(&Name, bool, Span)> {
     match &body.kind {
         StmtKind::Block(stmts) if stmts.len() == 1 => reset_test(&stmts[0]),
         StmtKind::If(c, _, _) => match &c.kind {
@@ -213,10 +213,7 @@ impl Cx<'_> {
 
     /// One event of a level list `@(a or b)` of a plain `always`: a signal
     /// name (an array name stands for all its elements) and its position.
-    pub(super) fn level_event(
-        &self,
-        event: &sv::EventExpressionExpression,
-    ) -> Result<(Name, Span)> {
+    fn level_event(&self, event: &sv::EventExpressionExpression) -> Result<(Name, Span)> {
         let (_, x, iff) = &event.nodes;
         self.absent(iff, "`iff`")?;
         let span = self.span(x);
@@ -460,7 +457,7 @@ impl Cx<'_> {
     }
 
     /// The condition of an `if`: one expression, no patterns.
-    pub(super) fn cond_predicate(&self, p: &sv::CondPredicate) -> Result<Expr> {
+    fn cond_predicate(&self, p: &sv::CondPredicate) -> Result<Expr> {
         match p.nodes.0.contents().as_slice() {
             [sv::ExpressionOrCondPattern::Expression(e)] => self.expr(e),
             _ => self.err(p, "`&&&` and patterns not supported"),

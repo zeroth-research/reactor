@@ -580,7 +580,7 @@ fn resize(e: Expr, from: Ty, to: Ty) -> Expr {
 }
 
 /// `v` truncated or extended to the type `to`, extended as `to` says.
-pub fn convert(v: &BitVec, to: Ty) -> BitVec {
+pub(crate) fn convert(v: &BitVec, to: Ty) -> BitVec {
     if to.signed && to.width > v.width() {
         BitVec::from_signed(to.width, v.signed())
     } else {
@@ -709,7 +709,7 @@ fn binary(op: BinOp, a: &BitVec, signed: bool, b: &BitVec, t: Ty) -> Result<BitV
 /// `signed_b` say. A negative exponent gives 1 for the base 1, ±1 for the
 /// base -1 and 0 for other bases except 0, where the result is x: an
 /// error.
-pub fn power(
+pub(crate) fn power(
     a: &BitVec,
     signed_a: bool,
     b: &BitVec,

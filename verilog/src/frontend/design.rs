@@ -8,13 +8,6 @@ use std::path::{Path, PathBuf};
 use sv_parser as sv;
 use sv_parser::{Iter, RefNode, SyntaxTree};
 
-/// Parses a file and elaborates its top module with the default parameter
-/// values.
-pub fn parse_file(path: impl AsRef<Path>) -> Result<Module> {
-    let d = parse_design_file(path)?;
-    d.module(&d.top()?, &[])
-}
-
 /// Parses `source` and elaborates its top module with the default
 /// parameter values; `path` is used for messages of the preprocessor and
 /// to find the files of `$readmemb`/`$readmemh` (relative to its
@@ -25,7 +18,7 @@ pub fn parse(source: &str, path: impl AsRef<Path>) -> Result<Module> {
 }
 
 /// Parses a file.
-pub fn parse_design_file(path: impl AsRef<Path>) -> Result<Design> {
+pub(crate) fn parse_design_file(path: impl AsRef<Path>) -> Result<Design> {
     parse_design_files(&[path])
 }
 
@@ -38,7 +31,7 @@ pub fn parse_design_files<P: AsRef<Path>>(paths: &[P]) -> Result<Design> {
 }
 
 /// The contents of the files, each with its path.
-pub(super) fn read_sources<P: AsRef<Path>>(paths: &[P]) -> Result<Vec<(String, PathBuf)>> {
+fn read_sources<P: AsRef<Path>>(paths: &[P]) -> Result<Vec<(String, PathBuf)>> {
     let mut sources = Vec::new();
     for path in paths {
         let path = path.as_ref();
@@ -94,7 +87,7 @@ pub(super) fn predefined() -> HashMap<String, Option<sv::Define>> {
 
 /// The sources as one text, each followed by a line break if it does not
 /// end with one, and the files with the line at which each starts.
-pub(super) fn join_sources(sources: Vec<(String, PathBuf)>) -> (String, Vec<SourceFile>) {
+fn join_sources(sources: Vec<(String, PathBuf)>) -> (String, Vec<SourceFile>) {
     let mut text = String::new();
     let mut files = Vec::new();
     for (source, path) in sources {
@@ -116,7 +109,7 @@ pub fn parse_design(source: &str, path: impl AsRef<Path>) -> Result<Design> {
 }
 
 /// Parses the sources, each with its path, as one text.
-pub(super) fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
+fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
     let Some((_, first)) = sources.first() else {
         return Err(Error::new(Span::default(), "no source file"));
     };
@@ -157,7 +150,7 @@ pub(super) fn parse_sources(sources: Vec<(String, PathBuf)>) -> Result<Design> {
 /// `e` with its position in its own file, and the file (see
 /// [`Design::locate`]). The positions its message mentions (`at L:C`, see
 /// [`mentions_in`]) are given in their files too.
-pub(super) fn locate_in(files: &[SourceFile], e: Error) -> Error {
+fn locate_in(files: &[SourceFile], e: Error) -> Error {
     if e.span == Span::default() {
         return e;
     }
@@ -167,7 +160,7 @@ pub(super) fn locate_in(files: &[SourceFile], e: Error) -> Error {
 }
 
 /// The file of a position of the design, with the position in that file.
-pub(super) fn file_of(files: &[SourceFile], span: Span) -> (&SourceFile, Span) {
+fn file_of(files: &[SourceFile], span: Span) -> (&SourceFile, Span) {
     let k = files.partition_point(|f| f.line <= span.line).max(1) - 1;
     let f = &files[k];
     let span = Span {
@@ -183,7 +176,7 @@ pub(super) fn file_of(files: &[SourceFile], span: Span) -> (&SourceFile, Span) {
 /// (the file of the error), else as `path:L:C`. A mention is the word `at`
 /// followed by one space and `L:C` (identifiers in messages cannot
 /// contain spaces or colons).
-pub(super) fn mentions_in(files: &[SourceFile], file: &Path, msg: &str) -> String {
+fn mentions_in(files: &[SourceFile], file: &Path, msg: &str) -> String {
     let digits = |s: &str| s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
     let mut out = String::new();
     let mut rest = msg;
@@ -233,7 +226,7 @@ pub struct Design {
 }
 
 /// A source file of a [`Design`].
-pub(super) struct SourceFile {
+struct SourceFile {
     path: PathBuf,
     /// The directory of the file.
     dir: PathBuf,

@@ -172,7 +172,7 @@ pub fn pieces<'l>(env: &Env, l: &'l Lvalue) -> Vec<Piece<'l>> {
 }
 
 /// The type of an element of the array of `e`.
-pub fn elem_type(env: &Env, e: &Elem) -> Ty {
+pub(crate) fn elem_type(env: &Env, e: &Elem) -> Ty {
     match &e.elems {
         Elems::Signals(ys) => env[&ys[0]].ty,
         Elems::Consts(ty, _) => *ty,
@@ -212,14 +212,14 @@ pub fn element(e: &Elem, index: Option<Ty>, span: Span) -> Result<()> {
 /// Checks the type `index` of the variable index of an element `e` in an
 /// assignment target: it must be unsigned; any value is fine (an index that
 /// is no address writes nothing).
-pub fn target_element(e: &Elem, index: Ty, span: Span) -> Result<()> {
+pub(crate) fn target_element(e: &Elem, index: Ty, span: Span) -> Result<()> {
     unsigned_index(&e.name(), index, span)
 }
 
 /// Checks the type `index` of the variable index of a select in an
 /// assignment target `x[…]`: it must be unsigned (a negative index would
 /// write nothing; not supported).
-pub fn target_index(x: &str, sel: &Select, index: Ty, span: Span) -> Result<()> {
+pub(crate) fn target_index(x: &str, sel: &Select, index: Ty, span: Span) -> Result<()> {
     unsigned_index(&format!("{x}{sel}"), index, span)
 }
 
@@ -308,12 +308,12 @@ pub(crate) fn divisor(b: &Expr) -> Result<()> {
 }
 
 /// The type of `{a, b, …}` with items of types `ts`: always unsigned.
-pub fn concat(ts: &[Ty]) -> Ty {
+pub(crate) fn concat(ts: &[Ty]) -> Ty {
     Ty::unsigned(ts.iter().map(|t| t.width).sum())
 }
 
 /// The type of `{n{e}}`, with `e` of type `t`: always unsigned.
-pub fn repl(n: usize, t: Ty) -> Ty {
+pub(crate) fn repl(n: usize, t: Ty) -> Ty {
     Ty::unsigned(n * t.width)
 }
 
@@ -373,7 +373,7 @@ pub fn may_leave(t: Ty, sel: &Select, i: Ty) -> bool {
 }
 
 /// The warning for a read `x[sel]` that [`may_leave`] the signal.
-pub fn leave_warning(x: &str, t: Ty, sel: &Select, span: Span) -> Error {
+pub(crate) fn leave_warning(x: &str, t: Ty, sel: &Select, span: Span) -> Error {
     Error::new(
         span,
         format!(
@@ -406,7 +406,7 @@ pub(super) fn constant_select(x: &str, t: Ty, sel: &Select, span: Span) -> Resul
 /// whether the operand's width is independent of its context; a widening
 /// cast needs that (see the module documentation). A size cast keeps the
 /// signedness of its operand.
-pub fn cast(c: Cast, t: Ty, context_free: bool, span: Span) -> Result<Ty> {
+pub(crate) fn cast(c: Cast, t: Ty, context_free: bool, span: Span) -> Result<Ty> {
     match c {
         Cast::Signed => Ok(Ty { signed: true, ..t }),
         Cast::Unsigned => Ok(Ty { signed: false, ..t }),
@@ -491,7 +491,7 @@ pub fn cond(a: Ty, b: Ty, span: Span) -> Result<Ty> {
 /// Checks a label of type `label` of a `case` whose selector has type
 /// `sel`: both must have the same type (no implicit resizing), and they are
 /// compared with `==`.
-pub fn label(sel: Ty, label: Ty, span: Span) -> Result<()> {
+pub(crate) fn label(sel: Ty, label: Ty, span: Span) -> Result<()> {
     if sel == label {
         Ok(())
     } else {
@@ -504,7 +504,7 @@ pub fn label(sel: Ty, label: Ty, span: Span) -> Result<()> {
 
 /// Checks an assignment of a value of type `rhs` to a target of width
 /// `lhs`: only the widths must agree, the bits are copied.
-pub fn assign(lhs: usize, rhs: Ty, span: Span) -> Result<()> {
+pub(crate) fn assign(lhs: usize, rhs: Ty, span: Span) -> Result<()> {
     if lhs == rhs.width {
         Ok(())
     } else {

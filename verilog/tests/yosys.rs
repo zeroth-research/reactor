@@ -341,8 +341,8 @@ fn names_match_examples() {
 /// The miter of an example, from Yosys's translation of it.
 fn miter_of(yosys: &Path, path: &Path) -> (Translation, yosys::Smt2, miter::Miter) {
     let (_, t) = load(path);
-    let ys =
-        yosys::run(yosys, &[path], &t.name, &[]).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let ys = yosys::run(yosys, &[path], &t.name, &[])
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let m = miter::build(&t, &ys).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     (t, ys, m)
 }

@@ -107,15 +107,18 @@ mod definite;
 mod domains;
 mod fragment;
 
+// the rules the documentation refers to are public, the other helpers of
+// lowering and sizing are not
 pub use check::check;
 pub use definite::definite;
 pub use domains::domains;
 pub use fragment::{
-    ElemIndex, Piece, Variable, assign, binary, cast, concat, cond, context_free, elem_type,
-    element, explicit, expr, label, leave_warning, may_leave, pieces, repl, select, target_element,
-    target_index, unary,
+    ElemIndex, Piece, Variable, binary, cond, context_free, element, explicit, expr, may_leave,
+    pieces, select, unary,
 };
-pub(crate) use fragment::divisor;
+pub(crate) use fragment::{
+    cast, concat, divisor, elem_type, leave_warning, repl, target_element, target_index,
+};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -185,7 +188,7 @@ pub fn env(m: &Module) -> Result<Env> {
     Ok(env)
 }
 
-pub fn lookup<'e>(env: &'e Env, name: &str, span: Span) -> Result<&'e Sig> {
+pub(crate) fn lookup<'e>(env: &'e Env, name: &str, span: Span) -> Result<&'e Sig> {
     env.get(name)
         .ok_or_else(|| Error::new(span, format!("`{name}` is not declared")))
 }
