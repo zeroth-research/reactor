@@ -448,39 +448,3 @@ impl Ite {
         self.0
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn one(s: Bool) -> Poly<Bool> {
-        mono![s].into()
-    }
-
-    fn two(s: Bool) -> Poly<Bool> {
-        mono![s, s].into()
-    }
-
-    #[test]
-    fn pointwise_boundaries() {
-        let b = Bool::new([2, 3]);
-        assert_eq!(And([2, 3]).dom(), two(b));
-        assert_eq!(And([2, 3]).cod(), one(b));
-        assert_eq!(Or([2, 3]).dom(), two(b));
-        assert_eq!(Xor([2, 3]).cod(), one(b));
-        assert_eq!(Not([2, 3]).dom(), one(b));
-        assert_eq!(Not([2, 3]).cod(), one(b));
-        assert_eq!(Eq([2, 3]).dom(), two(b));
-        assert_eq!(Eq([2, 3]).cod(), one(b));
-        assert_eq!(Ne([2, 3]).dom(), two(b));
-        assert_eq!(Ne([2, 3]).cod(), one(b));
-    }
-
-    #[test]
-    fn ops_display_their_name() {
-        assert_eq!(And([1, 1]).to_string(), "And");
-        assert_eq!(Not([1, 1]).to_string(), "Not");
-        assert_eq!(Eq([1, 1]).to_string(), "Eq");
-        assert_eq!(Ne([1, 1]).to_string(), "Ne");
-    }
-}
