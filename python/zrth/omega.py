@@ -1,16 +1,15 @@
 """An LTL formula over a net's variables as a module: the deterministic automaton that
 reads the net's state round by round.
 
-A formula is written like a module's blocks, as a method receiving the variables it is
-over, and instantiating the class is the automaton module:
+A formula is a function of the variables it is over, written like a module's block, and
+`Automaton` makes the module of it:
 
-    from zrth.omega import Formula, G, F, U
+    from zrth.omega import Automaton, G, F, U
 
-    class Bounded(Formula):
-        def formula(self, n):
-            return G(~(n >= 3))
+    def bounded(n):
+        return G(~(n >= 3))
 
-    monitor = Bounded(extl=(queue.count,))
+    monitor = Automaton(bounded, extl=(queue.count,))
     run = simulate(compose(net, monitor), horizon=50.0, seed=1)
     run.series(monitor.accepting[0])      # True while the queue has stayed below 3
 
@@ -157,26 +156,25 @@ def _cond(f, label: dict) -> Expr:
     raise ValueError(f"unexpected operator in an edge label: {f}")
 
 
-class Formula(Module):
-    """The automaton of the formula `formula(self, *variables)` returns, over the
-    variables in `extl`: `q` its state, `accepting[i]` whether `q` is in acceptance set
-    i, `acceptance` the condition over the sets, `text` the formula as Spot reads it."""
+class Automaton(Module):
+    """The automaton of the formula `formula(*variables)` returns, over the variables in
+    `extl`: `q` its state, `accepting[i]` whether `q` is in acceptance set i,
+    `acceptance` the condition over the sets, `text` the formula as Spot reads it."""
 
-    def __new__(cls, *, extl=(), name=None):
+    def __new__(cls, formula, *, extl=(), name=None):
         import spot
 
+        if not callable(formula):
+            raise TypeError(f"a formula is a function of its variables, got {formula!r}")
         extl = tuple(extl)
         for v in extl:
             if not isinstance(v, Var):
                 raise TypeError(f"a formula is over variables, got {v!r}")
         if len(set(extl)) != len(extl):
             raise ValueError("a variable appears twice in extl")
-        fn = getattr(cls, "formula", None)
-        if fn is None:
-            raise TypeError(f"{cls.__name__} defines no `formula` method")
 
         with collecting() as terms:
-            phi = _ltl(fn(None, *(expr(v, theory=SPN) for v in extl)))
+            phi = _ltl(formula(*(expr(v, theory=SPN) for v in extl)))
         names = {}
         text = _spot(phi, names, {w.id: t for t in terms for w in t.write})
 
@@ -235,8 +233,8 @@ class Formula(Module):
             extl=extl,
         )
         self.name, self.text, self.q, self.accepting = name, text, q, accepting
-        self.acceptance, self.automaton = str(aut.get_acceptance()), aut
+        self.acceptance, self.spot = str(aut.get_acceptance()), aut
         return self
 
     def __repr__(self):
-        return f"Formula({self.name or self.text}, acceptance={self.acceptance})"
+        return f"Automaton({self.name or self.text}, acceptance={self.acceptance})"
