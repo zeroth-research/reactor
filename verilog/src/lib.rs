@@ -99,3 +99,22 @@ pub type Atom = base::Atom<SvOp, SvOp, SvOp>;
 pub type Term = base::Term<SvOp>;
 pub type Var = base::Var<Sort>;
 pub type Wire = base::Wire<Sort>;
+
+/// The binary of the tool `name`: the path in the environment variable
+/// `var`, else `~/tools/oss-cad-suite/bin/NAME`, else `name` on the `PATH`
+/// if it answers `NAME version_flag`.
+fn find_tool(var: &str, name: &str, version_flag: &str) -> Option<std::path::PathBuf> {
+    use std::path::{Path, PathBuf};
+    let candidates = [
+        std::env::var_os(var).map(PathBuf::from),
+        std::env::var_os("HOME").map(|h| Path::new(&h).join("tools/oss-cad-suite/bin").join(name)),
+    ];
+    let found = candidates.into_iter().flatten().find(|p| p.exists());
+    found.or_else(|| {
+        let ok = std::process::Command::new(name)
+            .arg(version_flag)
+            .output()
+            .is_ok();
+        ok.then(|| PathBuf::from(name))
+    })
+}

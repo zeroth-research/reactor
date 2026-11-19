@@ -13,15 +13,7 @@ use std::time::Duration;
 
 /// The z3 binary, or `None` if there is none.
 pub fn find() -> Option<PathBuf> {
-    let candidates = [
-        std::env::var_os("Z3_BIN").map(PathBuf::from),
-        std::env::var_os("HOME").map(|h| Path::new(&h).join("tools/oss-cad-suite/bin/z3")),
-    ];
-    let found = candidates.into_iter().flatten().find(|p| p.exists());
-    found.or_else(|| {
-        let ok = Command::new("z3").arg("--version").output().is_ok();
-        ok.then(|| PathBuf::from("z3"))
-    })
+    crate::find_tool("Z3_BIN", "z3", "--version")
 }
 
 /// Runs the z3 binary `bin` on `script` and returns its output lines
