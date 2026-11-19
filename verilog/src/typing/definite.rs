@@ -1,8 +1,8 @@
 //! Definite assignment: no read of a bit before it is written in a block, no latch, no live x
-//! ([`definite`]).
+//! (`definite`, run by [`check`](super::check)).
 
 use super::fragment::{Piece, pieces_in};
-use super::{Checked, Env, Result};
+use super::{Env, Result};
 use crate::ast::{self, Error, Expr, ExprKind, Item, Lvalue, Name, Select, Span, Stmt, StmtKind};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -34,8 +34,11 @@ pub(super) fn bits_text(y: &str, bits: &[usize], width: usize) -> String {
     ranges.join(", ")
 }
 
-/// Checks the blocks of the checked module `c` (as written, not sized):
-/// that an `always_comb` block assigns each signal it drives on
+/// Checks the block `item` of a module whose names and drivers have been
+/// checked (as written, not sized): [`check`](super::check) runs it on
+/// each block in source order, so that a design with several errors is
+/// reported by its first one. It checks that an `always_comb` block
+/// assigns each signal it drives on
 /// every path before reading it and by the end of the block (no
 /// latch), and that the x a block of either kind assigns is dead.
 ///
@@ -60,14 +63,7 @@ pub(super) fn bits_text(y: &str, bits: &[usize], width: usize) -> String {
 /// besides x, only blocking assignments are checked there: no read may
 /// follow a `=` that may have assigned the bits it reads (on any path), so
 /// that every `=` means the same as `<=`.
-pub fn definite(c: &Checked) -> Result<()> {
-    (c.source().items.iter())
-        .filter(|item| item.body().is_some())
-        .try_for_each(|item| block(c.env(), item))
-}
-
-/// [`definite`] for the block `item`.
-fn block(env: &Env, item: &Item) -> Result<()> {
+pub(super) fn definite(env: &Env, item: &Item) -> Result<()> {
     let targets = item.targets();
     let body = item.body().expect("a block");
     let comb = matches!(item, Item::AlwaysComb { .. });
