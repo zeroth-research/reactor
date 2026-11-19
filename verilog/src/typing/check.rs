@@ -320,12 +320,7 @@ fn pin_uses(m: &Module) -> Result<()> {
 /// initial value would have no effect (the frontend has made initialized
 /// signals that nothing drives constants already, see
 /// [`frontend::constants`](crate::frontend::constants)).
-fn initial_value(
-    env: &Env,
-    m: &Module,
-    driver: &Drivers,
-    init: &ast::Init,
-) -> Result<()> {
+fn initial_value(env: &Env, m: &Module, driver: &Drivers, init: &ast::Init) -> Result<()> {
     let y = &init.target;
     let sig = lookup(env, y, init.span)?;
     let mut reads = Vec::new();
@@ -410,13 +405,7 @@ impl Drivers {
 }
 
 /// Records `item` as the driver of `lhs` and returns the type of `lhs`.
-fn drive(
-    env: &Env,
-    driver: &mut Drivers,
-    lhs: &Name,
-    span: Span,
-    item: usize,
-) -> Result<Ty> {
+fn drive(env: &Env, driver: &mut Drivers, lhs: &Name, span: Span, item: usize) -> Result<Ty> {
     let sig = lookup(env, lhs, span)?;
     if sig.dir == Some(Dir::Input) {
         return Err(Error::new(span, format!("input `{lhs}` is assigned")));

@@ -68,7 +68,11 @@ impl<'i> Out<'_, 'i> {
 /// Translates the instance at path `prefix`: its
 /// own items become atoms, its instances modules, which are composed with
 /// the signals of the module hidden.
-pub(super) fn lower_rec<'i>(inst: &'i Inst, prefix: &Path, out: &mut Out<'_, 'i>) -> Result<Module> {
+pub(super) fn lower_rec<'i>(
+    inst: &'i Inst,
+    prefix: &Path,
+    out: &mut Out<'_, 'i>,
+) -> Result<Module> {
     let ctx = |e: Error| elab::context(e, prefix);
     let checked = out.checked(inst).map_err(ctx)?;
     // every implicit resize made explicit, so that the terms below need
