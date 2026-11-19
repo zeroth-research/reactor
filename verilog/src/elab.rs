@@ -33,7 +33,7 @@ instantiating module drives it. The ports of a blackbox are no signals and
 have no paths: the signals connected to its outputs are free values.
 */
 
-use crate::ast::{Dir, Error, ExprKind, Formal, Item, Module, Name, Override, Span};
+use crate::ast::{Dir, Error, ExprKind, Formal, Instance, Item, Module, Name, Override, Span};
 use crate::frontend::{self, Design};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -84,6 +84,121 @@ pub fn context(e: Error, path: &str) -> Error {
     }
 }
 
+/// Moves the connections of the `inout` ports of `child` (pins of a
+/// blackbox) from `i`'s connections to [`Instance::pins`], checking that
+/// each is connected to one of the `pins` of the module `module_name`;
+/// adds the ports to `seen`.
+fn connect_pins(
+    i: &mut Instance,
+    child: &Inst,
+    pins: &BTreeMap<Name, usize>,
+    module_name: &str,
+    seen: &mut BTreeSet<Name>,
+) -> Result<()> {
+    let err = |span: Span, msg: String| Err(Error::new(span, msg));
+    let child_pins = &child.module.pins;
+    if let (false, Some(p)) = (child.module.blackbox, child_pins.first()) {
+        return err(
+            i.span,
+            format!(
+                "`{}` has an `inout` port `{}`: only blackboxes and the top module may \
+                 have `inout` ports",
+                i.module, p.name
+            ),
+        );
+    }
+    let (pin_conns, conns): (Vec<_>, Vec<_>) = std::mem::take(&mut i.conns)
+        .into_iter()
+        .partition(|c| child_pins.iter().any(|p| p.name == c.port));
+    i.conns = conns;
+    for c in &pin_conns {
+        if !seen.insert(c.port.clone()) {
+            return err(c.span, format!("port `{}` connected twice", c.port));
+        }
+        let Some(e) = &c.actual else { continue };
+        let formal = child_pins.iter().find(|p| p.name == c.port).expect("a pin");
+        match &e.kind {
+            ExprKind::Var(x) if pins.contains_key(x) => {
+                if pins[x] != formal.ty.width {
+                    return err(
+                        e.span,
+                        format!(
+                            "`inout` port `{}` of `{}` has {}, `{x}` {}",
+                            c.port,
+                            i.name,
+                            bits(formal.ty.width),
+                            pins[x]
+                        ),
+                    );
+                }
+            }
+            _ => {
+                return err(
+                    e.span,
+                    format!(
+                        "`inout` port `{}` of `{}` must be connected to an `inout` port of \
+                         `{module_name}` (or left unconnected)",
+                        c.port, i.name
+                    ),
+                );
+            }
+        }
+    }
+    i.pins = pin_conns;
+    Ok(())
+}
+
+/// Connects the instance `i` of `child`, in a module with the signals
+/// `widths` and the pins `pins` (`inout` ports) named `module_name`: fills
+/// in the formal of each connection and moves the connections of pins to
+/// [`Instance::pins`].
+fn connect(
+    i: &mut Instance,
+    child: &Inst,
+    widths: &BTreeMap<Name, usize>,
+    pins: &BTreeMap<Name, usize>,
+    module_name: &str,
+) -> Result<()> {
+    let err = |span: Span, msg: String| Err(Error::new(span, msg));
+    let ports = &child.module.ports;
+    let clocks = child.module.clocks();
+    let mut seen = BTreeSet::new();
+    connect_pins(i, child, pins, module_name, &mut seen)?;
+    for c in &mut i.conns {
+        let width = |x: &Name| widths.get(x).copied();
+        let Some(p) = ports.iter().find(|p| p.decl.name == c.port) else {
+            return err(c.span, format!("`{}` has no port `{}`", i.module, c.port));
+        };
+        if !seen.insert(c.port.clone()) {
+            return err(c.span, format!("port `{}` connected twice", c.port));
+        }
+        let shared = match c.actual.as_ref().map(|e| &e.kind) {
+            Some(ExprKind::Var(x)) => width(x) == Some(p.decl.ty.width),
+            _ => false,
+        };
+        c.formal = Some(Formal {
+            dir: p.dir,
+            ty: p.decl.ty,
+            clock: clocks.contains(&p.decl.name),
+            shared,
+            blackbox: child.module.blackbox,
+        });
+    }
+    for p in ports.iter().filter(|p| p.dir == Dir::Input) {
+        let connected = i
+            .conns
+            .iter()
+            .any(|c| c.port == p.decl.name && c.actual.is_some());
+        if !connected {
+            return err(
+                i.span,
+                format!("input `{}` of `{}` is not connected", p.decl.name, i.name),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Elaborates the module `name` at `prefix` (`""` or a path ending in
 /// `.`); `stack` holds the modules instantiating it.
 fn inst(
@@ -125,91 +240,7 @@ fn inst(
         }
         let path = format!("{prefix}{}.", i.name);
         let child = inst(d, &i.module, &i.params, &path, stack)?;
-        let ports = &child.module.ports;
-        let clocks = child.module.clocks();
-        let mut seen = BTreeSet::new();
-        // the `inout` ports: pins of a blackbox, connected to pins
-        let child_pins = &child.module.pins;
-        if let (false, Some(p)) = (child.module.blackbox, child_pins.first()) {
-            return err(
-                i.span,
-                format!(
-                    "`{}` has an `inout` port `{}`: only blackboxes and the top module may \
-                     have `inout` ports",
-                    i.module, p.name
-                ),
-            );
-        }
-        let (pin_conns, conns): (Vec<_>, Vec<_>) = std::mem::take(&mut i.conns)
-            .into_iter()
-            .partition(|c| child_pins.iter().any(|p| p.name == c.port));
-        i.conns = conns;
-        for c in &pin_conns {
-            if !seen.insert(c.port.clone()) {
-                return err(c.span, format!("port `{}` connected twice", c.port));
-            }
-            let Some(e) = &c.actual else { continue };
-            let formal = child_pins.iter().find(|p| p.name == c.port).expect("a pin");
-            match &e.kind {
-                ExprKind::Var(x) if pins.contains_key(x) => {
-                    if pins[x] != formal.ty.width {
-                        return err(
-                            e.span,
-                            format!(
-                                "`inout` port `{}` of `{}` has {}, `{x}` {}",
-                                c.port,
-                                i.name,
-                                bits(formal.ty.width),
-                                pins[x]
-                            ),
-                        );
-                    }
-                }
-                _ => {
-                    return err(
-                        e.span,
-                        format!(
-                            "`inout` port `{}` of `{}` must be connected to an `inout` port of \
-                             `{module_name}` (or left unconnected)",
-                            c.port, i.name
-                        ),
-                    );
-                }
-            }
-        }
-        i.pins = pin_conns;
-        for c in &mut i.conns {
-            let width = |x: &Name| widths.get(x).copied();
-            let Some(p) = ports.iter().find(|p| p.decl.name == c.port) else {
-                return err(c.span, format!("`{}` has no port `{}`", i.module, c.port));
-            };
-            if !seen.insert(c.port.clone()) {
-                return err(c.span, format!("port `{}` connected twice", c.port));
-            }
-            let shared = match c.actual.as_ref().map(|e| &e.kind) {
-                Some(ExprKind::Var(x)) => width(x) == Some(p.decl.ty.width),
-                _ => false,
-            };
-            c.formal = Some(Formal {
-                dir: p.dir,
-                ty: p.decl.ty,
-                clock: clocks.contains(&p.decl.name),
-                shared,
-                blackbox: child.module.blackbox,
-            });
-        }
-        for p in ports.iter().filter(|p| p.dir == Dir::Input) {
-            let connected = i
-                .conns
-                .iter()
-                .any(|c| c.port == p.decl.name && c.actual.is_some());
-            if !connected {
-                return err(
-                    i.span,
-                    format!("input `{}` of `{}` is not connected", p.decl.name, i.name),
-                );
-            }
-        }
+        connect(i, &child, &widths, &pins, &module_name).map_err(|e| context(e, prefix))?;
         children.push((i.name.clone(), child));
     }
     // with the ports known, the signals connected to instances too
