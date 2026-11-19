@@ -159,15 +159,7 @@ use std::process::Command;
 
 /// The Yosys binary, or `None` if there is none.
 pub fn find() -> Option<PathBuf> {
-    let candidates = [
-        std::env::var_os("YOSYS_BIN").map(PathBuf::from),
-        std::env::var_os("HOME").map(|h| Path::new(&h).join("tools/oss-cad-suite/bin/yosys")),
-    ];
-    let found = candidates.into_iter().flatten().find(|p| p.exists());
-    found.or_else(|| {
-        let ok = Command::new("yosys").arg("-V").output().is_ok();
-        ok.then(|| PathBuf::from("yosys"))
-    })
+    crate::find_tool("YOSYS_BIN", "yosys", "-V")
 }
 
 /// The Yosys version the format of its output (names of registers and
