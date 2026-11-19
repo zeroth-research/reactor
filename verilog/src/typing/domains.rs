@@ -84,80 +84,128 @@ pub(super) enum Source<'m> {
 /// translation the value before it (false), and hardware races. Other
 /// blocks may read clocks as data.
 pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
-    let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
-    // the instances with their paths, each instance before its children
-    let mut insts: Vec<(&Inst, String)> = Vec::new();
-    let mut walk = vec![(inst, String::new())];
-    while let Some((i, prefix)) = walk.pop() {
-        for (u, child) in i.children.iter().rev() {
-            walk.push((child, format!("{prefix}{u}.")));
+    let h = Hierarchy::new(inst);
+    let roots = h.roots()?;
+    let comb = h.comb_reads();
+    own_clock_reads(&h, &comb)?;
+    // the domain of every register, and of every signal through
+    // combinational logic
+    let mut dom: BTreeMap<Name, BTreeSet<Name>> = BTreeMap::new();
+    for (k, item) in h.blocks() {
+        if let Item::AlwaysFf { clock, .. } = item {
+            let r = &roots[&h.canon(k, clock)];
+            for q in item.targets() {
+                dom.insert(h.canon(k, q), BTreeSet::from([r.clone()]));
+            }
         }
-        insts.push((i, prefix));
     }
-    let canon = |k: usize, x: &str| naming[&format!("{}{x}", insts[k].1)].clone();
-    // the driver of every signal, by name, with its instance and its path
-    let mut drivers: BTreeMap<Name, (usize, Name, Source)> = BTreeMap::new();
-    for (k, (i, prefix)) in insts.iter().enumerate() {
-        for item in &i.module.items {
-            match item {
-                Item::Instance(u) => {
-                    for (c, f) in u.conns(Dir::Input) {
-                        if let Some(e) = &c.actual
-                            && c.shared().is_none()
-                            && !f.blackbox
-                        {
-                            let path = format!("{prefix}{}.{}", u.name, c.port);
-                            let source = Source::Conn(e, c.span);
-                            drivers.insert(naming[&path].clone(), (k, path, source));
+    propagate(&comb, &mut dom);
+    crossings(&h, &roots, &dom)?;
+    reset_edge_reads(&h, &roots, &dom, &comb)?;
+    blocking_races(&h, &comb)?;
+    Ok(roots.into_values().collect())
+}
+
+/// A hierarchy as [`domains`] sees it.
+pub(super) struct Hierarchy<'i> {
+    /// The instances with their paths, each instance before its children.
+    pub(super) insts: Vec<(&'i Inst, String)>,
+    /// The name of every signal path (see [`Inst::naming`]).
+    naming: BTreeMap<Name, Name>,
+    /// The driver of every signal, by name, with its instance and its path.
+    pub(super) drivers: BTreeMap<Name, (usize, Name, Source<'i>)>,
+    /// The inputs of the top module and the outputs of blackboxes: free
+    /// values, by name, with their widths.
+    free: BTreeMap<Name, usize>,
+}
+
+impl<'i> Hierarchy<'i> {
+    fn new(inst: &'i Inst) -> Self {
+        let naming: BTreeMap<Name, Name> = inst.naming().into_iter().collect();
+        let mut insts: Vec<(&Inst, String)> = Vec::new();
+        let mut walk = vec![(inst, String::new())];
+        while let Some((i, prefix)) = walk.pop() {
+            for (u, child) in i.children.iter().rev() {
+                walk.push((child, format!("{prefix}{u}.")));
+            }
+            insts.push((i, prefix));
+        }
+        let mut h = Hierarchy {
+            insts,
+            naming,
+            drivers: BTreeMap::new(),
+            free: BTreeMap::new(),
+        };
+        for (k, (i, prefix)) in h.insts.iter().enumerate() {
+            for item in &i.module.items {
+                match item {
+                    Item::Instance(u) => {
+                        for (c, f) in u.conns(Dir::Input) {
+                            if let Some(e) = &c.actual
+                                && c.shared().is_none()
+                                && !f.blackbox
+                            {
+                                let path = format!("{prefix}{}.{}", u.name, c.port);
+                                let source = Source::Conn(e, c.span);
+                                h.drivers.insert(h.naming[&path].clone(), (k, path, source));
+                            }
+                        }
+                    }
+                    _ => {
+                        for y in item.targets() {
+                            let path = format!("{prefix}{y}");
+                            h.drivers
+                                .insert(h.canon(k, y), (k, path, Source::Item(item)));
                         }
                     }
                 }
-                _ => {
-                    for y in item.targets() {
-                        let path = format!("{prefix}{y}");
-                        drivers.insert(canon(k, y), (k, path, Source::Item(item)));
-                    }
+            }
+        }
+        h.free = (inst.module.ports.iter())
+            .filter(|p| p.dir == Dir::Input)
+            .map(|p| (p.decl.name.clone(), p.decl.ty.width))
+            .collect();
+        for (k, (i, _)) in h.insts.iter().enumerate() {
+            for (c, f) in i.module.instances().flat_map(|u| u.conns(Dir::Output)) {
+                if let (true, Some(y)) = (f.blackbox, c.shared()) {
+                    h.free.insert(h.canon(k, y), f.ty.width);
                 }
             }
         }
-    }
-    // the inputs of the top module and the outputs of blackboxes: free
-    // values, by name, with their widths
-    let mut top: BTreeMap<Name, usize> = inst
-        .module
-        .ports
-        .iter()
-        .filter(|p| p.dir == Dir::Input)
-        .map(|p| (p.decl.name.clone(), p.decl.ty.width))
-        .collect();
-    for (k, (i, _)) in insts.iter().enumerate() {
-        for (c, f) in i.module.instances().flat_map(|u| u.conns(Dir::Output)) {
-            if let (true, Some(y)) = (f.blackbox, c.shared()) {
-                top.insert(canon(k, y), f.ty.width);
-            }
-        }
+        h
     }
 
-    // the root of the clock `c` of instance `k`, used at `span`; for a
-    // reset (`reset`), the input or register at the end of the chain
-    let root = |k: usize, c: &Name, span: Span, reset: bool| -> Result<Name> {
-        let err = |msg: String| elab::context(Error::new(span, msg), &insts[k].1);
+    /// The name of the signal `x` of instance `k`.
+    pub(super) fn canon(&self, k: usize, x: &str) -> Name {
+        self.naming[&format!("{}{x}", self.insts[k].1)].clone()
+    }
+
+    /// The items of every instance, with the instance's number.
+    pub(super) fn blocks(&self) -> impl Iterator<Item = (usize, &'i Item)> + '_ {
+        (self.insts.iter().enumerate())
+            .flat_map(|(k, (i, _))| i.module.items.iter().map(move |item| (k, item)))
+    }
+
+    /// The root of the clock `c` of instance `k`, used at `span`; for a
+    /// reset (`reset`), the input or register at the end of the chain.
+    pub(super) fn root(&self, k: usize, c: &Name, span: Span, reset: bool) -> Result<Name> {
+        let err = |msg: String| elab::context(Error::new(span, msg), &self.insts[k].1);
         let what = if reset { "reset" } else { "clock" };
-        let mut x = canon(k, c);
+        let mut x = self.canon(k, c);
         // the names on the chain so far
         let mut chain: Vec<Name> = Vec::new();
         loop {
             if chain.contains(&x) {
                 return Err(err(format!("internal error: {what} loop through `{x}`")));
             }
-            let Some((d, path, source)) = drivers.get(&x) else {
-                return match top.get(&x) {
+            let Some((d, path, source)) = self.drivers.get(&x) else {
+                return match self.free.get(&x) {
                     Some(1) => Ok(x),
                     Some(_) if reset => Ok(x),
                     Some(_) => Err(err(format!(
                         "the clock `{c}` is a bit of `{x}`, which has {} bits: input clocks \
                          must be 1-bit inputs (or blackbox outputs)",
-                        top[&x]
+                        self.free[&x]
                     ))),
                     None => Err(err(format!("internal error: `{x}` has no driver"))),
                 };
@@ -194,15 +242,16 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
                 return Err(err(format!("{msg}: {why}")));
             };
             chain.push(x);
-            x = canon(*d, y);
+            x = self.canon(*d, y);
         }
-    };
+    }
 
-    // the root of every clock, checked at each use (clock ports first,
-    // so that a bad clock is reported where it is passed down)
-    let mut roots: BTreeMap<Name, Name> = BTreeMap::new();
-    for (k, (i, _)) in insts.iter().enumerate() {
-        for item in &i.module.items {
+    /// The root of every clock, by name, checked at each use (clock ports
+    /// first, so that a bad clock is reported where it is passed down), and
+    /// the chain of every asynchronous reset.
+    fn roots(&self) -> Result<BTreeMap<Name, Name>> {
+        let mut roots: BTreeMap<Name, Name> = BTreeMap::new();
+        for (k, item) in self.blocks() {
             let uses: Vec<(&Name, Span)> = match item {
                 Item::AlwaysFf {
                     clock, clock_span, ..
@@ -220,32 +269,26 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
                 _ => Vec::new(),
             };
             for (c, span) in uses {
-                let r = root(k, c, span, false)?;
-                roots.insert(canon(k, c), r);
+                let r = self.root(k, c, span, false)?;
+                roots.insert(self.canon(k, c), r);
             }
             if let Item::AlwaysFf { reset: Some(r), .. } = item {
-                root(k, &r.name, r.span, true)?;
+                self.root(k, &r.name, r.span, true)?;
             }
         }
+        Ok(roots)
     }
 
-    // the domain of every register, and what every combinational signal
-    // reads, by name
-    let mut dom: BTreeMap<Name, BTreeSet<Name>> = BTreeMap::new();
-    let mut comb: Vec<(Name, Name)> = Vec::new();
-    for (k, (i, _)) in insts.iter().enumerate() {
-        for item in &i.module.items {
+    /// What every combinational signal reads, by name: pairs (signal, read).
+    pub(super) fn comb_reads(&self) -> Vec<(Name, Name)> {
+        let mut comb: Vec<(Name, Name)> = Vec::new();
+        for (k, item) in self.blocks() {
             match item {
-                Item::AlwaysFf { clock, .. } => {
-                    let r = &roots[&canon(k, clock)];
-                    for q in item.targets() {
-                        dom.insert(canon(k, q), BTreeSet::from([r.clone()]));
-                    }
-                }
+                Item::AlwaysFf { .. } => {}
                 Item::Assign { .. } | Item::AlwaysComb { .. } => {
                     for y in item.targets() {
                         for (x, _) in item.reads() {
-                            comb.push((canon(k, y), canon(k, x)));
+                            comb.push((self.canon(k, y), self.canon(k, x)));
                         }
                     }
                 }
@@ -255,19 +298,29 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
                         let mut reads = Vec::new();
                         e.reads(&mut reads);
                         for (x, _) in reads {
-                            comb.push((canon(k, &format!("{}.{}", u.name, c.port)), canon(k, x)));
+                            let y = self.canon(k, &format!("{}.{}", u.name, c.port));
+                            comb.push((y, self.canon(k, x)));
                         }
                     }
                 }
             }
         }
+        comb
     }
-    own_clock_reads(&insts, &drivers, &comb, &canon)?;
+}
+
+/// Extends the sets of `sets` along the combinational reads `comb` (pairs
+/// (signal, read)) until nothing changes: afterwards a signal's set holds
+/// those of everything it depends on through combinational logic.
+pub(super) fn propagate<T: Ord + Clone>(
+    comb: &[(Name, Name)],
+    sets: &mut BTreeMap<Name, BTreeSet<T>>,
+) {
     loop {
         let mut changed = false;
-        for (y, x) in &comb {
-            let add = dom.get(x).cloned().unwrap_or_default();
-            let d = dom.entry(y.clone()).or_default();
+        for (y, x) in comb {
+            let add = sets.get(x).cloned().unwrap_or_default();
+            let d = sets.entry(y.clone()).or_default();
             let before = d.len();
             d.extend(add);
             changed |= d.len() != before;
@@ -276,103 +329,106 @@ pub fn domains(inst: &Inst) -> Result<BTreeSet<Name>> {
             break;
         }
     }
-    // how a clock is named in messages: with its root if derived
-    let clocked = |c: &Name| match &roots[c] {
+}
+
+/// How a clock is named in messages: with its root if derived.
+fn clocked(roots: &BTreeMap<Name, Name>, c: &Name) -> String {
+    match &roots[c] {
         r if r == c => format!("`{c}`"),
         r => format!("`{c}`, derived from `{r}`"),
-    };
-    for (k, (i, prefix)) in insts.iter().enumerate() {
-        for item in &i.module.items {
-            let Item::AlwaysFf { clock, .. } = item else {
-                continue;
-            };
-            let c = canon(k, clock);
-            let r = &roots[&c];
-            for (x, span) in item.reads() {
-                let Some(other) = dom
-                    .get(&canon(k, x))
-                    .and_then(|d| d.iter().find(|d| *d != r))
-                else {
-                    continue;
-                };
-                let derived = if roots.iter().any(|(c, r)| r == other && c != other) {
-                    " or by clocks derived from it"
-                } else {
-                    ""
-                };
-                let q = item.targets()[0];
-                let msg = format!(
-                    "`{q}` (clocked by {}) reads `{x}`, which depends on registers clocked \
-                     by `{other}`{derived}: crossings between unrelated clocks are not supported yet",
-                    clocked(&c)
-                );
-                return Err(elab::context(Error::new(span, msg), prefix));
-            }
-        }
     }
-    // the edges every signal depends on through combinational logic: the
-    // clock and edge of each register, by name, like `dom`
-    let mut edges: BTreeMap<Name, BTreeSet<(Name, bool)>> = BTreeMap::new();
-    for (k, (i, _)) in insts.iter().enumerate() {
-        for item in &i.module.items {
-            if let Item::AlwaysFf { clock, edge, .. } = item {
-                for q in item.targets() {
-                    let e = (canon(k, clock), *edge == Edge::Pos);
-                    edges.insert(canon(k, q), BTreeSet::from([e]));
-                }
-            }
-        }
-    }
-    loop {
-        let mut changed = false;
-        for (y, x) in &comb {
-            let add = edges.get(x).cloned().unwrap_or_default();
-            let d = edges.entry(y.clone()).or_default();
-            let before = d.len();
-            d.extend(add);
-            changed |= d.len() != before;
-        }
-        if !changed {
-            break;
-        }
-    }
-    // edges made by asynchronous resets: an asynchronous reset from another
-    // domain sets a register at a time unrelated to its clock, which is an
-    // edge of a clock derived from the register. A block on such an edge
-    // may read only signals that depend on no register, or only on
-    // registers on the same edge of the same clock (they change together).
-    for (k, (i, prefix)) in insts.iter().enumerate() {
-        for item in &i.module.items {
-            let Item::AlwaysFf { clock, edge, .. } = item else {
-                continue;
-            };
-            let c = canon(k, clock);
-            let r = &roots[&c];
-            let Some(made) = reset_edge(&insts, &drivers, &dom, &canon, &root, &c, *edge, r)?
+}
+
+/// Rejects a read, in an `always_ff` block, of a signal from another clock
+/// domain (see [`domains`]).
+fn crossings(
+    h: &Hierarchy,
+    roots: &BTreeMap<Name, Name>,
+    dom: &BTreeMap<Name, BTreeSet<Name>>,
+) -> Result<()> {
+    for (k, item) in h.blocks() {
+        let Item::AlwaysFf { clock, .. } = item else {
+            continue;
+        };
+        let c = h.canon(k, clock);
+        let r = &roots[&c];
+        for (x, span) in item.reads() {
+            let Some(other) = dom
+                .get(&h.canon(k, x))
+                .and_then(|d| d.iter().find(|d| *d != r))
             else {
                 continue;
             };
-            let own = BTreeSet::from([(c.clone(), *edge == Edge::Pos)]);
-            for (x, span) in item.reads() {
-                let Some(e) = edges.get(&canon(k, x)) else {
-                    continue;
-                };
-                if e.is_empty() || *e == own {
-                    continue;
-                }
-                let q = item.targets()[0];
-                let msg = format!(
-                    "`{q}` (clocked by {}) reads `{x}`, which depends on registers on other \
-                     clocks or edges, but {made} at a time unrelated to `{r}`: crossings \
-                     between unrelated clocks are not supported yet",
-                    clocked(&c)
-                );
-                return Err(elab::context(Error::new(span, msg), prefix));
+            let derived = if roots.iter().any(|(c, r)| r == other && c != other) {
+                " or by clocks derived from it"
+            } else {
+                ""
+            };
+            let q = item.targets()[0];
+            let msg = format!(
+                "`{q}` (clocked by {}) reads `{x}`, which depends on registers clocked \
+                 by `{other}`{derived}: crossings between unrelated clocks are not supported yet",
+                clocked(roots, &c)
+            );
+            return Err(elab::context(Error::new(span, msg), &h.insts[k].1));
+        }
+    }
+    Ok(())
+}
+
+/// Rejects a read, in an `always_ff` block on an edge that an asynchronous
+/// reset from another domain can make, of a signal that depends on
+/// registers on other clocks or edges (see [`domains`]). Such a reset sets
+/// a register at a time unrelated to its clock, which is an edge of a clock
+/// derived from the register; a block on that edge may read only signals
+/// that depend on no register, or only on registers on the same edge of the
+/// same clock (they change together).
+fn reset_edge_reads(
+    h: &Hierarchy,
+    roots: &BTreeMap<Name, Name>,
+    dom: &BTreeMap<Name, BTreeSet<Name>>,
+    comb: &[(Name, Name)],
+) -> Result<()> {
+    // the edges every signal depends on through combinational logic: the
+    // clock and edge of each register, by name, like the domains
+    let mut edges: BTreeMap<Name, BTreeSet<(Name, bool)>> = BTreeMap::new();
+    for (k, item) in h.blocks() {
+        if let Item::AlwaysFf { clock, edge, .. } = item {
+            for q in item.targets() {
+                let e = (h.canon(k, clock), *edge == Edge::Pos);
+                edges.insert(h.canon(k, q), BTreeSet::from([e]));
             }
         }
     }
-    blocking_races(&insts, &drivers, &comb, &canon)?;
-    Ok(roots.into_values().collect())
+    propagate(comb, &mut edges);
+    for (k, item) in h.blocks() {
+        let Item::AlwaysFf { clock, edge, .. } = item else {
+            continue;
+        };
+        let c = h.canon(k, clock);
+        let r = &roots[&c];
+        let Some(made) = reset_edge(h, dom, &c, *edge, r)? else {
+            continue;
+        };
+        let own = BTreeSet::from([(c.clone(), *edge == Edge::Pos)]);
+        for (x, span) in item.reads() {
+            let Some(e) = edges.get(&h.canon(k, x)) else {
+                continue;
+            };
+            if e.is_empty() || *e == own {
+                continue;
+            }
+            let q = item.targets()[0];
+            let msg = format!(
+                "`{q}` (clocked by {}) reads `{x}`, which depends on registers on other \
+                 clocks or edges, but {made} at a time unrelated to `{r}`: crossings \
+                 between unrelated clocks are not supported yet",
+                clocked(roots, &c)
+            );
+            return Err(elab::context(Error::new(span, msg), &h.insts[k].1));
+        }
+    }
+    Ok(())
 }
 
 /// An event that runs `always_ff` blocks, as a simulator sees it: a rising
@@ -386,19 +442,16 @@ pub(super) type Event = (Name, usize, bool);
 /// at its own clock edge run (not after them, as with `<=`), so its edges
 /// belong to that event too. (A register with an asynchronous reset is
 /// assigned with `<=`, as its reset branch is.)
-#[allow(clippy::too_many_arguments)]
 pub(super) fn event(
-    insts: &[(&Inst, String)],
-    drivers: &BTreeMap<Name, (usize, Name, Source<'_>)>,
+    h: &Hierarchy,
     blocking: &BTreeMap<Name, ((usize, usize), Span)>,
-    canon: &dyn Fn(usize, &str) -> Name,
     k: usize,
     x: &Name,
     edge: Edge,
     with: &mut BTreeSet<Event>,
 ) -> Event {
-    let (mut x, mut bit) = (canon(k, x), None);
-    while let Some((d, _, source)) = drivers.get(&x) {
+    let (mut x, mut bit) = (h.canon(k, x), None);
+    while let Some((d, _, source)) = h.drivers.get(&x) {
         let next = match source {
             Source::Item(Item::Assign { lhs, rhs, .. })
                 if matches!(lhs.kind, LvalueKind::Var(_)) =>
@@ -410,14 +463,14 @@ pub(super) fn event(
         };
         let Some((y, b)) = next else { break };
         bit = b.or(bit);
-        x = canon(*d, y);
+        x = h.canon(*d, y);
     }
     let e = (x, bit.unwrap_or(0), edge == Edge::Pos);
     if with.insert(e.clone())
         && let Some(((bk, bn), _)) = blocking.get(&e.0)
-        && let Item::AlwaysFf { clock, edge, .. } = &insts[*bk].0.module.items[*bn]
+        && let Item::AlwaysFf { clock, edge, .. } = &h.insts[*bk].0.module.items[*bn]
     {
-        event(insts, drivers, blocking, canon, *bk, clock, *edge, with);
+        event(h, blocking, *bk, clock, *edge, with);
     }
     e
 }
@@ -429,23 +482,18 @@ pub(super) fn event(
 /// ([`event`]); the two edges of one bit never do. Reads of `<=`
 /// registers are not affected: every block reads them before any of them
 /// changes, in simulation as in the translation.
-pub(super) fn blocking_races(
-    insts: &[(&Inst, String)],
-    drivers: &BTreeMap<Name, (usize, Name, Source<'_>)>,
-    comb: &[(Name, Name)],
-    canon: &dyn Fn(usize, &str) -> Name,
-) -> Result<()> {
+pub(super) fn blocking_races(h: &Hierarchy, comb: &[(Name, Name)]) -> Result<()> {
     // the registers assigned with `=`: their block (instance, item) and the
     // first such assignment
     let mut blocking: BTreeMap<Name, ((usize, usize), Span)> = BTreeMap::new();
-    for (k, (i, _)) in insts.iter().enumerate() {
+    for (k, (i, _)) in h.insts.iter().enumerate() {
         for (n, item) in i.module.items.iter().enumerate() {
             if let Item::AlwaysFf { body, .. } = item {
                 let mut first = BTreeMap::new();
                 one_kind_of_assignment(body, item.block(), &mut first)?;
                 for (q, (span, b)) in first {
                     if b {
-                        blocking.insert(canon(k, q), ((k, n), span));
+                        blocking.insert(h.canon(k, q), ((k, n), span));
                     }
                 }
             }
@@ -459,26 +507,14 @@ pub(super) fn blocking_races(
         .keys()
         .map(|q| (q.clone(), BTreeSet::from([q.clone()])))
         .collect();
-    loop {
-        let mut changed = false;
-        for (y, x) in comb {
-            let add = dep.get(x).cloned().unwrap_or_default();
-            let d = dep.entry(y.clone()).or_default();
-            let before = d.len();
-            d.extend(add);
-            changed |= d.len() != before;
-        }
-        if !changed {
-            break;
-        }
-    }
+    propagate(comb, &mut dep);
     // the event of every block, with the events it can coincide with
     let mut events: BTreeMap<(usize, usize), (Event, BTreeSet<Event>)> = BTreeMap::new();
-    for (k, (i, _)) in insts.iter().enumerate() {
+    for (k, (i, _)) in h.insts.iter().enumerate() {
         for (n, item) in i.module.items.iter().enumerate() {
             if let Item::AlwaysFf { clock, edge, .. } = item {
                 let mut with = BTreeSet::new();
-                let e = event(insts, drivers, &blocking, canon, k, clock, *edge, &mut with);
+                let e = event(h, &blocking, k, clock, *edge, &mut with);
                 events.insert((k, n), (e, with));
             }
         }
@@ -487,14 +523,14 @@ pub(super) fn blocking_races(
         let opposite = e1.0 == e2.0 && e1.1 == e2.1 && e1.2 != e2.2;
         !opposite && !w1.is_disjoint(w2)
     };
-    for (k, (i, prefix)) in insts.iter().enumerate() {
+    for (k, (i, prefix)) in h.insts.iter().enumerate() {
         for (n, item) in i.module.items.iter().enumerate() {
             let Item::AlwaysFf { clock, .. } = item else {
                 continue;
             };
             let reads = &events[&(k, n)];
             for (x, span) in item.reads() {
-                let Some(qs) = dep.get(&canon(k, x)) else {
+                let Some(qs) = dep.get(&h.canon(k, x)) else {
                     continue;
                 };
                 for q in qs {
@@ -502,8 +538,8 @@ pub(super) fn blocking_races(
                     if writer == (k, n) || !coincide(&events[&writer], reads) {
                         continue;
                     }
-                    let block = insts[writer.0].0.module.items[writer.1].block();
-                    let what = if canon(k, x) == *q {
+                    let block = h.insts[writer.0].0.module.items[writer.1].block();
+                    let what = if h.canon(k, x) == *q {
                         format!("`{x}`,")
                     } else {
                         format!("`{x}`, which depends on `{q}`,")
@@ -527,21 +563,16 @@ pub(super) fn blocking_races(
 /// Rejects a read, in an `always_ff` block, of a signal on the chain of
 /// its own clock (see [`domains`]), directly or through combinational
 /// logic.
-pub(super) fn own_clock_reads(
-    insts: &[(&Inst, String)],
-    drivers: &BTreeMap<Name, (usize, Name, Source<'_>)>,
-    comb: &[(Name, Name)],
-    canon: &dyn Fn(usize, &str) -> Name,
-) -> Result<()> {
+pub(super) fn own_clock_reads(h: &Hierarchy, comb: &[(Name, Name)]) -> Result<()> {
     // the chain of every block's clock, by name, from the clock to its root
     let mut chains: BTreeMap<(usize, usize), Vec<Name>> = BTreeMap::new();
-    for (k, (i, _)) in insts.iter().enumerate() {
+    for (k, (i, _)) in h.insts.iter().enumerate() {
         for (n, item) in i.module.items.iter().enumerate() {
             let Item::AlwaysFf { clock, .. } = item else {
                 continue;
             };
-            let mut chain = vec![canon(k, clock)];
-            while let Some((d, _, source)) = drivers.get(chain.last().unwrap()) {
+            let mut chain = vec![h.canon(k, clock)];
+            while let Some((d, _, source)) = h.drivers.get(chain.last().unwrap()) {
                 let next = match source {
                     Source::Item(Item::AlwaysFf { clock, .. }) => Some(clock),
                     Source::Item(Item::Assign { lhs, rhs, .. })
@@ -553,7 +584,7 @@ pub(super) fn own_clock_reads(
                     _ => None,
                 };
                 // `domains` has rejected clock loops already
-                match next.map(|y| canon(*d, y)) {
+                match next.map(|y| h.canon(*d, y)) {
                     Some(y) if !chain.contains(&y) => chain.push(y),
                     _ => break,
                 }
@@ -568,20 +599,8 @@ pub(super) fn own_clock_reads(
         .flatten()
         .map(|c| (c.clone(), BTreeSet::from([c.clone()])))
         .collect();
-    loop {
-        let mut changed = false;
-        for (y, x) in comb {
-            let add = dep.get(x).cloned().unwrap_or_default();
-            let d = dep.entry(y.clone()).or_default();
-            let before = d.len();
-            d.extend(add);
-            changed |= d.len() != before;
-        }
-        if !changed {
-            break;
-        }
-    }
-    for (k, (i, prefix)) in insts.iter().enumerate() {
+    propagate(comb, &mut dep);
+    for (k, (i, prefix)) in h.insts.iter().enumerate() {
         for (n, item) in i.module.items.iter().enumerate() {
             let Item::AlwaysFf { clock, .. } = item else {
                 continue;
@@ -589,12 +608,12 @@ pub(super) fn own_clock_reads(
             let chain = &chains[&(k, n)];
             for (x, span) in item.reads() {
                 let Some(c) = dep
-                    .get(&canon(k, x))
+                    .get(&h.canon(k, x))
                     .and_then(|d| chain.iter().find(|c| d.contains(*c)))
                 else {
                     continue;
                 };
-                let what = match (canon(k, x) == *c, *c == chain[0]) {
+                let what = match (h.canon(k, x) == *c, *c == chain[0]) {
                     (true, true) => format!("`{x}`, its clock"),
                     (true, false) => format!("`{x}`, from which its clock is derived"),
                     (false, true) => format!("`{x}`, which depends on its clock"),
@@ -624,19 +643,15 @@ pub(super) fn own_clock_reads(
 /// reset to 0 makes a falling edge, a reset to 1 a rising one, and a reset
 /// value that is not a plain constant is taken to make either. Past a
 /// register, any edge of its clock that it runs at moves it.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn reset_edge(
-    insts: &[(&Inst, String)],
-    drivers: &BTreeMap<Name, (usize, Name, Source<'_>)>,
+    h: &Hierarchy,
     dom: &BTreeMap<Name, BTreeSet<Name>>,
-    canon: &dyn Fn(usize, &str) -> Name,
-    root: &dyn Fn(usize, &Name, Span, bool) -> Result<Name>,
     c: &Name,
     edge: Edge,
     r: &Name,
 ) -> Result<Option<String>> {
     let (mut x, mut want, mut bit) = (c.clone(), edge, None);
-    while let Some((d, path, source)) = drivers.get(&x) {
+    while let Some((d, path, source)) = h.drivers.get(&x) {
         let next = match source {
             Source::Item(Item::AlwaysFf {
                 clock,
@@ -645,12 +660,12 @@ pub(super) fn reset_edge(
                 body,
                 ..
             }) => {
-                let local = &path[insts[*d].1.len()..];
+                let local = &path[h.insts[*d].1.len()..];
                 let value = body.reset_values().into_iter().find(|(q, _)| *q == local);
                 if let (Some(rst), Some((_, v))) = (reset, value) {
                     // the domain of the reset: the root of its register's
                     // clock, or the input itself
-                    let end = root(*d, &rst.name, rst.span, true)?;
+                    let end = h.root(*d, &rst.name, rst.span, true)?;
                     let same = match dom.get(&end) {
                         Some(roots) => roots.contains(r),
                         None => end == *r,
@@ -688,7 +703,7 @@ pub(super) fn reset_edge(
             Source::Item(Item::AlwaysFf { .. }) => None,
             _ => b.or(bit),
         };
-        x = canon(*d, y);
+        x = h.canon(*d, y);
     }
     Ok(None)
 }
