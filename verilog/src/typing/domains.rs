@@ -7,7 +7,7 @@ use crate::ast::{
     Dir, Edge, Error, ErrorKind, Expr, ExprKind, Index, Item, LvalueKind, Name, Select, Span,
 };
 use crate::elab::{self, Inst, Path};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// What drives a signal, as [`domains`] sees it: an item of an instance,
 /// or the expression connected to an input of an instance (in the
@@ -313,17 +313,29 @@ impl<'i> Hierarchy<'i> {
 /// (signal, read)) until nothing changes: afterwards a signal's set holds
 /// those of everything it depends on through combinational logic.
 fn propagate<T: Ord + Clone>(comb: &[(Name, Name)], sets: &mut BTreeMap<Name, BTreeSet<T>>) {
-    loop {
-        let mut changed = false;
-        for (y, x) in comb {
-            let add = sets.get(x).cloned().unwrap_or_default();
-            let d = sets.entry(y.clone()).or_default();
-            let before = d.len();
-            d.extend(add);
-            changed |= d.len() != before;
+    // the signals reading each signal
+    let mut readers: HashMap<&Name, Vec<&Name>> = HashMap::new();
+    for (y, x) in comb {
+        readers.entry(x).or_default().push(y);
+        if !sets.contains_key(y) {
+            sets.insert(y.clone(), BTreeSet::new());
         }
-        if !changed {
-            break;
+    }
+    // the signals whose set grew since their readers last took it
+    let mut work: Vec<&Name> = readers.keys().copied().collect();
+    let mut queued: HashSet<&Name> = work.iter().copied().collect();
+    while let Some(x) = work.pop() {
+        queued.remove(x);
+        let Some(add) = sets.get(x).filter(|s| !s.is_empty()).cloned() else {
+            continue;
+        };
+        for &y in &readers[x] {
+            let d = sets.get_mut(y).expect("added above");
+            let before = d.len();
+            d.extend(add.iter().cloned());
+            if d.len() != before && readers.contains_key(y) && queued.insert(y) {
+                work.push(y);
+            }
         }
     }
 }

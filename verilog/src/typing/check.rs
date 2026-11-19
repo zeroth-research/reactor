@@ -7,7 +7,7 @@ use crate::ast::{
     self, BlockKind, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Module, Name, Span,
     Stmt, StmtKind, Ty, Written,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Checks the module and returns its signals.
 ///
@@ -62,7 +62,7 @@ pub fn check(m: &Module) -> Result<Env> {
     }
     pin_uses(m)?;
     // the position of the first assignment to each signal, and its item
-    let mut driver: BTreeMap<Name, (Span, usize)> = BTreeMap::new();
+    let mut driver = Drivers::default();
     // every use of a signal as a clock
     let mut clocks: Vec<(&Name, Span)> = Vec::new();
     for (i, item) in m.items.iter().enumerate() {
@@ -172,7 +172,7 @@ fn connections<'m>(
     m: &'m Module,
     inst: &'m ast::Instance,
     i: usize,
-    driver: &mut BTreeMap<Name, (Span, usize)>,
+    driver: &mut Drivers,
     clocks: &mut Vec<(&'m Name, Span)>,
 ) -> Result<()> {
     // the signals the outputs of this instance drive so far
@@ -323,7 +323,7 @@ fn pin_uses(m: &Module) -> Result<()> {
 fn initial_value(
     env: &Env,
     m: &Module,
-    driver: &BTreeMap<Name, (Span, usize)>,
+    driver: &Drivers,
     init: &ast::Init,
 ) -> Result<()> {
     let y = &init.target;
@@ -343,10 +343,7 @@ fn initial_value(
         ));
     }
     let array = &init.id.base;
-    let first = driver
-        .iter()
-        .find(|(x, _)| array_of(env, x) == array)
-        .map(|(_, d)| *d);
+    let first = driver.of_array(array);
     let (span, i) = match first {
         Some(d) => d,
         None if init.id.index.is_some() => {
@@ -375,10 +372,47 @@ fn initial_value(
     ))
 }
 
+/// The drivers found so far: the position of the first assignment to each
+/// signal and its item, and for each array (or signal outside arrays) the
+/// least of its driven signals (by name).
+#[derive(Default)]
+struct Drivers {
+    first: BTreeMap<Name, (Span, usize)>,
+    least: HashMap<Name, Name>,
+}
+
+impl Drivers {
+    fn contains_key(&self, y: &str) -> bool {
+        self.first.contains_key(y)
+    }
+
+    /// The driver of the least driven signal of the array `array` (or of
+    /// the signal `array`).
+    fn of_array(&self, array: &str) -> Option<(Span, usize)> {
+        self.least.get(array).map(|y| self.first[y])
+    }
+
+    /// Records `item` at `span` as the driver of `y`, of the array `array`,
+    /// unless `y` has one.
+    fn insert(&mut self, y: &Name, array: &str, span: Span, item: usize) {
+        if self.first.contains_key(y) {
+            return;
+        }
+        self.first.insert(y.clone(), (span, item));
+        match self.least.get_mut(array) {
+            Some(least) if *least <= *y => {}
+            Some(least) => *least = y.clone(),
+            None => {
+                self.least.insert(array.to_string(), y.clone());
+            }
+        }
+    }
+}
+
 /// Records `item` as the driver of `lhs` and returns the type of `lhs`.
 fn drive(
     env: &Env,
-    driver: &mut BTreeMap<Name, (Span, usize)>,
+    driver: &mut Drivers,
     lhs: &Name,
     span: Span,
     item: usize,
@@ -389,25 +423,20 @@ fn drive(
     }
     // all elements of an array have one driver
     let array = array_of(env, lhs);
-    let key = driver
-        .keys()
-        .find(|y| array_of(env, y) == array)
-        .cloned()
-        .unwrap_or_else(|| lhs.clone());
-    match driver.get(&key) {
-        Some((prev, i)) if *i != item && array != lhs => Err(Error::new(
+    match driver.of_array(array) {
+        Some((prev, i)) if i != item && array != lhs => Err(Error::new(
             span,
             format!(
                 "`{lhs}`: the array `{array}` is already driven at {prev} (an array has one \
                  driver)"
             ),
         )),
-        Some((prev, i)) if *i != item => Err(Error::new(
+        Some((prev, i)) if i != item => Err(Error::new(
             span,
             format!("`{lhs}` already driven at {prev}"),
         )),
         _ => {
-            driver.entry(lhs.clone()).or_insert((span, item));
+            driver.insert(lhs, array, span, item);
             Ok(sig.ty)
         }
     }
