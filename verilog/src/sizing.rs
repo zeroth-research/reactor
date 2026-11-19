@@ -826,7 +826,7 @@ fn body(c: &Checked, names: &BTreeMap<Name, Name>) -> String {
     }));
     out += &ports.join(",\n");
     out += "\n);\n";
-    for d in m.decls.iter().filter(|d| !d.name.contains('[')) {
+    for d in m.decls.iter().filter(|d| !d.is_element()) {
         out += &format!("  {} {};\n", d.ty, d.name);
     }
     for a in &m.arrays {

@@ -3,9 +3,9 @@
 use super::arrays::resolve;
 use super::{Cx, LARGEST, Result, VARIABLE_TARGET, has_tokens};
 use crate::ast::{
-    self, Array, Conn, Const, Decl, Dir, Elem, Elems, Error, ErrorKind, Expr, ExprKind, Formal,
+    Array, Conn, Const, Decl, Dir, Elem, Elems, Error, ErrorKind, Expr, ExprKind, Formal,
     Index, Init, Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select,
-    Span, Ty, array_of,
+    SignalId, Span, Ty,
 };
 use crate::constant::{self, Failure};
 use std::collections::{BTreeMap, BTreeSet};
@@ -444,19 +444,12 @@ impl Cx<'_> {
                         );
                     }
                     let value = e;
-                    self.inits.borrow_mut().push(Init {
-                        target: name.clone(),
-                        value,
-                        span,
-                    });
+                    let id = SignalId::signal(name.clone());
+                    self.inits.borrow_mut().push(Init::new(id, value, span));
                 }
             }
         }
-        let decl = Decl {
-            name,
-            ty,
-            span: self.span(id),
-        };
+        let decl = Decl::new(SignalId::signal(name), ty, self.span(id));
         Ok((dir, decl))
     }
 
@@ -826,11 +819,7 @@ impl Cx<'_> {
         let name = self.identifier(id)?;
         let span = self.span(id);
         let Some(size) = self.array_size(id, &dims)? else {
-            m.decls.push(Decl {
-                name: name.clone(),
-                ty,
-                span,
-            });
+            m.decls.push(Decl::new(SignalId::signal(name.clone()), ty, span));
             match value {
                 // `wire y = e;` is `assign y = e;`
                 Some(e) if net => {
@@ -841,7 +830,7 @@ impl Cx<'_> {
                     let rhs = self.expr(e)?;
                     m.items.push(Item::Assign { lhs, rhs, span });
                 }
-                Some(e) => self.initializer(name, span, e)?,
+                Some(e) => self.initializer(SignalId::signal(name), span, e)?,
                 None => {}
             }
             return Ok(());
@@ -854,11 +843,7 @@ impl Cx<'_> {
             );
         }
         for k in 0..size {
-            m.decls.push(Decl {
-                name: ast::element(&name, k),
-                ty,
-                span,
-            });
+            m.decls.push(Decl::new(SignalId::element(name.clone(), k), ty, span));
         }
         self.arrays.borrow_mut().push(Array {
             name,
@@ -1010,9 +995,9 @@ impl Cx<'_> {
         }
         let l = self.variable_lvalue(lhs)?;
         let target = match &l.kind {
-            LvalueKind::Var(x) => x.clone(),
+            LvalueKind::Var(x) => SignalId::signal(x.clone()),
             LvalueKind::Elem(e) if e.sel.is_none() => match e.index {
-                Index::Const(k) => ast::element(&e.array, k),
+                Index::Const(k) => SignalId::element(e.array.clone(), k),
                 Index::Expr(_) => {
                     return self.not_supported(
                         lhs,
@@ -1033,16 +1018,12 @@ impl Cx<'_> {
     }
 
     /// The initial value `e` of `target` at `span`.
-    fn initializer(&self, target: Name, span: Span, e: &sv::Expression) -> Result<()> {
+    fn initializer(&self, target: SignalId, span: Span, e: &sv::Expression) -> Result<()> {
         match unknown_value(&self.text(e)) {
-            Some(size) => self.unknown.borrow_mut().push((target, size, span)),
+            Some(size) => self.unknown.borrow_mut().push((target.name(), size, span)),
             None => {
                 let value = self.expr(e)?;
-                self.inits.borrow_mut().push(Init {
-                    target,
-                    value,
-                    span,
-                });
+                self.inits.borrow_mut().push(Init::new(target, value, span));
             }
         }
         Ok(())
@@ -1114,7 +1095,7 @@ pub(crate) fn constants(m: &mut Module) {
                     }
                 }
             }
-            _ => driven.extend(item.targets().into_iter().map(|y| array_of(y).to_string())),
+            _ => driven.extend(item.targets().into_iter().cloned()),
         }
     }
     let inputs: BTreeSet<&Name> = (m.ports.iter())
@@ -1126,7 +1107,7 @@ pub(crate) fn constants(m: &mut Module) {
             let mut reads = Vec::new();
             i.value.reads(&mut reads);
             reads.is_empty()
-                && !i.target.contains('[')
+                && i.id.index.is_none()
                 && !driven.contains(&i.target)
                 && !inputs.contains(&i.target)
         });

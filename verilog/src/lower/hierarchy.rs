@@ -106,6 +106,7 @@ fn connections(m: &ast::Module, env: &mut typing::Env) -> Vec<Item> {
             };
             let name = format!("{}.{}", i.name, c.port);
             let sig = typing::Sig {
+                id: ast::SignalId::signal(name.clone()),
                 ty: f.ty,
                 dir: None,
                 span: c.span,
