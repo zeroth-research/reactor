@@ -4,7 +4,7 @@
 use super::{Checked, Env, Result, lookup};
 use crate::ast::{
     BinOp, Cast, Dir, Elem, Elems, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Module, Name,
-    Select, Span, Stmt, StmtKind, Ty, UnOp,
+    Select, Span, Stmt, StmtKind, Ty, UnOp, Warning,
 };
 
 /// Checks that a module, after [`sizing`](crate::sizing), is in the
@@ -246,7 +246,7 @@ pub(crate) fn target_index(x: &str, sel: &Select, index: Ty, span: Span) -> Resu
 /// type `index`, is unsigned.
 fn unsigned_index(what: &str, index: Ty, span: Span) -> Result<()> {
     if index.signed {
-        return Err(Error::new(
+        return Err(Error::unsupported(
             span,
             format!("the index of `{what}` must be unsigned"),
         ));
@@ -318,7 +318,7 @@ pub fn expr(env: &Env, e: &Expr) -> Result<Ty> {
 pub(crate) fn divisor(b: &Expr) -> Result<()> {
     match &b.kind {
         ExprKind::Lit { value, .. } | ExprKind::Const { value, .. } if !value.is_zero() => Ok(()),
-        _ => Err(Error::new(
+        _ => Err(Error::unsupported(
             b.span,
             "the divisor must be a nonzero constant (2-state values have no result \
              for a division by zero)",
@@ -392,8 +392,8 @@ pub fn may_leave(t: Ty, sel: &Select, i: Ty) -> bool {
 }
 
 /// The warning for a read `x[sel]` that [`may_leave`] the signal.
-pub(crate) fn leave_warning(x: &str, t: Ty, sel: &Select, span: Span) -> Error {
-    Error::new(
+pub(crate) fn leave_warning(x: &str, t: Ty, sel: &Select, span: Span) -> Warning {
+    Warning::new(
         span,
         format!(
             "`{x}{sel}` may select bits outside `{x}` (bits {}:0), which read 0 here; \
@@ -488,7 +488,7 @@ pub fn binary(op: BinOp, a: Ty, b: Ty, span: Span) -> Result<Ty> {
         LogAnd | LogOr => Ok(Ty::BIT),
         // the shift amount is self-determined and unsigned
         Shl | Shr | AShl | AShr => Ok(a),
-        Pow => Err(Error::new(
+        Pow => Err(Error::internal(
             span,
             "internal error: `**` is folded by sizing, it has no operator",
         )),

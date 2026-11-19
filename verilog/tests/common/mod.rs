@@ -155,7 +155,7 @@ pub fn rejects(src: &str, line: usize, needle: &str, msg: &str) {
         .unwrap_or_else(|| panic!("`{needle}` not in `{text}`"))
         + 1;
     assert_eq!(
-        (err.span.line, err.span.col),
+        (err.span.unwrap().line, err.span.unwrap().col),
         (line, col),
         "{src}\n{err}\nexpected at `{needle}`"
     );

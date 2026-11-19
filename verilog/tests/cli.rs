@@ -185,7 +185,8 @@ fn top_module() {
     let (code, stdout, stderr) = v2rm(&["--top", "nothing", "examples/nest.sv"]);
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
-    assert!(stderr.contains("no module `nothing`"), "{stderr}");
+    // an error at no place of the design: the file, without a position
+    assert_eq!(stderr, "examples/nest.sv: no module `nothing`\n");
 }
 
 /// `-G NAME=VALUE` (also written `-GNAME=VALUE`) sets a parameter of the
@@ -233,6 +234,13 @@ fn parameters() {
         );
         assert!(stderr.contains(message), "{value}: {stderr}");
         assert_eq!(stderr.lines().count(), 1, "{value}: {stderr}");
+        // a value from the command line has no position in the design
+        if value != "N=-3" {
+            assert!(
+                stderr.starts_with(&format!("examples/modcount.sv: {message}")),
+                "{value}: {stderr}"
+            );
+        }
     }
 }
 

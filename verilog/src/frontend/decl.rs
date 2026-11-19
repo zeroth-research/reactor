@@ -3,9 +3,9 @@
 use super::arrays::resolve;
 use super::{Cx, LARGEST, Result, VARIABLE_TARGET, has_tokens};
 use crate::ast::{
-    self, Array, Conn, Const, Decl, Dir, Elem, Elems, Error, Expr, ExprKind, Formal, Index, Init,
-    Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select, Span, Ty,
-    array_of,
+    self, Array, Conn, Const, Decl, Dir, Elem, Elems, Error, ErrorKind, Expr, ExprKind, Formal,
+    Index, Init, Instance, Item, Lvalue, LvalueKind, Module, Name, Override, Param, Port, Select,
+    Span, Ty, array_of,
 };
 use crate::constant::{self, Failure};
 use std::collections::{BTreeMap, BTreeSet};
@@ -121,7 +121,7 @@ impl Cx<'_> {
                 } else {
                     format!("`{}` has no parameter `{}`", module.name, o.name)
                 };
-                return Err(Error::new(o.span, msg));
+                return Err(Error::at(o.span, msg));
             }
         }
         Ok(module)
@@ -156,14 +156,15 @@ impl Cx<'_> {
         match without {
             Ok(port) => Ok(port),
             Err(e) => match self.port(p, prev) {
-                Ok((_, decl)) => Err(Error::new(
-                    e.span,
-                    format!(
+                Ok((_, decl)) => Err(Error {
+                    kind: ErrorKind::User,
+                    msg: format!(
                         "the width of port `{}` of the blackbox `{module}` depends on a \
                          parameter: the widths of blackbox ports must be constants",
                         decl.name
                     ),
-                )),
+                    ..e
+                }),
                 Err(e) => Err(e),
             },
         }
@@ -205,14 +206,14 @@ impl Cx<'_> {
                     let ty = self.param_type(ty)?;
                     self.param_assignments(ty, list, false, m)
                 }
-                p => self.err(p, "type parameters not supported"),
+                p => self.not_supported(p, "type parameters not supported"),
             },
             sv::ParameterPortDeclaration::ParamList(p) => {
                 let (ty, list) = &p.nodes;
                 let ty = self.param_data_type(ty)?;
                 self.param_assignments(ParamTy::Typed(ty), list, true, m)
             }
-            d => self.err(d, "type parameters not supported"),
+            d => self.not_supported(d, "type parameters not supported"),
         }
     }
 
@@ -228,7 +229,7 @@ impl Cx<'_> {
                 let ty = self.param_type(ty)?;
                 self.param_assignments(ty, list, overridable, m)
             }
-            p => self.err(p, "type parameters not supported"),
+            p => self.not_supported(p, "type parameters not supported"),
         }
     }
 
@@ -251,7 +252,7 @@ impl Cx<'_> {
         match t {
             sv::DataType::Atom(a) => match &a.nodes {
                 (sv::IntegerAtomType::Int(_), None) => Ok(Ty::INT),
-                _ => self.err(
+                _ => self.not_supported(
                     t,
                     format!(
                         "parameter type `{}` not supported, use `int` or `logic`",
@@ -292,15 +293,21 @@ impl Cx<'_> {
                         sv::ConstantParamExpression::ConstantMintypmaxExpression(m) => {
                             match m.as_ref() {
                                 sv::ConstantMintypmaxExpression::Unary(e) => e,
-                                m => return self.err(m, "min:typ:max expression not supported"),
+                                m => {
+                                    return self
+                                        .not_supported(m, "min:typ:max expression not supported");
+                                }
                             }
                         }
                         sv::ConstantParamExpression::Dollar(d) => {
-                            return self.err(d.as_ref(), "`$` not supported as a parameter value");
+                            return self.not_supported(
+                                d.as_ref(),
+                                "`$` not supported as a parameter value",
+                            );
                         }
-                        e => return self.err(e, "type parameters not supported"),
+                        e => return self.not_supported(e, "type parameters not supported"),
                     };
-                    (self.const_expression(e)?, self.span(e))
+                    (self.const_expression(e)?, Some(self.span(e)))
                 }
                 (_, None) => {
                     return self.err(
@@ -315,10 +322,12 @@ impl Cx<'_> {
             // a typed parameter takes its value as in an assignment; an
             // untyped one has the type of its value
             let failed = |f| match f {
-                Failure::NotConstant(why) => Err(Error::new(
+                Failure::NotConstant(why) => Err(Error::at(
                     at,
                     format!("expected a constant expression, got `{value}`: {why}"),
                 )),
+                // a value from outside the design has no position in it
+                Failure::Error(e) if at.is_none() => Err(Error { span: None, ..e }),
                 Failure::Error(e) => Err(e),
             };
             let value = match ty {
@@ -412,9 +421,12 @@ impl Cx<'_> {
         if let Some((_, value)) = default {
             match dir {
                 Some(Dir::Input) => {
-                    return self.err(value, "default values of inputs not supported");
+                    return self.not_supported(value, "default values of inputs not supported");
                 }
-                None => return self.err(value, "default values of `inout` ports not supported"),
+                None => {
+                    return self
+                        .not_supported(value, "default values of `inout` ports not supported");
+                }
                 Some(Dir::Output) => {}
             }
             // a constant expression in the grammar, so evaluated here
@@ -451,7 +463,7 @@ impl Cx<'_> {
     fn net_type(&self, net: &sv::NetType) -> Result<()> {
         match net {
             sv::NetType::Wire(_) => Ok(()),
-            n => self.err(n, format!("net type `{}` not supported", self.text(n))),
+            n => self.not_supported(n, format!("net type `{}` not supported", self.text(n))),
         }
     }
 
@@ -474,7 +486,7 @@ impl Cx<'_> {
                 let _ = kind;
                 self.vector(signing, dims)
             }
-            t => self.err(t, format!("type `{}` not supported", self.text(t))),
+            t => self.not_supported(t, format!("type `{}` not supported", self.text(t))),
         }
     }
 
@@ -491,7 +503,7 @@ impl Cx<'_> {
                 let (hi, _, lo) = &r.nodes.0.nodes.1.nodes;
                 let (hi, lo) = (self.const_int(hi)?, self.const_int(lo)?);
                 if lo != 0 || hi < lo {
-                    return self.err(
+                    return self.not_supported(
                         r.as_ref(),
                         format!("range [{hi}:{lo}] not supported, only [N-1:0]"),
                     );
@@ -499,7 +511,9 @@ impl Cx<'_> {
                 hi + 1
             }
             [d] => return self.unsupported(d),
-            [_, d, ..] => return self.err(d, "more than one packed dimension not supported"),
+            [_, d, ..] => {
+                return self.not_supported(d, "more than one packed dimension not supported");
+            }
         };
         Ok(Ty { width, signed })
     }
@@ -518,7 +532,7 @@ impl Cx<'_> {
     ) -> Result<usize> {
         let text = self.text(node);
         match constant::int(e) {
-            Ok(n) if n > LARGEST as i64 => self.err(
+            Ok(n) if n > LARGEST as i64 => self.not_supported(
                 node,
                 format!(
                     "`{text}` is {n}: widths, sizes, counts and bounds up to {LARGEST} are \
@@ -545,7 +559,7 @@ impl Cx<'_> {
     ) -> Result<()> {
         let sv::NonPortModuleItem::ModuleOrGenerateItem(item) = item else {
             if let sv::NonPortModuleItem::GenerateRegion(g) = item {
-                return self.err(g.as_ref(), "generate regions not supported");
+                return self.not_supported(g.as_ref(), "generate regions not supported");
             }
             return self.unsupported(item);
         };
@@ -557,7 +571,7 @@ impl Cx<'_> {
                 return self.instantiation(i, m);
             }
             sv::ModuleOrGenerateItem::Parameter(p) => {
-                return self.err(p.as_ref(), "`defparam` not supported, use `#(.N(…))`");
+                return self.not_supported(p.as_ref(), "`defparam` not supported, use `#(.N(…))`");
             }
             i => return self.unsupported(i),
         };
@@ -584,7 +598,7 @@ impl Cx<'_> {
                     }
                     Ok(())
                 }
-                a => self.err(a, "delay not supported"),
+                a => self.not_supported(a, "delay not supported"),
             },
             sv::ModuleCommonItem::AlwaysConstruct(a) => {
                 m.items.push(self.always(a)?);
@@ -605,7 +619,7 @@ impl Cx<'_> {
             match &values.nodes.1.nodes.1 {
                 None => {}
                 Some(sv::ListOfParameterAssignments::Ordered(o)) => {
-                    return self.err(
+                    return self.not_supported(
                         o.as_ref(),
                         "positional parameter values not supported, write `#(.N(…))`",
                     );
@@ -623,13 +637,16 @@ impl Cx<'_> {
                         let value = match e {
                             sv::ParamExpression::MintypmaxExpression(m) => match m.as_ref() {
                                 sv::MintypmaxExpression::Expression(x) => self.expr(x)?,
-                                m => return self.err(m, "min:typ:max expression not supported"),
+                                m => {
+                                    return self
+                                        .not_supported(m, "min:typ:max expression not supported");
+                                }
                             },
                             sv::ParamExpression::Dollar(d) => {
                                 return self
                                     .err(d.as_ref(), "`$` not supported as a parameter value");
                             }
-                            e => return self.err(e, "type parameters not supported"),
+                            e => return self.not_supported(e, "type parameters not supported"),
                         };
                         // evaluated where the parameter is declared, at its type
                         if let Some(x) = constant::signal(&value) {
@@ -645,7 +662,7 @@ impl Cx<'_> {
                         params.push(Override {
                             name,
                             value,
-                            span: self.span(id),
+                            span: Some(self.span(id)),
                         });
                     }
                 }
@@ -661,7 +678,7 @@ impl Cx<'_> {
                 Some(sv::ListOfPortConnections::Ordered(o)) => {
                     let empty = o.nodes.0.contents().iter().all(|c| !has_tokens(*c));
                     if !empty {
-                        return self.err(
+                        return self.not_supported(
                             o.as_ref(),
                             "positional port connections not supported, write `.port(signal)`",
                         );
@@ -672,7 +689,7 @@ impl Cx<'_> {
                         let c = match c {
                             sv::NamedPortConnection::Identifier(c) => c,
                             sv::NamedPortConnection::Asterisk(c) => {
-                                return self.err(
+                                return self.not_supported(
                                     c.as_ref(),
                                     "`.*` not supported, connect each port by name",
                                 );
@@ -728,7 +745,7 @@ impl Cx<'_> {
                         let ty = self.param_type(ty)?;
                         self.param_assignments(ty, list, false, m)
                     }
-                    p => self.err(p, "type parameters not supported"),
+                    p => self.not_supported(p, "type parameters not supported"),
                 };
             }
             sv::PackageOrGenerateItemDeclaration::ParameterDeclaration(p) => {
@@ -771,7 +788,7 @@ impl Cx<'_> {
                                             unpacked.push(d.as_ref())
                                         }
                                         d => {
-                                            return self.err(
+                                            return self.not_supported(
                                                 d,
                                                 "dynamic, associative and queue arrays not \
                                                  supported",
@@ -830,7 +847,7 @@ impl Cx<'_> {
             return Ok(());
         };
         if let Some(e) = value {
-            return self.err(
+            return self.not_supported(
                 e,
                 "initial values of whole arrays not supported (load the array from a file \
                  with `$readmemb` or `$readmemh`)",
@@ -865,7 +882,7 @@ impl Cx<'_> {
                 let kind = LvalueKind::Concat(ls.collect::<Result<_>>()?);
                 return Ok(Lvalue { kind, span });
             }
-            lv => return self.err(lv, "assignment patterns not supported"),
+            lv => return self.not_supported(lv, "assignment patterns not supported"),
         };
         let (id, select) = &lv.nodes;
         let id = match id {
@@ -884,7 +901,7 @@ impl Cx<'_> {
         let index = |e: &sv::ConstantExpression| {
             let x = self.const_expression(e)?;
             match constant::signal(&x) {
-                Some(_) => self.err(e, VARIABLE_TARGET),
+                Some(_) => self.not_supported(e, VARIABLE_TARGET),
                 None => self.int_of(e, &x).map(Index::Const),
             }
         };
@@ -909,7 +926,7 @@ impl Cx<'_> {
                 ([b], None) => (index(&b.nodes.1)?, None),
                 ([b, c], None) => (index(&b.nodes.1)?, Some(Select::Bit(index(&c.nodes.1)?))),
                 ([b], Some(p)) => (index(&b.nodes.1)?, Some(range(&p.nodes.1)?)),
-                _ => return self.err(select, self.whole_array(&id)),
+                _ => return self.not_supported(select, self.whole_array(&id)),
             };
             let elem = Elem {
                 array: id,
@@ -924,7 +941,7 @@ impl Cx<'_> {
             ([], None) => None,
             ([b], None) => Some(Select::Bit(index(&b.nodes.1)?)),
             ([], Some(p)) => Some(range(&p.nodes.1)?),
-            _ => return self.err(select, "multi-dimensional selects not supported"),
+            _ => return self.not_supported(select, "multi-dimensional selects not supported"),
         };
         let kind = match sel {
             None => LvalueKind::Var(id),
@@ -969,14 +986,14 @@ impl Cx<'_> {
                     self.initial_assignment(&a.0, only)?;
                 }
                 sv::StatementItem::NonblockingAssignment(_) => {
-                    return self.err(
+                    return self.not_supported(
                         s,
                         "`initial` gives initial values with blocking assignments (`q = 8'd0;`), \
                          not `<=`",
                     );
                 }
                 sv::StatementItem::SubroutineCallStatement(c) => self.load(c, only)?,
-                _ => return self.err(s, only),
+                _ => return self.not_supported(s, only),
             }
         }
         Ok(())
@@ -985,11 +1002,11 @@ impl Cx<'_> {
     /// `q = c;` or `m[3] = c;` in `initial`.
     fn initial_assignment(&self, a: &sv::BlockingAssignment, only: &str) -> Result<()> {
         let sv::BlockingAssignment::OperatorAssignment(a) = a else {
-            return self.err(a, only);
+            return self.not_supported(a, only);
         };
         let (lhs, op, rhs) = &a.nodes;
         if self.text(op) != "=" {
-            return self.err(op, format!("`{}` not supported", self.text(op)));
+            return self.not_supported(op, format!("`{}` not supported", self.text(op)));
         }
         let l = self.variable_lvalue(lhs)?;
         let target = match &l.kind {
@@ -997,7 +1014,7 @@ impl Cx<'_> {
             LvalueKind::Elem(e) if e.sel.is_none() => match e.index {
                 Index::Const(k) => ast::element(&e.array, k),
                 Index::Expr(_) => {
-                    return self.err(
+                    return self.not_supported(
                         lhs,
                         "the initial value of an element needs a constant address (`m[3] = \
                          8'd0;`)",
@@ -1005,7 +1022,7 @@ impl Cx<'_> {
                 }
             },
             _ => {
-                return self.err(
+                return self.not_supported(
                     lhs,
                     "initial values are given to whole signals and elements (`q = 8'd0;`, \
                      `m[3] = 8'd0;`), not to selects or concatenations",
@@ -1041,7 +1058,7 @@ impl Cx<'_> {
             if let (Some(n), Some(w)) = (size, widths.get(y))
                 && n < w
             {
-                return Err(Error::new(
+                return Err(Error::unsupported(
                     *span,
                     format!(
                         "the initial value of `{y}` has {n} x bits, but `{y}` has {w} bits, so \

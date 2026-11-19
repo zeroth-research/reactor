@@ -107,7 +107,7 @@ impl Cx<'_> {
             ([], None) => None,
             ([b], None) => Some(Select::Bit(self.index(&b.nodes.1)?)),
             ([], Some(p)) => Some(self.part(&p.nodes.1)?),
-            _ => return self.err(select, "multi-dimensional selects not supported"),
+            _ => return self.not_supported(select, "multi-dimensional selects not supported"),
         })
     }
 
@@ -146,7 +146,7 @@ impl Cx<'_> {
                 Err(Error::new(e.span, format!("negative index {value}")))
             }
             Some(Ok(value)) => Ok(Index::Const(value as usize)),
-            Some(Err(msg)) => Err(Error::new(e.span, msg)),
+            Some(Err(p)) => Err(p.at(e.span)),
             None => Ok(Index::Expr(Box::new(e))),
         }
     }
@@ -158,7 +158,7 @@ impl Cx<'_> {
     ) -> Result<&'h sv::Identifier> {
         let (root, path, id) = &h.nodes;
         if root.is_some() || !path.is_empty() {
-            return self.err(h, "hierarchical names not supported");
+            return self.not_supported(h, "hierarchical names not supported");
         }
         Ok(id)
     }
@@ -204,7 +204,7 @@ impl Cx<'_> {
                 self.absent(attrs, "attribute")?;
                 let pred = match pred.nodes.0.contents().as_slice() {
                     [sv::ExpressionOrCondPattern::Expression(p)] => p.as_ref(),
-                    _ => return self.err(pred, "`&&&` and patterns not supported"),
+                    _ => return self.not_supported(pred, "`&&&` and patterns not supported"),
                 };
                 self.flatten(Node::Expr(pred), operands, ops)?;
                 ops.push(Op::Cond(self.expr(then)?, self.span(q)));
@@ -233,10 +233,10 @@ impl Cx<'_> {
                 self.unary(op, attrs, p, || self.primary(p))
             }
             Node::Expr(sv::Expression::IncOrDecExpression(e)) => {
-                self.err(e.as_ref(), "`++`/`--` not supported")
+                self.not_supported(e.as_ref(), "`++`/`--` not supported")
             }
             Node::Expr(sv::Expression::OperatorAssignment(e)) => {
-                self.err(e.as_ref(), "assignment in expression not supported")
+                self.not_supported(e.as_ref(), "assignment in expression not supported")
             }
             Node::Expr(e) => self.unsupported(e),
             Node::Const(sv::ConstantExpression::ConstantPrimary(p)) => self.const_primary(p),
@@ -312,14 +312,15 @@ impl Cx<'_> {
                 match (self.select(select)?, param) {
                     (None, _) => return Ok(self.name(id, span)),
                     (Some(_), true) => {
-                        return self.err(p, format!("select of parameter `{id}` not supported"));
+                        return self
+                            .not_supported(p, format!("select of parameter `{id}` not supported"));
                     }
                     (Some(sel), false) => ExprKind::Select(id, sel),
                 }
             }
             sv::Primary::MintypmaxExpression(m) => match &m.nodes.0.nodes.1 {
                 sv::MintypmaxExpression::Expression(e) => return self.expr(e),
-                m => return self.err(m, "min:typ:max expression not supported"),
+                m => return self.not_supported(m, "min:typ:max expression not supported"),
             },
             sv::Primary::Concatenation(c) => {
                 let (c, select) = &c.nodes;
@@ -334,7 +335,7 @@ impl Cx<'_> {
                 let (n, c) = &c.nodes.0.nodes.1;
                 let n = self.int_of(n, &self.expr(n)?)?;
                 if n == 0 {
-                    return self.err(p, "replication count 0 not supported");
+                    return self.not_supported(p, "replication count 0 not supported");
                 }
                 let items = c.nodes.0.nodes.1.contents();
                 let items = items.into_iter().map(|e| self.expr(e));
@@ -376,7 +377,7 @@ impl Cx<'_> {
             }
             sv::ConstantPrimary::MintypmaxExpression(m) => match &m.nodes.0.nodes.1 {
                 sv::ConstantMintypmaxExpression::Unary(e) => return self.const_expression(e),
-                m => return self.err(m, "min:typ:max expression not supported"),
+                m => return self.not_supported(m, "min:typ:max expression not supported"),
             },
             sv::ConstantPrimary::Concatenation(c) => {
                 let (c, select) = &c.nodes;
@@ -391,7 +392,7 @@ impl Cx<'_> {
                 let (n, c) = &c.nodes.0.nodes.1;
                 let n = self.const_int(n)?;
                 if n == 0 {
-                    return self.err(p, "replication count 0 not supported");
+                    return self.not_supported(p, "replication count 0 not supported");
                 }
                 let items = c.nodes.0.nodes.1.contents();
                 let items = items.into_iter().map(|e| self.const_expression(e));
@@ -403,7 +404,7 @@ impl Cx<'_> {
                 ExprKind::Cast(self.cast(ty, p)?, Box::new(e))
             }
             sv::ConstantPrimary::Dollar(_) => {
-                return self.err(p, "`$` not supported in constant expressions");
+                return self.not_supported(p, "`$` not supported in constant expressions");
             }
             sv::ConstantPrimary::ConstantFunctionCall(c) => {
                 // a plain name may parse as a call without arguments
@@ -438,7 +439,7 @@ impl Cx<'_> {
     ) -> Result<Expr> {
         let selected = !self.text(select).is_empty();
         if selected && self.params.borrow().contains_key(&id) {
-            return self.err(p, format!("select of parameter `{id}` not supported"));
+            return self.not_supported(p, format!("select of parameter `{id}` not supported"));
         }
         Ok(self.name(id, self.span(p)))
     }
@@ -471,7 +472,7 @@ impl Cx<'_> {
                 Cast::Size(n)
             }
             t => {
-                return self.err(t, format!("cast to `{}` not supported", self.text(t)));
+                return self.not_supported(t, format!("cast to `{}` not supported", self.text(t)));
             }
         })
     }
@@ -501,7 +502,8 @@ impl Cx<'_> {
     /// A call; only `$signed(e)` and `$unsigned(e)`, which are casts, and
     /// `$clog2(n)` of a constant, which is folded into an integer constant.
     pub(super) fn call(&self, c: &sv::SubroutineCall, span: Span) -> Result<Expr> {
-        let unsupported = || self.err(c, format!("call `{}` not supported", self.text(c)));
+        let unsupported =
+            || self.not_supported(c, format!("call `{}` not supported", self.text(c)));
         let sv::SubroutineCall::SystemTfCall(call) = c else {
             return unsupported();
         };
@@ -519,11 +521,11 @@ impl Cx<'_> {
                 let arg = self.expr(e)?;
                 let n = constant::value(&arg).or_else(|f| match f {
                     Failure::NotConstant(why) => {
-                        self.err(c, format!("`$clog2` of a constant only: {why}"))
+                        self.not_supported(c, format!("`$clog2` of a constant only: {why}"))
                     }
                     Failure::Error(e) => Err(e),
                 })?;
-                let value = constant::clog2(&n).map_err(|m| Error::new(span, m))?;
+                let value = constant::clog2(&n).map_err(|p| p.at(span))?;
                 let kind = ExprKind::Const {
                     text: format!("$clog2({arg})"),
                     ty: Ty::INT,
@@ -548,14 +550,14 @@ impl Cx<'_> {
         match l {
             sv::PrimaryLiteral::Number(n) => match n.as_ref() {
                 sv::Number::IntegralNumber(n) => self.literal(n),
-                n => self.err(n, "real numbers not supported"),
+                n => self.not_supported(n, "real numbers not supported"),
             },
             sv::PrimaryLiteral::UnbasedUnsizedLiteral(l) => {
                 let kind = match self.text(l.as_ref()).trim() {
                     "'0" => ExprKind::Fill(false),
                     "'1" => ExprKind::Fill(true),
                     t => {
-                        return self.err(
+                        return self.not_supported(
                             p,
                             format!("literal `{t}` with x/z digits not supported ({X_HINT})"),
                         );
@@ -577,7 +579,7 @@ impl Cx<'_> {
             .filter(|c| !c.is_whitespace() && *c != '_')
             .collect();
         let span = self.span(n);
-        let kind = match constant::literal(&text).map_err(|m| Error::new(span, m))? {
+        let kind = match constant::literal(&text).map_err(|p| p.at(span))? {
             Literal::Sized(ty, value) => ExprKind::Lit { ty, value },
             Literal::Int(value) => ExprKind::Const {
                 text,
@@ -635,7 +637,7 @@ impl Cx<'_> {
             "~&" => RedNand,
             "~|" => RedNor,
             "~^" | "^~" => RedXnor,
-            s => return self.err(op, format!("operator `{s}` not supported")),
+            s => return self.not_supported(op, format!("operator `{s}` not supported")),
         })
     }
 
@@ -668,7 +670,7 @@ impl Cx<'_> {
                 "/" => Div,
                 "%" => Mod,
                 "**" => Pow,
-                s => return self.err(op, format!("operator `{s}` not supported")),
+                s => return self.not_supported(op, format!("operator `{s}` not supported")),
             },
             span,
         ))

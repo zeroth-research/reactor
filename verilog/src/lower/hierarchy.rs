@@ -4,7 +4,8 @@ use super::builder::Builder;
 use super::order::{Pending, await_order, dependencies, reset_of};
 use super::{Part, Result, init_name, internal, literal, title};
 use crate::ast::{
-    self, Dir, Edge, Error, Expr, Instance, Item, Lvalue, LvalueKind, Name, Reset, Span,
+    self, Dir, Edge, Error, ErrorKind, Expr, Instance, Item, Lvalue, LvalueKind, Name, Reset, Span,
+    Warning,
 };
 use crate::elab::{self, Inst};
 use crate::typing;
@@ -29,9 +30,9 @@ pub(super) struct Out<'n> {
     pub(super) wire_names: HashMap<Wire, Name>,
     pub(super) instances: Vec<Part>,
     /// The reads that may select bits outside their signal, as warnings.
-    pub(super) out_of_range: Vec<Error>,
+    pub(super) out_of_range: Vec<Warning>,
     /// The instances of blackboxes, as warnings.
-    pub(super) blackboxes: Vec<Error>,
+    pub(super) blackboxes: Vec<Warning>,
 }
 
 impl Out<'_> {
@@ -88,7 +89,7 @@ pub(super) fn lower_rec(inst: &Inst, prefix: &str, out: &mut Out) -> Result<Modu
     if inst.children.is_empty() {
         let private: BTreeSet<Var> = m.decls.iter().map(|d| vars[&d.name]).collect();
         return Module::partially_observable(atoms, |v| private.contains(v))
-            .map_err(|e| internal(Span::default(), e));
+            .map_err(|e| internal(None, e));
     }
     compose(inst, m, atoms, &vars, &connections, prefix, out)
 }
@@ -257,7 +258,7 @@ impl<'a> Atoms<'a> {
         );
         out.add_names(self.prefix, b.names);
         let scope: Vec<&Var> = b.used.iter().map(|n| &self.vars[n]).collect();
-        Atom::combinatorial(scope, b.terms).map_err(|e| internal(span, e))
+        Atom::combinatorial(scope, b.terms).map_err(|e| internal(Some(span), e))
     }
 
     /// The atom of an `always_ff` block; `edges` counts the edge tests named
@@ -288,12 +289,12 @@ impl<'a> Atoms<'a> {
         out.add_names(self.prefix, std::mem::take(&mut b.names));
         let mut init = self.init(&regs, reset.as_ref(), span)?;
         b.used.extend(init.used);
-        let ctx = |e: Error| elab::context(e, self.prefix);
+        let ctx = |w: Warning| elab::context(w, self.prefix);
         out.out_of_range.extend(b.out_of_range.drain(..).map(ctx));
         out.out_of_range
             .extend(init.out_of_range.drain(..).map(ctx));
         let scope: Vec<&Var> = b.used.iter().map(|n| &self.vars[n]).collect();
-        Atom::sequential(scope, init.terms, b.terms).map_err(|e| internal(span, e))
+        Atom::sequential(scope, init.terms, b.terms).map_err(|e| internal(Some(span), e))
     }
 
     /// The init action of an `always_ff` block with the registers `regs`:
@@ -352,9 +353,8 @@ fn compose(
     // the module's own atoms observe everything, since its instances may
     // read and write its internal signals; hiding happens in the
     // composition
-    let own =
-        Module::partially_observable(atoms, |_| false).map_err(|e| internal(Span::default(), e))?;
-    let mut modules = vec![(own, Span::default())];
+    let own = Module::partially_observable(atoms, |_| false).map_err(|e| internal(None, e))?;
+    let mut modules = vec![(own, None)];
     // the outputs of blackboxes are external, like inputs, so not hidden
     let free: BTreeSet<&Name> = m
         .instances()
@@ -376,7 +376,7 @@ fn compose(
         let i = m.instances().find(|i| i.name == *u).expect("an instance");
         if child.module.blackbox {
             let warning = blackbox_warning(i, child, prefix, out.naming);
-            out.blackboxes.push(ctx(warning));
+            out.blackboxes.push(elab::context(warning, prefix));
             continue;
         }
         let path = format!("{prefix}{u}.");
@@ -386,7 +386,7 @@ fn compose(
             title: title(&child.module),
             module: module.clone(),
         });
-        modules.push((module, i.span));
+        modules.push((module, Some(i.span)));
         // unconnected outputs are signals of the instance only
         for p in child.module.ports.iter().filter(|p| p.dir == Dir::Output) {
             let connected = i
@@ -399,10 +399,14 @@ fn compose(
         }
     }
     if let Some((span, msg)) = instance_loop(&modules, &out.vars) {
-        return Err(ctx(Error::new(span, msg)));
+        let e = match span {
+            Some(span) => Error::new(span, msg),
+            None => Error::unlocated(ErrorKind::User, msg),
+        };
+        return Err(ctx(e));
     }
     Module::compose_hiding(modules.into_iter().map(|(m, _)| m), |v| hidden.contains(v))
-        .map_err(|e| internal(Span::default(), e))
+        .map_err(|e| internal(None, e))
 }
 
 /// The warning for the instance `i` of the blackbox `child`: which signals
@@ -412,7 +416,7 @@ fn blackbox_warning(
     child: &Inst,
     prefix: &str,
     naming: &BTreeMap<Name, Name>,
-) -> Error {
+) -> Warning {
     let free: Vec<String> = (i.conns(Dir::Output))
         .filter_map(|(c, _)| c.shared())
         .map(|y| format!("`{}`", naming[&format!("{prefix}{y}")]))
@@ -436,7 +440,7 @@ fn blackbox_warning(
         "`{}` is an instance of the blackbox `{}`, whose behaviour is not modelled{what}",
         i.name, child.module.name
     );
-    Error::new(i.span, msg)
+    Warning::new(i.span, msg)
 }
 
 impl Out<'_> {
@@ -451,8 +455,11 @@ impl Out<'_> {
 /// A combinational loop through the atoms of several modules (each of them
 /// free of loops), with the position of the instance of the first module
 /// on it that is not the first of `modules`.
-fn instance_loop(modules: &[(Module, Span)], vars: &BTreeMap<Name, Var>) -> Option<(Span, String)> {
-    let atoms: Vec<(&Atom, Span)> = modules
+fn instance_loop(
+    modules: &[(Module, Option<Span>)],
+    vars: &BTreeMap<Name, Var>,
+) -> Option<(Option<Span>, String)> {
+    let atoms: Vec<(&Atom, Option<Span>)> = modules
         .iter()
         .flat_map(|(m, span)| m.atoms().iter().map(move |a| (a, *span)))
         .collect();
@@ -511,11 +518,7 @@ fn instance_loop(modules: &[(Module, Span)], vars: &BTreeMap<Name, Var>) -> Opti
                 .collect();
             signals.reverse();
             signals.push(signals[0]);
-            let span = cycle
-                .iter()
-                .map(|&a| atoms[a].1)
-                .find(|s| *s != Span::default())
-                .unwrap_or_default();
+            let span = cycle.iter().find_map(|&a| atoms[a].1);
             return Some((
                 span,
                 format!(

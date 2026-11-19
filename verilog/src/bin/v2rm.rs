@@ -39,7 +39,7 @@
 //! of its own, then the usage). `-h`/`--help` prints the usage.
 
 use std::process::ExitCode;
-use verilog::ast::{Error, Override, Span};
+use verilog::ast::{Error, ErrorKind, Override, Warning};
 use verilog::elab::Inst;
 use verilog::lower::Translation;
 use verilog::miter::{self, Verdict};
@@ -218,17 +218,26 @@ fn main() -> ExitCode {
         let t = lower::lower_inst(&inst)?;
         Ok::<_, Error>((inst, t, overrides))
     })();
-    // `FILE:L:C: message`, with the file of the error
+    // `FILE:L:C: message`, with the file of the error (the first file if
+    // the design does not say)
     let located = |e: Error| {
         let e = match &design {
             Some(d) => d.located(e),
             None => e,
         };
-        let file = e
-            .file
-            .as_ref()
-            .map_or(path.clone(), |f| f.display().to_string());
-        format!("{file}:{e}")
+        match e.file {
+            Some(_) => e.to_string(),
+            None => e.in_file(&path).to_string(),
+        }
+    };
+    // `FILE:L:C: warning: message`
+    let located_warning = |w: Warning| {
+        let w = match &design {
+            Some(d) => d.located_warning(w),
+            None => w,
+        };
+        let file = w.file.map_or(path.clone(), |f| f.display().to_string());
+        format!("{file}:{}: warning: {}", w.span, w.msg)
     };
     match result {
         Ok((inst, t, overrides)) => {
@@ -236,10 +245,7 @@ fn main() -> ExitCode {
                 eprintln!("{path}: warning: input `{name}` is never read and is left out");
             }
             for w in t.blackboxes.iter().chain(&t.out_of_range) {
-                eprintln!(
-                    "{}",
-                    located(Error::new(w.span, format!("warning: {}", w.msg)))
-                );
+                eprintln!("{}", located_warning(w.clone()));
             }
             let code = output(mode, &paths, &inst, &t, &overrides, timeout, &located);
             ExitCode::from(code)
@@ -255,7 +261,7 @@ fn main() -> ExitCode {
 fn overrides(params: &[String]) -> Result<Vec<Override>, Error> {
     let mut overrides = Vec::new();
     for p in params {
-        let err = |msg: String| Error::new(Span::default(), format!("-G {p}: {msg}"));
+        let err = |msg: String| Error::unlocated(ErrorKind::User, format!("-G {p}: {msg}"));
         let (name, value) = p
             .split_once('=')
             .filter(|(name, _)| !name.is_empty())
@@ -264,7 +270,7 @@ fn overrides(params: &[String]) -> Result<Vec<Override>, Error> {
         overrides.push(Override {
             name: name.to_string(),
             value,
-            span: Span::default(),
+            span: None,
         });
     }
     Ok(overrides)

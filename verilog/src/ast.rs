@@ -26,10 +26,29 @@ impl fmt::Display for Span {
     }
 }
 
-/// A located error, from any phase of the translation.
+/// What an [`Error`] says about the design.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum ErrorKind {
+    /// The design is wrong: it breaks a rule of IEEE 1800, or a rule the
+    /// translation imposes on purpose because simulation and synthesis
+    /// (or hardware) would disagree on it (a latch, a stale read, a race).
+    /// Also a wrong use of the tool (a missing file, a bad `-G`).
+    User,
+    /// The design uses a construct of SystemVerilog outside the accepted
+    /// subset, which the translation does not handle (yet).
+    Unsupported,
+    /// A bug of the translation: a check that should have held did not.
+    Internal,
+}
+
+/// An error, from any phase of the translation, located in the design if
+/// it concerns a place in it.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Error {
-    pub span: Span,
+    pub kind: ErrorKind,
+    /// The position in the design (in `file` if it is set), if the error
+    /// concerns one place.
+    pub span: Option<Span>,
     pub msg: String,
     /// The source file, for a design of several files once the error is
     /// located (see [`Design::located`](crate::frontend::Design::located));
@@ -38,11 +57,56 @@ pub struct Error {
 }
 
 impl Error {
+    /// An error of the design ([`ErrorKind::User`]) at `span`.
     pub fn new(span: Span, msg: impl Into<String>) -> Self {
         Self {
-            span,
+            kind: ErrorKind::User,
+            span: Some(span),
             msg: msg.into(),
             file: None,
+        }
+    }
+
+    /// A construct outside the accepted subset, at `span`.
+    pub fn unsupported(span: Span, msg: impl Into<String>) -> Self {
+        Self::new(span, msg).of_kind(ErrorKind::Unsupported)
+    }
+
+    /// A bug of the translation, noticed at `span`.
+    pub fn internal(span: Span, msg: impl Into<String>) -> Self {
+        Self::new(span, msg).of_kind(ErrorKind::Internal)
+    }
+
+    /// An error of the design at `span`, or that concerns no one place of
+    /// it.
+    pub fn at(span: Option<Span>, msg: impl Into<String>) -> Self {
+        Self {
+            span,
+            ..Self::unlocated(ErrorKind::User, msg)
+        }
+    }
+
+    /// An error of the kind `kind` that concerns no one place of the
+    /// design.
+    pub fn unlocated(kind: ErrorKind, msg: impl Into<String>) -> Self {
+        Self {
+            kind,
+            span: None,
+            msg: msg.into(),
+            file: None,
+        }
+    }
+
+    /// The error, of the kind `kind`.
+    pub fn of_kind(self, kind: ErrorKind) -> Self {
+        Self { kind, ..self }
+    }
+
+    /// The error with the message `f(msg)`, at the same place.
+    pub fn map_msg(self, f: impl FnOnce(String) -> String) -> Self {
+        Self {
+            msg: f(self.msg),
+            ..self
         }
     }
 
@@ -55,9 +119,79 @@ impl Error {
     }
 }
 
+/// `FILE:L:C: message`, without the parts that are not known.
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.span, self.msg)
+        write_place(f, self.file.as_deref(), self.span)?;
+        write!(f, "{}", self.msg)
+    }
+}
+
+/// `FILE:L:C: `, `FILE: `, `L:C: ` or nothing, as far as known.
+fn write_place(
+    f: &mut fmt::Formatter<'_>,
+    file: Option<&std::path::Path>,
+    span: Option<Span>,
+) -> fmt::Result {
+    match (file, span) {
+        (Some(file), Some(span)) => write!(f, "{}:{span}: ", file.display()),
+        (Some(file), None) => write!(f, "{}: ", file.display()),
+        (None, Some(span)) => write!(f, "{span}: "),
+        (None, None) => Ok(()),
+    }
+}
+
+/// A warning: the design is translated, but the translation abstracts
+/// from something or differs from some tools there.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Warning {
+    pub span: Span,
+    pub msg: String,
+    /// The source file, as for [`Error::file`].
+    pub file: Option<std::path::PathBuf>,
+}
+
+impl Warning {
+    pub fn new(span: Span, msg: impl Into<String>) -> Self {
+        Self {
+            span,
+            msg: msg.into(),
+            file: None,
+        }
+    }
+
+    /// The warning with the message `f(msg)`, at the same place.
+    pub fn map_msg(self, f: impl FnOnce(String) -> String) -> Self {
+        Self {
+            msg: f(self.msg),
+            ..self
+        }
+    }
+}
+
+/// What [`Error`] and [`Warning`] share: a message that can be extended.
+pub(crate) trait Message {
+    fn map_msg(self, f: impl FnOnce(String) -> String) -> Self;
+}
+
+impl Message for Error {
+    fn map_msg(self, f: impl FnOnce(String) -> String) -> Self {
+        Error::map_msg(self, f)
+    }
+}
+
+impl Message for Warning {
+    fn map_msg(self, f: impl FnOnce(String) -> String) -> Self {
+        Warning::map_msg(self, f)
+    }
+}
+
+/// `FILE:L:C: message`, without the file if it is not known (like
+/// [`Error`]; the command-line tool puts `warning: ` before the message).
+impl fmt::Display for Warning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_place(f, self.file.as_deref(), Some(self.span))?;
+        write!(f, "{}", self.msg)
     }
 }
 
@@ -279,7 +413,9 @@ pub struct Instance {
 pub struct Override {
     pub name: Name,
     pub value: Expr,
-    pub span: Span,
+    /// The position of the name in the instance; none for a value given
+    /// from outside the design (the command line).
+    pub span: Option<Span>,
 }
 
 /// `.port(actual)`, `.port` (short for `.port(port)`) or `.port()`
@@ -375,11 +511,45 @@ pub enum Item {
     Instance(Instance),
 }
 
-/// A kind of block as [`Item::block`] names it, with its indefinite
-/// article (`` an `always_ff` ``, ``a clocked `always` ``).
-pub fn with_article(block: &str) -> String {
-    let article = if block.starts_with('`') { "an" } else { "a" };
-    format!("{article} {block}")
+/// A kind of block, as written.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum BlockKind {
+    /// `always_ff`
+    AlwaysFf,
+    /// `always @(posedge clk)`
+    ClockedAlways,
+    /// `always_comb`
+    AlwaysComb,
+    /// `always @*`, `always @(a or b)`
+    CombinationalAlways,
+}
+
+impl BlockKind {
+    /// Whether the kind is a keyword (`always_ff`, `always_comb`), which
+    /// messages name without an article.
+    pub fn is_keyword(self) -> bool {
+        matches!(self, BlockKind::AlwaysFf | BlockKind::AlwaysComb)
+    }
+
+    /// The kind with its indefinite article (`` an `always_ff` ``, ``a
+    /// clocked `always` ``).
+    pub fn with_article(self) -> String {
+        let article = if self.is_keyword() { "an" } else { "a" };
+        format!("{article} {self}")
+    }
+}
+
+/// `` `always_ff` ``, `` `always_comb` ``, ``clocked `always` `` or
+/// ``combinational `always` ``, for messages.
+impl fmt::Display for BlockKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            BlockKind::AlwaysFf => "`always_ff`",
+            BlockKind::ClockedAlways => "clocked `always`",
+            BlockKind::AlwaysComb => "`always_comb`",
+            BlockKind::CombinationalAlways => "combinational `always`",
+        })
+    }
 }
 
 /// How a combinational block was written.
@@ -396,25 +566,29 @@ pub enum Written {
 }
 
 impl Item {
-    /// The kind of block as written, for messages: `` `always_ff` ``,
-    /// `` `always_comb` ``, ``clocked `always` `` or ``combinational
-    /// `always` `` (empty for other items).
-    pub fn block(&self) -> &'static str {
+    /// The kind of block as written (none for other items).
+    pub fn kind(&self) -> Option<BlockKind> {
         match self {
-            Item::AlwaysFf { plain: false, .. } => "`always_ff`",
-            Item::AlwaysFf { plain: true, .. } => "clocked `always`",
+            Item::AlwaysFf { plain: false, .. } => Some(BlockKind::AlwaysFf),
+            Item::AlwaysFf { plain: true, .. } => Some(BlockKind::ClockedAlways),
             Item::AlwaysComb {
                 written: Written::Keyword,
                 ..
-            } => "`always_comb`",
-            Item::AlwaysComb { .. } => "combinational `always`",
-            Item::Assign { .. } | Item::Instance(_) => "",
+            } => Some(BlockKind::AlwaysComb),
+            Item::AlwaysComb { .. } => Some(BlockKind::CombinationalAlways),
+            Item::Assign { .. } | Item::Instance(_) => None,
         }
+    }
+
+    /// The kind of block as written, for messages ([`BlockKind`]; empty
+    /// for other items).
+    pub fn block(&self) -> String {
+        self.kind().map_or(String::new(), |k| k.to_string())
     }
 
     /// [`Item::block`] with its indefinite article.
     pub fn a_block(&self) -> String {
-        with_article(self.block())
+        self.kind().map_or(String::new(), BlockKind::with_article)
     }
 
     /// The signals the item drives, in the order of their first

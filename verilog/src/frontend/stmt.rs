@@ -112,7 +112,7 @@ impl Cx<'_> {
                 });
             }
             sv::AlwaysKeyword::AlwaysLatch(_) => {
-                return self.err(kw, "`always_latch` not supported");
+                return self.not_supported(kw, "`always_latch` not supported");
             }
             sv::AlwaysKeyword::Always(_) => true,
         };
@@ -157,7 +157,7 @@ impl Cx<'_> {
             });
         }
         if let Some(e) = events.get(2) {
-            return self.err(
+            return self.not_supported(
                 *e,
                 "at most two events supported: a clock and an asynchronous reset",
             );
@@ -205,7 +205,7 @@ impl Cx<'_> {
             }
             sv::EventExpression::Paren(e) => self.events(&e.nodes.0.nodes.1, out)?,
             sv::EventExpression::Sequence(e) => {
-                return self.err(e, "sequence events not supported");
+                return self.not_supported(e, "sequence events not supported");
             }
         }
         Ok(())
@@ -226,7 +226,10 @@ impl Cx<'_> {
             .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$');
         if !ident {
-            return Err(Error::new(span, "an event must be on a signal name"));
+            return Err(Error::unsupported(
+                span,
+                "an event must be on a signal name",
+            ));
         }
         Ok((name.to_string(), span))
     }
@@ -242,7 +245,7 @@ impl Cx<'_> {
             Some(sv::EdgeIdentifier::Posedge(_)) => Edge::Pos,
             Some(sv::EdgeIdentifier::Negedge(_)) => Edge::Neg,
             Some(e) => {
-                return self.err(
+                return self.not_supported(
                     e,
                     format!(
                         "`{}` not supported: use separate `posedge` and `negedge` blocks",
@@ -251,7 +254,7 @@ impl Cx<'_> {
                 );
             }
             None => {
-                return self.err(
+                return self.not_supported(
                     clock,
                     "level-sensitive event not supported, use `posedge` or `negedge`",
                 );
@@ -260,7 +263,10 @@ impl Cx<'_> {
         self.absent(iff, "`iff`")?;
         let span = self.span(clock);
         let ExprKind::Var(name) = self.expr(clock)?.kind else {
-            return Err(Error::new(span, "an event must be on a signal name"));
+            return Err(Error::unsupported(
+                span,
+                "an event must be on a signal name",
+            ));
         };
         Ok((name, edge, span))
     }
@@ -307,7 +313,8 @@ impl Cx<'_> {
                 sv::BlockingAssignment::OperatorAssignment(a) => {
                     let (lhs, op, rhs) = &a.nodes;
                     if self.text(op) != "=" {
-                        return self.err(op, format!("`{}` not supported", self.text(op)));
+                        return self
+                            .not_supported(op, format!("`{}` not supported", self.text(op)));
                     }
                     let lhs = self.variable_lvalue(lhs)?;
                     let span = lhs.span;
@@ -325,14 +332,14 @@ impl Cx<'_> {
                     return Ok(Stmt { kind, span });
                 }
                 sv::BlockingAssignment::Variable(a) => {
-                    return self.err(&a.nodes.2, "intra-assignment delay not supported");
+                    return self.not_supported(&a.nodes.2, "intra-assignment delay not supported");
                 }
                 a => return self.unsupported(a),
             },
             sv::StatementItem::ConditionalStatement(c) => {
                 let (unique, _, cond, then, elifs, els) = &c.nodes;
                 if let Some(u) = unique {
-                    return self.err(u, format!("`{}` not supported", self.text(u)));
+                    return self.not_supported(u, format!("`{}` not supported", self.text(u)));
                 }
                 // `else if` chains nest to the right
                 let mut branches = vec![(cond, then)];
@@ -365,10 +372,10 @@ impl Cx<'_> {
             sv::StatementItem::CaseStatement(c) => match c.as_ref() {
                 sv::CaseStatement::Normal(c) => return self.case(c, parallel, span),
                 sv::CaseStatement::Matches(c) => {
-                    return self.err(&c.nodes.3, "`case … matches` not supported");
+                    return self.not_supported(&c.nodes.3, "`case … matches` not supported");
                 }
                 sv::CaseStatement::Inside(c) => {
-                    return self.err(&c.nodes.3, "`case … inside` not supported");
+                    return self.not_supported(&c.nodes.3, "`case … inside` not supported");
                 }
             },
             i => return self.unsupported(i),
@@ -386,10 +393,10 @@ impl Cx<'_> {
     ) -> Result<Stmt> {
         let (unique, kw, sel, first, rest, _) = &c.nodes;
         if let Some(u) = unique {
-            return self.err(u, format!("`{}` not supported", self.text(u)));
+            return self.not_supported(u, format!("`{}` not supported", self.text(u)));
         }
         if !matches!(kw, sv::CaseKeyword::Case(_)) {
-            return self.err(kw, format!("`{}` not supported", self.text(kw)));
+            return self.not_supported(kw, format!("`{}` not supported", self.text(kw)));
         }
         let sel = self.expr(&sel.nodes.1.nodes.0)?;
         let mut items = Vec::new();
@@ -448,7 +455,7 @@ impl Cx<'_> {
                     if matches!(c.as_ref(), sv::CaseStatement::Normal(_))
             );
             if !is_case {
-                return self.err(spec, "`parallel_case` is only supported on a `case`");
+                return self.not_supported(spec, "`parallel_case` is only supported on a `case`");
             }
             parallel = Some(self.span(spec));
             Ok(())
@@ -460,7 +467,7 @@ impl Cx<'_> {
     fn cond_predicate(&self, p: &sv::CondPredicate) -> Result<Expr> {
         match p.nodes.0.contents().as_slice() {
             [sv::ExpressionOrCondPattern::Expression(e)] => self.expr(e),
-            _ => self.err(p, "`&&&` and patterns not supported"),
+            _ => self.not_supported(p, "`&&&` and patterns not supported"),
         }
     }
 
@@ -492,7 +499,7 @@ impl Cx<'_> {
                     .map(|l| self.variable_lvalue(l))
                     .collect::<Result<_>>()?,
             ),
-            lv => return self.err(lv, "assignment patterns and streams not supported"),
+            lv => return self.not_supported(lv, "assignment patterns and streams not supported"),
         };
         Ok(Lvalue { kind, span })
     }

@@ -406,7 +406,7 @@ impl Cx<'_> {
                 Some(Select::Bit(self.index(&c.nodes.1)?)),
             ),
             ([b], Some(p)) => (self.index(&b.nodes.1)?, Some(self.part(&p.nodes.1)?)),
-            _ => return Err(Error::new(span, self.whole_array(&m))),
+            _ => return Err(Error::unsupported(span, self.whole_array(&m))),
         };
         Ok(Elem {
             array: m,
@@ -428,7 +428,8 @@ impl Cx<'_> {
             [] => return Ok(None),
             [d] => *d,
             [_, d, ..] => {
-                return self.err(*d, "arrays with several unpacked dimensions not supported");
+                return self
+                    .not_supported(*d, "arrays with several unpacked dimensions not supported");
             }
         };
         let size = match d {
@@ -436,7 +437,7 @@ impl Cx<'_> {
                 let (a, _, b) = &r.nodes.0.nodes.1.nodes;
                 let (a, b) = (self.const_int(a)?, self.const_int(b)?);
                 if a.min(b) != 0 {
-                    return self.err(
+                    return self.not_supported(
                         d,
                         format!(
                             "array range `[{a}:{b}]` not supported: addresses must start at 0 \
@@ -461,25 +462,25 @@ impl Cx<'_> {
     /// the words for the array `m`.
     pub(super) fn load(&self, c: &sv::SubroutineCallStatement, only: &str) -> Result<()> {
         let sv::SubroutineCallStatement::SubroutineCall(c) = c else {
-            return self.err(c, only);
+            return self.not_supported(c, only);
         };
         let sv::SubroutineCall::SystemTfCall(call) = &c.0 else {
-            return self.err(&c.0, only);
+            return self.not_supported(&c.0, only);
         };
         let Some((name, args)) = system_call(call) else {
-            return self.err(&c.0, only);
+            return self.not_supported(&c.0, only);
         };
         let task = self.text(name);
         let binary = match task.as_str() {
             "$readmemb" => true,
             "$readmemh" => false,
-            _ => return self.err(&c.0, only),
+            _ => return self.not_supported(&c.0, only),
         };
         let span = self.span(&c.0);
         let (file, m) = match args.as_slice() {
             [Some(f), Some(m)] => (f, m),
             [_, _, _, ..] => {
-                return self.err(
+                return self.not_supported(
                     &c.0,
                     format!("`{task}` with start and end addresses not supported"),
                 );
@@ -497,7 +498,10 @@ impl Cx<'_> {
             {
                 file_text.trim_matches('"').to_string()
             }
-            f => return self.err(f, format!("the file of `{task}` must be a string literal")),
+            f => {
+                return self
+                    .not_supported(f, format!("the file of `{task}` must be a string literal"));
+            }
         };
         let m_text = self.text(m);
         let arrays = self.arrays.borrow();
@@ -505,7 +509,7 @@ impl Cx<'_> {
             return self.err(m, format!("`{m_text}` is not an array declared before"));
         };
         if let Some(l) = self.loads.borrow().iter().find(|l| l.array == m_text) {
-            return self.err(&c.0, format!("`{m_text}` is already loaded at {}", l.span));
+            return self.not_supported(&c.0, format!("`{m_text}` is already loaded at {}", l.span));
         }
         let path = self.dir.join(&file_name);
         let text = std::fs::read_to_string(&path).map_err(|e| {

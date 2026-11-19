@@ -1,6 +1,6 @@
 case	top	v2rm	yosys	bucket
-abstract/abstr.sby	demo	0:0: Define not found: demo_counter_abstr_mode	-	preprocessor: define / include missing
-abstract/props.sby	demo	0:0: Define not found: demo_counter_abstr_mode	-	preprocessor: define / include missing
+abstract/abstr.sby	demo	Define not found: demo_counter_abstr_mode	-	preprocessor: define / include missing
+abstract/props.sby	demo	Define not found: demo_counter_abstr_mode	-	preprocessor: define / include missing
 autotune/divider.sby	divider	OK	Equal	
 demos/fib.sby	fib	OK	Equal	
 demos/picorv32_axicheck.sby	testbench	84:11: syntax error [at `restrict`]	-	assertions / properties

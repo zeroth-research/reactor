@@ -4,8 +4,8 @@ use super::definite::{bits_text, definite, one_kind_of_assignment};
 use super::fragment::{constant_select, nonzero_width, pieces_in};
 use super::{Env, Result, env, lookup};
 use crate::ast::{
-    self, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Module, Name, Span, Stmt, StmtKind,
-    Ty, Written,
+    self, BlockKind, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Module, Name, Span,
+    Stmt, StmtKind, Ty, Written,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -85,7 +85,7 @@ pub fn check(m: &Module) -> Result<Env> {
                     drive(&env, &mut driver, lhs, span, i)
                 })?;
                 drives_something(item)?;
-                one_kind_of_assignment(body, item.block(), &mut BTreeMap::new())?;
+                one_kind_of_assignment(body, item.kind().expect("a block"), &mut BTreeMap::new())?;
                 if let Some(r) = reset {
                     if lookup(&env, &r.name, r.span)?.ty.width != 1 {
                         return Err(Error::new(
@@ -100,9 +100,12 @@ pub fn check(m: &Module) -> Result<Env> {
                 definite(&env, item)?;
             }
             Item::AlwaysComb { body, written, .. } => {
-                stmt(&env, body, Proc::Comb(item.block()), &mut |lhs, span| {
-                    drive(&env, &mut driver, lhs, span, i)
-                })?;
+                stmt(
+                    &env,
+                    body,
+                    Proc::Comb(item.kind().expect("a block")),
+                    &mut |lhs, span| drive(&env, &mut driver, lhs, span, i),
+                )?;
                 drives_something(item)?;
                 match written {
                     Written::List(list) => event_list(&env, m, item, list)?,
@@ -177,7 +180,7 @@ fn connections<'m>(
     for c in &inst.conns {
         let f = c
             .formal
-            .ok_or_else(|| Error::new(c.span, "internal error: instance not elaborated"))?;
+            .ok_or_else(|| Error::internal(c.span, "internal error: instance not elaborated"))?;
         let port = format!("port `{}` of `{}`", c.port, inst.name);
         match (&c.actual, f.dir) {
             (Some(e), Dir::Input) if f.clock => match &e.kind {
@@ -192,7 +195,7 @@ fn connections<'m>(
             (Some(e), Dir::Input) => names(env, e)?,
             (Some(e), Dir::Output) => {
                 let ExprKind::Var(y) = &e.kind else {
-                    return Err(Error::new(
+                    return Err(Error::unsupported(
                         e.span,
                         format!(
                             "output {port} must be connected to a signal name \
@@ -253,7 +256,7 @@ fn pin_uses(m: &Module) -> Result<()> {
     }
     let is_pin = |x: &str| m.pins.iter().any(|p| p.name == x);
     let err = |x: &str, span: Span| {
-        Err(Error::new(
+        Err(Error::unsupported(
             span,
             format!(
                 "`{x}` is an `inout` port: it may only be connected to an `inout` port of a \
@@ -414,8 +417,8 @@ fn drive(
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Proc {
     Ff,
-    /// A combinational block, with its kind as written ([`Item::block`]).
-    Comb(&'static str),
+    /// A combinational block, with its kind as written.
+    Comb(BlockKind),
 }
 
 /// Checks the event list `list` of a combinational plain `always` (`@(a or
@@ -494,7 +497,7 @@ fn reset_branch<'s>(s: &'s Stmt, seen: &mut BTreeSet<&'s Name>) -> Result<()> {
         StmtKind::Block(stmts) => stmts.iter().try_for_each(|s| reset_branch(s, seen)),
         StmtKind::NonBlocking { lhs, rhs } => {
             let LvalueKind::Var(q) = &lhs.kind else {
-                return Err(Error::new(
+                return Err(Error::unsupported(
                     lhs.span,
                     "the reset branch may only assign whole registers (`q <= 8'd0;`)",
                 ));
@@ -512,7 +515,7 @@ fn reset_branch<'s>(s: &'s Stmt, seen: &mut BTreeSet<&'s Name>) -> Result<()> {
             }
             Ok(())
         }
-        _ => Err(Error::new(
+        _ => Err(Error::unsupported(
             s.span,
             "the reset branch may only assign constants to registers (`q <= 8'd0;`)",
         )),
@@ -574,10 +577,10 @@ fn stmt(
                     format!(
                         "non-blocking assignment not allowed in {}, use `=`",
                         // `always_comb` without an article, as the keyword
-                        if kind.starts_with('`') {
+                        if kind.is_keyword() {
                             kind.to_string()
                         } else {
-                            ast::with_article(kind)
+                            kind.with_article()
                         }
                     ),
                 ));
@@ -612,7 +615,7 @@ fn unknown(
         .iter()
         .any(|p| p.variable.is_some() || p.elem.is_some())
     {
-        return Err(Error::new(
+        return Err(Error::unsupported(
             lhs.span,
             format!(
                 "`{lhs}` has a variable index: x may only be assigned to targets with \
@@ -623,7 +626,7 @@ fn unknown(
     if let Some(n) = size
         && n < w
     {
-        return Err(Error::new(
+        return Err(Error::unsupported(
             lhs.span,
             format!(
                 "the x literal has {n} bit{}, but `{lhs}` has {w} bits, so the others \

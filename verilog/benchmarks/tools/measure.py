@@ -199,7 +199,7 @@ def accept(case):
     # v2rm's errors start with the file they are in (`FILE:L:C: message`), the first file if
     # they have no position
     path = next((f for f in case.files if first.startswith(f"{f}:")), case.files[0])
-    return where(path, first.replace(str(path), "", 1).lstrip(":"))
+    return where(path, first.replace(str(path), "", 1).lstrip(":").lstrip())
 
 
 def where(path, msg):
