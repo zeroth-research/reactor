@@ -434,7 +434,6 @@ fn mutants_of_text() {
     );
 }
 
-
 /// The tokens: operators by longest match, literals of every form with
 /// their bases and digits, the keywords that mutants change (other words
 /// are skipped), nothing inside comments.
@@ -455,19 +454,40 @@ fn tokens_of_text() {
     );
     assert_eq!(
         texts("8'sd3 + 4'hF_f - 1_000 + 'd7 + 'sh7 + '0 + '1 + 16'b1010"),
-        ["8'sd3", "+", "4'hF_f", "-", "1_000", "+", "'d7", "+", "'sh7", "+", "'0", "+", "'1", "+", "16'b1010"]
+        [
+            "8'sd3", "+", "4'hF_f", "-", "1_000", "+", "'d7", "+", "'sh7", "+", "'0", "+", "'1",
+            "+", "16'b1010"
+        ]
     );
     assert_eq!(
         texts("always_ff @(posedge c, negedge r) if (r) q <= $signed(a) >> $unsigned(b);"),
         [
-            "@", "(", "posedge", ",", "negedge", ")", "if", "(", ")", "<=", "$signed", "(", ")",
-            ">>", "$unsigned", "(", ")", ";"
+            "@",
+            "(",
+            "posedge",
+            ",",
+            "negedge",
+            ")",
+            "if",
+            "(",
+            ")",
+            "<=",
+            "$signed",
+            "(",
+            ")",
+            ">>",
+            "$unsigned",
+            "(",
+            ")",
+            ";"
         ]
     );
     // a part select and a cast
     assert_eq!(
         texts("w[3 +: 2] = 4'(x[1:0]);"),
-        ["[", "3", "+:", "2", "]", "=", "4", "'", "(", "[", "1", ":", "0", "]", ")", ";"]
+        [
+            "[", "3", "+:", "2", "]", "=", "4", "'", "(", "[", "1", ":", "0", "]", ")", ";"
+        ]
     );
 }
 

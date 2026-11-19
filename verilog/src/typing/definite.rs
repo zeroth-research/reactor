@@ -651,6 +651,8 @@ pub struct Unwritten {
     pub lo: usize,
     /// The width of the register.
     pub width: usize,
+    /// Whether the register is an element of an array.
+    pub element: bool,
     /// The block that drives the register.
     pub span: Span,
 }
@@ -688,8 +690,9 @@ impl Unwritten {
 /// by register in the order of [`Item::targets`], each register's ranges
 /// from the top bit down. An assignment with a variable index counts as
 /// writing every bit of its signal (every element of its array), also
-/// those that no value of a narrow index reaches: so the bits found are
-/// the ones Yosys gives no flip-flop. An assignment of x writes nothing
+/// those that no value of a narrow index reaches: so for a register that
+/// is no element of an array, the bits found are the ones Yosys gives no
+/// flip-flop (Yosys keeps every element of an array whole). An assignment of x writes nothing
 /// (it is a dead store, assigned again).
 pub(super) fn unwritten(env: &Env, item: &Item) -> Vec<Unwritten> {
     let Item::AlwaysFf { body, .. } = item else {
@@ -727,6 +730,7 @@ pub(super) fn unwritten(env: &Env, item: &Item) -> Vec<Unwritten> {
             hi,
             lo,
             width,
+            element: env[y].id.index.is_some(),
             span: item.span(),
         }));
     }

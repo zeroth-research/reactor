@@ -444,7 +444,6 @@ pub struct Rom {
     pub span: Span,
 }
 
-
 /// `parameter` or `localparam`, with its value.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Param {

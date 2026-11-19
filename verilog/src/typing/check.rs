@@ -68,7 +68,9 @@ pub fn check(m: &Module) -> Result<Env> {
     for (i, item) in m.items.iter().enumerate() {
         match item {
             Item::Assign { lhs, rhs, span } => {
-                lvalue(&env, lhs, &mut |y, span| drive(&env, &mut driver, y, span, i))?;
+                lvalue(&env, lhs, &mut |y, span| {
+                    drive(&env, &mut driver, y, span, i)
+                })?;
                 target_names(&env, lhs)?;
                 names(&env, rhs)?;
                 drives_whole(&env, item, lhs, *span)?;
