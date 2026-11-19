@@ -326,12 +326,31 @@ pub fn registers(t: &Translation, ys: &Smt2) -> Result<BTreeMap<Name, String>, V
     }
 }
 
+/// Whether `t` can be compared with Yosys at all, checked before Yosys
+/// runs: not if a register has bits that no assignment writes
+/// ([`Translation::unwritten`]). Yosys gives those bits no flip-flop: it
+/// splits the register into flip-flops for the written bits and leaves the
+/// others undriven, which [`registers`] cannot pair with our one variable.
+pub fn comparable(t: &Translation) -> Result<(), String> {
+    if t.unwritten.is_empty() {
+        return Ok(());
+    }
+    let bits: Vec<String> = t.unwritten.iter().map(|u| u.never_written()).collect();
+    Err(format!(
+        "cannot compare with Yosys: {}; Yosys splits such a register into flip-flops \
+         for the written bits only and leaves the others undriven",
+        bits.join(", ")
+    ))
+}
+
 /// The miter of the rounds of `t` and the Yosys translation `ys` of the
-/// same design. Fails, listing them all, if the registers do not match
+/// same design. Fails if `t` cannot be compared ([`comparable`]), or,
+/// listing them all, if the registers do not match
 /// ([`registers`]), if a variable the rounds use is not a Yosys wire or
 /// has a different width there, or if the inputs, outputs and signals of
 /// the two sides do not match ([`interfaces`]).
 pub fn build(t: &Translation, ys: &Smt2) -> Result<Miter, String> {
+    comparable(t)?;
     let round = smt::round(t, Phase::Update);
     let first = smt::round(t, Phase::Init);
     let (samples, mut errors) = match registers(t, ys) {

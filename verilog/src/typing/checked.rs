@@ -1,5 +1,6 @@
 //! A module that passed every check, sized: [`checked`] and [`Checked`].
 
+use super::definite::{Unwritten, unwritten};
 use super::{Env, Result, check, explicit};
 use crate::ast::{
     Cast, ErrorKind, Expr, ExprKind, Index, Item, Lvalue, LvalueKind, Module, Select, Stmt,
@@ -18,6 +19,7 @@ pub struct Checked<'m> {
     env: Env,
     source: &'m Module,
     sized: Module,
+    unwritten: Vec<Unwritten>,
 }
 
 impl<'m> Checked<'m> {
@@ -36,14 +38,21 @@ impl<'m> Checked<'m> {
     pub fn sized(&self) -> &Module {
         &self.sized
     }
+
+    /// The bits of the registers that no assignment writes, block by
+    /// block in source order: they keep their power-on value.
+    pub fn unwritten(&self) -> &[Unwritten] {
+        &self.unwritten
+    }
 }
 
 /// Checks the module of the elaborated instance `inst` ([`check`], which
 /// also checks its blocks for latches, stale reads and live x, each block
 /// in source order), sizes it ([`sizing`](crate::sizing)) and checks that
 /// the sized module is in the explicit-width fragment ([`explicit`]; a
-/// failure there is an internal error). Errors are positions in the module, without the path
-/// of the instance.
+/// failure there is an internal error), and finds the bits of registers
+/// that no assignment writes ([`Checked::unwritten`]). Errors are
+/// positions in the module, without the path of the instance.
 pub fn checked(inst: &Inst) -> Result<Checked<'_>> {
     let m = &inst.module;
     debug_assert!(
@@ -54,10 +63,11 @@ pub fn checked(inst: &Inst) -> Result<Checked<'_>> {
     );
     let env = check(m)?;
     let sized = sizing::module(m, &env)?;
-    let c = Checked {
+    let mut c = Checked {
         env,
         source: m,
         sized,
+        unwritten: Vec::new(),
     };
     explicit(&c).map_err(|e| {
         e.of_kind(ErrorKind::Internal)
@@ -68,6 +78,9 @@ pub fn checked(inst: &Inst) -> Result<Checked<'_>> {
         "sizing broke an invariant of `{}`",
         m.name
     );
+    c.unwritten = (c.sized.items.iter())
+        .flat_map(|item| unwritten(&c.env, item))
+        .collect();
     Ok(c)
 }
 

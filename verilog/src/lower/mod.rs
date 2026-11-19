@@ -86,6 +86,18 @@ register with an initial value (`logic q = c;`, `initial q = c;`) to it,
 value of an external variable `q@init`, `X(q) := ID X(q@init)`, so all
 its initial values are possible.
 
+A register is one variable even if its block writes only some of its
+bits. The bits that no assignment of the block writes, on any path, keep
+their power-on value (the initial value, or that of `q@init`) forever: the
+2-state counterpart of a simulator's x, which such bits keep. An
+assignment with a variable index counts as writing every bit of its signal
+(every element of its array), even bits that no value of a narrow index
+reaches. Such bits are listed in [`Translation::unwritten`] and the CLI
+warns about each range of them. (Yosys gives them no flip-flop: it splits
+the register into flip-flops for the written bits and leaves the others
+undriven, so the comparison with Yosys refuses such designs. A register
+with a variable-index write stays one flip-flop in Yosys.)
+
 Reading values just before the edge is what hardware does under two
 timing assumptions, which this semantics makes and does not check:
 
@@ -331,6 +343,10 @@ pub struct Translation {
     /// round and nothing reads its inputs, since its behaviour is not part
     /// of the design (see the module docs, "Blackboxes and pins").
     pub blackboxes: Vec<Warning>,
+    /// The bits of registers that no assignment writes on any path, by
+    /// instance in the order of translation: they keep their power-on
+    /// value forever (see the module docs, "Time and clocks").
+    pub unwritten: Vec<UnwrittenBits>,
     /// Names of wires local to an atom: the intermediate values `y@1`,
     /// `y@2`, … of the signals of `always_comb` blocks, and the edge tests
     /// `clk@pos`, `clk@neg` of `always_ff` blocks (`clk@pos#2` for the
@@ -380,6 +396,32 @@ impl<'v> IntoIterator for &'v Vars {
 
     fn into_iter(self) -> Self::IntoIter {
         self.by_name.iter()
+    }
+}
+
+/// Bits of a register of an instance that no assignment writes
+/// ([`typing::Unwritten`]).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct UnwrittenBits {
+    pub instance: Path,
+    pub bits: typing::Unwritten,
+}
+
+impl UnwrittenBits {
+    /// The warning, with the instance: `` bits 3:1 of register `q` are
+    /// never written; they keep their power-on value (in instance `u`) ``.
+    pub fn warning(&self) -> Warning {
+        crate::elab::context(self.bits.warning(), &self.instance)
+    }
+
+    /// `` bits 3:1 of register `q` are never written (in instance `u`) ``.
+    pub fn never_written(&self) -> String {
+        let text = self.bits.never_written();
+        if self.instance.is_top() {
+            text
+        } else {
+            format!("{text} (in instance `{}`)", self.instance)
+        }
     }
 }
 
@@ -474,6 +516,7 @@ fn translate(inst: &Inst, parts: bool) -> Result<Translation> {
         instances: Vec::new(),
         out_of_range: Vec::new(),
         blackboxes: Vec::new(),
+        unwritten: Vec::new(),
     };
     let module = lower_rec(inst, &Path::top(), &mut out)?;
     out.out_of_range
@@ -503,6 +546,7 @@ fn translate(inst: &Inst, parts: bool) -> Result<Translation> {
         blackbox_outputs: inst.blackbox_outputs(),
         out_of_range: out.out_of_range,
         blackboxes: out.blackboxes,
+        unwritten: out.unwritten,
         wire_names: out.wire_names,
         instances: out.instances,
     })

@@ -5,7 +5,8 @@
 //! stubs, say); errors name the file they are in. Warnings (on standard
 //! error) name the inputs nothing reads, every instance of a blackbox with
 //! the signals it leaves free (see the crate docs, "The boundary of a
-//! design"), and reads that may select bits outside a signal. `-G` sets a parameter of the top module
+//! design"), reads that may select bits outside a signal, and bits of
+//! registers that no assignment writes (they keep their power-on value). `-G` sets a parameter of the top module
 //! to a literal (`8`, `-3`, `4'hf`), taken as the parameter's declaration
 //! takes a value. `--instances` first prints the module of every
 //! instance as it is composed into its parent, children before parents.
@@ -25,7 +26,9 @@
 //! and the replay of it in both interpreters, saying which side the
 //! reference semantics agrees with. Needs Yosys and z3 (found as in the
 //! `yosys` and `z3` modules), and does not take `-G` or
-//! `--ignore-initializers` (Yosys keeps initial values). It warns if Yosys
+//! `--ignore-initializers` (Yosys keeps initial values). It refuses, before
+//! running Yosys, a design with register bits that no assignment writes
+//! (Yosys leaves them undriven). It warns if Yosys
 //! is not the version the format of its output was checked with. `-t:MS` gives z3
 //! at most `MS` milliseconds for each query (no limit without it); a query
 //! that runs out of time is reported as `unknown:`. If iverilog is found
@@ -320,6 +323,9 @@ fn run(o: Options) -> ExitCode {
             for w in t.blackboxes.iter().chain(&t.out_of_range) {
                 eprintln!("{}", located_warning(w.clone()));
             }
+            for u in &t.unwritten {
+                eprintln!("{}", located_warning(u.warning()));
+            }
             let check = Check { timeout, iverilog };
             let code = output(mode, &paths, &inst, &t, &overrides, check, &located);
             ExitCode::from(code)
@@ -419,6 +425,7 @@ fn yosys_check(
     overrides: &[Override],
     check: Check,
 ) -> Result<bool, String> {
+    miter::comparable(t)?;
     let yosys = yosys::find().ok_or("yosys not found (set $YOSYS_BIN)")?;
     if let Some(w) = yosys::version_warning(&yosys::version(&yosys)) {
         eprintln!("{}: warning: {w}", paths[0]);

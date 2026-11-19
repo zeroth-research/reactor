@@ -255,6 +255,7 @@ fn round_declares_havoc() {
         unread_inputs: vec![],
         blackbox_outputs: vec![],
         blackboxes: vec![],
+        unwritten: vec![],
         out_of_range: vec![],
         wire_names: HashMap::new(),
         instances: vec![],
