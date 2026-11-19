@@ -123,7 +123,8 @@ fn vectors() {
     for (name, rounds) in VECTORS {
         let inst = elab::load_file(dir.join(format!("{name}.sv"))).unwrap();
         let t = lower_inst(&inst).unwrap();
-        let env = typing::check(&inst.module).unwrap();
+        let checked = typing::checked(&inst).unwrap();
+        let env = checked.env();
         let width = |x: &str| env[x].ty.width;
         // every register without an initial value at 0
         let init: Values = common::uninitialized(&inst)

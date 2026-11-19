@@ -32,7 +32,8 @@ const VECTORS: &[(&str, &str)] = &[
 fn deviating_shapes() {
     let inst = elab::load(DESIGN, "dev.sv").unwrap();
     let t = lower_inst(&inst).unwrap();
-    let env = typing::check(&inst.module).unwrap();
+    let checked = typing::checked(&inst).unwrap();
+    let env = checked.env();
     let width = |x: &str| env[x].ty.width;
     for (inputs, expected) in VECTORS {
         let inputs = values(inputs, width);

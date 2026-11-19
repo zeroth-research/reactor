@@ -1,7 +1,7 @@
 //! Names, drivers, blocks and their event controls: [`check`].
 
-use super::definite::{bits_text, definite, one_kind_of_assignment};
-use super::fragment::{constant_select, nonzero_width, pieces};
+use super::definite::{bits_text, one_kind_of_assignment};
+use super::fragment::{constant_select, nonzero_width, pieces_in};
 use super::{Env, Result, env, lookup};
 use crate::ast::{
     self, Dir, Error, Expr, ExprKind, Item, Lvalue, LvalueKind, Module, Name, Span, Stmt, StmtKind,
@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// block has non-blocking ones `<=`, and blocking ones `=` only where they
 /// mean the same: each signal is assigned either only with `<=` or only
 /// with `=`, and nothing a `=` assigns is read later in the block (checked
-/// by [`definite`]; reads before it see the value before the edge, as with
+/// by [`definite`](super::definite); reads before it see the value before the edge, as with
 /// `<=`; another block at the same clock edge may not read it either, see
 /// [`domains`](super::domains)). Every block drives something. This is the
 /// rule of IEEE 1800-2017 for whole variables: a variable assigned in an
@@ -97,7 +97,6 @@ pub fn check(m: &Module) -> Result<Env> {
                         reset_branch(branch, &mut BTreeSet::new())?;
                     }
                 }
-                definite(&env, item)?;
             }
             Item::AlwaysComb { body, written, .. } => {
                 stmt(&env, body, Proc::Comb(item.block()), &mut |lhs, span| {
@@ -109,7 +108,6 @@ pub fn check(m: &Module) -> Result<Env> {
                     Written::Star => star_reads(item)?,
                     Written::Keyword => {}
                 }
-                definite(&env, item)?;
             }
             Item::Instance(inst) => connections(&env, m, inst, i, &mut driver, &mut clocks)?,
         }
@@ -141,7 +139,7 @@ pub fn check(m: &Module) -> Result<Env> {
 fn drives_whole(env: &Env, item: &Item, lhs: &Lvalue, span: Span) -> Result<()> {
     for y in item.targets() {
         let n = env[y].ty.width;
-        let bits: BTreeSet<usize> = pieces(env, lhs)
+        let bits: BTreeSet<usize> = pieces_in(env, lhs)
             .into_iter()
             .filter(|p| p.name == *y)
             .flat_map(|p| p.lo..=p.hi)
@@ -608,7 +606,7 @@ fn unknown(
 ) -> Result<()> {
     let w = lvalue(lhs, drive)?;
     target_names(env, lhs)?;
-    if pieces(env, lhs)
+    if pieces_in(env, lhs)
         .iter()
         .any(|p| p.variable.is_some() || p.elem.is_some())
     {

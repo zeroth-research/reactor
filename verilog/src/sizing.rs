@@ -1,7 +1,7 @@
 /*!
 # The standard width and signedness rules
 
-[`module`] rewrites every expression of a checked module into the
+Sizing (run by [`typing::checked`]) rewrites every expression of a module into the
 explicit-width fragment that lowering translates (see [`typing::expr`]):
 where IEEE 1800 resizes a value implicitly, it inserts a resize node
 [`ExprKind::Resize`], and it replaces `'0`/`'1` by literals of their
@@ -77,7 +77,7 @@ use crate::ast::{
 };
 use crate::elab::{self, Inst};
 use crate::theory::SvOp;
-use crate::typing::{self, Env};
+use crate::typing::{self, Checked, Env};
 use crate::value::{self, BitVec};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -85,14 +85,15 @@ use std::collections::BTreeMap;
 type Result<T> = std::result::Result<T, Error>;
 
 /// The module with every expression sized (see the module documentation).
-/// Expects `m` to pass [`typing::check`], which gives `env`.
-pub fn module(m: &Module, env: &Env) -> Result<Module> {
+/// Expects `m` to pass [`typing::check`], which gives `env`;
+/// [`typing::checked`] calls it.
+pub(crate) fn module(m: &Module, env: &Env) -> Result<Module> {
     let s = Sizer::new(env);
     let mut out = m.clone();
     for item in &mut out.items {
         match item {
             Item::Assign { lhs, rhs, .. } => {
-                let width = typing::pieces(env, lhs).iter().map(|p| p.width()).sum();
+                let width = typing::pieces_in(env, lhs).iter().map(|p| p.width()).sum();
                 *rhs = s.assign(width, rhs)?;
             }
             Item::AlwaysFf { body, .. } | Item::AlwaysComb { body, .. } => s.stmt(body)?,
@@ -244,7 +245,7 @@ impl<'e> Sizer<'e> {
                 }
             }
             StmtKind::NonBlocking { lhs, rhs } | StmtKind::Blocking { lhs, rhs } => {
-                let width = typing::pieces(self.env, lhs)
+                let width = typing::pieces_in(self.env, lhs)
                     .iter()
                     .map(|p| p.width())
                     .sum();
@@ -762,10 +763,8 @@ impl Printer {
         for (u, child) in &inst.children {
             names.insert(u.clone(), self.inst(child, &format!("{prefix}{u}."))?);
         }
-        let ctx = |e: Error| elab::context(e, prefix);
-        let env = typing::check(m).map_err(ctx)?;
-        let sized = module(m, &env).map_err(ctx)?;
-        let body = body(&env, &sized, &names);
+        let checked = typing::checked(inst).map_err(|e| elab::context(e, prefix))?;
+        let body = body(&checked, &names);
         // the same module with the same text is printed once
         let base = &m.name;
         for (name, text) in &self.modules {
@@ -790,9 +789,10 @@ impl Printer {
     }
 }
 
-/// A module as source, named `{}`, with `names` the printed module name of
-/// each instance.
-fn body(env: &Env, m: &Module, names: &BTreeMap<Name, Name>) -> String {
+/// A sized module as source, named `{}`, with `names` the printed module
+/// name of each instance.
+fn body(c: &Checked, names: &BTreeMap<Name, Name>) -> String {
+    let (env, m) = (c.env(), c.sized());
     let mut out = String::new();
     if m.blackbox {
         out += "(* blackbox *)\n";

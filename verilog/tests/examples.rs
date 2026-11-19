@@ -103,8 +103,8 @@ fn sized_source() {
         let back = elab::load_file(&file).unwrap_or_else(|e| panic!("{}:{e}", file.display()));
         let mut walk = vec![&back];
         while let Some(i) = walk.pop() {
-            let env = typing::check(&i.module).unwrap();
-            typing::explicit(&env, &i.module).unwrap_or_else(|e| panic!("{}:{e}", file.display()));
+            let c = typing::checked(i).unwrap_or_else(|e| panic!("{}:{e}", file.display()));
+            typing::explicit_source(&c).unwrap_or_else(|e| panic!("{}:{e}", file.display()));
             walk.extend(i.children.iter().map(|(_, c)| c));
         }
         let Some(bin) = &bin else { continue };

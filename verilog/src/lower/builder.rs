@@ -161,7 +161,7 @@ impl<'a> Builder<'a> {
     /// the high bits. Variable indices are evaluated before any piece is
     /// written.
     pub(super) fn assign(&mut self, lhs: &Lvalue, w: Wire, span: Span) -> Result<()> {
-        let pieces = typing::pieces(self.env, lhs);
+        let pieces = typing::pieces_in(self.env, lhs);
         let mut indices = Vec::new();
         for p in &pieces {
             let inner = match p.variable {

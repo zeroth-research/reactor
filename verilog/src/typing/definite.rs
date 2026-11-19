@@ -1,8 +1,8 @@
 //! Definite assignment: no read of a bit before it is written in a block, no latch, no live x
 //! ([`definite`]).
 
-use super::fragment::{Piece, pieces};
-use super::{Env, Result};
+use super::fragment::{Piece, pieces_in};
+use super::{Checked, Env, Result};
 use crate::ast::{self, Error, Expr, ExprKind, Item, Lvalue, Name, Select, Span, Stmt, StmtKind};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -34,7 +34,8 @@ pub(super) fn bits_text(y: &str, bits: &[usize], width: usize) -> String {
     ranges.join(", ")
 }
 
-/// Checks that an `always_comb` block assigns each signal it drives on
+/// Checks the blocks of the checked module `c` (as written, not sized):
+/// that an `always_comb` block assigns each signal it drives on
 /// every path before reading it and by the end of the block (no
 /// latch), and that the x a block of either kind assigns is dead.
 ///
@@ -59,7 +60,14 @@ pub(super) fn bits_text(y: &str, bits: &[usize], width: usize) -> String {
 /// besides x, only blocking assignments are checked there: no read may
 /// follow a `=` that may have assigned the bits it reads (on any path), so
 /// that every `=` means the same as `<=`.
-pub fn definite(env: &Env, item: &Item) -> Result<()> {
+pub fn definite(c: &Checked) -> Result<()> {
+    (c.source().items.iter())
+        .filter(|item| item.body().is_some())
+        .try_for_each(|item| block(c.env(), item))
+}
+
+/// [`definite`] for the block `item`.
+fn block(env: &Env, item: &Item) -> Result<()> {
     let targets = item.targets();
     let body = item.body().expect("a block");
     let comb = matches!(item, Item::AlwaysComb { .. });
@@ -286,7 +294,7 @@ impl Definite<'_> {
                 self.merge(&branches, default.is_none(), st, s.span, why)
             }
             StmtKind::Unknown { lhs, blocking, .. } => {
-                for p in pieces(self.env, lhs) {
+                for p in pieces_in(self.env, lhs) {
                     for b in p.lo..=p.hi {
                         let bit = (p.name.clone(), b);
                         st.done.remove(&bit);
@@ -315,7 +323,7 @@ impl Definite<'_> {
         st: &mut State,
     ) -> Result<()> {
         self.reads(rhs, st)?;
-        let pieces = pieces(self.env, lhs);
+        let pieces = pieces_in(self.env, lhs);
         for p in &pieces {
             if let Some(v) = p.variable {
                 self.reads(v.index, st)?;
@@ -413,7 +421,7 @@ impl Definite<'_> {
     /// `span` in an `always_ff` may assign: with a variable index, every
     /// bit of the signal (or of every element).
     fn block(&self, lhs: &Lvalue, span: Span, st: &mut State) {
-        for p in pieces(self.env, lhs) {
+        for p in pieces_in(self.env, lhs) {
             let names: Vec<&Name> = match p.elem {
                 Some(e) => e.elems.iter().collect(),
                 None => vec![&p.name],
