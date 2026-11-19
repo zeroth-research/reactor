@@ -43,9 +43,8 @@ from pathlib import Path
 SP = Path(__file__).resolve().parent
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
 PY = VR.parent / "python"                   # python/: reactor and its tests
-LEAN_TESTS = VR.parent / "lean" / "tests"    # reactor_lean's tests: the limit matrix, tests/lean
-WARM = LEAN_TESTS / "lean"
-MANIFEST = LEAN_TESTS / "limits" / "lake-manifest.json"
+WARM = VR.parent / "lean" / "tests" / "lean"  # reactor_lean's Lake test project, Mathlib built
+MANIFEST = VR / "tests" / "limits" / "lake-manifest.json"
 
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))

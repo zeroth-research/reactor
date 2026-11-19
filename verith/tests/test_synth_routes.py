@@ -26,7 +26,7 @@ from reactor_lean.inputs.python import load_module
 from verith.resume import resumable_inv, ruled_out, taking_inv
 
 # The fixtures are `reactor`'s, in the `python/` project beside this one.
-MODS = Path(__file__).resolve().parents[2] / "lean" / "tests" / "limits" / "mods"
+MODS = Path(__file__).resolve().parent / "limits" / "mods"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 

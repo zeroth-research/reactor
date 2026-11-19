@@ -19,7 +19,7 @@ from reactor_lean.inputs.python import load_module
 cvc5 = pytest.importorskip("cvc5")
 from cvc5 import Kind  # noqa: E402
 
-LIMITS = Path(__file__).resolve().parents[2] / "lean" / "tests" / "limits" / "mods"
+LIMITS = Path(__file__).resolve().parent / "limits" / "mods"
 
 
 def _module(name: str):

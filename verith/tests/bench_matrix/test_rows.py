@@ -121,8 +121,7 @@ def test_every_module_has_a_refutable_row():
 # cannot tell them apart and answers `fails` to both.
 # ══════════════════════════════════════════════════════════════════════════
 
-COUNTDOWN = (Path(__file__).resolve().parents[3] / "lean" / "tests" / "limits"
-             / "mods" / "m_countdown.py")
+COUNTDOWN = Path(__file__).resolve().parents[1] / "limits" / "mods" / "m_countdown.py"
 
 
 def test_a_recurrence_longer_than_the_tail_is_not_refuted():
