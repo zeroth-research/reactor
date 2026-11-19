@@ -38,7 +38,7 @@ def running_verdict(counts, bound=3):
 
 def test_a_safety_formula_is_the_running_verdict_over_the_trace():
     net, queue = birth_death()
-    monitor = Automaton(bounded, extl=(queue.count,))
+    monitor = Automaton(bounded, extl=(queue.count,), theory=SPN)
     assert monitor.text == "G(!(p0))"
     assert monitor.acceptance == "Inf(0)"
     assert len(monitor.accepting) == 1
@@ -50,14 +50,14 @@ def test_a_safety_formula_is_the_running_verdict_over_the_trace():
 
 def test_init_reads_the_initial_marking():
     net, queue = birth_death(initial=5)
-    monitor = Automaton(bounded, extl=(queue.count,))
+    monitor = Automaton(bounded, extl=(queue.count,), theory=SPN)
     run = simulate(compose(net, monitor), horizon=1.0, seed=1)
     assert run.series(monitor.accepting[0])[0] is False
 
 
 def test_a_co_safety_formula_turns_true_once_and_stays():
     net, queue = birth_death()
-    monitor = Automaton(reaches, extl=(queue.count,))
+    monitor = Automaton(reaches, extl=(queue.count,), theory=SPN)
     run = simulate(compose(net, monitor), horizon=20.0, seed=1)
     verdict = run.series(monitor.accepting[0])
     first = next(i for i, c in enumerate(run.series(queue.count)) if c >= 3)
@@ -69,7 +69,7 @@ def test_liveness_without_a_buchi_automaton_gets_parity_acceptance():
         return F(G(n == 0))
 
     net, queue = birth_death()
-    monitor = Automaton(settles, extl=(queue.count,))
+    monitor = Automaton(settles, extl=(queue.count,), theory=SPN)
     assert monitor.acceptance == "Fin(0)"
     assert monitor.spot.is_deterministic()
     run = simulate(compose(net, monitor), horizon=5.0, seed=2)
@@ -82,23 +82,31 @@ def test_atoms_are_shared_by_identity_and_formulas_combine():
         return G(~full) | (U(~full, X(full)) & F(full))
 
     net, queue = birth_death()
-    monitor = Automaton(both, extl=(queue.count,))
+    monitor = Automaton(both, extl=(queue.count,), theory=SPN)
     assert monitor.text == "(G(!(p0))) | (((!(p0)) U (X(p0))) & (F(p0)))"
 
 
 def test_one_formula_watches_two_queues():
     net_a, a = birth_death()
     net_b, b = birth_death()
-    assert Automaton(bounded, extl=(a.count,)).extl != Automaton(bounded, extl=(b.count,)).extl
+    over_a = Automaton(bounded, extl=(a.count,), theory=SPN)
+    over_b = Automaton(bounded, extl=(b.count,), theory=SPN)
+    assert over_a.extl != over_b.extl
 
 
 def test_the_automaton_composes_with_the_net_it_watches():
     net, queue = birth_death()
-    monitor = Automaton(bounded, extl=(queue.count,))
+    monitor = Automaton(bounded, extl=(queue.count,), theory=SPN)
     assert set(monitor.extl) == {queue.count}
     assert set(monitor.ctrl) == {monitor.q, *monitor.accepting}
     whole = compose(net, monitor)
     assert set(whole.extl) == set(net.extl)
+
+
+def test_the_theory_is_required():
+    net, queue = birth_death()
+    with pytest.raises(TypeError, match="theory"):
+        Automaton(bounded, extl=(queue.count,))
 
 
 def test_an_atom_must_be_a_bool_expression():
@@ -107,7 +115,7 @@ def test_an_atom_must_be_a_bool_expression():
 
     net, queue = birth_death()
     with pytest.raises(TypeError, match="Bool"):
-        Automaton(wrong, extl=(queue.count,))
+        Automaton(wrong, extl=(queue.count,), theory=SPN)
 
 
 def test_a_controller_reads_the_verdict_latched_in_the_loop():
@@ -115,7 +123,7 @@ def test_a_controller_reads_the_verdict_latched_in_the_loop():
     birth = Transition(rate=2.0, inputs=[gate], outputs=[bth])
     death = Transition(rate=1.0, inputs=[dth])
     queue = Place(initial=0, inputs=[bth], outputs=[dth])
-    monitor = Automaton(bounded, extl=(queue.count,))
+    monitor = Automaton(bounded, extl=(queue.count,), theory=SPN)
     ok = monitor.accepting[0]
 
     class Stop(Module):

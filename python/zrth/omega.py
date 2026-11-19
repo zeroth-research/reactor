@@ -9,7 +9,7 @@ A formula is a function of the variables it is over, written like a module's blo
     def bounded(n):
         return G(~(n >= 3))
 
-    monitor = Automaton(bounded, extl=(queue.count,))
+    monitor = Automaton(bounded, extl=(queue.count,), theory=SPN)
     run = simulate(compose(net, monitor), horizon=50.0, seed=1)
     run.series(monitor.accepting[0])      # True while the queue has stayed below 3
 
@@ -21,7 +21,8 @@ initial state is the first letter and the state after a round judges that round'
 Readers of the automaton's variables take them latched.
 
 Spot translates the formula into a deterministic and complete automaton with state-based
-acceptance (parity when no Büchi one exists). The module's state `q` is an `Enum` over
+acceptance (parity when no Büchi one exists). The module is of `theory`, the one the
+variables' modules are of, which needs an `Enum` sort. Its state `q` is an `Enum` over
 the automaton's states, and `accepting[i]` is "q is in acceptance set i"; `acceptance`
 spells the condition over the sets (`Inf(0)`: set 0 visited infinitely often), which is
 what a solver needs for a liveness formula, while for a safety formula `accepting[0]` is
@@ -31,7 +32,7 @@ the running verdict, false once the sink is reached.
 from .expr import Expr, Term, Wire, _emit, collecting, expr, ite
 from .sort import Bool, Enum
 from .sugar import Module
-from .zrth import SPN, Var, X as base_X
+from .zrth import Var, X as base_X
 
 
 class LTL:
@@ -111,7 +112,7 @@ def _spot(phi: LTL, names: dict, made: dict) -> str:
 
 def _boolean(w, names: dict, made: dict) -> str:
     t = made.get(w.id)
-    op = type(t.itype).__name__.removeprefix("SPN_") if t is not None else None
+    op = type(t.itype).__name__.rsplit("_", 1)[-1] if t is not None else None
     if op == "Not":
         return f"!({_boolean(t.read[0], names, made)})"
     if op in ("And", "Or"):
@@ -120,7 +121,7 @@ def _boolean(w, names: dict, made: dict) -> str:
     return names.setdefault(w.id, (f"p{len(names)}", w))[0]
 
 
-def _replay(terms, names, by_id) -> dict:
+def _replay(terms, names, by_id, theory) -> dict:
     """Build the atoms' terms again in the open block, reading the variables through the
     wires in `by_id` (their next wires) in place of the latched ones; returns the atoms'
     new expressions by name."""
@@ -131,10 +132,10 @@ def _replay(terms, names, by_id) -> dict:
         _emit(term)
         for old, w in zip(t.write, write):
             new[old.id] = w
-    return {name: expr(new.get(w.id, w), theory=SPN) for name, w in names.values()}
+    return {name: expr(new.get(w.id, w), theory=theory) for name, w in names.values()}
 
 
-def _cond(f, label: dict) -> Expr:
+def _cond(f, label: dict, theory) -> Expr:
     """A Spot Boolean formula over the atoms as a Bool expression."""
     import spot
 
@@ -142,13 +143,13 @@ def _cond(f, label: dict) -> Expr:
     if kind == spot.op_ap:
         return label[f.ap_name()]
     if kind == spot.op_tt:
-        return expr(True, theory=SPN)
+        return expr(True, theory=theory)
     if kind == spot.op_ff:
-        return expr(False, theory=SPN)
+        return expr(False, theory=theory)
     if kind == spot.op_Not:
-        return ~_cond(f[0], label)
+        return ~_cond(f[0], label, theory)
     if kind in (spot.op_And, spot.op_Or):
-        parts = [_cond(c, label) for c in f]
+        parts = [_cond(c, label, theory) for c in f]
         out = parts[0]
         for p in parts[1:]:
             out = out & p if kind == spot.op_And else out | p
@@ -158,12 +159,15 @@ def _cond(f, label: dict) -> Expr:
 
 class Automaton(Module):
     """The automaton of the formula `formula(*variables)` returns, over the variables in
-    `extl`: `q` its state, `accepting[i]` whether `q` is in acceptance set i,
-    `acceptance` the condition over the sets, `text` the formula as Spot reads it."""
+    `extl`, a module of `theory`: `q` its state, `accepting[i]` whether `q` is in
+    acceptance set i, `acceptance` the condition over the sets, `text` the formula as
+    Spot reads it."""
 
-    def __new__(cls, formula, *, extl=(), name=None):
+    def __new__(cls, formula, *, extl=(), theory=None, name=None):
         import spot
 
+        if theory is None:
+            raise TypeError(f"{cls.__name__}: `theory` is a required constructor arg")
         if not callable(formula):
             raise TypeError(f"a formula is a function of its variables, got {formula!r}")
         extl = tuple(extl)
@@ -174,7 +178,7 @@ class Automaton(Module):
             raise ValueError("a variable appears twice in extl")
 
         with collecting() as terms:
-            phi = _ltl(formula(*(expr(v, theory=SPN) for v in extl)))
+            phi = _ltl(formula(*(expr(v, theory=theory) for v in extl)))
         names = {}
         text = _spot(phi, names, {w.id: t for t in terms for w in t.write})
 
@@ -195,25 +199,25 @@ class Automaton(Module):
         accepting = tuple(Var(Bool([1, 1])) for _ in range(sets))
 
         def literal(s):
-            return expr(s, theory=SPN, sort=Enum(n))
+            return expr(s, theory=theory, sort=Enum(n))
 
         def step(s, label):
             out = edges[s]
             r = literal(out[-1][1])
             for f, dst in reversed(out[:-1]):
-                r = ite(_cond(f, label), literal(dst), r)
+                r = ite(_cond(f, label, theory), literal(dst), r)
             return r
 
         def within(new_q, states):
             if len(states) == n:
-                return expr(True, theory=SPN)
-            r = expr(False, theory=SPN)
+                return expr(True, theory=theory)
+            r = expr(False, theory=theory)
             for s in sorted(states):
                 r = r | (new_q == s)
             return r
 
         def read(variables):
-            return _replay(terms, names, {v.id: base_X(v) for v in variables})
+            return _replay(terms, names, {v.id: base_X(v) for v in variables}, theory)
 
         def init(self, *variables):
             new_q = step(aut.get_init_state_number(), read(extl))
@@ -228,7 +232,7 @@ class Automaton(Module):
 
         self = Module.__new__(
             type(cls.__name__, (cls,), {"init": init, "next": next}),
-            theory=SPN,
+            theory=theory,
             ctrl=(q, *accepting),
             extl=extl,
         )
