@@ -210,20 +210,7 @@ fn main() -> ExitCode {
             Some(t) => t,
             None => d.top()?,
         };
-        let mut overrides = Vec::new();
-        for p in &params {
-            let err = |msg: String| Error::new(Span::default(), format!("-G {p}: {msg}"));
-            let (name, value) = p
-                .split_once('=')
-                .filter(|(name, _)| !name.is_empty())
-                .ok_or_else(|| err("expected NAME=VALUE".into()))?;
-            let value = constant::parse(value).map_err(err)?;
-            overrides.push(Override {
-                name: name.to_string(),
-                value,
-                span: Span::default(),
-            });
-        }
+        let overrides = overrides(&params)?;
         let mut inst = elab::elaborate(d, &top, &overrides)?;
         if ignore {
             inst.ignore_initializers();
@@ -254,44 +241,78 @@ fn main() -> ExitCode {
                     located(Error::new(w.span, format!("warning: {}", w.msg)))
                 );
             }
-            let code = match mode {
-                Mode::Yosys => match yosys_check(&paths, &inst, &t, &overrides, timeout) {
-                    Ok(true) => EQUAL,
-                    Ok(false) => DIFFERS,
-                    Err(e) => {
-                        eprintln!("{path}: {e}");
-                        ERROR
-                    }
-                },
-                Mode::Sized => match sizing::print(&inst) {
-                    Ok(text) => {
-                        print!("{text}");
-                        EQUAL
-                    }
-                    Err(e) => {
-                        eprintln!("{}", located(e));
-                        ERROR
-                    }
-                },
-                Mode::Smt(phase) => {
-                    print!("(set-logic QF_BV)\n{}", smt::round(&t, phase).text);
-                    EQUAL
-                }
-                Mode::Instances | Mode::Print => {
-                    if mode == Mode::Instances {
-                        for part in &t.instances {
-                            println!("{}", t.print_part(part));
-                        }
-                    }
-                    print!("{}", t.print());
-                    EQUAL
-                }
-            };
+            let code = output(mode, &paths, &inst, &t, &overrides, timeout, &located);
             ExitCode::from(code)
         }
         Err(e) => {
             eprintln!("{}", located(e));
             ExitCode::from(ERROR)
+        }
+    }
+}
+
+/// The parameter overrides that `-G NAME=VALUE` arguments give.
+fn overrides(params: &[String]) -> Result<Vec<Override>, Error> {
+    let mut overrides = Vec::new();
+    for p in params {
+        let err = |msg: String| Error::new(Span::default(), format!("-G {p}: {msg}"));
+        let (name, value) = p
+            .split_once('=')
+            .filter(|(name, _)| !name.is_empty())
+            .ok_or_else(|| err("expected NAME=VALUE".into()))?;
+        let value = constant::parse(value).map_err(err)?;
+        overrides.push(Override {
+            name: name.to_string(),
+            value,
+            span: Span::default(),
+        });
+    }
+    Ok(overrides)
+}
+
+/// Prints what `mode` asks for of the translation `t` of `inst`; returns
+/// the exit code. `located` formats an error with its file.
+fn output(
+    mode: Mode,
+    paths: &[String],
+    inst: &Inst,
+    t: &Translation,
+    overrides: &[Override],
+    timeout: Option<std::time::Duration>,
+    located: &dyn Fn(Error) -> String,
+) -> u8 {
+    let path = &paths[0];
+    match mode {
+        Mode::Yosys => match yosys_check(paths, inst, t, overrides, timeout) {
+            Ok(true) => EQUAL,
+            Ok(false) => DIFFERS,
+            Err(e) => {
+                eprintln!("{path}: {e}");
+                ERROR
+            }
+        },
+        Mode::Sized => match sizing::print(inst) {
+            Ok(text) => {
+                print!("{text}");
+                EQUAL
+            }
+            Err(e) => {
+                eprintln!("{}", located(e));
+                ERROR
+            }
+        },
+        Mode::Smt(phase) => {
+            print!("(set-logic QF_BV)\n{}", smt::round(t, phase).text);
+            EQUAL
+        }
+        Mode::Instances | Mode::Print => {
+            if mode == Mode::Instances {
+                for part in &t.instances {
+                    println!("{}", t.print_part(part));
+                }
+            }
+            print!("{}", t.print());
+            EQUAL
         }
     }
 }
