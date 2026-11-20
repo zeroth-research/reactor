@@ -15,7 +15,6 @@ readme = "README.md"
 dependencies = [
     "gymnasium>=1.2.3",
     "numpy>=1.26",
-    "jinja2>=3.1",
     "lark>=1.1",
     "maturin==1.9",
     # for toy and smt crates
@@ -25,13 +24,7 @@ dependencies = [
     "torch==2.15.0",
     "websockets>=15.0",
     "z3-solver>=4.12",
-    # `reactor.lean`'s SMT encoding, and the pre-check and tactic hints
-    "cvc5>=1.3.2",
 ]
-
-[project.scripts]
-# A reactive module in, a Lean certificate project out.
-reactor = "reactor.lean.pipeline:main"
 
 [build-system]
 requires = [

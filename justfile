@@ -1,10 +1,12 @@
 # Use bash for better scripting features
 # set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 #
-# Recipes are named by target: `rs-` for Rust, `py-` for Python, `nb-` for
-# notebooks; an unprefixed name means "all" (e.g. `test` = `rs-test` + `py-test`
-# + `nb-test`), and a `-fix` suffix marks the recipes that modify files in the
-# repository — everything else is read-only towards the sources.
+# Recipes are named by target: `rs-` for Rust, `py-` for Python, `lean-` for
+# the `lean` project (the `reactor` command), `nb-` for notebooks; an
+# unprefixed name means "all" (e.g. `test` = `rs-test` + `py-test` +
+# `lean-test` + `nb-test`),
+# and a `-fix` suffix marks the recipes that modify files in the repository —
+# everything else is read-only towards the sources.
 #
 # Prerequisites are declared as native dependencies (not `@just` calls in the
 # bodies), so shared ones run at most once per invocation: `just test` builds
@@ -55,14 +57,14 @@ features_flag := if FEATURES == "" { "" } else { "--features " + FEATURES }
 # Build everything: the Rust workspace (all targets and features) and the Python crate
 build: rs-build-all py-build
 
-# Run the test suite that needs no `lake` (Rust + Python + notebooks)
-test: rs-test py-test nb-test
+# Run the test suite that needs no `lake` (Rust + Python + lean + notebooks)
+test: rs-test py-test lean-test nb-test
 
 # Run everything, including the Lean tests that build proofs via `lake`
 test-all: test test-lean
 
 # Run the Lean tests that build proofs via `lake` (marked `slow`; require lake + mathlib)
-test-lean *args: (py-run "pytest" "-m" "slow" args)
+test-lean *args: (lean-run "pytest" "-m" "slow" args)
 
 # `cargo clean` needs no torch, and running it under `uv run` would trigger a
 # sync that can fail — cleaning the repo works fine outside the virtual env.
@@ -149,13 +151,24 @@ py-rebuild: clean rs-build-all py-build
     @echo "Now you can go into the \`python\` directory and use \`uv run <script.py>\`"\
           "(or \`uv run python\` to get Python interpreter with \`reactor\` available)"
 
-# Run all or a concrete python test (rebuilding the Python crate first),
-# excluding the Lean tests that need `lake` (marked `slow`; see `just test-lean`)
-py-test *args: (py-run "pytest" "-m" "'not slow'" args)
+# Run all or a concrete python test (rebuilding the Python crate first)
+py-test *args: (py-run "pytest" args)
 
 # Run a command inside the `python` crate (with rebuilding the Python crate). The command given is executed from *within* the `python` crate, i.e., with paths relative to the root of the crate.
 py-run *args: py-build
     cd python && uv run {{ args }}
+
+# -------------------------------------------------
+# lean (lean-)
+# -------------------------------------------------
+
+# Run all or a concrete `lean` test (rebuilding the Python crate first),
+# excluding the Lean tests that need `lake` (marked `slow`; see `just test-lean`)
+lean-test *args: (lean-run "pytest" "-m" "'not slow'" args)
+
+# Run a command inside the `lean` project (with rebuilding the Python crate it builds on). The command given is executed from *within* `lean/`, i.e., with paths relative to it.
+lean-run *args: py-build
+    cd lean && uv run {{ args }}
 
 # -------------------------------------------------
 # Notebooks (nb-)

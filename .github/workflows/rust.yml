@@ -97,10 +97,12 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install just
         uses: extractions/setup-just@v2
-      # `py-test` excludes the `slow`-marked Lean tests that build proofs
+      # `lean-test` excludes the `slow`-marked Lean tests that build proofs
       # via `lake` (see `just test-lean`); CI intentionally does not run those.
       - name: Run Python tests (builds the extension via maturin)
         run: just py-test
+      - name: Run lean tests
+        run: just lean-test
 
   nb-strip:
     runs-on: ubuntu-latest
