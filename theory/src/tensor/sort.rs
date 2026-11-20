@@ -367,6 +367,30 @@ impl fmt::Display for Any {
     }
 }
 
+impl fmt::Display for Reals {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Reals::Real(r) => r.fmt(f),
+            Reals::Bool(b) => b.fmt(f),
+            Reals::Zero(z) => z.fmt(f),
+        }
+    }
+}
+
+/// Each sort's tangent, taken within the sorts of reals, which hold them:
+/// reals one degree higher, and [`Zero`] for booleans and itself.
+impl Differentiable for Reals {
+    type Tangent = Reals;
+
+    fn tangent(self) -> Reals {
+        match self {
+            Reals::Real(r) => T(r).into(),
+            Reals::Bool(b) => T(b).into(),
+            Reals::Zero(z) => T(z).into(),
+        }
+    }
+}
+
 impl fmt::Display for Words {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

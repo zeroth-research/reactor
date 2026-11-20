@@ -1,8 +1,10 @@
 //! A sort of this test's own, with operations on it, alongside the sorts
-//! and operations of `theory::tensor`: angles, whose rates of change are
-//! reals. The theory's sorts and operations are closed enums, so the test
-//! joins them with its own in enums of its own, [`Sort`] and [`Op`], and
-//! builds its terms and atoms over those.
+//! and operations of a logic of `theory::tensor`, non-linear real
+//! arithmetic: angles, whose rates of change are reals. The logic's sorts
+//! and operations are closed enums, so the test joins them with its own in
+//! enums of its own, [`Sort`] and [`Op`], and builds its terms and atoms over
+//! those. The structural operations, which a logic leaves to whoever
+//! builds atoms over it, are the test's own, on all of its sorts.
 
 mod common;
 
@@ -13,7 +15,7 @@ use common::matrix::Matrix;
 use dataflow::diagram::{Block, Term, Wire};
 use reactive::var::{Var, X, d};
 use std::fmt;
-use theory::tensor::{Any, real, sort};
+use theory::tensor::{real, sort};
 use theory::{Combinatorial, Differential, Sequential, Tensor};
 
 //============================================================
@@ -44,14 +46,14 @@ impl Differentiable for Angle {
     }
 }
 
-/// The sorts of this test: those of the theories, and angles.
+/// The sorts of this test: those of real arithmetic, and angles.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Sort {
-    Theory(sort::Any),
+    Theory(real::Sort),
     Angle(Angle),
 }
 
-/// Each sort's tangent: the theory's for its sorts, and reals for angles.
+/// Each sort's tangent: the logic's for its sorts, and reals for angles.
 impl Differentiable for Sort {
     type Tangent = Sort;
 
@@ -107,25 +109,21 @@ enum Angles {
     Turn([usize; 2]),
     /// `cos θ`, the reals of the cosines of the angles `θ`.
     Cos([usize; 2]),
-    /// An arbitrary angle, and the angle read: the structural operations
-    /// on angles, as `Havoc` and `Skip` are on the theory's sorts.
-    Havoc([usize; 2]),
-    Skip([usize; 2]),
 }
 
 impl Boundary<Sort> for Angles {
     fn dom(&self) -> Poly<Sort> {
         match *self {
-            Angles::Radians(_) | Angles::Havoc(_) => Poly::unit(),
+            Angles::Radians(_) => Poly::unit(),
             Angles::Turn(s) => mono![angle(s), real(s)].into(),
-            Angles::Cos(s) | Angles::Skip(s) => mono![angle(s)].into(),
+            Angles::Cos(s) => mono![angle(s)].into(),
         }
     }
 
     fn cod(&self) -> Poly<Sort> {
         match *self {
             Angles::Radians(ref m) => mono![angle(m.shape())].into(),
-            Angles::Turn(s) | Angles::Havoc(s) | Angles::Skip(s) => mono![angle(s)].into(),
+            Angles::Turn(s) => mono![angle(s)].into(),
             Angles::Cos(s) => mono![real(s)].into(),
         }
     }
@@ -137,39 +135,47 @@ impl fmt::Display for Angles {
             Angles::Radians(m) => write!(f, "Radians({m})"),
             Angles::Turn(_) => write!(f, "Turn"),
             Angles::Cos(_) => write!(f, "Cos"),
-            Angles::Havoc(_) => write!(f, "Havoc"),
-            Angles::Skip(_) => write!(f, "Skip"),
         }
     }
 }
 
-/// The operations of this test: those of the theories, on their sorts,
-/// and those on angles.
+/// The operations of this test: those of non-linear real arithmetic, on
+/// its sorts, those on angles, and the structural operations, on all sorts.
 #[derive(Debug)]
 enum Op {
-    Theory(Any<Matrix>),
+    Real(real::NRA<Matrix>),
     Angle(Angles),
+    /// An arbitrary value of the sort, reading nothing.
+    Havoc(Sort),
+    /// The value of the sort read.
+    Skip(Sort),
+    /// The zero of the sort, reading nothing: the rate of change of a value
+    /// that does not change.
+    Zero(Sort),
 }
 
 impl Op {
     /// The operation of real arithmetic `op`.
     fn real(op: impl Into<real::NRA<Matrix>>) -> Op {
-        Op::Theory(Any::Real(op.into()))
+        Op::Real(op.into())
     }
 }
 
 impl Boundary<Sort> for Op {
     fn dom(&self) -> Poly<Sort> {
         match self {
-            Op::Theory(op) => op.dom().map(Sort::Theory),
+            Op::Real(op) => op.dom().map(Sort::Theory),
             Op::Angle(op) => op.dom(),
+            Op::Havoc(_) | Op::Zero(_) => Poly::unit(),
+            Op::Skip(s) => mono![*s].into(),
         }
     }
 
     fn cod(&self) -> Poly<Sort> {
         match self {
-            Op::Theory(op) => op.cod().map(Sort::Theory),
+            Op::Real(op) => op.cod().map(Sort::Theory),
             Op::Angle(op) => op.cod(),
+            Op::Havoc(s) | Op::Skip(s) | Op::Zero(s) => mono![*s].into(),
         }
     }
 }
@@ -177,42 +183,34 @@ impl Boundary<Sort> for Op {
 impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Op::Theory(op) => op.fmt(f),
+            Op::Real(op) => op.fmt(f),
             Op::Angle(op) => op.fmt(f),
+            Op::Havoc(_) => write!(f, "Havoc"),
+            Op::Skip(_) => write!(f, "Skip"),
+            Op::Zero(_) => write!(f, "Zero"),
         }
     }
 }
 
-// The structural operations that the constructors of atoms add: the
-// theory's on its sorts, and those on angles on angles.
+// The structural operations that the constructors of atoms add, on any
+// sort; `Zero` is asked of the sorts of rates of change only, which are
+// never angles, as the tangent of angles is a real.
 
 impl Combinatorial<Sort> for Op {
     fn havoc(range: &Sort) -> Self {
-        match *range {
-            Sort::Theory(s) => Op::Theory(Any::havoc(&s)),
-            Sort::Angle(Angle(shape)) => Op::Angle(Angles::Havoc(shape)),
-        }
+        Op::Havoc(*range)
     }
 }
 
 impl Sequential<Sort> for Op {
     fn skip(range: &Sort) -> Self {
-        match *range {
-            Sort::Theory(s) => Op::Theory(Any::skip(&s)),
-            Sort::Angle(Angle(shape)) => Op::Angle(Angles::Skip(shape)),
-        }
+        Op::Skip(*range)
     }
 }
 
-/// The zero rates of change are never angles, as the tangent of angles is
-/// a real, and the theory's `Zero` writes those; the zero of angles would
-/// be the angle 0.
 impl Differential<Sort> for Op {
     fn zero(range: &Sort) -> Self {
-        match *range {
-            Sort::Theory(s) => Op::Theory(Any::zero(&s)),
-            Sort::Angle(Angle(shape)) => Op::Angle(Angles::Radians(Matrix::zeros(shape))),
-        }
+        Op::Zero(*range)
     }
 }
 
@@ -224,17 +222,13 @@ fn structural(block: &Block<Op, Sort>) -> Vec<(Wire<Sort>, Sort)> {
     let mut terms: Vec<_> = block
         .iter()
         .map(|term| {
-            let sort = match term.itype() {
-                Op::Theory(Any::Havoc(op)) => Sort::Theory(op.sort()),
-                Op::Theory(Any::Skip(op)) => Sort::Theory(op.sort()),
-                Op::Theory(Any::Zero(op)) => Sort::Theory(op.sort()),
-                Op::Angle(Angles::Havoc(shape) | Angles::Skip(shape)) => angle(*shape),
-                op => panic!("{op} is not a structural operation"),
+            let (Op::Havoc(sort) | Op::Skip(sort) | Op::Zero(sort)) = term.itype() else {
+                panic!("{} is not a structural operation", term.itype());
             };
             let [w] = term.write() else {
                 panic!("{} writes one wire", term.itype());
             };
-            (*w, sort)
+            (*w, *sort)
         })
         .collect();
     terms.sort_by_key(|(w, _)| w.id());
@@ -257,9 +251,10 @@ fn the_rates_of_change_of_angles_are_reals() {
 }
 
 /// `c = cos(θ + φ) < 0`: the operations on angles read and write angles
-/// and reals, and the theory's operations take on the reals they write.
+/// and reals, and the operations of real arithmetic take on the reals
+/// they write.
 #[test]
-fn operations_on_angles_and_of_the_theory_compose() {
+fn operations_on_angles_and_of_real_arithmetic_compose() {
     let (theta, phi) = (Wire::new(angle(SCALAR)), Wire::new(real(SCALAR)));
     let (turned, cos, zero, c) = (
         Wire::new(angle(SCALAR)),
@@ -278,8 +273,8 @@ fn operations_on_angles_and_of_the_theory_compose() {
     assert!(Term::function(Op::real(real::Lt::new(SCALAR)), [c], [cos, zero]).is_ok());
 }
 
-/// An angle is not a real: neither the theory's operations nor those on
-/// angles take one for the other, nor an angle for its rate of change.
+/// An angle is not a real: neither the operations of real arithmetic nor
+/// those on angles take one for the other, nor an angle for its rate of change.
 #[test]
 fn angles_and_reals_do_not_mix() {
     let (theta, phi) = (Wire::new(angle(SCALAR)), Wire::new(real(SCALAR)));
@@ -309,7 +304,7 @@ fn angles_and_reals_do_not_mix() {
 }
 
 /// The hand of a clock, `θ' = θ + step` from `θ = 0`; the constructor adds
-/// the zero rate of change of `θ`, the theory's `Zero` of a real rate.
+/// the zero rate of change of `θ`, the `Zero` of a real rate.
 #[test]
 fn a_sequential_atom_over_angles_zeroes_their_real_rates() {
     let theta = Var::new(angle(SCALAR));
@@ -326,10 +321,10 @@ fn a_sequential_atom_over_angles_zeroes_their_real_rates() {
     assert_eq!(structural(atom.delay()), [(d(theta), rate(SCALAR))]);
 }
 
-/// A wheel of radius `0.5` rolling along `s`, `dθ = 2·ds`: the theory's
-/// `Scale` of degree 1 maps the real rate of `s` to that of `θ`, which is
-/// real too.
-/// The constructor adds the update `θ' = θ`, the `Skip` on angles.
+/// A wheel of radius `0.5` rolling along `s`, `dθ = 2·ds`: real
+/// arithmetic's `Scale` of degree 1 maps the real rate of `s` to that of
+/// `θ`, which is real too. The constructor adds the update `θ' = θ`, a
+/// `Skip` of an angle.
 #[test]
 fn a_differential_atom_computes_the_rate_of_an_angle_on_reals() {
     let (theta, s) = (Var::new(angle(SCALAR)), Var::new(real(SCALAR)));
@@ -345,7 +340,7 @@ fn a_differential_atom_computes_the_rate_of_an_angle_on_reals() {
 }
 
 /// `θ' = θ + cos θ`, without init or delay: the constructor havocs `θ` with
-/// the `Havoc` on angles, and zeroes its rate with the theory's `Zero`.
+/// a `Havoc` of an angle, and zeroes its rate with a `Zero` of a real rate.
 #[test]
 fn a_jump_atom_havocs_angles_and_zeroes_their_rates() {
     let theta = Var::new(angle(SCALAR));
