@@ -17,3 +17,6 @@ __pycache__/
 tutorials/generated/Counter/.lake/
 tutorials/.ipynb_checkpoints/
 lean/tests/LeanTests
+lean/tests/lean/Certs/
+lean/tests/lean/.lake
+
