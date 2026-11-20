@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from ..reactor import Module as _BaseModule, X
 from ..sort import Real, Int
-from ..builder import TermBuilder, number_sort
+from ..builder import builder_for, number_sort
 from ..analyzer import convert_method, resolve_wire
 
 
@@ -94,7 +94,7 @@ def _extract_nn_module(nn_instance, number=Real, combinatorial=False, **kwargs):
         in_wire, other = (X(extl), extl) if read_next else (extl, X(extl))
         return convert_method(
             nn_cls.forward, {obs_param: [in_wire, other]}, [X(ctrl)], cls=nn_cls,
-            layers=layer_out_features, live_layers=live_layers, builder=TermBuilder(number),
+            layers=layer_out_features, live_layers=live_layers, builder=builder_for(number),
         )
 
     if combinatorial:

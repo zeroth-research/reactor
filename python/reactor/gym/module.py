@@ -5,7 +5,7 @@ import gymnasium as gym
 
 from ..reactor import Module, Wire, X, Var
 from ..sort import Real, Int, Bool, Word, Zero, shape as _shape
-from ..builder import TermBuilder, number_sort, _normalize_shape
+from ..builder import builder_for, number_sort, _normalize_shape
 from ..analyzer import (
     convert_method,
     classify_attrs,
@@ -146,7 +146,7 @@ def _extract_env_module(env_instance, number=Real, **kwargs):
         p for p in inspect.signature(env_cls.step).parameters if p != "self"
     )
 
-    _builder = TermBuilder(number)
+    _builder = builder_for(number)
 
     action_dtype = space_to_dtype(env_instance.action_space, number, is_action=True)
     observation_dtype = space_to_dtype(

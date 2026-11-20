@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from reactor import Real, Int, Wire
-from reactor.builder import TermBuilder
+from reactor.builder import builder_for
 from reactor.eval import eval_itype
 
 
@@ -14,7 +14,7 @@ from reactor.eval import eval_itype
 ])
 @pytest.mark.parametrize("n", [1, 2, 3])
 def test_mul_multiplies_pointwise(sort, dtype, n):
-    builder = TermBuilder(number=sort)
+    builder = builder_for(sort)
     x = Wire(sort([n, 1]))
     const = builder.const(torch.full((n, 1), 3, dtype=dtype))
 
@@ -27,6 +27,6 @@ def test_mul_multiplies_pointwise(sort, dtype, n):
 
 @pytest.mark.parametrize("sort,dtype", [(Real, torch.float32), (Int, torch.int64)])
 def test_const_takes_the_numeric_sort(sort, dtype):
-    term = TermBuilder(number=sort).const(torch.tensor([[3]]))
+    term = builder_for(sort).const(torch.tensor([[3]]))
     assert term.write[0].dtype == sort([1, 1])
     assert term.itype.tensor.dtype == dtype

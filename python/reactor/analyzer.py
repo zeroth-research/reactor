@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Set, Tuple, Union, Callable
 from .reactor import Wire, Term, Var, X
 from .reactor.tensor import Havoc
 from .sort import Bool, Real, Int, Word
-from .builder import TermBuilder, _normalize_shape
+from .builder import TermBuilder, builder_for, _normalize_shape
 
 
 # ---------------------------------------------------------------------------
@@ -1391,7 +1391,7 @@ class MethodVisitor(ast.NodeVisitor):
         self.temp_vars = {}
         self.scopes = []
         self.written_wires = set()
-        self.builder = builder or TermBuilder()
+        self.builder = builder or builder_for()
 
     @staticmethod
     def _w(val) -> Wire:
@@ -2159,7 +2159,7 @@ def convert_method(
         List of Terms representing the method as a reactive diagram
     """
     if builder is None:
-        builder = TermBuilder(number)
+        builder = builder_for(number)
 
     source = textwrap.dedent(inspect.getsource(method))
     func_def = ast.parse(source).body[0]
