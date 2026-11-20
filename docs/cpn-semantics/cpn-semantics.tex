@@ -27,7 +27,6 @@
 
 \newtheorem{definition}{Definition}
 \newtheorem{remark}{Remark}
-\newtheorem{proposition}{Proposition}
 
 \title{Semantics of Coloured Petri Nets in SDCPN sense}
 \author{Igor Konnov, Thomas Pani}
@@ -495,7 +494,12 @@ would be back to ``must fire''.
 \end{figure}
 
 Since all colours are~$0$ and remain~$0$, a marking is determined by the
-numbers $(s, i, r, v)$ of tokens in $S$, $I$, $R$, and~$V$.
+numbers $(s, i, r, v)$ of tokens in $S$, $I$, $R$, and~$V$. In a round,
+every token of $S$ and~$I$ in the snapshot is consumed, since the
+self-loops can always consume it. If $\mathit{Inf}$ fires $a$~times and
+$\mathit{Rec}$ fires $b$~times, where $a \le s$ and $a + b \le i$, then the
+self-loops consume the remaining tokens, and the round leads to the marking
+$(s - a, i + a - b, r + b, v)$.
 
 In a Petrinaut step, Infection and Recovery fire at most once each, that
 is, a step corresponds to a round with $a \le 1$ and $b \le 1$. Hence, the
@@ -518,8 +522,7 @@ affects the \DCPN{0} only via the initial marking.
   to~$L_T$. The colour of the lock token is copied by $\pi_T$ and
   $\pi_{\mathit{Skip}_T}$. In every round, the lock token is consumed either
   by~$T$ or by~$\mathit{Skip}_T$, and it returns via~$\bfDelta$. Hence,
-  $T$ fires at most once per round, and it may not fire. Similar to
-  Proposition~\ref{prop:vaccination-rounds}, we have
+  $T$ fires at most once per round, and it may not fire. Then we have
   $(s, i, r, v) \Rightarrow (s - a, i + a - b, r + b, v)$ iff
   $a, b \in \{0, 1\}$, $a \le s$, and $a + b \le i$. These are exactly the
   steps that Petrinaut takes with positive probability, provided that
@@ -673,6 +676,165 @@ for them.
   $c_1 \le 0$. A token in a delay place must be consumed when its delay
   clock expires, whereas a token in a place with a frozen delay clock may
   stay there forever.
+\end{remark}
+
+%%%%%%%%%%%
+\subsection{Example: a café queue}\label{sec:cafe}
+
+We illustrate \DCPN{1} on the Petrinaut example ``Café
+Queue''~\cite{Petrinaut}. It has four uncoloured places: waiting
+customers~$W$, free members of staff~$F$, customers being served~$B$, and
+served customers~$D$. It has three stochastic transitions with constant
+rates:
+
+\begin{itemize}
+  \item \emph{Arrive} has no input arcs and produces a token in~$W$, at the
+    rate~$\lambda = 1.2$;
+  \item \emph{BeginService} consumes a token from~$W$ and a token from~$F$,
+    and produces a token in~$B$, at the rate~$\beta = 0.4$;
+  \item \emph{FinishService} consumes a token from~$B$, and produces a token
+    in~$D$ and a token in~$F$, at the rate~$\mu = 0.5$.
+\end{itemize}
+
+The scenario ``Morning Rush'' starts with $12$ waiting customers and $3$
+free members of staff.
+
+\paragraph{Encoding.}
+We follow Remark~\ref{rem:delay}. Arrive is a source, so we model it by a
+generator token in a new place~$G$ with a self-loop. FinishService has a
+single input arc and a constant rate, so every customer in~$B$ carries a
+delay clock. BeginService has two input arcs, so its delay cannot be
+attached to a single token. We make it an untimed transition with the
+guard~$\mathit{True}$, that is, a customer is served as soon as a member of
+staff is free. We discuss this choice below. The resulting \DCPN{1} is shown
+in Figure~\ref{fig:cafe}. Formally, we fix $k = 1$ and $\Dom = \Real$, that
+is, the colour of a token is its delay clock, and define:
+
+\begin{itemize}
+  \item $\mathcal{P} = \{G, W, F, B, D\}$, where $G$ and~$B$ are delay
+    places, that is, $\mathcal{V}_G(c) = \mathcal{V}_B(c) = -1$, and
+    $\mathcal{V}_W(c) = \mathcal{V}_F(c) = \mathcal{V}_D(c) = 0$;
+
+  \item $\mathcal{T} = \mathcal{T}_G = \{\mathit{Arr}, \mathit{Beg},
+    \mathit{Fin}\}$ and $\mathcal{T}_I = \emptyset$;
+
+  \item $\mathcal{A}$ consists of the arcs from~$G$ to~$\mathit{Arr}$, from
+    $\mathit{Arr}$ to $G$ and~$W$, from $W$ and~$F$ to~$\mathit{Beg}$,
+    from~$\mathit{Beg}$ to~$B$, from~$B$ to~$\mathit{Fin}$, and
+    from~$\mathit{Fin}$ to $D$ and~$F$, where the output arcs of every
+    transition are enumerated in this order;
+
+  \item $\mathcal{G}_{\mathit{Arr}}(c) = \mathcal{G}_{\mathit{Fin}}(c) =
+    \mathit{True}$ iff $c \le 0$, and $\mathcal{G}_{\mathit{Beg}}(c_1, c_2)
+    = \mathit{True}$;
+
+  \item $\pi_{\mathit{Arr}}(c) = (0, 0)$, $\pi_{\mathit{Beg}}(c_1, c_2) =
+    0$, and $\pi_{\mathit{Fin}}(c) = (0, 0)$;
+
+  \item $\mathcal{R}_{\mathit{Arr}} = \{1\}$ with
+    $\rho_{\mathit{Arr}, 1} = \mathrm{Exp}(\lambda)$, that is, every
+    arrival resets the clock of the generator;
+    $\mathcal{R}_{\mathit{Beg}} = \{1\}$ with
+    $\rho_{\mathit{Beg}, 1} = \mathrm{Exp}(\mu)$, that is, the service time
+    is sampled when the service begins; and
+    $\mathcal{R}_{\mathit{Fin}} = \emptyset$;
+
+  \item $\mathcal{I}(G) = \mset{g_0}$ for some $g_0 > 0$,
+    $\mathcal{I}(W) = 12 \cdot \mset{0}$, $\mathcal{I}(F) = 3 \cdot
+    \mset{0}$, and $\mathcal{I}(B) = \mathcal{I}(D) = \mset{}$.
+\end{itemize}
+
+The tokens in $W$, $F$, and~$D$ have the frozen clock~$0$, which plays no
+role. The delay places $G$ and~$B$ are the single inputs of $\mathit{Arr}$
+and~$\mathit{Fin}$, respectively, whose guards test $c \le 0$. Hence, the
+sufficient condition of Remark~\ref{rem:timelock} holds, and the net has no
+timelocks.
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+      >={Stealth[length=2mm]},
+      every place/.style={draw, thick, minimum size=9mm, font=\small},
+      every transition/.style={draw, thick, fill=black!15,
+        minimum width=3mm, minimum height=8mm},
+      every label/.style={font=\small},
+      arc/.style={->, thick},
+      aux/.style={draw=blue, text=blue},
+      delay/.style={double, double distance=1pt}]
+    \node[place, delay, aux, label={[text=blue]left:$G$}] (G) at (0, 1.8)
+      {$1$};
+    \node[transition, label=below:$\mathit{Arr}$] (Arr) at (0, 0) {};
+    \node[place, label=below:$W$] (W) at (2, 0) {$12$};
+    \node[transition, label=above:$\mathit{Beg}$] (Beg) at (4, 0) {};
+    \node[place, delay, label=above:$B$] (B) at (6, 0) {$0$};
+    \node[transition, label=above:$\mathit{Fin}$] (Fin) at (8, 0) {};
+    \node[place, label=below:$D$] (D) at (10, 0) {$0$};
+    \node[place, label=below:$F$] (F) at (6, -1.8) {$3$};
+    \draw[arc, aux] (G) to[bend left=30] (Arr);
+    \draw[arc, aux] (Arr) to[bend left=30] (G);
+    \draw[arc] (Arr) -- (W);
+    \draw[arc] (W) -- (Beg);
+    \draw[arc] (F) -- (Beg);
+    \draw[arc] (Beg) -- (B);
+    \draw[arc] (B) -- (Fin);
+    \draw[arc] (Fin) -- (D);
+    \draw[arc] (Fin) -- (F);
+  \end{tikzpicture}
+  \caption{The \DCPN{1} of the café queue with the initial marking of the
+    scenario ``Morning Rush''. A number in a place is the number of its
+    tokens. Double circles are delay places. The auxiliary generator
+    place~$G$ and its arcs are shown in blue.}
+  \label{fig:cafe}
+\end{figure}
+
+\paragraph{Executions.}
+In every round, $\mathit{Arr}$ fires iff the clock of the generator has
+expired, $\mathit{Fin}$ fires on every token of~$B$ whose clock has expired,
+and $\mathit{Beg}$ fires $\min(w, f)$ times, where $w$ and~$f$ are the
+numbers of tokens in $W$ and~$F$ in the snapshot. This is because every place
+has a single consuming transition, and the guards of the transitions only
+test the clocks of their own input tokens. Hence, the only nondeterminism
+is in the values of the reset clocks and in the durations of the ticks.
+Every marking has exactly three tokens in $F$ and~$B$ together, and a tick
+stops at the latest when the next arrival or the next completion of a
+service is due. A token that $\mathit{Fin}$ returns to~$F$ at~$t_i$ is
+in~$\bfDelta$, so the next service starts at~$t_{i + 1}$, after a tick of an
+arbitrarily small positive duration.
+
+\paragraph{Comparison with Petrinaut.}
+Our net differs from Petrinaut in two respects. First, Petrinaut attaches a
+delay to a transition, not to a token: FinishService fires at most once per
+step with the rate~$\mu$, regardless of how many customers are being served.
+In our net, every customer in~$B$ has their own clock, so the three members
+of staff serve in parallel. With a probabilistic reading of the resets,
+which is left for future work, our net is the M/M/3 queue with the arrival
+rate~$\lambda$ and the service rate~$\mu$. Second, we dropped the
+rate~$\beta$. In Petrinaut, BeginService fires at most at the rate
+$\beta = 0.4 < \lambda$, so the queue grows by about $0.8$ customers per time
+unit. In the M/M/3 queue, the utilisation is $\lambda / (3\mu) = 0.8 < 1$,
+so the queue is stable. The nondeterministic reading forgets the rates, so
+it cannot tell a growing queue from a stable one. It does, however, tell the
+two policies apart: in our net, a member of staff is never idle for more
+than one round while a customer is waiting, whereas in Petrinaut this
+happens with a positive probability.
+
+\begin{remark}[Delays per transition]\label{rem:cafe-locks}
+  To attach the delays to transitions as Petrinaut does, we combine
+  Remark~\ref{rem:locks} with delay clocks. The generator~$G$ is already
+  such a lock for~$\mathit{Arr}$. For $T \in \{\mathit{Beg},
+  \mathit{Fin}\}$, we add a delay place~$L_T$ with a single token, an arc
+  from~$L_T$ to~$T$, and an arc from~$T$ to~$L_T$ that resets the clock with
+  $\mathrm{Exp}(\beta)$ for $T = \mathit{Beg}$ and $\mathrm{Exp}(\mu)$ for
+  $T = \mathit{Fin}$. The guard of~$T$ tests $c \le 0$ on the clock of the
+  lock token, and $B$ becomes a place with frozen clocks. Since $T$ may lack
+  its other input tokens when the lock expires, we also add a guard
+  transition~$\mathit{Skip}_T$ with the guard $c \le 0$, an arc from~$L_T$
+  to~$\mathit{Skip}_T$, and an arc from~$\mathit{Skip}_T$ to~$L_T$ that
+  resets the clock in the same way. This avoids timelocks. However,
+  $\mathit{Skip}_T$ may also fire when $T$ has a binding. This is harmless in
+  the nondeterministic reading. In a probabilistic reading,
+  $\mathit{Skip}_T$ should only fire when $T$ has no binding, which requires
+  inhibitor arcs.
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
