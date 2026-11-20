@@ -1301,10 +1301,18 @@ pub mod signed {
 
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Extend {
+        /// Fails unless `width` is positive, and `width + i`, the width of
+        /// the words written, fits a `usize`.
         #[cfg_attr(feature = "pyo3", new)]
         #[cfg_attr(feature = "pyo3", pyo3(signature = (i, width, shape, /)))]
         pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
+            if width.checked_add(i).is_none() {
+                return Err(crate::Error(format!(
+                    "cannot extend words of {width} bits by {i} bits: the result would have more than {} bits",
+                    usize::MAX
+                )));
+            }
             Ok(Extend { i, width, shape })
         }
 
@@ -1739,10 +1747,18 @@ pub mod unsigned {
 
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Extend {
+        /// Fails unless `width` is positive, and `width + i`, the width of
+        /// the words written, fits a `usize`.
         #[cfg_attr(feature = "pyo3", new)]
         #[cfg_attr(feature = "pyo3", pyo3(signature = (i, width, shape, /)))]
         pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
             check_width(width)?;
+            if width.checked_add(i).is_none() {
+                return Err(crate::Error(format!(
+                    "cannot extend words of {width} bits by {i} bits: the result would have more than {} bits",
+                    usize::MAX
+                )));
+            }
             Ok(Extend { i, width, shape })
         }
 
@@ -2015,13 +2031,20 @@ where
 // its sizes positionally, in the order of its fields, the shape as a list.
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Concat {
-    /// Fails unless both widths are positive.
+    /// Fails unless both widths are positive, and their sum, the width of
+    /// the words written, fits a `usize`.
     #[cfg_attr(feature = "pyo3", new)]
     #[cfg_attr(feature = "pyo3", pyo3(signature = (widths, shape, /)))]
     pub fn new(widths: [usize; 2], shape: [usize; 2]) -> Result<Self, crate::Error> {
         let [u, v] = widths;
         check_width(u)?;
         check_width(v)?;
+        if u.checked_add(v).is_none() {
+            return Err(crate::Error(format!(
+                "cannot concatenate words of {u} and {v} bits: the result would have more than {} bits",
+                usize::MAX
+            )));
+        }
         Ok(Concat { widths, shape })
     }
 
@@ -2086,7 +2109,8 @@ impl Extract {
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Repeat {
-    /// Fails unless `i` and `width` are positive.
+    /// Fails unless `i` and `width` are positive, and their product, the
+    /// width of the words written, fits a `usize`.
     #[cfg_attr(feature = "pyo3", new)]
     #[cfg_attr(feature = "pyo3", pyo3(signature = (i, width, shape, /)))]
     pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
@@ -2094,6 +2118,12 @@ impl Repeat {
             return Err(crate::Error("cannot repeat a word zero times".to_string()));
         }
         check_width(width)?;
+        if i.checked_mul(width).is_none() {
+            return Err(crate::Error(format!(
+                "cannot repeat words of {width} bits {i} times: the result would have more than {} bits",
+                usize::MAX
+            )));
+        }
         Ok(Repeat { i, width, shape })
     }
 

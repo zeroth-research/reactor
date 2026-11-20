@@ -839,4 +839,35 @@ mod word {
         let r = RotateRight::new(3, 8, [2, 3]).unwrap();
         assert_eq!((r.i(), r.width(), r.shape()), (3, 8, [2, 3]));
     }
+
+    /// The width of the words that an operation writes must fit a `usize`,
+    /// or its boundary could not be computed: the constructors reject the
+    /// sizes whose width overflows, and accept those whose width is
+    /// `usize::MAX` exactly.
+    #[test]
+    fn constructors_reject_widths_that_overflow() {
+        let max = usize::MAX;
+
+        // `Concat(u, v)` writes words of `u + v` bits
+        assert!(Concat::new([max, 1], [1, 1]).is_err());
+        assert_eq!(
+            Concat::new([max - 1, 1], [1, 1]).unwrap().cod(),
+            one(w(max, [1, 1]))
+        );
+
+        // `Repeat(i, width)` writes words of `i · width` bits
+        assert!(Repeat::new(max / 2 + 1, 2, [1, 1]).is_err());
+        assert_eq!(
+            Repeat::new(max / 2, 2, [1, 1]).unwrap().cod(),
+            one(w(max - 1, [1, 1]))
+        );
+
+        // `Extend(i, width)` writes words of `width + i` bits
+        assert!(signed::Extend::new(1, max, [1, 1]).is_err());
+        assert!(unsigned::Extend::new(max, 1, [1, 1]).is_err());
+        assert_eq!(
+            unsigned::Extend::new(max - 1, 1, [1, 1]).unwrap().cod(),
+            one(w(max, [1, 1]))
+        );
+    }
 }
