@@ -14,7 +14,7 @@ gym.Env  ──reactor.gym.Env──▶  symbolic Module (SSA term IR)  ──re
 ## Prerequisites
 
 Run everything from the repository checkout (`uv run reactor` works from the
-repo root or from `python/`; it is not installed globally). Step 7, which has
+repo root, `lean/` or `verith/`; it is not installed globally). Step 7, which has
 the certificate searched for, runs `certify`: `reactor`'s flags and
 `--infer`, from the [`verith/`](../verith/README.md) project.
 

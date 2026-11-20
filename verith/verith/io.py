@@ -18,15 +18,15 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from reactor.lean.artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
-from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-from reactor.lean.core.errors import Refused
+from reactor_lean.artifacts import ARTIFACTS_DIR, Artifact, ArtifactStore
+from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.core.errors import Refused
 
 if TYPE_CHECKING:
     from reactor import Module
 
-    from reactor.lean.proof.render import LeanCertificate, ProofScripts
-    from reactor.lean.codegen.context import LeanContext
+    from reactor_lean.proof.render import LeanCertificate, ProofScripts
+    from reactor_lean.codegen.context import LeanContext
 
     from .common.encoding import Encoding
     from .common.limits import SmtBudget
@@ -72,7 +72,7 @@ class ProjectHandle:
         encoding it is removes the layout arithmetic -- ``System/System.lean``
         is the functional row's path only because `SYSTEM_LAYOUT` says so.
         """
-        from reactor.lean.project.scaffold import ENCODINGS, SYSTEM_LAYOUT
+        from reactor_lean.project.scaffold import ENCODINGS, SYSTEM_LAYOUT
 
         if suffix not in {e.suffix for e in ENCODINGS}:
             raise Refused(f"there is no {suffix!r} encoding to read")
@@ -121,8 +121,8 @@ class ProjectHandle:
                           proofs: "ProofScripts") -> None:
         """The certificate's four files, rewritten from `lean_cert` and
         proved by `proofs`, and the hammer."""
-        from reactor.lean.project.scaffold import write_files
-        from reactor.lean.proof.render import certificate_files
+        from reactor_lean.project.scaffold import write_files
+        from reactor_lean.proof.render import certificate_files
 
         from .proofs import hammer_files
 

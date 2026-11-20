@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sim                                                      # noqa: E402
 from suites import SUITES                                       # noqa: E402
 
-from reactor.lean.inputs.python import load_module
+from reactor_lean.inputs.python import load_module
 
 ROWS = [r for name in ("hybrid", "petri") for r in SUITES[name]()]
 
@@ -121,8 +121,7 @@ def test_every_module_has_a_refutable_row():
 # cannot tell them apart and answers `fails` to both.
 # ══════════════════════════════════════════════════════════════════════════
 
-COUNTDOWN = (Path(__file__).resolve().parents[3] / "python" / "tests" / "limits"
-             / "mods" / "m_countdown.py")
+COUNTDOWN = Path(__file__).resolve().parents[1] / "limits" / "mods" / "m_countdown.py"
 
 
 def test_a_recurrence_longer_than_the_tail_is_not_refuted():

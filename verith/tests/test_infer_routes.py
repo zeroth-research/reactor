@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 
 from certify.cli import build_parser, parse_args
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.errors import Refused
 from verith import (
     ROUTES,
     InferResult,
@@ -26,7 +26,7 @@ from verith import (
     route_by_name,
     route_names,
 )
-from reactor.lean.project.scaffold import ENCODINGS
+from reactor_lean.project.scaffold import ENCODINGS
 
 KINDS = {"safety", "buchi"}
 RETURNS = {"smt", "lean", "files"}
@@ -433,7 +433,7 @@ def test_route_option_defaults_survive(tmp_path):
 
 
 def _store(tmp_path, **kw):
-    from reactor.lean.artifacts import ArtifactStore
+    from reactor_lean.artifacts import ArtifactStore
 
     kw.setdefault("module_digest", "aaaaaaaaaaaa")
     kw.setdefault("kind", "buchi")
@@ -511,7 +511,7 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
                owns=()):
     """Put one synthetic row through `verith.run.run_route`."""
     from verith.run import run_route
-    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor_lean.core.certificate import Certificate, Claim
 
     settings = parse_args(["m.py", f"--{kind}", "(= s0 0)"])
     settings.route = _row(returns, kind, result)
@@ -526,7 +526,7 @@ def _run_infer(monkeypatch, tmp_path, result, *, returns="smt", kind="buchi",
 
 
 def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
-    from reactor.lean.core.certificate import Certificate
+    from reactor_lean.core.certificate import Certificate
 
     result = InferResult(Certificate("(= s0 0)", "s0"))
     assert _run_infer(monkeypatch, tmp_path, result) is result
@@ -535,7 +535,7 @@ def test_what_came_back_is_handed_on_as_it_came(monkeypatch, tmp_path):
 def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
     """Every SMT-LIB answer is printed as Lean in one place, so Lean from an
     `smt` row has nowhere to go."""
-    from reactor.lean.core.certificate import Certificate, LeanAnswer
+    from reactor_lean.core.certificate import Certificate, LeanAnswer
 
     both = InferResult(Certificate("(= s0 0)", "s0"),
                        LeanAnswer("fun s => s.1 = 0", "fun s => s.1"))
@@ -544,7 +544,7 @@ def test_an_smt_row_does_not_answer_in_lean(monkeypatch, tmp_path):
 
 
 def test_a_lean_row_is_taken_at_its_word(monkeypatch, tmp_path):
-    from reactor.lean.core.certificate import Certificate, LeanAnswer
+    from reactor_lean.core.certificate import Certificate, LeanAnswer
 
     lean = InferResult(lean=LeanAnswer("fun s => s.1 = 0", "fun s => 1"))
     assert _run_infer(monkeypatch, tmp_path, lean, returns="lean") is lean
@@ -565,7 +565,7 @@ def test_a_files_route_hands_back_files_and_no_predicates(monkeypatch, tmp_path)
 def test_a_row_and_its_result_have_to_agree(monkeypatch, tmp_path):
     """The row declares what comes back; nothing else has to guess which of
     the two to trust."""
-    from reactor.lean.core.certificate import Certificate
+    from reactor_lean.core.certificate import Certificate
 
     with pytest.raises(SystemExit, match="declares returns='smt'"):
         _run_infer(monkeypatch, tmp_path, InferResult(), returns="smt")
@@ -618,7 +618,7 @@ def test_the_handle_writes_what_a_route_handed_back(tmp_path, capsys):
 
 @pytest.mark.parametrize("route", ROUTES, ids=route_names())
 def test_declared_artifact_roles_are_real(route):
-    from reactor.lean.artifacts import ROLES
+    from reactor_lean.artifacts import ROLES
 
     assert route.reads_artifacts <= set(ROLES)
 
@@ -645,7 +645,7 @@ def _resume_input(tmp_path, *, kind="buchi", supplied_inv=None):
     knows what a stale artifact is and reports what it dropped); what is
     exercised here is the one rule left to the route.
     """
-    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor_lean.core.certificate import Certificate, Claim
     from verith import InferInput
     from verith.resume import resumable_inv
 
@@ -728,7 +728,7 @@ def test_the_owned_proveit_directory_is_the_one_the_route_writes():
 def test_the_workspace_is_not_a_route_owned_path():
     """`artifacts/` outlives the run, so `create_project`'s cleanup of
     route-written files must never reach it."""
-    from reactor.lean.artifacts import ARTIFACTS_DIR
+    from reactor_lean.artifacts import ARTIFACTS_DIR
 
     for route in ROUTES:
         assert not any(o.startswith(ARTIFACTS_DIR) for o in route.owns)
@@ -740,7 +740,7 @@ def test_the_workspace_is_not_a_route_owned_path():
 
 
 def _note_store(tmp_path):
-    from reactor.lean.artifacts import ArtifactStore
+    from reactor_lean.artifacts import ArtifactStore
 
     return ArtifactStore(dir=tmp_path / "artifacts", producer="test")
 
@@ -822,7 +822,7 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
     about why no certificate came of it."""
     from types import SimpleNamespace
 
-    from reactor.lean.core.certificate import Certificate, Claim
+    from reactor_lean.core.certificate import Certificate, Claim
     from verith import InferResult
     from verith import run
 
@@ -845,7 +845,7 @@ def test_an_answer_with_no_lean_form_is_noted(tmp_path, monkeypatch):
 
 
 def test_a_missing_package_is_refused_by_the_flag_that_needs_it():
-    from reactor.lean.core.errors import Refused
+    from reactor_lean.core.errors import Refused
     from verith.common.llm import require
 
     assert require("json", "--anything").dumps(1) == "1"

@@ -5,7 +5,7 @@ inferred -- stdout, the certificate files, `artifacts/` -- compared with the
 snapshots under `tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to
 rewrite them, and only for a change to the output that is intended. The
 same runs without the proofs are `reactor`'s, pinned the same way in
-`python/tests/test_pipeline_golden.py`, as is the codegen they share.
+`lean/tests/test_pipeline_golden.py`, as is the codegen they share.
 
 No run reaches an LLM: `make_client` is replaced in both modules that build
 one, and the `ai-cegis` run has every predicate fixed, so it never asks.
@@ -26,7 +26,7 @@ pytest.importorskip("cvc5")
 
 GOLDEN = Path(__file__).parent / "golden" / "pipeline"
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
 
 
@@ -123,7 +123,7 @@ ENCODINGS = {
 
 
 def _has_vampire() -> bool:
-    from reactor.lean.core.errors import Refused
+    from reactor_lean.core.errors import Refused
     from verith.common.vampire import resolve_vampire
 
     try:
@@ -246,7 +246,7 @@ def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
 
 def _count_encodings(monkeypatch) -> list:
     """Counts each `ModuleSMT` built from here on, in a one-element list."""
-    from reactor.lean.smt.module import ModuleSMT
+    from reactor_lean.smt.module import ModuleSMT
 
     built = [0]
     post_init = ModuleSMT.__post_init__

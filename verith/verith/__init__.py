@@ -9,8 +9,8 @@ what it inferred, and ``certify``, which also generates the project
 rows through :mod:`verith.flags`; neither knows anything about any
 particular route, which is what makes adding one a module and a line here.
 
-The routes are built on ``reactor.lean`` -- its SMT encoding, its Lean code
-generation, the project layout -- and ``reactor.lean`` imports nothing of
+The routes are built on ``reactor_lean`` -- its SMT encoding, its Lean code
+generation, the project layout -- and ``reactor_lean`` imports nothing of
 this package.
 
 Two things are deliberate about the shape.
@@ -52,13 +52,13 @@ no engine.
 Adding a route: write ``verith/<name>/__init__.py`` exporting ``ROUTE`` and
 its engine beside it, and add the package to the tuple below.  No route
 imports another; what two share goes in :mod:`.common` or under
-:mod:`reactor.lean.smt` (``tests/test_layering.py``).
+:mod:`reactor_lean.smt` (``tests/test_layering.py``).
 """
 
 from __future__ import annotations
 
-from reactor.lean.core.errors import Refused
-from reactor.lean.core.options import Opt
+from reactor_lean.core.errors import Refused
+from reactor_lean.core.options import Opt
 from . import (
     ai,
     ai_cegis,

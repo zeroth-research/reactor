@@ -43,19 +43,19 @@ from pathlib import Path
 SP = Path(__file__).resolve().parent
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
 PY = VR.parent / "python"                   # python/: reactor and its tests
-WARM = PY / "tests" / "lean"
-MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
+WARM = VR.parent / "lean" / "tests" / "lean"  # reactor_lean's Lake test project, Mathlib built
+MANIFEST = VR / "tests" / "limits" / "lake-manifest.json"
 
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
-from reactor.lean.project.lakefile import (  # noqa: E402
-    REACTOR_LEAN_ENV, reactor_lean_checkout, with_reactor_lean,
+from reactor_lean.project.lakefile import (  # noqa: E402
+    REACTLIB_ENV, reactlib_checkout, with_reactlib,
 )
 
-# The reactor-lean checkout the project requires by path; the `verith`
+# The ReactLib checkout the project requires by path; the `verith`
 # runs below inherit it.
-os.environ.setdefault(REACTOR_LEAN_ENV, str(PY.parent.parent / "ReactLib"))
-REACTOR_LEAN = reactor_lean_checkout()
+os.environ.setdefault(REACTLIB_ENV, str(PY.parent.parent / "ReactLib"))
+REACTLIB = reactlib_checkout()
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 RESULTS = WORK / "results.json"
 
@@ -105,8 +105,8 @@ EXPLAIN = (
 
 
 def write_manifest(proj: Path) -> None:
-    """The warm manifest, with reactor-lean's packages as path requires."""
-    manifest = with_reactor_lean(json.loads(MANIFEST.read_text()), REACTOR_LEAN)
+    """The warm manifest, with ReactLib's packages as path requires."""
+    manifest = with_reactlib(json.loads(MANIFEST.read_text()), REACTLIB)
     (proj / "lake-manifest.json").write_text(json.dumps(manifest, indent=2))
 
 

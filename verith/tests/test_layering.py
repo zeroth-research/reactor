@@ -1,18 +1,18 @@
 """Which module may import what, read off the source.
 
-`verith` is built on `reactor.lean`, and imports only the layers of it the
+`verith` is built on `reactor_lean`, and imports only the layers of it the
 routes were built on when they were one of its packages: the SMT layer,
 the Lean code generators, the project and the proof. The commands over the
 routes (`verith.cli`, `verith.flags`, `verith.run`) also read the input
 formats and `reactor`'s own command line, whose flags they share. `certify`
 is the one module that runs `reactor` and a route together; nothing in
-`verith` imports it. (`reactor.lean` imports none of the three:
-`python/tests/test_layering.py`.) An import under `if TYPE_CHECKING:` is
+`verith` imports it. (`reactor_lean` imports none of the three:
+`lean/tests/test_layering.py`.) An import under `if TYPE_CHECKING:` is
 exempt: it names a type for the reader and loads nothing.
 
 A route is a package of `verith`: its row in `__init__.py` and its engine
 beside it. No route imports another; what two share lives in
-`verith.common` or under `reactor.lean.smt`. `verith.proofs`, which proves
+`verith.common` or under `reactor_lean.smt`. `verith.proofs`, which proves
 what a route found, is no route either. A route's row imports its
 engine inside the function that runs it, so `verith --help` loads no engine.
 
@@ -38,7 +38,7 @@ CERTIFY = ROOT / "certify"
 
 PACKAGE = sorted([*VERITH.rglob("*.py"), *CERTIFY.rglob("*.py")])
 
-# The layers of `reactor.lean` the routes are built on, and what the
+# The layers of `reactor_lean` the routes are built on, and what the
 # commands over them read besides.
 ROUTE_LAYERS = frozenset({
     "core", "lowering", "artifacts", "codegen", "smt", "project", "proof"})
@@ -131,10 +131,10 @@ def _name(path: Path) -> str:
 
 
 def _reactor_layer(module: str) -> str | None:
-    """`smt` for `reactor.lean.smt.encode`; `None` outside `reactor.lean`."""
+    """`smt` for `reactor_lean.smt.encode`; `None` outside `reactor_lean`."""
     parts = module.split(".")
-    if parts[:2] == ["reactor", "lean"] and len(parts) > 2:
-        return parts[2]
+    if parts[0] == "reactor_lean" and len(parts) > 1:
+        return parts[1]
     return None
 
 
@@ -161,7 +161,7 @@ def _private(name: str) -> bool:
 VERITH_MODULES = [p for p in PACKAGE if p.is_relative_to(VERITH)]
 
 
-# ── what of `reactor.lean` ──────────────────────────────────────────────────
+# ── what of `reactor_lean` ──────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize("path", VERITH_MODULES, ids=_name)
@@ -175,7 +175,7 @@ def test_verith_imports_only_the_layers_it_is_built_on(path):
         layer = _reactor_layer(i.target)
         if layer is not None and layer not in allowed:
             bad.append(f"{_name(path)}:{i.line} imports {i.target} "
-                       f"(reactor.lean.{layer})")
+                       f"(reactor_lean.{layer})")
         if i.module.split(".")[0] == "certify":
             bad.append(f"{_name(path)}:{i.line} imports {i.module}, which is "
                        f"built on it")

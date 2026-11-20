@@ -8,7 +8,7 @@ import re
 import time
 from dataclasses import dataclass
 
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.errors import Refused
 from ..common.vampire import run_vampire
 
 
@@ -99,7 +99,7 @@ class Answers:
     # answers that the other does not. Named rather than a bare tuple of
     # flags so the log can say which one came back.
     STRATEGIES = (("naming", ()), ("no naming", ("--naming", "0")))
-    # The short rung's wall clock. Measured over `python/tests/limits` with the
+    # The short rung's wall clock. Measured over `tests/limits` with the
     # declared limit left alone: every answer but `m_max`'s and `m_relu`'s
     # arrives inside eight seconds, so one pass at this over every strategy
     # is what keeps the questions that do answer from waiting behind the
@@ -131,7 +131,7 @@ class Answers:
         them -- which is the whole reason a short rung is safe here. A short
         `--time_limit` would have Vampire run a *different* search; a short
         wall runs the same one and stops it early, and most answers measured
-        over `python/tests/limits` arrive in under four seconds.
+        over `tests/limits` arrive in under four seconds.
         """
         for short in (True, False):
             for n, (name, extra) in enumerate(self.STRATEGIES):

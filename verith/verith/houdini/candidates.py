@@ -46,7 +46,7 @@ def pinned_values(ctx: SynthContext, runs: Runs) -> dict[str, str]:
     Over the reals an interval is hardly ever inductive -- `0 <= x <= 5`
     admits `x = 1/2`, and `x' = x - 1` steps it out -- while the values a
     run takes are finitely many and closed under the round. It is the fact
-    the LRA certificates `python/tests/limits` carries by hand are written with,
+    the LRA certificates `tests/limits` carries by hand are written with,
     and the one a floored ranking function needs: see `Search.pinning`.
 
     Keyed by the column's own source, so an element of a matrix-shaped

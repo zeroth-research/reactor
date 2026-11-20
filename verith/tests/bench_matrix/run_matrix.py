@@ -43,23 +43,23 @@ SP = Path(__file__).resolve().parent
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
 PY = VR.parent / "python"                   # python/: reactor and its tests
 REPO = PY.parent
-WARM = PY / "tests" / "lean"                       # the already-built Mathlib
-MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
+WARM = VR.parent / "lean" / "tests" / "lean"     # the already-built Mathlib
+MANIFEST = VR / "tests" / "limits" / "lake-manifest.json"
 
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
 from verith.proofs.build import without_cascades
-from reactor.lean.project.lakefile import (  # noqa: E402
-    REACTOR_LEAN_ENV, reactor_lean_checkout, with_reactor_lean,
+from reactor_lean.project.lakefile import (  # noqa: E402
+    REACTLIB_ENV, reactlib_checkout, with_reactlib,
 )
-from reactor.lean.inputs import to_surface  # noqa: E402
+from reactor_lean.inputs import to_surface  # noqa: E402
 
-# The reactor-lean checkout every project requires by path, so a pass
+# The ReactLib checkout every project requires by path, so a pass
 # measures the libraries on disk; the `verith` runs below inherit it.
-os.environ.setdefault(REACTOR_LEAN_ENV, str(REPO.parent / "ReactLib"))
-REACTOR_LEAN = reactor_lean_checkout()
+os.environ.setdefault(REACTLIB_ENV, str(REPO.parent / "ReactLib"))
+REACTLIB = reactlib_checkout()
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 PROJECTS = WORK / "projects"
@@ -120,9 +120,9 @@ def write_manifest(proj: Path, route_name: str) -> None:
     `lean-ltl-certifying` checkout, and lake refuses a dependency the
     manifest does not list. It needs no fetch -- it is a local directory --
     so the entry is added here rather than by a `lake update`, which would
-    re-resolve the other thirteen packages. reactor-lean's packages are
+    re-resolve the other thirteen packages. ReactLib's packages are
     path requires too, for the same reason."""
-    manifest = with_reactor_lean(json.loads(MANIFEST.read_text()), REACTOR_LEAN)
+    manifest = with_reactlib(json.loads(MANIFEST.read_text()), REACTLIB)
     if route_name == "fbk-proveit":
         manifest["packages"].append({
             "type": "path", "scope": "", "name": "LTL_Certifying",
@@ -154,8 +154,8 @@ def command(row, route, out: Path) -> list[str]:
 
 def rel(p: Path) -> str:
     """A module path as it is written from `python/`, which is where a run
-    is: `tests/limits/...` for reactor's fixtures, `../verith/tests/...` for
-    the adapters beside this file."""
+    is: `../verith/tests/...` for the limit matrix, the CLI fixtures and the
+    adapters beside this file."""
     return os.path.relpath(Path(p).resolve(), PY)
 
 

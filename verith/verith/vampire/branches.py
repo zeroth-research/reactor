@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import product
 
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.errors import Refused
 from ..common.terms import ite_conditions
 from ..common.claim import SynthContext
 

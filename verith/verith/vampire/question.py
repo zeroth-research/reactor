@@ -6,7 +6,7 @@ as the SMT-LIB script cvc5 writes for it (`script_for`).
 from __future__ import annotations
 
 
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.errors import Refused
 from ..common import obligations as obl
 from ..common.obligations import Obligations, ranked as ranked_query
 from ..common.smtlib import decimals, script
@@ -236,7 +236,7 @@ class Question:
 
         `bounded` confines each open hole to the window, and it is asked for
         only where the obligations leave the coefficients loose. Measured
-        both ways over `python/tests/limits`: bounding costs the safety questions
+        both ways over `tests/limits`: bounding costs the safety questions
         `m_max` and `m_toward5`, whose `inv -> prp` obligation pins the
         interval already so the window is clauses for nothing; and it is
         what makes the invariant-only question answerable at all --

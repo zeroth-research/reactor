@@ -10,7 +10,7 @@ back with cvc5.
 
 from __future__ import annotations
 
-from reactor.lean.core.options import Opt
+from reactor_lean.core.options import Opt
 # Constants only -- the module imports cvc5 lazily, so naming its defaults
 # in the row costs a bare run nothing.
 from ..common.solvers import DEFAULT_TIMEOUT

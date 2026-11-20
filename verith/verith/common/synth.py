@@ -17,7 +17,7 @@ and ``record`` leaves that in ``artifacts/``, a found predicate as a
 resumable ``inv``/``ranking`` and an empty space as a note the next run's
 prompt can carry.
 
-Measured on the `python/tests/limits` fixtures with cvc5 1.3.4, which is what the
+Measured on the `tests/limits` fixtures with cvc5 1.3.4, which is what the
 shapes below are chosen from:
 
 * a linear rank is decided in **2-30 ms** under a fixed invariant --
@@ -52,10 +52,10 @@ from typing import TYPE_CHECKING
 
 from .claim import SynthContext, reading_kind
 from .record import GaveUp, found
-from reactor.lean.smt.encode import tuple_select
+from reactor_lean.smt.encode import tuple_select
 from .smtlib import decimals, smt_lit
 from .terms import free_constants, literals
-from reactor.lean.smt.terms import nodes
+from reactor_lean.smt.terms import nodes
 
 from cvc5 import Kind
 
@@ -328,7 +328,7 @@ def program_constants(ctx: SynthContext) -> tuple[int, ...]:
     """The integer literals this module and its property mention, read once
     per context.
 
-    Seeded rather than guessed, for the reason `python/tests/limits/README.md`
+    Seeded rather than guessed, for the reason `tests/limits/README.md`
     records about Houdini: the bound that makes an invariant true is almost
     always a constant the program already contains -- `NNInv` needs
     `0 <= x <= 9`, whose `9` only the guard mentions -- and a grammar over
@@ -349,7 +349,7 @@ def _program_constants(ctx: SynthContext) -> tuple[int, ...]:
                 #
                 # The neighbours because the bound is usually the guard's
                 # constant and the one step past it -- `x + 1 == 10` bounds
-                # `x` at 9 -- which is the normalisation `python/tests/limits`
+                # `x` at 9 -- which is the normalisation `tests/limits`
                 # records Houdini needing before it could seed them.
                 #
                 # The negation because of how an atom is *written*. The

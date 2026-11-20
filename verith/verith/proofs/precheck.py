@@ -23,15 +23,15 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.core.errors import Refused
 
 from ..common import obligations as ob
 from ..common.encoding import encoding_of, solver_for
 from ..common.smtlib import script
 
 if TYPE_CHECKING:
-    from reactor.lean.smt.queries import ModuleQueries
+    from reactor_lean.smt.queries import ModuleQueries
 
     from ..common.limits import SmtBudget
 

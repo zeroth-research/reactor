@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from reactor.lean.core.errors import PredicateRefused
+from reactor_lean.core.errors import PredicateRefused
 from ..common.claim import SynthContext
 from ..common.obligations import Candidate, Obligations
 from ..common.solvers import Solver

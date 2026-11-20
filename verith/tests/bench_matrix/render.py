@@ -693,9 +693,9 @@ def warnings_section(warns: list, w) -> None:
 
 
 # The directories benchmark files live in, in the order the page lists them.
-DIR_ORDER = ["tests/fixtures", "tests/limits/mods", "benchmarks/svcomp/dsl",
-             "tests/bench_matrix/hybrid", "tests/bench_matrix/petri",
-             "tests/bench_matrix"]
+DIR_ORDER = ["../verith/tests/fixtures", "../verith/tests/limits/mods",
+             "benchmarks/svcomp/dsl", "../verith/tests/bench_matrix/hybrid",
+             "../verith/tests/bench_matrix/petri", "../verith/tests/bench_matrix"]
 SVCOMP_DSL = PY / "benchmarks" / "svcomp" / "dsl"
 
 
@@ -905,7 +905,7 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None,
 
 # Where a path in the page's prose is relative to: the prose is written from
 # `python/`, with a few names local to this directory or the limit matrix's.
-LINK_BASES = [PY, PY.parent, SP, PY / "tests" / "limits", WORK]
+LINK_BASES = [PY, PY.parent, SP, VR / "tests" / "limits", WORK]
 # Embedded so the popup works from a copied page and without a server; larger
 # or non-text files are linked, not embedded.
 EMBED_SUFFIXES = {".py", ".md", ".lean", ".toml", ".txt", ".j2"}

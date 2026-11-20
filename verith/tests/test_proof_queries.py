@@ -16,8 +16,8 @@ import torch
 
 from reactor import Module, Term, Var, Wire, X, LIA, Int
 from reactor.analyzer import convert_method
-from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.core.errors import Refused
 from verith.common.encoding import predicate_terms
 from verith.common.limits import SmtBudget
 from verith.proofs.facts import predicate_facts, solver_hints
@@ -279,7 +279,7 @@ def test_branch_points_do_not_move_when_the_printer_shares():
     the printer bound the repeats to names -- and the heartbeat budget is
     calibrated against that goal.
     """
-    from reactor.lean.proof.from_smt import smt_to_lean_nat
+    from reactor_lean.proof.from_smt import smt_to_lean_nat
 
     q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(5)))
     unshared = smt_to_lean_nat(q.ranking, q.msmt.ctrl_next, share=False)

@@ -7,7 +7,7 @@ ranking function -- out, in the input's names and in the form `reactor`'s
     uv run verith mymodule.py --buchi "(= (X @intf.0) 0)" --infer houdini
 
 The module and the claim are read with the same flags `reactor` reads them
-with (`reactor.lean.cli`), and the route, the SMT budget and what is asked
+with (`reactor_lean.cli`), and the route, the SMT budget and what is asked
 of the proofs with the flags `certify` takes (`verith.flags`), so a command
 line moves between the three by adding or dropping flags.
 
@@ -35,26 +35,26 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from reactor.lean import inputs
-from reactor.lean.artifacts import ARTIFACTS_DIR
-from reactor.lean.cli import claim_deferred
-from reactor.lean.cli.checks import (
+from reactor_lean import inputs
+from reactor_lean.artifacts import ARTIFACTS_DIR
+from reactor_lean.cli import claim_deferred
+from reactor_lean.cli.checks import (
     check_blanks,
     check_claim_flags,
     check_input_options,
     input_adapter,
 )
-from reactor.lean.cli.parser import add_claim, add_input
-from reactor.lean.core.certificate import Claim
-from reactor.lean.core.errors import Refused
-from reactor.lean.pipeline.certificate import (
+from reactor_lean.cli.parser import add_claim, add_input
+from reactor_lean.core.certificate import Claim
+from reactor_lean.core.errors import Refused
+from reactor_lean.pipeline.certificate import (
     lean_context,
     record_predicates,
     workspace,
 )
-from reactor.lean.pipeline.claim import claim_from_flags, load, stated_claim
-from reactor.lean.project.lakefile import LakefileParts
-from reactor.lean.project.scaffold import write_lakefile
+from reactor_lean.pipeline.claim import claim_from_flags, load, stated_claim
+from reactor_lean.project.lakefile import LakefileParts
+from reactor_lean.project.scaffold import write_lakefile
 
 from .common.encoding import lazy
 from .common.limits import SmtBudget
@@ -116,8 +116,8 @@ examples:
 class Settings:
     """A validated `verith` command line.
 
-    The claim's fields are named as `reactor.lean.cli.Settings` names them,
-    so the stages that read a claim (`reactor.lean.pipeline.claim`) and the
+    The claim's fields are named as `reactor_lean.cli.Settings` names them,
+    so the stages that read a claim (`reactor_lean.pipeline.claim`) and the
     route checks (`verith.flags`) read this one too.
     """
 
@@ -212,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
 def parse_args(argv: "list[str] | None" = None, *,
                defer_claim: bool = True) -> Settings:
     """The command line as `Settings`; `defer_claim` as in
-    `reactor.lean.cli.parse_args`."""
+    `reactor_lean.cli.parse_args`."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -352,7 +352,7 @@ def project_handle(settings: Settings, module,
                 executable=(project / "Main.lean").exists(),
                 parts=parts,
             )
-        except Refused as e:            # a `$REACTOR_LEAN` that is no checkout
+        except Refused as e:            # a `$REACTLIB` that is no checkout
             raise SystemExit(f"error: {e}") from e
     return ProjectHandle(dir=project, name=project.name, ctx=ctx,
                          artifacts=store, **declared(route))

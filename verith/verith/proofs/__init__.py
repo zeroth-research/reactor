@@ -21,8 +21,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from reactor.lean.project.lakefile import LakefileParts, LeanLib
-from reactor.lean.proof.render import ProofScripts
+from reactor_lean.project.lakefile import LakefileParts, LeanLib
+from reactor_lean.proof.render import ProofScripts
 
 from ..common.encoding import predicate_terms
 from .build import LakeBuildError, build_certificate
@@ -31,9 +31,9 @@ from .precheck import pre_check
 from .scripts import HAMMER_LIB, print_hints, proof_scripts, render
 
 if TYPE_CHECKING:
-    from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-    from reactor.lean.proof.render import LeanCertificate
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+    from reactor_lean.proof.render import LeanCertificate
 
     from ..common.limits import SmtBudget
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from reactor.lean.core.options import Opt
+from reactor_lean.core.options import Opt
 
 
 @dataclass(frozen=True)

@@ -123,6 +123,7 @@ Crates are structured as follows.
 ```sh
  - base      # core data-structures
  - python    # Python API to access the crates
+ - lean      # Reactive modules to Lean 4: the `reactor` command (`lean/python/reactor_lean`)
  - tutorials # Tutorials and use cases
  ```
 
@@ -131,7 +132,8 @@ For details on each crate see its own README.
 ## Running tests
 
 After building the project, you can run tests of the Rust code using `just rs-test`.
-Tests of the Python interface can be run by `just py-test`.
+Tests of the Python interface can be run by `just py-test`, and those of
+`reactor_lean` (the `lean` crate's Python: the `reactor` command) by `just lean-test`.
 You can run all tests with the command `just test`.
 
 ### Running individual tests
@@ -142,21 +144,21 @@ You can use `cargo test -- --exact module::test` to run a single test with fully
 To run a concrete Python test, go to the `python` crate and run `uv run pytest file.py::test-name`,
 e.g., `uv run pytest tests/test_base.py::test_term_new`.
 Alternatively, you can use `just py-test [file::test]` from anywhere in the project
-to run all or any concrete test.
+to run all or any concrete test. The tests of `reactor_lean` are in `lean/tests`, and run
+the same way from `lean/` or by `just lean-test [file::test]`.
 
 ### Slow tests (Lean proof verification)
 
-Some Python tests verify Lean 4 certificates by running `lake build`, which
+Some tests of `reactor_lean` (in `lean/tests`) verify Lean 4 certificates by running `lake build`, which
 requires a working `lake` installation and a local Mathlib cache. These tests
 are marked `@pytest.mark.slow` and are **skipped by default**.
 
 ```sh
-just pytest                  # fast: skips all lake-build tests
-just pytest -m slow          # slow: runs lake-build tests (requires lake + Mathlib)
-just pytest -m "not slow"    # explicit fast-only run
+just lean-test               # fast: skips all lake-build tests
+just test-lean               # slow: runs lake-build tests (requires lake + Mathlib)
 ```
 
-Tests that carry the `slow` mark:
+Tests that carry the `slow` mark (paths relative to `lean/`):
 
 | File | Test | What it verifies |
 |------|------|-----------------|

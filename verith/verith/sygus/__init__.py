@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reactor.lean.core.options import Opt
+from reactor_lean.core.options import Opt
 from ..io import InferInput, InferResult
 from ..route import InferRoute
 

@@ -31,11 +31,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-PY = Path(__file__).resolve().parents[2] / "python"
-FIX = PY / "tests" / "fixtures"
-MODS = PY / "tests" / "limits" / "mods"
-HYBRID = Path(__file__).resolve().parents[1] / "tests" / "bench_matrix" / "hybrid"
-SMV = PY / "tests" / "smv_fixtures"
+REPO = Path(__file__).resolve().parents[2]
+TESTS = REPO / "verith" / "tests"
+FIX = TESTS / "fixtures"
+MODS = TESTS / "limits" / "mods"
+HYBRID = TESTS / "bench_matrix" / "hybrid"
+SMV = TESTS / "smv_fixtures"
 
 
 def _tool(var: str, default: str) -> Path:
@@ -227,7 +228,7 @@ _TMP = re.compile(r"/(?:private/)?var/folders/\S+?/certify-[A-Za-z0-9_]+-[A-Za-z
 
 def normalise(text: str, out: Path) -> str:
     text = _ANSI.sub("", text)
-    text = text.replace(str(out), "<OUT>").replace(str(PY), "<REPO>")
+    text = text.replace(str(out), "<OUT>").replace(str(REPO), "<REPO>")
     text = re.sub(r"#\d+", "#N", text)
     text = re.sub(r"\s+\d+ ms\b", " N ms", text)
     text = re.sub(r"\b\d+(\.\d+)? s\b", "N s", text)

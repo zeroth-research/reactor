@@ -51,8 +51,8 @@ from dataclasses import dataclass, field
 
 from reactor import Bool, Int, Real, BitVec
 
-from reactor.lean.lowering.sorts import itype_name, wire_shape
-from reactor.lean.lowering.elements import flat_layout
+from reactor_lean.lowering.sorts import itype_name, wire_shape
+from reactor_lean.lowering.elements import flat_layout
 
 
 # The lemmas `simp_mat` reduces matrix arithmetic with, after the

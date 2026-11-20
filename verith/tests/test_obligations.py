@@ -13,13 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.inputs.python import load_module
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.inputs.python import load_module
 
 cvc5 = pytest.importorskip("cvc5")
 from cvc5 import Kind  # noqa: E402
 
-LIMITS = Path(__file__).resolve().parents[2] / "python" / "tests" / "limits" / "mods"
+LIMITS = Path(__file__).resolve().parent / "limits" / "mods"
 
 
 def _module(name: str):
@@ -28,7 +28,7 @@ def _module(name: str):
 
 def _clamps():
     """`(name, tm, clamp)` for each clamp `hrank` is stated with."""
-    from reactor.lean.smt.queries import ModuleQueries
+    from reactor_lean.smt.queries import ModuleQueries
     from verith.common.obligations import clamp
 
     claim = Claim(prp="(= s0 0)")

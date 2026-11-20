@@ -1,10 +1,10 @@
-"""The fbk-proveit route's Lean against `reactor.lean`'s.
+"""The fbk-proveit route's Lean against `reactor_lean`'s.
 
 The NA model `lean2vmt` reads (`verith.fbk_proveit.na`) and the bridge that
 proves it is the module (`verith.fbk_proveit.bridge`) are this project's;
 what they are proved against -- the project's layout, its scalar encoding,
 the flat element order every encoding shares, the certificate's simp set --
-is `reactor.lean`'s. These are the checks that the two agree. They moved
+is `reactor_lean`'s. These are the checks that the two agree. They moved
 here with the route from `reactor`'s own tests (`test_lean_flat_layout.py`,
 `test_lean_names.py`, `test_lean_templates.py`), which keep the halves that
 are `reactor`'s alone.
@@ -17,19 +17,19 @@ import pytest
 import torch
 
 from reactor import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.codegen.encodings.scalar import _unpack_body
-from reactor.lean.inputs.python import load_module
-from reactor.lean.lowering.elements import flat_layout, flat_size
-from reactor.lean.project.names import CERT_LIB, SYSTEM_LAYOUT
-from reactor.lean.project.scaffold import create_project
-from reactor.lean.proof.render import certificate_files, generate_proofs_lean
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.codegen.encodings.scalar import _unpack_body
+from reactor_lean.inputs.python import load_module
+from reactor_lean.lowering.elements import flat_layout, flat_size
+from reactor_lean.project.names import CERT_LIB, SYSTEM_LAYOUT
+from reactor_lean.project.scaffold import create_project
+from reactor_lean.proof.render import certificate_files, generate_proofs_lean
 from verith.fbk_proveit.bridge import atom_to_lean_fbk_bridge
 from verith.fbk_proveit.na import atom_to_lean_na, check_na_supported, slot_accessors
 from verith.proofs.scripts import proof_scripts
 
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 # As `reactor`'s `test_lean_flat_layout.py` has them: one wire list per case,
 # the last three the ones no fixture has -- a genuinely 2-D wire, and a mixed
