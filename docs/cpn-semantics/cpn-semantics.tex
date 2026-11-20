@@ -6,6 +6,8 @@
 \usepackage{lmodern}
 \usepackage{a4wide}
 \usepackage{amsmath,amssymb,amsthm}
+\usepackage{tikz}
+\usetikzlibrary{petri,arrows.meta}
 \usepackage{hyperref}
 
 \theoremstyle{definition}
@@ -25,6 +27,7 @@
 
 \newtheorem{definition}{Definition}
 \newtheorem{remark}{Remark}
+\newtheorem{proposition}{Proposition}
 
 \title{Semantics of Coloured Petri Nets in SDCPN sense}
 \author{Igor Konnov, Thomas Pani}
@@ -369,6 +372,164 @@ whereas we select it nondeterministically.
   tokens produced in a round evolve during the following tick, that is, every
   token in~$\bfm_{i + 1}$ has evolved for the duration $t_{i+1} - t_i$,
   regardless of whether it was produced at~$t_i$.
+\end{remark}
+
+%%%%%%%%%%%
+\subsection{Example: a vaccination campaign}\label{sec:vaccination}
+
+We illustrate \DCPN{0} on the Petrinaut example ``Vaccination
+Campaign''~\cite{Petrinaut}. It is an SIR model with four uncoloured places: susceptible~$S$,
+infected~$I$, recovered~$R$, and vaccinated~$V$. It has two transitions:
+
+\begin{itemize}
+  \item \emph{Infection} consumes a token from~$S$ and a token from~$I$, and
+    produces two tokens in~$I$;
+  \item \emph{Recovery} consumes a token from~$I$ and produces a token
+    in~$R$.
+\end{itemize}
+
+The place~$V$ has no arcs. The vaccination enters the model in two ways.
+First, the scenario ``Winter wave'' has a population of~$1000$ with $20$
+infected people and the vaccination coverage~$0.3$. It moves
+$\mathrm{round}(980 \cdot 0.3) = 294$ people from~$S$ to~$V$, that is, the
+initial marking has $686$, $20$, $0$, and~$294$ tokens in $S$, $I$, $R$,
+and~$V$, respectively. Second, the vaccine lowers the rate of Infection.
+
+\paragraph{Stochastic transitions.}
+In Petrinaut, both transitions are stochastic. Infection has the rate
+$\lambda_{\mathit{inf}} = \beta (1 - \rho)(1 - \varepsilon v)$, where
+$\beta$ is the infection rate, $\rho$ is the contact reduction,
+$\varepsilon$ is the vaccine efficacy, and $v$ is the vaccination coverage.
+Recovery has a constant rate~$\gamma$. Petrinaut advances in steps of a
+fixed length~$\delta$. In every step, it visits the transitions once in a
+fixed order. A stochastic transition with rate~$\lambda$ that has enough
+input tokens fires once with probability $1 - e^{-\lambda \delta}$,
+regardless of how many bindings it has, and otherwise it does not fire. As
+for \DCPN{1}, we take the nondeterministic reading: if $\lambda > 0$, then
+an enabled stochastic transition may fire or may not fire.
+
+\paragraph{Why a direct translation fails.}
+Let us translate Infection and Recovery into guard transitions with the
+guard~$\mathit{True}$. By Definition~\ref{def:round}, a round finishes only
+when no transition has a binding in the remaining tokens of the snapshot.
+Hence, every token of~$I$ in the snapshot is consumed in the round, either
+by Infection or by Recovery. That is, every person stays infected for
+exactly one round: the maximality of rounds turns ``may fire'' into ``must
+fire''.
+
+\paragraph{Encoding with self-loops.}
+We give every token of $S$ and~$I$ the option to do nothing in a round: a
+self-loop transition consumes the token and puts it back unchanged. The
+resulting \DCPN{0} is shown in Figure~\ref{fig:vaccination}. Formally, we
+fix $k = 1$ and $\Dom = \NatZero$, and define:
+
+\begin{itemize}
+  \item $\mathcal{P} = \{S, I, R, V\}$;
+
+  \item $\mathcal{T} = \mathcal{T}_G = \{\mathit{Inf}, \mathit{Rec},
+    \mathit{Idle}_S, \mathit{Idle}_I\}$ and $\mathcal{T}_I = \emptyset$;
+
+  \item $\mathcal{A}$ consists of the arcs from $S$ and~$I$
+    to~$\mathit{Inf}$, two arcs from~$\mathit{Inf}$ to~$I$, an arc from~$I$
+    to~$\mathit{Rec}$, an arc from~$\mathit{Rec}$ to~$R$, and, for
+    $P \in \{S, I\}$, an arc from~$P$ to~$\mathit{Idle}_P$ and an arc
+    from~$\mathit{Idle}_P$ to~$P$;
+
+  \item $\mathcal{V}_P(c) = 0$ for every place~$P$ and colour $c \in
+    \NatZero$;
+
+  \item $\mathcal{G}_T(\cvec) = \mathit{True}$ for every transition~$T$;
+
+  \item $\pi_{\mathit{Inf}}(c_1, c_2) = (0, 0)$,
+    $\pi_{\mathit{Rec}}(c) = 0$, and $\pi_{\mathit{Idle}_P}(c) = c$ for
+    $P \in \{S, I\}$;
+
+  \item $\mathcal{I}(S) = 686 \cdot \mset{0}$,
+    $\mathcal{I}(I) = 20 \cdot \mset{0}$, $\mathcal{I}(R) = \mset{}$, and
+    $\mathcal{I}(V) = 294 \cdot \mset{0}$, where $n \cdot \mset{0}$ is the
+    multiset that contains the colour~$0$ exactly $n$ times.
+\end{itemize}
+
+All four transitions must be guard transitions. If $\mathit{Inf}$ and
+$\mathit{Rec}$ were immediate, then, by rule~R0, the self-loops could only
+fire after $\mathit{Inf}$ and $\mathit{Rec}$ have no bindings left, and we
+would be back to ``must fire''.
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+      >={Stealth[length=2mm]},
+      every place/.style={draw, thick, minimum size=9mm, font=\small},
+      every transition/.style={draw, thick, fill=black!15,
+        minimum width=3mm, minimum height=8mm},
+      every label/.style={font=\small},
+      arc/.style={->, thick},
+      aux/.style={draw=blue, text=blue}]
+    \node[place, label=below:$S$] (S) at (0, 0) {$686$};
+    \node[transition, label=below:$\mathit{Inf}$] (Inf) at (2, 0) {};
+    \node[place, label=below:$I$] (I) at (4, 0) {$20$};
+    \node[transition, label=below:$\mathit{Rec}$] (Rec) at (6, 0) {};
+    \node[place, label=below:$R$] (R) at (8, 0) {$0$};
+    \node[place, label=below:$V$] (V) at (10, 0) {$294$};
+    \node[transition, aux, fill=blue!15,
+      label={[text=blue]above:$\mathit{Idle}_S$}] (IdleS) at (0, 1.8) {};
+    \node[transition, aux, fill=blue!15,
+      label={[text=blue]above:$\mathit{Idle}_I$}] (IdleI) at (4, 1.8) {};
+    \draw[arc] (S) -- (Inf);
+    \draw[arc] (Inf) -- (I);
+    \draw[arc] (Inf) to[bend left=30] (I);
+    \draw[arc] (I) to[bend left=30] (Inf);
+    \draw[arc] (I) -- (Rec);
+    \draw[arc] (Rec) -- (R);
+    \draw[arc, aux] (S) to[bend left=30] (IdleS);
+    \draw[arc, aux] (IdleS) to[bend left=30] (S);
+    \draw[arc, aux] (I) to[bend left=30] (IdleI);
+    \draw[arc, aux] (IdleI) to[bend left=30] (I);
+  \end{tikzpicture}
+  \caption{The \DCPN{0} of the vaccination campaign with the initial marking
+    of the scenario ``Winter wave''. A number in a place is the number of
+    its tokens, all of which have the colour~$0$. The auxiliary self-loops
+    $\mathit{Idle}_S$ and $\mathit{Idle}_I$, shown in blue, let a token skip
+    a round.}
+  \label{fig:vaccination}
+\end{figure}
+
+Since all colours are~$0$ and remain~$0$, a marking is determined by the
+numbers $(s, i, r, v)$ of tokens in $S$, $I$, $R$, and~$V$.
+
+In a Petrinaut step, Infection and Recovery fire at most once each, that
+is, a step corresponds to a round with $a \le 1$ and $b \le 1$. Hence, the
+sequence of markings of every Petrinaut run is the sequence of markings of
+an execution. The converse does not hold, since the \DCPN{0} admits several
+infections in one round: every binding gets its own chance to fire, as in
+the usual semantics of stochastic Petri nets, whereas Petrinaut gives one
+chance to every transition. Moreover, the nondeterministic reading forgets
+the rate~$\lambda_{\mathit{inf}}$. Hence, the vaccination coverage~$v$
+affects the \DCPN{0} only via the initial marking.
+
+\begin{remark}[Lock places]\label{rem:locks}
+  To capture Petrinaut steps exactly, we attach the self-loops to private
+  places instead of $S$ and~$I$. We remove $\mathit{Idle}_S$
+  and~$\mathit{Idle}_I$, and for every $T \in \{\mathit{Inf},
+  \mathit{Rec}\}$, we add a place~$L_T$ with a single token of colour~$0$,
+  an arc from~$L_T$ to~$T$, an arc from~$T$ to~$L_T$, and a guard
+  transition~$\mathit{Skip}_T$ with the guard~$\mathit{True}$, an arc
+  from~$L_T$ to~$\mathit{Skip}_T$, and an arc from~$\mathit{Skip}_T$
+  to~$L_T$. The colour of the lock token is copied by $\pi_T$ and
+  $\pi_{\mathit{Skip}_T}$. In every round, the lock token is consumed either
+  by~$T$ or by~$\mathit{Skip}_T$, and it returns via~$\bfDelta$. Hence,
+  $T$ fires at most once per round, and it may not fire. Similar to
+  Proposition~\ref{prop:vaccination-rounds}, we have
+  $(s, i, r, v) \Rightarrow (s - a, i + a - b, r + b, v)$ iff
+  $a, b \in \{0, 1\}$, $a \le s$, and $a + b \le i$. These are exactly the
+  steps that Petrinaut takes with positive probability, provided that
+  $\lambda_{\mathit{inf}} > 0$ and $\gamma > 0$.
+
+  The self-loops on $S$ and~$I$ are harmless in this example, since no
+  transition with a non-trivial guard consumes tokens from $S$ or~$I$. In
+  general, a self-loop on an input place~$P$ may consume a token that a
+  guard transition must consume, which breaks the urgency of guard
+  transitions. The lock places do not have this problem.
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
