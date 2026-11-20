@@ -13,11 +13,14 @@
 \newcommand{\NatZero}{\mathbb{N}_0}
 \newcommand{\Real}{\mathbb{R}}
 \newcommand{\Int}{\mathbb{Z}}
+\newcommand{\Rat}{\mathbb{Q}}
+\newcommand{\Coef}{\mathbb{K}}
+\newcommand{\Dom}{\mathbb{D}}
 \newcommand{\mset}[1]{\{\!\{#1\}\!\}}
 \newcommand{\cvec}{\overline{c}}
 \newcommand{\bfm}{\mathbf{m}}
 \newcommand{\bfDelta}{\boldsymbol{\Delta}}
-\newcommand{\tickto}{\xrightarrow{\mathit{tick}}}
+\newcommand{\tickto}[1]{\xrightarrow{\mathit{tick}(#1)}}
 \newcommand{\DCPN}[1]{\texorpdfstring{\textup{DCPN}\ensuremath{_{#1}}}{DCPN#1}}
 
 \newtheorem{definition}{Definition}
@@ -48,7 +51,8 @@ that still makes sense:
 
 \begin{itemize}
   \item Colors are unified, that is, in every place, a token has its color
-    from~$\Real^k$ for a fixed~$k \ge 1$.
+    from~$\Dom^k$ for a fixed~$k \ge 1$. The domain~$\Dom$ is either the
+    reals~$\Real$ or the naturals~$\NatZero$.
 
   \item There are only ordinary arcs, no enabling or inhibitor arcs.
 
@@ -60,11 +64,14 @@ that still makes sense:
     each of its output arcs, and the colours of the produced tokens are an
     affine function of the colours of the consumed tokens.
 
-  \item Guarded transitions have their guards over linear-integer arithmetic.
+  \item Guarded transitions have their guards over linear integer arithmetic
+    (LIA) if $\Dom = \NatZero$, and over linear real arithmetic (LRA) if
+    $\Dom = \Real$.
 
-  \item Token color functions are constants, that is, flows are linear.
-    Moreover, there is a global discretized clock, and the token colors
-    change according to the change of this clock.
+  \item Token color functions are functions of the token colors. There is a
+    global clock that advances in ticks, whose durations range over~$\Dom$.
+    In every tick, the token colors change by one Euler step of the tick
+    duration.
 \end{itemize}
 
 %%%%%%%%%%%
@@ -77,7 +84,8 @@ whereas $P$, $T$, and $A$ denote individual places, transitions, and arcs,
 respectively.
 
 \begin{definition}[\DCPN{0}]\label{def:dcpn0}
-  Fix $k \in \Nat$ to be the color dimension, different from~0.
+  Fix $k \in \Nat$ to be the color dimension, different from~0, and fix the
+  domain $\Dom \in \{\Real, \NatZero\}$.
   A \emph{\DCPN{0}} is a tuple
   $(\mathcal{P}, \mathcal{T}, \mathcal{A}, \mathcal{N}, \mathcal{S},
     \mathcal{C}, \mathcal{V}, \mathcal{G}, \mathcal{D}, \mathcal{F},
@@ -116,41 +124,44 @@ respectively.
       $\mathcal{A}_{\mathit{in}}(T) \ne \emptyset$ for every
       $T \in \mathcal{T}$.
 
-    \item $\mathcal{S} = \{\Real^k\}$ is the set of colour types. In this
-      definition, there is only one colour type --- the set of real
-      vectors~$\Real^k$.
+    \item $\mathcal{S} = \{\Dom^k\}$ is the set of colour types. In this
+      definition, there is only one colour type --- the set of
+      vectors~$\Dom^k$.
 
     \item $\mathcal{C} : \mathcal{P} \to \mathcal{S}$ is the colour function.
-      In our case, it is trivially defined as $\mathcal{C}(P) = \Real^k$ for
+      In our case, it is trivially defined as $\mathcal{C}(P) = \Dom^k$ for
       every $P \in \mathcal{P}$.  For a transition $T$ with input arcs
       $\mathcal{A}_{\mathit{in}}(T) = \{A_1, \dots, A_m\}$ and output arcs
       $\mathcal{A}_{\mathit{out}}(T) = \{A'_1, \dots, A'_n\}$, we write
       $\mathcal{C}(P(\mathcal{A}_{\mathit{in}}(T))) = \mathcal{C}(P(A_1))
-      \times \dots \times \mathcal{C}(P(A_m)) = \Real^{k \cdot m}$, and
+      \times \dots \times \mathcal{C}(P(A_m)) = \Dom^{k \cdot m}$, and
       similarly $\mathcal{C}(P(\mathcal{A}_{\mathit{out}}(T)))
-      = \Real^{k \cdot n}$. While $m \ge 1$, a transition may have no output
+      = \Dom^{k \cdot n}$. While $m \ge 1$, a transition may have no output
       arcs, that is, $n = 0$, and then the latter product is empty.
       Unlike~\cite{EverdijBlom2005}, who set $\Real^0 = \emptyset$, we let
-      $\Real^0 = \{()\}$ be the singleton set containing the empty tuple.
+      $\Dom^0 = \{()\}$ be the singleton set containing the empty tuple.
       Hence, the firing measure $\mathcal{F}_T$ of a transition without
       output arcs is still a probability measure, and such a transition can
       fire.
 
     \item $\mathcal{V}$ is the set of token colour functions. For each
-      place $P \in \mathcal{P}$, it contains a constant
-      function $\mathcal{V}_P : \Real^k \to \Real^k$, that is,
-      $\mathcal{V}_P(c) = v_P$ for all $c \in \Real^k$ and some fixed
-      $v_P \in \Real^k$. Constant functions are trivially locally
-      Lipschitz continuous.
+      place $P \in \mathcal{P}$, it contains a function
+      $\mathcal{V}_P : \Dom^k \to \Dom_\pm^k$, which gives the rate of
+      change of the colour of a token in~$P$. Here, $\Dom_\pm = \Real$ if
+      $\Dom = \Real$, and $\Dom_\pm = \Int$ if $\Dom = \NatZero$, so that
+      colours may also decrease. If $\Dom = \Real$, then $\mathcal{V}_P$ is
+      locally Lipschitz continuous, as in~\cite{EverdijBlom2005}.
 
     \item $\mathcal{G}$ is the set of transition guards. For each
       $T \in \mathcal{T}_G$, it contains a guard
       $\mathcal{G}_T : \mathcal{C}(P(\mathcal{A}_{\mathit{in}}(T)))
         \to \{\mathit{True}, \mathit{False}\}$
       with $\mathcal{G}_T(\cvec) = \mathit{True}$ iff $\cvec \models \varphi_T$,
-      where $\varphi_T$ is a quantifier-free formula of linear arithmetic
-      with integer coefficients over the colour components of the input
-      tokens.\footnote{%
+      where $\varphi_T$ is a quantifier-free formula over the colour
+      components of the input tokens. If $\Dom = \NatZero$, then $\varphi_T$
+      is a formula of linear integer arithmetic (LIA) with coefficients
+      in~$\Int$, and if $\Dom = \Real$, then $\varphi_T$ is a formula of
+      linear real arithmetic (LRA) with coefficients in~$\Rat$.\footnote{%
         Everdij and Blom~\cite{EverdijBlom2005} define
         $\mathcal{G}_T(\cvec) = \mathit{True}$ iff $\cvec \in \partial O_T$, that is,
         $\cvec$ lies on the boundary of an open set~$O_T$. Since the colours
@@ -175,25 +186,27 @@ respectively.
       and the colours of the produced tokens ($a$).
       In this definition, firing is deterministic. Let $T$ have $m$ input arcs
       and $n$ output arcs. Then there is an affine function
-      $\pi_T(\cvec) = M_T\, \cvec + b_T$ with $M_T \in \Int^{kn \times km}$
-      and $b_T \in \Int^{kn}$ such that
+      $\pi_T(\cvec) = M_T\, \cvec + b_T$ with $M_T \in \Coef^{kn \times
+      km}$ and $b_T \in \Coef^{kn}$, where $\Coef = \Int$ if
+      $\Dom = \NatZero$, and $\Coef = \Rat$ if $\Dom = \Real$, such that
+      $\pi_T(\cvec) \in \Dom^{kn}$ and
       $\mathcal{F}_T(\cvec) = \delta_{(\mathbf{1}, \pi_T(\cvec))}$ for all
-      $\cvec \in \Real^{km}$. Here, $\delta_x$ is the Dirac measure at~$x$, and
+      $\cvec \in \Dom^{km}$. Here, $\delta_x$ is the Dirac measure at~$x$, and
       $\mathbf{1} = (1, \dots, 1) \in \{0, 1\}^n$, that is, $T$ produces
       a token along each of its output arcs.
 
     \item $\mathcal{I} : \mathcal{P} \to \mathcal{C}(P)_{\mathit{ms}}$ is the
       initialisation function, where $\mathcal{C}(P)_{\mathit{ms}}$ is the set
-      of all multisets over $\mathcal{C}(P) = \Real^k$.
+      of all multisets over $\mathcal{C}(P) = \Dom^k$.
   \end{enumerate}
 \end{definition}
 
 The rules R0--R4 resolve competing enablings and are therefore part of the
 execution semantics, which we define later. Since $\mathcal{T}_D = \emptyset$,
 rule R0 reduces to immediate transitions having priority over guard
-transitions. Likewise, the global discretized clock only affects executions:
-Definition~\ref{def:dcpn0} merely fixes that, while a token resides in a
-place~$P$, its colour changes at the constant rate~$v_P$.
+transitions. Likewise, the global clock only affects executions:
+Definition~\ref{def:dcpn0} merely fixes that, while a token with colour~$c$
+resides in a place~$P$, its colour changes at the rate~$\mathcal{V}_P(c)$.
 
 \begin{remark}
   Everdij and Blom define $\mathcal{C}(P(\mathcal{A}_{\mathit{in},OE}(T)))$
@@ -207,7 +220,7 @@ place~$P$, its colour changes at the constant rate~$v_P$.
   DCPNs~\cite{EverdijBlom2005} and Petrinaut allow transitions without input
   arcs, often called \emph{sources}. Such transitions are meaningful only as
   delay transitions. A guard transition without input arcs never fires, since
-  its guard is defined on $\Real^0$ and has an empty boundary. An immediate
+  its guard is defined on $\Dom^0$ and has an empty boundary. An immediate
   transition without input arcs is always enabled, so it would fire infinitely
   often at the same time. In contrast, Everdij and Blom explicitly allow a
   delay transition without input arcs, whose enabling rate~$d_T$ is then a
@@ -234,22 +247,22 @@ Throughout this section, we fix a \DCPN{0} as in
 Definition~\ref{def:dcpn0}. For every transition~$T$, we fix an enumeration
 $A_1, \dots, A_m$ of its input arcs and an enumeration $A'_1, \dots, A'_n$ of
 its output arcs, which we used to define the products
-$\mathcal{C}(P(\mathcal{A}_{\mathit{in}}(T))) = \Real^{km}$ and
-$\mathcal{C}(P(\mathcal{A}_{\mathit{out}}(T))) = \Real^{kn}$. For
-$\cvec \in \Real^{km}$, we write $\pi_T^j(\cvec) \in \Real^k$ for the $j$-th block of
+$\mathcal{C}(P(\mathcal{A}_{\mathit{in}}(T))) = \Dom^{km}$ and
+$\mathcal{C}(P(\mathcal{A}_{\mathit{out}}(T))) = \Dom^{kn}$. For
+$\cvec \in \Dom^{km}$, we write $\pi_T^j(\cvec) \in \Dom^k$ for the $j$-th block of
 $k$ components of $\pi_T(\cvec)$, that is, the colour produced along~$A'_j$.
 
 \paragraph{Markings.}
 We write $\mset{\cdot}$ for multisets, $+$ and $-$ for their sum and
 difference, and $\le$ for multiset inclusion. A \emph{token} is a pair
-$(P, c) \in \mathcal{P} \times \Real^k$ of a place and a colour, and a
+$(P, c) \in \mathcal{P} \times \Dom^k$ of a place and a colour, and a
 \emph{marking} is a finite multiset of tokens. The \emph{initial marking} is
 $\bfm_0 = \sum_{P \in \mathcal{P}} \mset{(P, c) \mid c \in \mathcal{I}(P)}$, where
 every colour~$c$ is taken with its multiplicity in~$\mathcal{I}(P)$.
 
 \paragraph{Bindings.}
 A \emph{binding} of a transition~$T$ in a marking~$\bfm$ is a tuple
-$\cvec = (c_1, \dots, c_m) \in \Real^{km}$ such that
+$\cvec = (c_1, \dots, c_m) \in \Dom^{km}$ such that
 $\mathit{in}_T(\cvec) = \mset{(P(A_1), c_1), \dots, (P(A_m), c_m)} \le \bfm$, that is,
 $\bfm$ contains a distinct token for every input arc. A binding~$\cvec$
 \emph{enables}~$T$ if $T \in \mathcal{T}_I$, or if $T \in \mathcal{T}_G$ and
@@ -265,7 +278,7 @@ only from~$\bfm$.
 
 \begin{definition}[Firing]\label{def:firing}
   For multisets $\bfm$, $\bfDelta$, $\bfm'$, $\bfDelta'$, a
-  transition~$T$, and a tuple $\cvec \in \Real^{km}$, we write
+  transition~$T$, and a tuple $\cvec \in \Dom^{km}$, we write
   $\langle \bfm, \bfDelta \rangle \xrightarrow{T, \cvec}
     \langle \bfm', \bfDelta' \rangle$ iff:
   \begin{enumerate}
@@ -301,19 +314,41 @@ of firings is finite. Hence, for every
 marking~$\bfm$, there is a marking~$\bfm'$ with $\bfm \Rightarrow \bfm'$.
 
 \begin{definition}[Clock tick]\label{def:tick}
-  For markings $\bfm$ and~$\bfm'$, we write $\bfm \tickto \bfm'$ iff
-  $\bfm' = \mset{(P, c + v_P) \mid (P, c) \in \bfm}$, where every token is
-  taken with its multiplicity in~$\bfm$.
+  For markings $\bfm$ and~$\bfm'$ and a duration $h \in \Dom$ with $h > 0$,
+  we write $\bfm \tickto{h} \bfm'$ iff $c + h \cdot \mathcal{V}_P(c) \in
+  \Dom^k$ for every token $(P, c) \in \bfm$, and
+  \[
+    \bfm' = \mset{(P, c + h \cdot \mathcal{V}_P(c)) \mid (P, c) \in \bfm},
+  \]
+  where every token is taken with its multiplicity in~$\bfm$.
 \end{definition}
+
+That is, a tick of duration~$h$ moves the colour of every token by one Euler
+step of size~$h$ along its rate of change. If $\Dom = \NatZero$, a tick is only
+possible if no colour leaves~$\NatZero$.
+
+\begin{remark}[Euler steps and exact flows]\label{rem:euler}
+  In~\cite{EverdijBlom2005}, the colour of a token in place~$P$ evolves as the
+  solution of the ordinary differential equation $\dot{c} = \mathcal{V}_P(c)$.
+  The proper way to advance the colour by a duration~$h$ is therefore the exact
+  flow $c \mapsto \Phi_P(c, h)$, where $\Phi_P(c, h)$ is the value at time~$h$
+  of the solution that starts in~$c$. This requires $\Dom = \Real$ and the
+  solutions to exist for all times. The Euler step $c + h \cdot
+  \mathcal{V}_P(c)$ coincides with the exact flow if $\mathcal{V}_P$ is
+  constant. Otherwise, it is an approximation with an error in $O(h^2)$ per
+  tick. We use the Euler step, since the exact flow is, in general, neither
+  available in closed form nor expressible in linear arithmetic.
+\end{remark}
 
 \begin{definition}[Execution]\label{def:execution}
   An \emph{execution} is an infinite sequence of markings
   $\bfm_0, \bfm_1, \bfm_2, \dots$ that starts with the initial
-  marking~$\bfm_0$, such that for every clock value~$t$, which is a natural
-  number $t \in \NatZero$, we have
-  $\bfm_t \Rightarrow \bfm' \tickto \bfm_{t + 1}$ for some
-  marking~$\bfm'$. The marking~$\bfm_t$ is the marking at the clock
-  value~$t$.
+  marking~$\bfm_0$, together with an infinite sequence of clock values
+  $0 = t_0 < t_1 < t_2 < \dots$ in~$\Dom$, such that for every
+  $i \in \NatZero$, we have
+  $\bfm_i \Rightarrow \bfm' \tickto{t_{i+1} - t_i} \bfm_{i + 1}$ for some
+  marking~$\bfm'$. The marking~$\bfm_i$ is the marking at the clock
+  value~$t_i$.
 \end{definition}
 
 The rules R0--R4 of~\cite{EverdijBlom2005} are reflected as follows. Rule~R0
@@ -326,14 +361,14 @@ whereas we select it nondeterministically.
 
 \begin{remark}
   Our semantics deviates from~\cite{EverdijBlom2005} in two respects. First,
-  tokens produced at the clock value~$t$ can only be consumed in the round
-  at~$t + 1$. In contrast, in~\cite{EverdijBlom2005}, an immediate
+  tokens produced at the clock value~$t_i$ can only be consumed in the round
+  at~$t_{i+1}$. In contrast, in~\cite{EverdijBlom2005}, an immediate
   transition enabled by freshly produced tokens fires at the same time. Hence,
   every stage of a cascade of immediate transitions costs one clock tick in
   our semantics. In return, rounds are finite. Second, the
   tokens produced in a round evolve during the following tick, that is, every
-  token in~$\bfm_{t + 1}$ has evolved for exactly one clock tick, regardless
-  of whether it was produced at~$t$.
+  token in~$\bfm_{i + 1}$ has evolved for the duration $t_{i+1} - t_i$,
+  regardless of whether it was produced at~$t_i$.
 \end{remark}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
