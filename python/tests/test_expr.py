@@ -325,7 +325,7 @@ def test_matmul():
     a, b = _varexpr(Real([2, 3])), _varexpr(Real([3, 4]))
     with collecting() as terms:
         e = a @ b
-    assert terms[-1].itype == tensor.real.MatMul([2, 3], [3, 4])
+    assert terms[-1].itype == tensor.real.MatMul([[2, 3], [3, 4]])
     assert e.dtype == Real([2, 4])
     av, bv = torch.rand(2, 3), torch.rand(3, 4)
     assert torch.allclose(_run(terms, {a.wire: av, b.wire: bv})[e.wire], av @ bv)

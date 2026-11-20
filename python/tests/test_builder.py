@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from reactor import Real, Int, Wire
-from reactor.builder import builder_for
+from reactor import Real, Int, Wire, TheoryError, tensor
+from reactor.builder import builder_for, RealTermBuilder
 from reactor.eval import eval_itype
 
 
@@ -30,3 +30,32 @@ def test_const_takes_the_numeric_sort(sort, dtype):
     term = builder_for(sort).const(torch.tensor([[3]]))
     assert term.write[0].dtype == sort([1, 1])
     assert term.itype.tensor.dtype == dtype
+
+
+@pytest.mark.parametrize("p,q", [(1, 1), (1, 0), (0, 1)])
+def test_mul_adds_the_degrees_of_reals(p, q):
+    builder = builder_for(Real)
+    x, y = Wire(Real([2, 3], degree=p)), Wire(Real([2, 3], degree=q))
+
+    term = builder.mul(x, y)
+
+    assert term.itype == tensor.real.Mul([2, 3], degrees=[p, q])
+    assert term.write[0].dtype == Real([2, 3], degree=p + q)
+
+
+def test_add_keeps_the_degree_of_reals():
+    builder = builder_for(Real)
+    x, y = Wire(Real([2, 3], degree=1)), Wire(Real([2, 3], degree=1))
+
+    term = builder.add(x, y)
+
+    assert term.itype == tensor.real.Add([2, 3], degree=1)
+    assert term.write[0].dtype == Real([2, 3], degree=1)
+
+
+@pytest.mark.parametrize("op", [RealTermBuilder.add, RealTermBuilder.sub])
+def test_reals_of_different_degrees_do_not_add_up(op):
+    x, y = Wire(Real([2, 3], degree=1)), Wire(Real([2, 3], degree=0))
+
+    with pytest.raises(TheoryError):
+        op(RealTermBuilder(), x, y)

@@ -247,9 +247,9 @@ class AExpr(Expr):
         out = _with_shape(self.dtype, [self.shape[0], o.shape[1]])
         match self.dtype:
             case Real(s):
-                op = tensor.real.MatMul(s, o.shape)
+                op = tensor.real.MatMul([s, o.shape])
             case Int(s):
-                op = tensor.int.MatMul(s, o.shape)
+                op = tensor.int.MatMul([s, o.shape])
         return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
 
     # comparisons -> Bool -> BExpr

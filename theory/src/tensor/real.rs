@@ -60,26 +60,38 @@ impl<T> Const<T> {
     }
 }
 
-/// Pointwise addition `x + y` of `[m, n]` matrices.
+/// Pointwise addition `x + y` of `[m, n]` matrices, of the same degree,
+/// which the sum keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Add {
     shape: [usize; 2],
+    degree: u8,
 }
 
-/// Pointwise subtraction `x - y` of `[m, n]` matrices.
+/// Pointwise subtraction `x - y` of `[m, n]` matrices, of the same degree,
+/// which the difference keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Sub {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise multiplication `x ⊙ y` of `[m, n]` matrices: the Hadamard
-/// product, not the matrix product [`MatMul`].
+/// product, not the matrix product [`MatMul`]. The degrees of the factors
+/// add up: the product of a rate of change by a plain real is a rate of
+/// change, and that of two rates of change is of degree 2.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Mul {
     shape: [usize; 2],
+    /// The degrees `[p, q]` of the factors.
+    ///
+    /// Entry `i` belongs to input `i`, as indexed in the domain of the
+    /// boundary: an array rather than one field per input, so that the
+    /// two match by position.
+    degrees: [u8; 2],
 }
 
 /// Pointwise division `x / y` of `[m, n]` matrices: the Hadamard division
@@ -158,12 +170,16 @@ pub struct Transpose {
 }
 
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
-/// matrix `y`, with the sizes given as `MatMul([m, n], [n, k])`.
+/// matrix `y`, with the shapes given as `MatMul([[m, n], [n, k]])`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct MatMul {
-    lhs: [usize; 2],
-    rhs: [usize; 2],
+    /// The shapes `[[m, n], [n, k]]` of the factors.
+    ///
+    /// Entry `i` belongs to input `i`, as indexed in the domain of the
+    /// boundary: an array rather than one field per input, so that the
+    /// two match by position.
+    shapes: [[usize; 2]; 2],
 }
 
 /// Pointwise comparison `x < y` of `[m, n]` matrices, writing an `[m, n]`
@@ -493,31 +509,39 @@ impl<T: Tensor> Boundary<Real> for Const<T> {
 
 impl Boundary<Real> for Add {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.shape); 2].into()
+        mono![Real::with_degree(self.shape, self.degree); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 }
 
 impl Boundary<Real> for Sub {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.shape); 2].into()
+        mono![Real::with_degree(self.shape, self.degree); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 }
 
+/// Takes matrices of degrees `p` and `q` to one of degree `p + q`.
 impl Boundary<Real> for Mul {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.shape); 2].into()
+        let [p, q] = self.degrees;
+        mono![
+            Real::with_degree(self.shape, p),
+            Real::with_degree(self.shape, q)
+        ]
+        .into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        // in range: `with_degrees` checks it
+        let [p, q] = self.degrees;
+        mono![Real::with_degree(self.shape, p + q)].into()
     }
 }
 
@@ -589,11 +613,13 @@ impl Boundary<Real> for Transpose {
 /// Takes matrices of shapes `[m, n]` and `[n, k]` to one of shape `[m, k]`.
 impl Boundary<Real> for MatMul {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.lhs), Real::new(self.rhs)].into()
+        let [lhs, rhs] = self.shapes;
+        mono![Real::new(lhs), Real::new(rhs)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.lhs[0], self.rhs[1]])].into()
+        let [[m, _], [_, k]] = self.shapes;
+        mono![Real::new([m, k])].into()
     }
 }
 
@@ -877,12 +903,20 @@ where
 
 // The Python constructors of the operations carrying no tensor: each takes
 // its sizes positionally, in the order of its fields, the shape as a list.
+impl Add {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Add { shape, degree: 0 }
+    }
+}
+
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Add {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Add { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Add { shape, degree }
     }
 
     #[cfg(feature = "pyo3")]
@@ -894,15 +928,28 @@ impl Add {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
+    }
+}
+
+impl Sub {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Sub { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Sub {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Sub { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Sub { shape, degree }
     }
 
     #[cfg(feature = "pyo3")]
@@ -914,15 +961,43 @@ impl Sub {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
+    }
+}
+
+impl Mul {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Mul {
+            shape,
+            degrees: [0, 0],
+        }
+    }
+
+    /// The degrees `[p, q]` of the factors.
+    pub fn degrees(&self) -> [u8; 2] {
+        self.degrees
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Mul {
+    /// On real matrices of the given `degrees`, `[p, q]`, writing ones of
+    /// degree `p + q`; fails when that degree is out of range.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Mul { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degrees = [0, 0])))]
+    pub fn with_degrees(shape: [usize; 2], degrees: [u8; 2]) -> Result<Self, crate::Error> {
+        let [p, q] = degrees;
+        if p.checked_add(q).is_none() {
+            return Err(crate::Error(format!(
+                "the product of reals of degrees {p} and {q} is of a degree out of range"
+            )));
+        }
+        Ok(Mul { shape, degrees })
     }
 
     #[cfg(feature = "pyo3")]
@@ -934,6 +1009,14 @@ impl Mul {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+
+    /// The degrees of the factors, as a list: pyo3 would make `[u8; 2]`
+    /// into `bytes`.
+    #[cfg(feature = "pyo3")]
+    #[getter(degrees)]
+    fn py_degrees(&self) -> [usize; 2] {
+        self.degrees.map(usize::from)
     }
 }
 
@@ -1059,32 +1142,30 @@ impl Transpose {
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl MatMul {
-    /// Fails unless the columns of `lhs` are the rows of `rhs`.
+    /// Fails unless the columns of the first shape are the rows of the
+    /// second.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (lhs, rhs, /)))]
-    pub fn new(lhs: [usize; 2], rhs: [usize; 2]) -> Result<Self, crate::Error> {
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shapes, /)))]
+    pub fn new(shapes: [[usize; 2]; 2]) -> Result<Self, crate::Error> {
+        let [lhs, rhs] = shapes;
         if lhs[1] != rhs[0] {
             return Err(crate::Error(format!(
                 "cannot multiply a {lhs:?} matrix by a {rhs:?} matrix"
             )));
         }
-        Ok(MatMul { lhs, rhs })
+        Ok(MatMul { shapes })
     }
 
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str) {
-        ("lhs", "rhs")
+    fn __match_args__() -> (&'static str,) {
+        ("shapes",)
     }
 
+    /// The shapes of the factors, `[[m, n], [n, k]]`.
     #[cfg_attr(feature = "pyo3", getter)]
-    pub fn lhs(&self) -> [usize; 2] {
-        self.lhs
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn rhs(&self) -> [usize; 2] {
-        self.rhs
+    pub fn shapes(&self) -> [[usize; 2]; 2] {
+        self.shapes
     }
 }
 

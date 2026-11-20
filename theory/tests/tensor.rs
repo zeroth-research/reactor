@@ -47,7 +47,7 @@ mod any {
 
     #[test]
     fn any_boundary_is_each_operations_boundary_in_sort() {
-        let op = real(real::MatMul::new([2, 3], [3, 4]).unwrap());
+        let op = real(real::MatMul::new([[2, 3], [3, 4]]).unwrap());
         let dom: Poly<sort::Any> = base::mono![
             sort::Real::new([2, 3]).into(),
             sort::Real::new([3, 4]).into()
@@ -117,7 +117,7 @@ mod any {
         assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::Mul::new([2, 3]))).is_err());
         assert!(
             real::LRA::try_from(real::NRA::<Mat>::from(
-                real::MatMul::new([2, 3], [3, 4]).unwrap()
+                real::MatMul::new([[2, 3], [3, 4]]).unwrap()
             ))
             .is_err()
         );
@@ -160,16 +160,16 @@ mod any {
     #[test]
     fn linear_logics_hold_the_linear_operations_only() {
         // `Mul`, `Div`, `Mod` and `MatMul` are in neither linear logic
-        assert!(LRA::try_from(real(real::MatMul::new([2, 3], [3, 4]).unwrap())).is_err());
+        assert!(LRA::try_from(real(real::MatMul::new([[2, 3], [3, 4]]).unwrap())).is_err());
         assert!(LRA::try_from(real(real::Mul::new([2, 3]))).is_err());
         assert!(LRA::try_from(real(real::Div::new([2, 3]))).is_err());
-        assert!(LIA::try_from(int(int::MatMul::new([2, 3], [3, 4]).unwrap())).is_err());
+        assert!(LIA::try_from(int(int::MatMul::new([[2, 3], [3, 4]]).unwrap())).is_err());
         assert!(LIA::try_from(int(int::Mul::new([2, 3]))).is_err());
         assert!(LIA::try_from(int(int::Div::new([2, 3]))).is_err());
         assert!(LIA::try_from(int(int::Mod::new([2, 3]))).is_err());
 
         // but they are in the non-linear ones
-        assert!(NRA::try_from(real(real::MatMul::new([2, 3], [3, 4]).unwrap())).is_ok());
+        assert!(NRA::try_from(real(real::MatMul::new([[2, 3], [3, 4]]).unwrap())).is_ok());
         assert!(NRA::try_from(real(real::Div::new([2, 3]))).is_ok());
         assert!(NIA::try_from(int(int::Mod::new([2, 3]))).is_ok());
 
@@ -213,7 +213,7 @@ mod any {
     fn bv_holds_word_and_boolean_operations() {
         assert!(BV::try_from(word(word::signed::Div::new(8, [2, 3]).unwrap())).is_ok());
         assert!(BV::try_from(word(word::unsigned::Lt::new(8, [2, 3]).unwrap())).is_ok());
-        assert!(BV::try_from(word(word::Concat::new(8, 4, [2, 3]).unwrap())).is_ok());
+        assert!(BV::try_from(word(word::Concat::new([8, 4], [2, 3]).unwrap())).is_ok());
         assert!(BV::try_from(int(int::Add::new([2, 3]))).is_err());
         assert!(BV::try_from(real(real::Add::new([2, 3]))).is_err());
 
@@ -340,7 +340,7 @@ mod int {
 
     #[test]
     fn matmul_contracts_inner_size() {
-        let p = MatMul::new([2, 3], [3, 4]).unwrap();
+        let p = MatMul::new([[2, 3], [3, 4]]).unwrap();
         let dom: Poly<Int> = mono![Int::new([2, 3]), Int::new([3, 4])].into();
         assert_eq!(p.dom(), dom);
         assert_eq!(p.cod(), one(Int::new([2, 4])));
@@ -348,15 +348,15 @@ mod int {
 
     #[test]
     fn matmul_checks_inner_size() {
-        assert!(MatMul::new([2, 3], [4, 5]).is_err());
-        let p = MatMul::new([2, 3], [3, 4]).unwrap();
-        assert_eq!((p.lhs(), p.rhs()), ([2, 3], [3, 4]));
+        assert!(MatMul::new([[2, 3], [4, 5]]).is_err());
+        let p = MatMul::new([[2, 3], [3, 4]]).unwrap();
+        assert_eq!(p.shapes(), [[2, 3], [3, 4]]);
     }
 
     #[test]
     fn shapes_may_be_empty() {
         assert_eq!(Add::new([0, 3]).shape(), [0, 3]);
-        assert!(MatMul::new([2, 0], [0, 4]).is_ok());
+        assert!(MatMul::new([[2, 0], [0, 4]]).is_ok());
         assert_eq!(Transpose::new([0, 0]).cod(), one(Int::new([0, 0])));
     }
 
@@ -431,7 +431,7 @@ mod real {
 
     #[test]
     fn matmul_contracts_inner_size() {
-        let p = MatMul::new([2, 3], [3, 4]).unwrap();
+        let p = MatMul::new([[2, 3], [3, 4]]).unwrap();
         let dom: Poly<Real> = mono![Real::new([2, 3]), Real::new([3, 4])].into();
         assert_eq!(p.dom(), dom);
         assert_eq!(p.cod(), one(Real::new([2, 4])));
@@ -439,15 +439,45 @@ mod real {
 
     #[test]
     fn matmul_checks_inner_size() {
-        assert!(MatMul::new([2, 3], [4, 5]).is_err());
-        let p = MatMul::new([2, 3], [3, 4]).unwrap();
-        assert_eq!((p.lhs(), p.rhs()), ([2, 3], [3, 4]));
+        assert!(MatMul::new([[2, 3], [4, 5]]).is_err());
+        let p = MatMul::new([[2, 3], [3, 4]]).unwrap();
+        assert_eq!(p.shapes(), [[2, 3], [3, 4]]);
+    }
+
+    #[test]
+    fn mul_adds_the_degrees_of_its_factors() {
+        let r = |d| Real::with_degree([2, 3], d);
+        let rates = Mul::with_degrees([2, 3], [1, 1]).unwrap();
+        assert_eq!(rates.dom(), two(r(1)));
+        assert_eq!(rates.cod(), one(r(2)));
+        let scaled = Mul::with_degrees([2, 3], [1, 0]).unwrap();
+        let dom: Poly<Real> = mono![r(1), r(0)].into();
+        assert_eq!(scaled.dom(), dom);
+        assert_eq!(scaled.cod(), one(r(1)));
+        assert_eq!(Mul::new([2, 3]), Mul::with_degrees([2, 3], [0, 0]).unwrap());
+    }
+
+    #[test]
+    fn mul_checks_the_degree_of_its_product() {
+        assert!(Mul::with_degrees([2, 3], [u8::MAX, 1]).is_err());
+        assert!(Mul::with_degrees([2, 3], [u8::MAX, 0]).is_ok());
+        assert_eq!(Mul::with_degrees([2, 3], [1, 0]).unwrap().degrees(), [1, 0]);
+    }
+
+    #[test]
+    fn sums_keep_the_degree_of_their_terms() {
+        let r = Real::with_degree([2, 3], 1);
+        assert_eq!(Add::with_degree([2, 3], 1).dom(), two(r));
+        assert_eq!(Add::with_degree([2, 3], 1).cod(), one(r));
+        assert_eq!(Sub::with_degree([2, 3], 1).dom(), two(r));
+        assert_eq!(Sub::with_degree([2, 3], 1).cod(), one(r));
+        assert_eq!(Add::new([2, 3]), Add::with_degree([2, 3], 0));
     }
 
     #[test]
     fn shapes_may_be_empty() {
         assert_eq!(Add::new([0, 3]).shape(), [0, 3]);
-        assert!(MatMul::new([2, 0], [0, 4]).is_ok());
+        assert!(MatMul::new([[2, 0], [0, 4]]).is_ok());
         assert_eq!(Transpose::new([0, 0]).cod(), one(Real::new([0, 0])));
     }
 
@@ -729,8 +759,11 @@ mod word {
         );
 
         let dom: Poly<Sort> = mono![w(8, [2, 3]), w(4, [2, 3])].into();
-        assert_eq!(Concat::new(8, 4, [2, 3]).unwrap().dom(), dom);
-        assert_eq!(Concat::new(8, 4, [2, 3]).unwrap().cod(), one(w(12, [2, 3])));
+        assert_eq!(Concat::new([8, 4], [2, 3]).unwrap().dom(), dom);
+        assert_eq!(
+            Concat::new([8, 4], [2, 3]).unwrap().cod(),
+            one(w(12, [2, 3]))
+        );
 
         assert_eq!(
             unsigned::Extend::new(8, 8, [2, 3]).unwrap().cod(),
@@ -781,8 +814,8 @@ mod word {
         assert!(RotateLeft::new(3, 0, [2, 3]).is_err());
 
         // concatenation needs two words
-        assert!(Concat::new(0, 4, [2, 3]).is_err());
-        assert!(Concat::new(8, 0, [2, 3]).is_err());
+        assert!(Concat::new([0, 4], [2, 3]).is_err());
+        assert!(Concat::new([8, 0], [2, 3]).is_err());
 
         // extraction needs `j ≤ i < width`
         assert!(Extract::new(7, 0, 8, [2, 3]).is_ok());
@@ -801,8 +834,8 @@ mod word {
     fn getters_read_the_fields() {
         let e = Extract::new(7, 4, 8, [2, 3]).unwrap();
         assert_eq!((e.i(), e.j(), e.width(), e.shape()), (7, 4, 8, [2, 3]));
-        let c = Concat::new(8, 4, [2, 3]).unwrap();
-        assert_eq!((c.u(), c.v(), c.shape()), (8, 4, [2, 3]));
+        let c = Concat::new([8, 4], [2, 3]).unwrap();
+        assert_eq!((c.widths(), c.shape()), ([8, 4], [2, 3]));
         let r = RotateRight::new(3, 8, [2, 3]).unwrap();
         assert_eq!((r.i(), r.width(), r.shape()), (3, 8, [2, 3]));
     }

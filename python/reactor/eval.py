@@ -146,7 +146,7 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0].argmax().reshape(1, 1).to(r[0].dtype)]
         case tensor.real.Transpose(_) | tensor.int.Transpose(_):
             return [r[0].transpose(0, 1)]
-        case tensor.real.MatMul(_, _) | tensor.int.MatMul(_, _):
+        case tensor.real.MatMul(_) | tensor.int.MatMul(_):
             return [r[0] @ r[1]]
 
         # --- comparisons: write booleans ---
@@ -230,7 +230,7 @@ def eval_itype(itype, read, out_sort=None):
             return [_rotl(r[0], i, w)]
         case tensor.word.RotateRight(i, w, _):
             return [_rotl(r[0], w - i % w, w)]
-        case tensor.word.Concat(_, v, _):
+        case tensor.word.Concat([_, v], _):
             return [(r[0] << v) | r[1]]
         case tensor.word.Extract(i, j, _, _):
             return [(r[0] >> j) & ((1 << (i - j + 1)) - 1)]

@@ -173,12 +173,16 @@ pub struct Transpose {
 }
 
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
-/// matrix `y`, with the sizes given as `MatMul([m, n], [n, k])`.
+/// matrix `y`, with the shapes given as `MatMul([[m, n], [n, k]])`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct MatMul {
-    lhs: [usize; 2],
-    rhs: [usize; 2],
+    /// The shapes `[[m, n], [n, k]]` of the factors.
+    ///
+    /// Entry `i` belongs to input `i`, as indexed in the domain of the
+    /// boundary: an array rather than one field per input, so that the
+    /// two match by position.
+    shapes: [[usize; 2]; 2],
 }
 
 /// Pointwise comparison `x < y` of `[m, n]` matrices, writing an `[m, n]`
@@ -619,11 +623,13 @@ impl Boundary<Int> for Transpose {
 /// Takes matrices of shapes `[m, n]` and `[n, k]` to one of shape `[m, k]`.
 impl Boundary<Int> for MatMul {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.lhs), Int::new(self.rhs)].into()
+        let [lhs, rhs] = self.shapes;
+        mono![Int::new(lhs), Int::new(rhs)].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new([self.lhs[0], self.rhs[1]])].into()
+        let [[m, _], [_, k]] = self.shapes;
+        mono![Int::new([m, k])].into()
     }
 }
 
@@ -1118,32 +1124,30 @@ impl Transpose {
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl MatMul {
-    /// Fails unless the columns of `lhs` are the rows of `rhs`.
+    /// Fails unless the columns of the first shape are the rows of the
+    /// second.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (lhs, rhs, /)))]
-    pub fn new(lhs: [usize; 2], rhs: [usize; 2]) -> Result<Self, crate::Error> {
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shapes, /)))]
+    pub fn new(shapes: [[usize; 2]; 2]) -> Result<Self, crate::Error> {
+        let [lhs, rhs] = shapes;
         if lhs[1] != rhs[0] {
             return Err(crate::Error(format!(
                 "cannot multiply a {lhs:?} matrix by a {rhs:?} matrix"
             )));
         }
-        Ok(MatMul { lhs, rhs })
+        Ok(MatMul { shapes })
     }
 
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str) {
-        ("lhs", "rhs")
+    fn __match_args__() -> (&'static str,) {
+        ("shapes",)
     }
 
+    /// The shapes of the factors, `[[m, n], [n, k]]`.
     #[cfg_attr(feature = "pyo3", getter)]
-    pub fn lhs(&self) -> [usize; 2] {
-        self.lhs
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn rhs(&self) -> [usize; 2] {
-        self.rhs
+    pub fn shapes(&self) -> [[usize; 2]; 2] {
+        self.shapes
     }
 }
 

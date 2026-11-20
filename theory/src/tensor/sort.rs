@@ -70,6 +70,11 @@ pub struct Real {
 }
 
 impl Real {
+    /// Plain real matrices of the given shape, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Real { degree: 0, shape }
+    }
+
     pub fn degree(&self) -> u8 {
         self.degree
     }
@@ -82,10 +87,12 @@ impl Real {
 /// Python matches a `Real` by `shape`.
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Real {
-    /// Plain real matrices of the given shape, of degree 0.
+    /// Real matrices of the given shape, of the given `degree`: the
+    /// `degree`-th order rates of change of plain ones.
     #[cfg_attr(feature = "pyo3", new)]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Real { degree: 0, shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Real { degree, shape }
     }
 
     #[cfg(feature = "pyo3")]

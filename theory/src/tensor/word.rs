@@ -93,14 +93,18 @@ impl<T> Const<T> {
 
 /// Pointwise concatenation `x ++ y` of a `u`-bit word `x`, the high bits
 /// of the result, and a `v`-bit word `y`, its low bits, as
-/// `Concat(u, v, [m, n])`; the result has `u + v` bits.
+/// `Concat([u, v], [m, n])`; the result has `u + v` bits.
 ///
 /// SMT-LIB2: `(concat x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Concat {
-    u: usize,
-    v: usize,
+    /// The widths `[u, v]` of the words read, high bits first.
+    ///
+    /// Entry `i` belongs to input `i`, as indexed in the domain of the
+    /// boundary: an array rather than one field per input, so that the
+    /// two match by position.
+    widths: [usize; 2],
     shape: [usize; 2],
 }
 
@@ -551,16 +555,17 @@ impl<T: Tensor> Boundary<Sort> for Const<T> {
 
 impl Boundary<Sort> for Concat {
     fn dom(&self) -> Poly<Sort> {
-        let shape = self.shape;
+        let ([u, v], shape) = (self.widths, self.shape);
         mono![
-            Word::new_unchecked(self.u, shape).into(),
-            Word::new_unchecked(self.v, shape).into()
+            Word::new_unchecked(u, shape).into(),
+            Word::new_unchecked(v, shape).into()
         ]
         .into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.u + self.v, self.shape).into()].into()
+        let [u, v] = self.widths;
+        mono![Word::new_unchecked(u + v, self.shape).into()].into()
     }
 }
 
@@ -2010,29 +2015,26 @@ where
 // its sizes positionally, in the order of its fields, the shape as a list.
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Concat {
-    /// Fails unless `u` and `v` are positive.
+    /// Fails unless both widths are positive.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (u, v, shape, /)))]
-    pub fn new(u: usize, v: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (widths, shape, /)))]
+    pub fn new(widths: [usize; 2], shape: [usize; 2]) -> Result<Self, crate::Error> {
+        let [u, v] = widths;
         check_width(u)?;
         check_width(v)?;
-        Ok(Concat { u, v, shape })
+        Ok(Concat { widths, shape })
     }
 
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str, &'static str) {
-        ("u", "v", "shape")
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("widths", "shape")
     }
 
+    /// The widths `[u, v]` of the words read, high bits first.
     #[cfg_attr(feature = "pyo3", getter)]
-    pub fn u(&self) -> usize {
-        self.u
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn v(&self) -> usize {
-        self.v
+    pub fn widths(&self) -> [usize; 2] {
+        self.widths
     }
 
     #[cfg_attr(feature = "pyo3", getter)]

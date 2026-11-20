@@ -280,14 +280,28 @@ class RealTermBuilder(TermBuilder):
             return super().ite(cond, a, b, output_wire)
         return self._ite(real.Ite, cond, a, b, output_wire)
 
+    def _degree(self, a, b) -> int:
+        """The degree of both `a` and `b`, which their sum or difference keeps: reals of
+        different degrees, rates of change of different orders, do not add up."""
+        p, q = _dtype(a).degree, _dtype(b).degree
+        if p != q:
+            raise TheoryError(f"cannot add or subtract reals of degrees {p} and {q}")
+        return p
+
     def add(self, a, b) -> Term:
-        return self._zip(real.Add, a, b)
+        s = _dtype(a)
+        return self._binary(real.Add(_shape(s), degree=self._degree(a, b)), s, a, b)
 
     def sub(self, a, b) -> Term:
-        return self._zip(real.Sub, a, b)
+        s = _dtype(a)
+        return self._binary(real.Sub(_shape(s), degree=self._degree(a, b)), s, a, b)
 
     def mul(self, a, b) -> Term:
-        return self._zip(real.Mul, a, b)
+        # the degrees of the factors add up
+        sa, sb = _dtype(a), _dtype(b)
+        p, q = sa.degree, sb.degree
+        out = Real(_shape(sa), degree=p + q)
+        return self._binary(real.Mul(_shape(sa), degrees=[p, q]), out, a, b)
 
     def div(self, a, b) -> Term:
         return self._zip(real.Div, a, b)
@@ -307,7 +321,7 @@ class RealTermBuilder(TermBuilder):
     def matmul(self, a, b) -> Term:
         sa, sb = _dtype(a), _dtype(b)
         out = _with_shape(sa, [_shape(sa)[0], _shape(sb)[1]])
-        return self._binary(real.MatMul(_shape(sa), _shape(sb)), out, a, b)
+        return self._binary(real.MatMul([_shape(sa), _shape(sb)]), out, a, b)
 
     def _linear(self, weight, bias):
         return real.Linear(weight, bias)
@@ -376,7 +390,7 @@ class IntTermBuilder(TermBuilder):
     def matmul(self, a, b) -> Term:
         sa, sb = _dtype(a), _dtype(b)
         out = _with_shape(sa, [_shape(sa)[0], _shape(sb)[1]])
-        return self._binary(int_.MatMul(_shape(sa), _shape(sb)), out, a, b)
+        return self._binary(int_.MatMul([_shape(sa), _shape(sb)]), out, a, b)
 
     def _linear(self, weight, bias):
         return int_.Linear(weight, bias)
