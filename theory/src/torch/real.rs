@@ -46,10 +46,12 @@ impl Linear {
     }
 }
 
-impl<'py> FromPyObject<'py> for crate::tensor::real::Linear<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Linear<tch::Tensor> {
+    type Error = PyErr;
+
     /// Fails when `ob` is not a [`Linear`].
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let linear = ob.downcast::<Linear>()?.get();
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let linear = ob.cast::<Linear>()?.get();
         Ok(crate::tensor::real::Linear::new(
             linear.0.shallow_clone(),
             linear.1.shallow_clone(),
@@ -93,10 +95,12 @@ impl Const {
     }
 }
 
-impl<'py> FromPyObject<'py> for crate::tensor::real::Const<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Const<tch::Tensor> {
+    type Error = PyErr;
+
     /// Fails when `ob` is not a [`Const`].
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let constant = ob.downcast::<Const>()?.get();
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let constant = ob.cast::<Const>()?.get();
         Ok(crate::tensor::real::Const::new(constant.0.shallow_clone()))
     }
 }

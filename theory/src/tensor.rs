@@ -104,14 +104,14 @@ pub enum LIA<T> {
 /// Writes an arbitrary value of the given sort, reading nothing: the
 /// nondeterministic choice of a value.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Havoc {
     sort: sort::Any,
 }
 
 /// Writes the value it reads, of the given sort: the identity.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Skip {
     sort: sort::Any,
 }
@@ -119,7 +119,7 @@ pub struct Skip {
 /// Writes the zero of the given sort, reading nothing: the rate of change
 /// of a value that does not change.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Zero {
     sort: sort::Any,
 }
@@ -400,14 +400,16 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
 /// then bit-vector operations. The operations of each theory are distinct
 /// Python classes, so at most one theory accepts a given object.
 #[cfg(feature = "pyo3")]
-impl<'py, T> pyo3::FromPyObject<'py> for Any<T>
+impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for Any<T>
 where
-    real::NRA<T>: pyo3::FromPyObject<'py>,
-    int::NIA<T>: pyo3::FromPyObject<'py>,
-    bool::Prop<T>: pyo3::FromPyObject<'py>,
-    word::BV<T>: pyo3::FromPyObject<'py>,
+    real::NRA<T>: pyo3::FromPyObject<'a, 'py>,
+    int::NIA<T>: pyo3::FromPyObject<'a, 'py>,
+    bool::Prop<T>: pyo3::FromPyObject<'a, 'py>,
+    word::BV<T>: pyo3::FromPyObject<'a, 'py>,
 {
-    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+    type Error = pyo3::PyErr;
+
+    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
         use pyo3::types::PyAnyMethods;
 
         if let Ok(op) = ob.extract::<real::NRA<T>>() {

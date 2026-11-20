@@ -57,7 +57,7 @@ impl Module {
                 Err(PyTypeError::new_err(
                     "positional arguments take atoms or modules",
                 ))
-            } else if args.get_item(0)?.downcast::<Atom>().is_ok() {
+            } else if args.get_item(0)?.cast::<Atom>().is_ok() {
                 // a sequence of atoms builds a single module
                 let atoms: Vec<_> = try_iter_borrow::<Atom>(args)?.collect::<PyResult<_>>()?;
                 let atoms = atoms.iter().map(|a| a.base().clone());

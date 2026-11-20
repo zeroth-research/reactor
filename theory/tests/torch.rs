@@ -14,8 +14,8 @@ use theory::torch::*;
 fn prepare_python_with_torch() {
     static TORCH: std::sync::Once = std::sync::Once::new();
     TORCH.call_once(|| {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             py.import("torch").unwrap();
         });
     });
@@ -49,7 +49,7 @@ fn torch_tensors_back_the_operations() {
 #[test]
 fn constants_are_built_from_tensors_of_their_theory_only() {
     prepare_python_with_torch();
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
         let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
         let bools = python(py, full(2, 3, 0.0, tch::Kind::Bool));
@@ -74,7 +74,7 @@ fn constants_are_built_from_tensors_of_their_theory_only() {
 #[test]
 fn constants_extract_from_the_class_of_their_theory() {
     prepare_python_with_torch();
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
         let constant = py.get_type::<real::Const>().call1((&floats,)).unwrap();
         let op = constant
@@ -110,7 +110,7 @@ fn constants_extract_from_the_class_of_their_theory() {
 #[test]
 fn linear_maps_are_built_from_tensors_of_their_theory_and_shapes() {
     prepare_python_with_torch();
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let a = python(py, full(4, 2, 1.0, tch::Kind::Float));
         let b = python(py, full(4, 1, 1.0, tch::Kind::Float));
         let real = py.get_type::<real::Linear>();
@@ -133,7 +133,7 @@ fn linear_maps_are_built_from_tensors_of_their_theory_and_shapes() {
 #[test]
 fn linear_maps_extract_from_the_class_of_their_theory() {
     prepare_python_with_torch();
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let a = python(py, full(4, 2, 1.0, tch::Kind::Float));
         let b = python(py, full(4, 3, 1.0, tch::Kind::Float));
         let class = py.get_type::<real::Linear>().call1((&a, &b)).unwrap();
@@ -160,7 +160,7 @@ fn linear_maps_extract_from_the_class_of_their_theory() {
 #[test]
 fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
     prepare_python_with_torch();
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
         let constant = py.get_type::<int::Const>().call1((&ints,)).unwrap();
         let any = constant.extract::<tensor::Any<tch::Tensor>>().unwrap();
@@ -187,7 +187,7 @@ fn any_extracts_the_operations_of_each_theory() {
     use tensor::{Any, bool, int, real, word};
 
     prepare_python_with_torch();
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let real_add = Bound::new(py, real::Add::new([2, 3])).unwrap();
         let op = real_add.extract::<Any<tch::Tensor>>().unwrap();
         assert!(matches!(
@@ -226,7 +226,7 @@ fn each_theory_extracts_its_own_operations_only() {
     use tensor::{bool, int, real, word};
 
     prepare_python_with_torch();
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let real_mul = Bound::new(py, real::Mul::new([2, 3])).unwrap();
         assert!(real_mul.extract::<real::NRA<tch::Tensor>>().is_ok());
         assert!(real_mul.extract::<int::NIA<tch::Tensor>>().is_err());
@@ -244,7 +244,7 @@ fn each_theory_extracts_its_own_operations_only() {
 #[test]
 fn constants_are_built_from_matrices_only() {
     prepare_python_with_torch();
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         let tensor =
             |size: &[i64], kind| python(py, tch::Tensor::zeros(size, (kind, tch::Device::Cpu)));
         let real = py.get_type::<real::Const>();

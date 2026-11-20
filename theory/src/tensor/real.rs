@@ -62,14 +62,14 @@ impl<T> Const<T> {
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Add {
     shape: [usize; 2],
 }
 
 /// Pointwise subtraction `x - y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Sub {
     shape: [usize; 2],
 }
@@ -77,7 +77,7 @@ pub struct Sub {
 /// Pointwise multiplication `x ⊙ y` of `[m, n]` matrices: the Hadamard
 /// product, not the matrix product [`MatMul`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Mul {
     shape: [usize; 2],
 }
@@ -87,7 +87,7 @@ pub struct Mul {
 ///
 /// SMT-LIB2: `(/ x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Div {
     shape: [usize; 2],
 }
@@ -123,7 +123,7 @@ impl<T> Linear<T> {
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct ReLU {
     shape: [usize; 2],
 }
@@ -131,28 +131,28 @@ pub struct ReLU {
 /// The index of a maximal entry of an `[m, n]` real matrix, counting its
 /// entries row by row, written as a `[1, 1]` matrix of the same sort.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Argmax {
     shape: [usize; 2],
 }
 
 /// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Min {
     shape: [usize; 2],
 }
 
 /// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Max {
     shape: [usize; 2],
 }
 
 /// Transposition `xᵀ` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Transpose {
     shape: [usize; 2],
 }
@@ -160,7 +160,7 @@ pub struct Transpose {
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the sizes given as `MatMul([m, n], [n, k])`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct MatMul {
     lhs: [usize; 2],
     rhs: [usize; 2],
@@ -171,7 +171,7 @@ pub struct MatMul {
 ///
 /// SMT-LIB2: `(< x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Lt {
     shape: [usize; 2],
 }
@@ -181,7 +181,7 @@ pub struct Lt {
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Ite {
     shape: [usize; 2],
 }
@@ -191,7 +191,7 @@ pub struct Ite {
 ///
 /// SMT-LIB2: `(<= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Le {
     shape: [usize; 2],
 }
@@ -201,7 +201,7 @@ pub struct Le {
 ///
 /// SMT-LIB2: `(> x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Gt {
     shape: [usize; 2],
 }
@@ -211,7 +211,7 @@ pub struct Gt {
 ///
 /// SMT-LIB2: `(>= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Ge {
     shape: [usize; 2],
 }
@@ -221,7 +221,7 @@ pub struct Ge {
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Eq {
     shape: [usize; 2],
 }
@@ -231,7 +231,7 @@ pub struct Eq {
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Ne {
     shape: [usize; 2],
 }
@@ -801,12 +801,14 @@ impl fmt::Display for Ne {
 /// classes, and [`Const`] and [`Linear`] through the extraction that the
 /// tensor type `T` provides.
 #[cfg(feature = "pyo3")]
-impl<'py, T> pyo3::FromPyObject<'py> for NRA<T>
+impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for NRA<T>
 where
-    Const<T>: pyo3::FromPyObject<'py>,
-    Linear<T>: pyo3::FromPyObject<'py>,
+    Const<T>: pyo3::FromPyObject<'a, 'py>,
+    Linear<T>: pyo3::FromPyObject<'a, 'py>,
 {
-    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+    type Error = pyo3::PyErr;
+
+    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
         use pyo3::types::PyAnyMethods;
 
         if let Ok(op) = ob.extract::<Add>() {

@@ -60,7 +60,10 @@ use pyo3::{exceptions::PyTypeError, prelude::*};
 /// their `degree`: values of degree `d` are `d`-th order rates of change,
 /// and plain reals have degree 0.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, get_all))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, get_all)
+)]
 pub struct Real {
     degree: u8,
     shape: [usize; 2],
@@ -117,7 +120,10 @@ impl Differentiable for Real {
 
 /// The sort of integer matrices with the given `[rows, cols]` shape.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, get_all))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, get_all)
+)]
 pub struct Int {
     shape: [usize; 2],
 }
@@ -162,7 +168,10 @@ impl Differentiable for Int {
 
 /// The sort of boolean matrices with the given `[rows, cols]` shape.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, get_all))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, get_all)
+)]
 pub struct Bool {
     shape: [usize; 2],
 }
@@ -208,7 +217,10 @@ impl Differentiable for Bool {
 /// The sort of matrices of `width`-bit words with the given `[rows, cols]`
 /// shape: entrywise, the SMT-LIB2 sort `(_ BitVec width)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str, get_all))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, get_all)
+)]
 pub struct Word {
     width: usize,
     shape: [usize; 2],
@@ -277,7 +289,7 @@ impl Differentiable for Word {
 /// The singleton sort, with exactly one value: the trivial tangent of
 /// discrete sorts. Its own tangent is itself.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Default)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Zero;
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -367,8 +379,10 @@ impl Differentiable for Words {
 
 /// Extracts a sort of any theory from an instance of its class.
 #[cfg(feature = "pyo3")]
-impl<'py> FromPyObject<'py> for Any {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for Any {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<Real>() {
             return Ok(Any::Real(s));
         }

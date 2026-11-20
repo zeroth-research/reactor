@@ -46,10 +46,12 @@ impl Const {
     }
 }
 
-impl<'py> FromPyObject<'py> for crate::tensor::word::Const<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::word::Const<tch::Tensor> {
+    type Error = PyErr;
+
     /// Fails when `ob` is not a [`Const`].
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let constant = ob.downcast::<Const>()?.get();
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let constant = ob.cast::<Const>()?.get();
         Ok(crate::tensor::word::Const::new(
             constant.0.shallow_clone(),
             constant.1,

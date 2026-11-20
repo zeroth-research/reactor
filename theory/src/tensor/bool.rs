@@ -42,28 +42,28 @@ impl<T> Const<T> {
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct And {
     shape: [usize; 2],
 }
 
 /// Pointwise disjunction `x ∨ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Or {
     shape: [usize; 2],
 }
 
 /// Pointwise exclusive disjunction `x ⊕ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Xor {
     shape: [usize; 2],
 }
 
 /// Pointwise negation `¬x` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Not {
     shape: [usize; 2],
 }
@@ -73,7 +73,7 @@ pub struct Not {
 ///
 /// SMT-LIB2: `(= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Eq {
     shape: [usize; 2],
 }
@@ -83,7 +83,7 @@ pub struct Eq {
 ///
 /// SMT-LIB2: `(distinct x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Ne {
     shape: [usize; 2],
 }
@@ -93,7 +93,7 @@ pub struct Ne {
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, eq, str))]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Ite {
     shape: [usize; 2],
 }
@@ -306,11 +306,13 @@ impl fmt::Display for Ite {
 /// classes, and [`Const`] through the extraction that the tensor type `T`
 /// provides.
 #[cfg(feature = "pyo3")]
-impl<'py, T> pyo3::FromPyObject<'py> for Prop<T>
+impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for Prop<T>
 where
-    Const<T>: pyo3::FromPyObject<'py>,
+    Const<T>: pyo3::FromPyObject<'a, 'py>,
 {
-    fn extract_bound(ob: &pyo3::Bound<'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+    type Error = pyo3::PyErr;
+
+    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
         use pyo3::types::PyAnyMethods;
 
         if let Ok(op) = ob.extract::<And>() {
