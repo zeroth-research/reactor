@@ -371,6 +371,149 @@ whereas we select it nondeterministically.
   regardless of whether it was produced at~$t_i$.
 \end{remark}
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{\DCPN{1}}
+
+In this section, we extend \DCPN{0} with a \emph{delay clock} that is carried
+by every token. It lets us express a class of delay transitions of DCPNs
+without introducing delay transitions. We only list the differences to
+\DCPN{0}:
+
+\begin{itemize}
+  \item The first component of the colour of every token is its delay clock.
+
+  \item In every place, the delay clock either counts down at the unit rate
+    or is frozen.
+
+  \item When a token is produced, its delay clock may be reset to a value that
+    is sampled from a fixed distribution, for example, an exponential or a
+    geometric distribution. Hence, firing is no longer deterministic.
+
+  \item There are still no delay transitions. A guard transition that tests
+    whether the delay clock of an input token has expired plays the role of a
+    delay transition.
+
+  \item Time cannot advance past the expiry of a delay clock.
+\end{itemize}
+
+\subsection{Structure and syntax}
+
+A \emph{\DCPN{1}} is a tuple as in Definition~\ref{def:dcpn0} with the
+following changes. For a colour $c = (c_1, \dots, c_k) \in \Dom^k$, we call
+the first component~$c_1$ the \emph{delay clock}.
+
+\begin{enumerate}
+  \item[7.] $\mathcal{V}$: For every place $P \in \mathcal{P}$, the delay
+    clock has a constant rate $r_P \in \{-1, 0\}$, that is, the first
+    component of $\mathcal{V}_P(c)$ is $r_P$ for every $c \in \Dom^k$. If
+    $r_P = -1$, then we call~$P$ a \emph{delay place}, and the delay clocks
+    of its tokens count down at the unit rate. If $r_P = 0$, then the delay
+    clocks of its tokens are frozen. The other components evolve as in
+    \DCPN{0}.
+
+  \item[10.] $\mathcal{F}$: For every transition~$T$ with $m$ input arcs and
+    $n$ output arcs, let $\pi_T$ be an affine function as in \DCPN{0}.
+    Additionally, let $\mathcal{R}_T \subseteq \{1, \dots, n\}$ be the set
+    of output arcs whose tokens get their delay clocks \emph{reset}, and let
+    $\rho_{T, j}$ be a probability distribution for every $j \in
+    \mathcal{R}_T$:
+    \begin{itemize}
+      \item if $\Dom = \Real$, then $\rho_{T, j} = \mathrm{Exp}(\lambda)$ for
+        some rate $\lambda > 0$;
+      \item if $\Dom = \NatZero$, then $\rho_{T, j} = \mathrm{Geom}(p)$ on
+        $\{1, 2, \dots\}$ for some $0 < p \le 1$.
+    \end{itemize}
+    Then $\mathcal{F}_T(\cvec)$ is the distribution of $(\mathbf{1}, a)$,
+    where $a = (a^1, \dots, a^n) \in \Dom^{kn}$ is defined as follows. For
+    every $j \in \mathcal{R}_T$, the delay clock $a^j_1$ is sampled
+    from~$\rho_{T, j}$, independently of all other samples. All other
+    components of~$a$ are the corresponding components of~$\pi_T(\cvec)$.
+    Hence, a transition still produces a token along each of its output arcs,
+    and only the reset delay clocks are random. If
+    $\mathcal{R}_T = \emptyset$, then $\mathcal{F}_T$ is the Dirac measure of
+    \DCPN{0}.
+\end{enumerate}
+
+All other elements are restricted as in Definition~\ref{def:dcpn0}. In
+particular, $\mathcal{T}_D = \emptyset$ and $\mathcal{D} = \emptyset$, and the
+initialisation function~$\mathcal{I}$ fixes the initial values of the delay
+clocks explicitly. A guard that tests whether the delay clock of an input
+token has expired, for example, $c_1 \le 0$, is expressible in LIA and LRA.
+
+\subsection{Execution semantics}
+
+The bindings, rounds, and executions are defined as in \DCPN{0}. We only
+change the produced tokens and the clock ticks.
+
+\paragraph{Firings.}
+We take the nondeterministic reading of the firing measures, as we did for the
+rules R2 and~R4: a firing may produce any colours in the support of the firing
+measure. For a binding~$\cvec$ of a transition~$T$, let $\mathit{Out}_T(\cvec)$
+be the set of multisets $\mset{(P(A'_1), a^1), \dots, (P(A'_n), a^n)}$ such
+that $(\mathbf{1}, a)$ is in the support of~$\mathcal{F}_T(\cvec)$. That is,
+every reset delay clock takes an arbitrary value in $\Real_{> 0}$ if
+$\Dom = \Real$, and in $\{1, 2, \dots\}$ if $\Dom = \NatZero$. Then, in
+Definition~\ref{def:firing}, we replace
+$\bfDelta' = \bfDelta + \mathit{out}_T(\cvec)$ with
+$\bfDelta' = \bfDelta + \bfDelta_T$ for some
+$\bfDelta_T \in \mathit{Out}_T(\cvec)$. A probabilistic semantics that keeps
+the distributions~$\rho_{T, j}$ is left for future work.
+
+\paragraph{Clock ticks.}
+In Definition~\ref{def:tick}, we additionally require that the delay clocks
+of the tokens in delay places remain non-negative, that is, $c_1 - h \ge 0$
+for every token $(P, c) \in \bfm$ such that $P$ is a delay place. Hence, the
+duration of a tick is bounded by the smallest delay clock in a delay place,
+and a tick stops at the moment the next delay clock expires. The frozen delay
+clocks do not constrain the ticks. Since the delay clocks have a constant rate, the Euler step is exact
+for them.
+
+\begin{remark}[Delay transitions of DCPNs]\label{rem:delay}
+  Consider a delay transition~$T$ of a DCPN with a single ordinary input arc
+  from a place~$P$, no inhibitor arcs, and a constant rate~$\lambda$. We
+  model~$T$ in \DCPN{1} by a guard transition with the guard $c_1 \le 0$ on
+  the delay clock of its input token, where $P$ is a delay place, and every
+  transition that produces tokens into~$P$ resets their delay clocks
+  with~$\mathrm{Exp}(\lambda)$. If
+  $\Dom = \Real$, then $T$ fires exactly when the delay clock expires, since
+  no tick passes the expiry. Since a single input token pre-enables~$T$
+  exactly while it resides in~$P$, this matches the restart rule
+  of~\cite{EverdijBlom2005}. If $\Dom = \NatZero$, then we use
+  $\mathrm{Geom}(1 - e^{-\lambda})$, since
+  $\lceil X \rceil \sim \mathrm{Geom}(1 - e^{-\lambda})$ for
+  $X \sim \mathrm{Exp}(\lambda)$. That is, the geometric delay is the
+  exponential delay rounded up to the next clock tick.
+
+  Since every token carries only one delay clock, delay transitions that
+  compete for the same token share it. If they have constant rates
+  $\lambda_1, \dots, \lambda_r$, then the delay clock is reset with
+  $\mathrm{Exp}(\lambda_1 + \dots + \lambda_r)$, which is the distribution of
+  the earliest of the competing delays. When the delay clock expires, one of
+  the competing guard transitions fires. In~\cite{EverdijBlom2005}, the
+  $i$-th transition wins with probability
+  $\lambda_i / (\lambda_1 + \dots + \lambda_r)$, whereas our semantics
+  chooses the winner nondeterministically. A source with a constant rate is
+  modelled by a generator token in a place with a self-loop, whose delay
+  clock is reset on every firing.
+
+  Delay transitions with several input arcs, enabling or inhibitor arcs, or
+  rates that depend on the colours, cannot be modelled this way: their delay
+  belongs to a combination of tokens, or it depends on the evolution of
+  colours after the clock was reset.
+\end{remark}
+
+\begin{remark}[Timelocks]\label{rem:timelock}
+  If a delay clock expires, but no transition consumes its token in the
+  round, then no tick of positive duration is possible, and time stops. This
+  happens, for example, if the guard transition that tests the delay clock
+  needs further input tokens that are not present. We consider such a net
+  ill-formed. A sufficient condition to avoid timelocks is that every delay
+  place is the single input of a guard transition with the guard
+  $c_1 \le 0$. A token in a delay place must be consumed when its delay
+  clock expires, whereas a token in a place with a frozen delay clock may
+  stay there forever.
+\end{remark}
+
 %%%%%%%%%%%%%%%%%%%%%%%%%
 \bibliographystyle{plain}
 \bibliography{references}
