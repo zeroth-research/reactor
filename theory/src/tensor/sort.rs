@@ -119,7 +119,10 @@ impl Differentiable for Real {
 
     fn tangent(self) -> Real {
         Real {
-            degree: self.degree + 1,
+            degree: self
+                .degree
+                .checked_add(1)
+                .expect("real sort degree out of range"),
             shape: self.shape,
         }
     }
