@@ -1,160 +1,247 @@
-"""Torch interpreter for theory_pyo3 terms.
+"""Torch interpreter for terms.
 
-Dispatch is by `match` on the op (per-theory classes), not op-name strings.
-LIA/LRA ops with identical torch semantics share a case via OR-patterns; BV
-diverges (mod-2^width wraparound, bitwise ops, 1-bit-BV comparisons), so it
-needs the output Sort for its width — threaded in as `out_sort`.
+Dispatch is by `match` on the operation's class, binding its sizes positionally
+(`case word.Extract(i, j, w, _):`). Values are tensors: booleans as `torch.bool`,
+reals as floating point, integers and words as `int64`. A word of width `w` is stored
+as its unsigned value in `[0, 2^w)`; the signed operations read it in two's complement,
+and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2.
 """
 
 import torch
-from .reactor import LRA, LIA, BV
-from .sort import BitVec
+
+from .reactor.tensor import Havoc, Skip, Zero
+from .sort import Real, Int, Bool, Word, shape as _shape
+
+from .reactor import tensor
 
 
-def _bv_width(sort):
+def _wrap(t, w):
+    """`t` modulo `2^w`: the word of width `w` it stands for."""
+    return t & ((1 << w) - 1) if w < 64 else t
+
+
+def _signed(t, w):
+    """The words `t` of width `w` read in two's complement."""
+    return torch.where(t >= (1 << (w - 1)), t - (1 << w), t) if w < 64 else t
+
+
+def _zeros(sort):
     match sort:
-        case BitVec(bw, _):
-            return bw
-    return None
+        case Bool(s):
+            return torch.zeros(s, dtype=torch.bool)
+        case Real(s):
+            return torch.zeros(s, dtype=torch.float32)
+        case Int(s) | Word(_, s):
+            return torch.zeros(s, dtype=torch.int64)
+    raise RuntimeError(f"no value of sort {sort}")
 
 
-def _wrap(t, sort):
-    """Mask a BV result to its bit-width (arithmetic modulo 2^width)."""
-    bw = _bv_width(sort)
-    if bw is None or bw >= 64:
-        return t
-    return t & ((1 << bw) - 1)
+def _euclid(x, y):
+    """Euclidean division of integers, as in SMT-LIB2 Ints: the remainder `r` is
+    `0 <= r < |y|`, and the quotient `q` is `(x - r) / y`. Division by zero is
+    unspecified there; here it gives `q = 0` and `r = x`."""
+    nz = torch.where(y == 0, torch.ones_like(y), y)
+    r = x.remainder(nz.abs())
+    q = (x - r).div(nz, rounding_mode="trunc")
+    return torch.where(y == 0, torch.zeros_like(q), q), torch.where(y == 0, x, r)
 
 
-def _linear(weight, bias, x):
-    """A·x (+ b). An empty bias tensor means no bias (matmul-as-Linear)."""
-    if bias is None or bias.numel() == 0:
-        return weight @ x
-    return weight @ x + bias
+def _udiv(x, y, w):
+    q = torch.where(y == 0, torch.ones_like(x), x).div(torch.where(y == 0, torch.ones_like(y), y), rounding_mode="floor")
+    return torch.where(y == 0, torch.full_like(x, (1 << w) - 1), q)
+
+
+def _urem(x, y):
+    return torch.where(y == 0, x, x.remainder(torch.where(y == 0, torch.ones_like(y), y)))
+
+
+def _sdiv(x, y, w):
+    a, b = _signed(x, w), _signed(y, w)
+    q = a.div(torch.where(b == 0, torch.ones_like(b), b), rounding_mode="trunc")
+    q = torch.where(b == 0, torch.where(a < 0, torch.ones_like(a), -torch.ones_like(a)), q)
+    return _wrap(q, w)
+
+
+def _srem(x, y, w):
+    a, b = _signed(x, w), _signed(y, w)
+    r = a.fmod(torch.where(b == 0, torch.ones_like(b), b))
+    return _wrap(torch.where(b == 0, a, r), w)
+
+
+def _smod(x, y, w):
+    a, b = _signed(x, w), _signed(y, w)
+    r = a.remainder(torch.where(b == 0, torch.ones_like(b), b))
+    return _wrap(torch.where(b == 0, a, r), w)
+
+
+def _shl(x, y, w):
+    return torch.where(y >= w, torch.zeros_like(x), _wrap(x << y.clamp(max=w), w))
+
+
+def _lshr(x, y, w):
+    return torch.where(y >= w, torch.zeros_like(x), x >> y.clamp(max=w))
+
+
+def _ashr(x, y, w):
+    return _wrap(_signed(x, w) >> y.clamp(max=w - 1), w)
+
+
+def _rotl(x, i, w):
+    i %= w
+    return _wrap((x << i) | (x >> (w - i)), w) if i else x
+
+
+def _repeat(x, i, w):
+    out = x
+    for _ in range(i - 1):
+        out = (out << w) | x
+    return out
 
 
 def eval_itype(itype, read, out_sort=None):
     """Evaluate a single op with the given input tensors.
 
-    `out_sort` is the write wire's Sort; needed for BV width-masking.
+    `out_sort` is the write wire's sort, needed by the structural operations that
+    write a value of it from nothing (`Havoc`, `Zero`).
     """
     r = read
     match itype:
-        # --- identity / control flow ---
-        case LRA.Id() | LIA.Id() | BV.Id():
+        # --- structural ---
+        case Skip(_):
             return [r[0].clone()]
-        case LRA.Ite() | LIA.Ite() | BV.Ite():
-            return [torch.where(r[0].bool(), r[1], r[2])]
+        case Havoc(sort) | Zero(sort):
+            # an arbitrary value, and the zero rate of change: zeros
+            return [_zeros(sort)]
 
-        # --- constants (payload bound from the op) ---
-        case LRA.Bool(t) | LRA.Real(t) | LIA.Bool(t) | LIA.Int(t) | BV.Const(t):
+        # --- constants and affine maps (tensors carried by the op) ---
+        case tensor.real.Const(t) | tensor.int.Const(t) | tensor.bool.Const(t) | tensor.word.Const(t, _):
             return [t.clone()]
+        case tensor.real.Linear(a, b) | tensor.int.Linear(a, b):
+            return [a @ r[0] + b]
+        case tensor.real.Scale(c) | tensor.int.Scale(c):
+            return [c * r[0]]
 
-        # --- arithmetic: LIA/LRA (exact, no wraparound) ---
-        case LRA.Add() | LIA.Add():
+        # --- choice ---
+        case tensor.real.Ite(_) | tensor.int.Ite(_) | tensor.bool.Ite(_) | tensor.word.Ite(_, _):
+            return [torch.where(r[0], r[1], r[2])]
+
+        # --- real and integer arithmetic (exact) ---
+        case tensor.real.Add(_) | tensor.int.Add(_):
             return [r[0] + r[1]]
-        case LRA.Sub() | LIA.Sub():
+        case tensor.real.Sub(_) | tensor.int.Sub(_):
             return [r[0] - r[1]]
-
-        # --- arithmetic: BV (modulo 2^width) ---
-        case BV.Add():
-            return [_wrap(r[0] + r[1], out_sort)]
-        case BV.Sub():
-            return [_wrap(r[0] - r[1], out_sort)]
-        case BV.Mul():
-            return [_wrap(r[0] * r[1], out_sort)]
-        case BV.Neg():
-            return [_wrap(-r[0], out_sort)]
-        case BV.Abs():
-            return [r[0].abs()]
-        case BV.UDiv():
-            return [r[0].div(r[1], rounding_mode="floor")]
-        case BV.SDiv():
-            return [r[0].div(r[1], rounding_mode="trunc")]
-        case BV.UMod():
-            return [r[0].remainder(r[1])]
-        case BV.SMod():
-            return [r[0].fmod(r[1])]
-        case BV.MatMul():
-            return [_wrap(r[0] @ r[1], out_sort)]
-
-        # --- Linear (LIA/LRA): A, B constants carried in the op ---
-        case LRA.Linear(weight, bias) | LIA.Linear(weight, bias):
-            return [_linear(weight, bias, r[0])]
-
-        # --- comparisons: LIA/LRA produce a boolean tensor ---
-        case LRA.Eq() | LIA.Eq():
-            return [r[0].eq(r[1])]
-        case LRA.Ne() | LIA.Ne():
-            return [r[0].ne(r[1])]
-        case LRA.Lt() | LIA.Lt():
-            return [r[0].lt(r[1])]
-        case LRA.Le() | LIA.Le():
-            return [r[0].le(r[1])]
-        case LRA.Gt() | LIA.Gt():
-            return [r[0].gt(r[1])]
-        case LRA.Ge() | LIA.Ge():
-            return [r[0].ge(r[1])]
-
-        # --- comparisons: BV produce a 1-bit BV (0/1 int) ---
-        # TODO: distinguish signed vs unsigned once BV values carry signedness;
-        # for non-negative storage signed == unsigned.
-        case BV.ULt() | BV.SLt():
-            return [(r[0] < r[1]).to(r[0].dtype)]
-        case BV.ULe() | BV.SLe():
-            return [(r[0] <= r[1]).to(r[0].dtype)]
-        case BV.UGt() | BV.SGt():
-            return [(r[0] > r[1]).to(r[0].dtype)]
-        case BV.UGe() | BV.SGe():
-            return [(r[0] >= r[1]).to(r[0].dtype)]
-        case BV.Eq():
-            return [(r[0] == r[1]).to(r[0].dtype)]
-        case BV.Ne():
-            return [(r[0] != r[1]).to(r[0].dtype)]
-
-        # --- logical: LIA/LRA boolean ops ---
-        case LRA.And() | LIA.And():
-            return [r[0].logical_and(r[1])]
-        case LRA.Or() | LIA.Or():
-            return [r[0].logical_or(r[1])]
-        case LRA.Not() | LIA.Not():
-            return [r[0].logical_not()]
-        case LRA.Xor() | LIA.Xor():
-            return [r[0].logical_xor(r[1])]
-
-        # --- bitwise: BV (width-preserving) ---
-        case BV.And():
-            return [r[0] & r[1]]
-        case BV.Or():
-            return [r[0] | r[1]]
-        case BV.Xor():
-            return [r[0] ^ r[1]]
-        case BV.Not():
-            return [_wrap(~r[0], out_sort)]
-        case BV.BVToBool():
-            return [(r[0] != 0).to(r[0].dtype)]
-        case BV.BitSelect(high=high, low=low):
-            return [(r[0] >> low) & ((1 << (high - low + 1)) - 1)]
-        case BV.Extend(extra=_):
-            return [r[0]]  # zero-extend: value unchanged, width grows
-
-        # --- neural / aggregate (LIA/LRA) ---
-        case LRA.ReLU() | LIA.ReLU():
+        case tensor.real.Mul(_) | tensor.int.Mul(_):
+            return [r[0] * r[1]]
+        case tensor.real.Div(_):
+            return [r[0] / r[1]]
+        case tensor.int.Div(_):
+            return [_euclid(r[0], r[1])[0]]
+        case tensor.int.Mod(_):
+            return [_euclid(r[0], r[1])[1]]
+        case tensor.real.ReLU(_) | tensor.int.ReLU(_):
             return [r[0].relu()]
-        case LRA.Argmax() | LIA.Argmax():
-            return [r[0].argmax()]
-        case LRA.Min() | LIA.Min():
+        case tensor.real.Min(_) | tensor.int.Min(_):
             return [torch.minimum(r[0], r[1])]
-        case LRA.Max() | LIA.Max():
+        case tensor.real.Max(_) | tensor.int.Max(_):
             return [torch.maximum(r[0], r[1])]
-
-        # --- matrix ---
-        case LRA.Transpose() | LIA.Transpose():
+        case tensor.real.Argmax(_) | tensor.int.Argmax(_):
+            return [r[0].argmax().reshape(1, 1).to(r[0].dtype)]
+        case tensor.real.Transpose(_) | tensor.int.Transpose(_):
             return [r[0].transpose(0, 1)]
+        case tensor.real.MatMul(_) | tensor.int.MatMul(_):
+            return [r[0] @ r[1]]
 
-        # --- uninterpreted ---
-        case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):
-            raise RuntimeError(f"cannot evaluate uninterpreted function '{name}'")
+        # --- comparisons: write booleans ---
+        case tensor.real.Eq(_) | tensor.int.Eq(_) | tensor.bool.Eq(_) | tensor.word.Eq(_, _):
+            return [r[0].eq(r[1])]
+        case tensor.real.Ne(_) | tensor.int.Ne(_) | tensor.bool.Ne(_) | tensor.word.Ne(_, _):
+            return [r[0].ne(r[1])]
+        case tensor.real.Lt(_) | tensor.int.Lt(_) | tensor.word.unsigned.Lt(_, _):
+            return [r[0].lt(r[1])]
+        case tensor.real.Le(_) | tensor.int.Le(_) | tensor.word.unsigned.Le(_, _):
+            return [r[0].le(r[1])]
+        case tensor.real.Gt(_) | tensor.int.Gt(_) | tensor.word.unsigned.Gt(_, _):
+            return [r[0].gt(r[1])]
+        case tensor.real.Ge(_) | tensor.int.Ge(_) | tensor.word.unsigned.Ge(_, _):
+            return [r[0].ge(r[1])]
+        case tensor.word.signed.Lt(w, _):
+            return [_signed(r[0], w).lt(_signed(r[1], w))]
+        case tensor.word.signed.Le(w, _):
+            return [_signed(r[0], w).le(_signed(r[1], w))]
+        case tensor.word.signed.Gt(w, _):
+            return [_signed(r[0], w).gt(_signed(r[1], w))]
+        case tensor.word.signed.Ge(w, _):
+            return [_signed(r[0], w).ge(_signed(r[1], w))]
+
+        # --- propositional logic ---
+        case tensor.bool.And(_):
+            return [r[0].logical_and(r[1])]
+        case tensor.bool.Or(_):
+            return [r[0].logical_or(r[1])]
+        case tensor.bool.Xor(_):
+            return [r[0].logical_xor(r[1])]
+        case tensor.bool.Not(_):
+            return [r[0].logical_not()]
+
+        # --- words: arithmetic modulo 2^w ---
+        case tensor.word.Add(w, _):
+            return [_wrap(r[0] + r[1], w)]
+        case tensor.word.Sub(w, _):
+            return [_wrap(r[0] - r[1], w)]
+        case tensor.word.Mul(w, _):
+            return [_wrap(r[0] * r[1], w)]
+        case tensor.word.Neg(w, _):
+            return [_wrap(-r[0], w)]
+        case tensor.word.signed.Abs(w, _):
+            return [_wrap(_signed(r[0], w).abs(), w)]
+        case tensor.word.unsigned.Div(w, _):
+            return [_udiv(r[0], r[1], w)]
+        case tensor.word.unsigned.Rem(_, _):
+            return [_urem(r[0], r[1])]
+        case tensor.word.signed.Div(w, _):
+            return [_sdiv(r[0], r[1], w)]
+        case tensor.word.signed.Rem(w, _):
+            return [_srem(r[0], r[1], w)]
+        case tensor.word.signed.Mod(w, _):
+            return [_smod(r[0], r[1], w)]
+
+        # --- words: bitwise ---
+        case tensor.word.And(_, _):
+            return [r[0] & r[1]]
+        case tensor.word.Or(_, _):
+            return [r[0] | r[1]]
+        case tensor.word.Xor(_, _):
+            return [r[0] ^ r[1]]
+        case tensor.word.Not(w, _):
+            return [_wrap(~r[0], w)]
+        case tensor.word.Nand(w, _):
+            return [_wrap(~(r[0] & r[1]), w)]
+        case tensor.word.Nor(w, _):
+            return [_wrap(~(r[0] | r[1]), w)]
+        case tensor.word.Xnor(w, _):
+            return [_wrap(~(r[0] ^ r[1]), w)]
+
+        # --- words: shifts, rotations and resizing ---
+        case tensor.word.Shl(w, _):
+            return [_shl(r[0], r[1], w)]
+        case tensor.word.unsigned.Shr(w, _):
+            return [_lshr(r[0], r[1], w)]
+        case tensor.word.signed.Shr(w, _):
+            return [_ashr(r[0], r[1], w)]
+        case tensor.word.RotateLeft(i, w, _):
+            return [_rotl(r[0], i, w)]
+        case tensor.word.RotateRight(i, w, _):
+            return [_rotl(r[0], w - i % w, w)]
+        case tensor.word.Concat([_, v], _):
+            return [(r[0] << v) | r[1]]
+        case tensor.word.Extract(i, j, _, _):
+            return [(r[0] >> j) & ((1 << (i - j + 1)) - 1)]
+        case tensor.word.Repeat(i, w, _):
+            return [_repeat(r[0], i, w)]
+        case tensor.word.unsigned.Extend(_, _, _):
+            return [r[0].clone()]
+        case tensor.word.signed.Extend(i, w, _):
+            return [_wrap(_signed(r[0], w), w + i)]
 
     raise RuntimeError(f"cannot evaluate op: {itype}")
 

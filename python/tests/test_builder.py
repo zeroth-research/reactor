@@ -3,23 +3,79 @@
 import pytest
 import torch
 
-from reactor import LRA, LIA, Real, Int, Wire
-from reactor.builder import builder_for
+from reactor import Real, Int, Wire, TheoryError, tensor
+from reactor.builder import builder_for, RealTermBuilder
 from reactor.eval import eval_itype
 
 
-@pytest.mark.parametrize("theory,sort,dtype", [
-    (LRA, Real, torch.float32),
-    (LIA, Int, torch.int64),
+@pytest.mark.parametrize("sort,dtype", [
+    (Real, torch.float32),
+    (Int, torch.int64),
 ])
 @pytest.mark.parametrize("n", [1, 2, 3])
-def test_mul_scales_a_column_vector(theory, sort, dtype, n):
-    builder = builder_for(theory)
+def test_mul_multiplies_pointwise(sort, dtype, n):
+    builder = builder_for(sort)
     x = Wire(sort([n, 1]))
-    const = builder.const(torch.tensor([[3]], dtype=dtype))
+    const = builder.const(torch.full((n, 1), 3, dtype=dtype))
 
     term = builder.mul(const, x)
 
     vals = torch.arange(1, n + 1, dtype=dtype).reshape(n, 1)
-    out = eval_itype(term.itype, [vals], term.write[0].dtype)[0]
+    out = eval_itype(term.itype, [torch.full((n, 1), 3, dtype=dtype), vals], term.write[0].dtype)[0]
+    assert out.flatten().tolist() == [3 * v for v in range(1, n + 1)]
+
+
+@pytest.mark.parametrize("sort,dtype", [(Real, torch.float32), (Int, torch.int64)])
+def test_const_takes_the_numeric_sort(sort, dtype):
+    term = builder_for(sort).const(torch.tensor([[3]]))
+    assert term.write[0].dtype == sort([1, 1])
+    assert term.itype.tensor.dtype == dtype
+
+
+@pytest.mark.parametrize("p,q", [(1, 1), (1, 0), (0, 1)])
+def test_mul_adds_the_degrees_of_reals(p, q):
+    builder = builder_for(Real)
+    x, y = Wire(Real([2, 3], degree=p)), Wire(Real([2, 3], degree=q))
+
+    term = builder.mul(x, y)
+
+    assert term.itype == tensor.real.Mul([2, 3], degrees=[p, q])
+    assert term.write[0].dtype == Real([2, 3], degree=p + q)
+
+
+def test_add_keeps_the_degree_of_reals():
+    builder = builder_for(Real)
+    x, y = Wire(Real([2, 3], degree=1)), Wire(Real([2, 3], degree=1))
+
+    term = builder.add(x, y)
+
+    assert term.itype == tensor.real.Add([2, 3], degree=1)
+    assert term.write[0].dtype == Real([2, 3], degree=1)
+
+
+@pytest.mark.parametrize("op", [RealTermBuilder.add, RealTermBuilder.sub])
+def test_reals_of_different_degrees_do_not_add_up(op):
+    x, y = Wire(Real([2, 3], degree=1)), Wire(Real([2, 3], degree=0))
+
+    with pytest.raises(TheoryError):
+        op(RealTermBuilder(), x, y)
+
+
+@pytest.mark.parametrize("sort,dtype", [
+    (Real, torch.float32),
+    (Int, torch.int64),
+])
+@pytest.mark.parametrize("n", [1, 2, 3])
+def test_mul_scales_a_column_vector(sort, dtype, n):
+    builder = builder_for(sort)
+    # `linear` maps row vectors, as `nn.Linear` does: transpose in, Linear, transpose out
+    x = Wire(sort([1, n]))
+
+    terms = builder.linear(x, 3 * torch.eye(n, dtype=dtype))
+
+    env = {x: torch.arange(1, n + 1, dtype=dtype).reshape(1, n)}
+    for t in terms:
+        outs = eval_itype(t.itype, [env[w] for w in t.read], t.write[0].dtype)
+        env.update(zip(t.write, outs))
+    out = env[terms[-1].write[0]]
     assert out.flatten().tolist() == [3 * v for v in range(1, n + 1)]

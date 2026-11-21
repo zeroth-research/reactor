@@ -1,18 +1,16 @@
 import pytest
 import gymnasium as gym
-from reactor import Module, Wire, Term, Sort, LIA, Bool, Real, Int, BitVec, Var, X
+from reactor import Module, Wire, Term, Real, Var, X
+from reactor.tensor import Havoc
 from gymnasium import spaces
 
 
 def convert_method(method, read: dict[str, Wire], write: dict[str, Wire], result: list[Wire]):
-    # `Uninterpreted` is single-read-or-single-write; emit one Term per wire
-    # so the multi-arity "method" is modeled as a bag of independent
-    # uninterpreted reads / writes.
+    # The method is opaque: each wire it writes is an arbitrary value (a Havoc);
+    # the wires it reads need no term.
     terms = []
-    for r in read.values():
-        terms.append(Term(LIA.Uninterpreted("method"), [], [r]))
     for w in list(write.values()) + list(result):
-        terms.append(Term.constant(LIA.Uninterpreted("method"), [w]))
+        terms.append(Term.constant(Havoc(w.dtype), [w]))
     return terms
 
 

@@ -1,16 +1,18 @@
-"""Translate theory_pyo3 terms to Z3 expressions.
+"""Translate terms to Z3 expressions.
 
-Each wire value is a list of Z3 expressions (the flattened tensor). Dispatch is
-by `match` on the op; LIA/LRA share cases. BV -> Z3 (BitVec) is not implemented
-yet (BV ops fall through to a clear error).
+Each wire value is a numpy array of Z3 expressions (the tensor, as a matrix). Dispatch is
+by `match` on the op's class; reals and integers share cases. Words (bit-vectors) are not
+translated yet (their ops fall through to a clear error).
 """
 
 import z3 as _z3
 import torch
-from ..reactor import LRA, LIA, BV, Combinatorial
+from ..reactor.tensor import Havoc, Skip, Zero
 from ..sort import Real, Int, Bool
 import numpy as _np
 import operator
+
+from ..reactor import tensor
 
 
 def fresh(dtype, prefix):
@@ -25,67 +27,92 @@ def fresh(dtype, prefix):
             raise NotImplementedError(f"fresh not implemented for dtype {dtype}")
 
 
+def _zeros(dtype):
+    match dtype:
+        case Real([n, m]):
+            return _np.full((n, m), _z3.RealVal(0), dtype=object)
+        case Int([n, m]):
+            return _np.full((n, m), _z3.IntVal(0), dtype=object)
+        case Bool([n, m]):
+            return _np.full((n, m), _z3.BoolVal(False), dtype=object)
+        case _:
+            raise NotImplementedError(f"zero not implemented for dtype {dtype}")
+
+
 def interpret(itype):
     match itype:
-        case LRA.Id() | LIA.Id():
+        # structural
+        case Skip(_):
             return lambda x: x
-        case LRA.Bool(t) | LIA.Bool(t):
+        case Havoc(dtype):
+            return lambda: fresh(dtype, "HAVOC")
+        case Zero(dtype):
+            return lambda: _zeros(dtype)
+
+        # constants
+        case tensor.bool.Const(t):
             return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(t.detach().numpy())
-        case LRA.Real(t):
+        case tensor.real.Const(t):
             return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(t.detach().numpy())
-        case LIA.Int(t):
+        case tensor.int.Const(t):
             return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(t.detach().numpy())
-        case Combinatorial.HAVOC(dtype):
-            return lambda: fresh(dtype, f"HAVOC")
 
         # arithmetic
-        case LRA.Sub() | LIA.Sub():
+        case tensor.real.Sub(_) | tensor.int.Sub(_):
             return _np.frompyfunc(operator.sub, 2, 1)
-        case LRA.Add() | LIA.Add():
+        case tensor.real.Add(_) | tensor.int.Add(_):
             return _np.frompyfunc(operator.add, 2, 1)
-        case LRA.Linear(weight, bias) | LIA.Linear(weight, bias):
+        case tensor.real.Mul(_) | tensor.int.Mul(_):
+            return _np.frompyfunc(operator.mul, 2, 1)
+        case tensor.real.Div(_) | tensor.int.Div(_):
+            return _np.frompyfunc(operator.truediv, 2, 1)
+        case tensor.int.Mod(_):
+            return _np.frompyfunc(operator.mod, 2, 1)
+        case tensor.real.MatMul(_) | tensor.int.MatMul(_):
+            return lambda x, y: x @ y
+        case tensor.real.Linear(weight, bias) | tensor.int.Linear(weight, bias):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
+        case tensor.real.Scale(c) | tensor.int.Scale(c):
+            return lambda x: c.detach().numpy() * x
 
         # comparisons (produce Bool)
-        case LRA.Eq() | LIA.Eq():
+        case tensor.real.Eq(_) | tensor.int.Eq(_) | tensor.bool.Eq(_):
             return _np.frompyfunc(operator.eq, 2, 1)
-        case LRA.Ne() | LIA.Ne():
+        case tensor.real.Ne(_) | tensor.int.Ne(_) | tensor.bool.Ne(_):
             return _np.frompyfunc(operator.ne, 2, 1)
-        case LRA.Lt() | LIA.Lt():
+        case tensor.real.Lt(_) | tensor.int.Lt(_):
             return _np.frompyfunc(operator.lt, 2, 1)
-        case LRA.Le() | LIA.Le():
+        case tensor.real.Le(_) | tensor.int.Le(_):
             return _np.frompyfunc(operator.le, 2, 1)
-        case LRA.Gt() | LIA.Gt():
+        case tensor.real.Gt(_) | tensor.int.Gt(_):
             return _np.frompyfunc(operator.gt, 2, 1)
-        case LRA.Ge() | LIA.Ge():
+        case tensor.real.Ge(_) | tensor.int.Ge(_):
             return _np.frompyfunc(operator.ge, 2, 1)
 
         # logical
-        case LRA.And() | LIA.And():
+        case tensor.bool.And(_):
             return _np.frompyfunc(lambda x, y: _z3.And(x, y), 2, 1)
-        case LRA.Or() | LIA.Or():
+        case tensor.bool.Or(_):
             return _np.frompyfunc(lambda x, y: _z3.Or(x, y), 2, 1)
-        case LRA.Not() | LIA.Not():
+        case tensor.bool.Not(_):
             return _np.frompyfunc(lambda x: _z3.Not(x), 1, 1)
-        case LRA.Xor() | LIA.Xor():
+        case tensor.bool.Xor(_):
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
 
         # control flow
-        case LRA.Ite() | LIA.Ite():
+        case tensor.real.Ite(_) | tensor.int.Ite(_) | tensor.bool.Ite(_):
             return _np.frompyfunc(lambda c, tt, ff: _z3.If(c, tt, ff), 3, 1)
 
         # neural-ish / aggregate
-        case LRA.ReLU() | LIA.ReLU():
-            return _np.frompyfunc(lambda x: _z3.If(x > 0., x, 0.), 1, 1)
-        case LRA.Min() | LIA.Min():
+        case tensor.real.ReLU(_) | tensor.int.ReLU(_):
+            return _np.frompyfunc(lambda x: _z3.If(x > 0, x, 0), 1, 1)
+        case tensor.real.Min(_) | tensor.int.Min(_):
             return _np.frompyfunc(lambda x, y: _z3.If(x <= y, x, y), 2, 1)
-        case LRA.Max() | LIA.Max():
+        case tensor.real.Max(_) | tensor.int.Max(_):
             return _np.frompyfunc(lambda x, y: _z3.If(x >= y, x, y), 2, 1)
 
-        case LRA.Transpose() | LIA.Transpose():
+        case tensor.real.Transpose(_) | tensor.int.Transpose(_):
             return _np.transpose
-        case LRA.Uninterpreted(name) | LIA.Uninterpreted(name) | BV.Uninterpreted(name):
-            raise RuntimeError(f"cannot translate uninterpreted '{name}' to Z3")
         case _:
             raise NotImplementedError(f"itype: {itype}")
 

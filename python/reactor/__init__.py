@@ -1,16 +1,14 @@
 from .reactor import *
 import sys as _sys
 
-del Sort
+# The namespaces of the operations and sorts, `reactor.tensor` and those within it, are
+# importable by their names in this package too (`import reactor.tensor.real`), not only
+# by those in the extension module (`reactor.reactor.tensor.real`).
+for _name, _module in list(_sys.modules.items()):
+    if _name.startswith(__name__ + ".reactor.tensor"):
+        _sys.modules[__name__ + _name[len(__name__ + ".reactor"):]] = _module
 
-from .builder import (
-    builder_for,
-    LRATermBuilder,
-    LIATermBuilder,
-    BVTermBuilder,
-    TheoryError,
-    NonLinearError,
-)
+from .builder import TermBuilder, TheoryError, builder_for
 from .gym import Env
 from .smv import parse_smv
 

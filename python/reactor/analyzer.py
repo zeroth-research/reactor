@@ -18,14 +18,9 @@ from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
 from .reactor import Wire, Term, Var, X
-from .sort import Bool, Real, Int, BitVec
-from .builder import (
-    TermBuilder,
-    LRATermBuilder,
-    LIATermBuilder,
-    BVTermBuilder,
-    _normalize_shape,
-)
+from .reactor.tensor import Havoc
+from .sort import Bool, Real, Int, Word
+from .builder import TermBuilder, builder_for, _normalize_shape
 
 
 # ---------------------------------------------------------------------------
@@ -1144,7 +1139,7 @@ def _infer_shape_and_elem_type(value):
 
 
 def infer_dtype(name, abstract_value, builder):
-    """Infer a DType from an AbstractValue using the builder's theory."""
+    """Infer a DType from an AbstractValue using the builder's numeric sort."""
     if abstract_value is None:
         raise ValueError(f"Cannot infer DType for '{name}': analyzer returned None")
 
@@ -1281,7 +1276,7 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
 def _torch_dtype(target_dtype):
     """Map a Sort to the corresponding torch dtype. Defaults to float32."""
     match target_dtype:
-        case Int(_) | BitVec(_, _):
+        case Int(_) | Word(_, _):
             return torch.long
         case Bool(_):
             return torch.bool
@@ -1396,7 +1391,7 @@ class MethodVisitor(ast.NodeVisitor):
         self.temp_vars = {}
         self.scopes = []
         self.written_wires = set()
-        self.builder = builder or LRATermBuilder()
+        self.builder = builder or builder_for()
 
     @staticmethod
     def _w(val) -> Wire:
@@ -1721,20 +1716,13 @@ class MethodVisitor(ast.NodeVisitor):
             return self._untraced_call(ast.unparse(call), target_dtype)
 
     def _untraced_call(self, label, target_dtype=None):
-        """Emit an Uninterpreted placeholder for calls we can't trace symbolically.
+        """Emit a Havoc, an arbitrary value, for calls we can't trace symbolically.
 
         The wire is produced symbolically but never evaluated at runtime in the
         gym.Env case — the real env overwrites the state via delegation.
         """
-        # Compact label for display: drop arguments, strip leading "self."
-        # e.g. "self.np_random.uniform(low=low, high=high)" -> "np_random.uniform(...)"
-        head = label.split("(", 1)[0].lstrip()
-        if head.startswith("self."):
-            head = head[len("self."):]
-        label = f"{head}(...)" if "(" in label else head
-
-        sort = target_dtype if target_dtype is not None else Real([1, 1])
-        term = self.builder.uninterpreted(label, sort)
+        sort = target_dtype if target_dtype is not None else self.builder.python_type_to_dtype(float, [1, 1])
+        term = Term.constant(Havoc(sort), [Wire(sort)])
         self.terms.append(term)
         return term
 
@@ -2150,7 +2138,7 @@ def convert_method(
         params: dict[str, Wire] | None = None,
         live_layers: dict | None = None,
         builder: TermBuilder | None = None,
-        theory=None,
+        number=Real,
         static_attrs: dict[str, Any] | None = None,
 ) -> list[Term]:
     """Convert a Python method to a list of Terms.
@@ -2163,17 +2151,15 @@ def convert_method(
         cls: Class owning the method, needed only for inlining self.helper() calls
         params: Read-only parameter wires (single wires, not pairs) for self.* constants
         live_layers: Optional dict of {layer_name: nn.Linear} for live tensor references
-        builder: Optional TermBuilder instance; if provided takes precedence over theory
-        theory: IType.LRA (default), IType.LIA, or IType.BV — selects the term builder
+        builder: Optional TermBuilder instance; if provided takes precedence over number
+        number: the numeric sort of the literals: Real (default), Int, or Word
                 (ignored if builder is provided)
 
     Returns:
         List of Terms representing the method as a reactive diagram
     """
-    from .builder import builder_for
-
     if builder is None:
-        builder = builder_for(theory)
+        builder = builder_for(number)
 
     source = textwrap.dedent(inspect.getsource(method))
     func_def = ast.parse(source).body[0]

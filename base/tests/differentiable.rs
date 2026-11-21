@@ -1,6 +1,6 @@
-//! Tests for the `Tangent` trait: the tangent former `T` on sorts.
+//! Tests for the `Differentiable` trait: the tangent former `T` on sorts.
 
-use base::tangent::{T, Tangent};
+use base::differentiable::{Differentiable, T};
 
 /// A minimal sort: graded reals, and booleans with the trivial tangent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -10,8 +10,10 @@ enum Sort {
     Zero,
 }
 
-impl Tangent for Sort {
-    fn tangent(&self) -> Self {
+impl Differentiable for Sort {
+    type Tangent = Sort;
+
+    fn tangent(self) -> Sort {
         match self {
             Sort::Real(rank) => Sort::Real(rank + 1),
             Sort::Bool | Sort::Zero => Sort::Zero,
