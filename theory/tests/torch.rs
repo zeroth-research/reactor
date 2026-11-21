@@ -60,7 +60,9 @@ fn constants_are_built_from_tensors_of_their_theory_only() {
         let word = py.get_type::<word::Const>();
 
         assert!(real.call1((&floats,)).is_ok());
-        assert!(real.call1((&ints,)).is_err());
+        // integers are reals too, kept as given
+        assert!(real.call1((&ints,)).is_ok());
+        assert!(real.call1((&bools,)).is_err());
         assert!(int.call1((&ints,)).is_ok());
         assert!(int.call1((&bools,)).is_err());
         assert!(boolean.call1((&bools,)).is_ok());
@@ -165,6 +167,15 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
         let constant = py.get_type::<int::Const>().call1((&ints,)).unwrap();
         let any = constant.extract::<tensor::Any<tch::Tensor>>().unwrap();
         assert!(matches!(any, tensor::Any::Int(tensor::int::NIA::Const(_))));
+
+        let scale = py.get_type::<int::Scale>().call1((&ints,)).unwrap();
+        let any = scale.extract::<tensor::Any<tch::Tensor>>().unwrap();
+        assert!(matches!(any, tensor::Any::Int(tensor::int::NIA::Scale(_))));
+        // the class decides the operation and the theory
+        assert!(scale.extract::<tensor::int::Const<tch::Tensor>>().is_err());
+        let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
+        assert!(py.get_type::<int::Scale>().call1((&floats,)).is_err());
+        assert!(py.get_type::<real::Scale>().call1((&floats,)).is_ok());
 
         let bools = python(py, full(2, 3, 0.0, tch::Kind::Bool));
         let constant = py.get_type::<bool::Const>().call1((&bools,)).unwrap();

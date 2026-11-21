@@ -114,6 +114,61 @@ impl Clone for crate::tensor::int::Const<tch::Tensor> {
     }
 }
 
+/// The pointwise product `x ↦ C ⊙ x` with a constant integer matrix `C`: a
+/// `torch.Tensor` of integer elements.
+#[pyclass(frozen, name = "Scale", module = "int")]
+pub struct Scale(tch::Tensor);
+
+// SAFETY: the tensor is private to this module, which only reads its
+// shape and element kind and takes shallow clones of it; libtorch makes
+// these thread-safe, counting the references to a tensor atomically.
+unsafe impl Sync for Scale {}
+
+#[pymethods]
+impl Scale {
+    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
+    /// integer elements.
+    #[new]
+    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+        super::check_matrix(&tensor)?;
+        if !super::is_integer(tensor.kind()) {
+            return Err(crate::Error(format!(
+                "expected a tensor of integer elements, got {:?}",
+                tensor.kind()
+            )));
+        }
+        Ok(Scale(tensor.0))
+    }
+
+    #[getter]
+    fn tensor(&self) -> PyTensor {
+        PyTensor(self.0.shallow_clone())
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("tensor",)
+    }
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Scale<tch::Tensor> {
+    type Error = PyErr;
+
+    /// Fails when `ob` is not an [`Scale`].
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let scale = ob.cast::<Scale>()?.get();
+        Ok(crate::tensor::int::Scale::new(scale.0.shallow_clone()))
+    }
+}
+
+/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
+/// so this takes a shallow clone of it, as libtorch counts its references.
+impl Clone for crate::tensor::int::Scale<tch::Tensor> {
+    fn clone(&self) -> Self {
+        crate::tensor::int::Scale::new(self.tensor().shallow_clone())
+    }
+}
+
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::int::Linear<tch::Tensor> {
@@ -136,6 +191,9 @@ impl<'py> IntoPyObject<'py> for crate::tensor::int::NIA<tch::Tensor> {
 
         match self {
             NIA::Const(op) => Const(op.tensor().shallow_clone())
+                .into_pyobject(py)
+                .map(Bound::into_any),
+            NIA::Scale(op) => Scale(op.tensor().shallow_clone())
                 .into_pyobject(py)
                 .map(Bound::into_any),
             NIA::Add(op) => op.into_pyobject(py).map(Bound::into_any),

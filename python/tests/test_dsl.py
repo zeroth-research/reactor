@@ -8,7 +8,7 @@ plus check the ctrl/extl partition and the config surface.
 
 import pytest
 
-from reactor import Module, Wire, sugar, Int, Var, Real, X as _X, d as _d
+from reactor import Module, Wire, sugar, Int, Var, Real, X as _X, d as _d, TheoryError
 from reactor.sugar import ite, d, X
 from reactor.eval import eval_itype
 

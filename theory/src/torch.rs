@@ -15,6 +15,8 @@ on construction, and [`word::Const`] its width too. A [`tch::Tensor`] is not
 `Sync`, which a Python class must be, so each class implements `Sync`
 itself, as only its own module touches the tensor. The constants of
 [`crate::tensor`] extract from the class of their theory, sharing its tensor.
+So do the pointwise products with a constant, [`real::Scale`] and
+[`int::Scale`], whose class holds the constant in the same way.
 
 The affine maps are Python classes too, [`real::Linear`] and
 [`int::Linear`], each holding, in private fields, the [`tch::Tensor`]s `A`

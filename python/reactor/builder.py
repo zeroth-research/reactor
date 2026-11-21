@@ -78,15 +78,6 @@ class TermBuilder:
     def _binary(self, op, output_sort: Real | Int | Bool | Word | Zero, a, b) -> Term:
         return Term(op, [Wire(output_sort)], [_wire(a), _wire(b)])
 
-    def _map(self, op, a) -> Term:
-        """The term of the operation `op` on the values of `a`, writing values of its sort."""
-        return self._unary(self._sized(op, _dtype(a)), _dtype(a), a)
-
-    def _zip(self, op, a, b) -> Term:
-        """The term of the operation `op` on the values of `a` and `b`, writing values of
-        their sort."""
-        return self._binary(self._sized(op, _dtype(a)), _dtype(a), a, b)
-
     def _compare(self, op, a, b) -> Term:
         """The term of the comparison `op` of `a` and `b`, writing booleans of their shape."""
         return self._binary(self._sized(op, _dtype(a)), Bool(_shape(_dtype(a))), a, b)
@@ -104,7 +95,7 @@ class TermBuilder:
         w = output_wire or Wire(_dtype(src))
         return Term(Skip(_dtype(src)), [w], [_wire(src)])
 
-    def linear(self, x, weight, bias) -> list:
+    def linear(self, x, weight, bias = None) -> list:
         """Emit [Transpose-in, Linear, Transpose-out]. Last write[0] is the output wire."""
         x_wire = _wire(x)
         in_features = _shape(x_wire.dtype)[-1]  # [1, in_features] row-major
@@ -142,16 +133,16 @@ class TermBuilder:
         self._unsupported(self.ite)
 
     def not_(self, a) -> Term:
-        return self._map(bool_.Not, a)
+        return self._unary(self._sized(bool_.Not, _dtype(a)), _dtype(a), a)
 
     def and_(self, a, b) -> Term:
-        return self._zip(bool_.And, a, b)
+        return self._binary(self._sized(bool_.And, _dtype(a)), _dtype(a), a, b)
 
     def or_(self, a, b) -> Term:
-        return self._zip(bool_.Or, a, b)
+        return self._binary(self._sized(bool_.Or, _dtype(a)), _dtype(a), a, b)
 
     def xor_(self, a, b) -> Term:
-        return self._zip(bool_.Xor, a, b)
+        return self._binary(self._sized(bool_.Xor, _dtype(a)), _dtype(a), a, b)
 
     def eq(self, a, b) -> Term:
         if _is_bool(a):
@@ -304,10 +295,10 @@ class RealTermBuilder(TermBuilder):
         return self._binary(real.Mul(_shape(sa), degrees=[p, q]), out, a, b)
 
     def div(self, a, b) -> Term:
-        return self._zip(real.Div, a, b)
+        return self._binary(self._sized(real.Div, _dtype(a)), _dtype(a), a, b)
 
     def relu(self, a) -> Term:
-        return self._map(real.ReLU, a)
+        return self._unary(self._sized(real.ReLU, _dtype(a)), _dtype(a), a)
 
     def argmax(self, a) -> Term:
         # the index is written as a [1, 1] matrix of the operand's sort
@@ -364,19 +355,19 @@ class IntTermBuilder(TermBuilder):
         return self._ite(int_.Ite, cond, a, b, output_wire)
 
     def add(self, a, b) -> Term:
-        return self._zip(int_.Add, a, b)
+        return self._binary(self._sized(int_.Add, _dtype(a)), _dtype(a), a, b)
 
     def sub(self, a, b) -> Term:
-        return self._zip(int_.Sub, a, b)
+        return self._binary(self._sized(int_.Sub, _dtype(a)), _dtype(a), a, b)
 
     def mul(self, a, b) -> Term:
-        return self._zip(int_.Mul, a, b)
+        return self._binary(self._sized(int_.Mul, _dtype(a)), _dtype(a), a, b)
 
     def div(self, a, b) -> Term:
-        return self._zip(int_.Div, a, b)
+        return self._binary(self._sized(int_.Div, _dtype(a)), _dtype(a), a, b)
 
     def relu(self, a) -> Term:
-        return self._map(int_.ReLU, a)
+        return self._unary(self._sized(int_.ReLU, _dtype(a)), _dtype(a), a)
 
     def argmax(self, a) -> Term:
         # the index is written as a [1, 1] matrix of the operand's sort
@@ -443,34 +434,34 @@ class WordTermBuilder(TermBuilder):
         return self._ite(word.Ite, cond, a, b, output_wire)
 
     def not_(self, a) -> Term:
-        return super().not_(a) if _is_bool(a) else self._map(word.Not, a)
+        return super().not_(a) if _is_bool(a) else self._unary(self._sized(word.Not, _dtype(a)), _dtype(a), a)
 
     def and_(self, a, b) -> Term:
-        return super().and_(a, b) if _is_bool(a) else self._zip(word.And, a, b)
+        return super().and_(a, b) if _is_bool(a) else self._binary(self._sized(word.And, _dtype(a)), _dtype(a), a, b)
 
     def or_(self, a, b) -> Term:
-        return super().or_(a, b) if _is_bool(a) else self._zip(word.Or, a, b)
+        return super().or_(a, b) if _is_bool(a) else self._binary(self._sized(word.Or, _dtype(a)), _dtype(a), a, b)
 
     def xor_(self, a, b) -> Term:
-        return super().xor_(a, b) if _is_bool(a) else self._zip(word.Xor, a, b)
+        return super().xor_(a, b) if _is_bool(a) else self._binary(self._sized(word.Xor, _dtype(a)), _dtype(a), a, b)
 
     def add(self, a, b) -> Term:
-        return self._zip(word.Add, a, b)
+        return self._binary(self._sized(word.Add, _dtype(a)), _dtype(a), a, b)
 
     def sub(self, a, b) -> Term:
-        return self._zip(word.Sub, a, b)
+        return self._binary(self._sized(word.Sub, _dtype(a)), _dtype(a), a, b)
 
     def mul(self, a, b) -> Term:
-        return self._zip(word.Mul, a, b)
+        return self._binary(self._sized(word.Mul, _dtype(a)), _dtype(a), a, b)
 
     def div(self, a, b) -> Term:
-        return self._zip(unsigned.Div, a, b)
+        return self._binary(self._sized(unsigned.Div, _dtype(a)), _dtype(a), a, b)
 
     def neg(self, a) -> Term:
-        return self._map(word.Neg, a)
+        return self._unary(self._sized(word.Neg, _dtype(a)), _dtype(a), a)
 
     def abs_(self, a) -> Term:
-        return self._map(signed.Abs, a)
+        return self._unary(self._sized(signed.Abs, _dtype(a)), _dtype(a), a)
 
     def lt(self, a, b) -> Term:
         return self._compare(unsigned.Lt, a, b)

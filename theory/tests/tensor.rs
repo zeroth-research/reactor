@@ -123,6 +123,19 @@ mod any {
         );
         assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::Mod::new([2, 3]))).is_err());
         assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::ReLU::new([2, 3]))).is_ok());
+
+        // the product with a constant is linear, unlike that of two variables
+        assert!(real::LRA::try_from(real::NRA::from(real::Scale::new(Mat([2, 3])))).is_ok());
+        assert!(int::LIA::try_from(int::NIA::from(int::Scale::new(Mat([2, 3])))).is_ok());
+    }
+
+    #[test]
+    fn scale_maps_matrices_of_the_shape_of_its_constant() {
+        let op = real(real::Scale::new(Mat([2, 3])));
+        let shape: Poly<sort::Any> = base::mono![sort::Real::new([2, 3]).into()].into();
+        assert_eq!(op.dom(), shape);
+        assert_eq!(op.cod(), shape);
+        assert_eq!(real::Scale::new(Mat([2, 3])).tensor().0, [2, 3]);
     }
 
     #[test]
