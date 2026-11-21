@@ -6,6 +6,7 @@ import pytest
 from reactor import Wire, Module, parse_smv, Word, Bool, Var, X
 from reactor import tensor
 from reactor.tensor import Skip
+from reactor.eval import eval_itype
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 
@@ -202,6 +203,23 @@ def test_literal_takes_the_width_of_its_operand():
     consts = [t for t in update if isinstance(t.itype, tensor.word.Const)]
     assert consts and all(t.write[0].dtype == Word(8, [1, 1]) for t in consts)
     assert any(isinstance(t.itype, tensor.word.Add) and t.itype.width == 8 for t in update)
+
+
+def test_word_constants_add_modulo_their_width():
+    """`0ud8_200 + 0ud8_100` adds two 8-bit words modulo 2^8, as in NuSMV: 44."""
+    update, _ = _update("""
+    MODULE main
+    VAR x : unsigned word[8];
+    ASSIGN next(x) := 0ud8_200 + 0ud8_100;
+    """)
+    terms = list(update)
+    consts = [t for t in terms if isinstance(t.itype, tensor.word.Const)]
+    assert len(consts) == 2 and all(t.write[0].dtype == Word(8, [1, 1]) for t in consts)
+    assert any(isinstance(t.itype, tensor.word.Add) and t.itype.width == 8 for t in terms)
+    state = {}
+    for t in terms:
+        state.update(zip(t.write, eval_itype(t.itype, [state[w] for w in t.read], t.write[0].dtype)))
+    assert state[terms[-1].write[0]].item() == (200 + 100) % 256
 
 
 def test_bool_of_word1_uses_extract():

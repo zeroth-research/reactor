@@ -26,11 +26,13 @@ def _bw(sort) -> int:
 
 
 def _const_op(value, sort):
-    """The constant `value` as a scalar of `sort`: a boolean (nonzero is TRUE), or a
-    word reduced modulo 2^width."""
+    """The constant `value` as a scalar of `sort`: a boolean (nonzero is TRUE), an
+    integer, or a word reduced modulo 2^width."""
     match sort:
         case Bool(_):
             return tensor.bool.Const(torch.tensor([[bool(value)]]))
+        case Int(_):
+            return tensor.int.Const(torch.tensor([[int(value)]], dtype=torch.int64))
         case Word(w, _):
             return tensor.word.Const(torch.tensor([[int(value) % (1 << w)]], dtype=torch.int64), w)
     raise TypeError(f"no constant of sort {sort}")
@@ -435,6 +437,8 @@ class _Lowerer:
                 if name == "Xnor":  # x <-> y is x = y
                     return self._emit(tensor.bool.Eq(s), sort, [left, right], target)
                 return self._emit(getattr(tensor.bool, name)(s), sort, [left, right], target)
+            case Int(s) if name in ("Add", "Sub", "Mul", "Div", "Mod"):
+                return self._emit(getattr(tensor.int, name)(s), sort, [left, right], target)
             case Word(w, s):
                 signed = self._is_signed(left) or self._is_signed(right)
                 if name == "Div":
@@ -693,8 +697,9 @@ class _Lowerer:
         return Wire(dtype if dtype is not None else Word(_DEFAULT_INT_BW, _SCALAR))
 
     def _emit_const(self, value: int, target: Wire | None, hint=None) -> Wire:
-        """A number literal, of the sort of the target, or else of the hint."""
-        w = self._fresh(target, hint)
+        """A number literal, of the sort of the target, or else of the hint, or else an
+        integer, as SMV's integer constants are."""
+        w = self._fresh(target, hint if hint is not None else Int(_SCALAR))
         self.terms.append(Term(_const_op(value, w.dtype), [w]))
         return self._enforce(w, target)
 
