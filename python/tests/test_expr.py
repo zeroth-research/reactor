@@ -7,7 +7,7 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from reactor import Wire, Bool, Int, Real, Word, Var, X as _X
+from reactor import Wire, Bool, Int, Real, Word, Var, X as _X, TheoryError
 from reactor import tensor
 from reactor.eval import eval_itype
 from reactor.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
@@ -82,27 +82,48 @@ def tensor_of_term(term):
 def test_literals_take_the_element_kind_of_their_sort():
     # the constant operations require it: floating point for reals, int64 for integers
     with collecting() as terms:
-        expr(3, sort=REAL)  # int -> Real
-        assert tensor_of_term(terms[0]).dtype == torch.float32
+        expr(3, sort=REAL)  # scalar int as Real -> float
+        assert tensor_of_term(terms[0]).dtype == torch.float
+
+    with pytest.raises(TypeError):
+        expr(True, sort=INT)  # scalar bool as Int -> not a number
+
+    with pytest.raises(TypeError):
+        expr(True, sort=REAL)  # scalar bool as Real -> not a number
 
     with collecting() as terms:
-        expr(True, sort=INT)  # bool -> Int
+        expr(torch.tensor([[2]]), sort=REAL)  # tensor -> no conversion
         assert tensor_of_term(terms[0]).dtype == torch.int64
 
-    with collecting() as terms:
-        expr(True, sort=REAL)  # bool -> Real
-        assert tensor_of_term(terms[0]).dtype == torch.float32
 
+def test_lossless_value_conversions_are_not_happening():
     with collecting() as terms:
-        expr(torch.tensor([[2]]), sort=REAL)  # int tensor -> Real
-        assert tensor_of_term(terms[0]).dtype == torch.float32
+        expr(3, sort=REAL)  # int as Real -> float
+        assert tensor_of_term(terms[0]).dtype == torch.float
+
+    with pytest.raises(TypeError):
+        expr(True, sort=INT)  # bool as Int -> not a number
+
+    with pytest.raises(TypeError):
+        expr(True, sort=REAL)  # bool as Real -> not a number
+
+    with collecting() as terms: # tensor -> no conversion
+        expr(torch.tensor([[2]]), sort=REAL)
+        assert tensor_of_term(terms[0]).dtype == torch.long
+
+    # assert expr(True, sort=INT)._value.dtype is torch.int64  # bool -> Int
+    # assert expr(True, sort=REAL)._value.dtype is torch.float32  # bool -> Real
+    # # an int tensor on a Real wire is converted, not left as int
+    # assert expr(torch.tensor([[2]]), sort=REAL)._value.dtype is torch.float32
 
 
 def test_explicit_sort_wins_for_bool_value():
-    # bool is a subtype of int: an explicit sort must be honored, not overridden to Bool
-    x = expr(True, sort=Int([1, 1]))
-    assert isinstance(x, AExpr) and isinstance(x.dtype, Int)
-    assert isinstance(expr(True), BExpr)  # but no sort -> still Bool
+    # a bool is not a number: an explicit numeric sort is an error, not a conversion
+    with pytest.raises(TypeError):
+        expr(True, sort=Int([1, 1]))
+    with pytest.raises(TypeError):
+        expr([True, False], sort=Real)
+    assert isinstance(expr(True), BExpr)  # no sort -> Bool
 
 
 # --- variables & nxt --------------------------------------------------------
@@ -293,24 +314,45 @@ def test_eval_ite_both_branches():
     assert _run(terms, {x.wire: _int(5), y.wire: _int(1)})[e.wire].item() == 1
 
 
-def test_mul_by_constant_is_mul():
-    x = _varexpr(INT)
-    with collecting() as terms:
-        e = x * 2
-    assert isinstance(terms[-1].itype, tensor.int.Mul)
-    assert _run(terms, {x.wire: _int(3)})[e.wire].item() == 6
-
-
 @pytest.mark.parametrize("n", [1, 2, 3])
 def test_scaling_a_column_vector_by_a_constant(n):
-    # the scalar is broadcast to the vector's shape
     x = _varexpr(Int([n, 1]))
     with collecting() as terms:
         e = x * 3
-    assert terms[-1].itype == tensor.int.Mul([n, 1])
+    assert isinstance(terms[-1].itype, tensor.int.Scale)
     vals = torch.arange(1, n + 1, dtype=torch.int64).reshape(n, 1)
     got = _run(terms, {x.wire: vals})[e.wire]
     assert got.flatten().tolist() == [3 * v for v in range(1, n + 1)]
+
+
+def test_mul_by_constant_folds_to_scale():
+    x = _varexpr(INT)
+    with collecting() as terms:
+        e = x * 2
+    assert isinstance(terms[-1].itype, tensor.int.Scale)
+    assert _run(terms, {x.wire: _int(3)})[e.wire].item() == 6
+
+
+@pytest.mark.parametrize("left", [False, True])
+def test_mul_by_a_full_tensor_is_a_pointwise_scale(left):
+    # a constant of the shape of the variable, with distinct entries: no `A·x` computes it
+    x = _varexpr(Real([2, 3]))
+    c = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    with collecting() as terms:
+        e = c * x if left else x * c
+    assert len(terms) == 1
+    assert isinstance(terms[0].itype, tensor.real.Scale)
+    assert terms[0].itype.tensor.data_ptr() == c.data_ptr()  # shared, not copied
+    assert e.dtype == Real([2, 3])
+    vals = torch.tensor([[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]])
+    assert torch.equal(_run(terms, {x.wire: vals})[e.wire], c * vals)
+
+
+# theory errors are deprecated - the python API has become permissive
+# def test_mul_of_two_variables_is_nonlinear():
+#     x, y = _varexpr(INT), _varexpr(INT)
+#     with pytest.raises(TheoryError):
+#         _ = x * y
 
 
 def test_mul_of_two_variables():

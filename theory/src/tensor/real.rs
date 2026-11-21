@@ -5,6 +5,7 @@ Defines one type per operation on the sort [`Real`] of real matrices. Every oper
 information to compute its [`Boundary`]:
 
 - [`Const`] — a constant real matrix literal.
+- [`Scale`] — the pointwise product `C ⊙ x` with a constant real matrix `C`.
 - [`Add`], [`Sub`] — pointwise addition and subtraction.
 - [`Mul`] — pointwise multiplication `x ⊙ y`.
 - [`Div`] — pointwise division `x / y`.
@@ -55,6 +56,26 @@ impl<T> Const<T> {
     }
 
     /// The tensor holding the constant.
+    pub fn tensor(&self) -> &T {
+        &self.tensor
+    }
+}
+
+/// The pointwise product `x ↦ C ⊙ x` of `[m, n]` matrices with a constant
+/// `C` of shape `[m, n]`, held in a tensor of type `T`: linear in `x`, unlike
+/// [`Mul`], which multiplies two variables.
+#[derive(Debug)]
+pub struct Scale<T> {
+    tensor: T,
+}
+
+impl<T> Scale<T> {
+    /// The product with the constant held in `tensor`.
+    pub fn new(tensor: T) -> Self {
+        Scale { tensor }
+    }
+
+    /// The tensor holding the constant `C`.
     pub fn tensor(&self) -> &T {
         &self.tensor
     }
@@ -264,6 +285,8 @@ pub enum NRA<T> {
     #[subenum(LRA)]
     Const(Const<T>),
     #[subenum(LRA)]
+    Scale(Scale<T>),
+    #[subenum(LRA)]
     Add(Add),
     #[subenum(LRA)]
     Sub(Sub),
@@ -301,11 +324,13 @@ pub enum NRA<T> {
 impl<T> Clone for NRA<T>
 where
     Const<T>: Clone,
+    Scale<T>: Clone,
     Linear<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
             NRA::Const(op) => NRA::Const(op.clone()),
+            NRA::Scale(op) => NRA::Scale(op.clone()),
             NRA::Add(op) => NRA::Add(*op),
             NRA::Sub(op) => NRA::Sub(*op),
             NRA::Mul(op) => NRA::Mul(*op),
@@ -332,6 +357,7 @@ impl<T: fmt::Display> fmt::Display for NRA<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             NRA::Const(op) => op.fmt(f),
+            NRA::Scale(op) => op.fmt(f),
             NRA::Add(op) => op.fmt(f),
             NRA::Sub(op) => op.fmt(f),
             NRA::Mul(op) => op.fmt(f),
@@ -357,11 +383,13 @@ impl<T: fmt::Display> fmt::Display for NRA<T> {
 impl<T> Clone for LRA<T>
 where
     Const<T>: Clone,
+    Scale<T>: Clone,
     Linear<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
             LRA::Const(op) => LRA::Const(op.clone()),
+            LRA::Scale(op) => LRA::Scale(op.clone()),
             LRA::Add(op) => LRA::Add(*op),
             LRA::Sub(op) => LRA::Sub(*op),
             LRA::Linear(op) => LRA::Linear(op.clone()),
@@ -385,6 +413,7 @@ impl<T: fmt::Display> fmt::Display for LRA<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LRA::Const(op) => op.fmt(f),
+            LRA::Scale(op) => op.fmt(f),
             LRA::Add(op) => op.fmt(f),
             LRA::Sub(op) => op.fmt(f),
             LRA::Linear(op) => op.fmt(f),
@@ -408,6 +437,7 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             NRA::Const(op) => op.dom().map(Sort::from),
+            NRA::Scale(op) => op.dom().map(Sort::from),
             NRA::Add(op) => op.dom().map(Sort::from),
             NRA::Sub(op) => op.dom().map(Sort::from),
             NRA::Mul(op) => op.dom().map(Sort::from),
@@ -432,6 +462,7 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
     fn cod(&self) -> Poly<Sort> {
         match self {
             NRA::Const(op) => op.cod().map(Sort::from),
+            NRA::Scale(op) => op.cod().map(Sort::from),
             NRA::Add(op) => op.cod().map(Sort::from),
             NRA::Sub(op) => op.cod().map(Sort::from),
             NRA::Mul(op) => op.cod().map(Sort::from),
@@ -457,6 +488,7 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
             LRA::Const(op) => op.dom().map(Sort::from),
+            LRA::Scale(op) => op.dom().map(Sort::from),
             LRA::Add(op) => op.dom().map(Sort::from),
             LRA::Sub(op) => op.dom().map(Sort::from),
             LRA::Linear(op) => op.dom().map(Sort::from),
@@ -478,6 +510,7 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
     fn cod(&self) -> Poly<Sort> {
         match self {
             LRA::Const(op) => op.cod().map(Sort::from),
+            LRA::Scale(op) => op.cod().map(Sort::from),
             LRA::Add(op) => op.cod().map(Sort::from),
             LRA::Sub(op) => op.cod().map(Sort::from),
             LRA::Linear(op) => op.cod().map(Sort::from),
@@ -500,6 +533,18 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
 impl<T: Tensor> Boundary<Real> for Const<T> {
     fn dom(&self) -> Poly<Real> {
         Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new(self.tensor.shape())].into()
+    }
+}
+
+/// The product with `C` of shape `[m, n]` maps `[m, n]` matrices to `[m, n]`
+/// matrices.
+impl<T: Tensor> Boundary<Real> for Scale<T> {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new(self.tensor.shape())].into()
     }
 
     fn cod(&self) -> Poly<Real> {
@@ -683,6 +728,12 @@ impl Boundary<Sort> for Ne {
     }
 }
 
+impl<T: fmt::Display> fmt::Display for Scale<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Scale({})", self.tensor)
+    }
+}
+
 impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.tensor)
@@ -824,12 +875,13 @@ impl fmt::Display for Ne {
 
 /// Extracts an operation of real arithmetic from a Python object, trying
 /// each operation in turn: those carrying no data through their own
-/// classes, and [`Const`] and [`Linear`] through the extraction that the
+/// classes, and [`Const`], [`Scale`] and [`Linear`] through the extraction that the
 /// tensor type `T` provides.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for NRA<T>
 where
     Const<T>: pyo3::FromPyObject<'a, 'py>,
+    Scale<T>: pyo3::FromPyObject<'a, 'py>,
     Linear<T>: pyo3::FromPyObject<'a, 'py>,
 {
     type Error = pyo3::PyErr;
@@ -890,6 +942,9 @@ where
         }
         if let Ok(op) = ob.extract::<Const<T>>() {
             return Ok(NRA::Const(op));
+        }
+        if let Ok(op) = ob.extract::<Scale<T>>() {
+            return Ok(NRA::Scale(op));
         }
         if let Ok(op) = ob.extract::<Linear<T>>() {
             return Ok(NRA::Linear(op));

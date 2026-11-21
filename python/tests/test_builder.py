@@ -59,3 +59,23 @@ def test_reals_of_different_degrees_do_not_add_up(op):
 
     with pytest.raises(TheoryError):
         op(RealTermBuilder(), x, y)
+
+
+@pytest.mark.parametrize("sort,dtype", [
+    (Real, torch.float32),
+    (Int, torch.int64),
+])
+@pytest.mark.parametrize("n", [1, 2, 3])
+def test_mul_scales_a_column_vector(sort, dtype, n):
+    builder = builder_for(sort)
+    # `linear` maps row vectors, as `nn.Linear` does: transpose in, Linear, transpose out
+    x = Wire(sort([1, n]))
+
+    terms = builder.linear(x, 3 * torch.eye(n, dtype=dtype))
+
+    env = {x: torch.arange(1, n + 1, dtype=dtype).reshape(1, n)}
+    for t in terms:
+        outs = eval_itype(t.itype, [env[w] for w in t.read], t.write[0].dtype)
+        env.update(zip(t.write, outs))
+    out = env[terms[-1].write[0]]
+    assert out.flatten().tolist() == [3 * v for v in range(1, n + 1)]

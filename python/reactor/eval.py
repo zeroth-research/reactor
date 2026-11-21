@@ -118,6 +118,8 @@ def eval_itype(itype, read, out_sort=None):
             return [t.clone()]
         case tensor.real.Linear(a, b) | tensor.int.Linear(a, b):
             return [a @ r[0] + b]
+        case tensor.real.Scale(c) | tensor.int.Scale(c):
+            return [c * r[0]]
 
         # --- choice ---
         case tensor.real.Ite(_) | tensor.int.Ite(_) | tensor.bool.Ite(_) | tensor.word.Ite(_, _):

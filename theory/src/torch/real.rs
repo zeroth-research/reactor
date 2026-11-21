@@ -59,7 +59,8 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Linear<tch::Tensor>
     }
 }
 
-/// A constant real matrix: a `torch.Tensor` of floating-point elements.
+/// A constant real matrix: a `torch.Tensor` of floating-point or integer
+/// elements, kept as given, since integers are reals too.
 #[pyclass(frozen, name = "Const", module = "real")]
 pub struct Const(tch::Tensor);
 
@@ -71,13 +72,13 @@ unsafe impl Sync for Const {}
 #[pymethods]
 impl Const {
     /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
-    /// floating-point elements.
+    /// floating-point or integer elements.
     #[new]
     fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
-        if !tensor.is_floating_point() {
+        if !tensor.is_floating_point() && !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
-                "expected a tensor of floating-point elements, got {:?}",
+                "expected a tensor of floating-point or integer elements, got {:?}",
                 tensor.kind()
             )));
         }
@@ -113,6 +114,61 @@ impl Clone for crate::tensor::real::Const<tch::Tensor> {
     }
 }
 
+/// The pointwise product `x ↦ C ⊙ x` with a constant real matrix `C`: a
+/// `torch.Tensor` of floating-point elements.
+#[pyclass(frozen, name = "Scale", module = "real")]
+pub struct Scale(tch::Tensor);
+
+// SAFETY: the tensor is private to this module, which only reads its
+// shape and element kind and takes shallow clones of it; libtorch makes
+// these thread-safe, counting the references to a tensor atomically.
+unsafe impl Sync for Scale {}
+
+#[pymethods]
+impl Scale {
+    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
+    /// floating-point elements.
+    #[new]
+    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+        super::check_matrix(&tensor)?;
+        if !tensor.is_floating_point() {
+            return Err(crate::Error(format!(
+                "expected a tensor of floating-point elements, got {:?}",
+                tensor.kind()
+            )));
+        }
+        Ok(Scale(tensor.0))
+    }
+
+    #[getter]
+    fn tensor(&self) -> PyTensor {
+        PyTensor(self.0.shallow_clone())
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("tensor",)
+    }
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Scale<tch::Tensor> {
+    type Error = PyErr;
+
+    /// Fails when `ob` is not a [`Scale`].
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let scale = ob.cast::<Scale>()?.get();
+        Ok(crate::tensor::real::Scale::new(scale.0.shallow_clone()))
+    }
+}
+
+/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
+/// so this takes a shallow clone of it, as libtorch counts its references.
+impl Clone for crate::tensor::real::Scale<tch::Tensor> {
+    fn clone(&self) -> Self {
+        crate::tensor::real::Scale::new(self.tensor().shallow_clone())
+    }
+}
+
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::real::Linear<tch::Tensor> {
@@ -135,6 +191,9 @@ impl<'py> IntoPyObject<'py> for crate::tensor::real::NRA<tch::Tensor> {
 
         match self {
             NRA::Const(op) => Const(op.tensor().shallow_clone())
+                .into_pyobject(py)
+                .map(Bound::into_any),
+            NRA::Scale(op) => Scale(op.tensor().shallow_clone())
                 .into_pyobject(py)
                 .map(Bound::into_any),
             NRA::Add(op) => op.into_pyobject(py).map(Bound::into_any),

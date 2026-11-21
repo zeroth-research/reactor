@@ -219,12 +219,53 @@ class AExpr(Expr):
         return self._binop(op, self.dtype, o)
 
     def __mul__(self, o):
+        self_is_constant = self._value is not None
+        o_is_constant = not isinstance(o, Expr) or o._value is not None
+
+        # variable * variable: the pointwise product
+        if not self_is_constant and not o_is_constant:
+            return self._mul(o)
+        # constant * variable: scale the variable `o` by my value
+        elif self_is_constant and not o_is_constant:
+            x, c = o, self._value
+        # variable * constant: scale me by its value
+        elif not self_is_constant and o_is_constant:
+            x, c = self, (o._value if isinstance(o, Expr) else o)
+        # constant * constant: scale my term by its value
+        elif self_is_constant and o_is_constant:
+            x, c = self, (o._value if isinstance(o, Expr) else o)
+
+        # by a scalar, broadcast to its shape
+        if isinstance(c, bool | int | float) or (isinstance(c, torch.Tensor) and c.dim() == 0):
+            return x._scale(torch.as_tensor(c).expand(x.shape).clone())
+        # by a tensor of its shape, sharing it
+        else:
+            return x._scale(c)
+
+    def _mul(self, o) -> "Expr":
+        """The pointwise product with the variable `o`."""
+        assert isinstance(o, Expr) and o._value is None, "the other factor must be a variable"
+        assert self._value is None, "a constant factor goes second, as a Scale"
+        assert o.shape == self.shape, f"cannot multiply {self.shape} and {o.shape} pointwise"
         match self.dtype:
             case Real(s):
                 op = tensor.real.Mul(s)
             case Int(s):
                 op = tensor.int.Mul(s)
         return self._binop(op, self.dtype, o)
+
+    def _scale(self, c) -> "Expr":
+        """The linear map `x ↦ C ⊙ x` by the constant `c` of my shape, sharing its tensor
+        unless its element kind is not of my sort."""
+        assert isinstance(c, torch.Tensor), f"the constant must be a tensor, got {type(c)}"
+        assert list(c.shape) == self.shape, f"cannot scale {self.shape} by a constant of {list(c.shape)}"
+        match self.dtype:
+            case Real(_):
+                op = tensor.real.Scale(c if c.is_floating_point() else c.float())
+            case Int(_):
+                integer = not c.is_floating_point() and c.dtype != torch.bool
+                op = tensor.int.Scale(c if integer else c.long())
+        return self._unop(op)
 
     def __truediv__(self, o):
         match self.dtype:
@@ -238,7 +279,7 @@ class AExpr(Expr):
 
     def __rsub__(self, o):  return self._coerce(o).__sub__(self)
 
-    def __rmul__(self, o):  return self._coerce(o).__mul__(self)
+    def __rmul__(self, o):  return self.__mul__(o)  # pointwise, so it commutes
 
     def __rtruediv__(self, o):  return self._coerce(o).__truediv__(self)
 
@@ -430,14 +471,15 @@ def _term_from_torch(value, sort, bw=None):
     match value.dtype:
         case torch.bool if sort == Bool:
             out = Bool(shape)
-        case torch.float if sort == Real:
+        # the tensor is kept as given: no conversion of its elements
+        case torch.half | torch.float | torch.double if sort == Real:
             out = Real(shape)
         case torch.int | torch.long if sort == Int:
-            out, value = Int(shape), value.to(torch.int64)
+            out = Int(shape)
         case torch.int | torch.long if sort == Real:
-            out, value = Real(shape), value.to(torch.float32)
+            out = Real(shape)
         case torch.int | torch.long if sort == Word and bw is not None:
-            out, value = Word(bw, shape), value.to(torch.int64)
+            out = Word(bw, shape)
         case _:
             raise TypeError(f"expr() unsupported literal type {type(value)} / {sort}")
     match out:
@@ -455,6 +497,10 @@ def _term_from_torch(value, sort, bw=None):
 def _term_from_other(value, sort, bw=None):
     # torch will figure out the errors, and the base
     assert sort in (Bool, Real, Int, Word)
+
+    # a boolean is not a number: no conversion of `True` to 1
+    if sort != Bool and torch.tensor(value).dtype == torch.bool:
+        raise TypeError(f"expr(): a boolean value {value!r} cannot be given the sort {sort.__name__}")
 
     if sort == Bool:
         dtype = torch.bool

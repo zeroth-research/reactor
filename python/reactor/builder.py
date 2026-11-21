@@ -104,7 +104,7 @@ class TermBuilder:
         w = output_wire or Wire(_dtype(src))
         return Term(Skip(_dtype(src)), [w], [_wire(src)])
 
-    def linear(self, x, weight, bias) -> list:
+    def linear(self, x, weight, bias = None) -> list:
         """Emit [Transpose-in, Linear, Transpose-out]. Last write[0] is the output wire."""
         x_wire = _wire(x)
         in_features = _shape(x_wire.dtype)[-1]  # [1, in_features] row-major

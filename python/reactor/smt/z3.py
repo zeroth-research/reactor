@@ -72,6 +72,8 @@ def interpret(itype):
             return lambda x, y: x @ y
         case tensor.real.Linear(weight, bias) | tensor.int.Linear(weight, bias):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
+        case tensor.real.Scale(c) | tensor.int.Scale(c):
+            return lambda x: c.detach().numpy() * x
 
         # comparisons (produce Bool)
         case tensor.real.Eq(_) | tensor.int.Eq(_) | tensor.bool.Eq(_):
