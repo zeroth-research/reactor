@@ -136,6 +136,28 @@ mod any {
     }
 
     #[test]
+    fn zero_writes_the_singleton_sort() {
+        let op = Any::Zero(Zero);
+        assert_eq!(op.dom(), Poly::unit());
+        let cod: Poly<sort::Any> = base::mono![sort::Zero.into()].into();
+        assert_eq!(op.cod(), cod);
+    }
+
+    #[test]
+    fn the_zero_rate_of_change_of_a_real_is_the_zero_matrix_of_its_degree() {
+        use theory::Differential;
+        // a real rate of change: the zero matrix, of its degree
+        let rate: sort::Any = sort::Real::with_degree([2, 3], 1).into();
+        let op = Any::zero(&rate);
+        assert!(matches!(&op, Any::Real(real::NRA::Zero(z)) if z.degree() == 1));
+        assert!(LRA::try_from(Any::zero(&rate)).is_ok());
+        assert_eq!(op.dom(), Poly::unit());
+        assert_eq!(op.cod(), base::mono![rate].into());
+        // the rate of change of a discrete value: the singleton
+        assert!(matches!(Any::zero(&sort::Zero.into()), Any::Zero(Zero)));
+    }
+
+    #[test]
     fn real_operations_take_the_degree_of_their_operands() {
         let r = |shape, degree| -> sort::Any { sort::Real::with_degree(shape, degree).into() };
         let b = |shape| -> sort::Any { sort::Bool::new(shape).into() };

@@ -37,6 +37,7 @@ pub mod int;
 pub mod real;
 pub mod sort;
 pub mod word;
+pub mod zero;
 
 use base::boundary::{Boundary, Poly};
 use derive_more::From;
@@ -44,6 +45,7 @@ use derive_more::From;
 use pyo3::prelude::*;
 use std::fmt;
 use subenum::subenum;
+pub use zero::Zero;
 
 /// A matrix of values, as held by the operations that carry data: the
 /// constants, and the coefficients of `Linear`. The operations are generic
@@ -116,14 +118,6 @@ pub struct Skip {
     sort: sort::Any,
 }
 
-/// Writes the zero of the given sort, reading nothing: the rate of change
-/// of a value that does not change.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
-pub struct Zero {
-    sort: sort::Any,
-}
-
 /// Fails unless `a` and `b` are the shapes `[m, n]` and `[m, k]` of the
 /// matrices `A` and `B` of an affine map `x ↦ A·x + B`.
 pub(crate) fn check_affine(a: [usize; 2], b: [usize; 2]) -> Result<(), crate::Error> {
@@ -155,16 +149,6 @@ impl Boundary<sort::Any> for Skip {
     }
 }
 
-impl Boundary<sort::Any> for Zero {
-    fn dom(&self) -> Poly<sort::Any> {
-        Poly::unit()
-    }
-
-    fn cod(&self) -> Poly<sort::Any> {
-        base::mono![self.sort].into()
-    }
-}
-
 impl fmt::Display for Havoc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Havoc")
@@ -174,12 +158,6 @@ impl fmt::Display for Havoc {
 impl fmt::Display for Skip {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Skip")
-    }
-}
-
-impl fmt::Display for Zero {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Zero")
     }
 }
 
@@ -222,25 +200,6 @@ impl Skip {
     }
 }
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Zero {
-    #[cfg_attr(feature = "pyo3", new)]
-    pub fn new(sort: sort::Any) -> Self {
-        Zero { sort }
-    }
-
-    #[cfg(feature = "pyo3")]
-    #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("sort",)
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn sort(&self) -> sort::Any {
-        self.sort
-    }
-}
-
 impl<T> crate::Combinatorial<sort::Any> for Any<T> {
     fn havoc(range: &sort::Any) -> Self {
         Any::Havoc(Havoc::new(*range))
@@ -253,9 +212,16 @@ impl<T> crate::Sequential<sort::Any> for Any<T> {
     }
 }
 
+/// The zero rate of change of a value of a tangent sort: the zero matrix of
+/// a real sort, of its degree, and the only value of the singleton sort,
+/// the tangent of the discrete sorts.
 impl<T> crate::Differential<sort::Any> for Any<T> {
     fn zero(range: &sort::Any) -> Self {
-        Any::Zero(Zero::new(*range))
+        match range {
+            sort::Any::Real(r) => Any::Real(real::Zero::with_degree(r.shape(), r.degree()).into()),
+            sort::Any::Zero(_) => Any::Zero(Zero),
+            _ => panic!("only the tangent sorts, reals and Zero, have a zero: {range}"),
+        }
     }
 }
 
@@ -378,7 +344,7 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
             Any::Word(op) => op.dom().map(sort::Any::from),
             Any::Havoc(op) => op.dom(),
             Any::Skip(op) => op.dom(),
-            Any::Zero(op) => op.dom(),
+            Any::Zero(op) => op.dom().map(sort::Any::from),
         }
     }
 
@@ -390,7 +356,7 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
             Any::Word(op) => op.cod().map(sort::Any::from),
             Any::Havoc(op) => op.cod(),
             Any::Skip(op) => op.cod(),
-            Any::Zero(op) => op.cod(),
+            Any::Zero(op) => op.cod().map(sort::Any::from),
         }
     }
 }

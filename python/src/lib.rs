@@ -56,6 +56,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             real.add_class::<theory::tensor::real::ReLU>()?;
             real.add_class::<theory::tensor::real::Abs>()?;
             real.add_class::<theory::tensor::real::Neg>()?;
+            real.add_class::<theory::tensor::real::Zero>()?;
             real.add_class::<theory::tensor::real::Argmax>()?;
             real.add_class::<theory::tensor::real::Min>()?;
             real.add_class::<theory::tensor::real::Max>()?;

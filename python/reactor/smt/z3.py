@@ -46,8 +46,12 @@ def interpret(itype):
             return lambda x: x
         case Havoc(dtype):
             return lambda: fresh(dtype, "HAVOC")
-        case Zero(dtype):
-            return lambda: _zeros(dtype)
+        case Zero():
+            # the singleton sort is the rate of change of discrete values, which are
+            # never integrated: nothing encodes it
+            raise RuntimeError("Zero writes the singleton sort, which is never encoded")
+        case tensor.real.Zero(shape):
+            return lambda: _zeros(Real(shape))
 
         # constants
         case tensor.bool.Const(t):

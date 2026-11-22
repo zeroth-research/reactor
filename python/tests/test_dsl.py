@@ -10,6 +10,7 @@ import pytest
 
 from reactor import Module, Wire, sugar, Int, Var, Real, X as _X, d as _d, TheoryError
 from reactor.sugar import ite, d, X
+from reactor.tensor import Skip, Zero
 from reactor.eval import eval_itype
 
 INT = Int([1, 1])
@@ -243,6 +244,57 @@ def test_hybrid_sugar_module():
     assert _d(x) in a.delay.write()
     # the update reads the reset guard from the input's next value
     assert _X(t) in a.update.read()
+
+
+class _Mixed(sugar.Module):
+    """A real variable drifting with a real input, and a discrete counter."""
+
+    def init(self, t):
+        return 0, 0
+
+    def update(self, x, n, t):
+        return x, n + 1
+
+    def delay(self, x, n, t):
+        return 1 * d(t), 0  # the counter does not change in time: its rate is 0
+
+
+def test_delay_of_mixed_real_and_discrete_variables():
+    x, n, t = Var(Real1), Var(Int([1, 1])), Var(Real1)
+    a = _Mixed(ctrl=(x, n), extl=(t,)).atoms[0]
+    writer = {w: term for term in a.delay for w in term.write}
+    # the counter's rate of change is the singleton, written by `Zero`, reading nothing
+    zero = writer[_d(n)]
+    assert isinstance(zero.itype, Zero) and len(zero.read) == 0
+    # the real's rate of change is a real of degree 1, copied at that sort
+    skip = writer[_d(x)]
+    assert skip.itype == Skip(Real([1, 1], degree=1))
+    assert skip.read[0].dtype == Real([1, 1], degree=1)
+
+
+@pytest.mark.parametrize("rate", [1, False, 0.0])
+def test_delay_of_a_discrete_variable_is_0_only(rate):
+    class Bad(_Mixed):
+        def delay(self, x, n, t):
+            return 1 * d(t), rate
+
+    x, n, t = Var(Real1), Var(Int([1, 1])), Var(Real1)
+    with pytest.raises(TypeError, match="discrete"):
+        Bad(ctrl=(x, n), extl=(t,))
+
+
+def test_delay_literal_takes_the_degree_of_the_rate():
+    class Steady(sugar.Module):
+        def init(self):
+            return 0
+
+        def delay(self, x):
+            return 1  # x' = 1: a constant rate of change, of degree 1
+
+    x = Var(Real1)
+    a = Steady(ctrl=(x,)).atoms[0]
+    sorts = [w.dtype for term in a.delay for w in term.write]
+    assert sorts and all(s == Real([1, 1], degree=1) for s in sorts)
 
 
 def test_useless_module():

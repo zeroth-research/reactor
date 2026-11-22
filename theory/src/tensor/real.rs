@@ -11,6 +11,7 @@ information to compute its [`Boundary`]:
 - [`Div`] — pointwise division `x / y`.
 - [`Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
   constant real matrices of compatible shapes.
+- [`Zero`] — the zero matrix of a degree: the zero rate of change.
 - [`Neg`] — the pointwise negation `x ↦ -x`.
 - [`Abs`] — the pointwise absolute value `x ↦ |x|`.
 - [`ReLU`] — the shape-preserving rectified-linear map `x ↦ max(x, 0)`.
@@ -205,6 +206,15 @@ impl<T> Linear<T> {
     pub fn degree(&self) -> u8 {
         self.degree
     }
+}
+
+/// The zero `[m, n]` matrix of a degree, reading nothing: of degree 1, the
+/// rate of change of a real matrix that does not change.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct Zero {
+    shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise negation `x ↦ -x` of `[m, n]` matrices, of a degree which
@@ -416,6 +426,8 @@ pub enum NRA<T> {
     #[subenum(LRA)]
     Neg(Neg),
     #[subenum(LRA)]
+    Zero(Zero),
+    #[subenum(LRA)]
     Argmax(Argmax),
     #[subenum(LRA)]
     Min(Min),
@@ -458,6 +470,7 @@ where
             NRA::ReLU(op) => NRA::ReLU(*op),
             NRA::Abs(op) => NRA::Abs(*op),
             NRA::Neg(op) => NRA::Neg(*op),
+            NRA::Zero(op) => NRA::Zero(*op),
             NRA::Argmax(op) => NRA::Argmax(*op),
             NRA::Min(op) => NRA::Min(*op),
             NRA::Max(op) => NRA::Max(*op),
@@ -487,6 +500,7 @@ impl<T: fmt::Display> fmt::Display for NRA<T> {
             NRA::ReLU(op) => op.fmt(f),
             NRA::Abs(op) => op.fmt(f),
             NRA::Neg(op) => op.fmt(f),
+            NRA::Zero(op) => op.fmt(f),
             NRA::Argmax(op) => op.fmt(f),
             NRA::Min(op) => op.fmt(f),
             NRA::Max(op) => op.fmt(f),
@@ -519,6 +533,7 @@ where
             LRA::ReLU(op) => LRA::ReLU(*op),
             LRA::Abs(op) => LRA::Abs(*op),
             LRA::Neg(op) => LRA::Neg(*op),
+            LRA::Zero(op) => LRA::Zero(*op),
             LRA::Argmax(op) => LRA::Argmax(*op),
             LRA::Min(op) => LRA::Min(*op),
             LRA::Max(op) => LRA::Max(*op),
@@ -545,6 +560,7 @@ impl<T: fmt::Display> fmt::Display for LRA<T> {
             LRA::ReLU(op) => op.fmt(f),
             LRA::Abs(op) => op.fmt(f),
             LRA::Neg(op) => op.fmt(f),
+            LRA::Zero(op) => op.fmt(f),
             LRA::Argmax(op) => op.fmt(f),
             LRA::Min(op) => op.fmt(f),
             LRA::Max(op) => op.fmt(f),
@@ -573,6 +589,7 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
             NRA::ReLU(op) => op.dom().map(Sort::from),
             NRA::Abs(op) => op.dom().map(Sort::from),
             NRA::Neg(op) => op.dom().map(Sort::from),
+            NRA::Zero(op) => op.dom().map(Sort::from),
             NRA::Argmax(op) => op.dom().map(Sort::from),
             NRA::Min(op) => op.dom().map(Sort::from),
             NRA::Max(op) => op.dom().map(Sort::from),
@@ -600,6 +617,7 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
             NRA::ReLU(op) => op.cod().map(Sort::from),
             NRA::Abs(op) => op.cod().map(Sort::from),
             NRA::Neg(op) => op.cod().map(Sort::from),
+            NRA::Zero(op) => op.cod().map(Sort::from),
             NRA::Argmax(op) => op.cod().map(Sort::from),
             NRA::Min(op) => op.cod().map(Sort::from),
             NRA::Max(op) => op.cod().map(Sort::from),
@@ -626,6 +644,7 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
             LRA::ReLU(op) => op.dom().map(Sort::from),
             LRA::Abs(op) => op.dom().map(Sort::from),
             LRA::Neg(op) => op.dom().map(Sort::from),
+            LRA::Zero(op) => op.dom().map(Sort::from),
             LRA::Argmax(op) => op.dom().map(Sort::from),
             LRA::Min(op) => op.dom().map(Sort::from),
             LRA::Max(op) => op.dom().map(Sort::from),
@@ -650,6 +669,7 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
             LRA::ReLU(op) => op.cod().map(Sort::from),
             LRA::Abs(op) => op.cod().map(Sort::from),
             LRA::Neg(op) => op.cod().map(Sort::from),
+            LRA::Zero(op) => op.cod().map(Sort::from),
             LRA::Argmax(op) => op.cod().map(Sort::from),
             LRA::Min(op) => op.cod().map(Sort::from),
             LRA::Max(op) => op.cod().map(Sort::from),
@@ -754,6 +774,16 @@ impl<T: Tensor> Boundary<Real> for Linear<T> {
 
     fn cod(&self) -> Poly<Real> {
         mono![Real::with_degree(self.b.shape(), self.degree)].into()
+    }
+}
+
+impl Boundary<Real> for Zero {
+    fn dom(&self) -> Poly<Real> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 }
 
@@ -941,6 +971,12 @@ impl fmt::Display for Div {
     }
 }
 
+impl fmt::Display for Zero {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Zero")
+    }
+}
+
 impl fmt::Display for Neg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Neg")
@@ -1092,6 +1128,9 @@ where
         }
         if let Ok(op) = ob.extract::<Neg>() {
             return Ok(NRA::Neg(op));
+        }
+        if let Ok(op) = ob.extract::<Zero>() {
+            return Ok(NRA::Zero(op));
         }
         if let Ok(op) = ob.extract::<Argmax>() {
             return Ok(NRA::Argmax(op));
@@ -1313,6 +1352,39 @@ impl Div {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Zero {
+    /// The plain zero matrix, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Zero { shape, degree: 0 }
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Zero {
+    /// The zero matrix of the given `degree`.
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Zero { shape, degree }
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 }
 

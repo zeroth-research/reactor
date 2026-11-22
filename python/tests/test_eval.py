@@ -424,9 +424,13 @@ def test_structural_ops():
     s = Real([1, 2])
     x = torch.tensor([[1., 2.]])
     assert torch.equal(eval_itype(Skip(s), [x])[0], x)
-    # Havoc writes an arbitrary value, Zero the zero rate of change: both zeros
+    # Havoc writes an arbitrary value: zeros
     assert eval_itype(Havoc(s), [])[0].tolist() == [[0., 0.]]
-    assert eval_itype(Zero(Word(8, [1, 1])), [])[0].tolist() == [[0]]
+    # Zero writes the singleton sort, which is never evaluated
+    with pytest.raises(RuntimeError, match="singleton"):
+        eval_itype(Zero(), [])
+    # and the zero rate of change of a real is the zero matrix
+    assert eval_itype(tensor.real.Zero([1, 2], degree=1), [])[0].tolist() == [[0., 0.]]
 
 
 @pytest.mark.parametrize("x,y,q,r", [

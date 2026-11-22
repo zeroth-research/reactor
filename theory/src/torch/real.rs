@@ -238,6 +238,7 @@ impl<'py> IntoPyObject<'py> for crate::tensor::real::NRA<tch::Tensor> {
             NRA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Abs(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Neg(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Zero(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Argmax(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Min(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Max(op) => op.into_pyobject(py).map(Bound::into_any),

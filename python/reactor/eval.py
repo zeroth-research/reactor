@@ -102,16 +102,23 @@ def eval_itype(itype, read, out_sort=None):
     """Evaluate a single op with the given input tensors.
 
     `out_sort` is the write wire's sort, needed by the structural operations that
-    write a value of it from nothing (`Havoc`, `Zero`).
+    write a value of it from nothing (`Havoc`).
     """
     r = read
     match itype:
         # --- structural ---
         case Skip(_):
             return [r[0].clone()]
-        case Havoc(sort) | Zero(sort):
-            # an arbitrary value, and the zero rate of change: zeros
+        case Havoc(sort):
+            # an arbitrary value: zeros
             return [_zeros(sort)]
+        case Zero():
+            # the singleton sort is the rate of change of discrete values, which are
+            # never integrated: nothing evaluates it
+            raise RuntimeError("Zero writes the singleton sort, which is never evaluated")
+        case tensor.real.Zero(shape):
+            # the zero matrix, of any degree: the zero rate of change
+            return [torch.zeros(shape, dtype=torch.float32)]
 
         # --- constants and affine maps (tensors carried by the op) ---
         case tensor.real.Const(t) | tensor.int.Const(t) | tensor.bool.Const(t) | tensor.word.Const(t, _):
