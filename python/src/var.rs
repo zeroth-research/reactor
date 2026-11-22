@@ -6,7 +6,7 @@ use pyo3::types::PyNotImplemented;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use theory::tensor::sort;
 
-#[pyclass(frozen, from_py_object)] // eq, hash, ord are implemented manually for compat with polymorphic __richcmp__
+#[pyclass(module = "reactor", frozen, from_py_object)] // eq, hash, ord are implemented manually for compat with polymorphic __richcmp__
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub(crate) struct Var {
     base: reactive::Var<sort::Any>,

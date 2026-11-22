@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 use theory::tensor::sort;
 
-#[pyclass(frozen, eq, hash, ord)]
+#[pyclass(module = "reactor", frozen, eq, hash, ord)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub(crate) struct Wire {
     base: dataflow::diagram::Wire<sort::Any>,

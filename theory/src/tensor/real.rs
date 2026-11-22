@@ -115,7 +115,10 @@ impl<T> Scale<T> {
 /// Pointwise addition `x + y` of `[m, n]` matrices, of the same degree,
 /// which the sum keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Add {
     shape: [usize; 2],
     degree: u8,
@@ -124,7 +127,10 @@ pub struct Add {
 /// Pointwise subtraction `x - y` of `[m, n]` matrices, of the same degree,
 /// which the difference keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Sub {
     shape: [usize; 2],
     degree: u8,
@@ -135,7 +141,10 @@ pub struct Sub {
 /// add up: the product of a rate of change by a plain real is a rate of
 /// change, and that of two rates of change is of degree 2.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Mul {
     shape: [usize; 2],
     /// The degrees `[p, q]` of the factors.
@@ -156,7 +165,10 @@ pub struct Mul {
 /// rate of change of a higher degree than the dividend is not defined, as
 /// degrees are not negative.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Div {
     shape: [usize; 2],
     /// The degrees `[p, q]` of the dividend and the divisor.
@@ -211,7 +223,10 @@ impl<T> Linear<T> {
 /// The zero `[m, n]` matrix of a degree, reading nothing: of degree 1, the
 /// rate of change of a real matrix that does not change.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Zero {
     shape: [usize; 2],
     degree: u8,
@@ -222,7 +237,10 @@ pub struct Zero {
 ///
 /// SMT-LIB2: `(- x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Neg {
     shape: [usize; 2],
     degree: u8,
@@ -233,7 +251,10 @@ pub struct Neg {
 ///
 /// Of a degree, which the absolute value keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Abs {
     shape: [usize; 2],
     degree: u8,
@@ -244,7 +265,10 @@ pub struct Abs {
 ///
 /// Of a degree, which the map keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct ReLU {
     shape: [usize; 2],
     degree: u8,
@@ -255,7 +279,10 @@ pub struct ReLU {
 ///
 /// Of an operand of any degree: the index it writes is of degree 0.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Argmax {
     shape: [usize; 2],
     degree: u8,
@@ -265,7 +292,10 @@ pub struct Argmax {
 ///
 /// Of operands of the same degree, which the minimum keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Min {
     shape: [usize; 2],
     degree: u8,
@@ -275,7 +305,10 @@ pub struct Min {
 ///
 /// Of operands of the same degree, which the maximum keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Max {
     shape: [usize; 2],
     degree: u8,
@@ -285,7 +318,10 @@ pub struct Max {
 ///
 /// Of a degree, which the transposition keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Transpose {
     shape: [usize; 2],
     degree: u8,
@@ -294,7 +330,10 @@ pub struct Transpose {
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the shapes given as `MatMul([[m, n], [n, k]])`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct MatMul {
     /// The shapes `[[m, n], [n, k]]` of the factors.
     ///
@@ -314,7 +353,10 @@ pub struct MatMul {
 ///
 /// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Lt {
     shape: [usize; 2],
     degree: u8,
@@ -327,7 +369,10 @@ pub struct Lt {
 ///
 /// Of branches of the same degree, which the choice keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Ite {
     shape: [usize; 2],
     degree: u8,
@@ -340,7 +385,10 @@ pub struct Ite {
 ///
 /// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Le {
     shape: [usize; 2],
     degree: u8,
@@ -353,7 +401,10 @@ pub struct Le {
 ///
 /// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Gt {
     shape: [usize; 2],
     degree: u8,
@@ -366,7 +417,10 @@ pub struct Gt {
 ///
 /// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Ge {
     shape: [usize; 2],
     degree: u8,
@@ -379,7 +433,10 @@ pub struct Ge {
 ///
 /// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Eq {
     shape: [usize; 2],
     degree: u8,
@@ -392,7 +449,10 @@ pub struct Eq {
 ///
 /// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.real")
+)]
 pub struct Ne {
     shape: [usize; 2],
     degree: u8,

@@ -6,7 +6,7 @@ use pyo3_tch::PyTensor;
 
 /// The affine map `x ↦ A·x + B` of integer matrices: torch tensors of
 /// integer elements.
-#[pyclass(frozen, name = "Linear", module = "int")]
+#[pyclass(frozen, name = "Linear", module = "reactor.tensor.int")]
 pub struct Linear(tch::Tensor, tch::Tensor);
 
 // SAFETY: the tensors are private to this module, which only reads their
@@ -61,7 +61,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Linear<tch::Tensor> 
 }
 
 /// A constant integer matrix: a `torch.Tensor` of integer elements.
-#[pyclass(frozen, name = "Const", module = "int")]
+#[pyclass(frozen, name = "Const", module = "reactor.tensor.int")]
 pub struct Const(tch::Tensor);
 
 // SAFETY: the tensor is private to this module, which only reads its
@@ -116,7 +116,7 @@ impl Clone for crate::tensor::int::Const<tch::Tensor> {
 
 /// The pointwise product `x ↦ C ⊙ x` with a constant integer matrix `C`: a
 /// `torch.Tensor` of integer elements.
-#[pyclass(frozen, name = "Scale", module = "int")]
+#[pyclass(frozen, name = "Scale", module = "reactor.tensor.int")]
 pub struct Scale(tch::Tensor);
 
 // SAFETY: the tensor is private to this module, which only reads its

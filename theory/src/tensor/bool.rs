@@ -42,28 +42,40 @@ impl<T> Const<T> {
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+)]
 pub struct And {
     shape: [usize; 2],
 }
 
 /// Pointwise disjunction `x ∨ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+)]
 pub struct Or {
     shape: [usize; 2],
 }
 
 /// Pointwise exclusive disjunction `x ⊕ y` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+)]
 pub struct Xor {
     shape: [usize; 2],
 }
 
 /// Pointwise negation `¬x` of `[m, n]` matrices.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+)]
 pub struct Not {
     shape: [usize; 2],
 }
@@ -73,7 +85,10 @@ pub struct Not {
 ///
 /// SMT-LIB2: `(= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+)]
 pub struct Eq {
     shape: [usize; 2],
 }
@@ -83,7 +98,10 @@ pub struct Eq {
 ///
 /// SMT-LIB2: `(distinct x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+)]
 pub struct Ne {
     shape: [usize; 2],
 }
@@ -93,7 +111,10 @@ pub struct Ne {
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+)]
 pub struct Ite {
     shape: [usize; 2],
 }

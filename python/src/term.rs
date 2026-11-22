@@ -3,7 +3,7 @@ use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
 use theory::tensor::sort;
 
-#[pyclass(frozen)]
+#[pyclass(module = "reactor", frozen)]
 pub(crate) struct Term {
     base: dataflow::diagram::Term<Any, sort::Any>,
 }
@@ -101,7 +101,7 @@ pub(crate) enum TermInterfaceType {
     Read,
     Write,
 }
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct TermInterface {
     term: Py<Term>,
     interface: TermInterfaceType,

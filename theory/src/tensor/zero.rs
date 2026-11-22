@@ -13,7 +13,10 @@ use std::fmt;
 /// The zero rate of change of a real matrix is not this, but the zero
 /// matrix of the degree of the rate of change, [`real::Zero`](super::real::Zero).
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Default)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.zero")
+)]
 pub struct Zero;
 
 /// Writes the only value of the singleton sort [`sort::Zero`].

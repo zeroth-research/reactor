@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use theory::tensor::sort;
 
-#[pyclass(subclass, frozen)]
+#[pyclass(module = "reactor", subclass, frozen)]
 pub(crate) struct Module {
     pub(crate) base: reactive::Module<Any, Any, Any, sort::Any>,
 }
@@ -404,7 +404,7 @@ enum ModuleInterfaceType {
     Obs,
     Ctrl,
 }
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct ModuleInterface {
     module: Py<Module>,
     interface: ModuleInterfaceType,
@@ -472,7 +472,7 @@ impl ModuleInterface {
     }
 }
 
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct ModuleAtoms {
     module: Py<Module>,
 }

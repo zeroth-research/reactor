@@ -5,7 +5,7 @@ use pyo3_tch::PyTensor;
 
 /// A constant matrix of bit-vectors of a width: a `torch.Tensor` of
 /// integer elements, each holding a bit-vector in its low bits.
-#[pyclass(frozen, name = "Const", module = "word")]
+#[pyclass(frozen, name = "Const", module = "reactor.tensor.word")]
 pub struct Const(tch::Tensor, usize);
 
 // SAFETY: the tensor is private to this module, which only reads its

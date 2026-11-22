@@ -97,7 +97,10 @@ impl<T> Const<T> {
 ///
 /// SMT-LIB2: `(concat x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Concat {
     /// The widths `[u, v]` of the words read, high bits first.
     ///
@@ -114,7 +117,10 @@ pub struct Concat {
 ///
 /// SMT-LIB2: `((_ extract i j) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Extract {
     i: usize,
     j: usize,
@@ -127,7 +133,10 @@ pub struct Extract {
 ///
 /// SMT-LIB2: `((_ repeat i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Repeat {
     i: usize,
     width: usize,
@@ -138,7 +147,10 @@ pub struct Repeat {
 ///
 /// SMT-LIB2: `(bvnot x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Not {
     width: usize,
     shape: [usize; 2],
@@ -148,7 +160,10 @@ pub struct Not {
 ///
 /// SMT-LIB2: `(bvand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct And {
     width: usize,
     shape: [usize; 2],
@@ -158,7 +173,10 @@ pub struct And {
 ///
 /// SMT-LIB2: `(bvor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Or {
     width: usize,
     shape: [usize; 2],
@@ -168,7 +186,10 @@ pub struct Or {
 ///
 /// SMT-LIB2: `(bvxor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Xor {
     width: usize,
     shape: [usize; 2],
@@ -178,7 +199,10 @@ pub struct Xor {
 ///
 /// SMT-LIB2: `(bvnand x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Nand {
     width: usize,
     shape: [usize; 2],
@@ -188,7 +212,10 @@ pub struct Nand {
 ///
 /// SMT-LIB2: `(bvnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Nor {
     width: usize,
     shape: [usize; 2],
@@ -199,7 +226,10 @@ pub struct Nor {
 ///
 /// SMT-LIB2: `(bvxnor x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Xnor {
     width: usize,
     shape: [usize; 2],
@@ -210,7 +240,10 @@ pub struct Xnor {
 ///
 /// SMT-LIB2: `(bvneg x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Neg {
     width: usize,
     shape: [usize; 2],
@@ -221,7 +254,10 @@ pub struct Neg {
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Ite {
     width: usize,
     shape: [usize; 2],
@@ -231,7 +267,10 @@ pub struct Ite {
 ///
 /// SMT-LIB2: `(bvadd x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Add {
     width: usize,
     shape: [usize; 2],
@@ -241,7 +280,10 @@ pub struct Add {
 ///
 /// SMT-LIB2: `(bvsub x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Sub {
     width: usize,
     shape: [usize; 2],
@@ -251,7 +293,10 @@ pub struct Sub {
 ///
 /// SMT-LIB2: `(bvmul x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Mul {
     width: usize,
     shape: [usize; 2],
@@ -261,7 +306,10 @@ pub struct Mul {
 ///
 /// SMT-LIB2: `(bvshl x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Shl {
     width: usize,
     shape: [usize; 2],
@@ -272,7 +320,10 @@ pub struct Shl {
 ///
 /// SMT-LIB2: `((_ rotate_left i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct RotateLeft {
     i: usize,
     width: usize,
@@ -284,7 +335,10 @@ pub struct RotateLeft {
 ///
 /// SMT-LIB2: `((_ rotate_right i) x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct RotateRight {
     i: usize,
     width: usize,
@@ -295,7 +349,10 @@ pub struct RotateRight {
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Eq {
     width: usize,
     shape: [usize; 2],
@@ -305,7 +362,10 @@ pub struct Eq {
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word")
+)]
 pub struct Ne {
     width: usize,
     shape: [usize; 2],
@@ -908,7 +968,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsdiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Div {
         width: usize,
         shape: [usize; 2],
@@ -918,7 +981,10 @@ pub mod signed {
     /// `Abs(width, [m, n])`: `Ite(x < 0, -x, x)`, so the minimum word is its own
     /// absolute value.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Abs {
         width: usize,
         shape: [usize; 2],
@@ -929,7 +995,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsrem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Rem {
         width: usize,
         shape: [usize; 2],
@@ -940,7 +1009,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsmod x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Mod {
         width: usize,
         shape: [usize; 2],
@@ -951,7 +1023,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvashr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Shr {
         width: usize,
         shape: [usize; 2],
@@ -962,7 +1037,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `((_ sign_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Extend {
         i: usize,
         width: usize,
@@ -973,7 +1051,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvslt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Lt {
         width: usize,
         shape: [usize; 2],
@@ -983,7 +1064,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsle x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Le {
         width: usize,
         shape: [usize; 2],
@@ -993,7 +1077,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsgt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Gt {
         width: usize,
         shape: [usize; 2],
@@ -1003,7 +1090,10 @@ pub mod signed {
     ///
     /// SMT-LIB2: `(bvsge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.word.signed")
+    )]
     pub struct Ge {
         width: usize,
         shape: [usize; 2],
@@ -1460,7 +1550,16 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvudiv x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.tensor.word.unsigned"
+        )
+    )]
     pub struct Div {
         width: usize,
         shape: [usize; 2],
@@ -1470,7 +1569,16 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvurem x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.tensor.word.unsigned"
+        )
+    )]
     pub struct Rem {
         width: usize,
         shape: [usize; 2],
@@ -1481,7 +1589,16 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvlshr x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.tensor.word.unsigned"
+        )
+    )]
     pub struct Shr {
         width: usize,
         shape: [usize; 2],
@@ -1492,7 +1609,16 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `((_ zero_extend i) x)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.tensor.word.unsigned"
+        )
+    )]
     pub struct Extend {
         i: usize,
         width: usize,
@@ -1503,7 +1629,16 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvult x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.tensor.word.unsigned"
+        )
+    )]
     pub struct Lt {
         width: usize,
         shape: [usize; 2],
@@ -1513,7 +1648,16 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvule x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.tensor.word.unsigned"
+        )
+    )]
     pub struct Le {
         width: usize,
         shape: [usize; 2],
@@ -1523,7 +1667,16 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvugt x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.tensor.word.unsigned"
+        )
+    )]
     pub struct Gt {
         width: usize,
         shape: [usize; 2],
@@ -1533,7 +1686,16 @@ pub mod unsigned {
     ///
     /// SMT-LIB2: `(bvuge x y)`.
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-    #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.tensor.word.unsigned"
+        )
+    )]
     pub struct Ge {
         width: usize,
         shape: [usize; 2],

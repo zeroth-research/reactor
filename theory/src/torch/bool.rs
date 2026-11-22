@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
 /// A constant boolean matrix: a `torch.Tensor` of boolean elements.
-#[pyclass(frozen, name = "Const", module = "bool")]
+#[pyclass(frozen, name = "Const", module = "reactor.tensor.bool")]
 pub struct Const(tch::Tensor);
 
 // SAFETY: the tensor is private to this module, which only reads its

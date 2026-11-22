@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use theory::tensor::sort;
 
-#[pyclass(frozen)]
+#[pyclass(module = "reactor", frozen)]
 pub(crate) struct Atom {
     base: reactive::Atom<Any, Any, Any, sort::Any>,
 }
@@ -242,7 +242,7 @@ enum AtomInterfaceType {
     Await,
 }
 
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct AtomInterface {
     atom: Py<Atom>,
     interface: AtomInterfaceType,
@@ -315,7 +315,7 @@ enum BlockType {
     Delay,
 }
 
-#[pyclass(sequence, frozen)]
+#[pyclass(module = "reactor", sequence, frozen)]
 pub(crate) struct AtomBlock {
     atom: Py<Atom>,
     block: BlockType,
@@ -383,7 +383,7 @@ impl AtomBlock {
     }
 }
 
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct AtomBlockInterface {
     block: Py<AtomBlock>,
     interface: TermInterfaceType,

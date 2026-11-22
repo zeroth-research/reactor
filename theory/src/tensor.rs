@@ -106,14 +106,20 @@ pub enum LIA<T> {
 /// Writes an arbitrary value of the given sort, reading nothing: the
 /// nondeterministic choice of a value.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor")
+)]
 pub struct Havoc {
     sort: sort::Any,
 }
 
 /// Writes the value it reads, of the given sort: the identity.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor")
+)]
 pub struct Skip {
     sort: sort::Any,
 }

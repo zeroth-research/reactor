@@ -62,7 +62,14 @@ use pyo3::{exceptions::PyTypeError, prelude::*};
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, get_all)
+    pyo3::pyclass(
+        frozen,
+        from_py_object,
+        eq,
+        str,
+        get_all,
+        module = "reactor.tensor.sort"
+    )
 )]
 pub struct Real {
     degree: u8,
@@ -140,7 +147,14 @@ impl Differentiable for Real {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, get_all)
+    pyo3::pyclass(
+        frozen,
+        from_py_object,
+        eq,
+        str,
+        get_all,
+        module = "reactor.tensor.sort"
+    )
 )]
 pub struct Int {
     shape: [usize; 2],
@@ -196,7 +210,14 @@ impl Differentiable for Int {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, get_all)
+    pyo3::pyclass(
+        frozen,
+        from_py_object,
+        eq,
+        str,
+        get_all,
+        module = "reactor.tensor.sort"
+    )
 )]
 pub struct Bool {
     shape: [usize; 2],
@@ -253,7 +274,14 @@ impl Differentiable for Bool {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, get_all)
+    pyo3::pyclass(
+        frozen,
+        from_py_object,
+        eq,
+        str,
+        get_all,
+        module = "reactor.tensor.sort"
+    )
 )]
 pub struct Word {
     width: usize,
@@ -331,7 +359,10 @@ impl Differentiable for Word {
 /// The singleton sort, with exactly one value: the trivial tangent of
 /// discrete sorts. Its own tangent is itself.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Default)]
-#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.sort")
+)]
 pub struct Zero;
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]

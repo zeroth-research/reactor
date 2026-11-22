@@ -5,7 +5,7 @@ use pyo3_tch::PyTensor;
 
 /// The affine map `x ↦ A·x + B` of real matrices: torch tensors of
 /// floating-point elements.
-#[pyclass(frozen, name = "Linear", module = "real")]
+#[pyclass(frozen, name = "Linear", module = "reactor.tensor.real")]
 pub struct Linear(tch::Tensor, tch::Tensor, u8);
 
 // SAFETY: the tensors are private to this module, which only reads their
@@ -69,7 +69,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Linear<tch::Tensor>
 
 /// A constant real matrix: a `torch.Tensor` of floating-point or integer
 /// elements, kept as given, since integers are reals too.
-#[pyclass(frozen, name = "Const", module = "real")]
+#[pyclass(frozen, name = "Const", module = "reactor.tensor.real")]
 pub struct Const(tch::Tensor, u8);
 
 // SAFETY: the tensor is private to this module, which only reads its
@@ -134,7 +134,7 @@ impl Clone for crate::tensor::real::Const<tch::Tensor> {
 
 /// The pointwise product `x ↦ C ⊙ x` with a constant real matrix `C`: a
 /// `torch.Tensor` of floating-point elements.
-#[pyclass(frozen, name = "Scale", module = "real")]
+#[pyclass(frozen, name = "Scale", module = "reactor.tensor.real")]
 pub struct Scale(tch::Tensor, u8);
 
 // SAFETY: the tensor is private to this module, which only reads its
