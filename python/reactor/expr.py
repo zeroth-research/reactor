@@ -99,6 +99,9 @@ def _wrap(wire, *, next=None, value=None, signed=False, tag=None) -> "Expr":
             return AExpr(wire, next=next, value=value, tag=tag)
         case Word(_, _):
             return WExpr(wire, next=next, value=value, signed=signed, tag=tag)
+        case Zero():
+            # the singleton: a value with no operations, only ever written as is
+            return Expr(wire, next=next, value=value, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
 
 
@@ -565,6 +568,18 @@ def _const(value, sort, *, signed, bw=None, degree=0, tag=None) -> Expr:
     # a sort is either None, or a type/family, or a concrete sort instance
     if sort is None:
         raise TypeError("expr(): a numeric literal needs an explicit sort= ")
+
+    # the singleton sort, the rate of change of discrete values: its only value is
+    # written by the operation `tensor.zero.Zero()`, given as is, unambiguously, and no literal
+    if sort is Zero or isinstance(sort, Zero):
+        if not isinstance(value, tensor.zero.Zero):
+            raise TypeError(
+                f"expr(): the rate of change of discrete values, of the sort Zero, is "
+                f"written `Zero`, got {value!r}"
+            )
+        term = Term.constant(tensor.zero.Zero(), [Wire(Zero())])
+        _emit(term)
+        return _wrap(term.write[0], value=value, tag=tag)
 
     # unpack sort family and required shape if any
     given = sort

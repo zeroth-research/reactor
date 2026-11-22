@@ -6,7 +6,8 @@ https://pyo3.rs/v0.29.0/python-typing-hints).
 
 The extension holds the structural layer `Wire` / `Var` / `Term` / `Atom` / `Module`,
 and the namespace `tensor` of the operations and sorts, mirroring the `theory` crate:
-`tensor` holds the structural operations `Havoc`, `Skip` and `Zero`, and the namespaces
+`tensor` holds the structural operations `Havoc` and `Skip`, `tensor.zero` the operation
+`Zero` of the singleton sort, and the namespaces
 `tensor.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`) hold the
 operations of each theory, sized by their shapes (`tensor.real.Add([m, n])`), and
 `tensor.sort` the sorts (`Real([rows, cols])`, `Word(width, [rows, cols])`). Those are

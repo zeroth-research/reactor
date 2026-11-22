@@ -48,7 +48,7 @@ their theories: [`super::real`], [`super::int`], [`super::bool`] and
 [`super::word`].
 */
 
-use base::differentiable::{Differentiable, T};
+use base::differentiable::Differentiable;
 use derive_more::From;
 use std::fmt;
 use subenum::subenum;
@@ -100,6 +100,14 @@ impl Real {
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Real {
+        Differentiable::tangent(self)
+    }
 }
 
 impl fmt::Display for Real {
@@ -117,7 +125,7 @@ impl fmt::Display for Real {
 impl Differentiable for Real {
     type Tangent = Real;
 
-    fn tangent(self) -> Real {
+    fn tangent(&self) -> Real {
         Real {
             degree: self
                 .degree
@@ -157,6 +165,14 @@ impl Int {
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Zero {
+        Differentiable::tangent(self)
+    }
 }
 
 impl fmt::Display for Int {
@@ -171,7 +187,7 @@ impl fmt::Display for Int {
 impl Differentiable for Int {
     type Tangent = Zero;
 
-    fn tangent(self) -> Zero {
+    fn tangent(&self) -> Zero {
         Zero
     }
 }
@@ -205,6 +221,14 @@ impl Bool {
     fn __match_args__() -> (&'static str,) {
         ("shape",)
     }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Zero {
+        Differentiable::tangent(self)
+    }
 }
 
 impl fmt::Display for Bool {
@@ -219,7 +243,7 @@ impl fmt::Display for Bool {
 impl Differentiable for Bool {
     type Tangent = Zero;
 
-    fn tangent(self) -> Zero {
+    fn tangent(&self) -> Zero {
         Zero
     }
 }
@@ -277,6 +301,14 @@ impl Word {
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
     }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Zero {
+        Differentiable::tangent(self)
+    }
 }
 
 impl fmt::Display for Word {
@@ -291,7 +323,7 @@ impl fmt::Display for Word {
 impl Differentiable for Word {
     type Tangent = Zero;
 
-    fn tangent(self) -> Zero {
+    fn tangent(&self) -> Zero {
         Zero
     }
 }
@@ -308,6 +340,14 @@ impl Zero {
     pub fn new() -> Self {
         Zero
     }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Zero {
+        Differentiable::tangent(self)
+    }
 }
 
 impl fmt::Display for Zero {
@@ -319,7 +359,7 @@ impl fmt::Display for Zero {
 impl Differentiable for Zero {
     type Tangent = Zero;
 
-    fn tangent(self) -> Zero {
+    fn tangent(&self) -> Zero {
         Zero
     }
 }
@@ -344,13 +384,13 @@ pub enum Any {
 impl Differentiable for Any {
     type Tangent = Any;
 
-    fn tangent(self) -> Any {
+    fn tangent(&self) -> Any {
         match self {
-            Any::Real(r) => T(r).into(),
-            Any::Int(i) => T(i).into(),
-            Any::Bool(b) => T(b).into(),
-            Any::Word(w) => T(w).into(),
-            Any::Zero(z) => T(z).into(),
+            Any::Real(r) => r.tangent().into(),
+            Any::Int(i) => i.tangent().into(),
+            Any::Bool(b) => b.tangent().into(),
+            Any::Word(w) => w.tangent().into(),
+            Any::Zero(z) => z.tangent().into(),
         }
     }
 }
@@ -382,7 +422,7 @@ impl fmt::Display for Words {
 impl Differentiable for Words {
     type Tangent = Zero;
 
-    fn tangent(self) -> Zero {
+    fn tangent(&self) -> Zero {
         Zero
     }
 }

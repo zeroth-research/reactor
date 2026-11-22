@@ -7,7 +7,8 @@ import pytest
 import torch
 from reactor import Wire, Term, Module, Bool, Real, Int, Word, Var, X
 from reactor import tensor
-from reactor.tensor import Skip, Havoc, Zero
+from reactor.tensor import Skip, Havoc
+from reactor.tensor.zero import Zero
 from reactor.eval import eval_itype, execute_init, execute_update
 
 

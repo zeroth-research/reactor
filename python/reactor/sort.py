@@ -102,6 +102,13 @@ def tensor_for(value, sort):
     return given.to(dtype)
 
 
+
+def T(sort):
+    """The tangent sort `T(sort)`: the sort of the rate of change of the values of `sort`,
+    one degree higher for a real, and the singleton `Zero` for a discrete sort."""
+    return sort.tangent()
+
+
 # Required, not boilerplate: without it `from .sort import *` in the package __init__
 # re-exports `torch`, replacing the `reactor.torch` submodule with the torch library.
-__all__ = ["Real", "Int", "Bool", "Word", "Zero", "tensor_for"]
+__all__ = ["Real", "Int", "Bool", "Word", "Zero", "T", "tensor_for"]

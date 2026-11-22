@@ -7,7 +7,7 @@ translated yet (their ops fall through to a clear error).
 
 import z3 as _z3
 import torch
-from ..reactor.tensor import Havoc, Skip, Zero
+from ..reactor.tensor import Havoc, Skip
 from ..sort import Real, Int, Bool
 import numpy as _np
 import operator
@@ -46,7 +46,7 @@ def interpret(itype):
             return lambda x: x
         case Havoc(dtype):
             return lambda: fresh(dtype, "HAVOC")
-        case Zero():
+        case tensor.zero.Zero():
             # the singleton sort is the rate of change of discrete values, which are
             # never integrated: nothing encodes it
             raise RuntimeError("Zero writes the singleton sort, which is never encoded")

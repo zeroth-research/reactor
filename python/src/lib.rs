@@ -43,7 +43,12 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         let tensor = PyModule::new(py, "tensor")?;
         tensor.add_class::<theory::tensor::Havoc>()?;
         tensor.add_class::<theory::tensor::Skip>()?;
-        tensor.add_class::<theory::tensor::Zero>()?;
+        {
+            let zero = PyModule::new(py, "zero")?;
+            zero.add_class::<theory::tensor::zero::Zero>()?;
+            tensor.add("zero", &zero)?;
+            namespaces.push(("tensor.zero", zero));
+        }
         {
             let real = PyModule::new(py, "real")?;
             real.add_class::<theory::torch::real::Const>()?;

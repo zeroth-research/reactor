@@ -9,8 +9,9 @@ plus check the ctrl/extl partition and the config surface.
 import pytest
 
 from reactor import Module, Wire, sugar, Int, Var, Real, X as _X, d as _d, TheoryError
-from reactor.sugar import ite, d, X
-from reactor.tensor import Skip, Zero
+from reactor.sugar import ite, d, X, Zero
+from reactor.tensor import Skip
+from reactor import sort
 from reactor.eval import eval_itype
 
 INT = Int([1, 1])
@@ -256,24 +257,27 @@ class _Mixed(sugar.Module):
         return x, n + 1
 
     def delay(self, x, n, t):
-        return 1 * d(t), 0  # the counter does not change in time: its rate is 0
+        return 1 * d(t), Zero  # the counter does not change in time: its rate is zero
 
 
 def test_delay_of_mixed_real_and_discrete_variables():
     x, n, t = Var(Real1), Var(Int([1, 1])), Var(Real1)
     a = _Mixed(ctrl=(x, n), extl=(t,)).atoms[0]
     writer = {w: term for term in a.delay for w in term.write}
-    # the counter's rate of change is the singleton, written by `Zero`, reading nothing
-    zero = writer[_d(n)]
-    assert isinstance(zero.itype, Zero) and len(zero.read) == 0
+    # the counter's rate of change is the singleton: `Zero`, reading nothing, copied
+    # into d(n) at the singleton sort
+    skip = writer[_d(n)]
+    assert skip.itype == Skip(sort.Zero())
+    zero = writer[skip.read[0]]
+    assert zero.itype == Zero and len(zero.read) == 0
     # the real's rate of change is a real of degree 1, copied at that sort
     skip = writer[_d(x)]
     assert skip.itype == Skip(Real([1, 1], degree=1))
     assert skip.read[0].dtype == Real([1, 1], degree=1)
 
 
-@pytest.mark.parametrize("rate", [1, False, 0.0])
-def test_delay_of_a_discrete_variable_is_0_only(rate):
+@pytest.mark.parametrize("rate", [0, 1, False, 0.0])
+def test_delay_of_a_discrete_variable_is_zero_only(rate):
     class Bad(_Mixed):
         def delay(self, x, n, t):
             return 1 * d(t), rate

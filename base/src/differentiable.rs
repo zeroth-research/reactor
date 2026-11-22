@@ -21,7 +21,7 @@ pub trait Differentiable {
     type Tangent;
 
     /// The tangent sort `T(self)`.
-    fn tangent(self) -> Self::Tangent;
+    fn tangent(&self) -> Self::Tangent;
 }
 
 /// `T` as a function on sorts: `T(s)` is `s.tangent()`.

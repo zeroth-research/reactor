@@ -54,12 +54,17 @@ Two base-class constraints force this (both flagged for design review):
 import inspect
 
 from .reactor import Module as _Module, Term as _Term, X as base_X, d as base_d, Var
-from .reactor.tensor import Skip as _Skip
+from .reactor import tensor
+from .sort import T
 
 from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
 
 # Public authoring surface: `from reactor.sugar import Module, expr, X, d, ite, cast, ...`
-__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var"]
+# The rate of change of a discrete variable, returned by ``delay`` for it: the operation
+# ``tensor.zero.Zero``, ready-made, as it has no arguments, so that it is written ``Zero``.
+Zero = tensor.zero.Zero()
+
+__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var", "Zero"]
 
 
 def _as_tuple(r) -> tuple:
@@ -89,7 +94,7 @@ def _build_init_block(cls, ctrl, extl) -> list:
             raise ValueError(f"init expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
-            terms.append(_Term(_Skip(var.dtype), [base_X(var)], [e.wire]))
+            terms.append(_Term(tensor.Skip(var.dtype), [base_X(var)], [e.wire]))
         return terms
 
 
@@ -110,7 +115,7 @@ def _build_update_block(cls, ctrl, extl) -> list:
             raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
-            terms.append(_Term(_Skip(var.dtype), [base_X(var)], [e.wire]))
+            terms.append(_Term(tensor.Skip(var.dtype), [base_X(var)], [e.wire]))
         return terms
 
 
@@ -130,8 +135,8 @@ def _build_delay_block(cls, ctrl, extl) -> list:
         if len(vals) != len(ctrl):
             raise ValueError(f"delay expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
-            e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
-            terms.append(_Term(_Skip(var.dtype), [base_d(var)], [e.wire]))
+            e = val if isinstance(val, Expr) else expr(val, sort=T(var.dtype))
+            terms.append(_Term(tensor.Skip(T(var.dtype)), [base_d(var)], [e.wire]))
         return terms
 
 
