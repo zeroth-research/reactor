@@ -124,9 +124,80 @@ mod any {
         assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::Mod::new([2, 3]))).is_err());
         assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::ReLU::new([2, 3]))).is_ok());
 
+        // negation and absolute value are linear
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::Neg::new([2, 3]))).is_ok());
+        assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::Neg::new([2, 3]))).is_ok());
+        assert!(int::LIA::try_from(int::NIA::<Mat>::from(int::Abs::new([2, 3]))).is_ok());
+        assert!(real::LRA::try_from(real::NRA::<Mat>::from(real::Abs::new([2, 3]))).is_ok());
+
         // the product with a constant is linear, unlike that of two variables
         assert!(real::LRA::try_from(real::NRA::from(real::Scale::new(Mat([2, 3])))).is_ok());
         assert!(int::LIA::try_from(int::NIA::from(int::Scale::new(Mat([2, 3])))).is_ok());
+    }
+
+    #[test]
+    fn real_operations_take_the_degree_of_their_operands() {
+        let r = |shape, degree| -> sort::Any { sort::Real::with_degree(shape, degree).into() };
+        let b = |shape| -> sort::Any { sort::Bool::new(shape).into() };
+
+        // kept by maps, choices and extrema
+        let op = real(real::Abs::with_degree([2, 3], 1));
+        assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
+        let op = real(real::Transpose::with_degree([2, 3], 2));
+        assert_eq!(op.dom(), base::mono![r([2, 3], 2)].into());
+        assert_eq!(op.cod(), base::mono![r([3, 2], 2)].into());
+        let op = real(real::Max::with_degree([2, 3], 1));
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1); 2].into());
+        let op = real(real::Ite::with_degree([2, 3], 1));
+        assert_eq!(
+            op.dom(),
+            base::mono![b([2, 3]), r([2, 3], 1), r([2, 3], 1)].into()
+        );
+        assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
+
+        // compared, writing booleans; an index is a plain real
+        let op = real(real::Lt::with_degree([2, 3], 1));
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1); 2].into());
+        assert_eq!(op.cod(), base::mono![b([2, 3])].into());
+        let op = real(real::Argmax::with_degree([2, 3], 1));
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1)].into());
+        assert_eq!(op.cod(), base::mono![r([1, 1], 0)].into());
+
+        // the degrees of the factors of a matrix product add up
+        let op = real(real::MatMul::with_degrees([[2, 3], [3, 4]], [1, 1]).unwrap());
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1), r([3, 4], 1)].into());
+        assert_eq!(op.cod(), base::mono![r([2, 4], 2)].into());
+        assert!(real::MatMul::with_degrees([[2, 3], [3, 4]], [u8::MAX, 1]).is_err());
+
+        // constants and the linear maps of a constant are of a degree too
+        let op = real(real::Const::with_degree(Mat([2, 3]), 1));
+        assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
+        let op = real(real::Scale::with_degree(Mat([2, 3]), 1));
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1)].into());
+        let op = real(real::Linear::with_degree(Mat([2, 3]), Mat([2, 4]), 1).unwrap());
+        assert_eq!(op.dom(), base::mono![r([3, 4], 1)].into());
+        assert_eq!(op.cod(), base::mono![r([2, 4], 1)].into());
+    }
+
+    #[test]
+    fn division_takes_off_the_degree_of_the_divisor_and_is_partial() {
+        let r = |degree| -> sort::Any { sort::Real::with_degree([2, 3], degree).into() };
+        let op = real(real::Div::with_degrees([2, 3], [2, 1]).unwrap());
+        assert_eq!(op.dom(), base::mono![r(2), r(1)].into());
+        assert_eq!(op.cod(), base::mono![r(1)].into());
+        assert_eq!(real::Div::new([2, 3]).degrees(), [0, 0]);
+        // a negative degree is not defined
+        assert!(real::Div::with_degrees([2, 3], [0, 1]).is_err());
+        assert!(real::Div::with_degrees([2, 3], [1, 1]).is_ok());
+    }
+
+    #[test]
+    fn negation_keeps_the_degree_of_reals() {
+        let op = real(real::Neg::with_degree([2, 3], 1));
+        let sort: Poly<sort::Any> = base::mono![sort::Real::with_degree([2, 3], 1).into()].into();
+        assert_eq!(op.dom(), sort);
+        assert_eq!(op.cod(), sort);
+        assert_eq!(real::Neg::new([2, 3]).degree(), 0);
     }
 
     #[test]

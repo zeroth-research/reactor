@@ -11,6 +11,8 @@ information to compute its [`Boundary`]:
 - [`Div`] — pointwise division `x / y`.
 - [`Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
   constant real matrices of compatible shapes.
+- [`Neg`] — the pointwise negation `x ↦ -x`.
+- [`Abs`] — the pointwise absolute value `x ↦ |x|`.
 - [`ReLU`] — the shape-preserving rectified-linear map `x ↦ max(x, 0)`.
 - [`Min`], [`Max`] — pointwise minimum and maximum.
 - [`Transpose`] — matrix transposition.
@@ -43,41 +45,69 @@ use subenum::subenum;
 /// [`tensor::sort::Reals`](crate::tensor::sort::Reals) of the sorts of all theories.
 pub use super::sort::Reals as Sort;
 
-/// A constant real matrix literal, held in a tensor of type `T`.
+/// A constant real matrix literal, held in a tensor of type `T`, of a
+/// degree: a constant rate of change, such as the `1` of `ẋ = 1`, is of
+/// degree 1.
 #[derive(Debug)]
 pub struct Const<T> {
     tensor: T,
+    degree: u8,
 }
 
 impl<T> Const<T> {
-    /// The constant held in `tensor`.
+    /// The plain constant held in `tensor`, of degree 0.
     pub fn new(tensor: T) -> Self {
-        Const { tensor }
+        Self::with_degree(tensor, 0)
+    }
+
+    /// The constant held in `tensor`, of the given `degree`.
+    pub fn with_degree(tensor: T, degree: u8) -> Self {
+        Const { tensor, degree }
     }
 
     /// The tensor holding the constant.
     pub fn tensor(&self) -> &T {
         &self.tensor
     }
+
+    /// The degree of the constant.
+    pub fn degree(&self) -> u8 {
+        self.degree
+    }
 }
 
 /// The pointwise product `x ↦ C ⊙ x` of `[m, n]` matrices with a constant
 /// `C` of shape `[m, n]`, held in a tensor of type `T`: linear in `x`, unlike
 /// [`Mul`], which multiplies two variables.
+///
+/// `C` is a plain real, so the product keeps the degree of `x`.
 #[derive(Debug)]
 pub struct Scale<T> {
     tensor: T,
+    degree: u8,
 }
 
 impl<T> Scale<T> {
-    /// The product with the constant held in `tensor`.
+    /// The product with the constant held in `tensor`, of plain real
+    /// matrices, of degree 0.
     pub fn new(tensor: T) -> Self {
-        Scale { tensor }
+        Self::with_degree(tensor, 0)
+    }
+
+    /// The product with the constant held in `tensor`, of real matrices of
+    /// the given `degree`.
+    pub fn with_degree(tensor: T, degree: u8) -> Self {
+        Scale { tensor, degree }
     }
 
     /// The tensor holding the constant `C`.
     pub fn tensor(&self) -> &T {
         &self.tensor
+    }
+
+    /// The degree of the matrices it maps.
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 }
 
@@ -119,25 +149,44 @@ pub struct Mul {
 /// `x ⊘ y`. As in SMT-LIB2, `x / 0` is unspecified.
 ///
 /// SMT-LIB2: `(/ x y)`.
+///
+/// The degree of the divisor is taken off that of the dividend: dividing a
+/// rate of change by a plain real is a rate of change, while dividing by a
+/// rate of change of a higher degree than the dividend is not defined, as
+/// degrees are not negative.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Div {
     shape: [usize; 2],
+    /// The degrees `[p, q]` of the dividend and the divisor.
+    ///
+    /// Entry `i` belongs to input `i`, as indexed in the domain of the
+    /// boundary: an array rather than one field per input, so that the
+    /// two match by position.
+    degrees: [u8; 2],
 }
 
-/// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
+/// The affine map `x ↦ A·x + B`, where `A` and `B` are constants: `A` a
+/// plain real, and `B` of the degree of `x`, which the map keeps.
 #[derive(Debug)]
 pub struct Linear<T> {
     a: T,
     b: T,
+    degree: u8,
 }
 
 impl<T: Tensor> Linear<T> {
-    /// The affine map `x ↦ A·x + B`; fails unless `a` and `b` are of shapes
-    /// `[m, n]` and `[m, k]`.
+    /// The affine map `x ↦ A·x + B` of plain real matrices, of degree 0;
+    /// fails unless `a` and `b` are of shapes `[m, n]` and `[m, k]`.
     pub fn new(a: T, b: T) -> Result<Self, crate::Error> {
+        Self::with_degree(a, b, 0)
+    }
+
+    /// The affine map `x ↦ A·x + B` of real matrices of the given `degree`;
+    /// fails unless `a` and `b` are of shapes `[m, n]` and `[m, k]`.
+    pub fn with_degree(a: T, b: T, degree: u8) -> Result<Self, crate::Error> {
         super::check_affine(a.shape(), b.shape())?;
-        Ok(Linear { a, b })
+        Ok(Linear { a, b, degree })
     }
 }
 
@@ -151,43 +200,85 @@ impl<T> Linear<T> {
     pub fn b(&self) -> &T {
         &self.b
     }
+
+    /// The degree of the matrices it maps.
+    pub fn degree(&self) -> u8 {
+        self.degree
+    }
+}
+
+/// Pointwise negation `x ↦ -x` of `[m, n]` matrices, of a degree which
+/// the negation keeps.
+///
+/// SMT-LIB2: `(- x)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct Neg {
+    shape: [usize; 2],
+    degree: u8,
+}
+
+/// Pointwise absolute value `x ↦ |x|` of `[m, n]` matrices. SMT-LIB2's
+/// `Reals` has no `abs`, unlike `Ints`; it is `(ite (>= x 0) x (- x))`.
+///
+/// Of a degree, which the absolute value keeps.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct Abs {
+    shape: [usize; 2],
+    degree: u8,
 }
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
+///
+/// Of a degree, which the map keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct ReLU {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// The index of a maximal entry of an `[m, n]` real matrix, counting its
 /// entries row by row, written as a `[1, 1]` matrix of the same sort.
+///
+/// Of an operand of any degree: the index it writes is of degree 0.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Argmax {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
+///
+/// Of operands of the same degree, which the minimum keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Min {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
+///
+/// Of operands of the same degree, which the maximum keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Max {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Transposition `xᵀ` of `[m, n]` matrices.
+///
+/// Of a degree, which the transposition keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Transpose {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
@@ -201,76 +292,100 @@ pub struct MatMul {
     /// boundary: an array rather than one field per input, so that the
     /// two match by position.
     shapes: [[usize; 2]; 2],
+    /// The degrees `[p, q]` of the factors, which add up as for [`Mul`],
+    /// matching the shapes by position.
+    degrees: [u8; 2],
 }
 
 /// Pointwise comparison `x < y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(< x y)`.
+///
+/// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Lt {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise choice `if c then x else y` between `[m, n]` real matrices `x` and `y`,
 /// by the boolean matrix `c`, read first.
 ///
 /// SMT-LIB2: `(ite c x y)`.
+///
+/// Of branches of the same degree, which the choice keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Ite {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise comparison `x ≤ y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(<= x y)`.
+///
+/// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Le {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise comparison `x > y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(> x y)`.
+///
+/// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Gt {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise comparison `x ≥ y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(>= x y)`.
+///
+/// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Ge {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise comparison `x = y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
+///
+/// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Eq {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// Pointwise comparison `x ≠ y` of `[m, n]` matrices, writing an `[m, n]`
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
+///
+/// Of operands of the same degree.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Ne {
     shape: [usize; 2],
+    degree: u8,
 }
 
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
@@ -296,6 +411,10 @@ pub enum NRA<T> {
     Linear(Linear<T>),
     #[subenum(LRA)]
     ReLU(ReLU),
+    #[subenum(LRA)]
+    Abs(Abs),
+    #[subenum(LRA)]
+    Neg(Neg),
     #[subenum(LRA)]
     Argmax(Argmax),
     #[subenum(LRA)]
@@ -337,6 +456,8 @@ where
             NRA::Div(op) => NRA::Div(*op),
             NRA::Linear(op) => NRA::Linear(op.clone()),
             NRA::ReLU(op) => NRA::ReLU(*op),
+            NRA::Abs(op) => NRA::Abs(*op),
+            NRA::Neg(op) => NRA::Neg(*op),
             NRA::Argmax(op) => NRA::Argmax(*op),
             NRA::Min(op) => NRA::Min(*op),
             NRA::Max(op) => NRA::Max(*op),
@@ -364,6 +485,8 @@ impl<T: fmt::Display> fmt::Display for NRA<T> {
             NRA::Div(op) => op.fmt(f),
             NRA::Linear(op) => op.fmt(f),
             NRA::ReLU(op) => op.fmt(f),
+            NRA::Abs(op) => op.fmt(f),
+            NRA::Neg(op) => op.fmt(f),
             NRA::Argmax(op) => op.fmt(f),
             NRA::Min(op) => op.fmt(f),
             NRA::Max(op) => op.fmt(f),
@@ -394,6 +517,8 @@ where
             LRA::Sub(op) => LRA::Sub(*op),
             LRA::Linear(op) => LRA::Linear(op.clone()),
             LRA::ReLU(op) => LRA::ReLU(*op),
+            LRA::Abs(op) => LRA::Abs(*op),
+            LRA::Neg(op) => LRA::Neg(*op),
             LRA::Argmax(op) => LRA::Argmax(*op),
             LRA::Min(op) => LRA::Min(*op),
             LRA::Max(op) => LRA::Max(*op),
@@ -418,6 +543,8 @@ impl<T: fmt::Display> fmt::Display for LRA<T> {
             LRA::Sub(op) => op.fmt(f),
             LRA::Linear(op) => op.fmt(f),
             LRA::ReLU(op) => op.fmt(f),
+            LRA::Abs(op) => op.fmt(f),
+            LRA::Neg(op) => op.fmt(f),
             LRA::Argmax(op) => op.fmt(f),
             LRA::Min(op) => op.fmt(f),
             LRA::Max(op) => op.fmt(f),
@@ -444,6 +571,8 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
             NRA::Div(op) => op.dom().map(Sort::from),
             NRA::Linear(op) => op.dom().map(Sort::from),
             NRA::ReLU(op) => op.dom().map(Sort::from),
+            NRA::Abs(op) => op.dom().map(Sort::from),
+            NRA::Neg(op) => op.dom().map(Sort::from),
             NRA::Argmax(op) => op.dom().map(Sort::from),
             NRA::Min(op) => op.dom().map(Sort::from),
             NRA::Max(op) => op.dom().map(Sort::from),
@@ -469,6 +598,8 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
             NRA::Div(op) => op.cod().map(Sort::from),
             NRA::Linear(op) => op.cod().map(Sort::from),
             NRA::ReLU(op) => op.cod().map(Sort::from),
+            NRA::Abs(op) => op.cod().map(Sort::from),
+            NRA::Neg(op) => op.cod().map(Sort::from),
             NRA::Argmax(op) => op.cod().map(Sort::from),
             NRA::Min(op) => op.cod().map(Sort::from),
             NRA::Max(op) => op.cod().map(Sort::from),
@@ -493,6 +624,8 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
             LRA::Sub(op) => op.dom().map(Sort::from),
             LRA::Linear(op) => op.dom().map(Sort::from),
             LRA::ReLU(op) => op.dom().map(Sort::from),
+            LRA::Abs(op) => op.dom().map(Sort::from),
+            LRA::Neg(op) => op.dom().map(Sort::from),
             LRA::Argmax(op) => op.dom().map(Sort::from),
             LRA::Min(op) => op.dom().map(Sort::from),
             LRA::Max(op) => op.dom().map(Sort::from),
@@ -515,6 +648,8 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
             LRA::Sub(op) => op.cod().map(Sort::from),
             LRA::Linear(op) => op.cod().map(Sort::from),
             LRA::ReLU(op) => op.cod().map(Sort::from),
+            LRA::Abs(op) => op.cod().map(Sort::from),
+            LRA::Neg(op) => op.cod().map(Sort::from),
             LRA::Argmax(op) => op.cod().map(Sort::from),
             LRA::Min(op) => op.cod().map(Sort::from),
             LRA::Max(op) => op.cod().map(Sort::from),
@@ -536,7 +671,7 @@ impl<T: Tensor> Boundary<Real> for Const<T> {
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.tensor.shape())].into()
+        mono![Real::with_degree(self.tensor.shape(), self.degree)].into()
     }
 }
 
@@ -544,11 +679,11 @@ impl<T: Tensor> Boundary<Real> for Const<T> {
 /// matrices.
 impl<T: Tensor> Boundary<Real> for Scale<T> {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.tensor.shape())].into()
+        mono![Real::with_degree(self.tensor.shape(), self.degree)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.tensor.shape())].into()
+        mono![Real::with_degree(self.tensor.shape(), self.degree)].into()
     }
 }
 
@@ -590,13 +725,21 @@ impl Boundary<Real> for Mul {
     }
 }
 
+/// Takes matrices of degrees `p` and `q` to one of degree `p - q`.
 impl Boundary<Real> for Div {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.shape); 2].into()
+        let [p, q] = self.degrees;
+        mono![
+            Real::with_degree(self.shape, p),
+            Real::with_degree(self.shape, q)
+        ]
+        .into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        // not negative: `with_degrees` checks it
+        let [p, q] = self.degrees;
+        mono![Real::with_degree(self.shape, p - q)].into()
     }
 }
 
@@ -606,71 +749,99 @@ impl<T: Tensor> Boundary<Real> for Linear<T> {
     fn dom(&self) -> Poly<Real> {
         let [_, n] = self.a.shape();
         let [_, k] = self.b.shape();
-        mono![Real::new([n, k])].into()
+        mono![Real::with_degree([n, k], self.degree)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.b.shape())].into()
+        mono![Real::with_degree(self.b.shape(), self.degree)].into()
+    }
+}
+
+impl Boundary<Real> for Neg {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::with_degree(self.shape, self.degree)].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree(self.shape, self.degree)].into()
+    }
+}
+
+impl Boundary<Real> for Abs {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::with_degree(self.shape, self.degree)].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 }
 
 impl Boundary<Real> for ReLU {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 }
 
 impl Boundary<Real> for Min {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.shape); 2].into()
+        mono![Real::with_degree(self.shape, self.degree); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 }
 
 impl Boundary<Real> for Max {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.shape); 2].into()
+        mono![Real::with_degree(self.shape, self.degree); 2].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 }
 
 /// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
 impl Boundary<Real> for Transpose {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new([self.shape[1], self.shape[0]])].into()
+        mono![Real::with_degree(
+            [self.shape[1], self.shape[0]],
+            self.degree
+        )]
+        .into()
     }
 }
 
-/// Takes matrices of shapes `[m, n]` and `[n, k]` to one of shape `[m, k]`.
+/// Takes matrices of shapes `[m, n]` and `[n, k]`, and degrees `p` and `q`,
+/// to one of shape `[m, k]` and degree `p + q`.
 impl Boundary<Real> for MatMul {
     fn dom(&self) -> Poly<Real> {
         let [lhs, rhs] = self.shapes;
-        mono![Real::new(lhs), Real::new(rhs)].into()
+        let [p, q] = self.degrees;
+        mono![Real::with_degree(lhs, p), Real::with_degree(rhs, q)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
         let [[m, _], [_, k]] = self.shapes;
-        mono![Real::new([m, k])].into()
+        // in range: `with_degrees` checks it
+        let [p, q] = self.degrees;
+        mono![Real::with_degree([m, k], p + q)].into()
     }
 }
 
 impl Boundary<Sort> for Lt {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.shape).into(); 2].into()
+        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
@@ -680,7 +851,7 @@ impl Boundary<Sort> for Lt {
 
 impl Boundary<Sort> for Le {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.shape).into(); 2].into()
+        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
@@ -690,7 +861,7 @@ impl Boundary<Sort> for Le {
 
 impl Boundary<Sort> for Gt {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.shape).into(); 2].into()
+        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
@@ -700,7 +871,7 @@ impl Boundary<Sort> for Gt {
 
 impl Boundary<Sort> for Ge {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.shape).into(); 2].into()
+        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
@@ -710,7 +881,7 @@ impl Boundary<Sort> for Ge {
 
 impl Boundary<Sort> for Eq {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.shape).into(); 2].into()
+        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
@@ -720,7 +891,7 @@ impl Boundary<Sort> for Eq {
 
 impl Boundary<Sort> for Ne {
     fn dom(&self) -> Poly<Sort> {
-        mono![Real::new(self.shape).into(); 2].into()
+        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
@@ -770,6 +941,18 @@ impl fmt::Display for Div {
     }
 }
 
+impl fmt::Display for Neg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Neg")
+    }
+}
+
+impl fmt::Display for Abs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Abs")
+    }
+}
+
 impl fmt::Display for ReLU {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ReLU")
@@ -778,7 +961,7 @@ impl fmt::Display for ReLU {
 
 impl Boundary<Real> for Argmax {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::new(self.shape)].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
@@ -826,14 +1009,14 @@ impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
         mono![
             Bool::new(self.shape).into(),
-            Real::new(self.shape).into(),
-            Real::new(self.shape).into()
+            Real::with_degree(self.shape, self.degree).into(),
+            Real::with_degree(self.shape, self.degree).into()
         ]
         .into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Real::new(self.shape).into()].into()
+        mono![Real::with_degree(self.shape, self.degree).into()].into()
     }
 }
 
@@ -903,6 +1086,12 @@ where
         }
         if let Ok(op) = ob.extract::<ReLU>() {
             return Ok(NRA::ReLU(op));
+        }
+        if let Ok(op) = ob.extract::<Abs>() {
+            return Ok(NRA::Abs(op));
+        }
+        if let Ok(op) = ob.extract::<Neg>() {
+            return Ok(NRA::Neg(op));
         }
         if let Ok(op) = ob.extract::<Argmax>() {
             return Ok(NRA::Argmax(op));
@@ -1075,12 +1264,44 @@ impl Mul {
     }
 }
 
+impl Div {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Div {
+            shape,
+            degrees: [0, 0],
+        }
+    }
+
+    /// The degrees `[p, q]` of the dividend and the divisor.
+    pub fn degrees(&self) -> [u8; 2] {
+        self.degrees
+    }
+}
+
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Div {
+    /// On real matrices of the given `degrees`, `[p, q]`, writing ones of
+    /// degree `p - q`; fails when `q` exceeds `p`, as that degree would be
+    /// negative.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Div { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degrees = [0, 0])))]
+    pub fn with_degrees(shape: [usize; 2], degrees: [u8; 2]) -> Result<Self, crate::Error> {
+        let [p, q] = degrees;
+        if q > p {
+            return Err(crate::Error(format!(
+                "the quotient of reals of degrees {p} and {q} is of a negative degree"
+            )));
+        }
+        Ok(Div { shape, degrees })
+    }
+
+    /// The degrees of the dividend and the divisor, as a list: pyo3 would
+    /// make `[u8; 2]` into `bytes`.
+    #[cfg(feature = "pyo3")]
+    #[getter(degrees)]
+    fn py_degrees(&self) -> [usize; 2] {
+        self.degrees.map(usize::from)
     }
 
     #[cfg(feature = "pyo3")]
@@ -1092,15 +1313,94 @@ impl Div {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Neg {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Neg { shape, degree: 0 }
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Neg {
+    /// On real matrices of the given `degree`.
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Neg { shape, degree }
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
+    }
+}
+
+impl Abs {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Abs { shape, degree: 0 }
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Abs {
+    /// On real matrices of the given `degree`.
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Abs { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+impl ReLU {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        ReLU { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl ReLU {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        ReLU { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        ReLU { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1112,15 +1412,28 @@ impl ReLU {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Argmax {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Argmax { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Argmax {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Argmax { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Argmax { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1132,15 +1445,28 @@ impl Argmax {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Min {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Min { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Min {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Min { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Min { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1152,15 +1478,28 @@ impl Min {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Max {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Max { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Max {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Max { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Max { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1172,15 +1511,28 @@ impl Max {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Transpose {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Transpose { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Transpose {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Transpose { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Transpose { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1195,20 +1547,48 @@ impl Transpose {
     }
 }
 
+impl MatMul {
+    /// On plain real matrices, of degree 0; fails unless the columns of the
+    /// first shape are the rows of the second.
+    pub fn new(shapes: [[usize; 2]; 2]) -> Result<Self, crate::Error> {
+        Self::with_degrees(shapes, [0, 0])
+    }
+
+    /// The degrees `[p, q]` of the factors.
+    pub fn degrees(&self) -> [u8; 2] {
+        self.degrees
+    }
+}
+
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl MatMul {
-    /// Fails unless the columns of the first shape are the rows of the
-    /// second.
+    /// On real matrices of the given `degrees`, `[p, q]`, writing one of
+    /// degree `p + q`; fails unless the columns of the first shape are the
+    /// rows of the second, and that degree is in range.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shapes, /)))]
-    pub fn new(shapes: [[usize; 2]; 2]) -> Result<Self, crate::Error> {
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shapes, /, degrees = [0, 0])))]
+    pub fn with_degrees(shapes: [[usize; 2]; 2], degrees: [u8; 2]) -> Result<Self, crate::Error> {
         let [lhs, rhs] = shapes;
         if lhs[1] != rhs[0] {
             return Err(crate::Error(format!(
                 "cannot multiply a {lhs:?} matrix by a {rhs:?} matrix"
             )));
         }
-        Ok(MatMul { shapes })
+        let [p, q] = degrees;
+        if p.checked_add(q).is_none() {
+            return Err(crate::Error(format!(
+                "the product of reals of degrees {p} and {q} is of a degree out of range"
+            )));
+        }
+        Ok(MatMul { shapes, degrees })
+    }
+
+    /// The degrees of the factors, as a list: pyo3 would make `[u8; 2]`
+    /// into `bytes`.
+    #[cfg(feature = "pyo3")]
+    #[getter(degrees)]
+    fn py_degrees(&self) -> [usize; 2] {
+        self.degrees.map(usize::from)
     }
 
     #[cfg(feature = "pyo3")]
@@ -1224,12 +1604,25 @@ impl MatMul {
     }
 }
 
+impl Lt {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Lt { shape, degree: 0 }
+    }
+}
+
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Lt {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Lt { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Lt { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1241,15 +1634,28 @@ impl Lt {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Ite {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ite { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ite {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ite { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Ite { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1261,15 +1667,28 @@ impl Ite {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Le {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Le { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Le {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Le { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Le { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1281,15 +1700,28 @@ impl Le {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Gt {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Gt { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Gt {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Gt { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Gt { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1301,15 +1733,28 @@ impl Gt {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Ge {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ge { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ge {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ge { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Ge { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1321,15 +1766,28 @@ impl Ge {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Eq {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Eq { shape, degree: 0 }
     }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Eq {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Eq { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Eq { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]
@@ -1344,12 +1802,25 @@ impl Eq {
     }
 }
 
+impl Ne {
+    /// On plain real matrices, of degree 0.
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ne { shape, degree: 0 }
+    }
+}
+
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ne {
+    /// On real matrices of the given `degree`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ne { shape }
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Ne { shape, degree }
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
     }
 
     #[cfg(feature = "pyo3")]

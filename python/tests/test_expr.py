@@ -348,6 +348,55 @@ def test_mul_by_a_full_tensor_is_a_pointwise_scale(left):
     assert torch.equal(_run(terms, {x.wire: vals})[e.wire], c * vals)
 
 
+def test_neg_and_abs():
+    x = _varexpr(INT)
+    with collecting() as terms:
+        n, a = -x, abs(x)
+    assert isinstance(terms[0].itype, tensor.int.Neg) and isinstance(terms[1].itype, tensor.int.Abs)
+    state = _run(terms, {x.wire: _int(-3)})
+    assert state[n.wire].item() == 3 and state[a.wire].item() == 3
+
+    r = _varexpr(REAL)
+    with collecting() as terms:
+        m, b = -r, abs(r)
+    assert isinstance(terms[0].itype, tensor.real.Neg) and isinstance(terms[1].itype, tensor.real.Abs)
+    state = _run(terms, {r.wire: torch.tensor([[-2.5]])})
+    assert state[m.wire].item() == 2.5 and state[b.wire].item() == 2.5
+
+
+def test_real_operations_take_the_degree_of_their_operands():
+    x = expr(Var(Real([1, 1])))
+    dx = expr(Wire(Real([1, 1], degree=1)))
+    with collecting() as terms:
+        s = dx + 1  # the literal takes the degree of `dx`
+        assert tensor_of_term(terms[-2]) is not None and terms[-2].itype.degree == 1
+        assert terms[-1].itype.degree == 1 and s.dtype == Real([1, 1], degree=1)
+        p = x * dx  # degrees add up
+        assert list(terms[-1].itype.degrees) == [0, 1] and p.dtype == Real([1, 1], degree=1)
+        q = dx / x  # degrees are taken off
+        assert list(terms[-1].itype.degrees) == [1, 0] and q.dtype == Real([1, 1], degree=1)
+        c = dx < 1  # compared at their degree
+        assert terms[-1].itype.degree == 1 and c.dtype == Bool([1, 1])
+        h = abs(dx)
+        assert terms[-1].itype.degree == 1 and h.dtype == Real([1, 1], degree=1)
+
+
+def test_division_by_a_real_of_a_higher_degree_is_not_defined():
+    x = expr(Var(Real([1, 1])))
+    dx = expr(Wire(Real([1, 1], degree=1)))
+    with pytest.raises(ValueError, match="negative degree"):
+        x / dx
+
+
+def test_neg_keeps_the_degree_of_reals():
+    x = expr(Var(Real([1, 1])))
+    d1 = expr(Wire(Real([1, 1], degree=1)))
+    with collecting() as terms:
+        n, m = -x, -d1
+    assert terms[0].itype.degree == 0 and n.dtype == Real([1, 1])
+    assert terms[1].itype.degree == 1 and m.dtype == Real([1, 1], degree=1)
+
+
 # theory errors are deprecated - the python API has become permissive
 # def test_mul_of_two_variables_is_nonlinear():
 #     x, y = _varexpr(INT), _varexpr(INT)

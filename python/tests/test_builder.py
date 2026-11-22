@@ -79,3 +79,22 @@ def test_mul_scales_a_column_vector(sort, dtype, n):
         env.update(zip(t.write, outs))
     out = env[terms[-1].write[0]]
     assert out.flatten().tolist() == [3 * v for v in range(1, n + 1)]
+
+
+def test_neg_keeps_the_degree_of_reals():
+    x = Wire(Real([1, 1], degree=1))
+    term = RealTermBuilder().neg(x)
+    assert term.itype.degree == 1
+    assert term.write[0].dtype == Real([1, 1], degree=1)
+
+
+def test_builder_takes_the_degree_of_reals():
+    b = RealTermBuilder()
+    x, dx = Wire(Real([1, 1])), Wire(Real([1, 1], degree=1))
+    assert b.relu(dx).itype.degree == 1
+    assert b.lt(dx, dx).itype.degree == 1
+    assert b.div(dx, x).write[0].dtype == Real([1, 1], degree=1)
+    with pytest.raises(TheoryError):
+        b.div(x, dx)  # a negative degree is not defined
+    with pytest.raises(TheoryError):
+        b.lt(x, dx)  # reals of different degrees are not comparable

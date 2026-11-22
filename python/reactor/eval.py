@@ -138,6 +138,10 @@ def eval_itype(itype, read, out_sort=None):
             return [_euclid(r[0], r[1])[0]]
         case tensor.int.Mod(_):
             return [_euclid(r[0], r[1])[1]]
+        case tensor.real.Neg(_) | tensor.int.Neg(_):
+            return [-r[0]]
+        case tensor.real.Abs(_) | tensor.int.Abs(_):
+            return [r[0].abs()]
         case tensor.real.ReLU(_) | tensor.int.ReLU(_):
             return [r[0].relu()]
         case tensor.real.Min(_) | tensor.int.Min(_):

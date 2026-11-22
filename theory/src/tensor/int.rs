@@ -13,6 +13,8 @@ information to compute its [`Boundary`]:
   SMT-LIB2's `div` and `mod`.
 - [`Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
   constant integer matrices of compatible shapes.
+- [`Neg`] — the pointwise negation `x ↦ -x`.
+- [`Abs`] — the pointwise absolute value `x ↦ |x|`.
 - [`ReLU`] — the shape-preserving rectified-linear map `x ↦ max(x, 0)`.
 - [`Min`], [`Max`] — pointwise minimum and maximum.
 - [`Transpose`] — matrix transposition.
@@ -154,6 +156,24 @@ impl<T> Linear<T> {
     pub fn b(&self) -> &T {
         &self.b
     }
+}
+
+/// Pointwise negation `x ↦ -x` of `[m, n]` matrices.
+///
+/// SMT-LIB2: `(- x)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct Neg {
+    shape: [usize; 2],
+}
+
+/// Pointwise absolute value `x ↦ |x|` of `[m, n]` matrices.
+///
+/// SMT-LIB2: `(abs x)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct Abs {
+    shape: [usize; 2],
 }
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
@@ -301,6 +321,10 @@ pub enum NIA<T> {
     #[subenum(LIA)]
     ReLU(ReLU),
     #[subenum(LIA)]
+    Abs(Abs),
+    #[subenum(LIA)]
+    Neg(Neg),
+    #[subenum(LIA)]
     Argmax(Argmax),
     #[subenum(LIA)]
     Min(Min),
@@ -342,6 +366,8 @@ where
             NIA::Mod(op) => NIA::Mod(*op),
             NIA::Linear(op) => NIA::Linear(op.clone()),
             NIA::ReLU(op) => NIA::ReLU(*op),
+            NIA::Abs(op) => NIA::Abs(*op),
+            NIA::Neg(op) => NIA::Neg(*op),
             NIA::Argmax(op) => NIA::Argmax(*op),
             NIA::Min(op) => NIA::Min(*op),
             NIA::Max(op) => NIA::Max(*op),
@@ -370,6 +396,8 @@ impl<T: fmt::Display> fmt::Display for NIA<T> {
             NIA::Mod(op) => op.fmt(f),
             NIA::Linear(op) => op.fmt(f),
             NIA::ReLU(op) => op.fmt(f),
+            NIA::Abs(op) => op.fmt(f),
+            NIA::Neg(op) => op.fmt(f),
             NIA::Argmax(op) => op.fmt(f),
             NIA::Min(op) => op.fmt(f),
             NIA::Max(op) => op.fmt(f),
@@ -400,6 +428,8 @@ where
             LIA::Sub(op) => LIA::Sub(*op),
             LIA::Linear(op) => LIA::Linear(op.clone()),
             LIA::ReLU(op) => LIA::ReLU(*op),
+            LIA::Abs(op) => LIA::Abs(*op),
+            LIA::Neg(op) => LIA::Neg(*op),
             LIA::Argmax(op) => LIA::Argmax(*op),
             LIA::Min(op) => LIA::Min(*op),
             LIA::Max(op) => LIA::Max(*op),
@@ -424,6 +454,8 @@ impl<T: fmt::Display> fmt::Display for LIA<T> {
             LIA::Sub(op) => op.fmt(f),
             LIA::Linear(op) => op.fmt(f),
             LIA::ReLU(op) => op.fmt(f),
+            LIA::Abs(op) => op.fmt(f),
+            LIA::Neg(op) => op.fmt(f),
             LIA::Argmax(op) => op.fmt(f),
             LIA::Min(op) => op.fmt(f),
             LIA::Max(op) => op.fmt(f),
@@ -451,6 +483,8 @@ impl<T: Tensor> Boundary<Sort> for NIA<T> {
             NIA::Mod(op) => op.dom().map(Sort::from),
             NIA::Linear(op) => op.dom().map(Sort::from),
             NIA::ReLU(op) => op.dom().map(Sort::from),
+            NIA::Abs(op) => op.dom().map(Sort::from),
+            NIA::Neg(op) => op.dom().map(Sort::from),
             NIA::Argmax(op) => op.dom().map(Sort::from),
             NIA::Min(op) => op.dom().map(Sort::from),
             NIA::Max(op) => op.dom().map(Sort::from),
@@ -477,6 +511,8 @@ impl<T: Tensor> Boundary<Sort> for NIA<T> {
             NIA::Mod(op) => op.cod().map(Sort::from),
             NIA::Linear(op) => op.cod().map(Sort::from),
             NIA::ReLU(op) => op.cod().map(Sort::from),
+            NIA::Abs(op) => op.cod().map(Sort::from),
+            NIA::Neg(op) => op.cod().map(Sort::from),
             NIA::Argmax(op) => op.cod().map(Sort::from),
             NIA::Min(op) => op.cod().map(Sort::from),
             NIA::Max(op) => op.cod().map(Sort::from),
@@ -501,6 +537,8 @@ impl<T: Tensor> Boundary<Sort> for LIA<T> {
             LIA::Sub(op) => op.dom().map(Sort::from),
             LIA::Linear(op) => op.dom().map(Sort::from),
             LIA::ReLU(op) => op.dom().map(Sort::from),
+            LIA::Abs(op) => op.dom().map(Sort::from),
+            LIA::Neg(op) => op.dom().map(Sort::from),
             LIA::Argmax(op) => op.dom().map(Sort::from),
             LIA::Min(op) => op.dom().map(Sort::from),
             LIA::Max(op) => op.dom().map(Sort::from),
@@ -523,6 +561,8 @@ impl<T: Tensor> Boundary<Sort> for LIA<T> {
             LIA::Sub(op) => op.cod().map(Sort::from),
             LIA::Linear(op) => op.cod().map(Sort::from),
             LIA::ReLU(op) => op.cod().map(Sort::from),
+            LIA::Abs(op) => op.cod().map(Sort::from),
+            LIA::Neg(op) => op.cod().map(Sort::from),
             LIA::Argmax(op) => op.cod().map(Sort::from),
             LIA::Min(op) => op.cod().map(Sort::from),
             LIA::Max(op) => op.cod().map(Sort::from),
@@ -621,6 +661,26 @@ impl<T: Tensor> Boundary<Int> for Linear<T> {
 
     fn cod(&self) -> Poly<Int> {
         mono![Int::new(self.b.shape())].into()
+    }
+}
+
+impl Boundary<Int> for Neg {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new(self.shape)].into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new(self.shape)].into()
+    }
+}
+
+impl Boundary<Int> for Abs {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new(self.shape)].into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new(self.shape)].into()
     }
 }
 
@@ -786,6 +846,18 @@ impl fmt::Display for Mod {
     }
 }
 
+impl fmt::Display for Neg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Neg")
+    }
+}
+
+impl fmt::Display for Abs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Abs")
+    }
+}
+
 impl fmt::Display for ReLU {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ReLU")
@@ -922,6 +994,12 @@ where
         }
         if let Ok(op) = ob.extract::<ReLU>() {
             return Ok(NIA::ReLU(op));
+        }
+        if let Ok(op) = ob.extract::<Abs>() {
+            return Ok(NIA::Abs(op));
+        }
+        if let Ok(op) = ob.extract::<Neg>() {
+            return Ok(NIA::Neg(op));
         }
         if let Ok(op) = ob.extract::<Argmax>() {
             return Ok(NIA::Argmax(op));
@@ -1063,6 +1141,46 @@ impl Mod {
     #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Mod { shape }
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Neg {
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
+    pub fn new(shape: [usize; 2]) -> Self {
+        Neg { shape }
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Abs {
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
+    pub fn new(shape: [usize; 2]) -> Self {
+        Abs { shape }
     }
 
     #[cfg(feature = "pyo3")]

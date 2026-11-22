@@ -6,7 +6,7 @@ use pyo3_tch::PyTensor;
 /// The affine map `x ↦ A·x + B` of real matrices: torch tensors of
 /// floating-point elements.
 #[pyclass(frozen, name = "Linear", module = "real")]
-pub struct Linear(tch::Tensor, tch::Tensor);
+pub struct Linear(tch::Tensor, tch::Tensor, u8);
 
 // SAFETY: the tensors are private to this module, which only reads their
 // shape and element kind and takes shallow clones of them; libtorch makes
@@ -15,10 +15,12 @@ unsafe impl Sync for Linear {}
 
 #[pymethods]
 impl Linear {
-    /// Fails when `a` and `b` are not `torch.Tensor`s of floating-point
+    /// The map of real matrices of the given `degree`, which `B` is of;
+    /// fails when `a` and `b` are not `torch.Tensor`s of floating-point
     /// elements, of shapes `[m, n]` and `[m, k]`.
     #[new]
-    fn new(a: PyTensor, b: PyTensor) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (a, b, /, degree = 0))]
+    fn new(a: PyTensor, b: PyTensor, degree: u8) -> Result<Self, crate::Error> {
         if !a.is_floating_point() || !b.is_floating_point() {
             return Err(crate::Error(format!(
                 "expected tensors of floating-point elements, got {:?} and {:?}",
@@ -27,7 +29,7 @@ impl Linear {
             )));
         }
         super::check_affine(&a, &b)?;
-        Ok(Linear(a.0, b.0))
+        Ok(Linear(a.0, b.0, degree))
     }
 
     #[getter]
@@ -38,6 +40,11 @@ impl Linear {
     #[getter]
     fn b(&self) -> PyTensor {
         PyTensor(self.1.shallow_clone())
+    }
+
+    #[getter]
+    fn degree(&self) -> u8 {
+        self.2
     }
 
     #[classattr]
@@ -52,9 +59,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Linear<tch::Tensor>
     /// Fails when `ob` is not a [`Linear`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let linear = ob.cast::<Linear>()?.get();
-        Ok(crate::tensor::real::Linear::new(
+        Ok(crate::tensor::real::Linear::with_degree(
             linear.0.shallow_clone(),
             linear.1.shallow_clone(),
+            linear.2,
         )?)
     }
 }
@@ -62,7 +70,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Linear<tch::Tensor>
 /// A constant real matrix: a `torch.Tensor` of floating-point or integer
 /// elements, kept as given, since integers are reals too.
 #[pyclass(frozen, name = "Const", module = "real")]
-pub struct Const(tch::Tensor);
+pub struct Const(tch::Tensor, u8);
 
 // SAFETY: the tensor is private to this module, which only reads its
 // shape and element kind and takes shallow clones of it; libtorch makes
@@ -71,10 +79,12 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
-    /// floating-point or integer elements.
+    /// The constant of the given `degree`; fails when `tensor` is not a
+    /// `torch.Tensor` of two dimensions and floating-point or integer
+    /// elements.
     #[new]
-    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, degree = 0))]
+    fn new(tensor: PyTensor, degree: u8) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !tensor.is_floating_point() && !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
@@ -82,12 +92,17 @@ impl Const {
                 tensor.kind()
             )));
         }
-        Ok(Const(tensor.0))
+        Ok(Const(tensor.0, degree))
     }
 
     #[getter]
     fn tensor(&self) -> PyTensor {
         PyTensor(self.0.shallow_clone())
+    }
+
+    #[getter]
+    fn degree(&self) -> u8 {
+        self.1
     }
 
     #[classattr]
@@ -102,7 +117,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Const<tch::Tensor> 
     /// Fails when `ob` is not a [`Const`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Const>()?.get();
-        Ok(crate::tensor::real::Const::new(constant.0.shallow_clone()))
+        Ok(crate::tensor::real::Const::with_degree(
+            constant.0.shallow_clone(),
+            constant.1,
+        ))
     }
 }
 
@@ -110,14 +128,14 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Const<tch::Tensor> 
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::real::Const<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::real::Const::new(self.tensor().shallow_clone())
+        crate::tensor::real::Const::with_degree(self.tensor().shallow_clone(), self.degree())
     }
 }
 
 /// The pointwise product `x ↦ C ⊙ x` with a constant real matrix `C`: a
 /// `torch.Tensor` of floating-point elements.
 #[pyclass(frozen, name = "Scale", module = "real")]
-pub struct Scale(tch::Tensor);
+pub struct Scale(tch::Tensor, u8);
 
 // SAFETY: the tensor is private to this module, which only reads its
 // shape and element kind and takes shallow clones of it; libtorch makes
@@ -126,10 +144,12 @@ unsafe impl Sync for Scale {}
 
 #[pymethods]
 impl Scale {
-    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
-    /// floating-point elements.
+    /// The product of real matrices of the given `degree`; fails when
+    /// `tensor` is not a `torch.Tensor` of two dimensions and floating-point
+    /// elements.
     #[new]
-    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, degree = 0))]
+    fn new(tensor: PyTensor, degree: u8) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !tensor.is_floating_point() {
             return Err(crate::Error(format!(
@@ -137,12 +157,17 @@ impl Scale {
                 tensor.kind()
             )));
         }
-        Ok(Scale(tensor.0))
+        Ok(Scale(tensor.0, degree))
     }
 
     #[getter]
     fn tensor(&self) -> PyTensor {
         PyTensor(self.0.shallow_clone())
+    }
+
+    #[getter]
+    fn degree(&self) -> u8 {
+        self.1
     }
 
     #[classattr]
@@ -157,7 +182,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Scale<tch::Tensor> 
     /// Fails when `ob` is not a [`Scale`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let scale = ob.cast::<Scale>()?.get();
-        Ok(crate::tensor::real::Scale::new(scale.0.shallow_clone()))
+        Ok(crate::tensor::real::Scale::with_degree(
+            scale.0.shallow_clone(),
+            scale.1,
+        ))
     }
 }
 
@@ -165,7 +193,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Scale<tch::Tensor> 
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::real::Scale<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::real::Scale::new(self.tensor().shallow_clone())
+        crate::tensor::real::Scale::with_degree(self.tensor().shallow_clone(), self.degree())
     }
 }
 
@@ -173,8 +201,12 @@ impl Clone for crate::tensor::real::Scale<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::real::Linear<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::real::Linear::new(self.a().shallow_clone(), self.b().shallow_clone())
-            .expect("a clone has the shapes of the original")
+        crate::tensor::real::Linear::with_degree(
+            self.a().shallow_clone(),
+            self.b().shallow_clone(),
+            self.degree(),
+        )
+        .expect("a clone has the shapes of the original")
     }
 }
 
@@ -190,20 +222,22 @@ impl<'py> IntoPyObject<'py> for crate::tensor::real::NRA<tch::Tensor> {
         use crate::tensor::real::NRA;
 
         match self {
-            NRA::Const(op) => Const(op.tensor().shallow_clone())
+            NRA::Const(op) => Const(op.tensor().shallow_clone(), op.degree())
                 .into_pyobject(py)
                 .map(Bound::into_any),
-            NRA::Scale(op) => Scale(op.tensor().shallow_clone())
+            NRA::Scale(op) => Scale(op.tensor().shallow_clone(), op.degree())
                 .into_pyobject(py)
                 .map(Bound::into_any),
             NRA::Add(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Div(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Linear(op) => Linear(op.a().shallow_clone(), op.b().shallow_clone())
+            NRA::Linear(op) => Linear(op.a().shallow_clone(), op.b().shallow_clone(), op.degree())
                 .into_pyobject(py)
                 .map(Bound::into_any),
             NRA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Abs(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::Neg(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Argmax(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Min(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Max(op) => op.into_pyobject(py).map(Bound::into_any),

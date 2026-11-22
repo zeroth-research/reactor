@@ -104,6 +104,10 @@ def interpret(itype):
             return _np.frompyfunc(lambda c, tt, ff: _z3.If(c, tt, ff), 3, 1)
 
         # neural-ish / aggregate
+        case tensor.real.Neg(_) | tensor.int.Neg(_):
+            return _np.frompyfunc(lambda x: -x, 1, 1)
+        case tensor.real.Abs(_) | tensor.int.Abs(_):
+            return _np.frompyfunc(lambda x: _z3.If(x >= 0, x, -x), 1, 1)
         case tensor.real.ReLU(_) | tensor.int.ReLU(_):
             return _np.frompyfunc(lambda x: _z3.If(x > 0, x, 0), 1, 1)
         case tensor.real.Min(_) | tensor.int.Min(_):

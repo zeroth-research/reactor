@@ -159,7 +159,9 @@ class Expr:
                 o = o.reshape(())
             if isinstance(o, (bool, int, float)) or (isinstance(o, torch.Tensor) and o.dim() == 0):
                 o = torch.as_tensor(o).expand(self.shape).clone()
-        return expr(o, sort=type(self.dtype), bw=self._bw(), signed=getattr(self, "_signed", False))
+        # a literal takes the degree of a real, as it takes the width of a word
+        degree = self.dtype.degree if isinstance(self.dtype, Real) else 0
+        return expr(o, sort=type(self.dtype), bw=self._bw(), degree=degree, signed=getattr(self, "_signed", False))
 
     def _coerce_same(self, o) -> "Expr":
         o = self._coerce(o)
@@ -205,7 +207,7 @@ class AExpr(Expr):
     def __add__(self, o):
         match self.dtype:
             case Real(s):
-                op = tensor.real.Add(s)
+                op = tensor.real.Add(s, degree=self.dtype.degree)
             case Int(s):
                 op = tensor.int.Add(s)
         return self._binop(op, self.dtype, o)
@@ -213,7 +215,7 @@ class AExpr(Expr):
     def __sub__(self, o):
         match self.dtype:
             case Real(s):
-                op = tensor.real.Sub(s)
+                op = tensor.real.Sub(s, degree=self.dtype.degree)
             case Int(s):
                 op = tensor.int.Sub(s)
         return self._binop(op, self.dtype, o)
@@ -249,7 +251,9 @@ class AExpr(Expr):
         assert o.shape == self.shape, f"cannot multiply {self.shape} and {o.shape} pointwise"
         match self.dtype:
             case Real(s):
-                op = tensor.real.Mul(s)
+                # the degrees of the factors add up
+                p, q = self.dtype.degree, o.dtype.degree
+                return self._binop(tensor.real.Mul(s, degrees=[p, q]), Real(s, degree=p + q), o)
             case Int(s):
                 op = tensor.int.Mul(s)
         return self._binop(op, self.dtype, o)
@@ -261,16 +265,35 @@ class AExpr(Expr):
         assert list(c.shape) == self.shape, f"cannot scale {self.shape} by a constant of {list(c.shape)}"
         match self.dtype:
             case Real(_):
-                op = tensor.real.Scale(c if c.is_floating_point() else c.float())
+                op = tensor.real.Scale(c if c.is_floating_point() else c.float(), degree=self.dtype.degree)
             case Int(_):
                 integer = not c.is_floating_point() and c.dtype != torch.bool
                 op = tensor.int.Scale(c if integer else c.long())
         return self._unop(op)
 
+    def __neg__(self):
+        match self.dtype:
+            case Real(s):
+                op = tensor.real.Neg(s, degree=self.dtype.degree)
+            case Int(s):
+                op = tensor.int.Neg(s)
+        return self._unop(op)
+
+    def __abs__(self):
+        match self.dtype:
+            case Real(s):
+                op = tensor.real.Abs(s, degree=self.dtype.degree)
+            case Int(s):
+                op = tensor.int.Abs(s)
+        return self._unop(op)
+
     def __truediv__(self, o):
         match self.dtype:
             case Real(s):
-                op = tensor.real.Div(s)
+                # the degree of the divisor is taken off that of the dividend
+                o = self._coerce_same(o)
+                p, q = self.dtype.degree, o.dtype.degree
+                return self._binop(tensor.real.Div(s, degrees=[p, q]), Real(s, degree=p - q), o)
             case Int(s):
                 op = tensor.int.Div(s)
         return self._binop(op, self.dtype, o)
@@ -288,7 +311,10 @@ class AExpr(Expr):
         out = _with_shape(self.dtype, [self.shape[0], o.shape[1]])
         match self.dtype:
             case Real(s):
-                op = tensor.real.MatMul([s, o.shape])
+                # the degrees of the factors add up
+                p, q = self.dtype.degree, o.dtype.degree
+                op = tensor.real.MatMul([s, o.shape], degrees=[p, q])
+                out = Real(out.shape, degree=p + q)
             case Int(s):
                 op = tensor.int.MatMul([s, o.shape])
         return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
@@ -297,7 +323,7 @@ class AExpr(Expr):
     def __eq__(self, o):
         match self.dtype:
             case Real(s):
-                op = tensor.real.Eq(s)
+                op = tensor.real.Eq(s, degree=self.dtype.degree)
             case Int(s):
                 op = tensor.int.Eq(s)
         return self._binop(op, Bool(self.shape), o)
@@ -305,7 +331,7 @@ class AExpr(Expr):
     def __ne__(self, o):
         match self.dtype:
             case Real(s):
-                op = tensor.real.Ne(s)
+                op = tensor.real.Ne(s, degree=self.dtype.degree)
             case Int(s):
                 op = tensor.int.Ne(s)
         return self._binop(op, Bool(self.shape), o)
@@ -313,7 +339,7 @@ class AExpr(Expr):
     def __lt__(self, o):
         match self.dtype:
             case Real(s):
-                op = tensor.real.Lt(s)
+                op = tensor.real.Lt(s, degree=self.dtype.degree)
             case Int(s):
                 op = tensor.int.Lt(s)
         return self._binop(op, Bool(self.shape), o)
@@ -321,7 +347,7 @@ class AExpr(Expr):
     def __le__(self, o):
         match self.dtype:
             case Real(s):
-                op = tensor.real.Le(s)
+                op = tensor.real.Le(s, degree=self.dtype.degree)
             case Int(s):
                 op = tensor.int.Le(s)
         return self._binop(op, Bool(self.shape), o)
@@ -329,7 +355,7 @@ class AExpr(Expr):
     def __gt__(self, o):
         match self.dtype:
             case Real(s):
-                op = tensor.real.Gt(s)
+                op = tensor.real.Gt(s, degree=self.dtype.degree)
             case Int(s):
                 op = tensor.int.Gt(s)
         return self._binop(op, Bool(self.shape), o)
@@ -337,7 +363,7 @@ class AExpr(Expr):
     def __ge__(self, o):
         match self.dtype:
             case Real(s):
-                op = tensor.real.Ge(s)
+                op = tensor.real.Ge(s, degree=self.dtype.degree)
             case Int(s):
                 op = tensor.int.Ge(s)
         return self._binop(op, Bool(self.shape), o)
@@ -439,7 +465,7 @@ class WExpr(Expr):
 # ---------------------------------------------------------------------------
 
 
-def expr(value, *, sort=None, signed=False, bw=None, tag=None) -> Expr:
+def expr(value, *, sort=None, signed=False, bw=None, degree=0, tag=None) -> Expr:
     if isinstance(value, Expr):
         raise TypeError("expr() builds from a raw value; got an Expr already")
 
@@ -448,10 +474,10 @@ def expr(value, *, sort=None, signed=False, bw=None, tag=None) -> Expr:
     elif isinstance(value, bool) and sort is None:
         return _const(value, Bool, signed=signed, tag=tag)
     else:
-        return _const(value, sort, signed=signed, tag=tag, bw=bw)
+        return _const(value, sort, signed=signed, tag=tag, bw=bw, degree=degree)
 
 
-def _term_from_torch(value, sort, bw=None):
+def _term_from_torch(value, sort, bw=None, degree=0):
     assert isinstance(value, torch.Tensor)
     assert sort in (Bool, Real, Int, Word)
 
@@ -473,11 +499,11 @@ def _term_from_torch(value, sort, bw=None):
             out = Bool(shape)
         # the tensor is kept as given: no conversion of its elements
         case torch.half | torch.float | torch.double if sort == Real:
-            out = Real(shape)
+            out = Real(shape, degree=degree)
         case torch.int | torch.long if sort == Int:
             out = Int(shape)
         case torch.int | torch.long if sort == Real:
-            out = Real(shape)
+            out = Real(shape, degree=degree)
         case torch.int | torch.long if sort == Word and bw is not None:
             out = Word(bw, shape)
         case _:
@@ -486,7 +512,7 @@ def _term_from_torch(value, sort, bw=None):
         case Bool(_):
             op = tensor.bool.Const(value)
         case Real(_):
-            op = tensor.real.Const(value)
+            op = tensor.real.Const(value, degree=degree)
         case Int(_):
             op = tensor.int.Const(value)
         case Word(_, _):
@@ -494,7 +520,7 @@ def _term_from_torch(value, sort, bw=None):
     return Term.constant(op, [Wire(out)]), value
 
 
-def _term_from_other(value, sort, bw=None):
+def _term_from_other(value, sort, bw=None, degree=0):
     # torch will figure out the errors, and the base
     assert sort in (Bool, Real, Int, Word)
 
@@ -509,7 +535,7 @@ def _term_from_other(value, sort, bw=None):
     else:
         dtype = torch.int64
 
-    return _term_from_torch(torch.tensor(value, dtype=dtype), sort, bw=bw)
+    return _term_from_torch(torch.tensor(value, dtype=dtype), sort, bw=bw, degree=degree)
 
 
 def _unpack_sort_user_argument(sort, *, bw=None):
@@ -535,19 +561,22 @@ def _unpack_sort_user_argument(sort, *, bw=None):
     raise TypeError(f"expr(): unsupported sort {sort}")
 
 
-def _const(value, sort, *, signed, bw=None, tag=None) -> Expr:
+def _const(value, sort, *, signed, bw=None, degree=0, tag=None) -> Expr:
     # a sort is either None, or a type/family, or a concrete sort instance
     if sort is None:
         raise TypeError("expr(): a numeric literal needs an explicit sort= ")
 
     # unpack sort family and required shape if any
+    given = sort
     sort, bw, required_shape = _unpack_sort_user_argument(sort, bw=bw)
+    if sort is Real and isinstance(given, Real):
+        degree = given.degree  # a real sort carries its degree
 
     # build term
     if isinstance(value, torch.Tensor):
-        term, value = _term_from_torch(value, sort, bw=bw)
+        term, value = _term_from_torch(value, sort, bw=bw, degree=degree)
     elif isinstance(value, int | float | bool | list):
-        term, value = _term_from_other(value, sort, bw=bw)
+        term, value = _term_from_other(value, sort, bw=bw, degree=degree)
     else:
         raise TypeError(f"expr() unsupported value type {type(value)}")
 
@@ -620,7 +649,7 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
         raise TypeError(f"ite branches have different sorts {a.dtype}, {b.dtype}; use cast()")
     match a.dtype:
         case Real(s):
-            op = tensor.real.Ite(s)
+            op = tensor.real.Ite(s, degree=a.dtype.degree)
         case Int(s):
             op = tensor.int.Ite(s)
         case Bool(s):
@@ -635,7 +664,7 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
 def relu(e: Expr) -> Expr:
     match e.dtype:
         case Real(s):
-            return e._unop(tensor.real.ReLU(s))
+            return e._unop(tensor.real.ReLU(s, degree=e.dtype.degree))
         case Int(s):
             return e._unop(tensor.int.ReLU(s))
     raise TypeError(f"relu() needs a Real or Int operand, got {e.dtype}")
@@ -645,7 +674,8 @@ def argmax(e: Expr) -> Expr:
     """The index of a maximal entry, as a [1, 1] matrix of the operand's sort."""
     match e.dtype:
         case Real(s):
-            op = tensor.real.Argmax(s)
+            # the index is a plain real
+            return e._unop(tensor.real.Argmax(s, degree=e.dtype.degree), out=Real([1, 1]))
         case Int(s):
             op = tensor.int.Argmax(s)
         case _:

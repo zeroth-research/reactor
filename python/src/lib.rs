@@ -54,6 +54,8 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             real.add_class::<theory::tensor::real::Mul>()?;
             real.add_class::<theory::tensor::real::Div>()?;
             real.add_class::<theory::tensor::real::ReLU>()?;
+            real.add_class::<theory::tensor::real::Abs>()?;
+            real.add_class::<theory::tensor::real::Neg>()?;
             real.add_class::<theory::tensor::real::Argmax>()?;
             real.add_class::<theory::tensor::real::Min>()?;
             real.add_class::<theory::tensor::real::Max>()?;
@@ -80,6 +82,8 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             int.add_class::<theory::tensor::int::Div>()?;
             int.add_class::<theory::tensor::int::Mod>()?;
             int.add_class::<theory::tensor::int::ReLU>()?;
+            int.add_class::<theory::tensor::int::Neg>()?;
+            int.add_class::<theory::tensor::int::Abs>()?;
             int.add_class::<theory::tensor::int::Argmax>()?;
             int.add_class::<theory::tensor::int::Min>()?;
             int.add_class::<theory::tensor::int::Max>()?;

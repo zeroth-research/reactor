@@ -68,9 +68,10 @@ class TermBuilder:
 
     # --- low-level helpers ---
 
-    def _sized(self, op, sort):
-        """The operation `op` on values of `sort`, sized by its shape."""
-        return op(_shape(sort))
+    def _sized(self, op, sort, **kwargs):
+        """The operation `op` on values of `sort`, sized by its shape, with any further
+        arguments of `op`, such as the degree of reals."""
+        return op(_shape(sort), **kwargs)
 
     def _unary(self, op, output_sort: Real | Int | Bool | Word | Zero, a) -> Term:
         return Term(op, [Wire(output_sort)], [_wire(a)])
@@ -271,38 +272,67 @@ class RealTermBuilder(TermBuilder):
             return super().ite(cond, a, b, output_wire)
         return self._ite(real.Ite, cond, a, b, output_wire)
 
+    def _sized(self, op, sort, **kwargs):
+        # a real operation is of the degree of its operand, unless given its degrees
+        if isinstance(sort, Real) and "degree" not in kwargs and "degrees" not in kwargs:
+            kwargs["degree"] = sort.degree
+        return super()._sized(op, sort, **kwargs)
+
     def _degree(self, a, b) -> int:
-        """The degree of both `a` and `b`, which their sum or difference keeps: reals of
-        different degrees, rates of change of different orders, do not add up."""
+        """The degree of both `a` and `b`, which their sum, difference, extremum or choice
+        keeps, and which their comparison requires: reals of different degrees, rates of
+        change of different orders, are not comparable."""
         p, q = _dtype(a).degree, _dtype(b).degree
         if p != q:
-            raise TheoryError(f"cannot add or subtract reals of degrees {p} and {q}")
+            raise TheoryError(f"cannot combine reals of degrees {p} and {q}")
         return p
 
+    def _compare(self, op, a, b) -> Term:
+        if isinstance(_dtype(a), Real):
+            self._degree(a, b)
+        return super()._compare(op, a, b)
+
+    def _ite(self, op, cond, a, b, output_wire) -> Term:
+        if isinstance(_dtype(a), Real):
+            self._degree(a, b)
+        return super()._ite(op, cond, a, b, output_wire)
+
     def add(self, a, b) -> Term:
-        s = _dtype(a)
-        return self._binary(real.Add(_shape(s), degree=self._degree(a, b)), s, a, b)
+        return self._binary(self._sized(real.Add, _dtype(a), degree=self._degree(a, b)), _dtype(a), a, b)
 
     def sub(self, a, b) -> Term:
-        s = _dtype(a)
-        return self._binary(real.Sub(_shape(s), degree=self._degree(a, b)), s, a, b)
+        return self._binary(self._sized(real.Sub, _dtype(a), degree=self._degree(a, b)), _dtype(a), a, b)
 
     def mul(self, a, b) -> Term:
         # the degrees of the factors add up
         sa, sb = _dtype(a), _dtype(b)
         p, q = sa.degree, sb.degree
         out = Real(_shape(sa), degree=p + q)
-        return self._binary(real.Mul(_shape(sa), degrees=[p, q]), out, a, b)
+        return self._binary(self._sized(real.Mul, sa, degrees=[p, q]), out, a, b)
 
     def div(self, a, b) -> Term:
-        return self._binary(self._sized(real.Div, _dtype(a)), _dtype(a), a, b)
+        # the degree of the divisor is taken off that of the dividend, which it must not
+        # exceed: a negative degree is not defined
+        sa, sb = _dtype(a), _dtype(b)
+        p, q = sa.degree, sb.degree
+        if q > p:
+            raise TheoryError(f"cannot divide a real of degree {p} by one of degree {q}")
+        out = Real(_shape(sa), degree=p - q)
+        return self._binary(self._sized(real.Div, sa, degrees=[p, q]), out, a, b)
+
+    def neg(self, a) -> Term:
+        # the negation keeps the degree
+        return self._unary(self._sized(real.Neg, _dtype(a)), _dtype(a), a)
+
+    def abs_(self, a) -> Term:
+        return self._unary(self._sized(real.Abs, _dtype(a)), _dtype(a), a)
 
     def relu(self, a) -> Term:
         return self._unary(self._sized(real.ReLU, _dtype(a)), _dtype(a), a)
 
     def argmax(self, a) -> Term:
-        # the index is written as a [1, 1] matrix of the operand's sort
-        return self._unary(self._sized(real.Argmax, _dtype(a)), _with_shape(_dtype(a), [1, 1]), a)
+        # the index is written as a plain [1, 1] real
+        return self._unary(self._sized(real.Argmax, _dtype(a)), Real([1, 1]), a)
 
     def transpose(self, a) -> Term:
         s = _dtype(a)
@@ -311,8 +341,10 @@ class RealTermBuilder(TermBuilder):
 
     def matmul(self, a, b) -> Term:
         sa, sb = _dtype(a), _dtype(b)
-        out = _with_shape(sa, [_shape(sa)[0], _shape(sb)[1]])
-        return self._binary(real.MatMul([_shape(sa), _shape(sb)]), out, a, b)
+        # the degrees of the factors add up, as for the pointwise product
+        p, q = sa.degree, sb.degree
+        out = Real([_shape(sa)[0], _shape(sb)[1]], degree=p + q)
+        return self._binary(real.MatMul([_shape(sa), _shape(sb)], degrees=[p, q]), out, a, b)
 
     def _linear(self, weight, bias):
         return real.Linear(weight, bias)
@@ -340,7 +372,7 @@ class RealTermBuilder(TermBuilder):
         return self._compare(real.Ne, a, b)
 
     def _const(self, tensor, sort):
-        return real.Const(tensor.to(torch.float32))
+        return real.Const(tensor.to(torch.float32), degree=sort.degree)
 
 
 class IntTermBuilder(TermBuilder):
@@ -365,6 +397,12 @@ class IntTermBuilder(TermBuilder):
 
     def div(self, a, b) -> Term:
         return self._binary(self._sized(int_.Div, _dtype(a)), _dtype(a), a, b)
+
+    def neg(self, a) -> Term:
+        return self._unary(self._sized(int_.Neg, _dtype(a)), _dtype(a), a)
+
+    def abs_(self, a) -> Term:
+        return self._unary(self._sized(int_.Abs, _dtype(a)), _dtype(a), a)
 
     def relu(self, a) -> Term:
         return self._unary(self._sized(int_.ReLU, _dtype(a)), _dtype(a), a)
@@ -423,10 +461,10 @@ class WordTermBuilder(TermBuilder):
     def number(self, shape: list) -> Word:
         return Word(self.width, shape)
 
-    def _sized(self, op, sort):
+    def _sized(self, op, sort, **kwargs):
         if isinstance(sort, Word):
-            return op(_width(sort), _shape(sort))
-        return super()._sized(op, sort)
+            return op(_width(sort), _shape(sort), **kwargs)
+        return super()._sized(op, sort, **kwargs)
 
     def ite(self, cond, a, b, output_wire=None) -> Term:
         if _is_bool(a):

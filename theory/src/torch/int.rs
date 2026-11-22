@@ -205,6 +205,8 @@ impl<'py> IntoPyObject<'py> for crate::tensor::int::NIA<tch::Tensor> {
                 .into_pyobject(py)
                 .map(Bound::into_any),
             NIA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Neg(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Abs(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Argmax(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Min(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Max(op) => op.into_pyobject(py).map(Bound::into_any),
