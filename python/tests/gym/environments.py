@@ -38,8 +38,9 @@ class SimpleEnv(gym.Env):
 class TwoBitCounterEnv(gym.Env):
     """2-bit counter: the action enables a tick; b0 toggles and carries into b1.
 
-    The gym twin of the `twobit_lia` fixture's hand-built module — same two
-    bits, same `enable`, so the two encodings of one system can be compared."""
+    The gym twin of the module `test_eval.py` builds by hand
+    (`_make_twobitcounter`) — same two bits, same `enable`, so the two
+    encodings of one system can be compared."""
 
     def __init__(self):
         super().__init__()
