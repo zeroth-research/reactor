@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING, Callable, Union
 from reactor import Bool, Int, Real, BitVec
 
 from ..core.errors import Refused
-from .sorts import itype_name, mat_mk
+from .sorts import THEORIES, itype_name, mat_mk, theory_of
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, cvc5 is not imported here
     import cvc5
@@ -104,10 +104,6 @@ SmtCell = Union[Callable[["SmtOp"], "cvc5.Term"], Unsupported]
 # ══════════════════════════════════════════════════════════════════════
 #  Rows
 # ══════════════════════════════════════════════════════════════════════
-
-# `Cast` is no theory of its own sorts: it is what crosses between the
-# other three's (`theory/src/cast.rs`), and has rows of its own only.
-THEORIES = ("LIA", "LRA", "BV", "Cast")
 
 ALL = ("LIA", "LRA", "BV")
 LIA_LRA = ("LIA", "LRA")
@@ -920,20 +916,6 @@ del _op, _theory, _key
 # ══════════════════════════════════════════════════════════════════════
 #  Lookup
 # ══════════════════════════════════════════════════════════════════════
-
-
-def theory_of(itype) -> str:
-    """The theory an op came from: "LIA", "LRA", "BV" or "Cast".
-
-    PyO3 exports the variants as `LIA_Add`, `LRA_Real`, `BV_MatMul`,
-    `Cast_BVToInt`; an op
-    with no such prefix belongs to no theory and gets "".
-    """
-    name = type(itype).__name__
-    for theory in THEORIES:
-        if name.startswith(theory + "_"):
-            return theory
-    return ""
 
 
 def op_for(itype) -> Op:
