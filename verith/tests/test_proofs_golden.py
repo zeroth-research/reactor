@@ -53,8 +53,8 @@ def _fixture(name: str) -> Module:
 
 
 def _vector_counter() -> Module:
-    """3x1 state over a 2x1 input, as `lean/tests/lean/conftest.py`
-    builds it."""
+    """3x1 state over a 2x1 input, as `tests/lean/conftest.py` builds
+    it."""
     state = Var(Int([3, 1]))
     extl = Var(Int([2, 1]))
     zero31 = torch.zeros((3, 1), dtype=torch.int64)

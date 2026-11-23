@@ -12,8 +12,8 @@ We define generic stubs for the macros that zeroth_hammer calls internally
 so all phases remain exercisable.
 
 Run via pytest:
-    just lean-test tests/lean/                 # fast: only checks generated files exist
-    just lean-run pytest tests/lean/ -m slow   # slow: runs lake build
+    just vr-test tests/lean/                 # fast: only checks generated files exist
+    just vr-run pytest tests/lean/ -m slow   # slow: runs lake build
 -/
 
 open Lean Elab Tactic

@@ -1,23 +1,13 @@
 """
 Session-scoped fixtures that prepare the tests/lean/ lake project before any
 test in this directory runs. The Lean library the files import,
-``Relational.*``, is ReactLib's: the lakefile requires it by path from
-the checkout beside this repository.
+``Relational.*``, is ReactLib's: the lakefile requires it from the checkout
+``$REACTLIB`` (``lake.prepare``).
 
 ``generate_lean_files`` generates:
-     • ZerothHammer.lean  (the zeroth_hammer tactic, standalone)
-     • Certs/Countdown.lean  (self-contained certificate, inline module)
-     • Certs/TwoVars.lean
-     • Certs/Collatz.lean
      • Certs/ScalarEnc*.lean  (functional + scalar encodings)
      • Certs/RelEnc*/     (those two + ScalarRel, one module each)
      • Certs/ArgmaxScalar.lean  (the scalar Argmax variants)
-
-The certificates' proofs, and ZerothHammer, are `verith`'s
-(``verith.proofs``, in the `verith/` project beside this one): they import
-ZerothHammer for the tactic and define their own module-specific
-``simp_mat`` / ``simp_defs`` macros. Without `verith` installed there is
-nothing to prove them with, and the tests that build them are skipped.
 """
 from functools import partial
 
@@ -25,10 +15,6 @@ import pytest
 import torch
 
 from reactor import Module, Wire, Term, LIA, LRA, Int, Real, Bool, Var, X
-from reactor_lean.codegen.context import LeanContext
-from reactor_lean.pipeline.certificate import render
-from reactor_lean.proof.render import generate_standalone_cert_lean
-from reactor_lean.core.certificate import Certificate, Claim
 from reactor_lean.project.names import LINTERS_OFF, Layout
 from reactor_lean.project.scaffold import ENCODINGS, write_encoding
 from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
@@ -46,7 +32,6 @@ _CERTS_DIR = LAKE_PROJECT / "Certs"
 
 _make_countdown = partial(fixture, "svcomp_countdown")
 _make_twovars = partial(fixture, "svcomp_twovars")
-_make_collatz = partial(fixture, "svcomp_collatz_bounded")
 
 
 def _make_counter() -> Module:
@@ -189,19 +174,7 @@ def _make_real_half() -> Module:
     return Module.sequential(
         [x], [Term(LRA.Real(torch.tensor([[5.0]])), [X(x)])], update)
 
-_COUNTDOWN_CERT = (
-    Claim(prp="s[0][0] == 0"),
-    Certificate(
-        inv="And(s[0][0] >= 0, s[0][0] <= 100)",
-        ranking="Ite(s[0][0] == 0, 0, s[0][0])",
-    ),
-)
 
-
-# (elem_ty, n) pairs for the generated scalar Argmax variants. n = 1 is the
-# degenerate single-element case; the rest exercise the fold.
-# Int and Real at the same width sit together on purpose: the variant
-# names used to be built from `n` alone, so these two collided.
 # Widths that exercise the scalar encoding's flattening: all-1x1, then
 # multi-element state, up to the 32 that stresses the index enumeration.
 _SCALAR_ENC_SPECS = [
@@ -223,6 +196,10 @@ _REL_ENC_SPECS = _SCALAR_ENC_SPECS + [
 ]
 
 
+# (elem_ty, n) pairs for the generated scalar Argmax variants. n = 1 is the
+# degenerate single-element case; the rest exercise the fold.
+# Int and Real at the same width sit together on purpose: the variant
+# names used to be built from `n` alone, so these two collided.
 _ARGMAX_SCALAR_SPECS = [
     ("Int", 1),
     ("Int", 2),
@@ -232,103 +209,9 @@ _ARGMAX_SCALAR_SPECS = [
 ]
 
 
-# (name, module, safety property) for the `--fbk-proveit` equivalence proof.
-# One per shape class the route accepts: a scalar Int state, a mixed Bool/Int
-# state, and a module whose transition is a net (`Linear` -> `ReLU` ->
-# `Linear`), which is the case that needs the matrix simp set.
-_BRIDGE_SPECS = [
-    ("Countdown", _make_countdown, "(and (>= s0 0) (<= s0 100))"),
-    ("TwoVars", _make_twovars, "(and (>= s0 0) (<= s0 s1) (= s1 10))"),
-]
-
-
-_CERT_SPECS = [
-    (
-        "BigCounter",
-        lambda: _make_countdown_vec(6),
-        _COUNTDOWN_CERT,
-    ),
-    (
-        "HugeCounter",
-        lambda: _make_countdown_vec(32),
-        _COUNTDOWN_CERT,
-    ),
-    (
-        "Counter",
-        _make_counter,
-        (
-            Claim(
-                prp="s[0][0] == 0",
-                init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
-            ),
-            Certificate(
-                inv="And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
-                ranking="Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], s[2][0]) - s[0][0]) + 1)",
-            ),
-        ),
-    ),
-    (
-        "Countdown",
-        _make_countdown,
-        (
-            Claim(prp="(= s0 0)"),
-            Certificate(
-                inv="(and (>= s0 0) (<= s0 100))",
-                ranking="(ite (= s0 0) 0 s0)",
-            ),
-        ),
-    ),
-    (
-        # The safety shape: `rule_globally`, an invariant that implies the
-        # property, and no ranking function anywhere in the file. Nothing
-        # else in this suite compiles a `--safety` certificate.
-        "CountdownSafe",
-        _make_countdown,
-        (
-            Claim(prp="(<= s0 100)", kind="safety"),
-            Certificate(inv="(and (>= s0 0) (<= s0 100))"),
-        ),
-    ),
-    (
-        "TwoVars",
-        _make_twovars,
-        (
-            Claim(prp="(= s0 s1)"),
-            Certificate(
-                inv="(and (>= s0 0) (<= s0 s1) (= s1 10))",
-                ranking="(ite (= s0 s1) 0 (- s1 s0))",
-            ),
-        ),
-    ),
-    (
-        "Collatz",
-        _make_collatz,
-        (
-            Claim(prp="(= s0 1)"),
-            Certificate(
-                inv="(and (>= s0 1) (<= s0 8))",
-                ranking="(ite (= s0 1) 0 (- s0 1))",
-            ),
-        ),
-    ),
-]
-
-
 # ──────────────────────────────────────────────────────────────
 # Fixtures
 # ──────────────────────────────────────────────────────────────
-
-
-def proved_cert_lean(module: Module, claim: Claim,
-                     cert: Certificate = Certificate()) -> str:
-    """The standalone certificate of `claim` and `cert`, with the proofs
-    `verith` writes for it."""
-    from verith.proofs import prove
-
-    ctx = LeanContext(module)
-    lean = render(module, claim, cert)
-    return generate_standalone_cert_lean(
-        ctx, lean, prove(module, ctx, claim, cert, lean))
 
 
 @pytest.fixture(scope="session")
@@ -341,45 +224,8 @@ def relational_circ() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def generate_lean_files() -> None:
-    """Generate ZerothHammer.lean and Certs/*.lean for the lake project."""
+    """Generate Certs/*.lean for the lake project."""
     _CERTS_DIR.mkdir(exist_ok=True)
-    try:
-        from verith.proofs import generate_zeroth_hammer_lean
-    except ImportError:
-        pass
-    else:
-        # ZerothHammer.lean — standalone tactic
-        hammer_file = LAKE_PROJECT / "ZerothHammer.lean"
-        hammer_file.write_text(generate_zeroth_hammer_lean())
-
-        # Certs/ — one self-contained certificate per module
-        for name, make_module, (claim, cert) in _CERT_SPECS:
-            (_CERTS_DIR / f"{name}.lean").write_text(
-                proved_cert_lean(make_module(), claim, cert))
-
-    # Certs/LearnedCountdown.lean — the certificate `--infer nuterm` produces,
-    # rather than one written by hand. Its ranking function is a sum of ReLU
-    # units, `(+ (* c (ite (> <affine> 0) <affine> 0)) ...)`, which no
-    # hand-written certificate in this suite has: whether `zeroth_hammer`
-    # closes `hrank` for that shape is a question only the learner's own
-    # output asks. The route proves the obligations before emitting them, so
-    # a failure here is the Lean side, not the certificate. The route is
-    # `verith`'s (the `verith/` project beside this one): without it, or
-    # without cvc5, there is nothing to generate.
-    try:
-        import cvc5  # noqa: F401
-        from verith.nuterm.engine import NutermEngine
-    except ImportError:
-        pass
-    else:
-        module = _make_countdown()
-        claim = Claim(prp="(= s0 0)", kind="buchi")
-        learned = NutermEngine(module, log=lambda *a: None).infer(claim)
-        # Generated from the SMT-LIB the route answered with, as `verith`
-        # does it.
-        (_CERTS_DIR / "LearnedCountdown.lean").write_text(
-            proved_cert_lean(module, claim, learned))
-
     # Certs/ArgmaxScalar.lean — the scalar Argmax variants exactly as the
     # generator emits them. Each carries an `argmax1d_scalar_n_eq` theorem
     # proving it equal to Relational.Mat.argmax_1d, so building this file is what
@@ -426,56 +272,6 @@ def generate_lean_files() -> None:
                 write_encoding(enc, t, layout, name)
         (_CERTS_DIR / f"RelEnc{name}.lean").write_text(
             f"import {layout.lean_module('ScalarRel')}\n")
-
-    # Certs/Bridge*.lean — the `--fbk-proveit` route's model, the module's
-    # own encodings, and the proof that the first is the second. The bridge
-    # normally imports `System.*` and the NA model from a generated project;
-    # inlining all of them in the order the project has them is the same
-    # elaboration problem, and it runs in this warm build instead of a cold
-    # `lake update` per case.
-    #
-    # The route is `verith`'s, as above: without it there are no bridges.
-    from reactor_lean.proof.render import generate_data_lean
-    try:
-        from verith.fbk_proveit.engine import property_to_bool_lean
-        from verith.fbk_proveit.na import atom_to_lean_na
-        from verith.fbk_proveit.bridge import atom_to_lean_fbk_bridge
-    except ImportError:
-        bridges = []
-    else:
-        bridges = _BRIDGE_SPECS
-
-    def _strip(src: str) -> str:
-        out, in_doc = [], False
-        for line in src.splitlines():
-            if line.startswith("/-"):
-                in_doc = True
-            if in_doc:
-                if "-/" in line:
-                    in_doc = False
-                continue
-            if line.startswith("import "):
-                continue
-            out.append(line)
-        return "\n".join(out)
-
-    for name, make_module, prop in bridges:
-        module = make_module()
-        ctx = LeanContext(module)
-        t = ModuleToLean4(module)
-        cert = render(module, Claim(prp=prop, kind="safety"))
-        (_CERTS_DIR / f"Bridge{name}.lean").write_text(
-            "\n".join([
-                "import Relational.Basic", "import Relational.Circ", "import Relational.Mat",
-                "import Smt", "", LINTERS_OFF, "",
-                t.to_lean_functional(), "",
-                t.to_lean_scalar(), "",
-                _strip(generate_data_lean(ctx, cert)), "",
-                _strip(atom_to_lean_na(ctx, property_to_bool_lean(module, prop),
-                                       module_name=name)), "",
-                _strip(atom_to_lean_fbk_bridge(ctx, na_module=name)),
-            ]) + "\n"
-        )
 
     argmax_lines = ["import Relational.Mat", ""]
     for elem_ty, n in _ARGMAX_SCALAR_SPECS:
