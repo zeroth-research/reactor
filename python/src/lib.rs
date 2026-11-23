@@ -32,8 +32,8 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(var::d, m)?)?;
 
     // The operations and sorts, in namespaces mirroring the `theory` crate:
-    // `tensor` holds the structural operations, with a namespace per theory
-    // and for the sorts. The operations carrying tensors come from
+    // `tensor` holds the structural operations, with a namespace per theory,
+    // for the casts between their sorts, and for the sorts. The operations carrying tensors come from
     // `theory::torch`, the others from `theory::tensor`. The terms, atoms and
     // modules at the top hold torch tensors; those holding JAX arrays are in
     // the namespace `jax`, and those holding either in `mixed`, each with the
@@ -60,6 +60,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             real.add_class::<theory::tensor::real::Min>()?;
             real.add_class::<theory::tensor::real::Max>()?;
             real.add_class::<theory::tensor::real::Transpose>()?;
+            real.add_class::<theory::tensor::real::Get>()?;
             real.add_class::<theory::tensor::real::MatMul>()?;
             real.add_class::<theory::tensor::real::Lt>()?;
             real.add_class::<theory::tensor::real::Ite>()?;
@@ -88,6 +89,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             int.add_class::<theory::tensor::int::Min>()?;
             int.add_class::<theory::tensor::int::Max>()?;
             int.add_class::<theory::tensor::int::Transpose>()?;
+            int.add_class::<theory::tensor::int::Get>()?;
             int.add_class::<theory::tensor::int::MatMul>()?;
             int.add_class::<theory::tensor::int::Lt>()?;
             int.add_class::<theory::tensor::int::Ite>()?;
@@ -110,6 +112,8 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             bool.add_class::<theory::tensor::bool::Ne>()?;
             bool.add_class::<theory::tensor::bool::All>()?;
             bool.add_class::<theory::tensor::bool::Ite>()?;
+            bool.add_class::<theory::tensor::bool::Implies>()?;
+            bool.add_class::<theory::tensor::bool::Get>()?;
             tensor.add("bool", &bool)?;
             namespaces.push(("tensor.bool", bool));
         }
@@ -136,6 +140,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             word.add_class::<theory::tensor::word::RotateRight>()?;
             word.add_class::<theory::tensor::word::Eq>()?;
             word.add_class::<theory::tensor::word::Ne>()?;
+            word.add_class::<theory::tensor::word::Get>()?;
             {
                 let signed = PyModule::new(py, "signed")?;
                 signed.add_class::<theory::tensor::word::signed::Div>()?;
@@ -166,6 +171,14 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             }
             tensor.add("word", &word)?;
             namespaces.push(("tensor.word", word));
+        }
+        {
+            let cast = PyModule::new(py, "cast")?;
+            cast.add_class::<theory::tensor::cast::ToReal>()?;
+            cast.add_class::<theory::tensor::cast::ToInt>()?;
+            cast.add_class::<theory::tensor::cast::UbvToInt>()?;
+            tensor.add("cast", &cast)?;
+            namespaces.push(("tensor.cast", cast));
         }
         {
             let sort = PyModule::new(py, "sort")?;
