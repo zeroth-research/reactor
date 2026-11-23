@@ -983,3 +983,102 @@ mod word {
         );
     }
 }
+
+/// Tests for `Implies` and the operations `Get` of each theory, which read one
+/// entry of a matrix.
+mod entries {
+    use base::boundary::{Boundary, Poly};
+    use base::mono;
+    use theory::tensor::sort::{Bool, Int, Real, Word};
+    use theory::tensor::{bool, int, real, word};
+
+    #[test]
+    fn implies_is_pointwise() {
+        let b = Bool::new([2, 3]);
+        let op = bool::Implies::new([2, 3]);
+        assert_eq!(op.dom(), Poly::from(mono![b, b]));
+        assert_eq!(op.cod(), Poly::from(mono![b]));
+        assert_eq!(op.to_string(), "Implies");
+    }
+
+    #[test]
+    fn get_reads_a_matrix_and_writes_one_entry() {
+        let op = int::Get::new(1, 2, [2, 3]).unwrap();
+        assert_eq!(op.dom(), Poly::from(mono![Int::new([2, 3])]));
+        assert_eq!(op.cod(), Poly::from(mono![Int::new([1, 1])]));
+        assert_eq!(op.to_string(), "Get[1][2]");
+
+        let op = bool::Get::new(0, 0, [1, 4]).unwrap();
+        assert_eq!(op.cod(), Poly::from(mono![Bool::new([1, 1])]));
+
+        let op = word::Get::new(0, 1, 8, [1, 2]).unwrap();
+        assert_eq!(
+            op.dom(),
+            Poly::from(mono![word::Sort::from(Word::new(8, [1, 2]).unwrap())])
+        );
+        assert_eq!(
+            op.cod(),
+            Poly::from(mono![word::Sort::from(Word::new(8, [1, 1]).unwrap())])
+        );
+    }
+
+    #[test]
+    fn get_of_reals_keeps_the_degree() {
+        let op = real::Get::with_degree(1, 0, [2, 1], 1).unwrap();
+        assert_eq!(op.dom(), Poly::from(mono![Real::with_degree([2, 1], 1)]));
+        assert_eq!(op.cod(), Poly::from(mono![Real::with_degree([1, 1], 1)]));
+    }
+
+    #[test]
+    fn get_rejects_an_entry_outside_the_matrix() {
+        assert!(int::Get::new(2, 0, [2, 3]).is_err());
+        assert!(int::Get::new(0, 3, [2, 3]).is_err());
+        assert!(real::Get::new(0, 0, [0, 1]).is_err());
+        assert!(bool::Get::new(1, 1, [1, 1]).is_err());
+        assert!(word::Get::new(0, 0, 0, [1, 1]).is_err());
+    }
+}
+
+/// Tests for `tensor::cast`.
+mod cast {
+    use base::boundary::{Boundary, Poly};
+    use base::mono;
+    use theory::tensor::cast::*;
+    use theory::tensor::sort::{Any, Int, Real, Word};
+
+    fn one(s: impl Into<Any>) -> Poly<Any> {
+        mono![s.into()].into()
+    }
+
+    #[test]
+    fn casts_keep_the_shape_and_change_the_sort() {
+        assert_eq!(ToReal::new([2, 1]).dom(), one(Int::new([2, 1])));
+        assert_eq!(ToReal::new([2, 1]).cod(), one(Real::new([2, 1])));
+        assert_eq!(ToInt::new([1, 3]).dom(), one(Real::new([1, 3])));
+        assert_eq!(ToInt::new([1, 3]).cod(), one(Int::new([1, 3])));
+        let op = UbvToInt::new(8, [1, 1]).unwrap();
+        assert_eq!(op.dom(), one(Word::new(8, [1, 1]).unwrap()));
+        assert_eq!(op.cod(), one(Int::new([1, 1])));
+    }
+
+    #[test]
+    fn ubv_to_int_has_positive_width() {
+        assert!(UbvToInt::new(0, [1, 1]).is_err());
+    }
+
+    #[test]
+    fn casts_are_operations_of_no_theory() {
+        type Any = theory::tensor::Any<Mat>;
+        #[derive(Debug)]
+        struct Mat([usize; 2]);
+        impl theory::Tensor for Mat {
+            fn shape(&self) -> [usize; 2] {
+                self.0
+            }
+        }
+        let op = Any::Cast(Cast::ToReal(ToReal::new([1, 1])));
+        assert_eq!(op.dom(), one(Int::new([1, 1])));
+        assert_eq!(op.cod(), one(Real::new([1, 1])));
+        assert_eq!(Cast::ToReal(ToReal::new([1, 1])).to_string(), "ToReal");
+    }
+}

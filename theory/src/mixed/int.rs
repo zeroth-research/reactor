@@ -194,6 +194,7 @@ impl<'py> IntoPyObject<'py> for crate::tensor::int::NIA<Tensor> {
             NIA::Min(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Max(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Transpose(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::Get(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::MatMul(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Lt(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Ite(op) => op.into_pyobject(py).map(Bound::into_any),

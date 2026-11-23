@@ -34,6 +34,7 @@ feature, `tch::Tensor` implements it, converting to and from Python
 */
 
 pub mod bool;
+pub mod cast;
 pub mod int;
 pub mod real;
 pub mod sort;
@@ -56,8 +57,9 @@ pub trait Tensor {
 
 /// The operations of all theories: a value of `Any` is an operation of one
 /// of them, on the sorts in [`sort::Any`], with its data held in tensors of
-/// type `T`; or one of the structural operations [`Havoc`], [`Skip`] and
-/// [`Zero`], which belong to no theory and so to no logic.
+/// type `T`; or a cast between their sorts, of [`cast`]; or one of the
+/// structural operations [`Havoc`], [`Skip`] and [`Zero`]. The casts and the
+/// structural operations belong to no theory and so to no logic.
 ///
 /// `subenum` defines the logics that take whole theories: [`Prop`],
 /// propositional logic; [`NRA`] and [`NIA`], non-linear real and integer
@@ -81,6 +83,7 @@ pub enum Any<T> {
     Bool(bool::Prop<T>),
     #[subenum(BV)]
     Word(word::BV<T>),
+    Cast(cast::Cast),
     Havoc(Havoc),
     Skip(Skip),
     Zero(Zero),
@@ -131,6 +134,17 @@ pub(crate) fn check_affine(a: [usize; 2], b: [usize; 2]) -> Result<(), crate::Er
     if a[0] != b[0] {
         return Err(crate::Error(format!(
             "expected A of shape [m, n] and B of shape [m, k], got {a:?} and {b:?}"
+        )));
+    }
+    Ok(())
+}
+
+/// Fails unless `row` and `col` index an entry of a matrix of shape `shape`:
+/// the check of the operations `Get`.
+pub(crate) fn check_entry(row: usize, col: usize, shape: [usize; 2]) -> Result<(), crate::Error> {
+    if row >= shape[0] || col >= shape[1] {
+        return Err(crate::Error(format!(
+            "expected an entry of a matrix of shape {shape:?}, got [{row}][{col}]"
         )));
     }
     Ok(())
@@ -275,6 +289,7 @@ where
             Any::Word(op) => Any::Word(op.clone()),
             Any::Havoc(op) => Any::Havoc(*op),
             Any::Skip(op) => Any::Skip(*op),
+            Any::Cast(op) => Any::Cast(*op),
             Any::Zero(op) => Any::Zero(*op),
         }
     }
@@ -365,6 +380,7 @@ impl<T: fmt::Display> fmt::Display for Any<T> {
             Any::Word(op) => op.fmt(f),
             Any::Havoc(op) => op.fmt(f),
             Any::Skip(op) => op.fmt(f),
+            Any::Cast(op) => op.fmt(f),
             Any::Zero(op) => op.fmt(f),
         }
     }
@@ -379,6 +395,7 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
             Any::Word(op) => op.dom().map(sort::Any::from),
             Any::Havoc(op) => op.dom(),
             Any::Skip(op) => op.dom(),
+            Any::Cast(op) => op.dom(),
             Any::Zero(op) => op.dom(),
         }
     }
@@ -391,6 +408,7 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
             Any::Word(op) => op.cod().map(sort::Any::from),
             Any::Havoc(op) => op.cod(),
             Any::Skip(op) => op.cod(),
+            Any::Cast(op) => op.cod(),
             Any::Zero(op) => op.cod(),
         }
     }
@@ -430,6 +448,9 @@ where
         }
         if let Ok(op) = ob.extract::<Skip>() {
             return Ok(Any::Skip(op));
+        }
+        if let Ok(op) = ob.extract::<cast::Cast>() {
+            return Ok(Any::Cast(op));
         }
         if let Ok(op) = ob.extract::<Zero>() {
             return Ok(Any::Zero(op));

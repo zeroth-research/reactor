@@ -210,6 +210,21 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0].logical_not()]
         case tensor.bool.All(_):
             return [r[0].all().reshape(1, 1)]
+        case tensor.bool.Implies(_):
+            return [r[0].logical_not().logical_or(r[1])]
+
+        # --- an entry of a matrix ---
+        case (tensor.real.Get(i, j, _) | tensor.int.Get(i, j, _) | tensor.bool.Get(i, j, _)
+              | tensor.word.Get(i, j, _, _)):
+            return [r[0][i:i + 1, j:j + 1].clone()]
+
+        # --- casts between the theories' sorts ---
+        case tensor.cast.ToReal(_):
+            return [r[0].to(torch.float32)]
+        case tensor.cast.ToInt(_):
+            return [r[0].floor().to(torch.int64)]
+        case tensor.cast.UbvToInt(_, _):
+            return [r[0].clone()]  # words are stored unsigned
 
         # --- words: arithmetic modulo 2^w ---
         case tensor.word.Add(w, _):
