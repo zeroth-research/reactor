@@ -3,7 +3,6 @@
 """
 
 import pytest
-import torch
 
 from reactor import Module, Var, X, LIA, Int
 from reactor.analyzer import convert_method

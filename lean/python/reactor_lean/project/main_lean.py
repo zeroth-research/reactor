@@ -165,7 +165,7 @@ def generate_main_lean(module: Module) -> str:
     # `update (ctrl) (extl_l) (extl_n)`, so the three groups are applied
     # separately -- and `extl_l` is the *previous* step's input, which the
     # loop therefore has to carry.
-    lines.append(f"""\
+    lines.append("""\
 def main : IO Unit := do
   let stdin ← IO.getStdin
   let line0 ← stdin.getLine
