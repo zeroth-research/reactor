@@ -12,7 +12,6 @@ the encoding.
 import gc
 import sys
 import types
-from pathlib import Path
 
 import pytest
 
@@ -21,8 +20,7 @@ pytest.importorskip("cvc5")
 from reactor_lean.core.errors import PredicateRefused
 from reactor_lean.inputs.python import load_module
 from reactor_lean.smt.encoding import ModuleEncoding
-
-MODS = Path(__file__).parent / "limits" / "mods"
+from testdata import MODS
 
 
 def _frames_holding(enc) -> list:

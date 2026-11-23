@@ -4,15 +4,13 @@ has. (The fbk-proveit bridge's imports are checked with the route, in
 `verith/tests/test_fbk_layout.py`.)"""
 
 import re
-from pathlib import Path
 
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.inputs.python import load_module
 from reactor_lean.project.names import CERT_LIB, SYSTEM_LAYOUT
 from reactor_lean.project.scaffold import create_project
 from reactor_lean.proof.render import certificate_files
-
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+from testdata import FIXTURES
 
 
 def _own_imports(text: str) -> list[str]:

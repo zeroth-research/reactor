@@ -6,7 +6,6 @@ instead, and anything outside it falls through to the SMT-LIB parser.
 """
 
 import os
-from pathlib import Path
 
 import cvc5
 import pytest
@@ -20,8 +19,7 @@ from reactor_lean.smt.predicates import (
     _pyeval_namespace,
     parse_predicate,
 )
-
-MODS = Path(__file__).parent / "limits" / "mods"
+from testdata import MODS
 
 
 def _env(name: str) -> PredicateParser:

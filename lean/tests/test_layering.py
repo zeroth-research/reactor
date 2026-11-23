@@ -26,7 +26,9 @@ from typing import NamedTuple
 
 import pytest
 
-LEAN = Path(__file__).parents[1] / "python" / "reactor_lean"
+from testdata import PKG_ROOT
+
+LEAN = PKG_ROOT / "python" / "reactor_lean"
 
 # Every module of the package: the SMT layer the routes are built from, and
 # the Lean code generators.

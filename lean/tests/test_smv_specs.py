@@ -1,15 +1,12 @@
 """An SMV model's own specifications as the claim."""
 
-from pathlib import Path
-
 import pytest
 
 from reactor_lean import inputs
 from reactor.smv import SMVRefused, parse_smv, read_smv
 from reactor_cli import reactor
+from testdata import FIXTURES, SMV
 
-TESTS = Path(__file__).resolve().parent
-SMV = TESTS / "smv_fixtures"
 MOD10 = (SMV / "mod10.smv").read_text()
 
 
@@ -80,7 +77,7 @@ def test_an_ambiguous_claim_is_refused(tmp_path, args, why):
 
 
 def test_spec_is_only_meaningful_for_smv_input(tmp_path):
-    r = reactor(str(TESTS / "fixtures" / "counter.py"),
+    r = reactor(str(FIXTURES / "counter.py"),
                "--spec", "1", "-o", str(tmp_path))
     assert r.returncode != 0
     assert "--spec is only meaningful for smv input" in r.stderr

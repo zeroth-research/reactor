@@ -10,14 +10,10 @@ and the digests compared.
 import json
 import subprocess
 import sys
-from os.path import dirname
-from pathlib import Path
 
 import pytest
 
-TESTS = Path(dirname(__file__))
-MODS = TESTS / "limits" / "mods"
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+from testdata import FIXTURES, MODS, TESTS
 
 # Every module whose update block writes two or more ctrl wires under one
 # branch: the shape that made the merge order observable.

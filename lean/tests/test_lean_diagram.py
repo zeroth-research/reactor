@@ -556,12 +556,11 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
     encoding computed (layer names, argmax variants). Called first, on a
     fresh `ModuleToLean4`, they print what the full producer prints rather
     than silently dropping the theorems or the argmax lemmas."""
-    from pathlib import Path
-
     from reactor_lean.codegen.encodings import ModuleToLean4
     from reactor_lean.inputs.python import load_module
+    from testdata import MODS
 
-    module = load_module(Path(__file__).parent / "limits" / "mods" / f"{mod}.py")
+    module = load_module(MODS / f"{mod}.py")
 
     circ_alone = ModuleToLean4(module).to_lean_equiv_theorems()
     assert "init_circ_eq" in circ_alone
