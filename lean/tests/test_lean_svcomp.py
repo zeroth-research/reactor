@@ -12,14 +12,12 @@ To verify proofs actually close (slow, requires lake + mathlib):
 import subprocess
 import pytest
 
-from reactor import Module, Int, LIA, Var, X
-from reactor.analyzer import convert_method
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.scaffold import create_project
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.proof.render import certificate_files
 from reactor_lean.core.certificate import Certificate, Claim
-from testdata import TESTS
+from testdata import TESTS, fixture
 
 OUTPUT_DIR = TESTS / "LeanTests"
 
@@ -84,123 +82,12 @@ def _lake_build(project_dir):
 
 
 # ──────────────────────────────────────────────────────────────
-# Test modules
-# ──────────────────────────────────────────────────────────────
-
-
-def _make_countdown():
-    """x starts at 100, decrements to 0, resets."""
-
-    def init():
-        return 100
-
-    def update(old_x):
-        if old_x == 0:
-            return 100
-        return old_x - 1
-
-    s = Var(Int([1, 1]))
-    return Module.sequential(
-        [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
-    )
-
-
-def _make_twovars():
-    """x increments toward y, resets when equal."""
-
-    def init():
-        return 0, 10
-
-    def update(old_x, old_y):
-        if old_x < old_y:
-            return old_x + 1, old_y
-        return 0, 10
-
-    x = Var(Int([1, 1]))
-    y = Var(Int([1, 1]))
-    return Module.sequential(
-        [x, y],
-        convert_method(init, {}, [X(x), X(y)], theory=LIA),
-        convert_method(update, {"old_x": x, "old_y": y}, [X(x), X(y)], theory=LIA),
-    )
-
-
-def _make_collatz_bounded():
-    """x starts at 7, steps down by 3 or 1, resets at 1."""
-
-    def init():
-        return 7
-
-    def update(old_x):
-        if old_x == 1:
-            return 7
-        if old_x > 4:
-            return old_x - 3
-        if old_x > 1:
-            return old_x - 1
-        return old_x
-
-    s = Var(Int([1, 1]))
-    return Module.sequential(
-        [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
-    )
-
-
-def _make_nested():
-    """Nested i/j counters: j counts to 3, then i increments, both reset at (3,3)."""
-
-    def init():
-        return 0, 0
-
-    def update(old_i, old_j):
-        if old_j < 3:
-            return old_i, old_j + 1
-        if old_i < 3:
-            return old_i + 1, 0
-        return 0, 0
-
-    i = Var(Int([1, 1]))
-    j = Var(Int([1, 1]))
-    return Module.sequential(
-        [i, j],
-        convert_method(init, {}, [X(i), X(j)], theory=LIA),
-        convert_method(update, {"old_i": i, "old_j": j}, [X(i), X(j)], theory=LIA),
-    )
-
-
-def _make_gcd():
-    """Euclidean GCD: a and b subtract until equal, then reset."""
-
-    def init():
-        return 12, 8
-
-    def update(old_a, old_b):
-        if old_a > old_b:
-            return old_a - old_b, old_b
-        if old_b > old_a:
-            return old_a, old_b - old_a
-        return 12, 8
-
-    a = Var(Int([1, 1]))
-    b = Var(Int([1, 1]))
-    return Module.sequential(
-        [a, b],
-        convert_method(init, {}, [X(a), X(b)], theory=LIA),
-        convert_method(update, {"old_a": a, "old_b": b}, [X(a), X(b)], theory=LIA),
-    )
-
-
-# ──────────────────────────────────────────────────────────────
 # Generation tests (fast — just check project is created)
 # ──────────────────────────────────────────────────────────────
 
 
 def test_countdown_generates():
-    m = _make_countdown()
+    m = fixture("svcomp_countdown")
     p = _gen(
         "SvcompCountdown",
         m,
@@ -212,7 +99,7 @@ def test_countdown_generates():
 
 
 def test_twovars_generates():
-    m = _make_twovars()
+    m = fixture("svcomp_twovars")
     p = _gen(
         "SvcompTwovars",
         m,
@@ -224,7 +111,7 @@ def test_twovars_generates():
 
 
 def test_collatz_bounded_generates():
-    m = _make_collatz_bounded()
+    m = fixture("svcomp_collatz_bounded")
     p = _gen(
         "SvcompCollatz",
         m,
@@ -236,7 +123,7 @@ def test_collatz_bounded_generates():
 
 
 def test_nested_generates():
-    m = _make_nested()
+    m = fixture("svcomp_nested")
     p = _gen(
         "SvcompNested",
         m,
@@ -248,7 +135,7 @@ def test_nested_generates():
 
 
 def test_gcd_generates():
-    m = _make_gcd()
+    m = fixture("svcomp_gcd")
     p = _gen(
         "SvcompGcd",
         m,
@@ -266,7 +153,7 @@ def test_gcd_generates():
 
 @pytest.mark.slow
 def test_countdown_proofs():
-    m = _make_countdown()
+    m = fixture("svcomp_countdown")
     p = _gen(
         "SvcompCountdown",
         m,
@@ -280,7 +167,7 @@ def test_countdown_proofs():
 
 @pytest.mark.slow
 def test_twovars_proofs():
-    m = _make_twovars()
+    m = fixture("svcomp_twovars")
     p = _gen(
         "SvcompTwovars",
         m,
@@ -294,7 +181,7 @@ def test_twovars_proofs():
 
 @pytest.mark.slow
 def test_collatz_bounded_proofs():
-    m = _make_collatz_bounded()
+    m = fixture("svcomp_collatz_bounded")
     p = _gen(
         "SvcompCollatz",
         m,

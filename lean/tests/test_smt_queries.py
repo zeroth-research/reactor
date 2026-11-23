@@ -4,33 +4,19 @@
 
 import pytest
 
-from reactor import Module, Var, X, LIA, Int
-from reactor.analyzer import convert_method
+from reactor import Module
 from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor_lean.core.errors import Refused
 from reactor_lean.proof.render import render_certificate
 from reactor_lean.smt.queries import predicate_terms
+from testdata import fixture
 
 pytest.importorskip("cvc5")
 
 
 def countdown() -> Module:
     """`x = 100`, then `x-1` each step, back to 100 at zero."""
-
-    def init():
-        return 100
-
-    def update(old_x):
-        if old_x == 0:
-            return 100
-        return old_x - 1
-
-    s = Var(Int([1, 1]))
-    return Module.sequential(
-        [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
-    )
+    return fixture("svcomp_countdown")
 
 
 CLAIM = Claim(prp="(= s0 0)")

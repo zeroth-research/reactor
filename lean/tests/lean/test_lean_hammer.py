@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+import testdata
 from lake import lake_build
 from testdata import LAKE_PROJECT
 
@@ -317,7 +318,6 @@ def test_generated_executable_builds_and_runs(
     refetch Mathlib; skipped if they are not built yet.
     """
     import json
-    import sys
     import tempfile
 
     from reactor_lean.project.lakefile import reactlib_checkout, with_reactlib
@@ -330,13 +330,7 @@ def test_generated_executable_builds_and_runs(
     if checkout is None:
         pytest.skip("no ReactLib checkout: set $REACTLIB")
 
-    import importlib
-
-    sys.path.insert(0, str(LAKE_PROJECT.resolve().parent / "fixtures"))
-    try:
-        module_def = importlib.import_module(fixture).module()
-    finally:
-        sys.path.pop(0)
+    module_def = testdata.fixture(fixture)
     from reactor_lean.codegen.context import LeanContext
     from reactor_lean.project.scaffold import create_project
     from reactor_lean.proof.render import certificate_files

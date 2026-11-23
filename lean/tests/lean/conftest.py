@@ -19,12 +19,12 @@ ZerothHammer for the tactic and define their own module-specific
 ``simp_mat`` / ``simp_defs`` macros. Without `verith` installed there is
 nothing to prove them with, and the tests that build them are skipped.
 """
+from functools import partial
 
 import pytest
 import torch
 
 from reactor import Module, Wire, Term, LIA, LRA, Int, Real, Bool, Var, X
-from reactor.analyzer import convert_method
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.proof.render import generate_standalone_cert_lean
@@ -32,70 +32,20 @@ from reactor_lean.core.certificate import Certificate, Claim
 from reactor_lean.project.names import LINTERS_OFF
 from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 from lake import lake_build
-from testdata import LAKE_PROJECT
+from testdata import LAKE_PROJECT, fixture
 
 _CERTS_DIR = LAKE_PROJECT / "Certs"
 
 
 # ──────────────────────────────────────────────────────────────
-# Module factories (same modules as test_lean_svcomp.py)
+# Modules: the svcomp fixtures (as test_lean_svcomp.py uses them), and
+# the ones only these files are about
 # ──────────────────────────────────────────────────────────────
 
 
-def _make_countdown() -> Module:
-    def init():
-        return 100
-
-    def update(old_x):
-        if old_x == 0:
-            return 100
-        return old_x - 1
-
-    s = Var(Int([1, 1]))
-    return Module.sequential(
-        [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
-    )
-
-
-def _make_twovars() -> Module:
-    def init():
-        return 0, 10
-
-    def update(old_x, old_y):
-        if old_x < old_y:
-            return old_x + 1, old_y
-        return 0, 10
-
-    x = Var(Int([1, 1]))
-    y = Var(Int([1, 1]))
-    return Module.sequential(
-        [x, y],
-        convert_method(init, {}, [X(x), X(y)], theory=LIA),
-        convert_method(update, {"old_x": x, "old_y": y}, [X(x), X(y)], theory=LIA),
-    )
-
-
-def _make_collatz() -> Module:
-    def init():
-        return 7
-
-    def update(old_x):
-        if old_x == 1:
-            return 7
-        if old_x > 4:
-            return old_x - 3
-        if old_x > 1:
-            return old_x - 1
-        return old_x
-
-    s = Var(Int([1, 1]))
-    return Module.sequential(
-        [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
-    )
+_make_countdown = partial(fixture, "svcomp_countdown")
+_make_twovars = partial(fixture, "svcomp_twovars")
+_make_collatz = partial(fixture, "svcomp_collatz_bounded")
 
 
 def _make_counter() -> Module:
