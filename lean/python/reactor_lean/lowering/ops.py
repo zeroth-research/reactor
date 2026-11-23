@@ -1,7 +1,9 @@
-"""One row per op variant, one column per backend: the op table.
+"""One row per op, one column per backend: the op table.
 
-`itype_name` turns a theory op into a variant name (`LIA.Ne()` -> `"Ne"`),
-and four backends turn that name into something they can emit:
+An op is one class of one theory: the namespace of `reactor.tensor` it is in
+(`theory_of`: `"int"` for `tensor.int.Ne([1, 1])`) and the name of its class
+(`itype_name`: `"Ne"`). Four backends turn that pair into something they can
+emit:
 
 | column   | backend                          | a cell holds                 |
 |----------|----------------------------------|------------------------------|
@@ -11,27 +13,35 @@ and four backends turn that name into something they can emit:
 | `smt`    | `smt.encode.translate_terms`     | `SmtOp` -> `cvc5.Term`       |
 
 These were six dicts and an if/elif chain — one per backend, doubled for the
-BV forms — with nothing relating them. A test can see a *dead* key (one no
+bit-vector forms — with nothing relating them. A test can see a *dead* key (one no
 theory defines) but not a *missing* one, so a variant the SMT encoder
-handled and no Lean emitter did went unnoticed: every unsigned and signed BV
-comparison passed cvc5's check of the obligations and then died at project
-generation in `No Lean expression mapping for: ULt`.
+handled and no Lean emitter did went unnoticed: every unsigned and signed
+bit-vector comparison passed cvc5's check of the obligations and then died at
+project generation in `No Lean expression mapping for: ULt`.
 
-A row is one variant of one or more theories, and it must say something
-about every column. A cell is either an emitter or one of
+A row is one op of one or more theories, and it must say something about
+every column. A cell is either an emitter or one of
 
 * `ViaMat(...)` — scalar column only: the matrix emitter, with scalar reads
   lifted to 1x1 and `0 0` projected back off the result;
 * `Inline(...)` — the backend emits this op from a branch of its own,
   because the argument strings are not enough (constants need the registry,
-  `Argmax` and `Linear` need shapes and the baked tensors);
+  `Argmax`, `Linear` and `Scale` need shapes and the baked tensors);
 * `Unsupported(...)` — no emitter, and the reason it is missing rather than
   forgotten. That reason is what the caller is told.
 
+A row's three Lean columns are all emitters or all refusals, so that a
+module no encoding can write is refused before any is generated
+(`codegen.terms.lean_gaps`), not half way through a project. Only the Box
+may be missing where the other two are not: of `All`, and of an
+`entrywise` op larger than 1×1. The circuit encoding, which no certificate
+reads, is optional, and a module with no circuit form gets a file saying
+why.
+
 `python -m reactor_lean.lowering.ops` prints the matrix, gaps and all.
-`tests/test_lean_ops.py` checks it against `LIA`/`LRA`/`BV` in both
-directions, so a variant added to a theory fails the suite until it has a
-row, and a row no theory backs fails it too.
+`tests/test_lean_ops.py` checks it against `reactor.tensor` in both
+directions, so an op added to a theory fails the suite until it has a row,
+and a row no theory backs fails it too.
 
 This module never imports cvc5, on purpose: `codegen/terms.py` and
 `codegen/boxes.py` import *it*, and the Lean path has to keep working where
@@ -44,7 +54,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Union
 
-from reactor import Bool, Int, Real, BitVec
+from reactor import Real
 
 from ..core.errors import Refused
 from .sorts import THEORIES, itype_name, mat_mk, theory_of
@@ -62,7 +72,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, cvc5 is not imported here
 
 @dataclass(frozen=True)
 class Unsupported:
-    """No emitter for this (variant, backend), and why not.
+    """No emitter for this (op, backend), and why not.
 
     The reason reaches the user: it is appended to the error the backend
     raises, so "no mapping" stops being the whole message.
@@ -101,22 +111,27 @@ BoxCell = Union[str, Inline, Unsupported]
 SmtCell = Union[Callable[["SmtOp"], "cvc5.Term"], Unsupported]
 
 
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  Rows
 # ══════════════════════════════════════════════════════════════════════
 
-ALL = ("LIA", "LRA", "BV")
-LIA_LRA = ("LIA", "LRA")
-BV_ONLY = ("BV",)
-# No theory defines these any more; the emitters are kept until it is
-# decided whether to drop them (TODO.md). Dispatch goes through `itype_name`,
-# so nothing can reach them.
-NONE: tuple[str, ...] = ()
+NUM = ("int", "real")
+WORD = ("word",)
+SIGNED = ("word.signed",)
+UNSIGNED = ("word.unsigned",)
+STRUCTURAL = ("",)
 
 
 @dataclass(frozen=True)
 class Op:
-    """One variant, as every backend sees it."""
+    """One op, as every backend sees it.
+
+    `entrywise`: the Lean cells are forms of 1×1 operands, read at `0 0`, and
+    so is the Box. The op of a larger shape is its scalar form applied entry
+    by entry (`codegen.terms`), and has no Box (`entrywise_shape`).
+    """
 
     name: str
     theories: tuple[str, ...]
@@ -124,6 +139,7 @@ class Op:
     scalar: ScalarCell
     box: BoxCell
     smt: SmtCell
+    entrywise: bool = False
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -139,25 +155,13 @@ def _smt_id(op: SmtOp) -> cvc5.Term:
 
 
 def _smt_const(op: SmtOp) -> cvc5.Term:
-    """LIA.Int/Bool, LRA.Real/Bool, BV.Const — scalar or per element."""
-    payload = op.term.itype._0
-    numel = payload.numel() if hasattr(payload, "numel") else 1
-    if numel > 1:
-        # matrix constant: materialize per element (payload matches shape)
+    """`Const` of every theory, scalar or per element; the element type is
+    the written wire's."""
+    payload = op.term.itype.tensor
+    if payload.numel() > 1:
         return op.tensor(op.write, payload)
-    # BV.Const's element type isn't encoded in the name (unlike
-    # LIA.Bool/LIA.Int/LRA.Real) — read it off the write wire.
-    elem = (
-        op.write.dtype
-        if op.name == "Const"
-        else {"Bool": Bool([1, 1]), "Int": Int([1, 1]), "Real": Real([1, 1])}[op.name]
-    )
-    v = op.const(elem, payload)
+    v = op.const(op.write.dtype, payload.item())
     return op.pack([v] * op.out_shape.total)
-
-
-def _smt_tensor(op: SmtOp) -> cvc5.Term:
-    return op.tensor(op.write, op.term.itype._0)
 
 
 def _smt_not(op: SmtOp) -> cvc5.Term:
@@ -180,18 +184,32 @@ def _smt_xor(op: SmtOp) -> cvc5.Term:
     return op.elementwise(op.binop(kind), *op.args)
 
 
+def _smt_negated(kind_name: str):
+    """`Nand`, `Nor` and `Xnor`: the complement of `bvand`, `bvor`, `bvxor`."""
+
+    def emit(op: SmtOp) -> cvc5.Term:
+        kind = getattr(op.K, kind_name)
+        return op.elementwise(
+            lambda a, b: op.mk(op.K.BITVECTOR_NOT, op.mk(kind, a, b)), *op.args
+        )
+
+    return emit
+
+
 def _smt_implies(op: SmtOp) -> cvc5.Term:
     return op.elementwise(op.binop(op.K.IMPLIES), *op.args)
 
 
 def _smt_ite(op: SmtOp) -> cvc5.Term:
-    # cond is a 1×1 matrix of Bool (LIA/LRA) or of BV<1> (BV); extract its
-    # scalar, coercing a BV<1> condition to a genuine Bool via `!= 0`.
-    cond = op.scalar(0)
-    cond_dtype = op.term.read[0].dtype
-    if isinstance(cond_dtype, BitVec):
-        cond = op.mk(op.K.DISTINCT, cond, op.bitvector(cond_dtype._0, 0))
-    return op.mk(op.K.ITE, cond, op.args[1], op.args[2])
+    # one of the whole branches, by the scalar of the 1×1 Bool condition
+    return op.mk(op.K.ITE, op.scalar(0), op.args[1], op.args[2])
+
+
+def _smt_all(op: SmtOp) -> cvc5.Term:
+    """The conjunction of the entries, as a 1×1 matrix."""
+    shape = op.in_shapes[0]
+    entries = [op.scalar(0, i, j) for i in range(shape.m) for j in range(shape.n)]
+    return op.pack([entries[0] if len(entries) == 1 else op.mk(op.K.AND, *entries)])
 
 
 def _smt_add(op: SmtOp) -> cvc5.Term:
@@ -226,28 +244,45 @@ def _smt_int_divmod(op: SmtOp) -> cvc5.Term:
     return op.elementwise(one, *op.args)
 
 
+def _smt_real_div(op: SmtOp) -> cvc5.Term:
+    """SMT-LIB leaves `x / 0` open, and Lean's is 0, so that case is spelled
+    out as `_smt_int_divmod` does."""
+    zero = op.const(op.write.dtype, 0)
+
+    def one(a, b):
+        return op.mk(op.K.ITE, op.mk(op.K.EQUAL, b, zero), zero,
+                     op.mk(op.K.DIVISION, a, b))
+
+    return op.elementwise(one, *op.args)
+
+
 def _smt_neg(op: SmtOp) -> cvc5.Term:
     kind = op.K.BITVECTOR_NEG if op.is_bv else op.K.NEG
     return op.elementwise(op.unop(kind), op.args[0])
 
 
-def _smt_bv_divmod(op: SmtOp) -> cvc5.Term:
-    """BV is the only theory with division and modulo, and it signs both."""
-    kind = {
-        "UDiv": op.K.BITVECTOR_UDIV,
-        "SDiv": op.K.BITVECTOR_SDIV,
-        "UMod": op.K.BITVECTOR_UREM,
-        "SMod": op.K.BITVECTOR_SMOD,
-    }[op.name]
-    return op.elementwise(op.binop(kind), *op.args)
+def _smt_abs(op: SmtOp) -> cvc5.Term:
+    if op.is_bv:
+        zero = op.bitvector(op.write.dtype.width, 0)
+        return op.elementwise(
+            lambda a: op.mk(op.K.ITE, op.mk(op.K.BITVECTOR_SLT, a, zero),
+                            op.mk(op.K.BITVECTOR_NEG, a), a),
+            op.args[0],
+        )
+    zero = op.const(op.write.dtype, 0)
+    return op.elementwise(
+        lambda a: op.mk(op.K.ITE, op.mk(op.K.GEQ, a, zero), a, op.mk(op.K.NEG, a)),
+        op.args[0],
+    )
 
 
-def _smt_bv_to_bool(op: SmtOp) -> cvc5.Term:
-    # Despite the name, output is BV<1> (non-zero test), not Bool.
-    a = op.scalar(0)
-    bw = op.term.read[0].dtype._0
-    pred = op.mk(op.K.DISTINCT, a, op.bitvector(bw, 0))
-    return op.pack([op.bool_or_bv1(pred, True)])
+def _smt_bv(kind_name: str):
+    """A word operation that is one cvc5 `Kind`, pointwise."""
+
+    def emit(op: SmtOp) -> cvc5.Term:
+        return op.elementwise(op.binop(getattr(op.K, kind_name)), *op.args)
+
+    return emit
 
 
 def _smt_compare(op: SmtOp) -> cvc5.Term:
@@ -259,29 +294,23 @@ def _smt_compare(op: SmtOp) -> cvc5.Term:
         "Eq": op.K.EQUAL,
         "Ne": op.K.DISTINCT,
     }[op.name]
-    # LIA/LRA Eq/Ne write Bool; BV.Eq/BV.Ne write BV<1> (bv.rs).
-    pred = op.mk(kind, op.scalar(0), op.scalar(1))
-    return op.pack([op.bool_or_bv1(pred, op.is_bv)])
+    # pointwise, as the comparisons are in every theory
+    return op.elementwise(op.binop(kind), *op.args)
 
 
-def _smt_bv_compare(op: SmtOp) -> cvc5.Term:
-    kind = {
-        "ULe": op.K.BITVECTOR_ULE,
-        "ULt": op.K.BITVECTOR_ULT,
-        "UGe": op.K.BITVECTOR_UGE,
-        "UGt": op.K.BITVECTOR_UGT,
-        "SLe": op.K.BITVECTOR_SLE,
-        "SLt": op.K.BITVECTOR_SLT,
-        "SGe": op.K.BITVECTOR_SGE,
-        "SGt": op.K.BITVECTOR_SGT,
-    }[op.name]
-    # These are BV-only ops; output is BV<1>, not the native Bool cvc5
-    # gives back from BITVECTOR_U*/S* comparison Kinds.
-    pred = op.mk(kind, op.scalar(0), op.scalar(1))
-    return op.pack([op.bool_or_bv1(pred, True)])
+def _smt_word_compare(signed: bool):
+    """The orderings of words, read unsigned or signed; they write Bool."""
+
+    def emit(op: SmtOp) -> cvc5.Term:
+        suffix = {"Lt": "LT", "Le": "LE", "Gt": "GT", "Ge": "GE"}[op.name]
+        kind = getattr(op.K, f"BITVECTOR_{'S' if signed else 'U'}{suffix}")
+        return op.elementwise(op.binop(kind), *op.args)
+
+    return emit
 
 
 def _smt_min_max(op: SmtOp) -> cvc5.Term:
+    """The least (greatest) entry, folded row by row, as a 1×1 matrix."""
     return op.pack([op.reduce_flat(0, take_min=op.name == "Min")])
 
 
@@ -289,11 +318,9 @@ def _smt_matmul(op: SmtOp) -> cvc5.Term:
     return op.matmul(op.args[0], op.args[1], op.in_shapes[0], op.in_shapes[1])
 
 
-def _smt_linear(op: SmtOp) -> cvc5.Term:
-    # Convention Y = A·X + B: A ([out,in]) and B ([out,1] or empty) are
-    # baked into the op; args[0] is the single read wire X ([in,batch]).
-    A_tensor = op.term.itype._0
-    B_tensor = op.term.itype._1
+def _smt_affine(op: SmtOp, A_tensor, B_tensor) -> cvc5.Term:
+    """`Y = A·X + B`, with `A` ([out,in]) and `B` ([out,batch]) baked into
+    the op; `args[0]` is the single read wire `X` ([in,batch])."""
     a_rows, a_cols = int(A_tensor.shape[0]), int(A_tensor.shape[1])
     A_shape = op.shape(a_rows, a_cols)
     A_data = A_tensor.reshape(a_rows, a_cols)
@@ -308,16 +335,27 @@ def _smt_linear(op: SmtOp) -> cvc5.Term:
     ax = op.matmul(A_term, op.args[0], A_shape, op.in_shapes[0])
     if B_tensor.numel() == 0:
         return ax
+    # `B` is of the output's shape
     out_shape = op.out_shape
-    B_data = B_tensor.reshape(int(B_tensor.shape[0]), int(B_tensor.shape[1]))
+    B_data = B_tensor.reshape(out_shape.m, out_shape.n)
     B_term = op.pack(
         [
-            op.const(op.write.dtype, B_data[i, 0].item())
+            op.const(op.write.dtype, B_data[i, j].item())
             for i in range(out_shape.m)
-            for _ in range(out_shape.n)
+            for j in range(out_shape.n)
         ]
     )
     return op.elementwise(op.binop(op.K.ADD), ax, B_term)
+
+
+def _smt_linear(op: SmtOp) -> cvc5.Term:
+    return _smt_affine(op, op.term.itype.a, op.term.itype.b)
+
+
+def _smt_scale(op: SmtOp) -> cvc5.Term:
+    """`Scale(c)`: the pointwise product of `c` and the operand."""
+    c = op.tensor(op.write, op.term.itype.tensor)
+    return op.elementwise(op.binop(op.K.MULT), c, op.args[0])
 
 
 def _smt_relu(op: SmtOp) -> cvc5.Term:
@@ -329,7 +367,8 @@ def _smt_relu(op: SmtOp) -> cvc5.Term:
 
 def _smt_argmax(op: SmtOp) -> cvc5.Term:
     idx = op.argmax_flat(0)
-    # `argmax_flat` builds an Int index; LRA modules carry it on a Real wire
+    # `argmax_flat` builds an Int index; a module of reals carries it on a
+    # Real wire
     if isinstance(op.write.dtype, Real):
         idx = op.mk(op.K.TO_REAL, idx)
     return op.pack([idx])
@@ -340,67 +379,70 @@ def _smt_get(op: SmtOp) -> cvc5.Term:
 
 
 def _smt_cast(op: SmtOp) -> cvc5.Term:
-    def one(a):
-        if op.name == "IntToReal":
-            return op.mk(op.K.TO_REAL, a)
-        if op.name == "RealToInt":
-            return op.mk(op.K.TO_INTEGER, a)
-        if op.name == "BVToInt":
-            return op.mk(op.K.BITVECTOR_UBV_TO_INT, a)
-        if op.name == "BitToBool":
-            return op.mk(op.K.EQUAL, a, op.bitvector(1, 1))
-        return op.mk(op.K.ITE, a, op.bitvector(1, 1), op.bitvector(1, 0))
-
-    return op.elementwise(one, op.args[0])
+    kind = {
+        "ToReal": op.K.TO_REAL,
+        "ToInt": op.K.TO_INTEGER,
+        "UbvToInt": op.K.BITVECTOR_UBV_TO_INT,
+    }[op.name]
+    return op.elementwise(op.unop(kind), op.args[0])
 
 
-def _smt_tensor_get(op: SmtOp) -> cvc5.Term:
-    return op.pack([op.scalar(0)])
+def _smt_word_indexed(kind_name: str, indices):
+    """A word operation that is a cvc5 `Kind` indexed by sizes the op holds
+    (`indices(itype)`), pointwise."""
+
+    def emit(op: SmtOp) -> cvc5.Term:
+        kind = getattr(op.K, kind_name)
+        idx = indices(op.term.itype)
+        return op.elementwise(lambda a: op.mk_indexed(kind, idx, a), op.args[0])
+
+    return emit
 
 
-def _smt_to_unsigned(op: SmtOp) -> cvc5.Term:
-    a = op.scalar(0)
-    zero = op.integer(0)
-    return op.pack([op.mk(op.K.ITE, op.mk(op.K.GEQ, a, zero), a, zero)])
+def _smt_concat(op: SmtOp) -> cvc5.Term:
+    return op.elementwise(op.binop(op.K.BITVECTOR_CONCAT), *op.args)
 
 
 # ══════════════════════════════════════════════════════════════════════
 #  Reasons shared by several rows
 # ══════════════════════════════════════════════════════════════════════
 
-# The three Lean columns share one reason whenever a variant is missing from
-# all of them; only the matrix cell spells the reason out.
+# The three Lean columns share one reason whenever an op is missing from all
+# of them; only the matrix cell spells the reason out.
 _SEE_MAT = Unsupported("see the matrix column")
 
 _NONDET = Unsupported(
-    "a nondeterministic value (nullary, one written wire — `check_havoc` in "
-    "theory/src/lib.rs). Every encoding here is a function of the read "
-    "wires, so there is nowhere to put the choice."
+    "a nondeterministic value (`Havoc`: nullary, one written wire). Every "
+    "encoding here is a function of the read wires, so there is nowhere to "
+    "put the choice."
 )
 
-_UNINTERPRETED = Unsupported(
-    "an uninterpreted symbol has no obvious translation — emit an `opaque` "
-    "nothing can prove anything about, or reject it at the front end. "
-    "Which of the two is an open decision."
-)
-
-_ZEROGRAD = Unsupported(
-    "the zero of the `Differential` trait (`theory/src/lra.rs`, marked "
-    "unstable), used for gradients rather than for a transition. No "
-    "encoding has needed it."
+_ZERO = Unsupported(
+    "the zero rate of change, of a `delay` block. No encoding here has "
+    "continuous time."
 )
 
 
-def _bv_only_in_smt(lean_form: str) -> Unsupported:
-    """A BV op cvc5 encodes and no Lean backend emits.
+def _no_box(lean_form: str) -> Unsupported:
+    """An op with no `Box` in `Relational.Circ`. Its other Lean forms would be
+    easy, but the Lean columns are all emitters or all refusals, so that a
+    module using it is refused before any of its encodings is generated."""
+    return Unsupported(
+        f"no `Box` in `Relational.Circ`. {lean_form} With a new `Box` all "
+        "three Lean columns could have it."
+    )
+
+
+def _word_only_in_smt(lean_form: str) -> Unsupported:
+    """A word op cvc5 encodes and no Lean backend emits.
 
     This is the divergence that made the table necessary: cvc5's check of
     the obligations runs on the SMT encoding and passes, and generation then
-    fails.
+    fails -- which `codegen.terms.lean_gaps` now reports up front.
     """
     return Unsupported(
         f"encoded for SMT, never for Lean. {lean_form} A module using it "
-        "passes cvc5's check of the obligations and fails at project "
+        "passes cvc5's check of the obligations and is refused at project "
         "generation."
     )
 
@@ -411,92 +453,98 @@ def _bv_only_in_smt(lean_form: str) -> Unsupported:
 
 OPS: tuple[Op, ...] = (
     # ── structural ────────────────────────────────────────────────────
-    Op("Id", ALL, mat=lambda a: a[0], scalar=lambda a: a[0], box="Box.id", smt=_smt_id),
+    Op("Skip", STRUCTURAL, mat=lambda a: a[0], scalar=lambda a: a[0], box="Box.id",
+       smt=_smt_id),
+    Op("Havoc", STRUCTURAL, mat=_NONDET, scalar=_SEE_MAT, box=_SEE_MAT, smt=_NONDET),
+    Op("Zero", STRUCTURAL, mat=_ZERO, scalar=_SEE_MAT, box=_SEE_MAT, smt=_ZERO),
     # ── constants ─────────────────────────────────────────────────────
-    # The element type is in the variant name for LIA/LRA and on the write
-    # wire for BV; scalar-vs-matrix is decided by the wire's shape.
-    *(
-        Op(
-            name,
-            theories,
-            mat=Inline("codegen.literals.constant_expr"),
-            scalar=Inline("codegen.terms._constant_expr_scalar"),
-            box=Inline("circ: @Box.const"),
-            smt=_smt_const,
-        )
-        for name, theories in (
-            ("Bool", LIA_LRA),
-            ("Int", ("LIA",)),
-            ("Real", ("LRA",)),
-            ("Const", BV_ONLY),
-        )
+    # The element type is the written wire's; scalar-vs-matrix is decided by
+    # the wire's shape.
+    Op(
+        "Const",
+        ("bool", "int", "real", "word"),
+        mat=Inline("codegen.literals.constant_expr"),
+        scalar=Inline("codegen.terms._constant_expr_scalar"),
+        box=Inline("circ: @Box.const"),
+        smt=_smt_const,
     ),
-    # ── Boolean forms (LIA/LRA) ───────────────────────────────────────
-    # Operands and results are all 1×1 matrices, so the matrix forms extract
-    # position `0 0`. FIXME: element-wise ops should be defined over the
-    # whole matrix, to match Rust.
+    # ── propositional logic ───────────────────────────────────────────
+    # The matrix forms and Boxes are of 1×1 operands, read at `0 0`; a larger
+    # op is the scalar form entry by entry (`entrywise`).
     Op(
         "Not",
-        LIA_LRA,
+        ("bool",),
         mat=lambda a: mat_mk(f"!({a[0]} 0 0)"),
         scalar=lambda a: f"(!{a[0]})",
         box="Box.not",
         smt=_smt_not,
+        entrywise=True,
     ),
     Op(
         "And",
-        LIA_LRA,
+        ("bool",),
         mat=lambda a: mat_mk(f"({a[0]} 0 0 && {a[1]} 0 0)"),
         scalar=lambda a: f"({a[0]} && {a[1]})",
         box="Box.and",
         smt=_smt_and,
+        entrywise=True,
     ),
     Op(
         "Or",
-        LIA_LRA,
+        ("bool",),
         mat=lambda a: mat_mk(f"({a[0]} 0 0 || {a[1]} 0 0)"),
         scalar=lambda a: f"({a[0]} || {a[1]})",
         box="Box.or",
         smt=_smt_or,
+        entrywise=True,
     ),
     Op(
         "Xor",
-        LIA_LRA,
-        mat=Unsupported(
-            "no Lean form; nothing has asked for one."
-        ),
+        ("bool",),
+        mat=Unsupported("no Lean form; nothing has asked for one."),
         scalar=_SEE_MAT,
         box=_SEE_MAT,
         smt=_smt_xor,
     ),
     Op(
         "Implies",
-        LIA_LRA,
+        ("bool",),
         mat=lambda a: mat_mk(f"(!({a[0]} 0 0) || {a[1]} 0 0)"),
         scalar=lambda a: f"(!{a[0]} || {a[1]})",
         box="Box.implies",
         smt=_smt_implies,
+        entrywise=True,
+    ),
+    # `All` reduces a matrix to the 1×1 condition of an `Ite`, which picks
+    # one of two whole matrices by it, in every theory. It quantifies over
+    # the pairs of indices: `∀ i j, ...` has no `Decidable` instance, which
+    # instance search would have to find through `Matrix`. Ascribed, as
+    # `matMin`'s type is, so that the scalar encoding can take its `0 0`.
+    Op(
+        "All",
+        ("bool",),
+        mat=lambda a: (f"({mat_mk(f'decide (∀ p : _ × _, {a[0]} p.1 p.2 = true)')}"
+                       " : Matrix (Fin 1) (Fin 1) Bool)"),
+        scalar=ViaMat("a reduction of a matrix; there is no bare-scalar form"),
+        box=Unsupported(
+            "no `Box` in `Relational.Circ` reduces a matrix of booleans; a "
+            "new `Box.all` would give the circuit encoding `All`."
+        ),
+        smt=_smt_all,
     ),
     Op(
         "Ite",
-        LIA_LRA,
+        ("bool", "int", "real", "word"),
         mat=lambda a: f"(if {a[0]} 0 0 then {a[1]} else {a[2]})",
         scalar=lambda a: f"(if {a[0]} then {a[1]} else {a[2]})",
         box="Box.ite",
         smt=_smt_ite,
     ),
-    # ── BitVec forms ──────────────────────────────────────────────────
-    # BV has no Bool wires at all: an `Ite` condition and an `Eq` result are
-    # both `BitVec 1`. The Boolean forms above do not apply (`!`, `&&`,
-    # `||` and a bare `if c then` were emitted against `BitVec 1` values,
-    # which does not elaborate). These use BitVec's own operators and
-    # compare a 1-bit value against 1 directly, rather than converting
-    # through `BV.BVToBool`. `Box.and`/`not`/`or` are likewise fixed to
-    # `Matrix (Fin 1) (Fin 1) Bool` — see the note beside the `bv*` boxes in
-    # `Relational.Circ`.
+    # ── bitwise ───────────────────────────────────────────────────────
+    # `Box.bvNot`/`bvAnd`/... map BitVec's own operators over the matrix.
     Op(
         "Not",
-        BV_ONLY,
+        WORD,
         mat=lambda a: mat_mk(f"~~~({a[0]} i j)", "i", "j"),
         scalar=lambda a: f"(~~~{a[0]})",
         box="Box.bvNot",
@@ -504,7 +552,7 @@ OPS: tuple[Op, ...] = (
     ),
     Op(
         "And",
-        BV_ONLY,
+        WORD,
         mat=lambda a: mat_mk(f"({a[0]} i j) &&& ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} &&& {a[1]})",
         box="Box.bvAnd",
@@ -512,7 +560,7 @@ OPS: tuple[Op, ...] = (
     ),
     Op(
         "Or",
-        BV_ONLY,
+        WORD,
         mat=lambda a: mat_mk(f"({a[0]} i j) ||| ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} ||| {a[1]})",
         box="Box.bvOr",
@@ -520,24 +568,34 @@ OPS: tuple[Op, ...] = (
     ),
     Op(
         "Xor",
-        BV_ONLY,
+        WORD,
         mat=lambda a: mat_mk(f"({a[0]} i j) ^^^ ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} ^^^ {a[1]})",
         box="Box.bvXor",
         smt=_smt_xor,
     ),
-    Op(
-        "Ite",
-        BV_ONLY,
-        mat=lambda a: f"(if {a[0]} 0 0 = 1 then {a[1]} else {a[2]})",
-        scalar=lambda a: f"(if {a[0]} = 1 then {a[1]} else {a[2]})",
-        box="Box.bvIte",
-        smt=_smt_ite,
+    *(
+        Op(
+            name,
+            WORD,
+            mat=_word_only_in_smt(
+                f"The matrix form would be `~~~(a {sym} b)`, the Box a new "
+                f"`Box.bv{name}` in `Relational.Circ`."
+            ),
+            scalar=_SEE_MAT,
+            box=_SEE_MAT,
+            smt=_smt_negated(kind),
+        )
+        for name, sym, kind in (
+            ("Nand", "&&&", "BITVECTOR_AND"),
+            ("Nor", "|||", "BITVECTOR_OR"),
+            ("Xnor", "^^^", "BITVECTOR_XOR"),
+        )
     ),
     # ── arithmetic ────────────────────────────────────────────────────
     Op(
         "Add",
-        ALL,
+        ("int", "real", "word"),
         mat=lambda a: f"({a[0]} + {a[1]})",
         scalar=lambda a: f"({a[0]} + {a[1]})",
         box="Box.add",
@@ -545,26 +603,18 @@ OPS: tuple[Op, ...] = (
     ),
     Op(
         "Sub",
-        ALL,
+        ("int", "real", "word"),
         mat=lambda a: f"({a[0]} - {a[1]})",
         scalar=lambda a: f"({a[0]} - {a[1]})",
         box="Box.sub",
         smt=_smt_sub,
     ),
-    Op(
-        "Mul",
-        BV_ONLY,
-        mat=lambda a: f"({a[0]} * {a[1]})",
-        scalar=lambda a: f"({a[0]} * {a[1]})",
-        box="Box.mul",
-        smt=_smt_mul,
-    ),
     # `*` on two `Matrix`es is their matrix product (Mathlib's), so the
-    # elementwise product is spelled out element by element, and its Box is
+    # pointwise product is spelled out entry by entry, and its Box is
     # `Box.hadamard` rather than `Box.mul`.
     Op(
         "Mul",
-        LIA_LRA,
+        ("int", "real", "word"),
         mat=lambda a: mat_mk(f"{a[0]} i j * {a[1]} i j", "i", "j"),
         scalar=lambda a: f"({a[0]} * {a[1]})",
         box="Box.hadamard",
@@ -575,7 +625,7 @@ OPS: tuple[Op, ...] = (
     *(
         Op(
             name,
-            ("LIA",),
+            ("int",),
             mat=lambda a, sym=sym: mat_mk(f"{a[0]} i j {sym} {a[1]} i j", "i", "j"),
             scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
             box=box,
@@ -583,173 +633,176 @@ OPS: tuple[Op, ...] = (
         )
         for name, sym, box in (("Div", "/", "Box.div"), ("Mod", "%", "Box.mod"))
     ),
+    # Lean's `x / 0` on `Real` is 0, which the SMT form spells out.
+    Op(
+        "Div",
+        ("real",),
+        mat=lambda a: mat_mk(f"{a[0]} i j / {a[1]} i j", "i", "j"),
+        scalar=lambda a: f"({a[0]} / {a[1]})",
+        box="Box.div",
+        smt=_smt_real_div,
+    ),
     Op(
         "Neg",
-        ALL,
+        ("int", "real", "word"),
         mat=lambda a: f"(-{a[0]})",
         scalar=lambda a: f"(-{a[0]})",
         box="Box.neg",
         smt=_smt_neg,
     ),
     Op(
-        "UDiv",
-        BV_ONLY,
-        mat=_bv_only_in_smt(
+        "Abs",
+        NUM,
+        mat=_no_box("The matrix form would be `|a i j|`."),
+        scalar=_SEE_MAT,
+        box=_SEE_MAT,
+        smt=_smt_abs,
+    ),
+    Op(
+        "Abs",
+        SIGNED,
+        mat=_word_only_in_smt(
+            "The matrix form would negate the entries below zero, the Box a "
+            "new `Box.bvAbs` in `Relational.Circ`."
+        ),
+        scalar=_SEE_MAT,
+        box=_SEE_MAT,
+        smt=_smt_abs,
+    ),
+    Op(
+        "Div",
+        UNSIGNED,
+        mat=_word_only_in_smt(
             "The matrix form would be `BitVec.udiv`, the Box a new "
             "`Box.bvUDiv` in `Relational.Circ`."
         ),
         scalar=_SEE_MAT,
         box=_SEE_MAT,
-        smt=_smt_bv_divmod,
+        smt=_smt_bv("BITVECTOR_UDIV"),
     ),
     Op(
-        "SDiv",
-        BV_ONLY,
-        mat=_bv_only_in_smt(
+        "Div",
+        SIGNED,
+        mat=_word_only_in_smt(
             "The matrix form would be `BitVec.sdiv`, the Box a new "
             "`Box.bvSDiv` in `Relational.Circ`."
         ),
         scalar=_SEE_MAT,
         box=_SEE_MAT,
-        smt=_smt_bv_divmod,
+        smt=_smt_bv("BITVECTOR_SDIV"),
     ),
     Op(
-        "UMod",
-        BV_ONLY,
+        "Rem",
+        UNSIGNED,
         mat=lambda a: mat_mk(f"BitVec.umod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"(BitVec.umod {a[0]} {a[1]})",
         box="Box.bvUMod",
-        smt=_smt_bv_divmod,
+        smt=_smt_bv("BITVECTOR_UREM"),
     ),
     Op(
-        "SMod",
-        BV_ONLY,
+        "Rem",
+        SIGNED,
+        mat=_word_only_in_smt(
+            "The matrix form would be `BitVec.srem`, the Box a new "
+            "`Box.bvSRem` in `Relational.Circ`."
+        ),
+        scalar=_SEE_MAT,
+        box=_SEE_MAT,
+        smt=_smt_bv("BITVECTOR_SREM"),
+    ),
+    Op(
+        "Mod",
+        SIGNED,
         mat=lambda a: mat_mk(f"BitVec.smod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"(BitVec.smod {a[0]} {a[1]})",
         box="Box.bvSMod",
-        smt=_smt_bv_divmod,
+        smt=_smt_bv("BITVECTOR_SMOD"),
     ),
-    # ── comparisons ───────────────────────────────────────────────────
-    Op(
-        "Lt",
-        LIA_LRA,
-        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 < {a[1]} 0 0)"),
-        scalar=lambda a: f"(decide ({a[0]} < {a[1]}))",
-        box="Box.lt",
-        smt=_smt_compare,
-    ),
-    Op(
-        "Le",
-        LIA_LRA,
-        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 ≤ {a[1]} 0 0)"),
-        scalar=lambda a: f"(decide ({a[0]} ≤ {a[1]}))",
-        box="Box.le",
-        smt=_smt_compare,
-    ),
-    Op(
-        "Gt",
-        LIA_LRA,
-        mat=lambda a: mat_mk(f"decide ({a[1]} 0 0 < {a[0]} 0 0)"),
-        scalar=lambda a: f"(decide ({a[1]} < {a[0]}))",
-        box="Box.gt",
-        smt=_smt_compare,
-    ),
-    Op(
-        "Ge",
-        LIA_LRA,
-        mat=lambda a: mat_mk(f"decide ({a[1]} 0 0 ≤ {a[0]} 0 0)"),
-        scalar=lambda a: f"(decide ({a[1]} ≤ {a[0]}))",
-        box="Box.ge",
-        smt=_smt_compare,
-    ),
-    Op(
-        "Eq",
-        LIA_LRA,
-        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 = {a[1]} 0 0)"),
-        scalar=lambda a: f"(decide ({a[0]} = {a[1]}))",
-        box="Box.eq",
-        smt=_smt_compare,
-    ),
-    Op(
-        "Ne",
-        LIA_LRA,
-        mat=lambda a: mat_mk(f"decide ({a[0]} 0 0 ≠ {a[1]} 0 0)"),
-        scalar=lambda a: f"(decide ({a[0]} ≠ {a[1]}))",
-        box="Box.neq",
-        smt=_smt_compare,
-    ),
-    Op(
-        "Eq",
-        BV_ONLY,
-        mat=lambda a: mat_mk(f"if {a[0]} 0 0 = {a[1]} 0 0 then 1 else 0"),
-        scalar=lambda a: f"(if {a[0]} = {a[1]} then 1 else 0)",
-        box="Box.bvEq",
-        smt=_smt_compare,
-    ),
-    Op(
-        "Ne",
-        BV_ONLY,
-        mat=lambda a: mat_mk(f"if {a[0]} 0 0 = {a[1]} 0 0 then 0 else 1"),
-        scalar=lambda a: f"(if {a[0]} = {a[1]} then 0 else 1)",
-        box="Box.bvNe",
-        smt=_smt_compare,
-    ),
-    # BV compares unsigned and signed separately, and writes the answer to a
-    # `BV<1>` wire rather than a Bool one.
+    # ── comparisons: write Bool ───────────────────────────────────────
     *(
         Op(
             name,
-            BV_ONLY,
-            mat=_bv_only_in_smt(
+            NUM,
+            mat=lambda a, f=f: mat_mk(f"decide ({f(f'{a[0]} 0 0', f'{a[1]} 0 0')})"),
+            scalar=lambda a, f=f: f"(decide ({f(a[0], a[1])}))",
+            box=box,
+            smt=_smt_compare,
+            entrywise=True,
+        )
+        for name, f, box in (
+            ("Lt", lambda x, y: f"{x} < {y}", "Box.lt"),
+            ("Le", lambda x, y: f"{x} ≤ {y}", "Box.le"),
+            ("Gt", lambda x, y: f"{y} < {x}", "Box.gt"),
+            ("Ge", lambda x, y: f"{y} ≤ {x}", "Box.ge"),
+        )
+    ),
+    *(
+        Op(
+            name,
+            ("bool", "int", "real", "word"),
+            mat=lambda a, f=f: mat_mk(f"decide ({f(f'{a[0]} 0 0', f'{a[1]} 0 0')})"),
+            scalar=lambda a, f=f: f"(decide ({f(a[0], a[1])}))",
+            box=box,
+            smt=_smt_compare,
+            entrywise=True,
+        )
+        for name, f, box in (
+            ("Eq", lambda x, y: f"{x} = {y}", "Box.eq"),
+            ("Ne", lambda x, y: f"{x} ≠ {y}", "Box.neq"),
+        )
+    ),
+    # Words compare unsigned and signed apart.
+    *(
+        Op(
+            name,
+            theories,
+            mat=_word_only_in_smt(
                 "The matrix form would compare with `BitVec`'s own "
-                "ordering and reify the answer as a 1-bit value, the Box a "
-                "new `Box.bv*` in `Relational.Circ`."
+                f"{order} ordering, the Box a new `Box.bv*` in "
+                "`Relational.Circ`."
             ),
             scalar=_SEE_MAT,
             box=_SEE_MAT,
-            smt=_smt_bv_compare,
+            smt=_smt_word_compare(signed),
         )
-        for name in ("ULt", "ULe", "UGt", "UGe", "SLt", "SLe", "SGt", "SGe")
+        for theories, order, signed in ((UNSIGNED, "unsigned", False),
+                                        (SIGNED, "signed", True))
+        for name in ("Lt", "Le", "Gt", "Ge")
     ),
     # ── reductions and matrix ops ─────────────────────────────────────
-    # `Min`/`Max` are unary reductions — one read wire of any shape, a
-    # 1×1 matrix written — folded row-major from element (0,0).
-    Op(
-        "Min",
-        LIA_LRA,
-        mat=lambda a: f"(matMin {a[0]})",
-        scalar=ViaMat("`matMin` folds a matrix; there is no bare-scalar fold"),
-        box="Box.min",
-        smt=_smt_min_max,
-    ),
-    Op(
-        "Max",
-        LIA_LRA,
-        mat=lambda a: f"(matMax {a[0]})",
-        scalar=ViaMat("`matMax` folds a matrix; there is no bare-scalar fold"),
-        box="Box.max",
-        smt=_smt_min_max,
+    # `Min`/`Max` are reductions -- one read wire of any shape, a 1×1
+    # matrix written -- folded row by row from entry (0, 0).
+    *(
+        Op(
+            name,
+            NUM,
+            mat=lambda a, name=name: f"(mat{name} {a[0]})",
+            scalar=ViaMat(f"`mat{name}` folds a matrix; there is no bare-scalar fold"),
+            box=f"Box.{name.lower()}",
+            smt=_smt_min_max,
+        )
+        for name in ("Min", "Max")
     ),
     Op(
         "MatMul",
-        BV_ONLY,
+        NUM,
         mat=lambda a: f"({a[0]} * {a[1]})",
         scalar=lambda a: f"({a[0]} * {a[1]})",
         box="Box.mul",
         smt=_smt_matmul,
     ),
-    # `Get`'s element is baked into the op, as `Linear`'s matrices are.
+    # `Get`'s entry is baked into the op, as `Linear`'s matrices are.
     Op(
         "Get",
-        ALL,
+        ("bool", "int", "real", "word"),
         mat=Inline("codegen.terms._get_expr"),
-        scalar=Inline("codegen.terms._get_expr, or the element's flat slot"),
+        scalar=Inline("codegen.terms._get_expr, or the entry's flat slot"),
         box=Inline("codegen.boxes._get_box"),
         smt=_smt_get,
     ),
     Op(
         "Transpose",
-        LIA_LRA,
+        NUM,
         mat=lambda a: f"(Matrix.transpose {a[0]})",
         scalar=ViaMat("`Matrix.transpose` is a matrix rearrangement"),
         box="Box.transpose",
@@ -761,7 +814,7 @@ OPS: tuple[Op, ...] = (
     ),
     Op(
         "ReLU",
-        LIA_LRA,
+        NUM,
         mat=lambda a: f"ReLu {a[0]}",
         # `ReLu` is a matrix op; on a scalar-bound wire it has to be the
         # bare `max 0 x`. Lifting the operand and projecting the result
@@ -772,137 +825,84 @@ OPS: tuple[Op, ...] = (
         smt=_smt_relu,
     ),
     # `Linear`'s A and B are baked into the op rather than read from wires,
-    # and `Argmax` picks its form from the read wire's shape — neither fits
-    # a cell taking argument strings.
+    # `Scale`'s factor too (it is written as the affine map `diag(c)·X`),
+    # and `Argmax` picks its form from the read wire's shape — none fits a
+    # cell taking argument strings.
     Op(
         "Linear",
-        LIA_LRA,
+        NUM,
         mat=Inline("codegen.terms._linear_expr"),
         scalar=Inline("codegen.terms._linear_expr, lifted and projected"),
         box=Inline("codegen.boxes._linear_box"),
         smt=_smt_linear,
     ),
     Op(
+        "Scale",
+        NUM,
+        mat=Inline("codegen.terms._linear_expr, as `diag(c)·X`"),
+        scalar=Inline("codegen.terms._linear_expr, lifted and projected"),
+        box=Inline("codegen.boxes._linear_box, as `diag(c)·X`"),
+        smt=_smt_scale,
+    ),
+    Op(
         "Argmax",
-        LIA_LRA,
+        NUM,
         mat=Inline("codegen.terms._argmax_expr"),
         scalar=Inline("native: the `argmax1d_scalar_*` axiom, else _argmax_expr"),
         box=Inline("codegen.boxes._argmax_box"),
         smt=_smt_argmax,
     ),
-    # ── bit-width and conversion ──────────────────────────────────────
-    Op(
-        "BVToBool",
-        BV_ONLY,
-        mat=_bv_only_in_smt(
-            "Despite the name it writes a `BV<1>` (a non-zero test), which "
-            "the Lean BV forms get by comparing against 1 inline."
-        ),
-        scalar=_SEE_MAT,
-        box=_SEE_MAT,
-        smt=_smt_bv_to_bool,
-    ),
+    # ── shifts, rotations and resizing of words ───────────────────────
     *(
         Op(
             name,
-            BV_ONLY,
-            mat=Unsupported(reason),
+            theories,
+            mat=_word_only_in_smt(f"The matrix form would be `{lean}`."),
             scalar=_SEE_MAT,
             box=_SEE_MAT,
-            smt=Unsupported(reason),
+            smt=smt,
         )
-        for name, reason in (
-            (
-                "BitSelect",
-                "width-changing: `BitSelect[high:low]` writes a narrower "
-                "wire than it reads (theory/src/bv.rs). No backend emits it.",
-            ),
-            (
-                "Extend",
-                "width-changing: `Extend(+extra)` writes a wider wire than "
-                "it reads (theory/src/bv.rs). No backend emits it.",
-            ),
-            (
-                "Abs",
-                "modelled as `Ite(x < 0, Neg x, x)` in theory/src/bv.rs, "
-                "which leaves `Abs(BV_MIN)` open there (XXX). No backend "
-                "emits it.",
-            ),
+        for name, theories, lean, smt in (
+            ("Shl", WORD, "a <<< b", _smt_bv("BITVECTOR_SHL")),
+            ("Shr", UNSIGNED, "a >>> b", _smt_bv("BITVECTOR_LSHR")),
+            ("Shr", SIGNED, "BitVec.sshiftRight' a b", _smt_bv("BITVECTOR_ASHR")),
+            ("RotateLeft", WORD, "BitVec.rotateLeft a i",
+             _smt_word_indexed("BITVECTOR_ROTATE_LEFT", lambda t: (t.i,))),
+            ("RotateRight", WORD, "BitVec.rotateRight a i",
+             _smt_word_indexed("BITVECTOR_ROTATE_RIGHT", lambda t: (t.i,))),
+            ("Repeat", WORD, "BitVec.replicate i a",
+             _smt_word_indexed("BITVECTOR_REPEAT", lambda t: (t.i,))),
+            ("Extract", WORD, "BitVec.extractLsb i j a",
+             _smt_word_indexed("BITVECTOR_EXTRACT", lambda t: (t.i, t.j))),
+            ("Extend", UNSIGNED, "BitVec.zeroExtend (w + i) a",
+             _smt_word_indexed("BITVECTOR_ZERO_EXTEND", lambda t: (t.i,))),
+            ("Extend", SIGNED, "BitVec.signExtend (w + i) a",
+             _smt_word_indexed("BITVECTOR_SIGN_EXTEND", lambda t: (t.i,))),
+            ("Concat", WORD, "a ++ b", _smt_concat),
         )
     ),
     # ── casts between the theories' sorts ─────────────────────────────
     *(
         Op(
             name,
-            ("Cast",),
+            ("cast",),
             mat=lambda a, one=one: mat_mk(one(f"({a[0]} i j)"), "i", "j"),
             scalar=lambda a, one=one: one(a[0]),
             box=box,
             smt=_smt_cast,
         )
         for name, one, box in (
-            ("IntToReal", lambda x: f"(({x} : Int) : Real)", "Box.intToReal"),
-            ("RealToInt", lambda x: f"⌊{x}⌋", "Box.realToInt"),
-            ("BVToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)",
+            ("ToReal", lambda x: f"(({x} : Int) : Real)", "Box.intToReal"),
+            ("ToInt", lambda x: f"⌊{x}⌋", "Box.realToInt"),
+            ("UbvToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)",
              "Box.bvToInt"),
-            ("BitToBool", lambda x: f"(decide ({x} = 1))", "Box.bitToBool"),
-            ("BoolToBit", lambda x: f"(if {x} then 1 else 0)", "Box.boolToBit"),
         )
-    ),
-    # ── nondeterminism and symbols ────────────────────────────────────
-    *(
-        Op(
-            name,
-            theories,
-            mat=reason,
-            scalar=_SEE_MAT,
-            box=_SEE_MAT,
-            smt=reason,
-        )
-        for name, theories, reason in (
-            ("AnyBool", LIA_LRA, _NONDET),
-            ("AnyInt", ("LIA",), _NONDET),
-            ("AnyReal", ("LRA",), _NONDET),
-            ("Havoc", BV_ONLY, _NONDET),
-            ("Uninterpreted", ALL, _UNINTERPRETED),
-            ("BoolZerograd", ("LRA",), _ZEROGRAD),
-            ("RealZerograd", ("LRA",), _ZEROGRAD),
-        )
-    ),
-    # ── dead ──────────────────────────────────────────────────────────
-    # `IType`-era names no theory defines any more. Kept until it is
-    # decided whether to remove them (TODO.md); unreachable either way,
-    # since dispatch goes through `itype_name`.
-    Op(
-        "Tensor",
-        NONE,
-        mat=Inline("codegen.literals.constant_expr"),
-        scalar=Inline("codegen.terms._constant_expr_scalar"),
-        box=Inline("circ: @Box.const"),
-        smt=_smt_tensor,
-    ),
-    Op(
-        "TensorGet",
-        NONE,
-        mat=lambda a: f"({a[0]} 0 0)",
-        scalar=lambda a: a[0],
-        box=Unsupported("never had a Box"),
-        smt=_smt_tensor_get,
-    ),
-    Op(
-        "ToUnsigned",
-        NONE,
-        mat=lambda a: mat_mk(f"Int.toNat ({a[0]} 0 0)"),
-        scalar=lambda a: f"(Int.toNat {a[0]})",
-        box=Unsupported("never had a Box"),
-        smt=_smt_to_unsigned,
     ),
 )
 
 
-# Rows are keyed by (theory, variant); a dead row answers to no theory and
-# is keyed by ("", name), which is what `theory_of` returns for an op
-# carrying no theory prefix.
+# Rows are keyed by (theory, name); the structural ops are of no theory, and
+# keyed by ("", name), which is what `theory_of` returns for them.
 _BY_KEY: dict[tuple[str, str], Op] = {}
 for _op in OPS:
     for _theory in _op.theories or ("",):
@@ -925,10 +925,20 @@ def op_for(itype) -> Op:
     row = _BY_KEY.get((theory, name))
     if row is None:
         raise ValueError(
-            f"no op-table row for {theory or '<no theory>'}.{name}; "
+            f"no op-table row for {theory or '<structural>'}.{name}; "
             "add one in reactor_lean/lowering/ops.py"
         )
     return row
+
+
+def entrywise_shape(itype) -> "list[int] | None":
+    """The shape of an `entrywise` op when it is larger than 1×1, where its
+    scalar form applies entry by entry and no Box does; None for every other
+    op."""
+    if not op_for(itype).entrywise:
+        return None
+    shape = list(itype.shape)
+    return None if shape == [1, 1] else shape
 
 
 def _reason(row: Op, cell) -> str:
@@ -970,7 +980,7 @@ def gap_of(row: Op) -> "str | None":
 
 
 def lean_gap(itype) -> "str | None":
-    """:func:`gap_of` for an operator, looked up by theory and variant.
+    """:func:`gap_of` for an operator, looked up by theory and name.
 
     What :func:`mat_emitter` would raise with, as a value: a caller checking
     a whole module before generating any of it should not have to provoke an
@@ -1023,7 +1033,7 @@ def smt_emitter(itype) -> Callable[[SmtOp], cvc5.Term]:
     cell = op_for(itype).smt
     if isinstance(cell, Unsupported):
         raise ValueError(
-            f"SMT translator: unsupported IType {itype_name(itype)} — {cell.reason}"
+            f"SMT translator: unsupported op {itype_name(itype)} — {cell.reason}"
         )
     return cell
 
@@ -1051,7 +1061,7 @@ def cell_mark(cell) -> str:
 
 
 def rows() -> list[tuple[str, Op]]:
-    """(theory, row) for every variant, theory-major then alphabetical."""
+    """(theory, row) for every op, theory-major then alphabetical."""
     order = {t: i for i, t in enumerate(THEORIES)}
     order[""] = len(order)
     return sorted(
@@ -1061,22 +1071,22 @@ def rows() -> list[tuple[str, Op]]:
 
 
 def format_matrix() -> str:
-    """The whole table as text: one line per variant, then every gap.
+    """The whole table as text: one line per op, then every gap.
 
-    Gaps are grouped by reason — the same one covers several variants, and
+    Gaps are grouped by reason — the same one covers several ops, and
     reading it once per group is the point of having it written down.
     """
-    head = f"{'theory':7} {'op':14} " + " ".join(f"{c:8}" for c in COLUMNS)
+    head = f"{'theory':13} {'op':14} " + " ".join(f"{c:8}" for c in COLUMNS)
     lines = [head, "-" * len(head)]
     gaps: dict[str, list[str]] = {}
     for theory, op in rows():
         marks = " ".join(f"{cell_mark(cell_of(op, c)):8}" for c in COLUMNS)
-        lines.append(f"{theory or '(dead)':7} {op.name:14} {marks}")
+        lines.append(f"{theory or '(struct)':13} {op.name:14} {marks}")
         for column in COLUMNS:
             cell = cell_of(op, column)
             if isinstance(cell, Unsupported) and cell is not _SEE_MAT:
                 gaps.setdefault(cell.reason, []).append(
-                    f"{theory or '(dead)'}.{op.name} [{column}]"
+                    f"{theory or '(struct)'}.{op.name} [{column}]"
                 )
     lines.append("\ngaps:")
     for reason, sites in gaps.items():
