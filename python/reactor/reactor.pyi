@@ -8,7 +8,8 @@ The extension holds the structural layer `Wire` / `Var` / `Term` / `Atom` / `Mod
 and the namespace `tensor` of the operations and sorts, mirroring the `theory` crate:
 `tensor` holds the structural operations `Havoc`, `Skip` and `Zero`, and the namespaces
 `tensor.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`) hold the
-operations of each theory, sized by their shapes (`tensor.real.Add([m, n])`), and
+operations of each theory, sized by their shapes (`tensor.real.Add([m, n])`),
+`tensor.cast` the casts between their sorts (`tensor.cast.ToReal([m, n])`), and
 `tensor.sort` the sorts (`Real([rows, cols])`, `Word(width, [rows, cols])`, and the
 rates of change `Real([rows, cols], degree=d)`). The constants, products with a constant
 and affine maps there (`tensor.real.Const(t)`, `tensor.real.Scale(c)`,

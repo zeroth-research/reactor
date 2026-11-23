@@ -17,6 +17,7 @@ information to compute its [`Boundary`]:
 - [`Min`], [`Max`] — the least and the greatest entry, as a `[1, 1]`
   matrix.
 - [`Transpose`] — matrix transposition.
+- [`Get`] — one entry of a matrix.
 - [`MatMul`] — the matrix product `x·y`.
 - [`Argmax`] — the index of a maximal entry, counted row by row, as a
   `[1, 1]` matrix.
@@ -285,6 +286,19 @@ pub struct Transpose {
     degree: u8,
 }
 
+/// The entry in row `row` and column `col` of an `[m, n]` real matrix,
+/// written as a `[1, 1]` matrix.
+///
+/// Of a degree, which the entry keeps.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct Get {
+    row: usize,
+    col: usize,
+    shape: [usize; 2],
+    degree: u8,
+}
+
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the shapes given as `MatMul([[m, n], [n, k]])`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -428,6 +442,8 @@ pub enum NRA<T> {
     Max(Max),
     #[subenum(LRA)]
     Transpose(Transpose),
+    #[subenum(LRA)]
+    Get(Get),
     MatMul(MatMul),
     #[subenum(LRA)]
     Lt(Lt),
@@ -467,6 +483,7 @@ where
             NRA::Min(op) => NRA::Min(*op),
             NRA::Max(op) => NRA::Max(*op),
             NRA::Transpose(op) => NRA::Transpose(*op),
+            NRA::Get(op) => NRA::Get(*op),
             NRA::MatMul(op) => NRA::MatMul(*op),
             NRA::Lt(op) => NRA::Lt(*op),
             NRA::Ite(op) => NRA::Ite(*op),
@@ -496,6 +513,7 @@ impl<T: fmt::Display> fmt::Display for NRA<T> {
             NRA::Min(op) => op.fmt(f),
             NRA::Max(op) => op.fmt(f),
             NRA::Transpose(op) => op.fmt(f),
+            NRA::Get(op) => op.fmt(f),
             NRA::MatMul(op) => op.fmt(f),
             NRA::Lt(op) => op.fmt(f),
             NRA::Ite(op) => op.fmt(f),
@@ -528,6 +546,7 @@ where
             LRA::Min(op) => LRA::Min(*op),
             LRA::Max(op) => LRA::Max(*op),
             LRA::Transpose(op) => LRA::Transpose(*op),
+            LRA::Get(op) => LRA::Get(*op),
             LRA::Lt(op) => LRA::Lt(*op),
             LRA::Ite(op) => LRA::Ite(*op),
             LRA::Le(op) => LRA::Le(*op),
@@ -554,6 +573,7 @@ impl<T: fmt::Display> fmt::Display for LRA<T> {
             LRA::Min(op) => op.fmt(f),
             LRA::Max(op) => op.fmt(f),
             LRA::Transpose(op) => op.fmt(f),
+            LRA::Get(op) => op.fmt(f),
             LRA::Lt(op) => op.fmt(f),
             LRA::Ite(op) => op.fmt(f),
             LRA::Le(op) => op.fmt(f),
@@ -582,6 +602,7 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
             NRA::Min(op) => op.dom().map(Sort::from),
             NRA::Max(op) => op.dom().map(Sort::from),
             NRA::Transpose(op) => op.dom().map(Sort::from),
+            NRA::Get(op) => op.dom().map(Sort::from),
             NRA::MatMul(op) => op.dom().map(Sort::from),
             NRA::Lt(op) => op.dom(),
             NRA::Ite(op) => op.dom(),
@@ -609,6 +630,7 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
             NRA::Min(op) => op.cod().map(Sort::from),
             NRA::Max(op) => op.cod().map(Sort::from),
             NRA::Transpose(op) => op.cod().map(Sort::from),
+            NRA::Get(op) => op.cod().map(Sort::from),
             NRA::MatMul(op) => op.cod().map(Sort::from),
             NRA::Lt(op) => op.cod(),
             NRA::Ite(op) => op.cod(),
@@ -635,6 +657,7 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
             LRA::Min(op) => op.dom().map(Sort::from),
             LRA::Max(op) => op.dom().map(Sort::from),
             LRA::Transpose(op) => op.dom().map(Sort::from),
+            LRA::Get(op) => op.dom().map(Sort::from),
             LRA::Lt(op) => op.dom(),
             LRA::Ite(op) => op.dom(),
             LRA::Le(op) => op.dom(),
@@ -659,6 +682,7 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
             LRA::Min(op) => op.cod().map(Sort::from),
             LRA::Max(op) => op.cod().map(Sort::from),
             LRA::Transpose(op) => op.cod().map(Sort::from),
+            LRA::Get(op) => op.cod().map(Sort::from),
             LRA::Lt(op) => op.cod(),
             LRA::Ite(op) => op.cod(),
             LRA::Le(op) => op.cod(),
@@ -815,6 +839,22 @@ impl Boundary<Real> for Max {
 }
 
 /// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
+impl Boundary<Real> for Get {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::with_degree(self.shape, self.degree)].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::with_degree([1, 1], self.degree)].into()
+    }
+}
+
+impl fmt::Display for Get {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Get[{}][{}]", self.row, self.col)
+    }
+}
+
 impl Boundary<Real> for Transpose {
     fn dom(&self) -> Poly<Real> {
         mono![Real::with_degree(self.shape, self.degree)].into()
@@ -1111,6 +1151,9 @@ where
         }
         if let Ok(op) = ob.extract::<Transpose>() {
             return Ok(NRA::Transpose(op));
+        }
+        if let Ok(op) = ob.extract::<Get>() {
+            return Ok(NRA::Get(op));
         }
         if let Ok(op) = ob.extract::<MatMul>() {
             return Ok(NRA::MatMul(op));
@@ -1834,6 +1877,62 @@ impl Ne {
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+impl Get {
+    /// On plain real matrices, of degree 0; fails unless `row` and `col`
+    /// index an entry of an `[m, n]` matrix.
+    pub fn new(row: usize, col: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
+        Self::with_degree(row, col, shape, 0)
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Get {
+    /// On real matrices of the given `degree`; fails unless `row` and `col`
+    /// index an entry of an `[m, n]` matrix.
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (row, col, shape, /, degree = 0)))]
+    pub fn with_degree(
+        row: usize,
+        col: usize,
+        shape: [usize; 2],
+        degree: u8,
+    ) -> Result<Self, crate::Error> {
+        super::check_entry(row, col, shape)?;
+        Ok(Get {
+            row,
+            col,
+            shape,
+            degree,
+        })
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn degree(&self) -> u8 {
+        self.degree
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("row", "col", "shape")
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn row(&self) -> usize {
+        self.row
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn col(&self) -> usize {
+        self.col
     }
 
     #[cfg_attr(feature = "pyo3", getter)]

@@ -185,6 +185,7 @@ impl<'py> IntoPyObject<'py> for crate::tensor::Any<Tensor> {
             Any::Word(op) => op.into_pyobject(py),
             Any::Havoc(op) => op.into_pyobject(py).map(Bound::into_any),
             Any::Skip(op) => op.into_pyobject(py).map(Bound::into_any),
+            Any::Cast(op) => op.into_pyobject(py).map(Bound::into_any),
             Any::Zero(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }

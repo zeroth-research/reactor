@@ -107,6 +107,18 @@ def interpret(itype):
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
         case tensor.bool.All(_):
             return lambda x: _np.array([[_z3.And(*x.flat)]], dtype=object)
+        case tensor.bool.Implies(_):
+            return _np.frompyfunc(lambda x, y: _z3.Implies(x, y), 2, 1)
+
+        # an entry of a matrix
+        case tensor.real.Get(i, j, _) | tensor.int.Get(i, j, _) | tensor.bool.Get(i, j, _):
+            return lambda x: x[i:i + 1, j:j + 1]
+
+        # casts between the theories' sorts
+        case tensor.cast.ToReal(_):
+            return _np.frompyfunc(_z3.ToReal, 1, 1)
+        case tensor.cast.ToInt(_):
+            return _np.frompyfunc(_z3.ToInt, 1, 1)
 
         # control flow: the [1, 1] condition broadcasts over the branches
         case tensor.real.Ite(_) | tensor.int.Ite(_) | tensor.bool.Ite(_):

@@ -19,6 +19,7 @@ information to compute its [`Boundary`]:
 - [`Min`], [`Max`] — the least and the greatest entry, as a `[1, 1]`
   matrix.
 - [`Transpose`] — matrix transposition.
+- [`Get`] — one entry of a matrix.
 - [`MatMul`] — the matrix product `x·y`.
 - [`Argmax`] — the index of a maximal entry, counted row by row, as a
   `[1, 1]` matrix.
@@ -217,6 +218,16 @@ pub struct Transpose {
     shape: [usize; 2],
 }
 
+/// The entry in row `row` and column `col` of an `[m, n]` integer matrix,
+/// written as a `[1, 1]` matrix.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct Get {
+    row: usize,
+    col: usize,
+    shape: [usize; 2],
+}
+
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the shapes given as `MatMul([[m, n], [n, k]])`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -337,6 +348,8 @@ pub enum NIA<T> {
     Max(Max),
     #[subenum(LIA)]
     Transpose(Transpose),
+    #[subenum(LIA)]
+    Get(Get),
     MatMul(MatMul),
     #[subenum(LIA)]
     Lt(Lt),
@@ -377,6 +390,7 @@ where
             NIA::Min(op) => NIA::Min(*op),
             NIA::Max(op) => NIA::Max(*op),
             NIA::Transpose(op) => NIA::Transpose(*op),
+            NIA::Get(op) => NIA::Get(*op),
             NIA::MatMul(op) => NIA::MatMul(*op),
             NIA::Lt(op) => NIA::Lt(*op),
             NIA::Ite(op) => NIA::Ite(*op),
@@ -407,6 +421,7 @@ impl<T: fmt::Display> fmt::Display for NIA<T> {
             NIA::Min(op) => op.fmt(f),
             NIA::Max(op) => op.fmt(f),
             NIA::Transpose(op) => op.fmt(f),
+            NIA::Get(op) => op.fmt(f),
             NIA::MatMul(op) => op.fmt(f),
             NIA::Lt(op) => op.fmt(f),
             NIA::Ite(op) => op.fmt(f),
@@ -439,6 +454,7 @@ where
             LIA::Min(op) => LIA::Min(*op),
             LIA::Max(op) => LIA::Max(*op),
             LIA::Transpose(op) => LIA::Transpose(*op),
+            LIA::Get(op) => LIA::Get(*op),
             LIA::Lt(op) => LIA::Lt(*op),
             LIA::Ite(op) => LIA::Ite(*op),
             LIA::Le(op) => LIA::Le(*op),
@@ -465,6 +481,7 @@ impl<T: fmt::Display> fmt::Display for LIA<T> {
             LIA::Min(op) => op.fmt(f),
             LIA::Max(op) => op.fmt(f),
             LIA::Transpose(op) => op.fmt(f),
+            LIA::Get(op) => op.fmt(f),
             LIA::Lt(op) => op.fmt(f),
             LIA::Ite(op) => op.fmt(f),
             LIA::Le(op) => op.fmt(f),
@@ -494,6 +511,7 @@ impl<T: Tensor> Boundary<Sort> for NIA<T> {
             NIA::Min(op) => op.dom().map(Sort::from),
             NIA::Max(op) => op.dom().map(Sort::from),
             NIA::Transpose(op) => op.dom().map(Sort::from),
+            NIA::Get(op) => op.dom().map(Sort::from),
             NIA::MatMul(op) => op.dom().map(Sort::from),
             NIA::Lt(op) => op.dom(),
             NIA::Ite(op) => op.dom(),
@@ -522,6 +540,7 @@ impl<T: Tensor> Boundary<Sort> for NIA<T> {
             NIA::Min(op) => op.cod().map(Sort::from),
             NIA::Max(op) => op.cod().map(Sort::from),
             NIA::Transpose(op) => op.cod().map(Sort::from),
+            NIA::Get(op) => op.cod().map(Sort::from),
             NIA::MatMul(op) => op.cod().map(Sort::from),
             NIA::Lt(op) => op.cod(),
             NIA::Ite(op) => op.cod(),
@@ -548,6 +567,7 @@ impl<T: Tensor> Boundary<Sort> for LIA<T> {
             LIA::Min(op) => op.dom().map(Sort::from),
             LIA::Max(op) => op.dom().map(Sort::from),
             LIA::Transpose(op) => op.dom().map(Sort::from),
+            LIA::Get(op) => op.dom().map(Sort::from),
             LIA::Lt(op) => op.dom(),
             LIA::Ite(op) => op.dom(),
             LIA::Le(op) => op.dom(),
@@ -572,6 +592,7 @@ impl<T: Tensor> Boundary<Sort> for LIA<T> {
             LIA::Min(op) => op.cod().map(Sort::from),
             LIA::Max(op) => op.cod().map(Sort::from),
             LIA::Transpose(op) => op.cod().map(Sort::from),
+            LIA::Get(op) => op.cod().map(Sort::from),
             LIA::Lt(op) => op.cod(),
             LIA::Ite(op) => op.cod(),
             LIA::Le(op) => op.cod(),
@@ -905,6 +926,22 @@ impl fmt::Display for Transpose {
     }
 }
 
+impl Boundary<Int> for Get {
+    fn dom(&self) -> Poly<Int> {
+        mono![Int::new(self.shape)].into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        mono![Int::new([1, 1])].into()
+    }
+}
+
+impl fmt::Display for Get {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Get[{}][{}]", self.row, self.col)
+    }
+}
+
 impl fmt::Display for MatMul {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "MatMul")
@@ -1019,6 +1056,9 @@ where
         }
         if let Ok(op) = ob.extract::<Transpose>() {
             return Ok(NIA::Transpose(op));
+        }
+        if let Ok(op) = ob.extract::<Get>() {
+            return Ok(NIA::Get(op));
         }
         if let Ok(op) = ob.extract::<MatMul>() {
             return Ok(NIA::MatMul(op));
@@ -1463,6 +1503,38 @@ impl Ne {
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("shape",)
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Get {
+    /// Fails unless `row` and `col` index an entry of an `[m, n]` matrix.
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (row, col, shape, /)))]
+    pub fn new(row: usize, col: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
+        super::check_entry(row, col, shape)?;
+        Ok(Get { row, col, shape })
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("row", "col", "shape")
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn row(&self) -> usize {
+        self.row
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn col(&self) -> usize {
+        self.col
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
