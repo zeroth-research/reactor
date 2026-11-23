@@ -8,6 +8,7 @@ from reactor_lean.lowering.sorts import itype_name
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.proof.render import certificate_files
 from reactor_lean.project.main_lean import generate_main_lean
+from testdata import fixture
 
 
 def test_itype_name_strips_prefix():
@@ -18,26 +19,7 @@ def test_itype_name_strips_prefix():
 
 def _make_twobitcounter():
     """Bool-only module: two-bit counter with enable."""
-    b0 = Var(Bool([1, 1]))
-    b1 = Var(Bool([1, 1]))
-    enable = Var(Bool([1, 1]))
-
-    not_b0 = Wire(Bool([1, 1]))
-    not_b1 = Wire(Bool([1, 1]))
-    b0_and_enable = Wire(Bool([1, 1]))
-
-    init = [
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b0)]),
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b1)]),
-    ]
-    update = [
-        Term(LIA.Not(), [not_b0], [b0]),
-        Term(LIA.Ite(), [X(b0)], [X(enable), not_b0, b0]),
-        Term(LIA.And(), [b0_and_enable], [b0, X(enable)]),
-        Term(LIA.Not(), [not_b1], [b1]),
-        Term(LIA.Ite(), [X(b1)], [b0_and_enable, not_b1, b1]),
-    ]
-    return Module.sequential([b0, b1, enable], init, update)
+    return fixture("twobit_lia")
 
 
 def _make_matrix_module():
@@ -556,12 +538,11 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
     encoding computed (layer names, argmax variants). Called first, on a
     fresh `ModuleToLean4`, they print what the full producer prints rather
     than silently dropping the theorems or the argmax lemmas."""
-    from pathlib import Path
-
     from reactor_lean.codegen.encodings import ModuleToLean4
     from reactor_lean.inputs.python import load_module
+    from testdata import MODS
 
-    module = load_module(Path(__file__).parent / "limits" / "mods" / f"{mod}.py")
+    module = load_module(MODS / f"{mod}.py")
 
     circ_alone = ModuleToLean4(module).to_lean_equiv_theorems()
     assert "init_circ_eq" in circ_alone

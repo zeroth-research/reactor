@@ -7,10 +7,7 @@ from reactor_lean.project.scaffold import create_project
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.proof.render import certificate_files
 from reactor_lean.core.certificate import Certificate, Claim
-
-from os.path import dirname
-from pathlib import Path
-
+from testdata import TESTS
 
 from .test_lean_diagram import _make_matrix_module
 
@@ -75,7 +72,7 @@ def test_inf_counter_generates_lean():
     m = _make_matrix_module()
 
     _ = create_project(
-        output_dir=Path(dirname(__file__)) / "LeanTests",
+        output_dir=TESTS / "LeanTests",
         module=m,
         project_name="CounterInfCertificate",
         executable=True,
@@ -90,7 +87,7 @@ def test_counter_generates_lean():
     # z=s[2][0]) and the 2×1 external input e (y0=e[0][0], z0=e[1][0]), written
     # in the Python-expression DSL with the `v[i][j]` matrix-indexing sugar.
     _ = create_project(
-        output_dir=Path(dirname(__file__)) / "LeanTests",
+        output_dir=TESTS / "LeanTests",
         module=m,
         project_name="Counter",
         executable=True,

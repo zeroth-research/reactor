@@ -29,6 +29,19 @@ class NotPredicate(ValueError):
     """Python that the predicate syntax does not read."""
 
 
+class Row:
+    """`v[i]` of a matrix variable, waiting for its `[j]`: `element(i, j)`,
+    which the namespace's variable passes in."""
+
+    __slots__ = ("_element", "_i")
+
+    def __init__(self, element, i: int):
+        self._element, self._i = element, i
+
+    def __getitem__(self, j: int):
+        return self._element(self._i, j)
+
+
 # The operators a term overloads. No `**`: on two constants it is evaluated
 # here, and its size is not bounded by the length of the source.
 _BINOPS = {

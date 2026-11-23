@@ -4,33 +4,19 @@
 
 import pytest
 
-from reactor import Module, Var, X, LIA, Int
-from reactor.analyzer import convert_method
+from reactor import Module
 from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor_lean.core.errors import Refused
 from reactor_lean.proof.render import render_certificate
 from reactor_lean.smt.queries import predicate_terms
+from testdata import dense, fixture
 
 pytest.importorskip("cvc5")
 
 
 def countdown() -> Module:
     """`x = 100`, then `x-1` each step, back to 100 at zero."""
-
-    def init():
-        return 100
-
-    def update(old_x):
-        if old_x == 0:
-            return 100
-        return old_x - 1
-
-    s = Var(Int([1, 1]))
-    return Module.sequential(
-        [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
-    )
+    return fixture("svcomp_countdown")
 
 
 CLAIM = Claim(prp="(= s0 0)")
@@ -38,17 +24,6 @@ LEAN = LeanAnswer(
     inv="fun s => 0 <= s 0 0 ∧ s 0 0 <= 100",
     ranking="fun s => (s 0 0).toNat",
 )
-
-
-def _relu(e: str) -> str:
-    return f"(ite (>= {e} 0) {e} 0)"
-
-
-def _dense(layers: int) -> str:
-    a, b = "s0", "s0"
-    for _ in range(layers):
-        a, b = _relu(f"(+ {a} {b})"), _relu(f"(+ {a} (- {b}))")
-    return f"(+ {a} {b})"
 
 
 def test_an_unparseable_predicate_is_refused_by_the_flag_it_came_from():
@@ -60,7 +35,7 @@ def test_an_unparseable_predicate_is_refused_by_the_flag_it_came_from():
 def test_translation_can_be_asked_not_to_share():
     """`share=False` prints every subterm in full -- for reading; the
     certificate itself is printed shared."""
-    q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(4)))
+    q = predicate_terms(countdown(), Claim(), Certificate(ranking=dense(4)))
     shared = render_certificate(q, share=True).ranking
     plain = render_certificate(q, share=False).ranking
     assert "let " in shared

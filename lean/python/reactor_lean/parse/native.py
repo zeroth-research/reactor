@@ -13,13 +13,13 @@ a claim's and a certificate's together, as `proof.render` prints them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fractions import Fraction
 
 from reactor import BitVec, X
 
 from ..core.certificate import Certificate, Claim
 from ..core.errors import PredicateRefused, Unreadable
 from ..lowering.sorts import wire_shape
+from ..lowering.values import decimal_fraction
 from . import dsl
 from .formula import Builder, Formula, family
 from .smtlib import Elaborator, Lit, Matrix, Scope, read_smtlib
@@ -139,19 +139,7 @@ class _Var(_Term):
         if isinstance(key, tuple):
             i, j = key
             return self._element(i, j)
-        return _Row(self, key)
-
-
-class _Row:
-    """`v[i]`, waiting for its `[j]`."""
-
-    __slots__ = ("_var", "_i")
-
-    def __init__(self, var: _Var, i: int):
-        self._var, self._i = var, i
-
-    def __getitem__(self, j: int) -> _Term:
-        return self._var._element(self._i, j)
+        return dsl.Row(self._element, key)
 
 
 def lift(x: Elaborator, o, like=None) -> _Term:
@@ -168,7 +156,7 @@ def lift(x: Elaborator, o, like=None) -> _Term:
             return _Term(x, x.b.bitvec(like.dtype._0, o))
         return _Term(x, Lit(o, decimal=False))
     if isinstance(o, float):
-        return _Term(x, Lit(Fraction(repr(o)), decimal=True))
+        return _Term(x, Lit(decimal_fraction(o), decimal=True))
     raise TypeError(f"Cannot read {type(o).__name__} as a term")
 
 
