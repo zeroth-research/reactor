@@ -18,7 +18,7 @@ name, so the run never becomes eventually periodic.
 
 state: s0 = h, s1 = v (Real)
 """
-from reactor import LRA, Module, Real, Var, sugar
+from reactor import Module, Real, Var, sugar
 from reactor.sugar import expr, ite
 
 REAL = Real([1, 1])
@@ -26,7 +26,7 @@ REAL = Real([1, 1])
 
 def _n(v):
     """`v` as a Real constant: an `ite` branch has to be an expression."""
-    return expr(v, theory=LRA, sort=REAL)
+    return expr(v, sort=REAL)
 
 
 class Ball(sugar.Module):
@@ -46,4 +46,4 @@ class Ball(sugar.Module):
 
 
 def module() -> Module:
-    return Ball(theory=LRA, ctrl=(Var(REAL), Var(REAL)))
+    return Ball(ctrl=(Var(REAL), Var(REAL)))

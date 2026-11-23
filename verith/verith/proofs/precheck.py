@@ -88,7 +88,7 @@ def _ask(q: "ModuleQueries", name, build, budget, artifacts=None) -> Verdict:
 
     `build` is a thunk returning `(negation, witness)` rather than the
     formula itself, because encoding the transition is where an
-    unsupported operator surfaces -- `Uninterpreted` has no SMT form and
+    unsupported operator surfaces -- `Havoc` has no SMT form and
     raises from `update_state`, well before any solver is involved. The
     contract is that nothing in here escapes to the caller.
     """

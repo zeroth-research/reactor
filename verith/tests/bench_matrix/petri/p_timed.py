@@ -27,7 +27,7 @@ working` holds only because the firing is urgent.
 state:  s0 = c (Real), s1 = working (Bool)
 inputs: e0 = dt (Real), e1 = go (Bool)
 """
-from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor import Bool, Module, Real, Var, sugar
 from reactor.sugar import X, expr, ite
 
 REAL = Real([1, 1])
@@ -36,7 +36,7 @@ EARLIEST, LATEST = 2.0, 5.0
 
 def _n(v):
     """`v` as a Real constant: an `ite` branch has to be an expression."""
-    return expr(v, theory=LRA, sort=REAL)
+    return expr(v, sort=REAL)
 
 
 class Timed(sugar.Module):
@@ -51,5 +51,5 @@ class Timed(sugar.Module):
 
 
 def module() -> Module:
-    return Timed(theory=LRA, ctrl=(Var(REAL), Var(Bool([1, 1]))),
+    return Timed(ctrl=(Var(REAL), Var(Bool([1, 1]))),
                  extl=(Var(REAL), Var(Bool([1, 1]))))

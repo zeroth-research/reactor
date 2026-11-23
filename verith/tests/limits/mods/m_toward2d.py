@@ -4,23 +4,23 @@
 Lyapunov function over a two-wire state.
 """
 import torch
-from reactor import Module, Term, Wire, Int, Bool, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Bool, Var, X, tensor
 
 
 def _leg(v, init_val):
     five, one = Wire(Int([1, 1])), Wire(Int([1, 1]))
     lo, hi = Wire(Bool([1, 1])), Wire(Bool([1, 1]))
     inc, dec, up = Wire(Int([1, 1])), Wire(Int([1, 1])), Wire(Int([1, 1]))
-    init = [Term(LIA.Int(torch.tensor([[init_val]])), [X(v)])]
+    init = [Term(tensor.int.Const(torch.tensor([[init_val]])), [X(v)])]
     update = [
-        Term(LIA.Int(torch.tensor([[5]])), [five]),
-        Term(LIA.Int(torch.tensor([[1]])), [one]),
-        Term(LIA.Lt(), [lo], [v, five]),
-        Term(LIA.Gt(), [hi], [v, five]),
-        Term(LIA.Add(), [inc], [v, one]),
-        Term(LIA.Sub(), [dec], [v, one]),
-        Term(LIA.Ite(), [up], [hi, dec, five]),
-        Term(LIA.Ite(), [X(v)], [lo, inc, up]),
+        Term(tensor.int.Const(torch.tensor([[5]])), [five]),
+        Term(tensor.int.Const(torch.tensor([[1]])), [one]),
+        Term(tensor.int.Lt([1, 1]), [lo], [v, five]),
+        Term(tensor.int.Gt([1, 1]), [hi], [v, five]),
+        Term(tensor.int.Add([1, 1]), [inc], [v, one]),
+        Term(tensor.int.Sub([1, 1]), [dec], [v, one]),
+        Term(tensor.int.Ite([1, 1]), [up], [hi, dec, five]),
+        Term(tensor.int.Ite([1, 1]), [X(v)], [lo, inc, up]),
     ]
     return init, update
 

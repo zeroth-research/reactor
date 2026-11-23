@@ -3,7 +3,7 @@
 Terminates lexicographically on (y, x); the single-Nat ranking has to fold
 both components.
 """
-from reactor import Module, Int, LIA, Var, X
+from reactor import Module, Int, Var, X
 from reactor.analyzer import convert_method
 
 
@@ -24,6 +24,6 @@ def module() -> Module:
     y = Var(Int([1, 1]))
     return Module.sequential(
         [x, y],
-        convert_method(init, {}, [X(x), X(y)], theory=LIA),
-        convert_method(update, {"old_x": x, "old_y": y}, [X(x), X(y)], theory=LIA),
+        convert_method(init, {}, [X(x), X(y)], number=Int),
+        convert_method(update, {"old_x": x, "old_y": y}, [X(x), X(y)], number=Int),
     )

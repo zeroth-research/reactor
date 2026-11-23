@@ -27,7 +27,7 @@ BUILD-FAIL on every route, measuring none of them.
 
 state: s0 = g, s1 = dv (Real)
 """
-from reactor import LRA, Module, Real, Var, sugar
+from reactor import Module, Real, Var, sugar
 from reactor.sugar import ite
 
 REAL = Real([1, 1])
@@ -46,4 +46,4 @@ class Cruise(sugar.Module):
 
 
 def module() -> Module:
-    return Cruise(theory=LRA, ctrl=(Var(REAL), Var(REAL)))
+    return Cruise(ctrl=(Var(REAL), Var(REAL)))

@@ -142,7 +142,7 @@ def test_cert_bigcounter_build(generate_lean_files, lake_build):
 
 @pytest.mark.slow
 def test_cert_counter_build(generate_lean_files, lake_build):
-    """Certs/Counter.lean: a 3×1 vector-state module with LIA.Linear transitions
+    """Certs/Counter.lean: a 3×1 vector-state module with Linear transitions
     and tuple-select (s[i][j]) predicates — zeroth_hammer closes all obligations."""
     r = lake_build("Certs.Counter")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]

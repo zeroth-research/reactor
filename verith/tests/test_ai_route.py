@@ -95,15 +95,15 @@ def test_a_real_valued_state_is_named_too():
     is read as `verith` prints it rather than as a hand-written line."""
     import torch
 
-    from reactor import LRA, Module, Real, Term, Var, X
+    from reactor import Module, Real, Term, Var, X, tensor
     from verith.ai.engine import _state_type_line
     from reactor_lean.codegen.encodings import ModuleToLean4
 
     s = Var(Real([1, 1]))
     module = Module.sequential(
         [s],
-        [Term(LRA.Real(torch.tensor([[0.0]])), [X(s)])],
-        [Term(LRA.Id(), [X(s)], [s])],
+        [Term(tensor.real.Const(torch.tensor([[0.0]])), [X(s)])],
+        [Term(tensor.Skip(Real([1, 1])), [X(s)], [s])],
     )
     functional = ModuleToLean4(module).to_lean_functional()
     assert "noncomputable def init" in functional

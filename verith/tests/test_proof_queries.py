@@ -14,7 +14,7 @@ import cvc5
 import pytest
 import torch
 
-from reactor import Module, Term, Var, Wire, X, LIA, Int
+from reactor import Module, Term, Var, Wire, X, Int, tensor
 from reactor.analyzer import convert_method
 from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor_lean.core.errors import Refused
@@ -38,8 +38,8 @@ def countdown() -> Module:
     s = Var(Int([1, 1]))
     return Module.sequential(
         [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
+        convert_method(init, {}, [X(s)], number=Int),
+        convert_method(update, {"old_x": s}, [X(s)], number=Int),
     )
 
 
@@ -156,15 +156,14 @@ def test_a_spent_phase_budget_yields_unknown_not_an_exception():
 
 
 def test_an_unencodable_transition_fails_only_the_obligations_it_is_in():
-    """`Uninterpreted` has no SMT translation, and the module is encoded
+    """`Havoc` has no SMT translation, and the module is encoded
     lazily: parsing the predicates does not touch the transition."""
     x = Var(Int([1, 1]))
     y = Wire(Int([1, 1]))
     module = Module.sequential(
         [x],
-        [Term(LIA.Int(torch.tensor([[0]])), [X(x)])],
-        # `Uninterpreted` is a lone write (a source) or a lone read.
-        [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])],
+        [Term(tensor.int.Const(torch.tensor([[0]])), [X(x)])],
+        [Term(tensor.Havoc(Int([1, 1])), [y]), Term(tensor.Skip(Int([1, 1])), [X(x)], [y])],
     )
     q = predicate_terms(module, CLAIM, GOOD)
     by_name = {v.name: v for v in check_obligations(q, SmtBudget())}

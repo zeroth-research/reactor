@@ -243,7 +243,7 @@ CASES = [
       note="Transpose in the transition (Matrix.transpose / Box.transpose)"),
     C(name="OpUninterp", group="ops", mod="m_uninterp", expect="fail",
       P="(= s0 0)", inv="true", rank="0",
-      note="an uninterpreted symbol — no Lean counterpart exists"),
+      note="an arbitrary value (`Havoc`) — no Lean counterpart exists"),
 
     # ─────────────────────────── scale ──────────────────────────
     C(name="Vec32", group="scale", mod="m_vec32", expect="?", timeout=2400,

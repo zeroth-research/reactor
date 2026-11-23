@@ -16,7 +16,7 @@ band is wider than either controller's own hysteresis band.
 
 state: s0 = x1, s1 = x2 (Real), s2 = v1, s3 = v2 (Bool)
 """
-from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor import Bool, Module, Real, Var, sugar
 from reactor.sugar import expr, ite
 
 REAL = Real([1, 1])
@@ -24,7 +24,7 @@ REAL = Real([1, 1])
 
 def _n(v):
     """`v` as a Real constant: an `ite` branch has to be an expression."""
-    return expr(v, theory=LRA, sort=REAL)
+    return expr(v, sort=REAL)
 
 
 class TwoTanks(sugar.Module):
@@ -40,5 +40,5 @@ class TwoTanks(sugar.Module):
 
 
 def module() -> Module:
-    return TwoTanks(theory=LRA, ctrl=(Var(REAL), Var(REAL),
+    return TwoTanks(ctrl=(Var(REAL), Var(REAL),
                                       Var(Bool([1, 1])), Var(Bool([1, 1]))))

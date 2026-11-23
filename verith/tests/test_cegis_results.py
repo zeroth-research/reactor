@@ -14,7 +14,7 @@ from pathlib import Path
 import cvc5
 import pytest
 
-from reactor import Module, Int, LIA, Var, X
+from reactor import Module, Int, Var, X
 from reactor.analyzer import convert_method
 from verith.ai_cegis import engine as cegis
 from reactor_lean.core.certificate import Certificate, Claim
@@ -140,8 +140,8 @@ def _counter() -> Module:
     s = Var(Int([1, 1]))
     return Module.sequential(
         [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
+        convert_method(init, {}, [X(s)], number=Int),
+        convert_method(update, {"old_x": s}, [X(s)], number=Int),
     )
 
 

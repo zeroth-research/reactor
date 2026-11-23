@@ -7,7 +7,7 @@ certificate only ever mentions slots 0 and 1. Isolates the cost of the
 s0' = relu(s0 - 1), s1' = relu(s1) + 1, si' = relu(si) elsewhere; init s0 = 6.
 """
 import torch
-from reactor import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Var, X, tensor
 
 N = 8
 
@@ -18,7 +18,7 @@ def module() -> Module:
 
     init_vec = torch.zeros((N, 1), dtype=torch.int64)
     init_vec[0][0] = 6
-    init = [Term(LIA.Int(init_vec), [X(s)])]
+    init = [Term(tensor.int.Const(init_vec), [X(s)])]
 
     b1 = torch.zeros((N, 1), dtype=torch.int64)
     b1[0][0] = -1
@@ -27,8 +27,8 @@ def module() -> Module:
     eye = torch.eye(N, dtype=torch.int64)
 
     update = [
-        Term(LIA.Linear(eye, b1), [h], [s]),
-        Term(LIA.ReLU(), [hr], [h]),
-        Term(LIA.Linear(eye, b2), [X(s)], [hr]),
+        Term(tensor.int.Linear(eye, b1), [h], [s]),
+        Term(tensor.int.ReLU([N, 1]), [hr], [h]),
+        Term(tensor.int.Linear(eye, b2), [X(s)], [hr]),
     ]
     return Module.sequential([s], init, update)
