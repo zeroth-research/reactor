@@ -22,7 +22,7 @@ from nuterm._farkas import certify, inductive
 from nuterm._invariants import as_predicates
 from nuterm._property import Safety
 from nuterm._termination import compose, system_of, terminates
-from reactor import LIA, Var, sugar
+from reactor import Var, sugar
 
 
 @dataclass
@@ -82,7 +82,7 @@ def loop_bench(state, update, *, init=None, precondition=None, name="test"):
             "init": _of_arity(lambda _: (init or (lambda: zeros))(), ()),
             "update": _of_arity(update, names),
         })
-        prog = Program(ctrl=tuple(state_vars[n] for n in names), theory=LIA)
+        prog = Program(ctrl=tuple(state_vars[n] for n in names))
         return prog, state_vars, {}
 
     return Bench(name=name, source="", state=names, inputs=(), build=build,

@@ -30,9 +30,10 @@ from nuterm._bench import Bench, INT, var  # noqa: F401
 from nuterm._farkas import System, certify, inductive, lex_decrease, read_system
 from nuterm._invariants import as_predicates, infer_invariants
 from nuterm._property import Liveness, Safety
-from reactor import LIA, Module, Term, X
+from reactor import Module, Term, X
 from reactor.expr import collecting
 from reactor.sugar import expr, relu
+from reactor.tensor import Skip
 
 
 # ---------------------------------------------------------------------------
@@ -40,16 +41,16 @@ from reactor.sugar import expr, relu
 # ---------------------------------------------------------------------------
 
 def _V_term(xs, layers):
-    """V(x) as an LIA term over the state expressions ``xs`` (integer arithmetic,
+    """V(x) as an integer term over the state expressions ``xs`` (integer arithmetic,
     matching the quantized net). layers = [(W1,b1),(W2,b2)]; ReLU -> relu()."""
     (W1, b1), (W2, b2) = layers
     hid = []
     for j in range(W1.shape[0]):
-        pre = expr(int(b1[j]), theory=LIA, sort=INT)
+        pre = expr(int(b1[j]), sort=INT)
         for k in range(len(xs)):
             pre = pre + xs[k] * int(W1[j][k])
         hid.append(relu(pre))
-    out = expr(int(b2[0]), theory=LIA, sort=INT)
+    out = expr(int(b2[0]), sort=INT)
     for j in range(len(hid)):
         out = out + hid[j] * int(W2[0][j])
     return out
@@ -73,8 +74,8 @@ def _v_module(state_vars, layers, *, read_next: bool):
 
     def block(at_next: bool):
         with collecting() as terms:
-            xs = [expr(X(v) if at_next else v, theory=LIA) for v in state_vars]
-            terms.append(Term(LIA.Id(), [X(out)], [_V_term(xs, layers).wire]))
+            xs = [expr(X(v) if at_next else v) for v in state_vars]
+            terms.append(Term(Skip(INT), [X(out)], [_V_term(xs, layers).wire]))
         return terms
 
     declared = (out,) + state_vars
