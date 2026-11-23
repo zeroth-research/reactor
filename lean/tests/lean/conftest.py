@@ -31,6 +31,7 @@ from reactor_lean.proof.render import generate_standalone_cert_lean
 from reactor_lean.core.certificate import Certificate, Claim
 from reactor_lean.project.names import LINTERS_OFF
 from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
+from lake import lake_build
 from testdata import LAKE_PROJECT
 
 _CERTS_DIR = LAKE_PROJECT / "Certs"
@@ -377,6 +378,14 @@ def proved_cert_lean(module: Module, claim: Claim,
     lean = render(module, claim, cert)
     return generate_standalone_cert_lean(
         ctx, lean, prove(module, ctx, claim, cert, lean))
+
+
+@pytest.fixture(scope="session")
+def relational_circ() -> None:
+    """`Relational.Circ` built, once a session: what the files the tests
+    compile with `lake.lean_outputs` import."""
+    built = lake_build("Relational.Circ", timeout=1800)
+    assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
 
 
 @pytest.fixture(scope="session", autouse=True)

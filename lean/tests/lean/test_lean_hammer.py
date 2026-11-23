@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from lake import lake_build
 from testdata import LAKE_PROJECT
 
 
@@ -88,21 +89,11 @@ def test_generated_argmax_scalar_mirrors_matrix_form(generate_lean_files):
 # ──────────────────────────────────────────────────────────────
 
 
-def _lake_build(*targets: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["lake", "build", *targets],
-        cwd=LAKE_PROJECT,
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
-
-
 @pytest.mark.slow
 def test_zeroth_hammer_proofs(generate_lean_files):
     """ZerothHammerTests.lean compiles — every example in the file type-checks."""
     _needs_verith()
-    r = _lake_build("ZerothHammerTests")
+    r = lake_build("ZerothHammerTests")
     assert r.returncode == 0, (
         f"lake build ZerothHammerTests failed.\n"
         f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
@@ -116,7 +107,7 @@ def test_zeroth_hammer_proofs(generate_lean_files):
 def test_manual_tests_build(generate_lean_files):
     """ManualTests/Basic.lean compiles — zeroth_hammer closes each standalone example."""
     _needs_verith()
-    r = _lake_build("ManualTests")
+    r = lake_build("ManualTests")
     assert r.returncode == 0, (
         f"lake build ManualTests failed.\n"
         f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
@@ -130,7 +121,7 @@ def test_argmax_scalar_equiv_build(generate_lean_files):
     """Certs/ArgmaxScalar.lean compiles — each `argmax1d_scalar_n_eq` proof
     goes through, which is what ties the generated unrolled form to
     `Relational.Mat.argmax_1d`."""
-    r = _lake_build("Certs.ArgmaxScalar")
+    r = lake_build("Certs.ArgmaxScalar")
     assert r.returncode == 0, (
         f"lake build Certs.ArgmaxScalar failed.\n"
         f"stdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
@@ -149,7 +140,7 @@ def test_the_learned_certificate_closes_in_lean(generate_lean_files):
     this suite uses."""
     pytest.importorskip("cvc5")
     pytest.importorskip("verith")
-    r = _lake_build("Certs.LearnedCountdown")
+    r = lake_build("Certs.LearnedCountdown")
     assert r.returncode == 0, (
         f"lake build Certs.LearnedCountdown failed.\n"
         f"stdout:\n{r.stdout[-1500:]}\nstderr:\n{r.stderr[-800:]}"
@@ -162,7 +153,7 @@ def test_the_learned_certificate_closes_in_lean(generate_lean_files):
 def test_playground_build(generate_lean_files):
     """Playground.lean compiles — proof-pattern experiments and regression tests."""
     _needs_verith()
-    r = _lake_build("Playground")
+    r = lake_build("Playground")
     assert r.returncode == 0, (
         f"lake build Playground failed.\n"
         f"stdout:\n{r.stdout[-1000:]}\nstderr:\n{r.stderr[-1000:]}"
@@ -177,7 +168,7 @@ def test_cert_hugecounter_build(generate_lean_files):
     contractions. Pre-contraction keeps this tractable where a dense matrix
     literal + symbolic sum-expansion blows the heartbeat budget."""
     _needs_verith()
-    r = _lake_build("Certs.HugeCounter")
+    r = lake_build("Certs.HugeCounter")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
         f"lake build Certs.HugeCounter failed.\n"
@@ -191,7 +182,7 @@ def test_cert_bigcounter_build(generate_lean_files):
     """Certs/BigCounter.lean: a 6-vector state whose every transition is a 6-wide
     MatMul contraction — exercises Fin.sum_univ_succ expansion at scale."""
     _needs_verith()
-    r = _lake_build("Certs.BigCounter")
+    r = lake_build("Certs.BigCounter")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
         f"lake build Certs.BigCounter failed.\n"
@@ -205,7 +196,7 @@ def test_cert_counter_build(generate_lean_files):
     """Certs/Counter.lean: a 3×1 vector-state module with LIA.Linear transitions
     and tuple-select (s[i][j]) predicates — zeroth_hammer closes all obligations."""
     _needs_verith()
-    r = _lake_build("Certs.Counter")
+    r = lake_build("Certs.Counter")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
         f"lake build Certs.Counter failed.\n"
@@ -218,7 +209,7 @@ def test_cert_counter_build(generate_lean_files):
 def test_cert_countdown_build(generate_lean_files):
     """Certs/Countdown.lean: zeroth_hammer closes all proof obligations."""
     _needs_verith()
-    r = _lake_build("Certs.Countdown")
+    r = lake_build("Certs.Countdown")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
         f"lake build Certs.Countdown failed.\n"
@@ -252,7 +243,7 @@ def test_fbk_bridge_builds(generate_lean_files, name):
     a translation defect in either shows up as an unclosed goal.
     """
     pytest.importorskip("verith")
-    r = _lake_build(f"Certs.Bridge{name}")
+    r = lake_build(f"Certs.Bridge{name}")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
         f"lake build Certs.Bridge{name} failed.\n"
@@ -267,7 +258,7 @@ def test_cert_countdownsafe_build(generate_lean_files):
     what says `rule_globally lts P hP` is applied to the right things --
     `hP` transfers the invariant to `P` through `inv_imp_P`."""
     _needs_verith()
-    r = _lake_build("Certs.CountdownSafe")
+    r = lake_build("Certs.CountdownSafe")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
         f"lake build Certs.CountdownSafe failed.\n"
@@ -280,7 +271,7 @@ def test_cert_countdownsafe_build(generate_lean_files):
 def test_cert_twovars_build(generate_lean_files):
     """Certs/TwoVars.lean: zeroth_hammer closes all proof obligations."""
     _needs_verith()
-    r = _lake_build("Certs.TwoVars")
+    r = lake_build("Certs.TwoVars")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
         f"lake build Certs.TwoVars failed.\n"
@@ -293,7 +284,7 @@ def test_cert_twovars_build(generate_lean_files):
 def test_cert_collatz_build(generate_lean_files):
     """Certs/Collatz.lean: zeroth_hammer closes all proof obligations."""
     _needs_verith()
-    r = _lake_build("Certs.Collatz")
+    r = lake_build("Certs.Collatz")
     sorry_lines = [l for l in r.stdout.splitlines() if "sorry" in l and "Certs/" in l]
     assert r.returncode == 0, (
         f"lake build Certs.Collatz failed.\n"
@@ -399,7 +390,7 @@ def test_scalar_encoding_builds(generate_lean_files, name):
     encoding was never compiled at all — it had four type errors per
     matrix-state module.
     """
-    r = _lake_build(f"Certs.ScalarEnc{name}")
+    r = lake_build(f"Certs.ScalarEnc{name}")
     assert r.returncode == 0, (
         f"lake build Certs.ScalarEnc{name} failed.\n"
         f"stdout:\n{r.stdout[-2000:]}\nstderr:\n{r.stderr[-800:]}"
@@ -431,7 +422,7 @@ def test_relational_encoding_builds(generate_lean_files, name):
     that difference alone was enough to hide a broken `effect_i_eq` from
     this test.
     """
-    r = _lake_build(f"Certs.RelEnc{name}")
+    r = lake_build(f"Certs.RelEnc{name}")
     assert r.returncode == 0, (
         f"lake build Certs.RelEnc{name} failed.\n"
         f"stdout:\n{r.stdout[-2000:]}\nstderr:\n{r.stderr[-800:]}"

@@ -18,9 +18,6 @@ file, since each file defines its own `simp_circ`.
 from __future__ import annotations
 
 import dataclasses
-import os
-import subprocess
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -28,8 +25,7 @@ import pytest
 from reactor_lean.codegen.encodings import ModuleToLean4
 from reactor_lean.project.names import LINTERS_OFF
 from agree import CORPUS
-
-_LEAN_DIR = Path(__file__).parent
+from lake import lean_outputs
 
 # The modules whose circuit is generated and does not compile.
 _KNOWN = {
@@ -37,12 +33,6 @@ _KNOWN = {
     # encoding has it Real (tutorials/verith_gym.md).
     "fixtures/simple_env",
 }
-
-
-def _build_relational() -> None:
-    built = subprocess.run(["lake", "build", "Relational.Circ"], cwd=_LEAN_DIR,
-                           capture_output=True, text=True, timeout=1800)
-    assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
 
 
 def _unproved(names: list[str], tmp_path: Path) -> "tuple[dict[str, str], int]":
@@ -61,12 +51,7 @@ def _unproved(names: list[str], tmp_path: Path) -> "tuple[dict[str, str], int]":
         path.write_text(f"-- {name}\nimport Relational.Circ\n\n{LINTERS_OFF}\n\n{body}\n")
         files.append((name, path))
 
-    def lean(path: Path) -> str:
-        return subprocess.run(["lake", "env", "lean", str(path)], cwd=_LEAN_DIR,
-                              capture_output=True, text=True, timeout=1800).stdout
-
-    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) - 1)) as pool:
-        outputs = list(pool.map(lambda f: lean(f[1]), files))
+    outputs = lean_outputs([path for _name, path in files])
 
     bad = {}
     for (name, _path), out in zip(files, outputs):
@@ -77,8 +62,7 @@ def _unproved(names: list[str], tmp_path: Path) -> "tuple[dict[str, str], int]":
 
 
 @pytest.mark.slow
-def test_each_circuit_is_proved_to_be_its_functional_encoding(tmp_path):
-    _build_relational()
+def test_each_circuit_is_proved_to_be_its_functional_encoding(tmp_path, relational_circ):
     bad, compiled = _unproved(sorted(CORPUS), tmp_path)
     assert compiled, "nothing to compile"
     new = {name: bad[name] for name in sorted(set(bad) - _KNOWN)}
@@ -89,7 +73,7 @@ def test_each_circuit_is_proved_to_be_its_functional_encoding(tmp_path):
 
 
 @pytest.mark.slow
-def test_a_wrong_box_is_caught(tmp_path, monkeypatch):
+def test_a_wrong_box_is_caught(tmp_path, monkeypatch, relational_circ):
     """The check can fail: with `Sub`'s `Box` adding, the countdown's
     circuit counts up, and its `update` is no longer the functional one."""
     from reactor_lean.lowering import ops
@@ -98,7 +82,6 @@ def test_a_wrong_box_is_caught(tmp_path, monkeypatch):
         if key[1] == "Sub":
             monkeypatch.setitem(ops._BY_KEY, key,
                                 dataclasses.replace(row, box="Box.add"))
-    _build_relational()
     bad, compiled = _unproved(["limits/m_countdown"], tmp_path)
     assert compiled == 1
     assert "limits/m_countdown" in bad
