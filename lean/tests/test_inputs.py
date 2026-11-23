@@ -1,13 +1,10 @@
 """The input adapters: `reactor_lean.inputs`."""
 
-from pathlib import Path
-
 import pytest
 
 from reactor import Module
 from reactor_lean import inputs
-
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+from testdata import FIXTURES, SMV
 
 
 def test_a_python_file_loads_through_its_adapter():
@@ -40,9 +37,6 @@ def test_the_project_keeps_the_input_under_its_formats_suffix(tmp_path):
                              certificate=certificate_files(LeanContext(module)))
     assert (project / "dbg" / "system.smv").read_text() == "MODULE main\n"
     assert not (project / "dbg" / "system.py").exists()
-
-
-SMV = Path(__file__).resolve().parent / "smv_fixtures"
 
 
 def test_an_smv_model_loads_with_its_names():

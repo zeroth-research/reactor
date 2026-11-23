@@ -9,8 +9,6 @@ refused in its own terms.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from reactor_lean.core.errors import PredicateRefused, Unreadable
@@ -22,8 +20,7 @@ from reactor_lean.parse.native import (
     ModuleWires, NativeParser, namespace, parse_predicate,
 )
 from reactor_lean.parse.smtlib import Elaborator
-
-MODS = Path(__file__).parent / "limits" / "mods"
+from testdata import FIXTURES, MODS
 
 
 def _wires(name: str) -> ModuleWires:
@@ -160,7 +157,7 @@ def test_a_native_run_loads_no_solver(tmp_path):
     import subprocess
     import sys
 
-    fixture = Path(__file__).resolve().parent / "fixtures" / "counter.py"
+    fixture = FIXTURES / "counter.py"
     argv = [
         "reactor", str(fixture), "--buchi", "(= (X @intf.0) 0)",
         "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",

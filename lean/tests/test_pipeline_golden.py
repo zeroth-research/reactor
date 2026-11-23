@@ -39,12 +39,11 @@ from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor_lean.parse import PARSERS
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.codegen.context import LeanContext
-from reactor_lean.inputs.python import load_module
+from testdata import FIXTURES, TESTS, fixture
 
 pytest.importorskip("cvc5")
 
-GOLDEN = Path(__file__).parent / "golden" / "pipeline"
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+GOLDEN = TESTS / "golden" / "pipeline"
 UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
 
 
@@ -61,10 +60,6 @@ def _check(name: str, text: str) -> None:
 # ══════════════════════════════════════════════════════════════════════════
 # Codegen
 # ══════════════════════════════════════════════════════════════════════════
-
-
-def _fixture(name: str) -> Module:
-    return load_module(str(FIXTURES / f"{name}.py"))
 
 
 def _vector_counter() -> Module:
@@ -125,14 +120,14 @@ COUNTDOWN_INV = "(and (>= s0 0) (<= s0 100))"
 # (name, module, claim, certificate). `verith/tests/test_proofs_golden.py`
 # proves the same certificates.
 CODEGEN = [
-    ("bare", lambda: _fixture("counter"), None, None),
-    ("countdown", lambda: _fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
+    ("bare", lambda: fixture("counter"), None, None),
+    ("countdown", lambda: fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
      Certificate(COUNTDOWN_INV, "(ite (= s0 0) 0 s0)")),
-    ("countdown_safe", lambda: _fixture("svcomp_countdown"),
+    ("countdown_safe", lambda: fixture("svcomp_countdown"),
      Claim(prp="(<= s0 100)", kind="safety"), Certificate(COUNTDOWN_INV)),
-    ("property_only", lambda: _fixture("svcomp_countdown"),
+    ("property_only", lambda: fixture("svcomp_countdown"),
      Claim(prp="(= s0 0)"), Certificate()),
-    ("twovars", lambda: _fixture("svcomp_twovars"), Claim(prp="(= s0 s1)"),
+    ("twovars", lambda: fixture("svcomp_twovars"), Claim(prp="(= s0 s1)"),
      Certificate("(and (>= s0 0) (<= s0 s1) (= s1 10))",
                  "(ite (= s0 s1) 0 (- s1 s0))")),
     ("vector_counter_pre", _vector_counter,
@@ -143,7 +138,7 @@ CODEGEN = [
          "And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
          "Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], "
          "s[2][0]) - s[0][0]) + 1)")),
-    ("shared_let", lambda: _fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
+    ("shared_let", lambda: fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
      Certificate(COUNTDOWN_INV, _dense(3))),
     ("real", _real_countdown, Claim(prp="(<= s0 0.0)"),
      Certificate("(<= s0 5.0)", "(to_int s0)")),
@@ -187,7 +182,7 @@ def test_codegen_of_a_lean_answer_is_unchanged(parser):
     answer = LeanAnswer("fun s => (s 0 0) ≥ 0",
                         "fun s => ((s 0 0) * (s 0 0)).toNat")
     _check("codegen-lean_answer_nonlinear.golden",
-           _codegen(_fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
+           _codegen(fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
                     None, verbatim=answer, parser=parser))
 
 

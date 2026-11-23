@@ -11,8 +11,6 @@ To verify proofs actually close (slow, requires lake + mathlib):
 
 import subprocess
 import pytest
-from os.path import dirname
-from pathlib import Path
 
 from reactor import Module, Int, LIA, Var, X
 from reactor.analyzer import convert_method
@@ -21,8 +19,9 @@ from reactor_lean.project.scaffold import create_project
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.proof.render import certificate_files
 from reactor_lean.core.certificate import Certificate, Claim
+from testdata import TESTS
 
-OUTPUT_DIR = Path(dirname(__file__)) / "LeanTests"
+OUTPUT_DIR = TESTS / "LeanTests"
 
 
 # ──────────────────────────────────────────────────────────────

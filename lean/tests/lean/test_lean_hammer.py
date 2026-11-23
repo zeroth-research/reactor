@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-_LEAN_DIR = Path(__file__).parent
+from testdata import LAKE_PROJECT
 
 
 def _needs_verith() -> None:
@@ -38,10 +38,10 @@ def _needs_verith() -> None:
 def test_generated_files_present(generate_lean_files):
     """ZerothHammer.lean and Certs/*.lean exist after generation fixture runs."""
     _needs_verith()
-    assert (_LEAN_DIR / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
+    assert (LAKE_PROJECT / "ZerothHammer.lean").exists(), "ZerothHammer.lean not generated"
     for name in ("Countdown", "CountdownSafe", "TwoVars", "Collatz",
                  "ArgmaxScalar"):
-        path = _LEAN_DIR / "Certs" / f"{name}.lean"
+        path = LAKE_PROJECT / "Certs" / f"{name}.lean"
         assert path.exists(), f"Certs/{name}.lean not generated"
 
 
@@ -50,7 +50,7 @@ def test_the_bridges_are_generated(generate_lean_files):
     project writes; without it installed there are none."""
     pytest.importorskip("verith")
     for name in ("BridgeCountdown", "BridgeTwoVars"):
-        path = _LEAN_DIR / "Certs" / f"{name}.lean"
+        path = LAKE_PROJECT / "Certs" / f"{name}.lean"
         assert path.exists(), f"Certs/{name}.lean not generated"
 
 
@@ -61,7 +61,7 @@ def test_the_learned_certificate_is_generated(generate_lean_files):
     the route is the `verith/` project's, so is that one's."""
     pytest.importorskip("cvc5")
     pytest.importorskip("verith")
-    path = _LEAN_DIR / "Certs" / "LearnedCountdown.lean"
+    path = LAKE_PROJECT / "Certs" / "LearnedCountdown.lean"
     assert path.exists(), "Certs/LearnedCountdown.lean not generated"
     src = path.read_text()
     assert "sorry" not in src, "the learned certificate left an obligation open"
@@ -76,7 +76,7 @@ def test_generated_argmax_scalar_mirrors_matrix_form(generate_lean_files):
     non-strict comparison here would leave that proof passing against a
     definition that disagrees with `torch.argmax`.
     """
-    src = (_LEAN_DIR / "Certs" / "ArgmaxScalar.lean").read_text()
+    src = (LAKE_PROJECT / "Certs" / "ArgmaxScalar.lean").read_text()
     assert "let b0 : Nat × Int := (0, s0)" in src, "scalar Argmax is not seeded with element 0"
     assert "(0, (0 : Int))" not in src, "scalar Argmax still seeds a neutral value"
     assert ".2 < s1" in src, "scalar Argmax does not use a strict comparison"
@@ -91,7 +91,7 @@ def test_generated_argmax_scalar_mirrors_matrix_form(generate_lean_files):
 def _lake_build(*targets: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["lake", "build", *targets],
-        cwd=_LEAN_DIR,
+        cwd=LAKE_PROJECT,
         capture_output=True,
         text=True,
         timeout=600,
@@ -233,7 +233,7 @@ def test_generated_safety_cert_has_no_ranking(generate_lean_files):
     named anywhere -- a `def ranking := sorry` would be a `sorry` in a file
     whose point is that it has none."""
     _needs_verith()
-    src = (_LEAN_DIR / "Certs" / "CountdownSafe.lean").read_text()
+    src = (LAKE_PROJECT / "Certs" / "CountdownSafe.lean").read_text()
     assert "rule_globally" in src and "theorem inv_imp_P" in src
     assert "rule_buchi" not in src
     assert "ranking" not in src and "sorry" not in src
@@ -331,8 +331,8 @@ def test_generated_executable_builds_and_runs(
 
     from reactor_lean.project.lakefile import reactlib_checkout, with_reactlib
 
-    packages = _LEAN_DIR / ".lake" / "packages"
-    manifest = _LEAN_DIR / "lake-manifest.json"
+    packages = LAKE_PROJECT / ".lake" / "packages"
+    manifest = LAKE_PROJECT / "lake-manifest.json"
     if not packages.is_dir() or not manifest.is_file():
         pytest.skip("tests/lean packages not built; run the other slow tests first")
     checkout = reactlib_checkout()
@@ -341,7 +341,7 @@ def test_generated_executable_builds_and_runs(
 
     import importlib
 
-    sys.path.insert(0, str(_LEAN_DIR.resolve().parent / "fixtures"))
+    sys.path.insert(0, str(LAKE_PROJECT.resolve().parent / "fixtures"))
     try:
         module_def = importlib.import_module(fixture).module()
     finally:

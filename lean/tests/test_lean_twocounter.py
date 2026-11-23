@@ -8,8 +8,7 @@ from reactor_lean.pipeline.certificate import render
 from reactor_lean.proof.render import certificate_files
 from reactor_lean.core.certificate import Certificate, Claim
 
-from os.path import dirname
-from pathlib import Path
+from testdata import TESTS
 
 
 def _make_twobitcounter():
@@ -41,7 +40,7 @@ def test_twobitcounter_generates_lean():
     m = _make_twobitcounter()
 
     _ = create_project(
-        output_dir=Path(dirname(__file__)) / "LeanTests",
+        output_dir=TESTS / "LeanTests",
         module=m,
         project_name="TwoBitCertificate",
         executable=True,

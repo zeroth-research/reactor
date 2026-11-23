@@ -15,16 +15,13 @@ from __future__ import annotations
 
 import random
 from fractions import Fraction
-from pathlib import Path
 
 import torch
 
 from reactor import Bool, BitVec, Int, Real, X
 from reactor.eval import execute_init, execute_update
 from reactor_lean.lowering.sorts import wire_shape
-
-TESTS = Path(__file__).parent
-FIXTURES = TESTS / "fixtures"
+from testdata import FIXTURES, MODS
 
 RUNS = 6            # runs per module
 ROUNDS = 5          # rounds per run after the initial one
@@ -46,7 +43,7 @@ def _corpus() -> dict:
     from reactor_lean.inputs.python import load_module as _load
 
     out = {}
-    for p in sorted((TESTS / "limits" / "mods").glob("m_*.py")):
+    for p in sorted(MODS.glob("m_*.py")):
         out[f"limits/{p.stem}"] = (lambda p=p: _load(p))
     for p in sorted(FIXTURES.glob("*.py")):
         if "def module(" in p.read_text():

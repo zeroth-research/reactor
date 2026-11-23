@@ -19,7 +19,6 @@ ZerothHammer for the tactic and define their own module-specific
 ``simp_mat`` / ``simp_defs`` macros. Without `verith` installed there is
 nothing to prove them with, and the tests that build them are skipped.
 """
-from pathlib import Path
 
 import pytest
 import torch
@@ -32,9 +31,9 @@ from reactor_lean.proof.render import generate_standalone_cert_lean
 from reactor_lean.core.certificate import Certificate, Claim
 from reactor_lean.project.names import LINTERS_OFF
 from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
+from testdata import LAKE_PROJECT
 
-_LEAN_DIR = Path(__file__).parent
-_CERTS_DIR = _LEAN_DIR / "Certs"
+_CERTS_DIR = LAKE_PROJECT / "Certs"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -390,7 +389,7 @@ def generate_lean_files() -> None:
         pass
     else:
         # ZerothHammer.lean — standalone tactic
-        hammer_file = _LEAN_DIR / "ZerothHammer.lean"
+        hammer_file = LAKE_PROJECT / "ZerothHammer.lean"
         hammer_file.write_text(generate_zeroth_hammer_lean())
 
         # Certs/ — one self-contained certificate per module
