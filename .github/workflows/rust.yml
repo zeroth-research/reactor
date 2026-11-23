@@ -101,8 +101,10 @@ jobs:
       # via `lake` (see `just test-lean`); CI intentionally does not run those.
       - name: Run Python tests (builds the extension via maturin)
         run: just py-test
+      # The extension is built once, by `py-test` above: `--no-deps` keeps
+      # the next one from running `py-build` (`maturin develop`) again.
       - name: Run lean tests
-        run: just lean-test
+        run: just --no-deps lean-test
 
   nb-strip:
     runs-on: ubuntu-latest
