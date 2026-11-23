@@ -45,6 +45,13 @@ export CARGO_TARGET_DIR := TARGET_DIR
 export PYTHONPYCACHEPREFIX := env("PYTHONPYCACHEPREFIX", TARGET_DIR / "pycache")
 NBSTRIPOUT := "uvx nbstripout@0.9.1 --max-size 16k --drop-empty-cells"
 
+# What every Lean project here builds against, for every recipe and every
+# command it runs (`reactor`, the tests): the ReactLib
+# checkout the projects require by path, the one beside this repository.
+# It is left unset where there is none, and a value already in the
+# environment wins.
+export REACTLIB := env("REACTLIB", if path_exists(parent_directory(justfile_directory()) / "ReactLib") == "true" { parent_directory(justfile_directory()) / "ReactLib" } else { "" })
+
 # Convert FEATURES into a flag only if set
 
 profile_flag := if PROFILE == "" { "" } else { "--profile " + PROFILE }

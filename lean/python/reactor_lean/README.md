@@ -84,9 +84,9 @@ By default they are git requires at `project/lakefile.py`'s
 `REACTLIB_REV`. With `REACTLIB` set to a ReactLib checkout they
 are path requires on it instead, which is how to change the library and the
 generator together; `reactor` refuses a `REACTLIB` that is not a
-checkout before it writes anything. The tests set it to the checkout beside
-this repository when there is one, and `tests/lean`'s lakefile requires
-`ReactLib` from there.
+checkout before it writes anything. `just` sets it to the checkout beside
+this repository when there is one, and the tests' Lake project
+(`tests/lean`) requires `ReactLib` from it.
 
 [ReactLib]: https://github.com/zeroth-research/ReactLib
 
