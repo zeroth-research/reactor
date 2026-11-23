@@ -8,16 +8,16 @@ Everything here is about the README staying an honest index of what is
 there, and about the predicates a run was given.
 """
 
-import subprocess
 import tempfile
 from pathlib import Path
 
 import pytest
 
 from reactor_lean.artifacts import ArtifactStore
+from reactor_cli import reactor
+from testdata import MODS
 
-LEAN_DIR = Path(__file__).parent.parent
-MODULE = LEAN_DIR / "tests" / "limits" / "mods" / "m_countdown.py"
+MODULE = MODS / "m_countdown.py"
 
 pytest.importorskip("cvc5")
 
@@ -83,11 +83,10 @@ def test_a_candidate_accumulates_and_a_question_does_not(tmp_path):
 
 
 def _reactor(out: Path, *args) -> str:
-    r = subprocess.run(
-        ["uv", "run", "reactor", str(MODULE), "--buchi", "(= (X @intf.0) 0)",
-         "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))", "--ranking", "(X @intf.0)",
-         *args, "-o", str(out), "-p", "Rea"],
-        cwd=LEAN_DIR, capture_output=True, text=True,
+    r = reactor(
+        str(MODULE), "--buchi", "(= (X @intf.0) 0)",
+        "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))", "--ranking", "(X @intf.0)",
+        *args, "-o", str(out), "-p", "Rea",
     )
     assert r.returncode == 0, r.stdout + r.stderr
     return r.stdout
