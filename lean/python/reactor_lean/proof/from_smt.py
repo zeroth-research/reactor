@@ -14,8 +14,8 @@ from cvc5 import Kind
 from reactor import Wire
 from ..core.errors import Refused
 from ..lowering.sorts import wire_shape
-from ..lowering.elements import product_accessor
 from ..codegen.literals import lean_bitvec, lean_int, lean_real
+from .bindings import Bindings, build_var_map, with_lets
 from ..smt.terms import min_max_of, selector_index, state_dependent
 
 
@@ -44,37 +44,12 @@ _INFIX_CMP = {
 }
 
 
-def build_var_map(
-    bindings: list[tuple[str, str, list[Wire]]],
-) -> tuple[dict[str, str], dict[str, Wire]]:
-    """Build Lean-accessor + wire maps for a list of (prefix, base, wires).
-
-    For each binding, each wire at position `i` gets a variable name
-    `<prefix><i>` mapped to a Lean accessor `<base><acc> [0 0]`. Scalar
-    1×1 wires get the `0 0` scalar extraction; vector/matrix wires keep
-    the raw function form.
-    """
-    var_accessor: dict[str, str] = {}
-    var_wire: dict[str, Wire] = {}
-    for prefix, base, wires in bindings:
-        n = len(wires)
-        for i, w in enumerate(wires):
-            acc = product_accessor(i, n)
-            name = f"{prefix}{i}"
-            if wire_shape(w).is_scalar:
-                var_accessor[name] = f"({base}{acc} 0 0)"
-            else:
-                var_accessor[name] = f"({base}{acc})"
-            var_wire[name] = w
-    return var_accessor, var_wire
-
-
 def smt_to_lean(
     term: cvc5.Term,
     state_wires: list[Wire],
     *,
     param_name: str = "s",
-    extra: list[tuple[str, str, list[Wire]]] | None = None,
+    extra: "Bindings | None" = None,
     share: bool = True,
 ) -> str:
     """Translate `term` into a Lean 4 expression in a single parameter.
@@ -85,7 +60,7 @@ def smt_to_lean(
     bindings = [("s", param_name, state_wires)] + (extra or [])
     var_accessor, var_wire = build_var_map(bindings)
     body, lets = _render(term, var_accessor, var_wire, share)
-    return f"fun {param_name} => {_with_lets(body, lets)}"
+    return f"fun {param_name} => {with_lets(body, lets)}"
 
 
 def smt_to_lean_body(
@@ -109,14 +84,14 @@ def smt_to_lean_nat(
     state_wires: list[Wire],
     *,
     param_name: str = "s",
-    extra: list[tuple[str, str, list[Wire]]] | None = None,
+    extra: "Bindings | None" = None,
     share: bool = True,
 ) -> str:
     """Int-sorted term → Lean `Nat` expression, clamped via `Int.toNat`."""
     bindings = [("s", param_name, state_wires)] + (extra or [])
     var_accessor, var_wire = build_var_map(bindings)
     body, lets = _render(term, var_accessor, var_wire, share)
-    return f"fun {param_name} => {_with_lets(f'(({body} : Int)).toNat', lets)}"
+    return f"fun {param_name} => {with_lets(f'(({body} : Int)).toNat', lets)}"
 
 
 # ---------------------------------------------------------------------
@@ -134,13 +109,6 @@ def smt_to_lean_nat(
 # predicate's logical structure behind a name, and `split_ifs` / `casesm*` /
 # `not_and_or` in the prep chain all match on that structure.
 # ---------------------------------------------------------------------
-
-
-def _with_lets(body: str, lets: list[tuple[str, str]]) -> str:
-    if not lets:
-        return body
-    binds = "".join(f"\n  let {name} := {expr}" for name, expr in lets)
-    return f"{binds}\n  {body}"
 
 
 def _shared_nodes(t: cvc5.Term) -> set[int]:
@@ -212,7 +180,7 @@ def _render(
     # Sharing is only ever worth a `let` if it actually shrinks the output.
     # A shallow net repeats little, and there each binding costs more text
     # than the repetition it removes.
-    if len(_with_lets(body, lets)) >= len(plain):
+    if len(with_lets(body, lets)) >= len(plain):
         return plain, []
     return body, lets
 
