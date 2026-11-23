@@ -102,14 +102,29 @@ def mat_mk(entry: str, i: str = "_", j: str = "_") -> str:
     return f"(Matrix.mk fun {i} {j} => {entry})"
 
 
+# The theories an op comes from. PyO3 exports each op as
+# `<theory>_<variant>`: `LIA_Add`, `LRA_Real`, `BV_MatMul`, `Cast_BVToInt`.
+# `Cast` is no theory of its own sorts: it is what crosses between the
+# other three's (`theory/src/cast.rs`), and has rows of its own only.
+THEORIES = ("LIA", "LRA", "BV", "Cast")
+
+
+def theory_of(itype) -> str:
+    """The theory an op came from: "LIA", "LRA", "BV" or "Cast"; an op
+    with no such prefix belongs to no theory and gets "".
+    """
+    name = type(itype).__name__
+    for theory in THEORIES:
+        if name.startswith(theory + "_"):
+            return theory
+    return ""
+
+
 def itype_name(itype) -> str:
     """Get the variant name of an op, e.g. LIA.Add() -> 'Add'."""
     name = type(itype).__name__
-    # PyO3 exports theory ops as LIA_Add, LRA_Real, BV_MatMul, Cast_BVToInt, etc.
-    for prefix in ("LIA_", "LRA_", "BV_", "Cast_"):
-        if name.startswith(prefix):
-            return name[len(prefix):]
-    return name
+    theory = theory_of(itype)
+    return name[len(theory) + 1:] if theory else name
 
 
 # Constant op variants across theories (LIA.Int/Bool, LRA.Real/Bool,
