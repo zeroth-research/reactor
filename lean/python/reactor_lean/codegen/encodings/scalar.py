@@ -50,11 +50,7 @@ def _pack_body(var: str, wires: "list[Wire]") -> str:
     for w in wires:
         offset, size = layout.span(w)
         parts.append(
-            mat_from_scalars(
-                flat_accrs[offset : offset + size],
-                wire_shape(w),
-                flat_element_type(w),
-            )
+            mat_from_scalars(flat_accrs[offset : offset + size], wire_shape(w))
         )
     return build_tuple(parts)
 
@@ -90,7 +86,7 @@ def _recon_lemma_lines(w) -> "list[str]":
     elem = flat_element_type(w)
     m, n = shape.m, shape.n
     slots = [f"c {i} {j}" for i in range(m) for j in range(n)]
-    lhs = mat_from_scalars(slots, shape, elem)
+    lhs = mat_from_scalars(slots, shape)
     name = f"recon_{elem_ty_slug(elem)}_{m}_{n}"
     return [
         "set_option maxHeartbeats 2000000 in",
