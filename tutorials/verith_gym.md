@@ -82,13 +82,13 @@ What the extraction does:
 - Instance attributes written in `reset`/`step` (here `self.state`) become
   **private state wires**; observation, reward, terminated, and truncated
   become **interface wires**; the action becomes an **external input**.
-- With the default theory (LRA) everything numeric is real-valued. A
+- With the default numbers (`Real`) everything numeric is real-valued. A
   `Discrete(n)` action space is encoded as a one-hot real vector of width
-  `n` — which is why `step` reads its action with `argmax`. (An integer
-  theory can be selected with `Env(..., theory=LIA)`, but discrete *actions*
-  are still one-hot real vectors — see [An integer-only environment
-  (LIA)](#step-6--an-integer-only-environment-lia) for how to design an env that
-  stays in integer arithmetic.)
+  `n` — which is why `step` reads its action with `argmax`. (Integers can be
+  selected with `Env(..., number=Int)`, which makes the action a vector of
+  integer scores — see [An integer-only
+  environment](#step-6--an-integer-only-environment) for how to design an env
+  that stays in integer arithmetic.)
 - The analyzer handles straight-line arithmetic, comparisons, `if`/`else`,
   `min`/`max`, `argmax`, etc. It analyzes the *code* of `reset`/`step`, so
   keep them free of I/O, randomness, and unbounded loops.
@@ -239,7 +239,7 @@ integer-valued while the functional encoding treats it as real. Until those
 translator bugs are fixed, build the
 `Certificate` target.
 
-## Step 6 — An integer-only environment (LIA)
+## Step 6 — An integer-only environment
 
 The chain example above lives in real arithmetic because of two encoding
 rules: a `Discrete` *action* space always becomes a one-hot real vector
@@ -249,23 +249,24 @@ modules work, but they cost you: every Lean definition becomes
 and the proofs lean on `linarith` instead of the more robust `omega`.
 
 If the dynamics are genuinely discrete, design the environment so the
-extraction stays in the integer theory:
+extraction stays in integer arithmetic:
 
-- pass `theory=LIA` to `Env`;
+- pass `number=Int` to `Env`, and declare the private state's sort with
+  `attrs=`;
 - use an **integer `Box` action space** instead of `Discrete`, and branch on
   the action value directly — no one-hot, no `argmax`;
-- return **integer rewards** (`1`, not `1.0`) — under LIA the reward wire is
-  integer-typed.
+- return **integer rewards** (`1`, not `1.0`) — with `number=Int` the reward
+  wire is integer-typed.
 
 Save this as `cycle_env.py`:
 
 ```python
-"""An integer-only gymnasium environment wrapped as a reactive module (LIA)."""
+"""An integer-only gymnasium environment wrapped as a reactive module."""
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from reactor import Module, LIA
+from reactor import Int, Module
 from reactor.gym import Env
 
 
@@ -292,7 +293,7 @@ class CycleEnv(gym.Env):
 
 
 def module() -> Module:
-    return Env(CycleEnv(), theory=LIA)
+    return Env(CycleEnv(), number=Int, attrs=Int([1, 1]))
 ```
 
 The wire layout is the same as before — `s0` observation, `s1` reward,
@@ -343,12 +344,12 @@ vector** and advance it by multiplying with a constant **permutation
 matrix**. Save this as `matcycle_env.py`:
 
 ```python
-"""Matrix-form LIA example: one-hot state advanced by a permutation matrix."""
+"""Matrix-form integer example: one-hot state advanced by a permutation matrix."""
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from reactor import Module, LIA
+from reactor import Int, Module
 from reactor.gym import Env
 
 
@@ -376,17 +377,17 @@ class MatCycleEnv(gym.Env):
 
 
 def module() -> Module:
-    return Env(MatCycleEnv(), theory=LIA)
+    return Env(MatCycleEnv(), number=Int, attrs=Int([4, 1]))
 ```
 
 Two encoding constraints shape the Python:
 
 - The state is a **column** vector (`shape (4, 1)`) and the matrix is the
-  **left** operand of `@`: the integer theory lowers a matrix product to a
-  `Linear` op with the convention `Y = A·X`, where `A` must be a constant.
+  **left** operand of `@`, a matrix product (`MatMul`) of a `4×4` and a
+  `4×1` matrix.
 - The rotation matrix is written **inline** so the analyzer bakes it as a
   constant term (an `np.array` literal); in Lean it appears as a constant
-  `Matrix (Fin 4) (Fin 4) Int` inside an `affineLinear` application.
+  `Matrix (Fin 4) (Fin 4) Int`.
 
 The state tuple now contains real matrices: `s0` (observation) and `s4`
 (`self.state`) are `Matrix (Fin 4) (Fin 1) Int`. In SMT-LIB, their components are
@@ -413,8 +414,8 @@ cd out/MatCycleCert
 lake build Certificate
 ```
 
-In the proofs, `simp_mat` reduces the `affineLinear` application — the
-`Fin 4` sums unfold and the permutation shuffles the components — after
+In the proofs, `simp_mat` reduces the matrix product — the `Fin 4` sums
+unfold and the permutation shuffles the components — after
 which every obligation is again linear integer arithmetic over the vector
 components and `omega` closes it. The one-hot invariant is load-bearing
 twice over: it bounds each component (so the ranking is non-negative) and
@@ -466,7 +467,7 @@ What happens:
    LLM proposal is checked with cvc5, and counterexamples are fed back to
    the model until the invariant is inductive and the ranking decreases
    (`--infer ai` skips the cvc5 loop and relies on LLM self-checking).
-   Both integer (LIA) and real-valued (LRA) modules are validated — the
+   Both integer and real-valued modules are validated — the
    Step 1 chain works here just as well as the cycle example.
 3. Only `Certificate/Data.lean` is rewritten with the inferred `inv` and
    `ranking` — `Certificate/Certificate.lean` and the module encodings are
