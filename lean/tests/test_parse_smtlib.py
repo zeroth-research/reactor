@@ -18,6 +18,7 @@ from reactor import BV, LIA, LRA, BitVec, Bool, Int, Module, Real, Term, Var, X
 from reactor_lean.core.errors import Unreadable
 from reactor_lean.lowering.sorts import itype_name
 from reactor_lean.parse.formula import family
+from reactor_lean.parse.native import ModuleWires
 from reactor_lean.parse.smtlib import Scope, read_smtlib
 
 
@@ -46,14 +47,8 @@ def _mixed() -> Module:
 MODULE = _mixed()
 
 
-def _scope(module=MODULE) -> Scope:
-    names = {}
-    for prefix, wires in (("s", [X(v) for v in module.ctrl]),
-                          ("e", [X(v) for v in module.extl]),
-                          ("el", list(module.extl))):
-        for k, w in enumerate(wires):
-            names[f"{prefix}{k}"] = w
-    return Scope(names)
+def _scope() -> Scope:
+    return ModuleWires.of(MODULE).scope()
 
 
 def _ops(src: str) -> list[str]:
