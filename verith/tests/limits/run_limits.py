@@ -65,12 +65,11 @@ sys.path.insert(0, str(SP))
 from cases import CASES  # noqa: E402
 from reactor_lean.inputs import to_surface  # noqa: E402
 from reactor_lean.project.lakefile import (  # noqa: E402
-    REACTLIB_ENV, reactlib_checkout, with_reactlib,
+    reactlib_checkout, with_reactlib,
 )
 
-# The ReactLib checkout every project requires by path; the `verith`
-# runs below inherit it.
-os.environ.setdefault(REACTLIB_ENV, str(REPO.parent / "ReactLib"))
+# The ReactLib checkout every project requires by path, `$REACTLIB`
+# (`just vr-run` sets it); the `verith` runs below inherit it.
 REACTLIB = reactlib_checkout()
 
 DEFAULT_TIMEOUT = 900
