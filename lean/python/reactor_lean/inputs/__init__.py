@@ -21,14 +21,13 @@ from pathlib import Path
 from typing import Any
 
 from . import python, smv
-from .api import InputAdapter, InputError, Problem, SourceText, StatedClaim
+from .api import InputAdapter, InputError, Problem, SourceText
 from .names import ClaimError, Names, to_internal, to_surface
 from .python import Named
 
 __all__ = [
     "ADAPTERS", "ClaimError", "InputAdapter", "InputError", "Named", "Names",
-    "Problem", "StatedClaim",
-    "SourceText", "adapter_by_name", "adapter_for", "load", "to_internal",
+    "Problem", "SourceText", "adapter_by_name", "adapter_for", "load", "to_internal",
     "to_surface",
 ]
 
