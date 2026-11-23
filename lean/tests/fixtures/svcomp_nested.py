@@ -9,7 +9,7 @@ Python semantics:
 Invariant: 0 <= i <= 3 and 0 <= j <= 3
 Ranking: (3 - i) * 4 + (3 - j) (when not at (0,0))
 """
-from reactor import Module, Int, LIA, Var, X
+from reactor import Module, Int, Var, X
 from reactor.analyzer import convert_method
 
 
@@ -30,8 +30,8 @@ def update(old_i, old_j):
 def module() -> Module:
     i = Var(Int([1, 1]))
     j = Var(Int([1, 1]))
-    init_terms = convert_method(init, {}, [X(i), X(j)], theory=LIA)
+    init_terms = convert_method(init, {}, [X(i), X(j)], number=Int)
     update_terms = convert_method(
-        update, {"old_i": i, "old_j": j}, [X(i), X(j)], theory=LIA
+        update, {"old_i": i, "old_j": j}, [X(i), X(j)], number=Int
     )
     return Module.sequential([i, j], init_terms, update_terms)

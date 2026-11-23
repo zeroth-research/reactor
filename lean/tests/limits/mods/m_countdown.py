@@ -1,5 +1,5 @@
 """LIA 1x1: x = 100, then x-1 each step, reset to 100 at 0. Baseline control."""
-from reactor import Module, Int, LIA, Var, X
+from reactor import Module, Int, Var, X
 from reactor.analyzer import convert_method
 
 
@@ -17,6 +17,6 @@ def module() -> Module:
     s = Var(Int([1, 1]))
     return Module.sequential(
         [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
+        convert_method(init, {}, [X(s)], number=Int),
+        convert_method(update, {"old_x": s}, [X(s)], number=Int),
     )

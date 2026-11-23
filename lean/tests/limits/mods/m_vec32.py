@@ -1,6 +1,6 @@
 """32-wide state, countdown in slot 0 — the scaling case."""
 import torch
-from reactor import Module, Term, Wire, Int, Bool, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Bool, Var, X, tensor
 
 N = 32
 
@@ -11,7 +11,7 @@ def module() -> Module:
 
     init_vec = torch.zeros((N, 1), dtype=torch.int64)
     init_vec[0][0] = 100
-    init = [Term(LIA.Int(init_vec), [X(s)])]
+    init = [Term(tensor.int.Const(init_vec), [X(s)])]
 
     x, zc = Wire(Int([1, 1])), Wire(Int([1, 1]))
     cond = Wire(Bool([1, 1]))
@@ -27,11 +27,11 @@ def module() -> Module:
     bneg[0][0] = -1
 
     update = [
-        Term(LIA.Linear(row0, z11), [x], [s]),
-        Term(LIA.Int(torch.tensor([[0]])), [zc]),
-        Term(LIA.Eq(), [cond], [x, zc]),
-        Term(LIA.Linear(diag_keep, b100), [reset], [s]),
-        Term(LIA.Linear(torch.eye(N, dtype=torch.int64), bneg), [dec], [s]),
-        Term(LIA.Ite(), [X(s)], [cond, reset, dec]),
+        Term(tensor.int.Linear(row0, z11), [x], [s]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [zc]),
+        Term(tensor.int.Eq([1, 1]), [cond], [x, zc]),
+        Term(tensor.int.Linear(diag_keep, b100), [reset], [s]),
+        Term(tensor.int.Linear(torch.eye(N, dtype=torch.int64), bneg), [dec], [s]),
+        Term(tensor.int.Ite([N, 1]), [X(s)], [cond, reset, dec]),
     ]
     return Module.sequential([s], init, update)

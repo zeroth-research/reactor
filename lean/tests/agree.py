@@ -18,7 +18,7 @@ from fractions import Fraction
 
 import torch
 
-from reactor import Bool, BitVec, Int, Real, X
+from reactor import Bool, Int, Real, Word, X
 from reactor.eval import execute_init, execute_update
 from reactor_lean.lowering.sorts import wire_shape
 from testdata import FIXTURES, MODS
@@ -65,54 +65,73 @@ def _one_op(op, ins: list, out) -> object:
 def _ops() -> dict:
     """One-op modules for every op the corpus never reaches but some
     encoding encodes, so that each encoded op is held to the interpreter.
-    BV at width 4, where a random draw is negative as often as not."""
-    from reactor import BV, LIA, LRA, Cast
+    Words at width 4, where a random draw is negative as often as not.
+    Real `Div` is not among them: the interpreter's `x / 0` is infinite,
+    and the encodings' is 0."""
+    from reactor import Word, tensor
 
-    bv, bv1 = BitVec(4, [1, 1]), BitVec(1, [1, 1])
-    real, boolean = Real([1, 1]), Bool([1, 1])
+    w, sc = 4, [1, 1]
+    bv, real, boolean, integer = Word(w, sc), Real(sc), Bool(sc), Int(sc)
+    word, signed, unsigned = tensor.word, tensor.word.signed, tensor.word.unsigned
     out = {}
-    for name in ("Add", "Sub", "Mul", "And", "Or", "Xor",
-                 "UDiv", "SDiv", "UMod", "SMod"):
-        out[f"BV.{name}"] = (getattr(BV, name)(), [bv, bv], bv)
-    for name in ("Neg", "Not", "Id"):
-        out[f"BV.{name}"] = (getattr(BV, name)(), [bv], bv)
-    for name in ("Eq", "Ne", "ULt", "ULe", "UGt", "UGe",
-                 "SLt", "SLe", "SGt", "SGe"):
-        out[f"BV.{name}"] = (getattr(BV, name)(), [bv, bv], bv1)
-    out["BV.BVToBool"] = (BV.BVToBool(), [bv], bv1)
-    out["BV.MatMul"] = (BV.MatMul(), [BitVec(4, [1, 2]), BitVec(4, [2, 1])], bv)
-    for name in ("And", "Or", "Xor"):
-        out[f"LRA.{name}"] = (getattr(LRA, name)(), [boolean, boolean], boolean)
-    out["LIA.Xor"] = (LIA.Xor(), [boolean, boolean], boolean)
-    out["LIA.Eq.Bool"] = (LIA.Eq(), [boolean, boolean], boolean)
-    out["LRA.Ne.Bool"] = (LRA.Ne(), [boolean, boolean], boolean)
-    for theory in (LIA, LRA):
-        out[f"{theory.__name__}.Implies"] = (
-            theory.Implies(), [boolean, boolean], boolean)
-    out["LIA.Neg"] = (LIA.Neg(), [Int([1, 2])], Int([1, 2]))
-    out["LRA.Neg"] = (LRA.Neg(), [real], real)
-    out["LIA.Mul"] = (LIA.Mul(), [Int([2, 2]), Int([2, 2])], Int([2, 2]))
-    out["LRA.Mul"] = (LRA.Mul(), [real, real], real)
-    out["LIA.Get"] = (LIA.Get(row=1, col=2), [Int([2, 3])], Int([1, 1]))
-    out["LIA.Get.Bool"] = (LIA.Get(row=1, col=0), [Bool([2, 2])], boolean)
-    out["LRA.Get"] = (LRA.Get(row=0, col=1), [Real([1, 2])], real)
-    out["BV.Get"] = (BV.Get(row=0, col=2), [BitVec(4, [1, 3])], bv)
-    out["Cast.IntToReal"] = (Cast.IntToReal(), [Int([1, 2])], Real([1, 2]))
-    out["Cast.RealToInt"] = (Cast.RealToInt(), [real], Int([1, 1]))
-    out["Cast.BVToInt"] = (Cast.BVToInt(), [BitVec(4, [1, 2])], Int([1, 2]))
-    out["Cast.BitToBool"] = (Cast.BitToBool(), [bv1], boolean)
-    out["Cast.BoolToBit"] = (Cast.BoolToBit(), [Bool([1, 2])], BitVec(1, [1, 2]))
+    for name in ("Add", "Sub", "Mul", "And", "Or", "Xor", "Nand", "Nor", "Xnor", "Shl"):
+        out[f"word.{name}"] = (getattr(word, name)(w, sc), [bv, bv], bv)
+    for ns, tag in ((unsigned, "word.unsigned"), (signed, "word.signed")):
+        for name in ("Div", "Rem", "Shr"):
+            out[f"{tag}.{name}"] = (getattr(ns, name)(w, sc), [bv, bv], bv)
+        for name in ("Lt", "Le", "Gt", "Ge"):
+            out[f"{tag}.{name}"] = (getattr(ns, name)(w, sc), [bv, bv], boolean)
+        out[f"{tag}.Extend"] = (ns.Extend(2, w, sc), [bv], Word(w + 2, sc))
+    out["word.signed.Mod"] = (signed.Mod(w, sc), [bv, bv], bv)
+    out["word.signed.Abs"] = (signed.Abs(w, sc), [bv], bv)
+    for name in ("Neg", "Not"):
+        out[f"word.{name}"] = (getattr(word, name)(w, sc), [bv], bv)
+    out["Skip.word"] = (tensor.Skip(bv), [bv], bv)
+    for name in ("Eq", "Ne"):
+        out[f"word.{name}"] = (getattr(word, name)(w, sc), [bv, bv], boolean)
+    out["word.Ite"] = (word.Ite(w, sc), [boolean, bv, bv], bv)
+    out["word.Get"] = (word.Get(0, 2, w, [1, 3]), [Word(w, [1, 3])], bv)
+    for name in ("RotateLeft", "RotateRight"):
+        out[f"word.{name}"] = (getattr(word, name)(1, w, sc), [bv], bv)
+    out["word.Extract"] = (word.Extract(2, 1, w, sc), [bv], Word(2, sc))
+    out["word.Repeat"] = (word.Repeat(2, w, sc), [bv], Word(2 * w, sc))
+    out["word.Concat"] = (word.Concat([w, 2], sc), [bv, Word(2, sc)], Word(w + 2, sc))
+    for name in ("And", "Or", "Xor", "Implies", "Eq", "Ne"):
+        out[f"bool.{name}"] = (getattr(tensor.bool, name)(sc), [boolean, boolean], boolean)
+    out["bool.Not"] = (tensor.bool.Not(sc), [boolean], boolean)
+    out["bool.Ite"] = (tensor.bool.Ite(sc), [boolean] * 3, boolean)
+    out["bool.Get"] = (tensor.bool.Get(1, 0, [2, 2]), [Bool([2, 2])], boolean)
+    out["int.Neg"] = (tensor.int.Neg([1, 2]), [Int([1, 2])], Int([1, 2]))
+    out["real.Neg"] = (tensor.real.Neg(sc), [real], real)
+    out["int.Mul"] = (tensor.int.Mul([2, 2]), [Int([2, 2])] * 2, Int([2, 2]))
+    out["real.Mul"] = (tensor.real.Mul(sc), [real, real], real)
+    out["int.Abs"] = (tensor.int.Abs([1, 2]), [Int([1, 2])], Int([1, 2]))
+    out["real.Abs"] = (tensor.real.Abs(sc), [real], real)
+    out["int.Get"] = (tensor.int.Get(1, 2, [2, 3]), [Int([2, 3])], integer)
+    out["real.Get"] = (tensor.real.Get(0, 1, [1, 2]), [Real([1, 2])], real)
+    out["cast.ToReal"] = (tensor.cast.ToReal([1, 2]), [Int([1, 2])], Real([1, 2]))
+    out["cast.ToInt"] = (tensor.cast.ToInt(sc), [real], integer)
+    out["cast.UbvToInt"] = (tensor.cast.UbvToInt(w, [1, 2]), [Word(w, [1, 2])], Int([1, 2]))
     for name in ("Div", "Mod"):
-        out[f"LIA.{name}"] = (getattr(LIA, name)(), [Int([1, 2]), Int([1, 2])],
+        out[f"int.{name}"] = (getattr(tensor.int, name)([1, 2]), [Int([1, 2])] * 2,
                               Int([1, 2]))
-    out["LRA.Not"] = (LRA.Not(), [boolean], boolean)
     for name in ("Ge", "Le", "Ne"):
-        out[f"LRA.{name}"] = (getattr(LRA, name)(), [real, real], boolean)
-    for name in ("Max", "Min"):
-        out[f"LRA.{name}"] = (getattr(LRA, name)(), [Real([1, 3])], real)
-    out["LRA.Linear"] = (LRA.Linear(torch.tensor([[0.5, -2.0]]),
-                                    torch.tensor([[0.25]])),
-                         [Real([2, 1])], real)
+        out[f"real.{name}"] = (getattr(tensor.real, name)(sc), [real, real], boolean)
+    for ns, tag, s, one in ((tensor.int, "int", Int([1, 3]), integer),
+                            (tensor.real, "real", Real([1, 3]), real)):
+        for name in ("Max", "Min"):
+            out[f"{tag}.{name}"] = (getattr(ns, name)([1, 3]), [s], one)
+    out["real.Linear"] = (tensor.real.Linear(torch.tensor([[0.5, -2.0]]),
+                                             torch.tensor([[0.25]])),
+                          [Real([2, 1])], real)
+    out["int.Scale"] = (tensor.int.Scale(torch.tensor([[3], [-2]])), [Int([2, 1])], Int([2, 1]))
+    out["real.Scale"] = (tensor.real.Scale(torch.tensor([[0.5, 0.5]])), [Real([1, 2])],
+                         Real([1, 2]))
+    out["int.MatMul"] = (tensor.int.MatMul([[1, 2], [2, 1]]), [Int([1, 2]), Int([2, 1])],
+                         integer)
+    out["int.Ite.vector"] = (tensor.int.Ite([2, 1]),
+                             [boolean, Int([2, 1]), Int([2, 1])], Int([2, 1]))
+    out["bool.All"] = (tensor.bool.All([2, 1]), [Bool([2, 1])], boolean)
     return {f"ops/{k}": (lambda a=a: _one_op(*a)) for k, a in out.items()}
 
 
@@ -130,10 +149,11 @@ def _draw(wire, rng: random.Random) -> torch.Tensor:
     elif isinstance(dt, Int):
         vals, kind = [rng.randint(-8, 8) for _ in range(shape.total)], torch.int64
     elif isinstance(dt, Real):
+        # quarters, exact in the interpreter's float32
         vals = [rng.randint(-16, 16) / 4 for _ in range(shape.total)]
-        kind = torch.float64
-    elif isinstance(dt, BitVec):
-        vals = [rng.randrange(1 << dt._0) for _ in range(shape.total)]
+        kind = torch.float32
+    elif isinstance(dt, Word):
+        vals = [rng.randrange(1 << dt.width) for _ in range(shape.total)]
         kind = torch.int64
     else:                                   # pragma: no cover
         raise Skip(f"no random values for sort {dt}")
@@ -285,8 +305,8 @@ def _lean_value(wire, tensor) -> str:
 
 def _lean_shown(wire, element: str) -> str:
     """`element` of `wire`'s sort, printed as `flat` prints the reference:
-    a BitVec as the natural number it holds."""
-    if isinstance(wire.dtype, BitVec):
+    a word as the natural number it holds."""
+    if isinstance(wire.dtype, Word):
         return f"{{toString ({element}).toNat}}"
     return f"{{toString ({element})}}"
 

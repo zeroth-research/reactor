@@ -8,7 +8,7 @@ descending side is ever reached from init. `hrank` quantifies over every state
 satisfying the invariant, so the unreachable branch has to close too.
 """
 import torch
-from reactor import Module, Term, Wire, Int, Bool, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Bool, Var, X, tensor
 
 
 def module() -> Module:
@@ -16,15 +16,15 @@ def module() -> Module:
     five, one = Wire(Int([1, 1])), Wire(Int([1, 1]))
     lo, hi = Wire(Bool([1, 1])), Wire(Bool([1, 1]))
     inc, dec, up = Wire(Int([1, 1])), Wire(Int([1, 1])), Wire(Int([1, 1]))
-    init = [Term(LIA.Int(torch.tensor([[10]])), [X(x)])]
+    init = [Term(tensor.int.Const(torch.tensor([[10]])), [X(x)])]
     update = [
-        Term(LIA.Int(torch.tensor([[5]])), [five]),
-        Term(LIA.Int(torch.tensor([[1]])), [one]),
-        Term(LIA.Lt(), [lo], [x, five]),
-        Term(LIA.Gt(), [hi], [x, five]),
-        Term(LIA.Add(), [inc], [x, one]),
-        Term(LIA.Sub(), [dec], [x, one]),
-        Term(LIA.Ite(), [up], [hi, dec, five]),
-        Term(LIA.Ite(), [X(x)], [lo, inc, up]),
+        Term(tensor.int.Const(torch.tensor([[5]])), [five]),
+        Term(tensor.int.Const(torch.tensor([[1]])), [one]),
+        Term(tensor.int.Lt([1, 1]), [lo], [x, five]),
+        Term(tensor.int.Gt([1, 1]), [hi], [x, five]),
+        Term(tensor.int.Add([1, 1]), [inc], [x, one]),
+        Term(tensor.int.Sub([1, 1]), [dec], [x, one]),
+        Term(tensor.int.Ite([1, 1]), [up], [hi, dec, five]),
+        Term(tensor.int.Ite([1, 1]), [X(x)], [lo, inc, up]),
     ]
     return Module.sequential([x], init, update)
