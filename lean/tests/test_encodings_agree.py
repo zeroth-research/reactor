@@ -17,9 +17,9 @@ Lean side is `tests/lean/test_lean_agree.py`, which `#eval`s the functional
 encoding on the same runs. Equal to one reference, the two encodings are
 equal to each other, and nothing is parsed back.
 
-The corpus is every module the suite already has -- `tests/limits/mods`,
-the CLI's fixtures and the SV-COMP corpus -- and a one-op module for each
-encoded op none of them reaches, which is most of BV. `agree.py` holds the
+The corpus is every module the suite already has -- `tests/limits/mods`
+and the CLI's fixtures -- and a one-op module for each encoded op none of
+them reaches, which is most of BV. `agree.py` holds the
 runs and the comparison, so the Lean side asks the same questions.
 """
 

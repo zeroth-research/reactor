@@ -17,21 +17,20 @@ arithmetic the remaining obligations are plain integer arithmetic.
 **Via pytest (recommended)** — generates `ZerothHammer.lean` and `Certs/`:
 
 ```
-just lean-test tests/lean/                    # fast: only generates the files
-just lean-run pytest tests/lean/ -m slow      # slow: also runs lake build
+just vr-test tests/lean/                    # fast: only generates the files
+just vr-run pytest tests/lean/ -m slow      # slow: also runs lake build
 ```
 
 **Directly with lake** — generate the files first, then build:
 
 ```
-just lean-test tests/lean/ && lake build ZerothHammerTests
+just vr-test tests/lean/ && (cd tests/lean && lake build ZerothHammerTests)
 ```
 
-`Relational.*` comes from the ReactLib checkout beside this repository,
-which the lakefile requires by path.
-
-The first `lake build` downloads Mathlib and may take several minutes.
-Subsequent runs use the cache.
+`Relational.*` comes from the ReactLib checkout `$REACTLIB`, and Mathlib
+from the Lake package cache `$REACTOR_LAKE_CACHE`: the tests link both into
+`.lake` (`conftest.py`). Without a cache the first `lake build` fetches
+Mathlib and compiles it, which takes about an hour.
 
 To check interactively, open this file in VS Code / Emacs with the lean4
 extension — it will type-check inside the `tests/lean/` lake project.

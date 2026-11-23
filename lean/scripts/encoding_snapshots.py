@@ -1,23 +1,19 @@
 """Every Lean text reactor generates for a module, over every fixture module.
 
-The route transcripts (`verith/scripts/route_transcripts.py`) and the goldens
-(`tests/test_pipeline_golden.py`) cover the certificate files, not the
-`System/*.lean` encodings, the `--cert-file` certificate of a bare module, or
-the fbk-proveit NA model and bridge. This writes those, so a codegen refactor
-is checked the same way: record at the commit before and after, then
-`diff -r`. Run from `lean/`:
+The goldens (`tests/test_pipeline_golden.py`) cover the certificate files,
+not the `System/*.lean` encodings or the `--cert-file` certificate of a bare
+module. This writes those, so a codegen refactor is checked the same way:
+record at the commit before and after, then `diff -r`. Run from `lean/`:
 
     uv run python scripts/encoding_snapshots.py OUTDIR
 
 OUTDIR/<fixture>/ gets one file per `project.scaffold.ENCODINGS` row (`System.lean`,
 `SystemCirc.lean`, ...; printed by one `ModuleToLean4`, in table order, as
 `create_project` does), each row again from a fresh `ModuleToLean4`
-(`alone/`, which is what shows state carried between producers), `Cert.lean`
-(the standalone certificate with no claim), and `NA.lean` / `Bridge.lean`
-where `check_na_supported` takes the module (`property_lean` "true"; the
-fbk-proveit route is the `verith/` project's, so only with it installed). A stage
-that refuses writes `<stage>.error` with the refusal instead. Every file
-name ends in `.txt`, which the repository ignores.
+(`alone/`, which is what shows state carried between producers), and
+`Cert.lean` (the standalone certificate with no claim). A stage that refuses
+writes `<stage>.error` with the refusal instead. Every file name ends in
+`.txt`, which the repository ignores.
 """
 
 import sys
@@ -73,21 +69,6 @@ def snapshot(path: Path, out: Path) -> None:
         _write(out / "alone", name,
                lambda enc=enc: enc.producer(ModuleToLean4(LeanContext(module))))
     _write(out, "Cert.lean", lambda: generate_standalone_cert_lean(module))
-
-    try:
-        from verith.fbk_proveit.na import atom_to_lean_na, check_na_supported
-        from verith.fbk_proveit.bridge import atom_to_lean_fbk_bridge
-    except ImportError:
-        return
-    try:
-        bodies = check_na_supported(ctx)
-    except Exception as e:
-        (out / "NA.error.txt").write_text(f"{type(e).__name__}: {e}\n")
-        return
-    _write(out, "NA.lean", lambda: atom_to_lean_na(
-        ctx, "true", module_name="NA", bodies=bodies))
-    _write(out, "Bridge.lean", lambda: atom_to_lean_fbk_bridge(
-        ctx, na_module="NA", bodies=bodies))
 
 
 def main() -> None:
