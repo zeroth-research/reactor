@@ -185,7 +185,7 @@ def test_matrix_update_signature():
 
 def test_main_lean_bool_module():
     m = _make_twobitcounter()
-    src = generate_main_lean("Rea", m, "ReactiveModule")
+    src = generate_main_lean(m)
 
     assert "parseBool" in src
     assert "parseExtl" in src
@@ -195,7 +195,7 @@ def test_main_lean_bool_module():
 
 def test_main_lean_matrix_module():
     m = _make_matrix_module()
-    src = generate_main_lean("Rea", m, "ReactiveModule")
+    src = generate_main_lean(m)
 
     assert "parseIntOrFail" in src
     assert "showMatrix" in src
@@ -206,7 +206,7 @@ def test_main_lean_matrix_module():
 
 def test_main_lean_bool_signatures():
     m = _make_twobitcounter()
-    src = generate_main_lean("Rea", m, "ReactiveModule")
+    src = generate_main_lean(m)
 
     # parseExtl returns Bool, showCtrl takes Bool × Bool
     assert "Matrix (Fin 1) (Fin 1) Bool" in src
@@ -215,7 +215,7 @@ def test_main_lean_bool_signatures():
 
 def test_main_lean_matrix_signatures():
     m = _make_matrix_module()
-    src = generate_main_lean("Rea", m, "ReactiveModule")
+    src = generate_main_lean(m)
 
     assert "Matrix (Fin 2) (Fin 1) Int" in src
     assert "Matrix (Fin 3) (Fin 1) Int" in src
