@@ -22,7 +22,7 @@ from reactor_lean.project.lakefile import (FIXED_REQUIRES, REACTLIB_ENV,
                                            Require, reactlib_checkout)
 from testdata import LAKE_PROJECT
 
-NAME = "ZerothHammerTests"
+NAME = "ReactorLeanTests"
 REACTLIB = Require("ReactLib", path=".lake/ReactLib")
 
 

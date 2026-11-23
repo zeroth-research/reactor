@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ast
 import functools
+import os
 from pathlib import Path
 from typing import NamedTuple
 
@@ -216,4 +217,42 @@ def test_nothing_imports_what_is_built_on_it(path):
     bad = [f"{_name(path)}:{i.line} imports {i.module}"
            for i in _imports(path)
            if i.module.split(".")[0] in ABOVE]
+    assert not bad, "\n".join(bad)
+
+
+def _outside() -> list[Path]:
+    """The package's tests and scripts, without the Lake projects they
+    generate (whose `.lake` holds Mathlib's own scripts)."""
+    out = []
+    for top in (PKG_ROOT / "tests", PKG_ROOT / "scripts"):
+        for root, dirs, files in os.walk(top):
+            dirs[:] = [d for d in dirs
+                       if d not in (".lake", "LeanTests", "__pycache__")]
+            out += [Path(root) / f for f in files if f.endswith(".py")]
+    return sorted(out)
+
+
+@pytest.mark.parametrize("path", _outside(),
+                         ids=lambda p: str(p.relative_to(PKG_ROOT)))
+def test_no_test_or_script_imports_what_is_built_on_it(path):
+    """Nor do this package's tests and scripts, nor ask for it with
+    `importorskip`: they run without what is built on this package
+    installed, and a test that skipped without it would cover what is
+    installed, not the package. What is built on this package is tested
+    where it is built."""
+    bad = []
+    for node in ast.walk(_tree(path)):
+        if isinstance(node, ast.Import):
+            names = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            names = [node.module or ""]
+        elif (isinstance(node, ast.Call)
+              and isinstance(node.func, ast.Attribute)
+              and node.func.attr == "importorskip" and node.args
+              and isinstance(node.args[0], ast.Constant)):
+            names = [str(node.args[0].value)]
+        else:
+            continue
+        bad += [f"{path.relative_to(PKG_ROOT)}:{node.lineno} imports {n}"
+                for n in names if n.split(".")[0] in ABOVE]
     assert not bad, "\n".join(bad)
