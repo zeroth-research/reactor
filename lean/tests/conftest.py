@@ -2,13 +2,7 @@
 # here ensures the right order regardless of a test module's own import order.
 import torch  # noqa: F401
 
-import os
-from pathlib import Path
-
-# The projects the tests generate require ReactLib's packages by path
-# from the checkout beside this repository, when there is one, so a test
-# that builds one builds it against the Lean libraries as they are on disk.
-# `tests/lean`'s lakefile requires the same checkout.
-_REACTLIB = Path(__file__).resolve().parents[3] / "ReactLib"
-if "REACTLIB" not in os.environ and _REACTLIB.is_dir():
-    os.environ["REACTLIB"] = str(_REACTLIB)
+# The projects the tests generate and build require ReactLib's packages
+# from `$REACTLIB` and build against the Lake package cache
+# `$REACTOR_LAKE_CACHE`; `just` sets both (see the justfile). A test that
+# needs one and finds it unset is skipped.

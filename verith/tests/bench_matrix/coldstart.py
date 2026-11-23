@@ -49,12 +49,11 @@ MANIFEST = VR / "tests" / "limits" / "lake-manifest.json"
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
 from reactor_lean.project.lakefile import (  # noqa: E402
-    REACTLIB_ENV, reactlib_checkout, with_reactlib,
+    reactlib_checkout, with_reactlib,
 )
 
-# The ReactLib checkout the project requires by path; the `verith`
-# runs below inherit it.
-os.environ.setdefault(REACTLIB_ENV, str(PY.parent.parent / "ReactLib"))
+# The ReactLib checkout the project requires by path, `$REACTLIB`
+# (`just vr-run` sets it); the `verith` runs below inherit it.
 REACTLIB = reactlib_checkout()
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 RESULTS = WORK / "results.json"
