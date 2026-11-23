@@ -1,6 +1,7 @@
 import math
 import torch
 import inspect
+import numpy as np
 import gymnasium as gym
 
 from ..reactor import Module, Wire, X, Var
@@ -31,7 +32,8 @@ def space_to_dtype(space, number, is_action: bool) -> Real | Int | Bool | Word |
             bits = max(1, int(math.ceil(math.log2(n + 1))))
             return Word(bits, [1, 1])
         if is_action:
-            return Real([1, n])
+            # a vector of per-action scores, `argmax`-ed to the index
+            return Int([1, n]) if number is Int else Real([1, n])
         return number_sort(number)([1, 1])
     elif isinstance(space, gym.spaces.Box):
         return number_sort(number)(_normalize_shape(list(space.shape)))
@@ -199,7 +201,8 @@ def _extract_env_module(env_instance, number=Real, **kwargs):
     observation = resolve_wire(
         "observation", observation_dtype, user_wires["observation"]
     )
-    reward = resolve_wire("reward", Real([1, 1]), user_wires["reward"])
+    reward_dtype = Int([1, 1]) if number is Int else Real([1, 1])
+    reward = resolve_wire("reward", reward_dtype, user_wires["reward"])
     terminated = resolve_wire("terminated", Bool([1, 1]), user_wires["terminated"])
     truncated = resolve_wire("truncated", Bool([1, 1]), user_wires["truncated"])
 
@@ -220,7 +223,7 @@ def _extract_env_module(env_instance, number=Real, **kwargs):
 
     # Add defaults for reward/terminated/truncated in init block
     reset_terms += [
-        _value_to_const_term(0.0, X(reward), _builder),
+        _value_to_const_term(0 if number is Int else 0.0, X(reward), _builder),
         _value_to_const_term(False, X(terminated), _builder),
         _value_to_const_term(False, X(truncated), _builder),
     ]
@@ -424,6 +427,8 @@ class Env(Module, gym.Wrapper):
                     self._state[X(var)] = torch.tensor([float(value)])
                 elif isinstance(value, torch.Tensor):
                     self._state[X(var)] = value.clone()
+                elif isinstance(value, np.ndarray):
+                    self._state[X(var)] = torch.as_tensor(value, dtype=torch.float32)
 
     def _prepare_action(self, action):
         """Convert action to tensor, one-hot encode for Discrete spaces."""
