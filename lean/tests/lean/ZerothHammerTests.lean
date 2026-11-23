@@ -17,14 +17,14 @@ arithmetic the remaining obligations are plain integer arithmetic.
 **Via pytest (recommended)** — generates `ZerothHammer.lean` and `Certs/`:
 
 ```
-just pytest tests/lean/                   # fast: only generates the files
-just pytest tests/lean/ -m slow           # slow: also runs lake build
+just lean-test tests/lean/                    # fast: only generates the files
+just lean-run pytest tests/lean/ -m slow      # slow: also runs lake build
 ```
 
 **Directly with lake** — generate the files first, then build:
 
 ```
-just pytest tests/lean/ && lake build ZerothHammerTests
+just lean-test tests/lean/ && lake build ZerothHammerTests
 ```
 
 `Relational.*` comes from the ReactLib checkout beside this repository,

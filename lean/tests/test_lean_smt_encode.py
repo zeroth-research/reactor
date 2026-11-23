@@ -82,7 +82,6 @@ def test_a_bitvector_matrix_product_is_bitvector_arithmetic():
     """`BV.MatMul` is a sum of bit-vector products, modulo the width. Built
     from cvc5's arithmetic `MULT` it was refused outright -- "expecting an
     arithmetic subterm" -- so no module with one had an SMT encoding."""
-    from reactor import BV, BitVec
     from reactor_lean.smt.encode import _matmul, MatShape
 
     tm = cvc5.TermManager()

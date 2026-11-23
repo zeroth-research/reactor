@@ -1,6 +1,6 @@
 """Shared helpers used by multiple translate sub-modules."""
 
-from reactor_lean.lowering.sorts import dtype_to_lean_type, flat_element_type, wire_shape
+from reactor_lean.lowering.sorts import dtype_to_lean_type, wire_shape
 from reactor_lean.lowering.elements import FlatLayout, product_accessor, mat_from_scalars, flat_layout
 from reactor_lean.codegen.terms import build_tuple, product_type_scalar
 
@@ -82,7 +82,7 @@ def scalar_bindings_with_recon(
                 bindings[w.id] = slots[0]
             else:
                 mat_ty = dtype_to_lean_type(w)
-                mat_expr = mat_from_scalars(slots, wire_shape(w), flat_element_type(w))
+                mat_expr = mat_from_scalars(slots, wire_shape(w))
                 var_name = f"_m{let_counter[0]}"
                 let_counter[0] += 1
                 let_lines.append(f"  let {var_name} : {mat_ty} := {mat_expr}")
