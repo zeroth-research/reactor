@@ -29,7 +29,7 @@ import pytest
 import torch
 
 from reactor import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
-from reactor_lean.lowering.sorts import flat_element_type, dtype_shape, dtype_to_lean_type, wire_shape
+from reactor_lean.lowering.sorts import dtype_shape, dtype_to_lean_type, wire_shape
 from reactor_lean.lowering.elements import (
     product_accessor,
     flat_indices,
@@ -194,7 +194,7 @@ def test_pack_places_each_slot_at_its_own_row_and_column(wires):
     for w in wires:
         offset, _ = layout.span(w)
         slots = [f"s{k}" for k in range(flat_size(w))]
-        mat = mat_from_scalars(slots, wire_shape(w), flat_element_type(w))
+        mat = mat_from_scalars(slots, wire_shape(w))
         arms = re.findall(r"\| (\d+), (\d+) => s(\d+)", mat)
         placed = {(int(r), int(c)): int(k) for r, c, k in arms}
         if placed:  # a 1x1 wire has no `match`, just `Matrix.mk fun _ _ =>`
