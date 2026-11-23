@@ -16,6 +16,7 @@ from reactor import Module
 
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
+from ..core.errors import Refused
 from .names import LINTERS_OFF, SYSTEM_LAYOUT, Layout
 from .templates import render
 from .lake_cache import lake_cache, use_lake_cache
@@ -57,6 +58,10 @@ class Encoding:
     needs: tuple[str, ...]      # suffixes of the sibling encodings it imports
     producer: Callable[[ModuleToLean4], str]    # prints it
     cert_file: bool = True      # also written by the `--cert-file` route
+    # A module may have no form in it: the file then says why, in place of
+    # its definitions, and the project builds without it. Only an encoding
+    # no certificate reads can be optional.
+    optional: bool = False
 
 
 ENCODINGS: tuple[Encoding, ...] = (
@@ -67,7 +72,7 @@ ENCODINGS: tuple[Encoding, ...] = (
     Encoding("", "Functional encoding", "Relational.Circ", (),
              ModuleToLean4.to_lean_functional, cert_file=False),
     Encoding("Circ", "Circuit encoding", "Relational.Circ", ("",),
-             ModuleToLean4.to_lean_circ, cert_file=False),
+             ModuleToLean4.to_lean_circ, cert_file=False, optional=True),
     Encoding("Rel", "Matrix-domain relational encoding", "Relational.Basic", ("",),
              ModuleToLean4.to_lean_mat_rel),
     Encoding("Scalar", "Scalar encoding", "Relational.Basic", ("",),
@@ -80,9 +85,16 @@ ENCODINGS: tuple[Encoding, ...] = (
 def write_encoding(
     enc: Encoding, m2l: "ModuleToLean4", layout: Layout, module_name: str
 ) -> Path:
-    """Print one encoding and write it where `layout` says it goes."""
+    """Print one encoding and write it where `layout` says it goes. An
+    optional one the module has no form in is written with the reason, as a
+    comment, in place of its definitions."""
     imports = [enc.core] + [layout.lean_module(s) for s in enc.needs]
-    body = enc.producer(m2l)
+    try:
+        body = enc.producer(m2l)
+    except Refused as e:
+        if not enc.optional:
+            raise
+        body = f"-- No {enc.title.lower()} of this module: {e}"
     path = layout.path(enc.suffix)
     path.write_text(
         f"/- {enc.title} of reactive module `{module_name}` -/\n"

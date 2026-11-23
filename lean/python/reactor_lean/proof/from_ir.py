@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from reactor import Wire
 
-from ..codegen.literals import lean_bitvec, lean_int, lean_real
+from ..codegen.literals import lean_literal, lean_real
 from ..core.errors import Refused
 from ..lowering.sorts import itype_name, theory_of, wire_shape
 from ..parse.formula import family
@@ -158,9 +158,9 @@ class _Printer:
             if acc is None:
                 raise Refused(f"`Get` against a term that is no variable: {t}")
             return f"({acc[0]} {t.itype.row} {t.itype.col})"
-        if theory == "Cast":
+        if theory == "cast":
             return self.cast(t, name, args, recur)
-        if theory == "BV" and name != "Ite":
+        if theory.startswith("word") and name not in ("Ite", "Eq", "Ne"):
             raise Refused(f"no Lean form for the bit-vector `{name}` in a predicate")
         if name == "Not":
             return f"¬ ({recur(args[0])})"
@@ -177,46 +177,25 @@ class _Printer:
         raise Refused(f"no Lean form for {theory}.{name} in a predicate")
 
     def constant(self, t, name: str) -> str:
-        value = t.itype._0.item()
-        if name == "Bool":
-            return "true" if value else "false"
-        if name == "Int":
-            return lean_int(value)
-        if name == "Real":
-            return lean_real(value)
-        if name == "Const":
-            return lean_bitvec(t.write[0].dtype._0, value)
-        raise Refused(f"no Lean literal for {name}")
+        if name != "Const":
+            raise Refused(f"no Lean literal for {name}")
+        return lean_literal(t.write[0].dtype, t.itype.tensor.item())
 
     def cast(self, t, name: str, args: list, recur) -> str:
-        if name == "RealToInt":
+        if name == "ToInt":
             return f"⌊{recur(args[0])}⌋"
-        if name == "BVToInt":
+        if name == "UbvToInt":
             return f"(Int.ofNat (BitVec.toNat {recur(args[0])}))"
-        if name == "IntToReal":
+        if name == "ToReal":
             # An Int literal becomes a Real one; anything else is cast.
             inner = self.by_wire.get(args[0].id)
-            if inner is not None and itype_name(inner.itype) == "Int":
-                return lean_real(inner.itype._0.item())
+            if inner is not None and itype_name(inner.itype) == "Const":
+                return lean_real(inner.itype.tensor.item())
             return f"((({recur(args[0])}) : Int) : Real)"
-        if name == "BitToBool":
-            # What a predicate compares bit-vectors with: `=` and `≠`.
-            inner = self.by_wire.get(args[0].id)
-            op = itype_name(inner.itype) if inner is not None else None
-            if op in ("Eq", "Ne"):
-                a, b = inner.read
-                return f"({recur(a)}{_INFIX[op]}{recur(b)})"
-            raise Refused(f"no Lean form for the bit-vector `{op}` in a predicate")
-        raise Refused(f"no Lean form for Cast.{name} in a predicate")
+        raise Refused(f"no Lean form for cast.{name} in a predicate")
 
     def ite(self, t, theory: str, args: list, recur) -> str:
         cond = args[0]
-        if theory == "BV":
-            # Its condition is a bit, cast from the Bool the predicate wrote.
-            inner = self.by_wire.get(cond.id)
-            if inner is None or itype_name(inner.itype) != "BoolToBit":
-                raise Refused(f"a bit-vector `ite` on a bit no Bool was cast to: {t}")
-            cond = inner.read[0]
         folded = self.min_max(t, theory, recur)
         if folded is not None:
             return folded
@@ -248,7 +227,7 @@ class _Printer:
     def min_max(self, t, theory: str, recur) -> "str | None":
         """An Int `ite` that is a `min` or a `max`, as one (`from_smt`'s
         `_fold_min_max`: `omega` reads them, with no case split)."""
-        if theory != "LIA" or family(t.write[0].dtype) != "Int":
+        if theory != "int":
             return None
         cond = self.by_wire.get(t.read[0].id)
         if cond is None or itype_name(cond.itype) not in ("Ge", "Gt", "Le", "Lt"):

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from reactor import BitVec, X
+from reactor import Word, X
 
 from ..core.certificate import Certificate, Claim
 from ..core.errors import PredicateRefused, Unreadable
@@ -73,7 +73,7 @@ class _Term:
 
     def _bits(self) -> bool:
         v = self._v
-        return not isinstance(v, (Lit, Matrix)) and isinstance(v.dtype, BitVec)
+        return not isinstance(v, (Lit, Matrix)) and isinstance(v.dtype, Word)
 
     def __gt__(self, o): return self._apply(">", self, self._lift(o))
     def __lt__(self, o): return self._apply("<", self, self._lift(o))
@@ -152,8 +152,8 @@ def lift(x: Elaborator, o, like=None) -> _Term:
         return _Term(x, x.b.boolean(o))
     if isinstance(o, int):
         if (like is not None and not isinstance(like, (Lit, Matrix))
-                and isinstance(like.dtype, BitVec)):
-            return _Term(x, x.b.bitvec(like.dtype._0, o))
+                and isinstance(like.dtype, Word)):
+            return _Term(x, x.b.bitvec(like.dtype.width, o))
         return _Term(x, Lit(o, decimal=False))
     if isinstance(o, float):
         return _Term(x, Lit(decimal_fraction(o), decimal=True))

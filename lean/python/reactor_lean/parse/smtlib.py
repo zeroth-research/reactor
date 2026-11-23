@@ -13,14 +13,12 @@ builds, so that the two parsers can be held to each other:
   take any number of arguments, and are built as a chain the printer
   prints flat again;
 * an Int written where a Real is wanted is a Real: a numeral is read as
-  one, and anything else is cast (`Cast.IntToReal`);
+  one, and anything else is cast (`cast.ToReal`);
 * `(= v 5)` and `(distinct 5 v)`, with `v` a bit-vector variable, read the
   numeral at `v`'s width, which plain SMT-LIB does not: the cvc5 parser
   rewrites the text so (`smt.predicates`), and this one reads it so.
 
-`(distinct a b c)` is every pair distinct. A bit-vector comparison writes a
-1-bit vector in reactor's terms, and is read as a Bool (`Cast.BitToBool`)
-wherever a predicate uses it as one. What reactor's terms have no term for
+`(distinct a b c)` is every pair distinct. What this parser does not read
 -- `/`, `abs` -- is refused, by name.
 """
 
@@ -30,7 +28,7 @@ import re
 from dataclasses import dataclass
 from fractions import Fraction
 
-from reactor import BV, LIA, LRA, BitVec, Bool, Cast, Int, Real
+from reactor import Bool, Int, Real, Word, tensor
 
 from ..core.errors import Unreadable
 from ..lowering.sorts import wire_shape
@@ -84,18 +82,31 @@ class Scope:
 _NEG_NUMBER = re.compile(r"-(0|[1-9][0-9]*)(\.[0-9]+)?$")
 _BV_LITERAL = re.compile(r"bv([0-9]+)$")
 _CHAINS = {"<": "Lt", "<=": "Le", ">": "Gt", ">=": "Ge"}
+# The operations of words, by their SMT-LIB names: the namespace of
+# `reactor.tensor` each is in, and its class there.
+_W, _S, _U = tensor.word, tensor.word.signed, tensor.word.unsigned
 _BV_COMPARE = {
-    "bvult": "ULt", "bvule": "ULe", "bvugt": "UGt", "bvuge": "UGe",
-    "bvslt": "SLt", "bvsle": "SLe", "bvsgt": "SGt", "bvsge": "SGe",
+    "bvult": _U.Lt, "bvule": _U.Le, "bvugt": _U.Gt, "bvuge": _U.Ge,
+    "bvslt": _S.Lt, "bvsle": _S.Le, "bvsgt": _S.Gt, "bvsge": _S.Ge,
 }
 _BV_BINARY = {
-    "bvadd": "Add", "bvsub": "Sub", "bvmul": "Mul", "bvand": "And",
-    "bvor": "Or", "bvxor": "Xor", "bvudiv": "UDiv", "bvsdiv": "SDiv",
-    "bvurem": "UMod", "bvsmod": "SMod",
+    "bvadd": _W.Add, "bvsub": _W.Sub, "bvmul": _W.Mul, "bvand": _W.And,
+    "bvor": _W.Or, "bvxor": _W.Xor, "bvudiv": _U.Div, "bvsdiv": _S.Div,
+    "bvurem": _U.Rem, "bvsrem": _S.Rem, "bvsmod": _S.Mod,
 }
 _BV_ASSOCIATIVE = ("bvadd", "bvmul", "bvand", "bvor", "bvxor")
-_BV_UNARY = {"bvneg": "Neg", "bvnot": "Not"}
-_ARITH = {"Int": LIA, "Real": LRA}
+_BV_UNARY = {"bvneg": _W.Neg, "bvnot": _W.Not}
+_ARITH = {"Int": tensor.int, "Real": tensor.real}
+
+
+def _scalar(cls):
+    """A maker of `cls` on 1×1 matrices, for the folds."""
+    return lambda: cls(SCALAR)
+
+
+def _word(cls, width: int):
+    """A maker of `cls` on 1×1 matrices of `width`-bit words."""
+    return lambda: cls(width, SCALAR)
 
 
 def read_smtlib(scope: Scope, src: str) -> Formula:
@@ -205,9 +216,17 @@ class Elaborator:
             raise Unreadable(f"a {m.rows}×{m.cols} matrix has no element {k}")
         row, col = divmod(k, m.cols)
         elem = element(m.wire.dtype)
-        theory = BV if isinstance(elem, BitVec) else LRA if isinstance(elem, Real) else LIA
-        return self.b.apply(theory.Get(row=row, col=col), [m.wire], elem,
-                            key=("Get", row, col))
+        shape = [m.rows, m.cols]
+        match elem:
+            case Word(w, _):
+                op = tensor.word.Get(row, col, w, shape)
+            case Real(_):
+                op = tensor.real.Get(row, col, shape)
+            case Bool(_):
+                op = tensor.bool.Get(row, col, shape)
+            case _:
+                op = tensor.int.Get(row, col, shape)
+        return self.b.apply(op, [m.wire], elem)
 
     # --- sorts -----------------------------------------------------------------
 
@@ -229,7 +248,7 @@ class Elaborator:
             fam = "Int"
         else:
             raise Unreadable(f"the numeral `{v.value}` where {want} is wanted")
-        return self.b.apply(_ARITH[fam].Neg(), [w], w.dtype) if v.neg else w
+        return self.b.apply(_ARITH[fam].Neg(SCALAR), [w], w.dtype) if v.neg else w
 
     def numeric(self, vals: list, what: str) -> tuple:
         """`vals` as wires of one arithmetic sort, Real if any is and each
@@ -245,7 +264,7 @@ class Elaborator:
         for v in vals:
             w = self.settle(v, fam)
             if fam == "Real" and family(w.dtype) == "Int":
-                w = self.b.apply(Cast.IntToReal(), [w], Real(SCALAR))
+                w = self.b.apply(tensor.cast.ToReal(SCALAR), [w], Real(SCALAR))
             out.append(w)
         return fam, out
 
@@ -259,7 +278,7 @@ class Elaborator:
     def bitvecs(self, vals: list, what: str) -> list:
         ws = [self.settle(v, None) for v in vals]
         fams = {family(w.dtype) for w in ws}
-        if len(fams) != 1 or not isinstance(ws[0].dtype, BitVec):
+        if len(fams) != 1 or not isinstance(ws[0].dtype, Word):
             raise Unreadable(f"`{what}` wants bit-vectors of one width, and was "
                              f"given {', '.join(sorted(fams))}")
         return ws
@@ -278,19 +297,20 @@ class Elaborator:
 
         if name == "not":
             need(1)
-            return self.b.apply(LIA.Not(), [self.boolean(vals[0], what)], Bool(SCALAR))
+            return self.b.apply(tensor.bool.Not(SCALAR), [self.boolean(vals[0], what)],
+                                Bool(SCALAR))
         if name in ("and", "or"):
             need(1, at_least=True)
-            op = LIA.And if name == "and" else LIA.Or
+            op = _scalar(tensor.bool.And if name == "and" else tensor.bool.Or)
             return self.fold_right(op, [self.boolean(v, what) for v in vals], Bool(SCALAR))
         if name == "=>":
             need(2, at_least=True)
-            return self.fold_right(LIA.Implies, [self.boolean(v, what) for v in vals],
-                                   Bool(SCALAR))
+            return self.fold_right(_scalar(tensor.bool.Implies),
+                                   [self.boolean(v, what) for v in vals], Bool(SCALAR))
         if name == "xor":
             need(2, at_least=True)
-            return self.fold_left(LIA.Xor, [self.boolean(v, what) for v in vals],
-                                  Bool(SCALAR))
+            return self.fold_left(_scalar(tensor.bool.Xor),
+                                  [self.boolean(v, what) for v in vals], Bool(SCALAR))
         if name == "ite":
             need(3)
             return self.ite(vals, what)
@@ -307,57 +327,57 @@ class Elaborator:
             links = []
             for a, b in zip(vals, vals[1:]):
                 fam, ws = self.numeric([a, b], what)
-                op = getattr(_ARITH[fam], _CHAINS[name])()
+                op = getattr(_ARITH[fam], _CHAINS[name])(SCALAR)
                 links.append(self.b.apply(op, ws, Bool(SCALAR)))
             return self.conjoin(links)
         if name in ("+", "*"):
             need(2, at_least=True)
             fam, ws = self.numeric(vals, what)
-            op = _ARITH[fam].Add if name == "+" else _ARITH[fam].Mul
+            op = _scalar(_ARITH[fam].Add if name == "+" else _ARITH[fam].Mul)
             return self.fold_left(op, ws, ws[0].dtype)
         if name == "-":
             need(1, at_least=True)
             fam, ws = self.numeric(vals, what)
             if arity == 1:
-                return self.b.apply(_ARITH[fam].Neg(), ws, ws[0].dtype)
-            return self.fold_left(_ARITH[fam].Sub, ws, ws[0].dtype)
+                return self.b.apply(_ARITH[fam].Neg(SCALAR), ws, ws[0].dtype)
+            return self.fold_left(_scalar(_ARITH[fam].Sub), ws, ws[0].dtype)
         if name in ("div", "mod"):
             need(2, at_least=name == "div")
             fam, ws = self.numeric(vals, what)
             if fam != "Int":
                 raise Unreadable(f"`{what}`: `{name}` is integer division")
             if name == "mod":
-                return self.b.apply(LIA.Mod(), ws, Int(SCALAR))
-            return self.fold_left(LIA.Div, ws, Int(SCALAR))
+                return self.b.apply(tensor.int.Mod(SCALAR), ws, Int(SCALAR))
+            return self.fold_left(_scalar(tensor.int.Div), ws, Int(SCALAR))
         if name == "to_real":
             need(1)
             w = self.settle(vals[0], "Int")
             if family(w.dtype) != "Int":
                 raise Unreadable(f"`{what}`: `to_real` reads an Int")
-            return self.b.apply(Cast.IntToReal(), [w], Real(SCALAR))
+            return self.b.apply(tensor.cast.ToReal(SCALAR), [w], Real(SCALAR))
         if name == "to_int":
             need(1)
             w = self.settle(vals[0], "Real")
             if family(w.dtype) != "Real":
                 raise Unreadable(f"`{what}`: `to_int` reads a Real")
-            return self.b.apply(Cast.RealToInt(), [w], Int(SCALAR))
+            return self.b.apply(tensor.cast.ToInt(SCALAR), [w], Int(SCALAR))
         if name in ("ubv_to_int", "bv2nat"):
             need(1)
             (w,) = self.bitvecs(vals, what)
-            return self.b.apply(Cast.BVToInt(), [w], Int(SCALAR))
+            return self.b.apply(tensor.cast.UbvToInt(w.dtype.width, SCALAR), [w], Int(SCALAR))
         if name in _BV_COMPARE:
             need(2)
             ws = self.bitvecs(vals, what)
-            bit = self.b.apply(getattr(BV, _BV_COMPARE[name])(), ws, BitVec(1, SCALAR))
-            return self.b.apply(Cast.BitToBool(), [bit], Bool(SCALAR))
+            op = _BV_COMPARE[name](ws[0].dtype.width, SCALAR)
+            return self.b.apply(op, ws, Bool(SCALAR))
         if name in _BV_BINARY:
             need(2, at_least=name in _BV_ASSOCIATIVE)
             ws = self.bitvecs(vals, what)
-            return self.fold_left(getattr(BV, _BV_BINARY[name]), ws, ws[0].dtype)
+            return self.fold_left(_word(_BV_BINARY[name], ws[0].dtype.width), ws, ws[0].dtype)
         if name in _BV_UNARY:
             need(1)
             (w,) = self.bitvecs(vals, what)
-            return self.b.apply(getattr(BV, _BV_UNARY[name])(), [w], w.dtype)
+            return self.b.apply(_BV_UNARY[name](w.dtype.width, SCALAR), [w], w.dtype)
         raise Unreadable(f"`{what}`: `{name}` is no function reactor's terms "
                          f"have a term for")
 
@@ -367,24 +387,25 @@ class Elaborator:
         sorts = {family(v.dtype) for v in (a, b) if not isinstance(v, (Lit, Matrix))}
         if sorts <= {"Int", "Real"}:
             fam, ws = self.numeric([a, b], what)
-            op = getattr(_ARITH[fam], "Ne" if ne else "Eq")()
+            op = getattr(_ARITH[fam], "Ne" if ne else "Eq")(SCALAR)
             return self.b.apply(op, ws, Bool(SCALAR))
         wa, wb = (self.settle(v, None) for v in (a, b))
         if family(wa.dtype) != family(wb.dtype):
             raise Unreadable(f"`{what}` compares {family(wa.dtype)} with "
                              f"{family(wb.dtype)}")
-        if isinstance(wa.dtype, BitVec):
-            bit = self.b.apply(BV.Ne() if ne else BV.Eq(), [wa, wb], BitVec(1, SCALAR))
-            return self.b.apply(Cast.BitToBool(), [bit], Bool(SCALAR))
-        return self.b.apply(LIA.Ne() if ne else LIA.Eq(), [wa, wb], Bool(SCALAR))
+        if isinstance(wa.dtype, Word):
+            op = (tensor.word.Ne if ne else tensor.word.Eq)(wa.dtype.width, SCALAR)
+            return self.b.apply(op, [wa, wb], Bool(SCALAR))
+        op = (tensor.bool.Ne if ne else tensor.bool.Eq)(SCALAR)
+        return self.b.apply(op, [wa, wb], Bool(SCALAR))
 
     def at_bitvec_width(self, a, b):
         """A bare numeral against a bit-vector variable, at its width."""
         for x, y in ((a, b), (b, a)):
             if (isinstance(y, Lit) and y.bare and not y.decimal
                     and not isinstance(x, (Lit, Matrix))
-                    and isinstance(x.dtype, BitVec) and self.scope.holds(x)):
-                lit = self.b.bitvec(x.dtype._0, int(y.value))
+                    and isinstance(x.dtype, Word) and self.scope.holds(x)):
+                lit = self.b.bitvec(x.dtype.width, int(y.value))
                 return (x, lit) if x is a else (lit, x)
         return a, b
 
@@ -396,11 +417,16 @@ class Elaborator:
         if family(wt.dtype) != family(we.dtype):
             raise Unreadable(f"`{what}`: the branches are {family(wt.dtype)} "
                              f"and {family(we.dtype)}")
-        if isinstance(wt.dtype, BitVec):
-            bit = self.b.apply(Cast.BoolToBit(), [cond], BitVec(1, SCALAR))
-            return self.b.apply(BV.Ite(), [bit, wt, we], wt.dtype)
-        theory = LRA if family(wt.dtype) == "Real" else LIA
-        return self.b.apply(theory.Ite(), [cond, wt, we], wt.dtype)
+        match wt.dtype:
+            case Word(w, _):
+                op = tensor.word.Ite(w, SCALAR)
+            case Real(_):
+                op = tensor.real.Ite(SCALAR)
+            case Bool(_):
+                op = tensor.bool.Ite(SCALAR)
+            case _:
+                op = tensor.int.Ite(SCALAR)
+        return self.b.apply(op, [cond, wt, we], wt.dtype)
 
     # --- chains ------------------------------------------------------------------
 
@@ -417,4 +443,4 @@ class Elaborator:
         return acc
 
     def conjoin(self, links: list):
-        return self.fold_right(LIA.And, links, Bool(SCALAR))
+        return self.fold_right(_scalar(tensor.bool.And), links, Bool(SCALAR))

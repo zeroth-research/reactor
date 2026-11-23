@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from reactor import BitVec, Bool, Int, Real, Sort, Wire
+from typing import Any
+
+import reactor.reactor as _ext
+from reactor import Bool, Int, Real, Word, Wire
+
+# A sort of `reactor.tensor.sort`: `Bool`, `Int`, `Real` or `Word`.
+Sort = Any
 
 
 def dtype_shape(dt) -> list:
-    """Shape of a Sort, across all element types.
-
-    Bool/Int/Real carry the shape in field ``_0``; BitVec carries the bit-width
-    in ``_0`` and the shape in ``_1``. main always uses 2-D shapes (a scalar is
-    ``[1, 1]``).
-    """
-    if isinstance(dt, BitVec):
-        return list(dt._1)
-    return list(dt._0)
+    """The `[rows, cols]` shape of a sort, of any element type: a scalar is
+    `[1, 1]`."""
+    return list(dt.shape)
 
 
 @dataclass(frozen=True)
@@ -65,8 +65,8 @@ def lean_elem_type(sort: Sort) -> str:
         return "Int"
     if isinstance(sort, Real):
         return "Real"
-    if isinstance(sort, BitVec):
-        return f"(BitVec {sort._0})"
+    if isinstance(sort, Word):
+        return f"(BitVec {sort.width})"
     raise ValueError(f"Unsupported Sort for Lean conversion: {sort}")
 
 
@@ -102,51 +102,69 @@ def mat_mk(entry: str, i: str = "_", j: str = "_") -> str:
     return f"(Matrix.mk fun {i} {j} => {entry})"
 
 
-# The theories an op comes from. PyO3 exports each op as
-# `<theory>_<variant>`: `LIA_Add`, `LRA_Real`, `BV_MatMul`, `Cast_BVToInt`.
-# `Cast` is no theory of its own sorts: it is what crosses between the
-# other three's (`theory/src/cast.rs`), and has rows of its own only.
-THEORIES = ("LIA", "LRA", "BV", "Cast")
+# The theories an op comes from: the namespaces of `reactor.tensor` that hold
+# operations, by their dotted names below it. `cast` is no theory of its own
+# sorts: it is what crosses between the others' (`theory/src/tensor/cast.rs`).
+# The structural operations, `Havoc`, `Skip` and `Zero`, belong to none, and
+# get "".
+THEORIES = ("bool", "int", "real", "word", "word.signed", "word.unsigned", "cast")
+
+
+def _namespaces():
+    """(theory, namespace) for every namespace holding operations: those of
+    `reactor.tensor`, and their counterparts holding JAX arrays and either
+    tensor, which hold the constants, products and affine maps."""
+    for theory in THEORIES:
+        ns = _ext.tensor
+        for part in theory.split("."):
+            ns = getattr(ns, part)
+        yield theory, ns
+    for backend in (_ext.jax, _ext.mixed):
+        for theory in ("bool", "int", "real", "word"):
+            yield theory, getattr(backend, theory)
+
+
+# The class of every operation, to its theory. The classes of two theories
+# share names (`tensor.int.Add`, `tensor.real.Add`), so the class, not its
+# name, says which theory it is of.
+_THEORY_OF: dict[type, str] = {
+    cls: theory
+    for theory, ns in _namespaces()
+    for cls in vars(ns).values()
+    if isinstance(cls, type)
+}
+_THEORY_OF.update({cls: "" for cls in (_ext.tensor.Havoc, _ext.tensor.Skip, _ext.tensor.Zero)})
 
 
 def theory_of(itype) -> str:
-    """The theory an op came from: "LIA", "LRA", "BV" or "Cast"; an op
-    with no such prefix belongs to no theory and gets "".
-    """
-    name = type(itype).__name__
-    for theory in THEORIES:
-        if name.startswith(theory + "_"):
-            return theory
-    return ""
+    """The theory an op is of: one of `THEORIES`, or "" for the structural
+    operations. Fails for an object that is no operation."""
+    try:
+        return _THEORY_OF[type(itype)]
+    except KeyError:
+        raise ValueError(f"not an operation of reactor.tensor: {itype!r}") from None
 
 
 def itype_name(itype) -> str:
-    """Get the variant name of an op, e.g. LIA.Add() -> 'Add'."""
-    name = type(itype).__name__
-    theory = theory_of(itype)
-    return name[len(theory) + 1:] if theory else name
-
-
-# Constant op variants across theories (LIA.Int/Bool, LRA.Real/Bool,
-# BV.Const). The element type is encoded in the variant name;
-# scalar-vs-matrix is decided by the wire's shape.
-CONST_VARIANTS = frozenset({"Int", "Real", "Bool", "Const"})
+    """The name of an op's class, e.g. `tensor.int.Add([1, 1])` -> 'Add'."""
+    return type(itype).__name__
 
 
 def is_constant_name(name: str) -> bool:
-    """True if the variant name denotes a constant in any theory."""
-    return name in CONST_VARIANTS
+    """True if the name is that of a constant, `Const`, in any theory: its
+    element type is the written wire's, and scalar-vs-matrix its shape."""
+    return name == "Const"
 
 
 def is_scalar_tensor(wire: Wire) -> bool:
-    """True if the wire carries a scalar Bool, Int or BitVec (not a matrix).
+    """True if the wire carries a scalar Bool, Int or word (not a matrix).
 
     Bool used to answer `True` for any shape, skipping the check the other
     two get, so a Bool *matrix* constant was never interned and reached
     `tensor_to_lean_inline`, which calls `.item()` on it.
     """
     dt = wire.dtype
-    if isinstance(dt, (Bool, Int, BitVec)):
+    if isinstance(dt, (Bool, Int, Word)):
         return is_scalar_shape(dtype_shape(dt))
     return False
 
