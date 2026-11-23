@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from reactor import Wire, Module, parse_smv, BV, BitVec, Var, X
+from reactor.smv import SMVSyntaxError
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
 
@@ -91,8 +92,8 @@ def test_wire_overrides():
 
 
 def test_parse_error():
-    """Invalid input should raise an error."""
-    with pytest.raises(Exception):
+    """Text the grammar does not read is refused as `SMVSyntaxError`."""
+    with pytest.raises(SMVSyntaxError):
         parse_smv("THIS IS NOT VALID SMV")
 
 

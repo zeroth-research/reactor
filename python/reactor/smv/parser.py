@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache, partial
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
+from lark.exceptions import LarkError
 
 from ..reactor import Wire, Term, Module, BV, LIA, Var, X
 from ..sort import Sort, BitVec, Bool, Int
@@ -46,6 +47,11 @@ def _get_parser():
 
 class SMVRefused(ValueError):
     """A model `parse_smv(strict=True)` would read differently from NuSMV."""
+
+
+class SMVSyntaxError(ValueError):
+    """Text the SMV grammar does not read: the parser's own account of
+    where it stopped, and what it expected there."""
 
 
 @dataclass(frozen=True)
@@ -90,7 +96,8 @@ def parse_smv(
     Inputs are read in the round they label, ``next(e)`` reads ``e`` at the
     next state, and ``INVAR x = e`` / ``x := e`` hold in every state.
     Without it, such text is read leniently: constraints dropped, free
-    variables started at 0 and held.
+    variables started at 0 and held. Either way, text the grammar does not
+    read is `SMVSyntaxError`.
     """
     return _read(text, overrides or {}, strict=strict)[:2]
 
@@ -98,7 +105,11 @@ def parse_smv(
 def _read(text: str, overrides: dict, *, strict: bool, specs: bool = False):
     """The passes both entry points run, in order; `_build_module`'s
     result."""
-    tree = _connectives(_get_parser().parse(text))
+    try:
+        tree = _get_parser().parse(text)
+    except LarkError as e:
+        raise SMVSyntaxError(str(e)) from e
+    tree = _connectives(tree)
     decls = _collect_declarations(tree)
     _split_assigns(decls, strict=strict)
     _promote_constraints(decls, strict=strict)
