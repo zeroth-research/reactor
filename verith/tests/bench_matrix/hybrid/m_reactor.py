@@ -23,7 +23,7 @@ invariant that does not relate c1 and c2 to the rod states cannot see it.
 
 state: s0 = T, s1 = c1, s2 = c2 (Real), s3 = r1, s4 = r2, s5 = down (Bool)
 """
-from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor import Bool, Module, Real, Var, sugar
 from reactor.sugar import expr, ite
 
 REAL = Real([1, 1])
@@ -32,7 +32,7 @@ BOOL = Bool([1, 1])
 
 def _n(v):
     """`v` as a Real constant: an `ite` branch has to be an expression."""
-    return expr(v, theory=LRA, sort=REAL)
+    return expr(v, sort=REAL)
 
 
 class Reactor(sugar.Module):
@@ -53,5 +53,5 @@ class Reactor(sugar.Module):
 
 
 def module() -> Module:
-    return Reactor(theory=LRA, ctrl=(Var(REAL), Var(REAL), Var(REAL),
+    return Reactor(ctrl=(Var(REAL), Var(REAL), Var(REAL),
                                      Var(BOOL), Var(BOOL), Var(BOOL)))

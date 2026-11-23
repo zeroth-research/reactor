@@ -7,7 +7,7 @@ Python semantics:
 Invariant: 0 <= x <= 100
 Ranking: x (when x != 0)
 """
-from reactor import Module, Int, LIA, Var, X
+from reactor import Module, Int, Var, X
 from reactor.analyzer import convert_method
 
 
@@ -23,6 +23,6 @@ def update(old_x):
 
 def module() -> Module:
     state = Var(Int([1, 1]))
-    init_terms = convert_method(init, {}, [X(state)], theory=LIA)
-    update_terms = convert_method(update, {"old_x": state}, [X(state)], theory=LIA)
+    init_terms = convert_method(init, {}, [X(state)], number=Int)
+    update_terms = convert_method(update, {"old_x": state}, [X(state)], number=Int)
     return Module.sequential([state], init_terms, update_terms)

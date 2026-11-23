@@ -2,21 +2,25 @@
 === stdout
 module
   interface
-    #N : Int([1,1])
+    #N : Int(1, 1)
   atom controls #N reads #N
   init
-    #N := [[100]] 
-    X(#N) := Id #N
+    #N := [[100]]
+Tensor[[1, 1], Int64] 
+    X(#N) := Skip #N
   delay
-    d(#N) := ZERO 
+    d(#N) := Zero 
   update
-    #N := [[0]] 
+    #N := [[0]]
+Tensor[[1, 1], Int64] 
     #N := Eq (#N, #N)
-    #N := [[100]] 
-    #N := [[1]] 
+    #N := [[100]]
+Tensor[[1, 1], Int64] 
+    #N := [[1]]
+Tensor[[1, 1], Int64] 
     #N := Sub (#N, #N)
     #N := Ite (#N, #N, #N)
-    X(#N) := Id #N
+    X(#N) := Skip #N
 
 .. --buchi, in internal names: (= s0 0)
 .. --invariant, in internal names: (and (>= s0 0) (<= s0 100))

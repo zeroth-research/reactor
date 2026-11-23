@@ -2,21 +2,23 @@
 === stdout
 module
   external
-    #N : Int([1,1])
+    #N : Int(1, 1)
   interface
-    #N : Int([1,1])
+    #N : Int(1, 1)
   atom controls #N reads #N awaits #N
   init
-    X(#N) := Id X(#N)
+    X(#N) := Skip X(#N)
   delay
-    d(#N) := ZERO 
+    d(#N) := Zero 
   update
-    #N := [[0]] 
+    #N := [[0]]
+Tensor[[1, 1], Int64] 
     #N := Gt (#N, #N)
-    #N := [[1]] 
+    #N := [[1]]
+Tensor[[1, 1], Int64] 
     #N := Sub (#N, #N)
     #N := Ite (#N, #N, #N)
-    X(#N) := Id #N
+    X(#N) := Skip #N
 
 .. --safety, in internal names: (>= s0 0)
 .. --pre, in internal names: (>= e0 0)

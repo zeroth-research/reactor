@@ -4,7 +4,7 @@ state is a 2-vector; the step is W2 @ relu(W1 @ s + b1) + b2 with a countdown
 embedded in the first component.
 """
 import torch
-from reactor import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Var, X, tensor
 
 
 def module() -> Module:
@@ -12,7 +12,7 @@ def module() -> Module:
     h = Wire(Int([2, 1]))
     hr = Wire(Int([2, 1]))
 
-    init = [Term(LIA.Int(torch.tensor([[4], [0]])), [X(s)])]
+    init = [Term(tensor.int.Const(torch.tensor([[4], [0]])), [X(s)])]
 
     # W1 = I, b1 = (-1, 0): h = (s0 - 1, s1)
     W1 = torch.eye(2, dtype=torch.int64)
@@ -22,8 +22,8 @@ def module() -> Module:
     b2 = torch.tensor([[0], [1]], dtype=torch.int64)
 
     update = [
-        Term(LIA.Linear(W1, b1), [h], [s]),
-        Term(LIA.ReLU(), [hr], [h]),
-        Term(LIA.Linear(W2, b2), [X(s)], [hr]),
+        Term(tensor.int.Linear(W1, b1), [h], [s]),
+        Term(tensor.int.ReLU([2, 1]), [hr], [h]),
+        Term(tensor.int.Linear(W2, b2), [X(s)], [hr]),
     ]
     return Module.sequential([s], init, update)

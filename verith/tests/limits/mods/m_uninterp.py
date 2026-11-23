@@ -1,15 +1,15 @@
-"""LIA Uninterpreted as a source (one write, no read) — the only shape the
-theory check accepts: `Uninterpreted` is a lone read *or* a lone write."""
+"""An arbitrary integer as a source (`Havoc`, one write, no read): x' is any
+value each step."""
 import torch
-from reactor import Module, Term, Wire, Int, LIA, Var, X
+from reactor import Module, Term, Wire, Int, Var, X, tensor
 
 
 def module() -> Module:
     x = Var(Int([1, 1]))
     y = Wire(Int([1, 1]))
-    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
+    init = [Term(tensor.int.Const(torch.tensor([[0]])), [X(x)])]
     update = [
-        Term(LIA.Uninterpreted("f"), [y]),
-        Term(LIA.Id(), [X(x)], [y]),
+        Term(tensor.Havoc(Int([1, 1])), [y]),
+        Term(tensor.Skip(Int([1, 1])), [X(x)], [y]),
     ]
     return Module.sequential([x], init, update)

@@ -204,6 +204,6 @@ REJECTED = {
     "m_lra_two":    ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_relu_lra":   ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_transpose":  ("verith",   "smt.encode has no term for Transpose"),
-    "m_uninterp":   ("verith",   "smt.encode has no term for Uninterpreted"),
+    "m_uninterp":   ("verith",   "smt.encode has no term for Havoc"),
     "m_relu_input": ("lean2vmt", "models only state/statenext, no inputs"),
 }

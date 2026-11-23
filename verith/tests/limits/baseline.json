@@ -81,10 +81,10 @@
   "verdict": "VERIFIED"
  },
  "OpMax": {
-  "verdict": "PROOF-FAIL"
+  "verdict": "VERIFIED"
  },
  "OpMin": {
-  "verdict": "PROOF-FAIL"
+  "verdict": "VERIFIED"
  },
  "OpArgmax": {
   "verdict": "PROOF-FAIL"

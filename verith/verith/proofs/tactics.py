@@ -49,7 +49,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from reactor import Bool, Int, Real, BitVec
+from reactor import Bool, Int, Real, Word
 
 from reactor_lean.lowering.sorts import itype_name, wire_shape
 from reactor_lean.lowering.elements import flat_layout
@@ -158,12 +158,12 @@ class Features:
         return bool(self.theories) and not ({"Int", "Real"} & self.theories)
 
 
-_SORT_NAMES = ((Bool, "Bool"), (Int, "Int"), (Real, "Real"), (BitVec, "BitVec"))
+_SORT_NAMES = ((Bool, "Bool"), (Int, "Int"), (Real, "Real"), (Word, "BitVec"))
 
 
 def _sort_name(dtype) -> str:
-    """The theory a sort's elements are in, a tag (`BitVec` without its
-    width), not a Lean type: `lowering.sorts.lean_elem_type` is that."""
+    """The theory a sort's elements are in, a tag (`BitVec` for a `Word`,
+    without its width), not a Lean type: `lowering.sorts.lean_elem_type` is that."""
     for cls, name in _SORT_NAMES:
         if isinstance(dtype, cls):
             return name
@@ -279,7 +279,7 @@ def _two_valued_slots(ctx) -> list[tuple[str, str]]:
         dt = w.dtype
         if isinstance(dt, Bool):
             lemmas.append("Bool.eq_false_or_eq_true")
-        elif isinstance(dt, BitVec) and dt._0 == 1:
+        elif isinstance(dt, Word) and dt.width == 1:
             lemmas.append("BitVec.eq_zero_or_eq_one")
         else:
             # Wider BitVec has 2^w values and no two-way lemma; Int and Real

@@ -16,7 +16,7 @@ same lesson `m_relu_input` carries in the limit matrix.
 state:  s0 = h (Real), s1 = fill (Bool)
 inputs: e0 = c (Real), the consumption this tick
 """
-from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor import Bool, Module, Real, Var, sugar
 from reactor.sugar import X, ite
 
 
@@ -30,5 +30,5 @@ class Tank(sugar.Module):
 
 
 def module() -> Module:
-    return Tank(theory=LRA, ctrl=(Var(Real([1, 1])), Var(Bool([1, 1]))),
+    return Tank(ctrl=(Var(Real([1, 1])), Var(Bool([1, 1]))),
                 extl=(Var(Real([1, 1])),))

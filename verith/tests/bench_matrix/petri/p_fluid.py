@@ -35,7 +35,7 @@ invariant.
 state:  s0 = v (Real), s1 = m1, s2 = m2 (Bool)
 inputs: e0 = r (Real), the drain's rate this tick
 """
-from reactor import Bool, LRA, Module, Real, Var, sugar
+from reactor import Bool, Module, Real, Var, sugar
 from reactor.sugar import X, expr, ite
 
 REAL = Real([1, 1])
@@ -43,7 +43,7 @@ REAL = Real([1, 1])
 
 def _n(v):
     """`v` as a Real constant: an `ite` branch has to be an expression."""
-    return expr(v, theory=LRA, sort=REAL)
+    return expr(v, sort=REAL)
 
 
 class Fluid(sugar.Module):
@@ -59,5 +59,5 @@ class Fluid(sugar.Module):
 
 
 def module() -> Module:
-    return Fluid(theory=LRA, ctrl=(Var(REAL), Var(Bool([1, 1])), Var(Bool([1, 1]))),
+    return Fluid(ctrl=(Var(REAL), Var(Bool([1, 1])), Var(Bool([1, 1]))),
                  extl=(Var(REAL),))

@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import torch
 
-from reactor import Int, LIA, Module, Real, Term, Var, Wire, X, sugar
+from reactor import Int, Module, Real, Term, Var, Wire, X, sugar, tensor
 from reactor.analyzer import convert_method
 from reactor.sugar import ite
 from reactor_lean.core.certificate import Claim
@@ -53,8 +53,8 @@ def _countdown() -> Module:
     state = Var(Int([1, 1]))
     return Module.sequential(
         [state],
-        convert_method(init, {}, [X(state)], theory=LIA),
-        convert_method(update, {"old_x": state}, [X(state)], theory=LIA),
+        convert_method(init, {}, [X(state)], number=Int),
+        convert_method(update, {"old_x": state}, [X(state)], number=Int),
     )
 
 
@@ -67,11 +67,10 @@ def _real_counter() -> Module:
         return old_x + 1.0
 
     state = Var(Real([1, 1]))
-    from reactor import LRA
     return Module.sequential(
         [state],
-        convert_method(init, {}, [X(state)], theory=LRA),
-        convert_method(update, {"old_x": state}, [X(state)], theory=LRA),
+        convert_method(init, {}, [X(state)], number=Real),
+        convert_method(update, {"old_x": state}, [X(state)], number=Real),
     )
 
 
@@ -88,7 +87,7 @@ def _write_only_second() -> Module:
         def update(self, x, y):
             return ite(x == 0, 100, x - 1), 0
 
-    return Prog(ctrl=(Var(Int([1, 1])), Var(Int([1, 1]))), theory=LIA)
+    return Prog(ctrl=(Var(Int([1, 1])), Var(Int([1, 1]))))
 
 
 def _learn(module, prp, kind, pre=None):
@@ -242,8 +241,8 @@ def _starts_at_an_input() -> Module:
 
     return Module.sequential(
         [x, n],
-        [Term(LIA.Id(), [X(x)], [X(n)])],
-        convert_method(update, {"old_x": x}, [X(x)], theory=LIA),
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [X(n)])],
+        convert_method(update, {"old_x": x}, [X(x)], number=Int),
     )
 
 
@@ -282,9 +281,9 @@ def test_a_precondition_over_an_input_that_starts_no_column_is_refused():
     one = Wire(Int([1, 1]))
     module = Module.sequential(
         [x, n],
-        [Term(LIA.Int(torch.tensor([[1]])), [one]),
-         Term(LIA.Add(), [X(x)], [X(n), one])],
-        [Term(LIA.Id(), [X(x)], [x])],
+        [Term(tensor.int.Const(torch.tensor([[1]])), [one]),
+         Term(tensor.int.Add([1, 1]), [X(x)], [X(n), one])],
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [x])],
     )
     with pytest.raises(Refused, match="e0, which starts no column"):
         _learn(module, "(>= s0 0)", "safety", "(>= e0 0)")
@@ -482,7 +481,7 @@ def _counter(bound: int):
         def update(self, x):
             return ite(x == bound, 0, x + 1)
 
-    return Counter(ctrl=(Var(Int([1, 1])),), theory=LIA)
+    return Counter(ctrl=(Var(Int([1, 1])),))
 
 
 def test_a_wrap_around_gets_a_rank_zeroed_where_the_property_holds():

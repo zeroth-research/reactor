@@ -163,16 +163,16 @@ def test_a_fault_in_the_module_file_keeps_its_traceback():
             assert "Traceback" in r.stderr and raised in r.stderr, r.stderr
 
 
-# `update` reads an `Uninterpreted` wire, which no Lean column can write.
+# `update` reads a `Havoc` wire, which no Lean column can write.
 _NO_LEAN_FORM_MODULE = """\
 import torch
-from reactor import Int, LIA, Module, Term, Var, Wire, X
+from reactor import Int, Module, Term, Var, Wire, X, tensor
 
 def module():
     x = Var(Int([1, 1]))
     y = Wire(Int([1, 1]))
-    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
-    update = [Term(LIA.Uninterpreted("f"), [y]), Term(LIA.Id(), [X(x)], [y])]
+    init = [Term(tensor.int.Const(torch.tensor([[0]])), [X(x)])]
+    update = [Term(tensor.Havoc(Int([1, 1])), [y]), Term(tensor.Skip(Int([1, 1])), [X(x)], [y])]
     return Module.sequential([x], init, update)
 """
 
