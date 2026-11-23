@@ -6,7 +6,7 @@
    "name": "ReactLib",
    "manifestFile": "lake-manifest.json",
    "inherited": false,
-   "dir": "../../../../ReactLib/ReactLib",
+   "dir": ".lake/ReactLib",
    "configFile": "lakefile.toml"},
   {"url": "https://github.com/ufmg-smite/lean-smt.git",
    "type": "git",
