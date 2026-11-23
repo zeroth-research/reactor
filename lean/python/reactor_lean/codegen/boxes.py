@@ -146,10 +146,7 @@ def _circ_translate_body(
 
 
 def _circ_compute_swapping(
-    block_inputs: list[Wire],
-    block_outputs: list[Wire],
-    wires_ord: dict[Wire, int],
-    layer: list[Wire],
+    wires_ord: dict[Wire, int], layer: list[Wire]
 ) -> tuple[list[CircLayer], list[Wire]]:
     swapping: list[CircLayer] = []
     while True:
@@ -207,7 +204,7 @@ def _circ_compute_swapping(
 
 
 def _circ_compute_dups(
-    block_inputs: list[Wire], wires_ord: dict[Wire, int], layer: list[Wire]
+    wires_ord: dict[Wire, int], layer: list[Wire]
 ) -> tuple[list[CircLayer], list[Wire]]:
     layers = []
     while True:
@@ -306,12 +303,10 @@ def translate_terms_circ(
     layers = _circ_translate_body(all_inputs, block_outputs, wire_to_term)
 
     # compute swapping wires
-    swapping, last_layer = _circ_compute_swapping(
-        all_inputs, block_outputs, wires_ord, layers[-1]
-    )
+    swapping, last_layer = _circ_compute_swapping(wires_ord, layers[-1])
 
     # duplication of wires
-    dups, last_layer = _circ_compute_dups(all_inputs, wires_ord, last_layer)
+    dups, last_layer = _circ_compute_dups(wires_ord, last_layer)
 
     # deletion of unused wires
     dels = _circ_compute_dels(all_inputs, last_layer)
