@@ -68,6 +68,7 @@ from __future__ import annotations
 
 from ..cli import parse_args
 from ..core.errors import Refused
+from ..project.lake_cache import lake_cache
 from ..project.lakefile import reactlib_checkout
 from .certificate import lean_context, render
 from .claim import claim_from_flags, load
@@ -77,11 +78,13 @@ from .outputs import generate, standalone
 def main():
     settings = parse_args()
 
-    # `$REACTLIB` is a checkout the project's lakefile will require, so
-    # a bad one is refused here, before any of the project is written.
+    # `$REACTLIB` is a checkout the project's lakefile will require, and
+    # `$REACTOR_LAKE_CACHE` the packages it will build against, so a bad
+    # one is refused here, before any of the project is written.
     if not settings.cert_file:
         try:
             reactlib_checkout()
+            lake_cache()
         except Refused as e:
             raise SystemExit(f"error: {e}") from e
 

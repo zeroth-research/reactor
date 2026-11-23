@@ -20,4 +20,7 @@ tutorials/.ipynb_checkpoints/
 lean/tests/LeanTests
 lean/tests/lean/Certs/
 lean/tests/lean/.lake
+lean/tests/lean/lake-manifest.json
+# the Lake package cache of the workspace (`reactor_lean.project.lake_cache`)
+/.lake
 

@@ -88,6 +88,14 @@ checkout before it writes anything. `just` sets it to the checkout beside
 this repository when there is one, and the tests' Lake project
 (`tests/lean`) requires `ReactLib` from it.
 
+With `REACTOR_LAKE_CACHE` set to a Lake package cache -- Mathlib and Cslib,
+fetched and built once -- the project is written to build against
+it: `.lake/packages` is a link to the cache's packages, and
+`lake-manifest.json` is made from the cache's, so the first `lake build`
+compiles only the project rather than Mathlib too
+(`project/lake_cache.py`). `reactor` refuses a `REACTOR_LAKE_CACHE` that is
+not a cache, and `just` sets it to `.lake` at the top of this repository.
+
 [ReactLib]: https://github.com/zeroth-research/ReactLib
 
 The certificate in `Data.lean` is the one given by `--invariant` and
@@ -181,7 +189,7 @@ layer.
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `codegen/` | The module as Lean text: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
 | `parse/` | Reading a predicate's text: `dsl` (the Python predicate syntax), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the parser: `NativeParser`, `read_predicates`) |
-| `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
+| `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `lake_cache` (the built packages it can share), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
 | `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, `ProofScripts`, the project's `certificate_files` and the `--cert-file` one), `from_ir` (a `parse.Formula` printed as Lean) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`), and `names`, which translates a claim's names to the internal ones and back |
 | `cli/` | The command line: `parser` (the flags, one `add_*` per group), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |

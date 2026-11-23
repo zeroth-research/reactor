@@ -158,6 +158,14 @@ just lean-test               # fast: skips all lake-build tests
 just test-lean               # slow: runs lake-build tests (requires lake + Mathlib)
 ```
 
+`just` points every command it runs at the ReactLib checkout beside this
+repository (`$REACTLIB`) and at the Lake package cache in `.lake` here
+(`$REACTOR_LAKE_CACHE`): Mathlib and cslib, built once, which every
+project the tests, `reactor`, `certify` and `verith` write builds against. A
+variable already set wins. A cache is made from a project built without one
+(see `reactor_lean.project.lake_cache`); that first build fetches and compiles
+Mathlib, which takes about an hour.
+
 Tests that carry the `slow` mark (paths relative to `lean/`):
 
 | File | Test | What it verifies |
@@ -170,10 +178,6 @@ Tests that carry the `slow` mark (paths relative to `lean/`):
 | `tests/test_lean_svcomp.py` | `test_countdown_proofs` | Countdown certificate compiles (separate lake project) |
 | `tests/test_lean_svcomp.py` | `test_twovars_proofs` | Two-variable certificate compiles (separate lake project) |
 | `tests/test_lean_svcomp.py` | `test_collatz_bounded_proofs` | Collatz-bounded certificate compiles (separate lake project) |
-
-The first `lake build` invocation downloads Mathlib (~1 GB) and can take
-10–30 minutes. Subsequent runs use the on-disk cache and typically finish in
-under a minute per test.
 
 ## Advanced building
 

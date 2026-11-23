@@ -25,21 +25,22 @@ name = "{{ lib.name }}"
 srcDir = "{{ lib.src_dir }}"
 {% endif %}
 {% endfor %}
-
-[[require]]
-name = "cslib"
-scope = "leanprover"
-rev = "{{ cslib_rev }}"
+{% for req in requires %}
 
 {% for line in req.comment.splitlines() %}
 # {{ line }}
 {% endfor %}
 [[require]]
 name = "{{ req.name }}"
+{% if req.scope is not none %}
+scope = "{{ req.scope }}"
+{% endif %}
 {% if req.path is not none %}
 path = "{{ req.path }}"
 {% else %}
+{% if req.git is not none %}
 git = "{{ req.git }}"
+{% endif %}
 rev = "{{ req.rev }}"
 {% if req.sub_dir is not none %}
 subDir = "{{ req.sub_dir }}"

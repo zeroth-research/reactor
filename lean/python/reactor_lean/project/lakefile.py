@@ -48,8 +48,9 @@ class LeanLib:
 
 @dataclass(frozen=True)
 class Require:
-    """A `[[require]]`: from a local checkout at `path`, or else from the git
-    repository `git` at `rev`, the package being its `sub_dir` if given."""
+    """A `[[require]]`: from a local checkout at `path`, or else at `rev`
+    from the git repository `git`, or from Reservoir under `scope`, the
+    package being its `sub_dir` if given."""
 
     name: str
     path: str | None = None
@@ -57,6 +58,7 @@ class Require:
     git: str | None = None
     rev: str | None = None
     sub_dir: str | None = None
+    scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,13 @@ _REACTLIB_COMMENTS = {
 }
 
 
+# What every project requires besides ReactLib's packages: Cslib, which
+# brings Mathlib at the revision it pins.
+FIXED_REQUIRES = (
+    Require("cslib", scope="leanprover", rev=CSLIB_REV),
+)
+
+
 def reactlib_requires() -> tuple[Require, ...]:
     """The requires on ReactLib's packages: by path from
     `$REACTLIB` when it is set, from git at `REACTLIB_REV`
@@ -122,25 +131,10 @@ def reactlib_requires() -> tuple[Require, ...]:
     )
 
 
-def with_reactlib(manifest: dict, checkout: Path) -> dict:
-    """`manifest` (a parsed `lake-manifest.json`) with ReactLib's
-    packages entered as path dependencies on `checkout`.
-
-    `lake build` materializes a path dependency from the manifest's `dir`,
-    not from the lakefile's `path`, so a project that is built against a
-    manifest it did not resolve itself -- the test runners copy
-    `tests/lean`'s, whose `dir`s are relative to `tests/lean` -- needs
-    these entries rewritten for it.
-    """
-    entries = [
-        {"type": "path", "scope": "", "name": p,
-         "manifestFile": "lake-manifest.json", "inherited": False,
-         "dir": str(checkout / p), "configFile": "lakefile.toml"}
-        for p in REACTLIB_PACKAGES
-    ]
-    rest = [e for e in manifest["packages"]
-            if e["name"] not in REACTLIB_PACKAGES]
-    return {**manifest, "packages": rest + entries}
+def project_requires(parts: LakefileParts = LakefileParts()) -> tuple[Require, ...]:
+    """Everything the project's lakefile requires, in its order: the fixed
+    packages, ReactLib's, then what `parts` adds."""
+    return FIXED_REQUIRES + reactlib_requires() + parts.requires
 
 
 def generate_lakefile(
@@ -157,7 +151,6 @@ def generate_lakefile(
         "project/lakefile.toml.j2",
         project_name=project_name,
         executable=executable,
-        cslib_rev=CSLIB_REV,
         parts=parts,
-        requires=reactlib_requires() + parts.requires,
+        requires=project_requires(parts),
     )
