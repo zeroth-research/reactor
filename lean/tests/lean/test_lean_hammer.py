@@ -2,10 +2,10 @@
 Lean compilation tests for the tests/lean/ lake project.
 
 Fast tests (default):
-    just pytest tests/lean/            # checks generated files exist
+    just lean-test tests/lean/                  # checks generated files exist
 
 Slow tests (require lake + Mathlib cache):
-    just pytest tests/lean/ -m slow    # runs lake build
+    just lean-run pytest tests/lean/ -m slow    # runs lake build
 
 Targets verified by the slow tests:
   ZerothHammerTests  — individual tactic examples (manually written)
