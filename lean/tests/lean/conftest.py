@@ -19,83 +19,34 @@ ZerothHammer for the tactic and define their own module-specific
 ``simp_mat`` / ``simp_defs`` macros. Without `verith` installed there is
 nothing to prove them with, and the tests that build them are skipped.
 """
-from pathlib import Path
+from functools import partial
 
 import pytest
 import torch
 
 from reactor import Module, Wire, Term, LIA, LRA, Int, Real, Bool, Var, X
-from reactor.analyzer import convert_method
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.proof.render import generate_standalone_cert_lean
 from reactor_lean.core.certificate import Certificate, Claim
-from reactor_lean.project.names import LINTERS_OFF
+from reactor_lean.project.names import LINTERS_OFF, Layout
+from reactor_lean.project.scaffold import ENCODINGS, write_encoding
 from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
+from lake import lake_build
+from testdata import LAKE_PROJECT, fixture
 
-_LEAN_DIR = Path(__file__).parent
-_CERTS_DIR = _LEAN_DIR / "Certs"
+_CERTS_DIR = LAKE_PROJECT / "Certs"
 
 
 # ──────────────────────────────────────────────────────────────
-# Module factories (same modules as test_lean_svcomp.py)
+# Modules: the svcomp fixtures (as test_lean_svcomp.py uses them), and
+# the ones only these files are about
 # ──────────────────────────────────────────────────────────────
 
 
-def _make_countdown() -> Module:
-    def init():
-        return 100
-
-    def update(old_x):
-        if old_x == 0:
-            return 100
-        return old_x - 1
-
-    s = Var(Int([1, 1]))
-    return Module.sequential(
-        [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
-    )
-
-
-def _make_twovars() -> Module:
-    def init():
-        return 0, 10
-
-    def update(old_x, old_y):
-        if old_x < old_y:
-            return old_x + 1, old_y
-        return 0, 10
-
-    x = Var(Int([1, 1]))
-    y = Var(Int([1, 1]))
-    return Module.sequential(
-        [x, y],
-        convert_method(init, {}, [X(x), X(y)], theory=LIA),
-        convert_method(update, {"old_x": x, "old_y": y}, [X(x), X(y)], theory=LIA),
-    )
-
-
-def _make_collatz() -> Module:
-    def init():
-        return 7
-
-    def update(old_x):
-        if old_x == 1:
-            return 7
-        if old_x > 4:
-            return old_x - 3
-        if old_x > 1:
-            return old_x - 1
-        return old_x
-
-    s = Var(Int([1, 1]))
-    return Module.sequential(
-        [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
-    )
+_make_countdown = partial(fixture, "svcomp_countdown")
+_make_twovars = partial(fixture, "svcomp_twovars")
+_make_collatz = partial(fixture, "svcomp_collatz_bounded")
 
 
 def _make_counter() -> Module:
@@ -380,6 +331,14 @@ def proved_cert_lean(module: Module, claim: Claim,
         ctx, lean, prove(module, ctx, claim, cert, lean))
 
 
+@pytest.fixture(scope="session")
+def relational_circ() -> None:
+    """`Relational.Circ` built, once a session: what the files the tests
+    compile with `lake.lean_outputs` import."""
+    built = lake_build("Relational.Circ", timeout=1800)
+    assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
+
+
 @pytest.fixture(scope="session", autouse=True)
 def generate_lean_files() -> None:
     """Generate ZerothHammer.lean and Certs/*.lean for the lake project."""
@@ -390,7 +349,7 @@ def generate_lean_files() -> None:
         pass
     else:
         # ZerothHammer.lean — standalone tactic
-        hammer_file = _LEAN_DIR / "ZerothHammer.lean"
+        hammer_file = LAKE_PROJECT / "ZerothHammer.lean"
         hammer_file.write_text(generate_zeroth_hammer_lean())
 
         # Certs/ — one self-contained certificate per module
@@ -434,8 +393,8 @@ def generate_lean_files() -> None:
         )
 
     # Certs/RelEnc*/ — functional, scalar and ScalarRel, one module each,
-    # exactly the way `create_project` splits them: System/Scalar.lean imports
-    # System/System.lean and System/ScalarRel.lean imports Scalar.
+    # written by `create_project`'s own `write_encoding`: Scalar imports the
+    # functional encoding (`Base` here) and ScalarRel imports Scalar.
     # `ScalarRel.effect_i` is per wire while the state tuple it is compared to
     # is per element, so these are what keep the slice and the codomain in
     # agreement; no certificate carries a ScalarRel section.
@@ -449,22 +408,14 @@ def generate_lean_files() -> None:
     # failed to compile while this test passed.
     for name, make_module in _REL_ENC_SPECS:
         t = ModuleToLean4(make_module())
-        base = f"Certs.RelEnc{name}"
-        d = _CERTS_DIR / f"RelEnc{name}"
-        d.mkdir(exist_ok=True)
-        (d / "Base.lean").write_text(
-            f"import Relational.Mat\nimport Relational.Circ\n\n{LINTERS_OFF}\n\n"
-            + t.to_lean_functional() + "\n"
-        )
-        (d / "Scalar.lean").write_text(
-            f"import Relational.Basic\nimport {base}.Base\n\n{LINTERS_OFF}\n\n"
-            + t.to_lean_scalar() + "\n"
-        )
-        (d / "ScalarRel.lean").write_text(
-            f"import Relational.Basic\nimport {base}.Scalar\n\n{LINTERS_OFF}\n\n"
-            + t.to_lean_rel() + "\n"
-        )
-        (_CERTS_DIR / f"RelEnc{name}.lean").write_text(f"import {base}.ScalarRel\n")
+        layout = Layout(base="Base", prefix=f"Certs.RelEnc{name}.",
+                        directory=_CERTS_DIR / f"RelEnc{name}")
+        layout.directory.mkdir(exist_ok=True)
+        for enc in ENCODINGS:
+            if enc.suffix in ("", "Scalar", "ScalarRel"):
+                write_encoding(enc, t, layout, name)
+        (_CERTS_DIR / f"RelEnc{name}.lean").write_text(
+            f"import {layout.lean_module('ScalarRel')}\n")
 
     # Certs/Bridge*.lean — the `--fbk-proveit` route's model, the module's
     # own encodings, and the proof that the first is the second. The bridge

@@ -7,8 +7,6 @@ wrong in it is refused in its own terms.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from reactor_lean.core.errors import PredicateRefused, Unreadable
@@ -20,8 +18,7 @@ from reactor_lean.parse.native import (
     ModuleWires, NativeParser, namespace, parse_predicate,
 )
 from reactor_lean.parse.smtlib import Elaborator
-
-MODS = Path(__file__).parent / "limits" / "mods"
+from testdata import MODS
 
 
 def _wires(name: str) -> ModuleWires:

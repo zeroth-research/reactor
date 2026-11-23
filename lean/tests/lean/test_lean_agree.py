@@ -17,24 +17,15 @@ compile is still reported as that module, since its rounds print nothing.
 from __future__ import annotations
 
 import dataclasses
-import os
-import subprocess
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 
 from agree import CORPUS, Skip, lean_script, runs
+from lake import lean_outputs
 
-_LEAN_DIR = Path(__file__).parent
 _RUNS = 2
 _PER_FILE = 8
-
-
-def _build_relational() -> None:
-    built = subprocess.run(["lake", "build", "Relational.Circ"], cwd=_LEAN_DIR,
-                           capture_output=True, text=True, timeout=1800)
-    assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
 
 
 def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
@@ -58,12 +49,7 @@ def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
         path.write_text("import Relational.Circ\n" + body)
         files.append((path, chunk))
 
-    def lean(path: Path) -> str:
-        return subprocess.run(["lake", "env", "lean", str(path)], cwd=_LEAN_DIR,
-                              capture_output=True, text=True, timeout=1800).stdout
-
-    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) - 1)) as pool:
-        outputs = list(pool.map(lambda f: lean(f[0]), files))
+    outputs = lean_outputs([path for path, _chunk in files])
 
     bad = []
     for (_path, chunk), out in zip(files, outputs):
@@ -82,15 +68,14 @@ def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
 
 
 @pytest.mark.slow
-def test_the_lean_encoding_takes_the_rounds_the_module_takes(tmp_path):
-    _build_relational()
+def test_the_lean_encoding_takes_the_rounds_the_module_takes(tmp_path, relational_circ):
     bad, checked = _disagreements(sorted(CORPUS), tmp_path)
     assert checked, "nothing to check"
     assert not bad, f"{len(bad)} disagreement(s):\n" + "\n".join(bad)
 
 
 @pytest.mark.slow
-def test_a_wrong_lean_emitter_is_caught(tmp_path, monkeypatch):
+def test_a_wrong_lean_emitter_is_caught(tmp_path, monkeypatch, relational_circ):
     """The check can fail: with `Sub`'s matrix emitter swapping its
     operands, the countdown's every `update` round prints something else."""
     from reactor_lean.lowering import ops
@@ -99,7 +84,6 @@ def test_a_wrong_lean_emitter_is_caught(tmp_path, monkeypatch):
         if key[1] == "Sub":
             monkeypatch.setitem(ops._BY_KEY, key, dataclasses.replace(
                 row, mat=lambda a: f"({a[1]} - {a[0]})"))
-    _build_relational()
     bad, checked = _disagreements(["limits/m_countdown"], tmp_path)
     assert checked == 1
     assert bad and "the interpreter computed" in bad[0]

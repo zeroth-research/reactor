@@ -19,8 +19,7 @@ from reactor import Wire
 
 from ..codegen.literals import lean_bitvec, lean_int, lean_real
 from ..core.errors import Refused
-from ..lowering.ops import theory_of
-from ..lowering.sorts import itype_name, wire_shape
+from ..lowering.sorts import itype_name, theory_of, wire_shape
 from ..parse.formula import family
 from .bindings import Bindings, build_var_map, with_lets
 

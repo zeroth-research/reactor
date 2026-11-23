@@ -1,13 +1,10 @@
 """The input adapters: `reactor_lean.inputs`."""
 
-from pathlib import Path
-
 import pytest
 
 from reactor import Module
 from reactor_lean import inputs
-
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+from testdata import FIXTURES
 
 
 def test_a_python_file_loads_through_its_adapter():
