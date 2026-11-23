@@ -19,10 +19,10 @@ from reactor import Wire
 
 from ..codegen.literals import lean_bitvec, lean_int, lean_real
 from ..core.errors import Refused
-from ..lowering.elements import product_accessor
 from ..lowering.ops import theory_of
 from ..lowering.sorts import itype_name, wire_shape
 from ..parse.formula import family
+from .bindings import Bindings, build_var_map, with_lets
 
 _INFIX = {
     "Lt": " < ", "Le": " ≤ ", "Gt": " > ", "Ge": " ≥ ", "Eq": " = ", "Ne": " ≠ ",
@@ -39,8 +39,6 @@ _MIN_MAX = {("Ge", True): "max", ("Gt", True): "max",
             ("Ge", False): "min", ("Gt", False): "min",
             ("Le", False): "max", ("Lt", False): "max"}
 
-Bindings = "list[tuple[str, str, list[Wire]]]"
-
 
 def ir_to_lean(formula, state_wires: list[Wire], *, param_name: str = "s",
                extra: "Bindings | None" = None, share: bool = True) -> str:
@@ -48,7 +46,7 @@ def ir_to_lean(formula, state_wires: list[Wire], *, param_name: str = "s",
     variables -- `e0..`, `el0..` -- to accessors on the parameter."""
     p = _Printer(formula, [("s", param_name, state_wires)] + (extra or []))
     body, lets = p.parts(share)
-    return f"fun {param_name} => {_with_lets(body, lets)}"
+    return f"fun {param_name} => {with_lets(body, lets)}"
 
 
 def ir_to_lean_nat(formula, state_wires: list[Wire], *, param_name: str = "s",
@@ -56,14 +54,7 @@ def ir_to_lean_nat(formula, state_wires: list[Wire], *, param_name: str = "s",
     """An Int-sorted `formula` as a Lean `Nat`, clamped by `Int.toNat`."""
     p = _Printer(formula, [("s", param_name, state_wires)] + (extra or []))
     body, lets = p.parts(share)
-    return f"fun {param_name} => {_with_lets(f'(({body} : Int)).toNat', lets)}"
-
-
-def _with_lets(body: str, lets: list) -> str:
-    if not lets:
-        return body
-    binds = "".join(f"\n  let {name} := {expr}" for name, expr in lets)
-    return f"{binds}\n  {body}"
+    return f"fun {param_name} => {with_lets(f'(({body} : Int)).toNat', lets)}"
 
 
 class _Printer:
@@ -71,13 +62,9 @@ class _Printer:
         self.formula = formula
         self.by_wire = {t.write[0].id: t for t in formula.terms}
         # wire id -> (accessor, wire, name)
-        self.vars: dict[int, tuple[str, Wire, str]] = {}
-        for prefix, base, wires in bindings:
-            for i, w in enumerate(wires):
-                acc = product_accessor(i, len(wires))
-                scalar = wire_shape(w).is_scalar
-                self.vars[w.id] = (f"({base}{acc} 0 0)" if scalar
-                                   else f"({base}{acc})", w, f"{prefix}{i}")
+        accessor, wire = build_var_map(bindings)
+        self.vars: dict[int, tuple[str, Wire, str]] = {
+            wire[name].id: (accessor[name], wire[name], name) for name in accessor}
         self.bound: dict[int, str] = {}
         self.shared: set[int] = set()
 
@@ -106,7 +93,7 @@ class _Printer:
 
         body = self.walk(self.formula.out, emit)
         # A binding is only worth it when the output is shorter for it.
-        if len(_with_lets(body, lets)) >= len(plain):
+        if len(with_lets(body, lets)) >= len(plain):
             return plain, []
         return body, lets
 

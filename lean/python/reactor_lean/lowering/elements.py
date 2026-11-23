@@ -130,7 +130,7 @@ def flat_layout(wires: "list[Wire]") -> FlatLayout:
     return FlatLayout(tuple(wires), tuple(slots), tuple(offsets))
 
 
-def mat_from_scalars(slots: list[str], shape: MatShape, elem_ty: str) -> str:
+def mat_from_scalars(slots: list[str], shape: MatShape) -> str:
     """Build a Lean ``Matrix (Fin m) (Fin n) T`` expression from flat scalar slot strings.
 
     1x1:       ``(Matrix.mk fun _ _ => slots[0])``

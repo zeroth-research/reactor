@@ -212,10 +212,9 @@ def _lean_value(wire, tensor) -> str:
     (`lowering.elements.mat_from_scalars`)."""
     from reactor_lean.lowering.elements import mat_from_scalars
     from reactor_lean.codegen.literals import lean_literal
-    from reactor_lean.lowering.sorts import flat_element_type
 
     elems = [lean_literal(wire.dtype, v) for v in flat(wire, tensor)]
-    return mat_from_scalars(elems, wire_shape(wire), flat_element_type(wire))
+    return mat_from_scalars(elems, wire_shape(wire))
 
 
 def _lean_shown(wire, element: str) -> str:

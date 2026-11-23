@@ -251,7 +251,7 @@ forms.  Every matrix built from its entries is a `Matrix.mk`
 search a bare `fun i j => …` is a function, not a matrix.  `Matrix.mk` is
 ReactLib's, not Mathlib's (`Relational.Mat` says why).
 
-`ModuleToLean4.atom_to_lean_functional()` wraps the body into:
+`functional.atom_to_lean_functional(ctx)` wraps the body into:
 
 ```lean
 @[simp] def init (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) := ...
@@ -270,7 +270,7 @@ inside `namespace Circ`.  The translation:
 3. Each operation becomes `Box.add`, `Box.lt`, etc. composed with `⊗` (par) and
    `≫` (seq).
 
-`ModuleToLean4.atom_to_lean_circuit()` emits one `@[simp] def init_l0 ...`
+`circuit.atom_to_lean_circuit` emits one `@[simp] def init_l0 ...`
 per layer and a composed `def init := init_l0 ≫ init_l1 ≫ ...`.
 
 **Equivalence theorems** (`to_lean_equiv_theorems`) prove that the circuit and
@@ -355,18 +355,19 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 
 | Method | Returns |
 |--------|---------|
-| `to_lean_functional()` | Constants block + `init`/`update` defs (`System.lean`) |
-| `to_lean_circ()` | Circuit namespace + equivalence theorems (`SystemCirc.lean`) |
-| `to_lean_mat_rel()` | `namespace Rel`, the matrix-domain relational encoding (`SystemRel.lean`) |
-| `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems (`SystemScalar.lean`) |
-| `to_lean_rel()` | `namespace ScalarRel`, the scalar-relational encoding (`SystemScalarRel.lean`) |
+| `to_lean_functional()` | Constants block + `init`/`update` defs (`System/System.lean`) |
+| `to_lean_circ()` | Circuit namespace + equivalence theorems (`System/Circ.lean`) |
+| `to_lean_mat_rel()` | `namespace Rel`, the matrix-domain relational encoding (`System/Rel.lean`) |
+| `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems (`System/Scalar.lean`) |
+| `to_lean_rel()` | `namespace ScalarRel`, the scalar-relational encoding (`System/ScalarRel.lean`) |
 | `to_lean(circuit=True, scalar=True, rel=True)` | Functional, then each enabled one of circuit, scalar and scalar-relational, joined (never `Rel`); used by tests |
-| `atom_to_lean_functional()` | Just `init`/`update` bodies |
-| `atom_to_lean_circuit()` | Just `namespace Circ` block |
-| `atom_to_lean_scalar()` | Just `namespace Scalar` block |
-| `atom_to_lean_mat_rel()` / `atom_to_lean_rel()` | Just the `Rel` / `ScalarRel` namespace |
 | `to_lean_equiv_theorems()` | `init_circ_eq` / `update_circ_eq` theorems |
 | `to_lean_scalar_equiv()` | `init_scalar_eq` / `update_scalar_eq` theorems |
+
+Each wraps the function of its encoding's module that prints the bare
+block -- `atom_to_lean_functional`, `atom_to_lean_circuit`,
+`atom_to_lean_scalar`, `atom_to_lean_mat_rel`, `atom_to_lean_rel` -- each
+taking the `LeanContext`.
 
 The project writes one file per row of `project.scaffold.ENCODINGS`, each
 printed by the row's `producer`, a `ModuleToLean4.to_lean_*` method.

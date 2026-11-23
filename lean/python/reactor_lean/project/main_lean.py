@@ -59,7 +59,7 @@ def _elem_shower(elem: str, wire: Wire) -> str:
     raise _unsupported_io_sort(elem, wire)
 
 
-def generate_main_lean(project_name: str, module: Module, module_name: str) -> str:
+def generate_main_lean(module: Module) -> str:
     """Generate Main.lean source that runs init/update in a stdin/stdout loop."""
     extl_next = [X(v) for v in module.extl]
     ctrl_next = [X(v) for v in module.ctrl]
@@ -69,8 +69,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     lines: list[str] = []
 
     # Imports. `init`/`update` are emitted into System/System.lean, which the
-    # `System` lean_lib's root module pulls in; `{project_name}.{module_name}`
-    # named no file the generator ever writes.
+    # `System` lean_lib's root module pulls in.
     lines.append("import System")
     lines.append("")
     lines.append(LINTERS_OFF)
@@ -166,7 +165,7 @@ def generate_main_lean(project_name: str, module: Module, module_name: str) -> s
     # `update (ctrl) (extl_l) (extl_n)`, so the three groups are applied
     # separately -- and `extl_l` is the *previous* step's input, which the
     # loop therefore has to carry.
-    lines.append(f"""\
+    lines.append("""\
 def main : IO Unit := do
   let stdin ← IO.getStdin
   let line0 ← stdin.getLine
