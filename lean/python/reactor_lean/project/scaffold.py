@@ -161,7 +161,6 @@ def create_project(
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
     dbg_dir = project_dir / "dbg"
-    module_name = project_name
 
     # Create directory structure
     src_dir.mkdir(parents=True, exist_ok=True)
@@ -211,7 +210,7 @@ def create_project(
     # Every encoding the project carries, in table order.
     layout = replace(SYSTEM_LAYOUT, directory=src_dir)
     for enc in ENCODINGS:
-        print(f"++ Generated {write_encoding(enc, m2l, layout, module_name)} ++")
+        print(f"++ Generated {write_encoding(enc, m2l, layout, project_name)} ++")
 
     # The certificate: its definitions, and the proofs it was handed.
     write_files(project_dir, certificate)
@@ -221,7 +220,7 @@ def create_project(
     # ----------------------------------------------------------
     if executable:
         main_lean = project_dir / "Main.lean"
-        main_lean.write_text(generate_main_lean(project_name, module, module_name))
+        main_lean.write_text(generate_main_lean(module))
         print(f"Wrote {main_lean}")
 
     print()
