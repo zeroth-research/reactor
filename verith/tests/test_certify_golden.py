@@ -22,12 +22,21 @@ from pathlib import Path
 import pytest
 import torch  # noqa: F401  (before the reactor extension)
 
+from reactor_lean.project.lake_cache import LAKE_CACHE_ENV
+
 pytest.importorskip("cvc5")
 
 GOLDEN = Path(__file__).parent / "golden" / "pipeline"
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
+
+
+@pytest.fixture(autouse=True)
+def _no_lake_cache(monkeypatch):
+    """A run against a Lake package cache says so, naming where the cache
+    is: the snapshots are of the generator, not of the machine."""
+    monkeypatch.delenv(LAKE_CACHE_ENV, raising=False)
 
 
 def _check(name: str, text: str) -> None:

@@ -90,8 +90,8 @@ serves both** and Mathlib is never rebuilt.
 ```sh
 cd <lean-ltl-certifying>
 mv .lake .lake.old 2>/dev/null; mkdir -p .lake
-ln -s <repo>/lean/tests/lean/.lake/packages .lake/packages
-cp <repo>/lean/tests/lean/lake-manifest.json .
+ln -s "$REACTOR_LAKE_CACHE/packages" .lake/packages
+cp "$REACTOR_LAKE_CACHE/lake-manifest.json" .
 lake build LTLCertifying.Safety.Lemmas lean2vmt      # ~80 s cold, ~2 s after
 ```
 

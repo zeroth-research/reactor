@@ -43,23 +43,22 @@ SP = Path(__file__).resolve().parent
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
 PY = VR.parent / "python"                   # python/: reactor and its tests
 REPO = PY.parent
-WARM = VR.parent / "lean" / "tests" / "lean"     # the already-built Mathlib
-MANIFEST = VR / "tests" / "limits" / "lake-manifest.json"
 
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
 sys.path.insert(0, str(SP))
 from suites import all_rows, column_of, pairs, routes  # noqa: E402
 from verith.proofs.build import without_cascades
-from reactor_lean.project.lakefile import (  # noqa: E402
-    reactlib_checkout, with_reactlib,
-)
+from reactor_lean.project.lake_cache import LAKE_CACHE_ENV, lake_cache  # noqa: E402
+from reactor_lean.project.lakefile import LEAN_TOOLCHAIN  # noqa: E402
 from reactor_lean.inputs import to_surface  # noqa: E402
 
-# The ReactLib checkout every project requires by path, so a pass
-# measures the libraries on disk: `$REACTLIB` (`just vr-run` sets it),
-# which the `verith` runs below inherit.
-REACTLIB = reactlib_checkout()
+# The Lake package cache every project builds against, and the ReactLib
+# checkout the projects require by path: both from the environment
+# (`$REACTOR_LAKE_CACHE`, `$REACTLIB`; `just vr-run` sets them), and both
+# inherited by the `certify` runs below, which write each project's
+# manifest against the cache.
+CACHE = lake_cache()
 
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 PROJECTS = WORK / "projects"
@@ -92,16 +91,16 @@ MODEL = os.environ.get("VERITH_MODEL", "")     # "" = verith's own default
 # ══════════════════════════════════════════════════════════════════════════
 
 def ensure_shared_lake() -> None:
-    """Point the shared build dir's `packages` at the already-built ones.
+    """Point the shared build dir's `packages` at the cache's.
 
     Without this every project resolves Mathlib for itself, which shows up
     as `external command 'git' exited with code 128` on every row at once.
     `packages` is only ever read, so several build dirs may point at it --
     unlike the build dir itself, which takes one writer."""
-    warm = WARM / ".lake" / "packages"
-    if not warm.is_dir():
-        raise SystemExit(f"error: {warm} does not exist. Build it first:\n"
-                         f"    (cd {WARM} && lake build)")
+    if CACHE is None:
+        raise SystemExit(f"error: no Lake package cache: set ${LAKE_CACHE_ENV} "
+                         f"(`just vr-run` sets it)")
+    warm = CACHE / "packages"
     SHARED.mkdir(parents=True, exist_ok=True)
     link = SHARED / "packages"
     if link.is_symlink():
@@ -113,23 +112,15 @@ def ensure_shared_lake() -> None:
     link.symlink_to(warm)
 
 
-def write_manifest(proj: Path, route_name: str) -> None:
-    """The manifest the project builds against.
-
-    `--infer fbk-proveit` writes a lakefile with a *path* require on the
-    `lean-ltl-certifying` checkout, and lake refuses a dependency the
-    manifest does not list. It needs no fetch -- it is a local directory --
-    so the entry is added here rather than by a `lake update`, which would
-    re-resolve the other thirteen packages. ReactLib's packages are
-    path requires too, for the same reason."""
-    manifest = with_reactlib(json.loads(MANIFEST.read_text()), REACTLIB)
-    if route_name == "fbk-proveit":
-        manifest["packages"].append({
-            "type": "path", "scope": "", "name": "LTL_Certifying",
-            "manifestFile": "lake-manifest.json", "inherited": False,
-            "dir": PROVEIT_DIR, "configFile": "lakefile.toml",
-        })
-    (proj / "lake-manifest.json").write_text(json.dumps(manifest, indent=2))
+def link_lake(proj: Path, shared: Path) -> None:
+    """Point `proj`'s `.lake` at `shared`, the one build dir. `certify`
+    made it a directory holding the link to the cache's packages."""
+    lake = proj / ".lake"
+    if lake.is_symlink():
+        lake.unlink()
+    elif lake.is_dir():
+        shutil.rmtree(lake)
+    lake.symlink_to(shared)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -365,11 +356,7 @@ OURS = ("Certificate/", "System/", "Relational/", "LeanAI/", "ZerothHammer/", "P
 
 def build(row, route, out: Path) -> dict:
     proj = out / "Rea"
-    lake = proj / ".lake"
-    if lake.exists() or lake.is_symlink():
-        lake.unlink()
-    lake.symlink_to(SHARED)
-    write_manifest(proj, route.name)
+    link_lake(proj, SHARED)
 
     t0 = time.time()
     r, timed_out = run_capped(["lake", "build"], cwd=proj, timeout=BUILD_TIMEOUT)
@@ -515,11 +502,12 @@ def machine() -> dict:
         os_build=out(["sw_vers", "-buildVersion"]),
         python=platform.python_version(),
         lake=out(["lake", "--version"]),
-        toolchain=(WARM / "lean-toolchain").read_text().strip(),
-        lake_packages_gb=round(int(out(["du", "-sk", str(WARM / ".lake")]).split()[0])
-                               / 1024**2, 1) if out(["du", "-sk", str(WARM / ".lake")]) else None,
+        toolchain=LEAN_TOOLCHAIN,
+        lake_packages_gb=round(int(out(["du", "-sk", str(CACHE / "packages")]).split()[0])
+                               / 1024**2, 1) if out(["du", "-sk", str(CACHE / "packages")]) else None,
         packages={p["name"]: (p.get("inputRev") or p.get("rev", ""))[:40]
-                  for p in json.loads(MANIFEST.read_text())["packages"]},
+                  for p in json.loads((CACHE / "lake-manifest.json").read_text())["packages"]
+                  if p["type"] == "git"},
     )
 
 
