@@ -12,11 +12,10 @@ from .store import (
     STATUSES,
     Artifact,
     ArtifactStore,
-    language_of,
     module_digest,
 )
 
 __all__ = [
     "ARTIFACTS_DIR", "ROLES", "STATUSES", "Artifact", "ArtifactStore",
-    "language_of", "module_digest",
+    "module_digest",
 ]
