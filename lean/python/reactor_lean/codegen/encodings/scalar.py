@@ -126,7 +126,7 @@ def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
         f"@[simp] theorem {name}_eq (v : Matrix (Fin 1) (Fin {n}) {elem_ty}) :",
         f"    {name} {eq_params} = (↑(argmax_1d v 0 0) : Int) := by",
         f"  simp only [{name}, argmax_1d, ↓Matrix.mk_apply, List.ofFn_succ, List.ofFn_zero]",
-        f"  rfl",
+        "  rfl",
         "",
     ]
 
@@ -265,24 +265,24 @@ def to_lean_scalar_equiv(
             # `fin_cases` enumerates every index of every wire, so the cost
             # grows with the state width: a 32-wide module exceeds the default
             # budget. Raised per theorem rather than file-wide.
-            f"set_option maxHeartbeats 2000000 in",
-            f"set_option maxRecDepth 100000 in",
+            "set_option maxHeartbeats 2000000 in",
+            "set_option maxRecDepth 100000 in",
             f"theorem {scalar_eq_name(func_name)} : ∀ {' '.join(binders)},",
             f"    {func_name} {' '.join(vars_)} = {rhs} := by",
             f"  intro {' '.join(vars_)}",
             f"  simp only [{', '.join(simp_names)}]",
-            f"  try rfl",
+            "  try rfl",
             # Enumerate the matrix indices first. `Fin.fin_one_eq_zero` alone
             # only collapses a `Fin 1`, so a wire with several elements is
             # left with a `match i, j with ...` on a symbolic `i`; and once an
             # earlier step has introduced `i`/`j`, a later `funext` can no
             # longer fire, so the general form has to come before the narrow
             # ones rather than after.
-            f"  try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
-            f"  try (funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
-            f"  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
-            f"  try (funext i j; simp [Fin.fin_one_eq_zero])",
-            f"  try simp [Fin.fin_one_eq_zero]",
+            "  try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
+            "  try (funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
+            "  try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
+            "  try (funext i j; simp [Fin.fin_one_eq_zero])",
+            "  try simp [Fin.fin_one_eq_zero]",
             # The scalar side repacks a 1×1 wire as `Matrix.mk fun _ _ => w 0 0`,
             # and the matrix side hands `w` itself to an operator that
             # consumes the whole matrix (`matVecAffine ... w`). Neither
@@ -291,7 +291,7 @@ def to_lean_scalar_equiv(
             # true, and closed only by rewriting the repacked wire back into
             # the wire. Over every goal: with two or more wires `Prod.ext`
             # leaves one per component, each with its own copy of the residue.
-            f"  all_goals try simp [← Matrix_1_1_eq]",
+            "  all_goals try simp [← Matrix_1_1_eq]",
         ]
 
     input_groups = [
@@ -303,7 +303,7 @@ def to_lean_scalar_equiv(
     if has_block(ctx, "init"):
         init_binder = f"(extl_n : {product_type(ctx.extl_next)})"
         extl_n_arg = _call_arg("extl_n", ctx.extl_next)
-        extras = [f"Scalar.unpack_extl_n"] if ctx.extl_next else []
+        extras = ["Scalar.unpack_extl_n"] if ctx.extl_next else []
         lines.extend(_proof([init_binder], "init", [extl_n_arg], extras))
         lines.append("")
 
