@@ -9,7 +9,7 @@ from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor_lean.core.errors import Refused
 from reactor_lean.proof.render import render_certificate
 from reactor_lean.smt.queries import predicate_terms
-from testdata import fixture
+from testdata import dense, fixture
 
 pytest.importorskip("cvc5")
 
@@ -26,17 +26,6 @@ LEAN = LeanAnswer(
 )
 
 
-def _relu(e: str) -> str:
-    return f"(ite (>= {e} 0) {e} 0)"
-
-
-def _dense(layers: int) -> str:
-    a, b = "s0", "s0"
-    for _ in range(layers):
-        a, b = _relu(f"(+ {a} {b})"), _relu(f"(+ {a} (- {b}))")
-    return f"(+ {a} {b})"
-
-
 def test_an_unparseable_predicate_is_refused_by_the_flag_it_came_from():
     bad = Certificate(inv="(this is not smt")
     with pytest.raises(Refused, match="--invariant: cannot read"):
@@ -46,7 +35,7 @@ def test_an_unparseable_predicate_is_refused_by_the_flag_it_came_from():
 def test_translation_can_be_asked_not_to_share():
     """`share=False` prints every subterm in full -- for reading; the
     certificate itself is printed shared."""
-    q = predicate_terms(countdown(), Claim(), Certificate(ranking=_dense(4)))
+    q = predicate_terms(countdown(), Claim(), Certificate(ranking=dense(4)))
     shared = render_certificate(q, share=True).ranking
     plain = render_certificate(q, share=False).ranking
     assert "let " in shared

@@ -21,3 +21,18 @@ def fixture(name: str):
     from reactor_lean.inputs.python import load_module
 
     return load_module(FIXTURES / f"{name}.py")
+
+
+def relu(e: str, cmp: str = ">=") -> str:
+    """`max(e, 0)` in SMT-LIB, the test written with `cmp`."""
+    return f"(ite ({cmp} {e} 0) {e} 0)"
+
+
+def dense(layers: int, cmp: str = ">=") -> str:
+    """A ranking over `s0`: `layers` hidden layers of two ReLU units, each
+    reading both units below, so its printed form shares subterms behind
+    `let`."""
+    a, b = "s0", "s0"
+    for _ in range(layers):
+        a, b = relu(f"(+ {a} {b})", cmp), relu(f"(+ {a} (- {b}))", cmp)
+    return f"(+ {a} {b})"

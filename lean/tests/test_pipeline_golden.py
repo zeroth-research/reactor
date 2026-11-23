@@ -39,7 +39,7 @@ from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor_lean.parse import PARSERS
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.codegen.context import LeanContext
-from testdata import FIXTURES, TESTS, fixture
+from testdata import FIXTURES, TESTS, dense, fixture
 
 pytest.importorskip("cvc5")
 
@@ -103,18 +103,6 @@ def _real_countdown() -> Module:
     )
 
 
-def _relu(e: str) -> str:
-    return f"(ite (> {e} 0) {e} 0)"
-
-
-def _dense(layers: int) -> str:
-    """A ranking whose printed form shares subterms behind `let`."""
-    a, b = "s0", "s0"
-    for _ in range(layers):
-        a, b = _relu(f"(+ {a} {b})"), _relu(f"(+ {a} (- {b}))")
-    return f"(+ {a} {b})"
-
-
 COUNTDOWN_INV = "(and (>= s0 0) (<= s0 100))"
 
 # (name, module, claim, certificate). `verith/tests/test_proofs_golden.py`
@@ -139,7 +127,7 @@ CODEGEN = [
          "Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], "
          "s[2][0]) - s[0][0]) + 1)")),
     ("shared_let", lambda: fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
-     Certificate(COUNTDOWN_INV, _dense(3))),
+     Certificate(COUNTDOWN_INV, dense(3, cmp=">"))),
     ("real", _real_countdown, Claim(prp="(<= s0 0.0)"),
      Certificate("(<= s0 5.0)", "(to_int s0)")),
     ("real_safety", _real_countdown, Claim(prp="(<= s0 5.0)", kind="safety"),
