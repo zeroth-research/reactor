@@ -1,11 +1,12 @@
 # Use bash for better scripting features
 # set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 #
-# Recipes are named by target: `rs-` for Rust, `py-` for Python, `vr-` for the
-# `verith` project (the inference routes), `nb-` for notebooks; an unprefixed
-# name means "all" (e.g. `test` = `rs-test` + `py-test` + `vr-test` +
-# `nb-test`), and a `-fix` suffix marks the recipes that modify files in the
-# repository — everything else is read-only towards the sources.
+# Recipes are named by target: `rs-` for Rust, `py-` for Python, `lean-` for
+# the `lean` project (the `reactor` command), `vr-` for the `verith` project
+# (the inference routes), `nb-` for notebooks; an unprefixed name means "all"
+# (e.g. `test` = `rs-test` + `py-test` + `lean-test` + `vr-test` + `nb-test`),
+# and a `-fix` suffix marks the recipes that modify files in the repository —
+# everything else is read-only towards the sources.
 #
 # Prerequisites are declared as native dependencies (not `@just` calls in the
 # bodies), so shared ones run at most once per invocation: `just test` builds
@@ -44,6 +45,15 @@ export CARGO_TARGET_DIR := TARGET_DIR
 export PYTHONPYCACHEPREFIX := env("PYTHONPYCACHEPREFIX", TARGET_DIR / "pycache")
 NBSTRIPOUT := "uvx nbstripout@0.9.1 --max-size 16k --drop-empty-cells"
 
+# What every Lean project here builds against, for every recipe and every
+# command it runs (`reactor`, `certify`, `verith`, the tests): the ReactLib
+# checkout the projects require by path, the one beside this repository;
+# and the Lake package cache, `.lake` here (see `reactor_lean.project.
+# lake_cache`). Each is left unset where there is none, and a value already
+# in the environment wins.
+export REACTLIB := env("REACTLIB", if path_exists(parent_directory(justfile_directory()) / "ReactLib") == "true" { parent_directory(justfile_directory()) / "ReactLib" } else { "" })
+export REACTOR_LAKE_CACHE := env("REACTOR_LAKE_CACHE", if path_exists(justfile_directory() / ".lake" / "lake-manifest.json") == "true" { justfile_directory() / ".lake" } else { "" })
+
 # Convert FEATURES into a flag only if set
 
 profile_flag := if PROFILE == "" { "" } else { "--profile " + PROFILE }
@@ -56,14 +66,14 @@ features_flag := if FEATURES == "" { "" } else { "--features " + FEATURES }
 # Build everything: the Rust workspace (all targets and features) and the Python crate
 build: rs-build-all py-build
 
-# Run the test suite that needs no `lake` (Rust + Python + verith + notebooks)
-test: rs-test py-test vr-test nb-test
+# Run the test suite that needs no `lake` (Rust + Python + lean + verith + notebooks)
+test: rs-test py-test lean-test vr-test nb-test
 
 # Run everything, including the Lean tests that build proofs via `lake`
 test-all: test test-lean
 
 # Run the Lean tests that build proofs via `lake` (marked `slow`; require lake + mathlib)
-test-lean *args: (py-run "pytest" "-m" "slow" args) (vr-run "pytest" "-m" "slow" args)
+test-lean *args: (lean-run "pytest" "-m" "slow" args) (vr-run "pytest" "-m" "slow" args)
 
 # `cargo clean` needs no torch, and running it under `uv run` would trigger a
 # sync that can fail — cleaning the repo works fine outside the virtual env.
@@ -150,13 +160,24 @@ py-rebuild: clean rs-build-all py-build
     @echo "Now you can go into the \`python\` directory and use \`uv run <script.py>\`"\
           "(or \`uv run python\` to get Python interpreter with \`reactor\` available)"
 
-# Run all or a concrete python test (rebuilding the Python crate first),
-# excluding the Lean tests that need `lake` (marked `slow`; see `just test-lean`)
-py-test *args: (py-run "pytest" "-m" "'not slow'" args)
+# Run all or a concrete python test (rebuilding the Python crate first)
+py-test *args: (py-run "pytest" args)
 
 # Run a command inside the `python` crate (with rebuilding the Python crate). The command given is executed from *within* the `python` crate, i.e., with paths relative to the root of the crate.
 py-run *args: py-build
     cd python && uv run {{ args }}
+
+# -------------------------------------------------
+# lean (lean-)
+# -------------------------------------------------
+
+# Run all or a concrete `lean` test (rebuilding the Python crate first),
+# excluding the Lean tests that need `lake` (marked `slow`; see `just test-lean`)
+lean-test *args: (lean-run "pytest" "-m" "'not slow'" args)
+
+# Run a command inside the `lean` project (with rebuilding the Python crate it builds on). The command given is executed from *within* `lean/`, i.e., with paths relative to it.
+lean-run *args: py-build
+    cd lean && uv run {{ args }}
 
 # -------------------------------------------------
 # verith (vr-)

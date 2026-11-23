@@ -97,12 +97,17 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install just
         uses: extractions/setup-just@v2
-      # `py-test` excludes the `slow`-marked Lean tests that build proofs
-      # via `lake` (see `just test-lean`); CI intentionally does not run those.
+      # `lean-test` and `vr-test` exclude the `slow`-marked Lean tests that
+      # build proofs via `lake` (see `just test-lean`); CI intentionally does
+      # not run those.
       - name: Run Python tests (builds the extension via maturin)
         run: just py-test
+      # The extension is built once, by `py-test` above: `--no-deps` keeps
+      # the next two from running `py-build` (`maturin develop`) again.
+      - name: Run lean tests
+        run: just --no-deps lean-test
       - name: Run verith tests
-        run: just vr-test
+        run: just --no-deps vr-test
 
   nb-strip:
     runs-on: ubuntu-latest

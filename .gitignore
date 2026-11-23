@@ -17,4 +17,14 @@ __pycache__/
 .ipynb_checkpoints/
 tutorials/generated/Counter/.lake/
 tutorials/.ipynb_checkpoints/
-python/tests/LeanTests
+lean/tests/LeanTests
+lean/tests/lean/Certs/
+lean/tests/lean/.lake
+lean/tests/lean/lake-manifest.json
+verith/tests/LeanTests
+verith/tests/lean/Certs/
+verith/tests/lean/.lake
+verith/tests/lean/lake-manifest.json
+# the Lake package cache of the workspace (`reactor_lean.project.lake_cache`)
+/.lake
+

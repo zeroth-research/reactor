@@ -123,6 +123,7 @@ Crates are structured as follows.
 ```sh
  - base      # core data-structures
  - python    # Python API to access the crates
+ - lean      # Reactive modules to Lean 4: the `reactor` command (`lean/python/reactor_lean`)
  - tutorials # Tutorials and use cases
  ```
 
@@ -131,7 +132,8 @@ For details on each crate see its own README.
 ## Running tests
 
 After building the project, you can run tests of the Rust code using `just rs-test`.
-Tests of the Python interface can be run by `just py-test`.
+Tests of the Python interface can be run by `just py-test`, and those of
+`reactor_lean` (the `lean` crate's Python: the `reactor` command) by `just lean-test`.
 You can run all tests with the command `just test`.
 
 ### Running individual tests
@@ -142,36 +144,41 @@ You can use `cargo test -- --exact module::test` to run a single test with fully
 To run a concrete Python test, go to the `python` crate and run `uv run pytest file.py::test-name`,
 e.g., `uv run pytest tests/test_base.py::test_term_new`.
 Alternatively, you can use `just py-test [file::test]` from anywhere in the project
-to run all or any concrete test.
+to run all or any concrete test. The tests of `reactor_lean` are in `lean/tests`, and run
+the same way from `lean/` or by `just lean-test [file::test]`.
 
 ### Slow tests (Lean proof verification)
 
-Some Python tests verify Lean 4 certificates by running `lake build`, which
-requires a working `lake` installation and a local Mathlib cache. These tests
-are marked `@pytest.mark.slow` and are **skipped by default**.
+Some tests of `reactor_lean` (in `lean/tests`) and of `verith` (in `verith/tests`)
+build Lean 4 projects by running `lake build`, which requires a working `lake`
+installation, a ReactLib checkout and Mathlib. These tests are marked
+`@pytest.mark.slow` and are **skipped by default**.
 
 ```sh
-just pytest                  # fast: skips all lake-build tests
-just pytest -m slow          # slow: runs lake-build tests (requires lake + Mathlib)
-just pytest -m "not slow"    # explicit fast-only run
+just lean-test               # fast: skips all lake-build tests
+just test-lean               # slow: runs the lake-build tests of lean and verith
 ```
+
+`just` points every command it runs at the ReactLib checkout beside this
+repository (`$REACTLIB`) and at the Lake package cache in `.lake` here
+(`$REACTOR_LAKE_CACHE`): Mathlib, cslib and lean-smt, built once, which every
+project the tests, `reactor`, `certify` and `verith` write builds against. A
+variable already set wins. A cache is made from a project built without one
+(see `reactor_lean.project.lake_cache`); that first build fetches and compiles
+Mathlib, which takes about an hour.
 
 Tests that carry the `slow` mark:
 
 | File | Test | What it verifies |
 |------|------|-----------------|
-| `tests/lean/test_lean_hammer.py` | `test_zeroth_hammer_proofs` | `ZerothHammerTests.lean` compiles — individual tactic phase examples |
-| `tests/lean/test_lean_hammer.py` | `test_manual_tests_build` | `ManualTests/Basic.lean` compiles — `zeroth_hammer` on standalone goal shapes |
-| `tests/lean/test_lean_hammer.py` | `test_cert_countdown_build` | Generated `Certs/Countdown.lean` compiles without sorry |
-| `tests/lean/test_lean_hammer.py` | `test_cert_twovars_build` | Generated `Certs/TwoVars.lean` compiles without sorry |
-| `tests/lean/test_lean_hammer.py` | `test_cert_collatz_build` | Generated `Certs/Collatz.lean` compiles without sorry |
-| `tests/test_lean_svcomp.py` | `test_countdown_proofs` | Countdown certificate compiles (separate lake project) |
-| `tests/test_lean_svcomp.py` | `test_twovars_proofs` | Two-variable certificate compiles (separate lake project) |
-| `tests/test_lean_svcomp.py` | `test_collatz_bounded_proofs` | Collatz-bounded certificate compiles (separate lake project) |
-
-The first `lake build` invocation downloads Mathlib (~1 GB) and can take
-10–30 minutes. Subsequent runs use the on-disk cache and typically finish in
-under a minute per test.
+| `lean/tests/lean/test_lean_builds.py` | `test_scalar_encoding_builds`, `test_relational_encoding_builds` | The generated encodings elaborate, and their equivalence theorems hold |
+| `lean/tests/lean/test_lean_builds.py` | `test_manual_tests_build`, `test_argmax_scalar_equiv_build` | `Relational.Mat`'s reductions, and the scalar Argmax proved equal to them |
+| `lean/tests/lean/test_lean_builds.py` | `test_generated_executable_builds_and_runs` | A generated executable project builds and runs |
+| `lean/tests/lean/test_lean_agree.py` | `test_the_lean_encoding_takes_the_rounds_the_module_takes` | The functional encoding computes what the interpreter computes |
+| `verith/tests/lean/test_lean_hammer.py` | `test_zeroth_hammer_proofs` | `ZerothHammerTests.lean` compiles — individual tactic phase examples |
+| `verith/tests/lean/test_lean_hammer.py` | `test_manual_tests_build` | `ManualTests/Basic.lean` compiles — `zeroth_hammer` on standalone goal shapes |
+| `verith/tests/lean/test_lean_hammer.py` | `test_cert_*_build` | Generated `Certs/*.lean` compile without sorry |
+| `verith/tests/test_svcomp_proofs.py` | `test_*_proofs` | SV-COMP certificates compile (a generated project each) |
 
 ## Advanced building
 
