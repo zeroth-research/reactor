@@ -139,19 +139,7 @@ class _Var(_Term):
         if isinstance(key, tuple):
             i, j = key
             return self._element(i, j)
-        return _Row(self, key)
-
-
-class _Row:
-    """`v[i]`, waiting for its `[j]`."""
-
-    __slots__ = ("_var", "_i")
-
-    def __init__(self, var: _Var, i: int):
-        self._var, self._i = var, i
-
-    def __getitem__(self, j: int) -> _Term:
-        return self._var._element(self._i, j)
+        return dsl.Row(self._element, key)
 
 
 def lift(x: Elaborator, o, like=None) -> _Term:
