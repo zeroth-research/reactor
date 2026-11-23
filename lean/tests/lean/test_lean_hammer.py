@@ -17,6 +17,7 @@ The hammer and the certificates' proofs are `verith`'s: the tests about
 them are skipped without it.
 """
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -307,46 +308,33 @@ def test_cert_collatz_build(generate_lean_files):
 def test_generated_executable_builds_and_runs(
     generate_lean_files, fixture, stdin, expected
 ):
-    """`verith -x` end to end: generate a project, build `main`, run it.
+    """`reactor -x` end to end: generate a project, build `main`, run it.
 
     The only coverage the executable path has. Its three generated pieces
     have to agree — `update`'s curried signature, the component order in
     `showCtrl`/`parseExtl`, and each wire's element type — and none of that
     is visible without elaborating the result.
 
-    Reuses this project's already-built `.lake/packages` so the run does not
-    refetch Mathlib; skipped if they are not built yet.
+    Built against the Lake package cache, as `reactor` writes it with
+    `$REACTOR_LAKE_CACHE` set, so the run does not fetch Mathlib; skipped
+    without one.
     """
-    import json
-    import tempfile
-
-    from reactor_lean.project.lakefile import reactlib_checkout, with_reactlib
-
-    packages = LAKE_PROJECT / ".lake" / "packages"
-    manifest = LAKE_PROJECT / "lake-manifest.json"
-    if not packages.is_dir() or not manifest.is_file():
-        pytest.skip("tests/lean packages not built; run the other slow tests first")
-    checkout = reactlib_checkout()
-    if checkout is None:
-        pytest.skip("no ReactLib checkout: set $REACTLIB")
-
-    module_def = testdata.fixture(fixture)
     from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.project.lake_cache import LAKE_CACHE_ENV, lake_cache
+    from reactor_lean.project.lakefile import REACTLIB_ENV, reactlib_checkout
     from reactor_lean.project.scaffold import create_project
     from reactor_lean.proof.render import certificate_files
 
-    with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp)
-        project = create_project(
-            out, module_def, "Rea", executable=True,
-            certificate=certificate_files(LeanContext(module_def)))
+    if lake_cache() is None:
+        pytest.skip(f"no Lake package cache: set ${LAKE_CACHE_ENV}")
+    if reactlib_checkout() is None:
+        pytest.skip(f"no ReactLib checkout: set ${REACTLIB_ENV}")
 
-        (project / ".lake").mkdir(exist_ok=True)
-        (project / ".lake" / "packages").symlink_to(packages)
-        # This project's `dir`s are relative to it; the generated one
-        # requires ReactLib by path too, and needs them as its own.
-        (project / "lake-manifest.json").write_text(json.dumps(
-            with_reactlib(json.loads(manifest.read_text()), checkout)))
+    module_def = testdata.fixture(fixture)
+    with tempfile.TemporaryDirectory() as tmp:
+        project = create_project(
+            Path(tmp), module_def, "Rea", executable=True,
+            certificate=certificate_files(LeanContext(module_def)))
 
         build = subprocess.run(
             ["lake", "build", "main"],

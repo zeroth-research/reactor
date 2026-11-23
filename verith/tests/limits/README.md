@@ -53,12 +53,14 @@ precondition) key: the 77-case matrix is **30** distinct questions to ask
 finds nothing verdicts `NO-CERT` rather than `GEN-FAIL` — that is the
 measurement, not a defect.
 
-Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs
-`lean/tests/lean/.lake` already built (Mathlib, cslib, lean-smt; the first
-`(cd ../lean/tests/lean && lake build)` takes about an hour cold): every
-generated project symlinks its `.lake` to one shared build dir whose
-`packages` the runner points there, so Relational / LeanAI / ZerothHammer are
-compiled once and only `System/*` and `Certificate/*` recompile per case.
+Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs the
+Lake package cache `$REACTOR_LAKE_CACHE` (Mathlib, cslib, lean-smt, built;
+`just vr-run` sets it to the workspace's `.lake`, and
+`reactor_lean.project.lake_cache` says how one is made, which takes about
+an hour cold): every generated project symlinks its `.lake` to one shared
+build dir whose `packages` the runner points there, so Relational / LeanAI
+/ ZerothHammer are compiled once and only `System/*` and `Certificate/*`
+recompile per case.
 
 The **first** case in a fresh work directory pays for all of that: 654 s
 against ~10 s for its neighbours. That is the cache filling, not the case.

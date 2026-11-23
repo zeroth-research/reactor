@@ -39,12 +39,20 @@ from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor_lean.parse import PARSERS
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.codegen.context import LeanContext
+from reactor_lean.project.lake_cache import LAKE_CACHE_ENV
 from testdata import FIXTURES, TESTS, dense, fixture
 
 pytest.importorskip("cvc5")
 
 GOLDEN = TESTS / "golden" / "pipeline"
 UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
+
+
+@pytest.fixture(autouse=True)
+def _no_lake_cache(monkeypatch):
+    """A run against a Lake package cache says so, naming where the cache
+    is: the snapshots are of the generator, not of the machine."""
+    monkeypatch.delenv(LAKE_CACHE_ENV, raising=False)
 
 
 def _check(name: str, text: str) -> None:

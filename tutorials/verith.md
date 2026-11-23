@@ -86,8 +86,8 @@ uv run certify --help      # both
 **One output directory for every command.** `reactor` regenerates
 `<OUT>/<PROJ>` in place — it never wipes the directory — so the project's
 `.lake` survives from one example to the next, and with it every `.olean` of
-Mathlib, cslib, lean-smt and `ZerothHammer`; the `ReactLib` package is
-built once, in the checkout itself. Only `System/*` and `Certificate/*`
+`ZerothHammer`; Mathlib, cslib and lean-smt are the Lake package cache's,
+and the `ReactLib` package is built once, in the checkout itself. Only `System/*` and `Certificate/*`
 recompile per example: the first `lake build` below costs about 15 s and each
 later one about 10 s, against an hour from cold.
 
@@ -96,16 +96,17 @@ export REPO=$(cd .. && pwd)
 export OUT=/tmp/verith-tutorial.noindex       # keep the .noindex suffix on macOS
 export PROJ=Rea
 export REACTLIB=$(cd "$REPO/../ReactLib" && pwd)       # a ReactLib checkout
-
-mkdir -p "$OUT/shared_lake"
-ln -sfn "$REPO/lean/tests/lean/.lake/packages" "$OUT/shared_lake/packages"
+export REACTOR_LAKE_CACHE="$REPO/.lake"                 # the Lake package cache
 ```
 
-Three things make that work:
+(`just` sets the last two to the same, and these commands run as well under
+`just vr-run`.) Three things make that work:
 
-* `<OUT>/<PROJ>/.lake` is a symlink to one shared build directory whose
-  `packages` points at the already-built packages of `lean/tests/lean`.
-  Build those once with `cd lean/tests/lean && lake build`.
+* `REACTOR_LAKE_CACHE` names a Lake package cache: Mathlib, cslib and
+  lean-smt, built once. Every project `reactor` or `certify` writes gets
+  `.lake/packages` as a link to the cache's and a manifest made from the
+  cache's, so no build fetches or compiles them
+  (`reactor_lean.project.lake_cache` says how a cache is made).
 * The Lean libraries the project is stated in, `Spec` and `Relational`, are
   not among those packages. They make up the `ReactLib` package of
   [ReactLib], which the lakefile requires from git; with `REACTLIB`
@@ -118,29 +119,20 @@ Three things make that work:
 
 [ReactLib]: https://github.com/zeroth-research/ReactLib
 
-One shared build directory takes **one writer** — don't run two of these
-sessions, or `tests/limits/run_limits.py`, against the same `OUT` at the same
-time. Module names are identical in every generated project, so concurrent
-builds serve each other's oleans, and the symptom is
-`unknown constant 'hrank'`, which reads exactly like a codegen bug.
+A build directory takes **one writer** — don't run two of these sessions
+against the same `OUT` at the same time. Module names are identical in every
+generated project, so concurrent builds serve each other's oleans, and the
+symptom is `unknown constant 'hrank'`, which reads exactly like a codegen
+bug.
 
 Building the certificate is `lake build Certificate` in the generated project.
 `certify --build-cert` (or `verith --build-cert`) does it in one flag, which
-is what you would type at a terminal — but it runs `lake update` first, and
-that re-queries every dependency's git remote. Writing the warm manifest instead, with ReactLib's
-packages entered as path dependencies on the checkout, keeps every example
-below off the network:
+is what you would type at a terminal; on a Lake package cache it skips the
+`lake update` it otherwise runs first, which re-queries every dependency's
+git remote, so every example below stays off the network:
 
 ```bash
 lake_cert() {                                  # build the certificate of $OUT/$PROJ
-  ln -sfn "$OUT/shared_lake" "$OUT/$PROJ/.lake"
-  uv run python -c '
-import json, sys, torch
-from pathlib import Path
-from reactor_lean.project.lakefile import reactlib_checkout, with_reactlib
-warm = json.loads(Path(sys.argv[1]).read_text())
-Path(sys.argv[2]).write_text(json.dumps(with_reactlib(warm, reactlib_checkout())))
-' "$REPO/lean/tests/lean/lake-manifest.json" "$OUT/$PROJ/lake-manifest.json"
   (cd "$OUT/$PROJ" && lake build Certificate)
 }
 ```

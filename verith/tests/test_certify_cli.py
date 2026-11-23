@@ -734,6 +734,30 @@ def test_a_certificate_that_compiles_with_sorry_is_not_a_proof(
         project.build_certificate(tmp_path)
 
 
+def test_a_project_on_a_lake_cache_is_built_without_an_update(
+    monkeypatch, tmp_path
+):
+    """Its manifest was written with its lakefile, and `lake update` would
+    fetch into the packages every other project builds against."""
+    from verith.proofs import build as project
+
+    ran: list[str] = []
+
+    def stream(cmd, *, cwd):
+        ran.append(cmd[1])
+        return 0, "Build completed successfully (3 jobs).\n"
+
+    monkeypatch.setattr(project, "stream", stream)
+    project.build_certificate(tmp_path)
+    assert ran == ["update", "build"]
+
+    ran.clear()
+    (tmp_path / ".lake").mkdir()
+    (tmp_path / ".lake" / "packages").symlink_to(tmp_path)
+    project.build_certificate(tmp_path)
+    assert ran == ["build"]
+
+
 def test_a_kernel_error_after_another_one_is_not_reported_twice(
     monkeypatch, tmp_path
 ):

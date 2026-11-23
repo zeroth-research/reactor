@@ -112,7 +112,7 @@ them, and both check and build the certificate:
 | `--pre-check cvc5` | before the proofs are written, ask cvc5 whether each obligation holds (`proofs/precheck.py`): a refuted one means the certificate is wrong, which a failing build cannot tell apart from tactics that are too weak. Each question and its answer is left in `artifacts/` |
 | `--smt-tactics cvc5` | let cvc5 inform the plan (`proofs/facts.py`): a branch condition the invariant settles is proved once and rewritten away instead of split on, the products cvc5's own refutation needed are handed to `nlinarith`, and a precondition no refutation used is cleared |
 | `--smt-timeout`, `--smt-budget` | what cvc5 is given for those, per query and per phase |
-| `--build-cert` | `lake update` + `lake build Certificate` once the proofs are written, failing on a surviving `sorry` |
+| `--build-cert` | `lake update` (not on a Lake package cache) + `lake build Certificate` once the proofs are written, failing on a surviving `sorry` |
 
 ### Tactic plans (`proofs/tactics.py`)
 
@@ -186,6 +186,14 @@ then `lake build Certificate` in the project:
 uv run certify mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf.0) 100)" \
     --ranking "(X @intf.0)" --build-cert -o out/ -p Counter
 ```
+
+Without more, that fetches Mathlib into the project and compiles it, about
+an hour. With `$REACTOR_LAKE_CACHE` naming a Lake package cache (`just`
+sets it to the workspace's `.lake`), `certify`, `verith` and `reactor`
+write each project against the cache instead: its `.lake/packages` a link
+to the cache's built packages and its manifest made from the cache's, so
+the build skips `lake update` and compiles only the project
+(`reactor_lean.project.lake_cache`).
 
 Two kinds of run are refused rather than silently doing nothing:
 
@@ -807,8 +815,8 @@ see [Building the certificate](#building-the-certificate---build-cert).
 The route needs that checkout on the same toolchain as the generated
 projects, **v4.34.0**. It is kept there by matching `project/lakefile.py`'s
 package set exactly (`cslib v4.34.0`, `smt db545be…`, Mathlib inherited
-through cslib), which lets one already-built `.lake/packages` — e.g.
-`lean/tests/lean`'s — serve both.
+through cslib), which lets one already-built `.lake/packages` — the Lake
+package cache's (`$REACTOR_LAKE_CACHE`) — serve both.
 
 The port from v4.28.0 needed, on the `smt` path this route uses, the move
 of `Mathlib.Logic.Basic` to `Mathlib.Basic.Logic.Basic` and one `simp at ih`

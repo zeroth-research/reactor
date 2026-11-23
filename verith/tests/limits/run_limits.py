@@ -4,12 +4,12 @@
     uv run python run_limits.py [name ...]
 
 Every project gets `.lake` symlinked to a single shared build dir whose
-`packages` points at the already-built Mathlib/cslib/lean-smt of
-lean/tests/lean. ZerothHammer is byte-identical across projects, and
-ReactLib's packages are path requires on one checkout
-(`$REACTLIB`, by default the one beside this repository), so they are
-built once and hit the cache afterwards; only System/* and Certificate/*
-recompile per case.
+`packages` points at the already-built Mathlib/cslib/lean-smt of the Lake
+package cache (`$REACTOR_LAKE_CACHE`). ZerothHammer is byte-identical
+across projects, and ReactLib's packages are path requires on one checkout
+(`$REACTLIB`), so they are built once and hit the cache afterwards; only
+System/* and Certificate/* recompile per case. `just vr-run` sets both
+variables.
 
 Verdicts land in $VERITH_LIMITS_WORK/results.json (default
 /tmp/verith-limits); a table is printed as it goes.
@@ -43,7 +43,6 @@ from pathlib import Path
 
 SP = Path(__file__).parent                  # verith/tests/limits
 REPO = SP.parent.parent.parent
-WARM = REPO / "lean" / "tests" / "lean"     # the already-built Mathlib
 MODS = SP / "mods"
 
 # Generated projects and their shared build dir are build artifacts, so they
@@ -58,19 +57,19 @@ MODS = SP / "mods"
 WORK = Path(os.environ.get("VERITH_LIMITS_WORK", "/tmp/verith-limits.noindex"))
 PROJECTS = WORK / "projects"
 SHARED = WORK / "shared_lake"
-MANIFEST = SP / "lake-manifest.json"
 WORK.mkdir(parents=True, exist_ok=True)
 
 sys.path.insert(0, str(SP))
 from cases import CASES  # noqa: E402
 from reactor_lean.inputs import to_surface  # noqa: E402
-from reactor_lean.project.lakefile import (  # noqa: E402
-    reactlib_checkout, with_reactlib,
-)
+from reactor_lean.project.lake_cache import LAKE_CACHE_ENV, lake_cache  # noqa: E402
 
-# The ReactLib checkout every project requires by path, `$REACTLIB`
-# (`just vr-run` sets it); the `verith` runs below inherit it.
-REACTLIB = reactlib_checkout()
+# The Lake package cache every project builds against, and the ReactLib
+# checkout the projects require by path: both from the environment
+# (`$REACTOR_LAKE_CACHE`, `$REACTLIB`; `just vr-run` sets them), and both
+# inherited by the `certify` runs below, which write each project's
+# manifest against the cache.
+CACHE = lake_cache()
 
 DEFAULT_TIMEOUT = 900
 
@@ -163,19 +162,17 @@ _FAILED_TGT = re.compile(r"^✖ \[[\d/]+\] Built (?P<t>\S+)")
 
 
 def ensure_shared_lake() -> None:
-    """Point the shared build dir's `packages` at the already-built ones.
+    """Point the shared build dir's `packages` at the cache's.
 
     Without this every project tries to fetch and build Mathlib for itself,
     which shows up as `external command 'git' exited with code 128` on every
     case at once. `packages` is only ever read, so several build dirs may
     point at it -- unlike the build dir itself, which takes one writer.
     """
-    warm = WARM / ".lake" / "packages"
-    if not warm.is_dir():
-        raise SystemExit(
-            f"error: {warm} does not exist. Build the warm project first:\n"
-            f"    cd {WARM} && lake build"
-        )
+    if CACHE is None:
+        raise SystemExit(f"error: no Lake package cache: set ${LAKE_CACHE_ENV} "
+                         f"(`just vr-run` sets it)")
+    warm = CACHE / "packages"
     SHARED.mkdir(parents=True, exist_ok=True)
     link = SHARED / "packages"
     if link.is_symlink():
@@ -187,20 +184,20 @@ def ensure_shared_lake() -> None:
     link.symlink_to(warm)
 
 
-def write_manifest(proj: Path) -> None:
-    """The manifest the project builds against: the warm one, with
-    ReactLib's packages entered as path requires on the checkout."""
-    manifest = with_reactlib(json.loads(MANIFEST.read_text()), REACTLIB)
-    (proj / "lake-manifest.json").write_text(json.dumps(manifest, indent=2))
+def link_lake(proj: Path, shared: Path) -> None:
+    """Point `proj`'s `.lake` at `shared`, the one build dir. `certify`
+    made it a directory holding the link to the cache's packages."""
+    lake = proj / ".lake"
+    if lake.is_symlink():
+        lake.unlink()
+    elif lake.is_dir():
+        shutil.rmtree(lake)
+    lake.symlink_to(shared)
 
 
 def run_lake(case) -> dict:
     proj = PROJECTS / case["name"] / "Rea"
-    lake = proj / ".lake"
-    if lake.exists() or lake.is_symlink():
-        lake.unlink()
-    lake.symlink_to(SHARED)
-    write_manifest(proj)
+    link_lake(proj, SHARED)
 
     t0 = time.time()
     try:

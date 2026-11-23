@@ -1,7 +1,10 @@
 """`lake` in the tests' Lake project (`testdata.LAKE_PROJECT`).
 
 The project requires ReactLib's `ReactLib` package at `.lake/ReactLib`, a
-link to the checkout `$REACTLIB` that `prepare` makes.
+link to the checkout `$REACTLIB` that `prepare` makes; and it builds against
+the Lake package cache `$REACTOR_LAKE_CACHE`, when one is set, as a
+generated project does (`reactor_lean.project.lake_cache`). Without a cache,
+its first build fetches Mathlib into its own `.lake` and compiles it.
 """
 
 from __future__ import annotations
@@ -14,9 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from reactor_lean.project.lakefile import REACTLIB_ENV, Require, reactlib_checkout
+from reactor_lean.project.lake_cache import lake_cache, use_lake_cache
+from reactor_lean.project.lakefile import (FIXED_REQUIRES, REACTLIB_ENV,
+                                           Require, reactlib_checkout)
 from testdata import LAKE_PROJECT
 
+NAME = "ZerothHammerTests"
 REACTLIB = Require("ReactLib", path=".lake/ReactLib")
 
 
@@ -32,6 +38,10 @@ def prepare() -> None:
         link.unlink()
     link.parent.mkdir(exist_ok=True)
     link.symlink_to(checkout / "ReactLib", target_is_directory=True)
+    cache = lake_cache()
+    if cache is not None:
+        use_lake_cache(LAKE_PROJECT, (*FIXED_REQUIRES, REACTLIB), name=NAME,
+                       cache=cache)
 
 
 def lake_build(*targets: str, timeout: int = 600) -> subprocess.CompletedProcess:

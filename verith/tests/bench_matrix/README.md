@@ -58,10 +58,11 @@ a second pass may find a different certificate, or none. `VERITH_MODEL` pins
 the model; unset, `verith`'s own default is used and recorded in the page.
 
 For `fbk-proveit` the checkout needs its own `.lake/packages` symlinked to
-the shared one first — [`../lean/fbk/README.md`](../lean/fbk/README.md) has
-that setup. `run_matrix.py` adds the checkout to each generated project's
-`lake-manifest.json` itself (it is a *path* require, so it needs no fetch;
-a `lake update` would re-resolve the other thirteen packages).
+the shared one first — [`../fbk/README.md`](../fbk/README.md) has
+that setup. `certify` adds the checkout to each generated project's
+`lake-manifest.json` itself, as it writes the manifest against the Lake
+package cache (it is a *path* require, so it needs no fetch; a `lake update`
+would re-resolve the other thirteen packages).
 
 ### The suites
 

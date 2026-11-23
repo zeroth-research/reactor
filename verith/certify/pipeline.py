@@ -23,6 +23,7 @@ from __future__ import annotations
 import sys
 
 from reactor_lean.core.errors import Refused
+from reactor_lean.project.lake_cache import lake_cache
 from reactor_lean.project.lakefile import reactlib_checkout
 from reactor_lean.project.scaffold import write_files
 from reactor_lean.pipeline.certificate import (
@@ -64,11 +65,13 @@ def main(argv: "list[str] | None" = None) -> None:
         hammer_only(settings.hammer_file)
         return
 
-    # `$REACTLIB` is a checkout the project's lakefile will require, so
-    # a bad one is refused here, before any of the project is written.
+    # `$REACTLIB` is a checkout the project's lakefile will require, and
+    # `$REACTOR_LAKE_CACHE` the packages it will build against, so a bad
+    # one is refused here, before any of the project is written.
     if not settings.cert_file:
         try:
             reactlib_checkout()
+            lake_cache()
         except Refused as e:
             raise SystemExit(f"error: {e}") from e
 

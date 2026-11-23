@@ -352,7 +352,7 @@ def project_handle(settings: Settings, module,
                 executable=(project / "Main.lean").exists(),
                 parts=parts,
             )
-        except Refused as e:            # a `$REACTLIB` that is no checkout
+        except Refused as e:            # a bad `$REACTLIB` or Lake cache
             raise SystemExit(f"error: {e}") from e
     return ProjectHandle(dir=project, name=project.name, ctx=ctx,
                          artifacts=store, **declared(route))
