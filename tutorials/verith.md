@@ -177,7 +177,7 @@ cat tests/limits/mods/m_countdown.py
 
 ```python
 """LIA 1x1: x = 100, then x-1 each step, reset to 100 at 0. Baseline control."""
-from reactor import Module, Int, LIA, Var, X
+from reactor import Module, Int, Var, X
 from reactor.analyzer import convert_method
 
 
@@ -195,8 +195,8 @@ def module() -> Module:
     s = Var(Int([1, 1]))
     return Module.sequential(
         [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
+        convert_method(init, {}, [X(s)], number=Int),
+        convert_method(update, {"old_x": s}, [X(s)], number=Int),
     )
 ```
 
@@ -210,21 +210,25 @@ uv run reactor tests/limits/mods/m_countdown.py -o "$OUT" -p "$PROJ"
 ```
 module
   interface
-    #0 : Int([1,1])
+    #0 : Int(1, 1)
   atom controls #0 reads #0
   init
-    #3 := [[100]] 
-    X(#0) := Id #3
+    #3 := [[100]]
+Tensor[[1, 1], Int64] 
+    X(#0) := Skip #3
   delay
-    d(#0) := ZERO 
+    d(#0) := Zero 
   update
-    #4 := [[0]] 
+    #4 := [[0]]
+Tensor[[1, 1], Int64] 
     #5 := Eq (#0, #4)
-    #6 := [[100]] 
-    #7 := [[1]] 
+    #6 := [[100]]
+Tensor[[1, 1], Int64] 
+    #7 := [[1]]
+Tensor[[1, 1], Int64] 
     #8 := Sub (#0, #7)
     #9 := Ite (#5, #6, #8)
-    X(#0) := Id #9
+    X(#0) := Skip #9
 
 .. Generating lean code
 Created project directory: `/tmp/verith-tutorial.noindex/Rea`
@@ -567,28 +571,28 @@ uv run reactor tests/fixtures/simple_env.py -o "$OUT" -p "$PROJ" | head -24
 ```
 module
   external
-    #3 : Real([1,2])
+    #3 : Real(1, 2)
   interface
-    #6 : Real([1,1])
-    #9 : Real([1,1])
-    #12 : Bool([1,1])
-    #15 : Bool([1,1])
+    #6 : Real(1, 1)
+    #9 : Real(1, 1)
+    #12 : Bool(1, 1)
+    #15 : Bool(1, 1)
   private
-    #0 : Real([1,1])
+    #0 : Real(1, 1)
   atom controls #0, #6, #9, #12, #15 reads #0, #3
   init
-    #18 := [[0]] 
-    X(#0) := Id #18
-    #19 := [[2]] 
+    #18 := [[0.]]
+Tensor[[1, 1], Float] 
+    X(#0) := Skip #18
+    #19 := [[2.]]
+Tensor[[1, 1], Float] 
     #20 := Eq (#18, #19)
-    #21 := [[1]] 
-    #22 := [[0]] 
+    #21 := [[1.]]
+Tensor[[1, 1], Float] 
+    #22 := [[0.]]
+Tensor[[1, 1], Float] 
     #23 := Ite (#20, #21, #22)
-    X(#6) := Id #23
-    X(#9) := [[0]] 
-    X(#12) := [[false]] 
-    X(#15) := [[false]] 
-  delay
+    X(#6) := Skip #23
 ```
 
 
@@ -603,7 +607,7 @@ module
 | `s4` | truncated | `Matrix (Fin 1) (Fin 1) Bool` | `s.2.2.2.2` |
 | `e0` / `el0` | action, one-hot of width 2 | `Matrix (Fin 1) (Fin 2) Real` | — |
 
-Note that the arithmetic is **real**, not integer: under the default theory a
+Note that the arithmetic is **real**, not integer: with the default numbers a
 `Discrete` action space becomes a one-hot real vector (read back with `argmax`)
 and rewards are real-valued. Hence `0.0` and `2.0` in the property below rather
 than `0` and `2`.
@@ -648,7 +652,7 @@ Büchi property here:
   this module: `argmax` over real wires is a known gap.
 
 If the dynamics are genuinely discrete, design the environment so the
-extraction stays in integer arithmetic: pass `theory=LIA` to `Env`, use an
+extraction stays in integer arithmetic: pass `number=Int` to `Env`, use an
 integer `Box` action space rather than `Discrete`, and return integer rewards.
 [`verith_gym.md`](verith_gym.md) works that variant through in full.
 
@@ -1214,25 +1218,27 @@ counterexample the next sample. An 8-bit counter to try it on:
 
 ```bash
 cat > "$OUT/m_bvcount.py" <<'PY'
-# BV 8-bit counter: 0, 1, ... 10, then back to 0.
+# An 8-bit counter: 0, 1, ... 10, then back to 0.
 import torch
-from reactor import Module, Term, Wire, BitVec, BV, Var, X
+from reactor import Bool, Module, Term, Wire, Word, Var, X, tensor
+
+W, S = 8, [1, 1]
 
 
 def module() -> Module:
-    s = Var(BitVec(8, [1, 1]))
-    one, ten, zero = (Wire(BitVec(8, [1, 1])) for _ in range(3))
-    at_ten = Wire(BitVec(1, [1, 1]))      # BV has no Bool wires: one bit
-    bumped = Wire(BitVec(8, [1, 1]))
+    s = Var(Word(W, S))
+    one, ten, zero = (Wire(Word(W, S)) for _ in range(3))
+    at_ten = Wire(Bool(S))                # a comparison of words is a Bool
+    bumped = Wire(Word(W, S))
     return Module.sequential(
         [s],
-        [Term(BV.Const(torch.tensor([[0]])), [X(s)])],
-        [Term(BV.Const(torch.tensor([[1]])), [one]),
-         Term(BV.Const(torch.tensor([[10]])), [ten]),
-         Term(BV.Const(torch.tensor([[0]])), [zero]),
-         Term(BV.Eq(), [at_ten], [s, ten]),
-         Term(BV.Add(), [bumped], [s, one]),
-         Term(BV.Ite(), [X(s)], [at_ten, zero, bumped])],
+        [Term(tensor.word.Const(torch.tensor([[0]]), W), [X(s)])],
+        [Term(tensor.word.Const(torch.tensor([[1]]), W), [one]),
+         Term(tensor.word.Const(torch.tensor([[10]]), W), [ten]),
+         Term(tensor.word.Const(torch.tensor([[0]]), W), [zero]),
+         Term(tensor.word.Eq(W, S), [at_ten], [s, ten]),
+         Term(tensor.word.Add(W, S), [bumped], [s, one]),
+         Term(tensor.word.Ite(W, S), [X(s)], [at_ten, zero, bumped])],
     )
 PY
 
