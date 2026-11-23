@@ -168,8 +168,7 @@ def test_bitvec_literal_uses_of_int():
     Latent rather than live: `BV.Const` rejects negative tensors ("Const:
     tensor values do not fit in N bits") and BV has no `Linear`, so nothing
     currently feeds a negative here. `ofInt` closes the trap and agrees with
-    `ofNat` on non-negatives — both facts pinned in
-    tests/lean/Playground.lean.
+    `ofNat` on non-negatives.
     """
     from reactor import Wire, BitVec
     from reactor_lean.codegen.literals import lean_literal

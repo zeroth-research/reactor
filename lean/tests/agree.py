@@ -36,7 +36,7 @@ class Skip(Exception):
 
 
 def _corpus() -> dict:
-    """Name -> a function building the module: loaded the way `verith`
+    """Name -> a function building the module: loaded the way `reactor`
     loads a Python input, so a fixture returning a `Named` module is the
     module it names."""
     from reactor_lean.inputs.python import load_module as _load
@@ -47,12 +47,6 @@ def _corpus() -> dict:
     for p in sorted(FIXTURES.glob("*.py")):
         if "def module(" in p.read_text():
             out[f"fixtures/{p.stem}"] = (lambda p=p: _load(p))
-    try:
-        from nuterm.tests.benchmarks.svcomp import discover
-    except ImportError:                     # pragma: no cover - no nuterm
-        return out
-    for b in discover():
-        out[f"svcomp/{b.name}"] = (lambda b=b: b.build()[0])
     return out
 
 
