@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from reactor.lean.core.certificate import Certificate
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Certificate
+from reactor_lean.core.errors import Refused
 
 
 def announce(log: Callable, tag: str, cert: Certificate) -> Certificate:

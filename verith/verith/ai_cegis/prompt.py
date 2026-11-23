@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import cvc5
 
-from reactor.lean.smt.predicates import PredicateParser, Unreadable, parse_predicate
+from reactor_lean.smt.predicates import PredicateParser, Unreadable, parse_predicate
 from ..common.llm import reply_fields, source_block
 
 

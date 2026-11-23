@@ -17,17 +17,17 @@ from typing import TYPE_CHECKING
 
 from jinja2 import FileSystemLoader
 
-from reactor.lean.core.certificate import LeanAnswer
-from reactor.lean.core.errors import Refused
-from reactor.lean.project.templates import env as reactor_env
-from reactor.lean.proof.render import LeanCertificate, ProofScripts
+from reactor_lean.core.certificate import LeanAnswer
+from reactor_lean.core.errors import Refused
+from reactor_lean.project.templates import env as reactor_env
+from reactor_lean.proof.render import LeanCertificate, ProofScripts
 
 from .facts import predicate_facts
 from .tactics import DSIMP_ERASE, MAT_SIMP, plan_for
 
 if TYPE_CHECKING:
-    from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.smt.queries import ModuleQueries
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.smt.queries import ModuleQueries
 
     from .facts import SolverHints
 
@@ -94,7 +94,7 @@ class LeanHints:
 def print_hints(hints: "SolverHints", ctrl_next) -> LeanHints:
     """`hints` printed. A condition or a factor the printer cannot express
     is left out: a hint is an optimisation, never needed for the proof."""
-    from reactor.lean.proof.from_smt import smt_to_lean_body
+    from reactor_lean.proof.from_smt import smt_to_lean_body
 
     determined = []
     for cond, value in hints.determined:
@@ -175,7 +175,7 @@ def proof_scripts(
     definitions with `simp`'s default `zeta`, which substitutes the `let`s
     away before the hint's rewrite runs.
     """
-    from reactor.lean.proof.from_smt import smt_to_lean_body
+    from reactor_lean.proof.from_smt import smt_to_lean_body
 
     lean_cert = lean_cert or LeanCertificate()
     facts = predicate_facts(q)

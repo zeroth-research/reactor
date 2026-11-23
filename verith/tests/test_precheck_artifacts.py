@@ -16,7 +16,7 @@ import z3
 
 ROOT = Path(__file__).resolve().parents[2]
 VERITH_DIR = ROOT / "verith"
-MODULE = ROOT / "python" / "tests" / "limits" / "mods" / "m_countdown.py"
+MODULE = VERITH_DIR / "tests" / "limits" / "mods" / "m_countdown.py"
 
 pytest.importorskip("cvc5")
 

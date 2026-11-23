@@ -1,0 +1,376 @@
+# `reactor` limit matrix
+
+77 cases, each one a **full Lean project** generated and proved by `uv run certify` and
+built with `lake`. It answers three questions per case, which are independent
+and must be read apart:
+
+| | question |
+|---|---|
+| generation | does `reactor` emit a project at all? |
+| `System` target | do all five encodings compile? (functional, Circ, Rel, Scalar, ScalarRel) |
+| `Certificate` target | do `init_inv`, `step_inv` and `hrank` discharge? |
+
+`Certificate.lean` imports only `System.System` and `Certificate.Data`, so a broken
+Scalar or ScalarRel encoding does **not** stop the certificate from verifying. Until
+that was noticed, five cases had a verifying certificate inside a project
+whose `lake build` failed.
+
+This file is both the operational one and the record of what the matrix
+found: how to run it, what verifies, what does not, and why. What is still
+to do about the failures is in [`TODO.md`](../../../TODO.md).
+
+---
+
+## Running it
+
+```bash
+cd verith
+uv run python tests/limits/run_limits.py                 # all cases
+uv run python tests/limits/run_limits.py Countdown NN2Deep5
+uv run python tests/limits/run_regress.py                # only baseline.json's cases, diffs verdicts
+uv run python tests/limits/run_regress.py other.json     # against a different baseline
+
+VERITH_EXTRA="--smt-tactics cvc5" uv run python tests/limits/run_regress.py
+VERITH_LIMITS_WORK=/tmp/mine.noindex uv run python tests/limits/run_regress.py
+
+# the same plumbing, pointed at another question
+VERITH_ROUTE=nuterm uv run python tests/limits/run_limits.py
+VERITH_SUITE=fbk VERITH_ROUTE=nuterm uv run python tests/limits/run_limits.py
+```
+
+`VERITH_SUITE` picks the case table — `limits` (this one) or `fbk`
+([`tests/fbk/probes.py`](../fbk/probes.py), whose probes are `--safety`
+properties over the same modules). `VERITH_ROUTE` picks where the certificate
+comes from — `supplied` (the matrix's own `inv`/`rank`) or `nuterm`
+(`--infer nuterm`, which drops them). A non-default suite or route writes
+`results-<suite>-<route>.json` and leaves `results.json` alone, so
+`run_regress.py` still compares like with like.
+
+An inferring route reads none of the supplied predicates, so cases differing
+only in those are one problem and are collapsed onto their (module, property,
+precondition) key: the 77-case matrix is **30** distinct questions to ask
+`--infer nuterm`, and the run prints which names fell together. A route that
+finds nothing verdicts `NO-CERT` rather than `GEN-FAIL` — that is the
+measurement, not a defect.
+
+Roughly 10-15 s per case, so a full pass is 20-35 minutes. It needs the
+Lake package cache `$REACTOR_LAKE_CACHE` (Mathlib, cslib, lean-smt, built;
+`just vr-run` sets it to the workspace's `.lake`, and
+`reactor_lean.project.lake_cache` says how one is made, which takes about
+an hour cold): every generated project symlinks its `.lake` to one shared
+build dir whose `packages` the runner points there, so Relational / LeanAI
+/ ZerothHammer are compiled once and only `System/*` and `Certificate/*`
+recompile per case.
+
+The **first** case in a fresh work directory pays for all of that: 654 s
+against ~10 s for its neighbours. That is the cache filling, not the case.
+
+Generated projects, the shared build dir and the results JSON all go to
+`/tmp/verith-limits.noindex` (override with `VERITH_LIMITS_WORK`), never
+into the tree. **Keep the `.noindex` suffix** — see below.
+
+### Two ways the harness will lie to you
+
+**One shared build dir takes one writer.** Module names (`Certificate.Data`,
+`Certificate.Certificate`, …) are identical in every generated project, so two
+concurrent runs overwrite each other's oleans. It does not fail cleanly: it
+shows up as heartbeat timeouts and `unknown constant 'hrank'`, which reads
+exactly like a codegen bug. One session lost an hour to five "regressions"
+that were another process building into the same directory. `run_regress.py`
+already uses its own subdirectory; use `VERITH_LIMITS_WORK` for anything else
+running at the same time.
+
+**Wall-clock is worthless under load.** Another Lean build anywhere on the
+machine is enough — including the `--fbk-proveit` / ic3ia pipeline in a
+neighbouring checkout. One 12-case run reported Countdown at 801.8 s,
+NN2Width12 at 978.9 s and NN2Deep5 at 1996.2 s — for a Countdown
+certificate whose generated file differed from the baseline's by a single
+comment line. Quiet re-run: 9.4 s, 11.3 s, 74.9 s.
+
+The worst offender turned out to be **Spotlight**. A full pass writes tens
+of thousands of `.olean` files, `spotlightknowledged` sits at 100% of a
+core indexing them, and the damage is wildly uneven — in one run five of
+nine cases came in at 9 s and the other four at 928 s, 928 s, 1053 s and
+1940 s. Hence the `.noindex` suffix on the work directory, which is the
+documented way to make Spotlight skip one. If you point
+`VERITH_LIMITS_WORK` somewhere else, keep the suffix.
+
+Verdicts were unaffected through all of this. Only timings lie — re-time
+anything surprising before believing it.
+
+---
+
+## Layout
+
+```
+cases.py         the matrix: one C(...) per case, plus the net builders
+mods/            28 module fixtures (m_countdown.py, m_max.py, m_relu_net.py, …)
+run_limits.py    generate + build every case, print and record verdicts
+run_regress.py   run only the names in a baseline, diff verdicts, flag both directions
+baseline.json    the verdicts this README's numbers were measured at
+check_obl.py     numeric oracle: exhaustively evaluate the obligations in Python
+probes/          runnable evidence for the cvc5 work (abduction, SyGuS)
+```
+
+A case is
+`C(name=, group=, mod=, expect=, P=, inv=, rank=, pre=, note=)`. `mod` names a
+file in `mods/`, or `TESTS/x` for `../fixtures/x.py`. `expect` is
+`ok` / `fail` / `?` — what the case is *meant* to show, so a surprise is
+visible. `P`, `inv`, `rank` and `pre` are SMT-LIB 2 expressions over `s0..sN-1`
+(state) and `e0…` / `el0…` (inputs), in internal names; `run_limits.py` turns
+them into `(X @intf.N)` / `(X @extl.N)` / `@extl.N` with `to_surface` when it
+builds the `certify` command line: `certify`, not `reactor`, because
+`reactor` alone leaves every obligation `sorry`.
+
+`check_obl.py` is the independent oracle: it evaluates the obligations
+numerically over a bounded domain, in plain Python, with no `verith` in the
+loop. Largely superseded by `--pre-check cvc5` (below), which is a decision
+procedure rather than an enumeration, but it is the one check that shares no
+code with the thing under test.
+
+---
+
+## Before calling anything a tool limit
+
+```bash
+uv run certify tests/limits/mods/m_countdown.py --buchi '(= (X @intf.0) 0)' \
+    --invariant '(and (>= (X @intf.0) 0) (<= (X @intf.0) 100))' --ranking '(- 100 (X @intf.0))' \
+    --pre-check cvc5 -o /tmp/out -p Rea
+```
+```
+.. SMT pre-check (cvc5): <=5000 ms per query, <=20000 ms total
+   init_inv  holds         1 ms
+   step_inv  holds         1 ms
+   hrank     REFUTED       1 ms   counterexample: s0 = 1
+```
+
+A failing `lake build` cannot tell a **wrong certificate** from **weak
+tactics**, and takes 9-79 s per case to not tell you. cvc5 answers all three
+obligations in 3-13 ms with a counterexample. More than one "limit" recorded
+in earlier passes turned out to be a broken test case; `RealConjDisjUnsat` is
+kept in the matrix as the control for exactly that.
+
+Note the obligations are quantified over **every state satisfying the
+invariant**, not the reachable ones. A ranking that decreases along all
+reachable runs but not from some unreachable invariant state is a wrong
+certificate, and this is the usual reason a "correct-looking" case fails.
+
+---
+
+## What verifies
+
+**State.** Integer (LIA) state of any shape tried: a single `1×1` wire,
+several `1×1` wires, a 3-, 6- or 32-element vector, and a mixed state whose
+wire indices and flat element slots disagree (`1×1` + `3×1`). Components that
+grow without bound are fine as long as the invariant does not mention them.
+Bool state works. External inputs work, with `--pre` constraining them.
+
+**Invariants.** Conjunctive interval bounds; relational (`x ≤ y`); six-way
+disjunctions; parity via `%`; `≠`; `Ite` and `Implies` in a `Prop` position
+over a Bool component; per-component predicates over a vector.
+
+**Ranking functions.** A bare linear `x`; the guarded `ite(P, 0, x)`; a
+difference `y − x`; a lexicographic order on two counters folded into one
+`Nat` as `4y + x`.
+
+**ReLU — in every position tried.** In the transition at `1×1`
+(`x' = relu(x−1)`, emitted as `Max.max 0 (x−1)`) and element-wise on a
+3-vector; as a ReLU-shaped *ranking* (`ite(x>0, x, 0)` — the SMT→Lean
+translator has no `max`, so it must be written as an `Ite`); as a ReLU-shaped
+*invariant* (`x = ite(x≥0, x, 0)`); in a `Linear → ReLU → Linear` net, the
+shape a small Q-network compiles to; and combined with an external input under
+`--pre "(>= (X @extl.0) 1)"`. It works because `Relational.Mat` gives `ReLu` a `@[simp]
+relu_apply` and `omega` understands `max` over `Int`.
+
+**Scale.** A 32-wide state verifies. A straight-line transition body verifies
+to at least 64 chained operations now that `maxRecDepth` is raised; the
+default limit gave out between 44 and 48.
+
+---
+
+---
+
+## Final numbers
+
+Measured on a quiet machine, 76 cases in 1044 s. `NN2RealAllPos4` was added
+afterwards and verified separately, so `baseline.json` holds 77.
+
+| | |
+|---|---|
+| cases | **76** |
+| generate | **75** (1 `GEN-FAIL`: `OpUninterp`) |
+| all five encodings compile | **75 / 75** |
+| certificates discharge | **64** |
+| green end to end | **64** |
+| regressions from the previous pass | **0** |
+
+The 12 that do not verify:
+
+| | | |
+|---|---|---|
+| negative controls, meant to fail | 8 | `NoCert` `PropOnly` `InvTrue` `RankConst` `ReluInputNoPre` `BadInv` `BadRankDir` `RealConjDisjUnsat` |
+| real limits | 3 | `OpMax` `OpMin` `OpArgmax` — one defect, see below |
+| generation gap | 1 | `OpUninterp` |
+
+Every neural-network case passes, up to a 12-unit layer, five dense hidden
+layers, 2-D Lyapunov nets, nets over ℝ and nets over a vector state.
+
+Since dropping `norm_num` from Int prep (below), the deep Int nets are no
+longer the slow ones — measured quiet, with Spotlight excluded:
+
+| | before | after |
+|---|---|---|
+| `NN2Deep5` | 83.5 s | **12.3 s** |
+| `NN2Deep4` | 23.9 s | **11.2 s** |
+| `NN2Deep3` | 12.5 s | 9.9 s |
+| `NN2RealWide4` | 72.8 s | 70.5 s *(Real: keeps `norm_num`)* |
+| `NN2RealFrac` | 75.5 s | 82.7 s *(as above)* |
+
+The two Real cases are now the only ones over 30 s. Everything else sits
+around 10 s.
+
+Supporting suites: `just py-test` 450 passed / 5 skipped / 2 xfailed, `just test-lean` 25 passed.
+
+---
+
+## `--infer nuterm` over both suites
+
+`VERITH_ROUTE=nuterm`, measured on the code at the time of writing. The
+matrix's 77 cases vary the *supplied* predicates over 30 distinct (module,
+property, precondition) problems, and an inferring route is asked each once;
+the fbk probes are 39 `--safety` properties. Both are full projects built
+against the shared `.lake`, so `VERIFIED` means Lean discharged the
+obligations, not merely that verith emitted something.
+
+| | limit matrix (Büchi) | fbk probes (safety) |
+|---|---|---|
+| problems | 30 (77 cases) | 39 |
+| **verified end to end** | **8** (42 of the 76 cases carrying a property) | **29** |
+| no certificate | 21 | 10 |
+| generation failed | 1 | 0 |
+| wall clock | 43 s generate, 85 s build | 42 s generate, 287 s build |
+
+### Safety: 29 of the 32 the ic3ia route is meant to certify
+
+The fbk probes come with `expect`, so the comparison is direct. Of the 32
+probes `--fbk-proveit` is expected to certify, `--infer nuterm` certifies 29 —
+with no ic3ia build and no `lean-ltl-certifying` checkout. All four probes
+whose property is *false* are refused, as are the three the fbk route cannot
+deliver either (`abort`, `unknown`, `lean-fail`). Net-shaped properties are in
+reach: `NetBox`, `NetBoxIneq`, `NetTwoInput` and `NetLyapunov` all verify.
+
+The three it misses are two Bool-state modules (`MixedBoolInt`, `BiSplit`) and
+one property outside Houdini's lattice. Two more are refused for a rule
+predicate the LP cannot read as linear rows — `(mod s0 2)` and `s0*s1`.
+
+### Büchi: 8 of 30, and 21 of the other 22 are reach, not ranking
+
+`Countdown` verifies, and with it the 31 matrix cases that differ only in the
+predicates supplied; so do `TwoVars`, `RankLex`, `Relu`, `Deep64`, `NNInv`,
+`NN2Lyapunov` and `NN2Lyap2D`. What stops the rest is almost never the rank:
+
+| | | |
+|---|---|---|
+| the state is not scalar `Int` | 15 | Real ×5, Bool ×2, BV ×1, vector or matrix `Int` ×7 |
+| the procedure has no rule for an operation | 3 | `LIA_Max`, `LIA_Min`, `LIA_Argmax` |
+| the transition reads an awaited input | 2 | `m_relu_input`, with and without `--pre` |
+| generation failed | 1 | `OpUninterp` — verith's own codegen gap, and the same case the supplied route fails |
+| **no rank certified** | **1** | `m_step2` |
+
+The one left is a fact about the candidate lattice, not the rank: `m_step2`
+runs 0, 2, …, 10 and resets, so its invariant needs `x` to be even, and no
+candidate Houdini has can say so.
+
+`NNInv` and `NN2Lyapunov` were in this column until two changes landed
+together. A rank only has to rank the rounds *before* the property is reached
+— refuting an infinite stretch of those proves recurrence, since a run that
+never reaches the property is exactly such a stretch — and `ite(P, 0, δ + V)`
+turns one of those into the stronger thing `check_hrank` asks for, at no extra
+proof: off the reaching round the `δ` cancels, and on it the rank falls from at
+least `δ` to zero because `check_ranks` already required `V >= 0`. That is the
+shape this matrix supplies by hand for `NNInv`. It needs the invariant
+`0 <= x <= 9`, whose `9` is a constant only the guard mentions — and only once
+`x + 1 == 10` is normalised onto `x` — so Houdini now seeds the literals the
+program mentions, simplified first.
+
+### What a lexicographic rank does and does not fix
+
+`lex_decrease` is available to the learner (`learn_ranking(ranks=N)`,
+`python -m nuterm FILE.py --ranks N`) and is worth a lot where it applies:
+on the SV-COMP termination corpus it takes **38/57 to 45/57**, losing nothing,
+and what it unlocks is the nested loops — `cousot9`, `speedpldi3`,
+`ChenFlurMukhopadhyay` Ex2.01, Ex2.08 and Fig1, both `Masse-VMCAI2014`.
+
+It does **not** fix a wrap-around, and not for want of tuning. Each component
+is a non-negative sum of ReLUs, hence convex in the state, and in lex order the
+first component must be non-increasing along the whole chain of counting
+rounds. For a counter running 1..9 and back to 0 that means
+`V₁(1) >= … >= V₁(9) >= V₁(0)`; convexity makes the differences
+`dₖ = V₁(k+1) − V₁(k)` non-decreasing, so `d₁…d₈ <= 0` forces `d₀ <= 0` and
+`Σd <= 0`, while `V₁(9) >= V₁(0)` says `Σd >= 0`. Every `dₖ` is therefore zero,
+`V₁` is constant, it covers no round, and the argument recurses into `V₂`.
+
+Nor can a lexicographic rank reach a verith certificate at all: `rule_buchi`
+takes one ranking function and `Certificate.ranking` is one `Int`
+expression. `--ranks` is for the Farkas side, which has `lexDec` end to end.
+
+---
+
+## What the fixes taught
+
+What the matrix's fixes showed about the proofs, compressed.
+
+- **A ReLU arrives as `ite (>= e 0) e 0`** because there is no `max` kind to
+  translate from. Left as an `ite` each unit costs a `split_ifs` branch, and
+  `hrank` mentions the ranking twice, so a k-unit net fans one goal into
+  2^(2k). Folding it back to `max`, which `omega` handles with no split at
+  all, took NN2Width6 from 491 s to 9.6 s and turned 11 cases green.
+- **A low heartbeat budget does not make failures fail fast.** When a tactic
+  hits the cap it throws, `first` catches that like any other failure, and
+  moves to a *more expensive* alternative. Measured: NN2RealWide4 fails in
+  106 s at 400k and succeeds in 71 s at 2M.
+- **Enumerate a finite, narrow state before closing.** A branch contradictory
+  only because `BitVec 1` has two inhabitants reduces to a bare `False` that
+  nothing in the chain discharges. `rcases BitVec.eq_zero_or_eq_one` first.
+- **cvc5 hash-conses; the printer did not.** A dense net printed as a tree is
+  exponential in depth — 10 layers went from 45056 characters to 1036 once
+  repeated subterms were `let`-bound. It does **not** speed up the proofs
+  (`simp` is zeta-reducing, so the goal is the expanded one either way); it
+  stops generation blowing up.
+- **Never read the plan off the printed Lean.** Feature detection used a regex
+  over the emitted file, so teaching the printer to share cut a five-layer net
+  from 62 `max` to 10 and silently dropped it two heartbeat tiers, failing it
+  at 400k. Branch points are now counted on the term.
+- **`norm_num at *` was the whole bill for an Int net, and unnecessary.**
+  Profiled, `NN2Deep5` spent 47.3 s of its 48.7 s of tactic execution in
+  `norm_num`, and 0.79 s in the `omega` that actually closed the goal.
+  `omega` normalises numerals itself and reads `min`/`max`/`Int.toNat`
+  natively, so dropping it from prep for non-Real states took that case
+  from **75.9 s to 7.0 s**, same proof. Restricting it to the goal saved
+  nothing (77.9 s) — the cost is the goal, not the context. Over ℝ it is
+  load-bearing: goal-only leaves two obligations of `NN2RealAllPos4`
+  unproved, because `linarith` needs the hypotheses normalised.
+- **Explicit instances in the source cannot help the instance search.**
+  Emitting `@HAdd.hAdd ℝ ℝ ℝ instHAdd x y` for `x + y` saves nothing, and
+  `Real.add` does not even exist. `Certificate/Data.lean` holds every `+`, `*`,
+  `≥`, `⌊·⌋` and numeral in the certificate and costs **6.17 ms** of
+  typeclass inference; the Certificate costs **17.7 s**. The search all
+  happens while the tactics rewrite, on terms they construct. Of the
+  searches over 1 ms, 862 are for `CanonicallyOrderedAdd` — a class ℝ
+  cannot satisfy, so 862 *failures*, 2.6 s, from simp/norm_num retrying
+  lemmas guarded on it.
+- **Real has no equivalent win.** Its prep runs two full-context passes,
+  `norm_num at *` and `simp_all`; dropping the second gives 3-5% on the
+  three Real cases, inside the noise, and `simp_all` is load-bearing for
+  invariants that pin exact values. The Real cost is diffuse — thousands
+  of sub-millisecond instance searches — with no single step to remove.
+- **A generated tactic is not tested until Lean has parsed it.** Unit tests
+  on the emitted *string* miss syntax the quotation rejects — `;`-separated
+  steps broken across lines fail with `unexpected token 'try'; expected ')'`,
+  and only from two steps on, so every case in the matrix built clean while
+  the bug sat there. Exercise more than one of whatever you add.
+- **Giving `hrank` the invariant at the successor state is a trap.** `have
+  hinv_next : inv (RM.update s l) := step_inv s l ⟨hpre, hi⟩` is sound, one
+  line, and took NN2Deep4 from 22.4 s to 1077.5 s and NN2RealWide4 to a 2027 s
+  timeout. Unfolding a net-shaped invariant at a net-shaped successor doubles
+  everything downstream.

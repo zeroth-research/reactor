@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.errors import Refused
 from ..common.smtlib import script
 from ..common.smtlib import decimals
 from ..common.obligations import Question

@@ -182,7 +182,7 @@ SUITE_BLURB = {
         ),
         source=(
             "The SV-COMP <code>termination-crafted-lit</code> corpus, "
-            "<code>benchmarks/svcomp/dsl/</code> &mdash; 57 benchmarks, the ones the "
+            "<code>nuterm/tests/benchmarks/svcomp/dsl/</code> &mdash; 57 benchmarks, the ones the "
             "nuterm learner is scored on. No property is written down in the corpus, "
             "because these are termination benchmarks and the Farkas pipeline states "
             "termination as a claim over wires rather than as the one-state predicate "
@@ -693,10 +693,14 @@ def warnings_section(warns: list, w) -> None:
 
 
 # The directories benchmark files live in, in the order the page lists them.
-DIR_ORDER = ["tests/fixtures", "tests/limits/mods", "benchmarks/svcomp/dsl",
-             "tests/bench_matrix/hybrid", "tests/bench_matrix/petri",
-             "tests/bench_matrix"]
-SVCOMP_DSL = PY / "benchmarks" / "svcomp" / "dsl"
+DIR_ORDER = ["../verith/tests/fixtures", "../verith/tests/limits/mods",
+             "../verith/nuterm/tests/benchmarks/svcomp/dsl",
+             "../verith/tests/bench_matrix/hybrid",
+             "../verith/tests/bench_matrix/petri", "../verith/tests/bench_matrix"]
+# nuterm's corpus, which `suites.svcomp_rows` asks about. Paths on the page
+# are relative to `python/`, as `run_matrix` records a row's module.
+SVCOMP_DSL = VR / "nuterm" / "tests" / "benchmarks" / "svcomp" / "dsl"
+SVCOMP_REL = os.path.relpath(SVCOMP_DSL, PY)
 
 
 def _svcomp_files() -> dict:
@@ -707,7 +711,7 @@ def _svcomp_files() -> dict:
     for f in sorted(SVCOMP_DSL.glob("*.py")):
         m = re.search(r'\bname\s*=\s*"([^"]+)"', f.read_text())
         if m:
-            out[m.group(1)] = f"benchmarks/svcomp/dsl/{f.name}"
+            out[m.group(1)] = f"{SVCOMP_REL}/{f.name}"
     return out
 
 
@@ -762,7 +766,7 @@ def describe(path: str) -> str:
     except (OSError, SyntaxError):
         return ""
     first = " ".join(doc.split("\n\n")[0].split())
-    if path.startswith("benchmarks/svcomp/"):
+    if path.startswith(SVCOMP_REL + "/"):
         gloss = first.split(" — ", 1)[1] if " — " in first else ""
         loop = _c_loop(doc)
         parts = ([f"<code>{esc(loop)}</code>"] if loop else []) + (
@@ -905,7 +909,7 @@ def method_row(w, rt: str, run: dict, truth: "str | None" = None,
 
 # Where a path in the page's prose is relative to: the prose is written from
 # `python/`, with a few names local to this directory or the limit matrix's.
-LINK_BASES = [PY, PY.parent, SP, PY / "tests" / "limits", WORK]
+LINK_BASES = [PY, PY.parent, SP, VR / "tests" / "limits", WORK]
 # Embedded so the popup works from a copied page and without a server; larger
 # or non-text files are linked, not embedded.
 EMBED_SUFFIXES = {".py", ".md", ".lean", ".toml", ".txt", ".j2"}
@@ -1625,17 +1629,17 @@ def render(data: dict, warns: list = ()) -> str:
     )
     w("<h3>Building what one cell emits</h3>")
     w(
-        "<p>A command from a cell writes a Lean project and stops. To build it the way "
-        "the matrix does &mdash; against the already-built Mathlib, so nothing resolves "
-        "or recompiles it &mdash; point the project&rsquo;s <code>.lake</code> at the "
-        "shared one and give it the manifest that goes with it:</p>"
+        "<p>A command from a cell writes a Lean project and stops. Run with "
+        "<code>$REACTOR_LAKE_CACHE</code> set, as <code>just vr-run</code> sets it, the "
+        "project already builds against the cache&rsquo;s Mathlib, so nothing resolves "
+        "or recompiles it. To build it the way the matrix does, into the one shared "
+        "build dir, point the project&rsquo;s <code>.lake</code> at that:</p>"
     )
     w(
         "<pre>P=/tmp/verith-out.noindex/&lt;cell&gt;/Rea      # the -o of the pasted command\n"
         "mkdir -p /tmp/shared.noindex\n"
-        'ln -sfn "$PWD/tests/lean/.lake/packages" /tmp/shared.noindex/packages\n'
-        'ln -sfn /tmp/shared.noindex "$P/.lake"\n'
-        'cp tests/limits/lake-manifest.json "$P/"\n'
+        'ln -sfn "$REACTOR_LAKE_CACHE/packages" /tmp/shared.noindex/packages\n'
+        'rm -r "$P/.lake" &amp;&amp; ln -s /tmp/shared.noindex "$P/.lake"\n'
         '(cd "$P" &amp;&amp; lake build)</pre>'
     )
     w(
@@ -1645,9 +1649,7 @@ def render(data: dict, warns: list = ()) -> str:
         "<b>one build directory takes one writer</b>: module names are identical across "
         "generated projects, so a second build into the same shared directory serves the "
         "first one&rsquo;s oleans, and the symptom is <code>unknown constant "
-        "&#39;hrank&#39;</code> rather than a clean failure. "
-        "The <code>fbk-proveit</code> column needs one line more, because its lakefile "
-        "adds a path require: <code>lake update LTL_Certifying</code> before the build.</p>"
+        "&#39;hrank&#39;</code> rather than a clean failure.</p>"
     )
     w(
         "<p>The prose above is generated too: the method cards come from "

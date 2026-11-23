@@ -4,7 +4,7 @@
 conditions under a term; `literals`, every numeral under one;
 `select_element` takes one element of a tuple-sorted term without leaving
 a select of an `ite` behind. The walk they are built on is
-`reactor.lean.smt.terms.nodes`.
+`reactor_lean.smt.terms.nodes`.
 
 `Kind` is imported where it is used, so importing this loads no cvc5.
 """
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
-from reactor.lean.smt.terms import nodes
+from reactor_lean.smt.terms import nodes
 
 
 def free_constants(roots: Iterable, *, order: str = "pre") -> dict:
@@ -71,7 +71,7 @@ def select_element(tm, t, k: int, leaf: Callable = lambda s: s):
     """
     from cvc5 import Kind
 
-    from reactor.lean.smt.encode import tuple_select
+    from reactor_lean.smt.encode import tuple_select
 
     kind = t.getKind()
     if kind == Kind.APPLY_CONSTRUCTOR:

@@ -28,14 +28,13 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.core.certificate import Claim
-from reactor.lean.core.errors import Refused
-from reactor.lean.inputs.python import load_module
+from reactor_lean.core.certificate import Claim
+from reactor_lean.core.errors import Refused
+from reactor_lean.inputs.python import load_module
 
 # The fixtures are `reactor`'s, in the `python/` project beside this one.
-PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
-LIMITS = PYTHON_TESTS / "limits" / "mods"
-FIXTURES = PYTHON_TESTS / "fixtures"
+LIMITS = Path(__file__).resolve().parent / "limits" / "mods"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def module_at(path: Path):

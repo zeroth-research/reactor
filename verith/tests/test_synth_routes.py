@@ -19,15 +19,15 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.artifacts import ArtifactStore, module_digest
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.core.errors import Refused
-from reactor.lean.inputs.python import load_module
+from reactor_lean.artifacts import ArtifactStore, module_digest
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.core.errors import Refused
+from reactor_lean.inputs.python import load_module
 from verith.resume import resumable_inv, ruled_out, taking_inv
 
 # The fixtures are `reactor`'s, in the `python/` project beside this one.
-PYTHON_TESTS = Path(__file__).resolve().parents[2] / "python" / "tests"
-MODS = PYTHON_TESTS / "limits" / "mods"
+MODS = Path(__file__).resolve().parent / "limits" / "mods"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def module_of(name: str):
@@ -532,8 +532,8 @@ def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
     arrives in the message verbatim and is framed as established rather than
     as feedback about an attempt.
     """
-    from reactor.lean.smt.module import ModuleSMT
-    from reactor.lean.smt.predicates import PredicateParser
+    from reactor_lean.smt.module import ModuleSMT
+    from reactor_lean.smt.predicates import PredicateParser
     from verith.ai_cegis.prompt import prompt_inv_ranking
     import cvc5
 
@@ -556,8 +556,8 @@ def test_what_one_run_ruled_out_reaches_the_next_run_s_prompt():
 
 def test_the_cegis_prompt_fences_the_source_as_lean():
     """`ai-cegis` is handed the project's Lean encoding, as `ai` is."""
-    from reactor.lean.smt.module import ModuleSMT
-    from reactor.lean.smt.predicates import PredicateParser
+    from reactor_lean.smt.module import ModuleSMT
+    from reactor_lean.smt.predicates import PredicateParser
     from verith.ai_cegis.prompt import prompt_inv_ranking
     import cvc5
 
@@ -579,8 +579,8 @@ def test_an_empty_ranking_is_a_parse_error_the_loop_can_answer():
     cvc5 parses an empty source to a null term, and `getSort()` on one raises
     a `RuntimeError` from inside the binding -- which `AiCegisEngine`'s loop does
     not catch, so the whole route died on one bad reply."""
-    from reactor.lean.smt.module import ModuleSMT
-    from reactor.lean.smt.predicates import PredicateParser
+    from reactor_lean.smt.module import ModuleSMT
+    from reactor_lean.smt.predicates import PredicateParser
     from verith.ai_cegis.prompt import (
         PromptParseError,
         prompt_inv_ranking,
@@ -909,7 +909,7 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
     """What the loop proves is narrower than what the query proves, and the
     note has to carry the difference: its `unsat` is about the coefficients
     it was allowed to try, not about every integer."""
-    from reactor.lean.artifacts import ArtifactStore, module_digest
+    from reactor_lean.artifacts import ArtifactStore, module_digest
     from verith.smt_linear.engine import SmtLinearEngine
 
     module = bv_counter(4, 10)
@@ -931,7 +931,7 @@ def test_a_bounded_refutation_says_it_is_bounded(tmp_path):
 
 def _fixture(name: str):
     """One `tests/fixtures` module, loaded by path."""
-    return load_module(PYTHON_TESTS / "fixtures" / f"{name}.py")
+    return load_module(FIXTURES / f"{name}.py")
 
 
 @pytest.mark.parametrize("prp", ["(= s0 0)", "s[0][0] == 0", "(s[0][0] == 0)"])

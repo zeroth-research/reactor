@@ -19,13 +19,13 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from reactor.lean.core.options import Opt
-from reactor.lean.project.names import CERTIFICATE, PROOFS, cert_file
+from reactor_lean.core.options import Opt
+from reactor_lean.project.names import CERTIFICATE, PROOFS, cert_file
 from ..io import InferInput, InferResult
 from ..route import Alias, InferRoute
 
 if TYPE_CHECKING:
-    from reactor.lean.project.lakefile import LakefileParts
+    from reactor_lean.project.lakefile import LakefileParts
 
 # The project files this route adds beside `reactor`'s, which it owns.
 EQUIVALENCE = "Equivalence"     # `Certificate/`: the NA model is the module
@@ -74,7 +74,7 @@ def _lakefile(config, project_name: str) -> "LakefileParts":
     NA model declared as a lean_lib.  Without the two, the certificate this
     route installs is a file lake reaches and cannot elaborate."""
     from .engine import na_module_name
-    from reactor.lean.project.lakefile import LakefileParts, LeanLib, Require
+    from reactor_lean.project.lakefile import LakefileParts, LeanLib, Require
 
     return LakefileParts(
         libs=(

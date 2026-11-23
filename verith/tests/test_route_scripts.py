@@ -17,14 +17,14 @@ from pathlib import Path
 
 import pytest
 
-from reactor.lean.core.certificate import Claim
-from reactor.lean.inputs.python import load_module
+from reactor_lean.core.certificate import Claim
+from reactor_lean.inputs.python import load_module
 
 pytest.importorskip("cvc5")
 
 GOLDEN = Path(__file__).parent / "golden" / "scripts"
 # The limit modules are `reactor`'s, in the `python/` project beside this one.
-LIMITS = Path(__file__).resolve().parents[2] / "python" / "tests" / "limits" / "mods"
+LIMITS = Path(__file__).resolve().parent / "limits" / "mods"
 HYBRID = Path(__file__).parent / "bench_matrix" / "hybrid"
 UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
 

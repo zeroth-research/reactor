@@ -2,7 +2,7 @@
 on it.
 
 `reactor` reads the claim and the certificate against the module
-(`reactor.lean.smt.encoding.ModuleEncoding`). `Encoding` is that encoding
+(`reactor_lean.smt.encoding.ModuleEncoding`). `Encoding` is that encoding
 with what an obligation needs besides: the round, fresh constants to state
 it over, the rewriter, and the solvers built on its terms. `lazy(module)`
 is how a run holds one, so a run that asks cvc5 nothing never imports it;
@@ -15,14 +15,14 @@ import functools
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.smt import queries
-from reactor.lean.smt.encoding import ModuleEncoding
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.smt import queries
+from reactor_lean.smt.encoding import ModuleEncoding
 
 from .limits import bounded_solver, call_ms
 
 if TYPE_CHECKING:
-    from reactor.lean.smt.queries import ModuleQueries
+    from reactor_lean.smt.queries import ModuleQueries
 
     from .limits import SmtBudget
 
@@ -132,7 +132,7 @@ def predicate_terms(smt, claim: Claim,
                     cert: Certificate = Certificate()) -> "ModuleQueries":
     """`claim` and `cert` read against the module, as `reactor` reads them,
     on an `Encoding`: `smt` is the module, its encoding or a `lazy` factory
-    for one. Refuses as `reactor.lean.smt.queries.predicate_terms` does."""
+    for one. Refuses as `reactor_lean.smt.queries.predicate_terms` does."""
     return queries.predicate_terms(lambda: encoding_of(smt), claim, cert)
 
 

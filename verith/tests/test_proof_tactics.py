@@ -13,7 +13,7 @@ import torch
 import pytest
 
 from reactor import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
-from reactor.lean.codegen.context import LeanContext
+from reactor_lean.codegen.context import LeanContext
 from verith.proofs.tactics import features_for, is_nonlinear, plan_for
 
 
@@ -510,7 +510,7 @@ def _solver_hints(**fields):
 def _proofs_text(hints) -> str:
     """`Proofs.lean` for `_int_module`'s Buchi certificate, proved by the
     plan `hints` inform."""
-    from reactor.lean.proof.render import generate_proofs_lean
+    from reactor_lean.proof.render import generate_proofs_lean
     from verith.proofs.scripts import proof_scripts
 
     return generate_proofs_lean(
@@ -567,8 +567,8 @@ def _before_and_after(inv, ranking, smt_tactics="cvc5", verbatim=None):
     pytest.importorskip("cvc5")
     from types import SimpleNamespace
 
-    from reactor.lean.core.certificate import Certificate, Claim
-    from reactor.lean.pipeline.certificate import render
+    from reactor_lean.core.certificate import Certificate, Claim
+    from reactor_lean.pipeline.certificate import render
     from verith.common.encoding import predicate_terms
     from verith.common.limits import SmtBudget
     from verith.proofs.facts import predicate_facts, solver_hints
@@ -652,7 +652,7 @@ def test_an_answer_in_lean_is_planned_from_the_property_alone():
     """Nothing parses printed Lean back into a term, so a route that
     answers in Lean leaves the facts those of the property and asks cvc5
     nothing."""
-    from reactor.lean.core.certificate import LeanAnswer
+    from reactor_lean.core.certificate import LeanAnswer
 
     answer = LeanAnswer(inv="fun s => (s 0 0) ≥ 0", ranking="fun s => 1")
     _module, before, after = _before_and_after(None, None, verbatim=answer)
@@ -834,10 +834,10 @@ def test_a_branchy_transition_gets_the_higher_budget():
 
 def test_the_simp_set_unfolds_the_reductions():
     """`matMin`, `matMax` and the argmaxes unfold to a `List.ofFn` fold that
-    `simp_mat` computes (`python/tests/test_lean_templates.py` holds the
+    `simp_mat` computes (`lean/tests/test_lean_templates.py` holds the
     library to that); computing the fold is no use if the definition never
     opens."""
-    from reactor.lean.proof.render import generate_proofs_lean
+    from reactor_lean.proof.render import generate_proofs_lean
     from verith.proofs.scripts import proof_scripts
 
     proofs = generate_proofs_lean(

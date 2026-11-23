@@ -1,7 +1,7 @@
 """The proofs `verith.proofs` writes, pinned byte for byte.
 
 For a fixed set of modules and certificates -- the ones whose definitions
-`reactor`'s `python/tests/test_pipeline_golden.py` pins -- the proofs as
+`reactor`'s `lean/tests/test_pipeline_golden.py` pins -- the proofs as
 `Certificate/Proofs.lean` holds them and as a `--cert-file` certificate
 inlines them, compared with the snapshots under `tests/golden/pipeline/`;
 set `REACTOR_UPDATE_GOLDEN=1` to rewrite them, and only for a change to the
@@ -17,10 +17,10 @@ import pytest
 import torch
 
 from reactor import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.core.certificate import Certificate, Claim, LeanAnswer
-from reactor.lean.inputs.python import load_module
-from reactor.lean.proof.render import (
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.inputs.python import load_module
+from reactor_lean.proof.render import (
     generate_proofs_lean,
     generate_standalone_cert_lean,
     render_certificate,
@@ -34,7 +34,7 @@ pytest.importorskip("cvc5")
 
 GOLDEN = Path(__file__).parent / "golden" / "pipeline"
 # The fixtures are `reactor`'s, in the `python/` project beside this one.
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 UPDATE = os.environ.get("REACTOR_UPDATE_GOLDEN") == "1"
 
 
@@ -53,8 +53,8 @@ def _fixture(name: str) -> Module:
 
 
 def _vector_counter() -> Module:
-    """3x1 state over a 2x1 input, as `python/tests/lean/conftest.py`
-    builds it."""
+    """3x1 state over a 2x1 input, as `tests/lean/conftest.py` builds
+    it."""
     state = Var(Int([3, 1]))
     extl = Var(Int([2, 1]))
     zero31 = torch.zeros((3, 1), dtype=torch.int64)

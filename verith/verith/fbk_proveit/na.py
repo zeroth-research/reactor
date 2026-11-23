@@ -130,13 +130,13 @@ discover.
 import re
 from typing import NamedTuple
 
-from reactor.lean.lowering.sorts import flat_element_type
-from reactor.lean.lowering.elements import flat_layout
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.core.errors import Refused
-from reactor.lean.codegen.terms import reachable_terms
-from reactor.lean.codegen.encodings.common import has_block
-from reactor.lean.codegen.encodings.skeleton import RelBlock, RelSyntax, emit_rel_block
+from reactor_lean.lowering.sorts import flat_element_type
+from reactor_lean.lowering.elements import flat_layout
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.core.errors import Refused
+from reactor_lean.codegen.terms import reachable_terms
+from reactor_lean.codegen.encodings.common import has_block
+from reactor_lean.codegen.encodings.skeleton import RelBlock, RelSyntax, emit_rel_block
 
 
 class NAUnsupported(Exception):

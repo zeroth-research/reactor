@@ -9,7 +9,7 @@ import random
 from fractions import Fraction
 from itertools import islice, product
 
-from reactor.lean.core.errors import PredicateRefused
+from reactor_lean.core.errors import PredicateRefused
 from ..common.claim import SynthContext
 from ..common.smtlib import affine_smt, smt_int, smt_real
 from ..common.synth import Column, columns

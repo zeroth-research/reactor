@@ -17,7 +17,7 @@ import pytest
 pytest.importorskip("cvc5")
 
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
-FIXTURES = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 COUNTDOWN = FIXTURES / "svcomp_countdown.py"
 COUNTER = FIXTURES / "counter.py"
 BUCHI = ["--buchi", "(= (X @intf.0) 0)"]
@@ -40,7 +40,7 @@ def verith(capsys, *argv) -> tuple[int, str, str]:
 
 def reactor(monkeypatch, capsys, *argv) -> str:
     """`reactor *argv`, in process; its stdout."""
-    from reactor.lean.pipeline import main
+    from reactor_lean.pipeline import main
 
     monkeypatch.setattr(sys, "argv", ["reactor", *map(str, argv)])
     main()

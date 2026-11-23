@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 from fractions import Fraction
 
-from reactor.lean.smt.terms import selector_index
+from reactor_lean.smt.terms import selector_index
 from ..common.terms import free_constants
 
 import cvc5

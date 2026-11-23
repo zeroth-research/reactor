@@ -22,7 +22,7 @@ _MAX_WIDTH_FOR_DIFFERENCES = 4
 # How far outside the module's own numbers a coefficient is looked for. The
 # bound that makes an invariant true is almost always a constant the program
 # already contains -- what `program_constants` is seeded from and what
-# `python/tests/limits/README.md` records about Houdini -- so the window only has
+# `tests/limits/README.md` records about Houdini -- so the window only has
 # to be wide enough to hold a little arithmetic around them.
 _WINDOW_MARGIN = 10
 _MIN_WINDOW = 100

@@ -1,6 +1,6 @@
 # `verith` — inferring the certificate, and proving it
 
-`reactor` (the [`python/`](../python/reactor/lean/README.md) project) turns a reactive module and a
+`reactor` (the [`lean/`](../lean/python/reactor_lean/README.md) project) turns a reactive module and a
 property into a Lean project whose `lake build` checks a proof of the
 property, given the proof's certificate: an inductive invariant, and for a
 Büchi property a ranking function. `reactor` states the obligations and
@@ -16,7 +16,7 @@ It holds three packages:
 | `nuterm` | the learner `--infer nuterm` trains, with its own command (`python -m nuterm`) and Lean library |
 
 All three are built on `reactor`, and `reactor` imports none of them
-(`python/tests/test_layering.py`, `tests/test_layering.py`). What a route
+(`lean/tests/test_layering.py`, `tests/test_layering.py`). What a route
 needs of a project `reactor` generates -- the encodings it reads, the
 lakefile entries it adds, the files it owns -- it declares as data on its
 row, and the commands here hand that to `reactor`.
@@ -41,7 +41,7 @@ in. Its source is [`figures/pipeline.tex`](figures/pipeline.tex).
 cd verith
 
 # infer, and print what was found
-uv run verith ../python/tests/fixtures/svcomp_countdown.py \
+uv run verith tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" --infer houdini
 # .. The certificate, in the input's names:
 #    --invariant '(<= 0 (X @intf.0))'
@@ -49,17 +49,17 @@ uv run verith ../python/tests/fixtures/svcomp_countdown.py \
 
 # ... hand it to reactor, which writes the project with every obligation
 # `sorry`, and to verith again, which proves them and builds the project
-uv run reactor ../python/tests/fixtures/svcomp_countdown.py \
+uv run reactor tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" \
     --invariant '(<= 0 (X @intf.0))' --ranking '(X @intf.0)' \
     -o out/ -p Countdown
-uv run verith ../python/tests/fixtures/svcomp_countdown.py \
+uv run verith tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" \
     --invariant '(<= 0 (X @intf.0))' --ranking '(X @intf.0)' \
     --project out/Countdown --build-cert
 
 # or all of it in one run
-uv run certify ../python/tests/fixtures/svcomp_countdown.py \
+uv run certify tests/fixtures/svcomp_countdown.py \
     --buchi "(= (X @intf.0) 0)" --infer houdini --build-cert -o out/ -p Countdown
 ```
 
@@ -112,7 +112,7 @@ them, and both check and build the certificate:
 | `--pre-check cvc5` | before the proofs are written, ask cvc5 whether each obligation holds (`proofs/precheck.py`): a refuted one means the certificate is wrong, which a failing build cannot tell apart from tactics that are too weak. Each question and its answer is left in `artifacts/` |
 | `--smt-tactics cvc5` | let cvc5 inform the plan (`proofs/facts.py`): a branch condition the invariant settles is proved once and rewritten away instead of split on, the products cvc5's own refutation needed are handed to `nlinarith`, and a precondition no refutation used is cleared |
 | `--smt-timeout`, `--smt-budget` | what cvc5 is given for those, per query and per phase |
-| `--build-cert` | `lake update` + `lake build Certificate` once the proofs are written, failing on a surviving `sorry` |
+| `--build-cert` | `lake update` (not on a Lake package cache) + `lake build Certificate` once the proofs are written, failing on a surviving `sorry` |
 
 ### Tactic plans (`proofs/tactics.py`)
 
@@ -187,6 +187,14 @@ uv run certify mymodule.py --buchi "(= (X @intf.0) 0)" --invariant "(<= (X @intf
     --ranking "(X @intf.0)" --build-cert -o out/ -p Counter
 ```
 
+Without more, that fetches Mathlib into the project and compiles it, about
+an hour. With `$REACTOR_LAKE_CACHE` naming a Lake package cache (`just`
+sets it to the workspace's `.lake`), `certify`, `verith` and `reactor`
+write each project against the cache instead: its `.lake/packages` a link
+to the cache's built packages and its manifest made from the cache's, so
+the build skips `lake update` and compiles only the project
+(`reactor_lean.project.lake_cache`).
+
 Two kinds of run are refused rather than silently doing nothing:
 
 | refused | because |
@@ -244,7 +252,7 @@ new one.
 
 ### Flags
 
-`certify` takes every flag of `reactor`'s ([Key flags](../python/reactor/lean/README.md#key-flags));
+`certify` takes every flag of `reactor`'s ([Key flags](../lean/python/reactor_lean/README.md#key-flags));
 `verith` takes its input, claim and `--artifacts` flags, and neither the
 project's (`-o`, `-p`, `-x`) nor `--cert-file`. Besides those they take the
 proofs' flags ([The proofs](#the-proofs-verithproofs)), and:
@@ -398,7 +406,7 @@ uv run certify m_step2.py --safety "(not (= (X @intf.0) 1))" --infer ai-cegis \
 # [CEGIS] all obligations UNSAT — accepted        -- and no LLM call was made
 ```
 
-What each is for, measured on the `python/tests/limits` fixtures:
+What each is for, measured on the `tests/limits` fixtures:
 
 | | `--infer smt-linear` | `--infer sygus` |
 |---|---|---|
@@ -516,7 +524,7 @@ decimal as happily, so the certificate carries one spelling whoever proved
 it.
 
 ```bash
-uv run certify ../python/tests/limits/mods/m_lra_lin.py --buchi "(= (X @intf.0) 0.0)" \
+uv run certify tests/limits/mods/m_lra_lin.py --buchi "(= (X @intf.0) 0.0)" \
     --infer houdini --houdini-solver vampire --vampire ~/vampire/vampire \
     -o out/ -p Rea
 # [houdini] solver: vampire
@@ -567,7 +575,7 @@ So the questions are kept to two where they can be:
 * `--buchi` is **two**: an inductive invariant, then a ranking function that
   drops on *that* invariant, with its coefficients already numbers. The
   joint question is four holes for a one-component module and answered
-  nothing at all over `python/tests/limits`; the split derives `m_countdown` and
+  nothing at all over `tests/limits`; the split derives `m_countdown` and
   `m_deep` — invariant in about a second, rank in about eight. The rank
   obligation is `rank(s) > 0` where the property fails and `rank(s') <
   rank(s)`, which implies the clamped `Int.toNat` form `rule_buchi` asks
@@ -611,7 +619,7 @@ portfolio strategy is tuned to find a refutation; what is wanted here is the
 **Both namings, and the whole budget declared to each.** Vampire introduces
 a Tseitin definition for each subformula it judges worth naming, and on a
 conjecture with holes that is decisive in *both* directions: over
-`python/tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
+`tests/limits` at 30 s each, naming answers `m_max` and `m_toward5` where
 `--naming 0` does not, `--naming 0` answers `m_relu` where naming does not,
 and they agree on `m_countdown`, `m_deep` and `m_min`. So both are asked,
 each on a share of what is left of the run.
@@ -633,7 +641,7 @@ lrs`, `--theory_instantiation all`, `--unification_with_abstraction
 one_side_interpreted` — and none moved either.
 
 So in practice this route derives a certificate for a **one-component Int**
-module — eight of seventeen `python/tests/limits` safety and Büchi pairs, two of
+module — eight of seventeen `tests/limits` safety and Büchi pairs, two of
 them Büchi — and refuses past that pointing at `--infer houdini`, which
 searches a wider module by proposing facts and proving them. It reads scalar `Int` state
 only: Vampire reads reals, but the templates here are integer intervals and
@@ -649,7 +657,7 @@ that is reported as not found. This is not Houdini: nothing is filtered and
 nothing is proposed; it is the one check that the derivation is honest.
 
 ```bash
-uv run certify ../python/tests/limits/mods/m_countdown.py --safety "(<= (X @intf.0) 100)" \
+uv run certify tests/limits/mods/m_countdown.py --safety "(<= (X @intf.0) 100)" \
     --infer vampire --vampire ~/zeroth/vampire/vampire -o out/ -p Rea
 # [vampire] 2 branch(es) of the round, 1 of the initial state, 1 component(s)
 # [vampire] template intervals: 2 holes, 409 chars
@@ -807,8 +815,8 @@ see [Building the certificate](#building-the-certificate---build-cert).
 The route needs that checkout on the same toolchain as the generated
 projects, **v4.34.0**. It is kept there by matching `project/lakefile.py`'s
 package set exactly (`cslib v4.34.0`, `smt db545be…`, Mathlib inherited
-through cslib), which lets one already-built `.lake/packages` — e.g.
-`python/tests/lean`'s — serve both.
+through cslib), which lets one already-built `.lake/packages` — the Lake
+package cache's (`$REACTOR_LAKE_CACHE`) — serve both.
 
 The port from v4.28.0 needed, on the `smt` path this route uses, the move
 of `Mathlib.Logic.Basic` to `Mathlib.Basic.Logic.Basic` and one `simp at ih`
@@ -906,8 +914,8 @@ flag fails there rather than in generated code.
 
 `just vr-test` (`uv run pytest -m 'not slow'` from `verith/`) runs
 `tests/` and `nuterm/tests/`; `just test-lean` adds the `slow` ones, which
-build Lean. The modules they run on are `reactor`'s fixtures, read from
-`python/tests/` (`fixtures/`, `smv_fixtures/`, `limits/mods/`).
+build Lean. The modules they run on are their own (`tests/fixtures/`,
+`tests/smv_fixtures/`, `tests/limits/mods/`).
 `tests/bench_matrix/` measures every route on every benchmark
 ([README](tests/bench_matrix/README.md)), `tests/fbk/` sweeps the
 `fbk-proveit` route ([README](tests/fbk/README.md)), and
@@ -923,8 +931,9 @@ commit before it and after it, and compare:
   external tools. Record on a quiet machine, and re-run a `vampire_*` case
   alone before reading a difference in it as a change: under load its
   templates run out of their shared deadline.
-- **Encoding snapshots**: `scripts/encoding_snapshots.py OUTDIR` writes what
-  the transcripts do not cover: the `System/*.lean` encodings, the bare
-  `--cert-file` certificate, and the NA model and bridge, per fixture.
+- **Encoding snapshots**: `uv run python scripts/encoding_snapshots.py OUTDIR`
+  from `../lean/` writes what the transcripts do not cover: the
+  `System/*.lean` encodings, the bare `--cert-file` certificate, and the NA
+  model and bridge, per fixture.
 - **Goldens**: `tests/test_certify_golden.py`; `REACTOR_UPDATE_GOLDEN=1`
   rewrites them. Set `VAMPIRE` to the binary for the Vampire tests.

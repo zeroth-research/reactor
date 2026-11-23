@@ -7,7 +7,7 @@ spell identically is defined once, here, and named in both.
 
 from __future__ import annotations
 
-from reactor.lean.core.options import Opt
+from reactor_lean.core.options import Opt
 
 from .llm import DEFAULT_MODEL
 

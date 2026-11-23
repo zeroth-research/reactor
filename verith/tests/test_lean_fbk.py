@@ -16,14 +16,14 @@ import pytest
 import torch
 
 from reactor import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
-from reactor.lean.lowering.sorts import dtype_shape
-from reactor.lean.codegen.context import LeanContext
-from reactor.lean.core.errors import PredicateRefused
+from reactor_lean.lowering.sorts import dtype_shape
+from reactor_lean.codegen.context import LeanContext
+from reactor_lean.core.errors import PredicateRefused
 from verith.fbk_proveit.engine import ProveItError, property_to_bool_lean, resolve_project
 from verith.fbk_proveit.na import NAUnsupported, atom_to_lean_na, check_na_supported
 
 # The CLI fixtures are `reactor`'s, in the `python/` project beside this one.
-FIXTURE_DIR = Path(__file__).resolve().parents[2] / "python" / "tests" / "fixtures"
+FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 def run_certify(*args) -> subprocess.CompletedProcess:
@@ -955,7 +955,7 @@ def test_the_bridge_is_not_imported_by_the_certificate_root():
     importing the two is rejected before it is elaborated. Lake reaches the
     bridge through the `Certificate` lean_lib's glob instead."""
     from verith.fbk_proveit.engine import equivalence_lean
-    from reactor.lean.project.templates import render
+    from reactor_lean.project.templates import render
 
     text = equivalence_lean("Proj", LeanContext(_counter()))
 
@@ -1170,7 +1170,7 @@ def test_the_proveit_lakefile_can_see_what_the_certificate_imports():
 
     from verith.fbk_proveit.engine import na_module_name
     from verith import route_by_name
-    from reactor.lean.project.lakefile import generate_lakefile
+    from reactor_lean.project.lakefile import generate_lakefile
 
     bare = generate_lakefile("Proj")
     assert "LTL_Certifying" not in bare
@@ -1226,7 +1226,7 @@ def test_a_check_and_a_property_share_one_encoding(monkeypatch):
     on the run's one `Encoding`; none of them builds a term manager of
     its own."""
     from verith.fbk_proveit.engine import check_module
-    from reactor.lean.smt.module import ModuleSMT
+    from reactor_lean.smt.module import ModuleSMT
     from verith.common.encoding import Encoding
 
     built = [0]

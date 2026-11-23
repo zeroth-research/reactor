@@ -21,10 +21,10 @@ import pytest
 
 pytest.importorskip("cvc5")
 
-from reactor.lean.inputs.python import load_module
+from reactor_lean.inputs.python import load_module
 from verith.common.encoding import Encoding
 
-MODS = Path(__file__).resolve().parents[2] / "python" / "tests" / "limits" / "mods"
+MODS = Path(__file__).resolve().parent / "limits" / "mods"
 
 
 def _frames_holding(enc) -> list:
@@ -46,7 +46,7 @@ def test_a_translation_that_failed_holds_no_frame_of_it():
 
 _KEPT_FAILURE = r"""
 import sys
-from reactor.lean.inputs.python import load_module
+from reactor_lean.inputs.python import load_module
 from verith.common.encoding import Encoding
 
 def kept_block(self, name):

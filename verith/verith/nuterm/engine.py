@@ -54,8 +54,8 @@ from z3.z3util import get_vars
 
 from reactor import Module
 
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.core.errors import Refused
 from ..common.record import announce
 from ..common.encoding import encoding_of
 from ..common.smtlib import affine_smt, conjunction_smt, smt_int, smtlib_source

@@ -10,8 +10,8 @@ Neither package is imported until a client is made: `cli` imports
 
 import os
 
-from reactor.lean.core.certificate import Claim
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Claim
+from reactor_lean.core.errors import Refused
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 

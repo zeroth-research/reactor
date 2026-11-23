@@ -64,8 +64,8 @@ and the artifact is the answer being *reusable*.
 
 from __future__ import annotations
 
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.core.errors import Refused
 from ..common.claim import READING_KINDS, SynthContext
 from ..common.record import announce
 from ..common.limits import bounded_solver, call_ms

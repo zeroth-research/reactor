@@ -88,7 +88,7 @@ Naming is asked both ways
 =========================
 Vampire introduces a Tseitin definition for each subformula it judges worth
 naming, and on a conjecture with holes that is decisive in *both*
-directions.  Measured over `python/tests/limits`, 30 s each: naming answers
+directions.  Measured over `tests/limits`, 30 s each: naming answers
 `m_max` and `m_toward5` where ``--naming 0`` does not; ``--naming 0``
 answers `m_relu` where naming does not; they agree on `m_countdown`,
 `m_deep` and `m_min`.  Neither setting is the right one, so both are asked,
@@ -111,7 +111,7 @@ the questions are kept to two where they can be:
 * ``--buchi`` is two questions: an inductive invariant, then a rank that
   drops on *that* invariant, with its coefficients already numbers.  The
   joint question is four holes for a one-component module and answered
-  nothing at all over `python/tests/limits`; the split derives `m_countdown` and
+  nothing at all over `tests/limits`; the split derives `m_countdown` and
   `m_deep`, invariant in about a second and rank in about fifteen.
 
 Splitting a search can cost what a joint one would have found -- an
@@ -160,8 +160,8 @@ nothing is proposed, it is the one check that the derivation is honest.
 from __future__ import annotations
 
 
-from reactor.lean.core.certificate import Certificate, Claim
-from reactor.lean.core.errors import PredicateRefused, Refused
+from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.core.errors import PredicateRefused, Refused
 from ..common.solvers import DEFAULT_TIMEOUT, Cvc5Solver
 from ..common.obligations import Candidate, Obligations
 from ..common.record import GaveUp, announce, found_certificate
@@ -263,7 +263,7 @@ class VampireEngine:
         Asked apart rather than as one conjecture with every hole in it,
         because two holes is what this mechanism reaches: the joint question
         for a one-component module is four, and it answered nothing at all
-        over `python/tests/limits`, where the split derives `m_countdown` and
+        over `tests/limits`, where the split derives `m_countdown` and
         `m_deep` -- invariant in about a second, rank in about fifteen.
 
         Splitting a search can cost what a joint one would have found: an

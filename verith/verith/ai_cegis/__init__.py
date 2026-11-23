@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from reactor.lean.core.options import Opt
+from reactor_lean.core.options import Opt
 from ..common.options import BASE_URL, MODEL
 from ..io import InferInput, InferResult
 from ..resume import resumable_inv, ruled_out, taking_inv

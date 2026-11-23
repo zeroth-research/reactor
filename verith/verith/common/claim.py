@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from functools import cached_property
 
-from reactor.lean.core.certificate import Claim
-from reactor.lean.core.errors import Refused
+from reactor_lean.core.certificate import Claim
+from reactor_lean.core.errors import Refused
 from .encoding import encoding_of
 
 from .smtlib import smtlib_source

@@ -32,13 +32,12 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-# `reactor`'s tests, in the `python/` project beside this one: the CLI
-# fixtures and the limit matrix.
-PYTHON_TESTS = HERE.parents[2] / "python" / "tests"
+# The CLI fixtures, which a probe names as `TESTS/<name>`.
+FIXTURES = HERE.parent / "fixtures"
 sys.path.insert(0, str(HERE))
 
 from probes import PROBES, REJECTED  # noqa: E402
-from reactor.lean.inputs import to_surface  # noqa: E402
+from reactor_lean.inputs import to_surface  # noqa: E402
 
 
 def _run(cmd, timeout):
@@ -75,7 +74,7 @@ def module_path(mod: str, mods_dir) -> Path:
     a probe can name either set.
     """
     if mod.startswith("TESTS/"):
-        return PYTHON_TESTS / "fixtures" / f"{mod.split('/', 1)[1]}.py"
+        return FIXTURES / f"{mod.split('/', 1)[1]}.py"
     return Path(mods_dir) / f"{mod}.py"
 
 
@@ -119,8 +118,8 @@ def screen(opts) -> int:
     """Which modules the NA encoding refuses, and whether it is still the
     same set.  Needs no Lean, no ic3ia and no lean-ltl-certifying."""
     sys.path.insert(0, str(Path(opts.mods).resolve()))
-    from reactor.lean.codegen.context import LeanContext
-    from reactor.lean.inputs.python import load_module
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.inputs.python import load_module
     from verith.fbk_proveit.na import NAUnsupported, check_na_supported
 
     accepted, rejected, surprises = [], {}, []

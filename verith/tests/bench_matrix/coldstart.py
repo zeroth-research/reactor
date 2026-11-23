@@ -18,8 +18,9 @@ per-cell cost the table reports.
 `noop_build_s` is `lake build` with nothing to do, the floor under every
 number here.
 
-Mathlib itself is **not** compiled: `tests/lean/.lake/packages` holds it
-already, and it arrives from the mathlib4 olean cache
+Mathlib itself is **not** compiled: the Lake package cache
+(`$REACTOR_LAKE_CACHE`, which `just vr-run` sets) holds it already, and it
+arrives from the mathlib4 olean cache
 (`lake exe cache get`, an Azure blob store) rather than from a local
 build. That download-and-decompress, not a compile, is the real cold start
 for Mathlib, and it is the one thing here that is a property of the network
@@ -43,19 +44,17 @@ from pathlib import Path
 SP = Path(__file__).resolve().parent
 VR = SP.parent.parent                       # verith/: verith, certify, nuterm
 PY = VR.parent / "python"                   # python/: reactor and its tests
-WARM = PY / "tests" / "lean"
-MANIFEST = PY / "tests" / "limits" / "lake-manifest.json"
 
 sys.path.insert(0, str(PY))
 sys.path.insert(0, str(VR))
-from reactor.lean.project.lakefile import (  # noqa: E402
-    REACTOR_LEAN_ENV, reactor_lean_checkout, with_reactor_lean,
-)
+from reactor_lean.project.lake_cache import LAKE_CACHE_ENV, lake_cache  # noqa: E402
 
-# The reactor-lean checkout the project requires by path; the `verith`
-# runs below inherit it.
-os.environ.setdefault(REACTOR_LEAN_ENV, str(PY.parent.parent / "ReactLib"))
-REACTOR_LEAN = reactor_lean_checkout()
+# The Lake package cache every project builds against, and the ReactLib
+# checkout the projects require by path: both from the environment
+# (`$REACTOR_LAKE_CACHE`, `$REACTLIB`; `just vr-run` sets them), and both
+# inherited by the `certify` runs below, which write each project's
+# manifest against the cache.
+CACHE = lake_cache()
 WORK = Path(os.environ.get("VERITH_BENCH_WORK", "/tmp/verith-bench.noindex"))
 RESULTS = WORK / "results.json"
 
@@ -82,7 +81,7 @@ FIRST_BUILD_NOTE = (
     "did not reproduce here, and that figure has no target list attached.")
 
 MATHLIB_NOTE = (
-    "not compiled here &mdash; <code>tests/lean/.lake/packages</code> is already "
+    "not compiled here &mdash; the Lake package cache is already "
     "populated, and Mathlib arrives from the mathlib4 olean cache "
     "(<code>lake exe cache get</code>, an Azure blob store) rather than from a "
     "local build. <code>tests/limits/README.md</code> records that first "
@@ -104,10 +103,15 @@ EXPLAIN = (
 )
 
 
-def write_manifest(proj: Path) -> None:
-    """The warm manifest, with reactor-lean's packages as path requires."""
-    manifest = with_reactor_lean(json.loads(MANIFEST.read_text()), REACTOR_LEAN)
-    (proj / "lake-manifest.json").write_text(json.dumps(manifest, indent=2))
+def link_lake(proj: Path, shared: Path) -> None:
+    """Point `proj`'s `.lake` at `shared`, the one build dir. `certify`
+    made it a directory holding the link to the cache's packages."""
+    lake = proj / ".lake"
+    if lake.is_symlink():
+        lake.unlink()
+    elif lake.is_dir():
+        shutil.rmtree(lake)
+    lake.symlink_to(shared)
 
 
 def run(cmd, cwd, timeout=3600):
@@ -117,8 +121,9 @@ def run(cmd, cwd, timeout=3600):
 
 
 def main() -> None:
-    if not (WARM / ".lake" / "packages").is_dir():
-        raise SystemExit(f"error: {WARM / '.lake/packages'} is not populated")
+    if CACHE is None:
+        raise SystemExit(f"error: no Lake package cache: set ${LAKE_CACHE_ENV} "
+                         f"(`just vr-run` sets it)")
 
     proj_root = WORK / "coldstart_project"
     shutil.rmtree(proj_root, ignore_errors=True)
@@ -127,16 +132,14 @@ def main() -> None:
     print("generating one project (m_countdown, --infer nuterm) ...")
     _, r = run(["uv", "run", "certify", "tests/limits/mods/m_countdown.py",
                 "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm",
-                "--artifacts", "reset", "-o", str(proj_root), "-p", "Rea"], PY, 600)
+                "--artifacts", "reset", "-o", str(proj_root), "-p", "Rea"], VR, 600)
     if r.returncode != 0:
         raise SystemExit(f"generation failed:\n{r.stderr[-2000:]}")
 
     proj = proj_root / "Rea"
     COLD.mkdir(parents=True, exist_ok=True)
-    (COLD / "packages").symlink_to(WARM / ".lake" / "packages")
-    (proj / ".lake").unlink(missing_ok=True)
-    (proj / ".lake").symlink_to(COLD)
-    write_manifest(proj)
+    (COLD / "packages").symlink_to(CACHE / "packages")
+    link_lake(proj, COLD)
 
     print(f"cold build into an empty build dir ({COLD}) ... this is the slow one")
     cold_s, r = run(["lake", "build"], proj)
@@ -157,10 +160,8 @@ def main() -> None:
     shutil.rmtree(proj_root, ignore_errors=True)
     run(["uv", "run", "certify", "tests/limits/mods/m_countdown.py",
          "--buchi", "(= (X @intf.0) 0)", "--infer", "nuterm", "--artifacts", "reset",
-         "-o", str(proj_root), "-p", "Rea"], PY, 600)
-    (proj / ".lake").unlink(missing_ok=True)
-    (proj / ".lake").symlink_to(COLD)
-    write_manifest(proj)
+         "-o", str(proj_root), "-p", "Rea"], VR, 600)
+    link_lake(proj, COLD)
     warm_s, _ = run(["lake", "build"], proj)
     print(f"  {warm_s:.1f}s")
 

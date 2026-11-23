@@ -30,8 +30,8 @@ and a `lean-ltl-certifying` checkout.
 ### 1. The fixture modules (`--mods`)
 
 The probes run on the limit-probe fixture set — the `m_*.py` modules of
-[`python/tests/limits/`](../../../python/tests/limits/README.md), which is in the repo at
-`python/tests/limits/mods`.  Any directory of `m_*.py` files exposing `module()`
+[`tests/limits/`](../limits/README.md), which is in the repo at
+`verith/tests/limits/mods`.  Any directory of `m_*.py` files exposing `module()`
 will do; the probe table names 11 of them.
 
 ### 2. MathSAT + its Python bindings
@@ -90,8 +90,8 @@ serves both** and Mathlib is never rebuilt.
 ```sh
 cd <lean-ltl-certifying>
 mv .lake .lake.old 2>/dev/null; mkdir -p .lake
-ln -s <repo>/python/tests/lean/.lake/packages .lake/packages
-cp <repo>/python/tests/lean/lake-manifest.json .
+ln -s "$REACTOR_LAKE_CACHE/packages" .lake/packages
+cp "$REACTOR_LAKE_CACHE/lake-manifest.json" .
 lake build LTLCertifying.Safety.Lemmas lean2vmt      # ~80 s cold, ~2 s after
 ```
 
@@ -144,7 +144,7 @@ last sweep, 39 probes: 32 `certified`, 4 `unsafe`, 1 `unknown`, 1 `abort`,
 
 ### On the choice of properties
 
-The `P` column of the `python/tests/limits` case matrix is **not** usable here.
+The `P` column of the `tests/limits` case matrix is **not** usable here.
 That `P` is a reachability target for verith's own certificate, which proves
 `inv` + `ranking` ⇒ `P` is reached; this route proves `□ PROPERTY`.  They are
 different properties.  Countdown starts at 100, so `□(x = 0)` is false at
@@ -168,7 +168,7 @@ and land on opposite sides of it.
 
 `run_fbk.py` is a pass/fail table — every probe carries the verdict it
 should get.  `run_fbk_limits.py` is the other thing: it takes all 77 cases
-of `python/tests/limits/cases.py`, feeds each case's `--invariant` to `--safety`,
+of `tests/limits/cases.py`, feeds each case's `--invariant` to `--safety`,
 and reports what happens, with no expectation attached.  Distinct
 `(module, invariant)` pairs only, since 23 countdown cases share one
 invariant.
