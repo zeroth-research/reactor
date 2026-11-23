@@ -9,9 +9,9 @@ from __future__ import annotations
 import pytest
 import torch
 
-from reactor import BV, LIA, LRA, BitVec, Bool, Int, Module, Real, Term, Var, X
+from reactor import Bool, Int, Module, Real, Term, Var, Word, X, tensor
 from reactor_lean.core.errors import Unreadable
-from reactor_lean.lowering.sorts import itype_name
+from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse.formula import family
 from reactor_lean.parse.native import ModuleWires
 from reactor_lean.parse.smtlib import Scope, read_smtlib
@@ -21,20 +21,20 @@ def _mixed() -> Module:
     """One state variable of each sort -- Int, Bool, Real, a 4-bit vector
     and a 2x2 Int matrix (`s0`..`s4`) -- and an Int input (`e0`, `el0`)."""
     i, b, r = Var(Int([1, 1])), Var(Bool([1, 1])), Var(Real([1, 1]))
-    v, m, e = Var(BitVec(4, [1, 1])), Var(Int([2, 2])), Var(Int([1, 1]))
+    v, m, e = Var(Word(4, [1, 1])), Var(Int([2, 2])), Var(Int([1, 1]))
     init = [
-        Term(LIA.Int(torch.tensor([[0]])), [X(i)]),
-        Term(LIA.Bool(torch.tensor([[True]])), [X(b)]),
-        Term(LRA.Real(torch.tensor([[0.0]])), [X(r)]),
-        Term(BV.Const(torch.tensor([[0]])), [X(v)]),
-        Term(LIA.Int(torch.zeros(2, 2, dtype=torch.int64)), [X(m)]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [X(i)]),
+        Term(tensor.bool.Const(torch.tensor([[True]])), [X(b)]),
+        Term(tensor.real.Const(torch.tensor([[0.0]])), [X(r)]),
+        Term(tensor.word.Const(torch.tensor([[0]]), 4), [X(v)]),
+        Term(tensor.int.Const(torch.zeros(2, 2, dtype=torch.int64)), [X(m)]),
     ]
     update = [
-        Term(LIA.Id(), [X(i)], [X(e)]),
-        Term(LIA.Id(), [X(b)], [b]),
-        Term(LRA.Id(), [X(r)], [r]),
-        Term(BV.Id(), [X(v)], [v]),
-        Term(LIA.Id(), [X(m)], [m]),
+        Term(tensor.Skip(Int([1, 1])), [X(i)], [X(e)]),
+        Term(tensor.Skip(Bool([1, 1])), [X(b)], [b]),
+        Term(tensor.Skip(Real([1, 1])), [X(r)], [r]),
+        Term(tensor.Skip(Word(4, [1, 1])), [X(v)], [v]),
+        Term(tensor.Skip(Int([2, 2])), [X(m)], [m]),
     ]
     return Module.sequential([i, b, r, v, m, e], init, update)
 
@@ -47,7 +47,9 @@ def _scope() -> Scope:
 
 
 def _ops(src: str) -> list[str]:
-    return [itype_name(t.itype) for t in read_smtlib(_scope(), src).terms]
+    """The ops `src` is read into, each named with its theory (`int.Lt`)."""
+    return [f"{theory_of(t.itype)}.{itype_name(t.itype)}"
+            for t in read_smtlib(_scope(), src).terms]
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -122,25 +124,26 @@ def test_a_subterm_written_twice_is_built_once():
 
 
 def test_a_chain_is_built_as_a_conjunction_of_its_links():
-    assert _ops("(and s1 s1 s1)").count("And") == 2
-    assert _ops("(< s0 1 2)") == ["Int", "Lt", "Int", "Lt", "And"]
-    assert _ops("(distinct s0 1 2)").count("Ne") == 3
+    assert _ops("(and s1 s1 s1)").count("bool.And") == 2
+    assert _ops("(< s0 1 2)") == [
+        "int.Const", "int.Lt", "int.Const", "int.Lt", "bool.And"]
+    assert _ops("(distinct s0 1 2)").count("int.Ne") == 3
 
 
 def test_a_numeral_takes_the_sort_it_meets():
     """An Int numeral against a Real is a Real constant, not a cast one; a
     variable is cast."""
-    assert "IntToReal" not in _ops("(< s2 2)")
-    assert "Real" in _ops("(< s2 2)")
-    assert "IntToReal" in _ops("(< s2 s0)")
-    assert _ops("(- 5)") == ["Int", "Neg"]
-    assert _ops("(< s2 (- 5))")[:2] == ["Real", "Neg"]
+    assert "cast.ToReal" not in _ops("(< s2 2)")
+    assert "real.Const" in _ops("(< s2 2)")
+    assert "cast.ToReal" in _ops("(< s2 s0)")
+    assert _ops("(- 5)") == ["int.Const", "int.Neg"]
+    assert _ops("(< s2 (- 5))")[:2] == ["real.Const", "real.Neg"]
 
 
 def test_a_bit_vector_comparison_is_read_as_a_bool():
     f = read_smtlib(_scope(), "(= s3 5)")
     assert family(f.sort) == "Bool"
-    assert _ops("(= s3 5)") == ["Const", "Eq", "BitToBool"]
+    assert _ops("(= s3 5)") == ["word.Const", "word.Eq"]
 
 
 @pytest.mark.parametrize("src, why", [

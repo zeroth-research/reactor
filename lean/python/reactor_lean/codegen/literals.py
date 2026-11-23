@@ -4,8 +4,11 @@ module's terms define (`ConstantRegistry`)."""
 from __future__ import annotations
 
 
-from reactor import BitVec, Bool, Int, Real, Sort, Term, Wire
-from ..lowering.sorts import is_scalar_tensor, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type, mat_mk, wire_shape
+import torch
+
+from reactor import Bool, Int, Real, Term, Wire, Word
+from ..core.errors import Refused
+from ..lowering.sorts import Sort, is_scalar_tensor, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type, mat_mk, wire_shape
 from ..lowering.values import decimal_fraction
 
 
@@ -36,7 +39,7 @@ class ConstantRegistry:
         name = f"c{self._counter}"
         self._counter += 1
         self._by_id[out_wire.id] = name
-        self._defs.append(tensor_to_lean_def(name, term.itype._0, out_wire))
+        self._defs.append(tensor_to_lean_def(name, term.itype.tensor, out_wire))
 
     def lookup(self, wire_id: int) -> str | None:
         return self._by_id.get(wire_id)
@@ -54,7 +57,7 @@ def constant_expr(term: Term, w: Wire, constants: "ConstantRegistry") -> str:
     name = constants.lookup(w.id)
     if name is not None:
         return name
-    return tensor_to_lean_inline(term.itype._0, w)
+    return tensor_to_lean_inline(term.itype.tensor, w)
 
 
 def lean_int(value) -> str:
@@ -87,8 +90,8 @@ def lean_literal(sort: Sort, value) -> str:
         return lean_int(value)
     if isinstance(sort, Real):
         return lean_real(value)
-    if isinstance(sort, BitVec):
-        return lean_bitvec(sort._0, value)
+    if isinstance(sort, Word):
+        return lean_bitvec(sort.width, value)
     raise ValueError(f"no Lean literal for a value of sort {sort}")
 
 
@@ -150,8 +153,37 @@ def tensor_to_lean_scalar(tensor, wire: Wire) -> str:
     return lean_literal(wire.dtype, tensor.item())
 
 
+def affine_tensors(term: Term) -> "tuple[torch.Tensor, torch.Tensor]":
+    """`A` and the bias column `b` of the affine map `Y = A·X + b` a `Linear`
+    or `Scale` op is, `b` of shape `[out, 1]`.
+
+    `Linear(A, B)`'s `B` is of the output's shape `[out, k]`, which the
+    reflected form takes as one column added to every column of `A·X`: a `B`
+    whose columns differ is refused. `Scale(c)` is the pointwise product of
+    `c` and `X`, which is `diag(c)·X` when every row of `c` is one number: a
+    `c` whose rows are not is refused.
+    """
+    op = term.itype
+    if itype_name(op) == "Scale":
+        c = op.tensor
+        if not bool((c == c[:, :1]).all()):
+            raise Refused(
+                f"no Lean form for `Scale` by {c.tolist()}: its rows are not "
+                "one number each, so it is no `diag(c)·X`"
+            )
+        return torch.diag(c[:, 0]), torch.zeros(c.shape[0], 1, dtype=c.dtype)
+    A, B = op.a, op.b
+    if B.numel() and not bool((B == B[:, :1]).all()):
+        raise Refused(
+            f"no Lean form for a `Linear` whose bias {B.tolist()} differs "
+            "across its columns: `matVecAffine` adds one column"
+        )
+    return A, B[:, :1]
+
+
 def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
-    """List-literal operands for a baked-constant `Linear` op (`Y = A·X + B`).
+    """List-literal operands for a baked-constant `Linear` or `Scale` op
+    (`Y = A·X + b`, see `affine_tensors`).
 
     Returns ``(out_rows, A_literal, b_literal, elem_ty)`` where ``A_literal`` is a
     ``List (List t)`` and ``b_literal`` a ``List t`` (empty bias → zeros), both
@@ -159,8 +191,7 @@ def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
     emitters so the reflected form is generated in one place.
     """
     out_wire = term.write[0]
-    A = term.itype._0
-    B = term.itype._1
+    A, B = affine_tensors(term)
     # Rows of `A`, which is what `Y` has whatever its wire's shape says.
     out_m = int(A.shape[0])
     in_dim = int(A.shape[1])

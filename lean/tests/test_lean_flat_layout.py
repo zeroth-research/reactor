@@ -28,7 +28,7 @@ import re
 import pytest
 import torch
 
-from reactor import Bool, Int, LIA, Module, Real, Term, Var, Wire, X
+from reactor import Bool, Int, Module, Real, Term, Var, Wire, X, tensor
 from reactor_lean.lowering.sorts import dtype_shape, dtype_to_lean_type, wire_shape
 from reactor_lean.lowering.elements import (
     product_accessor,
@@ -212,10 +212,10 @@ def _matrix_module() -> Module:
     x = Var(Int([2, 3]))
     ones = Wire(Int([2, 3]))
     start = torch.tensor([[1, 2, 3], [4, 5, 6]])
-    init = [Term(LIA.Int(start), [X(x)])]
+    init = [Term(tensor.int.Const(start), [X(x)])]
     update = [
-        Term(LIA.Int(torch.ones((2, 3), dtype=torch.int64)), [ones]),
-        Term(LIA.Add(), [X(x)], [x, ones]),
+        Term(tensor.int.Const(torch.ones((2, 3), dtype=torch.int64)), [ones]),
+        Term(tensor.int.Add([2, 3]), [X(x)], [x, ones]),
     ]
     return Module.sequential([x], init, update)
 

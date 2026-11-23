@@ -2,7 +2,7 @@
 
 import pytest
 import torch
-from reactor import Wire, Term, Module, Bool, Int, LIA, Var, X
+from reactor import Wire, Term, Module, Bool, Int, Var, X, tensor
 from reactor_lean import ModuleToLean4
 from reactor_lean.lowering.sorts import itype_name
 from reactor_lean.codegen.context import LeanContext
@@ -12,9 +12,9 @@ from testdata import fixture
 
 
 def test_itype_name_strips_prefix():
-    assert itype_name(LIA.Add()) == "Add"
-    assert itype_name(LIA.Int(torch.tensor([[0]]))) == "Int"
-    assert itype_name(LIA.Ite()) == "Ite"
+    assert itype_name(tensor.int.Add([1, 1])) == "Add"
+    assert itype_name(tensor.int.Const(torch.tensor([[0]]))) == "Const"
+    assert itype_name(tensor.int.Ite([1, 1])) == "Ite"
 
 
 def _make_twobitcounter():
@@ -23,10 +23,10 @@ def _make_twobitcounter():
 
 
 def _make_matrix_module():
-    """Matrix module using LIA.Linear (affine map Y = A·X + B).
+    """Matrix module using Linear (affine map Y = A·X + B).
 
     Both transitions are constant-matrix maps, so they are linear and expressed
-    with `LIA.Linear` (A and B baked into the op) rather than a (BV-only) MatMul:
+    with `Linear` (A and B baked into the op) rather than a MatMul:
       init:   x' = A · u          with A = [[0,0],[1,0],[0,1]]  (no bias)
       update: x' = B · x + e1     with B = I₃, e1 = [1,0,0]ᵀ
     """
@@ -35,13 +35,13 @@ def _make_matrix_module():
 
     A = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
     init = [
-        Term(LIA.Linear(A, torch.zeros((3, 1), dtype=torch.int64)), [X(x)], [X(u)]),
+        Term(tensor.int.Linear(A, torch.zeros((3, 1), dtype=torch.int64)), [X(x)], [X(u)]),
     ]
 
     B = torch.eye(3, dtype=torch.int64)
     e1 = torch.tensor([[1], [0], [0]], dtype=torch.int64)
     update = [
-        Term(LIA.Linear(B, e1), [X(x)], [x]),
+        Term(tensor.int.Linear(B, e1), [X(x)], [x]),
     ]
     return Module.sequential([x, u], init, update)
 
@@ -136,7 +136,7 @@ def test_matrix_module_uses_matvecaffine():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    # LIA.Linear is emitted in the reflected form over list literals: matVecAffine
+    # Linear is emitted in the reflected form over list literals: matVecAffine
     # on the native path, Box.linear on the circuit path — neither uses the
     # (unreduced) affineLinear/MatMul the prover would have to expand.
     assert "affineLinear" not in lean
@@ -284,7 +284,7 @@ def test_certificate_has_buchi():
 def _no_ctrl_module():
     """A module with no controlled state: `module.ctrl` is empty."""
     w = Wire(Bool([1, 1]))
-    return Module.combinatorial([], [Term(LIA.Bool(torch.tensor([[True]])), [w])])
+    return Module.combinatorial([], [Term(tensor.bool.Const(torch.tensor([[True]])), [w])])
 
 
 @pytest.mark.parametrize(
@@ -351,8 +351,8 @@ def test_scalar_encoding_emits_a_scalar_relu():
     s = Var(Int([1, 1]))
     module = Module.sequential(
         [s],
-        [Term(LIA.Int(torch.tensor([[0]])), [X(s)])],
-        [Term(LIA.ReLU(), [X(s)], [s])],
+        [Term(tensor.int.Const(torch.tensor([[0]])), [X(s)])],
+        [Term(tensor.int.ReLU([1, 1]), [X(s)], [s])],
     )
     lean = ModuleToLean4(module).to_lean_scalar()
     relu = [l for l in lean.splitlines() if "Max.max" in l or "ReLu" in l]
@@ -367,8 +367,8 @@ def test_scalar_encoding_extracts_a_scalar_from_linear():
     s = Var(Int([1, 1]))
     module = Module.sequential(
         [s],
-        [Term(LIA.Int(torch.tensor([[0]])), [X(s)])],
-        [Term(LIA.Linear(torch.tensor([[2]]), torch.tensor([[1]])), [X(s)], [s])],
+        [Term(tensor.int.Const(torch.tensor([[0]])), [X(s)])],
+        [Term(tensor.int.Linear(torch.tensor([[2]]), torch.tensor([[1]])), [X(s)], [s])],
     )
     lean = ModuleToLean4(module).to_lean_scalar()
     line = next(l for l in lean.splitlines() if "matVecAffine" in l)
@@ -393,12 +393,12 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
     m3 = Var(Int([1, 3]))
     c = Var(Bool([1, 1]))
     init = [
-        Term(LIA.Int(torch.zeros(1, 3, dtype=torch.int64)), [X(m3)]),
-        Term(LIA.Bool(torch.tensor([[True]])), [X(c)]),
+        Term(tensor.int.Const(torch.zeros(1, 3, dtype=torch.int64)), [X(m3)]),
+        Term(tensor.bool.Const(torch.tensor([[True]])), [X(c)]),
     ]
     update = [
-        Term(LIA.Id(), [X(c)], [c]),
-        Term(LIA.Ite(), [X(m3)], [c, m3, m3]),
+        Term(tensor.Skip(Bool([1, 1])), [X(c)], [c]),
+        Term(tensor.int.Ite([1, 3]), [X(m3)], [c, m3, m3]),
     ]
     lean = ModuleToLean4(Module.sequential([m3, c], init, update)).to_lean_scalar()
     ite = [l for l in lean.splitlines() if "if " in l]
@@ -440,13 +440,13 @@ def _mixed_dependency_module():
     s2 = Var(Int([1, 1]))
     e = Var(Int([3, 1]))
     init = [
-        Term(LIA.Int(torch.tensor([[0]])), [X(s1)]),
-        Term(LIA.Int(torch.tensor([[0]])), [X(s2)]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [X(s1)]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [X(s2)]),
     ]
     update = [
-        Term(LIA.Id(), [X(s1)], [s1]),
+        Term(tensor.Skip(Int([1, 1])), [X(s1)], [s1]),
         Term(
-            LIA.Linear(torch.tensor([[1, 0, 0]]), torch.tensor([[0]])),
+            tensor.int.Linear(torch.tensor([[1, 0, 0]]), torch.tensor([[0]])),
             [X(s2)],
             [e],
         ),

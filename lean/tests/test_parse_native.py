@@ -11,7 +11,7 @@ import pytest
 
 from reactor_lean.core.errors import PredicateRefused, Unreadable
 from reactor_lean.inputs.python import load_module
-from reactor_lean.lowering.sorts import itype_name
+from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse import dsl
 from reactor_lean.parse.formula import Builder
 from reactor_lean.parse.native import (
@@ -36,9 +36,9 @@ def _shape(formula, wires: ModuleWires):
             return names[w.id]
         t = by_wire[w.id]
         name = itype_name(t.itype)
-        payload = (t.itype._0.tolist() if name in ("Int", "Real", "Bool", "Const")
+        payload = (t.itype.tensor.tolist() if name == "Const"
                    else (t.itype.row, t.itype.col) if name == "Get" else None)
-        return (type(t.itype).__name__, payload, *[go(r) for r in t.read])
+        return (f"{theory_of(t.itype)}.{name}", payload, *[go(r) for r in t.read])
 
     return go(formula.out)
 
@@ -95,7 +95,8 @@ def test_python_outside_the_syntax_is_not_read(src):
 
 def test_a_bare_numeral_still_falls_through_to_smtlib():
     f = parse_predicate(_wires("m_countdown"), "0")
-    assert itype_name(f.terms[-1].itype) == "Int"
+    op = f.terms[-1].itype
+    assert (theory_of(op), itype_name(op)) == ("int", "Const")
 
 
 @pytest.mark.parametrize(
