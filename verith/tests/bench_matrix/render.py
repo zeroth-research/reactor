@@ -1625,17 +1625,17 @@ def render(data: dict, warns: list = ()) -> str:
     )
     w("<h3>Building what one cell emits</h3>")
     w(
-        "<p>A command from a cell writes a Lean project and stops. To build it the way "
-        "the matrix does &mdash; against the already-built Mathlib, so nothing resolves "
-        "or recompiles it &mdash; point the project&rsquo;s <code>.lake</code> at the "
-        "shared one and give it the manifest that goes with it:</p>"
+        "<p>A command from a cell writes a Lean project and stops. Run with "
+        "<code>$REACTOR_LAKE_CACHE</code> set, as <code>just vr-run</code> sets it, the "
+        "project already builds against the cache&rsquo;s Mathlib, so nothing resolves "
+        "or recompiles it. To build it the way the matrix does, into the one shared "
+        "build dir, point the project&rsquo;s <code>.lake</code> at that:</p>"
     )
     w(
         "<pre>P=/tmp/verith-out.noindex/&lt;cell&gt;/Rea      # the -o of the pasted command\n"
         "mkdir -p /tmp/shared.noindex\n"
-        'ln -sfn "$PWD/tests/lean/.lake/packages" /tmp/shared.noindex/packages\n'
-        'ln -sfn /tmp/shared.noindex "$P/.lake"\n'
-        'cp tests/limits/lake-manifest.json "$P/"\n'
+        'ln -sfn "$REACTOR_LAKE_CACHE/packages" /tmp/shared.noindex/packages\n'
+        'rm -r "$P/.lake" &amp;&amp; ln -s /tmp/shared.noindex "$P/.lake"\n'
         '(cd "$P" &amp;&amp; lake build)</pre>'
     )
     w(
@@ -1645,9 +1645,7 @@ def render(data: dict, warns: list = ()) -> str:
         "<b>one build directory takes one writer</b>: module names are identical across "
         "generated projects, so a second build into the same shared directory serves the "
         "first one&rsquo;s oleans, and the symptom is <code>unknown constant "
-        "&#39;hrank&#39;</code> rather than a clean failure. "
-        "The <code>fbk-proveit</code> column needs one line more, because its lakefile "
-        "adds a path require: <code>lake update LTL_Certifying</code> before the build.</p>"
+        "&#39;hrank&#39;</code> rather than a clean failure.</p>"
     )
     w(
         "<p>The prose above is generated too: the method cards come from "

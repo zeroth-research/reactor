@@ -9,20 +9,31 @@ prevent. (`templates/` once carried two byte-identical sets of the Core
 files, and edits to the unread one did nothing for months.)
 """
 
+import json
 import re
 from pathlib import Path
 
 import pytest
 
 from reactor_lean.core.errors import Refused
+from reactor_lean.project.lake_cache import (
+    LAKE_CACHE_ENV,
+    cached_manifest,
+    lake_cache,
+)
 from reactor_lean.project.lakefile import (
+    FIXED_REQUIRES,
+    LakefileParts,
     REACTLIB_ENV,
     REACTLIB_PACKAGES,
+    REACTLIB_REV,
     REACTLIB_URL,
+    Require,
     generate_lakefile,
+    project_requires,
     reactlib_checkout,
-    with_reactlib,
 )
+from reactor_lean.project.scaffold import write_lakefile
 from reactor_lean.project.templates import TEMPLATES_DIR, PROJECT_TEMPLATES_DIR
 from testdata import FIXTURES
 
@@ -105,17 +116,127 @@ def test_a_reactlib_that_is_not_a_checkout_is_refused_before_the_project(
     assert not out.exists()
 
 
-def test_a_copied_manifest_gets_the_checkout_as_its_own(tmp_path):
-    """`lake build` reads a path dependency's `dir` from the manifest, not
-    the lakefile, so a manifest copied from elsewhere must be repointed."""
+# ══════════════════════════════════════════════════════════════════════
+#  The project builds against a Lake package cache, with $REACTOR_LAKE_CACHE
+# ══════════════════════════════════════════════════════════════════════
+
+def _git(name: str, rev: str, input_rev: str = "") -> dict:
+    return {"type": "git", "name": name, "rev": rev,
+            "inputRev": input_rev or rev, "inherited": False}
+
+
+def _cache(root: Path, *extra: dict) -> Path:
+    """A cache holding the fixed packages, Mathlib (as Cslib requires it),
+    `extra`, and a path entry of the project it was made from."""
+    (root / "packages").mkdir(parents=True)
+    cslib, smt = FIXED_REQUIRES
+    packages = [
+        _git("cslib", "990e65a", cslib.rev),
+        _git("smt", smt.rev),
+        {**_git("mathlib", "5ed2965", "v4.34.0"), "inherited": True},
+        {"type": "path", "name": "ReactLib", "dir": "../../elsewhere"},
+        *extra,
+    ]
+    (root / "lake-manifest.json").write_text(json.dumps(
+        {"version": "1.2.0", "name": "Made", "packagesDir": ".lake/packages",
+         "packages": packages}))
+    return root
+
+
+def test_no_cache_is_none_and_a_directory_that_is_no_cache_is_refused(
+        monkeypatch, tmp_path):
+    monkeypatch.delenv(LAKE_CACHE_ENV, raising=False)
+    assert lake_cache() is None
+    monkeypatch.setenv(LAKE_CACHE_ENV, str(tmp_path))
+    with pytest.raises(Refused, match="no packages or lake-manifest.json"):
+        lake_cache()
+    _cache(tmp_path / "c")
+    monkeypatch.setenv(LAKE_CACHE_ENV, str(tmp_path / "c"))
+    assert lake_cache() == (tmp_path / "c").resolve()
+
+
+def test_the_manifest_holds_the_cached_packages_and_the_projects_paths(
+        monkeypatch, tmp_path):
+    """The cache's git packages, the transitive ones too; not the path
+    package of the project the cache was made from, which is the
+    project's own; and an entry for each path require this project has."""
+    cache = _cache(tmp_path / "c")
     root = _checkout(tmp_path / "rl")
-    stale = {"name": "ReactLib", "type": "path", "dir": "../../elsewhere"}
-    kept = {"name": "cslib", "type": "git"}
-    out = with_reactlib({"version": "1.1.0", "packages": [kept, stale]}, root)
-    assert out["version"] == "1.1.0"
-    assert out["packages"][0] == kept
-    dirs = {e["name"]: e["dir"] for e in out["packages"] if e["type"] == "path"}
-    assert dirs == {p: str(root / p) for p in REACTLIB_PACKAGES}
+    monkeypatch.setenv(REACTLIB_ENV, str(root))
+    m = cached_manifest(cache, project_requires(), name="P",
+                        project=tmp_path / "P")
+    assert m["name"] == "P" and m["version"] == "1.2.0"
+    git = [e["name"] for e in m["packages"] if e["type"] == "git"]
+    assert git == ["cslib", "smt", "mathlib"]
+    dirs = {e["name"]: e["dir"] for e in m["packages"] if e["type"] == "path"}
+    assert dirs == {p: str(root.resolve() / p) for p in REACTLIB_PACKAGES}
+
+
+def test_a_git_require_the_cache_does_not_hold_is_refused(monkeypatch,
+                                                          tmp_path):
+    """Without `$REACTLIB`, ReactLib's packages are git requires, which a
+    cache made against a checkout does not hold."""
+    cache = _cache(tmp_path / "c")
+    monkeypatch.delenv(REACTLIB_ENV, raising=False)
+    with pytest.raises(Refused, match="does not hold ReactLib"):
+        cached_manifest(cache, project_requires(), name="P", project=tmp_path)
+    held = _cache(tmp_path / "held", *(_git(p, REACTLIB_REV)
+                                       for p in REACTLIB_PACKAGES))
+    m = cached_manifest(held, project_requires(), name="P", project=tmp_path)
+    assert {e["name"] for e in m["packages"]} >= set(REACTLIB_PACKAGES)
+
+
+def test_a_package_cached_at_another_revision_is_refused(tmp_path):
+    """Lake would fetch the asked-for revision over the one every other
+    project builds against."""
+    cache = _cache(tmp_path / "c")
+    newer = (Require("cslib", scope="leanprover", rev="v4.35.0"),)
+    with pytest.raises(Refused, match="holds cslib at v4.34.0"):
+        cached_manifest(cache, newer, name="P", project=tmp_path)
+
+
+def test_the_lakefile_written_with_a_cache_brings_the_manifest_and_packages(
+        monkeypatch, tmp_path):
+    """`write_lakefile` is where a project's lakefile is written, first or
+    again, so whatever writes one builds against the cache."""
+    cache = _cache(tmp_path / "c")
+    monkeypatch.setenv(REACTLIB_ENV, str(_checkout(tmp_path / "rl")))
+    monkeypatch.setenv(LAKE_CACHE_ENV, str(cache))
+    project = tmp_path / "P"
+    project.mkdir()
+    for _ in range(2):              # and again, over the first
+        write_lakefile(project, "P", executable=False, parts=LakefileParts())
+    link = project / ".lake" / "packages"
+    assert link.is_symlink() and link.resolve() == (cache / "packages").resolve()
+    manifest = json.loads((project / "lake-manifest.json").read_text())
+    assert manifest["name"] == "P"
+
+
+def test_a_project_with_packages_of_its_own_keeps_them(monkeypatch, tmp_path):
+    """One an earlier run built without the cache: its packages are not
+    the cache's to delete, and its manifest goes with them."""
+    cache = _cache(tmp_path / "c")
+    monkeypatch.setenv(REACTLIB_ENV, str(_checkout(tmp_path / "rl")))
+    monkeypatch.setenv(LAKE_CACHE_ENV, str(cache))
+    own = tmp_path / "P" / ".lake" / "packages" / "mathlib"
+    own.mkdir(parents=True)
+    (tmp_path / "P" / "lake-manifest.json").write_text("its own")
+    write_lakefile(tmp_path / "P", "P", executable=False, parts=LakefileParts())
+    assert own.is_dir()
+    assert (tmp_path / "P" / "lake-manifest.json").read_text() == "its own"
+
+
+def test_a_bad_cache_is_refused_before_the_project(monkeypatch, tmp_path):
+    from reactor_lean.pipeline import main
+
+    monkeypatch.setenv(LAKE_CACHE_ENV, str(tmp_path))
+    out = tmp_path / "out"
+    monkeypatch.setattr("sys.argv", [
+        "reactor", str(FIXTURES / "counter.py"),
+        "--safety", "(>= (X @intf.0) 0)", "-o", str(out), "-p", "P"])
+    with pytest.raises(SystemExit, match="is not a Lake package cache"):
+        main()
+    assert not out.exists()
 
 
 # ══════════════════════════════════════════════════════════════════════

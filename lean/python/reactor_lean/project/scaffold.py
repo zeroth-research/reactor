@@ -18,7 +18,9 @@ from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
 from .names import LINTERS_OFF, SYSTEM_LAYOUT, Layout
 from .templates import render
-from .lakefile import LEAN_TOOLCHAIN, LakefileParts, generate_lakefile
+from .lake_cache import lake_cache, use_lake_cache
+from .lakefile import (LEAN_TOOLCHAIN, LakefileParts, generate_lakefile,
+                       project_requires)
 from .main_lean import generate_main_lean
 
 if TYPE_CHECKING:
@@ -116,12 +118,20 @@ def write_lakefile(project_dir: Path, project_name: str, *,
     """The project's `lakefile.toml`, with what a caller adds (`parts`).
 
     `create_project` writes it; a caller can write it again with other
-    `parts` for a project already generated.
+    `parts` for a project already generated. With `$REACTOR_LAKE_CACHE`
+    set, the project's manifest is written with it, for the same requires
+    (`lake_cache`).
     """
+    cache = lake_cache()
     path = project_dir / "lakefile.toml"
     path.write_text(
         generate_lakefile(project_name, executable=executable, parts=parts))
     print(f"Wrote {path}")
+    if cache is not None and use_lake_cache(
+            project_dir, project_requires(parts), name=project_name,
+            cache=cache):
+        print(f"Wrote {project_dir / 'lake-manifest.json'}, "
+              f"its packages {cache / 'packages'}")
     return path
 
 

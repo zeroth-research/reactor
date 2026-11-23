@@ -47,14 +47,21 @@ def build_certificate(project_dir: Path) -> None:
     `lake update` runs first: a freshly generated project has no manifest at
     all, and one left by an earlier run predates this run's lakefile --
     `LakefileParts` can add a require the manifest has never seen, and
-    `lake build` resolves neither case.
+    `lake build` resolves neither case. Not for a project whose packages
+    are a Lake cache's (`reactor_lean.project.lake_cache`): its manifest
+    was written with its lakefile, and an update would fetch into the
+    packages every other project builds against.
 
     A build that succeeds while the certificate still holds `sorry` is not a
     proof, so that is an error too. `zeroth_hammer` leaves a `sorry` where it
     cannot close an obligation, and lake reports those as warnings and exits
     0 -- which would make "built" mean nothing.
     """
-    for cmd in (["lake", "update"], ["lake", "build", CERT_LIB]):
+    cached = (project_dir / ".lake" / "packages").is_symlink()
+    cmds = [["lake", "build", CERT_LIB]]
+    if not cached:
+        cmds.insert(0, ["lake", "update"])
+    for cmd in cmds:
         try:
             rc, out = stream(cmd, cwd=project_dir)
         except FileNotFoundError as e:
