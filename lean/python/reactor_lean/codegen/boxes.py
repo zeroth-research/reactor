@@ -157,14 +157,8 @@ def _circ_compute_swapping(
         in_ty, out_ty = [], []
         i = 0
         while i < N:
-            if i >= N - 1:
+            if i >= N - 1 or wires_ord[layer[i]] <= wires_ord[layer[i + 1]]:
                 # emit ID, this is the last wire or this and next wire are correctly ordered
-                boxes.append(f"@Box.id {dtype_to_lean_type(layer[i])}")
-                new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_type(layer[i]))
-                out_ty.append(dtype_to_lean_type(layer[i]))
-                i += 1
-            elif wires_ord[layer[i]] <= wires_ord[layer[i + 1]]:
                 boxes.append(f"@Box.id {dtype_to_lean_type(layer[i])}")
                 new_layer.append(layer[i])
                 in_ty.append(dtype_to_lean_type(layer[i]))
@@ -215,14 +209,8 @@ def _circ_compute_dups(
         in_ty, out_ty = [], []
         i = 0
         while i < N:
-            if i >= N - 1:
-                # emit ID, this is the last wire or this and next wire are correctly ordered
-                boxes.append(f"@Box.id {dtype_to_lean_type(layer[i])}")
-                new_layer.append(layer[i])
-                in_ty.append(dtype_to_lean_type(layer[i]))
-                out_ty.append(dtype_to_lean_type(layer[i]))
-                i += 1
-            elif wires_ord[layer[i]] != wires_ord[layer[i + 1]]:
+            if i >= N - 1 or wires_ord[layer[i]] != wires_ord[layer[i + 1]]:
+                # emit ID, this is the last wire or this and the next wire differ
                 boxes.append(f"@Box.id {dtype_to_lean_type(layer[i])}")
                 new_layer.append(layer[i])
                 in_ty.append(dtype_to_lean_type(layer[i]))
