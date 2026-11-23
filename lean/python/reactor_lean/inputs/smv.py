@@ -11,15 +11,13 @@ from .names import Names, usable
 
 
 def _load(source: SourceText, opts: Mapping[str, Any]) -> Problem:
-    from lark.exceptions import LarkError
-
-    from reactor.smv import SMVRefused, read_smv
+    from reactor.smv import SMVRefused, SMVSyntaxError, read_smv
 
     try:
         module, variables, specs = read_smv(source.text)
     except SMVRefused as e:
         raise InputError(f"{source.path}: {e}") from e
-    except LarkError as e:
+    except SMVSyntaxError as e:
         raise InputError(f"{source.path} is not SMV reactor reads: {e}") from e
     variables_of = {*module.ctrl, *module.extl}
     # A variable the module never reads (an unused IVAR) is not one of its
