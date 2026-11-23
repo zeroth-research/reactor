@@ -182,7 +182,7 @@ SUITE_BLURB = {
         ),
         source=(
             "The SV-COMP <code>termination-crafted-lit</code> corpus, "
-            "<code>benchmarks/svcomp/dsl/</code> &mdash; 57 benchmarks, the ones the "
+            "<code>nuterm/tests/benchmarks/svcomp/dsl/</code> &mdash; 57 benchmarks, the ones the "
             "nuterm learner is scored on. No property is written down in the corpus, "
             "because these are termination benchmarks and the Farkas pipeline states "
             "termination as a claim over wires rather than as the one-state predicate "
@@ -694,9 +694,13 @@ def warnings_section(warns: list, w) -> None:
 
 # The directories benchmark files live in, in the order the page lists them.
 DIR_ORDER = ["../verith/tests/fixtures", "../verith/tests/limits/mods",
-             "benchmarks/svcomp/dsl", "../verith/tests/bench_matrix/hybrid",
+             "../verith/nuterm/tests/benchmarks/svcomp/dsl",
+             "../verith/tests/bench_matrix/hybrid",
              "../verith/tests/bench_matrix/petri", "../verith/tests/bench_matrix"]
-SVCOMP_DSL = PY / "benchmarks" / "svcomp" / "dsl"
+# nuterm's corpus, which `suites.svcomp_rows` asks about. Paths on the page
+# are relative to `python/`, as `run_matrix` records a row's module.
+SVCOMP_DSL = VR / "nuterm" / "tests" / "benchmarks" / "svcomp" / "dsl"
+SVCOMP_REL = os.path.relpath(SVCOMP_DSL, PY)
 
 
 def _svcomp_files() -> dict:
@@ -707,7 +711,7 @@ def _svcomp_files() -> dict:
     for f in sorted(SVCOMP_DSL.glob("*.py")):
         m = re.search(r'\bname\s*=\s*"([^"]+)"', f.read_text())
         if m:
-            out[m.group(1)] = f"benchmarks/svcomp/dsl/{f.name}"
+            out[m.group(1)] = f"{SVCOMP_REL}/{f.name}"
     return out
 
 
@@ -762,7 +766,7 @@ def describe(path: str) -> str:
     except (OSError, SyntaxError):
         return ""
     first = " ".join(doc.split("\n\n")[0].split())
-    if path.startswith("benchmarks/svcomp/"):
+    if path.startswith(SVCOMP_REL + "/"):
         gloss = first.split(" — ", 1)[1] if " — " in first else ""
         loop = _c_loop(doc)
         parts = ([f"<code>{esc(loop)}</code>"] if loop else []) + (
