@@ -13,13 +13,13 @@ a claim's and a certificate's together, as `proof.render` prints them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from fractions import Fraction
 
 from reactor import BitVec, X
 
 from ..core.certificate import Certificate, Claim
 from ..core.errors import PredicateRefused, Unreadable
 from ..lowering.sorts import wire_shape
+from ..lowering.values import decimal_fraction
 from . import dsl
 from .formula import Builder, Formula, family
 from .smtlib import Elaborator, Lit, Matrix, Scope, read_smtlib
@@ -168,7 +168,7 @@ def lift(x: Elaborator, o, like=None) -> _Term:
             return _Term(x, x.b.bitvec(like.dtype._0, o))
         return _Term(x, Lit(o, decimal=False))
     if isinstance(o, float):
-        return _Term(x, Lit(Fraction(repr(o)), decimal=True))
+        return _Term(x, Lit(decimal_fraction(o), decimal=True))
     raise TypeError(f"Cannot read {type(o).__name__} as a term")
 
 
