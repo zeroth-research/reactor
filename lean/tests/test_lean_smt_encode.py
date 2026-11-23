@@ -15,14 +15,14 @@ import cvc5
 import pytest
 import torch
 
-from reactor import Module, Term, Wire, Var, X, LIA, Int
+from reactor import Module, Term, Wire, Var, X, Int, tensor
 from reactor_lean.smt.module import ModuleSMT
 
 _TM = cvc5.TermManager()
 _KEEP: list = []
 
 
-def _reduce_module(itype, rows: int) -> Module:
+def _reduce_module(op, rows: int) -> Module:
     """`x' = <reduce> (A·x + b)` with `b = (0, -1, -2, ...)`.
 
     So the reduction sees `x, x-1, ..., x-(rows-1)`: `Max` is the identity
@@ -37,11 +37,11 @@ def _reduce_module(itype, rows: int) -> Module:
     b = torch.tensor([[-i] for i in range(rows)], dtype=torch.int64)
     return Module.sequential(
         [x],
-        [Term(LIA.Int(torch.tensor([[5]])), [X(x)])],
+        [Term(tensor.int.Const(torch.tensor([[5]])), [X(x)])],
         [
-            Term(LIA.Linear(A, b), [v], [x]),
-            Term(itype, [out], [v]),
-            Term(LIA.Id(), [X(x)], [out]),
+            Term(tensor.int.Linear(A, b), [v], [x]),
+            Term(op([rows, 1]), [out], [v]),
+            Term(tensor.Skip(Int([1, 1])), [X(x)], [out]),
         ],
     )
 
@@ -60,26 +60,26 @@ def _step(module: Module, value: int) -> int:
 
 @pytest.mark.parametrize("value", [-3, 0, 4, 17])
 def test_max_reduces_over_the_whole_column(value):
-    assert _step(_reduce_module(LIA.Max(), 3), value) == value
+    assert _step(_reduce_module(tensor.int.Max, 3), value) == value
 
 
 @pytest.mark.parametrize("value", [-3, 0, 4, 17])
 def test_min_reduces_over_the_whole_column(value):
-    assert _step(_reduce_module(LIA.Min(), 3), value) == value - 2
+    assert _step(_reduce_module(tensor.int.Min, 3), value) == value - 2
 
 
 def test_reduction_over_a_single_element_is_the_identity():
-    assert _step(_reduce_module(LIA.Max(), 1), 7) == 7
+    assert _step(_reduce_module(tensor.int.Max, 1), 7) == 7
 
 
 def test_max_module_encodes_at_all():
     """The regression itself: building the term used to raise TypeError."""
-    m = ModuleSMT(tm=_TM, module=_reduce_module(LIA.Max(), 2))
+    m = ModuleSMT(tm=_TM, module=_reduce_module(tensor.int.Max, 2))
     assert m.update_state(m.fresh_ctrl("s"), [], [])
 
 
 def test_a_bitvector_matrix_product_is_bitvector_arithmetic():
-    """`BV.MatMul` is a sum of bit-vector products, modulo the width. Built
+    """A product of word matrices is a sum of bit-vector products, modulo the width. Built
     from cvc5's arithmetic `MULT` it was refused outright -- "expecting an
     arithmetic subterm" -- so no module with one had an SMT encoding."""
     from reactor_lean.smt.encode import _matmul, MatShape

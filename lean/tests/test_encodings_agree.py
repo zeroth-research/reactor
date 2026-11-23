@@ -47,13 +47,14 @@ def test_a_wrong_emitter_is_caught(monkeypatch):
     proves nothing about the encodings that pass it."""
     import dataclasses
 
+    from reactor import tensor
     from reactor_lean.smt import encode as smt_encode
 
     real = smt_encode.smt_emitter
 
     def swapped(itype):
         emit = real(itype)
-        if type(itype).__name__.endswith("_Sub"):
+        if isinstance(itype, tensor.int.Sub):
             return lambda op: emit(dataclasses.replace(op, args=op.args[::-1]))
         return emit
 

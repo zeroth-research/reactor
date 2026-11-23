@@ -23,7 +23,7 @@ import cvc5
 import pytest
 import torch
 
-from reactor import Int, Term, Module, LIA, Var, X
+from reactor import Int, Term, Module, Var, X, tensor
 from reactor_lean import ModuleToLean4
 from reactor_lean.smt.encode import _argmax_flat, MatShape, elem_sort
 
@@ -127,12 +127,12 @@ def _argmax_module(in_shape, out_shape):
     s = Var(Int(in_shape))
     out = Var(Int(out_shape))
     init = [
-        Term(LIA.Int(torch.zeros(*in_shape, dtype=torch.int64)), [X(s)]),
-        Term(LIA.Int(torch.zeros(*out_shape, dtype=torch.int64)), [X(out)]),
+        Term(tensor.int.Const(torch.zeros(*in_shape, dtype=torch.int64)), [X(s)]),
+        Term(tensor.int.Const(torch.zeros(*out_shape, dtype=torch.int64)), [X(out)]),
     ]
     update = [
-        Term(LIA.Id(), [X(s)], [s]),
-        Term(LIA.Argmax(), [X(out)], [s]),
+        Term(tensor.Skip(Int(in_shape)), [X(s)], [s]),
+        Term(tensor.int.Argmax(in_shape), [X(out)], [s]),
     ]
     return Module.sequential([s, out], init, update)
 
@@ -164,8 +164,8 @@ def test_theory_rejects_wider_argmax_output(out_shape):
     """
     s = Var(Int([3, 4]))
     out = Var(Int(out_shape))
-    with pytest.raises(Exception, match="exactly one index|vector|matrix"):
-        Term(LIA.Argmax(), [X(out)], [s])
+    with pytest.raises(Exception, match=r"to write Int\(1, 1\)"):
+        Term(tensor.int.Argmax([3, 4]), [X(out)], [s])
 
 
 def test_codegen_guard_still_states_the_one_index_contract():

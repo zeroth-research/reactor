@@ -10,7 +10,7 @@ cycle, and the product of their ranges admits a run that never reaches the
 property, which makes the Buchi obligation false for *any* ranking.)
 """
 import torch
-from reactor import Module, Term, Wire, Real, Bool, LRA, Var, X
+from reactor import Module, Term, Wire, Real, Bool, Var, X, tensor
 
 
 def module() -> Module:
@@ -23,18 +23,18 @@ def module() -> Module:
     y_dec = Wire(Real([1, 1]))
 
     init = [
-        Term(LRA.Real(torch.tensor([[3.0]])), [X(x)]),
-        Term(LRA.Real(torch.tensor([[5.0]])), [X(y)]),
+        Term(tensor.real.Const(torch.tensor([[3.0]])), [X(x)]),
+        Term(tensor.real.Const(torch.tensor([[5.0]])), [X(y)]),
     ]
     update = [
-        Term(LRA.Real(torch.tensor([[0.0]])), [zero]),
-        Term(LRA.Real(torch.tensor([[1.0]])), [one]),
-        Term(LRA.Real(torch.tensor([[2.0]])), [two]),
-        Term(LRA.Gt(), [x_pos], [x, zero]),
-        Term(LRA.Sub(), [x_dec], [x, one]),
-        Term(LRA.Ite(), [X(x)], [x_pos, x_dec, zero]),
-        Term(LRA.Gt(), [y_big], [y, two]),
-        Term(LRA.Sub(), [y_dec], [y, one]),
-        Term(LRA.Ite(), [X(y)], [y_big, y_dec, two]),
+        Term(tensor.real.Const(torch.tensor([[0.0]])), [zero]),
+        Term(tensor.real.Const(torch.tensor([[1.0]])), [one]),
+        Term(tensor.real.Const(torch.tensor([[2.0]])), [two]),
+        Term(tensor.real.Gt([1, 1]), [x_pos], [x, zero]),
+        Term(tensor.real.Sub([1, 1]), [x_dec], [x, one]),
+        Term(tensor.real.Ite([1, 1]), [X(x)], [x_pos, x_dec, zero]),
+        Term(tensor.real.Gt([1, 1]), [y_big], [y, two]),
+        Term(tensor.real.Sub([1, 1]), [y_dec], [y, one]),
+        Term(tensor.real.Ite([1, 1]), [X(y)], [y_big, y_dec, two]),
     ]
     return Module.sequential([x, y], init, update)

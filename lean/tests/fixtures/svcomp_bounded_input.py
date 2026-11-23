@@ -13,7 +13,7 @@ makes, in the smallest module that can show it.
 `n` is never written, so it is an external input; `x` starts at it *bare*,
 which is what lets a constraint on the input be read back as one on `x`.
 """
-from reactor import Int, LIA, Module, Term, Var, X
+from reactor import Int, Module, Term, Var, X, tensor
 from reactor.analyzer import convert_method
 
 
@@ -26,6 +26,6 @@ def update(old_x):
 def module() -> Module:
     x = Var(Int([1, 1]))
     n = Var(Int([1, 1]))
-    init_terms = [Term(LIA.Id(), [X(x)], [X(n)])]
-    update_terms = convert_method(update, {"old_x": x}, [X(x)], theory=LIA)
+    init_terms = [Term(tensor.Skip(Int([1, 1])), [X(x)], [X(n)])]
+    update_terms = convert_method(update, {"old_x": x}, [X(x)], number=Int)
     return Module.sequential([x, n], init_terms, update_terms)

@@ -7,7 +7,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from reactor.gym import Env
-from reactor import Module, Bool, LIA
+from reactor import Module, Bool, Int
 
 
 class TwoBitCounterEnv(gym.Env):
@@ -41,4 +41,4 @@ class TwoBitCounterEnv(gym.Env):
 
 def module() -> Module:
     # `b0`/`b1` are TwoBitCounterEnv's private state; their sorts must be explicit.
-    return Env(TwoBitCounterEnv(), attrs=Bool([1, 1]), theory=LIA)
+    return Env(TwoBitCounterEnv(), attrs=Bool([1, 1]), number=Int)

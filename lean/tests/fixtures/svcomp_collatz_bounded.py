@@ -14,7 +14,7 @@ even branch and x+1 is always even.
 Invariant: 1 <= x <= 8
 Ranking: x - 1 (when x != 1)
 """
-from reactor import Module, Int, LIA, Var, X
+from reactor import Module, Int, Var, X
 from reactor.analyzer import convert_method
 
 
@@ -34,6 +34,6 @@ def update(old_x):
 
 def module() -> Module:
     state = Var(Int([1, 1]))
-    init_terms = convert_method(init, {}, [X(state)], theory=LIA)
-    update_terms = convert_method(update, {"old_x": state}, [X(state)], theory=LIA)
+    init_terms = convert_method(init, {}, [X(state)], number=Int)
+    update_terms = convert_method(update, {"old_x": state}, [X(state)], number=Int)
     return Module.sequential([state], init_terms, update_terms)
