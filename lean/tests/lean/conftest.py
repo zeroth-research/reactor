@@ -29,7 +29,8 @@ from reactor_lean.codegen.context import LeanContext
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.proof.render import generate_standalone_cert_lean
 from reactor_lean.core.certificate import Certificate, Claim
-from reactor_lean.project.names import LINTERS_OFF
+from reactor_lean.project.names import LINTERS_OFF, Layout
+from reactor_lean.project.scaffold import ENCODINGS, write_encoding
 from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 from lake import lake_build
 from testdata import LAKE_PROJECT, fixture
@@ -402,8 +403,8 @@ def generate_lean_files() -> None:
         )
 
     # Certs/RelEnc*/ — functional, scalar and ScalarRel, one module each,
-    # exactly the way `create_project` splits them: System/Scalar.lean imports
-    # System/System.lean and System/ScalarRel.lean imports Scalar.
+    # written by `create_project`'s own `write_encoding`: Scalar imports the
+    # functional encoding (`Base` here) and ScalarRel imports Scalar.
     # `ScalarRel.effect_i` is per wire while the state tuple it is compared to
     # is per element, so these are what keep the slice and the codomain in
     # agreement; no certificate carries a ScalarRel section.
@@ -417,22 +418,14 @@ def generate_lean_files() -> None:
     # failed to compile while this test passed.
     for name, make_module in _REL_ENC_SPECS:
         t = ModuleToLean4(make_module())
-        base = f"Certs.RelEnc{name}"
-        d = _CERTS_DIR / f"RelEnc{name}"
-        d.mkdir(exist_ok=True)
-        (d / "Base.lean").write_text(
-            f"import Relational.Mat\nimport Relational.Circ\n\n{LINTERS_OFF}\n\n"
-            + t.to_lean_functional() + "\n"
-        )
-        (d / "Scalar.lean").write_text(
-            f"import Relational.Basic\nimport {base}.Base\n\n{LINTERS_OFF}\n\n"
-            + t.to_lean_scalar() + "\n"
-        )
-        (d / "ScalarRel.lean").write_text(
-            f"import Relational.Basic\nimport {base}.Scalar\n\n{LINTERS_OFF}\n\n"
-            + t.to_lean_rel() + "\n"
-        )
-        (_CERTS_DIR / f"RelEnc{name}.lean").write_text(f"import {base}.ScalarRel\n")
+        layout = Layout(base="Base", prefix=f"Certs.RelEnc{name}.",
+                        directory=_CERTS_DIR / f"RelEnc{name}")
+        layout.directory.mkdir(exist_ok=True)
+        for enc in ENCODINGS:
+            if enc.suffix in ("", "Scalar", "ScalarRel"):
+                write_encoding(enc, t, layout, name)
+        (_CERTS_DIR / f"RelEnc{name}.lean").write_text(
+            f"import {layout.lean_module('ScalarRel')}\n")
 
     # Certs/Bridge*.lean — the `--fbk-proveit` route's model, the module's
     # own encodings, and the proof that the first is the second. The bridge
