@@ -140,6 +140,11 @@ def module_digest(module) -> str:
     return hashlib.sha256(str(module).encode()).hexdigest()[:12]
 
 
+def _check_status(status: str) -> None:
+    if status not in STATUSES:
+        raise ValueError(f"unknown artifact status {status!r}; one of {STATUSES}")
+
+
 @dataclass(frozen=True)
 class Artifact:
     """One file in `artifacts/`, and what is known about it."""
@@ -294,8 +299,7 @@ class ArtifactStore:
         """
         if role not in ROLES:
             raise ValueError(f"unknown artifact role {role!r}; one of {ROLES}")
-        if status not in STATUSES:
-            raise ValueError(f"unknown artifact status {status!r}; one of {STATUSES}")
+        _check_status(status)
         self.dir.mkdir(parents=True, exist_ok=True)
         entries = self._index()
         seq = max((e.get("seq", 0) for e in entries), default=0) + 1
@@ -406,8 +410,7 @@ class ArtifactStore:
         Silent when the artifact was never indexed: there is then no entry
         to answer, and an answer to nothing is not an error.
         """
-        if status not in STATUSES:
-            raise ValueError(f"unknown artifact status {status!r}; one of {STATUSES}")
+        _check_status(status)
         name = artifact if isinstance(artifact, str) else artifact.name
         entries = self._index()
         entry = next((e for e in entries if e.get("name") == name), None)
