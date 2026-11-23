@@ -9,9 +9,9 @@ use crate::ast::{
 use crate::typing;
 use crate::value::BitVec;
 use crate::{Sort, SvOp, Term, Var, Wire};
-use base::var::X;
 use num_bigint::BigUint;
 use num_traits::One;
+use reactive::var::X;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -501,8 +501,8 @@ impl<'a> Builder<'a> {
         match r.edge {
             Edge::Pos => level,
             Edge::Neg => {
-                let low = Wire::scalar(Sort(1));
-                let term = Term::function(SvOp::Not, [low], [level]);
+                let low = Wire::new(Sort(1));
+                let term = crate::term(SvOp::Not, [low], [level]);
                 self.push(term.expect("a 1-bit reset"));
                 low
             }
@@ -522,11 +522,7 @@ impl<'a> Builder<'a> {
             Some(i) if !self.read.contains(&w) => {
                 let t = &self.terms[i];
                 let op = t.itype().clone();
-                let term = if t.read().is_empty() {
-                    Term::constant(op, [dest])
-                } else {
-                    Term::function(op, [dest], t.read().iter().copied())
-                };
+                let term = crate::term(op, [dest], t.read().iter().copied());
                 self.terms[i] = term.map_err(|e| internal(Some(span), e))?;
                 self.writer.remove(&w);
                 self.writer.entry(dest).or_insert(i);
@@ -542,7 +538,7 @@ impl<'a> Builder<'a> {
 
     /// Adds the term `w := op(reads)` with a fresh wire `w` of `sort`.
     fn emit(&mut self, op: SvOp, reads: &[Wire], sort: Sort, span: Span) -> Result<Wire> {
-        self.emit_to(op, reads, Wire::scalar(sort), span)
+        self.emit_to(op, reads, Wire::new(sort), span)
     }
 
     /// Adds the term `dest := op(reads)`.
@@ -553,11 +549,7 @@ impl<'a> Builder<'a> {
         dest: Wire,
         span: Span,
     ) -> Result<Wire> {
-        let term = if reads.is_empty() {
-            Term::constant(op, [dest])
-        } else {
-            Term::function(op, [dest], reads.iter().copied())
-        };
+        let term = crate::term(op, [dest], reads.iter().copied());
         self.push(term.map_err(|e| internal(Some(span), e))?);
         Ok(dest)
     }

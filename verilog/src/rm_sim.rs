@@ -14,7 +14,7 @@ previous round.
 
 use crate::value::{BitVec, eval};
 use crate::{Module, Var, Wire};
-use base::var::X;
+use reactive::var::X;
 use std::collections::{BTreeMap, HashMap};
 
 /// A value for each of some variables.

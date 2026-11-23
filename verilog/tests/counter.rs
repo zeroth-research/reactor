@@ -12,9 +12,9 @@
 //! The register `q` starts at the external `q_init`, so every initial
 //! value is possible.
 
-use base::var::X;
+use reactive::var::X;
 use verilog::rm_sim::{Sim, Valuation};
-use verilog::{Atom, BitVec, Module, Sort, SvOp, Term, Var, Wire};
+use verilog::{Atom, BitVec, Module, Sort, SvOp, Var, Wire};
 
 struct Counter {
     module: Module,
@@ -33,18 +33,18 @@ fn counter(atoms_in_wrong_order: bool) -> Result<Counter, String> {
     let full = Var::new(Sort(1));
 
     // always_ff: reads latched values, writes X(q); q keeps its value when !en
-    let one = Wire::scalar(Sort(8));
-    let inc = Wire::scalar(Sort(8));
-    let init = [Term::function(SvOp::Id, [X(q)], [X(q_init)])?];
+    let one = Wire::new(Sort(8));
+    let inc = Wire::new(Sort(8));
+    let init = [verilog::term(SvOp::Id, [X(q)], [X(q_init)])?];
     let update = [
-        Term::constant(SvOp::Lit(BitVec::new(8, 1u8).unwrap()), [one])?,
-        Term::function(SvOp::Add, [inc], [*q, one])?,
-        Term::function(SvOp::Ite, [X(q)], [*en, inc, *q])?,
+        verilog::term(SvOp::Lit(BitVec::new(8, 1u8).unwrap()), [one], [])?,
+        verilog::term(SvOp::Add, [inc], [*q, one])?,
+        verilog::term(SvOp::Ite, [X(q)], [*en, inc, *q])?,
     ];
     let reg = Atom::sequential(&[en, q_init, q], init, update)?;
 
     // assign: awaits X(q)
-    let assign = [Term::function(SvOp::RedAnd, [X(full)], [X(q)])?];
+    let assign = [verilog::term(SvOp::RedAnd, [X(full)], [X(q)])?];
     let comb = Atom::combinatorial(&[q, full], assign)?;
 
     let atoms = if atoms_in_wrong_order {
@@ -87,7 +87,7 @@ impl Counter {
 #[test]
 fn structure() {
     let c = counter(false).unwrap();
-    let names = |vars: &base::Interface<Sort>| {
+    let names = |vars: &verilog::Interface| {
         let mut names: Vec<_> = vars.iter().map(|v| c.name(v)).collect();
         names.sort();
         names

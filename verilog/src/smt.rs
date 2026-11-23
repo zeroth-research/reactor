@@ -112,7 +112,7 @@ use crate::lower::Translation;
 use crate::theory::{Sort, SvOp};
 use crate::value::BitVec;
 use crate::{Atom, Term, Var, Wire};
-use base::var::X;
+use reactive::var::X;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// `(_ BitVec N)`.

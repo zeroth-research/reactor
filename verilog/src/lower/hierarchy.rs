@@ -10,7 +10,7 @@ use crate::ast::{
 use crate::elab::{self, Inst, Path};
 use crate::typing::{self, Checked};
 use crate::{Atom, Module, Sort, SvOp, Var, Wire};
-use base::var::X;
+use reactive::var::X;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
 

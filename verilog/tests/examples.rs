@@ -134,7 +134,7 @@ fn structure() {
     for path in examples() {
         let (inst, t) = load(&path);
         let m = &inst.module;
-        let names = |intf: &base::Interface<verilog::Sort>| {
+        let names = |intf: &verilog::Interface| {
             let mut names: Vec<String> = intf.iter().map(|v| t.name(v).to_string()).collect();
             names.sort();
             names
@@ -202,9 +202,9 @@ fn structure() {
             assert_eq!(wait, sorted(inits), "{display}: {ctrl:?} awaits {wait:?}");
             for term in atom.update().iter() {
                 for w in term.read() {
-                    let awaited = t.vars.values().any(|v| base::var::X(*v) == *w);
+                    let awaited = t.vars.values().any(|v| reactive::var::X(*v) == *w);
                     assert!(
-                        !awaited || edges.iter().any(|x| *w == base::var::X(t.var(x))),
+                        !awaited || edges.iter().any(|x| *w == reactive::var::X(t.var(x))),
                         "{display}: update of {ctrl:?} awaits"
                     );
                 }

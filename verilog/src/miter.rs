@@ -558,7 +558,7 @@ pub fn interfaces(
     round: &smt::Round,
 ) -> Vec<String> {
     let mut errors = vec![];
-    let named = |set: &base::Interface<crate::Sort>| -> BTreeMap<&str, usize> {
+    let named = |set: &crate::Interface| -> BTreeMap<&str, usize> {
         (t.vars.iter())
             .filter(|(_, v)| set.contains(v))
             .map(|(n, v)| (n.as_str(), v.dtype().width()))

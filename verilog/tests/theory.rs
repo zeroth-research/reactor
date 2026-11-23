@@ -2,18 +2,16 @@
 //! arithmetic, comparison, and shift ops are compared exhaustively with
 //! Rust's `u8`/`i8` arithmetic.
 
-use ::theory::Theory;
 use num_bigint::BigUint;
 use verilog::value::eval;
 use verilog::{BitVec, Sort, SvOp};
 
-fn check(op: SvOp, read: &[usize], write: usize) -> Result<(), String> {
-    check_degree(op, read, (write, 0))
+fn sorts(widths: &[usize]) -> Vec<Sort> {
+    widths.iter().map(|w| Sort(*w)).collect()
 }
 
-fn check_degree(op: SvOp, read: &[usize], (write, degree): (usize, u8)) -> Result<(), String> {
-    let ok = |(w, d): (usize, u8)| Ok::<_, String>((Sort(w), d));
-    op.check(read.iter().map(|w| ok((*w, 0))), [ok((write, degree))])
+fn check(op: SvOp, read: &[usize], write: usize) -> Result<(), String> {
+    op.check(&sorts(read), &[Sort(write)])
 }
 
 fn bv(width: usize, value: u128) -> BitVec {
@@ -30,7 +28,7 @@ fn check_accepts() {
     check(Lit(bv(8, 3)), &[], 8).unwrap();
     check(Id, &[8], 8).unwrap();
     check(Havoc(Sort(8)), &[], 8).unwrap();
-    check_degree(Zero(Sort(8)), &[], (8, 1)).unwrap();
+    check(Zero(Sort(8)), &[], 8).unwrap();
     check(Not, &[8], 8).unwrap();
     check(Add, &[8, 8], 8).unwrap();
     check(SLt, &[8, 8], 1).unwrap();
@@ -67,17 +65,10 @@ fn check_rejects() {
     assert!(check(Extract { hi: 2, lo: 3 }, &[8], 1).is_err());
     assert!(check(ZExt(4), &[8], 4).is_err());
     assert!(check(SExt(4), &[8], 4).is_err());
-    // degrees: only ZERO writes a derivative, and nothing reads one
-    assert!(check_degree(Zero(Sort(8)), &[], (8, 0)).is_err());
-    assert!(check_degree(Id, &[8], (8, 1)).is_err());
-    let ok = |s: usize, d: u8| Ok::<_, String>((Sort(s), d));
-    assert!(Id.check([ok(8, 1)], [ok(8, 0)]).is_err());
+    assert!(check(Zero(Sort(8)), &[], 4).is_err());
     // number of writes
-    assert!(
-        Add.check([ok(8, 0), ok(8, 0)], [ok(8, 0), ok(8, 0)])
-            .is_err()
-    );
-    assert!(Add.check([ok(8, 0), ok(8, 0)], []).is_err());
+    assert!(Add.check(&sorts(&[8, 8]), &sorts(&[8, 8])).is_err());
+    assert!(Add.check(&sorts(&[8, 8]), &[]).is_err());
 }
 
 #[test]

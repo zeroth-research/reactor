@@ -231,15 +231,15 @@ fn symbol_rejects_bar() {
 /// example has one).
 #[test]
 fn round_declares_havoc() {
-    use base::var::X;
+    use reactive::var::X;
     use std::collections::{BTreeMap, HashMap};
     use verilog::lower::Translation;
-    use verilog::{Atom, Module, Term, Var, Wire};
+    use verilog::{Atom, Module, Var, Wire};
     let (a, y) = (Var::new(Sort(8)), Var::new(Sort(8)));
-    let h = Wire::scalar(Sort(8));
+    let h = Wire::new(Sort(8));
     let assign = [
-        Term::constant(SvOp::Havoc(Sort(8)), [h]).unwrap(),
-        Term::function(SvOp::Xor, [X(y)], [X(a), h]).unwrap(),
+        verilog::term(SvOp::Havoc(Sort(8)), [h], []).unwrap(),
+        verilog::term(SvOp::Xor, [X(y)], [X(a), h]).unwrap(),
     ];
     let atom = Atom::combinatorial(&[a, y], assign).unwrap();
     let t = Translation {

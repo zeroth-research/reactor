@@ -96,11 +96,27 @@ pub mod z3;
 pub use crate::theory::{Sort, SvOp};
 pub use crate::value::BitVec;
 
-pub type Module = base::Module<SvOp, SvOp, SvOp>;
-pub type Atom = base::Atom<SvOp, SvOp, SvOp>;
-pub type Term = base::Term<SvOp>;
-pub type Var = base::Var<Sort>;
-pub type Wire = base::Wire<Sort>;
+pub type Module = reactive::Module<SvOp, SvOp, SvOp, Sort>;
+pub type Atom = reactive::Atom<SvOp, SvOp, SvOp, Sort>;
+pub type Term = dataflow::diagram::Term<SvOp, Sort>;
+pub type Var = reactive::Var<Sort>;
+pub type Wire = dataflow::diagram::Wire<Sort>;
+pub type Interface = reactive::Interface<Sort>;
+
+/// A term of `op` writing `write` and reading `read`, after checking the
+/// wire sorts against the op ([`SvOp::check`]). Every term of a translation
+/// is built here, so a term whose sorts do not fit the op never exists.
+pub fn term(
+    op: SvOp,
+    write: impl IntoIterator<Item = Wire>,
+    read: impl IntoIterator<Item = Wire>,
+) -> Result<Term, String> {
+    let write: Vec<Wire> = write.into_iter().collect();
+    let read: Vec<Wire> = read.into_iter().collect();
+    let sorts = |ws: &[Wire]| ws.iter().map(|w| *w.dtype()).collect::<Vec<Sort>>();
+    op.check(&sorts(&read), &sorts(&write))?;
+    Term::function(op, write, read)
+}
 
 /// A new empty directory in the system's temporary directory, named
 /// after `label`, removed with everything in it when dropped.

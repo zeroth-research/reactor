@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn whole_values_are_wires() {
-        let w = Wire::scalar(Sort(8));
+        let w = Wire::new(Sort(8));
         assert_eq!(as_wire(&whole(w)), Some(w));
         // the high half, or the whole wire at an offset, is no wire
         assert_eq!(as_wire(&vec![seg(4, Some((w, 4)))]), None);
@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn coalesce_joins_adjacent_bits_of_one_wire() {
-        let (a, b) = (Wire::scalar(Sort(8)), Wire::scalar(Sort(4)));
+        let (a, b) = (Wire::new(Sort(8)), Wire::new(Sort(4)));
         // a[7:4] a[3:0] is all of a
         let v = coalesce(vec![seg(4, Some((a, 4))), seg(4, Some((a, 0)))]);
         assert_eq!(as_wire(&v), Some(a));
@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn split_cuts_at_bit_positions() {
-        let (a, b) = (Wire::scalar(Sort(8)), Wire::scalar(Sort(4)));
+        let (a, b) = (Wire::new(Sort(8)), Wire::new(Sort(4)));
         // {b, a}: bits 11:8 from b, 7:0 from a
         let v = vec![seg(4, Some((b, 0))), seg(8, Some((a, 0)))];
         assert_eq!(cuts(&v), BTreeSet::from([0, 8]));

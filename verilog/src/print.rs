@@ -1,7 +1,7 @@
 /*!
 # Printing modules with names
 
-Like `base`'s display, but plain text (for golden tests) and with readable
+Like `reactive`'s display, but plain text (for golden tests) and with readable
 names for the wires local to an atom: the given name if there is one, else
 `%1`, `%2`, … in the order they are written. Delay blocks are left out: in the discrete modules here they only
 set every derivative to `ZERO`. When the init and update blocks of an atom
@@ -9,9 +9,9 @@ are the same (a combinatorial atom), they are printed once as
 `init = update`.
 */
 
-use crate::{Atom, Module, Sort, Var, Wire};
-use base::Interface;
-use base::var::{X, d};
+use crate::Interface;
+use crate::{Atom, Module, Var, Wire};
+use reactive::var::{X, d};
 use std::collections::HashMap;
 use std::fmt::Write;
 
@@ -54,7 +54,7 @@ fn print_atom(
     vars: &HashMap<Wire, String>,
     wire_name: &dyn Fn(&Wire) -> Option<String>,
 ) {
-    let list = |intf: &Interface<Sort>| {
+    let list = |intf: &Interface| {
         intf.iter()
             .map(|v| vars[&**v].as_str())
             .collect::<Vec<_>>()

@@ -9,17 +9,14 @@ Every op has exactly one write wire, and the sort of that wire is a
 function of the op and its operand sorts ([`SvOp::result_sort`]). Ops that
 change the width carry the parameters they need for that (`Extract`,
 `ZExt`, `SExt`, and the sort of `Lit`, `Havoc`, `Zero`).
-[`Theory::check`] computes the result sort and compares it with the write
-wire.
-
-All wires are values (degree 0), except the write of `Zero`, which is a
-derivative (degree 1).
+[`SvOp::check`] computes the result sort and compares it with the write
+wire; [`crate::term`] runs it on every term the translation builds.
 
 The meaning of the ops is [`crate::value::eval`].
 */
 
 use crate::value::BitVec;
-use ::theory::{Combinatorial, Differential, Sequential, Theory};
+use ::theory::{Combinatorial, Differential, Sequential};
 use std::fmt;
 
 /// The sort of a wire: a bit vector of the given width (at least 1).
@@ -206,63 +203,32 @@ impl SvOp {
         Ok(sort)
     }
 
-    /// The degree of the write wire: `Zero` writes a derivative.
-    fn write_degree(&self) -> u8 {
-        match self {
-            SvOp::Zero(_) => 1,
-            _ => 0,
-        }
-    }
-}
-
-impl Theory for SvOp {
-    type Sort = Sort;
-
-    const NAME: &'static str = "SV";
-
-    fn check<R, W, E: fmt::Display>(&self, read: R, write: W) -> Result<(), String>
-    where
-        R: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-        W: IntoIterator<Item = Result<(Self::Sort, u8), E>>,
-    {
-        let read: Vec<(Sort, u8)> = read
-            .into_iter()
-            .collect::<Result<_, E>>()
-            .map_err(|e| e.to_string())?;
-        let write: Vec<(Sort, u8)> = write
-            .into_iter()
-            .collect::<Result<_, E>>()
-            .map_err(|e| e.to_string())?;
-
-        if let Some((s, d)) = read.iter().find(|(_, d)| *d != 0) {
-            return Err(format!("{self}: reads a wire of sort {s} and degree {d}"));
-        }
-        let args: Vec<Sort> = read.into_iter().map(|(s, _)| s).collect();
-        let expected = (self.result_sort(&args)?, self.write_degree());
-        match write.as_slice() {
+    /// Checks a term of this op: the operand sorts must be valid for the op
+    /// ([`SvOp::result_sort`]), and there must be exactly one write wire,
+    /// of the result sort.
+    pub fn check(&self, read: &[Sort], write: &[Sort]) -> Result<(), String> {
+        let expected = self.result_sort(read)?;
+        match write {
             [w] if *w == expected => Ok(()),
-            [(s, d)] => Err(format!(
-                "{self}: writes sort {s} and degree {d}, expected sort {} and degree {}",
-                expected.0, expected.1
-            )),
+            [w] => Err(format!("{self}: writes sort {w}, expected sort {expected}")),
             _ => Err(format!("{self}: expects 1 write, got {}", write.len())),
         }
     }
 }
 
-impl Combinatorial for SvOp {
+impl Combinatorial<Sort> for SvOp {
     fn havoc(range: &Sort) -> Self {
         SvOp::Havoc(*range)
     }
 }
 
-impl Sequential for SvOp {
+impl Sequential<Sort> for SvOp {
     fn skip(_range: &Sort) -> Self {
         SvOp::Id
     }
 }
 
-impl Differential for SvOp {
+impl Differential<Sort> for SvOp {
     fn zero(range: &Sort) -> Self {
         SvOp::Zero(*range)
     }
