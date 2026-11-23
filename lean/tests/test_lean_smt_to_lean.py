@@ -22,6 +22,7 @@ from reactor_lean.core.certificate import Certificate, Claim
 from reactor_lean.core.errors import PredicateRefused
 from reactor_lean.parse import PARSERS
 from reactor_lean.pipeline.certificate import render
+from testdata import dense, relu
 
 PARSER = PARSERS[0]
 
@@ -131,28 +132,13 @@ def test_a_whole_relu_layer_folds():
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _relu(e: str) -> str:
-    return f"(ite (>= {e} 0) {e} 0)"
-
-
-def _dense(layers: int) -> str:
-    """`layers` hidden layers of two units, each reading both units below."""
-    a, b = "s0", "s0"
-    for _ in range(layers):
-        a, b = (
-            _relu(f"(+ {a} {b})"),
-            _relu(f"(+ {a} (- {b}))"),
-        )
-    return f"(+ {a} {b})"
-
-
 def _rank(module, smt: str) -> str:
     return _lean(module, ranking=smt).ranking
 
 
 def test_a_deep_net_is_emitted_once_per_unit_not_once_per_path():
     """Four layers of two units: 8 units, but 30 `max` when expanded."""
-    lean = _rank(_int_module(), _dense(4))
+    lean = _rank(_int_module(), dense(4))
     assert lean.count("(max ") == 8, lean
     # every repeated subterm gets a name, pre-activations included
     assert lean.count("let ") == 14
@@ -172,14 +158,14 @@ def _ranking(parser: str, smt: str):
 
 
 def test_the_same_net_without_sharing_shows_what_it_costs(parser):
-    term, wires, nat = _ranking(parser, _dense(4))
+    term, wires, nat = _ranking(parser, dense(4))
     plain = nat(term, wires, share=False)
     assert plain.count("(max ") == 30
     assert "let " not in plain
 
 
 def test_sharing_never_makes_the_output_longer(parser):
-    for smt in ("s0", "(+ s0 1)", _relu("s0"), _dense(1), _dense(2), _dense(5)):
+    for smt in ("s0", "(+ s0 1)", relu("s0"), dense(1), dense(2), dense(5)):
         term, wires, nat = _ranking(parser, smt)
         assert len(nat(term, wires, share=True)) <= len(
             nat(term, wires, share=False)
@@ -188,7 +174,7 @@ def test_sharing_never_makes_the_output_longer(parser):
 
 def test_a_shallow_net_gets_no_bindings():
     """One layer repeats nothing worth naming, so no `let` appears."""
-    assert "let " not in _rank(_int_module(), _dense(1))
+    assert "let " not in _rank(_int_module(), dense(1))
 
 
 def test_propositions_are_never_bound():
