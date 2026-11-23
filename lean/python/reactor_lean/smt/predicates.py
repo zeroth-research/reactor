@@ -21,7 +21,7 @@ from cvc5 import Kind
 
 from ..core.errors import Unreadable
 from ..lowering.sorts import wire_shape
-from ..parse.dsl import NotPredicate, evaluate
+from ..parse.dsl import NotPredicate, Row, evaluate
 from .encode import wire_sort
 from .module import ModuleSMT
 
@@ -124,18 +124,6 @@ class _E:
         return _E(self._tm, self._tm.mkTerm(Kind.APPLY_SELECTOR, sel, self._t))
 
 
-class _Row:
-    """Intermediate for 2-D indexing: `v[i]` → `_Row`, then `v[i][j]` → element."""
-
-    __slots__ = ("_var", "_i")
-
-    def __init__(self, var: "_MatVar", i: int):
-        self._var, self._i = var, i
-
-    def __getitem__(self, j: int) -> "_E":
-        return self._var._element(self._i, j)
-
-
 class _MatVar(_E):
     """A state/input variable that knows its matrix shape, so predicates can
     address elements as ``v[i][j]`` (or ``v[i, j]``) into the row-major flat
@@ -167,7 +155,7 @@ class _MatVar(_E):
         if isinstance(key, tuple):
             i, j = key
             return self._element(i, j)
-        return _Row(self, key)
+        return Row(self._element, key)
 
 
 def _pyeval_namespace(env: "PredicateParser") -> dict:
