@@ -1853,6 +1853,7 @@ source = { editable = "lean" }
 dependencies = [
     { name = "jinja2" },
     { name = "reactor" },
+    { name = "torch" },
 ]
 
 [package.dev-dependencies]
@@ -1864,6 +1865,7 @@ dev = [
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1" },
     { name = "reactor", editable = "python" },
+    { name = "torch", specifier = "==2.15.0" },
 ]
 
 [package.metadata.requires-dev]

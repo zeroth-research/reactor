@@ -9,6 +9,8 @@ dependencies = [
     "reactor",
     # The Lean project's files are rendered from templates.
     "jinja2>=3.1",
+    # The constants of the terms the predicate parser builds (`parse`).
+    "torch==2.15.0",
 ]
 
 [project.scripts]
