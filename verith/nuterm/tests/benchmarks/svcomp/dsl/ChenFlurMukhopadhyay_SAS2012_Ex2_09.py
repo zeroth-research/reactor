@@ -32,7 +32,6 @@ Original header comment:
 
 from __future__ import annotations
 
-from reactor import LIA
 from reactor.sugar import Module, X, ite
 
 from .._bench import Bench, var
@@ -53,7 +52,7 @@ class Program(Module):
 def _build():
     x, y, n = var(), var(), var()
     x0, y0, n0 = var(), var(), var()
-    prog = Program(theory=LIA, ctrl=(x, y, n), extl=(x0, y0, n0))
+    prog = Program(ctrl=(x, y, n), extl=(x0, y0, n0))
     return prog, {"x": x, "y": y, "n": n}, {"x0": x0, "y0": y0, "n0": n0}
 
 

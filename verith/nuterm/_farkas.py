@@ -66,36 +66,41 @@ def _relu_region(e, mode):
 
 
 # This procedure's vocabulary: what it understands of the theory's operations, in
-# one place. An itype absent here is refused by :func:`._nodes.node_view`; a kind
-# with neither a cell rule nor a case split is one Z3 cannot read either, so the
-# walk refuses it too; a test pins that those are the only such kinds.
-# Adding support for an operation is an entry here and nothing else.
+# one place, keyed by qualified name (:func:`._nodes.op_name`). It covers the
+# integer and boolean operations and the structural ones; anything else (reals,
+# words, casts) is absent and so refused by :func:`._nodes.node_view`, as is an
+# itype absent here; a kind with neither a cell rule nor a case split is one Z3
+# cannot read either, so the walk refuses it too; a test pins that those are the
+# only such kinds. Adding support for an operation is an entry here and nothing else.
 OPS = {
     # affine arithmetic — evaluated straight through
-    "LIA_Linear": Op(), "LIA_Add": Op(), "LIA_Sub": Op(), "LIA_Neg": Op(),
-    "LIA_Int": Op(),
-    "LIA_Bool": Op(), "LIA_Id": Op(), "LIA_Transpose": Op(), "LIA_Get": Op(),
+    "int.Linear": Op(), "int.Add": Op(), "int.Sub": Op(), "int.Neg": Op(),
+    "int.Scale": Op(), "int.Const": Op(),
+    "bool.Const": Op(), "Skip": Op(), "int.Transpose": Op(), "int.Get": Op(),
+    "bool.Get": Op(),
     # boolean structure — z3 handles it, and PRED_MODES splits what the LP cannot
-    "LIA_And": Op(), "LIA_Or": Op(), "LIA_Xor": Op(), "LIA_Not": Op(),
-    "LIA_Implies": Op(),
-    "LIA_Le": Op(), "LIA_Lt": Op(), "LIA_Ge": Op(), "LIA_Gt": Op(),
-    "LIA_Eq": Op(), "LIA_Ne": Op(),
+    "bool.And": Op(), "bool.Or": Op(), "bool.Xor": Op(), "bool.Not": Op(),
+    "bool.Implies": Op(), "bool.Eq": Op(), "bool.Ne": Op(), "bool.All": Op(),
+    "int.Le": Op(), "int.Lt": Op(), "int.Ge": Op(), "int.Gt": Op(),
+    "int.Eq": Op(), "int.Ne": Op(),
     # piecewise-linear
-    "LIA_ReLU": Op("relu", mode=ModeKind(_relu_at, _relu_region)),
-    "LIA_Ite": Op("ite", split=True),
-    # the theory's havoc: a fresh value each round. Named so the vocabulary is
-    # complete, but Z3 has no translation for one, so the walk refuses a module
-    # carrying it — as `check_supported` would of a transition reading a fresh
-    # value.
-    "LIA_AnyInt": Op(), "LIA_AnyBool": Op(),
+    "int.ReLU": Op("relu", mode=ModeKind(_relu_at, _relu_region)),
+    "int.Ite": Op("ite", split=True), "bool.Ite": Op("ite", split=True),
+    # the theory's havoc: a fresh value each round, which Z3 reads as a fresh
+    # symbol, so `check_supported` refuses a next value reading one as it does an
+    # awaited input. `Zero` is the zero rate of change, which a discrete module
+    # carries none of.
+    "Havoc": Op(), "Zero": Op(),
     # recognised, no cell rule — so the walk refuses a module carrying one by
     # name, whether or not Z3 can read it
-    "LIA_Min": Op("min"),
-    "LIA_Max": Op("max"),
-    "LIA_Mul": Op("mul"),
-    "LIA_Div": Op("div"),
-    "LIA_Mod": Op("mod"),
-    "LIA_Argmax": Op("argmax"),
+    "int.Min": Op("min"),
+    "int.Max": Op("max"),
+    "int.Abs": Op("abs"),
+    "int.Mul": Op("mul"),
+    "int.MatMul": Op("mul"),
+    "int.Div": Op("div"),
+    "int.Mod": Op("mod"),
+    "int.Argmax": Op("argmax"),
 }
 
 # Derived, so the table above stays the single source of truth.

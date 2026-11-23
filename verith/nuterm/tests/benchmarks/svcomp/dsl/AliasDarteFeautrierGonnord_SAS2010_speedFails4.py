@@ -22,7 +22,6 @@ Original header comment:
 
 from __future__ import annotations
 
-from reactor import LIA
 from reactor.sugar import Module, X, expr, ite
 
 from .._bench import Bench, INT, var
@@ -31,8 +30,8 @@ from .._bench import Bench, INT, var
 class Program(Module):
     def init(self, i0, x0, n0, b0):
         # t = 1 if b>=1 else -1  (b set once before the loop); `ite` needs one
-        # branch as an Expr to pin the theory and sort
-        one = expr(1, theory=LIA, sort=INT)
+        # branch as an Expr to pin the sort
+        one = expr(1, sort=INT)
         return X(i0), X(x0), X(n0), X(b0), ite(X(b0) >= 1, one, -1)
 
     def update(self, i, x, n, b, t, _i0, _x0, _n0, _b0):
@@ -44,7 +43,7 @@ class Program(Module):
 def _build():
     i, x, n, b, t = var(), var(), var(), var(), var()
     i0, x0, n0, b0 = var(), var(), var(), var()
-    prog = Program(theory=LIA, ctrl=(i, x, n, b, t), extl=(i0, x0, n0, b0))
+    prog = Program(ctrl=(i, x, n, b, t), extl=(i0, x0, n0, b0))
     return (
         prog,
         {"i": i, "x": x, "n": n, "b": b, "t": t},
