@@ -445,15 +445,9 @@ def test_bv_gets_its_own_row_where_it_diverges(name):
 
 
 def _twobit():
-    import sys
-    from pathlib import Path
+    from testdata import fixture
 
-    sys.path.insert(0, str(Path(__file__).resolve().parent / "fixtures"))
-    try:
-        import twobit
-    finally:
-        sys.path.pop(0)
-    return twobit.module()
+    return fixture("twobit")
 
 
 def test_bv_module_emits_bitvec_operators_not_boolean_ones():
