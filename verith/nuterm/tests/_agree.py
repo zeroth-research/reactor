@@ -21,7 +21,7 @@ from fractions import Fraction
 
 import torch
 
-from reactor import Bool, BitVec, Int, Real, X
+from reactor import Bool, Int, Real, Word, X
 from reactor.eval import execute_init, execute_update
 from reactor_lean.lowering.sorts import wire_shape
 
@@ -59,10 +59,11 @@ def _draw(wire, rng: random.Random) -> torch.Tensor:
     elif isinstance(dt, Int):
         vals, kind = [rng.randint(-8, 8) for _ in range(shape.total)], torch.int64
     elif isinstance(dt, Real):
+        # quarters, exact in the interpreter's float32
         vals = [rng.randint(-16, 16) / 4 for _ in range(shape.total)]
-        kind = torch.float64
-    elif isinstance(dt, BitVec):
-        vals = [rng.randrange(1 << dt._0) for _ in range(shape.total)]
+        kind = torch.float32
+    elif isinstance(dt, Word):
+        vals = [rng.randrange(1 << dt.width) for _ in range(shape.total)]
         kind = torch.int64
     else:                                   # pragma: no cover
         raise Skip(f"no random values for sort {dt}")
@@ -214,8 +215,8 @@ def _lean_value(wire, tensor) -> str:
 
 def _lean_shown(wire, element: str) -> str:
     """`element` of `wire`'s sort, printed as `flat` prints the reference:
-    a BitVec as the natural number it holds."""
-    if isinstance(wire.dtype, BitVec):
+    a word as the natural number it holds."""
+    if isinstance(wire.dtype, Word):
         return f"{{toString ({element}).toNat}}"
     return f"{{toString ({element})}}"
 

@@ -22,7 +22,7 @@ from nuterm import _farkas
 from nuterm._bench import INT
 from nuterm._termination import _v_module, compose, system_of
 from nuterm.tests._fixtures import candidate, loop_bench
-from reactor import LIA, Int, Module, Var, X, sugar
+from reactor import Int, Module, Var, X, sugar, tensor
 from reactor.sugar import argmax as dsl_argmax
 from reactor.sugar import expr as dsl_expr
 from reactor.sugar import ite as dsl_ite
@@ -209,12 +209,14 @@ def test_atoms_the_lp_cannot_express_are_reported():
 
 
 def test_the_vocabulary_covers_the_theory():
-    """``OPS`` answers for every LIA operation, so one added to the theory shows up
-    as a failure here rather than as a refusal on some benchmark. ``Uninterpreted``
-    has no linear reading at all, so it is excluded by name."""
-    theory = {f"LIA_{n}" for n in dir(LIA) if not n.startswith("_")}
+    """``OPS`` answers for every integer, boolean and structural operation, so one
+    added to the theory shows up as a failure here rather than as a refusal on
+    some benchmark."""
+    def ops(prefix, ns):
+        return {prefix + n for n in dir(ns) if isinstance(getattr(ns, n), type)}
+    theory = ops("int.", tensor.int) | ops("bool.", tensor.bool) | ops("", tensor)
     assert set(_farkas.OPS) - theory == set(), "declared but not in the theory"
-    assert theory - set(_farkas.OPS) == {"LIA_Uninterpreted"}
+    assert theory - set(_farkas.OPS) == set()
 
 
 def test_an_itype_outside_the_vocabulary_is_refused():
@@ -222,8 +224,8 @@ def test_an_itype_outside_the_vocabulary_is_refused():
     refuses an operation absent from it by name rather than guessing a kind."""
     bench = loop_bench(("x",), lambda x: dsl_ite(x > 0, x - 1, x))
     prog, ctrl, _ = bench.build()
-    ops = {k: v for k, v in _farkas.OPS.items() if k != "LIA_Ite"}
-    with pytest.raises(Unsupported, match="LIA_Ite"):
+    ops = {k: v for k, v in _farkas.OPS.items() if k != "int.Ite"}
+    with pytest.raises(Unsupported, match="int.Ite"):
         node_view(prog, {ctrl[n]: [z3.Int(n)] for n in bench.state}, ops)
 
 
@@ -248,7 +250,7 @@ def _prog(update, *, extl=()):
             def update(self, ctrl):
                 return update(ctrl, None)
 
-    return Program(ctrl=(x,), extl=extl, theory=LIA), x
+    return Program(ctrl=(x,), extl=extl), x
 
 
 def test_the_kinds_without_a_rule_are_the_ones_the_walk_refuses():
@@ -258,13 +260,13 @@ def test_the_kinds_without_a_rule_are_the_ones_the_walk_refuses():
     here before its rule shows up in this set."""
     from nuterm._farkas import OPS
     unruled = {op.kind for op in OPS.values() if op.kind and not op.mode and not op.split}
-    assert unruled == {"min", "max", "argmax", "mul", "div", "mod"}
+    assert unruled == {"min", "max", "abs", "argmax", "mul", "div", "mod"}
 
 
 @pytest.mark.parametrize("build, itype, why", [
-    (lambda c, _e: (c - 1)._unop(LIA.Min(), out=c.dtype), "LIA_Min", "no rule"),
-    (lambda c, _e: (c - 1)._binop(LIA.Mul(), c.dtype, c), "LIA_Mul", "no rule"),
-    (lambda c, _e: dsl_argmax(c), "LIA_Argmax", "no Z3 translation"),
+    (lambda c, _e: (c - 1)._unop(tensor.int.Min([1, 1])), "int.Min", "no rule"),
+    (lambda c, _e: (c - 1)._binop(tensor.int.Mul([1, 1]), c.dtype, c), "int.Mul", "no rule"),
+    (lambda c, _e: dsl_argmax(c), "int.Argmax", "no Z3 translation"),
 ])
 def test_an_op_the_procedure_cannot_use_is_refused(build, itype, why):
     """An op with no cell rule, and one Z3 cannot read, are both refused by name in
@@ -284,13 +286,13 @@ def test_a_vector_wire_is_refused():
 
     class Program(sugar.Module):
         def init(self):
-            return (dsl_expr([[0], [0]], theory=LIA, sort=vec),)
+            return (dsl_expr([[0], [0]], sort=vec),)
 
         def update(self, ctrl):
             return ctrl
 
     with pytest.raises(Unsupported, match="scalar"):
-        read_system(Program(ctrl=(v,), theory=LIA), ("v",))
+        read_system(Program(ctrl=(v,)), ("v",))
 
 
 def test_a_nondeterministic_transition_is_refused():

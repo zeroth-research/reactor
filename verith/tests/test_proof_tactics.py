@@ -12,7 +12,7 @@ import re
 import torch
 import pytest
 
-from reactor import Module, Term, Wire, Var, X, LIA, LRA, BV, Int, Real, Bool, BitVec
+from reactor import Module, Term, Wire, Var, X, Int, Real, Bool, Word, tensor
 from reactor_lean.codegen.context import LeanContext
 from verith.proofs.tactics import features_for, is_nonlinear, plan_for
 
@@ -54,14 +54,14 @@ def _int_module() -> Module:
     dec = Wire(Int([1, 1]))
     return Module.sequential(
         [x],
-        [Term(LIA.Int(torch.tensor([[100]])), [X(x)])],
+        [Term(tensor.int.Const(torch.tensor([[100]])), [X(x)])],
         [
-            Term(LIA.Int(torch.tensor([[0]])), [zero]),
-            Term(LIA.Int(torch.tensor([[1]])), [one]),
-            Term(LIA.Int(torch.tensor([[100]])), [hundred]),
-            Term(LIA.Eq(), [cond], [x, zero]),
-            Term(LIA.Sub(), [dec], [x, one]),
-            Term(LIA.Ite(), [X(x)], [cond, hundred, dec]),
+            Term(tensor.int.Const(torch.tensor([[0]])), [zero]),
+            Term(tensor.int.Const(torch.tensor([[1]])), [one]),
+            Term(tensor.int.Const(torch.tensor([[100]])), [hundred]),
+            Term(tensor.int.Eq([1, 1]), [cond], [x, zero]),
+            Term(tensor.int.Sub([1, 1]), [dec], [x, one]),
+            Term(tensor.int.Ite([1, 1]), [X(x)], [cond, hundred, dec]),
         ],
     )
 
@@ -71,21 +71,22 @@ def _real_module() -> Module:
     one = Wire(Real([1, 1]))
     return Module.sequential(
         [x],
-        [Term(LRA.Real(torch.tensor([[5.0]])), [X(x)])],
+        [Term(tensor.real.Const(torch.tensor([[5.0]])), [X(x)])],
         [
-            Term(LRA.Real(torch.tensor([[1.0]])), [one]),
-            Term(LRA.Sub(), [X(x)], [x, one]),
+            Term(tensor.real.Const(torch.tensor([[1.0]])), [one]),
+            Term(tensor.real.Sub([1, 1]), [X(x)], [x, one]),
         ],
     )
 
 
 def _bv_module() -> Module:
-    b = Var(BitVec(1, [1, 1]))
-    nb = Wire(BitVec(1, [1, 1]))
+    b = Var(Word(1, [1, 1]))
+    nb = Wire(Word(1, [1, 1]))
     return Module.sequential(
         [b],
-        [Term(BV.Const(torch.tensor([[0]])), [X(b)])],
-        [Term(BV.Not(), [nb], [b]), Term(BV.Id(), [X(b)], [nb])],
+        [Term(tensor.word.Const(torch.tensor([[0]]), 1), [X(b)])],
+        [Term(tensor.word.Not(1, [1, 1]), [nb], [b]),
+         Term(tensor.Skip(Word(1, [1, 1])), [X(b)], [nb])],
     )
 
 
@@ -227,23 +228,23 @@ def test_wide_finite_state_is_not_enumerated():
     """Each element doubles the fan-out, so a wide state opts out."""
     from verith.proofs.tactics import MAX_ENUMERABLE_SLOTS
 
-    b = Var(BitVec(1, [MAX_ENUMERABLE_SLOTS + 1, 1]))
+    b = Var(Word(1, [MAX_ENUMERABLE_SLOTS + 1, 1]))
     wide = Module.sequential(
         [b],
-        [Term(BV.Const(torch.zeros((MAX_ENUMERABLE_SLOTS + 1, 1), dtype=torch.int64)),
-              [X(b)])],
-        [Term(BV.Id(), [X(b)], [b])],
+        [Term(tensor.word.Const(
+            torch.zeros((MAX_ENUMERABLE_SLOTS + 1, 1), dtype=torch.int64), 1), [X(b)])],
+        [Term(tensor.Skip(b.dtype), [X(b)], [b])],
     )
     assert _plan(wide, "fun s => True").state_case_tactic == ""
 
 
 def test_wide_bitvec_is_not_enumerated():
     """`BitVec.eq_zero_or_eq_one` is width-1 only; wider has 2^w values."""
-    b = Var(BitVec(8, [1, 1]))
+    b = Var(Word(8, [1, 1]))
     m = Module.sequential(
         [b],
-        [Term(BV.Const(torch.tensor([[0]])), [X(b)])],
-        [Term(BV.Id(), [X(b)], [b])],
+        [Term(tensor.word.Const(torch.tensor([[0]]), 8), [X(b)])],
+        [Term(tensor.Skip(b.dtype), [X(b)], [b])],
     )
     assert _plan(m, "fun s => True").state_case_tactic == ""
 
@@ -253,8 +254,8 @@ def test_flat_predicates_skip_the_splitting_steps():
     x = Var(Int([1, 1]))
     flat = Module.sequential(
         [x],
-        [Term(LIA.Int(torch.tensor([[0]])), [X(x)])],
-        [Term(LIA.Id(), [X(x)], [x])],
+        [Term(tensor.int.Const(torch.tensor([[0]])), [X(x)])],
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [x])],
     )
     plan = _plan(flat, "fun s => True")
     assert "split_ifs" not in plan.prep
@@ -317,8 +318,8 @@ def test_only_recursion_depth_scales_with_the_module():
     x = Var(Int([64, 1]))
     wide = Module.sequential(
         [x],
-        [Term(LIA.Int(torch.zeros((64, 1), dtype=torch.int64)), [X(x)])],
-        [Term(LIA.Id(), [X(x)], [x])],
+        [Term(tensor.int.Const(torch.zeros((64, 1), dtype=torch.int64)), [X(x)])],
+        [Term(tensor.Skip(Int([64, 1])), [X(x)], [x])],
     )
     plan = _plan(wide, "fun s => True")
     # 64 slots used to be one of the shapes that bought a bigger budget.
@@ -555,8 +556,8 @@ def _countdown():
 
     return Module.sequential(
         [s],
-        convert_method(init, {}, [X(s)], theory=LIA),
-        convert_method(update, {"old_x": s}, [X(s)], theory=LIA),
+        convert_method(init, {}, [X(s)], number=Int),
+        convert_method(update, {"old_x": s}, [X(s)], number=Int),
     )
 
 
@@ -808,17 +809,17 @@ def _branchy_transition(n: int) -> Module:
     """A countdown whose next value is chosen by an `n`-deep chain of `ite`s."""
     x = Var(Int([1, 1]))
     zero, one = Wire(Int([1, 1])), Wire(Int([1, 1]))
-    terms = [Term(LIA.Int(torch.tensor([[0]])), [zero]),
-             Term(LIA.Int(torch.tensor([[1]])), [one])]
+    terms = [Term(tensor.int.Const(torch.tensor([[0]])), [zero]),
+             Term(tensor.int.Const(torch.tensor([[1]])), [one])]
     prev = x
     for k in range(n):
         cond, out = Wire(Bool([1, 1])), (X(x) if k == n - 1 else Wire(Int([1, 1])))
         dec = Wire(Int([1, 1]))
-        terms += [Term(LIA.Eq(), [cond], [prev, zero]),
-                  Term(LIA.Sub(), [dec], [prev, one]),
-                  Term(LIA.Ite(), [out], [cond, zero, dec])]
+        terms += [Term(tensor.int.Eq([1, 1]), [cond], [prev, zero]),
+                  Term(tensor.int.Sub([1, 1]), [dec], [prev, one]),
+                  Term(tensor.int.Ite([1, 1]), [out], [cond, zero, dec])]
         prev = out
-    return Module.sequential([x], [Term(LIA.Int(torch.tensor([[9]])), [X(x)])], terms)
+    return Module.sequential([x], [Term(tensor.int.Const(torch.tensor([[9]])), [X(x)])], terms)
 
 
 def test_a_branchy_transition_gets_the_higher_budget():
@@ -860,28 +861,28 @@ def _twobitcounter():
     not_b0, not_b1 = Wire(Bool([1, 1])), Wire(Bool([1, 1]))
     b0_and_enable = Wire(Bool([1, 1]))
     init = [
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b0)]),
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b1)]),
+        Term(tensor.bool.Const(torch.tensor([[False]])), [X(b0)]),
+        Term(tensor.bool.Const(torch.tensor([[False]])), [X(b1)]),
     ]
     update = [
-        Term(LIA.Not(), [not_b0], [b0]),
-        Term(LIA.Ite(), [X(b0)], [X(enable), not_b0, b0]),
-        Term(LIA.And(), [b0_and_enable], [b0, X(enable)]),
-        Term(LIA.Not(), [not_b1], [b1]),
-        Term(LIA.Ite(), [X(b1)], [b0_and_enable, not_b1, b1]),
+        Term(tensor.bool.Not([1, 1]), [not_b0], [b0]),
+        Term(tensor.bool.Ite([1, 1]), [X(b0)], [X(enable), not_b0, b0]),
+        Term(tensor.bool.And([1, 1]), [b0_and_enable], [b0, X(enable)]),
+        Term(tensor.bool.Not([1, 1]), [not_b1], [b1]),
+        Term(tensor.bool.Ite([1, 1]), [X(b1)], [b0_and_enable, not_b1, b1]),
     ]
     return Module.sequential([b0, b1, enable], init, update)
 
 
 def _affine_module():
-    """`x' = A·u` at init and `x' = x + e1` after: both `LIA.Linear`, with
+    """`x' = A·u` at init and `x' = x + e1` after: both integer `Linear`, with
     the matrices baked into the op rather than interned as constants."""
     x, u = Var(Int([3, 1])), Var(Int([2, 1]))
     a = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
-    init = [Term(LIA.Linear(a, torch.zeros((3, 1), dtype=torch.int64)),
+    init = [Term(tensor.int.Linear(a, torch.zeros((3, 1), dtype=torch.int64)),
                  [X(x)], [X(u)])]
     e1 = torch.tensor([[1], [0], [0]], dtype=torch.int64)
-    update = [Term(LIA.Linear(torch.eye(3, dtype=torch.int64), e1), [X(x)], [x])]
+    update = [Term(tensor.int.Linear(torch.eye(3, dtype=torch.int64), e1), [X(x)], [x])]
     return Module.sequential([x, u], init, update)
 
 

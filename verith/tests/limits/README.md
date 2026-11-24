@@ -16,8 +16,7 @@ that was noticed, five cases had a verifying certificate inside a project
 whose `lake build` failed.
 
 This file is both the operational one and the record of what the matrix
-found: how to run it, what verifies, what does not, and why. What is still
-to do about the failures is in [`TODO.md`](../../../TODO.md).
+found: how to run it, what verifies, what does not, and why.
 
 ---
 

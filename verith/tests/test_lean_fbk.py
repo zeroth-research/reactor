@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from reactor import Bool, Int, LIA, LRA, Module, Real, Term, Var, Wire, X
+from reactor import Bool, Int, Module, Real, Term, Var, Wire, X, tensor
 from reactor_lean.lowering.sorts import dtype_shape
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.core.errors import PredicateRefused
@@ -47,14 +47,14 @@ def _counter() -> Module:
     zero = Wire(Int([1, 1]))
     inc = Wire(Int([1, 1]))
     at_ten = Wire(Bool([1, 1]))
-    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
+    init = [Term(tensor.int.Const(torch.tensor([[0]])), [X(x)])]
     update = [
-        Term(LIA.Int(torch.tensor([[1]])), [one]),
-        Term(LIA.Int(torch.tensor([[10]])), [ten]),
-        Term(LIA.Int(torch.tensor([[0]])), [zero]),
-        Term(LIA.Add(), [inc], [x, one]),
-        Term(LIA.Eq(), [at_ten], [inc, ten]),
-        Term(LIA.Ite(), [X(x)], [at_ten, zero, inc]),
+        Term(tensor.int.Const(torch.tensor([[1]])), [one]),
+        Term(tensor.int.Const(torch.tensor([[10]])), [ten]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [zero]),
+        Term(tensor.int.Add([1, 1]), [inc], [x, one]),
+        Term(tensor.int.Eq([1, 1]), [at_ten], [inc, ten]),
+        Term(tensor.int.Ite([1, 1]), [X(x)], [at_ten, zero, inc]),
     ]
     return Module.sequential([x], init, update)
 
@@ -65,13 +65,13 @@ def _two_bools() -> Module:
     b1 = Var(Bool([1, 1]))
     not_b0 = Wire(Bool([1, 1]))
     init = [
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b0)]),
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b1)]),
+        Term(tensor.bool.Const(torch.tensor([[False]])), [X(b0)]),
+        Term(tensor.bool.Const(torch.tensor([[False]])), [X(b1)]),
     ]
     update = [
-        Term(LIA.Not(), [not_b0], [b0]),
-        Term(LIA.Id(), [X(b0)], [not_b0]),
-        Term(LIA.Id(), [X(b1)], [b0]),
+        Term(tensor.bool.Not([1, 1]), [not_b0], [b0]),
+        Term(tensor.Skip(Bool([1, 1])), [X(b0)], [not_b0]),
+        Term(tensor.Skip(Bool([1, 1])), [X(b1)], [b0]),
     ]
     return Module.sequential([b0, b1], init, update)
 
@@ -80,18 +80,18 @@ def _with_extl() -> Module:
     """x := x + e. `e` is never written, so it is an external input."""
     x = Var(Int([1, 1]))
     e = Var(Int([1, 1]))
-    init = [Term(LIA.Int(torch.tensor([[0]])), [X(x)])]
-    update = [Term(LIA.Add(), [X(x)], [x, X(e)])]
+    init = [Term(tensor.int.Const(torch.tensor([[0]])), [X(x)])]
+    update = [Term(tensor.int.Add([1, 1]), [X(x)], [x, X(e)])]
     return Module.sequential([x, e], init, update)
 
 
 def _real_state() -> Module:
     x = Var(Real([1, 1]))
     one = Wire(Real([1, 1]))
-    init = [Term(LRA.Real(torch.tensor([[0.0]])), [X(x)])]
+    init = [Term(tensor.real.Const(torch.tensor([[0.0]])), [X(x)])]
     update = [
-        Term(LRA.Real(torch.tensor([[1.0]])), [one]),
-        Term(LRA.Add(), [X(x)], [x, one]),
+        Term(tensor.real.Const(torch.tensor([[1.0]])), [one]),
+        Term(tensor.real.Add([1, 1]), [X(x)], [x, one]),
     ]
     return Module.sequential([x], init, update)
 
@@ -102,13 +102,13 @@ def _mixed_state() -> Module:
     flag = Var(Bool([1, 1]))
     one = Wire(Int([1, 1]))
     init = [
-        Term(LIA.Int(torch.tensor([[0]])), [X(n)]),
-        Term(LIA.Bool(torch.tensor([[False]])), [X(flag)]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [X(n)]),
+        Term(tensor.bool.Const(torch.tensor([[False]])), [X(flag)]),
     ]
     update = [
-        Term(LIA.Int(torch.tensor([[1]])), [one]),
-        Term(LIA.Add(), [X(n)], [n, one]),
-        Term(LIA.Lt(), [X(flag)], [n, one]),
+        Term(tensor.int.Const(torch.tensor([[1]])), [one]),
+        Term(tensor.int.Add([1, 1]), [X(n)], [n, one]),
+        Term(tensor.int.Lt([1, 1]), [X(flag)], [n, one]),
     ]
     return Module.sequential([n, flag], init, update)
 
@@ -118,11 +118,11 @@ def _uses_ne() -> Module:
     n = Var(Int([1, 1]))
     one = Wire(Int([1, 1]))
     differs = Wire(Bool([1, 1]))
-    init = [Term(LIA.Int(torch.tensor([[0]])), [X(n)])]
+    init = [Term(tensor.int.Const(torch.tensor([[0]])), [X(n)])]
     update = [
-        Term(LIA.Int(torch.tensor([[1]])), [one]),
-        Term(LIA.Ne(), [differs], [n, one]),
-        Term(LIA.Ite(), [X(n)], [differs, one, n]),
+        Term(tensor.int.Const(torch.tensor([[1]])), [one]),
+        Term(tensor.int.Ne([1, 1]), [differs], [n, one]),
+        Term(tensor.int.Ite([1, 1]), [X(n)], [differs, one, n]),
     ]
     return Module.sequential([n], init, update)
 
@@ -155,14 +155,14 @@ def _wide_vec() -> Module:
     init_vec[0][0] = 9
     return Module.sequential(
         [v],
-        [Term(LIA.Int(init_vec), [X(v)])],
+        [Term(tensor.int.Const(init_vec), [X(v)])],
         [
-            Term(LIA.Linear(row0, z11), [x], [v]),
-            Term(LIA.Int(torch.tensor([[0]])), [zc]),
-            Term(LIA.Eq(), [cond], [x, zc]),
-            Term(LIA.Linear(keep, b9), [reset], [v]),
-            Term(LIA.Linear(torch.eye(n, dtype=torch.int64), bneg), [dec], [v]),
-            Term(LIA.Ite(), [X(v)], [cond, reset, dec]),
+            Term(tensor.int.Linear(row0, z11), [x], [v]),
+            Term(tensor.int.Const(torch.tensor([[0]])), [zc]),
+            Term(tensor.int.Eq([1, 1]), [cond], [x, zc]),
+            Term(tensor.int.Linear(keep, b9), [reset], [v]),
+            Term(tensor.int.Linear(torch.eye(n, dtype=torch.int64), bneg), [dec], [v]),
+            Term(tensor.int.Ite([n, 1]), [X(v)], [cond, reset, dec]),
         ],
     )
 
@@ -179,15 +179,15 @@ def _wide_mixed() -> Module:
     step = Wire(Int([3, 1]))
     moved = Wire(Int([3, 1]))
     init = [
-        Term(LIA.Bool(torch.tensor([[False]])), [X(b)]),
-        Term(LIA.Int(torch.tensor([[0], [1], [2]])), [X(v)]),
+        Term(tensor.bool.Const(torch.tensor([[False]])), [X(b)]),
+        Term(tensor.int.Const(torch.tensor([[0], [1], [2]])), [X(v)]),
     ]
     update = [
-        Term(LIA.Not(), [nb], [b]),
-        Term(LIA.Id(), [X(b)], [nb]),
-        Term(LIA.Int(torch.tensor([[1], [10], [100]])), [step]),
-        Term(LIA.Add(), [moved], [v, step]),
-        Term(LIA.Id(), [X(v)], [moved]),
+        Term(tensor.bool.Not([1, 1]), [nb], [b]),
+        Term(tensor.Skip(Bool([1, 1])), [X(b)], [nb]),
+        Term(tensor.int.Const(torch.tensor([[1], [10], [100]])), [step]),
+        Term(tensor.int.Add([3, 1]), [moved], [v, step]),
+        Term(tensor.Skip(Int([3, 1])), [X(v)], [moved]),
     ]
     return Module.sequential([b, v], init, update)
 
@@ -200,11 +200,11 @@ def _wide_matrix() -> Module:
     moved = Wire(Int([2, 2]))
     return Module.sequential(
         [v],
-        [Term(LIA.Int(torch.tensor([[0, 1], [2, 3]])), [X(v)])],
+        [Term(tensor.int.Const(torch.tensor([[0, 1], [2, 3]])), [X(v)])],
         [
-            Term(LIA.Int(torch.tensor([[1, 10], [100, 1000]])), [step]),
-            Term(LIA.Add(), [moved], [v, step]),
-            Term(LIA.Id(), [X(v)], [moved]),
+            Term(tensor.int.Const(torch.tensor([[1, 10], [100, 1000]])), [step]),
+            Term(tensor.int.Add([2, 2]), [moved], [v, step]),
+            Term(tensor.Skip(Int([2, 2])), [X(v)], [moved]),
         ],
     )
 
@@ -391,10 +391,10 @@ def _input_start() -> Module:
     y = Var(Int([1, 1]))
     e = Var(Int([1, 1]))
     init = [
-        Term(LIA.Int(torch.tensor([[0]])), [X(x)]),
-        Term(LIA.Id(), [X(y)], [X(e)]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [X(x)]),
+        Term(tensor.Skip(Int([1, 1])), [X(y)], [X(e)]),
     ]
-    update = [Term(LIA.Id(), [X(x)], [x]), Term(LIA.Id(), [X(y)], [y])]
+    update = [Term(tensor.Skip(Int([1, 1])), [X(x)], [x]), Term(tensor.Skip(Int([1, 1])), [X(y)], [y])]
     return Module.sequential([x, y, e], init, update)
 
 
@@ -424,8 +424,8 @@ def test_every_slot_free_leaves_INIT_as_true():
     e = Var(Int([1, 1]))
     module = Module.sequential(
         [x, e],
-        [Term(LIA.Id(), [X(x)], [X(e)])],
-        [Term(LIA.Id(), [X(x)], [x])],
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [X(e)])],
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [x])],
     )
     assert "abbrev INIT (state : StateType) : Bool :=\n  true\n" in _na(
         module, "(>= s0 0)"
@@ -441,9 +441,9 @@ def test_an_initial_value_built_from_an_input_is_refused():
     one = Wire(Int([1, 1]))
     module = Module.sequential(
         [x, e],
-        [Term(LIA.Int(torch.tensor([[1]])), [one]),
-         Term(LIA.Add(), [X(x)], [X(e), one])],
-        [Term(LIA.Id(), [X(x)], [x])],
+        [Term(tensor.int.Const(torch.tensor([[1]])), [one]),
+         Term(tensor.int.Add([1, 1]), [X(x)], [X(e), one])],
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [x])],
     )
     with pytest.raises(NAUnsupported, match="rather than being one"):
         check_na_supported(LeanContext(module))
@@ -458,8 +458,8 @@ def test_two_slots_from_one_input_start_equal():
     e = Var(Int([1, 1]))
     module = Module.sequential(
         [x, y, e],
-        [Term(LIA.Id(), [X(x)], [X(e)]), Term(LIA.Id(), [X(y)], [X(e)])],
-        [Term(LIA.Id(), [X(x)], [x]), Term(LIA.Id(), [X(y)], [y])],
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [X(e)]), Term(tensor.Skip(Int([1, 1])), [X(y)], [X(e)])],
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [x]), Term(tensor.Skip(Int([1, 1])), [X(y)], [y])],
     )
     src = _na(module, "(<= s0 s1)")
     assert "abbrev Init_0" not in src
@@ -520,10 +520,10 @@ def test_a_precondition_over_an_input_that_starts_no_slot_is_refused():
     e = Var(Int([2, 1]))
     module = Module.sequential(
         [x, y, e],
-        [Term(LIA.Int(torch.tensor([[0]])), [X(x)]),
-         Term(LIA.Linear(torch.tensor([[1, 0]]), torch.tensor([[0]])),
+        [Term(tensor.int.Const(torch.tensor([[0]])), [X(x)]),
+         Term(tensor.int.Linear(torch.tensor([[1, 0]]), torch.tensor([[0]])),
               [X(y)], [X(e)])],
-        [Term(LIA.Id(), [X(x)], [x]), Term(LIA.Id(), [X(y)], [y])],
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [x]), Term(tensor.Skip(Int([1, 1])), [X(y)], [y])],
     )
     # The element it *did* keep is readable.
     assert _pre(module, "(>= ((_ tuple.select 0) e0) 5)") == \
@@ -612,10 +612,10 @@ def test_ne_is_accepted_now_that_lean2vmt_translates_it():
 def _xor_module() -> Module:
     b = Var(Bool([1, 1]))
     t = Wire(Bool([1, 1]))
-    init = [Term(LIA.Bool(torch.tensor([[False]])), [X(b)])]
+    init = [Term(tensor.bool.Const(torch.tensor([[False]])), [X(b)])]
     update = [
-        Term(LIA.Bool(torch.tensor([[True]])), [t]),
-        Term(LIA.Xor(), [X(b)], [b, t]),
+        Term(tensor.bool.Const(torch.tensor([[True]])), [t]),
+        Term(tensor.bool.Xor([1, 1]), [X(b)], [b, t]),
     ]
     return Module.sequential([b], init, update)
 
@@ -639,10 +639,10 @@ def test_an_op_the_encoder_has_no_term_for_aborts():
     term at all, so no VMT model can be built from it."""
     v = Var(Int([1, 3]))
     t = Wire(Int([3, 1]))
-    init = [Term(LIA.Int(torch.tensor([[0, 0, 0]])), [X(v)])]
+    init = [Term(tensor.int.Const(torch.tensor([[0, 0, 0]])), [X(v)])]
     update = [
-        Term(LIA.Transpose(), [t], [v]),
-        Term(LIA.Transpose(), [X(v)], [t]),
+        Term(tensor.int.Transpose([1, 3]), [t], [v]),
+        Term(tensor.int.Transpose([3, 1]), [X(v)], [t]),
     ]
     with pytest.raises(NAUnsupported, match="Transpose"):
         check_na_supported(LeanContext(Module.sequential([v], init, update)))
@@ -656,8 +656,8 @@ def test_a_non_scalar_ctrl_wire_becomes_one_slot_per_element():
     three slots rather than one, and every comparison stays scalar.
     """
     v = Var(Int([1, 3]))
-    init = [Term(LIA.Int(torch.tensor([[0, 1, 2]])), [X(v)])]
-    update = [Term(LIA.Id(), [X(v)], [v])]
+    init = [Term(tensor.int.Const(torch.tensor([[0, 1, 2]])), [X(v)])]
+    update = [Term(tensor.Skip(Int([1, 3])), [X(v)], [v])]
     module = Module.sequential([v], init, update)
     check_na_supported(LeanContext(module))
 
@@ -678,8 +678,8 @@ def test_an_element_of_a_wide_wire_reads_its_own_slot():
     """The property and the transition have to agree about which slot an
     element lives in; both take the layout from `slot_accessors`."""
     v = Var(Int([1, 3]))
-    init = [Term(LIA.Int(torch.tensor([[0, 0, 0]])), [X(v)])]
-    update = [Term(LIA.Id(), [X(v)], [v])]
+    init = [Term(tensor.int.Const(torch.tensor([[0, 0, 0]])), [X(v)])]
+    update = [Term(tensor.Skip(Int([1, 3])), [X(v)], [v])]
     module = Module.sequential([v], init, update)
     src = _na(module, "(= ((_ tuple.select 2) s0) 7)")
     assert "abbrev PROPERTY (state : StateType) : Bool :=\n  ((var_2 state) == (7 : Int))" in src

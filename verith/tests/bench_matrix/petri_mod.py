@@ -45,13 +45,14 @@ import os
 import sys
 from pathlib import Path
 
-from reactor import Int, LIA, LRA, Module, Real, Term, Var
+from reactor import Int, Module, Real, Term, Var
+from reactor.tensor import Skip
 from reactor.expr import collecting, expr, ite
 from reactor.sugar import X          # the `next` wire of a Var *or* of an Expr
 
 
-def _num(v, theory, sort):
-    return expr(v, theory=theory, sort=sort)
+def _num(v, sort):
+    return expr(v, sort=sort)
 
 
 def _enabled(tr, m, sel, k, ntrans, lam):
@@ -82,7 +83,7 @@ def _fold(parts):
     return parts[0]
 
 
-def _step(net, m, sel, lam, theory, sort):
+def _step(net, m, sel, lam, sort):
     """The marking after the selected transition, or `m` where it is dead.
 
     Exactly one transition fires per tick, so an ordinary place's next value
@@ -102,7 +103,7 @@ def _step(net, m, sel, lam, theory, sort):
     chain. Neither arc appears in a net with more than three transitions
     here, which is what keeps that path affordable.
     """
-    zero = _num(0 if lam is None else 0.0, theory, sort)
+    zero = _num(0 if lam is None else 0.0, sort)
     guards = [_enabled(tr, m, sel, k, len(net.trans), lam)
               for k, tr in enumerate(net.trans)]
     out = []
@@ -129,7 +130,7 @@ def _step(net, m, sel, lam, theory, sort):
             if not delta:
                 continue
             paid = (delta * lam if lam is not None
-                    else _num(delta, theory, sort))
+                    else _num(delta, sort))
             parts.append(ite(guards[k], paid, zero))
         out.append(_fold(parts))
     return out
@@ -139,7 +140,6 @@ def build(net) -> Module:
     """`net` as a sequential reactive module."""
     if net.sched == "rr" and net.real:
         raise ValueError("petri_mod: a continuous net has no round-robin variant")
-    theory = LRA if net.real else LIA
     sort = Real([1, 1]) if net.real else Int([1, 1])
     ntrans = len(net.trans)
 
@@ -153,24 +153,24 @@ def build(net) -> Module:
     with collecting() as init:
         start = list(net.init) + ([0] if rr else [])
         for var, k in zip(ctrl, start):
-            e = _num(float(k) if net.real else k, theory, sort)
-            init.append(Term(theory.Id(), [X(var)], [e.wire]))
+            e = _num(float(k) if net.real else k, sort)
+            init.append(Term(Skip(var.dtype), [X(var)], [e.wire]))
 
     with collecting() as update:
-        cur = [expr(v, theory=theory) for v in ctrl]
+        cur = [expr(v) for v in ctrl]
         m = dict(zip(net.places, cur))
         if rr:
             counter = cur[-1]
             sel, lam = counter, None
         else:
-            ins = [expr(v, theory=theory) for v in extl]
+            ins = [expr(v) for v in extl]
             sel = X(ins[0])
             lam = X(ins[1]) if net.real else None
-        vals = _step(net, m, sel, lam, theory, sort)
+        vals = _step(net, m, sel, lam, sort)
         if rr:
-            vals.append(ite(counter >= ntrans - 1, _num(0, theory, sort), counter + 1))
+            vals.append(ite(counter >= ntrans - 1, _num(0, sort), counter + 1))
         for var, e in zip(ctrl, vals):
-            update.append(Term(theory.Id(), [X(var)], [e.wire]))
+            update.append(Term(Skip(var.dtype), [X(var)], [e.wire]))
 
     return Module.sequential(ctrl + extl, init, update)
 

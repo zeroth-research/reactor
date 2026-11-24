@@ -21,7 +21,32 @@ from dataclasses import dataclass, field
 import numpy as np
 import z3
 
+from reactor import tensor
 from reactor import z3 as zz3
+
+
+def _qualified_names() -> dict:
+    """Each operation class of :mod:`reactor.tensor` by its name qualified with its
+    namespace: ``int.Add``, ``bool.And``, ``word.signed.Lt``, and ``Skip`` for a
+    structural one. Class names repeat across namespaces (``int.Add`` and
+    ``real.Add``), so the namespace is part of what identifies an operation."""
+    spaces = (("", tensor), ("int.", tensor.int), ("real.", tensor.real),
+              ("bool.", tensor.bool), ("word.", tensor.word),
+              ("word.signed.", tensor.word.signed),
+              ("word.unsigned.", tensor.word.unsigned), ("cast.", tensor.cast))
+    return {cls: prefix + n for prefix, ns in spaces for n in dir(ns)
+            if isinstance(cls := getattr(ns, n), type)}
+
+
+_NAMES = _qualified_names()
+
+
+def op_name(itype) -> str:
+    """``itype``'s operation by its qualified name (see :func:`_qualified_names`),
+    the key :data:`._farkas.OPS` declares it under."""
+    cls = type(itype)
+    return _NAMES.get(cls, cls.__name__)
+
 
 @dataclass(frozen=True)
 class ModeKind:
@@ -110,7 +135,7 @@ def _eval(term, reads, ops):
     tensor. Every wire this procedure reads is a scalar (:func:`._farkas.read_system`
     refuses the rest), so a value is wrapped into its 1x1 array on the way in and
     read back out of one on the way out, and the maps here hold plain expressions."""
-    name = type(term.itype).__name__
+    name = op_name(term.itype)
     op = ops.get(name)
     if op is None:
         raise Unsupported(f"itype {name!r} is not in this procedure's vocabulary")
@@ -141,10 +166,11 @@ def node_view(module, seed, ops, entry_seed=None, atoms=None) -> NodeView:
     a node differ between the two maps, so the second evaluation is done just for
     those.
 
-    ``ops`` maps an itype's class name to the :class:`Op` describing it. An itype
-    absent from it raises :class:`Unsupported` rather than being evaluated away —
-    the procedure says what it understands, and anything else is refused. So is a
-    kind the table names but has no rule for: Z3 may well read it, and then its
+    ``ops`` maps an itype's qualified name (:func:`op_name`) to the :class:`Op`
+    describing it. An itype absent from it raises :class:`Unsupported` rather
+    than being evaluated away — the procedure says what it understands, and
+    anything else is refused. So is a kind the table names but has no rule for:
+    Z3 may well read it, and then its
     output would be a symbol the engine can neither pin nor split, which is a
     proof that does not close rather than the reason it could not.
 
@@ -160,10 +186,10 @@ def node_view(module, seed, ops, entry_seed=None, atoms=None) -> NodeView:
             kind, out = _eval(t_, reads, ops)
             values.update(zip(t_.write, out))
             if kind is not None:
-                op = ops[type(t_.itype).__name__]
+                op = ops[op_name(t_.itype)]
                 if not op.mode and not op.split:
                     raise Unsupported(
-                        f"itype {type(t_.itype).__name__!r} has no rule in this "
+                        f"itype {op_name(t_.itype)!r} has no rule in this "
                         f"procedure: its kind {kind!r} has neither a cell rule "
                         f"nor a case split")
                 sym = z3.Int(f"_n{len(nodes)}")

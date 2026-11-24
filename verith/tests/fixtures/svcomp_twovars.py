@@ -8,7 +8,7 @@ Python semantics:
 Invariant: 0 <= x <= y and y == 10
 Ranking: y - x (when x != y)
 """
-from reactor import Module, Int, LIA, Var, X
+from reactor import Module, Int, Var, X
 from reactor.analyzer import convert_method
 
 
@@ -25,8 +25,8 @@ def update(old_x, old_y):
 def module() -> Module:
     x = Var(Int([1, 1]))
     y = Var(Int([1, 1]))
-    init_terms = convert_method(init, {}, [X(x), X(y)], theory=LIA)
+    init_terms = convert_method(init, {}, [X(x), X(y)], number=Int)
     update_terms = convert_method(
-        update, {"old_x": x, "old_y": y}, [X(x), X(y)], theory=LIA
+        update, {"old_x": x, "old_y": y}, [X(x), X(y)], number=Int
     )
     return Module.sequential([x, y], init_terms, update_terms)

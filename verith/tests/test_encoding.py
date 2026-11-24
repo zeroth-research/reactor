@@ -39,7 +39,7 @@ def test_a_translation_that_failed_holds_no_frame_of_it():
     refused twice, the same way."""
     enc = Encoding(load_module(MODS / "m_transpose.py"))
     for _ in range(2):
-        with pytest.raises(ValueError, match="unsupported IType Transpose"):
+        with pytest.raises(ValueError, match="unsupported op Transpose"):
             enc.next_state(enc.state, enc.extl_latched, enc.extl_next)
     assert _frames_holding(enc) == []
 

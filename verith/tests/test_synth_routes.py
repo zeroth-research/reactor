@@ -325,15 +325,15 @@ def test_an_element_is_read_by_its_own_sort_not_the_component_s():
     """
     import torch
 
-    from reactor import LIA, Bool, Module, Term, Var, Wire, X
+    from reactor import Bool, Module, Term, Var, Wire, X, tensor
     from verith.common.claim import SynthContext
     from verith.common.synth import component_readings, component_slots
 
     b, n = Var(Bool([2, 1])), Wire(Bool([2, 1]))
     module = Module.sequential(
         [b],
-        [Term(LIA.Bool(torch.tensor([[True], [False]])), [X(b)])],
-        [Term(LIA.Not(), [n], [b]), Term(LIA.Id(), [X(b)], [n])],
+        [Term(tensor.bool.Const(torch.tensor([[True], [False]])), [X(b)])],
+        [Term(tensor.bool.Not([2, 1]), [n], [b]), Term(tensor.Skip(Bool([2, 1])), [X(b)], [n])],
     )
     ctx = SynthContext.build(module, Claim(prp="true", kind="safety"),
                              route="test", takes=("bool", "tuple"))
@@ -822,22 +822,23 @@ def bv_counter(width: int, top: int):
     fixture and the limit matrix's cases carry a baseline.
     """
     import torch
-    from reactor import BV, BitVec, Module, Term, Var, Wire, X
+    from reactor import Bool, Word, Module, Term, Var, Wire, X, tensor
 
-    s = Var(BitVec(width, [1, 1]))
-    one, cap, zero = (Wire(BitVec(width, [1, 1])) for _ in range(3))
-    at_top = Wire(BitVec(1, [1, 1]))     # BV has no Bool wires: one bit
-    bumped = Wire(BitVec(width, [1, 1]))
+    word = Word(width, [1, 1])
+    s = Var(word)
+    one, cap, zero = (Wire(word) for _ in range(3))
+    at_top = Wire(Bool([1, 1]))
+    bumped = Wire(word)
     return Module.sequential(
         [s],
-        [Term(BV.Const(torch.tensor([[0]])), [X(s)])],
+        [Term(tensor.word.Const(torch.tensor([[0]]), width), [X(s)])],
         [
-            Term(BV.Const(torch.tensor([[1]])), [one]),
-            Term(BV.Const(torch.tensor([[top]])), [cap]),
-            Term(BV.Const(torch.tensor([[0]])), [zero]),
-            Term(BV.Eq(), [at_top], [s, cap]),
-            Term(BV.Add(), [bumped], [s, one]),
-            Term(BV.Ite(), [X(s)], [at_top, zero, bumped]),
+            Term(tensor.word.Const(torch.tensor([[1]]), width), [one]),
+            Term(tensor.word.Const(torch.tensor([[top]]), width), [cap]),
+            Term(tensor.word.Const(torch.tensor([[0]]), width), [zero]),
+            Term(tensor.word.Eq(width, [1, 1]), [at_top], [s, cap]),
+            Term(tensor.word.Add(width, [1, 1]), [bumped], [s, one]),
+            Term(tensor.word.Ite(width, [1, 1]), [X(s)], [at_top, zero, bumped]),
         ],
     )
 

@@ -83,7 +83,7 @@ HAND_WRITTEN = [
     ("NiTvNe11",    "m_twovars",   "(not (= s0 11))", "certified"),
     # needs *parity*, not just a bound: 3 is inside 0..10 and only
     # unreachable because x steps by 2.  ic3ia finds the invariant; the
-    # `smt` tactic then miscompiles the proof -- the lean-smt item in TODO.md
+    # `smt` tactic then miscompiles the proof -- a lean-smt bug
     ("NiS2Odd3",    "m_step2",     "(not (= s0 3))", "lean-fail"),
 
     # -- relational: needs an invariant over both state variables at once.
@@ -123,7 +123,7 @@ HAND_WRITTEN = [
     #    the model -- "incorrect number of universe levels Max". The NA
     #    encoding now takes its transition from `smt.encode`, where a ReLU
     #    is an `ite`, so no `Max` reaches Lean and the certificate checks.
-    #    The bug is still there (TODO.md keeps the reproducer);
+    #    The bug is still there;
     #    this route no longer walks into it.
     ("ReluTrans",   "m_relu",      "(and (>= s0 0) (<= s0 5))", "certified"),
 ]
@@ -148,8 +148,8 @@ HARDER = [
     # -- parity again, but asked as an implication into a disjunction of
     #    equalities instead of a disequality.  Same module and the same
     #    parity argument as `NiS2Odd3`, and it certifies where that one
-    #    hits the lean-smt bug -- the evidence that narrowed the
-    #    reproducer in TODO.md.
+    #    hits the lean-smt bug -- the evidence that narrowed that bug
+    #    down.
     ("Step2Odd",    "m_step2",
      "(=> (>= s0 5) (or (= s0 6) (= s0 8) (= s0 10)))", "certified"),
     # -- relational, with a conjunction under the implication: the bound on
@@ -204,6 +204,6 @@ REJECTED = {
     "m_lra_two":    ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_relu_lra":   ("vmt2lean", "Real state: tp() maps only Int and Bool"),
     "m_transpose":  ("verith",   "smt.encode has no term for Transpose"),
-    "m_uninterp":   ("verith",   "smt.encode has no term for Uninterpreted"),
+    "m_uninterp":   ("verith",   "smt.encode has no term for Havoc"),
     "m_relu_input": ("lean2vmt", "models only state/statenext, no inputs"),
 }

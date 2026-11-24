@@ -160,7 +160,7 @@ synthesise the bound), relational over two state variables, nonlinear,
 `probes.py::HARDER` goes one step further — a coupling between two state
 components, a parity argument asked as an implication, a linear combination
 of two counters, three-way band splits — and is what narrowed the
-lean-smt `sum_ub` bug (its reproducer is in [`TODO.md`](../../../../TODO.md)):
+lean-smt `sum_ub` bug:
 `Step2Odd` and `NiS2Odd3` ask the same parity question of the same module
 and land on opposite sides of it.
 
@@ -190,12 +190,11 @@ heartbeats (200000) in `whnf`.
 
 ### What the sweep found
 
-Two obstacles are upstream and still open, and both are in
-[`TODO.md`](../../../../TODO.md): `vmt2lean.py` cannot render the witness
-MathSAT gives for a `mod` property (`InvMod`, `abort`), and lean-smt's
-reconstruction of a `sum_ub` step fails in the kernel (`NiS2Odd3`,
-`lean-fail`). A third is expected: `NonlinLexMul` comes back `unknown`,
-because ic3ia is IC3 with implicit predicate abstraction over *linear*
-arithmetic, and the route aborts cleanly.
+Two obstacles are upstream and still open: `vmt2lean.py` cannot render
+the witness MathSAT gives for a `mod` property (`InvMod`, `abort`), and
+lean-smt's reconstruction of a `sum_ub` step fails in the kernel
+(`NiS2Odd3`, `lean-fail`). A third is expected: `NonlinLexMul` comes back
+`unknown`, because ic3ia is IC3 with implicit predicate abstraction over
+*linear* arithmetic, and the route aborts cleanly.
 
 [ltl]: https://github.com/zeroth/proof-prototyping

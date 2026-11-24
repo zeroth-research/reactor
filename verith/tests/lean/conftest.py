@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from reactor import Module, Wire, Term, LIA, Int, Bool, Var, X
+from reactor import Module, Wire, Term, Int, Bool, Var, X, tensor
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.codegen.encodings import ModuleToLean4
 from reactor_lean.core.certificate import Certificate, Claim
@@ -127,7 +127,7 @@ _make_collatz = partial(_fixture, "svcomp_collatz_bounded")
 
 
 def _make_counter() -> Module:
-    """3×1 vector-state counter with LIA.Linear transitions (matrix cert).
+    """3×1 vector-state counter with Linear transitions (matrix cert).
 
     state = (x, y, z); init = (0, y0, z0); update increments x while x < y or
     x < z, else resets x to 0. Exercises the Linear affine map plus tuple-select
@@ -139,7 +139,7 @@ def _make_counter() -> Module:
     zero11 = torch.zeros((1, 1), dtype=torch.int64)
 
     A = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
-    init = [Term(LIA.Linear(A, zero31), [X(state)], [X(extl)])]
+    init = [Term(tensor.int.Linear(A, zero31), [X(state)], [X(extl)])]
 
     x, y, z = Wire(Int([1, 1])), Wire(Int([1, 1])), Wire(Int([1, 1]))
     x_lt_y, x_lt_z, cond = Wire(Bool([1, 1])), Wire(Bool([1, 1])), Wire(Bool([1, 1]))
@@ -150,15 +150,15 @@ def _make_counter() -> Module:
     e1 = torch.tensor([[1], [0], [0]], dtype=torch.int64)
     diag_yz = torch.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=torch.int64)
     update = [
-        Term(LIA.Linear(row_x, zero11), [x], [state]),
-        Term(LIA.Linear(row_y, zero11), [y], [state]),
-        Term(LIA.Linear(row_z, zero11), [z], [state]),
-        Term(LIA.Lt(), [x_lt_y], [x, y]),
-        Term(LIA.Lt(), [x_lt_z], [x, z]),
-        Term(LIA.Or(), [cond], [x_lt_y, x_lt_z]),
-        Term(LIA.Linear(torch.eye(3, dtype=torch.int64), e1), [result_true], [state]),
-        Term(LIA.Linear(diag_yz, zero31), [result_false], [state]),
-        Term(LIA.Ite(), [X(state)], [cond, result_true, result_false]),
+        Term(tensor.int.Linear(row_x, zero11), [x], [state]),
+        Term(tensor.int.Linear(row_y, zero11), [y], [state]),
+        Term(tensor.int.Linear(row_z, zero11), [z], [state]),
+        Term(tensor.int.Lt([1, 1]), [x_lt_y], [x, y]),
+        Term(tensor.int.Lt([1, 1]), [x_lt_z], [x, z]),
+        Term(tensor.bool.Or([1, 1]), [cond], [x_lt_y, x_lt_z]),
+        Term(tensor.int.Linear(torch.eye(3, dtype=torch.int64), e1), [result_true], [state]),
+        Term(tensor.int.Linear(diag_yz, zero31), [result_false], [state]),
+        Term(tensor.int.Ite([3, 1]), [X(state)], [cond, result_true, result_false]),
     ]
     return Module.sequential([state, extl], init, update)
 
@@ -176,7 +176,7 @@ def _make_countdown_vec(n: int) -> Module:
 
     init_vec = torch.zeros((n, 1), dtype=torch.int64)
     init_vec[0][0] = 100
-    init = [Term(LIA.Int(init_vec), [X(s)])]
+    init = [Term(tensor.int.Const(init_vec), [X(s)])]
 
     x = Wire(Int([1, 1]))
     zc = Wire(Int([1, 1]))
@@ -195,12 +195,12 @@ def _make_countdown_vec(n: int) -> Module:
     bneg[0][0] = -1
 
     update = [
-        Term(LIA.Linear(row0, z11), [x], [s]),            # x = s[0]
-        Term(LIA.Int(torch.tensor([[0]])), [zc]),
-        Term(LIA.Eq(), [cond], [x, zc]),                  # cond = (x == 0)
-        Term(LIA.Linear(diag_keep, b100), [reset], [s]),  # reset: s[0] := 100
-        Term(LIA.Linear(In, bneg), [dec], [s]),           # dec:   s[0] := s[0] - 1
-        Term(LIA.Ite(), [X(s)], [cond, reset, dec]),
+        Term(tensor.int.Linear(row0, z11), [x], [s]),            # x = s[0]
+        Term(tensor.int.Const(torch.tensor([[0]])), [zc]),
+        Term(tensor.int.Eq([1, 1]), [cond], [x, zc]),            # cond = (x == 0)
+        Term(tensor.int.Linear(diag_keep, b100), [reset], [s]),  # reset: s[0] := 100
+        Term(tensor.int.Linear(In, bneg), [dec], [s]),           # dec:   s[0] := s[0] - 1
+        Term(tensor.int.Ite([n, 1]), [X(s)], [cond, reset, dec]),
     ]
     return Module.sequential([s], init, update)
 

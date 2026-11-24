@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from reactor import Module, Term, Var, Wire, X, LIA, LRA, Int, Real, Bool
+from reactor import Module, Term, Var, Wire, X, Int, Real, Bool, tensor
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
 from reactor_lean.inputs.python import load_module
@@ -60,7 +60,7 @@ def _vector_counter() -> Module:
     zero31 = torch.zeros((3, 1), dtype=torch.int64)
     zero11 = torch.zeros((1, 1), dtype=torch.int64)
     a = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
-    init = [Term(LIA.Linear(a, zero31), [X(state)], [X(extl)])]
+    init = [Term(tensor.int.Linear(a, zero31), [X(state)], [X(extl)])]
     x, y, z = Wire(Int([1, 1])), Wire(Int([1, 1])), Wire(Int([1, 1]))
     x_lt_y, x_lt_z, cond = Wire(Bool([1, 1])), Wire(Bool([1, 1])), Wire(Bool([1, 1]))
     yes, no = Wire(Int([3, 1])), Wire(Int([3, 1]))
@@ -68,15 +68,15 @@ def _vector_counter() -> Module:
     e1 = torch.tensor([[1], [0], [0]], dtype=torch.int64)
     diag_yz = torch.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=torch.int64)
     update = [
-        Term(LIA.Linear(row(0), zero11), [x], [state]),
-        Term(LIA.Linear(row(1), zero11), [y], [state]),
-        Term(LIA.Linear(row(2), zero11), [z], [state]),
-        Term(LIA.Lt(), [x_lt_y], [x, y]),
-        Term(LIA.Lt(), [x_lt_z], [x, z]),
-        Term(LIA.Or(), [cond], [x_lt_y, x_lt_z]),
-        Term(LIA.Linear(torch.eye(3, dtype=torch.int64), e1), [yes], [state]),
-        Term(LIA.Linear(diag_yz, zero31), [no], [state]),
-        Term(LIA.Ite(), [X(state)], [cond, yes, no]),
+        Term(tensor.int.Linear(row(0), zero11), [x], [state]),
+        Term(tensor.int.Linear(row(1), zero11), [y], [state]),
+        Term(tensor.int.Linear(row(2), zero11), [z], [state]),
+        Term(tensor.int.Lt([1, 1]), [x_lt_y], [x, y]),
+        Term(tensor.int.Lt([1, 1]), [x_lt_z], [x, z]),
+        Term(tensor.bool.Or([1, 1]), [cond], [x_lt_y, x_lt_z]),
+        Term(tensor.int.Linear(torch.eye(3, dtype=torch.int64), e1), [yes], [state]),
+        Term(tensor.int.Linear(diag_yz, zero31), [no], [state]),
+        Term(tensor.int.Ite([3, 1]), [X(state)], [cond, yes, no]),
     ]
     return Module.sequential([state, extl], init, update)
 
@@ -86,10 +86,10 @@ def _real_countdown() -> Module:
     one = Wire(Real([1, 1]))
     return Module.sequential(
         [x],
-        [Term(LRA.Real(torch.tensor([[5.0]])), [X(x)])],
+        [Term(tensor.real.Const(torch.tensor([[5.0]])), [X(x)])],
         [
-            Term(LRA.Real(torch.tensor([[1.0]])), [one]),
-            Term(LRA.Sub(), [X(x)], [x, one]),
+            Term(tensor.real.Const(torch.tensor([[1.0]])), [one]),
+            Term(tensor.real.Sub([1, 1]), [X(x)], [x, one]),
         ],
     )
 
