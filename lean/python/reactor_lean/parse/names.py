@@ -9,9 +9,8 @@ external variable `i`. The `@` keeps a positional name from ever being a
 source name.
 
 The rest of the pipeline -- the predicate parser and the Lean --
-reads positional internal names, so a claim is rewritten
-here, once, on the way in, and a predicate shown to the user is rewritten
-back on the way out:
+reads positional internal names, so a claim is rewritten here, once, on
+the way in:
 
     surface                     internal
     (X @intf.{i})  (X x)        s{i}     the state after the round
@@ -102,9 +101,6 @@ class Names:
         out.update({n: ("extl", i) for i, n in enumerate(self.extl)
                     if n is not None})
         return out
-
-
-# --- surface -> internal ---------------------------------------------------
 
 
 class _Reader:
@@ -318,75 +314,3 @@ def to_internal(text: str, names: Names, flag: str) -> str:
     if parsed is None:
         return _smtlib_to_internal(text, r)
     return _python_to_internal(*parsed, r)
-
-
-# --- internal -> surface ---------------------------------------------------
-
-
-def _surface_name(names: Names | None, kind: str, i: int) -> str:
-    src = getattr(names, kind)[i] if names is not None and i < len(
-        getattr(names, kind)) else None
-    if src is not None:
-        return src
-    return f"@{'intf' if kind == 'ctrl' else 'extl'}.{i}"
-
-
-def _surface(m: re.Match, names: Names | None) -> tuple[str, bool] | None:
-    """(name, after) for an internal name, or None."""
-    prefix, idx = m.group(1), m.group(2)
-    i = int(idx or 0)
-    kind = "ctrl" if prefix == "s" else "extl"
-    return _surface_name(names, kind, i), prefix != "el"
-
-
-def _quote(name: str) -> str:
-    return name if (_SIMPLE_SYMBOL.fullmatch(name) or name.startswith("@")) \
-        else f"|{name}|"
-
-
-_EMBEDDED = re.compile(r"(?<![A-Za-z0-9_])(s|e|el)\d+")
-
-
-def _smtlib_shaped(text: str, tree: ast.Expression) -> bool:
-    """Whether text both dialects read is shown as SMT-LIB: a lone name,
-    or a parenthesised form in which every internal name is a whole atom
-    and none is in head position (where Python's `(s0 >= 0)` has one)."""
-    if isinstance(tree.body, ast.Name):
-        return True
-    if not text.lstrip().startswith("("):
-        return False
-    toks = [t for t in _tokens(text) if t[0] not in ("ws", "comment")]
-    for j, (kind, tok) in enumerate(toks):
-        if kind != "atom" or not _EMBEDDED.search(tok):
-            continue
-        if not _INTERNAL.fullmatch(tok) or (j and toks[j - 1][0] == "lp"):
-            return False
-    return True
-
-
-def to_surface(text: str, names: Names | None = None) -> str:
-    """`text`, a predicate in internal names, in the surface ones a claim
-    takes: the input's names where `names` has them, positional otherwise.
-    With no `names`, every variable is spelled by position."""
-    parsed = _python(text)
-    if parsed is None or _smtlib_shaped(text, parsed[0]):
-        out = []
-        for kind, tok in _tokens(text):
-            m = _INTERNAL.fullmatch(tok) if kind == "atom" else None
-            if m and m.group(2) is not None:
-                name, after = _surface(m, names)
-                name = _quote(name)
-                out.append(f"(X {name})" if after else name)
-            else:
-                out.append(tok)
-        return "".join(out)
-
-    tree, data = parsed
-    edits: list[tuple[ast.AST, str]] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            m = _INTERNAL.fullmatch(node.id)
-            if m:
-                name, after = _surface(m, names)
-                edits.append((node, f"X({name})" if after else name))
-    return _splice(data, edits)

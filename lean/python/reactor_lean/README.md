@@ -427,9 +427,9 @@ certificate trusts nothing in it.
 ### `read_predicates` / `render_certificate`
 
 `read_predicates` parses and refuses a predicate by the flag it came from;
-`render_certificate(q, share=...)` translates the terms. `share=False` prints repeated subterms in full, for reading; a
-certificate is printed shared, which Lean reads the same once `simp` has
-zeta-reduced the `let`s. Every certificate is printed through it, by
+`render_certificate(q)` translates the terms, with repeated subterms
+`let`-bound, which Lean reads the same once `simp` has zeta-reduced the
+`let`s. Every certificate is printed through it, by
 `cli.certificate.render(module, claim, cert)`; `certificate_files` renders
 the project's `Data.lean`, `Module.lean`, `Proofs.lean` and
 `Certificate.lean` from it, and `create_project` writes that text as it is.
@@ -604,8 +604,7 @@ Python-DSL aliases `s`, `e`, `el`) are refused there.
 An interface variable's latched value cannot be named yet. A name like `x`
 comes from an input that provides one (a module file returning
 `reactor_lean.parse.Named(module, {"x": var})`); `@intf.N` works for any
-module. `reactor_lean.parse.to_surface(text)` turns internal text into this
-spelling. A run prints one `.. --FLAG, in internal names: ...` line
+module. A run prints one `.. --FLAG, in internal names: ...` line
 per claim flag it was given. Everything past the command line (`Claim`,
 `Certificate`, Lean) still uses the internal names below.
 

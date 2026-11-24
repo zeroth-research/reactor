@@ -57,15 +57,11 @@ class FlatLayout:
 
     One walk over the wires, in the views its consumers need: `slots` per
     element, :meth:`span` per wire, `total` for the width, and the two string
-    views (:meth:`flat_accessors`, :meth:`wire_accessor`) that the encodings
-    used to rebuild beside each other.
+    views (:meth:`flat_accessors`, :meth:`wire_accessor`).
 
-    Every view was being derived independently -- seven walks at the last
-    count, two of them in the same file -- and the defects `d49ebdb9` and
-    `fe8600da` fixed were both two of those drifting apart: a per-wire index
-    used where a per-element one was meant. Both are `int`, so the one thing
-    this can do about that class of mistake is refuse to hand out the
-    per-wire view by position: :meth:`span` takes the wire itself.
+    A per-wire index and a per-element one are both `int`, and easily
+    mistaken for each other, so the per-wire view is not handed out by
+    position: :meth:`span` takes the wire itself.
 
     The order is row-major, element `i*n + j` of an `m × n` matrix;
     `tests/test_lean_flat_layout.py` pins it.

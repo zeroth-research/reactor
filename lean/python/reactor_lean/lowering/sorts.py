@@ -159,12 +159,7 @@ def is_constant_name(name: str) -> bool:
 
 
 def is_scalar_tensor(wire: Wire) -> bool:
-    """True if the wire carries a scalar Bool, Int or word (not a matrix).
-
-    Bool used to answer `True` for any shape, skipping the check the other
-    two get, so a Bool *matrix* constant was never interned and reached
-    `tensor_to_lean_inline`, which calls `.item()` on it.
-    """
+    """True if the wire carries a scalar Bool, Int or word (not a matrix)."""
     dt = wire.dtype
     if isinstance(dt, (Bool, Int, Word)):
         return is_scalar_shape(dtype_shape(dt))

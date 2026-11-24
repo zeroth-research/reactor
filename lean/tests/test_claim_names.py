@@ -2,7 +2,7 @@
 
 import pytest
 
-from reactor_lean.parse import ClaimError, Names, load, to_internal, to_surface
+from reactor_lean.parse import ClaimError, Names, load, to_internal
 from reactor_cli import reactor
 from testdata import FIXTURES
 
@@ -54,9 +54,7 @@ def test_an_operator_is_never_read_as_a_variable():
      "X(x)[0][0] >= 0 and u[0][0] == 1",
      "X(@intf.0)[0][0] >= 0 and @extl.0[0][0] == 1"),
 ])
-def test_a_predicate_is_shown_in_surface_names(internal, named, positional):
-    assert to_surface(internal, NAMED) == named
-    assert to_surface(internal) == positional
+def test_named_and_positional_claims_read_alike(internal, named, positional):
     assert to_internal(named, NAMED, "rt") == internal
     assert to_internal(positional, POSITIONAL, "rt") == internal
 
@@ -104,12 +102,3 @@ def test_a_bad_claim_or_name_is_an_error_line(tmp_path):
         assert r.returncode != 0, args
         assert "Traceback" not in r.stderr, r.stderr
         assert "error:" in r.stderr, r.stderr
-
-
-@pytest.mark.parametrize("internal, surface", [
-    ("s0", "(X @intf.0)"),
-    ("(not el0)", "(not @extl.0)"),
-    ("(s0 >= 0)", "(X(@intf.0) >= 0)"),
-])
-def test_text_both_dialects_read_is_shown_as_smtlib(internal, surface):
-    assert to_surface(internal) == surface

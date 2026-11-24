@@ -41,8 +41,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Union
 
-from reactor import Real
-
 from ..core.errors import Refused
 from .sorts import THEORIES, itype_name, mat_mk, theory_of
 
@@ -449,8 +447,7 @@ OPS: tuple[Op, ...] = (
             scalar=_SEE_MAT,
             box=_SEE_MAT,
         )
-        for theories, order, signed in ((UNSIGNED, "unsigned", False),
-                                        (SIGNED, "signed", True))
+        for theories, order in ((UNSIGNED, "unsigned"), (SIGNED, "signed"))
         for name in ("Lt", "Le", "Gt", "Ge")
     ),
     # ── reductions and matrix ops ─────────────────────────────────────

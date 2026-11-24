@@ -1,11 +1,7 @@
-"""
-Translate a Python Module (reactive module with init/update blocks)
-into Lean4 code.
-
-Python modules store computations as a flat list of Terms (SSA-style dataflow).
-We translate each Term into a `let` binding in a Lean function, mapping each
-IType operation to its Lean equivalent.
-"""
+"""A block's terms as `Box` circuit layers (`translate_terms_circ`): the
+circuit encoding, in which each op is the `Box` combinator the op table
+names (`lowering.ops.box_for`) and the layers compose as
+`Relational.Circ` circuits."""
 
 from __future__ import annotations
 from reactor_lean.core.errors import Refused
@@ -31,7 +27,8 @@ from reactor import Wire, Term
 
 
 def ty_list(wires: list[Wire]) -> str:
-    """Build a right-nested product type: [w1, w2] -> 'Bool × Bool', [w1] -> 'Bool'."""
+    """The wires' types as a Lean list, a layer's interface:
+    `[T₁ , T₂]`, and `[]` for no wires."""
     if not wires:
         return "[]"
     parts = [dtype_to_lean_type(w) for w in wires]

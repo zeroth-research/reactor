@@ -12,26 +12,8 @@ class Refused(ValueError):
     `error: ...` and exits; everything else keeps its traceback, which is
     what tells the two apart.
 
-    `ValueError` is the base because that is what these sites raised before
-    the type existed, and callers that catch it still do.
-
-    `flag` is the command-line flag the refusal is about, when whoever
-    raises it knows: the message is then shown under it, `flag: message`,
-    and a caller that would otherwise put it under a flag of its own can
-    tell that it already names one.
+    It is a `ValueError`: what is refused is a value the input gave.
     """
-
-    def __init__(self, *args, flag: str | None = None):
-        super().__init__(*args)
-        self._flag = flag
-
-    @property
-    def flag(self) -> str | None:
-        return self._flag
-
-    def __str__(self) -> str:
-        text = super().__str__()
-        return f"{self._flag}: {text}" if self._flag else text
 
 
 class Unreadable(Refused):

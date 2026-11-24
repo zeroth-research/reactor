@@ -49,16 +49,12 @@ class LeanCertificate:
         return self.kind == "safety"
 
 
-def render_certificate(
-    q: "NativePredicates", *, share: bool = True,
-) -> LeanCertificate:
+def render_certificate(q: "NativePredicates") -> LeanCertificate:
     """The one place certificate predicates are printed as Lean.
 
     `q` is what the parser read (`parse.native.NativePredicates`), printed
-    by `from_ir`. `share=False` prints repeated subterms in full instead of
-    `let`-binding them, which Lean reads the same once `simp` has
-    zeta-reduced the `let`s; it is for reading a definition, not for
-    proving with it.
+    by `from_ir` with repeated subterms `let`-bound, which Lean reads the
+    same once `simp` has zeta-reduced the `let`s.
     """
     from .from_ir import ir_to_lean as prop
     from .from_ir import ir_to_lean_nat as nat
@@ -69,9 +65,9 @@ def render_certificate(
         if term is None:
             return None
         if mode in ("property", "invariant"):
-            return prop(term, wires.ctrl_next, param_name="s", share=share)
+            return prop(term, wires.ctrl_next, param_name="s")
         if mode == "ranking":
-            return nat(term, wires.ctrl_next, param_name="s", share=share)
+            return nat(term, wires.ctrl_next, param_name="s")
         # preconditions
         return prop(
             term,
@@ -81,7 +77,6 @@ def render_certificate(
                 ("e", "e.2", wires.extl_next),
                 ("el", "e.1", wires.extl_latched),
             ],
-            share=share,
         )
 
     def named(term, role: str) -> str | None:

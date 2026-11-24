@@ -1,10 +1,10 @@
 """The two provable relational encodings: `Rel` (matrix) and `ScalarRel` (flat).
 
 Both are the skeleton in `skeleton.py` — a body def, a relation and a
-conjunction per slot — instantiated on the three axes it is parameterised on:
-the type builder (`product_type` vs `product_type_scalar`), the body
-producer (`translate_terms_lean` vs `translate_terms_scalar`) and the projection
-(a product accessor vs a re-tupled slice of the flattened element tuple).
+conjunction per slot — over their own type builder (`product_type` vs
+`product_type_scalar`), body producer (`translate_terms_lean` vs
+`translate_terms_scalar`) and projection (a product accessor vs a re-tupled
+slice of the flattened element tuple).
 
 What the two do *not* share is the closing theorem. `Rel` relates its
 conjunction to the matrix `update`/`init` directly. `ScalarRel` relates its
@@ -109,7 +109,7 @@ def _conj_eq_theorem(
     ]
 
 
-def _update_block(dom: _Domain, n: int, ref: str) -> RelBlock:
+def _update_block(dom: _Domain, ref: str) -> RelBlock:
     """The transition half: the state twice, the inputs alongside it.
 
     `ref` is the functional counterpart each slot is proved equal to —
@@ -124,8 +124,8 @@ def _update_block(dom: _Domain, n: int, ref: str) -> RelBlock:
         state_binders=f"(old new : {dom.state_ty})",
         state_args="old new",
         target="new",
-        binders=[f" {dom.update_binders}"] * n,
-        args=[f" old {dom.extl_args}"] * n,
+        binders=f" {dom.update_binders}",
+        args=f" old {dom.extl_args}",
         extl_binders=dom.extl_binders,
         extl_args=dom.extl_args,
         ref=ref,
@@ -134,7 +134,7 @@ def _update_block(dom: _Domain, n: int, ref: str) -> RelBlock:
     )
 
 
-def _init_block(dom: _Domain, n: int, ref: str) -> RelBlock:
+def _init_block(dom: _Domain, ref: str) -> RelBlock:
     """The initial half: one state, and only the next-input group in scope."""
     return RelBlock(
         body_name="init",
@@ -143,8 +143,8 @@ def _init_block(dom: _Domain, n: int, ref: str) -> RelBlock:
         state_binders=f"(s : {dom.state_ty})",
         state_args="s",
         target="s",
-        binders=[f" {dom.extl_n_binder}"] * n,
-        args=[" extl_n"] * n,
+        binders=f" {dom.extl_n_binder}",
+        args=" extl_n",
         extl_binders=dom.extl_n_binder,
         extl_args="extl_n",
         ref=ref,
@@ -213,17 +213,11 @@ def _unpack(param: str, wires, var: str = "") -> str:
 
 def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
     """Generate the matrix-domain relational encoding inside ``namespace Rel``."""
-    noncomp = "noncomputable " if ctx.uses_real else ""
-
     n_ctrl = len(ctx.ctrl_next)
     dom = _domain(ctx, product_type)
 
     syn = RelSyntax(
-        body_decl=f"@[simp] {noncomp}def",
-        rel_decl="def",
-        prop="Prop",
-        eq="=",
-        conj="∧",
+        noncomputable=ctx.uses_real,
         slot_ty=lambda i: dtype_to_lean_type(ctx.ctrl_next[i]),
         project=lambda e, i: f"{e}{product_accessor(i, n_ctrl)}",
     )
@@ -248,7 +242,7 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
     lines = ["namespace Rel", ""]
 
     if has_block(ctx, "update"):
-        blk = _update_block(dom, n_ctrl, "update")
+        blk = _update_block(dom, "update")
         lines += emit_rel_block(
             syn, blk, _bodies(ctx.atom.update, update_bindings)
         )
@@ -257,7 +251,7 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
         )
 
     if has_block(ctx, "init"):
-        blk = _init_block(dom, n_ctrl, "init")
+        blk = _init_block(dom, "init")
         lines += emit_rel_block(syn, blk, _bodies(ctx.atom.init, init_bindings))
         lines += _conj_eq_theorem(
             "InitCond_func_eq", blk, n_ctrl, "s = init extl_n"
@@ -269,8 +263,6 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
 
 def atom_to_lean_rel(ctx: LeanContext) -> str:
     """Generate the relational encoding inside ``namespace ScalarRel``."""
-    noncomp = "noncomputable " if ctx.uses_real else ""
-
     # One `effect_i`/`R_i` per ctrl *wire*, but one state component per
     # *element*: `Scalar.update`'s codomain is the flattened tuple, so wire
     # `i`'s data sits at its own span in it, not at position `i`.
@@ -279,11 +271,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
     dom = _domain(ctx, product_type_scalar)
 
     syn = RelSyntax(
-        body_decl=f"@[simp] {noncomp}def",
-        rel_decl="def",
-        prop="Prop",
-        eq="=",
-        conj="∧",
+        noncomputable=ctx.uses_real,
         slot_ty=lambda i: effect_type(ctx.ctrl_next[i]),
         project=lambda e, i: flat_slice(e, layout, ctx.ctrl_next[i]),
         eq_simp=("Fin.cons_zero", "Fin.cons_succ"),
@@ -325,10 +313,8 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
     has_init = has_block(ctx, "init")
 
     # Described up front because its two closing theorems are emitted after
-    # the init block, not with the block itself: `TransRel_func_eq` rewrites
-    # by `update_scalar_eq`, and the emitted order is the one the generated
-    # `ScalarRel.lean` has always had.
-    update_blk = _update_block(dom, n_ctrl, "Scalar.update")
+    # the init block, not with the block itself.
+    update_blk = _update_block(dom, "Scalar.update")
 
     if has_update:
         lines += emit_rel_block(
@@ -338,7 +324,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         )
 
     if has_init:
-        init_blk = _init_block(dom, n_ctrl, "Scalar.init")
+        init_blk = _init_block(dom, "Scalar.init")
         lines += emit_rel_block(
             syn,
             init_blk,

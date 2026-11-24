@@ -215,8 +215,6 @@ class NativeParser:
     """A run's predicates read against `module` into reactor's terms, each
     once."""
 
-    name = "native"
-
     def __init__(self, module):
         self.module = module
         self.wires = ModuleWires.of(module)

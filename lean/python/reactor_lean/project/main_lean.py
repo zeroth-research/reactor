@@ -130,7 +130,6 @@ def generate_main_lean(module: Module) -> str:
 
     # `product_type` orders components as the wires are declared, and
     # `product_accessor` projects them the same way, so the literal follows suit.
-    # (An earlier right-nested `ValTuple` encoding needed the reverse.)
     lines.append(f"  pure {build_tuple(parse_vars)}")
     lines.append("")
 
@@ -144,9 +143,8 @@ def generate_main_lean(module: Module) -> str:
     # below pick showBool/toString/showMatrix from that wire's type.
     lines.append(f"  let {build_tuple(destr_vars)} := v")
 
-    # Format each variable. `dtype_to_lean_type` always returns a `Matrix ...`
-    # here, so dispatch on the element sort instead: comparing that string
-    # against "Bool"/"Int" never matched and pinned every element to Int.
+    # Format each variable by its element sort: `dtype_to_lean_type` is a
+    # `Matrix ...` here whatever the sort.
     show_parts: list[str] = []
     for i, w in enumerate(ctrl_next):
         elem = flat_element_type(w)

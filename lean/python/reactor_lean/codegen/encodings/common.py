@@ -22,10 +22,9 @@ def scalar_eq_name(block: str) -> str:
 def flat_slice(expr: str, layout: FlatLayout, wire) -> str:
     """The components of the flat tuple `expr` that `wire` owns.
 
-    Takes the wire and the layout rather than an offset and a length: the
-    only two numbers involved are a position in one index space and a length
-    in another, and the defect `fe8600da` fixed was them mismatched at a
-    call site.
+    Takes the wire and the layout rather than an offset and a length,
+    which are a position in one index space and a length in another, and
+    easily mismatched.
 
     A wire covering the whole tuple slices to `expr` itself: projecting and
     re-tupling would be a no-op that repeats `expr` once per element, and
