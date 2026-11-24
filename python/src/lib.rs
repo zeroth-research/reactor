@@ -54,6 +54,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             real.add_class::<theory::torch::real::Const>()?;
             real.add_class::<theory::torch::real::Scale>()?;
             real.add_class::<theory::torch::real::Linear>()?;
+            real.add_class::<theory::torch::real::Affine>()?;
             real.add_class::<theory::tensor::real::Add>()?;
             real.add_class::<theory::tensor::real::Sub>()?;
             real.add_class::<theory::tensor::real::Mul>()?;
@@ -82,6 +83,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             int.add_class::<theory::torch::int::Const>()?;
             int.add_class::<theory::torch::int::Scale>()?;
             int.add_class::<theory::torch::int::Linear>()?;
+            int.add_class::<theory::torch::int::Affine>()?;
             int.add_class::<theory::tensor::int::Add>()?;
             int.add_class::<theory::tensor::int::Sub>()?;
             int.add_class::<theory::tensor::int::Mul>()?;

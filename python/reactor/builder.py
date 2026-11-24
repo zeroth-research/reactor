@@ -338,7 +338,7 @@ class RealTermBuilder(TermBuilder):
         return self._binary(real.MatMul, a, b)
 
     def _linear(self, weight, bias, dom):
-        return real.Linear(weight, bias, dom)
+        return real.Affine(weight, bias, dom)
 
     def lt(self, a, b) -> Term:
         return self._compare(real.Lt, a, b)
@@ -409,7 +409,7 @@ class IntTermBuilder(TermBuilder):
         return self._binary(int_.MatMul, a, b)
 
     def _linear(self, weight, bias, dom):
-        return int_.Linear(weight, bias, dom)
+        return int_.Affine(weight, bias, dom)
 
     def lt(self, a, b) -> Term:
         return self._compare(int_.Lt, a, b)

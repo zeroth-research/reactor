@@ -74,7 +74,7 @@ def interpret(itype):
             return _np.frompyfunc(operator.mod, 2, 1)
         case tensor.real.MatMul() | tensor.int.MatMul():
             return lambda x, y: x @ y
-        case tensor.real.Linear(weight, bias) | tensor.int.Linear(weight, bias):
+        case tensor.real.Affine(weight, bias) | tensor.int.Affine(weight, bias):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
         case tensor.real.Scale(c) | tensor.int.Scale(c):
             return lambda x: c.detach().numpy() * x

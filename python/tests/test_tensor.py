@@ -36,11 +36,11 @@ def test_parameters_come_first():
     assert word.Extract.__match_args__ == ("i", "j", "dom", "cod")
     assert word.RotateLeft.__match_args__ == ("i", "dom", "cod")
     assert real.Add.__match_args__ == ("dom", "cod")
-    assert real.Linear.__match_args__ == ("a", "b", "dom", "cod")
+    assert real.Affine.__match_args__ == ("a", "b", "dom", "cod")
     assert real.Scale.__match_args__ == ("tensor", "dom", "cod")
     assert word.Extract(5, 2, Word(8, [1, 1])).cod == Word(4, [1, 1])
-    match real.Linear(torch.ones(4, 2), torch.zeros(4, 3), Real([2, 3])):
-        case real.Linear(a, _, Real(s), Real(t)):
+    match real.Affine(torch.ones(4, 2), torch.zeros(4, 3), Real([2, 3])):
+        case real.Affine(a, _, Real(s), Real(t)):
             assert a.shape == (4, 2)
             assert (list(s), list(t)) == ([2, 3], [4, 3])
         case _:
@@ -125,12 +125,12 @@ def test_the_domain_is_optional_when_the_parameters_determine_it():
     with pytest.raises(ValueError):
         int_.Scale(ints, cod=Int([3, 2]))
     a, b = torch.ones(4, 2, dtype=torch.int64), torch.zeros(4, 3, dtype=torch.int64)
-    assert int_.Linear(a, b).dom == Int([2, 3])
-    assert int_.Linear(a, b).cod == Int([4, 3])
+    assert int_.Affine(a, b).dom == Int([2, 3])
+    assert int_.Affine(a, b).cod == Int([4, 3])
     # the tensors of reals determine all but their degree, 0 unless given
     assert real.Scale(torch.ones(2, 3)).dom == Real([2, 3])
     assert real.Scale(torch.ones(2, 3), T(Real([2, 3]))).cod == T(Real([2, 3]))
-    assert real.Linear(torch.ones(4, 2), torch.zeros(4, 3)).dom == Real([2, 3])
-    assert real.Linear(torch.ones(4, 2), torch.zeros(4, 3)).cod == Real([4, 3])
+    assert real.Affine(torch.ones(4, 2), torch.zeros(4, 3)).dom == Real([2, 3])
+    assert real.Affine(torch.ones(4, 2), torch.zeros(4, 3)).cod == Real([4, 3])
     with pytest.raises(ValueError):
         real.Scale(torch.ones(2, 3), cod=T(Real([2, 3])))

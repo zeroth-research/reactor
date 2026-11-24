@@ -18,12 +18,15 @@ itself, as only its own module touches the tensor. The constants of
 So do the pointwise products with a constant, [`real::Scale`] and
 [`int::Scale`], whose class holds the constant in the same way.
 
-The affine maps are Python classes too, [`real::Linear`] and
-[`int::Linear`], each holding, in private fields, the [`tch::Tensor`]s `A`
+The linear maps are Python classes too, [`real::Linear`] and
+[`int::Linear`], each holding, in a private field, the [`tch::Tensor`] `A`
+of its theory, together with the sort it reads, whose columns `A` does not
+determine. So are the affine maps, [`real::Affine`] and
+[`int::Affine`], each holding, in private fields, the [`tch::Tensor`]s `A`
 and `B` of its theory, of shapes `[m, n]` and `[m, k]`, checked on
-construction, and implementing `Sync` in the same way. [`crate::tensor::real::Linear`]
-and [`crate::tensor::int::Linear`] extract from the class of their theory, sharing its
-tensors.
+construction, and implementing `Sync` in the same way. The linear and
+affine maps of [`crate::tensor::real`] and [`crate::tensor::int`] extract
+from the class of their theory, sharing its tensors.
 */
 
 pub mod bool;
@@ -63,6 +66,16 @@ fn check_matrix(tensor: &tch::Tensor) -> Result<(), crate::Error> {
         )));
     }
     Ok(())
+}
+
+/// The sort of a boundary holding exactly one: that of the operations
+/// reading or writing a single matrix.
+fn sole<S>(sorts: base::boundary::Poly<S>) -> S {
+    sorts
+        .into_iter()
+        .flatten()
+        .next()
+        .expect("a boundary of one sort")
 }
 
 /// Fails unless `a` and `b` are the matrices of an affine map `x ↦ A·x + B`:

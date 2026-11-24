@@ -125,7 +125,7 @@ def eval_itype(itype, read, out_sort=None):
         # --- constants and affine maps (tensors carried by the op) ---
         case tensor.real.Const(t) | tensor.int.Const(t) | tensor.bool.Const(t) | tensor.word.Const(t):
             return [t.clone()]
-        case tensor.real.Linear(a, b) | tensor.int.Linear(a, b):
+        case tensor.real.Affine(a, b) | tensor.int.Affine(a, b):
             return [a @ r[0] + b]
         case tensor.real.Scale(c) | tensor.int.Scale(c):
             return [c * r[0]]

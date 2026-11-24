@@ -47,15 +47,15 @@ fn torch_tensors_back_the_operations() {
     // `A` of shape `[4, 2]` and `B` of shape `[4, 3]` map `[2, 3]` to `[4, 3]`
     let a = full(4, 2, 0.0, tch::Kind::Float);
     let b = full(4, 3, 0.0, tch::Kind::Float);
-    let linear = tensor::real::Linear::with_dom(a, b, [Real::new([2, 3])]).unwrap();
+    let affine = tensor::real::Affine::with_dom(a, b, [Real::new([2, 3])]).unwrap();
     assert_eq!(
-        linear.dom(),
+        affine.dom(),
         tensor::real::ReLU::with_dom([Real::new([2, 3]); 1])
             .unwrap()
             .dom()
     );
     assert_eq!(
-        linear.cod(),
+        affine.cod(),
         tensor::real::ReLU::with_dom([Real::new([4, 3]); 1])
             .unwrap()
             .cod()
@@ -163,7 +163,7 @@ fn linear_maps_are_built_from_tensors_of_their_theory_and_shapes() {
     Python::attach(|py| {
         let a = python(py, full(4, 2, 1.0, tch::Kind::Float));
         let b = python(py, full(4, 1, 1.0, tch::Kind::Float));
-        let real = py.get_type::<real::Linear>();
+        let real = py.get_type::<real::Affine>();
         let reals = sort(py, Real::new([2, 1]));
         assert!(real.call1((&a, &b, &reals)).is_ok());
 
@@ -174,7 +174,7 @@ fn linear_maps_are_built_from_tensors_of_their_theory_and_shapes() {
         // and both must be matrices of the theory
         let ints = python(py, full(4, 1, 1.0, tch::Kind::Int64));
         assert!(real.call1((&a, &ints, &reals)).is_err());
-        let int = py.get_type::<int::Linear>();
+        let int = py.get_type::<int::Affine>();
         let integers = sort(py, Int::new([2, 1]));
         let ia = python(py, full(4, 2, 1.0, tch::Kind::Int64));
         assert!(int.call1((&ia, &ints, &integers)).is_ok());
@@ -206,11 +206,11 @@ fn linear_maps_extract_from_the_class_of_their_theory() {
         let a = python(py, full(4, 2, 1.0, tch::Kind::Float));
         let b = python(py, full(4, 3, 1.0, tch::Kind::Float));
         let class = py
-            .get_type::<real::Linear>()
+            .get_type::<real::Affine>()
             .call1((&a, &b, sort(py, Real::new([2, 3]))))
             .unwrap();
         let linear = class
-            .extract::<tensor::real::Linear<tch::Tensor>>()
+            .extract::<tensor::real::Affine<tch::Tensor>>()
             .unwrap();
         assert_eq!(
             linear.dom(),
@@ -230,11 +230,11 @@ fn linear_maps_extract_from_the_class_of_their_theory() {
         assert_eq!(linear.a().data_ptr(), ta.data_ptr());
 
         // the class decides the theory
-        assert!(class.extract::<tensor::int::Linear<tch::Tensor>>().is_err());
+        assert!(class.extract::<tensor::int::Affine<tch::Tensor>>().is_err());
         let any = class.extract::<tensor::Any<tch::Tensor>>().unwrap();
         assert!(matches!(
             any,
-            tensor::Any::Real(tensor::real::NRA::Linear(_))
+            tensor::Any::Real(tensor::real::NRA::Affine(_))
         ));
     });
 }
@@ -287,11 +287,11 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
         let a = python(py, full(4, 2, 1.0, tch::Kind::Int64));
         let b = python(py, full(4, 1, 1.0, tch::Kind::Int64));
         let linear = py
-            .get_type::<int::Linear>()
+            .get_type::<int::Affine>()
             .call1((&a, &b, sort(py, Int::new([2, 1]))))
             .unwrap();
         let any = linear.extract::<tensor::Any<tch::Tensor>>().unwrap();
-        assert!(matches!(any, tensor::Any::Int(tensor::int::NIA::Linear(_))));
+        assert!(matches!(any, tensor::Any::Int(tensor::int::NIA::Affine(_))));
     });
 }
 

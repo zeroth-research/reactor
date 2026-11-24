@@ -9,7 +9,9 @@ information to compute its [`Boundary`]:
 - [`Add`], [`Sub`] — pointwise addition and subtraction.
 - [`Mul`] — pointwise multiplication `x ⊙ y`.
 - [`Div`] — pointwise division `x / y`.
-- [`Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
+- [`Linear`]`(A)` — the linear map `x ↦ A·x`, with `A` a constant real
+  matrix.
+- [`Affine`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
   constant real matrices of compatible shapes.
 - [`Zero`] — the zero matrix of a degree: the zero rate of change.
 - [`Neg`] — the pointwise negation `x ↦ -x`.
@@ -210,23 +212,85 @@ pub struct Div {
     degrees: [u8; 2],
 }
 
+/// The linear map `x ↦ A·x`, where `A` is a plain real constant, so the map
+/// keeps the degree of `x`. `A` determines the rows of `x` but not its
+/// columns, which the map holds.
+#[derive(Debug)]
+pub struct Linear<T> {
+    a: T,
+    cols: usize,
+    degree: u8,
+}
+
+impl<T: Tensor> Linear<T> {
+    /// The linear map `x ↦ A·x` reading the real matrix `x` of `dom`, whose
+    /// degree it keeps; fails unless `a` is of shape `[m, n]` and `x` of
+    /// shape `[n, k]`.
+    pub fn with_dom(a: T, dom: [Real; 1]) -> Result<Self, crate::Error> {
+        let [x] = dom;
+        let ([_, n], [rows, k]) = (a.shape(), x.shape());
+        if rows != n {
+            return Err(crate::tensor::unexpected_dom(
+                &format!("1 sort of shape [{n}, k]"),
+                &dom,
+            ));
+        }
+        Ok(Linear {
+            a,
+            cols: k,
+            degree: x.degree(),
+        })
+    }
+
+    /// The linear map `x ↦ A·x` writing the real matrix of `cod`, whose
+    /// degree it keeps; fails unless `a` is of shape `[m, n]` and that
+    /// matrix of shape `[m, k]`.
+    pub fn with_cod(a: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        let ([m, _], [rows, k]) = (a.shape(), x.shape());
+        if rows != m {
+            return Err(crate::tensor::unexpected_cod(
+                &format!("1 sort of shape [{m}, k]"),
+                &cod,
+            ));
+        }
+        Ok(Linear {
+            a,
+            cols: k,
+            degree: x.degree(),
+        })
+    }
+}
+
+impl<T> Linear<T> {
+    /// The tensor of `A`.
+    pub fn a(&self) -> &T {
+        &self.a
+    }
+
+    /// The degree of the matrices it maps.
+    pub fn degree(&self) -> u8 {
+        self.degree
+    }
+}
+
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants: `A` a
 /// plain real, and `B` of the degree of `x`, which the map keeps.
 #[derive(Debug)]
-pub struct Linear<T> {
+pub struct Affine<T> {
     a: T,
     b: T,
     degree: u8,
 }
 
-impl<T: Tensor> Linear<T> {
+impl<T: Tensor> Affine<T> {
     /// The affine map `x ↦ A·x + B` reading the real matrix `x` of `dom`,
     /// whose degree it keeps; fails unless `a` and `b` are of shapes
     /// `[m, n]` and `[m, k]`, and `x` of shape `[n, k]`.
     pub fn with_dom(a: T, b: T, dom: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = dom;
         super::check_affine(a.shape(), b.shape())?;
-        let op = Linear {
+        let op = Affine {
             a,
             b,
             degree: x.degree(),
@@ -247,7 +311,7 @@ impl<T: Tensor> Linear<T> {
     pub fn with_cod(a: T, b: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
         super::check_affine(a.shape(), b.shape())?;
-        let op = Linear {
+        let op = Affine {
             a,
             b,
             degree: x.degree(),
@@ -262,7 +326,7 @@ impl<T: Tensor> Linear<T> {
     }
 }
 
-impl<T> Linear<T> {
+impl<T> Affine<T> {
     /// The tensor of `A`.
     pub fn a(&self) -> &T {
         &self.a
@@ -539,6 +603,8 @@ pub enum NRA<T> {
     #[subenum(LRA)]
     Linear(Linear<T>),
     #[subenum(LRA)]
+    Affine(Affine<T>),
+    #[subenum(LRA)]
     ReLU(ReLU),
     #[subenum(LRA)]
     Abs(Abs),
@@ -576,6 +642,7 @@ where
     Const<T>: Clone,
     Scale<T>: Clone,
     Linear<T>: Clone,
+    Affine<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
@@ -586,6 +653,7 @@ where
             NRA::Mul(op) => NRA::Mul(*op),
             NRA::Div(op) => NRA::Div(*op),
             NRA::Linear(op) => NRA::Linear(op.clone()),
+            NRA::Affine(op) => NRA::Affine(op.clone()),
             NRA::ReLU(op) => NRA::ReLU(*op),
             NRA::Abs(op) => NRA::Abs(*op),
             NRA::Neg(op) => NRA::Neg(*op),
@@ -616,6 +684,7 @@ impl<T: fmt::Display> fmt::Display for NRA<T> {
             NRA::Mul(op) => op.fmt(f),
             NRA::Div(op) => op.fmt(f),
             NRA::Linear(op) => op.fmt(f),
+            NRA::Affine(op) => op.fmt(f),
             NRA::ReLU(op) => op.fmt(f),
             NRA::Abs(op) => op.fmt(f),
             NRA::Neg(op) => op.fmt(f),
@@ -641,6 +710,7 @@ where
     Const<T>: Clone,
     Scale<T>: Clone,
     Linear<T>: Clone,
+    Affine<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
@@ -649,6 +719,7 @@ where
             LRA::Add(op) => LRA::Add(*op),
             LRA::Sub(op) => LRA::Sub(*op),
             LRA::Linear(op) => LRA::Linear(op.clone()),
+            LRA::Affine(op) => LRA::Affine(op.clone()),
             LRA::ReLU(op) => LRA::ReLU(*op),
             LRA::Abs(op) => LRA::Abs(*op),
             LRA::Neg(op) => LRA::Neg(*op),
@@ -676,6 +747,7 @@ impl<T: fmt::Display> fmt::Display for LRA<T> {
             LRA::Add(op) => op.fmt(f),
             LRA::Sub(op) => op.fmt(f),
             LRA::Linear(op) => op.fmt(f),
+            LRA::Affine(op) => op.fmt(f),
             LRA::ReLU(op) => op.fmt(f),
             LRA::Abs(op) => op.fmt(f),
             LRA::Neg(op) => op.fmt(f),
@@ -705,6 +777,7 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
             NRA::Mul(op) => op.dom().map(Sort::from),
             NRA::Div(op) => op.dom().map(Sort::from),
             NRA::Linear(op) => op.dom().map(Sort::from),
+            NRA::Affine(op) => op.dom().map(Sort::from),
             NRA::ReLU(op) => op.dom().map(Sort::from),
             NRA::Abs(op) => op.dom().map(Sort::from),
             NRA::Neg(op) => op.dom().map(Sort::from),
@@ -733,6 +806,7 @@ impl<T: Tensor> Boundary<Sort> for NRA<T> {
             NRA::Mul(op) => op.cod().map(Sort::from),
             NRA::Div(op) => op.cod().map(Sort::from),
             NRA::Linear(op) => op.cod().map(Sort::from),
+            NRA::Affine(op) => op.cod().map(Sort::from),
             NRA::ReLU(op) => op.cod().map(Sort::from),
             NRA::Abs(op) => op.cod().map(Sort::from),
             NRA::Neg(op) => op.cod().map(Sort::from),
@@ -760,6 +834,7 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
             LRA::Add(op) => op.dom().map(Sort::from),
             LRA::Sub(op) => op.dom().map(Sort::from),
             LRA::Linear(op) => op.dom().map(Sort::from),
+            LRA::Affine(op) => op.dom().map(Sort::from),
             LRA::ReLU(op) => op.dom().map(Sort::from),
             LRA::Abs(op) => op.dom().map(Sort::from),
             LRA::Neg(op) => op.dom().map(Sort::from),
@@ -785,6 +860,7 @@ impl<T: Tensor> Boundary<Sort> for LRA<T> {
             LRA::Add(op) => op.cod().map(Sort::from),
             LRA::Sub(op) => op.cod().map(Sort::from),
             LRA::Linear(op) => op.cod().map(Sort::from),
+            LRA::Affine(op) => op.cod().map(Sort::from),
             LRA::ReLU(op) => op.cod().map(Sort::from),
             LRA::Abs(op) => op.cod().map(Sort::from),
             LRA::Neg(op) => op.cod().map(Sort::from),
@@ -882,9 +958,23 @@ impl Boundary<Real> for Div {
     }
 }
 
+/// With `A` of shape `[m, n]`, the map takes `x` of shape `[n, k]` to a
+/// matrix of shape `[m, k]`.
+impl<T: Tensor> Boundary<Real> for Linear<T> {
+    fn dom(&self) -> Poly<Real> {
+        let [_, n] = self.a.shape();
+        mono![Real::with_degree([n, self.cols], self.degree)].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        let [m, _] = self.a.shape();
+        mono![Real::with_degree([m, self.cols], self.degree)].into()
+    }
+}
+
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl<T: Tensor> Boundary<Real> for Linear<T> {
+impl<T: Tensor> Boundary<Real> for Affine<T> {
     fn dom(&self) -> Poly<Real> {
         let [_, n] = self.a.shape();
         let [_, k] = self.b.shape();
@@ -1062,7 +1152,13 @@ impl<T: fmt::Display> fmt::Display for Const<T> {
 
 impl<T: fmt::Display> fmt::Display for Linear<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Linear({}, {})", self.a, self.b)
+        write!(f, "Linear({})", self.a)
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for Affine<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Affine({}, {})", self.a, self.b)
     }
 }
 
@@ -1213,7 +1309,7 @@ impl fmt::Display for Ne {
 
 /// Extracts an operation of real arithmetic from a Python object, trying
 /// each operation in turn: those carrying no data through their own
-/// classes, and [`Const`], [`Scale`] and [`Linear`] through the extraction that the
+/// classes, and [`Const`], [`Scale`], [`Linear`] and [`Affine`] through the extraction that the
 /// tensor type `T` provides.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for NRA<T>
@@ -1221,6 +1317,7 @@ where
     Const<T>: pyo3::FromPyObject<'a, 'py>,
     Scale<T>: pyo3::FromPyObject<'a, 'py>,
     Linear<T>: pyo3::FromPyObject<'a, 'py>,
+    Affine<T>: pyo3::FromPyObject<'a, 'py>,
 {
     type Error = pyo3::PyErr;
 
@@ -1295,6 +1392,9 @@ where
         }
         if let Ok(op) = ob.extract::<Linear<T>>() {
             return Ok(NRA::Linear(op));
+        }
+        if let Ok(op) = ob.extract::<Affine<T>>() {
+            return Ok(NRA::Affine(op));
         }
         Err(pyo3::exceptions::PyTypeError::new_err(format!(
             "expected an operation of real arithmetic, got {}",

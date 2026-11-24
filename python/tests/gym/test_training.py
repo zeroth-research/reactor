@@ -47,7 +47,7 @@ def test_training():
     for atom in wrapped_nn.atoms:
         for term in atom.update:
             match term.itype:
-                case tensor.real.Linear(weight, _bias):
+                case tensor.real.Affine(weight, _bias):
                     assert any(
                         torch.equal(weight, w) for w in live_weights
                     ), "Linear op weight does not reflect the live trained tensor"

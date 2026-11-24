@@ -48,7 +48,7 @@ use subenum::subenum;
 pub use zero::Zero;
 
 /// A matrix of values, as held by the operations that carry data: the
-/// constants, and the coefficients of `Linear`. The operations are generic
+/// constants, and the coefficients of `Affine`. The operations are generic
 /// over it, so that any tensor representation can back them.
 pub trait Tensor {
     /// The `[rows, cols]` shape of the matrix.

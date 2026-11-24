@@ -6,18 +6,110 @@ use crate::tensor::sort::Int;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
-/// The affine map `x ↦ A·x + B` of integer matrices: torch tensors of
-/// integer elements.
+/// The linear map `x ↦ A·x` of integer matrices: `A` a torch tensor of
+/// integer elements, held with the sort the map reads, as `A` does not
+/// determine its columns.
 #[pyclass(frozen, name = "Linear", module = "reactor.tensor.int")]
-pub struct Linear(tch::Tensor, tch::Tensor);
+pub struct Linear(tch::Tensor, Int);
 
-// SAFETY: the tensors are private to this module, which only reads their
-// shape and element kind and takes shallow clones of them; libtorch makes
+// SAFETY: the tensor is private to this module, which only reads its
+// shape and element kind and takes shallow clones of it; libtorch makes
 // these thread-safe, counting the references to a tensor atomically.
 unsafe impl Sync for Linear {}
 
 #[pymethods]
 impl Linear {
+    /// The map of the tensor `a`, reading `dom`; its codomain `cod`, when
+    /// given, must be the one it writes. As `a` does not determine the
+    /// columns of `dom`, either may be omitted but not both. Fails when `a`
+    /// is not a `torch.Tensor` of two dimensions and integer elements, of
+    /// shape `[m, n]`, or `dom` not of shape `[n, k]`, or `cod` not of shape
+    /// `[m, k]`.
+    #[new]
+    #[pyo3(signature = (a, /, dom = None, cod = None))]
+    fn new(a: PyTensor, dom: Option<Int>, cod: Option<Int>) -> Result<Self, crate::Error> {
+        super::check_matrix(&a)?;
+        if !super::is_integer(a.kind()) {
+            return Err(crate::Error(format!(
+                "expected a tensor of integer elements, got {:?}",
+                a.kind()
+            )));
+        }
+        let op = match (dom, cod) {
+            (Some(dom), cod) => crate::tensor::check_cod(int::Linear::with_dom(a.0, [dom]), cod)?,
+            (None, Some(cod)) => int::Linear::with_cod(a.0, [cod])?,
+            (None, None) => {
+                return Err(crate::Error(
+                    "expected a domain or a codomain, as A does not determine the columns".into(),
+                ));
+            }
+        };
+        let dom = super::sole(base::boundary::Boundary::dom(&op));
+        Ok(Linear(op.a().shallow_clone(), dom))
+    }
+
+    #[getter]
+    fn a(&self) -> PyTensor {
+        PyTensor(self.0.shallow_clone())
+    }
+
+    /// The tensors it carries, then its domain, when it reads anything, and
+    /// its codomain.
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("a", "dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter]
+    fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let op: crate::tensor::int::Linear<tch::Tensor> = slf.extract()?;
+        crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
+    }
+
+    /// The sort it writes.
+    #[getter]
+    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let op: crate::tensor::int::Linear<tch::Tensor> = slf.extract()?;
+        crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+    }
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Linear<tch::Tensor> {
+    type Error = PyErr;
+
+    /// Fails when `ob` is not a [`Linear`].
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let linear = ob.cast::<Linear>()?.get();
+        Ok(crate::tensor::int::Linear::with_dom(
+            linear.0.shallow_clone(),
+            [linear.1],
+        )?)
+    }
+}
+
+/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
+/// so this takes a shallow clone of it, as libtorch counts its references.
+impl Clone for crate::tensor::int::Linear<tch::Tensor> {
+    fn clone(&self) -> Self {
+        let dom = super::sole(base::boundary::Boundary::dom(self));
+        crate::tensor::int::Linear::with_dom(self.a().shallow_clone(), [dom])
+            .expect("a clone has the shapes of the original")
+    }
+}
+
+/// The affine map `x ↦ A·x + B` of integer matrices: torch tensors of
+/// integer elements.
+#[pyclass(frozen, name = "Affine", module = "reactor.tensor.int")]
+pub struct Affine(tch::Tensor, tch::Tensor);
+
+// SAFETY: the tensors are private to this module, which only reads their
+// shape and element kind and takes shallow clones of them; libtorch makes
+// these thread-safe, counting the references to a tensor atomically.
+unsafe impl Sync for Affine {}
+
+#[pymethods]
+impl Affine {
     /// The map of the tensors `a` and `b`, reading `dom`, which they determine
     /// and may be omitted; its codomain `cod`, when given, must be the one it
     /// writes. Fails when `a` and `b` are not `torch.Tensor`s of integer
@@ -43,8 +135,8 @@ impl Linear {
             let ([_, n], [_, k]) = (crate::Tensor::shape(&a.0), crate::Tensor::shape(&b.0));
             Int::new([n, k])
         });
-        let op = crate::tensor::check_cod(int::Linear::with_dom(a.0, b.0, [dom]), cod)?;
-        Ok(Linear(op.a().shallow_clone(), op.b().shallow_clone()))
+        let op = crate::tensor::check_cod(int::Affine::with_dom(a.0, b.0, [dom]), cod)?;
+        Ok(Affine(op.a().shallow_clone(), op.b().shallow_clone()))
     }
 
     #[getter]
@@ -67,28 +159,28 @@ impl Linear {
     /// The sorts it reads: the sort alone when it reads one, else their list.
     #[getter]
     fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::tensor::int::Linear<tch::Tensor> = slf.extract()?;
+        let op: crate::tensor::int::Affine<tch::Tensor> = slf.extract()?;
         crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
     }
 
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::tensor::int::Linear<tch::Tensor> = slf.extract()?;
+        let op: crate::tensor::int::Affine<tch::Tensor> = slf.extract()?;
         crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Linear<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Affine<tch::Tensor> {
     type Error = PyErr;
 
-    /// Fails when `ob` is not an [`Linear`].
+    /// Fails when `ob` is not an [`Affine`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let linear = ob.cast::<Linear>()?.get();
-        let cod = Int::new(crate::Tensor::shape(&linear.1));
-        Ok(crate::tensor::int::Linear::with_cod(
-            linear.0.shallow_clone(),
-            linear.1.shallow_clone(),
+        let affine = ob.cast::<Affine>()?.get();
+        let cod = Int::new(crate::Tensor::shape(&affine.1));
+        Ok(crate::tensor::int::Affine::with_cod(
+            affine.0.shallow_clone(),
+            affine.1.shallow_clone(),
             [cod],
         )?)
     }
@@ -251,10 +343,10 @@ impl Clone for crate::tensor::int::Scale<tch::Tensor> {
 
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::tensor::int::Linear<tch::Tensor> {
+impl Clone for crate::tensor::int::Affine<tch::Tensor> {
     fn clone(&self) -> Self {
         let cod = Int::new(crate::Tensor::shape(self.b()));
-        crate::tensor::int::Linear::with_cod(
+        crate::tensor::int::Affine::with_cod(
             self.a().shallow_clone(),
             self.b().shallow_clone(),
             [cod],
@@ -286,7 +378,13 @@ impl<'py> IntoPyObject<'py> for crate::tensor::int::NIA<tch::Tensor> {
             NIA::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Div(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Mod(op) => op.into_pyobject(py).map(Bound::into_any),
-            NIA::Linear(op) => Linear(op.a().shallow_clone(), op.b().shallow_clone())
+            NIA::Linear(op) => Linear(
+                op.a().shallow_clone(),
+                super::sole(base::boundary::Boundary::dom(&op)),
+            )
+            .into_pyobject(py)
+            .map(Bound::into_any),
+            NIA::Affine(op) => Affine(op.a().shallow_clone(), op.b().shallow_clone())
                 .into_pyobject(py)
                 .map(Bound::into_any),
             NIA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),

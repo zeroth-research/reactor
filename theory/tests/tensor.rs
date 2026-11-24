@@ -77,7 +77,7 @@ mod any {
 
         // `A` of shape `[2, 3]` and `B` of shape `[2, 4]` take `[3, 4]` to `[2, 4]`
         let l =
-            int(int::Linear::with_dom(Mat([2, 3]), Mat([2, 4]), [sort::Int::new([3, 4])]).unwrap());
+            int(int::Affine::with_dom(Mat([2, 3]), Mat([2, 4]), [sort::Int::new([3, 4])]).unwrap());
         let dom: Poly<sort::Any> = base::mono![sort::Int::new([3, 4]).into()].into();
         let cod: Poly<sort::Any> = base::mono![sort::Int::new([2, 4]).into()].into();
         assert_eq!(l.dom(), dom);
@@ -98,11 +98,11 @@ mod any {
     fn data_operations_check_their_tensors() {
         // `B` must have the rows of `A`
         assert!(
-            real::Linear::with_dom(Mat([2, 3]), Mat([3, 4]), [sort::Real::new([3, 4])]).is_err()
+            real::Affine::with_dom(Mat([2, 3]), Mat([3, 4]), [sort::Real::new([3, 4])]).is_err()
         );
-        assert!(int::Linear::with_dom(Mat([2, 3]), Mat([3, 4]), [sort::Int::new([3, 4])]).is_err());
+        assert!(int::Affine::with_dom(Mat([2, 3]), Mat([3, 4]), [sort::Int::new([3, 4])]).is_err());
         assert!(
-            real::Linear::with_dom(Mat([0, 3]), Mat([0, 4]), [sort::Real::new([3, 4])]).is_ok()
+            real::Affine::with_dom(Mat([0, 3]), Mat([0, 4]), [sort::Real::new([3, 4])]).is_ok()
         );
 
         // a constant word has the shape of its tensor
@@ -119,7 +119,7 @@ mod any {
     fn data_operations_read_their_tensors() {
         let c = real::Const::with_cod(Mat([2, 3]), [sort::Real::new([2, 3])]).unwrap();
         assert_eq!(c.tensor().0, [2, 3]);
-        let l = int::Linear::with_dom(Mat([2, 3]), Mat([2, 4]), [sort::Int::new([3, 4])]).unwrap();
+        let l = int::Affine::with_dom(Mat([2, 3]), Mat([2, 4]), [sort::Int::new([3, 4])]).unwrap();
         assert_eq!(l.a().0, [2, 3]);
         assert_eq!(l.b().0, [2, 4]);
     }
@@ -287,7 +287,7 @@ mod any {
             real(real::Scale::with_dom(Mat([2, 3]), [sort::Real::with_degree([2, 3], 1)]).unwrap());
         assert_eq!(op.dom(), base::mono![r([2, 3], 1)].into());
         let op = real(
-            real::Linear::with_dom(
+            real::Affine::with_dom(
                 Mat([2, 3]),
                 Mat([2, 4]),
                 [sort::Real::with_degree([3, 4], 1)],
@@ -1617,9 +1617,13 @@ mod with_dom {
         reads(real::MatMul::with_dom([x, z]).unwrap(), [x, z]);
         reads(real::Scale::with_dom(Mat([2, 3]), [y]).unwrap(), [y]);
         reads(
-            real::Linear::with_dom(Mat([5, 2]), Mat([5, 3]), [x]).unwrap(),
+            real::Affine::with_dom(Mat([5, 2]), Mat([5, 3]), [x]).unwrap(),
             [x],
         );
+        // `A` of shape `[5, 2]` takes `x` of shape `[2, 3]` to `[5, 3]`
+        let l = real::Linear::with_dom(Mat([5, 2]), [x]).unwrap();
+        reads(real::Linear::with_dom(Mat([5, 2]), [x]).unwrap(), [x]);
+        assert_eq!(l.cod(), base::mono![Real::with_degree([5, 3], 1)].into());
         let c = Bool::new([2, 3]);
         let dom = [c.into(), x.into(), x.into()];
         reads(real::Ite::with_dom(dom).unwrap(), dom);
@@ -1642,7 +1646,8 @@ mod with_dom {
         assert!(real::Div::with_dom([x, y]).is_err());
         assert!(real::MatMul::with_dom([x, x]).is_err());
         assert!(real::Scale::with_dom(Mat([3, 2]), [x]).is_err());
-        assert!(real::Linear::with_dom(Mat([5, 2]), Mat([5, 3]), [z]).is_err());
+        assert!(real::Affine::with_dom(Mat([5, 2]), Mat([5, 3]), [z]).is_err());
+        assert!(real::Linear::with_dom(Mat([5, 2]), [z]).is_err());
         let c = Bool::new([3, 2]);
         assert!(real::Ite::with_dom([c.into(), x.into(), x.into()]).is_err());
         assert!(real::Ite::with_dom([x.into(), x.into(), x.into()]).is_err());
@@ -1662,9 +1667,11 @@ mod with_dom {
         reads(int::MatMul::with_dom([x, z]).unwrap(), [x, z]);
         reads(int::Scale::with_dom(Mat([2, 3]), [x]).unwrap(), [x]);
         reads(
-            int::Linear::with_dom(Mat([4, 2]), Mat([4, 3]), [x]).unwrap(),
+            int::Affine::with_dom(Mat([4, 2]), Mat([4, 3]), [x]).unwrap(),
             [x],
         );
+        reads(int::Linear::with_dom(Mat([4, 2]), [x]).unwrap(), [x]);
+        assert!(int::Linear::with_dom(Mat([4, 3]), [x]).is_err());
         let dom = [Bool::new([2, 3]).into(), x.into(), x.into()];
         reads(int::Ite::with_dom(dom).unwrap(), dom);
         assert!(int::Sub::with_dom([x, z]).is_err());
@@ -1753,11 +1760,16 @@ mod with_cod {
         writes(real::Ite::with_cod([x]).unwrap(), [x.into()]);
         writes(real::Scale::with_cod(Mat([2, 3]), [x]).unwrap(), [x]);
         writes(
-            real::Linear::with_cod(Mat([2, 5]), Mat([2, 3]), [x]).unwrap(),
+            real::Affine::with_cod(Mat([2, 5]), Mat([2, 3]), [x]).unwrap(),
             [x],
         );
+        // `A` of shape `[2, 5]` writes `[2, 3]` from `[5, 3]`, of the same degree
+        let l = real::Linear::with_cod(Mat([2, 5]), [x]).unwrap();
+        writes(real::Linear::with_cod(Mat([2, 5]), [x]).unwrap(), [x]);
+        assert_eq!(l.dom(), base::mono![Real::with_degree([5, 3], 1)].into());
+        assert!(real::Linear::with_cod(Mat([3, 5]), [x]).is_err());
         assert!(real::Scale::with_cod(Mat([3, 2]), [x]).is_err());
-        let e = real::Linear::with_cod(Mat([3, 5]), Mat([3, 3]), [x]).unwrap_err();
+        let e = real::Affine::with_cod(Mat([3, 5]), Mat([3, 3]), [x]).unwrap_err();
         assert_eq!(
             e.0,
             "expected a codomain of 1 sort of shape [3, 3], got [T(Real([2, 3]))]"
@@ -1774,10 +1786,12 @@ mod with_cod {
         writes(int::Le::with_cod([b]).unwrap(), [b.into()]);
         writes(int::Scale::with_cod(Mat([2, 3]), [x]).unwrap(), [x]);
         writes(
-            int::Linear::with_cod(Mat([2, 4]), Mat([2, 3]), [x]).unwrap(),
+            int::Affine::with_cod(Mat([2, 4]), Mat([2, 3]), [x]).unwrap(),
             [x],
         );
-        assert!(int::Linear::with_cod(Mat([3, 4]), Mat([3, 3]), [x]).is_err());
+        assert!(int::Affine::with_cod(Mat([3, 4]), Mat([3, 3]), [x]).is_err());
+        writes(int::Linear::with_cod(Mat([2, 4]), [x]).unwrap(), [x]);
+        assert!(int::Linear::with_cod(Mat([3, 4]), [x]).is_err());
     }
 
     #[test]

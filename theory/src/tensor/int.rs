@@ -11,7 +11,9 @@ information to compute its [`Boundary`]:
 - [`Mul`] — pointwise multiplication `x ⊙ y`.
 - [`Div`], [`Mod`] — pointwise Euclidean division and remainder, as
   SMT-LIB2's `div` and `mod`.
-- [`Linear`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
+- [`Linear`]`(A)` — the linear map `x ↦ A·x`, with `A` a constant integer
+  matrix.
+- [`Affine`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
   constant integer matrices of compatible shapes.
 - [`Neg`] — the pointwise negation `x ↦ -x`.
 - [`Abs`] — the pointwise absolute value `x ↦ |x|`.
@@ -178,21 +180,66 @@ pub struct Mod {
     shape: [usize; 2],
 }
 
-/// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
+/// The linear map `x ↦ A·x`, where `A` is a constant. `A` determines the
+/// rows of `x` but not its columns, which the map holds.
 #[derive(Debug)]
 pub struct Linear<T> {
+    a: T,
+    cols: usize,
+}
+
+impl<T: Tensor> Linear<T> {
+    /// The linear map `x ↦ A·x` reading the integer matrix `x` of `dom`;
+    /// fails unless `a` is of shape `[m, n]` and `x` of shape `[n, k]`.
+    pub fn with_dom(a: T, dom: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = dom;
+        let ([_, n], [rows, k]) = (a.shape(), x.shape());
+        if rows != n {
+            return Err(crate::tensor::unexpected_dom(
+                &format!("1 sort of shape [{n}, k]"),
+                &dom,
+            ));
+        }
+        Ok(Linear { a, cols: k })
+    }
+
+    /// The linear map `x ↦ A·x` writing the integer matrix of `cod`; fails
+    /// unless `a` is of shape `[m, n]` and that matrix of shape `[m, k]`.
+    pub fn with_cod(a: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        let ([m, _], [rows, k]) = (a.shape(), x.shape());
+        if rows != m {
+            return Err(crate::tensor::unexpected_cod(
+                &format!("1 sort of shape [{m}, k]"),
+                &cod,
+            ));
+        }
+        Ok(Linear { a, cols: k })
+    }
+}
+
+impl<T> Linear<T> {
+    /// The tensor of `A`.
+    pub fn a(&self) -> &T {
+        &self.a
+    }
+}
+
+/// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
+#[derive(Debug)]
+pub struct Affine<T> {
     a: T,
     b: T,
 }
 
-impl<T: Tensor> Linear<T> {
+impl<T: Tensor> Affine<T> {
     /// The affine map `x ↦ A·x + B` reading the integer matrix `x` of
     /// `dom`; fails unless `a` and `b` are of shapes `[m, n]` and `[m, k]`,
     /// and `x` of shape `[n, k]`.
     pub fn with_dom(a: T, b: T, dom: [Int; 1]) -> Result<Self, crate::Error> {
         let [x] = dom;
         super::check_affine(a.shape(), b.shape())?;
-        let op = Linear { a, b };
+        let op = Affine { a, b };
         let ([_, n], [_, k]) = (op.a.shape(), op.b.shape());
         if x.shape() != [n, k] {
             return Err(crate::tensor::unexpected_dom(
@@ -209,7 +256,7 @@ impl<T: Tensor> Linear<T> {
     pub fn with_cod(a: T, b: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
         super::check_affine(a.shape(), b.shape())?;
-        let op = Linear { a, b };
+        let op = Affine { a, b };
         if x.shape() != op.b.shape() {
             return Err(crate::tensor::unexpected_cod(
                 &format!("1 sort of shape {:?}", op.b.shape()),
@@ -220,7 +267,7 @@ impl<T: Tensor> Linear<T> {
     }
 }
 
-impl<T> Linear<T> {
+impl<T> Affine<T> {
     /// The tensor of `A`.
     pub fn a(&self) -> &T {
         &self.a
@@ -438,6 +485,8 @@ pub enum NIA<T> {
     #[subenum(LIA)]
     Linear(Linear<T>),
     #[subenum(LIA)]
+    Affine(Affine<T>),
+    #[subenum(LIA)]
     ReLU(ReLU),
     #[subenum(LIA)]
     Abs(Abs),
@@ -473,6 +522,7 @@ where
     Const<T>: Clone,
     Scale<T>: Clone,
     Linear<T>: Clone,
+    Affine<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
@@ -484,6 +534,7 @@ where
             NIA::Div(op) => NIA::Div(*op),
             NIA::Mod(op) => NIA::Mod(*op),
             NIA::Linear(op) => NIA::Linear(op.clone()),
+            NIA::Affine(op) => NIA::Affine(op.clone()),
             NIA::ReLU(op) => NIA::ReLU(*op),
             NIA::Abs(op) => NIA::Abs(*op),
             NIA::Neg(op) => NIA::Neg(*op),
@@ -514,6 +565,7 @@ impl<T: fmt::Display> fmt::Display for NIA<T> {
             NIA::Div(op) => op.fmt(f),
             NIA::Mod(op) => op.fmt(f),
             NIA::Linear(op) => op.fmt(f),
+            NIA::Affine(op) => op.fmt(f),
             NIA::ReLU(op) => op.fmt(f),
             NIA::Abs(op) => op.fmt(f),
             NIA::Neg(op) => op.fmt(f),
@@ -538,6 +590,7 @@ where
     Const<T>: Clone,
     Scale<T>: Clone,
     Linear<T>: Clone,
+    Affine<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
@@ -546,6 +599,7 @@ where
             LIA::Add(op) => LIA::Add(*op),
             LIA::Sub(op) => LIA::Sub(*op),
             LIA::Linear(op) => LIA::Linear(op.clone()),
+            LIA::Affine(op) => LIA::Affine(op.clone()),
             LIA::ReLU(op) => LIA::ReLU(*op),
             LIA::Abs(op) => LIA::Abs(*op),
             LIA::Neg(op) => LIA::Neg(*op),
@@ -572,6 +626,7 @@ impl<T: fmt::Display> fmt::Display for LIA<T> {
             LIA::Add(op) => op.fmt(f),
             LIA::Sub(op) => op.fmt(f),
             LIA::Linear(op) => op.fmt(f),
+            LIA::Affine(op) => op.fmt(f),
             LIA::ReLU(op) => op.fmt(f),
             LIA::Abs(op) => op.fmt(f),
             LIA::Neg(op) => op.fmt(f),
@@ -601,6 +656,7 @@ impl<T: Tensor> Boundary<Sort> for NIA<T> {
             NIA::Div(op) => op.dom().map(Sort::from),
             NIA::Mod(op) => op.dom().map(Sort::from),
             NIA::Linear(op) => op.dom().map(Sort::from),
+            NIA::Affine(op) => op.dom().map(Sort::from),
             NIA::ReLU(op) => op.dom().map(Sort::from),
             NIA::Abs(op) => op.dom().map(Sort::from),
             NIA::Neg(op) => op.dom().map(Sort::from),
@@ -629,6 +685,7 @@ impl<T: Tensor> Boundary<Sort> for NIA<T> {
             NIA::Div(op) => op.cod().map(Sort::from),
             NIA::Mod(op) => op.cod().map(Sort::from),
             NIA::Linear(op) => op.cod().map(Sort::from),
+            NIA::Affine(op) => op.cod().map(Sort::from),
             NIA::ReLU(op) => op.cod().map(Sort::from),
             NIA::Abs(op) => op.cod().map(Sort::from),
             NIA::Neg(op) => op.cod().map(Sort::from),
@@ -655,6 +712,7 @@ impl<T: Tensor> Boundary<Sort> for LIA<T> {
             LIA::Add(op) => op.dom().map(Sort::from),
             LIA::Sub(op) => op.dom().map(Sort::from),
             LIA::Linear(op) => op.dom().map(Sort::from),
+            LIA::Affine(op) => op.dom().map(Sort::from),
             LIA::ReLU(op) => op.dom().map(Sort::from),
             LIA::Abs(op) => op.dom().map(Sort::from),
             LIA::Neg(op) => op.dom().map(Sort::from),
@@ -679,6 +737,7 @@ impl<T: Tensor> Boundary<Sort> for LIA<T> {
             LIA::Add(op) => op.cod().map(Sort::from),
             LIA::Sub(op) => op.cod().map(Sort::from),
             LIA::Linear(op) => op.cod().map(Sort::from),
+            LIA::Affine(op) => op.cod().map(Sort::from),
             LIA::ReLU(op) => op.cod().map(Sort::from),
             LIA::Abs(op) => op.cod().map(Sort::from),
             LIA::Neg(op) => op.cod().map(Sort::from),
@@ -769,9 +828,23 @@ impl Boundary<Int> for Mod {
     }
 }
 
+/// With `A` of shape `[m, n]`, the map takes `x` of shape `[n, k]` to a
+/// matrix of shape `[m, k]`.
+impl<T: Tensor> Boundary<Int> for Linear<T> {
+    fn dom(&self) -> Poly<Int> {
+        let [_, n] = self.a.shape();
+        mono![Int::new([n, self.cols])].into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        let [m, _] = self.a.shape();
+        mono![Int::new([m, self.cols])].into()
+    }
+}
+
 /// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
-impl<T: Tensor> Boundary<Int> for Linear<T> {
+impl<T: Tensor> Boundary<Int> for Affine<T> {
     fn dom(&self) -> Poly<Int> {
         let [_, n] = self.a.shape();
         let [_, k] = self.b.shape();
@@ -931,7 +1004,13 @@ impl<T: fmt::Display> fmt::Display for Const<T> {
 
 impl<T: fmt::Display> fmt::Display for Linear<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Linear({}, {})", self.a, self.b)
+        write!(f, "Linear({})", self.a)
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for Affine<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Affine({}, {})", self.a, self.b)
     }
 }
 
@@ -1082,7 +1161,7 @@ impl fmt::Display for Ne {
 
 /// Extracts an operation of integer arithmetic from a Python object, trying
 /// each operation in turn: those carrying no data through their own
-/// classes, and [`Const`], [`Scale`] and [`Linear`] through the extraction that the
+/// classes, and [`Const`], [`Scale`], [`Linear`] and [`Affine`] through the extraction that the
 /// tensor type `T` provides.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for NIA<T>
@@ -1090,6 +1169,7 @@ where
     Const<T>: pyo3::FromPyObject<'a, 'py>,
     Scale<T>: pyo3::FromPyObject<'a, 'py>,
     Linear<T>: pyo3::FromPyObject<'a, 'py>,
+    Affine<T>: pyo3::FromPyObject<'a, 'py>,
 {
     type Error = pyo3::PyErr;
 
@@ -1164,6 +1244,9 @@ where
         }
         if let Ok(op) = ob.extract::<Linear<T>>() {
             return Ok(NIA::Linear(op));
+        }
+        if let Ok(op) = ob.extract::<Affine<T>>() {
+            return Ok(NIA::Affine(op));
         }
         Err(pyo3::exceptions::PyTypeError::new_err(format!(
             "expected an operation of integer arithmetic, got {}",
