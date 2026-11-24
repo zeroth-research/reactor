@@ -112,7 +112,7 @@ def _argmax_box(
         return "Box.argmax_1d"
     if len(input_shape) == 2:
         return "Box.argmax"
-    raise ValueError(
+    raise Refused(
         f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
     )
 

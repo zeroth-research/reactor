@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from reactor import Module, Real, Var, Wire
+
+from ..core.errors import Refused
 from ..lowering.elements import product_accessor
 from ..lowering.wires import ModuleWires
 from .literals import ConstantRegistry
@@ -19,8 +21,9 @@ class LeanContext:
     def __init__(self, module: Module):
         atoms = list(module.atoms)
         if len(atoms) != 1:
-            raise ValueError(
-                f"LeanContext currently supports single-atom modules, got {len(atoms)}"
+            raise Refused(
+                f"the module is a composition of {len(atoms)} atoms; only a "
+                "module of one atom is translated"
             )
 
         self.module = module

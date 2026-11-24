@@ -21,7 +21,8 @@ back on the way out:
 
 Both dialects `parse_predicate` reads are rewritten: SMT-LIB, and the
 Python DSL (any text that parses as a Python expression once its `@` names
-are set aside).
+are set aside). An SMT-LIB `let` is refused: the names it binds would be
+read as the module's.
 """
 
 from __future__ import annotations
@@ -192,6 +193,12 @@ def _symbol(kind: str, tok: str) -> str | None:
 def _smtlib_to_internal(text: str, r: _Reader) -> str:
     toks = _tokens(text)
     sig = [i for i, (k, _) in enumerate(toks) if k not in ("ws", "comment")]
+    # The names a `let` binds would be read as the module's: refused
+    # rather than rewritten wrongly.
+    for a, b in zip(sig, sig[1:]):
+        if toks[a][0] == "lp" and toks[b] == ("atom", "let"):
+            raise r.fail("`let` is not supported in a claim yet; write each "
+                         "bound term out where it is used")
     out: list[str] = []
     j = 0           # index into `sig`
     done = 0        # tokens before this are emitted

@@ -8,6 +8,7 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
+from reactor_lean.core.errors import Refused
 from reactor_lean.lowering.sorts import (
     dtype_shape,
     is_scalar_shape,
@@ -103,7 +104,7 @@ def _argmax_expr(
         return mat_mk(f"((argmax_1d {arg_expr}) i j : Int)", "i", "j")
     if len(input_shape) == 2:
         return mat_mk(f"((argmax {arg_expr}) i j : Int)", "i", "j")
-    raise ValueError(
+    raise Refused(
         f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
     )
 
@@ -120,7 +121,7 @@ def check_argmax_output(output_shape: "list[int] | None") -> None:
     if output_shape is None:
         return
     if not is_scalar_shape(output_shape):
-        raise ValueError(
+        raise Refused(
             f"argmax: output shape {output_shape} holds more than one element, "
             "but argmax yields a single flat index (torch.argmax semantics); "
             "declare a [1, 1] output wire"
@@ -254,7 +255,7 @@ def _output_expr(wire_expr: dict[int, str], w: Wire) -> str:
     for a proof.
     """
     if w.id not in wire_expr:
-        raise ValueError(
+        raise Refused(
             f"block output wire #{w.id} is written by no term and is not an input"
         )
     return wire_expr[w.id]

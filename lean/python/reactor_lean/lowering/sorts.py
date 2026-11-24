@@ -9,6 +9,8 @@ from typing import Any
 import reactor.reactor as _ext
 from reactor import Bool, Int, Real, Word, Wire
 
+from ..core.errors import Refused
+
 # A sort of `reactor.tensor.sort`: `Bool`, `Int`, `Real` or `Word`.
 Sort = Any
 
@@ -67,7 +69,7 @@ def lean_elem_type(sort: Sort) -> str:
         return "Real"
     if isinstance(sort, Word):
         return f"(BitVec {sort.width})"
-    raise ValueError(f"Unsupported Sort for Lean conversion: {sort}")
+    raise Refused(f"no Lean type for the sort {sort}")
 
 
 def lean_matrix_type(elem: str, m: int | str, n: int | str) -> str:

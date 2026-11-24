@@ -30,19 +30,19 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(generate_standalone_cert_lean(ctx, lean_cert))
+        print(f"Wrote standalone certificate: {out}")
+        # The same encoding table the project walks, so these files and
+        # the ones in a generated project carry the same headers and the
+        # same imports. The functional encoding is already inlined in the
+        # standalone certificate above, which is the base they import.
+        m2l = ModuleToLean4(ctx)
+        layout = Layout(base=out.stem, flat=True, directory=out.parent)
+        for enc in ENCODINGS:
+            if enc.cert_file:
+                path = write_encoding(enc, m2l, layout, out.stem)
+                print(f"Wrote {enc.title.lower()}: {path}")
     except (Refused, OSError) as e:
         raise SystemExit(f"error: --cert-file: {e}") from e
-    print(f"Wrote standalone certificate: {out}")
-    # The same encoding table the project walks, so these files and
-    # the ones in a generated project carry the same headers and the same
-    # imports. The functional encoding is already inlined in the standalone
-    # certificate above, which is the base they import.
-    m2l = ModuleToLean4(ctx)
-    layout = Layout(base=out.stem, flat=True, directory=out.parent)
-    for enc in ENCODINGS:
-        if not enc.cert_file:
-            continue
-        print(f"Wrote {enc.title.lower()}: {write_encoding(enc, m2l, layout, out.stem)}")
 
 
 def generate(settings: Settings, module, ctx: LeanContext,

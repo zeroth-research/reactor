@@ -92,7 +92,7 @@ def lean_literal(sort: Sort, value) -> str:
         return lean_real(value)
     if isinstance(sort, Word):
         return lean_bitvec(sort.width, value)
-    raise ValueError(f"no Lean literal for a value of sort {sort}")
+    raise Refused(f"no Lean literal for a value of sort {sort}")
 
 
 def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
