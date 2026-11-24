@@ -122,9 +122,11 @@ def eval_itype(itype, read, out_sort=None):
             # the zero matrix, of any degree: the zero rate of change
             return [torch.zeros(shape, dtype=torch.float32)]
 
-        # --- constants and affine maps (tensors carried by the op) ---
+        # --- constants, linear and affine maps (tensors carried by the op) ---
         case tensor.real.Const(t) | tensor.int.Const(t) | tensor.bool.Const(t) | tensor.word.Const(t):
             return [t.clone()]
+        case tensor.real.Linear(a) | tensor.int.Linear(a):
+            return [a @ r[0]]
         case tensor.real.Affine(a, b) | tensor.int.Affine(a, b):
             return [a @ r[0] + b]
         case tensor.real.Scale(c) | tensor.int.Scale(c):
