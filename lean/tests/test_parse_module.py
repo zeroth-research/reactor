@@ -11,7 +11,7 @@ def test_a_python_file_loads():
     path = FIXTURES / "counter.py"
     problem = parse.load(path)
     assert isinstance(problem.module, Module)
-    assert problem.source == parse.SourceText(path, path.read_text())
+    assert problem.source == path.read_text()
 
 
 def test_a_missing_file_is_named():
@@ -42,4 +42,4 @@ def test_the_project_keeps_the_input(tmp_path):
                              source=problem.source,
                              certificate=certificate_files(
                                  LeanContext(problem.module)))
-    assert (project / "dbg" / "system.py").read_text() == problem.source.text
+    assert (project / "dbg" / "system.py").read_text() == problem.source

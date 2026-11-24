@@ -23,21 +23,13 @@ class InputError(Exception):
 
 
 @dataclass(frozen=True)
-class SourceText:
-    """The input file as read: where it is, and what it says."""
-
-    path: Path
-    text: str
-
-
-@dataclass(frozen=True)
 class Problem:
     """What the input states: the module the run is about, the text it
     was read from, and the names a claim may call its variables by
     (positional only when the input gives none)."""
 
     module: Module
-    source: SourceText
+    source: str
     names: Names
 
 
@@ -76,7 +68,7 @@ def load(path: str | Path, module_def: str = "module") -> Problem:
         raise InputError(f"cannot read {path}: {e}") from e
     module, names = _as_module(_call(path, module_def))
     return Problem(
-        module, SourceText(path, text),
+        module, text,
         Names.of(module, names) if names else Names.positional(module),
     )
 

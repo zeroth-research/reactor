@@ -11,10 +11,10 @@ syntax first (`dsl`), and SMT-LIB for text that is no Python (`sexpr` and
 `smtlib`).
 """
 
-from .module import InputError, Named, Problem, SourceText, load, load_module
+from .module import InputError, Named, Problem, load, load_module
 from .names import ClaimError, Names, to_internal
 
 __all__ = [
-    "ClaimError", "InputError", "Named", "Names", "Problem", "SourceText",
-    "load", "load_module", "to_internal",
+    "ClaimError", "InputError", "Named", "Names", "Problem", "load",
+    "load_module", "to_internal",
 ]

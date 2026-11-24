@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from reactor import Module
 
@@ -23,9 +22,6 @@ from .lake_cache import lake_cache, use_lake_cache
 from .lakefile import (LEAN_TOOLCHAIN, generate_lakefile,
                        project_requires)
 from .main_lean import generate_main_lean
-
-if TYPE_CHECKING:
-    from ..parse import SourceText
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -153,7 +149,7 @@ def create_project(
     executable: bool = False,
     *,
     certificate: Mapping[str, str],
-    source: "SourceText | None" = None,
+    source: str | None = None,
     ctx: "LeanContext | None" = None,
 ) -> Path:
     """
@@ -165,8 +161,8 @@ def create_project(
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
         `certificate`:     The certificate's files by project-relative path,
                            as `proof.render.certificate_files` renders them.
-        `source`:          The input the module was read from, written to
-                           `dbg/system.py` as a debug artifact.
+        `source`:          The text of the input the module was read from,
+                           written to `dbg/system.py` as a debug artifact.
         `ctx`:             A `LeanContext` this run already built, so the
                            discovery pass runs once rather than once here
                            and again for every file rewritten later.
@@ -184,9 +180,8 @@ def create_project(
     (dbg_dir / "system.txt").write_text(str(module))
     print("Wrote system.txt")
     if source is not None:
-        copy = "system.py"
-        (dbg_dir / copy).write_text(source.text)
-        print(f"Wrote {copy}")
+        (dbg_dir / "system.py").write_text(source)
+        print("Wrote system.py")
 
     # Render and write project-level files from templates
     write_lakefile(project_dir, project_name, executable=executable)
