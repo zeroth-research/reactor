@@ -24,10 +24,10 @@ fn join<T: Display>(f: &mut Formatter<'_>, items: &[T], sep: &str) -> fmt::Resul
 ///   in v0: R, v1: D
 ///   n0  v2 = gt0(v0)
 ///   n1  v3 = sample@0(v1)
-///   r0  end 1 ()
-///   r1  end 0 (v0)
-///   r2  bind n1; split v3 ? r1 : r0
-///   r3  split v2 ? r2 : r0
+///   r0  end 0 (v0)
+///   r1  end 1 ()
+///   r2  bind n1; split v3 ? r0 : r1
+///   r3  split v2 ? r2 : r1
 /// arm 1: I
 ///   in (none)
 ///   n2  v0 = zero()

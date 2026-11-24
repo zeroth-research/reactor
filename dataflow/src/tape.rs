@@ -153,31 +153,31 @@
 //!   in v0: R, v1: D
 //!   n0  v2 = gt0(v0)
 //!   n1  v3 = sample@0(v1)
-//!   r0  end 1 ()
-//!   r1  end 0 (v0)
-//!   r2  bind n1; split v3 ? r1 : r0
-//!   r3  split v2 ? r2 : r0
+//!   r0  end 0 (v0)
+//!   r1  end 1 ()
+//!   r2  bind n1; split v3 ? r0 : r1
+//!   r3  split v2 ? r2 : r1
 //! arm 1: I
 //!   in (none)
 //!   n2  v0 = zero()
 //!   r4  end 0 (v0)
 //! ```
 //!
-//! Arm 0 splits on `gt0(x)` first and only then draws `b`. The end node `r0`
+//! Arm 0 splits on `gt0(x)` first and only then draws `b`. The end node `r1`
 //! (to `I`) is shared by both splits. The join of the two arms into `R` is
-//! the two end nodes `r1` and `r4` with output 0. In memory this is:
+//! the two end nodes `r0` and `r4` with output 0. In memory this is:
 //!
 //! ```text
 //! arms      = [ Arm { nodes: 0..2, routes: 0..4 },
 //!               Arm { nodes: 2..3, routes: 4..5 } ]
 //! nodes     = [ Node { kind: Det(gt0),                  args: 0..1, n_outs: 1 },
 //!               Node { kind: NonDet(sample, level: 0),  args: 1..2, n_outs: 1 },
-//!               Node { kind: Det(zero),                 args: 2..2, n_outs: 1 } ]
+//!               Node { kind: Det(zero),                 args: ∅,    n_outs: 1 } ]
 //! args      = [ v0, v1 ]
-//! routes    = [ End   { binds: ∅,    output: 1, outs: 0..0 },
-//!               End   { binds: ∅,    output: 0, outs: 0..1 },
-//!               Split { binds: 0..1, cond: v3, hi: r1, lo: r0 },
-//!               Split { binds: ∅,    cond: v2, hi: r2, lo: r0 },
+//! routes    = [ End   { binds: ∅,    output: 0, outs: 0..1 },
+//!               End   { binds: ∅,    output: 1, outs: ∅ },
+//!               Split { binds: 0..1, cond: v3, hi: r0, lo: r1 },
+//!               Split { binds: ∅,    cond: v2, hi: r2, lo: r1 },
 //!               End   { binds: ∅,    output: 0, outs: 1..2 } ]
 //! bound     = [ n1 ]
 //! outs      = [ v0, v0 ]
