@@ -8,7 +8,7 @@ plus check the ctrl/extl partition and the config surface.
 
 import pytest
 
-from reactor import Module, Wire, sugar, Int, Var, Real, X as _X, d as _d, TheoryError
+from reactor import Module, Wire, sugar, Int, Var, Real, T, X as _X, d as _d, TheoryError
 from reactor.sugar import ite, d, X, Zero
 from reactor.tensor import Skip
 from reactor import sort
@@ -272,8 +272,8 @@ def test_delay_of_mixed_real_and_discrete_variables():
     assert zero.itype == Zero and len(zero.read) == 0
     # the real's rate of change is a real of degree 1, copied at that sort
     skip = writer[_d(x)]
-    assert skip.itype == Skip(Real([1, 1], degree=1))
-    assert skip.read[0].dtype == Real([1, 1], degree=1)
+    assert skip.itype == Skip(T(Real([1, 1])))
+    assert skip.read[0].dtype == T(Real([1, 1]))
 
 
 @pytest.mark.parametrize("rate", [0, 1, False, 0.0])
@@ -298,7 +298,7 @@ def test_delay_literal_takes_the_degree_of_the_rate():
     x = Var(Real1)
     a = Steady(ctrl=(x,)).atoms[0]
     sorts = [w.dtype for term in a.delay for w in term.write]
-    assert sorts and all(s == Real([1, 1], degree=1) for s in sorts)
+    assert sorts and all(s == T(Real([1, 1])) for s in sorts)
 
 
 def test_useless_module():

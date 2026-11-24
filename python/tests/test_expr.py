@@ -7,7 +7,7 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from reactor import Wire, Bool, Int, Real, Word, Var, X as _X, TheoryError
+from reactor import Wire, Bool, Int, Real, T, Word, Var, X as _X, TheoryError
 from reactor import tensor
 from reactor.eval import eval_itype
 from reactor.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
@@ -366,35 +366,35 @@ def test_neg_and_abs():
 
 def test_real_operations_take_the_degree_of_their_operands():
     x = expr(Var(Real([1, 1])))
-    dx = expr(Wire(Real([1, 1], degree=1)))
+    dx = expr(Wire(T(Real([1, 1]))))
     with collecting() as terms:
         s = dx + 1  # the literal takes the degree of `dx`
         assert tensor_of_term(terms[-2]) is not None and terms[-2].itype.degree == 1
-        assert terms[-1].itype.degree == 1 and s.dtype == Real([1, 1], degree=1)
+        assert terms[-1].itype.degree == 1 and s.dtype == T(Real([1, 1]))
         p = x * dx  # degrees add up
-        assert list(terms[-1].itype.degrees) == [0, 1] and p.dtype == Real([1, 1], degree=1)
+        assert list(terms[-1].itype.degrees) == [0, 1] and p.dtype == T(Real([1, 1]))
         q = dx / x  # degrees are taken off
-        assert list(terms[-1].itype.degrees) == [1, 0] and q.dtype == Real([1, 1], degree=1)
+        assert list(terms[-1].itype.degrees) == [1, 0] and q.dtype == T(Real([1, 1]))
         c = dx < 1  # compared at their degree
         assert terms[-1].itype.degree == 1 and c.dtype == Bool([1, 1])
         h = abs(dx)
-        assert terms[-1].itype.degree == 1 and h.dtype == Real([1, 1], degree=1)
+        assert terms[-1].itype.degree == 1 and h.dtype == T(Real([1, 1]))
 
 
 def test_division_by_a_real_of_a_higher_degree_is_not_defined():
     x = expr(Var(Real([1, 1])))
-    dx = expr(Wire(Real([1, 1], degree=1)))
+    dx = expr(Wire(T(Real([1, 1]))))
     with pytest.raises(ValueError, match="negative degree"):
         x / dx
 
 
 def test_neg_keeps_the_degree_of_reals():
     x = expr(Var(Real([1, 1])))
-    d1 = expr(Wire(Real([1, 1], degree=1)))
+    d1 = expr(Wire(T(Real([1, 1]))))
     with collecting() as terms:
         n, m = -x, -d1
     assert terms[0].itype.degree == 0 and n.dtype == Real([1, 1])
-    assert terms[1].itype.degree == 1 and m.dtype == Real([1, 1], degree=1)
+    assert terms[1].itype.degree == 1 and m.dtype == T(Real([1, 1]))
 
 
 # theory errors are deprecated - the python API has become permissive

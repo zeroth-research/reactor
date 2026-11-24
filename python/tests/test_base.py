@@ -1,6 +1,6 @@
 import pytest
 import torch
-from reactor import Wire, Term, Atom, Module, Bool, Int, Real, Var, X, d
+from reactor import Wire, Term, Atom, Module, Bool, Int, Real, T, Var, X, d
 from reactor import tensor
 from reactor.tensor import Skip
 
@@ -143,7 +143,7 @@ def _stateful_blocks():
     init = [Term(tensor.real.Const(zero, Real([1, 1])), [X(x)]), Term(tensor.real.Const(zero, Real([1, 1])), [X(p)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [x]), Term(Skip(Real([1, 1])), [X(p)], [p])]
     # the zero rate of change of a real: the zero matrix, of degree 1
-    rest = tensor.real.Zero(Real([1, 1], 1))
+    rest = tensor.real.Zero(T(Real([1, 1])))
     delay = [Term(rest, [d(x)]), Term(rest, [d(p)])]
     return x, p, init, update, delay
 
@@ -454,7 +454,7 @@ def test_heterogeneous_composition():
     P = Module.sequential([x], init, update)
 
     init = [Term(tensor.real.Const(zero, Real([1, 1])), [X(y)])]
-    flow = [Term(tensor.real.Zero(Real([1, 1], 1)), [d(y)])]
+    flow = [Term(tensor.real.Zero(T(Real([1, 1]))), [d(y)])]
     Q = Module.differential([y], init, flow)
 
     comb = [Term(tensor.real.Add([Real([1, 1]), Real([1, 1])]), [X(z)], [X(x), X(y)])]

@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from reactor import Real, Int, Wire, TheoryError, tensor
+from reactor import Real, T, Int, Wire, TheoryError, tensor
 from reactor.builder import builder_for, RealTermBuilder
 from reactor.eval import eval_itype
 
@@ -45,17 +45,17 @@ def test_mul_adds_the_degrees_of_reals(p, q):
 
 def test_add_keeps_the_degree_of_reals():
     builder = builder_for(Real)
-    x, y = Wire(Real([2, 3], degree=1)), Wire(Real([2, 3], degree=1))
+    x, y = Wire(T(Real([2, 3]))), Wire(T(Real([2, 3])))
 
     term = builder.add(x, y)
 
-    assert term.itype == tensor.real.Add([Real([2, 3], degree=1)] * 2)
-    assert term.write[0].dtype == Real([2, 3], degree=1)
+    assert term.itype == tensor.real.Add([T(Real([2, 3]))] * 2)
+    assert term.write[0].dtype == T(Real([2, 3]))
 
 
 @pytest.mark.parametrize("op", [RealTermBuilder.add, RealTermBuilder.sub])
 def test_reals_of_different_degrees_do_not_add_up(op):
-    x, y = Wire(Real([2, 3], degree=1)), Wire(Real([2, 3], degree=0))
+    x, y = Wire(T(Real([2, 3]))), Wire(Real([2, 3]))
 
     with pytest.raises(TheoryError):
         op(RealTermBuilder(), x, y)
@@ -82,18 +82,18 @@ def test_mul_scales_a_column_vector(sort, dtype, n):
 
 
 def test_neg_keeps_the_degree_of_reals():
-    x = Wire(Real([1, 1], degree=1))
+    x = Wire(T(Real([1, 1])))
     term = RealTermBuilder().neg(x)
     assert term.itype.degree == 1
-    assert term.write[0].dtype == Real([1, 1], degree=1)
+    assert term.write[0].dtype == T(Real([1, 1]))
 
 
 def test_builder_takes_the_degree_of_reals():
     b = RealTermBuilder()
-    x, dx = Wire(Real([1, 1])), Wire(Real([1, 1], degree=1))
+    x, dx = Wire(Real([1, 1])), Wire(T(Real([1, 1])))
     assert b.relu(dx).itype.degree == 1
     assert b.lt(dx, dx).itype.degree == 1
-    assert b.div(dx, x).write[0].dtype == Real([1, 1], degree=1)
+    assert b.div(dx, x).write[0].dtype == T(Real([1, 1]))
     with pytest.raises(TheoryError):
         b.div(x, dx)  # a negative degree is not defined
     with pytest.raises(TheoryError):

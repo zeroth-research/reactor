@@ -121,8 +121,9 @@ impl fmt::Display for Real {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let [i, j] = self.shape;
         match self.degree {
-            0 => write!(f, "Real({i}, {j})"),
-            d => write!(f, "T^{d}(Real({i}, {j}))"),
+            0 => write!(f, "Real([{i}, {j}])"),
+            1 => write!(f, "T(Real([{i}, {j}]))"),
+            d => write!(f, "T^{d}(Real([{i}, {j}]))"),
         }
     }
 }
@@ -192,7 +193,7 @@ impl Int {
 impl fmt::Display for Int {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let [i, j] = self.shape;
-        write!(f, "Int({i}, {j})")
+        write!(f, "Int([{i}, {j}])")
     }
 }
 
@@ -255,7 +256,7 @@ impl Bool {
 impl fmt::Display for Bool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let [i, j] = self.shape;
-        write!(f, "Bool({i}, {j})")
+        write!(f, "Bool([{i}, {j}])")
     }
 }
 
@@ -342,7 +343,7 @@ impl Word {
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let [i, j] = self.shape;
-        write!(f, "Word<{}>({i}, {j})", self.width)
+        write!(f, "Word{}([{i}, {j}])", self.width)
     }
 }
 
@@ -383,7 +384,7 @@ impl Zero {
 
 impl fmt::Display for Zero {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Zero")
+        write!(f, "Zero()")
     }
 }
 

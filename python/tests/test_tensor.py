@@ -7,10 +7,11 @@ import pytest
 import torch
 from reactor.tensor import Havoc, Skip, real, int as int_, bool as bool_, word, zero
 from reactor.tensor.sort import Real, Int, Bool, Word, Zero
+from reactor import T
 
 
 def test_binary_operations_take_and_match_their_domain_as_a_list():
-    x, y = Real([2, 3], 1), Real([2, 3], 0)
+    x, y = T(Real([2, 3])), Real([2, 3])
     match real.Mul([x, y]):
         case real.Mul([Real(s, degree=p), Real(degree=q)], Real(degree=r)):
             assert (list(s), p, q, r) == ([2, 3], 1, 0, 1)
@@ -20,9 +21,9 @@ def test_binary_operations_take_and_match_their_domain_as_a_list():
 
 
 def test_unary_operations_take_and_match_their_domain_bare():
-    op = real.Transpose(Real([2, 3], 1))
-    assert op.dom == Real([2, 3], 1)
-    assert op.cod == Real([3, 2], 1)
+    op = real.Transpose(T(Real([2, 3])))
+    assert op.dom == T(Real([2, 3]))
+    assert op.cod == T(Real([3, 2]))
     assert int_.Lt([Int([2, 2]), Int([2, 2])]).cod == Bool([2, 2])
     match word.signed.Extend(3, Word(5, [1, 1])):
         case word.signed.Extend(i, Word(w), Word(v)):
@@ -56,7 +57,7 @@ def test_choice_reads_its_condition_and_branches():
 
 
 def test_the_codomain_is_optional_and_checked():
-    x = Real([2, 3], 1)
+    x = T(Real([2, 3]))
     assert real.Add([x, x], x) == real.Add([x, x])
     assert real.Add([x, x], cod=x) == real.Add([x, x])
     with pytest.raises(ValueError, match="writes"):
@@ -82,7 +83,7 @@ def test_domains_of_no_instance_raise():
 
 def test_nullary_operations_take_and_match_their_codomain_only():
     for op in [
-        real.Zero(Real([1, 2], 1)),
+        real.Zero(T(Real([1, 2]))),
         real.Const(torch.ones(1, 2), Real([1, 2])),
         int_.Const(torch.ones(1, 2, dtype=torch.int64), Int([1, 2])),
         bool_.Const(torch.ones(1, 2, dtype=torch.bool), Bool([1, 2])),
@@ -93,7 +94,7 @@ def test_nullary_operations_take_and_match_their_codomain_only():
         assert type(op).__match_args__[-1] == "cod"
         assert "dom" not in type(op).__match_args__
         assert not hasattr(op, "dom")
-    assert real.Const(torch.ones(1, 2), Real([1, 2], 1)).cod == Real([1, 2], 1)
+    assert real.Const(torch.ones(1, 2), T(Real([1, 2]))).cod == T(Real([1, 2]))
     assert word.Const(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])).cod == Word(4, [1, 2])
     assert Havoc(Int([1, 2])).cod == Int([1, 2])
     assert zero.Zero().cod == Zero()

@@ -626,7 +626,7 @@ mod sort {
     fn real_shape_and_display() {
         let r = Real::new([2, 3]);
         assert_eq!(r.shape(), [2, 3]);
-        assert_eq!(r.to_string(), "Real(2, 3)");
+        assert_eq!(r.to_string(), "Real([2, 3])");
     }
 
     #[test]
@@ -635,14 +635,15 @@ mod sort {
         assert_eq!(T(r).degree(), 1);
         assert_eq!(T(r).shape(), [2, 3]);
         assert_eq!(T(T(r)).degree(), 2);
-        assert_eq!(T(r).to_string(), "T^1(Real(2, 3))");
+        assert_eq!(T(r).to_string(), "T(Real([2, 3]))");
+        assert_eq!(T(T(r)).to_string(), "T^2(Real([2, 3]))");
     }
 
     #[test]
     fn int_shape_and_display() {
         let r = Int::new([2, 3]);
         assert_eq!(r.shape(), [2, 3]);
-        assert_eq!(r.to_string(), "Int(2, 3)");
+        assert_eq!(r.to_string(), "Int([2, 3])");
     }
 
     #[test]
@@ -655,7 +656,7 @@ mod sort {
     fn bool_shape_and_display() {
         let b = Bool::new([2, 3]);
         assert_eq!(b.shape(), [2, 3]);
-        assert_eq!(b.to_string(), "Bool(2, 3)");
+        assert_eq!(b.to_string(), "Bool([2, 3])");
     }
 
     #[test]
@@ -669,7 +670,7 @@ mod sort {
         let x = Word::new(8, [2, 3]).unwrap();
         assert_eq!(x.width(), 8);
         assert_eq!(x.shape(), [2, 3]);
-        assert_eq!(x.to_string(), "Word<8>(2, 3)");
+        assert_eq!(x.to_string(), "Word8([2, 3])");
     }
 
     #[test]
@@ -699,9 +700,9 @@ mod sort {
     fn words_display_their_sort() {
         let x = Word::new_unchecked(8, [2, 3]);
         assert_eq!(Words::from(x), Words::Word(x));
-        assert_eq!(Words::from(x).to_string(), "Word<8>(2, 3)");
-        assert_eq!(Words::from(Bool::new([2, 3])).to_string(), "Bool(2, 3)");
-        assert_eq!(Words::from(Zero).to_string(), "Zero");
+        assert_eq!(Words::from(x).to_string(), "Word8([2, 3])");
+        assert_eq!(Words::from(Bool::new([2, 3])).to_string(), "Bool([2, 3])");
+        assert_eq!(Words::from(Zero).to_string(), "Zero()");
     }
 
     #[test]
@@ -718,7 +719,7 @@ mod sort {
 
     #[test]
     fn zero_display() {
-        assert_eq!(Zero.to_string(), "Zero");
+        assert_eq!(Zero.to_string(), "Zero()");
     }
 
     #[test]
@@ -1050,7 +1051,7 @@ mod with_dom {
         let e = real::Add::with_dom([x, y]).unwrap_err();
         assert_eq!(
             e.0,
-            "expected a domain of 2 equal sorts, got [Real(2, 3), T^1(Real(2, 3))]"
+            "expected a domain of 2 equal sorts, got [Real([2, 3]), T(Real([2, 3]))]"
         );
     }
 
@@ -1161,7 +1162,7 @@ mod with_cod {
         let e = real::Linear::with_cod(Mat([3, 5]), Mat([3, 3]), [x]).unwrap_err();
         assert_eq!(
             e.0,
-            "expected a codomain of 1 sort of shape [3, 3], got [T^1(Real(2, 3))]"
+            "expected a codomain of 1 sort of shape [3, 3], got [T(Real([2, 3]))]"
         );
     }
 

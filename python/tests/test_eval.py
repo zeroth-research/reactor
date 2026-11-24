@@ -5,7 +5,7 @@ multi-step execution of hand-built modules.
 """
 import pytest
 import torch
-from reactor import Wire, Term, Module, Bool, Real, Int, Word, Var, X
+from reactor import Wire, Term, Module, Bool, Real, T, Int, Word, Var, X
 from reactor import tensor
 from reactor.tensor import Skip, Havoc
 from reactor.tensor.zero import Zero
@@ -431,7 +431,7 @@ def test_structural_ops():
     with pytest.raises(RuntimeError, match="singleton"):
         eval_itype(Zero(), [])
     # and the zero rate of change of a real is the zero matrix
-    assert eval_itype(tensor.real.Zero(Real([1, 2], 1)), [])[0].tolist() == [[0., 0.]]
+    assert eval_itype(tensor.real.Zero(T(Real([1, 2]))), [])[0].tolist() == [[0., 0.]]
 
 
 @pytest.mark.parametrize("x,y,q,r", [

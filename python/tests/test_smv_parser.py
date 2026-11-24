@@ -137,7 +137,7 @@ def test_enum_type():
     assert "state" in name_map
     # state should have TensorInt dtype (enum mapped to int)
     state = name_map["state"]
-    # SMV parser maps `integer` / enum types to Word<32>.
+    # SMV parser maps `integer` / enum types to Word32([1, 1]).
     assert isinstance(state.dtype, Word)
 
 
