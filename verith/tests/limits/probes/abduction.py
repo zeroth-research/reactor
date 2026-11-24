@@ -1,4 +1,4 @@
-"""Proof of concept for cvc5 abduction (TODO.md): repair a non-inductive invariant.
+"""Proof of concept for cvc5 abduction: repair a non-inductive invariant.
 
 `getAbduct` returns a formula B with `inv ∧ B` consistent and
 `inv ∧ B ⊨ inv(update s)` -- the conjunct missing from an invariant that is

@@ -157,11 +157,6 @@ compare; every difference must be one the change means.
   encodings to `reactor.eval`, the interpreter. The equivalence theorems
   cannot catch an encoder that is wrong on every side at once; these can.
 
-## Further reading
-
-- [`TODO.md`](../../../TODO.md): what is still to do, known defects
-  included.
-
 The rest of this file is the reference, starting from the IR.
 
 ---
