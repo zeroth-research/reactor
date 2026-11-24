@@ -143,15 +143,9 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     all_terms = list(atom.init) + list(atom.update)
     argmax_variants = _collect_argmax_variants(all_terms)
 
-    input_groups = [
-        ("ctrl", ctx.ctrl_latched),
-        ("extl_l", ctx.extl_latched),
-        ("extl_n", ctx.extl_next),
-    ]
-
     lines: list[str] = []
     seen_recon: set[tuple] = set()
-    for _, wires in input_groups:
+    for _, wires in ctx.update_groups:
         for w in wires:
             if flat_size(w) == 1:
                 continue
@@ -169,7 +163,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     #    (`literals.tensor_to_lean_def`): a `decide` over an unpacked input
     #    keeps `unpack_*` in its instance after `simp` has unfolded it in the
     #    proposition, and from Lean v4.34 that stops `simp` there.
-    for param, wires in input_groups:
+    for param, wires in ctx.update_groups:
         if not wires:
             continue
         mat_ty = product_type(wires)
@@ -190,7 +184,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
 
     # 3. Scalar init / update
     init_recon, init_bindings, init_flat = scalar_bindings_with_recon(
-        [("extl_n", ctx.extl_next)]
+        ctx.init_groups
     )
     init_body = translate_terms_scalar(
         atom.init,
@@ -206,11 +200,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     lines.append("")
 
     update_recon, update_bindings_scalar, update_flat = scalar_bindings_with_recon(
-        [
-            ("ctrl", ctx.ctrl_latched),
-            ("extl_l", ctx.extl_latched),
-            ("extl_n", ctx.extl_next),
-        ]
+        ctx.update_groups
     )
     update_body = translate_terms_scalar(
         atom.update,
@@ -219,7 +209,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
         ctx.constants,
         flat_slots=update_flat,
     )
-    upd_dom = " ".join(_scalar_dom(p, w) for p, w in input_groups)
+    upd_dom = " ".join(_scalar_dom(p, w) for p, w in ctx.update_groups)
     lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
     lines.append(prepend_recon(update_recon, update_body))
     lines.append("")
@@ -294,12 +284,6 @@ def to_lean_scalar_equiv(
             "  all_goals try simp [← Matrix_1_1_eq]",
         ]
 
-    input_groups = [
-        ("ctrl", ctx.ctrl_latched),
-        ("extl_l", ctx.extl_latched),
-        ("extl_n", ctx.extl_next),
-    ]
-
     if has_block(ctx, "init"):
         init_binder = f"(extl_n : {product_type(ctx.extl_next)})"
         extl_n_arg = _call_arg("extl_n", ctx.extl_next)
@@ -309,10 +293,11 @@ def to_lean_scalar_equiv(
 
     if has_block(ctx, "update"):
         binders = [
-            f"({p} : {product_type(w) if w else 'Unit'})" for p, w in input_groups
+            f"({p} : {product_type(w) if w else 'Unit'})"
+            for p, w in ctx.update_groups
         ]
-        scalar_args = [_call_arg(p, w) for p, w in input_groups]
-        extras = [f"Scalar.unpack_{p}" for p, w in input_groups if w]
+        scalar_args = [_call_arg(p, w) for p, w in ctx.update_groups]
+        extras = [f"Scalar.unpack_{p}" for p, w in ctx.update_groups if w]
         lines.extend(_proof(binders, "update", scalar_args, extras))
         lines.append("")
 

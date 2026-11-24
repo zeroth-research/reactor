@@ -52,14 +52,20 @@ class LeanContext:
             [t.write[0] for t in self.atom.update],
         )
 
-        self.init_wire_names = bind_wires([("extl_n", self.extl_next)])
-        self.update_wire_names = bind_wires(
-            [
-                ("ctrl", self.ctrl_latched),
-                ("extl_l", self.extl_latched),
-                ("extl_n", self.extl_next),
-            ]
-        )
+        # What each block reads, in the order and under the names every
+        # encoding binds it: `init` the inputs awaited in the first round,
+        # `update` the state and the inputs latched before the round and
+        # awaited in it.
+        self.init_groups: list[tuple[str, list[Wire]]] = [
+            ("extl_n", self.extl_next),
+        ]
+        self.update_groups: list[tuple[str, list[Wire]]] = [
+            ("ctrl", self.ctrl_latched),
+            ("extl_l", self.extl_latched),
+            ("extl_n", self.extl_next),
+        ]
+        self.init_wire_names = bind_wires(self.init_groups)
+        self.update_wire_names = bind_wires(self.update_groups)
 
 
 def any_float_wire(*wire_lists: list[Wire]) -> bool:

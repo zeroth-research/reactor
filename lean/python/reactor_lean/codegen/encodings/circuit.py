@@ -163,7 +163,7 @@ def atom_to_lean_circuit(
         ctx.constants,
     )
 
-    update_inputs = (ctx.ctrl_latched, ctx.extl_latched, ctx.extl_next)
+    update_inputs = tuple(w for _, w in ctx.update_groups)
     update_outputs = ctx.ctrl_next
     update_layers = translate_terms_circ(
         atom.update,
@@ -189,7 +189,7 @@ def atom_to_lean_circuit(
         lines.extend(layer_lines)
 
     if update_layers:
-        upd_dom = ty_list(ctx.ctrl_latched + ctx.extl_latched + ctx.extl_next)
+        upd_dom = ty_list([w for ws in update_inputs for w in ws])
         upd_cod = ty_list(update_outputs)
         layer_lines, update_layer_names = _emit_named_layers(
             ctx,
@@ -253,29 +253,23 @@ def to_lean_equiv_theorems(
         lines.append("")
 
     if update_layer_names:
-        n_ctrl_l = len(ctx.ctrl_latched)
-        n_extl_l = len(ctx.extl_latched)
-        n_extl_n = len(ctx.extl_next)
-        update_binders = (
-            f"(ctrl : {product_type(ctx.ctrl_latched)}) "
-            f"(extl_l : {product_type(ctx.extl_latched)}) "
-            f"(extl_n : {product_type(ctx.extl_next)})"
+        update_params = [p for p, _ in ctx.update_groups]
+        update_binders = " ".join(
+            f"({p} : {product_type(w)})" for p, w in ctx.update_groups
         )
-        lhs_input = natives_to_vt(
-            [("ctrl", n_ctrl_l), ("extl_l", n_extl_l), ("extl_n", n_extl_n)]
-        )
+        lhs_input = natives_to_vt([(p, len(w)) for p, w in ctx.update_groups])
         rhs_output = native_to_vt("r", n_ctrl)
 
         lines.append(f"set_option maxHeartbeats {_CIRC_HEARTBEATS} in")
         lines.append("set_option maxRecDepth 100000 in")
         lines.append(f"theorem update_circ_eq : ∀ {update_binders},")
         lines.append(f"    Circ.update.fn {lhs_input} =")
-        lines.append("    let r := update ctrl extl_l extl_n")
+        lines.append(f"    let r := update {' '.join(update_params)}")
         lines.append(f"    {rhs_output} := by")
         lines.append(
             _equiv_proof_tactic(
                 ctx,
-                ["ctrl", "extl_l", "extl_n"],
+                update_params,
                 update_layer_names,
                 "update",
             )

@@ -24,7 +24,7 @@ from reactor_lean.codegen.terms import (
 )
 from reactor_lean.lowering.sorts import dtype_to_lean_type
 from reactor_lean.lowering.elements import product_accessor, flat_layout
-from reactor_lean.codegen.context import LeanContext, bind_wires
+from reactor_lean.codegen.context import LeanContext
 from reactor_lean.codegen.encodings.common import (
     has_block,
     scalar_eq_name,
@@ -57,11 +57,7 @@ def _domain(ctx: LeanContext, ty) -> _Domain:
     with no external inputs still gets the binder written out rather than
     dropped — the call sites are built from the same lists.
     """
-    update_groups = [
-        ("ctrl", ctx.ctrl_latched),
-        ("extl_l", ctx.extl_latched),
-        ("extl_n", ctx.extl_next),
-    ]
+    update_groups = ctx.update_groups
     extl_groups = update_groups[1:]
 
     def binders(groups):
@@ -222,15 +218,6 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
         project=lambda e, i: f"{e}{product_accessor(i, n_ctrl)}",
     )
 
-    update_bindings = bind_wires(
-        [
-            ("ctrl", ctx.ctrl_latched),
-            ("extl_l", ctx.extl_latched),
-            ("extl_n", ctx.extl_next),
-        ]
-    )
-    init_bindings = bind_wires([("extl_n", ctx.extl_next)])
-
     def _bodies(terms, bindings) -> "list[str]":
         return [
             translate_terms_lean(
@@ -244,7 +231,7 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
     if has_block(ctx, "update"):
         blk = _update_block(dom, "update")
         lines += emit_rel_block(
-            syn, blk, _bodies(ctx.atom.update, update_bindings)
+            syn, blk, _bodies(ctx.atom.update, ctx.update_wire_names)
         )
         lines += _conj_eq_theorem(
             "TransRel_func_eq", blk, n_ctrl, f"new = update old {dom.extl_args}"
@@ -252,7 +239,7 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
 
     if has_block(ctx, "init"):
         blk = _init_block(dom, "init")
-        lines += emit_rel_block(syn, blk, _bodies(ctx.atom.init, init_bindings))
+        lines += emit_rel_block(syn, blk, _bodies(ctx.atom.init, ctx.init_wire_names))
         lines += _conj_eq_theorem(
             "InitCond_func_eq", blk, n_ctrl, "s = init extl_n"
         )
@@ -278,14 +265,10 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
     )
 
     update_recon, update_bindings, update_flat = scalar_bindings_with_recon(
-        [
-            ("ctrl", ctx.ctrl_latched),
-            ("extl_l", ctx.extl_latched),
-            ("extl_n", ctx.extl_next),
-        ]
+        ctx.update_groups
     )
     init_recon, init_bindings, init_flat = scalar_bindings_with_recon(
-        [("extl_n", ctx.extl_next)]
+        ctx.init_groups
     )
 
     def _bodies(terms, recon, bindings, flat) -> "list[str]":
@@ -354,7 +337,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
             f"new = Scalar.update old {dom.extl_args}",
         )
 
-        extl_groups = [("extl_l", ctx.extl_latched), ("extl_n", ctx.extl_next)]
+        extl_groups = ctx.update_groups[1:]
 
         old_unpack = _unpack("ctrl", ctx.ctrl_latched)
         new_unpack = _unpack("ctrl", ctx.ctrl_next, "ctrl'")

@@ -40,11 +40,7 @@ def atom_to_lean_functional(ctx: LeanContext) -> str:
     lines.append(init_body)
     lines.append("")
 
-    upd_dom = (
-        f"(ctrl: {product_type(ctx.ctrl_latched)}) "
-        f"(extl_l: {product_type(ctx.extl_latched)}) "
-        f"(extl_n: {product_type(ctx.extl_next)})"
-    )
+    upd_dom = " ".join(f"({p}: {product_type(w)})" for p, w in ctx.update_groups)
     lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
     lines.append(update_body)
     lines.append("")

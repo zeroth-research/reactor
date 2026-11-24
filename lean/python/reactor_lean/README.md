@@ -217,6 +217,9 @@ Created once per module; shared across all code generators.  It extracts:
   groups.
 - `constants` — a `ConstantRegistry` that assigns top-level `@[simp] def c0`
   names to non-scalar `Tensor` constants (scalar tensors are inlined at use).
+- `init_groups`, `update_groups` — what each block reads, as
+  `(name, wires)` groups in the order every encoding binds them:
+  `extl_n` for `init`; `ctrl`, `extl_l`, `extl_n` for `update`.
 - `init_wire_names`, `update_wire_names` — `dict[wire_id, lean_accessor]`
   mapping each input wire to its Lean expression (e.g. `"ctrl.1"`).
 - `uses_real` — True if any wire is Float-typed (triggers `noncomputable`).
