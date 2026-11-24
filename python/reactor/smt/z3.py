@@ -42,7 +42,7 @@ def _zeros(dtype):
 def interpret(itype):
     match itype:
         # structural
-        case Skip(_):
+        case Skip():
             return lambda x: x
         case Havoc(dtype):
             return lambda: fresh(dtype, "HAVOC")
@@ -50,7 +50,7 @@ def interpret(itype):
             # the singleton sort is the rate of change of discrete values, which are
             # never integrated: nothing encodes it
             raise RuntimeError("Zero writes the singleton sort, which is never encoded")
-        case tensor.real.Zero(shape):
+        case tensor.real.Zero(Real(shape)):
             return lambda: _zeros(Real(shape))
 
         # constants
@@ -62,17 +62,17 @@ def interpret(itype):
             return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(t.detach().numpy())
 
         # arithmetic
-        case tensor.real.Sub(_) | tensor.int.Sub(_):
+        case tensor.real.Sub() | tensor.int.Sub():
             return _np.frompyfunc(operator.sub, 2, 1)
-        case tensor.real.Add(_) | tensor.int.Add(_):
+        case tensor.real.Add() | tensor.int.Add():
             return _np.frompyfunc(operator.add, 2, 1)
-        case tensor.real.Mul(_) | tensor.int.Mul(_):
+        case tensor.real.Mul() | tensor.int.Mul():
             return _np.frompyfunc(operator.mul, 2, 1)
-        case tensor.real.Div(_) | tensor.int.Div(_):
+        case tensor.real.Div() | tensor.int.Div():
             return _np.frompyfunc(operator.truediv, 2, 1)
-        case tensor.int.Mod(_):
+        case tensor.int.Mod():
             return _np.frompyfunc(operator.mod, 2, 1)
-        case tensor.real.MatMul(_) | tensor.int.MatMul(_):
+        case tensor.real.MatMul() | tensor.int.MatMul():
             return lambda x, y: x @ y
         case tensor.real.Linear(weight, bias) | tensor.int.Linear(weight, bias):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
@@ -80,46 +80,46 @@ def interpret(itype):
             return lambda x: c.detach().numpy() * x
 
         # comparisons (produce Bool)
-        case tensor.real.Eq(_) | tensor.int.Eq(_) | tensor.bool.Eq(_):
+        case tensor.real.Eq() | tensor.int.Eq() | tensor.bool.Eq():
             return _np.frompyfunc(operator.eq, 2, 1)
-        case tensor.real.Ne(_) | tensor.int.Ne(_) | tensor.bool.Ne(_):
+        case tensor.real.Ne() | tensor.int.Ne() | tensor.bool.Ne():
             return _np.frompyfunc(operator.ne, 2, 1)
-        case tensor.real.Lt(_) | tensor.int.Lt(_):
+        case tensor.real.Lt() | tensor.int.Lt():
             return _np.frompyfunc(operator.lt, 2, 1)
-        case tensor.real.Le(_) | tensor.int.Le(_):
+        case tensor.real.Le() | tensor.int.Le():
             return _np.frompyfunc(operator.le, 2, 1)
-        case tensor.real.Gt(_) | tensor.int.Gt(_):
+        case tensor.real.Gt() | tensor.int.Gt():
             return _np.frompyfunc(operator.gt, 2, 1)
-        case tensor.real.Ge(_) | tensor.int.Ge(_):
+        case tensor.real.Ge() | tensor.int.Ge():
             return _np.frompyfunc(operator.ge, 2, 1)
 
         # logical
-        case tensor.bool.And(_):
+        case tensor.bool.And():
             return _np.frompyfunc(lambda x, y: _z3.And(x, y), 2, 1)
-        case tensor.bool.Or(_):
+        case tensor.bool.Or():
             return _np.frompyfunc(lambda x, y: _z3.Or(x, y), 2, 1)
-        case tensor.bool.Not(_):
+        case tensor.bool.Not():
             return _np.frompyfunc(lambda x: _z3.Not(x), 1, 1)
-        case tensor.bool.Xor(_):
+        case tensor.bool.Xor():
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
 
         # control flow
-        case tensor.real.Ite(_) | tensor.int.Ite(_) | tensor.bool.Ite(_):
+        case tensor.real.Ite() | tensor.int.Ite() | tensor.bool.Ite():
             return _np.frompyfunc(lambda c, tt, ff: _z3.If(c, tt, ff), 3, 1)
 
         # neural-ish / aggregate
-        case tensor.real.Neg(_) | tensor.int.Neg(_):
+        case tensor.real.Neg() | tensor.int.Neg():
             return _np.frompyfunc(lambda x: -x, 1, 1)
-        case tensor.real.Abs(_) | tensor.int.Abs(_):
+        case tensor.real.Abs() | tensor.int.Abs():
             return _np.frompyfunc(lambda x: _z3.If(x >= 0, x, -x), 1, 1)
-        case tensor.real.ReLU(_) | tensor.int.ReLU(_):
+        case tensor.real.ReLU() | tensor.int.ReLU():
             return _np.frompyfunc(lambda x: _z3.If(x > 0, x, 0), 1, 1)
-        case tensor.real.Min(_) | tensor.int.Min(_):
+        case tensor.real.Min() | tensor.int.Min():
             return _np.frompyfunc(lambda x, y: _z3.If(x <= y, x, y), 2, 1)
-        case tensor.real.Max(_) | tensor.int.Max(_):
+        case tensor.real.Max() | tensor.int.Max():
             return _np.frompyfunc(lambda x, y: _z3.If(x >= y, x, y), 2, 1)
 
-        case tensor.real.Transpose(_) | tensor.int.Transpose(_):
+        case tensor.real.Transpose() | tensor.int.Transpose():
             return _np.transpose
         case _:
             raise NotImplementedError(f"itype: {itype}")

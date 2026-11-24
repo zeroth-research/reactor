@@ -135,6 +135,60 @@ pub(crate) fn check_affine(a: [usize; 2], b: [usize; 2]) -> Result<(), crate::Er
     Ok(())
 }
 
+/// The failure of a `with_dom` constructor: `dom` is not the domain of an
+/// instance of the operation, which reads the sorts described by `expected`.
+pub(crate) fn unexpected_dom<S: fmt::Display>(expected: &str, dom: &[S]) -> crate::Error {
+    unexpected("domain", expected, dom)
+}
+
+/// The failure of a `with_cod` constructor: `cod` is not the codomain of an
+/// instance of the operation, which writes the sorts described by `expected`.
+pub(crate) fn unexpected_cod<S: fmt::Display>(expected: &str, cod: &[S]) -> crate::Error {
+    unexpected("codomain", expected, cod)
+}
+
+fn unexpected<S: fmt::Display>(boundary: &str, expected: &str, sorts: &[S]) -> crate::Error {
+    let sorts: Vec<String> = sorts.iter().map(ToString::to_string).collect();
+    crate::Error(format!(
+        "expected a {boundary} of {expected}, got [{}]",
+        sorts.join(", ")
+    ))
+}
+
+/// Fails unless the sorts of `dom`, at least one, are all equal, and
+/// returns that sort: the domain of an operation whose inputs share it.
+pub(crate) fn same_sort<S: Copy + PartialEq + fmt::Display, const N: usize>(
+    dom: [S; N],
+) -> Result<S, crate::Error> {
+    let s = dom[0];
+    if dom.iter().any(|t| *t != s) {
+        return Err(unexpected_dom(&format!("{N} equal sorts"), &dom));
+    }
+    Ok(s)
+}
+
+/// The sorts of the domain or codomain `poly` of an operation, as Python
+/// presents them: the sort alone when there is one, else their list.
+///
+/// Panics unless `poly` is a single product of sorts, as the boundaries of
+/// the operations are.
+#[cfg(feature = "pyo3")]
+pub(crate) fn py_sorts<'py, S: Into<sort::Any>>(
+    py: Python<'py>,
+    poly: Poly<S>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let mut monos = poly.into_iter();
+    let (Some(mono), None) = (monos.next(), monos.next()) else {
+        panic!("the boundary of an operation is a single product of sorts");
+    };
+    let mut sorts: Vec<sort::Any> = mono.into_iter().map(Into::into).collect();
+    if sorts.len() == 1 {
+        sorts.pop().unwrap().into_pyobject(py)
+    } else {
+        Ok(sorts.into_pyobject(py)?.into_any())
+    }
+}
+
 impl Boundary<sort::Any> for Havoc {
     fn dom(&self) -> Poly<sort::Any> {
         Poly::unit()
@@ -175,10 +229,19 @@ impl Havoc {
         Havoc { sort }
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
-        ("sort",)
+        ("cod",)
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -194,10 +257,26 @@ impl Skip {
         Skip { sort }
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("sort",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]

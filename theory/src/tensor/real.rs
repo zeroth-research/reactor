@@ -88,6 +88,35 @@ pub struct Scale<T> {
     degree: u8,
 }
 
+impl<T: Tensor> Scale<T> {
+    /// The product with the constant held in `tensor`, reading the real
+    /// matrix of `dom`, whose degree it keeps; fails unless `tensor` is of
+    /// its shape.
+    pub fn with_dom(tensor: T, dom: [Real; 1]) -> Result<Self, crate::Error> {
+        let [x] = dom;
+        if tensor.shape() != x.shape() {
+            return Err(crate::tensor::unexpected_dom(
+                &format!("1 sort of the shape {:?} of C", tensor.shape()),
+                &dom,
+            ));
+        }
+        Ok(Self::with_degree(tensor, x.degree()))
+    }
+
+    /// The product with the constant held in `tensor`, writing the real
+    /// matrix of `cod`, whose degree it keeps; fails unless `tensor` is of its shape.
+    pub fn with_cod(tensor: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        if tensor.shape() != x.shape() {
+            return Err(crate::tensor::unexpected_cod(
+                &format!("1 sort of the shape {:?} of C", tensor.shape()),
+                &cod,
+            ));
+        }
+        Ok(Self::with_degree(tensor, x.degree()))
+    }
+}
+
 impl<T> Scale<T> {
     /// The product with the constant held in `tensor`, of plain real
     /// matrices, of degree 0.
@@ -200,6 +229,37 @@ impl<T: Tensor> Linear<T> {
     pub fn with_degree(a: T, b: T, degree: u8) -> Result<Self, crate::Error> {
         super::check_affine(a.shape(), b.shape())?;
         Ok(Linear { a, b, degree })
+    }
+
+    /// The affine map `x ↦ A·x + B` reading the real matrix `x` of `dom`,
+    /// whose degree it keeps; fails unless `a` and `b` are of shapes
+    /// `[m, n]` and `[m, k]`, and `x` of shape `[n, k]`.
+    pub fn with_dom(a: T, b: T, dom: [Real; 1]) -> Result<Self, crate::Error> {
+        let [x] = dom;
+        let op = Self::with_degree(a, b, x.degree())?;
+        let ([_, n], [_, k]) = (op.a.shape(), op.b.shape());
+        if x.shape() != [n, k] {
+            return Err(crate::tensor::unexpected_dom(
+                &format!("1 sort of shape {:?}", [n, k]),
+                &dom,
+            ));
+        }
+        Ok(op)
+    }
+
+    /// The affine map `x ↦ A·x + B` writing the real matrix of `cod`, whose degree it keeps;
+    /// fails unless `a` and `b` are of shapes `[m, n]` and `[m, k]`, and
+    /// that matrix of shape `[m, k]`.
+    pub fn with_cod(a: T, b: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        let op = Self::with_degree(a, b, x.degree())?;
+        if x.shape() != op.b.shape() {
+            return Err(crate::tensor::unexpected_cod(
+                &format!("1 sort of shape {:?}", op.b.shape()),
+                &cod,
+            ));
+        }
+        Ok(op)
     }
 }
 
@@ -1251,6 +1311,18 @@ impl Add {
     pub fn new(shape: [usize; 2]) -> Self {
         Add { shape, degree: 0 }
     }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
+
+    /// The operation writing the real matrix of `cod`.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -1262,10 +1334,26 @@ impl Add {
         Add { shape, degree }
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1284,6 +1372,18 @@ impl Sub {
     pub fn new(shape: [usize; 2]) -> Self {
         Sub { shape, degree: 0 }
     }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
+
+    /// The operation writing the real matrix of `cod`.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -1295,10 +1395,26 @@ impl Sub {
         Sub { shape, degree }
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1325,6 +1441,18 @@ impl Mul {
     pub fn degrees(&self) -> [u8; 2] {
         self.degrees
     }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are of the same shape.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let [x, y] = dom;
+        if x.shape() != y.shape() {
+            return Err(crate::tensor::unexpected_dom(
+                "2 sorts of the same shape",
+                &dom,
+            ));
+        }
+        Self::with_degrees(x.shape(), [x.degree(), y.degree()])
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -1343,10 +1471,26 @@ impl Mul {
         Ok(Mul { shape, degrees })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1376,6 +1520,18 @@ impl Div {
     pub fn degrees(&self) -> [u8; 2] {
         self.degrees
     }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are of the same shape.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let [x, y] = dom;
+        if x.shape() != y.shape() {
+            return Err(crate::tensor::unexpected_dom(
+                "2 sorts of the same shape",
+                &dom,
+            ));
+        }
+        Self::with_degrees(x.shape(), [x.degree(), y.degree()])
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -1403,10 +1559,26 @@ impl Div {
         self.degrees.map(usize::from)
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1420,6 +1592,12 @@ impl Zero {
     pub fn new(shape: [usize; 2]) -> Self {
         Zero { shape, degree: 0 }
     }
+
+    /// The operation writing the real matrix of `cod`.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -1431,10 +1609,19 @@ impl Zero {
         Zero { shape, degree }
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str,) {
-        ("shape",)
+        ("cod",)
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1453,6 +1640,18 @@ impl Neg {
     pub fn new(shape: [usize; 2]) -> Self {
         Neg { shape, degree: 0 }
     }
+
+    /// The operation reading the real matrix of `dom`.
+    pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
+
+    /// The operation writing the real matrix of `cod`.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -1464,10 +1663,26 @@ impl Neg {
         Neg { shape, degree }
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1486,6 +1701,18 @@ impl Abs {
     pub fn new(shape: [usize; 2]) -> Self {
         Abs { shape, degree: 0 }
     }
+
+    /// The operation reading the real matrix of `dom`.
+    pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
+
+    /// The operation writing the real matrix of `cod`.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -1502,10 +1729,26 @@ impl Abs {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1518,6 +1761,18 @@ impl ReLU {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         ReLU { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrix of `dom`.
+    pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
+
+    /// The operation writing the real matrix of `cod`.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1535,10 +1790,26 @@ impl ReLU {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1551,6 +1822,12 @@ impl Argmax {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Argmax { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrix of `dom`.
+    pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1568,10 +1845,26 @@ impl Argmax {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1584,6 +1877,18 @@ impl Min {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Min { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
+
+    /// The operation writing the real matrix of `cod`.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1601,10 +1906,26 @@ impl Min {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1617,6 +1938,18 @@ impl Max {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Max { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
+
+    /// The operation writing the real matrix of `cod`.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1634,10 +1967,26 @@ impl Max {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1650,6 +1999,19 @@ impl Transpose {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Transpose { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrix of `dom`.
+    pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
+    }
+
+    /// The transposition writing the real matrix of `cod`, reading its transpose.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        let [m, n] = s.shape();
+        Ok(Self::with_degree([n, m], s.degree()))
     }
 }
 
@@ -1667,10 +2029,26 @@ impl Transpose {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1689,6 +2067,13 @@ impl MatMul {
     /// The degrees `[p, q]` of the factors.
     pub fn degrees(&self) -> [u8; 2] {
         self.degrees
+    }
+
+    /// The product of the real matrices of `dom`; fails unless the columns of
+    /// the first are the rows of the second.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let [x, y] = dom;
+        Self::with_degrees([x.shape(), y.shape()], [x.degree(), y.degree()])
     }
 }
 
@@ -1723,10 +2108,26 @@ impl MatMul {
         self.degrees.map(usize::from)
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shapes",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     /// The shapes of the factors, `[[m, n], [n, k]]`.
@@ -1740,6 +2141,12 @@ impl Lt {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Lt { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1757,10 +2164,26 @@ impl Lt {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1773,6 +2196,27 @@ impl Ite {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Ite { shape, degree: 0 }
+    }
+
+    /// The choice reading the boolean condition and the branches of `dom`;
+    /// fails unless the branches are of the same sort, and the condition of
+    /// their shape.
+    pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+        match dom {
+            [Sort::Bool(c), Sort::Real(x), Sort::Real(y)] if x == y && c.shape() == x.shape() => {
+                Ok(Self::with_degree(x.shape(), x.degree()))
+            }
+            _ => Err(crate::tensor::unexpected_dom(
+                "a condition Bool and two branches Real of its shape",
+                &dom,
+            )),
+        }
+    }
+
+    /// The operation writing the real matrix of `cod`.
+    pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1790,10 +2234,26 @@ impl Ite {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1806,6 +2266,12 @@ impl Le {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Le { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1823,10 +2289,26 @@ impl Le {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1839,6 +2321,12 @@ impl Gt {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Gt { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1856,10 +2344,26 @@ impl Gt {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1872,6 +2376,12 @@ impl Ge {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Ge { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1889,10 +2399,26 @@ impl Ge {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1905,6 +2431,12 @@ impl Eq {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Eq { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1922,10 +2454,26 @@ impl Eq {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1938,6 +2486,12 @@ impl Ne {
     /// On plain real matrices, of degree 0.
     pub fn new(shape: [usize; 2]) -> Self {
         Ne { shape, degree: 0 }
+    }
+
+    /// The operation reading the real matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Ok(Self::with_degree(s.shape(), s.degree()))
     }
 }
 
@@ -1955,10 +2509,26 @@ impl Ne {
         self.degree
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("shape",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]

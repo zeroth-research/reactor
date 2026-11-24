@@ -1258,6 +1258,21 @@ pub mod signed {
             write!(f, "SGe")
         }
     }
+
+    impl Div {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+
+        /// The operation writing the words of `cod`.
+        pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Self::new(s.width(), s.shape())
+        }
+    }
+
     // The Python constructors and getters of the operations.
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Div {
@@ -1268,10 +1283,32 @@ pub mod signed {
             Ok(Div { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1282,6 +1319,20 @@ pub mod signed {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Abs {
+        /// The operation reading the words of `dom`.
+        pub fn with_dom(dom: [Word; 1]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+
+        /// The operation writing the words of `cod`.
+        pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Self::new(s.width(), s.shape())
         }
     }
 
@@ -1294,10 +1345,32 @@ pub mod signed {
             Ok(Abs { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1308,6 +1381,20 @@ pub mod signed {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Rem {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+
+        /// The operation writing the words of `cod`.
+        pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Self::new(s.width(), s.shape())
         }
     }
 
@@ -1320,10 +1407,32 @@ pub mod signed {
             Ok(Rem { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1334,6 +1443,20 @@ pub mod signed {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Mod {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+
+        /// The operation writing the words of `cod`.
+        pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Self::new(s.width(), s.shape())
         }
     }
 
@@ -1346,10 +1469,32 @@ pub mod signed {
             Ok(Mod { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1363,6 +1508,20 @@ pub mod signed {
         }
     }
 
+    impl Shr {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+
+        /// The operation writing the words of `cod`.
+        pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Self::new(s.width(), s.shape())
+        }
+    }
+
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Shr {
         #[cfg_attr(feature = "pyo3", new)]
@@ -1372,10 +1531,32 @@ pub mod signed {
             Ok(Shr { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1386,6 +1567,27 @@ pub mod signed {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Extend {
+        /// The operation of indices `i`, reading the words of `dom`.
+        pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = dom;
+            Self::new(i, s.width(), s.shape())
+        }
+
+        /// The extension by `i` bits writing the words of `cod`; fails unless
+        /// their width exceeds `i`.
+        pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            match s.width().checked_sub(i) {
+                Some(width) if width > 0 => Self::new(i, width, s.shape()),
+                _ => Err(crate::tensor::unexpected_cod(
+                    &format!("1 sort of more than {i} bits"),
+                    &cod,
+                )),
+            }
         }
     }
 
@@ -1406,10 +1608,32 @@ pub mod signed {
             Ok(Extend { i, width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str, &'static str) {
-            ("i", "width", "shape")
+            ("i", "dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1428,6 +1652,14 @@ pub mod signed {
         }
     }
 
+    impl Lt {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+    }
+
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Lt {
         #[cfg_attr(feature = "pyo3", new)]
@@ -1437,10 +1669,32 @@ pub mod signed {
             Ok(Lt { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1451,6 +1705,14 @@ pub mod signed {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Le {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
         }
     }
 
@@ -1463,10 +1725,32 @@ pub mod signed {
             Ok(Le { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1477,6 +1761,14 @@ pub mod signed {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Gt {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
         }
     }
 
@@ -1489,10 +1781,32 @@ pub mod signed {
             Ok(Gt { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1506,6 +1820,14 @@ pub mod signed {
         }
     }
 
+    impl Ge {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+    }
+
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Ge {
         #[cfg_attr(feature = "pyo3", new)]
@@ -1515,10 +1837,32 @@ pub mod signed {
             Ok(Ge { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1828,6 +2172,21 @@ pub mod unsigned {
             write!(f, "UGe")
         }
     }
+
+    impl Div {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+
+        /// The operation writing the words of `cod`.
+        pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Self::new(s.width(), s.shape())
+        }
+    }
+
     // The Python constructors and getters of the operations.
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Div {
@@ -1838,10 +2197,32 @@ pub mod unsigned {
             Ok(Div { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1852,6 +2233,20 @@ pub mod unsigned {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Rem {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+
+        /// The operation writing the words of `cod`.
+        pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Self::new(s.width(), s.shape())
         }
     }
 
@@ -1864,10 +2259,32 @@ pub mod unsigned {
             Ok(Rem { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1881,6 +2298,20 @@ pub mod unsigned {
         }
     }
 
+    impl Shr {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+
+        /// The operation writing the words of `cod`.
+        pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Self::new(s.width(), s.shape())
+        }
+    }
+
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Shr {
         #[cfg_attr(feature = "pyo3", new)]
@@ -1890,10 +2321,32 @@ pub mod unsigned {
             Ok(Shr { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1904,6 +2357,27 @@ pub mod unsigned {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Extend {
+        /// The operation of indices `i`, reading the words of `dom`.
+        pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = dom;
+            Self::new(i, s.width(), s.shape())
+        }
+
+        /// The extension by `i` bits writing the words of `cod`; fails unless
+        /// their width exceeds `i`.
+        pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            match s.width().checked_sub(i) {
+                Some(width) if width > 0 => Self::new(i, width, s.shape()),
+                _ => Err(crate::tensor::unexpected_cod(
+                    &format!("1 sort of more than {i} bits"),
+                    &cod,
+                )),
+            }
         }
     }
 
@@ -1924,10 +2398,32 @@ pub mod unsigned {
             Ok(Extend { i, width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str, &'static str) {
-            ("i", "width", "shape")
+            ("i", "dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1946,6 +2442,14 @@ pub mod unsigned {
         }
     }
 
+    impl Lt {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+    }
+
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Lt {
         #[cfg_attr(feature = "pyo3", new)]
@@ -1955,10 +2459,32 @@ pub mod unsigned {
             Ok(Lt { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1969,6 +2495,14 @@ pub mod unsigned {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Le {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
         }
     }
 
@@ -1981,10 +2515,32 @@ pub mod unsigned {
             Ok(Le { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1995,6 +2551,14 @@ pub mod unsigned {
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape
+        }
+    }
+
+    impl Gt {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
         }
     }
 
@@ -2007,10 +2571,32 @@ pub mod unsigned {
             Ok(Gt { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2024,6 +2610,14 @@ pub mod unsigned {
         }
     }
 
+    impl Ge {
+        /// The operation reading the words of `dom`; fails unless they are equal.
+        pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+            let s = crate::tensor::same_sort(dom)?;
+            Self::new(s.width(), s.shape())
+        }
+    }
+
     #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
     impl Ge {
         #[cfg_attr(feature = "pyo3", new)]
@@ -2033,10 +2627,32 @@ pub mod unsigned {
             Ok(Ge { width, shape })
         }
 
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
         #[classattr]
         fn __match_args__() -> (&'static str, &'static str) {
-            ("width", "shape")
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::tensor::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2189,6 +2805,20 @@ where
     }
 }
 
+impl Concat {
+    /// The operation reading the words, high bits first, of `dom`; fails unless they are of the same shape.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let [x, y] = dom;
+        if x.shape() != y.shape() {
+            return Err(crate::tensor::unexpected_dom(
+                "2 sorts of the same shape",
+                &dom,
+            ));
+        }
+        Self::new([x.width(), y.width()], x.shape())
+    }
+}
+
 // The Python constructors of the operations carrying no tensor: each takes
 // its sizes positionally, in the order of its fields, the shape as a list.
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -2210,10 +2840,26 @@ impl Concat {
         Ok(Concat { widths, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("widths", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     /// The widths `[u, v]` of the words read, high bits first.
@@ -2225,6 +2871,14 @@ impl Concat {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Extract {
+    /// The operation of indices `i`, `j`, reading the words of `dom`.
+    pub fn with_dom(i: usize, j: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = dom;
+        Self::new(i, j, s.width(), s.shape())
     }
 }
 
@@ -2242,10 +2896,26 @@ impl Extract {
         Ok(Extract { i, j, width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
-        ("i", "j", "width", "shape")
+        ("i", "j", "dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2269,6 +2939,27 @@ impl Extract {
     }
 }
 
+impl Repeat {
+    /// The operation of indices `i`, reading the words of `dom`.
+    pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = dom;
+        Self::new(i, s.width(), s.shape())
+    }
+
+    /// The repetition `i` times writing the words of `cod`; fails unless `i`
+    /// divides their width.
+    pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        if i == 0 || s.width() % i != 0 {
+            return Err(crate::tensor::unexpected_cod(
+                &format!("1 sort of a width that {i} divides"),
+                &cod,
+            ));
+        }
+        Self::new(i, s.width() / i, s.shape())
+    }
+}
+
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Repeat {
     /// Fails unless `i` and `width` are positive, and their product, the
@@ -2289,10 +2980,26 @@ impl Repeat {
         Ok(Repeat { i, width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str) {
-        ("i", "width", "shape")
+        ("i", "dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2308,6 +3015,20 @@ impl Repeat {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Not {
+    /// The operation reading the words of `dom`.
+    pub fn with_dom(dom: [Word; 1]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2320,10 +3041,26 @@ impl Not {
         Ok(Not { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2334,6 +3071,20 @@ impl Not {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl And {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2346,10 +3097,26 @@ impl And {
         Ok(And { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2360,6 +3127,20 @@ impl And {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Or {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2372,10 +3153,26 @@ impl Or {
         Ok(Or { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2386,6 +3183,20 @@ impl Or {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Xor {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2398,10 +3209,26 @@ impl Xor {
         Ok(Xor { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2412,6 +3239,20 @@ impl Xor {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Nand {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2424,10 +3265,26 @@ impl Nand {
         Ok(Nand { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2438,6 +3295,20 @@ impl Nand {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Nor {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2450,10 +3321,26 @@ impl Nor {
         Ok(Nor { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2464,6 +3351,20 @@ impl Nor {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Xnor {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2476,10 +3377,26 @@ impl Xnor {
         Ok(Xnor { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2490,6 +3407,20 @@ impl Xnor {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Neg {
+    /// The operation reading the words of `dom`.
+    pub fn with_dom(dom: [Word; 1]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2502,10 +3433,26 @@ impl Neg {
         Ok(Neg { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2516,6 +3463,29 @@ impl Neg {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Ite {
+    /// The choice reading the boolean condition and the branches of `dom`;
+    /// fails unless the branches are of the same sort, and the condition of
+    /// their shape.
+    pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+        match dom {
+            [Sort::Bool(c), Sort::Word(x), Sort::Word(y)] if x == y && c.shape() == x.shape() => {
+                Self::new(x.width(), x.shape())
+            }
+            _ => Err(crate::tensor::unexpected_dom(
+                "a condition Bool and two branches Word of its shape",
+                &dom,
+            )),
+        }
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2528,10 +3498,26 @@ impl Ite {
         Ok(Ite { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2542,6 +3528,20 @@ impl Ite {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Add {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2554,10 +3554,26 @@ impl Add {
         Ok(Add { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2568,6 +3584,20 @@ impl Add {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Sub {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2580,10 +3610,26 @@ impl Sub {
         Ok(Sub { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2594,6 +3640,20 @@ impl Sub {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Mul {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2606,10 +3666,26 @@ impl Mul {
         Ok(Mul { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2620,6 +3696,20 @@ impl Mul {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl Shl {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+
+    /// The operation writing the words of `cod`.
+    pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(s.width(), s.shape())
     }
 }
 
@@ -2632,10 +3722,26 @@ impl Shl {
         Ok(Shl { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2646,6 +3752,20 @@ impl Shl {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl RotateLeft {
+    /// The operation of indices `i`, reading the words of `dom`.
+    pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = dom;
+        Self::new(i, s.width(), s.shape())
+    }
+
+    /// The operation of index `i`, writing the words of `cod`.
+    pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(i, s.width(), s.shape())
     }
 }
 
@@ -2658,10 +3778,26 @@ impl RotateLeft {
         Ok(RotateLeft { i, width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str) {
-        ("i", "width", "shape")
+        ("i", "dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2677,6 +3813,20 @@ impl RotateLeft {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+impl RotateRight {
+    /// The operation of indices `i`, reading the words of `dom`.
+    pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = dom;
+        Self::new(i, s.width(), s.shape())
+    }
+
+    /// The operation of index `i`, writing the words of `cod`.
+    pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Self::new(i, s.width(), s.shape())
     }
 }
 
@@ -2689,10 +3839,26 @@ impl RotateRight {
         Ok(RotateRight { i, width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str, &'static str) {
-        ("i", "width", "shape")
+        ("i", "dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2711,6 +3877,14 @@ impl RotateRight {
     }
 }
 
+impl Eq {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+}
+
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Eq {
     #[cfg_attr(feature = "pyo3", new)]
@@ -2720,10 +3894,26 @@ impl Eq {
         Ok(Eq { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2737,6 +3927,14 @@ impl Eq {
     }
 }
 
+impl Ne {
+    /// The operation reading the words of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
+        let s = crate::tensor::same_sort(dom)?;
+        Self::new(s.width(), s.shape())
+    }
+}
+
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ne {
     #[cfg_attr(feature = "pyo3", new)]
@@ -2746,10 +3944,26 @@ impl Ne {
         Ok(Ne { width, shape })
     }
 
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
-        ("width", "shape")
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[cfg(feature = "pyo3")]
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]

@@ -41,9 +41,25 @@ impl Linear {
         PyTensor(self.1.shallow_clone())
     }
 
+    /// The tensors it carries, then its domain, when it reads anything, and
+    /// its codomain.
     #[classattr]
-    fn __match_args__() -> (&'static str, &'static str) {
-        ("a", "b")
+    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
+        ("a", "b", "dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter]
+    fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let op: crate::tensor::int::Linear<tch::Tensor> = slf.extract()?;
+        crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
+    }
+
+    /// The sort it writes.
+    #[getter]
+    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let op: crate::tensor::int::Linear<tch::Tensor> = slf.extract()?;
+        crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
@@ -90,9 +106,18 @@ impl Const {
         PyTensor(self.0.shallow_clone())
     }
 
+    /// The tensors it carries, then its domain, when it reads anything, and
+    /// its codomain.
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("tensor",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("tensor", "cod")
+    }
+
+    /// The sort it writes.
+    #[getter]
+    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let op: crate::tensor::int::Const<tch::Tensor> = slf.extract()?;
+        crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
@@ -145,9 +170,25 @@ impl Scale {
         PyTensor(self.0.shallow_clone())
     }
 
+    /// The tensors it carries, then its domain, when it reads anything, and
+    /// its codomain.
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("tensor",)
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("tensor", "dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter]
+    fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let op: crate::tensor::int::Scale<tch::Tensor> = slf.extract()?;
+        crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
+    }
+
+    /// The sort it writes.
+    #[getter]
+    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let op: crate::tensor::int::Scale<tch::Tensor> = slf.extract()?;
+        crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 

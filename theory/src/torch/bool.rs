@@ -33,9 +33,18 @@ impl Const {
         PyTensor(self.0.shallow_clone())
     }
 
+    /// The tensors it carries, then its domain, when it reads anything, and
+    /// its codomain.
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("tensor",)
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("tensor", "cod")
+    }
+
+    /// The sort it writes.
+    #[getter]
+    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+        let op: crate::tensor::bool::Const<tch::Tensor> = slf.extract()?;
+        crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 

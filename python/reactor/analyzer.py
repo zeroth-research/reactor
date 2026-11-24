@@ -1276,9 +1276,9 @@ def classify_attrs(cls, roots, init_attrs=None, base_cls=None):
 def _torch_dtype(target_dtype):
     """Map a Sort to the corresponding torch dtype. Defaults to float32."""
     match target_dtype:
-        case Int(_) | Word(_, _):
+        case Int() | Word():
             return torch.long
-        case Bool(_):
+        case Bool():
             return torch.bool
         case _:
             return torch.float32

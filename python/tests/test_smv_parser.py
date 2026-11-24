@@ -48,7 +48,7 @@ def test_counter_init_terms():
     # At least one init term should be a zero-valued word constant for x.
     def _is_const_zero(itype):
         match itype:
-            case tensor.word.Const(data, _):
+            case tensor.word.Const(data):
                 return int(data.item()) == 0
         return False
 

@@ -42,4 +42,19 @@ impl Zero {
     pub fn new() -> Self {
         Zero
     }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("cod",)
+    }
+
+    /// The sort it writes.
+    #[cfg(feature = "pyo3")]
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+        crate::tensor::py_sorts(py, Boundary::cod(self))
+    }
 }

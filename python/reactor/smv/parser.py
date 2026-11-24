@@ -20,7 +20,7 @@ from ..sort import Real, Int, Bool, Word, Zero
 def _bw(sort) -> int:
     """Width of a word sort."""
     match sort:
-        case Word(w, _):
+        case Word(w):
             return w
     raise TypeError(f"not a word sort: {sort}")
 
@@ -29,11 +29,11 @@ def _const_op(value, sort):
     """The constant `value` as a scalar of `sort`: a boolean (nonzero is TRUE), an
     integer, or a word reduced modulo 2^width."""
     match sort:
-        case Bool(_):
+        case Bool():
             return tensor.bool.Const(torch.tensor([[bool(value)]]))
-        case Int(_):
+        case Int():
             return tensor.int.Const(torch.tensor([[int(value)]], dtype=torch.int64))
-        case Word(w, _):
+        case Word(w):
             return tensor.word.Const(torch.tensor([[int(value) % (1 << w)]], dtype=torch.int64), w)
     raise TypeError(f"no constant of sort {sort}")
 
@@ -550,9 +550,9 @@ class _Lowerer:
     def _as_bool(self, w: Wire) -> Wire:
         """A condition as a boolean: a 1-bit word `x` as `bool(x)`."""
         match w.dtype:
-            case Bool(_):
+            case Bool():
                 return w
-            case Word(1, _):
+            case Word(1):
                 return self._bool_of_word1(w)
         raise TypeError(f"a condition must be a boolean, got {w.dtype}")
 

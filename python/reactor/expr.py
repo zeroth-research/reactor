@@ -93,11 +93,11 @@ def _emit(term: Term) -> Term:
 
 def _wrap(wire, *, next=None, value=None, signed=False, tag=None) -> "Expr":
     match wire.dtype:
-        case Bool(_):
+        case Bool():
             return BExpr(wire, next=next, value=value, tag=tag)
-        case Int(_) | Real(_):
+        case Int() | Real():
             return AExpr(wire, next=next, value=value, tag=tag)
-        case Word(_, _):
+        case Word():
             return WExpr(wire, next=next, value=value, signed=signed, tag=tag)
         case Zero():
             # the singleton: a value with no operations, only ever written as is
@@ -145,7 +145,7 @@ class Expr:
 
     def _bw(self):
         match self.dtype:
-            case Word(bw, _):
+            case Word(bw):
                 return bw
             case _:
                 return None
@@ -267,9 +267,9 @@ class AExpr(Expr):
         assert isinstance(c, torch.Tensor), f"the constant must be a tensor, got {type(c)}"
         assert list(c.shape) == self.shape, f"cannot scale {self.shape} by a constant of {list(c.shape)}"
         match self.dtype:
-            case Real(_):
+            case Real():
                 op = tensor.real.Scale(c if c.is_floating_point() else c.float(), degree=self.dtype.degree)
-            case Int(_):
+            case Int():
                 integer = not c.is_floating_point() and c.dtype != torch.bool
                 op = tensor.int.Scale(c if integer else c.long())
         return self._unop(op)
@@ -512,13 +512,13 @@ def _term_from_torch(value, sort, bw=None, degree=0):
         case _:
             raise TypeError(f"expr() unsupported literal type {type(value)} / {sort}")
     match out:
-        case Bool(_):
+        case Bool():
             op = tensor.bool.Const(value)
-        case Real(_):
+        case Real():
             op = tensor.real.Const(value, degree=degree)
-        case Int(_):
+        case Int():
             op = tensor.int.Const(value)
-        case Word(_, _):
+        case Word():
             op = tensor.word.Const(value, bw)
     return Term.constant(op, [Wire(out)]), value
 

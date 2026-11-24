@@ -438,6 +438,19 @@ impl fmt::Display for Any {
     }
 }
 
+/// Each subset displays its sorts as [`Any`] does.
+macro_rules! display_subset {
+    ($($subset:ident),*) => {$(
+        impl fmt::Display for $subset {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                Any::from(*self).fmt(f)
+            }
+        }
+    )*};
+}
+
+display_subset!(Prop, Reals, Ints, Nums);
+
 impl fmt::Display for Words {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

@@ -977,3 +977,248 @@ mod word {
         );
     }
 }
+
+/// Tests for the `with_dom` constructors: each builds the operation whose
+/// domain is the one given, and fails on a domain of no instance.
+mod with_dom {
+    use base::boundary::{Boundary, Mono, Poly};
+    use theory::tensor::sort::{Bool, Int, Real, Word};
+    use theory::tensor::*;
+
+    #[derive(Debug)]
+    struct Mat([usize; 2]);
+
+    impl Tensor for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    /// Fails unless `op` reads exactly `dom`.
+    fn reads<S, B>(op: B, dom: impl IntoIterator<Item = S>)
+    where
+        S: Clone + PartialEq + std::fmt::Debug,
+        B: Boundary<S>,
+    {
+        let expected: Poly<S> = dom.into_iter().collect::<Mono<S>>().into();
+        assert_eq!(op.dom(), expected);
+    }
+
+    fn word(width: usize, shape: [usize; 2]) -> Word {
+        Word::new_unchecked(width, shape)
+    }
+
+    #[test]
+    fn real_operations_read_their_domain() {
+        let x = Real::with_degree([2, 3], 1);
+        let y = Real::with_degree([2, 3], 2);
+        reads(real::Add::with_dom([x, x]).unwrap(), [x, x]);
+        reads(real::Neg::with_dom([y]).unwrap(), [y]);
+        reads(real::Transpose::with_dom([x]).unwrap(), [x]);
+        reads(real::Mul::with_dom([x, y]).unwrap(), [x, y]);
+        reads(real::Div::with_dom([y, x]).unwrap(), [y, x]);
+        let z = Real::new([3, 4]);
+        reads(real::MatMul::with_dom([x, z]).unwrap(), [x, z]);
+        reads(real::Scale::with_dom(Mat([2, 3]), [y]).unwrap(), [y]);
+        reads(
+            real::Linear::with_dom(Mat([5, 2]), Mat([5, 3]), [x]).unwrap(),
+            [x],
+        );
+        let c = Bool::new([2, 3]);
+        let dom = [c.into(), x.into(), x.into()];
+        reads(real::Ite::with_dom(dom).unwrap(), dom);
+        let cmp = real::Lt::with_dom([y, y]).unwrap();
+        assert_eq!(cmp, real::Lt::with_degree([2, 3], 2));
+    }
+
+    #[test]
+    fn real_operations_reject_domains_of_no_instance() {
+        let x = Real::new([2, 3]);
+        let y = Real::with_degree([2, 3], 1);
+        let z = Real::new([3, 2]);
+        assert!(real::Add::with_dom([x, y]).is_err());
+        assert!(real::Eq::with_dom([x, z]).is_err());
+        assert!(real::Mul::with_dom([x, z]).is_err());
+        // the degree of the divisor exceeds that of the dividend
+        assert!(real::Div::with_dom([x, y]).is_err());
+        assert!(real::MatMul::with_dom([x, x]).is_err());
+        assert!(real::Scale::with_dom(Mat([3, 2]), [x]).is_err());
+        assert!(real::Linear::with_dom(Mat([5, 2]), Mat([5, 3]), [z]).is_err());
+        let c = Bool::new([3, 2]);
+        assert!(real::Ite::with_dom([c.into(), x.into(), x.into()]).is_err());
+        assert!(real::Ite::with_dom([x.into(), x.into(), x.into()]).is_err());
+        let e = real::Add::with_dom([x, y]).unwrap_err();
+        assert_eq!(
+            e.0,
+            "expected a domain of 2 equal sorts, got [Real(2, 3), T^1(Real(2, 3))]"
+        );
+    }
+
+    #[test]
+    fn int_operations_read_their_domain() {
+        let x = Int::new([2, 3]);
+        let z = Int::new([3, 1]);
+        reads(int::Mod::with_dom([x, x]).unwrap(), [x, x]);
+        reads(int::Argmax::with_dom([x]).unwrap(), [x]);
+        reads(int::MatMul::with_dom([x, z]).unwrap(), [x, z]);
+        reads(int::Scale::with_dom(Mat([2, 3]), [x]).unwrap(), [x]);
+        reads(
+            int::Linear::with_dom(Mat([4, 2]), Mat([4, 3]), [x]).unwrap(),
+            [x],
+        );
+        let dom = [Bool::new([2, 3]).into(), x.into(), x.into()];
+        reads(int::Ite::with_dom(dom).unwrap(), dom);
+        assert!(int::Sub::with_dom([x, z]).is_err());
+        assert!(int::MatMul::with_dom([z, x]).is_err());
+        assert!(int::Ite::with_dom([Bool::new([2, 3]).into(), x.into(), z.into()]).is_err());
+    }
+
+    #[test]
+    fn bool_operations_read_their_domain() {
+        let x = Bool::new([1, 4]);
+        reads(bool::And::with_dom([x, x]).unwrap(), [x, x]);
+        reads(bool::Not::with_dom([x]).unwrap(), [x]);
+        reads(bool::Ite::with_dom([x, x, x]).unwrap(), [x, x, x]);
+        assert!(bool::Ite::with_dom([x, x, Bool::new([4, 1])]).is_err());
+    }
+
+    #[test]
+    fn word_operations_read_their_domain() {
+        let x = word(8, [2, 2]);
+        let y = word(4, [2, 2]);
+        let dom = |ws: &[Word]| ws.iter().map(|&w| sort::Words::from(w)).collect::<Vec<_>>();
+        reads(word::Add::with_dom([x, x]).unwrap(), dom(&[x, x]));
+        reads(word::Not::with_dom([x]).unwrap(), dom(&[x]));
+        reads(word::Concat::with_dom([x, y]).unwrap(), dom(&[x, y]));
+        reads(word::Extract::with_dom(5, 2, [x]).unwrap(), dom(&[x]));
+        reads(word::Repeat::with_dom(3, [y]).unwrap(), dom(&[y]));
+        reads(word::RotateLeft::with_dom(1, [x]).unwrap(), dom(&[x]));
+        reads(word::signed::Rem::with_dom([y, y]).unwrap(), dom(&[y, y]));
+        reads(word::signed::Abs::with_dom([y]).unwrap(), dom(&[y]));
+        reads(word::signed::Extend::with_dom(8, [x]).unwrap(), dom(&[x]));
+        reads(word::unsigned::Ge::with_dom([x, x]).unwrap(), dom(&[x, x]));
+        reads(word::unsigned::Extend::with_dom(8, [y]).unwrap(), dom(&[y]));
+        let ite = [Bool::new([2, 2]).into(), x.into(), x.into()];
+        reads(word::Ite::with_dom(ite).unwrap(), ite);
+
+        assert!(word::Add::with_dom([x, y]).is_err());
+        assert!(word::Concat::with_dom([x, word(4, [2, 1])]).is_err());
+        assert!(word::Extract::with_dom(8, 2, [x]).is_err());
+        assert!(word::Repeat::with_dom(0, [x]).is_err());
+        assert!(word::Ite::with_dom([Bool::new([2, 2]).into(), x.into(), y.into()]).is_err());
+    }
+}
+
+/// Tests for the `with_cod` constructors: each builds the operation whose
+/// codomain is the one given, when the codomain determines it, and fails on
+/// a codomain of no instance.
+mod with_cod {
+    use base::boundary::{Boundary, Mono, Poly};
+    use theory::tensor::sort::{Bool, Int, Real, Word};
+    use theory::tensor::*;
+
+    #[derive(Debug)]
+    struct Mat([usize; 2]);
+
+    impl Tensor for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    /// Fails unless `op` writes exactly `cod`.
+    fn writes<S, B>(op: B, cod: impl IntoIterator<Item = S>)
+    where
+        S: Clone + PartialEq + std::fmt::Debug,
+        B: Boundary<S>,
+    {
+        let expected: Poly<S> = cod.into_iter().collect::<Mono<S>>().into();
+        assert_eq!(op.cod(), expected);
+    }
+
+    fn word(width: usize, shape: [usize; 2]) -> sort::Words {
+        Word::new_unchecked(width, shape).into()
+    }
+
+    #[test]
+    fn real_operations_write_their_codomain() {
+        let x = Real::with_degree([2, 3], 1);
+        writes(real::Zero::with_cod([x]).unwrap(), [x]);
+        writes(real::Add::with_cod([x]).unwrap(), [x]);
+        writes(real::ReLU::with_cod([x]).unwrap(), [x]);
+        writes(real::Transpose::with_cod([x]).unwrap(), [x]);
+        assert_eq!(
+            real::Transpose::with_cod([x]).unwrap(),
+            real::Transpose::with_degree([3, 2], 1)
+        );
+        writes(real::Ite::with_cod([x]).unwrap(), [x.into()]);
+        writes(real::Scale::with_cod(Mat([2, 3]), [x]).unwrap(), [x]);
+        writes(
+            real::Linear::with_cod(Mat([2, 5]), Mat([2, 3]), [x]).unwrap(),
+            [x],
+        );
+        assert!(real::Scale::with_cod(Mat([3, 2]), [x]).is_err());
+        let e = real::Linear::with_cod(Mat([3, 5]), Mat([3, 3]), [x]).unwrap_err();
+        assert_eq!(
+            e.0,
+            "expected a codomain of 1 sort of shape [3, 3], got [T^1(Real(2, 3))]"
+        );
+    }
+
+    #[test]
+    fn int_operations_write_their_codomain() {
+        let x = Int::new([2, 3]);
+        let b = Bool::new([2, 3]);
+        writes(int::Mod::with_cod([x]).unwrap(), [x]);
+        writes(int::Transpose::with_cod([x]).unwrap(), [x]);
+        writes(int::Ite::with_cod([x]).unwrap(), [x.into()]);
+        writes(int::Le::with_cod([b]).unwrap(), [b.into()]);
+        writes(int::Scale::with_cod(Mat([2, 3]), [x]).unwrap(), [x]);
+        writes(
+            int::Linear::with_cod(Mat([2, 4]), Mat([2, 3]), [x]).unwrap(),
+            [x],
+        );
+        assert!(int::Linear::with_cod(Mat([3, 4]), Mat([3, 3]), [x]).is_err());
+    }
+
+    #[test]
+    fn bool_operations_write_their_codomain() {
+        let x = Bool::new([1, 4]);
+        writes(bool::Xor::with_cod([x]).unwrap(), [x]);
+        writes(bool::Not::with_cod([x]).unwrap(), [x]);
+        writes(bool::Ite::with_cod([x]).unwrap(), [x]);
+    }
+
+    #[test]
+    fn word_operations_write_their_codomain() {
+        let w = |width| Word::new_unchecked(width, [2, 2]);
+        writes(word::Nand::with_cod([w(8)]).unwrap(), [word(8, [2, 2])]);
+        writes(word::Ite::with_cod([w(8)]).unwrap(), [word(8, [2, 2])]);
+        writes(
+            word::RotateRight::with_cod(3, [w(8)]).unwrap(),
+            [word(8, [2, 2])],
+        );
+        writes(
+            word::signed::Mod::with_cod([w(8)]).unwrap(),
+            [word(8, [2, 2])],
+        );
+        writes(
+            word::unsigned::Shr::with_cod([w(8)]).unwrap(),
+            [word(8, [2, 2])],
+        );
+
+        let repeat = word::Repeat::with_cod(3, [w(12)]).unwrap();
+        assert_eq!(repeat, word::Repeat::new(3, 4, [2, 2]).unwrap());
+        writes(repeat, [word(12, [2, 2])]);
+        assert!(word::Repeat::with_cod(5, [w(12)]).is_err());
+        assert!(word::Repeat::with_cod(0, [w(12)]).is_err());
+
+        let extend = word::signed::Extend::with_cod(3, [w(8)]).unwrap();
+        assert_eq!(extend, word::signed::Extend::new(3, 5, [2, 2]).unwrap());
+        writes(extend, [word(8, [2, 2])]);
+        let extend = word::unsigned::Extend::with_cod(3, [w(8)]).unwrap();
+        writes(extend, [word(8, [2, 2])]);
+        assert!(word::signed::Extend::with_cod(8, [w(8)]).is_err());
+        assert!(word::unsigned::Extend::with_cod(9, [w(8)]).is_err());
+    }
+}

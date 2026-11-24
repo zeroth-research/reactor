@@ -30,13 +30,13 @@ def shape(sort) -> list:
 def with_shape(sort, new_shape) -> Real | Int | Bool | Word:
     """The sort of the same family as ``sort`` (and width, for words), of another shape."""
     match sort:
-        case Real(_):
+        case Real():
             return Real(new_shape)
-        case Int(_):
+        case Int():
             return Int(new_shape)
-        case Bool(_):
+        case Bool():
             return Bool(new_shape)
-        case Word(w, _):
+        case Word(w):
             return Word(w, new_shape)
     raise TypeError(f"sort has no shape: {sort}")
 
@@ -44,7 +44,7 @@ def with_shape(sort, new_shape) -> Real | Int | Bool | Word:
 def width(sort) -> int:
     """The width of a word sort."""
     match sort:
-        case Word(w, _):
+        case Word(w):
             return w
     raise TypeError(f"not a word sort: {sort}")
 
@@ -53,13 +53,13 @@ def family(sort) -> str:
     """A key identifying a sort's family (with its width, for words), ignoring its shape:
     two values may combine only if their families match."""
     match sort:
-        case Real(_):
+        case Real():
             return "Real"
-        case Int(_):
+        case Int():
             return "Int"
-        case Bool(_):
+        case Bool():
             return "Bool"
-        case Word(w, _):
+        case Word(w):
             return f"Word{w}"
     raise TypeError(f"unknown sort: {sort}")
 
@@ -68,13 +68,13 @@ def namespace(sort):
     """The namespace of the operations on the family of ``sort``: ``reactor.tensor.real``
     for ``Real``, ``.int`` for ``Int``, ``.bool`` for ``Bool`` and ``.word`` for ``Word``."""
     match sort:
-        case Real(_):
+        case Real():
             return _tensor.real
-        case Int(_):
+        case Int():
             return _tensor.int
-        case Bool(_):
+        case Bool():
             return _tensor.bool
-        case Word(_, _):
+        case Word():
             return _tensor.word
     raise TypeError(f"no operations on {sort}")
 
