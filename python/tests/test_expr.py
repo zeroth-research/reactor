@@ -462,7 +462,7 @@ def test_single_entry_point_spec():
     # included, so a factor of another shape is built explicitly
     t = expr([0.1, 1.0], sort=Real)
     assert isinstance(t, RExpr)
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):  # the constant rejects the codomain of my shape
         t @ torch.tensor([[0.2], [0.5]])
     u = t @ expr(torch.tensor([[0.2], [0.5]]), sort=Real)
     assert isinstance(u, RExpr) and u.dtype == Real([1, 1])

@@ -215,22 +215,19 @@ class TermBuilder:
         return self.const(torch.tensor([value]), output_wire=output_wire)
 
     def const(self, tensor, output_wire=None) -> Term:
+        """The constant `tensor`, writing `output_wire`, whose sort the constant checks, or a
+        wire of the sort the constant takes from the tensor."""
         tensor = torch.atleast_2d(tensor)  # theory const ops require a 2-D initializer
-        shape = list(tensor.shape)
-        if output_wire is not None:
-            sort = output_wire.dtype
-        elif tensor.dtype == torch.bool:
-            sort = Bool(shape)
+        cod = output_wire.dtype if output_wire is not None else None
+        if isinstance(cod, Bool) or (cod is None and tensor.dtype == torch.bool):
+            op = bool_.Const(tensor.to(torch.bool), cod)
         else:
-            sort = self.number(shape)
-        if isinstance(sort, Bool):
-            op = bool_.Const(tensor.to(torch.bool), sort)
-        else:
-            op = self._const(tensor, sort)
-        return Term.constant(op, [output_wire or Wire(sort)])
+            op = self._const(tensor, cod)
+        return Term.constant(op, [output_wire or Wire(op.cod)])
 
-    def _const(self, tensor, sort):
-        """The constant `tensor`, of the numeric sort `sort`."""
+    def _const(self, tensor, cod):
+        """The constant `tensor`, of the numeric sort `cod`, or of the one it takes from the
+        tensor when `cod` is None."""
         self._unsupported(self.const)
 
     # --- ops that no theory provides ---
@@ -354,8 +351,8 @@ class RealTermBuilder(TermBuilder):
             return super().ne(a, b)
         return self._compare(real.Ne, a, b)
 
-    def _const(self, tensor, sort):
-        return real.Const(tensor.to(torch.float32), sort)
+    def _const(self, tensor, cod):
+        return real.Const(tensor.to(torch.float32), cod)
 
 
 class IntTermBuilder(TermBuilder):
@@ -425,8 +422,8 @@ class IntTermBuilder(TermBuilder):
             return super().ne(a, b)
         return self._compare(int_.Ne, a, b)
 
-    def _const(self, tensor, sort):
-        return int_.Const(tensor.to(torch.int64), sort)
+    def _const(self, tensor, cod):
+        return int_.Const(tensor.to(torch.int64), cod)
 
 
 class WordTermBuilder(TermBuilder):
@@ -503,8 +500,11 @@ class WordTermBuilder(TermBuilder):
     def extend(self, a, extra: int) -> Term:
         return self._apply(unsigned.Extend(extra, _dtype(a)), a)
 
-    def _const(self, tensor, sort):
-        return word.Const(tensor.to(torch.int64), sort)
+    def _const(self, tensor, cod):
+        # the tensor does not tell the width of its words: the codomain is required
+        if cod is None:
+            cod = self.number(list(tensor.shape))
+        return word.Const(tensor.to(torch.int64), cod)
 
 
 def builder_for(number=Real) -> TermBuilder:

@@ -545,8 +545,9 @@ def expr(value, *, sort=None, signed=False, tag=None) -> Expr:
 
 
 def _term_from_torch(value, sort):
-    """The constant of the tensor `value`, of the sort `sort`: a concrete sort, which must
-    be of the shape of the tensor, or a family (Real/Int/Bool) taking its shape."""
+    """The constant of the tensor `value`, of the sort `sort`: a concrete sort, its codomain,
+    which the constant checks against the tensor, or a family (Real/Int/Bool), whose sort the
+    constant takes from the tensor."""
     assert isinstance(value, torch.Tensor)
 
     # make it 2D to make the theory crate happy
@@ -562,32 +563,29 @@ def _term_from_torch(value, sort):
         case _:
             raise TypeError(f"expr() requires shape at most 2d; got {value.shape}")
 
-    # a family takes the shape of the tensor; a concrete sort, with its width or degree,
-    # must already be of it
+    # a family leaves the codomain to the constant; a concrete sort is its codomain
     if sort in (Bool, Real, Int):
-        out = sort(shape)
+        family, cod = sort, None
     elif sort is Word:
         raise TypeError("expr(): a word literal needs a width: pass sort=Word(width, [...])")
     elif isinstance(sort, Real | Int | Bool | Word):
-        out = sort
-        if _shape(out) != shape:
-            raise TypeError(f"expr(): value {value} with shape {shape} cannot be given shape {_shape(out)}")
+        family, cod = type(sort), sort
     else:
         raise TypeError(f"expr(): unsupported sort {sort}")
 
     # the tensor is kept as given: no conversion of its elements
-    match out, value.dtype:
-        case Bool(), torch.bool:
-            op = tensor.bool.Const(value, out)
-        case Real(), torch.half | torch.float | torch.double | torch.int | torch.long:
-            op = tensor.real.Const(value, out)
-        case Int(), torch.int | torch.long:
-            op = tensor.int.Const(value, out)
-        case Word(), torch.int | torch.long:
-            op = tensor.word.Const(value, out)
-        case _:
-            raise TypeError(f"expr() unsupported literal type {value.dtype} / {out}")
-    return Term.constant(op, [Wire(out)]), value
+    integer = value.dtype in (torch.int, torch.long)
+    if family is Bool and value.dtype == torch.bool:
+        op = tensor.bool.Const(value, cod)
+    elif family is Real and (value.dtype in (torch.half, torch.float, torch.double) or integer):
+        op = tensor.real.Const(value, cod)
+    elif family is Int and integer:
+        op = tensor.int.Const(value, cod)
+    elif family is Word and integer:
+        op = tensor.word.Const(value, cod)
+    else:
+        raise TypeError(f"expr() unsupported literal type {value.dtype} / {sort}")
+    return Term.constant(op, [Wire(op.cod)]), value
 
 
 def _term_from_other(value, sort):
