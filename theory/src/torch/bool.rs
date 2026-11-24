@@ -15,12 +15,12 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// The constant held in `tensor`, writing `cod`. Fails when `tensor` is
-    /// not a `torch.Tensor` of two dimensions and boolean elements, or `cod`
-    /// not of its shape.
+    /// The constant held in `tensor`, writing `cod`, which it determines and may be
+    /// omitted. Fails when `tensor` is not a `torch.Tensor` of two dimensions and
+    /// boolean elements, or `cod` not of its shape.
     #[new]
-    #[pyo3(signature = (tensor, /, cod))]
-    fn new(tensor: PyTensor, cod: Bool) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, cod = None))]
+    fn new(tensor: PyTensor, cod: Option<Bool>) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if tensor.kind() != tch::Kind::Bool {
             return Err(crate::Error(format!(
@@ -28,6 +28,7 @@ impl Const {
                 tensor.kind()
             )));
         }
+        let cod = cod.unwrap_or_else(|| Bool::new(crate::Tensor::shape(&tensor.0)));
         let op = crate::tensor::bool::Const::with_cod(tensor.0, [cod])?;
         Ok(Const(op.tensor().shallow_clone()))
     }

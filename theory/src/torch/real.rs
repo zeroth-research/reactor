@@ -17,13 +17,19 @@ unsafe impl Sync for Linear {}
 
 #[pymethods]
 impl Linear {
-    /// The map of the tensors `a` and `b`, reading `dom`; its codomain `cod`,
+    /// The map of the tensors `a` and `b`, reading `dom`, which they determine
+    /// but for its degree: when omitted, it is of degree 0. Its codomain `cod`,
     /// when given, must be the one it writes. Fails when `a` and `b` are not
-    /// `torch.Tensor`s of floating-point elements, of shapes `[m, n]` and `[m, k]`,
-    /// or `dom` not of shape `[n, k]`.
+    /// `torch.Tensor`s of floating-point elements, of shapes `[m, n]` and
+    /// `[m, k]`, or `dom` not of shape `[n, k]`.
     #[new]
-    #[pyo3(signature = (a, b, /, dom, cod = None))]
-    fn new(a: PyTensor, b: PyTensor, dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (a, b, /, dom = None, cod = None))]
+    fn new(
+        a: PyTensor,
+        b: PyTensor,
+        dom: Option<Real>,
+        cod: Option<Real>,
+    ) -> Result<Self, crate::Error> {
         if !a.is_floating_point() || !b.is_floating_point() {
             return Err(crate::Error(format!(
                 "expected tensors of floating-point elements, got {:?} and {:?}",
@@ -32,6 +38,10 @@ impl Linear {
             )));
         }
         super::check_affine(&a, &b)?;
+        let dom = dom.unwrap_or_else(|| {
+            let ([_, n], [_, k]) = (crate::Tensor::shape(&a.0), crate::Tensor::shape(&b.0));
+            Real::new([n, k])
+        });
         let op = crate::tensor::check_cod(real::Linear::with_dom(a.0, b.0, [dom]), cod)?;
         Ok(Linear(
             op.a().shallow_clone(),
@@ -103,12 +113,13 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// The constant held in `tensor`, writing `cod`. Fails when `tensor` is
-    /// not a `torch.Tensor` of two dimensions and floating-point or integer elements, or `cod`
-    /// not of its shape.
+    /// The constant held in `tensor`, writing `cod`, which it determines but for
+    /// its degree: when omitted, it is of degree 0. Fails when `tensor` is not a
+    /// `torch.Tensor` of two dimensions and floating-point or integer elements, or
+    /// `cod` not of its shape.
     #[new]
-    #[pyo3(signature = (tensor, /, cod))]
-    fn new(tensor: PyTensor, cod: Real) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, cod = None))]
+    fn new(tensor: PyTensor, cod: Option<Real>) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !tensor.is_floating_point() && !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
@@ -116,6 +127,7 @@ impl Const {
                 tensor.kind()
             )));
         }
+        let cod = cod.unwrap_or_else(|| Real::new(crate::Tensor::shape(&tensor.0)));
         let op = real::Const::with_cod(tensor.0, [cod])?;
         Ok(Const(op.tensor().shallow_clone(), op.degree()))
     }
@@ -178,13 +190,14 @@ unsafe impl Sync for Scale {}
 
 #[pymethods]
 impl Scale {
-    /// The product with the constant held in `tensor`, reading `dom`; its
+    /// The product with the constant held in `tensor`, reading `dom`, which
+    /// it determines but for its degree: when omitted, it is of degree 0. Its
     /// codomain `cod`, when given, must be the one it writes. Fails when
     /// `tensor` is not a `torch.Tensor` of two dimensions and floating-point
     /// elements, or `dom` not of its shape.
     #[new]
-    #[pyo3(signature = (tensor, /, dom, cod = None))]
-    fn new(tensor: PyTensor, dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, dom = None, cod = None))]
+    fn new(tensor: PyTensor, dom: Option<Real>, cod: Option<Real>) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !tensor.is_floating_point() {
             return Err(crate::Error(format!(
@@ -192,6 +205,7 @@ impl Scale {
                 tensor.kind()
             )));
         }
+        let dom = dom.unwrap_or_else(|| Real::new(crate::Tensor::shape(&tensor.0)));
         let op = crate::tensor::check_cod(real::Scale::with_dom(tensor.0, [dom]), cod)?;
         Ok(Scale(op.tensor().shallow_clone(), op.degree()))
     }

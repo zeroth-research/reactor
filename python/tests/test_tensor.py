@@ -98,13 +98,39 @@ def test_nullary_operations_take_and_match_their_codomain_only():
     assert word.Const(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])).cod == Word(4, [1, 2])
     assert Havoc(Int([1, 2])).cod == Int([1, 2])
     assert zero.Zero().cod == Zero()
-    with pytest.raises(TypeError):
-        real.Const(torch.ones(1, 2))
     with pytest.raises(ValueError):
         real.Const(torch.ones(1, 2), Real([2, 1]))
+
+
+def test_the_codomain_of_constants_is_optional_when_their_tensor_determines_it():
+    assert real.Const(torch.ones(1, 2)).cod == Real([1, 2])
+    assert real.Const(torch.ones(1, 2), T(Real([1, 2]))).cod == T(Real([1, 2]))
+    assert int_.Const(torch.ones(1, 2, dtype=torch.int64)).cod == Int([1, 2])
+    assert bool_.Const(torch.ones(1, 2, dtype=torch.bool)).cod == Bool([1, 2])
+    # the tensor of words does not determine their width
+    with pytest.raises(TypeError):
+        word.Const(torch.ones(1, 2, dtype=torch.int64))
 
 
 def test_skip_reads_and_writes_its_sort():
     op = Skip(Word(8, [1, 1]))
     assert (op.dom, op.cod) == (Word(8, [1, 1]), Word(8, [1, 1]))
     assert Skip(Word(8, [1, 1]), Word(8, [1, 1])) == op
+
+
+def test_the_domain_is_optional_when_the_parameters_determine_it():
+    ints = torch.ones(2, 3, dtype=torch.int64)
+    assert int_.Scale(ints).dom == int_.Scale(ints, Int([2, 3])).dom == Int([2, 3])
+    assert int_.Scale(ints, cod=Int([2, 3])).cod == Int([2, 3])
+    with pytest.raises(ValueError):
+        int_.Scale(ints, cod=Int([3, 2]))
+    a, b = torch.ones(4, 2, dtype=torch.int64), torch.zeros(4, 3, dtype=torch.int64)
+    assert int_.Linear(a, b).dom == Int([2, 3])
+    assert int_.Linear(a, b).cod == Int([4, 3])
+    # the tensors of reals determine all but their degree, 0 unless given
+    assert real.Scale(torch.ones(2, 3)).dom == Real([2, 3])
+    assert real.Scale(torch.ones(2, 3), T(Real([2, 3]))).cod == T(Real([2, 3]))
+    assert real.Linear(torch.ones(4, 2), torch.zeros(4, 3)).dom == Real([2, 3])
+    assert real.Linear(torch.ones(4, 2), torch.zeros(4, 3)).cod == Real([4, 3])
+    with pytest.raises(ValueError):
+        real.Scale(torch.ones(2, 3), cod=T(Real([2, 3])))

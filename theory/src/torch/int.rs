@@ -18,13 +18,19 @@ unsafe impl Sync for Linear {}
 
 #[pymethods]
 impl Linear {
-    /// The map of the tensors `a` and `b`, reading `dom`; its codomain `cod`,
-    /// when given, must be the one it writes. Fails when `a` and `b` are not
-    /// `torch.Tensor`s of integer elements, of shapes `[m, n]` and `[m, k]`,
-    /// or `dom` not of shape `[n, k]`.
+    /// The map of the tensors `a` and `b`, reading `dom`, which they determine
+    /// and may be omitted; its codomain `cod`, when given, must be the one it
+    /// writes. Fails when `a` and `b` are not `torch.Tensor`s of integer
+    /// elements, of shapes `[m, n]` and `[m, k]`, or `dom` not of shape
+    /// `[n, k]`.
     #[new]
-    #[pyo3(signature = (a, b, /, dom, cod = None))]
-    fn new(a: PyTensor, b: PyTensor, dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (a, b, /, dom = None, cod = None))]
+    fn new(
+        a: PyTensor,
+        b: PyTensor,
+        dom: Option<Int>,
+        cod: Option<Int>,
+    ) -> Result<Self, crate::Error> {
         if !super::is_integer(a.kind()) || !super::is_integer(b.kind()) {
             return Err(crate::Error(format!(
                 "expected tensors of integer elements, got {:?} and {:?}",
@@ -33,6 +39,10 @@ impl Linear {
             )));
         }
         super::check_affine(&a, &b)?;
+        let dom = dom.unwrap_or_else(|| {
+            let ([_, n], [_, k]) = (crate::Tensor::shape(&a.0), crate::Tensor::shape(&b.0));
+            Int::new([n, k])
+        });
         let op = crate::tensor::check_cod(int::Linear::with_dom(a.0, b.0, [dom]), cod)?;
         Ok(Linear(op.a().shallow_clone(), op.b().shallow_clone()))
     }
@@ -93,12 +103,12 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// The constant held in `tensor`, writing `cod`. Fails when `tensor` is
-    /// not a `torch.Tensor` of two dimensions and integer elements, or `cod`
-    /// not of its shape.
+    /// The constant held in `tensor`, writing `cod`, which it determines and may be
+    /// omitted. Fails when `tensor` is not a `torch.Tensor` of two dimensions and
+    /// integer elements, or `cod` not of its shape.
     #[new]
-    #[pyo3(signature = (tensor, /, cod))]
-    fn new(tensor: PyTensor, cod: Int) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, cod = None))]
+    fn new(tensor: PyTensor, cod: Option<Int>) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
@@ -106,6 +116,7 @@ impl Const {
                 tensor.kind()
             )));
         }
+        let cod = cod.unwrap_or_else(|| Int::new(crate::Tensor::shape(&tensor.0)));
         let op = int::Const::with_cod(tensor.0, [cod])?;
         Ok(Const(op.tensor().shallow_clone()))
     }
@@ -160,13 +171,13 @@ unsafe impl Sync for Scale {}
 
 #[pymethods]
 impl Scale {
-    /// The product with the constant held in `tensor`, reading `dom`; its
-    /// codomain `cod`, when given, must be the one it writes. Fails when
-    /// `tensor` is not a `torch.Tensor` of two dimensions and integer
-    /// elements, or `dom` not of its shape.
+    /// The product with the constant held in `tensor`, reading `dom`, which
+    /// it determines and may be omitted; its codomain `cod`, when given, must
+    /// be the one it writes. Fails when `tensor` is not a `torch.Tensor` of
+    /// two dimensions and integer elements, or `dom` not of its shape.
     #[new]
-    #[pyo3(signature = (tensor, /, dom, cod = None))]
-    fn new(tensor: PyTensor, dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, dom = None, cod = None))]
+    fn new(tensor: PyTensor, dom: Option<Int>, cod: Option<Int>) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
@@ -174,6 +185,7 @@ impl Scale {
                 tensor.kind()
             )));
         }
+        let dom = dom.unwrap_or_else(|| Int::new(crate::Tensor::shape(&tensor.0)));
         let op = crate::tensor::check_cod(int::Scale::with_dom(tensor.0, [dom]), cod)?;
         Ok(Scale(op.tensor().shallow_clone()))
     }

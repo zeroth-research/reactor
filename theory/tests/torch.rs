@@ -82,8 +82,16 @@ fn constants_are_built_from_tensors_of_their_theory_only() {
         assert!(word.call1((&floats, &words)).is_err());
         assert!(real.call1((42, &reals)).is_err());
 
-        // a constant writes its codomain, which is of the shape of its tensor
-        assert!(real.call1((&floats,)).is_err());
+        // a constant writes its codomain, which is of the shape of its tensor, and of
+        // degree 0 for reals unless given; words need it, for their width
+        let plain = real.call1((&floats,)).unwrap();
+        assert_eq!(
+            plain.getattr("cod").unwrap().extract::<Real>().unwrap(),
+            Real::new([2, 3])
+        );
+        assert!(int.call1((&ints,)).is_ok());
+        assert!(boolean.call1((&bools,)).is_ok());
+        assert!(word.call1((&ints,)).is_err());
         assert!(real.call1((&floats, sort(py, Real::new([3, 2])))).is_err());
         assert!(
             word.call1((&ints, sort(py, Word::new_unchecked(8, [3, 2]))))
@@ -157,9 +165,13 @@ fn linear_maps_are_built_from_tensors_of_their_theory_and_shapes() {
         assert!(int.call1((&ia, &ints, &integers)).is_ok());
         assert!(int.call1((&a, &b, &integers)).is_err());
 
-        // a map reads its domain, of the columns of `A` and of `B`, and writes the
-        // codomain, if given, of the rows of `A`
-        assert!(real.call1((&a, &b)).is_err());
+        // a map reads its domain, of the columns of `A` and of `B`, plain reals unless
+        // given, and writes the codomain, if given, of the rows of `A`
+        let plain = real.call1((&a, &b)).unwrap();
+        assert_eq!(
+            plain.getattr("dom").unwrap().extract::<Real>().unwrap(),
+            Real::new([2, 1])
+        );
         assert!(real.call1((&a, &b, sort(py, Real::new([2, 3])))).is_err());
         assert!(
             real.call1((&a, &b, &reals, sort(py, Real::new([4, 1]))))
