@@ -518,7 +518,7 @@ class CasadiModule(NamedTuple):
     inputs: tuple[tuple[Var, ...], ...]  # external: one tuple per further input
 
 
-def _prepare(f, init, state, inputs, what):
+def _prepare(f, init, state, inputs, what, wait=None):
     f = _as_sx(f)
     n = f.numel_in(0)
     if f.n_out() < 1 or f.numel_out(0) != n:
@@ -534,14 +534,46 @@ def _prepare(f, init, state, inputs, what):
     inputs = tuple(tuple(u) for u in inputs)
     if len(inputs) != f.n_in() - 1:
         raise ValueError(f"expected {f.n_in() - 1} input groups, got {len(inputs)}")
-    init = list(init) if init is not None else [None] * n
-    if len(init) != n:
-        raise ValueError(f"expected {n} initial values, got {len(init)}")
-    return f, state, inputs, init
+    for i, u in enumerate(inputs):
+        if len(u) != f.numel_in(i + 1):
+            raise ValueError(f"input group {i}: expected {f.numel_in(i + 1)} variables, got {len(u)}")
+    wait = _wait(wait, len(inputs))
+    if isinstance(init, cs.Function):
+        init = _as_sx(init)
+        if init.n_in() != len(inputs) or any(init.numel_in(i) != len(u) for i, u in enumerate(inputs)):
+            raise ValueError(f"{init.name()}: an initial-state function takes the {len(inputs)} input "
+                             "groups (not the state)")
+        if init.numel_out(0) != n:
+            raise ValueError(f"{init.name()}: first output must have the state's {n} elements")
+    else:
+        init = list(init) if init is not None else [None] * n
+        if len(init) != n:
+            raise ValueError(f"expected {n} initial values, got {len(init)}")
+    return f, state, inputs, init, wait
 
 
-def _init_block(state, init) -> list[Term]:
+def _wait(wait, k: int) -> tuple[bool, ...]:
+    """Per input group, whether it is read awaited (``X(v)``, this round's value)."""
+    if wait is None or isinstance(wait, bool):
+        return (bool(wait),) * k
+    wait = tuple(bool(w) for w in wait)
+    if len(wait) != k:
+        raise ValueError(f"expected {k} wait flags (one per input group), got {len(wait)}")
+    return wait
+
+
+def _read(inputs, wait) -> list[list[AExpr]]:
+    """The expressions an atom reads its input groups as: awaited (``X(v)``) or latched."""
+    return [[expr(X(v)) if w else expr(v) for v in u] for u, w in zip(inputs, wait)]
+
+
+def _init_block(state, init, inputs=(), wait=()) -> list[Term]:
     with collecting() as terms:
+        if isinstance(init, cs.Function):
+            x0 = translate(init, _read(inputs, wait))[0]
+            for v, val in zip(state, x0):
+                terms.append(Term(Skip(REAL), [X(v)], [_real(val).wire]))
+            return terms
         for v, c in zip(state, init):
             if c is None:
                 terms.append(Term(Havoc(REAL), [X(v)], []))
@@ -552,10 +584,11 @@ def _init_block(state, init) -> list[Term]:
 
 def sequential(
     step: cs.Function,
-    init: Sequence[float | None] | None = None,
+    init: Sequence[float | None] | cs.Function | None = None,
     *,
     state: Sequence[Var] | None = None,
     inputs: Sequence[Sequence[Var]] | None = None,
+    wait: bool | Sequence[bool] | None = None,
     hide=None,
 ) -> CasadiModule:
     """Build a sequential module ``x' = step(x, u1, ..., uk)[0]``.
@@ -564,20 +597,68 @@ def sequential(
         step: Function whose first input is the state, the remaining inputs are
             external, and whose first output is the next state (same size).
         init: Initial value per state entry; ``None`` (or an entry ``None``) leaves it
-            unconstrained (a havoc).
+            unconstrained (a havoc). Or a CasADi function of the input groups (not the
+            state) whose first output is the initial state, read as `wait` says.
         state: Variables for the state, created if not given.
         inputs: Variables for each further input, created if not given.
+        wait: Per input group (or one flag for all), whether the module reads this
+            round's value ``X(v)`` (it then awaits the module that controls `v`, which
+            must not await it back) instead of the latched one; default: latched.
         hide: Variables to hide in the built module.
     """
-    step, state, inputs, init = _prepare(step, init, state, inputs, "the next state")
-    init_terms = _init_block(state, init)
+    step, state, inputs, init, wait = _prepare(step, init, state, inputs, "the next state", wait)
+    init_terms = _init_block(state, init, inputs, wait)
     with collecting() as update_terms:
-        nxt = translate(step, [list(state)] + [list(u) for u in inputs])[0]
+        nxt = translate(step, [[expr(v) for v in state]] + _read(inputs, wait))[0]
         for v, val in zip(state, nxt):
             update_terms.append(Term(Skip(REAL), [X(v)], [_real(val).wire]))
     variables = state + tuple(u for group in inputs for u in group)
     module = Module(init=init_terms, update=update_terms, vars=variables, hide=hide)
     return CasadiModule(module, state, inputs)
+
+
+def combinatorial(
+    f: cs.Function,
+    *,
+    inputs: Sequence[Sequence[Var]] | None = None,
+    outputs: Sequence[Var] | None = None,
+    wait: bool | Sequence[bool] | None = True,
+    hide=None,
+) -> CasadiModule:
+    """Build a combinatorial module ``y = f(u1, ..., uk)[0]``: no state of its own; every
+    round (the init round too) it assigns its outputs from its inputs.
+
+    Args:
+        f: Function of the input groups; its first output is assigned to `outputs`.
+        inputs: Variables for each input, created if not given.
+        outputs: Variables for the output, created if not given (the module controls them).
+        wait: Per input group (or one flag for all), whether it reads this round's value
+            ``X(v)`` (default) or the latched one.
+        hide: Variables to hide in the built module.
+
+    The returned `CasadiModule` has the outputs as its `state` (what it controls).
+    """
+    f = _as_sx(f)
+    n = f.numel_out(0)
+    outputs = tuple(outputs) if outputs is not None else scalar_vars(n)
+    if len(outputs) != n:
+        raise ValueError(f"expected {n} output variables, got {len(outputs)}")
+    if inputs is None:
+        inputs = tuple(scalar_vars(f.numel_in(i)) for i in range(f.n_in()))
+    inputs = tuple(tuple(u) for u in inputs)
+    if len(inputs) != f.n_in():
+        raise ValueError(f"expected {f.n_in()} input groups, got {len(inputs)}")
+    for i, u in enumerate(inputs):
+        if len(u) != f.numel_in(i):
+            raise ValueError(f"input group {i}: expected {f.numel_in(i)} variables, got {len(u)}")
+    wait = _wait(wait, len(inputs))
+    with collecting() as terms:
+        y = translate(f, _read(inputs, wait))[0]
+        for v, val in zip(outputs, y):
+            terms.append(Term(Skip(REAL), [X(v)], [_real(val).wire]))
+    variables = outputs + tuple(u for group in inputs for u in group)
+    module = Module.combinatorial(variables, terms, hide=hide)
+    return CasadiModule(module, outputs, inputs)
 
 
 def differential(
@@ -597,7 +678,9 @@ def differential(
 
     Args: as for ``sequential``, with `f` the time derivative of the state.
     """
-    f, state, inputs, init = _prepare(f, init, state, inputs, "the derivative")
+    f, state, inputs, init, wait = _prepare(f, init, state, inputs, "the derivative")
+    if isinstance(init, cs.Function):
+        raise ValueError("a differential module takes initial values, not an initial-state function")
     init_terms = _init_block(state, init)
     with collecting() as delay_terms:
         xdot = translate(f, [list(state)] + [list(u) for u in inputs])[0]

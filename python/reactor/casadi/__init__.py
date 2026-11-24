@@ -8,6 +8,10 @@
     step = euler(f, dt=0.01)                 # discretize in CasADi
     m = sequential(step, init=[0.0, 0.0])    # m.module, m.state, m.inputs
     c = differential(f, init=[0.0, 0.0])     # or keep continuous time: d(x) = f(x, u)
+
+    k = cs.Function("k", [x], [-2 * x[0] - x[1]])
+    ctrl = combinatorial(k, inputs=[m.state], outputs=m.inputs[0])  # u = k(x), this round's x
+    loop = Module.compose(m.module, ctrl.module)                    # the closed loop
     print(check_equivalence(step))           # miter: CasADi vs. its translation
 
 The translation targets real arithmetic (``reactor.tensor.real``): polynomial and
@@ -22,6 +26,7 @@ Requires the ``casadi`` package (it is not a dependency of ``reactor`` itself).
 from .translate import (
     CasadiModule,
     UnsupportedOp,
+    combinatorial,
     differential,
     Terms,
     Value,
@@ -47,6 +52,7 @@ from .validate import (
 __all__ = [
     "CasadiModule",
     "UnsupportedOp",
+    "combinatorial",
     "differential",
     "Terms",
     "Value",

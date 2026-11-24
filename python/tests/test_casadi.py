@@ -306,3 +306,85 @@ def test_differential_constant_rate():
     cm = differential(f, init=[0.0, 0.0])
     consts = [t for t in cm.module.atoms[0].delay if type(t.itype).__name__ == "Const"]
     assert any(t.itype.degree == 1 and float(t.itype.tensor) == 1.5 for t in consts)
+
+
+# ── composing CasADi modules ─────────────────────────────────────────────────
+
+
+def _loop_parts():
+    """A plant ``x' = x + 0.01 f(x, u, w)`` and a controller ``u = k(x)``."""
+    x, u, w = cs.SX.sym("x", 2), cs.SX.sym("u"), cs.SX.sym("w")
+    f = cs.Function("f", [x, u, w], [cs.vertcat(x[1], -x[0] + u + w)])
+    k = cs.Function("k", [x], [-2 * x[0] - x[1]])
+    return euler(f, 0.01), k
+
+
+def _t(v):
+    return torch.tensor([[float(v)]], dtype=torch.float64)
+
+
+def test_a_combinatorial_controller_closes_the_loop_without_delay():
+    """Plant and controller composed by their shared variables give ``u[k] = k(x[k])``,
+    ``x[k+1] = step(x[k], u[k])``, as a loop in CasADi does."""
+    from reactor import Module
+    from reactor.casadi import combinatorial
+    from reactor.eval import Runner
+
+    step, k = _loop_parts()
+    plant = sequential(step, init=[1.0, 0.0])
+    ctrl = combinatorial(k, inputs=[plant.state], outputs=plant.inputs[0])
+    loop = Module.compose(plant.module, ctrl.module)
+    assert set(loop.extl) == set(plant.inputs[1])  # only the disturbance is left open
+    r = Runner(loop)
+    (w,) = plant.inputs[1]
+    r[w] = _t(0.1)
+    r.init()
+    x = np.array([1.0, 0.0])
+    for _ in range(5):
+        u = float(k(x))
+        assert float(r[ctrl.state[0]]) == pytest.approx(u, abs=1e-15)
+        x = np.array(step(x, u, 0.1)).ravel()
+        r.update()
+        np.testing.assert_allclose([float(r[v]) for v in plant.state], x, rtol=0, atol=1e-15)
+
+
+def test_sequential_reads_awaited_inputs_and_an_initial_state_function():
+    """An observer-like module ``z' = z + (X(y) - z) / 2`` that reads this round's ``y``,
+    and starts from ``z0 = X(y)``."""
+    from reactor import Module
+    from reactor.casadi import combinatorial
+    from reactor.eval import Runner
+
+    z, y, x = cs.SX.sym("z"), cs.SX.sym("y"), cs.SX.sym("x")
+    src = sequential(cs.Function("s", [x], [x + 1]), init=[3.0])  # x = 3, 4, 5, ...
+    out = combinatorial(cs.Function("h", [x], [2 * x]), inputs=[src.state])  # y = 2 x, this round
+    obs = sequential(cs.Function("o", [z, y], [z + (y - z) / 2]),
+                     init=cs.Function("o0", [y], [y]), inputs=[out.state], wait=True)
+    r = Runner(Module.compose(src.module, out.module, obs.module))
+    r.init()
+    zs = [float(r[obs.state[0]])]
+    for _ in range(3):
+        r.update()
+        zs.append(float(r[obs.state[0]]))
+    want = [6.0]
+    for xk in (4, 5, 6):
+        want.append(want[-1] + (2 * xk - want[-1]) / 2)
+    assert zs == pytest.approx(want, abs=1e-15)
+
+
+def test_the_new_builders_check_their_arguments():
+    from reactor.casadi import combinatorial
+
+    step, k = _loop_parts()
+    with pytest.raises(ValueError, match="wait flags"):
+        sequential(step, init=[0.0, 0.0], wait=[True])
+    xs = cs.SX.sym("x", 2)
+    with pytest.raises(ValueError, match="input groups"):
+        sequential(step, init=cs.Function("bad", [xs], [xs]))  # the state is not an input of init
+    with pytest.raises(ValueError, match="output variables"):
+        combinatorial(k, outputs=[])
+    with pytest.raises(ValueError, match="input group 0"):
+        combinatorial(k, inputs=[[]])
+    with pytest.raises(ValueError, match="initial-state function"):
+        y = cs.SX.sym("y")
+        differential(cs.Function("f", [y], [-y]), init=cs.Function("y0", [], [cs.SX(1.0)]))
