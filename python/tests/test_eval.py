@@ -421,6 +421,19 @@ def test_extract_and_extend():
     assert eval_itype(tensor.word.unsigned.Extend(8, Word(8, [1, 1])), [_w(0xFB)])[0].tolist() == [[0xFB]]
 
 
+def test_real_constants_of_integer_tensors_evaluate_as_reals():
+    # a real constant may hold an integer tensor; it still combines with floating-point ones
+    (c,) = eval_itype(tensor.real.Const(torch.tensor([[1], [2]])), [])
+    (out,) = eval_itype(tensor.real.Linear(torch.eye(2), Real([2, 1])), [c])
+    assert torch.equal(out, torch.tensor([[1.0], [2.0]]))
+    (out,) = eval_itype(tensor.real.MatMul([Real([2, 2]), Real([2, 1])]), [torch.eye(2), c])
+    assert torch.equal(out, torch.tensor([[1.0], [2.0]]))
+    # nor do they wrap around, as integers do
+    (big,) = eval_itype(tensor.real.Const(torch.tensor([[2**62]])), [])
+    (out,) = eval_itype(tensor.real.Add([Real([1, 1])] * 2), [big, big])
+    assert out.item() == 2.0**63
+
+
 def test_structural_ops():
     s = Real([1, 2])
     x = torch.tensor([[1., 2.]])

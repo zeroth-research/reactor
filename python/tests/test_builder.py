@@ -51,6 +51,16 @@ def test_mul_adds_the_degrees_of_reals(p, q):
     assert term.write[0].dtype == _real(p + q)
 
 
+def test_transpose_keeps_the_degree_of_reals():
+    term = RealTermBuilder().transpose(Wire(T(Real([2, 3]))))
+    assert term.write[0].dtype == T(Real([3, 2]))
+
+
+def test_linear_keeps_the_degree_of_reals():
+    terms = RealTermBuilder().linear(Wire(T(Real([1, 2]))), torch.ones(3, 2), torch.zeros(3))
+    assert [t.write[0].dtype for t in terms] == [T(Real([2, 1])), T(Real([3, 1])), T(Real([1, 3]))]
+
+
 def test_add_keeps_the_degree_of_reals():
     builder = builder_for(Real)
     x, y = Wire(T(Real([2, 3]))), Wire(T(Real([2, 3])))
