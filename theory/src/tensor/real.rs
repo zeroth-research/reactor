@@ -66,21 +66,14 @@ impl<T: Tensor> Const<T> {
                 &cod,
             ));
         }
-        Ok(Self::with_degree(tensor, x.degree()))
+        Ok(Const {
+            tensor,
+            degree: x.degree(),
+        })
     }
 }
 
 impl<T> Const<T> {
-    /// The plain constant held in `tensor`, of degree 0.
-    pub fn new(tensor: T) -> Self {
-        Self::with_degree(tensor, 0)
-    }
-
-    /// The constant held in `tensor`, of the given `degree`.
-    pub fn with_degree(tensor: T, degree: u8) -> Self {
-        Const { tensor, degree }
-    }
-
     /// The tensor holding the constant.
     pub fn tensor(&self) -> &T {
         &self.tensor
@@ -115,7 +108,10 @@ impl<T: Tensor> Scale<T> {
                 &dom,
             ));
         }
-        Ok(Self::with_degree(tensor, x.degree()))
+        Ok(Scale {
+            tensor,
+            degree: x.degree(),
+        })
     }
 
     /// The product with the constant held in `tensor`, writing the real
@@ -128,23 +124,14 @@ impl<T: Tensor> Scale<T> {
                 &cod,
             ));
         }
-        Ok(Self::with_degree(tensor, x.degree()))
+        Ok(Scale {
+            tensor,
+            degree: x.degree(),
+        })
     }
 }
 
 impl<T> Scale<T> {
-    /// The product with the constant held in `tensor`, of plain real
-    /// matrices, of degree 0.
-    pub fn new(tensor: T) -> Self {
-        Self::with_degree(tensor, 0)
-    }
-
-    /// The product with the constant held in `tensor`, of real matrices of
-    /// the given `degree`.
-    pub fn with_degree(tensor: T, degree: u8) -> Self {
-        Scale { tensor, degree }
-    }
-
     /// The tensor holding the constant `C`.
     pub fn tensor(&self) -> &T {
         &self.tensor
@@ -233,25 +220,17 @@ pub struct Linear<T> {
 }
 
 impl<T: Tensor> Linear<T> {
-    /// The affine map `x ↦ A·x + B` of plain real matrices, of degree 0;
-    /// fails unless `a` and `b` are of shapes `[m, n]` and `[m, k]`.
-    pub fn new(a: T, b: T) -> Result<Self, crate::Error> {
-        Self::with_degree(a, b, 0)
-    }
-
-    /// The affine map `x ↦ A·x + B` of real matrices of the given `degree`;
-    /// fails unless `a` and `b` are of shapes `[m, n]` and `[m, k]`.
-    pub fn with_degree(a: T, b: T, degree: u8) -> Result<Self, crate::Error> {
-        super::check_affine(a.shape(), b.shape())?;
-        Ok(Linear { a, b, degree })
-    }
-
     /// The affine map `x ↦ A·x + B` reading the real matrix `x` of `dom`,
     /// whose degree it keeps; fails unless `a` and `b` are of shapes
     /// `[m, n]` and `[m, k]`, and `x` of shape `[n, k]`.
     pub fn with_dom(a: T, b: T, dom: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = dom;
-        let op = Self::with_degree(a, b, x.degree())?;
+        super::check_affine(a.shape(), b.shape())?;
+        let op = Linear {
+            a,
+            b,
+            degree: x.degree(),
+        };
         let ([_, n], [_, k]) = (op.a.shape(), op.b.shape());
         if x.shape() != [n, k] {
             return Err(crate::tensor::unexpected_dom(
@@ -267,7 +246,12 @@ impl<T: Tensor> Linear<T> {
     /// that matrix of shape `[m, k]`.
     pub fn with_cod(a: T, b: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
-        let op = Self::with_degree(a, b, x.degree())?;
+        super::check_affine(a.shape(), b.shape())?;
+        let op = Linear {
+            a,
+            b,
+            degree: x.degree(),
+        };
         if x.shape() != op.b.shape() {
             return Err(crate::tensor::unexpected_cod(
                 &format!("1 sort of shape {:?}", op.b.shape()),
@@ -874,7 +858,7 @@ impl Boundary<Real> for Mul {
     }
 
     fn cod(&self) -> Poly<Real> {
-        // in range: `with_degrees` checks it
+        // in range: `with_dom` checks it
         let [p, q] = self.degrees;
         mono![Real::with_degree(self.shape, p + q)].into()
     }
@@ -892,7 +876,7 @@ impl Boundary<Real> for Div {
     }
 
     fn cod(&self) -> Poly<Real> {
-        // not negative: `with_degrees` checks it
+        // not negative: `with_dom` checks it
         let [p, q] = self.degrees;
         mono![Real::with_degree(self.shape, p - q)].into()
     }
@@ -998,7 +982,7 @@ impl Boundary<Real> for MatMul {
 
     fn cod(&self) -> Poly<Real> {
         let [[m, _], [_, k]] = self.shapes;
-        // in range: `with_degrees` checks it
+        // in range: `with_dom` checks it
         let [p, q] = self.degrees;
         mono![Real::with_degree([m, k], p + q)].into()
     }
@@ -1322,26 +1306,22 @@ where
 // The Python constructors of the operations carrying no tensor: each takes
 // its sizes positionally, in the order of its fields, the shape as a list.
 impl Add {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Add { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
+        Ok(Add {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 
     /// The operation writing the real matrix of `cod`.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Add { shape, degree }
+        Ok(Add {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -1391,26 +1371,22 @@ impl Add {
 }
 
 impl Sub {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Sub { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
+        Ok(Sub {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 
     /// The operation writing the real matrix of `cod`.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Sub { shape, degree }
+        Ok(Sub {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -1460,14 +1436,6 @@ impl Sub {
 }
 
 impl Mul {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Mul {
-            shape,
-            degrees: [0, 0],
-        }
-    }
-
     /// The degrees `[p, q]` of the factors.
     pub fn degrees(&self) -> [u8; 2] {
         self.degrees
@@ -1482,19 +1450,16 @@ impl Mul {
                 &dom,
             ));
         }
-        Self::with_degrees(x.shape(), [x.degree(), y.degree()])
-    }
-
-    /// On real matrices of the given `degrees`, `[p, q]`, writing ones of
-    /// degree `p + q`; fails when that degree is out of range.
-    pub fn with_degrees(shape: [usize; 2], degrees: [u8; 2]) -> Result<Self, crate::Error> {
-        let [p, q] = degrees;
+        let [p, q] = [x.degree(), y.degree()];
         if p.checked_add(q).is_none() {
             return Err(crate::Error(format!(
                 "the product of reals of degrees {p} and {q} is of a degree out of range"
             )));
         }
-        Ok(Mul { shape, degrees })
+        Ok(Mul {
+            shape: x.shape(),
+            degrees: [p, q],
+        })
     }
 }
 
@@ -1547,14 +1512,6 @@ impl Mul {
 }
 
 impl Div {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Div {
-            shape,
-            degrees: [0, 0],
-        }
-    }
-
     /// The degrees `[p, q]` of the dividend and the divisor.
     pub fn degrees(&self) -> [u8; 2] {
         self.degrees
@@ -1569,20 +1526,16 @@ impl Div {
                 &dom,
             ));
         }
-        Self::with_degrees(x.shape(), [x.degree(), y.degree()])
-    }
-
-    /// On real matrices of the given `degrees`, `[p, q]`, writing ones of
-    /// degree `p - q`; fails when `q` exceeds `p`, as that degree would be
-    /// negative.
-    pub fn with_degrees(shape: [usize; 2], degrees: [u8; 2]) -> Result<Self, crate::Error> {
-        let [p, q] = degrees;
+        let [p, q] = [x.degree(), y.degree()];
         if q > p {
             return Err(crate::Error(format!(
                 "the quotient of reals of degrees {p} and {q} is of a negative degree"
             )));
         }
-        Ok(Div { shape, degrees })
+        Ok(Div {
+            shape: x.shape(),
+            degrees: [p, q],
+        })
     }
 }
 
@@ -1635,20 +1588,13 @@ impl Div {
 }
 
 impl Zero {
-    /// The plain zero matrix, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Zero { shape, degree: 0 }
-    }
-
     /// The operation writing the real matrix of `cod`.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// The zero matrix of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Zero { shape, degree }
+        Ok(Zero {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -1690,26 +1636,22 @@ impl Zero {
 }
 
 impl Neg {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Neg { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
+        Ok(Neg {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 
     /// The operation writing the real matrix of `cod`.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Neg { shape, degree }
+        Ok(Neg {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -1759,26 +1701,22 @@ impl Neg {
 }
 
 impl Abs {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Abs { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
+        Ok(Abs {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 
     /// The operation writing the real matrix of `cod`.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Abs { shape, degree }
+        Ok(Abs {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -1828,26 +1766,22 @@ impl Abs {
 }
 
 impl ReLU {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        ReLU { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
+        Ok(ReLU {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 
     /// The operation writing the real matrix of `cod`.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        ReLU { shape, degree }
+        Ok(ReLU {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -1897,20 +1831,13 @@ impl ReLU {
 }
 
 impl Argmax {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Argmax { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Argmax { shape, degree }
+        Ok(Argmax {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -1960,26 +1887,22 @@ impl Argmax {
 }
 
 impl Min {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Min { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
+        Ok(Min {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 
     /// The operation writing the real matrix of `cod`.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Min { shape, degree }
+        Ok(Min {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -2029,26 +1952,22 @@ impl Min {
 }
 
 impl Max {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Max { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
+        Ok(Max {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 
     /// The operation writing the real matrix of `cod`.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Max { shape, degree }
+        Ok(Max {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -2098,27 +2017,23 @@ impl Max {
 }
 
 impl Transpose {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Transpose { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
+        Ok(Transpose {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 
     /// The transposition writing the real matrix of `cod`, reading its transpose.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
         let [m, n] = s.shape();
-        Ok(Self::with_degree([n, m], s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Transpose { shape, degree }
+        Ok(Transpose {
+            shape: [n, m],
+            degree: s.degree(),
+        })
     }
 }
 
@@ -2168,12 +2083,6 @@ impl Transpose {
 }
 
 impl MatMul {
-    /// On plain real matrices, of degree 0; fails unless the columns of the
-    /// first shape are the rows of the second.
-    pub fn new(shapes: [[usize; 2]; 2]) -> Result<Self, crate::Error> {
-        Self::with_degrees(shapes, [0, 0])
-    }
-
     /// The degrees `[p, q]` of the factors.
     pub fn degrees(&self) -> [u8; 2] {
         self.degrees
@@ -2183,26 +2092,22 @@ impl MatMul {
     /// the first are the rows of the second.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let [x, y] = dom;
-        Self::with_degrees([x.shape(), y.shape()], [x.degree(), y.degree()])
-    }
-
-    /// On real matrices of the given `degrees`, `[p, q]`, writing one of
-    /// degree `p + q`; fails unless the columns of the first shape are the
-    /// rows of the second, and that degree is in range.
-    pub fn with_degrees(shapes: [[usize; 2]; 2], degrees: [u8; 2]) -> Result<Self, crate::Error> {
-        let [lhs, rhs] = shapes;
+        let [lhs, rhs] = [x.shape(), y.shape()];
         if lhs[1] != rhs[0] {
             return Err(crate::Error(format!(
                 "cannot multiply a {lhs:?} matrix by a {rhs:?} matrix"
             )));
         }
-        let [p, q] = degrees;
+        let [p, q] = [x.degree(), y.degree()];
         if p.checked_add(q).is_none() {
             return Err(crate::Error(format!(
                 "the product of reals of degrees {p} and {q} is of a degree out of range"
             )));
         }
-        Ok(MatMul { shapes, degrees })
+        Ok(MatMul {
+            shapes: [lhs, rhs],
+            degrees: [p, q],
+        })
     }
 }
 
@@ -2256,20 +2161,13 @@ impl MatMul {
 }
 
 impl Lt {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Lt { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Lt { shape, degree }
+        Ok(Lt {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -2319,18 +2217,16 @@ impl Lt {
 }
 
 impl Ite {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ite { shape, degree: 0 }
-    }
-
     /// The choice reading the boolean condition and the branches of `dom`;
     /// fails unless the branches are of the same sort, and the condition of
     /// their shape.
     pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
         match dom {
             [Sort::Bool(c), Sort::Real(x), Sort::Real(y)] if x == y && c.shape() == x.shape() => {
-                Ok(Self::with_degree(x.shape(), x.degree()))
+                Ok(Ite {
+                    shape: x.shape(),
+                    degree: x.degree(),
+                })
             }
             _ => Err(crate::tensor::unexpected_dom(
                 "a condition Bool and two branches Real of its shape",
@@ -2342,12 +2238,10 @@ impl Ite {
     /// The operation writing the real matrix of `cod`.
     pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Ite { shape, degree }
+        Ok(Ite {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -2397,20 +2291,13 @@ impl Ite {
 }
 
 impl Le {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Le { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Le { shape, degree }
+        Ok(Le {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -2460,20 +2347,13 @@ impl Le {
 }
 
 impl Gt {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Gt { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Gt { shape, degree }
+        Ok(Gt {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -2523,20 +2403,13 @@ impl Gt {
 }
 
 impl Ge {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ge { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Ge { shape, degree }
+        Ok(Ge {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -2586,20 +2459,13 @@ impl Ge {
 }
 
 impl Eq {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Eq { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Eq { shape, degree }
+        Ok(Eq {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 
@@ -2649,20 +2515,13 @@ impl Eq {
 }
 
 impl Ne {
-    /// On plain real matrices, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ne { shape, degree: 0 }
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::with_degree(s.shape(), s.degree()))
-    }
-
-    /// On real matrices of the given `degree`.
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Ne { shape, degree }
+        Ok(Ne {
+            shape: s.shape(),
+            degree: s.degree(),
+        })
     }
 }
 

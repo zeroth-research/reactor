@@ -64,9 +64,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::word::Const<tch::Tensor> 
     /// Fails when `ob` is not a [`Const`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Const>()?.get();
-        Ok(crate::tensor::word::Const::new(
+        let cod = crate::tensor::sort::Word::new(constant.1, crate::Tensor::shape(&constant.0))?;
+        Ok(crate::tensor::word::Const::with_cod(
             constant.0.shallow_clone(),
-            constant.1,
+            [cod],
         )?)
     }
 }
@@ -75,8 +76,12 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::word::Const<tch::Tensor> 
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::word::Const<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::word::Const::new(self.tensor().shallow_clone(), self.width())
-            .expect("a clone has the width of the original")
+        let cod = crate::tensor::sort::Word::new_unchecked(
+            self.width(),
+            crate::Tensor::shape(self.tensor()),
+        );
+        crate::tensor::word::Const::with_cod(self.tensor().shallow_clone(), [cod])
+            .expect("a clone has the sort of the original")
     }
 }
 

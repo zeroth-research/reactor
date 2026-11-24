@@ -42,10 +42,6 @@ impl Zero {
         let [_] = cod;
         Ok(Zero)
     }
-
-    pub fn new() -> Self {
-        Zero
-    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
@@ -56,7 +52,7 @@ impl Zero {
     #[new]
     #[pyo3(signature = ())]
     fn py_new() -> Self {
-        Self::new()
+        Zero
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it

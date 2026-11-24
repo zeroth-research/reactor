@@ -85,9 +85,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Linear<tch::Tensor> 
     /// Fails when `ob` is not an [`Linear`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let linear = ob.cast::<Linear>()?.get();
-        Ok(crate::tensor::int::Linear::new(
+        let cod = Int::new(crate::Tensor::shape(&linear.1));
+        Ok(crate::tensor::int::Linear::with_cod(
             linear.0.shallow_clone(),
             linear.1.shallow_clone(),
+            [cod],
         )?)
     }
 }
@@ -147,7 +149,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Const<tch::Tensor> {
     /// Fails when `ob` is not an [`Const`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Const>()?.get();
-        Ok(crate::tensor::int::Const::new(constant.0.shallow_clone()))
+        let cod = Int::new(crate::Tensor::shape(&constant.0));
+        Ok(crate::tensor::int::Const::with_cod(
+            constant.0.shallow_clone(),
+            [cod],
+        )?)
     }
 }
 
@@ -155,7 +161,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Const<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::int::Const<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::int::Const::new(self.tensor().shallow_clone())
+        let cod = Int::new(crate::Tensor::shape(self.tensor()));
+        crate::tensor::int::Const::with_cod(self.tensor().shallow_clone(), [cod])
+            .expect("a clone has the shape of the original")
     }
 }
 
@@ -223,7 +231,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Scale<tch::Tensor> {
     /// Fails when `ob` is not an [`Scale`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let scale = ob.cast::<Scale>()?.get();
-        Ok(crate::tensor::int::Scale::new(scale.0.shallow_clone()))
+        let dom = Int::new(crate::Tensor::shape(&scale.0));
+        Ok(crate::tensor::int::Scale::with_dom(
+            scale.0.shallow_clone(),
+            [dom],
+        )?)
     }
 }
 
@@ -231,7 +243,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::int::Scale<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::int::Scale<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::int::Scale::new(self.tensor().shallow_clone())
+        let dom = Int::new(crate::Tensor::shape(self.tensor()));
+        crate::tensor::int::Scale::with_dom(self.tensor().shallow_clone(), [dom])
+            .expect("a clone has the shape of the original")
     }
 }
 
@@ -239,8 +253,13 @@ impl Clone for crate::tensor::int::Scale<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::int::Linear<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::int::Linear::new(self.a().shallow_clone(), self.b().shallow_clone())
-            .expect("a clone has the shapes of the original")
+        let cod = Int::new(crate::Tensor::shape(self.b()));
+        crate::tensor::int::Linear::with_cod(
+            self.a().shallow_clone(),
+            self.b().shallow_clone(),
+            [cod],
+        )
+        .expect("a clone has the shapes of the original")
     }
 }
 

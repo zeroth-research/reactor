@@ -59,7 +59,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::bool::Const<tch::Tensor> 
     /// Fails when `ob` is not a [`Const`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Const>()?.get();
-        Ok(crate::tensor::bool::Const::new(constant.0.shallow_clone()))
+        let shape = crate::Tensor::shape(&constant.0);
+        Ok(crate::tensor::bool::Const::with_cod(
+            constant.0.shallow_clone(),
+            [crate::tensor::sort::Bool::new(shape)],
+        )?)
     }
 }
 
@@ -67,7 +71,12 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::bool::Const<tch::Tensor> 
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::bool::Const<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::bool::Const::new(self.tensor().shallow_clone())
+        let shape = crate::Tensor::shape(self.tensor());
+        crate::tensor::bool::Const::with_cod(
+            self.tensor().shallow_clone(),
+            [crate::tensor::sort::Bool::new(shape)],
+        )
+        .expect("a clone has the shape of the original")
     }
 }
 

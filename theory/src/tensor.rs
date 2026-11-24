@@ -252,10 +252,6 @@ impl Havoc {
         let [s] = cod;
         Ok(Havoc { sort: s })
     }
-
-    pub fn new(sort: sort::Any) -> Self {
-        Havoc { sort }
-    }
 }
 
 impl Skip {
@@ -269,10 +265,6 @@ impl Skip {
     pub fn with_cod(cod: [sort::Any; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
         Ok(Skip { sort: s })
-    }
-
-    pub fn new(sort: sort::Any) -> Self {
-        Skip { sort }
     }
 }
 
@@ -350,13 +342,13 @@ impl Skip {
 
 impl<T> crate::Combinatorial<sort::Any> for Any<T> {
     fn havoc(range: &sort::Any) -> Self {
-        Any::Havoc(Havoc::new(*range))
+        Any::Havoc(Havoc { sort: *range })
     }
 }
 
 impl<T> crate::Sequential<sort::Any> for Any<T> {
     fn skip(range: &sort::Any) -> Self {
-        Any::Skip(Skip::new(*range))
+        Any::Skip(Skip { sort: *range })
     }
 }
 
@@ -366,7 +358,11 @@ impl<T> crate::Sequential<sort::Any> for Any<T> {
 impl<T> crate::Differential<sort::Any> for Any<T> {
     fn zero(range: &sort::Any) -> Self {
         match range {
-            sort::Any::Real(r) => Any::Real(real::Zero::with_degree(r.shape(), r.degree()).into()),
+            sort::Any::Real(r) => Any::Real(
+                real::Zero::with_cod([*r])
+                    .expect("the zero of a real writes it")
+                    .into(),
+            ),
             sort::Any::Zero(_) => Any::Zero(Zero),
             _ => panic!("only the tangent sorts, reals and Zero, have a zero: {range}"),
         }

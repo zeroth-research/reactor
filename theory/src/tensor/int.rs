@@ -64,16 +64,11 @@ impl<T: Tensor> Const<T> {
                 &cod,
             ));
         }
-        Ok(Self::new(tensor))
+        Ok(Const { tensor })
     }
 }
 
 impl<T> Const<T> {
-    /// The constant held in `tensor`.
-    pub fn new(tensor: T) -> Self {
-        Const { tensor }
-    }
-
     /// The tensor holding the constant.
     pub fn tensor(&self) -> &T {
         &self.tensor
@@ -99,7 +94,7 @@ impl<T: Tensor> Scale<T> {
                 &dom,
             ));
         }
-        Ok(Self::new(tensor))
+        Ok(Scale { tensor })
     }
 
     /// The product with the constant held in `tensor`, writing the integer
@@ -112,16 +107,11 @@ impl<T: Tensor> Scale<T> {
                 &cod,
             ));
         }
-        Ok(Self::new(tensor))
+        Ok(Scale { tensor })
     }
 }
 
 impl<T> Scale<T> {
-    /// The product with the constant held in `tensor`.
-    pub fn new(tensor: T) -> Self {
-        Scale { tensor }
-    }
-
     /// The tensor holding the constant `C`.
     pub fn tensor(&self) -> &T {
         &self.tensor
@@ -196,19 +186,13 @@ pub struct Linear<T> {
 }
 
 impl<T: Tensor> Linear<T> {
-    /// The affine map `x ↦ A·x + B`; fails unless `a` and `b` are of shapes
-    /// `[m, n]` and `[m, k]`.
-    pub fn new(a: T, b: T) -> Result<Self, crate::Error> {
-        super::check_affine(a.shape(), b.shape())?;
-        Ok(Linear { a, b })
-    }
-
     /// The affine map `x ↦ A·x + B` reading the integer matrix `x` of
     /// `dom`; fails unless `a` and `b` are of shapes `[m, n]` and `[m, k]`,
     /// and `x` of shape `[n, k]`.
     pub fn with_dom(a: T, b: T, dom: [Int; 1]) -> Result<Self, crate::Error> {
         let [x] = dom;
-        let op = Self::new(a, b)?;
+        super::check_affine(a.shape(), b.shape())?;
+        let op = Linear { a, b };
         let ([_, n], [_, k]) = (op.a.shape(), op.b.shape());
         if x.shape() != [n, k] {
             return Err(crate::tensor::unexpected_dom(
@@ -224,7 +208,8 @@ impl<T: Tensor> Linear<T> {
     /// that matrix of shape `[m, k]`.
     pub fn with_cod(a: T, b: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
-        let op = Self::new(a, b)?;
+        super::check_affine(a.shape(), b.shape())?;
+        let op = Linear { a, b };
         if x.shape() != op.b.shape() {
             return Err(crate::tensor::unexpected_cod(
                 &format!("1 sort of shape {:?}", op.b.shape()),
@@ -1191,17 +1176,13 @@ impl Add {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Add { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Add { shape }
+        Ok(Add { shape: s.shape() })
     }
 }
 
@@ -1251,17 +1232,13 @@ impl Sub {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Sub { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Sub { shape }
+        Ok(Sub { shape: s.shape() })
     }
 }
 
@@ -1309,17 +1286,13 @@ impl Mul {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Mul { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Mul { shape }
+        Ok(Mul { shape: s.shape() })
     }
 }
 
@@ -1367,17 +1340,13 @@ impl Div {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Div { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Div { shape }
+        Ok(Div { shape: s.shape() })
     }
 }
 
@@ -1425,17 +1394,13 @@ impl Mod {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Mod { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Mod { shape }
+        Ok(Mod { shape: s.shape() })
     }
 }
 
@@ -1483,17 +1448,13 @@ impl Neg {
     /// The operation reading the integer matrix of `dom`.
     pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Neg { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Neg { shape }
+        Ok(Neg { shape: s.shape() })
     }
 }
 
@@ -1541,17 +1502,13 @@ impl Abs {
     /// The operation reading the integer matrix of `dom`.
     pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Abs { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Abs { shape }
+        Ok(Abs { shape: s.shape() })
     }
 }
 
@@ -1599,17 +1556,13 @@ impl ReLU {
     /// The operation reading the integer matrix of `dom`.
     pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(ReLU { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        ReLU { shape }
+        Ok(ReLU { shape: s.shape() })
     }
 }
 
@@ -1657,11 +1610,7 @@ impl Argmax {
     /// The operation reading the integer matrix of `dom`.
     pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Argmax { shape }
+        Ok(Argmax { shape: s.shape() })
     }
 }
 
@@ -1709,17 +1658,13 @@ impl Min {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Min { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Min { shape }
+        Ok(Min { shape: s.shape() })
     }
 }
 
@@ -1767,17 +1712,13 @@ impl Max {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Max { shape: s.shape() })
     }
 
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Max { shape }
+        Ok(Max { shape: s.shape() })
     }
 }
 
@@ -1825,18 +1766,14 @@ impl Transpose {
     /// The operation reading the integer matrix of `dom`.
     pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Transpose { shape: s.shape() })
     }
 
     /// The transposition writing the integer matrix of `cod`, reading its transpose.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
         let [m, n] = s.shape();
-        Ok(Self::new([n, m]))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Transpose { shape }
+        Ok(Transpose { shape: [n, m] })
     }
 }
 
@@ -1885,12 +1822,7 @@ impl MatMul {
     /// of the first are the rows of the second.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let [x, y] = dom;
-        Self::new([x.shape(), y.shape()])
-    }
-
-    /// Fails unless the columns of the first shape are the rows of the
-    /// second.
-    pub fn new(shapes: [[usize; 2]; 2]) -> Result<Self, crate::Error> {
+        let shapes = [x.shape(), y.shape()];
         let [lhs, rhs] = shapes;
         if lhs[1] != rhs[0] {
             return Err(crate::Error(format!(
@@ -1946,17 +1878,13 @@ impl Lt {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Lt { shape: s.shape() })
     }
 
     /// The operation writing the boolean matrix of `cod`.
     pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Lt { shape }
+        Ok(Lt { shape: s.shape() })
     }
 }
 
@@ -2007,7 +1935,7 @@ impl Ite {
     pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
         match dom {
             [Sort::Bool(c), Sort::Int(x), Sort::Int(y)] if x == y && c.shape() == x.shape() => {
-                Ok(Self::new(x.shape()))
+                Ok(Ite { shape: x.shape() })
             }
             _ => Err(crate::tensor::unexpected_dom(
                 "a condition Bool and two branches Int of its shape",
@@ -2019,11 +1947,7 @@ impl Ite {
     /// The operation writing the integer matrix of `cod`.
     pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ite { shape }
+        Ok(Ite { shape: s.shape() })
     }
 }
 
@@ -2071,17 +1995,13 @@ impl Le {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Le { shape: s.shape() })
     }
 
     /// The operation writing the boolean matrix of `cod`.
     pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Le { shape }
+        Ok(Le { shape: s.shape() })
     }
 }
 
@@ -2129,17 +2049,13 @@ impl Gt {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Gt { shape: s.shape() })
     }
 
     /// The operation writing the boolean matrix of `cod`.
     pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Gt { shape }
+        Ok(Gt { shape: s.shape() })
     }
 }
 
@@ -2187,17 +2103,13 @@ impl Ge {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Ge { shape: s.shape() })
     }
 
     /// The operation writing the boolean matrix of `cod`.
     pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ge { shape }
+        Ok(Ge { shape: s.shape() })
     }
 }
 
@@ -2245,17 +2157,13 @@ impl Eq {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Eq { shape: s.shape() })
     }
 
     /// The operation writing the boolean matrix of `cod`.
     pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Eq { shape }
+        Ok(Eq { shape: s.shape() })
     }
 }
 
@@ -2303,17 +2211,13 @@ impl Ne {
     /// The operation reading the integer matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Ok(Self::new(s.shape()))
+        Ok(Ne { shape: s.shape() })
     }
 
     /// The operation writing the boolean matrix of `cod`.
     pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Ok(Self::new(s.shape()))
-    }
-
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ne { shape }
+        Ok(Ne { shape: s.shape() })
     }
 }
 

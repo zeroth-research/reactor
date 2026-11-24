@@ -93,10 +93,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Linear<tch::Tensor>
     /// Fails when `ob` is not a [`Linear`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let linear = ob.cast::<Linear>()?.get();
-        Ok(crate::tensor::real::Linear::with_degree(
+        let cod = Real::with_degree(crate::Tensor::shape(&linear.1), linear.2);
+        Ok(crate::tensor::real::Linear::with_cod(
             linear.0.shallow_clone(),
             linear.1.shallow_clone(),
-            linear.2,
+            [cod],
         )?)
     }
 }
@@ -163,10 +164,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Const<tch::Tensor> 
     /// Fails when `ob` is not a [`Const`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Const>()?.get();
-        Ok(crate::tensor::real::Const::with_degree(
+        let cod = Real::with_degree(crate::Tensor::shape(&constant.0), constant.1);
+        Ok(crate::tensor::real::Const::with_cod(
             constant.0.shallow_clone(),
-            constant.1,
-        ))
+            [cod],
+        )?)
     }
 }
 
@@ -174,7 +176,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Const<tch::Tensor> 
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::real::Const<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::real::Const::with_degree(self.tensor().shallow_clone(), self.degree())
+        let cod = Real::with_degree(crate::Tensor::shape(self.tensor()), self.degree());
+        crate::tensor::real::Const::with_cod(self.tensor().shallow_clone(), [cod])
+            .expect("a clone has the sort of the original")
     }
 }
 
@@ -248,10 +252,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Scale<tch::Tensor> 
     /// Fails when `ob` is not a [`Scale`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let scale = ob.cast::<Scale>()?.get();
-        Ok(crate::tensor::real::Scale::with_degree(
+        let dom = Real::with_degree(crate::Tensor::shape(&scale.0), scale.1);
+        Ok(crate::tensor::real::Scale::with_dom(
             scale.0.shallow_clone(),
-            scale.1,
-        ))
+            [dom],
+        )?)
     }
 }
 
@@ -259,7 +264,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::real::Scale<tch::Tensor> 
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::real::Scale<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::real::Scale::with_degree(self.tensor().shallow_clone(), self.degree())
+        let dom = Real::with_degree(crate::Tensor::shape(self.tensor()), self.degree());
+        crate::tensor::real::Scale::with_dom(self.tensor().shallow_clone(), [dom])
+            .expect("a clone has the sort of the original")
     }
 }
 
@@ -267,10 +274,11 @@ impl Clone for crate::tensor::real::Scale<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::tensor::real::Linear<tch::Tensor> {
     fn clone(&self) -> Self {
-        crate::tensor::real::Linear::with_degree(
+        let cod = Real::with_degree(crate::Tensor::shape(self.b()), self.degree());
+        crate::tensor::real::Linear::with_cod(
             self.a().shallow_clone(),
             self.b().shallow_clone(),
-            self.degree(),
+            [cod],
         )
         .expect("a clone has the shapes of the original")
     }

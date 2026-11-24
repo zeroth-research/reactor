@@ -46,7 +46,7 @@ theory FixedSizeBitVectors or are defined by the logic QF_BV. The
 comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
 */
 
-use super::sort::{Bool, Word, check_width};
+use super::sort::{Bool, Word};
 use crate::Tensor;
 use base::boundary::{Boundary, Poly};
 use base::mono;
@@ -83,18 +83,14 @@ impl<T: Tensor> Const<T> {
                 &cod,
             ));
         }
-        Self::new(tensor, x.width())
+        Ok(Const {
+            tensor,
+            width: x.width(),
+        })
     }
 }
 
 impl<T> Const<T> {
-    /// The constant of `width`-bit words held in `tensor`; fails unless
-    /// `width` is positive.
-    pub fn new(tensor: T, width: usize) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Const { tensor, width })
-    }
-
     /// The tensor holding the constant.
     pub fn tensor(&self) -> &T {
         &self.tensor
@@ -970,7 +966,6 @@ impl fmt::Display for Ne {
 pub mod signed {
     use super::{Sort, Word};
     use crate::tensor::sort::Bool;
-    use crate::tensor::sort::check_width;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     #[cfg(feature = "pyo3")]
@@ -1278,18 +1273,19 @@ pub mod signed {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
+            Ok(Div {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
 
         /// The operation writing the words of `cod`.
         pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Div { width, shape })
+            Ok(Div {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -1349,18 +1345,19 @@ pub mod signed {
         /// The operation reading the words of `dom`.
         pub fn with_dom(dom: [Word; 1]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
+            Ok(Abs {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
 
         /// The operation writing the words of `cod`.
         pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Abs { width, shape })
+            Ok(Abs {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -1419,18 +1416,19 @@ pub mod signed {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
+            Ok(Rem {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
 
         /// The operation writing the words of `cod`.
         pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Rem { width, shape })
+            Ok(Rem {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -1489,18 +1487,19 @@ pub mod signed {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
+            Ok(Mod {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
 
         /// The operation writing the words of `cod`.
         pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Mod { width, shape })
+            Ok(Mod {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -1559,18 +1558,19 @@ pub mod signed {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
+            Ok(Shr {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
 
         /// The operation writing the words of `cod`.
         pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Shr { width, shape })
+            Ok(Shr {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -1629,7 +1629,18 @@ pub mod signed {
         /// The operation of indices `i`, reading the words of `dom`.
         pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = dom;
-            Self::new(i, s.width(), s.shape())
+            let width = s.width();
+            if width.checked_add(i).is_none() {
+                return Err(crate::Error(format!(
+                    "cannot extend words of {width} bits by {i} bits: the result would have more than {} bits",
+                    usize::MAX
+                )));
+            }
+            Ok(Extend {
+                i,
+                width,
+                shape: s.shape(),
+            })
         }
 
         /// The extension by `i` bits writing the words of `cod`; fails unless
@@ -1637,25 +1648,16 @@ pub mod signed {
         pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
             match s.width().checked_sub(i) {
-                Some(width) if width > 0 => Self::new(i, width, s.shape()),
+                Some(width) if width > 0 => Ok(Extend {
+                    i,
+                    width,
+                    shape: s.shape(),
+                }),
                 _ => Err(crate::tensor::unexpected_cod(
                     &format!("1 sort of more than {i} bits"),
                     &cod,
                 )),
             }
-        }
-
-        /// Fails unless `width` is positive, and `width + i`, the width of
-        /// the words written, fits a `usize`.
-        pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            if width.checked_add(i).is_none() {
-                return Err(crate::Error(format!(
-                    "cannot extend words of {width} bits by {i} bits: the result would have more than {} bits",
-                    usize::MAX
-                )));
-            }
-            Ok(Extend { i, width, shape })
         }
     }
 
@@ -1719,12 +1721,10 @@ pub mod signed {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Lt { width, shape })
+            Ok(Lt {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -1783,12 +1783,10 @@ pub mod signed {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Le { width, shape })
+            Ok(Le {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -1847,12 +1845,10 @@ pub mod signed {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Gt { width, shape })
+            Ok(Gt {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -1911,12 +1907,10 @@ pub mod signed {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Ge { width, shape })
+            Ok(Ge {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -1977,7 +1971,6 @@ pub mod signed {
 pub mod unsigned {
     use super::{Sort, Word};
     use crate::tensor::sort::Bool;
-    use crate::tensor::sort::check_width;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     #[cfg(feature = "pyo3")]
@@ -2272,18 +2265,19 @@ pub mod unsigned {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
+            Ok(Div {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
 
         /// The operation writing the words of `cod`.
         pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Div { width, shape })
+            Ok(Div {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -2343,18 +2337,19 @@ pub mod unsigned {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
+            Ok(Rem {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
 
         /// The operation writing the words of `cod`.
         pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Rem { width, shape })
+            Ok(Rem {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -2413,18 +2408,19 @@ pub mod unsigned {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
+            Ok(Shr {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
 
         /// The operation writing the words of `cod`.
         pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Shr { width, shape })
+            Ok(Shr {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -2483,7 +2479,18 @@ pub mod unsigned {
         /// The operation of indices `i`, reading the words of `dom`.
         pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = dom;
-            Self::new(i, s.width(), s.shape())
+            let width = s.width();
+            if width.checked_add(i).is_none() {
+                return Err(crate::Error(format!(
+                    "cannot extend words of {width} bits by {i} bits: the result would have more than {} bits",
+                    usize::MAX
+                )));
+            }
+            Ok(Extend {
+                i,
+                width,
+                shape: s.shape(),
+            })
         }
 
         /// The extension by `i` bits writing the words of `cod`; fails unless
@@ -2491,25 +2498,16 @@ pub mod unsigned {
         pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
             let [s] = cod;
             match s.width().checked_sub(i) {
-                Some(width) if width > 0 => Self::new(i, width, s.shape()),
+                Some(width) if width > 0 => Ok(Extend {
+                    i,
+                    width,
+                    shape: s.shape(),
+                }),
                 _ => Err(crate::tensor::unexpected_cod(
                     &format!("1 sort of more than {i} bits"),
                     &cod,
                 )),
             }
-        }
-
-        /// Fails unless `width` is positive, and `width + i`, the width of
-        /// the words written, fits a `usize`.
-        pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            if width.checked_add(i).is_none() {
-                return Err(crate::Error(format!(
-                    "cannot extend words of {width} bits by {i} bits: the result would have more than {} bits",
-                    usize::MAX
-                )));
-            }
-            Ok(Extend { i, width, shape })
         }
     }
 
@@ -2573,12 +2571,10 @@ pub mod unsigned {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Lt { width, shape })
+            Ok(Lt {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -2637,12 +2633,10 @@ pub mod unsigned {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Le { width, shape })
+            Ok(Le {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -2701,12 +2695,10 @@ pub mod unsigned {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Gt { width, shape })
+            Ok(Gt {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -2765,12 +2757,10 @@ pub mod unsigned {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
             let s = crate::tensor::same_sort(dom)?;
-            Self::new(s.width(), s.shape())
-        }
-
-        pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-            check_width(width)?;
-            Ok(Ge { width, shape })
+            Ok(Ge {
+                width: s.width(),
+                shape: s.shape(),
+            })
         }
     }
 
@@ -2974,22 +2964,17 @@ impl Concat {
                 &dom,
             ));
         }
-        Self::new([x.width(), y.width()], x.shape())
-    }
-
-    /// Fails unless both widths are positive, and their sum, the width of
-    /// the words written, fits a `usize`.
-    pub fn new(widths: [usize; 2], shape: [usize; 2]) -> Result<Self, crate::Error> {
-        let [u, v] = widths;
-        check_width(u)?;
-        check_width(v)?;
+        let [u, v] = [x.width(), y.width()];
         if u.checked_add(v).is_none() {
             return Err(crate::Error(format!(
                 "cannot concatenate words of {u} and {v} bits: the result would have more than {} bits",
                 usize::MAX
             )));
         }
-        Ok(Concat { widths, shape })
+        Ok(Concat {
+            widths: [u, v],
+            shape: x.shape(),
+        })
     }
 }
 
@@ -3045,17 +3030,18 @@ impl Extract {
     /// The operation of indices `i`, `j`, reading the words of `dom`.
     pub fn with_dom(i: usize, j: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = dom;
-        Self::new(i, j, s.width(), s.shape())
-    }
-
-    /// Fails unless `j ≤ i < width`.
-    pub fn new(i: usize, j: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
+        let width = s.width();
         if !(j <= i && i < width) {
             return Err(crate::Error(format!(
                 "cannot extract the bits {i} down to {j} of {width}-bit words"
             )));
         }
-        Ok(Extract { i, j, width, shape })
+        Ok(Extract {
+            i,
+            j,
+            width,
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3118,7 +3104,21 @@ impl Repeat {
     /// The operation of indices `i`, reading the words of `dom`.
     pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = dom;
-        Self::new(i, s.width(), s.shape())
+        let width = s.width();
+        if i == 0 {
+            return Err(crate::Error("cannot repeat a word zero times".to_string()));
+        }
+        if i.checked_mul(width).is_none() {
+            return Err(crate::Error(format!(
+                "cannot repeat words of {width} bits {i} times: the result would have more than {} bits",
+                usize::MAX
+            )));
+        }
+        Ok(Repeat {
+            i,
+            width,
+            shape: s.shape(),
+        })
     }
 
     /// The repetition `i` times writing the words of `cod`; fails unless `i`
@@ -3131,23 +3131,11 @@ impl Repeat {
                 &cod,
             ));
         }
-        Self::new(i, s.width() / i, s.shape())
-    }
-
-    /// Fails unless `i` and `width` are positive, and their product, the
-    /// width of the words written, fits a `usize`.
-    pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        if i == 0 {
-            return Err(crate::Error("cannot repeat a word zero times".to_string()));
-        }
-        check_width(width)?;
-        if i.checked_mul(width).is_none() {
-            return Err(crate::Error(format!(
-                "cannot repeat words of {width} bits {i} times: the result would have more than {} bits",
-                usize::MAX
-            )));
-        }
-        Ok(Repeat { i, width, shape })
+        Ok(Repeat {
+            i,
+            width: s.width() / i,
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3205,18 +3193,19 @@ impl Not {
     /// The operation reading the words of `dom`.
     pub fn with_dom(dom: [Word; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Not {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Not { width, shape })
+        Ok(Not {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3269,18 +3258,19 @@ impl And {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(And {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(And { width, shape })
+        Ok(And {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3333,18 +3323,19 @@ impl Or {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Or {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Or { width, shape })
+        Ok(Or {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3397,18 +3388,19 @@ impl Xor {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Xor {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Xor { width, shape })
+        Ok(Xor {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3461,18 +3453,19 @@ impl Nand {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Nand {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Nand { width, shape })
+        Ok(Nand {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3525,18 +3518,19 @@ impl Nor {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Nor {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Nor { width, shape })
+        Ok(Nor {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3589,18 +3583,19 @@ impl Xnor {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Xnor {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Xnor { width, shape })
+        Ok(Xnor {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3653,18 +3648,19 @@ impl Neg {
     /// The operation reading the words of `dom`.
     pub fn with_dom(dom: [Word; 1]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Neg {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Neg { width, shape })
+        Ok(Neg {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3720,7 +3716,10 @@ impl Ite {
     pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
         match dom {
             [Sort::Bool(c), Sort::Word(x), Sort::Word(y)] if x == y && c.shape() == x.shape() => {
-                Self::new(x.width(), x.shape())
+                Ok(Ite {
+                    width: x.width(),
+                    shape: x.shape(),
+                })
             }
             _ => Err(crate::tensor::unexpected_dom(
                 "a condition Bool and two branches Word of its shape",
@@ -3732,12 +3731,10 @@ impl Ite {
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Ite { width, shape })
+        Ok(Ite {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3790,18 +3787,19 @@ impl Add {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Add {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Add { width, shape })
+        Ok(Add {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3854,18 +3852,19 @@ impl Sub {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Sub {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Sub { width, shape })
+        Ok(Sub {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3918,18 +3917,19 @@ impl Mul {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Mul {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Mul { width, shape })
+        Ok(Mul {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -3982,18 +3982,19 @@ impl Shl {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
+        Ok(Shl {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation writing the words of `cod`.
     pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Shl { width, shape })
+        Ok(Shl {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -4046,18 +4047,21 @@ impl RotateLeft {
     /// The operation of indices `i`, reading the words of `dom`.
     pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = dom;
-        Self::new(i, s.width(), s.shape())
+        Ok(RotateLeft {
+            i,
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation of index `i`, writing the words of `cod`.
     pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(i, s.width(), s.shape())
-    }
-
-    pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(RotateLeft { i, width, shape })
+        Ok(RotateLeft {
+            i,
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -4115,18 +4119,21 @@ impl RotateRight {
     /// The operation of indices `i`, reading the words of `dom`.
     pub fn with_dom(i: usize, dom: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = dom;
-        Self::new(i, s.width(), s.shape())
+        Ok(RotateRight {
+            i,
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 
     /// The operation of index `i`, writing the words of `cod`.
     pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
-        Self::new(i, s.width(), s.shape())
-    }
-
-    pub fn new(i: usize, width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(RotateRight { i, width, shape })
+        Ok(RotateRight {
+            i,
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -4184,12 +4191,10 @@ impl Eq {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Eq { width, shape })
+        Ok(Eq {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
@@ -4242,12 +4247,10 @@ impl Ne {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let s = crate::tensor::same_sort(dom)?;
-        Self::new(s.width(), s.shape())
-    }
-
-    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
-        check_width(width)?;
-        Ok(Ne { width, shape })
+        Ok(Ne {
+            width: s.width(),
+            shape: s.shape(),
+        })
     }
 }
 
