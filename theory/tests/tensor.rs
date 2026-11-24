@@ -1815,3 +1815,161 @@ mod with_cod {
         assert!(word::unsigned::Extend::with_cod(9, [w(8)]).is_err());
     }
 }
+
+/// Tests for `tensor::float`.
+mod float {
+    use base::boundary::{Boundary, Poly};
+    use base::differentiable::T;
+    use base::mono;
+    use theory::tensor::float::*;
+    use theory::tensor::sort::{self, Bool, Float};
+
+    const RM: RoundingMode = RoundingMode::RNE;
+
+    fn f(shape: [usize; 2]) -> Float {
+        Float::new(8, 24, shape).unwrap()
+    }
+
+    fn one(s: impl Into<Sort>) -> Poly<Sort> {
+        mono![s.into()].into()
+    }
+
+    fn many(s: impl Into<Sort> + Copy, n: usize) -> Poly<Sort> {
+        (0..n)
+            .map(|_| s.into())
+            .collect::<base::boundary::Mono<Sort>>()
+            .into()
+    }
+
+    #[test]
+    fn floats_have_more_than_one_bit_of_exponent_and_of_significand() {
+        assert!(Float::new(1, 24, [1, 1]).is_err());
+        assert!(Float::new(8, 1, [1, 1]).is_err());
+        assert!(Float::new(2, 2, [1, 1]).is_ok());
+        assert_eq!(f([2, 3]).to_string(), "Float8_24([2, 3])");
+        // floats are discrete: their tangent is the singleton sort
+        assert_eq!(T(f([2, 3])), sort::Zero);
+    }
+
+    #[test]
+    fn arithmetic_reads_and_writes_floats_of_one_sort() {
+        let x = f([2, 3]);
+        let add = Add::with_dom(RM, [x; 2]).unwrap();
+        assert_eq!((add.dom(), add.cod()), (many(x, 2), one(x)));
+        let fma = Fma::with_dom(RM, [x; 3]).unwrap();
+        assert_eq!((fma.dom(), fma.cod()), (many(x, 3), one(x)));
+        let sqrt = Sqrt::with_dom(RM, [x]).unwrap();
+        assert_eq!((sqrt.dom(), sqrt.cod()), (one(x), one(x)));
+        let rem = Rem::with_dom([x; 2]).unwrap();
+        assert_eq!((rem.dom(), rem.cod()), (many(x, 2), one(x)));
+        let neg = Neg::with_dom([x]).unwrap();
+        assert_eq!((neg.dom(), neg.cod()), (one(x), one(x)));
+        // the codomain determines them too
+        assert_eq!(Add::with_cod(RM, [x]).unwrap(), add);
+        assert_eq!(Max::with_cod([x]).unwrap(), Max::with_dom([x; 2]).unwrap());
+        assert_eq!(add.rm(), RM);
+    }
+
+    #[test]
+    fn operands_of_different_sorts_are_rejected() {
+        let x = f([2, 3]);
+        let y = Float::new(11, 53, [2, 3]).unwrap();
+        assert!(Add::with_dom(RM, [x, y]).is_err());
+        assert!(Min::with_dom([x, f([3, 2])]).is_err());
+        assert!(Fma::with_dom(RM, [x, x, y]).is_err());
+        assert!(Lt::with_dom([x, y]).is_err());
+    }
+
+    #[test]
+    fn comparisons_and_predicates_write_booleans() {
+        let x = f([2, 3]);
+        let b = Bool::new([2, 3]);
+        let lt = Lt::with_dom([x; 2]).unwrap();
+        assert_eq!((lt.dom(), lt.cod()), (many(x, 2), one(b)));
+        assert_eq!(Eq::with_dom([x; 2]).unwrap().cod(), one(b));
+        let nan = IsNaN::with_dom([x]).unwrap();
+        assert_eq!((nan.dom(), nan.cod()), (one(x), one(b)));
+    }
+
+    #[test]
+    fn special_values_read_nothing() {
+        let x = f([2, 3]);
+        let inf = PlusInfinity::with_cod([x]).unwrap();
+        assert_eq!((inf.dom(), inf.cod()), (Poly::unit(), one(x)));
+        assert_eq!(NaN::with_cod([x]).unwrap().cod(), one(x));
+        assert_eq!(MinusZero::with_cod([x]).unwrap().to_string(), "MinusZero");
+    }
+
+    #[test]
+    fn ite_chooses_between_floats_of_the_shape_of_its_condition() {
+        let x = f([2, 3]);
+        let b = Bool::new([2, 3]);
+        let ite = Ite::with_dom([b.into(), x.into(), x.into()]).unwrap();
+        assert_eq!(ite.cod(), one(x));
+        assert_eq!(Ite::with_cod([x]).unwrap(), ite);
+        assert!(Ite::with_dom([Bool::new([3, 2]).into(), x.into(), x.into()]).is_err());
+        assert!(
+            Ite::with_dom([
+                b.into(),
+                x.into(),
+                Float::new(11, 53, [2, 3]).unwrap().into()
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn conversion_changes_the_format_and_keeps_the_shape() {
+        let x = f([2, 3]);
+        let double = Float::new(11, 53, [2, 3]).unwrap();
+        let op = Convert::with_dom(RoundingMode::RTZ, 11, 53, [x]).unwrap();
+        assert_eq!((op.dom(), op.cod()), (one(x), one(double)));
+        assert_eq!(op.to_string(), "Convert(RTZ, 11, 53)");
+        assert_eq!((op.exponent(), op.significand()), (11, 53));
+        // to a format of no float
+        assert!(Convert::with_dom(RM, 1, 53, [x]).is_err());
+    }
+
+    /// A tensor carrying its shape only, enough to compute boundaries.
+    #[derive(Debug)]
+    struct Mat([usize; 2]);
+
+    impl theory::Tensor for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    #[test]
+    fn float_operations_belong_to_any_and_to_the_logic_fp() {
+        let x = f([2, 3]);
+        let op = theory::tensor::Any::<Mat>::Float(Add::with_dom(RM, [x; 2]).unwrap().into());
+        let cod: Poly<sort::Any> = mono![x.into()].into();
+        assert_eq!(op.cod(), cod);
+        assert!(theory::tensor::FP::try_from(op).is_ok());
+
+        // a constant is of the shape of its tensor, and belongs to no other logic
+        assert!(Const::with_cod(Mat([3, 2]), [x]).is_err());
+        let c = Const::with_cod(Mat([2, 3]), [x]).unwrap();
+        let any = theory::tensor::Any::Float(FP::from(c));
+        assert!(theory::tensor::BV::try_from(any).is_err());
+    }
+
+    #[test]
+    fn rounding_operations_display_their_rounding_mode() {
+        let x = f([1, 1]);
+        assert_eq!(
+            Add::with_dom(RoundingMode::RNA, [x; 2])
+                .unwrap()
+                .to_string(),
+            "Add(RNA)"
+        );
+        assert_eq!(
+            RoundToIntegral::with_dom(RoundingMode::RTP, [x])
+                .unwrap()
+                .to_string(),
+            "RoundToIntegral(RTP)"
+        );
+        assert_eq!(Abs::with_dom([x]).unwrap().to_string(), "Abs");
+    }
+}

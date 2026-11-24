@@ -3,13 +3,15 @@
 
 The tensor operations of each theory, one type per operation, in a module per
 theory: [`real`] and [`int`] for arithmetic, [`bool`](mod@bool) for
-propositional logic, and [`word`] for fixed-size bit-vectors. Each
+propositional logic, [`word`] for fixed-size bit-vectors, and [`float`]
+for floating-point numbers. Each
 operation reads and writes the sorts of [`sort`], and computes its
 own boundary.
 
 The operations are organised in two levels. Each theory module gathers its
 operations in an enum named after the logic of that theory alone:
-[`real::NRA`], [`int::NIA`], [`bool::Prop`] and [`word::BV`]. The
+[`real::NRA`], [`int::NIA`], [`bool::Prop`], [`word::BV`] and
+[`float::FP`]. The
 arithmetic ones mark their linear operations with a subenum named after
 the linear logic: [`real::LRA`] and [`int::LIA`].
 Here, [`Any`] holds the operations of all theories, one variant per
@@ -24,6 +26,7 @@ arithmetic to its linear operations where the logic is linear:
 | [`NIA`] | [`int::NIA`], [`bool::Prop`] | `QF_NIA` |
 | [`LIA`] | [`int::LIA`], [`bool::Prop`] | `QF_LIA` |
 | [`BV`] | [`word::BV`], [`bool::Prop`] | `QF_BV` |
+| [`FP`] | [`float::FP`], [`bool::Prop`] | `QF_FP`, without its conversions |
 
 The operations that carry data, the constants and the coefficients of the
 affine maps, hold it in matrices of a type `T` implementing [`Tensor`], over
@@ -33,6 +36,7 @@ feature, `tch::Tensor` implements it, converting to and from Python
 */
 
 pub mod bool;
+pub mod float;
 pub mod int;
 pub mod real;
 pub mod sort;
@@ -62,7 +66,9 @@ pub trait Tensor {
 ///
 /// `subenum` defines the logics that take whole theories: [`Prop`],
 /// propositional logic; [`NRA`] and [`NIA`], non-linear real and integer
-/// arithmetic; and [`BV`], the logic `QF_BV` of fixed-size bit-vectors. It
+/// arithmetic; [`BV`], the logic `QF_BV` of fixed-size bit-vectors; and
+/// [`FP`], the logic `QF_FP` of floating-point numbers, without the
+/// conversions to and from other sorts. It
 /// also generates their casts: `From` up to `Any`, and `TryFrom` down from
 /// it. The linear logics [`LRA`] and [`LIA`] restrict a theory to its
 /// linear operations, which `subenum` cannot express, so they are defined
@@ -71,17 +77,19 @@ pub trait Tensor {
 /// `Any` is cloneable when the constants and affine maps of its tensor type
 /// are: `Clone` is implemented by hand rather than derived, as a derive would
 /// require `T: Clone`, which tensor types such as `tch::Tensor` are not.
-#[subenum(NRA, NIA, Prop, BV)]
+#[subenum(NRA, NIA, Prop, BV, FP)]
 #[derive(Debug, From)]
 pub enum Any<T> {
     #[subenum(NRA)]
     Real(real::NRA<T>),
     #[subenum(NIA)]
     Int(int::NIA<T>),
-    #[subenum(NRA, NIA, Prop, BV)]
+    #[subenum(NRA, NIA, Prop, BV, FP)]
     Bool(bool::Prop<T>),
     #[subenum(BV)]
     Word(word::BV<T>),
+    #[subenum(FP)]
+    Float(float::FP<T>),
     Havoc(Havoc),
     Skip(Skip),
     Zero(Zero),
@@ -375,6 +383,7 @@ where
     int::NIA<T>: Clone,
     bool::Prop<T>: Clone,
     word::BV<T>: Clone,
+    float::FP<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
@@ -382,6 +391,7 @@ where
             Any::Int(op) => Any::Int(op.clone()),
             Any::Bool(op) => Any::Bool(op.clone()),
             Any::Word(op) => Any::Word(op.clone()),
+            Any::Float(op) => Any::Float(op.clone()),
             Any::Havoc(op) => Any::Havoc(*op),
             Any::Skip(op) => Any::Skip(*op),
             Any::Zero(op) => Any::Zero(*op),
@@ -439,6 +449,19 @@ where
     }
 }
 
+impl<T> Clone for FP<T>
+where
+    bool::Prop<T>: Clone,
+    float::FP<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            FP::Bool(op) => FP::Bool(op.clone()),
+            FP::Float(op) => FP::Float(op.clone()),
+        }
+    }
+}
+
 impl<T> Clone for LRA<T>
 where
     real::LRA<T>: Clone,
@@ -472,6 +495,7 @@ impl<T: fmt::Display> fmt::Display for Any<T> {
             Any::Int(op) => op.fmt(f),
             Any::Bool(op) => op.fmt(f),
             Any::Word(op) => op.fmt(f),
+            Any::Float(op) => op.fmt(f),
             Any::Havoc(op) => op.fmt(f),
             Any::Skip(op) => op.fmt(f),
             Any::Zero(op) => op.fmt(f),
@@ -486,6 +510,7 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
             Any::Int(op) => op.dom().map(sort::Any::from),
             Any::Bool(op) => op.dom().map(sort::Any::from),
             Any::Word(op) => op.dom().map(sort::Any::from),
+            Any::Float(op) => op.dom().map(sort::Any::from),
             Any::Havoc(op) => op.dom(),
             Any::Skip(op) => op.dom(),
             Any::Zero(op) => op.dom().map(sort::Any::from),
@@ -498,6 +523,7 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
             Any::Int(op) => op.cod().map(sort::Any::from),
             Any::Bool(op) => op.cod().map(sort::Any::from),
             Any::Word(op) => op.cod().map(sort::Any::from),
+            Any::Float(op) => op.cod().map(sort::Any::from),
             Any::Havoc(op) => op.cod(),
             Any::Skip(op) => op.cod(),
             Any::Zero(op) => op.cod().map(sort::Any::from),
@@ -506,8 +532,8 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
 }
 
 /// Extracts an operation of any theory from a Python object, trying each
-/// theory in turn through its own extraction: real, integer, boolean, and
-/// then bit-vector operations. The operations of each theory are distinct
+/// theory in turn through its own extraction: real, integer, boolean,
+/// bit-vector, and then floating-point operations. The operations of each theory are distinct
 /// Python classes, so at most one theory accepts a given object.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for Any<T>
@@ -516,6 +542,7 @@ where
     int::NIA<T>: pyo3::FromPyObject<'a, 'py>,
     bool::Prop<T>: pyo3::FromPyObject<'a, 'py>,
     word::BV<T>: pyo3::FromPyObject<'a, 'py>,
+    float::FP<T>: pyo3::FromPyObject<'a, 'py>,
 {
     type Error = pyo3::PyErr;
 
@@ -534,6 +561,9 @@ where
         if let Ok(op) = ob.extract::<word::BV<T>>() {
             return Ok(Any::Word(op));
         }
+        if let Ok(op) = ob.extract::<float::FP<T>>() {
+            return Ok(Any::Float(op));
+        }
         if let Ok(op) = ob.extract::<Havoc>() {
             return Ok(Any::Havoc(op));
         }
@@ -544,8 +574,8 @@ where
             return Ok(Any::Zero(op));
         }
         Err(pyo3::exceptions::PyTypeError::new_err(format!(
-            "expected an operation of real, integer, boolean or bit-vector \
-             arithmetic, got {}",
+            "expected an operation of real, integer, boolean, bit-vector or \
+             floating-point arithmetic, got {}",
             ob.get_type()
         )))
     }
@@ -624,6 +654,12 @@ impl<T> From<Prop<T>> for LRA<T> {
 impl<T> From<Prop<T>> for LIA<T> {
     fn from(Prop::Bool(op): Prop<T>) -> Self {
         LIA::Bool(op)
+    }
+}
+
+impl<T> From<Prop<T>> for FP<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
+        FP::Bool(op)
     }
 }
 

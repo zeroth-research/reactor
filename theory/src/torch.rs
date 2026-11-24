@@ -9,9 +9,10 @@ torch tensors directly, as `tensor::real::Const<tch::Tensor>`. The Python
 
 The constants are Python classes of their own, one per theory, as a tensor
 alone does not tell the theory of its constant: [`real::Const`],
-[`int::Const`], [`bool::Const`] and [`word::Const`]. Each holds, in a
-private field, a [`tch::Tensor`] of the element kind of its theory, checked
-on construction, and [`word::Const`] its width too. A [`tch::Tensor`] is not
+[`int::Const`], [`bool::Const`], [`word::Const`] and [`float::Const`]. Each
+holds, in a private field, a [`tch::Tensor`] of the element kind of its
+theory, checked on construction, [`word::Const`] its width too, and
+[`float::Const`] its sort, whose format must be that of its elements. A [`tch::Tensor`] is not
 `Sync`, which a Python class must be, so each class implements `Sync`
 itself, as only its own module touches the tensor. The constants of
 [`crate::tensor`] extract from the class of their theory, sharing its tensor.
@@ -30,6 +31,7 @@ from the class of their theory, sharing its tensors.
 */
 
 pub mod bool;
+pub mod float;
 pub mod int;
 pub mod real;
 pub mod word;
@@ -107,6 +109,7 @@ impl<'py> IntoPyObject<'py> for crate::tensor::Any<tch::Tensor> {
             Any::Int(op) => op.into_pyobject(py),
             Any::Bool(op) => op.into_pyobject(py),
             Any::Word(op) => op.into_pyobject(py),
+            Any::Float(op) => op.into_pyobject(py),
             Any::Havoc(op) => op.into_pyobject(py).map(Bound::into_any),
             Any::Skip(op) => op.into_pyobject(py).map(Bound::into_any),
             Any::Zero(op) => op.into_pyobject(py).map(Bound::into_any),

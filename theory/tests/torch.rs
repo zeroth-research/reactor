@@ -409,3 +409,76 @@ fn constants_are_built_from_matrices_only() {
         );
     });
 }
+
+#[test]
+fn float_constants_are_built_from_floats_of_their_format() {
+    prepare_python_with_torch();
+    Python::attach(|py| {
+        let float = py.get_type::<theory::torch::float::Const>();
+        let singles = python(py, full(2, 3, 1.5, tch::Kind::Float));
+        let doubles = python(py, full(2, 3, 1.5, tch::Kind::Double));
+        let ints = python(py, full(2, 3, 1.0, tch::Kind::Int64));
+        let single = tensor::sort::Float::new(8, 24, [2, 3]).unwrap();
+
+        // the format of the elements is that of the sort, which they determine
+        assert!(float.call1((&singles, sort(py, single))).is_ok());
+        let inferred = float.call1((&doubles,)).unwrap();
+        assert_eq!(
+            inferred
+                .getattr("cod")
+                .unwrap()
+                .extract::<tensor::sort::Float>()
+                .unwrap(),
+            tensor::sort::Float::new(11, 53, [2, 3]).unwrap()
+        );
+        assert!(float.call1((&doubles, sort(py, single))).is_err());
+        assert!(float.call1((&ints,)).is_err());
+        assert!(
+            float
+                .call1((
+                    &singles,
+                    sort(py, tensor::sort::Float::new(8, 24, [3, 2]).unwrap())
+                ))
+                .is_err()
+        );
+        // a format torch has no floats of
+        assert!(
+            float
+                .call1((
+                    &singles,
+                    sort(py, tensor::sort::Float::new(4, 4, [2, 3]).unwrap())
+                ))
+                .is_err()
+        );
+
+        // the constant extracts, sharing its tensor, through its theory and `Any`
+        let constant = float.call1((&singles,)).unwrap();
+        let op = constant
+            .extract::<tensor::float::Const<tch::Tensor>>()
+            .unwrap();
+        let cod: base::boundary::Poly<tensor::float::Sort> = base::mono![single.into()].into();
+        assert_eq!(op.cod(), cod);
+        let t = singles.extract::<PyTensor>().unwrap();
+        assert_eq!(op.tensor().data_ptr(), t.data_ptr());
+        let any = constant.extract::<tensor::Any<tch::Tensor>>().unwrap();
+        assert!(matches!(
+            any,
+            tensor::Any::Float(tensor::float::FP::Const(_))
+        ));
+    });
+}
+
+#[test]
+fn float_operations_extract_through_any() {
+    prepare_python_with_torch();
+    Python::attach(|py| {
+        let x = tensor::sort::Float::new(8, 24, [2, 3]).unwrap();
+        let rm = tensor::float::RoundingMode::RTN;
+        let add = Bound::new(py, tensor::float::Add::with_dom(rm, [x; 2]).unwrap()).unwrap();
+        let any = add.extract::<tensor::Any<tch::Tensor>>().unwrap();
+        assert!(matches!(any, tensor::Any::Float(tensor::float::FP::Add(op)) if op.rm() == rm));
+        // and back to its class
+        let back = any.into_pyobject(py).unwrap();
+        assert!(back.cast::<tensor::float::Add>().is_ok());
+    });
+}

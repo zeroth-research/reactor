@@ -27,9 +27,11 @@ plural the sorts of a theory:
 | [`Ints`] | [`Int`], [`Bool`], [`Zero`] | `Ints` |
 | [`Nums`] | [`Real`], [`Int`], [`Bool`], [`Zero`] | `Reals_Ints` |
 | [`Words`] | [`Word`], [`Bool`], [`Zero`] | `FixedSizeBitVectors` |
+| [`Floats`] | [`Float`], [`Bool`], [`Zero`] | `FloatingPoint` |
 
 [`Nums`], the sorts of both kinds of numbers, shortens `Reals_Ints`, and
-[`Words`] follows our sort [`Word`] rather than SMT-LIB2's longer name.
+[`Words`] and [`Floats`] follow our sorts [`Word`] and [`Float`] rather than
+SMT-LIB2's longer names.
 [`Prop`] is the exception to the plurals: the theory of booleans is
 SMT-LIB2's `Core`, a name too generic for its sorts, so it takes the name
 of propositional logic, whose operations are [`crate::tensor::Prop`].
@@ -39,13 +41,13 @@ Core theory, whose booleans are the sort that comparisons write; [`Prop`]
 holds exactly the sorts that the others share.
 
 Every subset also includes [`Zero`], which is not an SMT-LIB2 sort, but
-the trivial tangent of the discrete sorts [`Bool`], [`Int`] and [`Word`],
+the trivial tangent of the discrete sorts [`Bool`], [`Int`], [`Word`] and [`Float`],
 and its own tangent. With it, each subset holds the tangents of its sorts,
 and so is closed under taking tangents, as [`Any`] is.
 
 The sorts are defined here, and the operations on them in the modules of
-their theories: [`super::real`], [`super::int`], [`super::bool`] and
-[`super::word`].
+their theories: [`super::real`], [`super::int`], [`super::bool`],
+[`super::word`] and [`super::float`].
 */
 
 use base::differentiable::Differentiable;
@@ -358,6 +360,105 @@ impl Differentiable for Word {
     }
 }
 
+/// The sort of matrices of floating-point numbers with the given
+/// `[rows, cols]` shape, of `exponent` bits of exponent and `significand` bits
+/// of significand, its hidden bit included: entrywise, the SMT-LIB2 sort
+/// `(_ FloatingPoint exponent significand)`, as IEEE 754 binary formats are,
+/// such as `Float(8, 24, shape)` for single precision.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(
+        frozen,
+        from_py_object,
+        eq,
+        str,
+        get_all,
+        module = "reactor.tensor.sort"
+    )
+)]
+pub struct Float {
+    exponent: usize,
+    significand: usize,
+    shape: [usize; 2],
+}
+
+impl Float {
+    /// Matrices of floating-point numbers, as [`Float::new`], but panics if
+    /// `exponent` or `significand` is not greater than 1.
+    pub fn new_unchecked(exponent: usize, significand: usize, shape: [usize; 2]) -> Self {
+        Self::new(exponent, significand, shape).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    pub fn exponent(&self) -> usize {
+        self.exponent
+    }
+
+    pub fn significand(&self) -> usize {
+        self.significand
+    }
+
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+/// Python matches a `Float` by `exponent`, `significand` and `shape`.
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Float {
+    /// Matrices of floating-point numbers of `exponent` bits of exponent and
+    /// `significand` bits of significand; as in SMT-LIB2, both must be greater
+    /// than 1, or this returns an error.
+    #[cfg_attr(feature = "pyo3", new)]
+    pub fn new(
+        exponent: usize,
+        significand: usize,
+        shape: [usize; 2],
+    ) -> Result<Self, crate::Error> {
+        if exponent < 2 || significand < 2 {
+            return Err(crate::Error(format!(
+                "floats have more than 1 bit of exponent and of significand, got {exponent} and {significand}"
+            )));
+        }
+        Ok(Float {
+            exponent,
+            significand,
+            shape,
+        })
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("exponent", "significand", "shape")
+    }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Zero {
+        Differentiable::tangent(self)
+    }
+}
+
+impl fmt::Display for Float {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [i, j] = self.shape;
+        write!(f, "Float{}_{}([{i}, {j}])", self.exponent, self.significand)
+    }
+}
+
+/// Floats are discrete, as words are, so their tangent is trivial: the
+/// singleton sort [`Zero`].
+impl Differentiable for Float {
+    type Tangent = Zero;
+
+    fn tangent(self) -> Zero {
+        Zero
+    }
+}
+
 /// The singleton sort, with exactly one value: the trivial tangent of
 /// discrete sorts. Its own tangent is itself.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Default)]
@@ -398,18 +499,20 @@ impl Differentiable for Zero {
 }
 
 /// The sorts of all theories: a value of `Any` is a sort of one of them.
-#[subenum(Prop, Reals, Ints, Nums, Words)]
+#[subenum(Prop, Reals, Ints, Nums, Words, Floats)]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, From)]
 pub enum Any {
     #[subenum(Reals, Nums)]
     Real(Real),
     #[subenum(Ints, Nums)]
     Int(Int),
-    #[subenum(Prop, Reals, Ints, Nums, Words)]
+    #[subenum(Prop, Reals, Ints, Nums, Words, Floats)]
     Bool(Bool),
     #[subenum(Words)]
     Word(Word),
-    #[subenum(Prop, Reals, Ints, Nums, Words)]
+    #[subenum(Floats)]
+    Float(Float),
+    #[subenum(Prop, Reals, Ints, Nums, Words, Floats)]
     Zero(Zero),
 }
 
@@ -423,6 +526,7 @@ impl Differentiable for Any {
             Any::Int(i) => i.tangent().into(),
             Any::Bool(b) => b.tangent().into(),
             Any::Word(w) => w.tangent().into(),
+            Any::Float(x) => x.tangent().into(),
             Any::Zero(z) => z.tangent().into(),
         }
     }
@@ -435,6 +539,7 @@ impl fmt::Display for Any {
             Any::Int(i) => i.fmt(f),
             Any::Bool(b) => b.fmt(f),
             Any::Word(w) => w.fmt(f),
+            Any::Float(x) => x.fmt(f),
             Any::Zero(z) => z.fmt(f),
         }
     }
@@ -473,6 +578,26 @@ impl Differentiable for Words {
     }
 }
 
+impl fmt::Display for Floats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Floats::Float(x) => x.fmt(f),
+            Floats::Bool(b) => b.fmt(f),
+            Floats::Zero(z) => z.fmt(f),
+        }
+    }
+}
+
+/// All the sorts of floats are discrete, so their tangent is trivial: the
+/// singleton sort [`Zero`].
+impl Differentiable for Floats {
+    type Tangent = Zero;
+
+    fn tangent(self) -> Zero {
+        Zero
+    }
+}
+
 /// Extracts a sort of any theory from an instance of its class.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py> FromPyObject<'a, 'py> for Any {
@@ -491,11 +616,14 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Any {
         if let Ok(s) = ob.extract::<Word>() {
             return Ok(Any::Word(s));
         }
+        if let Ok(s) = ob.extract::<Float>() {
+            return Ok(Any::Float(s));
+        }
         if let Ok(s) = ob.extract::<Zero>() {
             return Ok(Any::Zero(s));
         }
         Err(PyTypeError::new_err(format!(
-            "expected a sort: Real, Int, Bool, Word or Zero, got {}",
+            "expected a sort: Real, Int, Bool, Word, Float or Zero, got {}",
             ob.get_type()
         )))
     }
@@ -524,7 +652,7 @@ macro_rules! extract_subset {
 }
 
 #[cfg(feature = "pyo3")]
-extract_subset!(Reals, Ints, Words);
+extract_subset!(Reals, Ints, Words, Floats);
 
 /// Converts a sort into an instance of its class.
 #[cfg(feature = "pyo3")]
@@ -539,6 +667,7 @@ impl<'py> IntoPyObject<'py> for Any {
             Any::Int(s) => s.into_pyobject(py).map(Bound::into_any),
             Any::Bool(s) => s.into_pyobject(py).map(Bound::into_any),
             Any::Word(s) => s.into_pyobject(py).map(Bound::into_any),
+            Any::Float(s) => s.into_pyobject(py).map(Bound::into_any),
             Any::Zero(s) => s.into_pyobject(py).map(Bound::into_any),
         }
     }
