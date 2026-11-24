@@ -16,6 +16,7 @@ from .arrays import as_torch
 from .sort import Real, Int, Bool, Word, shape as _shape
 
 from .reactor import tensor
+from .reactor import d as _d
 from .reactor import jax as _jax
 from .reactor import mixed as _mixed
 
@@ -341,6 +342,66 @@ def execute_init(state, atoms):
 def execute_update(state, atoms):
     """Evaluate the update block of all atoms."""
     _execute_block(state, atoms, lambda a: a.update)
+
+
+def execute_delay(state, atoms):
+    """Evaluate the delay block of all atoms: write the rate of change ``d(v)`` of each
+    variable they control, from the values in `state` (the latched variables and the
+    inputs). A discrete variable's rate is the zero of `Zero`, which writes nothing of
+    use; the flowing variables are the reals, whose rates are reals of degree 1."""
+    _execute_block(state, atoms, lambda a: a.delay)
+
+
+def flowing(atoms) -> list:
+    """The variables the atoms control that flow: the reals, whose delay block writes a
+    rate of change (every other sort, and a real held by a `Zero` rate, has rate zero)."""
+    out = []
+    for atom in atoms:
+        writes = {w for term in atom.delay for w in term.write}
+        for v in atom.ctrl:
+            if isinstance(v.dtype, Real) and _d(v) in writes:
+                out.append(v)
+    return out
+
+
+def rates(state, atoms, variables=None) -> list:
+    """The rates of change ``d(v)`` of `variables` (default: `flowing(atoms)`) at the
+    values in `state`, which is left as it was."""
+    variables = flowing(atoms) if variables is None else variables
+    env = dict(state)
+    execute_delay(env, atoms)
+    return [env[_d(v)] for v in variables]
+
+
+def execute_flow(state, atoms, dt: float, method: str = "rk4"):
+    """Let the atoms flow for `dt`: advance every flowing variable (`flowing`) in
+    `state` by one step of `method` for the ODE their delay blocks define, holding the
+    other values in `state` (the inputs, and the discrete variables) over the step.
+
+    `method` is ``"euler"``, ``x + dt·f(x)``, or ``"rk4"``, the classical Runge-Kutta
+    step, written in the operation order of `reactor.casadi.rk4`, so a differential
+    module translated from CasADi flows exactly as the CasADi step of it computes."""
+    variables = flowing(atoms)
+    x = [state[v] for v in variables]
+
+    def f(values):
+        env = dict(state)
+        env.update(zip(variables, values))
+        execute_delay(env, atoms)
+        return [env[_d(v)] for v in variables]
+
+    if method == "euler":
+        new = [xi + dt * ki for xi, ki in zip(x, f(x))]
+    elif method == "rk4":
+        k1 = f(x)
+        k2 = f([xi + dt / 2 * ki for xi, ki in zip(x, k1)])
+        k3 = f([xi + dt / 2 * ki for xi, ki in zip(x, k2)])
+        k4 = f([xi + dt * ki for xi, ki in zip(x, k3)])
+        new = [xi + dt / 6 * (a + 2 * b + 2 * c + e) for xi, a, b, c, e in zip(x, k1, k2, k3, k4)]
+    else:
+        raise ValueError(f"unknown method {method!r}: use 'euler' or 'rk4'")
+    for v, value in zip(variables, new):
+        state[v] = value
 
 
 def read_wire(state, wire):
