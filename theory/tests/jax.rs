@@ -169,7 +169,7 @@ fn operations_hold_and_give_back_the_same_arrays() {
         let any = constant.extract::<tensor::Any<Array>>().unwrap();
         assert!(matches!(
             any,
-            tensor::Any::Real(tensor::real::NRA::Const(_))
+            tensor::Any::Real(tensor::real::NRAT::Const(_))
         ));
         let back = any.into_pyobject(py).unwrap();
         assert!(back.is_instance_of::<real::Const>());
@@ -232,7 +232,7 @@ fn scales_and_constants_hold_arrays_of_their_theory_and_a_degree() {
         let rates = scale.call1((&floats, 1)).unwrap();
         assert!(rates.getattr("tensor").unwrap().is(&floats));
         let any = rates.extract::<tensor::Any<Array>>().unwrap();
-        let tensor::Any::Real(tensor::real::NRA::Scale(op)) = &any else {
+        let tensor::Any::Real(tensor::real::NRAT::Scale(op)) = &any else {
             panic!("a real scale extracts as one, got {any}");
         };
         assert_eq!(op.degree(), 1);

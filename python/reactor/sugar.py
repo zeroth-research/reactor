@@ -57,9 +57,12 @@ from .reactor import Module as _Module, Term as _Term, X as base_X, d as base_d,
 from .reactor.tensor import Skip as _Skip
 
 from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
+from .expr import sqrt, exp, log, sin, cos, tan, asin, acos, atan, atan2, sinh, cosh, tanh  # noqa: F401
 
 # Public authoring surface: `from reactor.sugar import Module, expr, X, d, ite, cast, ...`
-__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var"]
+__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var",
+           "sqrt", "exp", "log", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
+           "sinh", "cosh", "tanh"]
 
 
 def _as_tuple(r) -> tuple:

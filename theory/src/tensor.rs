@@ -9,9 +9,10 @@ own boundary.
 
 The operations are organised in two levels. Each theory module gathers its
 operations in an enum named after the logic of that theory alone:
-[`real::NRA`], [`int::NIA`], [`bool::Prop`] and [`word::BV`]. The
-arithmetic ones mark their linear operations with a subenum named after
-the linear logic: [`real::LRA`] and [`int::LIA`].
+[`real::NRAT`], [`int::NIA`], [`bool::Prop`] and [`word::BV`]. The
+arithmetic ones mark their fragments with subenums named after their
+logics: [`real::NRA`], the polynomial and rational real operations, and the
+linear [`real::LRA`] and [`int::LIA`].
 Here, [`Any`] holds the operations of all theories, one variant per
 theory, and each logic picks the theories it combines, restricting
 arithmetic to its linear operations where the logic is linear:
@@ -19,6 +20,7 @@ arithmetic to its linear operations where the logic is linear:
 | Logic | Operations | SMT-LIB2 logic |
 |---|---|---|
 | [`Prop`] | [`bool::Prop`] | none: the `Core` theory alone |
+| [`NRAT`] | [`real::NRAT`], [`bool::Prop`] | `QF_NRAT` (cvc5, MathSAT, dReal) |
 | [`NRA`] | [`real::NRA`], [`bool::Prop`] | `QF_NRA` |
 | [`LRA`] | [`real::LRA`], [`bool::Prop`] | `QF_LRA` |
 | [`NIA`] | [`int::NIA`], [`bool::Prop`] | `QF_NIA` |
@@ -62,24 +64,26 @@ pub trait Tensor {
 /// structural operations belong to no theory and so to no logic.
 ///
 /// `subenum` defines the logics that take whole theories: [`Prop`],
-/// propositional logic; [`NRA`] and [`NIA`], non-linear real and integer
-/// arithmetic; and [`BV`], the logic `QF_BV` of fixed-size bit-vectors. It
-/// also generates their casts: `From` up to `Any`, and `TryFrom` down from
-/// it. The linear logics [`LRA`] and [`LIA`] restrict a theory to its
-/// linear operations, which `subenum` cannot express, so they are defined
-/// on their own, with the same casts.
+/// propositional logic; [`NRAT`], non-linear real arithmetic with
+/// transcendental functions; [`NIA`], non-linear integer arithmetic; and
+/// [`BV`], the logic `QF_BV` of fixed-size bit-vectors. It also generates
+/// their casts: `From` up to `Any`, and `TryFrom` down from it. The logics
+/// [`NRA`], [`LRA`] and [`LIA`] restrict a theory to a fragment of its
+/// operations (the polynomial and rational ones, or the linear ones), which
+/// `subenum` cannot express, so they are defined on their own, with the same
+/// casts.
 ///
 /// `Any` is cloneable when the constants and affine maps of its tensor type
 /// are: `Clone` is implemented by hand rather than derived, as a derive would
 /// require `T: Clone`, which tensor types such as `tch::Tensor` are not.
-#[subenum(NRA, NIA, Prop, BV)]
+#[subenum(NRAT, NIA, Prop, BV)]
 #[derive(Debug, From)]
 pub enum Any<T> {
-    #[subenum(NRA)]
-    Real(real::NRA<T>),
+    #[subenum(NRAT)]
+    Real(real::NRAT<T>),
     #[subenum(NIA)]
     Int(int::NIA<T>),
-    #[subenum(NRA, NIA, Prop, BV)]
+    #[subenum(NRAT, NIA, Prop, BV)]
     Bool(bool::Prop<T>),
     #[subenum(BV)]
     Word(word::BV<T>),
@@ -87,6 +91,14 @@ pub enum Any<T> {
     Havoc(Havoc),
     Skip(Skip),
     Zero(Zero),
+}
+
+/// Non-linear real arithmetic: the polynomial and rational operations of
+/// [`real`], with the boolean operations.
+#[derive(Debug, From)]
+pub enum NRA<T> {
+    Real(real::NRA<T>),
+    Bool(bool::Prop<T>),
 }
 
 /// Linear real arithmetic: the linear operations of [`real`], with the
@@ -276,7 +288,7 @@ impl<T> crate::Differential<sort::Any> for Any<T> {
 
 impl<T> Clone for Any<T>
 where
-    real::NRA<T>: Clone,
+    real::NRAT<T>: Clone,
     int::NIA<T>: Clone,
     bool::Prop<T>: Clone,
     word::BV<T>: Clone,
@@ -291,6 +303,19 @@ where
             Any::Skip(op) => Any::Skip(*op),
             Any::Cast(op) => Any::Cast(*op),
             Any::Zero(op) => Any::Zero(*op),
+        }
+    }
+}
+
+impl<T> Clone for NRAT<T>
+where
+    real::NRAT<T>: Clone,
+    bool::Prop<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            NRAT::Real(op) => NRAT::Real(op.clone()),
+            NRAT::Bool(op) => NRAT::Bool(op.clone()),
         }
     }
 }
@@ -421,7 +446,7 @@ impl<T: Tensor> Boundary<sort::Any> for Any<T> {
 #[cfg(feature = "pyo3")]
 impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for Any<T>
 where
-    real::NRA<T>: pyo3::FromPyObject<'a, 'py>,
+    real::NRAT<T>: pyo3::FromPyObject<'a, 'py>,
     int::NIA<T>: pyo3::FromPyObject<'a, 'py>,
     bool::Prop<T>: pyo3::FromPyObject<'a, 'py>,
     word::BV<T>: pyo3::FromPyObject<'a, 'py>,
@@ -431,7 +456,7 @@ where
     fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
         use pyo3::types::PyAnyMethods;
 
-        if let Ok(op) = ob.extract::<real::NRA<T>>() {
+        if let Ok(op) = ob.extract::<real::NRAT<T>>() {
             return Ok(Any::Real(op));
         }
         if let Ok(op) = ob.extract::<int::NIA<T>>() {
@@ -460,6 +485,29 @@ where
              arithmetic, got {}",
             ob.get_type()
         )))
+    }
+}
+
+impl<T> From<NRA<T>> for Any<T> {
+    fn from(op: NRA<T>) -> Self {
+        match op {
+            NRA::Real(op) => Any::Real(op.into()),
+            NRA::Bool(op) => Any::Bool(op),
+        }
+    }
+}
+
+impl<T> TryFrom<Any<T>> for NRA<T> {
+    type Error = String;
+
+    fn try_from(op: Any<T>) -> Result<Self, Self::Error> {
+        match op {
+            Any::Real(op) => op.try_into().map(NRA::Real).map_err(|_| {
+                "NRA holds the polynomial and rational real operations only".to_string()
+            }),
+            Any::Bool(op) => Ok(NRA::Bool(op)),
+            _ => Err("NRA holds real and boolean operations only".to_string()),
+        }
     }
 }
 
@@ -513,8 +561,24 @@ impl<T> TryFrom<Any<T>> for LIA<T> {
 
 // The embeddings between logics, which `subenum` cannot express: it casts
 // between `Any` and each logic, but not between two of them. `Prop` embeds
-// into every other logic, and each linear logic into its non-linear one.
+// into every other logic, each linear logic into its non-linear one, and
+// non-linear real arithmetic into its extension with transcendentals.
 // Their inverses are absent, as nothing casts down between logics.
+impl<T> From<Prop<T>> for NRAT<T> {
+    fn from(Prop::Bool(op): Prop<T>) -> Self {
+        NRAT::Bool(op)
+    }
+}
+
+impl<T> From<NRA<T>> for NRAT<T> {
+    fn from(op: NRA<T>) -> Self {
+        match op {
+            NRA::Real(op) => NRAT::Real(op.into()),
+            NRA::Bool(op) => NRAT::Bool(op),
+        }
+    }
+}
+
 impl<T> From<Prop<T>> for NRA<T> {
     fn from(Prop::Bool(op): Prop<T>) -> Self {
         NRA::Bool(op)

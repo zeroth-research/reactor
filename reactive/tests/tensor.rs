@@ -16,7 +16,7 @@ use theory::tensor::{Havoc, Skip, Zero, bool, real, sort};
 type Op = theory::tensor::Any<Matrix>;
 type Atom = reactive::Atom<Op, Op, Op, sort::Any>;
 
-fn real(op: impl Into<real::NRA<Matrix>>) -> Op {
+fn real(op: impl Into<real::NRAT<Matrix>>) -> Op {
     Op::Real(op.into())
 }
 

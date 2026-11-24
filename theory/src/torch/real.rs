@@ -213,44 +213,57 @@ impl Clone for crate::tensor::real::Linear<tch::Tensor> {
 /// Converts an operation of the theory into its Python class: the
 /// operations carrying tensors into the classes of this module, holding the
 /// same tensors, and the others into their own classes.
-impl<'py> IntoPyObject<'py> for crate::tensor::real::NRA<tch::Tensor> {
+impl<'py> IntoPyObject<'py> for crate::tensor::real::NRAT<tch::Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        use crate::tensor::real::NRA;
+        use crate::tensor::real::NRAT;
 
         match self {
-            NRA::Const(op) => Const(op.tensor().shallow_clone(), op.degree())
+            NRAT::Const(op) => Const(op.tensor().shallow_clone(), op.degree())
                 .into_pyobject(py)
                 .map(Bound::into_any),
-            NRA::Scale(op) => Scale(op.tensor().shallow_clone(), op.degree())
+            NRAT::Scale(op) => Scale(op.tensor().shallow_clone(), op.degree())
                 .into_pyobject(py)
                 .map(Bound::into_any),
-            NRA::Add(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Div(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Linear(op) => Linear(op.a().shallow_clone(), op.b().shallow_clone(), op.degree())
+            NRAT::Add(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Div(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Linear(op) => Linear(op.a().shallow_clone(), op.b().shallow_clone(), op.degree())
                 .into_pyobject(py)
                 .map(Bound::into_any),
-            NRA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Abs(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Neg(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Argmax(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Min(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Max(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Transpose(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Get(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::MatMul(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Lt(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Le(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Gt(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Ge(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Abs(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Neg(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Argmax(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Min(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Max(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Transpose(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Get(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::MatMul(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Lt(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Le(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Gt(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Ge(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Sqrt(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Exp(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Log(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Sin(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Cos(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Tan(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Asin(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Acos(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Atan(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Atan2(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Sinh(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Cosh(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRAT::Tanh(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }
 }

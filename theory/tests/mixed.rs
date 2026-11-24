@@ -148,7 +148,7 @@ fn scales_hold_either_tensor_and_reals_a_degree() {
 
             let rates = py.get_type::<real::Scale>().call1((&floats, 1)).unwrap();
             let any = rates.extract::<tensor::Any<Tensor>>().unwrap();
-            let tensor::Any::Real(tensor::real::NRA::Scale(op)) = &any else {
+            let tensor::Any::Real(tensor::real::NRAT::Scale(op)) = &any else {
                 panic!("a real scale extracts as one, got {any}");
             };
             assert_eq!(op.dom(), tensor::real::ReLU::with_degree([2, 3], 1).dom());

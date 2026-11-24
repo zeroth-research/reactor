@@ -247,14 +247,51 @@ class TermBuilder:
     def uninterpreted(self, name: str, sort: Real | Int | Bool | Word | Zero) -> Term:
         raise TheoryError(f"uninterpreted functions are not supported (`{name}`)")
 
+    # --- transcendental functions: of the reals only (the logic NRAT) ---
+
+    def _transcendental(self, name: str, *args) -> Term:
+        """The term of the transcendental function `name` of `args`."""
+        raise TheoryError(f"{name} is a function of reals, not supported by {type(self).__name__}")
+
+    def sqrt(self, a) -> Term:
+        return self._transcendental("Sqrt", a)
+
+    def exp(self, a) -> Term:
+        return self._transcendental("Exp", a)
+
+    def log(self, a) -> Term:
+        return self._transcendental("Log", a)
+
     def sin(self, a) -> Term:
-        raise TheoryError("sin is not supported by any theory")
+        return self._transcendental("Sin", a)
 
     def cos(self, a) -> Term:
-        raise TheoryError("cos is not supported by any theory")
+        return self._transcendental("Cos", a)
+
+    def tan(self, a) -> Term:
+        return self._transcendental("Tan", a)
+
+    def asin(self, a) -> Term:
+        return self._transcendental("Asin", a)
+
+    def acos(self, a) -> Term:
+        return self._transcendental("Acos", a)
+
+    def atan(self, a) -> Term:
+        return self._transcendental("Atan", a)
+
+    def sinh(self, a) -> Term:
+        return self._transcendental("Sinh", a)
+
+    def cosh(self, a) -> Term:
+        return self._transcendental("Cosh", a)
 
     def tanh(self, a) -> Term:
-        raise TheoryError("tanh is not supported by any theory")
+        return self._transcendental("Tanh", a)
+
+    def atan2(self, y, x) -> Term:
+        """The angle `atan2(y, x)` of the point `(x, y)`: `y` first, as in C."""
+        return self._transcendental("Atan2", y, x)
 
     def pow(self, base, exponent) -> Term:
         raise TheoryError("** / pow is not supported by any theory")
@@ -334,6 +371,18 @@ class RealTermBuilder(TermBuilder):
 
     def relu(self, a) -> Term:
         return self._unary(self._sized(real.ReLU, _dtype(a)), _dtype(a), a)
+
+    def _transcendental(self, name: str, *args) -> Term:
+        # of plain reals: the function of a rate of change is not one
+        sorts = [_dtype(a) for a in args]
+        for sort in sorts:
+            if not isinstance(sort, Real) or sort.degree != 0:
+                raise TheoryError(f"{name} takes plain reals (degree 0), got {sort}")
+        shape = _shape(sorts[0])
+        if any(_shape(sort) != shape for sort in sorts):
+            raise TheoryError(f"{name} takes operands of one shape, got {sorts}")
+        op = getattr(real, name)(shape)
+        return Term(op, [Wire(Real(shape))], [_wire(a) for a in args])
 
     def argmax(self, a) -> Term:
         # the index is written as a plain [1, 1] real

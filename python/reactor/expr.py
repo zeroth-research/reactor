@@ -680,6 +680,88 @@ def relu(e: Expr) -> Expr:
     raise TypeError(f"relu() needs a Real or Int operand, got {e.dtype}")
 
 
+def _transcendental(name: str, *es: Expr) -> Expr:
+    """The term of the transcendental function `name` (an operation of
+    `reactor.tensor.real`, of plain reals) of the expressions `es`."""
+    for e in es:
+        if not isinstance(e, Expr):
+            raise TypeError(f"{name.lower()}() needs expressions; fold a constant before")
+        if not isinstance(e.dtype, Real) or e.dtype.degree != 0:
+            raise TypeError(f"{name.lower()}() needs plain reals (degree 0), got {e.dtype}")
+        if e.shape != es[0].shape:
+            raise TypeError(f"{name.lower()}() needs operands of one shape, got {[x.shape for x in es]}")
+    shape = es[0].shape
+    term = Term(getattr(tensor.real, name)(shape), [Wire(Real(shape))], [e._wire for e in es])
+    _emit(term)
+    return _wrap(term.write[0])
+
+
+def sqrt(e: Expr) -> Expr:
+    """The pointwise square root, unspecified below zero."""
+    return _transcendental("Sqrt", e)
+
+
+def exp(e: Expr) -> Expr:
+    """The pointwise exponential."""
+    return _transcendental("Exp", e)
+
+
+def log(e: Expr) -> Expr:
+    """The pointwise natural logarithm, unspecified at and below zero."""
+    return _transcendental("Log", e)
+
+
+def sin(e: Expr) -> Expr:
+    """The pointwise sine, of radians."""
+    return _transcendental("Sin", e)
+
+
+def cos(e: Expr) -> Expr:
+    """The pointwise cosine, of radians."""
+    return _transcendental("Cos", e)
+
+
+def tan(e: Expr) -> Expr:
+    """The pointwise tangent, unspecified at its poles."""
+    return _transcendental("Tan", e)
+
+
+def asin(e: Expr) -> Expr:
+    """The pointwise arcsine, unspecified outside [-1, 1]."""
+    return _transcendental("Asin", e)
+
+
+def acos(e: Expr) -> Expr:
+    """The pointwise arccosine, unspecified outside [-1, 1]."""
+    return _transcendental("Acos", e)
+
+
+def atan(e: Expr) -> Expr:
+    """The pointwise arctangent."""
+    return _transcendental("Atan", e)
+
+
+def sinh(e: Expr) -> Expr:
+    """The pointwise hyperbolic sine."""
+    return _transcendental("Sinh", e)
+
+
+def cosh(e: Expr) -> Expr:
+    """The pointwise hyperbolic cosine."""
+    return _transcendental("Cosh", e)
+
+
+def tanh(e: Expr) -> Expr:
+    """The pointwise hyperbolic tangent."""
+    return _transcendental("Tanh", e)
+
+
+def atan2(y: Expr, x: Expr) -> Expr:
+    """The pointwise angle of the point `(x, y)`, in (-π, π]: `y` first, as in C;
+    unspecified at (0, 0)."""
+    return _transcendental("Atan2", y, x)
+
+
 def argmax(e: Expr) -> Expr:
     """The index of a maximal entry, as a [1, 1] matrix of the operand's sort."""
     match e.dtype:

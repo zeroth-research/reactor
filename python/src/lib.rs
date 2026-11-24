@@ -69,6 +69,19 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             real.add_class::<theory::tensor::real::Ge>()?;
             real.add_class::<theory::tensor::real::Eq>()?;
             real.add_class::<theory::tensor::real::Ne>()?;
+            real.add_class::<theory::tensor::real::Sqrt>()?;
+            real.add_class::<theory::tensor::real::Exp>()?;
+            real.add_class::<theory::tensor::real::Log>()?;
+            real.add_class::<theory::tensor::real::Sin>()?;
+            real.add_class::<theory::tensor::real::Cos>()?;
+            real.add_class::<theory::tensor::real::Tan>()?;
+            real.add_class::<theory::tensor::real::Asin>()?;
+            real.add_class::<theory::tensor::real::Acos>()?;
+            real.add_class::<theory::tensor::real::Atan>()?;
+            real.add_class::<theory::tensor::real::Atan2>()?;
+            real.add_class::<theory::tensor::real::Sinh>()?;
+            real.add_class::<theory::tensor::real::Cosh>()?;
+            real.add_class::<theory::tensor::real::Tanh>()?;
             tensor.add("real", &real)?;
             namespaces.push(("tensor.real", real));
         }

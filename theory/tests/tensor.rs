@@ -19,6 +19,8 @@ mod any {
     // generic ones of `theory::tensor`.
     type Any = theory::tensor::Any<Mat>;
     #[allow(clippy::upper_case_acronyms)]
+    type NRAT = theory::tensor::NRAT<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
     type NRA = theory::tensor::NRA<Mat>;
     #[allow(clippy::upper_case_acronyms)]
     type NIA = theory::tensor::NIA<Mat>;
@@ -29,7 +31,7 @@ mod any {
     type Prop = theory::tensor::Prop<Mat>;
     type BV = theory::tensor::BV<Mat>;
 
-    fn real(op: impl Into<real::NRA<Mat>>) -> Any {
+    fn real(op: impl Into<real::NRAT<Mat>>) -> Any {
         Any::Real(op.into())
     }
 
@@ -216,7 +218,7 @@ mod any {
         let lra = LRA::Real(real::Add::new([2, 3]).into());
         assert!(matches!(
             Any::from(lra),
-            Any::Real(real::NRA::Add(op)) if op == real::Add::new([2, 3])
+            Any::Real(real::NRAT::Add(op)) if op == real::Add::new([2, 3])
         ));
         let lia = LIA::Int(int::Sub::new([2, 3]).into());
         assert!(matches!(
@@ -292,6 +294,59 @@ mod any {
         assert!(matches!(LRA::from(prop()), LRA::Bool(_)));
         assert!(matches!(LIA::from(prop()), LIA::Bool(_)));
         assert!(matches!(BV::from(prop()), BV::Bool(_)));
+    }
+
+    #[test]
+    fn transcendental_operations_are_in_nrat_only() {
+        let unary: [real::NRAT<Mat>; 12] = [
+            real::Sqrt::new([2, 3]).into(),
+            real::Exp::new([2, 3]).into(),
+            real::Log::new([2, 3]).into(),
+            real::Sin::new([2, 3]).into(),
+            real::Cos::new([2, 3]).into(),
+            real::Tan::new([2, 3]).into(),
+            real::Asin::new([2, 3]).into(),
+            real::Acos::new([2, 3]).into(),
+            real::Atan::new([2, 3]).into(),
+            real::Sinh::new([2, 3]).into(),
+            real::Cosh::new([2, 3]).into(),
+            real::Tanh::new([2, 3]).into(),
+        ];
+        let plain = |shape| -> sort::Any { sort::Real::new(shape).into() };
+        for op in unary {
+            // pointwise on plain reals
+            let any = Any::Real(op);
+            assert_eq!(any.dom(), base::mono![plain([2, 3])].into());
+            assert_eq!(any.cod(), base::mono![plain([2, 3])].into());
+            let Any::Real(op) = any else { unreachable!() };
+            assert!(real::NRA::try_from(op).is_err());
+        }
+        let atan2 = || real(real::Atan2::new([2, 3]));
+        assert_eq!(
+            atan2().dom(),
+            base::mono![plain([2, 3]), plain([2, 3])].into()
+        );
+        assert_eq!(atan2().cod(), base::mono![plain([2, 3])].into());
+
+        // the logics: NRAT holds them, NRA and LRA do not
+        assert!(NRAT::try_from(atan2()).is_ok());
+        assert!(NRAT::try_from(real(real::Sin::new([2, 3]))).is_ok());
+        assert!(NRA::try_from(real(real::Sin::new([2, 3]))).is_err());
+        assert!(LRA::try_from(real(real::Sqrt::new([2, 3]))).is_err());
+        assert!(NRAT::try_from(int(int::Add::new([2, 3]))).is_err());
+
+        // NRA and LRA nest inside NRAT, and keep their own operations
+        assert!(NRAT::try_from(real(real::Mul::new([2, 3]))).is_ok());
+        assert!(NRA::try_from(real(real::Mul::new([2, 3]))).is_ok());
+        let nra = NRA::Real(real::Mul::new([2, 3]).into());
+        assert!(matches!(
+            NRAT::from(nra),
+            NRAT::Real(real::NRAT::Mul(op)) if op == real::Mul::new([2, 3])
+        ));
+        let lra: real::LRA<Mat> = real::Add::new([2, 3]).into();
+        assert!(matches!(real::NRA::from(lra), real::NRA::Add(_)));
+        assert_eq!(real::Sin::new([2, 3]).to_string(), "Sin");
+        assert_eq!(real::Atan2::new([2, 3]).to_string(), "Atan2");
     }
 
     #[test]

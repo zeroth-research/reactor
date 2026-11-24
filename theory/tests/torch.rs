@@ -154,7 +154,7 @@ fn linear_maps_extract_from_the_class_of_their_theory() {
         let any = class.extract::<tensor::Any<tch::Tensor>>().unwrap();
         assert!(matches!(
             any,
-            tensor::Any::Real(tensor::real::NRA::Linear(_))
+            tensor::Any::Real(tensor::real::NRAT::Linear(_))
         ));
     });
 }
@@ -203,7 +203,7 @@ fn any_extracts_the_operations_of_each_theory() {
         let op = real_add.extract::<Any<tch::Tensor>>().unwrap();
         assert!(matches!(
             op,
-            Any::Real(real::NRA::Add(op)) if op == real::Add::new([2, 3])
+            Any::Real(real::NRAT::Add(op)) if op == real::Add::new([2, 3])
         ));
 
         let int_add = Bound::new(py, int::Add::new([2, 3])).unwrap();

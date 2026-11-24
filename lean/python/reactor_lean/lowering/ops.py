@@ -276,6 +276,55 @@ def _smt_abs(op: SmtOp) -> cvc5.Term:
     )
 
 
+def _smt_real_unary(kind_name: str):
+    """A transcendental function that is one cvc5 `Kind`, pointwise; cvc5
+    leaves it open where it is undefined (`sqrt` of a negative, `asin`
+    outside `[-1, 1]`), as the theory does."""
+
+    def emit(op: SmtOp) -> cvc5.Term:
+        return op.elementwise(op.unop(getattr(op.K, kind_name)), op.args[0])
+
+    return emit
+
+
+def _smt_hyperbolic(op: SmtOp) -> cvc5.Term:
+    """`Sinh`, `Cosh` and `Tanh`, which cvc5 has no kinds for, through `exp`:
+    `(eˣ ∓ e⁻ˣ) / 2` and their quotient."""
+    two = op.const(op.write.dtype, 2)
+
+    def one(a):
+        ep = op.mk(op.K.EXPONENTIAL, a)
+        em = op.mk(op.K.EXPONENTIAL, op.mk(op.K.NEG, a))
+        if op.name == "Sinh":
+            return op.mk(op.K.DIVISION, op.mk(op.K.SUB, ep, em), two)
+        if op.name == "Cosh":
+            return op.mk(op.K.DIVISION, op.mk(op.K.ADD, ep, em), two)
+        return op.mk(op.K.DIVISION, op.mk(op.K.SUB, ep, em), op.mk(op.K.ADD, ep, em))
+
+    return op.elementwise(one, op.args[0])
+
+
+def _smt_atan2(op: SmtOp) -> cvc5.Term:
+    """`atan2(y, x)`, which cvc5 has no kind for, by quadrant from `arctan`
+    and `π`; `(0, 0)`, where the theory leaves it open, gives 0, as in C."""
+    zero = op.const(op.write.dtype, 0)
+    two = op.const(op.write.dtype, 2)
+    pi = op.tm.mkPi()
+
+    def one(y, x):
+        r = op.mk(op.K.ARCTANGENT, op.mk(op.K.DIVISION, y, x))
+        on_axis = op.mk(
+            op.K.ITE, op.mk(op.K.GT, y, zero), op.mk(op.K.DIVISION, pi, two),
+            op.mk(op.K.ITE, op.mk(op.K.LT, y, zero),
+                  op.mk(op.K.NEG, op.mk(op.K.DIVISION, pi, two)), zero))
+        left = op.mk(op.K.ITE, op.mk(op.K.GEQ, y, zero),
+                     op.mk(op.K.ADD, r, pi), op.mk(op.K.SUB, r, pi))
+        return op.mk(op.K.ITE, op.mk(op.K.GT, x, zero), r,
+                     op.mk(op.K.ITE, op.mk(op.K.LT, x, zero), left, on_axis))
+
+    return op.elementwise(one, *op.args)
+
+
 def _smt_bv(kind_name: str):
     """A word operation that is one cvc5 `Kind`, pointwise."""
 
@@ -880,6 +929,42 @@ OPS: tuple[Op, ...] = (
              _smt_word_indexed("BITVECTOR_SIGN_EXTEND", lambda t: (t.i,))),
             ("Concat", WORD, "a ++ b", _smt_concat),
         )
+    ),
+    # ── transcendental functions of reals (the logic NRAT) ────────────
+    # Mathlib has each as a total function (`Real.sqrt` is 0 below zero,
+    # `Real.log` is `log |x|`, ...), but `Relational.Circ` has no `Box` for
+    # any, so all three Lean columns refuse them, as they do `Abs`.
+    *(
+        Op(
+            name,
+            ("real",),
+            mat=_no_box(f"The matrix form would be `{lean} (a i j)`."),
+            scalar=_SEE_MAT,
+            box=_SEE_MAT,
+            smt=smt,
+        )
+        for name, lean, smt in (
+            ("Sqrt", "Real.sqrt", _smt_real_unary("SQRT")),
+            ("Exp", "Real.exp", _smt_real_unary("EXPONENTIAL")),
+            ("Log", "Real.log", Unsupported("cvc5 has no logarithm.")),
+            ("Sin", "Real.sin", _smt_real_unary("SINE")),
+            ("Cos", "Real.cos", _smt_real_unary("COSINE")),
+            ("Tan", "Real.tan", _smt_real_unary("TANGENT")),
+            ("Asin", "Real.arcsin", _smt_real_unary("ARCSINE")),
+            ("Acos", "Real.arccos", _smt_real_unary("ARCCOSINE")),
+            ("Atan", "Real.arctan", _smt_real_unary("ARCTANGENT")),
+            ("Sinh", "Real.sinh", _smt_hyperbolic),
+            ("Cosh", "Real.cosh", _smt_hyperbolic),
+            ("Tanh", "Real.tanh", _smt_hyperbolic),
+        )
+    ),
+    Op(
+        "Atan2",
+        ("real",),
+        mat=_no_box("The matrix form would be `Complex.arg ⟨b i j, a i j⟩`."),
+        scalar=_SEE_MAT,
+        box=_SEE_MAT,
+        smt=_smt_atan2,
     ),
     # ── casts between the theories' sorts ─────────────────────────────
     *(

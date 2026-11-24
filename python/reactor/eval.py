@@ -163,6 +163,34 @@ def eval_itype(itype, read, out_sort=None):
             return [-r[0]]
         case tensor.real.Abs(_) | tensor.int.Abs(_):
             return [r[0].abs()]
+        # transcendental functions of reals, as torch computes them: NaN or an
+        # infinity where they are undefined, which the theory leaves unspecified
+        case tensor.real.Sqrt(_):
+            return [r[0].sqrt()]
+        case tensor.real.Exp(_):
+            return [r[0].exp()]
+        case tensor.real.Log(_):
+            return [r[0].log()]
+        case tensor.real.Sin(_):
+            return [r[0].sin()]
+        case tensor.real.Cos(_):
+            return [r[0].cos()]
+        case tensor.real.Tan(_):
+            return [r[0].tan()]
+        case tensor.real.Asin(_):
+            return [r[0].asin()]
+        case tensor.real.Acos(_):
+            return [r[0].acos()]
+        case tensor.real.Atan(_):
+            return [r[0].atan()]
+        case tensor.real.Atan2(_):
+            return [torch.atan2(r[0], r[1])]
+        case tensor.real.Sinh(_):
+            return [r[0].sinh()]
+        case tensor.real.Cosh(_):
+            return [r[0].cosh()]
+        case tensor.real.Tanh(_):
+            return [r[0].tanh()]
         case tensor.real.ReLU(_) | tensor.int.ReLU(_):
             return [r[0].relu()]
         # the least and the greatest entry, as a [1, 1] matrix

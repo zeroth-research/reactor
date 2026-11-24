@@ -316,6 +316,13 @@ KNOWN_BUILTINS: Dict[str, type] = {
 
 ANNOT_SUPPORTED_TYPES = {"int": int, "float": float, "bool": bool}
 
+# The transcendental functions of `math` and `torch`, by name, and the number of
+# arguments each takes: the builder method of the same name builds the term.
+_TRANSCENDENTAL = {
+    "sqrt": 1, "exp": 1, "log": 1, "sin": 1, "cos": 1, "tan": 1, "asin": 1,
+    "acos": 1, "atan": 1, "sinh": 1, "cosh": 1, "tanh": 1, "atan2": 2,
+}
+
 
 # ---------------------------------------------------------------------------
 # Abstract Interpreter
@@ -1675,38 +1682,13 @@ class MethodVisitor(ast.NodeVisitor):
                         term = self.builder.relu(input_val)
                         self.terms.append(term)
                         return term
-                    elif method == "tanh":
-                        input_val = self._convert_expr(
-                            call.args[0], target_dtype=target_dtype
-                        )
-                        term = self.builder.tanh(input_val)
-                        self.terms.append(term)
-                        return term
-                    elif method in ("sin", "cos"):
-                        input_val = self._convert_expr(
-                            call.args[0], target_dtype=target_dtype
-                        )
-                        term = (
-                            self.builder.sin(input_val)
-                            if method == "sin"
-                            else self.builder.cos(input_val)
-                        )
-                        self.terms.append(term)
-                        return term
+                    elif method in _TRANSCENDENTAL:
+                        return self._transcendental_call(method, call, target_dtype)
                     else:
                         raise ValueError(f"Unsupported torch function: torch.{method}")
                 elif name == "math":
-                    if method in ("sin", "cos"):
-                        input_val = self._convert_expr(
-                            call.args[0], target_dtype=target_dtype
-                        )
-                        term = (
-                            self.builder.sin(input_val)
-                            if method == "sin"
-                            else self.builder.cos(input_val)
-                        )
-                        self.terms.append(term)
-                        return term
+                    if method in _TRANSCENDENTAL:
+                        return self._transcendental_call(method, call, target_dtype)
                     else:
                         raise ValueError(f"Unsupported math function: math.{method}")
                 elif name == "self":
@@ -2113,6 +2095,17 @@ class MethodVisitor(ast.NodeVisitor):
             raise ValueError(f"Unknown wire: {wire_name}")
         else:
             raise ValueError(f"Unsupported attribute access: {ast.unparse(attr)}")
+
+    def _transcendental_call(self, method, call, target_dtype):
+        """The term of `math.<method>(...)` or `torch.<method>(...)`, a transcendental
+        function of reals (`atan2` takes `y` first, as in C)."""
+        arity = _TRANSCENDENTAL[method]
+        if len(call.args) != arity:
+            raise ValueError(f"{method} takes {arity} argument(s), got {len(call.args)}")
+        args = [self._convert_expr(a, target_dtype=target_dtype) for a in call.args]
+        term = getattr(self.builder, method)(*args)
+        self.terms.append(term)
+        return term
 
     def _inline_method(self, method_name, args):
         """Inline simple method or dispatch to layer translator."""

@@ -11,6 +11,11 @@ asks the solver for an input on which the two differ; with products of variables
 query is nonlinear, which Z3 decides (nlsat) but may need time for. ``proved`` means the entry
 is equal for **all real inputs**.
 
+Transcendental functions other than the square root are uninterpreted functions in
+Z3, one per name, shared by both sides (``reactor.smt.z3.transcendental``): the
+check then proves the translation applies the same function to the same arguments,
+which is what it must do, without reasoning about the functions themselves.
+
 Both sides use the same constant semantics, which is the translation's contract
 (see ``translate``): constant subexpressions are folded in float64 and division by
 a constant is multiplication by its float64 reciprocal. Z3 reads each float from
@@ -29,7 +34,9 @@ import z3
 
 from ..eval import eval_itype
 from ..smt import z3 as rz3
-from .translate import DTYPE, Terms, _as_sx, _div, fold, integer_exponent, op_name, to_terms
+from .translate import (
+    DTYPE, TRANSCENDENTAL, Terms, _as_sx, _div, fold, integer_exponent, op_name, to_terms,
+)
 
 __all__ = [
     "casadi_to_z3",
@@ -67,6 +74,10 @@ def _z3_unary(op: int, a: z3.ArithRef) -> z3.ArithRef:
             return z3.If(a >= 0, a, -a)
         case cs.OP_SIGN:
             return z3.If(a > 0, _rv(1.0), z3.If(a < 0, _rv(-1.0), _rv(0.0)))
+        case cs.OP_SQRT:
+            return z3.Sqrt(a)
+    if op in TRANSCENDENTAL:  # the uninterpreted functions of `reactor.smt.z3`
+        return rz3.transcendental(TRANSCENDENTAL[op])(a)
     raise NotImplementedError(f"reference: no Z3 encoding for '{op_name(op)}' of a non-constant")
 
 
@@ -101,6 +112,10 @@ def _z3_binary(op: int, a, b) -> z3.ArithRef:
             return z3.If(a <= b, a, b)
         case cs.OP_FMAX:
             return z3.If(a >= b, a, b)
+        case cs.OP_ATAN2:
+            return rz3.transcendental("atan2", 2)(a, b)
+        case cs.OP_HYPOT:
+            return z3.Sqrt(a * a + b * b)
         case cs.OP_POW | cs.OP_CONSTPOW if isinstance(b, float) and integer_exponent(b) is not None:
             n = integer_exponent(b)
             return a**n if n >= 0 else _rv(1.0) / a ** (-n)

@@ -149,14 +149,37 @@ def test_polynomial_and_rational_functions_translate():
     assert result.proved, str(result)
 
 
-def test_transcendental_of_variable_is_rejected():
+def test_transcendental_functions_translate():
+    x = cs.SX.sym("x", 3)
+    f = cs.Function("f", [x], [cs.vertcat(
+        cs.sin(x[0]) * cs.cos(x[1]) + cs.tan(x[0] / 4),
+        cs.atan2(x[1], x[0]),                      # y first, as in C
+        cs.sqrt(x[2] * x[2] + 1) + cs.hypot(x[0], x[1]),
+        cs.exp(x[0]) - cs.log(x[2] * x[2] + 1) + cs.tanh(x[2]),
+        cs.asin(x[0] / 4) + cs.acos(x[1] / 4) + cs.atan(x[2]),
+        cs.sinh(x[1]) + cs.cosh(x[2]),
+    )])
+    t = to_terms(f)
+    assert {"Sin", "Cos", "Tan", "Atan2", "Sqrt", "Exp", "Log", "Tanh", "Asin", "Acos",
+            "Atan", "Sinh", "Cosh"} <= _ops(t.terms)
+    assert check_numeric(f, 200, low=-2.0, high=2.0, terms=t) < 1e-12
+    result = check_equivalence(f, terms=t)
+    assert result.proved, str(result)
+
+
+def test_functions_with_no_reactor_operation_are_rejected():
     x = cs.SX.sym("x")
-    with pytest.raises(UnsupportedOp, match="sin"):
-        to_terms(cs.Function("f", [x], [cs.sin(x)]))
-    with pytest.raises(UnsupportedOp, match="sqrt"):
-        to_terms(cs.Function("f", [x], [cs.sqrt(x)]))
-    with pytest.raises(UnsupportedOp, match="pow"):
-        to_terms(cs.Function("f", [x], [x**1.5]))
+    for g, name in ((cs.erf(x), "erf"), (x**1.5, "pow"), (cs.floor(x), "floor"),
+                    (cs.asinh(x), "asinh")):
+        with pytest.raises(UnsupportedOp, match=name):
+            to_terms(cs.Function("f", [x], [g]))
+
+
+def test_miter_finds_swapped_functions():
+    x = cs.SX.sym("x", 2)
+    right = cs.Function("f", [x], [cs.sin(x[0]) + cs.atan2(x[0], x[1])])
+    wrong = cs.Function("g", [x], [cs.cos(x[0]) + cs.atan2(x[1], x[0])])
+    assert not check_equivalence(right, terms=to_terms(wrong)).proved
 
 
 def test_division_by_a_constant_stays_linear():

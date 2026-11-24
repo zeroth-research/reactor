@@ -204,6 +204,13 @@ _KNOWN_GAPS = {
     *(("word.unsigned", name, c)
       for name in ("Div", "Extend", "Ge", "Gt", "Le", "Lt", "Shr")
       for c in _LEAN),
+    # The transcendental functions of reals: no `Box` in `Relational.Circ`,
+    # and cvc5 has no logarithm.
+    *(("real", name, c)
+      for name in ("Sqrt", "Exp", "Log", "Sin", "Cos", "Tan", "Asin", "Acos",
+                   "Atan", "Atan2", "Sinh", "Cosh", "Tanh")
+      for c in _LEAN),
+    ("real", "Log", "smt"),
     # A transpose has no cvc5 term; `check_na_supported` refuses it by name.
     ("int", "Transpose", "smt"),
     ("real", "Transpose", "smt"),
@@ -253,6 +260,47 @@ def _word_ult_module() -> Module:
         Term(tensor.word.unsigned.Lt(8, S), [X(flag)], [s, s]),
     ]
     return Module.sequential([s, flag], init, update)
+
+
+def _real_function_module(name: str) -> Module:
+    """One real variable updated by the transcendental function `name` of
+    itself (of itself twice, for `Atan2`)."""
+    from reactor import Real
+
+    x = Var(Real(S))
+    init = [Term(tensor.real.Const(torch.tensor([[0.5]])), [X(x)])]
+    reads = [x, x] if name == "Atan2" else [x]
+    update = [Term(getattr(tensor.real, name)(S), [X(x)], reads)]
+    return Module.sequential([x], init, update)
+
+
+@pytest.mark.parametrize("name, kinds", [
+    ("Sqrt", ("sqrt",)),
+    ("Exp", ("exp",)),
+    ("Sin", ("sin",)),
+    ("Cos", ("cos",)),
+    ("Tan", ("tan",)),
+    ("Asin", ("arcsin",)),
+    ("Acos", ("arccos",)),
+    ("Atan", ("arctan",)),
+    ("Sinh", ("exp",)),
+    ("Cosh", ("exp",)),
+    ("Tanh", ("exp",)),
+    ("Atan2", ("arctan", "real.pi")),
+])
+def test_a_transcendental_function_encodes_for_cvc5(name, kinds):
+    import cvc5
+
+    from reactor_lean.smt.module import ModuleSMT
+
+    msmt = ModuleSMT(tm=cvc5.TermManager(), module=_real_function_module(name))
+    state = msmt.update_state(msmt.fresh_ctrl(), msmt.fresh_extl_l(), msmt.fresh_extl_n())
+    for kind in kinds:
+        assert kind in str(state[0]), str(state[0])
+
+
+def test_the_logarithm_is_refused_for_cvc5_with_its_reason():
+    assert "no logarithm" in cell_of(ops.op_for(tensor.real.Log(S)), "smt").reason
 
 
 def test_an_op_only_cvc5_has_still_encodes_for_cvc5():

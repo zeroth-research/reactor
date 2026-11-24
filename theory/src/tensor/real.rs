@@ -25,6 +25,18 @@ information to compute its [`Boundary`]:
   `[1, 1]` boolean matrix `c`.
 - [`Lt`], [`Le`], [`Gt`], [`Ge`], [`Eq`](struct@Eq), [`Ne`] — pointwise
   comparisons, which write boolean matrices of the same shape.
+- [`Sqrt`], [`Exp`], [`Log`], [`Sin`], [`Cos`], [`Tan`], [`Asin`], [`Acos`],
+  [`Atan`], [`Sinh`], [`Cosh`], [`Tanh`] — pointwise transcendental functions
+  of plain reals, and [`Atan2`], the pointwise angle `atan2(y, x)`.
+
+The operations are gathered in three nested enums, after the SMT-LIB2 logics
+they span: [`LRA`], the linear operations; [`NRA`], which adds the products and
+quotients of two variables (polynomial and rational arithmetic); and
+[`NRAT`], which adds the transcendental functions, as in the logic `QF_NRAT`
+of the solvers that support it (cvc5, MathSAT, dReal). Where a function is not
+defined (`sqrt` and `log` of a negative, `log 0`, `asin` and `acos` outside
+`[-1, 1]`, `tan` at its poles, `atan2(0, 0)`), its value is unspecified, as
+that of `x / 0`.
 
 The comparisons are those of SMT-LIB2's `Reals` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
@@ -407,58 +419,446 @@ pub struct Ne {
     degree: u8,
 }
 
+/// Defines a pointwise transcendental function of plain real matrices: an
+/// operation on `[m, n]` matrices of degree 0, as the function of a rate of
+/// change is not one, with its Python constructor from the shape, its
+/// boundary and its name.
+macro_rules! transcendental {
+    ($(#[$attr:meta])* $name:ident) => {
+        $(#[$attr])*
+        #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+        #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+        pub struct $name {
+            shape: [usize; 2],
+        }
+
+        #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+        impl $name {
+            /// On plain real matrices of the given `shape`.
+            #[cfg_attr(feature = "pyo3", new)]
+            #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
+            pub fn new(shape: [usize; 2]) -> Self {
+                $name { shape }
+            }
+
+            #[cfg(feature = "pyo3")]
+            #[classattr]
+            fn __match_args__() -> (&'static str,) {
+                ("shape",)
+            }
+
+            #[cfg_attr(feature = "pyo3", getter)]
+            pub fn shape(&self) -> [usize; 2] {
+                self.shape
+            }
+        }
+
+        impl Boundary<Real> for $name {
+            fn dom(&self) -> Poly<Real> {
+                mono![Real::new(self.shape)].into()
+            }
+
+            fn cod(&self) -> Poly<Real> {
+                mono![Real::new(self.shape)].into()
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, stringify!($name))
+            }
+        }
+    };
+}
+
+transcendental! {
+    /// The pointwise square root `x ↦ √x`, unspecified for `x < 0`.
+    ///
+    /// cvc5 and MathSAT: `(sqrt x)`.
+    Sqrt
+}
+
+transcendental! {
+    /// The pointwise exponential `x ↦ eˣ`.
+    ///
+    /// cvc5 and MathSAT: `(exp x)`.
+    Exp
+}
+
+transcendental! {
+    /// The pointwise natural logarithm `x ↦ ln x`, unspecified for `x ≤ 0`.
+    ///
+    /// MathSAT: `(log x)`.
+    Log
+}
+
+transcendental! {
+    /// The pointwise sine `x ↦ sin x`, of an angle in radians.
+    ///
+    /// cvc5 and MathSAT: `(sin x)`.
+    Sin
+}
+
+transcendental! {
+    /// The pointwise cosine `x ↦ cos x`, of an angle in radians.
+    ///
+    /// cvc5 and MathSAT: `(cos x)`.
+    Cos
+}
+
+transcendental! {
+    /// The pointwise tangent `x ↦ tan x`, unspecified at its poles.
+    ///
+    /// cvc5 and MathSAT: `(tan x)`.
+    Tan
+}
+
+transcendental! {
+    /// The pointwise arcsine `x ↦ asin x`, in `[-π/2, π/2]`, unspecified
+    /// outside `[-1, 1]`.
+    ///
+    /// cvc5: `(arcsin x)`; MathSAT: `(asin x)`.
+    Asin
+}
+
+transcendental! {
+    /// The pointwise arccosine `x ↦ acos x`, in `[0, π]`, unspecified outside
+    /// `[-1, 1]`.
+    ///
+    /// cvc5: `(arccos x)`; MathSAT: `(acos x)`.
+    Acos
+}
+
+transcendental! {
+    /// The pointwise arctangent `x ↦ atan x`, in `(-π/2, π/2)`.
+    ///
+    /// cvc5: `(arctan x)`; MathSAT: `(atan x)`.
+    Atan
+}
+
+transcendental! {
+    /// The pointwise hyperbolic sine `x ↦ sinh x`.
+    Sinh
+}
+
+transcendental! {
+    /// The pointwise hyperbolic cosine `x ↦ cosh x`.
+    Cosh
+}
+
+transcendental! {
+    /// The pointwise hyperbolic tangent `x ↦ tanh x`.
+    Tanh
+}
+
+/// The pointwise angle `(y, x) ↦ atan2(y, x)` of the point `(x, y)`, in
+/// `(-π, π]`, of plain real `[m, n]` matrices, read in the order `y`, `x`,
+/// as in C; unspecified at `(0, 0)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct Atan2 {
+    shape: [usize; 2],
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Atan2 {
+    /// On plain real matrices of the given `shape`.
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
+    pub fn new(shape: [usize; 2]) -> Self {
+        Atan2 { shape }
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+impl Boundary<Real> for Atan2 {
+    fn dom(&self) -> Poly<Real> {
+        mono![Real::new(self.shape); 2].into()
+    }
+
+    fn cod(&self) -> Poly<Real> {
+        mono![Real::new(self.shape)].into()
+    }
+}
+
+impl fmt::Display for Atan2 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Atan2")
+    }
+}
+
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
-/// with their boundary in [`Sort`].
+/// extended with transcendental functions, with their boundary in [`Sort`].
 ///
-/// `subenum` defines [`LRA`], the linear ones: all but `Mul`, `Div` and
-/// `MatMul`, which multiply or divide two variables. It also generates the
-/// casts between them: `From` up to `NRA`, and `TryFrom` down from it.
-#[subenum(LRA)]
+/// `subenum` defines [`NRA`], the polynomial and rational ones: all but the
+/// transcendental functions; and [`LRA`], the linear ones: those of `NRA`
+/// but `Mul`, `Div` and `MatMul`, which multiply or divide two variables. It
+/// also generates the casts between `NRAT` and each of them: `From` up, and
+/// `TryFrom` down. Those between `NRA` and `LRA` are implemented by hand.
+#[subenum(NRA, LRA)]
 #[derive(Debug, From)]
-pub enum NRA<T> {
-    #[subenum(LRA)]
+pub enum NRAT<T> {
+    #[subenum(NRA, LRA)]
     Const(Const<T>),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Scale(Scale<T>),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Add(Add),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Sub(Sub),
+    #[subenum(NRA)]
     Mul(Mul),
+    #[subenum(NRA)]
     Div(Div),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Linear(Linear<T>),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     ReLU(ReLU),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Abs(Abs),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Neg(Neg),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Argmax(Argmax),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Min(Min),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Max(Max),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Transpose(Transpose),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Get(Get),
+    #[subenum(NRA)]
     MatMul(MatMul),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Lt(Lt),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Ite(Ite),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Le(Le),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Gt(Gt),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Ge(Ge),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Eq(Eq),
-    #[subenum(LRA)]
+    #[subenum(NRA, LRA)]
     Ne(Ne),
+    Sqrt(Sqrt),
+    Exp(Exp),
+    Log(Log),
+    Sin(Sin),
+    Cos(Cos),
+    Tan(Tan),
+    Asin(Asin),
+    Acos(Acos),
+    Atan(Atan),
+    Atan2(Atan2),
+    Sinh(Sinh),
+    Cosh(Cosh),
+    Tanh(Tanh),
+}
+
+// The casts between the two subenums, which `subenum` does not generate: up
+// from `LRA` to `NRA`, and down from `NRA` to `LRA`, both through `NRAT`.
+impl<T> From<LRA<T>> for NRA<T> {
+    fn from(op: LRA<T>) -> Self {
+        NRA::try_from(NRAT::from(op))
+            .unwrap_or_else(|_| unreachable!("every linear operation is in NRA"))
+    }
+}
+
+impl<T> TryFrom<NRA<T>> for LRA<T> {
+    type Error = LRAConvertError;
+
+    fn try_from(op: NRA<T>) -> Result<Self, Self::Error> {
+        LRA::try_from(NRAT::from(op))
+    }
+}
+
+impl<T> Clone for NRAT<T>
+where
+    Const<T>: Clone,
+    Scale<T>: Clone,
+    Linear<T>: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            NRAT::Const(op) => NRAT::Const(op.clone()),
+            NRAT::Scale(op) => NRAT::Scale(op.clone()),
+            NRAT::Add(op) => NRAT::Add(*op),
+            NRAT::Sub(op) => NRAT::Sub(*op),
+            NRAT::Mul(op) => NRAT::Mul(*op),
+            NRAT::Div(op) => NRAT::Div(*op),
+            NRAT::Linear(op) => NRAT::Linear(op.clone()),
+            NRAT::ReLU(op) => NRAT::ReLU(*op),
+            NRAT::Abs(op) => NRAT::Abs(*op),
+            NRAT::Neg(op) => NRAT::Neg(*op),
+            NRAT::Argmax(op) => NRAT::Argmax(*op),
+            NRAT::Min(op) => NRAT::Min(*op),
+            NRAT::Max(op) => NRAT::Max(*op),
+            NRAT::Transpose(op) => NRAT::Transpose(*op),
+            NRAT::Get(op) => NRAT::Get(*op),
+            NRAT::MatMul(op) => NRAT::MatMul(*op),
+            NRAT::Lt(op) => NRAT::Lt(*op),
+            NRAT::Ite(op) => NRAT::Ite(*op),
+            NRAT::Le(op) => NRAT::Le(*op),
+            NRAT::Gt(op) => NRAT::Gt(*op),
+            NRAT::Ge(op) => NRAT::Ge(*op),
+            NRAT::Eq(op) => NRAT::Eq(*op),
+            NRAT::Ne(op) => NRAT::Ne(*op),
+            NRAT::Sqrt(op) => NRAT::Sqrt(*op),
+            NRAT::Exp(op) => NRAT::Exp(*op),
+            NRAT::Log(op) => NRAT::Log(*op),
+            NRAT::Sin(op) => NRAT::Sin(*op),
+            NRAT::Cos(op) => NRAT::Cos(*op),
+            NRAT::Tan(op) => NRAT::Tan(*op),
+            NRAT::Asin(op) => NRAT::Asin(*op),
+            NRAT::Acos(op) => NRAT::Acos(*op),
+            NRAT::Atan(op) => NRAT::Atan(*op),
+            NRAT::Atan2(op) => NRAT::Atan2(*op),
+            NRAT::Sinh(op) => NRAT::Sinh(*op),
+            NRAT::Cosh(op) => NRAT::Cosh(*op),
+            NRAT::Tanh(op) => NRAT::Tanh(*op),
+        }
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for NRAT<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NRAT::Const(op) => op.fmt(f),
+            NRAT::Scale(op) => op.fmt(f),
+            NRAT::Add(op) => op.fmt(f),
+            NRAT::Sub(op) => op.fmt(f),
+            NRAT::Mul(op) => op.fmt(f),
+            NRAT::Div(op) => op.fmt(f),
+            NRAT::Linear(op) => op.fmt(f),
+            NRAT::ReLU(op) => op.fmt(f),
+            NRAT::Abs(op) => op.fmt(f),
+            NRAT::Neg(op) => op.fmt(f),
+            NRAT::Argmax(op) => op.fmt(f),
+            NRAT::Min(op) => op.fmt(f),
+            NRAT::Max(op) => op.fmt(f),
+            NRAT::Transpose(op) => op.fmt(f),
+            NRAT::Get(op) => op.fmt(f),
+            NRAT::MatMul(op) => op.fmt(f),
+            NRAT::Lt(op) => op.fmt(f),
+            NRAT::Ite(op) => op.fmt(f),
+            NRAT::Le(op) => op.fmt(f),
+            NRAT::Gt(op) => op.fmt(f),
+            NRAT::Ge(op) => op.fmt(f),
+            NRAT::Eq(op) => op.fmt(f),
+            NRAT::Ne(op) => op.fmt(f),
+            NRAT::Sqrt(op) => op.fmt(f),
+            NRAT::Exp(op) => op.fmt(f),
+            NRAT::Log(op) => op.fmt(f),
+            NRAT::Sin(op) => op.fmt(f),
+            NRAT::Cos(op) => op.fmt(f),
+            NRAT::Tan(op) => op.fmt(f),
+            NRAT::Asin(op) => op.fmt(f),
+            NRAT::Acos(op) => op.fmt(f),
+            NRAT::Atan(op) => op.fmt(f),
+            NRAT::Atan2(op) => op.fmt(f),
+            NRAT::Sinh(op) => op.fmt(f),
+            NRAT::Cosh(op) => op.fmt(f),
+            NRAT::Tanh(op) => op.fmt(f),
+        }
+    }
+}
+
+impl<T: Tensor> Boundary<Sort> for NRAT<T> {
+    fn dom(&self) -> Poly<Sort> {
+        match self {
+            NRAT::Const(op) => op.dom().map(Sort::from),
+            NRAT::Scale(op) => op.dom().map(Sort::from),
+            NRAT::Add(op) => op.dom().map(Sort::from),
+            NRAT::Sub(op) => op.dom().map(Sort::from),
+            NRAT::Mul(op) => op.dom().map(Sort::from),
+            NRAT::Div(op) => op.dom().map(Sort::from),
+            NRAT::Linear(op) => op.dom().map(Sort::from),
+            NRAT::ReLU(op) => op.dom().map(Sort::from),
+            NRAT::Abs(op) => op.dom().map(Sort::from),
+            NRAT::Neg(op) => op.dom().map(Sort::from),
+            NRAT::Argmax(op) => op.dom().map(Sort::from),
+            NRAT::Min(op) => op.dom().map(Sort::from),
+            NRAT::Max(op) => op.dom().map(Sort::from),
+            NRAT::Transpose(op) => op.dom().map(Sort::from),
+            NRAT::Get(op) => op.dom().map(Sort::from),
+            NRAT::MatMul(op) => op.dom().map(Sort::from),
+            NRAT::Lt(op) => op.dom(),
+            NRAT::Ite(op) => op.dom(),
+            NRAT::Le(op) => op.dom(),
+            NRAT::Gt(op) => op.dom(),
+            NRAT::Ge(op) => op.dom(),
+            NRAT::Eq(op) => op.dom(),
+            NRAT::Ne(op) => op.dom(),
+            NRAT::Sqrt(op) => op.dom().map(Sort::from),
+            NRAT::Exp(op) => op.dom().map(Sort::from),
+            NRAT::Log(op) => op.dom().map(Sort::from),
+            NRAT::Sin(op) => op.dom().map(Sort::from),
+            NRAT::Cos(op) => op.dom().map(Sort::from),
+            NRAT::Tan(op) => op.dom().map(Sort::from),
+            NRAT::Asin(op) => op.dom().map(Sort::from),
+            NRAT::Acos(op) => op.dom().map(Sort::from),
+            NRAT::Atan(op) => op.dom().map(Sort::from),
+            NRAT::Atan2(op) => op.dom().map(Sort::from),
+            NRAT::Sinh(op) => op.dom().map(Sort::from),
+            NRAT::Cosh(op) => op.dom().map(Sort::from),
+            NRAT::Tanh(op) => op.dom().map(Sort::from),
+        }
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        match self {
+            NRAT::Const(op) => op.cod().map(Sort::from),
+            NRAT::Scale(op) => op.cod().map(Sort::from),
+            NRAT::Add(op) => op.cod().map(Sort::from),
+            NRAT::Sub(op) => op.cod().map(Sort::from),
+            NRAT::Mul(op) => op.cod().map(Sort::from),
+            NRAT::Div(op) => op.cod().map(Sort::from),
+            NRAT::Linear(op) => op.cod().map(Sort::from),
+            NRAT::ReLU(op) => op.cod().map(Sort::from),
+            NRAT::Abs(op) => op.cod().map(Sort::from),
+            NRAT::Neg(op) => op.cod().map(Sort::from),
+            NRAT::Argmax(op) => op.cod().map(Sort::from),
+            NRAT::Min(op) => op.cod().map(Sort::from),
+            NRAT::Max(op) => op.cod().map(Sort::from),
+            NRAT::Transpose(op) => op.cod().map(Sort::from),
+            NRAT::Get(op) => op.cod().map(Sort::from),
+            NRAT::MatMul(op) => op.cod().map(Sort::from),
+            NRAT::Lt(op) => op.cod(),
+            NRAT::Ite(op) => op.cod(),
+            NRAT::Le(op) => op.cod(),
+            NRAT::Gt(op) => op.cod(),
+            NRAT::Ge(op) => op.cod(),
+            NRAT::Eq(op) => op.cod(),
+            NRAT::Ne(op) => op.cod(),
+            NRAT::Sqrt(op) => op.cod().map(Sort::from),
+            NRAT::Exp(op) => op.cod().map(Sort::from),
+            NRAT::Log(op) => op.cod().map(Sort::from),
+            NRAT::Sin(op) => op.cod().map(Sort::from),
+            NRAT::Cos(op) => op.cod().map(Sort::from),
+            NRAT::Tan(op) => op.cod().map(Sort::from),
+            NRAT::Asin(op) => op.cod().map(Sort::from),
+            NRAT::Acos(op) => op.cod().map(Sort::from),
+            NRAT::Atan(op) => op.cod().map(Sort::from),
+            NRAT::Atan2(op) => op.cod().map(Sort::from),
+            NRAT::Sinh(op) => op.cod().map(Sort::from),
+            NRAT::Cosh(op) => op.cod().map(Sort::from),
+            NRAT::Tanh(op) => op.cod().map(Sort::from),
+        }
+    }
 }
 
 impl<T> Clone for NRA<T>
@@ -1108,7 +1508,7 @@ impl fmt::Display for Ne {
 /// classes, and [`Const`], [`Scale`] and [`Linear`] through the extraction that the
 /// tensor type `T` provides.
 #[cfg(feature = "pyo3")]
-impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for NRA<T>
+impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for NRAT<T>
 where
     Const<T>: pyo3::FromPyObject<'a, 'py>,
     Scale<T>: pyo3::FromPyObject<'a, 'py>,
@@ -1120,78 +1520,139 @@ where
         use pyo3::types::PyAnyMethods;
 
         if let Ok(op) = ob.extract::<Add>() {
-            return Ok(NRA::Add(op));
+            return Ok(NRAT::Add(op));
         }
         if let Ok(op) = ob.extract::<Sub>() {
-            return Ok(NRA::Sub(op));
+            return Ok(NRAT::Sub(op));
         }
         if let Ok(op) = ob.extract::<Mul>() {
-            return Ok(NRA::Mul(op));
+            return Ok(NRAT::Mul(op));
         }
         if let Ok(op) = ob.extract::<Div>() {
-            return Ok(NRA::Div(op));
+            return Ok(NRAT::Div(op));
         }
         if let Ok(op) = ob.extract::<ReLU>() {
-            return Ok(NRA::ReLU(op));
+            return Ok(NRAT::ReLU(op));
         }
         if let Ok(op) = ob.extract::<Abs>() {
-            return Ok(NRA::Abs(op));
+            return Ok(NRAT::Abs(op));
         }
         if let Ok(op) = ob.extract::<Neg>() {
-            return Ok(NRA::Neg(op));
+            return Ok(NRAT::Neg(op));
         }
         if let Ok(op) = ob.extract::<Argmax>() {
-            return Ok(NRA::Argmax(op));
+            return Ok(NRAT::Argmax(op));
         }
         if let Ok(op) = ob.extract::<Min>() {
-            return Ok(NRA::Min(op));
+            return Ok(NRAT::Min(op));
         }
         if let Ok(op) = ob.extract::<Max>() {
-            return Ok(NRA::Max(op));
+            return Ok(NRAT::Max(op));
         }
         if let Ok(op) = ob.extract::<Transpose>() {
-            return Ok(NRA::Transpose(op));
+            return Ok(NRAT::Transpose(op));
         }
         if let Ok(op) = ob.extract::<Get>() {
-            return Ok(NRA::Get(op));
+            return Ok(NRAT::Get(op));
         }
         if let Ok(op) = ob.extract::<MatMul>() {
-            return Ok(NRA::MatMul(op));
+            return Ok(NRAT::MatMul(op));
         }
         if let Ok(op) = ob.extract::<Lt>() {
-            return Ok(NRA::Lt(op));
+            return Ok(NRAT::Lt(op));
         }
         if let Ok(op) = ob.extract::<Ite>() {
-            return Ok(NRA::Ite(op));
+            return Ok(NRAT::Ite(op));
         }
         if let Ok(op) = ob.extract::<Le>() {
-            return Ok(NRA::Le(op));
+            return Ok(NRAT::Le(op));
         }
         if let Ok(op) = ob.extract::<Gt>() {
-            return Ok(NRA::Gt(op));
+            return Ok(NRAT::Gt(op));
         }
         if let Ok(op) = ob.extract::<Ge>() {
-            return Ok(NRA::Ge(op));
+            return Ok(NRAT::Ge(op));
         }
         if let Ok(op) = ob.extract::<Eq>() {
-            return Ok(NRA::Eq(op));
+            return Ok(NRAT::Eq(op));
         }
         if let Ok(op) = ob.extract::<Ne>() {
-            return Ok(NRA::Ne(op));
+            return Ok(NRAT::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<Sqrt>() {
+            return Ok(NRAT::Sqrt(op));
+        }
+        if let Ok(op) = ob.extract::<Exp>() {
+            return Ok(NRAT::Exp(op));
+        }
+        if let Ok(op) = ob.extract::<Log>() {
+            return Ok(NRAT::Log(op));
+        }
+        if let Ok(op) = ob.extract::<Sin>() {
+            return Ok(NRAT::Sin(op));
+        }
+        if let Ok(op) = ob.extract::<Cos>() {
+            return Ok(NRAT::Cos(op));
+        }
+        if let Ok(op) = ob.extract::<Tan>() {
+            return Ok(NRAT::Tan(op));
+        }
+        if let Ok(op) = ob.extract::<Asin>() {
+            return Ok(NRAT::Asin(op));
+        }
+        if let Ok(op) = ob.extract::<Acos>() {
+            return Ok(NRAT::Acos(op));
+        }
+        if let Ok(op) = ob.extract::<Atan>() {
+            return Ok(NRAT::Atan(op));
+        }
+        if let Ok(op) = ob.extract::<Atan2>() {
+            return Ok(NRAT::Atan2(op));
+        }
+        if let Ok(op) = ob.extract::<Sinh>() {
+            return Ok(NRAT::Sinh(op));
+        }
+        if let Ok(op) = ob.extract::<Cosh>() {
+            return Ok(NRAT::Cosh(op));
+        }
+        if let Ok(op) = ob.extract::<Tanh>() {
+            return Ok(NRAT::Tanh(op));
         }
         if let Ok(op) = ob.extract::<Const<T>>() {
-            return Ok(NRA::Const(op));
+            return Ok(NRAT::Const(op));
         }
         if let Ok(op) = ob.extract::<Scale<T>>() {
-            return Ok(NRA::Scale(op));
+            return Ok(NRAT::Scale(op));
         }
         if let Ok(op) = ob.extract::<Linear<T>>() {
-            return Ok(NRA::Linear(op));
+            return Ok(NRAT::Linear(op));
         }
         Err(pyo3::exceptions::PyTypeError::new_err(format!(
             "expected an operation of real arithmetic, got {}",
             ob.get_type()
         )))
+    }
+}
+
+/// Extracts a polynomial or rational operation of real arithmetic from a
+/// Python object: an operation of [`NRAT`] that is not transcendental.
+#[cfg(feature = "pyo3")]
+impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for NRA<T>
+where
+    Const<T>: pyo3::FromPyObject<'a, 'py>,
+    Scale<T>: pyo3::FromPyObject<'a, 'py>,
+    Linear<T>: pyo3::FromPyObject<'a, 'py>,
+{
+    type Error = pyo3::PyErr;
+
+    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        let op = ob.extract::<NRAT<T>>()?;
+        NRA::try_from(op).map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err(
+                "expected a polynomial or rational operation of real arithmetic, \
+                 got a transcendental one",
+            )
+        })
     }
 }
 

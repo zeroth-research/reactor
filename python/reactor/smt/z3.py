@@ -43,6 +43,29 @@ def _zeros(dtype):
             raise NotImplementedError(f"zero not implemented for dtype {dtype}")
 
 
+# Z3 has no transcendental functions but the square root (an algebraic power,
+# which its nonlinear solver handles). The others are uninterpreted functions of
+# one name each, shared by every term: two applications to equal arguments are
+# equal, which is all an equivalence check of two encodings needs, and a property
+# proved holds for every interpretation of them, so also for the real one (it may
+# fail to prove one that needs, say, `-1 <= sin x <= 1`).
+_UNINTERPRETED: dict = {}
+
+
+def transcendental(name: str, arity: int = 1):
+    """The uninterpreted Z3 function standing for the real function `name`
+    (``"sin"``, ``"atan2"``, ...), the same object on every call."""
+    key = (name, arity)
+    if key not in _UNINTERPRETED:
+        _UNINTERPRETED[key] = _z3.Function(name, *([_z3.RealSort()] * (arity + 1)))
+    return _UNINTERPRETED[key]
+
+
+def _unary_function(name):
+    f = transcendental(name)
+    return _np.frompyfunc(lambda x: f(x), 1, 1)
+
+
 def interpret(itype):
     match itype:
         # structural
@@ -136,6 +159,36 @@ def interpret(itype):
             return lambda x: _np.array([[reduce(lambda m, y: _z3.If(m <= y, m, y), x.flat)]], dtype=object)
         case tensor.real.Max(_) | tensor.int.Max(_):
             return lambda x: _np.array([[reduce(lambda m, y: _z3.If(m >= y, m, y), x.flat)]], dtype=object)
+
+        # transcendental functions of reals: the square root exactly, the others
+        # as uninterpreted functions (see `transcendental`)
+        case tensor.real.Sqrt(_):
+            return _np.frompyfunc(_z3.Sqrt, 1, 1)
+        case tensor.real.Exp(_):
+            return _unary_function("exp")
+        case tensor.real.Log(_):
+            return _unary_function("log")
+        case tensor.real.Sin(_):
+            return _unary_function("sin")
+        case tensor.real.Cos(_):
+            return _unary_function("cos")
+        case tensor.real.Tan(_):
+            return _unary_function("tan")
+        case tensor.real.Asin(_):
+            return _unary_function("asin")
+        case tensor.real.Acos(_):
+            return _unary_function("acos")
+        case tensor.real.Atan(_):
+            return _unary_function("atan")
+        case tensor.real.Sinh(_):
+            return _unary_function("sinh")
+        case tensor.real.Cosh(_):
+            return _unary_function("cosh")
+        case tensor.real.Tanh(_):
+            return _unary_function("tanh")
+        case tensor.real.Atan2(_):
+            f = transcendental("atan2", 2)
+            return _np.frompyfunc(lambda y, x: f(y, x), 2, 1)
 
         case tensor.real.Transpose(_) | tensor.int.Transpose(_):
             return _np.transpose

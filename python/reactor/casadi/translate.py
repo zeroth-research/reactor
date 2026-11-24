@@ -1,4 +1,4 @@
-"""Translate CasADi functions into Reactor terms over real arithmetic.
+"""Translate CasADi functions into Reactor terms over real arithmetic (the logic NRAT).
 
 The translation walks the instruction list of the function's scalar (SX) form, one
 instruction at a time, and emits one Reactor ``Term`` per instruction that is not
@@ -23,9 +23,14 @@ Semantics
 * ``neg`` and ``fabs`` become ``real.Neg`` and ``real.Abs``; ``fmin``/``fmax``/``sign``
   become ``Ite`` terms (``real.Min``/``real.Max`` reduce a single matrix, they are not
   binary).
-* Transcendental functions (sin, cos, sqrt, exp, atan2, ...) are folded when their
-  arguments are constant and raise ``UnsupportedOp`` otherwise: no Reactor theory has
-  them yet.
+* **Transcendental functions** become the operations of the same name in
+  ``reactor.tensor.real`` (the logic NRAT): ``sqrt``, ``exp``, ``log``, ``sin``,
+  ``cos``, ``tan``, ``asin``, ``acos``, ``atan``, ``sinh``, ``cosh``, ``tanh`` and
+  ``atan2`` (``y`` first, as in CasADi and C); ``hypot(a, b)`` becomes
+  ``sqrt(a*a + b*b)``. Where CasADi gives ``nan`` (``sqrt`` of a negative), the theory
+  leaves the value unspecified. ``asinh``, ``acosh``, ``atanh``, ``expm1``, ``log1p``,
+  ``erf``, ``floor``, ``ceil``, ``fmod`` and non-integer powers of variables raise
+  ``UnsupportedOp``. All are folded when their arguments are constant.
 
 Entry points
 ------------
@@ -47,6 +52,8 @@ import casadi as cs
 import torch
 
 from ..builder import TheoryError
+import sys
+
 from ..expr import AExpr, BExpr, Expr, _emit, _wrap, collecting, expr, ite
 from ..reactor import Module, Term, Var, Wire, X, d, tensor
 from ..reactor.tensor import Havoc, Skip
@@ -83,6 +90,28 @@ _OP_NAMES = {getattr(cs, n): n[3:].lower() for n in dir(cs) if n.startswith("OP_
 def op_name(op: int) -> str:
     """Human-readable name of a CasADi opcode (``cs.OP_MUL`` -> ``"mul"``)."""
     return _OP_NAMES.get(op, f"op#{op}")
+
+
+# The module `reactor.expr`, whose functions build the transcendental operations
+# (`reactor.expr` itself names the function `expr`, re-exported by the package).
+_dsl = sys.modules[AExpr.__module__]
+
+#: The CasADi opcodes of the transcendental functions, and the functions of
+#: ``reactor.expr`` that build the operations of ``reactor.tensor.real`` for them.
+TRANSCENDENTAL = {
+    cs.OP_SQRT: "sqrt",
+    cs.OP_EXP: "exp",
+    cs.OP_LOG: "log",
+    cs.OP_SIN: "sin",
+    cs.OP_COS: "cos",
+    cs.OP_TAN: "tan",
+    cs.OP_ASIN: "asin",
+    cs.OP_ACOS: "acos",
+    cs.OP_ATAN: "atan",
+    cs.OP_SINH: "sinh",
+    cs.OP_COSH: "cosh",
+    cs.OP_TANH: "tanh",
+}
 
 
 class UnsupportedOp(TheoryError):
@@ -286,6 +315,8 @@ def _unary(op: int, a: Value) -> Value:
             r = _real(a)
             zero = _const(0.0)
             return ite(r > zero, _const(1.0), ite(r < zero, _const(-1.0), zero))
+    if op in TRANSCENDENTAL:
+        return getattr(_dsl, TRANSCENDENTAL[op])(_real(a))
     raise UnsupportedOp(op)
 
 
@@ -353,6 +384,11 @@ def _binary(op: int, a: Value, b: Value) -> Value:
             return _power(_real(a), integer_exponent(b))
         case cs.OP_POW | cs.OP_CONSTPOW:
             raise UnsupportedOp(op, "only constant integer exponents expand into products")
+        case cs.OP_ATAN2:
+            return _dsl.atan2(_real(a), _real(b))
+        case cs.OP_HYPOT:
+            ra, rb = _real(a), _real(b)
+            return _dsl.sqrt(_mul(ra, ra) + _mul(rb, rb))
     raise UnsupportedOp(op)
 
 
@@ -406,8 +442,8 @@ def translate(f: cs.Function, inputs: Sequence) -> list[list[Value]]:
         turns any of them into a real expression with a wire.
 
     Raises:
-        UnsupportedOp: `f` applies a transcendental function (or a non-integer power)
-            to a non-constant.
+        UnsupportedOp: `f` applies a function with no Reactor operation (``erf``,
+            ``floor``, a non-integer power, ...) to a non-constant.
     """
     f = _as_sx(f)
     if len(inputs) != f.n_in():
