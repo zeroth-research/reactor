@@ -4,7 +4,7 @@ the claim the flags ask (`claim_from_flags`).
 
 from __future__ import annotations
 
-from ..cli import Settings
+from .settings import Settings
 from ..core.certificate import Certificate, Claim
 from .. import inputs
 

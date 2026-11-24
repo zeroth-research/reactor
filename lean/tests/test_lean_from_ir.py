@@ -17,7 +17,7 @@ from reactor_lean.proof.render import LeanCertificate
 from reactor_lean.core.certificate import Certificate, Claim
 from reactor_lean.core.errors import PredicateRefused
 from reactor_lean.parse.native import read_predicates
-from reactor_lean.pipeline.certificate import render
+from reactor_lean.cli.certificate import render
 from reactor_lean.proof.from_ir import ir_to_lean_nat
 from testdata import dense, relu
 

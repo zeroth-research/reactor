@@ -16,7 +16,7 @@ class Settings:
     re-derive.
     """
 
-    module_file: str | None
+    module_file: str
     output_dir: Path
     project_name: str
     input_format: str | None            # an `inputs` row; None without input

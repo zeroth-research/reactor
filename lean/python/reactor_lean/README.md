@@ -9,7 +9,7 @@ whoever wrote it. It is written into the project, and Lean checks it.
 
 ## The pipeline, stage by stage
 
-`pipeline.main` runs the stages in this order. Each one names the code that
+`cli.main` runs the stages in this order. Each one names the code that
 does it and the section of this file that covers it in full.
 
 ### 1. Input (`inputs/`)
@@ -185,8 +185,7 @@ layer.
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `lake_cache` (the built packages it can share), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
 | `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_ir` (a `parse.Formula` printed as Lean) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`), and `names`, which translates a claim's names to the internal ones and back |
-| `cli/` | The command line: `parser` (the flags, one `add_*` per group), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
-| `pipeline/` | `uv run reactor`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, the certificate rendered), `outputs` (the project, `--cert-file`) |
+| `cli/` | `uv run reactor`: `main` runs the stages in order -- `parse_args` (the command line: `parser`, the flags, one `add_*` per group; `checks`, the rules about which go together, read off the rows; `settings`, `Settings`, what they are read into), `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, the certificate rendered), `outputs` (the project, `--cert-file`) |
 
 ---
 
@@ -435,7 +434,7 @@ certificate trusts nothing in it.
 `render_certificate(q, share=...)` translates the terms. `share=False` prints repeated subterms in full, for reading; a
 certificate is printed shared, which Lean reads the same once `simp` has
 zeta-reduced the `let`s. Every certificate is printed through it, by
-`pipeline.certificate.render(module, claim, cert)`; `certificate_files` renders
+`cli.certificate.render(module, claim, cert)`; `certificate_files` renders
 the project's `Data.lean`, `Module.lean`, `Proofs.lean` and
 `Certificate.lean` from it, and `create_project` writes that text as it is.
 
@@ -457,7 +456,7 @@ The lemmas that read an entry are pre-lemmas (`simp↓`), proved by `id rfl`;
 
 ---
 
-## `uv run reactor` CLI (`cli/`, `pipeline/`, `project/`)
+## `uv run reactor` CLI (`cli/`, `project/`)
 
 `reactor` is the command-line tool that drives the pipeline: Python module
 → Lean project or standalone certificate files, with the certificate as

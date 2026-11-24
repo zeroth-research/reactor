@@ -49,7 +49,7 @@ def test_a_certificate_file_this_run_does_not_write_is_removed(tmp_path):
     there -- an inference route's `Equivalence.lean`, say -- would be built
     against this run's module. Generating the project again removes it,
     without knowing which route wrote it."""
-    from reactor_lean.pipeline.outputs import stale_certificate_files
+    from reactor_lean.cli.outputs import stale_certificate_files
 
     module = load_module(FIXTURES / "counter.py")
     files = certificate_files(LeanContext(module))

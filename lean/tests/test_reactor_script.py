@@ -1,5 +1,5 @@
 """The `reactor` script the package installs. The other tests run the command
-as `python -m reactor_lean.pipeline` (`reactor_cli`); this one runs the
+as `python -m reactor_lean.cli` (`reactor_cli`); this one runs the
 entry point a user's `reactor` is."""
 
 import shutil

@@ -15,7 +15,7 @@ dependencies = [
 
 [project.scripts]
 # A reactive module in, a Lean certificate project out.
-reactor = "reactor_lean.pipeline:main"
+reactor = "reactor_lean.cli:main"
 
 [tool.uv.sources]
 reactor = { workspace = true }

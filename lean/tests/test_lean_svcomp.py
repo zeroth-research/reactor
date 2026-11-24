@@ -6,7 +6,7 @@ function, and generates a Lean 4 project whose certificate states them.
 
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.scaffold import create_project
-from reactor_lean.pipeline.certificate import render
+from reactor_lean.cli.certificate import render
 from reactor_lean.proof.render import certificate_files
 from reactor_lean.core.certificate import Certificate, Claim
 from testdata import TESTS, fixture

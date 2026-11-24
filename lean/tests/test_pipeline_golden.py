@@ -28,7 +28,7 @@ from reactor_lean.proof.render import (
     generate_standalone_cert_lean,
 )
 from reactor_lean.core.certificate import Certificate, Claim
-from reactor_lean.pipeline.certificate import render
+from reactor_lean.cli.certificate import render
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.lake_cache import LAKE_CACHE_ENV
 from testdata import FIXTURES, TESTS, dense, fixture
@@ -204,7 +204,7 @@ def _normalise(text: str, out: Path) -> str:
 
 
 def _transcript(monkeypatch, capsys, tmp_path, fixture, args) -> str:
-    from reactor_lean.pipeline import main
+    from reactor_lean.cli import main
 
     out = tmp_path / "out"
     argv = [a.replace("{out}", str(out)) for a in args]

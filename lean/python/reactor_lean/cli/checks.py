@@ -1,9 +1,5 @@
 """The rules about which flags go together, each read off the rows it is
-about: an input format's options, the claim and the outputs a run can
-write.
-
-Public so that a command built on this one, which takes these flags too,
-applies the same rules.
+about: an input format's options, and the claim.
 """
 
 from __future__ import annotations
@@ -12,7 +8,6 @@ import argparse
 
 from ..core.options import given, missing, put_defaults
 from ..inputs import ADAPTERS, InputAdapter, adapter_by_name, adapter_for
-from .settings import Settings
 
 
 def check_blanks(parser: argparse.ArgumentParser, args) -> None:
@@ -108,11 +103,4 @@ def check_claim_flags(parser: argparse.ArgumentParser, args) -> None:
             "by an invariant that implies FORMULA, and `rule_globally` takes "
             "no ranking function. Ranking functions belong to --buchi."
         )
-
-
-def check_outputs(parser: argparse.ArgumentParser, settings: Settings, *,
-                  one_file: "tuple[tuple[str, object], ...]" = ()) -> None:
-    """What the run writes, against what it was given. `one_file` is a
-    command's own flags that, as --cert-file does, write one file and
-    return, each with its value."""
 

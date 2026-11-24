@@ -1,34 +1,129 @@
-"""The `uv run reactor` command line: the flags, and what combinations mean.
+"""`uv run reactor`: a reactive module in, a Lean 4 certificate project out.
 
-Apart from the pipeline (:mod:`reactor_lean.pipeline`) so that the pipeline
-and the argument grammar are two things.  What the pipeline gets back is
-:class:`Settings` -- validated, with the property and its kind already
-decided -- rather than an `argparse.Namespace` to re-derive facts from.
-`parser` is the flags (`build_parser`), `checks` the rules about which go
-together, `settings` what they are read into; `parse_args` runs the three.
-A command built on this one assembles its command line from the same
-groups (`parser.add_*`), checks and fields (`settings_fields`), and adds
-flags and rules of its own.
+`main` runs the stages in order. `parse_args` reads the command line into
+`Settings` -- validated, with the property and its kind already decided --
+rather than an `argparse.Namespace` to re-derive facts from: `parser` is
+the flags (`build_parser`), `checks` the rules about which go together,
+`settings` what they are read into. Then `claim` reads the module and what
+is to be proved of it; `certificate` checks the module and renders the
+certificate; `outputs` writes the project, or the one file asked for.
+
+The certificate states its obligations and proves each by `sorry`: the
+proofs are a prover's to write, into `Certificate/Proofs.lean`, which
+nothing else in the project depends on but the certificate's `exact`s.
+
+Quick start
+-----------
+A *module file* is a Python file that defines a ``module()`` function (or
+class) returning a :class:`reactor.Module` (or a ``reactor_lean.inputs.Named``
+one, for claims in its own names), or another format ``--format`` lists.
+
+Generate a bare Lean project (all certificate fields left as ``sorry``)::
+
+    uv run reactor mymodule.py -o out/ -p MyProject
+
+Pass the property so the certificate knows what to prove.  Which flag it
+goes under is the choice of proof rule, and so of what the certificate
+contains::
+
+    # `G (F x == 0)` -- holds infinitely often: invariant + ranking function
+    uv run reactor mymodule.py --buchi "(= (X x) 0)" -o out/ -p MyProject
+
+    # `G (x <= 100)` -- holds in every reachable state: invariant alone
+    uv run reactor mymodule.py --safety "(<= (X x) 100)" -o out/ -p MyProject
+
+A claim is written in the module's own terms: ``(X x)`` is the value of ``x``
+after the round.  Names like ``x`` come from a module file that returns
+``reactor_lean.inputs.Named(module, {"x": var})``, and ``(X @intf.0)`` names
+interface variable 0 by position, which works for any module.
+
+Supply the certificate's predicates::
+
+    uv run reactor mymodule.py --buchi "(= (X x) 0)" \\
+        --invariant "(<= (X x) 10)" --ranking "(- 10 (X x))" \\
+        -o out/ -p MyProject
+
+Module file format
+------------------
+The file must expose a callable named ``module`` (override with ``-d``) that
+returns a :class:`reactor.Module`::
+
+    # mymodule.py
+    from reactor import Module, Int, Var, X
+    from reactor.analyzer import convert_method
+
+    def init():
+        return 0
+
+    def update(old_x):
+        x = old_x + 1
+        if x == 10:
+            return 0
+        return x
+
+    def module() -> Module:
+        state = Var(Int([1, 1]))
+        init_terms   = convert_method(init,   {},               [X(state)], number=Int)
+        update_terms = convert_method(update, {"old_x": state}, [X(state)], number=Int)
+        return Module.sequential([state], init_terms, update_terms)
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from ..core.errors import Refused
 from ..inputs import InputAdapter
+from ..project.lake_cache import lake_cache
+from ..project.lakefile import reactlib_checkout
+from .certificate import lean_context, render
 from .checks import (
     check_blanks,
     check_claim_flags,
     check_input_options,
-    check_outputs,
     input_adapter,
 )
+from .claim import claim_from_flags, load
+from .outputs import generate, standalone
 from .parser import build_parser
 from .settings import Settings
 
-__all__ = [
-    "Settings", "build_parser", "parse_args", "settings_fields",
-]
+__all__ = ["Settings", "main", "parse_args"]
+
+
+def main():
+    settings = parse_args()
+
+    # `$REACTLIB` is a checkout the project's lakefile will require, and
+    # `$REACTOR_LAKE_CACHE` the packages it will build against, so a bad
+    # one is refused here, before any of the project is written.
+    if not settings.cert_file:
+        try:
+            reactlib_checkout()
+            lake_cache()
+        except Refused as e:
+            raise SystemExit(f"error: {e}") from e
+
+    problem = load(settings)
+    module = problem.module
+    print(module)
+    claim, given = claim_from_flags(settings, problem.names)
+    try:
+        ctx = lean_context(module)
+    except Refused as e:
+        raise SystemExit(f"error: {e}") from e
+
+    try:
+        lean_cert = render(module, claim, given)
+    except Refused as e:
+        raise SystemExit(f"error: {e}") from e
+
+    if settings.cert_file:
+        standalone(settings.cert_file, ctx, lean_cert)
+        return
+
+    project_dir = generate(settings, module, ctx, lean_cert, problem.source)
+    print(f"\nProject ready at: {project_dir}")
 
 
 def parse_args(argv: "list[str] | None" = None) -> Settings:
@@ -42,14 +137,11 @@ def parse_args(argv: "list[str] | None" = None) -> Settings:
     adapter = input_adapter(parser, args)
     check_input_options(parser, args, adapter)
 
-    settings = Settings(**settings_fields(args, adapter))
-    check_outputs(parser, settings)
-    return settings
+    return Settings(**settings_fields(args, adapter))
 
 
 def settings_fields(args, adapter: "InputAdapter | None") -> dict:
-    """`Settings`' fields, read off a command line built from
-    `build_parser`'s groups."""
+    """`Settings`' fields, read off the command line."""
     return dict(
         module_file=args.module_file,
         output_dir=Path(args.output_dir),

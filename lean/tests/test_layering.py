@@ -42,12 +42,11 @@ LAYERS: dict[str, frozenset[str]] = {
     "proof": frozenset({"core", "lowering", "codegen", "project", "parse"}),
     # The input formats.
     "inputs": frozenset({"core"}),
-    # The command line: read off the input formats' rows.
-    "cli": frozenset({"core", "inputs", "parse"}),
-    # `uv run reactor`: every stage, in order.
-    "pipeline": frozenset({
-        "core", "lowering", "codegen", "project", "proof",
-        "inputs", "cli", "parse"}),
+    # `uv run reactor`: the command line, read off the input formats' rows,
+    # and every stage, in order.
+    "cli": frozenset({
+        "core", "lowering", "codegen", "project", "proof", "inputs",
+        "parse"}),
 }
 
 

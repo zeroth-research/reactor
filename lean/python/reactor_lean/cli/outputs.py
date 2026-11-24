@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..cli import Settings
+from .settings import Settings
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
 from ..core.errors import Refused

@@ -1,8 +1,5 @@
 """The flags: `build_parser`, with the help each input format contributes
 assembled from its rows.
-
-Each group is its own `add_*` so that a command built on this one
-assembles the same flags rather than copies of them.
 """
 
 from __future__ import annotations
@@ -61,35 +58,29 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def add_input(parser: argparse.ArgumentParser, *, project: bool = True,
-              optional: str = "") -> None:
+def add_input(parser: argparse.ArgumentParser) -> None:
     """The input: the module file, the format it is read in and that
-    format's own options, and, with `project`, where the project is
-    written. The module file is required, unless `optional` says when a
-    command runs without one."""
+    format's own options, and where the project is written."""
     parser.add_argument(
         "module_file",
-        nargs="?" if optional else None,
         help=(
             "The input: a file stating the module, in the format --format "
             "names (by default the one its suffix names; a Python file must "
             "contain a callable that returns a Module)."
-            + (f" {optional}" if optional else "")
         ),
     )
-    if project:
-        parser.add_argument(
-            "-o",
-            "--output-dir",
-            default=".",
-            help="Directory where the Lean project will be created (default: current directory).",
-        )
-        parser.add_argument(
-            "-p",
-            "--project-name",
-            default="Rea",
-            help="Name of the Lean package / library (default: Rea).",
-        )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        default=".",
+        help="Directory where the Lean project will be created (default: current directory).",
+    )
+    parser.add_argument(
+        "-p",
+        "--project-name",
+        default="Rea",
+        help="Name of the Lean package / library (default: Rea).",
+    )
     parser.add_argument(
         "--format",
         choices=[a.name for a in ADAPTERS],
@@ -103,13 +94,12 @@ def add_input(parser: argparse.ArgumentParser, *, project: bool = True,
             group = parser.add_argument_group(f"--format {adapter.name}")
             for opt in adapter.options:
                 group.add_argument(*opt.flags, **{**opt.kwargs, "default": None})
-    if project:
-        parser.add_argument(
-            "-x",
-            "--executable",
-            action="store_true",
-            help="Generate Main.lean and add [[lean_exe]] to lakefile for a runnable binary.",
-        )
+    parser.add_argument(
+        "-x",
+        "--executable",
+        action="store_true",
+        help="Generate Main.lean and add [[lean_exe]] to lakefile for a runnable binary.",
+    )
 
 
 def add_claim(parser: argparse.ArgumentParser) -> None:

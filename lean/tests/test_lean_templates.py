@@ -101,7 +101,7 @@ def test_a_reactlib_that_is_not_a_checkout_is_refused_before_the_project(
         monkeypatch, tmp_path):
     """Otherwise the lakefile points at nothing, and lake says so only when
     it is asked to build, long after the project was written."""
-    from reactor_lean.pipeline import main
+    from reactor_lean.cli import main
 
     monkeypatch.setenv(REACTLIB_ENV, str(tmp_path))
     with pytest.raises(Refused, match="is not a ReactLib checkout"):
@@ -225,7 +225,7 @@ def test_a_project_with_packages_of_its_own_keeps_them(monkeypatch, tmp_path):
 
 
 def test_a_bad_cache_is_refused_before_the_project(monkeypatch, tmp_path):
-    from reactor_lean.pipeline import main
+    from reactor_lean.cli import main
 
     monkeypatch.setenv(LAKE_CACHE_ENV, str(tmp_path))
     out = tmp_path / "out"
@@ -291,7 +291,7 @@ def test_the_certificate_is_one_text_for_each_kind_of_property():
     from reactor_lean.project.names import (
         CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
     )
-    from reactor_lean.pipeline.certificate import render
+    from reactor_lean.cli.certificate import render
     from reactor_lean.proof.render import certificate_files
 
     counter = load_module(FIXTURES / "counter.py")
@@ -326,7 +326,7 @@ def test_each_obligation_is_stated_alike_in_both_files():
     so that the check is a formality rather than a unification."""
     from reactor_lean.core.certificate import Claim
     from reactor_lean.project.names import CERTIFICATE, PROOFS, cert_file
-    from reactor_lean.pipeline.certificate import render
+    from reactor_lean.cli.certificate import render
     from reactor_lean.proof.render import certificate_files
 
     ctx = _counter_ctx()
