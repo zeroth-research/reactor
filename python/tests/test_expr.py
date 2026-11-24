@@ -10,7 +10,7 @@ import pytest
 from reactor import Wire, Bool, Int, Real, Word, Var, X as _X, TheoryError
 from reactor import tensor
 from reactor.eval import eval_itype
-from reactor.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
+from reactor.expr import expr, cast, ite, all_, collecting, AExpr, BExpr, WExpr, X
 
 INT = Int([1, 1])
 REAL = Real([1, 1])
@@ -312,6 +312,16 @@ def test_eval_ite_both_branches():
         e = ite(x < y, x + 1, y)
     assert _run(terms, {x.wire: _int(1), y.wire: _int(5)})[e.wire].item() == 2
     assert _run(terms, {x.wire: _int(5), y.wire: _int(1)})[e.wire].item() == 1
+
+
+def test_eval_ite_of_vectors_by_all_of_their_comparison():
+    x, y = _varexpr(Int([2, 1])), _varexpr(Int([2, 1]))
+    with collecting() as terms:
+        e = ite(all_(x < y), x + 1, y)
+    vec = lambda *v: torch.tensor([[n] for n in v], dtype=torch.int64)
+    assert _run(terms, {x.wire: vec(1, 2), y.wire: vec(5, 5)})[e.wire].tolist() == [[2], [3]]
+    # one entry not less: the whole of `y`
+    assert _run(terms, {x.wire: vec(1, 7), y.wire: vec(5, 5)})[e.wire].tolist() == [[5], [5]]
 
 
 @pytest.mark.parametrize("n", [1, 2, 3])

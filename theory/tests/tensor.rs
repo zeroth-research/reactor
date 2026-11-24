@@ -151,7 +151,7 @@ mod any {
         let op = real(real::Ite::with_degree([2, 3], 1));
         assert_eq!(
             op.dom(),
-            base::mono![b([2, 3]), r([2, 3], 1), r([2, 3], 1)].into()
+            base::mono![b([1, 1]), r([2, 3], 1), r([2, 3], 1)].into()
         );
         assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
 
@@ -374,11 +374,26 @@ mod bool {
     }
 
     #[test]
+    fn all_reduces_a_matrix_to_one_boolean() {
+        assert_eq!(All::new([2, 3]).dom(), one(Bool::new([2, 3])));
+        assert_eq!(All::new([2, 3]).cod(), one(Bool::new([1, 1])));
+    }
+
+    /// The condition is one boolean, whatever the shape of the branches.
+    #[test]
+    fn ite_reads_a_single_condition() {
+        let (c, b) = (Bool::new([1, 1]), Bool::new([2, 3]));
+        assert_eq!(Ite::new([2, 3]).dom(), mono![c, b, b].into());
+        assert_eq!(Ite::new([2, 3]).cod(), one(b));
+    }
+
+    #[test]
     fn ops_display_their_name() {
         assert_eq!(And::new([1, 1]).to_string(), "And");
         assert_eq!(Not::new([1, 1]).to_string(), "Not");
         assert_eq!(Eq::new([1, 1]).to_string(), "Eq");
         assert_eq!(Ne::new([1, 1]).to_string(), "Ne");
+        assert_eq!(All::new([1, 1]).to_string(), "All");
     }
 }
 

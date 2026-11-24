@@ -141,7 +141,8 @@ def eval_itype(itype, read, out_sort=None):
               | _mixed.real.Scale(c) | _mixed.int.Scale(c)):
             return [_held(c) * r[0]]
 
-        # --- choice ---
+        # --- choice: of a whole matrix, by the one boolean of a [1, 1] condition, which
+        # `where` broadcasts over the branches ---
         case tensor.real.Ite(_) | tensor.int.Ite(_) | tensor.bool.Ite(_) | tensor.word.Ite(_, _):
             return [torch.where(r[0], r[1], r[2])]
 
@@ -206,6 +207,8 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0].logical_xor(r[1])]
         case tensor.bool.Not(_):
             return [r[0].logical_not()]
+        case tensor.bool.All(_):
+            return [r[0].all().reshape(1, 1)]
 
         # --- words: arithmetic modulo 2^w ---
         case tensor.word.Add(w, _):

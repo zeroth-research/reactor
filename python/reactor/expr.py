@@ -638,6 +638,8 @@ def d(v: Expr) -> Expr:
 
 
 def ite(cond: Expr, iftrue, iffalse) -> Expr:
+    """`iftrue` if `cond` holds, else `iffalse`: one of the two whole branches, by the one
+    boolean of `cond`, a [1, 1] matrix (`all_` reduces a comparison of matrices to one)."""
     a, b = iftrue, iffalse
     if not isinstance(a, Expr) and not isinstance(b, Expr):
         raise TypeError("ite(): at least one branch must be an Expr")
@@ -659,6 +661,14 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
     term = Term(op, [Wire(a.dtype)], [cond._wire, a._wire, b._wire])
     _emit(term)
     return _wrap(term.write[0], signed=getattr(a, "_signed", False))
+
+
+def all_(e: Expr) -> Expr:
+    """Whether every entry of the boolean matrix `e` holds, as a [1, 1] matrix."""
+    match e.dtype:
+        case Bool(s):
+            return e._unop(tensor.bool.All(s), out=Bool([1, 1]))
+    raise TypeError(f"all_() needs a Bool operand, got {e.dtype}")
 
 
 def relu(e: Expr) -> Expr:

@@ -108,6 +108,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             bool.add_class::<theory::tensor::bool::Not>()?;
             bool.add_class::<theory::tensor::bool::Eq>()?;
             bool.add_class::<theory::tensor::bool::Ne>()?;
+            bool.add_class::<theory::tensor::bool::All>()?;
             bool.add_class::<theory::tensor::bool::Ite>()?;
             tensor.add("bool", &bool)?;
             namespaces.push(("tensor.bool", bool));

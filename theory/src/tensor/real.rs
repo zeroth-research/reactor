@@ -19,7 +19,8 @@ information to compute its [`Boundary`]:
 - [`MatMul`] — the matrix product `x·y`.
 - [`Argmax`] — the index of a maximal entry, counted row by row, as a
   `[1, 1]` matrix.
-- [`Ite`] — the pointwise choice `if c then x else y`, by a boolean matrix `c`.
+- [`Ite`] — the choice `if c then x else y` between whole matrices, by a
+  `[1, 1]` boolean matrix `c`.
 - [`Lt`], [`Le`], [`Gt`], [`Ge`], [`Eq`](struct@Eq), [`Ne`] — pointwise
   comparisons, which write boolean matrices of the same shape.
 
@@ -310,8 +311,9 @@ pub struct Lt {
     degree: u8,
 }
 
-/// Pointwise choice `if c then x else y` between `[m, n]` real matrices `x` and `y`,
-/// by the boolean matrix `c`, read first.
+/// The choice `if c then x else y` between `[m, n]` real matrices `x` and
+/// `y`, by the `[1, 1]` boolean matrix `c`, read first: one of the two whole
+/// matrices, not entry by entry.
 ///
 /// SMT-LIB2: `(ite c x y)`.
 ///
@@ -1008,7 +1010,7 @@ impl fmt::Display for Lt {
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
         mono![
-            Bool::new(self.shape).into(),
+            Bool::new([1, 1]).into(),
             Real::with_degree(self.shape, self.degree).into(),
             Real::with_degree(self.shape, self.degree).into()
         ]

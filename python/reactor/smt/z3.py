@@ -104,8 +104,10 @@ def interpret(itype):
             return _np.frompyfunc(lambda x: _z3.Not(x), 1, 1)
         case tensor.bool.Xor(_):
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
+        case tensor.bool.All(_):
+            return lambda x: _np.array([[_z3.And(*x.flat)]], dtype=object)
 
-        # control flow
+        # control flow: the [1, 1] condition broadcasts over the branches
         case tensor.real.Ite(_) | tensor.int.Ite(_) | tensor.bool.Ite(_):
             return _np.frompyfunc(lambda c, tt, ff: _z3.If(c, tt, ff), 3, 1)
 

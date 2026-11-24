@@ -10,7 +10,7 @@ use base::differentiable::T;
 use common::matrix::Matrix;
 use dataflow::diagram::{Block, Term, Wire};
 use reactive::var::{Var, X, d};
-use theory::tensor::{Havoc, Skip, Zero, real, sort};
+use theory::tensor::{Havoc, Skip, Zero, bool, real, sort};
 
 /// The operations of all theories, holding their data in `Matrix`es.
 type Op = theory::tensor::Any<Matrix>;
@@ -18,6 +18,10 @@ type Atom = reactive::Atom<Op, Op, Op, sort::Any>;
 
 fn real(op: impl Into<real::NRA<Matrix>>) -> Op {
     Op::Real(op.into())
+}
+
+fn boolean(op: impl Into<bool::Prop<Matrix>>) -> Op {
+    Op::Bool(op.into())
 }
 
 /// Columns of two reals: the sort of most values here.
@@ -28,6 +32,11 @@ fn vec2() -> sort::Any {
 /// Columns of two booleans.
 fn bool2() -> sort::Any {
     sort::Bool::new([2, 1]).into()
+}
+
+/// A single boolean, as the condition of a choice.
+fn bool1() -> sort::Any {
+    sort::Bool::new([1, 1]).into()
 }
 
 /// The identity on columns of two reals, and the zero column.
@@ -81,12 +90,16 @@ fn constants_and_linear_maps_take_their_sorts_from_the_tensor_shape() {
 fn operations_without_data_type_check_on_their_shape() {
     let (x, y) = (Wire::new(vec2()), Wire::new(vec2()));
     let (sum, pos, lt) = (Wire::new(vec2()), Wire::new(vec2()), Wire::new(bool2()));
+    let all = Wire::new(bool1());
 
     assert!(Term::function(real(real::Add::new([2, 1])), [sum], [x, y]).is_ok());
     assert!(Term::function(real(real::ReLU::new([2, 1])), [pos], [sum]).is_ok());
     assert!(Term::function(real(real::Lt::new([2, 1])), [lt], [x, y]).is_ok());
-    let ite = real(real::Ite::new([2, 1]));
-    assert!(Term::function(ite, [Wire::new(vec2())], [lt, x, pos]).is_ok());
+    assert!(Term::function(boolean(bool::All::new([2, 1])), [all], [lt]).is_ok());
+    let ite = || real(real::Ite::new([2, 1]));
+    assert!(Term::function(ite(), [Wire::new(vec2())], [all, x, pos]).is_ok());
+    // the condition is one boolean, not one per entry
+    assert!(Term::function(ite(), [Wire::new(vec2())], [lt, x, pos]).is_err());
 }
 
 #[test]
@@ -194,21 +207,22 @@ fn a_differential_atom_computes_on_rates_and_skips_its_values() {
     assert_eq!(atom.update().read(), [*x]);
 }
 
-/// `c' = x < relu(x)` and `x' = if c then relu(x) else x`, without init or
-/// delay: the constructor havocs both variables and adds their zero rates
-/// of change, of degree 1 for `x` and the singleton `Zero` for `c`.
+/// `c' = all(x < relu(x))` and `x' = if c then relu(x) else x`, without
+/// init or delay: the constructor havocs both variables and adds their zero
+/// rates of change, of degree 1 for `x` and the singleton `Zero` for `c`.
 #[test]
 fn a_jump_atom_havocs_its_values_and_zeroes_their_rates() {
-    let (x, c) = (Var::new(vec2()), Var::new(bool2()));
-    let pos = Wire::new(vec2());
+    let (x, c) = (Var::new(vec2()), Var::new(bool1()));
+    let (pos, lt) = (Wire::new(vec2()), Wire::new(bool2()));
     let update = [
         Term::function(real(real::ReLU::new([2, 1])), [pos], [x]).unwrap(),
-        Term::function(real(real::Lt::new([2, 1])), [X(c)], [*x, pos]).unwrap(),
+        Term::function(real(real::Lt::new([2, 1])), [lt], [*x, pos]).unwrap(),
+        Term::function(boolean(bool::All::new([2, 1])), [X(c)], [lt]).unwrap(),
         Term::function(real(real::Ite::new([2, 1])), [X(x)], [*c, pos, *x]).unwrap(),
     ];
 
     let atom = Atom::jump(&[x, c], update).unwrap();
-    assert_eq!(structural(atom.init()), [(X(x), vec2()), (X(c), bool2())]);
+    assert_eq!(structural(atom.init()), [(X(x), vec2()), (X(c), bool1())]);
     assert_eq!(
         structural(atom.delay()),
         [(d(x), T(vec2())), (d(c), sort::Any::from(sort::Zero))]

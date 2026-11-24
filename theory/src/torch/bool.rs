@@ -78,6 +78,7 @@ impl<'py> IntoPyObject<'py> for crate::tensor::bool::Prop<tch::Tensor> {
             Prop::Not(op) => op.into_pyobject(py).map(Bound::into_any),
             Prop::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
             Prop::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
+            Prop::All(op) => op.into_pyobject(py).map(Bound::into_any),
             Prop::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }

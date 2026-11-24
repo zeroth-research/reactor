@@ -44,6 +44,9 @@ two's complement, and [`unsigned`], reading them in binary.
 includes, at the sort `(_ BitVec width)`; all the others belong to the
 theory FixedSizeBitVectors or are defined by the logic QF_BV. The
 comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
+
+[`Ite`] alone is not pointwise: its condition is a single `[1, 1]` boolean,
+which picks one of the two whole matrices.
 */
 
 use super::sort::{Bool, Word, check_width};
@@ -216,8 +219,9 @@ pub struct Neg {
     shape: [usize; 2],
 }
 
-/// Pointwise choice `if c then x else y` between `[m, n]` matrices of `width`-bit
-/// words `x` and `y`, by the boolean matrix `c`, read first, as `Ite(width, [m, n])`.
+/// The choice `if c then x else y` between `[m, n]` matrices of `width`-bit
+/// words `x` and `y`, by the `[1, 1]` boolean matrix `c`, read first, as
+/// `Ite(width, [m, n])`: one of the two whole matrices, not entry by entry.
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -824,7 +828,7 @@ impl fmt::Display for Neg {
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
         mono![
-            Bool::new(self.shape).into(),
+            Bool::new([1, 1]).into(),
             Word::new_unchecked(self.width, self.shape).into(),
             Word::new_unchecked(self.width, self.shape).into()
         ]

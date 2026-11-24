@@ -10,7 +10,11 @@ information to compute its [`Boundary`]:
   exclusive disjunction.
 - [`Not`] — pointwise negation.
 - [`Eq`](struct@Eq), [`Ne`] — pointwise equality and disequality.
-- [`Ite`] — the pointwise choice `if c then x else y`, by a boolean matrix `c`.
+- [`All`] — the conjunction of all the entries of a matrix, as a `[1, 1]`
+  matrix: what reduces a pointwise comparison to the condition of an
+  [`Ite`].
+- [`Ite`] — the choice `if c then x else y` between whole matrices, by a
+  `[1, 1]` boolean matrix `c`.
 */
 
 use super::sort::Bool;
@@ -88,8 +92,19 @@ pub struct Ne {
     shape: [usize; 2],
 }
 
-/// Pointwise choice `if c then x else y` between `[m, n]` boolean matrices
-/// `x` and `y`, by the boolean matrix `c`, read first.
+/// The conjunction `⋀ᵢⱼ xᵢⱼ` of all the entries of an `[m, n]` matrix,
+/// written as a `[1, 1]` matrix: true iff every entry is.
+///
+/// SMT-LIB2: `(and x₀₀ … xₘₙ)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct All {
+    shape: [usize; 2],
+}
+
+/// The choice `if c then x else y` between `[m, n]` boolean matrices `x`
+/// and `y`, by the `[1, 1]` boolean matrix `c`, read first: one of the two
+/// whole matrices, not entry by entry.
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
@@ -109,6 +124,7 @@ pub enum Prop<T> {
     Not(Not),
     Eq(Eq),
     Ne(Ne),
+    All(All),
     Ite(Ite),
 }
 
@@ -125,6 +141,7 @@ where
             Prop::Not(op) => Prop::Not(*op),
             Prop::Eq(op) => Prop::Eq(*op),
             Prop::Ne(op) => Prop::Ne(*op),
+            Prop::All(op) => Prop::All(*op),
             Prop::Ite(op) => Prop::Ite(*op),
         }
     }
@@ -140,6 +157,7 @@ impl<T: fmt::Display> fmt::Display for Prop<T> {
             Prop::Not(op) => op.fmt(f),
             Prop::Eq(op) => op.fmt(f),
             Prop::Ne(op) => op.fmt(f),
+            Prop::All(op) => op.fmt(f),
             Prop::Ite(op) => op.fmt(f),
         }
     }
@@ -155,6 +173,7 @@ impl<T: Tensor> Boundary<Bool> for Prop<T> {
             Prop::Not(op) => op.dom(),
             Prop::Eq(op) => op.dom(),
             Prop::Ne(op) => op.dom(),
+            Prop::All(op) => op.dom(),
             Prop::Ite(op) => op.dom(),
         }
     }
@@ -168,6 +187,7 @@ impl<T: Tensor> Boundary<Bool> for Prop<T> {
             Prop::Not(op) => op.cod(),
             Prop::Eq(op) => op.cod(),
             Prop::Ne(op) => op.cod(),
+            Prop::All(op) => op.cod(),
             Prop::Ite(op) => op.cod(),
         }
     }
@@ -243,6 +263,17 @@ impl Boundary<Bool> for Ne {
     }
 }
 
+/// Takes a matrix of shape `[m, n]` to one of shape `[1, 1]`.
+impl Boundary<Bool> for All {
+    fn dom(&self) -> Poly<Bool> {
+        mono![Bool::new(self.shape)].into()
+    }
+
+    fn cod(&self) -> Poly<Bool> {
+        mono![Bool::new([1, 1])].into()
+    }
+}
+
 impl<T: fmt::Display> fmt::Display for Const<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.tensor)
@@ -285,9 +316,21 @@ impl fmt::Display for Ne {
     }
 }
 
+impl fmt::Display for All {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "All")
+    }
+}
+
+/// Reads the `[1, 1]` condition, then the two `[m, n]` branches.
 impl Boundary<Bool> for Ite {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape); 3].into()
+        mono![
+            Bool::new([1, 1]),
+            Bool::new(self.shape),
+            Bool::new(self.shape)
+        ]
+        .into()
     }
 
     fn cod(&self) -> Poly<Bool> {
@@ -332,6 +375,9 @@ where
         }
         if let Ok(op) = ob.extract::<Ne>() {
             return Ok(Prop::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<All>() {
+            return Ok(Prop::All(op));
         }
         if let Ok(op) = ob.extract::<Ite>() {
             return Ok(Prop::Ite(op));
@@ -462,6 +508,28 @@ impl Ne {
         ("shape",)
     }
 
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl All {
+    /// The conjunction of the entries of `[m, n]` matrices, `shape`.
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
+    pub fn new(shape: [usize; 2]) -> Self {
+        All { shape }
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    /// The shape `[m, n]` of the matrix read.
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape

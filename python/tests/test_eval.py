@@ -380,10 +380,27 @@ def _w(*vals):
     return torch.tensor([list(vals)], dtype=torch.int64)
 
 
-def test_ite_op_picks_pointwise():
-    c = torch.tensor([[True, False, True]])
-    got = eval_itype(tensor.real.Ite([1, 3]), [c, torch.tensor([[1., 2., 3.]]), torch.tensor([[4., 5., 6.]])])
-    assert got[0].tolist() == [[1., 5., 3.]]
+@pytest.mark.parametrize("c, picked", [(True, [[1., 2., 3.]]), (False, [[4., 5., 6.]])])
+def test_ite_op_picks_a_whole_branch(c, picked):
+    branches = [torch.tensor([[1., 2., 3.]]), torch.tensor([[4., 5., 6.]])]
+    got = eval_itype(tensor.real.Ite([1, 3]), [torch.tensor([[c]]), *branches])
+    assert got[0].tolist() == picked
+
+
+def test_ite_reads_one_boolean_whatever_the_shape_of_its_branches():
+    x, y = Wire(Real([1, 3])), Wire(Real([1, 3]))
+    Term(tensor.real.Ite([1, 3]), [Wire(Real([1, 3]))], [Wire(Bool([1, 1])), x, y])
+    with pytest.raises(Exception, match=r"expected Ite to read Bool\(1, 1\) ⊗ Real\(1, 3\)"):
+        Term(tensor.real.Ite([1, 3]), [Wire(Real([1, 3]))], [Wire(Bool([1, 3])), x, y])
+
+
+@pytest.mark.parametrize("entries, holds", [
+    ([[True, True], [True, True]], True),
+    ([[True, True], [True, False]], False),
+])
+def test_all_op_is_the_conjunction_of_the_entries(entries, holds):
+    got = eval_itype(tensor.bool.All([2, 2]), [torch.tensor(entries)])[0]
+    assert got.shape == (1, 1) and got.dtype == torch.bool and got.item() is holds
 
 
 def test_argmax_writes_flat_index_as_1x1():

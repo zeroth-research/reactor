@@ -145,6 +145,11 @@ class TermBuilder:
     def xor_(self, a, b) -> Term:
         return self._binary(self._sized(bool_.Xor, _dtype(a)), _dtype(a), a, b)
 
+    def all_(self, a) -> Term:
+        """The conjunction of the entries of the boolean matrix `a`, as a [1, 1] one: what
+        reduces a comparison of matrices to the condition of an `ite`."""
+        return self._unary(self._sized(bool_.All, _dtype(a)), Bool([1, 1]), a)
+
     def eq(self, a, b) -> Term:
         if _is_bool(a):
             return self._compare(bool_.Eq, a, b)
