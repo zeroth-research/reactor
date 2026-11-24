@@ -133,7 +133,7 @@ impl fmt::Display for Real {
 impl Differentiable for Real {
     type Tangent = Real;
 
-    fn tangent(&self) -> Real {
+    fn tangent(self) -> Real {
         Real {
             degree: self
                 .degree
@@ -202,7 +202,7 @@ impl fmt::Display for Int {
 impl Differentiable for Int {
     type Tangent = Zero;
 
-    fn tangent(&self) -> Zero {
+    fn tangent(self) -> Zero {
         Zero
     }
 }
@@ -265,7 +265,7 @@ impl fmt::Display for Bool {
 impl Differentiable for Bool {
     type Tangent = Zero;
 
-    fn tangent(&self) -> Zero {
+    fn tangent(self) -> Zero {
         Zero
     }
 }
@@ -352,7 +352,7 @@ impl fmt::Display for Word {
 impl Differentiable for Word {
     type Tangent = Zero;
 
-    fn tangent(&self) -> Zero {
+    fn tangent(self) -> Zero {
         Zero
     }
 }
@@ -391,7 +391,7 @@ impl fmt::Display for Zero {
 impl Differentiable for Zero {
     type Tangent = Zero;
 
-    fn tangent(&self) -> Zero {
+    fn tangent(self) -> Zero {
         Zero
     }
 }
@@ -416,7 +416,7 @@ pub enum Any {
 impl Differentiable for Any {
     type Tangent = Any;
 
-    fn tangent(&self) -> Any {
+    fn tangent(self) -> Any {
         match self {
             Any::Real(r) => r.tangent().into(),
             Any::Int(i) => i.tangent().into(),
@@ -467,7 +467,7 @@ impl fmt::Display for Words {
 impl Differentiable for Words {
     type Tangent = Zero;
 
-    fn tangent(&self) -> Zero {
+    fn tangent(self) -> Zero {
         Zero
     }
 }

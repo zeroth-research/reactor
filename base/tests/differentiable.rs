@@ -13,7 +13,7 @@ enum Sort {
 impl Differentiable for Sort {
     type Tangent = Sort;
 
-    fn tangent(&self) -> Sort {
+    fn tangent(self) -> Sort {
         match self {
             Sort::Real(rank) => Sort::Real(rank + 1),
             Sort::Bool | Sort::Zero => Sort::Zero,

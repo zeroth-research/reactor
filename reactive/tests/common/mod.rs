@@ -18,8 +18,8 @@ pub struct Sort(pub &'static str);
 impl Differentiable for Sort {
     type Tangent = Self;
 
-    fn tangent(&self) -> Self {
-        *self
+    fn tangent(self) -> Self {
+        self
     }
 }
 

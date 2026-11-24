@@ -21,7 +21,17 @@ pub trait Differentiable {
     type Tangent;
 
     /// The tangent sort `T(self)`.
-    fn tangent(&self) -> Self::Tangent;
+    fn tangent(self) -> Self::Tangent;
+}
+
+/// The tangent of a borrowed sort: that of a copy of the sort, so that a
+/// sort need not be moved to take its tangent.
+impl<S: Differentiable + Copy> Differentiable for &S {
+    type Tangent = S::Tangent;
+
+    fn tangent(self) -> S::Tangent {
+        (*self).tangent()
+    }
 }
 
 /// `T` as a function on sorts: `T(s)` is `s.tangent()`.
